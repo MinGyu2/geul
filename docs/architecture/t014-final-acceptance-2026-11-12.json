@@ -177,7 +177,8 @@
       },
       "status": "FAIL",
       "cause": "New DOCX harness incorrectly required RHWP-only localRevision. Corrected to pending0 and production docx_view; failed evidence preserved, no product defect."
-    }
+    },
+    "commit": "3047b6f26d37bec3f60d3340c822e353a748fa73"
   },
   "runtime": {
     "app": {
@@ -194,8 +195,329 @@
     ]
   },
   "remaining": [
-    "Stage5 failure/conflict/publication/durability matrix",
     "Stage6 recovery revalidation including DOCX",
     "Stage7 controlling-document reconciliation; existing explicit T014 power-loss/filesystem-fault and Windows/macOS implementation obligations remain unfulfilled"
-  ]
+  ],
+  "stage5": {
+    "status": "PASS_LINUX_DETERMINISTIC_AND_NATIVE_BOUNDARY_SCOPE",
+    "overallT014Acceptance": "PARTIAL; physical power-loss/filesystem-fault and Windows/macOS obligations NOT RUN/unimplemented",
+    "productDefectsFound": [],
+    "changes": "Tests only: file fsync replacement-save regression, actual pending same-size/mtime external write,9-case save+recovery filesystem/state/restore/retry matrix. No preservation rule changed.",
+    "build": {
+      "path": "target/t014-final/stage5-build-final-cfg.log",
+      "sha256": "c41986b53407983d26474f165c798d1c35368aef4b0ece3ad60be688699ef937"
+    },
+    "verification": {
+      "path": "target/t014-final/stage5/verification-summary.json",
+      "sha256": "207333dbb7e3740a6439d89a61c527fb415dc0cfe866aec5759dc6bc7966e6f6"
+    },
+    "finalSaveVerification": {
+      "path": "target/t014-final/stage5/save-final-command.json",
+      "sha256": "f7d0645e970d7ed585f46a674df135f50f0dcb30d32fb09947a2ea5ca3068ee1"
+    },
+    "pass": {
+      "save": 212,
+      "recovery": 28,
+      "creationFaultMatrix": 1,
+      "frontend": 148
+    },
+    "ignored": {
+      "save": 23,
+      "recovery": 1
+    },
+    "fail": 0,
+    "ignoredMeaning": "Explicit helpers/large corpus/manual resource/multiuser probes; ignored is not PASS. See exact names/reasons in logs. No mandatory scenario was reclassified as ignored.",
+    "reuse": "Recovery28/creation1/frontend148 run before the final same-size pending-save test addition. Their relevant source/config/input/environment is unchanged; save212 rerun after final edit. Different test-binary hashes are recorded separately; no claim of one combined execution.",
+    "nestedNotRun": [],
+    "duplicateExecution": "The worker ran identical Vitest command twice while capturing logs; both148 PASS; counted once. No additional acceptance coverage inferred.",
+    "matrix": [
+      {
+        "event": "staging creation denied",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "failure immediately after staging creation",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "write storage-full",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "file fsync failure",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "staging readback verification failure",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "metadata inspection refusal",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "rename permission denied",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "pre-publication conflict",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and inode unchanged",
+        "actual": "asserted unchanged bytes/inode, no staging names, dirty revision1/generation1; expected typed error",
+        "recovery": "valid revision1 WordCraft payload restored byte-identically; durable retry succeeds and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "directory fsync fails after rename",
+        "expectedPublication": "published; durability unconfirmed",
+        "expectedOriginal": "new output remains; no rollback",
+        "actual": "asserted new inode/output bytes, durable=false, dirty revision1; no staging name",
+        "recovery": "validated payload retained/restorable; confirmed retry cleans session and retires candidate",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "services::recovery::tests::replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "durable successful save and independent WordCraft reopen",
+        "expectedPublication": "published durable",
+        "expectedOriginal": "updated verified bytes",
+        "actual": "clean matching revision; original-format model equality and preserved package parts",
+        "recovery": "saved recovery records retired",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "docx_대표_문서를_편집해_저장하면_다시_열어도_같고_dirty가_풀린다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "external content modified after open, same-size/mtime after preflight and during pending save",
+        "expectedPublication": "not published",
+        "expectedOriginal": "external bytes preserved",
+        "actual": "FileConflict; pending actual AFTER_STAGE write observed once; dirty/revision retained, lane retryable",
+        "recovery": "save does not erase owned recovery",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "불러온_뒤_디스크의_파일이_바뀌면_사전_검사도_저장도_덮어쓰지_않는다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "original inode replaced during pending save; verified staging substituted/mutated/linked/missing",
+        "expectedPublication": "not published",
+        "expectedOriginal": "external/replaced bytes preserved",
+        "actual": "FileConflict or Publish failure; foreign staging inode/symlink kept",
+        "recovery": "no authorization to delete foreign files",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "b_검증한_뒤_임시_파일이_바뀌거나_이름이_다른_것으로_바뀌면_게시하지_않고_남의_것은_지우지_않는다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "permission/metadata trust changes during pending save",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original bytes and changed metadata retained",
+        "actual": "FileConflict for mode/link/xattr changes; unsupported metadata and ownership fail closed",
+        "recovery": "recovery does not bypass preservation",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "c_교체로_잃을_메타데이터가_있거나_저장_중_바뀌면_막는다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "untrusted parent/directory changes",
+        "expectedPublication": "not published",
+        "expectedOriginal": "original and unrelated files unchanged",
+        "actual": "shared directory rejected; held directory cannot redirect publication",
+        "recovery": "no unsafe recovery deletion",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "a4_믿는_경로가_저장_중_움직이면_확인한_디렉터리에서만_일하고_게시하지_않는다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "invalid/missing save evidence and stale revision/session",
+        "expectedPublication": "not published",
+        "expectedOriginal": "unchanged",
+        "actual": "preflight/reopen/loss/format guards and stale revision reject; session ownership retained",
+        "recovery": "unsafe output not accepted as checkpoint",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "rhwp_저장_서비스는_사전_검사와_손실_보고와_다시_열기_비교를_모두_요구한다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "publish succeeded then target name swapped",
+        "expectedPublication": "published; durability unconfirmed",
+        "expectedOriginal": "do not roll back external replacement",
+        "actual": "durable=false; next preflight/save FileConflict",
+        "recovery": "candidate not represented as durable document save",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "b_교체_직후_원본_이름이_이_저장의_파일이_아니면_내구성_미확인이고_다음_저장은_충돌이다",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "unsafe RHWP export or bad preview",
+        "expectedPublication": "not published",
+        "expectedOriginal": "unchanged",
+        "actual": "unsafe outputs rejected, no new durable checkpoint",
+        "recovery": "previous durable HWP/HWPX record survives",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "unsafe_exports_are_rejected_and_the_previous_durable_checkpoint_survives",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "cleanup unlink or directory fsync failure",
+        "expectedPublication": "according to actual publication, independent cleanup outcome",
+        "expectedOriginal": "no deletion of original/foreign bytes",
+        "actual": "unlink failure leaves staging+record; unlink success/fsync failure leaves record; later cleanup sync retires",
+        "recovery": "ownership retained or reconciled, no false durable retirement",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "unlink_or_directory_sync_failure_keeps_the_ownership_record",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "journal retirement unlink/fsync failure",
+        "expectedPublication": "according to actual publication, independent cleanup outcome",
+        "expectedOriginal": "no deletion of original/foreign bytes",
+        "actual": "failed retirement counted as failed; absent unconfirmed record is not confirmed retired; reappeared record reevaluated",
+        "recovery": "ownership retained or reconciled, no false durable retirement",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "retirement_is_counted_only_when_durably_confirmed_and_reconciles_on_the_next_pass",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "journal retirement failure during successful save",
+        "expectedPublication": "according to actual publication, independent cleanup outcome",
+        "expectedOriginal": "no deletion of original/foreign bytes",
+        "actual": "published save remains successful and bytes match; residual record handled conservatively",
+        "recovery": "ownership retained or reconciled, no false durable retirement",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "a_failed_record_retirement_never_fails_the_document_save",
+        "evidence": "target/t014-final/stage5/save-final.log"
+      },
+      {
+        "event": "invalid payload/quota checkpoint creation failure",
+        "expectedPublication": "record/document publication and durability distinguished",
+        "expectedOriginal": "document original preserved",
+        "actual": "invalid payload and full quota leave last known durable record bytes unchanged",
+        "recovery": "last durable/owned candidate retained as required",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "invalid_new_checkpoint_and_full_quota_never_touch_the_previous_candidate",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "checkpoint publication directory fsync failure",
+        "expectedPublication": "record/document publication and durability distinguished",
+        "expectedOriginal": "document original preserved",
+        "actual": "new unconfirmed record does not replace previous durable record; both independently handled",
+        "recovery": "last durable/owned candidate retained as required",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "failed_directory_sync_after_publication_keeps_last_known_good_candidate",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "recovery retirement fsync and unlink failure",
+        "expectedPublication": "record/document publication and durability distinguished",
+        "expectedOriginal": "document original preserved",
+        "actual": "ownership remains unconfirmed until a successful sync; unlink failure is not hidden by other syncs",
+        "recovery": "last durable/owned candidate retained as required",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "retirement_sync_failure_keeps_ownership_and_unconfirmed_state",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "restore published but directory fsync unconfirmed",
+        "expectedPublication": "record/document publication and durability distinguished",
+        "expectedOriginal": "document original preserved",
+        "actual": "FilePublishedUnconfirmed; actual new destination bytes remain; original and candidate retained; existing destination retry refused",
+        "recovery": "last durable/owned candidate retained as required",
+        "testType": "deterministic Rust actual filesystem/service",
+        "status": "PASS",
+        "test": "published_restore_reports_unconfirmed_and_preserves_both_files_and_candidate",
+        "evidence": "target/t014-final/stage5/rust-2.log"
+      },
+      {
+        "event": "user-visible save failure/durability/checkpoint guards",
+        "expectedPublication": "matches backend result",
+        "expectedOriginal": "dirty/revision and explicit discard protection maintained",
+        "actual": "148 frontend tests pass across9 files; real Rust behavior tested separately",
+        "recovery": "IME/pending/stale models blocked; failed checkpoints remain retryable",
+        "testType": "frontend integration with fake backend (not native fault injection)",
+        "status": "PASS",
+        "test": "nine selected Vitest files",
+        "evidence": "target/t014-final/stage5/frontend.log"
+      },
+      {
+        "event": "representative DOCX/HWP/HWPX real native staging boundary",
+        "expectedPublication": "verified staged, not published",
+        "expectedOriginal": "original hash/inode unchanged",
+        "actual": "all3 engines reach actual Rust publish boundary after real export; SIGKILL/restart cleanup PASS",
+        "recovery": "separate checkpoint/restore acceptance in stage6",
+        "testType": "native actual Tauri/engines/GDB/pidfd",
+        "status": "PASS",
+        "test": "native-save-interruption.py",
+        "evidence": "target/t014-final/stage4b/acceptance/result.json"
+      }
+    ],
+    "threatModel": "Root/owner trusted ancestor handles + content hash + fingerprint checks; no atomic filesystem compare-and-swap against a malicious trusted same-UID actor between last check and rename. Deterministic real-file race hooks are not native multiuser/power-loss acceptance."
+  }
 }

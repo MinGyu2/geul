@@ -867,6 +867,150 @@ mod tests {
             .unwrap();
         info
     }
+    /// Exercise the real replacement-save service with recovery enabled, including the
+    /// boundary where rename succeeded but directory durability cannot be confirmed.
+    #[test]
+    fn replacement_save_faults_preserve_recoverable_payload_and_report_publication_truthfully() {
+        use crate::document::{IoProblem, SaveStage};
+        use publish::Fault;
+        use std::io::ErrorKind;
+        use std::os::unix::fs::MetadataExt;
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                publish::FAULT.with(|f| f.set(None));
+            }
+        }
+        let _reset = Reset;
+        let write_error = |io| DocumentError::SaveFailure {
+            stage: SaveStage::Write,
+            io,
+        };
+        for (fault, expected) in [
+            (
+                Fault::Create(ErrorKind::PermissionDenied),
+                Some(write_error(Some(IoProblem::PermissionDenied))),
+            ),
+            (
+                Fault::AfterCreate,
+                Some(write_error(Some(IoProblem::Other))),
+            ),
+            (
+                Fault::Write(ErrorKind::StorageFull),
+                Some(write_error(Some(IoProblem::StorageFull))),
+            ),
+            (
+                Fault::FileSync(ErrorKind::Other),
+                Some(write_error(Some(IoProblem::Other))),
+            ),
+            (Fault::Verify, Some(write_error(None))),
+            (
+                Fault::Inspect,
+                Some(DocumentError::SaveUnsupported {
+                    reason: crate::document::SaveUnsupportedReason::Metadata,
+                }),
+            ),
+            (
+                Fault::Rename(ErrorKind::PermissionDenied),
+                Some(DocumentError::SaveFailure {
+                    stage: SaveStage::Publish,
+                    io: Some(IoProblem::PermissionDenied),
+                }),
+            ),
+            (Fault::BeforePublish, Some(DocumentError::FileConflict)),
+            (Fault::DirSync, None),
+        ] {
+            let dir = TempDir::new();
+            let source = dir.path().join("source.docx");
+            let (registry, info, original) = setup(&source);
+            let before = std::fs::metadata(&source).unwrap();
+            let output = edited(&original);
+            let store = RecoveryStore::new(dir.path().join("records"));
+            let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+            publish::FAULT.with(|f| f.set(Some(fault)));
+            let saved = service::save_with_options(
+                &registry,
+                &ticket,
+                &Limits::default(),
+                &output,
+                None,
+                true,
+                service::SaveOptions {
+                    destination: None,
+                    recovery: Some(&store),
+                    preview: None,
+                },
+            );
+            publish::FAULT.with(|f| f.set(None));
+            let after = std::fs::metadata(&source).unwrap();
+            if let Some(error) = expected {
+                assert_eq!(saved.unwrap_err(), error, "{fault:?}");
+                assert_eq!(std::fs::read(&source).unwrap(), original, "{fault:?}");
+                assert_eq!(
+                    (after.dev(), after.ino()),
+                    (before.dev(), before.ino()),
+                    "{fault:?}"
+                );
+            } else {
+                let saved = saved.unwrap();
+                assert!(!saved.durable, "{fault:?}");
+                assert!(saved.session.dirty);
+                assert_eq!(std::fs::read(&source).unwrap(), output);
+                assert_ne!(after.ino(), before.ino()); // publication happened; never roll it back
+            }
+            let session = registry.get(info.session_id).unwrap();
+            assert!(session.dirty, "{fault:?}");
+            assert_eq!((session.revision, session.load_generation), (1, 1));
+            assert!(!std::fs::read_dir(dir.path()).unwrap().any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".geul-save-")));
+            let candidate = store
+                .list()
+                .unwrap()
+                .pop()
+                .expect("validated recovery before document staging");
+            assert!(candidate.valid, "{fault:?}");
+            assert_eq!(candidate.revision, Some(1));
+            let restored = dir.path().join("restored.docx");
+            store.restore(&candidate.id, &restored).unwrap();
+            assert_eq!(std::fs::read(&restored).unwrap(), output, "{fault:?}");
+            assert!(crate::adapters::wordcraft::engine::DocxModel::open(&output).is_ok());
+            drop(ticket); // failed or unconfirmed save releases the session lane for retry
+            let disk = std::fs::read(&source).unwrap();
+            registry
+                .record_preflight(
+                    info.session_id,
+                    1,
+                    content_hash(&disk),
+                    service::preflight(Format::Docx, &disk, &disk, None),
+                )
+                .unwrap();
+            let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+            let retried = service::save_with_options(
+                &registry,
+                &ticket,
+                &Limits::default(),
+                &output,
+                None,
+                true,
+                service::SaveOptions {
+                    destination: None,
+                    recovery: Some(&store),
+                    preview: None,
+                },
+            )
+            .unwrap();
+            assert!(retried.durable && !retried.session.dirty, "{fault:?}");
+            assert_eq!(std::fs::read(&source).unwrap(), output);
+            assert!(
+                store.list().unwrap().is_empty(),
+                "{fault:?}: durable retry retires owned recovery"
+            );
+        }
+    }
+
     #[test]
     fn published_restore_reports_unconfirmed_and_preserves_both_files_and_candidate() {
         let dir = TempDir::new();

@@ -961,6 +961,46 @@ fn 불러온_뒤_디스크의_파일이_바뀌면_사전_검사도_저장도_덮
     assert_eq!(doc.save().err(), Some(DocumentError::FileConflict));
     assert_eq!(doc.bytes(), changed);
     assert!(doc.leftovers().is_empty());
+    #[cfg(target_os = "linux")]
+    {
+        // A real in-place modification while this save is staged, preserving size and mtime.
+        // AFTER_STAGE precedes the service's second content read; no simulated FileConflict.
+        let mut doc = open_docx(&original);
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let modified = std::fs::metadata(&doc.path).unwrap().modified().unwrap();
+        let external = changed.clone();
+        let (saved, calls) = save_with_hooks(
+            &doc,
+            vec![(
+                &super::publish::AFTER_STAGE,
+                Box::new(move |target, _| {
+                    std::fs::write(target, &external).unwrap();
+                    std::fs::File::options()
+                        .write(true)
+                        .open(target)
+                        .unwrap()
+                        .set_modified(modified)
+                        .unwrap();
+                }),
+            )],
+        );
+        assert_eq!(calls, 1);
+        assert_eq!(saved.err(), Some(DocumentError::FileConflict));
+        assert_eq!(doc.bytes(), changed);
+        assert!(doc.leftovers().is_empty());
+        let info = doc.state.registry().get(doc.info.session_id).unwrap();
+        assert!(info.dirty);
+        assert_eq!(
+            (info.revision, info.load_generation),
+            (doc.info.revision, doc.info.load_generation)
+        );
+        assert!(doc
+            .state
+            .registry()
+            .begin_save(info.session_id, info.load_generation, info.revision)
+            .is_ok());
+    }
 }
 
 // ---- 레지스트리 저장 프로토콜 ----
@@ -1127,6 +1167,10 @@ fn 쓰기_권한_공간_되읽기_교체_외부_수정_실패는_원본을_보�
         (
             Fault::Write(std::io::ErrorKind::ReadOnlyFilesystem),
             io(SaveStage::Write, IoProblem::ReadOnly),
+        ),
+        (
+            Fault::FileSync(std::io::ErrorKind::Other),
+            io(SaveStage::Write, IoProblem::Other),
         ),
         (
             Fault::Verify,
