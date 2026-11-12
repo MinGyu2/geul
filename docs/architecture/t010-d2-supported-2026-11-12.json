@@ -1,0 +1,492 @@
+{
+  "schema": "geul.t010.d2.supported.v1",
+  "date": "2026-11-12",
+  "recordedAt": "2026-11-12T06:18:01.254047+00:00",
+  "reportTimezone": "Asia/Seoul",
+  "policy": "docs/planning/spec.md#t010-d2-supported-runtime-v1",
+  "decision": "User-approved prospective Option B; historical results unchanged",
+  "statuses": {
+    "supportedEnvironmentD2": "PASS",
+    "eufCompatibility": "NOT OBSERVED / UNVERIFIED",
+    "otherEnvironments": "NOT RUN / UNVERIFIED",
+    "t010Functional": "INCOMPLETE",
+    "generalRhwpHistoryProduction": "NO-GO",
+    "d4Performance": "TARGET NOT MET"
+  },
+  "scope": {
+    "runtime": {
+      "os": "Linux 7.2.14-arch1-1 x86_64",
+      "displayServer": "X11/Xvfb 21.1.23",
+      "nativeHost": "Tauri 2 debug host + Vite source",
+      "webkitgtk": "2.54.1",
+      "gtk": "3.24.52",
+      "ibus": "1.5.33",
+      "engine": "ibus-hangul 1.5.5, two-set/preedit, native Hangul/Latin toggle",
+      "generalHistoryConfiguration": {
+        "VITE_GEUL_TEST_HOOKS": "1",
+        "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+        "GEUL_RHWP_PROFILE": "release"
+      }
+    },
+    "documents": {
+      "hwp": "generated basic-ko.hwp first paragraph; fixture copies per scenario",
+      "hwpx": "generated basic-ko.hwpx first paragraph; fixture copies per scenario",
+      "docx": "new blank DOCX, shared ownership comparison only"
+    },
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "crossDocxSha256": "61bb506d56e93e68b8db2a1edde2e01fae1569a5e84db62466ddc7f6065666f9",
+    "reload": "supported failed→discard-confirm→new generation UI after actual snapshot-discard trap during native composition commit; not ready-state reload",
+    "nativeInput": "real X11 xdotool via isolated IBus; no fabricated isTrusted or composition dispatch",
+    "baselineTrustLimit": "original baseline traces have no isTrusted fields; native delivery verified from unchanged harness and native X11 execution method. Supplement records actual Event.isTrusted.",
+    "notClaimed": [
+      "universal IME compatibility",
+      "other documents beyond stated scope",
+      "production packaged frontend acceptance",
+      "physical desktop",
+      "Wayland",
+      "Windows",
+      "macOS",
+      "XIM",
+      "other input methods/engines",
+      "general RHWP production history activation"
+    ]
+  },
+  "identity": {
+    "applicationSourceBaseHead": "c3faaaf8c30127d41a095eb4d7cc5b62a75cbd3e",
+    "branch": "master",
+    "nativeHostSha256": "4c88dee83572f8e31b98058c038474a70417f614f96cad5efa90097300dc2e38",
+    "applicationSourceSha256": {
+      "src/components/Editor/textInput.ts": "b64d30365599b07d49e5a318368a1b7794559039243bfcafa3b924b9d00e3326",
+      "src/components/CommandButton/editorFocus.ts": "c2367174dfaa7f4fea3a70187a6134cb69247660680510d3e63ff2e476cae9b2",
+      "src/components/Editor/rhwp/imeInput.ts": "ea172a078d62669d7f80482240f3ace65594805fb3179d3e32df1c74ff302420",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts": "1f21f3ab6a43ac2c25f1ebd0e0657b68220fa38232d4fc522315653b0950a516",
+      "src/components/Editor/rhwp/rhwpHistory.ts": "d736d8719725aad7595184a1485b36a831b955b78b2c583ba6c499d490c56029",
+      "src/components/Editor/rhwp/RhwpSurface.tsx": "c38f751833fc371480915805869d11dc49ad4207b0f40291d03889950bb8c859",
+      "src/components/Editor/wordcraft/DocxSurface.tsx": "90aa2d2bbed1fbfb62bf54947565b52b6231eb1c0f8e8ae3d31ad535cf195a4b",
+      "src/commands/registry.ts": "89af93b76a264899732c51c021ae420e7677b00662e08a3abe1c6afbf1cde347",
+      "src/commands/capability.ts": "830acc6164b74de89dbc5cae11ee093387201c821cfa71691d592bc769885730"
+    },
+    "rhwpRelease": {
+      "artifacts": {
+        "rhwp.js": "3dc17d30c86235e94bc750149fe99bab4b97e7fd04973f5783c173b7800cc1e8",
+        "rhwp_bg.wasm": "94a00e6809210a7905ee35c9427cb8be329201318d23e2c6768021dfc57e6dc0"
+      },
+      "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "engine": "rhwp",
+      "generation": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6",
+      "integration": {
+        "kind": "patched-upstream",
+        "patches": [
+          {
+            "name": "hwpx-textdir-ltr.patch",
+            "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+          },
+          {
+            "name": "hwpx-duplicate-paragraph-ids.patch",
+            "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+          },
+          {
+            "name": "hwpx-clipboard-paragraph-ids.patch",
+            "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+          },
+          {
+            "name": "hwpx-spine-linear.patch",
+            "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+          },
+          {
+            "name": "hwpx-spine-validation.patch",
+            "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+          },
+          {
+            "name": "hwpx-manifest-order.patch",
+            "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+          },
+          {
+            "name": "hwpx-charpr-child-presence.patch",
+            "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+          },
+          {
+            "name": "hwpx-strikeout-3d-placeholder.patch",
+            "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+          },
+          {
+            "name": "hwpx-strike3d-derived-styles.patch",
+            "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+          },
+          {
+            "name": "hwpx-secpr-tabstop-presence.patch",
+            "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+          },
+          {
+            "name": "hwpx-empty-text-boundaries.patch",
+            "sha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2"
+          },
+          {
+            "name": "char-shape-compaction.patch",
+            "sha256": "44bf18d47d3e6e0cf0b65c43316147578483e61a79701da9d5d517459852d529"
+          },
+          {
+            "name": "table-formula-field.patch",
+            "sha256": "ba11170978c1177e77b87b347c14a1904218bdd36874e72a71dff809671722bd"
+          },
+          {
+            "name": "char-shape-publication.patch",
+            "sha256": "ca20c93189638f042e76a9154bcd5a55577f6ddc845bd84dd9f72868de28f575"
+          },
+          {
+            "name": "table-formula-paragraphs.patch",
+            "sha256": "d71da9acaf71d1e4f23e618cfe72bf2db991689c8a9d4424b6eca15ae38ff8c3"
+          },
+          {
+            "name": "hwp-source-preservation.patch",
+            "sha256": "a43c77d2a26f0ed15305dfd53e9faec91465bd963d4a5023af57c22cf4a4198c"
+          }
+        ],
+        "sourceTreeSha256": "444180e8620281bcc74e94ae4b314936c5e9eb22eb8973fd79424fcfda316ccb"
+      },
+      "optimization": {
+        "flags": [],
+        "tool": "none",
+        "version": null
+      },
+      "profile": "release",
+      "schemaVersion": 3,
+      "sourceFingerprint": "ab08730a733a45aa311b537adbfe3250bebfbc2b2f1fce56a4251bb94a8695a3",
+      "tools": {
+        "cargo": "1.99.1",
+        "rustc": "1.99.1",
+        "wasm-bindgen": "0.2.127"
+      }
+    },
+    "wordcraftGitlink": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5",
+    "canonicalNativeRunnerSha256": "561f5394ce0847e1ee932635e2a0f22ed2b8c9a23228ef88491e2cc30360feff",
+    "supplementHarnessSha256": "e2c4d8f8f257f35aa85184d7d882aa98b66c4c5c21628661403111de29eb04ec",
+    "aggregatorSha256": "16ed4b1d6045e01509539ddff7843281a622f62ed82e224f826ed33c2ae6259b",
+    "classificationTestsSha256": "ab842ca3b4572e5bb446370ef688171157bc5815219dc267b5caf7a5a66d2e77",
+    "sharedRegressionSha256": "fb18e2f98f1d1700877326995a6f176c3c4412fcbc1952e61353fdcc6d6db5e9",
+    "privateLauncherSha256": "739ada319ce9919418bb76711f41912d30f03a2421713d05e177fec4f65da187",
+    "pinnedObserverConfigSha256": "c858f3290b56d55a7936805ca7475184f59ad19b739b53d6d7f3c351736e53f8",
+    "toolHashes": {
+      "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb": "c997cae1f2e5f9c4ca87e47e605b6bcc4bee3eccd816da9c7ba40fb82309d626",
+      "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool": "d4edba5957d34473b7f49a488dba19bad533195f70b8f75932467a35b89153fd",
+      "/nix/store/mhq9kk703lrphqxjqzphva99f1qa5s0c-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver": "b09bec7757b2ece6a5eb6f61c61a6f867b1ab1b166cbb634ed735123e50549c6",
+      "src-tauri/target/debug/geul": "4c88dee83572f8e31b98058c038474a70417f614f96cad5efa90097300dc2e38",
+      "/tmp/geul-tauri-driver-target/debug/tauri-driver": "1d1ca38626716dd2fd77e7b2c2be42ec93a40818a9aa053d06c50b4946f889c5"
+    }
+  },
+  "results": {
+    "originalNative": {
+      "safetyGatesPass": 25,
+      "compatibilityGatesInconclusive": 2,
+      "producerExit": 1,
+      "gapTrials": 14,
+      "safeGapTrials": 14,
+      "observedSequences": "E→F→U in all14 initial trials",
+      "eufObserved": 0
+    },
+    "supplement": {
+      "scenariosPass": 34,
+      "scenariosFail": 0,
+      "perFormat": {
+        "hwp": 17,
+        "hwpx": 17
+      },
+      "scenarioIds": [
+        "hwp:busy-button",
+        "hwp:busy-click",
+        "hwp:busy-key",
+        "hwp:caret",
+        "hwp:close-reopen",
+        "hwp:different-after-click",
+        "hwp:english",
+        "hwp:focus-native",
+        "hwp:new-start-after-click",
+        "hwp:ordinary-key-between",
+        "hwp:reload-generation",
+        "hwp:repeat-syllables",
+        "hwp:rhwp-wordcraft",
+        "hwp:same-after-click",
+        "hwp:shift-redo",
+        "hwp:tab-ownership",
+        "hwp:wordcraft-rhwp",
+        "hwpx:busy-button",
+        "hwpx:busy-click",
+        "hwpx:busy-key",
+        "hwpx:caret",
+        "hwpx:close-reopen",
+        "hwpx:different-after-click",
+        "hwpx:english",
+        "hwpx:focus-native",
+        "hwpx:new-start-after-click",
+        "hwpx:ordinary-key-between",
+        "hwpx:reload-generation",
+        "hwpx:repeat-syllables",
+        "hwpx:rhwp-wordcraft",
+        "hwpx:same-after-click",
+        "hwpx:shift-redo",
+        "hwpx:tab-ownership",
+        "hwpx:wordcraft-rhwp"
+      ],
+      "assertionsPass": 250,
+      "modelComparisonsPass": 34,
+      "trustedEvents": 2156,
+      "droppedTraceRecords": 0,
+      "busyClickTrustedGaCompositionEnds": {
+        "hwp": 3,
+        "hwpx": 3
+      },
+      "resetInterpretation": "3 ends per format = first commit, reset repetition, deliberate new same-syllable input; exact text/revision/noDuplicateOrLoss/newIdenticalInputPreserved all true"
+    },
+    "classificationUnitTests": {
+      "pass": 16,
+      "includesAllEightRequiredCases": true
+    },
+    "typecheck": "PASS",
+    "focusedVitest": {
+      "files": 4,
+      "testsPass": 79,
+      "filesTested": [
+        "src/components/Editor/rhwp/nativeImeOrder.test.tsx",
+        "src/components/Editor/imeOwnership.test.tsx",
+        "src/components/Editor/wordcraft/DocxSurface.test.tsx",
+        "src/components/CommandButton/editorFocus.test.tsx"
+      ]
+    },
+    "syntheticEufRegression": "PASS within focused tests; not native observation",
+    "cleanup": {
+      "baseline": true,
+      "supplement": true,
+      "survivors": []
+    },
+    "aggregateFailures": [],
+    "aggregateMissing": []
+  },
+  "mandatorySafetyCoverage": {
+    "1-no-missing-Korean-English": [
+      "original:continuous Korean",
+      "english",
+      "cross-editor newTargetInputPreserved"
+    ],
+    "2-no-duplicate-commits": [
+      "repeat-syllables",
+      "busy-key",
+      "busy-click",
+      "busy-button"
+    ],
+    "3-composition-lifecycle": [
+      "original:composition Undo",
+      "new-start-after-click",
+      "readyAndCertain"
+    ],
+    "4-final-insertion": [
+      "original:14 gap trials",
+      "firstExact",
+      "newInputPreserved"
+    ],
+    "5-cancellation": [
+      "original:Backspace and selection cancellation"
+    ],
+    "6-transaction-boundaries": [
+      "original:typing group boundaries",
+      "focus-native",
+      "busy-button two Undo/two Redo"
+    ],
+    "7-Undo-during-composition": [
+      "original:Ctrl+Z during preedit",
+      "original:14 gap trials"
+    ],
+    "8-late-input-caret-ownership": [
+      "original:composition pointer Undo/Redo",
+      "caret",
+      "busy-click"
+    ],
+    "9-old-session-not-new-document": [
+      "close-reopen",
+      "rhwp-wordcraft",
+      "wordcraft-rhwp"
+    ],
+    "10-cross-editor-isolation": [
+      "rhwp-wordcraft",
+      "wordcraft-rhwp"
+    ],
+    "11-no-stale-close-reload-transactions": [
+      "reload-generation",
+      "close-reopen",
+      "original:close/reopen Undo isolation"
+    ],
+    "12-model-revision-history": [
+      "original:cancel revision/history",
+      "exactRevision",
+      "revisionSynchronized",
+      "modelTextMatches"
+    ],
+    "13-Undo-Redo-text-cursor": [
+      "original:selection restoration",
+      "shift-redo",
+      "caret",
+      "busy-button"
+    ],
+    "14-input-recovers-after-cancel": [
+      "original:cancel followed by Korean typing",
+      "original:rapid continuous Korean"
+    ],
+    "15-delayed-reset-input": [
+      "original:14 gap trials",
+      "busy-key",
+      "busy-click",
+      "busy-button",
+      "same-after-click",
+      "ordinary-key-between",
+      "different-after-click"
+    ]
+  },
+  "defect": {
+    "cause": "focus-preserving command mousedown omitted pointer boundary; bare repeated IBus final duplicated the just-committed syllable under busy UI",
+    "fix": [
+      "src/components/Editor/textInput.ts",
+      "src/components/CommandButton/editorFocus.ts"
+    ],
+    "regression": "native supplement9 plus shared synthetic2 failures without notifier; after correction both engines and native busy key/click/button pass",
+    "preserved": [
+      "awaiting-final",
+      "composition ownership",
+      "session generation",
+      "cancellation",
+      "history snapshots/transactions",
+      "new identical/different input"
+    ]
+  },
+  "eufCompatibility": {
+    "historicalNativeObservations": 0,
+    "newOriginalTrialObservations": 0,
+    "newSupplementSameCompositionWindowObservations": 0,
+    "originalPredicateAndAssertionsPreserved": true,
+    "status": "NOT OBSERVED / UNVERIFIED",
+    "limits": "not impossible, not native-verified; newly observed ordering requires original native assertions and blocks environment acceptance until validated"
+  },
+  "evidence": [
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/aggregate-final.json",
+      "sha256": "e6af08fdb54586bdc14b4eb703501abb165b408b7dcdd3a0a2a1a90d9cad4240"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/baseline2/report.json",
+      "sha256": "ffec99cff6b7c361ecb04c842dfde922f9b0fee9ee9fa1e417e326e9ccbce6eb"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/baseline2/execution.json",
+      "sha256": "6de8927bba59ff9c2c4ca8305404e282321ab4b9d9847a9a2dad570bd85c0aaa"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/supplement-final3/report.json",
+      "sha256": "6fefd184561e9120bc8cebd47cc455d6b06d8217cc7e32705018667205f8be11"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/supplement-final3/execution.json",
+      "sha256": "222f7fe08ca2aa90cd9e9965f116fae1ad3e26d26c95c4fbb5a9c83628a9408a"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/checks/typecheck-final.log",
+      "sha256": "84289470c4ab3e54625fbaee53eecea7677e0d45cb4c7d76adfdc4d865fe5771"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/checks/ime-final.log",
+      "sha256": "582375373c1b56cf20a4dcd6e540c511329ff047080352bf3e730301e9f47c85"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/checks/classification-final.log",
+      "sha256": "f0c79ce6dc83e2fb10ea0f89a87b9acd70f8b8d0c1da65db952928491752af3f"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/checks/pointer-regression-before-fix.log",
+      "sha256": "5cf0711be44d1c704a65e7de86dc07ec48a936b6ca07c9ec71dffbfdb053fef9"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/supplement9/supplement-rows.json",
+      "sha256": "37f9d6da8f9b679c1e3c5f707e551fc88ea2ecce099b3498287a6301a9e1c5c8"
+    },
+    {
+      "path": "../geul-tests/reports/t010-d2-supported-20261112/native/supplement-final/report.json",
+      "sha256": "eda201c4ce2b6cf1c890f57734b2a21af1e7257398180e604abc243629928ce6"
+    }
+  ],
+  "historicalIntegrity": [
+    {
+      "path": "docs/architecture/t010-phase1-acceptance-2026-11-12.json",
+      "sha256": "5d9b876798598ab0fb88643d1bd1bdc10b1461e036c81dd005695e369916c535",
+      "matchesStartingHead": true
+    },
+    {
+      "path": "docs/architecture/t010-phase3-acceptance-2026-11-12.json",
+      "sha256": "a6d2d55077fa5303a5df7fb63dcaa3d9d4d46123a7cd133b36901d750282a8ea",
+      "matchesStartingHead": true
+    },
+    {
+      "path": "scripts/tests/native-d2-order.py",
+      "sha256": "6a9c6bb0d5817ad4d745b8c55a49fd6989979c5c8b23d0af76d80b91dcbce00e",
+      "matchesStartingHead": true
+    },
+    {
+      "path": "../geul-tests/reports/t010-phase123-20261112/phase2/native/ime25/execution.json",
+      "sha256": "a5865d8fa70413391c3793ecaaa92f7262a3da1500492e9b2c9bb521c1b745ae",
+      "historicalRecordedRunnerSha256": "755ba01439e5db770ebda2ee722c4d3bf0d3df5c5dc6c11a7e1bb3eaacb43eac",
+      "originalRunnerUnchangedDuringThisTask": true
+    }
+  ],
+  "preservedAttemptOutcomes": {
+    "directory": "../geul-tests/reports/t010-d2-supported-20261112/native/",
+    "notAggregated": [
+      "baseline",
+      "supplement1..12",
+      "supplement-final"
+    ],
+    "aggregateInputsOnly": [
+      "baseline2",
+      "supplement-final3"
+    ],
+    "notes": [
+      "earlier infrastructure/setup failures retained",
+      "supplement4 model mismatch was legacy active-hitTest probe selecting old model; corrected live model/session binding",
+      "supplement9 genuine duplicate commit fixed; two explicitly injected Undo requests correctly require two steps",
+      "supplement-final cross failures were clicks on statusbar; final target/focus checks use visible page intersection"
+    ]
+  },
+  "unchangedIndependentAcceptance": {
+    "D1D3D5": "recorded Phase1 scope preserved",
+    "D4Resources": "recorded Phase3 scope preserved",
+    "D4Latency": {
+      "status": "TARGET NOT MET",
+      "groupStartP95MsMax": 50,
+      "undoP95MsMax": 1500,
+      "newBenchmarkRun": false
+    },
+    "rendering": "FULL_PAGE_ONLY unchanged",
+    "savePublicationSafety": "unchanged",
+    "T012": "existing advanced-only limitations unchanged",
+    "submodulePins": "unchanged"
+  },
+  "remainingT010": [
+    "separate reproducible native usability for complex documents/continuous editing and backlog convergence",
+    "evaluate all remaining mandatory functional/predecessor evidence before overall completion",
+    "separate general RHWP history product activation review",
+    "D4 original latency targets remain independent follow-up"
+  ],
+  "documentationAudit": {
+    "authoritativeCurrent": [
+      "docs/planning/spec.md",
+      "docs/planning/plan.md",
+      "docs/planning/tasks.md",
+      "docs/architecture/rhwp-undo-redo.md",
+      "docs/architecture/command-registry.md"
+    ],
+    "datedHistoricalMentionsRetained": [
+      "docs/architecture/save-preservation.md",
+      "docs/upstream/rhwp.md",
+      "docs/architecture/stage567-acceptance-2026-11-05.md",
+      "docs/architecture/t010-performance-followup-2026-11-03.md"
+    ]
+  }
+}

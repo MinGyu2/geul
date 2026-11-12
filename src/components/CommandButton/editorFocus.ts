@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { prepareImePointerDown } from "../Editor/textInput";
 
 /** 누르면 스스로 초점을 받아야 하는 글자 입력 요소(리본 안에 생겨도 초점을 빼앗지 않음). */
 const EDITABLE = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
@@ -38,5 +39,6 @@ export function keepEditorFocusOnPointerDown(event: MouseEvent<HTMLElement>): vo
   if (!(document.activeElement instanceof HTMLElement && document.activeElement.classList.contains("rhwp-input"))) return;
   if (event.target instanceof Element && event.target.closest(EDITABLE)) return;
   if (onOwnScrollbar(event)) return;
+  prepareImePointerDown(document.activeElement);
   event.preventDefault();
 }

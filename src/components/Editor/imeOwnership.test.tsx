@@ -5,6 +5,7 @@
 import { act, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { LanguageProvider } from "../../language/LanguageContext";
+import { keepEditorFocusOnPointerDown } from "../CommandButton/editorFocus";
 import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
 import { flush, info, loaded, ok, readySession } from "./rhwp/testing";
@@ -18,7 +19,8 @@ type Step =
   | ["start"]
   | ["input", string, string, boolean] // data, inputType, isComposing
   | ["end", string]
-  | ["mousedown"]; // 쪽을 실제 mousedown으로 누름
+  | ["mousedown"] // 쪽을 실제 mousedown으로 누름
+  | ["commandPointer"]; // 초점 유지형 명령 단추 mousedown
 
 interface Surface {
   kind: "rhwp" | "docx";
@@ -26,6 +28,7 @@ interface Surface {
   revision(): number;
   play(steps: Step[]): Promise<void>;
   unmount(): void;
+  focus(): void;
   reload?(): Promise<void>;
 }
 
@@ -60,6 +63,13 @@ function player(container: HTMLElement, pageSelector: string) {
           act(() => void page.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
           break;
         }
+        case "commandPointer": {
+          const button = container.querySelector<HTMLButtonElement>("[data-testid=ime-command]")!;
+          const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+          act(() => void button.dispatchEvent(event));
+          if (!event.defaultPrevented) throw new Error("focus-preserving command mousedown handler did not run");
+          break;
+        }
       }
     }
     await act(flush);
@@ -70,7 +80,10 @@ async function rhwp(context: ImeContext, text = "가나다"): Promise<Surface> {
   const t = await readySession([text, "abc"]);
   const view = render(
     <LanguageProvider language="ko" onLanguageChange={() => {}}>
-      <RhwpSurface session={t.editor} zoom={100} imeContext={context} />
+      <>
+        <RhwpSurface session={t.editor} zoom={100} imeContext={context} />
+        <button data-testid="ime-command" onMouseDown={keepEditorFocusOnPointerDown}>Undo</button>
+      </>
     </LanguageProvider>,
   );
   return {
@@ -78,6 +91,11 @@ async function rhwp(context: ImeContext, text = "가나다"): Promise<Surface> {
     text: () => t.doc.paragraphs[0]!,
     revision: () => t.editor.localRevision,
     play: player(view.container, ".rhwp-page"),
+    focus: () => act(() => {
+      const input = view.container.querySelector<HTMLTextAreaElement>(".rhwp-input")!;
+      input.focus();
+      if (document.activeElement !== input) throw new Error("RHWP input did not receive focus");
+    }),
     unmount: () => view.unmount(),
     reload: async () => {
       const reloading = t.editor.load({ discard: true });
@@ -96,7 +114,10 @@ async function docx(context: ImeContext, text = "가나다"): Promise<Surface> {
   const t = await readyDocx([text]);
   const view = render(
     <LanguageProvider language="ko" onLanguageChange={() => {}}>
-      <DocxSurface session={t.editor} zoom={100} imeContext={context} />
+      <>
+        <DocxSurface session={t.editor} zoom={100} imeContext={context} />
+        <button data-testid="ime-command" onMouseDown={keepEditorFocusOnPointerDown}>Undo</button>
+      </>
     </LanguageProvider>,
   );
   await act(flush);
@@ -105,6 +126,11 @@ async function docx(context: ImeContext, text = "가나다"): Promise<Surface> {
     text: () => t.fake.paragraphs[0]!,
     revision: () => t.sessions.get(1)?.revision ?? -1,
     play: player(view.container, ".docx-page"),
+    focus: () => act(() => {
+      const input = view.container.querySelector<HTMLTextAreaElement>(".rhwp-input")!;
+      input.focus();
+      if (document.activeElement !== input) throw new Error("WordCraft input did not receive focus");
+    }),
     unmount: () => view.unmount(),
   };
 }
@@ -119,6 +145,63 @@ const ximRepeat = (text: string): Step[] => [["xim"], ["input", text, "insertTex
 const ximTyped = (text: string): Step[] => [
   ...compose(text), ["ime", true], ["input", "", "deleteCompositionText", true], ["end", ""], ...ximRepeat(text),
 ];
+
+/** WebKitGTK split commit: empty compositionend, then a late composition final. */
+const splitCommit = (text: string): Step[] => [
+  ...compose(text), ["ime", true], ["input", "", "deleteCompositionText", true], ["end", ""],
+  ["ime", false], ["input", text, "insertFromComposition", true], ["end", text],
+];
+/** IBus reset tail after focus-preserving button mousedown; no new compositionstart. */
+const resetTail = (text: string): Step[] => [["ime", false], ["input", text, "insertFromComposition", true], ["end", text]];
+
+describe("초점 유지형 명령 단추의 IBus reset 재확정", () => {
+  for (const kind of ["rhwp", "docx"] as const) {
+    it(`${kind}: 빈 끝 뒤 확정, 단추 reset tail은 한 번만 반영하고 새 같은 음절은 보존`, async () => {
+      const context = new ImeContext();
+      const a = await makers[kind](context);
+      await a.play(splitCommit("가"));
+      expect(a.text()).toBe("가가나다");
+      expect(a.revision()).toBe(1);
+
+      a.focus();
+      expect(document.activeElement?.classList.contains("rhwp-input")).toBe(true);
+      await a.play([["commandPointer"]]);
+      await a.play(resetTail("가"));
+      expect(a.text()).toBe("가가나다");
+      expect(a.revision()).toBe(1);
+
+      await a.play([...compose("가"), ["ime", true], ["input", "", "deleteCompositionText", true], ["end", ""],
+        ["ime", false], ["input", "가", "insertFromComposition", true], ["end", "가"]]);
+      expect(a.text()).toBe("가가가나다");
+      expect(a.revision()).toBe(2);
+    });
+
+    it(`${kind}: 단추 뒤 다른 글자는 새 입력`, async () => {
+      const a = await makers[kind](new ImeContext());
+      await a.play(splitCommit("가"));
+      a.focus();
+      await a.play([["commandPointer"], ...resetTail("나")]);
+      expect(a.text()).toBe("가나가나다");
+      expect(a.revision()).toBe(2);
+    });
+
+    it(`${kind}: 단추 뒤 일반 키는 재확정 소비 기록을 끝내고 같은 글자를 보존`, async () => {
+      const a = await makers[kind](new ImeContext());
+      await a.play(splitCommit("가"));
+      a.focus();
+      await a.play([["commandPointer"], ["key", " "], ["input", " ", "insertText", false], ...resetTail("가")]);
+      expect(a.text()).toBe("가 가가나다");
+      expect(a.revision()).toBe(3);
+    });
+
+    it(`${kind}: 단추 누름 없이 같은 final은 새 입력`, async () => {
+      const a = await makers[kind](new ImeContext());
+      await a.play([...splitCommit("가"), ...resetTail("가")]);
+      expect(a.text()).toBe("가가가나다");
+      expect(a.revision()).toBe(2);
+    });
+  }
+});
 
 const makers = { rhwp, docx } as const;
 const pairs = [["rhwp", "rhwp"], ["rhwp", "docx"], ["docx", "rhwp"], ["docx", "docx"]] as const;

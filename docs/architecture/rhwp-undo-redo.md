@@ -1,5 +1,7 @@
 # rhwp 실행 취소·다시 실행 계약 (T010 Phase 1 설계 2026-10-21 · 고침 2026-10-22 · Phase 2 구현 2026-10-22)
 
+> **2026-11-12 D2 Option B:** 현재 D2 규범은 [지원 환경별 native 안전성 계약](../planning/spec.md#t010-d2-supported-runtime-v1)이다. 아래 종전 E→U→F 의무/INCONCLUSIVE는 역사적 판정으로 보존한다. 지원 환경 D2는 실제 native 필수 검사를 통과해 PASS다. 정확한 실행 신원은 [증거 JSON](t010-d2-supported-2026-11-12.json)에 기록한다. E→U→F는 독립 NOT OBSERVED / UNVERIFIED이며 그 순서가 불가능하거나 native 검증됐다고 주장하지 않는다.
+
 <a id="advanced-only-history-20261106"></a>
 
 ## 2026-11-06 조건부 고급 명령 기록
@@ -36,15 +38,55 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 | 현재 차원 | 판정 | 범위·영향 |
 |---|---|---|
 | D1 렌더·커서 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | native 원본 `undo_native.py --render --native-keys` 33/33 관문; 교정 2건 뒤 Release `97abf6bd…`([Phase 1](#t010-phase1-20261112)) |
-| D2 IME 안전성 | INCONCLUSIVE (2026-11-12 Phase 2 재조사) | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 새 기전(Undo 단추, 입력기 정지 중 단추, 바쁜 UI main loop)으로도 미관측. 면제/대체 불가, 완료 차단. 조사 중 찾은 바쁜 UI 중복 입력(`가가`)은 교정([Phase 2](#t010-phase2-20261112)) |
+| D2 지원 환경 IME 안전성 | **PASS — X11/IBus 명시 범위** | 모든 필수 native 안전성 증거 필요. [새 증거](t010-d2-supported-2026-11-12.json). 종전 Phase 2 INCONCLUSIVE와 중복 교정 이력은 [보존](#t010-phase2-20261112) |
+| D2 E→U→F 호환성 | NOT OBSERVED / UNVERIFIED | 역사적 관측 0. 원래 predicate/assertion 보존. 관측되는 지원 환경에서는 native 안전성 통과 필수 |
 | D3 저장 보존 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | `undo_save.py --release` 19/19, strict 저장 23행 CURRENT0/DESIRED0, Rust 저장·복구·세션 304/0. 4행은 이력과 무관한 T009 정책 거부로 판정(기준 출력과 근거·바이트 동일) |
 | D5 실패·복구 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | 실제 WASM 경계 18/18, 통합 시험 3구성, PoC 50/50, native discard 예외·새 세대 reload 4/4 |
 | D4 자원·메모리 안전 | **PASS — 현재 신원 (2026-11-12 Phase 3)** | 엔진 전역 그림 캐시의 문서별 소유·해제 교정 뒤 native 수명주기 43/43(소유 참조·화면 Canvas·엔진 보유 Canvas 0, WASM warm-up 뒤 증가 0). RSS는 규범 기준이 없어 진단으로만 기록([Phase 3](#t010-phase3-20261112)) |
-| Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | 본 변경에서 native 실행 없음; benchmark만으로 대체 불가 |
+| Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | D2 대표 문서 안전성만 이번에 수용; 복잡 문서·연속 편집·backlog 수렴의 별도 native 실사용성은 미완료 |
 | D4 성능 | TARGET NOT MET — 기존 공식 FAIL | 목표·원 표본/fixture/workload/warmup/3RAF/평가법 고정; 기능 수용과 독립 보고 |
 | T010 전체 기능 / 제품 일반 RHWP Undo/Redo | INCOMPLETE / NO-GO | 체크·제품 일반 활성화 불가; T012 advanced-only 범위는 별도 승인 그대로 |
 
 이 표는 2026-11-12 현재 정책 적용 요약이며 과거 D1–D5 표와 날짜별 증거를 수정하지 않는다. 아래 2026-11-01/02 절의 “단일 요약” 및 일괄 성능 관문 표현은 당시 판정으로 보존하며, 앞으로의 완료·활성화 집계는 위 새 정책이 우선한다. D4 producer/evaluator의 PASS/FAIL·종료 코드는 기능 완료 판정이 아니므로 그대로 유지한다. 성능 정책 개정만으로 제품 활성화가 승인되지 않으며, 활성화할 기능의 별도 정확성·안전·자원·usability 근거가 필요하다.
+
+<a id="t010-d2-supported-20261112"></a>
+
+### Phase 2 — 지원 환경 native 안전성 PASS (2026-11-12, Option B)
+
+사용자 승인으로 [전향적 D2 정책](../planning/spec.md#t010-d2-supported-runtime-v1)을 적용했다. 종전 순서 관문은
+[기존 Phase 2 INCONCLUSIVE](#t010-phase2-20261112) 그대로 보존한다. 이번 판정은 **지원 환경 D2 PASS**,
+**E→U→F NOT OBSERVED / UNVERIFIED**, 다른 환경 NOT RUN/UNVERIFIED다. T010 INCOMPLETE·일반 history NO-GO와
+D4 성능 TARGET NOT MET(원 목표50ms/1500ms)은 별도이며 바뀌지 않았다.
+
+Linux 7.2.14-arch1-1 x86_64, X11/Xvfb 21.1.23, Tauri 2 debug native host+Vite, WebKitGTK 2.54.1/GTK 3.24.52,
+IBus 1.5.33/ibus-hangul 1.5.5 두벌식·preedit 및 실제 한/영 전환에서 검사했다. 일반 history는 시험 flag 두 개를 켠 구성이다.
+RHWP gitlink `1a76570…`·16패치·Release `0559a2ba…`·WASM `94a00e68…`, native host `4c88dee8…`와 수정된
+프런트엔드 소스 SHA를 [작은 증거 JSON](t010-d2-supported-2026-11-12.json)에 연결한다. 문서 범위는 생성된 basic-ko HWP/HWPX의
+첫 문단과 소유권 대조용 새 DOCX다. 다른 문서·제품 일반 빌드·물리 데스크톱·Wayland·다른 OS/IM에는 확대하지 않는다.
+
+실제 native 원래 하네스는 안전 관문25 PASS, 순서 관문2 INCONCLUSIVE(종료1)를 냈다. 원래14개 trial은 E→F→U였고 안전했다.
+새 하네스의 필수34개(각 형식17개)도 모두 PASS다. 본문·모델·revision·커서/Undo 단위·초점·탭·close/reload·세대·양방향
+RHWP/WordCraft 소유권·취소 뒤 새 입력을 검사했다. reload는 지원되는 실패→폐기 확인→새 세대 복구 UI를 실제 native로 실행했다.
+추가 trace의 trusted 입력·drop0·모델 세션 귀속도 검사했다. 분류 회귀16개(사용자 지정8경우 포함), TypeScript, 공유 IME/초점79개 PASS다.
+
+새 결함은 **바쁜 UI에서 리본 Undo 단추 mousedown 뒤 IBus의 시작 없는 같은 글자 reset 확정이 두 번 들어간 것**이다.
+기존 페이지 클릭의 resetRepeat 교정은 유효했지만, 초점을 유지하는 외부 단추/탭 누름이 그 경계에 연결되지 않았다.
+`textInput.ts`는 붙은 textarea의 컨트롤러를 WeakMap으로 연결·해제하고 `CommandButton/editorFocus.ts`는 같은
+`ImeInput.pointerDown()` 경계를 전달한다. 조합 ownership/awaiting-final/취소/세대 가드는 유지한다. 두 실제 Undo 요청은 두 단계,
+두 Redo는 접두 거래와 확정 거래를 차례로 복원해야 하며 중복 revision은 허용하지 않는다.
+수정 전 native `supplement9`와 공유 합성2건에서 재현했고, 수정 후 native busy key/click/button과 공유 회귀가 통과했다.
+HWP/HWPX busy-click에서 각각 trusted `compositionend('가')` 3회(첫 확정·reset 반복·의도적 새 입력)를 관측했지만 본문·revision은
+정확했다. 새 같은 음절·다른 글자·일반 키·새 compositionStart·문서 전환/새 세대 입력도 보존했다.
+
+최종 별도 집계 `d2_acceptance.py`는 원래25개 관문/14trial 및 명시된34개 native 행·필수 assertion·실행 신원을 요구한다.
+누락·중복 신원·불완전 trace·합성 전용 증거는 PASS가 될 수 없고 모든 확인된 안전성 실패는 FAIL이다. 원래 predicate는 변경하지 않았다.
+추가 행에는 이후 의도적인 새 조합도 있으므로 원 predicate는 동일 조합의 빈 끝→첫 final 구간에 적용한다(다른 조합의 E/F를 짝짓지 않음).
+그 구간에서 새 E→U→F가 관측되면 원래 native assertion이 없을 때 INCONCLUSIVE로 차단한다.
+
+비공개 원시 증거는 `../geul-tests/reports/t010-d2-supported-20261112/`에 있다. 초기 환경/하네스 오류와 FAIL도 남겼다.
+세션별 모델 observer 교정 전에는 마지막 hitTest 모델을 다른 탭과 비교한 오류가 있었고, 첫 전체 실행의 cross-editor 실패는
+고정 클릭 좌표가 상태 표시줄에 도달한 준비 오류였다. 최종 하네스는 살아 있는 실제 모델을 세션에 연결하고 보이는 페이지 적중과
+textarea 초점을 native 입력 전에 확인한다. 이전 실패를 PASS로 덮어쓰거나 합산하지 않았다. 최종 baseline2+supplement-final3만 집계한다.
 
 <a id="t010-phase1-20261112"></a>
 

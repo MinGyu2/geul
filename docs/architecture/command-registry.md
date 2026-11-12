@@ -1,9 +1,11 @@
 > **2026-11-10 HWP 핵심 삽입:** `insert.table`·`insert.image`·`paragraph.bullets`가 HWP에서도 T009 제한 부분집합 안에서 활성화된다(상세 재열기 API·complete baseline·section 0·현재 원본 사전검사 SAFE 조건; 이유 `originalChecking`/`originalUnverified` 추가). Phase 4 비GUI 저장·재열기 수용과 측정된 지원 범위는 [Phase 4](core-insertions.md#hwp-비gui-저장재열기-통합-수용--phase-4-2026-11-10).. 경계와 검증은 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)을 따른다.
+
+> **2026-11-12 D2 Option B:** [지원 환경 native 안전성](../planning/spec.md#t010-d2-supported-runtime-v1)과 E→U→F 독립 호환성을 구분한다. [현재 증거](t010-d2-supported-2026-11-12.json): 명시한 X11/IBus 환경 D2 PASS, E→U→F NOT OBSERVED / UNVERIFIED. 일반 RHWP history는 시험 활성화 경계 뒤에 있고 제품은 기존 advanced-only 범위만 유지한다. D2 PASS도 일반 history 제품 승인·T010 완료가 아니다. 날짜별 종전 gate 결과는 보존한다.
 > **2026-11-10 클립보드:** DOCX/HWP/HWPX의 plain-text Copy/Cut/Paste를 연결했다. 현재 계약과 제한은 [Plain-text clipboard](#plain-text-clipboard-2026-11-10)를 따른다. 기존 T010 전체 수용 판정은 바꾸지 않는다.
 
 # 명령 레지스트리·가용성·실행 취소 (T010)
 
-> **2026-11-12 T010 acceptance policy:** [필수 기능·안전·자원·native usability와 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. 이 문서 정책 변경으로 capability/source는 바뀌지 않았다: 일반 RHWP history는 일반 빌드에서 비활성이고, 제품의 `historyScope: advanced`는 기존 조건부 T012 범위만 뜻한다. 테스트 플래그 경계도 유지된다. 성능 목표 미달은 자동 기능 FAIL이나 명령 활성화 승인이 아니다. 현재 D2 E→U→F 및 D4 자원/실사용성 증거는 미완료이며 일반 RHWP Undo/Redo NO-GO다.
+> **2026-11-12 T010 acceptance policy:** [필수 기능·안전·자원·native usability와 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. registry/capability의 제품 활성화 경계는 바뀌지 않았다: 일반 RHWP history는 일반 빌드에서 비활성이고, 제품의 `historyScope: advanced`는 기존 조건부 T012 범위만 뜻한다. 테스트 플래그 경계도 유지된다. 성능 목표 미달은 자동 기능 FAIL이나 명령 활성화 승인이 아니다. 현재 D2는 명시한 지원 환경에서 PASS이고 E→U→F는 독립 NOT OBSERVED / UNVERIFIED다. D4 자원은 Phase 3 범위 PASS이나 별도 native 실사용성은 미완료이며 일반 RHWP Undo/Redo NO-GO다.
 
 
 ## 2026-11-06 T012 조건부 제품 capability

@@ -1,5 +1,7 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
+> **2026-11-12 D2 Option B (전향적 정책):** [지원 환경별 native 안전성 계약](spec.md#t010-d2-supported-runtime-v1)이 종전 무조건적 E→U→F 관측 의무를 대체한다. 원래 predicate·날짜별 결과는 보존하고 E→U→F는 독립 UNVERIFIED로 추적한다. 지원 환경 D2 **PASS**(native 안전 관문25·순서 trial14·추가34), E→U→F **NOT OBSERVED / UNVERIFIED**다. 정확한 범위·신원은 [증거 JSON](../architecture/t010-d2-supported-2026-11-12.json)을 따른다. 정책 변경만으로 PASS가 되지 않는다. T010 INCOMPLETE, 일반 RHWP history NO-GO, D4 성능 TARGET NOT MET 및 기존 수용 범위·T012 제한 유지. 아래 날짜별 이전 결과는 당시 기록이다.
+
 > **2026-11-12 T014: 부분 완료, 체크하지 않음.** Linux X11/Xvfb·WebKitGTK·격리 IBus의 지원 대표 DOCX/WordCraft·HWP/HWPX/RHWP에서 중단 저장 시작 정리, 실패·충돌·게시/내구성 상태, 체크포인트·SIGKILL·재시작·복원 수용을 확인했다. 정전·실제 파일시스템 고장과 Windows/macOS 안전 저장 게시·내구성·복구의 기존 T014 의무는 미완료다. T015 품질 행렬과 T016 출시 수용도 그대로 남긴다. [증거·실행 신원·26행 결과 행렬·미완료 근거](../architecture/t014-final-acceptance-2026-11-12.json).
 
 > **2026-11-11 Linux native GUI + IBus Phase 5: COMPLETED.** 새 스키마의 실제 X11/Xvfb·IBus 인수 111개와 최종 집계가 통과했다(과거 시나리오 재사용 0). [실행 신원·검증 범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json), [증거 재사용 계약](tasks.md#linux-native-guiibus-인수-증거-계약--2026-11-11). 이 사용자 지정 단계는 계획의 T012/T013 고급 기능 Phase 5와 구분한다. T014/T015/T016 및 기존 미완료 조건, 물리 데스크톱·Wayland·Word/Hancom NOT RUN은 유지한다.
@@ -7,7 +9,7 @@
 Date: 2026-11-12
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
-Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
+Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(지원 환경 D2 PASS·E→U→F UNVERIFIED·별도 native 실사용성 부족), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
 
 
 ## 현재 최종 상태 — 2026-11-09
@@ -59,7 +61,7 @@ RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결�
 
 ## T010 현재 수용 정책 (2026-11-12)
 
-완료에는 기능 정확성, IME/데이터 안전성, 자원·수명 안전성 및 재현 가능한 native 실사용성의 충분한 PASS 증거가 필요하다. 원 D4 지연 목표는 별도 성능 결과로 유지하며 미달만으로 기능 완료를 FAIL 처리하지 않는다. 확인된 기능/안전 위반과 필수 증거 공백은 각각 FAIL/INCOMPLETE다. 현재 D2 필수 E→U→F는 INCONCLUSIVE, D4 자원은 INCONCLUSIVE, native usability 증거는 부족하므로 T010은 INCOMPLETE로 남고 일반 RHWP history NO-GO다. T012 advanced-only 조건부 범위는 바꾸지 않는다. 수용 정의와 결과 분류는 [spec.md](./spec.md#t010-acceptance-policy-20261112)가 기준이며, 과거 D4 FAIL과 모든 측정은 그대로다.
+완료에는 기능 정확성, IME/데이터 안전성, 자원·수명 안전성 및 재현 가능한 native 실사용성의 충분한 PASS 증거가 필요하다. 원 D4 지연 목표는 별도 성능 결과로 유지하며 미달만으로 기능 완료를 FAIL 처리하지 않는다. 확인된 기능/안전 위반과 필수 증거 공백은 각각 FAIL/INCOMPLETE다. 현재 D2는 명시한 X11/IBus 지원 환경에서 PASS이며 E→U→F는 독립 NOT OBSERVED / UNVERIFIED다. D4 자원은 Phase 3 범위 PASS이나 native usability 증거는 부족하므로 T010은 INCOMPLETE로 남고 일반 RHWP history NO-GO다. T012 advanced-only 조건부 범위는 바꾸지 않는다. 수용 정의와 결과 분류는 [spec.md](./spec.md#t010-acceptance-policy-20261112)가 기준이며, 과거 D4 FAIL과 모든 측정은 그대로다.
 
 ## Constitution Check
 

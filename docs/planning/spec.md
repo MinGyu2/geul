@@ -6,7 +6,7 @@
 
 Created: 2026-10-13
 Updated: 2026-11-12
-Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
+Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 지원 환경 PASS/E→U→F UNVERIFIED, D4 latency TARGET NOT MET/resources Phase 3 범위 PASS), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
@@ -22,14 +22,14 @@ T010 기능 완료는 아래 필수 차원과 해당 선행 계약의 충분한 
 | 수용 차원 | 필수 증거 | 완료·활성화에 미치는 영향 |
 |---|---|---|
 | 기능 정확성 | 두 엔진의 편집·명령, Undo/Redo 상태 복원·트랜잭션 경계, 텍스트 무손실·무중복·문서 간 격리, revision·세션 소유권, 정확한 렌더, 저장 무결성·원본 보존(D1/D3 포함) | 필수. 확인된 위반은 FAIL로 차단 |
-| IME 안전성 | 조합·최종 삽입·늦은 이벤트 안전성, 원래 D2 native E(empty compositionend)→U(Undo)→F(late final insertion) predicate와 원래 assertion | 필수. E→F→U, 일반 입력 성공, 합성 시험으로 대체 불가 |
+| IME 안전성 | 명시한 지원 환경에서 실제 native 조합·최종 삽입·취소·늦은 이벤트·Undo/Redo·문서 소유 안전성 ([D2 정책](#t010-d2-supported-runtime-v1)) | 필수. 모든 필수 native 동작 증거가 필요. E→U→F 호환성은 별도 판정하며 관측된 환경에서는 원래 assertion도 필수 |
 | 자원 안전성 | 기존 메모리 한도·snapshot 수명/깊이·회계·자원 소유권, 반복 편집/Undo/Redo/close 및 취소·실패·reload·cleanup(D4 자원/D5 포함) | 필수. 자원 INCONCLUSIVE는 계속 차단. RSS와 WASM high-water를 혼동하거나 한도를 올려 승인하지 않음 |
 | native 실사용성 | 아래 지원 native 환경의 재현 가능한 실제 사용 증거 | 필수. benchmark 수치만으로 PASS 불가 |
 | 성능 목표 달성 | 원래 D4 producer/evaluator의 지연 결과와 원시 표본·실행 신원 | 독립. TARGET NOT MET 하나만으로 기능 완료나 정당한 제품 활성화를 차단하지 않음 |
 | T010 전체 기능 수용 | 모든 필수 차원과 해당 선행 계약 PASS, 범위·산출물 신원에 맞는 충분한 증거 | 확인된 필수 위반은 FAIL, 필수 증거 공백은 INCOMPLETE. 이 조건을 충족할 때만 완료 체크 가능 |
 | 제품 활성화 결정 | 활성화할 실제 기능·지원 환경에 대해 기능·안전·자원·실사용성 증거를 별도로 검토 | T010 상태나 성능 결과만으로 자동 승인하지 않음. T012 고급 명령 부분집합은 일반 RHWP history 수용이 아님 |
 
-필수 차원의 `PASS`는 해당 범위의 관측 증거가 있을 때만 쓴다. 확인된 위반은 `FAIL`, 시험했으나 필수 순서·관측·판정 근거가
+필수 차원의 `PASS`는 해당 범위의 관측 증거가 있을 때만 쓴다. 확인된 위반은 `FAIL`, 시험했으나 범위 내 필수 동작·관측·판정 근거가
 부족하면 `INCONCLUSIVE`, 필요한 시험을 실행하지 않았으면 `NOT RUN`이다. 과거 산출물의 PASS는 그 신원·범위에 한정한다.
 필수 증거의 신원 연결이 검증되지 않았으면 증거 공백으로 남기며, 과거 PASS 자체를 FAIL로 다시 쓰지 않는다.
 
@@ -45,7 +45,7 @@ T010 기능 완료는 아래 필수 차원과 해당 선행 계약의 충분한 
 누락·중복·잘못 적용된 입력, 문서 간 오염, 지속적인 무응답 또는 편집을 계속할 수 없는 상태는 차단한다.
 단순한 “느리지만 괜찮다”는 소감이나 과거 p95만으로 승인하지 않는다. 중단/관측 실패로 판정할 수 없으면 INCONCLUSIVE,
 미실행이면 NOT RUN이다. 50 ms를 대신하는 임의의 새 지연 문턱은 만들지 않는다.
-기존 native 기록은 이 범위·행동·신원에 충분히 대응하는 경우만 재사용하고, 일반 타이핑 성공만으로 D2 특수 순서를 면제하지 않는다.
+기존 native 기록은 이 범위·행동·신원에 충분히 대응하는 경우만 재사용하고, 일반 타이핑 성공만으로 D2의 다른 필수 안전성 시나리오를 면제하지 않는다. E→U→F의 별도 호환성 판정은 아래 정책을 따른다.
 
 ### 독립 성능 계약과 결과 표기
 
@@ -70,11 +70,67 @@ benchmark 실행의 FAIL은 그대로 FAIL이며, 그것만으로 별도 기능 
 | 6 | T012 advanced-only만 PASS, 일반 history 수용 증거 부족 | 어느 상태든 | 일반 RHWP Undo/Redo 활성화 불가 |
 
 **현재 판정은 변경하지 않는다:** T010 INCOMPLETE, 일반 RHWP Undo/Redo NO-GO.
-D2 INCONCLUSIVE(E→U→F 미관측, 2026-11-12 Phase 2에서 Undo 단추·입력기 정지·바쁜 UI 기전까지 재조사, [기록](../architecture/rhwp-undo-redo.md#t010-phase2-20261112)), D4 자원은 2026-11-12 Phase 3에서 엔진 그림 캐시 소유를 교정한 뒤 현재 신원(Release `0559a2ba…`)으로 PASS다([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D1/D3/D5는 2026-11-12 Phase 1에서 현재 신원(Release `97abf6bd…`)으로 다시 실행해 PASS다. Phase 3 엔진 변경 뒤 최종 Release `0559a2ba…`에서도 다시 PASS다. 재실행에서 찾은 결함 2건(한컴 글자 겹치기 sentinel 때문에 Undo가 멈춤, HWP 내보내기 검사 레이아웃이 화면에 남음)은 교정했다([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)).
+D2의 종전 순서 계약 결과는 INCONCLUSIVE(E→U→F 미관측, [역사 기록](../architecture/rhwp-undo-redo.md#t010-phase2-20261112)). 전향적 지원 환경 D2는 아래 정책의 실제 native 필수 검사를 통과해 **PASS**다([새 증거](../architecture/t010-d2-supported-2026-11-12.json)). D4 자원은 2026-11-12 Phase 3에서 엔진 그림 캐시 소유를 교정한 뒤 현재 신원(Release `0559a2ba…`)으로 PASS다([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D1/D3/D5는 2026-11-12 Phase 1에서 현재 신원(Release `97abf6bd…`)으로 다시 실행해 PASS다. Phase 3 엔진 변경 뒤 최종 Release `0559a2ba…`에서도 다시 PASS다. 재실행에서 찾은 결함 2건(한컴 글자 겹치기 sentinel 때문에 Undo가 멈춤, HWP 내보내기 검사 레이아웃이 화면에 남음)은 교정했다([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)).
 문서에 남은 공식 D4 지연 FAIL은 독립 성능 `TARGET NOT MET`과 함께 보고하며 새 측정이 아니다.
-기능 완료를 위한 D2·자원 및 해당 기능의 native 실사용성 증거가 아직 충분하지 않다.
+지원 환경 D2 PASS는 대표 문서의 IME 안전성 수용이다. 복잡한 문서의 연속 편집·상호작용·backlog 수렴 등 별도 native 실사용성 증거가 아직 충분하지 않다.
 [수용 기록과 남은 조건](../architecture/rhwp-undo-redo.md#t010-current-status)을 따른다.
 [조건부 T012 승인](#conditional-advanced-20261106)의 범위·제한은 바꾸지 않는다.
+
+<a id="t010-d2-supported-runtime-v1"></a>
+
+## D2 지원 환경 native 안전성 수용 v1 — 2026-11-12 Option B
+
+사용자는 종전 D2의 무조건적 E(empty compositionend)→U(native Undo 요청)→F(늦은 비어 있지 않은 최종 삽입)
+관측 의무를 **앞으로의 지원 환경별 행동 안전성 수용**으로 대체했다. X11/IBus/GTK/WebKitGTK에서 여러 독립 기전으로
+조사했으나 역사적 E→U→F 관측은 0회였고, 주로 E→F→U 또는 F 없는 취소가 관측됐다. 미관측 자체는 기능 결함의 증거가
+아니다. 순서가 불가능하다는 결론도 아니다. 날짜별 기존 FAIL/INCONCLUSIVE와 원시 trace는 수정하지 않는다.
+
+지원 환경 D2의 상태는 `PASS / FAIL / INCONCLUSIVE / NOT RUN`이다. PASS에는 아래의 실제 native 필수 시나리오 및
+안전성 assertion 전체의 충분한 증거가 필요하다. 확인된 위반은 FAIL, 범위 내 필수 증거 누락은 INCONCLUSIVE 또는 NOT RUN이며,
+정책 변경·합성 DOM/state-machine 시험·T012 advanced-only 성공만으로 native D2를 PASS 처리할 수 없다.
+
+지원 범위 신원에는 OS, 표시 서버, native 앱/runtime, WebKitGTK, 입력기·엔진·설정, RHWP source/gitlink·패치 목록/해시,
+WASM generation/SHA-256, 앱 source/build SHA-256, HWP/HWPX fixture 범위/해시, 일반 history 시험 설정을 기록한다.
+이번 지원 환경 D2 판정은 **PASS**다(원래 안전 관문25, 순서 trial14, 추가 native34). E→U→F는 **NOT OBSERVED / UNVERIFIED**다.
+이번 검증 범위는 Linux 7.2.14-arch1-1 x86_64·X11/Xvfb 21.1.23, Tauri debug native host+Vite 시험 소스, WebKitGTK 2.54.1, GTK IBus 1.5.33,
+ibus-hangul 1.5.5 두벌식/preedit, Release RHWP, `VITE_GEUL_TEST_HOOKS=1 VITE_GEUL_TEST_RHWP_HISTORY=1`이다.
+정확한 실행 신원과 새 판정은 [현재 증거](../architecture/t010-d2-supported-2026-11-12.json)에 기록한다. 이 범위는 일반 제품 빌드
+활성화 승인이 아니며 Windows/macOS/Wayland/XIM·다른 입력기/엔진·물리 데스크톱과 다른 문서 범위는 NOT RUN/UNVERIFIED다.
+
+필수 native 안전성은 다음 15개를 모두 유지한다.
+
+1. 한국어·영어 입력 무손실.
+2. 확정 글자 무중복.
+3. 올바른 조합 수명주기.
+4. 올바른 최종 삽입.
+5. 올바른 취소.
+6. Undo/Redo 트랜잭션 경계.
+7. 조합 중 Undo로 인한 오염 없음.
+8. 늦은 입력의 커서 귀속.
+9. 옛 세션 입력이 새 문서에 반영되지 않음.
+10. RHWP/WordCraft 간 오염 없음.
+11. close/reload 뒤 낡은 트랜잭션 적용 없음.
+12. 올바른 모델 revision·history 상태.
+13. Undo/Redo 뒤 본문·커서 상태.
+14. 취소 뒤 지속적인 입력 차단 없음.
+15. 관측된 지연 입력·reset 이벤트의 올바른 처리.
+
+필수 시나리오는 정상/연속 한글·영문, 조합 중/확정 뒤 Ctrl+Z, Ctrl+Y/Ctrl+Shift+Z, 취소 뒤 Undo, Backspace 취소,
+빈 compositionend 뒤 늦은 최종 삽입과 관측된 E→F→U, 완료 중/직후 커서 이동, 실제 포인터·Undo 단추, 초점 복구,
+탭 전환, close/reload·세대 경계, 바쁜 UI queue 복구, 반복 IBus reset, 양방향 RHWP/WordCraft 소유권이다.
+`resetRepeat`는 중복 reset 확정만 억제해야 한다. 반복 동일 음절·클릭 뒤 같은/다른 글자·새 compositionstart·일반 키를 사이에 둔
+확정·편집기 전환·새 세대 뒤 실제 새 입력을 보존하는지 검사한다. 누락된 시나리오가 집계에서 사라져 PASS가 되면 안 된다.
+
+E→U→F는 독립 호환성 상태 `VERIFIED PASS`, `VERIFIED FAIL`, `NOT OBSERVED / UNVERIFIED`, `NOT RUN`으로 보고한다.
+관측됐으나 원래 assertion의 native 검증을 실행하지 못했으면 호환성 검증은 NOT RUN이며 지원 환경 D2는 INCONCLUSIVE로 차단한다. 기존 `undo_native.py` 및 `native-d2-order.py`의 원래 predicate와 안전성 assertion은
+보존한다. 관측되지 않았으면 NOT OBSERVED / UNVERIFIED이며 native PASS가 아니다. 실제 지원 환경에서 관측되면 원래 assertion이
+통과해야 VERIFIED PASS다. 안전성 위반이면 VERIFIED FAIL이며 그 환경의 D2도 FAIL이다. 해당 순서가 나타나는 새 runtime/입력
+환경을 지원에 추가할 때에는 그 순서의 native 수용을 필수로 추가한다. 합성 E→U→F 회귀는 가드 보호이며 native 관측 증명이 아니다.
+
+지원 환경 D2와 E→U→F 호환성, 다른 환경, T010 전체 기능 수용, 일반 RHWP history 제품 활성화는 서로 다른 판정 축이다.
+T010은 별도 native 실사용성 등 나머지 필수 조건이 빠지면 INCOMPLETE이며, 일반 history는 별도 제품 승인 전 NO-GO다.
+D1/D3/D5·D4 자원 수용 범위, 원래 D4 50ms/1500ms 지연 목표와 TARGET NOT MET, FULL_PAGE_ONLY·저장/게시 안전성,
+T012 제한·submodule pin 및 awaiting-final/조합 소유권·세대/취소 가드는 바꾸지 않는다.
 
 ## 현재 최종 검증 — 2026-11-09
 

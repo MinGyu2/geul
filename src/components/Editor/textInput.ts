@@ -56,9 +56,23 @@ function insertedText(before: { value: string; start: number; end: number } | nu
 export const TRIM_LENGTH = 256;
 const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", "Tab", "Escape"]);
 
+// The focus-preserving ribbon/tab mousedown can trigger the same IBus reset as
+// a page click. Route it to the currently attached controller without fabricating
+// an input event or changing cursor/document ownership.
+const inputControllers = new WeakMap<HTMLTextAreaElement, ImeInput>();
+
+export function prepareImePointerDown(input: HTMLElement): void {
+  if (!(input instanceof HTMLTextAreaElement)) return;
+  const controller = inputControllers.get(input);
+  if (!controller) return;
+  controller.pointerDown();
+  trace("ime:pointerDown", () => controller.phase());
+}
+
 /** textarea에 키보드·IME 리스너를 붙이고, 뗄 함수를 돌려준다. */
 export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput, handlers: TextInputHandlers): () => void {
   const { handleKey, mark } = handlers;
+  inputControllers.set(input, controller);
   const pasteAllowed = () => handlers.pasteAllowed?.() ?? !handlers.composing();
   const onPaste = (event: ClipboardEvent) => {
     if (!pasteAllowed()) event.preventDefault();
@@ -170,6 +184,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   };
   input.addEventListener("blur", onBlur);
   return () => {
+    if (inputControllers.get(input) === controller) inputControllers.delete(input);
     input.removeEventListener("blur", onBlur);
     controller.detach();
     trace("ime:detach", () => controller.phase());
