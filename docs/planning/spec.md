@@ -70,7 +70,7 @@ benchmark 실행의 FAIL은 그대로 FAIL이며, 그것만으로 별도 기능 
 | 6 | T012 advanced-only만 PASS, 일반 history 수용 증거 부족 | 어느 상태든 | 일반 RHWP Undo/Redo 활성화 불가 |
 
 **현재 판정은 변경하지 않는다:** T010 INCOMPLETE, 일반 RHWP Undo/Redo NO-GO.
-D2 INCONCLUSIVE(E→U→F 미관측, 2026-11-12 Phase 2에서 Undo 단추·입력기 정지·바쁜 UI 기전까지 재조사, [기록](../architecture/rhwp-undo-redo.md#t010-phase2-20261112)), D4 자원 INCONCLUSIVE를 유지한다. D1/D3/D5는 2026-11-12 Phase 1에서 현재 신원(Release `97abf6bd…`)으로 다시 실행해 PASS다. 재실행에서 찾은 결함 2건(한컴 글자 겹치기 sentinel 때문에 Undo가 멈춤, HWP 내보내기 검사 레이아웃이 화면에 남음)은 교정했다([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)).
+D2 INCONCLUSIVE(E→U→F 미관측, 2026-11-12 Phase 2에서 Undo 단추·입력기 정지·바쁜 UI 기전까지 재조사, [기록](../architecture/rhwp-undo-redo.md#t010-phase2-20261112)), D4 자원은 2026-11-12 Phase 3에서 엔진 그림 캐시 소유를 교정한 뒤 현재 신원(Release `0559a2ba…`)으로 PASS다([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D1/D3/D5는 2026-11-12 Phase 1에서 현재 신원(Release `97abf6bd…`)으로 다시 실행해 PASS다. Phase 3 엔진 변경 뒤 최종 Release `0559a2ba…`에서도 다시 PASS다. 재실행에서 찾은 결함 2건(한컴 글자 겹치기 sentinel 때문에 Undo가 멈춤, HWP 내보내기 검사 레이아웃이 화면에 남음)은 교정했다([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)).
 문서에 남은 공식 D4 지연 FAIL은 독립 성능 `TARGET NOT MET`과 함께 보고하며 새 측정이 아니다.
 기능 완료를 위한 D2·자원 및 해당 기능의 native 실사용성 증거가 아직 충분하지 않다.
 [수용 기록과 남은 조건](../architecture/rhwp-undo-redo.md#t010-current-status)을 따른다.

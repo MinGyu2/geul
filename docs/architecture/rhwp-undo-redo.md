@@ -39,7 +39,7 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 | D2 IME 안전성 | INCONCLUSIVE (2026-11-12 Phase 2 재조사) | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 새 기전(Undo 단추, 입력기 정지 중 단추, 바쁜 UI main loop)으로도 미관측. 면제/대체 불가, 완료 차단. 조사 중 찾은 바쁜 UI 중복 입력(`가가`)은 교정([Phase 2](#t010-phase2-20261112)) |
 | D3 저장 보존 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | `undo_save.py --release` 19/19, strict 저장 23행 CURRENT0/DESIRED0, Rust 저장·복구·세션 304/0. 4행은 이력과 무관한 T009 정책 거부로 판정(기준 출력과 근거·바이트 동일) |
 | D5 실패·복구 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | 실제 WASM 경계 18/18, 통합 시험 3구성, PoC 50/50, native discard 예외·새 세대 reload 4/4 |
-| D4 자원·메모리 안전 | INCONCLUSIVE | 필수 차원이라 계속 완료/활성화 차단 |
+| D4 자원·메모리 안전 | **PASS — 현재 신원 (2026-11-12 Phase 3)** | 엔진 전역 그림 캐시의 문서별 소유·해제 교정 뒤 native 수명주기 43/43(소유 참조·화면 Canvas·엔진 보유 Canvas 0, WASM warm-up 뒤 증가 0). RSS는 규범 기준이 없어 진단으로만 기록([Phase 3](#t010-phase3-20261112)) |
 | Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | 본 변경에서 native 실행 없음; benchmark만으로 대체 불가 |
 | D4 성능 | TARGET NOT MET — 기존 공식 FAIL | 목표·원 표본/fixture/workload/warmup/3RAF/평가법 고정; 기능 수용과 독립 보고 |
 | T010 전체 기능 / 제품 일반 RHWP Undo/Redo | INCOMPLETE / NO-GO | 체크·제품 일반 활성화 불가; T012 advanced-only 범위는 별도 승인 그대로 |
@@ -130,6 +130,39 @@ preedit 플랫폼의 새 입력은 조합 시작·조합 입력과 함께 오므
 `appStallKeyButton`은 Ctrl+Z와 단추로 Undo를 두 번 요청하므로 행렬의 단일 Undo safe 조건과 맞지 않는다. 그래서 행렬 모드에서 뺐고, 그 결과(교정 전 UNSAFE 6행: 중복 확정)는 보존했다.
 환경 신원: Release `97abf6bd…`, debug 앱 `4c88dee8…`, IBus 1.5.33·ibus-hangul 1.5.5. 원시 trace·실패·인프라 오류(엔진 미설정, socket 경로 길이)는
 비공개 `geul-tests/reports/t010-phase123-20261112/phase2/native/`에 있다(`d2-gap-2`, `d2-matrix-1`, `d2-matrix-2`, `dup-probe-1`, `dupfix1`, `ime7`, `ime25`, `gapfin`, `mtxfin`).
+
+<a id="t010-phase3-20261112"></a>
+
+### Phase 3 — D4 자원·메모리 안전 (2026-11-12): PASS, 엔진 그림 캐시 소유 교정
+
+**판정: D4 자원 PASS(아래 범위·신원).** D4 지연(group-start p95 ≤ 50 ms, Undo ≤ 1,500 ms)은 독립 성능 항목이다. 이번에 재측정하거나 바꾸지 않았고, 기존 공식 FAIL / TARGET NOT MET을 유지한다.
+history 256 MiB 회계·깊이·HEADROOM, Canvas 16 Mi px/쪽·32 Mi px/surface, FULL_PAGE_ONLY, fail-closed·취소·소유 계약은 그대로다. 새 RSS 문턱은 만들지 않았다.
+
+**재현한 결함(교정 전, 원래 `undo_native.py --lifecycle`, 문서당 3모드 × 6 cycle).** 문서 핸들·snapshot 참조·화면 Canvas는 매번 0이었다.
+그러나 rhwp `web_canvas.rs`의 WASM 스레드 전역 `DECODED_CANVAS_CACHE`·`IMAGE_CACHE`는 개수 200 상한만 있고 바이트 예산·해제 경로가 없다.
+그래서 모든 문서를 닫은 뒤에도 엔진이 detached Canvas 21~23개(100.8~102.9 Mpx, RGBA 약 400 MB)를 붙들었다(externref 표 스캔). 32 Mi px surface 예산의 약 3배다.
+WASM 선형 메모리는 142.4 MiB에서 멈췄다. RSS는 열기·닫기만 해도 605→1002 MB로 올라갔다(비공개 `phase3/lc0`).
+
+**교정(`hwp-source-preservation.patch`에 합침, 패치 16개 유지).** 신원 검증기가 패치 수를 16으로 제한하고, `9b659b0`도 그 수를 유지하려고 합쳤다. 그래서 같은 방식을 따랐다.
+- 각 `HwpDocument`가 하나의 `RendererCacheOwner`를 갖는다(복제 불가). 그 문서가 만드는 모든 `WebCanvasRenderer`(전체·부분·작업 경로 5곳)가 그린 캐시 키에 소유자를 기록한다.
+- 문서를 해제(`free`/Drop)하면 그 소유를 풀고, 살아 있는 다른 문서가 그리지 않은 항목을 두 캐시에서 지운다. 디코드 Canvas는 크기 0으로 backing store를 즉시 돌려준다.
+- 기존 개수 상한(200)으로 비울 때도 Canvas를 즉시 돌려준다. 관측용 `rendererCacheStats()`를 추가했다.
+- 열린 문서가 실제로 그리는 그림 집합(working set)은 남긴다. 다시 디코드하는 성능 비용을 만들지 않으며, 여러 문서가 공유하는 항목은 마지막 소유 문서가 닫힐 때까지 남는다.
+
+| 검증(Release `0559a2ba…`, debug 앱 `4c88dee8…`, WebKitGTK 2.54.1) | 결과 |
+|---|---|
+| 원래 수명주기 `--lifecycle --cycles 6`(화학 HWP·자산 HWPX × 열기/닫기·기록 끔 대조·편집 Undo/Redo) | 43/43 PASS. 매 닫힘 뒤 문서 핸들·snapshot·화면 Canvas 0 |
+| 엔진 보유 Canvas·그림 캐시(모든 문서를 닫은 뒤) | 교정 전 21~23개 / 101~103 Mpx → 교정 뒤 0 / 0 / 소유 키 0 |
+| 두 문서 공유(자산 단독 → 닫기 → 화학+자산 → 화학 닫기 → 자산 닫기) | 소유 키 2 → 0 → 9 → 2(자산 단독과 같음) → 0, 엔진 Canvas 2 → 0 → 9 → 2 → 0 |
+| WASM 선형 메모리 | high-water 142.4 → 97.2 MiB. 각 모드 2번째 cycle 뒤 닫힘 값이 바이트까지 같음(재사용, 증가 0) |
+| RSS(WebKitWebProcess, 진단) | 화학 열기/닫기 닫힘 RSS가 매 cycle 377~400 MB로 돌아옴(교정 전 605→1002 상승). 편집 모드는 톱니 모양으로 오르다 크게 내려감(예 1585→959, 1182→697 MB). 단조 증가 없음. 규범 기준이 없어 PASS/FAIL로 쓰지 않음 |
+| 수명주기 자리표 관문 | 전에는 항상 INCONCLUSIVE였다. 이제 구조 근거(매 닫힘 엔진 Canvas·캐시 0, warm-up 뒤 WASM 증가 0)로 판정한다. 교정 전 lc0 자료에서는 엔진 Canvas 21~23이므로 이 조건이 FAIL이다 |
+
+snapshot 회계·깊이·실패 경계(실제 WASM `history_boundary` 18/18, 단위 시험), render 작업·취소·lease·해제(src 1432/1432), 실패·reload 정리(D5 native 4/4)는
+같은 최종 신원에서 다시 통과했다. 2D Canvas context loss를 처리하는 코드와 시험은 없다(기존 계약 밖이며 미관측). 이번에 PASS로 세지 않는다.
+비공개 근거: `geul-tests/reports/t010-phase123-20261112/phase3/`(`lc0` 교정 전, `lc1`·`lc2` 교정 뒤, 원본 시험 사본 `originals/`).
+최종 신원 회귀(같은 Release `0559a2ba…`): native D1 33/33, native D5 4/4, `undo_save` 19/19, strict 저장 23행 불일치 0,
+통합 vitest 46/34/12 PASS, `history_boundary` 18/18, PoC 50/50(비공개 `final/`). 신원·결과는 [t010-phase3-acceptance-2026-11-12.json](t010-phase3-acceptance-2026-11-12.json)에 있다.
 
 ## 현재 수용 상태와 기술 보류 (2026-11-01 · 2026-11-02 재평가)
 

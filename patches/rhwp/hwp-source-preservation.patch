@@ -411,3 +411,254 @@
 +    }
  
      /// 표의 행/열/셀 수를 반환한다.
+diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
+index 4b6fde7..f9d5c03 100644
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -96,6 +96,83 @@ thread_local! {
+     > = std::cell::RefCell::new(std::collections::HashMap::new());
+ }
+ 
++// [geul] 위 두 캐시는 WASM 스레드 전역이고 문서 사이에 공유된다. 항목마다 그 그림을 그린 살아 있는 문서
++// (`HwpDocument` 의 cache owner)를 기록하고, 문서를 해제하면 더 이상 어떤 살아 있는 문서도 그리지 않은 항목을
++// 지우며 디코드한 detached Canvas 의 backing store 를 즉시 돌려준다(크기 0). 개수 상한(200) 규칙은 그대로다.
++#[cfg(target_arch = "wasm32")]
++thread_local! {
++    static CACHE_OWNERS: std::cell::RefCell<
++        std::collections::HashMap<u64, std::collections::BTreeSet<u64>>,
++    > = std::cell::RefCell::new(std::collections::HashMap::new());
++}
++
++#[cfg(target_arch = "wasm32")]
++fn mark_cache_owner(owner: u64, key: u64) {
++    if owner != 0 {
++        CACHE_OWNERS.with(|owners| {
++            owners.borrow_mut().entry(key).or_default().insert(owner);
++        });
++    }
++}
++
++#[cfg(target_arch = "wasm32")]
++fn release_decoded(canvas: Option<HtmlCanvasElement>) {
++    if let Some(canvas) = canvas {
++        canvas.set_width(0);
++        canvas.set_height(0);
++    }
++}
++
++/// [geul] 개수 상한을 넘은 디코드 캐시를 비운다(원래 규칙). 비운 Canvas 도 즉시 돌려준다.
++#[cfg(target_arch = "wasm32")]
++fn clear_decoded_cache(cache: &mut std::collections::HashMap<u64, Option<HtmlCanvasElement>>) {
++    for (_, canvas) in cache.drain() {
++        release_decoded(canvas);
++    }
++}
++
++/// [geul] 문서 `owner` 를 지운다. 남은 살아 있는 문서가 없는 그림 항목은 두 캐시에서 지우고 지운 항목 수를 준다.
++#[cfg(target_arch = "wasm32")]
++pub(crate) fn release_cache_owner(owner: u64) -> usize {
++    let orphaned: Vec<u64> = CACHE_OWNERS.with(|owners| {
++        let mut owners = owners.borrow_mut();
++        let mut orphaned = Vec::new();
++        owners.retain(|key, set| {
++            set.remove(&owner);
++            if set.is_empty() {
++                orphaned.push(*key);
++                false
++            } else {
++                true
++            }
++        });
++        orphaned
++    });
++    for key in &orphaned {
++        if let Some(canvas) = DECODED_CANVAS_CACHE.with(|cache| cache.borrow_mut().remove(key)) {
++            release_decoded(canvas);
++        }
++        IMAGE_CACHE.with(|cache| {
++            cache.borrow_mut().remove(key);
++        });
++    }
++    orphaned.len()
++}
++
++/// [geul] 관측용: (디코드 항목, 살아 있는 디코드 Canvas, 그 픽셀 합, 이미지 항목, 소유자가 기록된 키).
++#[cfg(target_arch = "wasm32")]
++pub(crate) fn renderer_cache_stats() -> (usize, usize, u64, usize, usize) {
++    let (entries, canvases, pixels) = DECODED_CANVAS_CACHE.with(|cache| {
++        let cache = cache.borrow();
++        let live: Vec<&HtmlCanvasElement> = cache.values().flatten().collect();
++        let pixels = live.iter().map(|c| u64::from(c.width()) * u64::from(c.height())).sum();
++        (cache.len(), live.len(), pixels)
++    });
++    let images = IMAGE_CACHE.with(|cache| cache.borrow().len());
++    let owned = CACHE_OWNERS.with(|owners| owners.borrow().len());
++    (entries, canvases, pixels, images, owned)
++}
++
+ #[cfg(target_arch = "wasm32")]
+ fn decode_image_to_canvas(data: &[u8]) -> Option<HtmlCanvasElement> {
+     let dynimg = image::load_from_memory(data).ok()?;
+@@ -379,6 +456,8 @@ pub struct WebCanvasRenderer {
+     active_decoration_trim: usize,
+     suppress_text_glyphs: bool,
+     metric_descriptor_mismatch: std::cell::Cell<bool>,
++    /// [geul] 이 렌더러를 만든 문서의 cache owner(0 = 없음). 그린 그림 캐시 항목의 소유자로 기록한다.
++    pub cache_owner: u64,
+ }
+ 
+ #[cfg(target_arch = "wasm32")]
+@@ -407,6 +486,7 @@ impl WebCanvasRenderer {
+             active_decoration_trim: 0,
+             suppress_text_glyphs: false,
+             metric_descriptor_mismatch: std::cell::Cell::new(false),
++            cache_owner: 0,
+         })
+     }
+ 
+@@ -2708,6 +2788,7 @@ impl Renderer for WebCanvasRenderer {
+ 
+     fn draw_image(&mut self, data: &[u8], x: f64, y: f64, w: f64, h: f64) {
+         let key = hash_bytes(data);
++        mark_cache_owner(self.cache_owner, key);
+ 
+         let decoded = DECODED_CANVAS_CACHE.with(|cache| {
+             let mut c = cache.borrow_mut();
+@@ -2715,7 +2796,7 @@ impl Renderer for WebCanvasRenderer {
+                 return slot.clone();
+             }
+             if c.len() > 200 {
+-                c.clear();
++                clear_decoded_cache(&mut c);
+             }
+             let canvas = decode_image_to_canvas(data);
+             c.insert(key, canvas.clone());
+@@ -2833,6 +2914,7 @@ impl WebCanvasRenderer {
+         dh: f64,
+     ) {
+         let key = hash_bytes(data);
++        mark_cache_owner(self.cache_owner, key);
+ 
+         let decoded = DECODED_CANVAS_CACHE.with(|cache| {
+             let mut c = cache.borrow_mut();
+@@ -2840,7 +2922,7 @@ impl WebCanvasRenderer {
+                 return slot.clone();
+             }
+             if c.len() > 200 {
+-                c.clear();
++                clear_decoded_cache(&mut c);
+             }
+             let canvas = decode_image_to_canvas(data);
+             c.insert(key, canvas.clone());
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index b5eedb2..86f21b2 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -189,6 +189,7 @@ fn render_page_to_canvas_filtered_with_profile_impl(
+     canvas.set_height(scaled_canvas_extent(tree.page_height, scale));
+ 
+     let mut renderer = WebCanvasRenderer::new(canvas)?;
++    renderer.cache_owner = document.cache_owner.0;
+     renderer.show_paragraph_marks = document.show_paragraph_marks;
+     renderer.show_control_codes = document.show_control_codes;
+     renderer.set_scale(scale);
+@@ -254,6 +255,7 @@ fn render_page_patch_to_canvas_filtered_with_profile_impl(
+     }
+ 
+     let mut renderer = WebCanvasRenderer::new(canvas)?;
++    renderer.cache_owner = document.cache_owner.0;
+     renderer.show_paragraph_marks = document.show_paragraph_marks;
+     renderer.show_control_codes = document.show_control_codes;
+     renderer.set_scale(scale);
+@@ -374,6 +376,35 @@ fn collect_external_image_references(document: &Document) -> Vec<ExternalImageRe
+ #[wasm_bindgen]
+ pub struct HwpDocument {
+     core: DocumentCore,
++    /// [geul] 전역 그림 캐시 항목의 소유자. 문서를 해제하면 이 문서만 그린 항목을 지운다.
++    cache_owner: RendererCacheOwner,
++}
++
++/// [geul] 문서마다 하나인 렌더러 캐시 소유자(복제하지 않는다). Drop 에서 소유를 풀고 고아 항목을 지운다.
++pub struct RendererCacheOwner(u64);
++
++impl RendererCacheOwner {
++    fn new() -> Self {
++        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++        Self(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
++    }
++}
++
++impl Drop for RendererCacheOwner {
++    fn drop(&mut self) {
++        #[cfg(target_arch = "wasm32")]
++        crate::renderer::web_canvas::release_cache_owner(self.0);
++    }
++}
++
++/// [geul] 관측용 전역 그림 캐시 상태 JSON(`decodedEntries`, `decodedCanvases`, `decodedPixels`, `imageEntries`, `ownedKeys`).
++#[cfg(target_arch = "wasm32")]
++#[wasm_bindgen(js_name = rendererCacheStats)]
++pub fn renderer_cache_stats() -> String {
++    let (entries, canvases, pixels, images, owned) = crate::renderer::web_canvas::renderer_cache_stats();
++    format!(
++        "{{\"decodedEntries\":{entries},\"decodedCanvases\":{canvases},\"decodedPixels\":{pixels},\"imageEntries\":{images},\"ownedKeys\":{owned}}}"
++    )
+ }
+ 
+ /// [geul] Immutable, bounded publication definitions; not a document snapshot.
+@@ -444,11 +475,11 @@ impl std::ops::DerefMut for HwpDocument {
+ /// 테스트 및 CLI 환경에서 `HwpDocument::from_bytes()` 등을 직접 호출할 수 있도록 한다.
+ impl HwpDocument {
+     pub fn from_bytes(data: &[u8]) -> Result<HwpDocument, HwpError> {
+-        DocumentCore::from_bytes(data).map(|core| HwpDocument { core })
++        DocumentCore::from_bytes(data).map(|core| HwpDocument { core, cache_owner: RendererCacheOwner::new() })
+     }
+ 
+     pub fn from_bytes_with_password(data: &[u8], password: &[u8]) -> Result<HwpDocument, HwpError> {
+-        DocumentCore::from_bytes_with_password(data, password).map(|core| HwpDocument { core })
++        DocumentCore::from_bytes_with_password(data, password).map(|core| HwpDocument { core, cache_owner: RendererCacheOwner::new() })
+     }
+ 
+     pub fn find_initial_column_def(paragraphs: &[Paragraph]) -> ColumnDef {
+@@ -594,7 +625,7 @@ impl HwpDocument {
+     #[wasm_bindgen(constructor)]
+     pub fn new(data: &[u8]) -> Result<HwpDocument, JsValue> {
+         DocumentCore::from_bytes(data)
+-            .map(|core| HwpDocument { core })
++            .map(|core| HwpDocument { core, cache_owner: RendererCacheOwner::new() })
+             .map_err(|e| e.into())
+     }
+ 
+@@ -630,7 +661,7 @@ impl HwpDocument {
+         let mut document = Document::default();
+         document.sections.push(section);
+         core.set_document(document);
+-        HwpDocument { core }
++        HwpDocument { core, cache_owner: RendererCacheOwner::new() }
+     }
+ 
+     /// 내장 템플릿에서 빈 문서를 생성한다.
+@@ -832,6 +863,7 @@ impl HwpDocument {
+         canvas.set_height(scaled_canvas_extent(tree.page_height, scale));
+ 
+         let mut renderer = WebCanvasRenderer::new(canvas)?;
++        renderer.cache_owner = self.cache_owner.0;
+         renderer.show_paragraph_marks = self.show_paragraph_marks;
+         renderer.show_control_codes = self.show_control_codes;
+         renderer.set_scale(scale);
+@@ -871,6 +903,7 @@ impl HwpDocument {
+         canvas.set_height(scaled_canvas_extent(tree.root.bbox.height, scale));
+ 
+         let mut renderer = WebCanvasRenderer::new(canvas)?;
++        renderer.cache_owner = self.cache_owner.0;
+         renderer.show_paragraph_marks = self.show_paragraph_marks;
+         renderer.show_control_codes = self.show_control_codes;
+         renderer.set_scale(scale);
+@@ -974,6 +1007,7 @@ impl HwpDocument {
+         canvas.set_height(scaled_canvas_extent(tree.root.bbox.height, scale));
+ 
+         let mut renderer = WebCanvasRenderer::new(canvas)?;
++        renderer.cache_owner = self.cache_owner.0;
+         renderer.show_paragraph_marks = self.show_paragraph_marks;
+         renderer.show_control_codes = self.show_control_codes;
+         renderer.set_scale(scale);
