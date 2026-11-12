@@ -10,7 +10,7 @@
 
 - 선택 범위는 같은 본문 section 안의 텍스트 또는 같은 table cell 안의 텍스트다. 지원되는 범위에는 여러 문단 선택이 포함된다. 접힌 caret 선택은 지원하지 않는다.
 - section을 가로지르는 선택, 서로 다른 cell, field/object 등 텍스트 좌표로 안전하게 표현할 수 없는 문맥과 알 수 없는 원본 body record는 지원하지 않는다. capability는 이를 사용 가능하다고 표시하지 않는다.
-- 선택된 모든 문자가 해당 flag를 가지고 있을 때만 토글이 끈다. 하나라도 꺼져 있으면 지원되는 전체 선택에 적용한다. 이미 켜진 문자 모양은 건너뛰어 underline/strike의 기존 variant 및 다른 속성을 보존한다.
+- 선택된 모든 문자가 해당 flag를 가지고 있을 때만 토글이 끈다. 하나라도 꺼져 있으면 지원되는 전체 선택에 적용한다. 한 번의 native 범위 변경에서 이미 켜진 underline/strike variant와 다른 속성을 보존하며, 개별 문자를 건너뛰기 위해 여러 번 호출하지 않는다.
 - cursor와 selection을 유지하며 선택 밖 문자는 수정하지 않는다. 표 셀 범위도 cell 로컬로 제한한다.
 
 ## 저장 보존 경계
@@ -75,3 +75,14 @@ Release proof의 generation은 `eb3aaadce87dc108e9b4b8d501581463b7e6b23863c00b4a
 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py clippy --lib --bins -- -D warnings` | PASS |
 
 이 증거는 focused implementation/regression/save 검증이다. full Stage 5 통합 acceptance, Stage 6 native Tauri/GUI acceptance, 실제 한컴/Word 호환성 판정은 수행하지 않았다. 릴리스 GO 판정이 아니다.
+
+
+## Formatting hardening A–C — 2026-11-13
+
+A는 `getFormattingRuns` native API로 선택 구간의 scalar 경계와 UTF-16 control-slot 배치를 실제 문서 모델에서 확인하고, 글꼴·언어 JSON 없이 연속 flag 구간만 반환한다. 기존 477개 API와 각 인자 수를 유지하고 읽기 전용 메서드 하나만 추가했다. B는 현재 epoch/model/selection에 귀속된 증명을 실행 단계에서 재사용하고 문단마다 한 번만 변경한 뒤 한 차례 compaction한다. 회귀 corpus는 본문과 셀에서 네 flag, 여러 문단, 빈 문단, 역방향 selection, supplementary Unicode, 선택 밖 속성, Undo/Redo, 이후 native 실패 뒤 rollback/uncertain freeze를 확인한다. C는 clipboard 추출과 별도로 native 증명에서 선택 범위 안의 object slot만 거부한다. object에 닿기 전후의 텍스트와 다른 문단/셀은 허용하고 slot을 가로지르면 거부하며, HWPX 인접 셀 그림도 유지한다.
+
+현재 Release generation은 `c51dd0fe7fcf845cfe2b1e0c67400606babf65888279a1ebe0c722d15be3a101`이다. JS SHA-256은 `436cd46b94def9d95d1d6b33eafb7586df60a1bcae9f44adcbd4564ffeb1b577`, WASM SHA-256은 `ee44446b64ac65d096ed5849d2d134feafb4ec7085c6eae080a33d855b8a0649`이다. 새 20-case positive corpus의 실제 save-service publication과 게시 파일 fresh-engine reopen이 모두 통과했다. 여덟 HWP case는 새 preview를 만들었고, 인접-object HWP case 두 개는 기존에 허용된 known-blank preview 예외를 별도로 증명했다. 이는 모든 HWP 원본을 허용한다는 뜻이 아니다.
+
+동일한 Release engine과 여덟 개 동일 source/state 조합에서 분석 시 개별 character-property 읽기가 10,000회에서 0회로 줄었고, 단일 문단은 batch 1회, 20문단은 batch 20회였다. 10,000자 분석 시간은 이전 207.9–320.5 ms에서 새 경로 0.21–0.86 ms였다. 별도 짝지은 16자 adapter 측정 60개에서 median은 0.4745 ms에서 0.0153 ms, p95는 0.6049 ms에서 0.0368 ms였다. 이는 선택 분석 경로의 측정이며 전체 편집 지연 보장이 아니다. 20문단 적용과 제거에는 렌더링을 포함해 약 0.38–0.41초가 걸렸다.
+
+추가 hardening 24건과 기존 production 7건은 앞서 통과한 결과를 재사용했다. 최종 검증은 20건 publication 및 fresh reopen, focused frontend 230건, production WASM 22건, Rust HWP 36건(pass; 10 ignored), Python profile 3건, normal build, lint, Rust fmt/check/clippy를 통과했다. 상세 로그는 ignored evidence 경로 `src-tauri/target/general-formatting-hardening/final-checks/`에 있다. corpus와 benchmark JSON은 `src-tauri/target/general-formatting-hardening/`에 있다. 앞 절의 10-case 기록은 당시 실행된 역사적 증거로 보존한다. 이 A–C hardening 결과는 Stage 5/6 native acceptance 또는 릴리스 승인으로 확대하지 않는다.

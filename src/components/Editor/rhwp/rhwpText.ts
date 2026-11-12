@@ -404,56 +404,57 @@ export class RhwpText {
     }
   }
 
-  /** Validate the entire coherent selection before any mutation. Objects/fields and stale
-   * coordinates are rejected by selectedText; empty paragraph boundaries alone are not text. */
+  /** Formatting has a separate contract from clipboard extraction: native proof
+   * excludes selected control slots, without refusing objects outside the range.
+   * Keep the existing scalar budget; additionally bound query/response complexity. */
   formatSelection(from: DocPosition, to: DocPosition): {
     state: Record<"bold" | "italic" | "underline" | "strikethrough", boolean>;
-    runs: { from: DocPosition; to: DocPosition; flags: Record<"bold" | "italic" | "underline" | "strikethrough", boolean> }[];
   } | null {
     try {
       const valid = (at: DocPosition) => [at.section, at.paragraph, at.offset,
         ...(at.cell ? [at.cell.parentParagraph, at.cell.control, at.cell.cell, at.cell.cellParagraph] : [])].every(isIndex)
         && (!at.cell || at.paragraph === at.cell.parentParagraph);
-      if (!valid(from) || !valid(to) || compare(from, to) >= 0) return null;
-      if (!(from.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)
-        || this.selectedText(from, to) === null) return null;
-      const state = { bold: true, italic: true, underline: true, strikethrough: true };
-      const runs: NonNullable<ReturnType<RhwpText["formatSelection"]>>["runs"] = [];
-      for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
-        const start = p === paragraphOf(from) ? from.offset : 0;
-        const end = p === paragraphOf(to) ? to.offset : this.paragraphLength(withParagraph(from, p, 0));
-        for (let offset = start; offset < end; offset++) {
-          const at = withParagraph(from, p, offset), flags = this.charFormat(at);
-          if (!flags) return null;
-          for (const flag of ["bold", "italic", "underline", "strikethrough"] as const) state[flag] &&= flags[flag];
-          const previous = runs.at(-1);
-          if (previous && paragraphOf(previous.to) === p && previous.to.offset === offset
-            && (Object.keys(state) as (keyof typeof state)[]).every(flag => previous.flags[flag] === flags[flag]))
-            previous.to = { ...at, offset: offset + 1 };
-          else runs.push({ from: at, to: { ...at, offset: offset + 1 }, flags });
+      if (!valid(from) || !valid(to) || !sameContext(from, to) || compare(from, to) >= 0
+        || !this.doc.getFormattingRuns || !(from.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
+      const first = paragraphOf(from), last = paragraphOf(to);
+      if (last - first >= 4096 || last >= this.paragraphCount(from)) return null;
+      let count = 0, runCount = 0, mask = 15;
+      for (let p = first; p <= last; p++) {
+        const at = withParagraph(from, p, 0), c = from.cell;
+        const length = this.paragraphLength(at), start = p === first ? from.offset : 0;
+        const end = p === last ? to.offset : length;
+        if (!isIndex(length) || start > end || end > length) return null;
+        count += end - start + (p > first ? 1 : 0);
+        if (count > MAX_CLIPBOARD_CHARS) return null;
+        // The exclusive final paragraph at offset zero is not selected.
+        if (p === last && start === end) continue;
+        const raw = this.doc.getFormattingRuns(from.section, c ? c.parentParagraph : p,
+          c?.control ?? NO_CELL, c?.cell ?? 0, c ? p : 0, start, end);
+        if (raw.length > 4 * 1024 * 1024) return null;
+        const value = json(raw);
+        if (!isRecord(value) || value.length !== length || !Array.isArray(value.runs)) return null;
+        let next = start;
+        for (const run of value.runs) {
+          if (!Array.isArray(run) || run.length !== 3) return null;
+          const [a, b, flags] = run as unknown[];
+          if (!isIndex(a) || !isIndex(b) || !isIndex(flags)
+            || a !== next || b <= next || b > end || flags > 15 || ++runCount > 65_536) return null;
+          next = b; mask &= flags;
         }
+        if (next !== end) return null;
       }
-      return runs.length ? { state, runs } : null;
+      return runCount ? { state: { bold: !!(mask & 1), italic: !!(mask & 2), underline: !!(mask & 4), strikethrough: !!(mask & 8) } } : null;
     } catch { return null; }
   }
 
-  /** Build the complete plan before history admission. Skip already enabled characters when
-   * applying, preserving existing underline/strike variants in a mixed selection. */
-  prepareFlag(from: DocPosition, to: DocPosition, flag: "bold" | "italic" | "underline" | "strikethrough") {
-    const selection = this.formatSelection(from, to);
+  /** The session may reuse only its current epoch/model/selection-owned proof.
+   * Native enabling preserves decoration variants, so one call per paragraph is
+   * enough even for mixed selections. Compaction runs once after the whole edit. */
+  prepareFlag(from: DocPosition, to: DocPosition, flag: "bold" | "italic" | "underline" | "strikethrough",
+    selection = this.formatSelection(from, to)) {
     if (!selection) return null;
-    const enabled = !selection.state[flag];
-    const ranges: { from: DocPosition; to: DocPosition }[] = [];
-    for (const { from: start, to: end, flags } of selection.runs) {
-      if (flags[flag] === enabled) continue;
-      const previous = ranges.at(-1);
-      if (previous && paragraphOf(previous.to) === paragraphOf(start) && previous.to.offset === start.offset)
-        previous.to = end;
-      else ranges.push({ from: start, to: end });
-    }
-    return () => {
-      for (const range of ranges) this.format(range.from, range.to, JSON.stringify({ [flag]: enabled }));
-    };
+    const props = JSON.stringify({ [flag]: !selection.state[flag] });
+    return () => this.format(from, to, props);
   }
 
   /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */

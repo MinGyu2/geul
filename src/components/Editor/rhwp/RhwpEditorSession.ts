@@ -1920,7 +1920,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   private formatSourceCache: { key: string; safe: boolean } | null = null;
-  private formatCache: { key: string; value: Readonly<Record<CharFormatFlag, boolean>> | null } | null = null;
+  private formatCache: { key: string; value: ReturnType<RhwpText["formatSelection"]> } | null = null;
 
   /** Full-selection state; runtime checks are shared by ribbon, shortcuts and execution.
    * HWP additionally requires a complete reopen baseline and a SAFE owned original preflight. */
@@ -1937,11 +1937,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return null;
     if (!this.text.hasCharShapeOwnership || !this.doc.compactAppendedCharShapes
       || !this.doc.capturePublishingCharShapePrefix || !this.doc.reconcileCharShapePrefix) return null;
+    if (!this.doc.getFormattingRuns || !(this.caret.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
     if (!this.hasSelection || !sameContext(this.anchor, this.caret)) return null;
     const [from, to] = this.ordered();
     const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(this.anchor)}|${RhwpEditorSession.positionKey(this.caret)}`;
-    if (this.formatCache?.key !== key) this.formatCache = { key, value: this.text.formatSelection(from, to)?.state ?? null };
-    return this.formatCache.value;
+    if (this.formatCache?.key !== key) this.formatCache = { key, value: this.text.formatSelection(from, to) };
+    return this.formatCache.value?.state ?? null;
   }
 
   /**
@@ -1952,7 +1953,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const state = this.formatState();
     if (!state) return false;
     const [from, to] = this.ordered();
-    const apply = this.text!.prepareFlag(from, to, flag);
+    const apply = this.text!.prepareFlag(from, to, flag, this.formatCache?.value ?? null);
     if (!apply) return false;
     const caret = this.caret, anchor = this.anchor;
     this.history?.boundary();

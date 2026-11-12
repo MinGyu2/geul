@@ -1,7 +1,7 @@
 diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
 --- a/src/document_core/commands/char_shape_compact.rs
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -494,6 +494,32 @@
+@@ -494,6 +494,98 @@
          self.document.doc_info.raw_stream_dirty = true;
          self.rebuild_derived_state();
          Ok("{\"ok\":true}".into())
@@ -31,13 +31,79 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 +            }),
 +            _ => false,
 +        }
++    }
++
++    /// Bounded, read-only scalar-coordinate formatting inventory. No per-character
++    /// JS/WASM calls or font/language JSON. Control positions are proved from the
++    /// actual UTF-16 gaps, never from getControls' stream-position fallbacks.
++    pub fn formatting_runs_native(
++        &self, section: usize, paragraph: usize, control: u32, cell: usize,
++        cell_paragraph: usize, start: usize, end: usize,
++    ) -> Result<String, HwpError> {
++        use crate::model::style::UnderlineType;
++        let fail = || HwpError::RenderError("unsupported formatting selection".into());
++        let in_cell = control != u32::MAX;
++        let para = if in_cell {
++            self.get_cell_paragraph_ref(section, paragraph, control as usize, cell, cell_paragraph).ok_or_else(fail)?
++        } else {
++            self.document.sections.get(section).and_then(|s| s.paragraphs.get(paragraph)).ok_or_else(fail)?
++        };
++        if start > end || end > para.char_offsets.len() || end - start > 1_048_576
++            || !para.field_ranges.is_empty() || !para.orphan_field_ends.is_empty()
++            || !para.title_marks.is_empty() || !para.range_tags.is_empty()
++            || para.char_shapes.windows(2).any(|w| w[0].start_pos > w[1].start_pos) { return Err(fail()); }
++        let mut ci = 0usize;
++        let mut gap = |delta: u32, boundary: usize| -> Result<(), HwpError> {
++            if delta % 8 != 0 || delta as usize / 8 > para.controls.len() - ci { return Err(fail()); }
++            for _ in 0..delta / 8 {
++                let object = match &para.controls[ci] {
++                    Control::SectionDef(_) | Control::ColumnDef(_) => false,
++                    Control::Table(_) if !in_cell => true,
++                    Control::Picture(_) => true,
++                    Control::Shape(shape) if matches!(shape.as_ref(), ShapeObject::Picture(_)) => true,
++                    _ => return Err(fail()),
++                };
++                if object && (start == end || (start < boundary && boundary < end)) { return Err(fail()); }
++                ci += 1;
++            }
++            Ok(())
++        };
++        let mut cursor = 0u32;
++        let mut length = 0usize;
++        for (i, ch) in para.text.chars().enumerate() {
++            let off = *para.char_offsets.get(i).ok_or_else(fail)?;
++            gap(off.checked_sub(cursor).ok_or_else(fail)?, i)?;
++            if i >= start && i < end && (ch == '\u{fffc}' || (ch.is_control() && ch != '\t')) { return Err(fail()); }
++            cursor = off.checked_add(Paragraph::char_stream_len(ch)).ok_or_else(fail)?;
++            length += 1;
++        }
++        if length != para.char_offsets.len() { return Err(fail()); }
++        gap(para.char_count.saturating_sub(1).checked_sub(cursor).ok_or_else(fail)?, length)?;
++        if ci != para.controls.len() { return Err(fail()); }
++        let mut runs: Vec<[usize; 3]> = Vec::new();
++        let mut shape = 0usize;
++        for offset in start..end {
++            let pos = para.char_offsets[offset];
++            while shape + 1 < para.char_shapes.len() && para.char_shapes[shape + 1].start_pos <= pos { shape += 1; }
++            let id = para.char_shapes.get(shape).map_or(0, |s| s.char_shape_id);
++            let style = self.styles.char_styles.get(id as usize).ok_or_else(fail)?;
++            let mask = usize::from(style.bold) | (usize::from(style.italic) << 1)
++                | (usize::from(!matches!(style.underline, UnderlineType::None)) << 2)
++                | (usize::from(style.strikethrough) << 3);
++            if let Some(last) = runs.last_mut().filter(|r| r[2] == mask) { last[1] = offset + 1; }
++            else {
++                if runs.len() >= 65_536 { return Err(fail()); }
++                runs.push([offset, offset + 1, mask]);
++            }
++        }
++        Ok(serde_json::json!({"length":length,"runs":runs}).to_string())
      }
  
      /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -7185,6 +7185,13 @@
+@@ -7185,6 +7185,21 @@
      ) -> Result<String, JsValue> {
          self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
              .map_err(|e| e.into())
@@ -48,6 +114,44 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +    #[wasm_bindgen(js_name = canFormatCharacters)]
 +    pub fn can_format_characters(&self) -> bool {
 +        self.can_format_characters_native()
++    }
++
++    /// [geul] Proven text-only formatting runs; u32::MAX control means body.
++    #[wasm_bindgen(js_name = getFormattingRuns)]
++    pub fn get_formatting_runs(&self, section: u32, paragraph: u32, control: u32,
++        cell: u32, cell_paragraph: u32, start: u32, end: u32) -> Result<String, JsValue> {
++        self.formatting_runs_native(section as usize, paragraph as usize, control,
++            cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
      }
  
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
+diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -2553,7 +2553,11 @@
+                 && matches!(self.controls.get(range.control_idx),
+                     Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink)
+         });
+-        let utf16_end = if ends_hyperlink {
++        // Text ending immediately before an object must not recolor the object's
++        // eight-unit slot. Formatting selection proof excludes interior slots.
++        let adjacent_object = self.field_ranges.is_empty() && self.orphan_field_ends.is_empty()
++            && self.controls.iter().any(|c| matches!(c, Control::Picture(_) | Control::Table(_) | Control::Shape(_)));
++        let utf16_end = if ends_hyperlink || adjacent_object {
+             *self.char_offsets.get(end - 1)?
+                 + self
+                     .text
+diff --git a/src/model/style.rs b/src/model/style.rs
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -969,7 +969,9 @@
+         }
+         if let Some(v) = self.underline {
+             cs.underline_type = if v {
+-                UnderlineType::Bottom
++                // Enabling an already enabled underline preserves Top/Bottom.
++                // An explicit underline_type below still requests a transformation.
++                if matches!(cs.underline_type, UnderlineType::None) { UnderlineType::Bottom } else { cs.underline_type }
+             } else {
+                 UnderlineType::None
+             };

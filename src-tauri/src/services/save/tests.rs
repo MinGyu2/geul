@@ -13142,7 +13142,11 @@ fn general_formatting_real_publication() {
     let cases: Value =
         serde_json::from_slice(&std::fs::read(root.join("cases.json")).unwrap()).unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 10);
+    let expected = std::env::var("GEUL_FORMAT_EXPECTED_CASES")
+        .map(|v| v.parse::<usize>().expect("expected case count"))
+        .unwrap_or(10);
+    assert!((1..=64).contains(&expected));
+    assert_eq!(cases.len(), expected);
     let mut results = vec![];
     for case in cases {
         let id = case["id"].as_str().unwrap();
@@ -13177,7 +13181,13 @@ fn general_formatting_real_publication() {
             super::preview::PreviewRaster::new(png.width(), png.height(), png.into_raw()).unwrap()
         });
         let raw = service::check_saved(format, &original, &output, Some(&loss), true);
-        if ext == "hwp" {
+        let preview_required = ext == "hwp" && case["previewRequired"].as_bool().unwrap_or(true);
+        if ext == "hwp" && !preview_required {
+            assert!(super::preview::known_blank_hwp_image(
+                &cfb_stream(&original, "/PrvImage").unwrap()
+            ));
+        }
+        if preview_required {
             assert!(
                 raw.findings
                     .iter()
@@ -13236,7 +13246,7 @@ fn general_formatting_real_publication() {
             assert_eq!(std::fs::read(dir.path().join(&name)).unwrap(), original);
             assert!(registry.get(info.session_id).unwrap().dirty);
         }
-        if ext == "hwp" {
+        if preview_required {
             let ticket = registry
                 .begin_save(info.session_id, info.load_generation, 1)
                 .unwrap();
@@ -13275,7 +13285,7 @@ fn general_formatting_real_publication() {
         .unwrap_or_else(|e| panic!("{id}: {e:?}"));
         assert!(saved.durable && !saved.session.dirty, "{id}");
         let published = std::fs::read(dir.path().join(&name)).unwrap();
-        if ext == "hwp" {
+        if preview_required {
             let image = cfb_stream(&published, "/PrvImage").unwrap();
             assert_ne!(Some(image.clone()), cfb_stream(&original, "/PrvImage"));
             assert!(super::preview::decode_canonical_png(&image).is_some());
@@ -13283,7 +13293,7 @@ fn general_formatting_real_publication() {
         std::fs::write(folder.join(format!("published.{ext}")), &published).unwrap();
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         results.push(json!({"id": id, "durable": saved.durable, "dirty": saved.session.dirty,
-            "originalIntactOnRejection": true, "raw": raw, "previewRegenerated": ext == "hwp", "publishedSha256": format!("{:x}", Sha256::digest(&published))}));
+            "originalIntactOnRejection": true, "raw": raw, "previewRegenerated": preview_required, "publishedSha256": format!("{:x}", Sha256::digest(&published))}));
     }
     std::fs::write(
         root.join("publication.json"),

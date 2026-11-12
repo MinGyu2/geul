@@ -90,6 +90,10 @@ export interface RhwpDocument {
    */
   /** Read-only load-time proof: source shapes are reconstructible and HWP body records are understood. */
   canFormatCharacters?(): boolean;
+  /** Read-only scalar-coordinate, text-only proof and compact [start,end,flags] runs.
+   * control=u32::MAX selects body; otherwise a single top-level table cell. */
+  getFormattingRuns?(section: number, paragraph: number, control: number, cell: number,
+    cellParagraph: number, start: number, end: number): string;
   charShapeCount?(): number;
   compactAppendedCharShapes?(baseline: number): string;
   captureCharShapePrefix?(): CharShapePrefix;
