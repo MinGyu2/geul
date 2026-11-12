@@ -9,9 +9,15 @@ ordinary DOM attributes, the page canvas and screenshots. The product build expo
 so text and character properties are asserted on the files the product saved, reopened outside the
 app with the hash-verified RHWP Release runtime (scripts/tests/rhwp-char-flags.mjs).
 
-Scenario per format: open -> Korean IME text -> bold/italic/underline by shortcut and
+Scenario per format: open through the native chooser -> Korean IME text -> bold/italic/underline by shortcut and
 strikethrough/bold/italic/underline by ribbon -> bold inside one table cell -> Undo -> Redo ->
-save -> close -> reopen through the native chooser -> formatting state on the reopened document.
+save -> close -> reopen through the native chooser -> formatting state on the reopened document ->
+close. Opening and closing are native too, so the sequence-numbered input event log installed by this
+harness (WebDriver-injected listener, no product hook) must be trusted from the first key to the last
+click; it is read again at the very end, not at the time of the IME check.
+
+This process can only report PENDING_LAUNCHER_CLEANUP. The final verdict is derived by
+scripts/tests/formatting_acceptance.py (`run` launches the session and finalizes in one step).
 """
 import argparse
 import hashlib
@@ -27,6 +33,7 @@ import time
 import traceback
 import uuid
 
+import formatting_acceptance as contract
 import t010_acceptance as gate
 import t010_lifecycle as lifecycle
 
@@ -34,7 +41,6 @@ ROOT = Path(__file__).resolve().parents[2]
 for folder in ('tests/e2e', 'tests/integration/rhwp'):
     sys.path.insert(0, str(ROOT / folder))
 import tauri_smoke as smoke  # noqa: E402
-import rhwp_poc as rhwp  # noqa: E402
 
 
 def load(name, file):
@@ -47,18 +53,32 @@ def load(name, file):
 production = load('t010_production_native', 'native-t010-production.py')
 sha = production.sha
 FLAGS = {'bold': 'B', 'italic': 'I', 'underline': 'U', 'strikethrough': 'S'}
-IME_KEYS, IME_TEXT = 'dkssud', '안녕'
-
-
-def marked(text, ranges):
-    """Expected per-character flag letters: '-' everywhere except the given (start, end, letters)."""
-    flags = ['-'] * len(text)
-    for start, end, letters in ranges:
-        flags[start:end] = [letters] * (end - start)
-    return flags
+IME_KEYS, IME_TEXT = contract.IME_KEYS, contract.IME_TEXT
+EVENT_LOG = """window.__fmtEvents=[];window.__fmtSeq=0;
+  const where=t=>{if(!(t instanceof Element))return 'other';const c=t.closest('[data-command]');if(c)return c.dataset.command;
+    if(t.closest('.document-tab__close'))return 'tab-close';if(t.matches('.rhwp-input'))return 'rhwp-input';return t.tagName.toLowerCase()};
+  for(const type of arguments[0])window.addEventListener(type,e=>{window.__fmtEvents.push({seq:window.__fmtSeq++,type,trusted:e.isTrusted,
+    target:where(e.target),key:e.key??null,data:e.data??null})},true);"""
 
 
 class Formatting(production.Production):
+    def calibrate(self):
+        super().calibrate()
+        # Unbounded, numbered log of every keyboard/composition/input/pointer event in the window.
+        self.d.js(EVENT_LOG, list(contract.EVENT_TYPES))
+
+    def event_log(self):
+        return self.d.js('return [window.__fmtEvents,window.__fmtSeq]')
+
+    def close_native(self, name):
+        """Close the only open document with a native pointer click; False when a discard prompt appears."""
+        self.click('.document-tab__close')
+        time.sleep(0.5)
+        if self.d.exists('[data-testid=discard-dialog]'):
+            return False
+        self.a.wait("return ![...document.querySelectorAll('.document-tab__select')].some(t=>t.textContent.includes(arguments[0]))", name, timeout=10)
+        return True
+
     def oracle(self, path):
         value = json.loads(subprocess.check_output(['node', str(ROOT / 'scripts/tests/rhwp-char-flags.mjs'), str(path)], text=True))
         identity = {'generation': value['generation'], 'artifacts': value['artifacts']}
@@ -67,8 +87,8 @@ class Formatting(production.Production):
         return value['files'][0]
 
     def model(self, file):
-        return {'body': [[p['text'], ''.join(p['flags'])] for p in file['body']],
-                'cells': [[c['text'], ''.join(c['flags'])] for c in file['tables'][0]['cells']]}
+        return {'body': [[p['text'], p['flags']] for p in file['body']],
+                'cells': [[c['text'], c['flags']] for c in file['tables'][0]['cells']]}
 
     def save_and_verify(self, path, label, expected):
         result = self.a.save(self.row['format'])
@@ -143,18 +163,19 @@ class Formatting(production.Production):
         original = self.oracle(source)
         base = self.model(original)
         self.report.setdefault('fixtureOracle', {})[fmt] = base
-        t0, t1 = base['body'][0][0], base['body'][1][0]
-        gate.require(t1[6:10] == 'Bold' and base['cells'][1][0][:4] == 'Cell' and t0[10:16] == 'Korean', 'unexpected fixture content')
+        gate.require(base == contract.FIXTURE, 'unexpected fixture content')
+        models = contract.expected_models()
         path = self.args.out / f'format-{fmt}.{fmt}'
         shutil.copyfile(source, path)
 
-        # A. Open; editable; formatting needs a selection.
-        a.open(fmt, path)
+        # A. Open through the native chooser; editable; formatting needs a selection.
+        d.js('window.__fmtEvents=[];window.__fmtSeq=0')
+        a.open_native(fmt, path)
+        self.check('document opened through the native chooser', self.state()['status'] == 'ready')
         absent = d.js('return !document.querySelector("[data-testid=rhwp-status]").hasAttribute("data-paragraph-text")')
         self.report['testHooksAbsent'] = self.report['testHooksAbsent'] and absent
         self.check('product build: test-only text hook absent', absent)
         self.focus_start(); a.engine('xkb:us::eng')
-        d.js('window.__pEvents=[]')
         st = self.state()
         self.check('document editable: ready, clean, input focused', st['status'] == 'ready' and st['dirty'] == 'false' and st['localRevision'] == '0', st)
         controls = self.buttons()
@@ -164,11 +185,10 @@ class Formatting(production.Production):
 
         # E. Real Korean IME text, then format it.
         a.engine('hangul'); a.type(IME_KEYS); a.key('End'); self.idle(); a.engine('xkb:us::eng')
-        events = d.js('return window.__pEvents')
+        events = self.event_log()[0]
         self.check('native Korean composition through IBus (trusted compositionstart/compositionend)',
                    any(e['type'] == 'compositionstart' and e['trusted'] for e in events) and any(e['type'] == 'compositionend' and e['trusted'] for e in events))
         self.row['imeCommitted'] = [e['data'] for e in events if e['type'] == 'compositionend']
-        p0 = IME_TEXT + t0
         n = len(IME_TEXT)
         sel = self.select(0, 0, n)
         controls = self.buttons()
@@ -185,31 +205,26 @@ class Formatting(production.Production):
         for name in ('bold', 'italic', 'underline'):
             self.apply(name, 'ribbon', sel)
         d.screenshot(self.args.out / f'{fmt}-02-body-formatted.png')
-        body = [[p0, ''.join(marked(p0, [(0, n, 'B'), (n + 3, n + 5, 'I'), (n + 5, n + 8, 'U'), (n + 10, n + 16, 'S')]))],
-                [t1, ''.join(marked(t1, [(0, 5, 'B'), (6, 10, 'BIU')]))], *base['body'][2:]]
 
         # C. One table cell; D. Undo/Redo on that formatting edit.
         table = self.click_cell(original, 1)
         sel = self.select(table, 0, 4, self.cell_key)
         before = self.canvas()
         formatted = self.apply('bold', 'ctrl+b', sel)
-        cells = [list(c) for c in base['cells']]
-        cells[1][1] = 'BBBB' + cells[1][1][4:]
         self.press('ctrl+z', 'undo')
         self.check('Undo: rendered page equals the state before the cell formatting', self.canvas() == before)
         self.check('Undo: bold no longer reported for the restored selection', self.button('bold')['pressed'] != 'true', self.state()['selection'])
         d.screenshot(self.args.out / f'{fmt}-03-undo.png')
-        self.save_and_verify(path, 'undo', {'body': body, 'cells': base['cells']})
+        self.save_and_verify(path, 'undo', models['undo'])
         st = self.press('ctrl+y', 'redo')
         self.check('Redo exhausted after Ctrl+Y', st['redo']['disabled'], st['redo'])
         self.check('Redo: rendered page equals the formatted state', self.canvas() == formatted)
         d.screenshot(self.args.out / f'{fmt}-04-redo.png')
 
         # F. Save, close, reopen through the native chooser.
-        expected = {'body': body, 'cells': cells}
-        self.save_and_verify(path, 'final', expected)
+        self.save_and_verify(path, 'final', models['final'])
         final_sha = sha(path)
-        gate.require(rhwp.close_tab(d, path.name), 'saved document asked to discard')
+        self.check('saved document closed by native pointer without a discard prompt', self.close_native(path.name))
         a.open_native(fmt, path)
         st = self.state()
         self.check('reopened document: fresh clean session', st['localRevision'] == '0' and st['dirty'] == 'false' and st['undo']['disabled'], st)
@@ -225,18 +240,20 @@ class Formatting(production.Production):
         table = self.click_cell(original, 1)
         got['cell-bold'] = pressed_for((table, 0, 4, self.cell_key))
         got['cell-rest'] = pressed_for((table, 4, 8, self.cell_key))
-        none = dict.fromkeys(FLAGS, False)
-        want = {'ime-bold': none | {'bold': True}, 'italic': none | {'italic': True}, 'underline': none | {'underline': True},
-                'strike': none | {'strikethrough': True}, 'unformatted': none, 'ribbon-biu': none | {'bold': True, 'italic': True, 'underline': True},
-                'cell-bold': none | {'bold': True}, 'cell-rest': none}
-        self.check('reopened document: application reports the saved formatting and unformatted neighbours', got == want, got)
+        self.check('reopened document: application reports the saved formatting and unformatted neighbours', got == contract.REOPEN_PRESSED, got)
         d.screenshot(self.args.out / f'{fmt}-05-reopened.png')
         st = self.state()
         self.check('reopened document untouched by inspection', st['localRevision'] == '0' and st['dirty'] == 'false', st)
+        self.row['reopen'] = {'nativeChooser': True, 'pressed': got, 'localRevision': st['localRevision'], 'dirty': st['dirty'], 'savedSha256': sha(path)}
         self.check('saved file unchanged by reopen', sha(path) == final_sha)
         self.check('source fixture bytes unchanged', sha(source) == source_sha)
-        gate.require(rhwp.close_tab(d, path.name), 'reopened document did not close cleanly')
-        self.check('all observed editor input events trusted', all(e['trusted'] for e in events))
+        self.check('reopened document closed by native pointer without a discard prompt', self.close_native(path.name))
+        # The complete log is read here, after the last native interaction of this format.
+        self.row['events'], self.row['eventCount'] = self.event_log()
+        complete = gate.verdict(contract.events, self.row['events'], self.row['eventCount'])
+        self.check('final event log: complete and contiguous through the last native close', complete['status'] == 'PASS', complete)
+        self.check('final event log: every recorded input event trusted', gate.verdict(contract.trusted, self.row['events'])['status'] == 'PASS',
+                   [e for e in self.row['events'] if e.get('trusted') is not True][:20])
         self.row['status'] = 'PASS'
 
 
@@ -254,9 +271,10 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     report = {'runId': os.environ.get('GEUL_NATIVE_RUN_ID') or uuid.uuid4().hex, 'status': 'RUNNING',
               'scope': 'normal embedded product build; native X11/IBus input; actual save service; saved files read by the Release runtime outside the app',
-              'appSha256': sha(args.app), 'harnessSha256': sha(__file__), 'oracleSha256': sha(ROOT / 'scripts/tests/rhwp-char-flags.mjs'),
+              'appSha256': sha(args.app), 'harnessSha256': contract.harness_hashes(),
+              'contract': {'schema': contract.SCHEMA, 'formats': list(contract.FORMATS), 'checks': list(contract.CHECKS)},
               'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-              'sourceDiffSha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src', 'src-tauri', 'public', 'patches'], cwd=ROOT)).hexdigest(),
+              'productTrees': contract.product_trees(), 'sourceDiffSha256': contract.product_diff(),
               'testFlagsInEnvironment': sorted(k for k in os.environ if k.startswith('VITE_GEUL_TEST_'))}
     smoke.APP = str(args.app); smoke.DRIVER_LOG = str(args.out / 'driver.log')
     try:
@@ -311,22 +329,27 @@ def main():
     except Exception as error:
         report.update(error=f'{type(error).__name__}: {error}', trace=traceback.format_exc())
 
-    def accept(report, expected):
-        gate.production_identity(report, expected)
-        rows = report.get('formats', [])
-        gate.require([r['format'] for r in rows] == args.formats.split(',') and all(r['status'] == 'PASS' for r in rows), 'format scenario missing or failed')
-        for row in rows:
-            gate.require(all(c['status'] == 'PASS' for c in row['checks']) and [s['label'] for s in row['saves']] == ['undo', 'final']
-                         and all(s.get('verified') is True for s in row['saves']) and len(row['operations']) == 8, 'incomplete scenario evidence')
-        gate.teardown(report.get('teardown'), report.get('sessions'), report.get('runId'))
-        gate.require(not report.get('error'), 'execution error')
-    report['acceptance'] = gate.verdict(accept, report, getattr(args, 'expected', {}))
-    # Launcher cleanup (native-ibus-session.py cleanup.json) is verified by the caller after this process exits.
-    report['status'] = 'PASS_PENDING_LAUNCHER_CLEANUP' if report['acceptance']['status'] == 'PASS' else 'FAIL'
+    # Inner verdict for the requested formats only; the finalizer always requires HWP and HWPX.
+    requested = tuple(args.formats.split(','))
+    expected = getattr(args, 'expected', {})
+    report['native'] = contract.native(report, requested)
+    report['acceptance'] = gate.verdict(lambda: (
+        gate.require(report['native']['status'] == 'PASS', 'format scenario missing or failed'),
+        contract.identity(report, {**expected, 'productTrees': report['productTrees'], 'sourceDiffSha256': report['sourceDiffSha256'], 'harness': report['harnessSha256']}),
+        gate.teardown(report.get('teardown'), report.get('sessions'), report.get('runId')),
+        gate.require(not report.get('error'), 'execution error')))
+    try:
+        session = json.loads(Path(os.environ['GEUL_NATIVE_SESSION_REPORT']).read_text())
+        report['nativeLauncher'] = {k: session.get(k) for k in ('runId', 'commandSha256')}
+    except (KeyError, OSError, ValueError, AttributeError):
+        report['nativeLauncher'] = {}
+    # A child cannot claim success for its parent's future teardown: PASS exists only in the final verdict.
+    report['status'] = ('FAIL' if report['acceptance']['status'] != 'PASS'
+                        else contract.PENDING if report['nativeLauncher'].get('runId') == report['runId'] else 'INCONCLUSIVE')
     report['summary'] = {r['format']: {'status': r['status'], 'checks': len(r['checks']), 'saves': len(r['saves']), 'error': r.get('error')} for r in report.get('formats', [])}
     (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'status': report['status'], 'acceptance': report['acceptance'], 'summary': report['summary'], 'error': report.get('error')}, ensure_ascii=False, indent=2))
-    return 0 if report['status'] != 'FAIL' else 1
+    return 0 if report['status'] == contract.PENDING else 1
 
 
 if __name__ == '__main__':

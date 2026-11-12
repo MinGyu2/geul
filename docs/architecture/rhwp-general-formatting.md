@@ -120,3 +120,51 @@ A는 `getFormattingRuns` native API로 선택 구간의 scalar 경계와 UTF-16 
 | 6 — native Tauri/product acceptance | COMPLETED | 같은 흐름을 실제 Tauri 창에서 native 키보드/포인터/IBus/GTK 선택기만으로 수행, test flag·hook 없음 |
 
 지원 native 환경(위 범위) 판정: GO.
+
+
+## Stage 5/6 acceptance 계약 보정 및 최종 판정 — 2026-11-13
+
+앞의 "Stage 5/6 native acceptance addendum"은 당시 기록으로 보존한다. 그 run3 판정에는 하네스 결함 세 가지가 있었고, 이 절이 보정된 계약과 최종 판정이다. 제품 코드, RHWP, submodule pin은 바꾸지 않았다.
+
+**보정한 결함.**
+
+1. *최종 PASS와 launcher 정리.* 시나리오 프로세스는 `PASS_PENDING_LAUNCHER_CLEANUP`만 남겼고 launcher 정리 증거와 결합하는 단계가 없었다. 이제 자식은 `PENDING_LAUNCHER_CLEANUP`까지만 보고하고, 최종 PASS는 `scripts/tests/formatting_acceptance.py`가 쓰는 `final-verdict.json`에만 존재한다. 전이는 `native-scenario → identity → pending-launcher-cleanup → launcher-cleanup-verified → final`이며 하나라도 실패하면 FAIL, 증거 파일이 없거나 읽을 수 없거나 필수 형식이 빠지면 INCOMPLETE다. `run` 모드는 비공개 IBus 세션 실행과 finalize를 한 명령으로 수행한다. T010 finalizer와 계약(`acceptanceReport` 인계, T010 검사 목록)은 건드리지 않았고, 의미가 같은 `gate.production_identity`, `gate.teardown`, `gate.directory_cleanup`, `launcher.atomic_json`만 재사용했다.
+2. *고정 범위.* 최종 판정은 실행 인자 `--formats`와 무관하게 HWP와 HWPX를 정확히 한 번씩 요구한다. 형식별 판정은 독립이며(한쪽 PASS는 보존) 결합 판정은 둘 다 PASS일 때만 PASS다. 검사는 `all(PASS)`나 개수가 아니라 모듈의 명시적 목록(`CHECKS`, 형식당 58개)과 이름·순서가 정확히 같아야 하고, 서식 8회(`OPERATIONS`), 저장 2회(`undo`, `final`)의 저장 파일 모델, 재열기 상태(`REOPEN_PRESSED`)도 상수 기대값과 비교한다. 누락·중복·추가·실패 검사, 잘못된 형식 이름, 저장/재열기 증거 누락은 거부한다.
+3. *마지막 시점 trusted 이벤트.* 이전 검사는 IME 직후에 읽은 snapshot을 끝에서 다시 썼다. 이제 하네스가 WebDriver로 주입한 listener(제품 hook 아님)가 창의 keydown/keyup/composition*/beforeinput/input/mousedown/mouseup/click을 일련번호와 함께 상한 없이 기록하고, 형식별 시나리오의 마지막 native 조작(재열린 문서 닫기) 뒤에 다시 읽는다. 로그는 번호가 빈틈없이 독립 카운터와 일치하고, IME 조합 시작/끝, 리본 네 단추 클릭, 두 번의 탭 닫기 클릭(마지막 클릭이 닫기), 재열린 문서의 키 입력을 포함해야 하며 모든 항목이 `trusted === true`여야 한다. 이를 위해 열기(Ctrl+O + GTK 선택기)와 닫기(탭 닫기 단추 포인터 클릭)도 native 입력으로 바꿨다. 이전에는 WebDriver가 경로 양식과 닫기 단추를 스크립트로 눌렀다.
+
+검사 수 변화(54 → 58): `all observed editor input events trusted` 1개를 빼고 `document opened through the native chooser`, 닫기 2개(`saved document closed…`, `reopened document closed…`), 최종 이벤트 로그 2개(`…complete and contiguous…`, `…every recorded input event trusted`)를 더했다.
+
+**신원과 staleness.** finalizer는 기대 신원을 보고서가 아니라 저장소와 실행 파일에서 직접 읽는다: 앱 SHA-256, `public/rhwp/RELEASE.json`, `dist/frontend-build.json`, 제품 입력(`src`, `src-tauri`, `patches`, 두 submodule pin, `package*.json`, `index.html`, `vite.config.ts`)의 Git object id와 빈 diff, 하네스 파일 9개의 SHA-256. 실행 뒤 이 중 하나라도 바뀌면 증거는 stale로 거부된다. 제품 입력과 하네스 파일을 바꾸지 않는 커밋(예: 문서)만으로는 stale이 아니며, 하네스를 커밋한 뒤 같은 증거로 `finalize`를 다시 실행해도 PASS가 재현됐다(`run5/post-commit-verdict.json`). result/session/cleanup은 같은 `runId`와 `commandSha256`, 결과 디렉터리의 data home, 기록 시각 순서로 같은 실행임을 확인한다.
+
+**검증.** `scripts/tests/test_formatting_acceptance.py` 31건(`python3 -m unittest`, `python3 -O -m unittest` 모두 통과; Tauri/RHWP 빌드 없음): cleanup 누락·잘못된 JSON, 생존 프로세스, 불완전 정리, 다른 runId/명령, 0이 아닌 종료 코드, pending이 아닌 상태(`PASS` 포함), 한 형식 누락/중복/미지 형식, 필수 검사 누락·중복 이름·추가·실패, 저장/재열기 증거 결함, 앱·Release·frontend 신원 불일치, stale/모순 증거, 이벤트 로그 결함을 거부한다. 회귀 시험은 이전 snapshot 구간만 보면 통과하지만 뒤에 온 untrusted 이벤트가 있는 로그가 거부됨을 보인다. 기존 `test_t010_acceptance`/`test_t010_launcher` 53건은 그대로 통과한다.
+
+**증거 재사용 판단.** run3 `result.json`에는 원시 이벤트 로그가 없고(조합 확정 문자열만) launcher 소유 기록도 없어, 보정된 계약을 소급 증명할 수 없다. finalizer도 run3을 FAIL로 판정했다(`run3-corrected-contract-verdict.json`; run3 원본 파일은 수정하지 않음). 따라서 native 시나리오만 다시 실행했다. 20-case publication/reopen, frontend 230, WASM 22, Rust HWP 36, hardening 24, production 7, 성능 측정은 제품 소스와 Release generation `c51dd0fe…`이 같으므로 재실행 없이 재사용했고, 앱과 RHWP WASM도 다시 빌드하지 않았다(앱 SHA-256 `b974a28a…` 그대로).
+
+**실행 이력**(ignored `src-tauri/target/general-formatting-native/`, 모두 보존):
+
+| 실행 | 결과 | 비고 |
+|---|---|---|
+| run1 | FAIL | 하네스 상대 경로(역사적 기록) |
+| run2 | FAIL | 비공개 ibus-hangul Latin 모드(역사적 기록) |
+| run3 | 당시 시나리오 PASS, 보정 계약으로는 FAIL | 이벤트 로그·launcher 결합 없음. Stage 5/6의 근거로 쓰지 않음 |
+| run4 | 보정 계약 PASS, 이후 stale | 판정 뒤 신원 기준을 커밋 해시에서 제품 트리로 바꿔 하네스 해시가 달라짐 |
+| run5 | **최종 PASS** | 아래 |
+
+**최종 판정(run5).** 명령: `python3 scripts/tests/formatting_acceptance.py run --evidence src-tauri/target/general-formatting-native/run5 --app src-tauri/target/debug/geul --driver <tauri-driver>`. runId `e96c1a67295a4872b309fff83ce06d72`, launcher 종료 코드 0, 자식 종료 코드 0, 정리 `proven`/`filesystemProven` true, 생존 프로세스 없음.
+
+| 항목 | HWP | HWPX |
+|---|---|---|
+| 필수 검사 | 58/58 | 58/58 |
+| 입력 이벤트(전부 trusted, 0..479 연속) | 480 | 480 |
+| 저장본(Undo/최종) 글자·속성 정확 일치 | PASS | PASS |
+| native 재열기 상태 | PASS | PASS |
+| 형식 판정 | PASS | PASS |
+
+결합 판정 PASS. 증거 SHA-256: `run5/final-verdict.json` `58752f715191b61327a0e55d62bfe206f71a5578432a61aa55505888d27edeb1`, `run5/native/result.json` `f16ba35896027dccc47b25997b7da37c662b0b4ab107f6177a818f576cd0d00c`, `run5/session/session.json` `afdc65263904f506744861e510502f5b4f5f960c8483d6432f49796b96ef27a3`, `run5/session/cleanup.json` `57c9dc96051e8a3d831c917c5cfec76a961fd252626995370f42646ab72939b1`. 계약 SHA-256(판정 파일의 `contractSha256`) `4acdf862ca9fd09781b5e15669f56c9fc6fbfb8909a378e13b7adfc7242c0543`. 저장본 네 개의 SHA-256은 run3과 같다.
+
+| 단계 | 상태 |
+|---|---|
+| 5 — full integration acceptance | COMPLETED (보정 계약, run5) |
+| 6 — native Tauri/product acceptance | COMPLETED (보정 계약, run5) |
+
+판정 범위와 한계는 이전 addendum과 같다: Linux x86_64, X11/Xvfb, WebKitGTK 2.54.1, IBus 1.5.33 + ibus-hangul 1.5.5, 시험한 debug-profile 실행 파일, 생성된 `basic-ko` HWP/HWPX. 이 범위에서 GO. Windows/macOS, Wayland native, 다른 IME, release 패키지, 일반 외부 HWP/HWPX, 한컴오피스 호환은 시험하지 않았고 주장하지 않는다. 이벤트 로그는 WebView 문서 안의 DOM 이벤트만 본다(GTK 선택기 창의 입력은 대상이 아니다). T014, T015, T016은 별도이며 완료되지 않았다.
