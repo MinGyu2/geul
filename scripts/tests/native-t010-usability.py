@@ -9,6 +9,9 @@ The hooks expose the caret paragraph text and the actual engine model for assert
 product build is checked separately (native-t010-production.py).
 
 Usage: native-t010-usability.py --app APP --driver DRIVER --xdotool X --ibus I --out DIR [--only a,b]
+
+Final PASS requires native-ibus-session.py --acceptance-report OUT/result.json.
+The child records PENDING_CLEANUP until that launcher proves its own cleanup.
 """
 import argparse
 import hashlib
@@ -21,7 +24,10 @@ import sys
 import tempfile
 import time
 import traceback
-from collections import Counter
+import uuid
+
+import t010_acceptance as gate
+import t010_lifecycle as lifecycle
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'tests/e2e'), str(ROOT / 'tests/integration/rhwp')]
@@ -55,7 +61,7 @@ class Usability:
         self.run(self.args.xdotool, 'type', '--delay', str(delay), text)
 
     def engine(self, name):
-        assert self.run(self.args.ibus, 'engine') == 'hangul', 'IBus engine is not hangul'
+        gate.require(self.run(self.args.ibus, 'engine') == 'hangul', 'IBus engine is not hangul')
         want = name == 'latin'
         if self.latin != want:
             self.key('Hangul')  # the real Hangul/Latin toggle inside ibus-hangul
@@ -78,10 +84,14 @@ class Usability:
           for(const type of ['keydown','compositionstart','compositionend','beforeinput','input'])
             document.addEventListener(type,e=>{
               if(!e.target?.matches?.('.rhwp-input'))return;
-              window.__uEvents.push({type,trusted:e.isTrusted,data:e.data??null,key:e.key??null,inputType:e.inputType??null,t:performance.now()});
+              window.__uEvents.push({type,trusted:e.isTrusted,data:e.data??null,key:e.key??null,inputType:e.inputType??null,ctrlKey:!!e.ctrlKey,code:e.code??null,t:performance.now()});
             },true);""")
         # Actual engine model per session: wrap the shared facade before any document opens.
         d.js("""window.__uReady=false;(async()=>{
+            const {RhwpEditorSession}=await import('/src/components/Editor/rhwp/RhwpEditorSession.ts');
+            const snapshot=RhwpEditorSession.prototype.snapshot, sessions=new Map();
+            RhwpEditorSession.prototype.snapshot=function(...a){sessions.set(String(this.sessionId),this);return snapshot.apply(this,a)};
+            window.__uIme=sid=>sessions.get(String(sid)).imeDiagnostics();
             const facade=await(await import('/src/components/Editor/rhwp/rhwpModule.ts')).loadRhwpModule();
             const open=facade.openDocument,live=new Map(),bound=new Map();let serial=0;
             facade.openDocument=function(...args){const doc=open.apply(this,args),id=++serial,free=doc.free;live.set(id,doc);
@@ -100,7 +110,7 @@ class Usability:
               return doc.getTextInCell(sec,par,control,c,cp,0,doc.getCellParagraphLength(sec,par,control,c,cp))};
             window.__uReady=true;})().catch(e=>window.__uError=String(e));""")
         smoke.wait_until(d, 'return window.__uReady||!!window.__uError')
-        assert d.js('return window.__uReady'), d.js('return window.__uError')
+        gate.require(d.js('return window.__uReady'), d.js('return window.__uError'))
 
     def click_point(self, point):
         xy = [str(round(point[i] * self.scale[i] + self.origin[i])) for i in (0, 1)]
@@ -116,7 +126,7 @@ class Usability:
           const left=Math.max(r.left,q.left,0),right=Math.min(r.right,q.right,innerWidth),top=Math.max(r.top,q.top,0),bottom=Math.min(r.bottom,q.bottom,innerHeight);
           const point=[left+Math.min(150,(right-left)/2),top+Math.min(20,(bottom-top)/2)];
           return {point,ok:right>left&&bottom>top&&!!document.elementFromPoint(...point)?.closest('.rhwp-page')}""")
-        assert g['ok'], json.dumps(g)
+        gate.require(g['ok'], json.dumps(g))
         self.click_point(g['point'])
         smoke.wait_until(self.d, "return document.activeElement?.matches('.editor__scroll .rhwp-input')")
         self.key('Home')
@@ -143,7 +153,7 @@ class Usability:
         self.click_point(point)
         smoke.wait_until(self.d, "return !!document.querySelector('[data-testid=discard-dialog]') || ![...document.querySelectorAll('.document-tab__select')].some(e=>e.textContent.includes(arguments[0]))", name)
         if self.d.exists('[data-testid=discard-dialog]'):
-            assert discard, 'unexpected discard prompt'
+            gate.require(discard, 'unexpected discard prompt')
             self.click('[data-testid=discard-confirm]')
         smoke.wait_until(self.d, "return !document.querySelector('[data-testid=discard-dialog]') && ![...document.querySelectorAll('.document-tab__select')].some(e=>e.textContent.includes(arguments[0]))", name)
 
@@ -163,8 +173,9 @@ class Usability:
         full = self.d.js('return window.__uParagraph(arguments[0],arguments[1])', st['session'], st['caret'])
         self.check(label + ': status paragraph is a prefix of the engine paragraph', full[:200] == st['paragraphText'], [st['paragraphText'][:40], full[:40]])
         st['paragraphText'] = full
+        st['ime'] = self.d.js('return window.__uIme(arguments[0])', st['session'])
         st['undo'], st['redo'] = self.button('edit.undo'), self.button('edit.redo')
-        self.current['states'].append({'label': label, **{k: st.get(k) for k in ('paragraphText', 'caret', 'selection', 'localRevision', 'revision', 'composing', 'status', 'uncertain', 'pages', 'settleSeconds', 'undo', 'redo')},
+        self.current['states'].append({'label': label, **{k: st.get(k) for k in ('session', 'paragraphText', 'caret', 'selection', 'localRevision', 'revision', 'composing', 'status', 'uncertain', 'pages', 'settleSeconds', 'undo', 'redo', 'ime')},
                                        'modelParagraphs': st['model']['paragraphs'], 'modelPages': st['model']['pages'], 'modelSha256': hashlib.sha256(st['model']['text'].encode()).hexdigest()})
         return st
 
@@ -313,14 +324,24 @@ class Usability:
         self.check('immediate Undo removes only the committed syllable', un['paragraphText'] == before['paragraphText'], [un['paragraphText'], before['paragraphText']])
         self.key('ctrl+y'); re = self.state('Redo committed syllable')
         self.check('Redo restores the committed syllable', re['paragraphText'] == mixed['paragraphText'] + '가', re['paragraphText'])
-        # Ctrl+Z while a syllable is still visible in preedit.
+        # Capture only this native trial; do not conflate it with the original E→U→F probe.
+        self.reset_events()
+        self.d.js('window.__geulTrace={seq:0,dropped:0,records:[]}')
         self.typ('sk'); pre = self.state('preedit visible')
-        self.check('preedit visible before Ctrl+Z', pre['composing'] == 'true' or pre['paragraphText'].endswith('나'), pre['composing'])
+        gate.insertion(re, pre, '나')
+        self.check('native preedit active before Ctrl+Z', pre['composing'] == 'true')
         self.key('ctrl+z'); cz = self.state('Ctrl+Z during composition')
-        self.check('Ctrl+Z during composition: no duplicate, no stale preedit', cz['composing'] == 'false'
-                   and Counter(cz['paragraphText']) in (Counter(re['paragraphText']), Counter(re['paragraphText'] + '나')), cz['paragraphText'])
+        events = self.d.js('return window.__uEvents')
+        trace = self.d.js('return window.__geulTrace')
+        self.current['compositionUndo'] = {'events': events, 'trace': trace}
+        result = gate.verdict(gate.composition_undo, re, pre, cz, events, trace)
+        self.check('composition Undo has exact native text/caret/revision/history outcome', result['status'] == 'PASS', result)
+        self.current['compositionUndo']['outcome'] = gate.composition_undo(re, pre, cz, events, trace)
         self.typ('ekf'); self.key('End'); after = self.state('typing after composition Undo')
-        self.check('editing continues after composition Undo', Counter(after['paragraphText']) == Counter(cz['paragraphText'] + '달'), after['paragraphText'])
+        result = gate.verdict(gate.insertion, cz, after, '달', end=True)
+        self.check('editing continues at the exact restored caret', result['status'] == 'PASS', result)
+        self.check('new composition commits exactly one revision', int(after['localRevision']) == int(cz['localRevision']) + 1
+                   and after['ime']['historyTransaction'] is False, after['ime'])
         self.ready_ok(after, 'korean final')
 
     def selection(self, fmt):
@@ -547,21 +568,22 @@ def main():
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     selected = [c for c in args.only.split(',') if c] or list(CASES)
-    report = {'status': 'RUNNING', 'harnessSha256': sha(__file__), 'appSha256': sha(args.app), 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+    report = {'runId': os.environ.get('GEUL_NATIVE_RUN_ID') or uuid.uuid4().hex, 'status': 'RUNNING', 'harnessSha256': sha(__file__), 'validatorSha256': {n: sha(ROOT / 'scripts/tests' / n) for n in ('t010_acceptance.py', 't010_lifecycle.py', 'native-ibus-session.py')}, 'appSha256': sha(args.app), 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'sourceDiffSha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src'], cwd=ROOT)).hexdigest(),
-              'sourceSha256': {p: sha(ROOT / p) for p in SOURCES}, 'cases': selected,
+              'sourceSha256': {p: sha(ROOT / p) for p in SOURCES}, 'cases': selected, 'formatsRequested': args.formats.split(','),
               'environment': {'VITE_GEUL_TEST_HOOKS': os.environ.get('VITE_GEUL_TEST_HOOKS'), 'VITE_GEUL_TEST_RHWP_HISTORY': os.environ.get('VITE_GEUL_TEST_RHWP_HISTORY'),
                               'display': os.environ.get('DISPLAY'), 'gtkIm': os.environ.get('GTK_IM_MODULE'), 'syntheticComposition': False}}
-    assert report['environment']['VITE_GEUL_TEST_RHWP_HISTORY'] in (None, '', '0'), 'general history must come from the product registry'
     smoke.APP = os.path.abspath(args.app)
     smoke.DRIVER_LOG = args.out / 'driver.log'
     try:
+        gate.require(report['environment']['VITE_GEUL_TEST_RHWP_HISTORY'] in (None, '', '0'), 'general history must come from the product registry')
+        gate.require(set(selected) <= set(CASES), 'unknown usability case')
         with tempfile.TemporaryDirectory(prefix='geul-t010-usability-') as scratch:
             args.fixtures = Path(scratch) / 'fixtures'
             subprocess.run(['node', str(ROOT / 'tests/fixtures/rhwp/generate.mjs'), str(args.fixtures)], check=True, capture_output=True)
             report['fixtureSha256'] = {p.name: sha(p) for p in sorted(args.fixtures.glob('basic-ko.hwp*'))}
             report['complexSha256'] = {str(p.relative_to(ROOT)): sha(p) for p in COMPLEX}
-            with tempfile.TemporaryDirectory(prefix='geul-t010-usability-data-') as data, smoke.tauri_driver(args.driver, args.port, data) as start:
+            with tempfile.TemporaryDirectory(prefix='geul-t010-usability-data-') as data, lifecycle.driver(smoke, args.driver, args.port, data, report) as start:
                 d = start()
                 try:
                     smoke.wait_until(d, "return document.querySelector('.document-bar')!==null", timeout=60)
@@ -578,16 +600,16 @@ def main():
                             print(json.dumps({k: report['scenarios'][-1].get(k) for k in ('format', 'case', 'status', 'error', 'seconds')}, ensure_ascii=False), flush=True)
                 finally:
                     smoke.end_session(d)
-        failed = [r for r in report.get('scenarios', []) if r['status'] != 'PASS']
-        report['status'] = 'PASS' if not failed and report.get('scenarios') else 'FAIL'
+        report['status'] = 'PENDING'
     except Exception as error:
         report.update(status='FAIL', error=f'{type(error).__name__}: {error}', trace=traceback.format_exc())
     finally:
-        report['teardown'] = smoke.TEARDOWN
+        report['acceptance'] = gate.verdict(gate.usability, report, args.formats.split(','), selected)
+        gate.pending_cleanup(report)
         report['summary'] = {f"{r['format']}:{r['case']}": {'status': r['status'], 'checks': len(r['checks']), 'failed': [c['name'] for c in r['checks'] if c['status'] != 'PASS']} for r in report.get('scenarios', [])}
         (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'status': report['status'], 'summary': report['summary'], 'error': report.get('error')}, ensure_ascii=False, indent=2))
-    return 0 if report['status'] == 'PASS' else 1
+    return 0 if report['status'] in ('PASS', 'PENDING_CLEANUP') else 1
 
 
 if __name__ == '__main__':

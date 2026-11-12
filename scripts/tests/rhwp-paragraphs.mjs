@@ -2,6 +2,7 @@
 // Independent saved-file oracle: opens HWP/HWPX files with the hash-verified RHWP Release generation
 // (public/rhwp/RELEASE.json) outside the application and prints every body paragraph.
 //   node scripts/tests/rhwp-paragraphs.mjs FILE...
+import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -14,6 +15,8 @@ const sha = (path) => createHash("sha256").update(readFileSync(path)).digest("he
 for (const name of ["rhwp.js", "rhwp_bg.wasm"]) {
   if (sha(join(folder, name)) !== pointer.artifacts[name]) throw new Error(`Release artifact hash mismatch: ${name}`);
 }
+const metadata = JSON.parse(readFileSync(join(folder, "BUILD.json"), "utf8"));
+if (!isDeepStrictEqual(metadata, pointer) || pointer.profile !== "release") throw new Error("Release metadata mismatch");
 const engine = createRequire(import.meta.url)(join(folder, "rhwp.js"));
 engine.initSync({ module: readFileSync(join(folder, "rhwp_bg.wasm")) });
 const files = process.argv.slice(2).map((file) => {
@@ -27,4 +30,4 @@ const files = process.argv.slice(2).map((file) => {
     return { file, sha256: sha(file), format: doc.getSourceFormat(), pages: doc.pageCount(), paragraphs };
   } finally { doc.free(); }
 });
-process.stdout.write(JSON.stringify({ generation: pointer.generation, wasm: pointer.artifacts["rhwp_bg.wasm"], files }) + "\n");
+process.stdout.write(JSON.stringify({ generation: pointer.generation, wasm: pointer.artifacts["rhwp_bg.wasm"], artifacts: pointer.artifacts, files }) + "\n");

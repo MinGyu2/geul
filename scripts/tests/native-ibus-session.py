@@ -18,6 +18,8 @@ Why each piece exists (diagnosed 2026-11-10, see docs/architecture/clipboard-pre
 - Unix socket paths are limited to 108 bytes, so sockets live in a short private /tmp directory.
 """
 import argparse
+import hashlib
+import uuid
 import contextlib
 import glob
 import json
@@ -72,6 +74,7 @@ def tool(env_name, pattern, required):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--out', required=True)
+    p.add_argument('--acceptance-report', type=Path, help='finalize a T010 result only after launcher cleanup')
     p.add_argument('--hangul-initial-mode', choices=['latin', 'hangul'],
                    help='override only this private session schema default; never writes user settings')
     p.add_argument('--hangul-disable-latin', action='store_true',
@@ -147,7 +150,11 @@ def main():
         compiler = shutil.which('glib-compile-schemas') or store('*-glib-*-dev', ['bin/glib-compile-schemas']) + '/bin/glib-compile-schemas'
         subprocess.run([compiler, '--strict', str(schemas)], env=env, check=True)
         env['GSETTINGS_SCHEMA_DIR'] = str(schemas)
-    identity = {'work': str(work), 'ibus': ibus, 'ibusHangul': hangul, 'dconf': dconf, 'xvfb': xvfb,
+    run_id = uuid.uuid4().hex
+    argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
+    command_hash = hashlib.sha256(json.dumps(argv).encode()).hexdigest()
+    env['GEUL_NATIVE_RUN_ID'] = run_id
+    identity = {'runId': run_id, 'commandSha256': command_hash, 'acceptanceReport': str(args.acceptance_report.resolve()) if args.acceptance_report else None, 'work': str(work), 'ibus': ibus, 'ibusHangul': hangul, 'dconf': dconf, 'xvfb': xvfb,
                 'xdotool': xdotool, 'dbusDaemon': dbus_daemon, 'imModule': ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so',
                 'privateHangulInitialMode': args.hangul_initial_mode,
                 'privateHangulDisableLatin': args.hangul_disable_latin}
@@ -192,7 +199,6 @@ def main():
             return 2
         subprocess.run([ibus + '/bin/ibus', 'engine', 'xkb:us::eng'], env=env, check=True, timeout=30)
         env['GEUL_NATIVE_SESSION_REPORT'] = str(out / 'session.json')
-        argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
         code = subprocess.run(argv, env=env).returncode
     finally:
         # Snapshot every test-owned process (pid + start time) before teardown; only these are touched.
@@ -225,7 +231,7 @@ def main():
                     os.kill(pid, signal.SIGTERM if time.monotonic() < deadline - 2 else signal.SIGKILL)
             time.sleep(.1)
         survivors = sorted(set(descendants(os.getpid())) | set(alive))
-        cleanup = {'exit': code, 'subreaper': subreaper, 'ownedAtTeardown': len(owned),
+        cleanup = {'runId': run_id, 'commandSha256': command_hash, 'complete': True, 'exit': code, 'subreaper': subreaper, 'ownedAtTeardown': len(owned),
                    'leakedAfterManagedStop': leaked, 'survivors': survivors,
                    'proven': subreaper and not survivors}
         (out / 'cleanup.json').write_text(json.dumps(cleanup) + '\n')
@@ -234,6 +240,23 @@ def main():
             code = code or 3
         shutil.rmtree(sock, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
+    if args.acceptance_report:
+        import t010_acceptance as gate
+        try:
+            report = json.loads(args.acceptance_report.read_text())
+            report['launcherCleanup'] = cleanup
+            report['launcherAcceptance'] = gate.verdict(gate.launcher_cleanup, report, identity, cleanup)
+            # Re-evaluate required child evidence as well, after both lifecycle scopes have ended.
+            inner = gate.verdict(gate.production, report, report.get('expectedIdentity', {})) if 'formats' in report else gate.verdict(gate.usability, report, report.get('formatsRequested'), report.get('cases'))
+            report['status'] = 'PASS' if inner['status'] == 'PASS' and report['launcherAcceptance']['status'] == 'PASS' else 'FAIL'
+            report['acceptance'] = inner
+            pending = args.acceptance_report.with_suffix('.pending.json')
+            pending.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+            pending.replace(args.acceptance_report)
+            code = code or (0 if report['status'] == 'PASS' else 1)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print('ACCEPTANCE FINALIZATION FAILED:', error, file=sys.stderr)
+            code = code or 2
     return code
 
 

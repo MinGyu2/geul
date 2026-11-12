@@ -7,6 +7,9 @@ Run inside scripts/tests/native-ibus-session.py against a protected
 no model text in this build, so every content assertion is made on files saved by the product's own
 save path and reopened outside the app with the hash-verified RHWP Release runtime
 (scripts/tests/rhwp-paragraphs.mjs). Ribbon state, revision and caret come from ordinary DOM attributes.
+
+Final PASS requires native-ibus-session.py --acceptance-report OUT/result.json.
+The child records PENDING_CLEANUP until that launcher proves its own cleanup.
 """
 import argparse
 import hashlib
@@ -19,6 +22,10 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
+
+import t010_acceptance as gate
+import t010_lifecycle as lifecycle
 
 ROOT = Path(__file__).resolve().parents[2]
 for folder in ('tests/e2e', 'tests/integration/rhwp'):
@@ -89,7 +96,10 @@ class Production:
     def paragraphs(self, path):
         out = subprocess.check_output(['node', str(ROOT / 'scripts/tests/rhwp-paragraphs.mjs'), str(path)], text=True)
         value = json.loads(out)
-        self.report['oracleGeneration'] = value['generation']
+        identity = {'generation': value['generation'], 'artifacts': value['artifacts']}
+        gate.require(identity == {'generation': self.args.expected['release']['generation'], 'artifacts': self.args.expected['release']['artifacts']}, 'oracle Release mismatch')
+        self.report['oracleGeneration'] = value['generation']  # legacy report consumer
+        self.report['oracleIdentity'] = identity
         return value['files'][0]['paragraphs']
 
     def save(self, path, label, expected_first):
@@ -97,8 +107,9 @@ class Production:
         copy = self.args.out / f'{self.row["format"]}-{label}{path.suffix}'
         shutil.copyfile(path, copy)
         paragraphs = self.paragraphs(copy)
-        self.row['saves'].append({'label': label, 'result': {k: result.get(k) for k in ('state', 'synced', 'changedSince')}, 'sha256': sha(copy), 'first': paragraphs[0], 'paragraphs': len(paragraphs)})
+        self.row['saves'].append({'label': label, 'result': {k: result.get(k) for k in ('state', 'synced', 'changedSince')}, 'sha256': sha(copy), 'first': paragraphs[0], 'restSha256': hashlib.sha256(json.dumps(paragraphs[1:], ensure_ascii=False).encode()).hexdigest(), 'paragraphs': len(paragraphs)})
         self.check(f'{label}: saved file reopened outside the app holds expected text', paragraphs[0] == expected_first and paragraphs[1:] == self.rest, [paragraphs[0], expected_first])
+        self.row['saves'][-1]['verified'] = True
         return paragraphs
 
     def press(self, how, direction):
@@ -119,10 +130,13 @@ class Production:
         source = self.args.fixtures / f'basic-ko.{fmt}'
         original = self.paragraphs(source)
         t0, self.rest = original[0], original[1:]
+        self.report.setdefault('fixtureOracle', {})[fmt] = {'first': t0, 'restSha256': hashlib.sha256(json.dumps(self.rest, ensure_ascii=False).encode()).hexdigest()}
         path = self.args.out / f'prod-{fmt}.{fmt}'
         shutil.copyfile(source, path)
         a.open(fmt, path)
-        self.check('product build: test-only text hook absent', d.js('return !document.querySelector("[data-testid=rhwp-status]").hasAttribute("data-paragraph-text")'))
+        absent = d.js('return !document.querySelector("[data-testid=rhwp-status]").hasAttribute("data-paragraph-text")')
+        self.report['testHooksAbsent'] = self.report['testHooksAbsent'] and absent
+        self.check('product build: test-only text hook absent', absent)
         self.check('product build: no advanced-only history notice', '글자 입력' not in d.js('return document.querySelector("[data-testid=rhwp-status]").textContent'))
         self.focus_start(); a.engine('xkb:us::eng')
         d.js('window.__pEvents=[]')
@@ -156,7 +170,7 @@ class Production:
         rev = st['localRevision']; a.key('ctrl+y'); self.idle()
         self.check('Ctrl+Y on invalidated branch is a no-op', self.state()['localRevision'] == rev)
         self.save(path, 'branch', 'Alpha Z' + t0)
-        assert rhwp.close_tab(d, path.name), 'saved document asked to discard'
+        gate.require(rhwp.close_tab(d, path.name), 'saved document asked to discard')
         a.open_native(fmt, path)
         st = self.state()
         self.check('reopened document: fresh session without history', st['localRevision'] == '0' and st['dirty'] == 'false' and st['undo']['disabled'] and st['redo']['disabled'], st)
@@ -181,8 +195,8 @@ class Production:
         self.check('second document keeps its own Redo after switching', not st['redo']['disabled'], st['redo'])
         self.focus_start(); self.press('ctrl+y', 'redo')
         self.save(other, 'switch-b-redo', 'b' + t0)
-        assert rhwp.close_tab(d, other.name)
-        assert rhwp.close_tab(d, path.name)
+        gate.require(rhwp.close_tab(d, other.name), 'second document did not close')
+        gate.require(rhwp.close_tab(d, path.name), 'first document did not close')
         self.row['events'] = d.js('return window.__pEvents.length')
         self.check('all observed editor input events trusted', all(e['trusted'] for e in d.js('return window.__pEvents')))
         self.row['status'] = 'PASS'
@@ -195,30 +209,49 @@ def main():
     parser.add_argument('--xdotool', required=True)
     parser.add_argument('--ibus', required=True)
     parser.add_argument('--app-sha256', required=True)
+    parser.add_argument('--build-evidence', type=Path, default=ROOT / 'dist/frontend-build.json', help='trusted build-time evidence; must match embedded frontend')
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
-    report = {'status': 'RUNNING', 'scope': 'normal embedded product build; native X11/IBus; actual save service; saved files read by the Release runtime outside the app',
-              'appSha256': sha(args.app), 'harnessSha256': sha(__file__), 'oracleSha256': sha(ROOT / 'scripts/tests/rhwp-paragraphs.mjs'),
+    report = {'runId': os.environ.get('GEUL_NATIVE_RUN_ID') or uuid.uuid4().hex, 'status': 'RUNNING', 'scope': 'normal embedded product build; native X11/IBus; actual save service; saved files read by the Release runtime outside the app',
+              'appSha256': sha(args.app), 'harnessSha256': sha(__file__), 'validatorSha256': {n: sha(ROOT / 'scripts/tests' / n) for n in ('t010_acceptance.py', 't010_lifecycle.py', 'native-ibus-session.py')}, 'oracleSha256': sha(ROOT / 'scripts/tests/rhwp-paragraphs.mjs'),
               'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'sourceDiffSha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src'], cwd=ROOT)).hexdigest(),
               'testFlagsInEnvironment': sorted(k for k in os.environ if k.startswith('VITE_GEUL_TEST_'))}
-    assert report['appSha256'] == args.app_sha256, 'app identity mismatch'
-    args.fixtures = args.out / 'fixtures'
-    subprocess.run(['node', str(ROOT / 'tests/fixtures/rhwp/generate.mjs'), str(args.fixtures)], check=True, capture_output=True)
-    report['fixtureSha256'] = {p.name: sha(p) for p in sorted(args.fixtures.glob('basic-ko.hwp*'))}
     smoke.APP = str(args.app); smoke.DRIVER_LOG = str(args.out / 'driver.log')
-    code = 1
     try:
-        with smoke.tauri_driver(str(args.driver), 4444, str(args.out / 'data')) as start:
+        # Trusted inputs are captured before reading anything from the application under test.
+        args.expected = {'appSha256': args.app_sha256,
+                         'release': json.loads((ROOT / 'public/rhwp/RELEASE.json').read_text()),
+                         'frontendBuild': json.loads(args.build_evidence.read_text())}
+        report['expectedIdentity'] = args.expected
+        gate.release(args.expected['release'], args.expected['release'])
+        gate.require(report['appSha256'] == args.app_sha256, 'app identity mismatch')
+        gate.require(report['testFlagsInEnvironment'] == [], 'unexpected VITE_GEUL_TEST_* runtime environment')
+        gate.require(args.expected['frontendBuild']['testFlags'] == {} and args.expected['frontendBuild']['mode'] == 'production', 'test-only/non-production frontend build')
+        args.fixtures = args.out / 'fixtures'
+        subprocess.run(['node', str(ROOT / 'tests/fixtures/rhwp/generate.mjs'), str(args.fixtures)], check=True, capture_output=True)
+        report['fixtureSha256'] = {p.name: sha(p) for p in sorted(args.fixtures.glob('basic-ko.hwp*'))}
+        with lifecycle.driver(smoke, str(args.driver), 4444, str(args.out / 'data'), report) as start:
             d = start()
             try:
                 smoke.wait_until(d, 'return !!document.querySelector(".document-bar")', timeout=60)
                 report['location'] = d.js('return location.href')
-                assert not report['location'].startswith('http://localhost'), 'dev-URL app is not the product build'
-                d.js("window.__pId=null;fetch('/rhwp/BUILD.json').then(r=>r.json()).then(v=>window.__pId=v)")
-                smoke.wait_until(d, 'return window.__pId!==null')
-                report['rhwpIdentity'] = d.js('return window.__pId')
-                report['testTraceAbsent'] = d.js('return typeof window.__geulTrace==="undefined"')
+                # All bytes are fetched from the actual embedded origin, not the local dist directory.
+                value = base.Acceptance(args, d, report).async_js("""
+                  const hash=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b))).map(x=>x.toString(16).padStart(2,'0')).join('');
+                  const get=async p=>{const r=await fetch(p);if(!r.ok)throw Error('fetch '+p+': '+r.status);return r};
+                  const build=await(await get('/frontend-build.json')).json();
+                  const identity=await(await get('/rhwp/BUILD.json')).json();
+                  const assets={},artifacts={};
+                  for(const p of Object.keys(arguments[0].frontendBuild.assets))assets[p]=await hash(await(await get('/'+p)).arrayBuffer());
+                  for(const n of ['rhwp.js','rhwp_bg.wasm'])artifacts[n]=await hash(await(await get('/rhwp/generations/'+arguments[0].release.generation+'/'+n)).arrayBuffer());
+                  const entrypoints=[...document.querySelectorAll('script[src],link[rel=stylesheet][href]')].map(e=>e.getAttribute(e.tagName==='SCRIPT'?'src':'href')).sort();
+                  return {frontendBuild:build,frontendAssetHashes:assets,frontendEntrypoints:entrypoints,rhwpIdentity:identity,servedArtifactHashes:artifacts};
+                """, args.expected)
+                gate.require(value.get('ok') is True, 'embedded identity fetch failed: ' + str(value))
+                report.update(value['value'])
+                report['testTraceAbsent'] = d.js('return typeof window.__geulTrace==="undefined" && typeof window.__geulTraceRecord==="undefined"')
+                report['testHooksAbsent'] = d.js('return typeof window.__geulPerf==="undefined"')
                 p = Production(args, d, report)
                 p.calibrate()
                 for fmt in ('hwp', 'hwpx'):
@@ -235,17 +268,17 @@ def main():
                                     time.sleep(0.5)
                                     d.js("document.querySelector('[data-testid=discard-confirm]')?.click()")
                     (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
-                report['status'] = 'PASS' if all(r['status'] == 'PASS' for r in report['formats']) and report['testTraceAbsent'] else 'FAIL'
-                code = 0 if report['status'] == 'PASS' else 1
+                report['status'] = 'PENDING'
             finally:
                 smoke.end_session(d)
     except Exception as error:
         report.update(status='FAIL', error=f'{type(error).__name__}: {error}', trace=traceback.format_exc())
-    report['teardown'] = smoke.TEARDOWN
+    report['acceptance'] = gate.verdict(gate.production, report, getattr(args, 'expected', {}))
+    gate.pending_cleanup(report)
     report['summary'] = {r['format']: {'status': r['status'], 'checks': len(r['checks']), 'saves': len(r['saves']), 'error': r.get('error')} for r in report.get('formats', [])}
     (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'status': report['status'], 'summary': report['summary'], 'error': report.get('error')}, ensure_ascii=False, indent=2))
-    return code
+    return 0 if report['status'] in ('PASS', 'PENDING_CLEANUP') else 1
 
 
 if __name__ == '__main__':

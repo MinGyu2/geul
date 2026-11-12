@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { frontendBuildIdentity } from "./scripts/frontendBuildIdentity.ts";
 import { rhwpGenerationPlugin } from "./scripts/rhwpAssets.ts";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
@@ -11,7 +12,7 @@ const { version } = JSON.parse(readFileSync(new URL("./package.json", import.met
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [react(), rhwpGenerationPlugin()],
+  plugins: [react(), rhwpGenerationPlugin(), frontendBuildIdentity()],
   define: { __APP_VERSION__: JSON.stringify(version) },
   clearScreen: false,
   // Scan the product entry only. external/ includes independent studio HTML
