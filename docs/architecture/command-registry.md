@@ -973,3 +973,7 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 ## 핵심 삽입 명령 — 2026-11-10
 
 `insert.table`, `insert.image`, `paragraph.bullets`는 capability→활성 세션→기존 변경 queue로 연결했다. 실제 엔진 기능과 DOCX/HWPX 저장 계약, 선택 제한, 비활성 HWP 경계 및 최신 검증 결과는 [핵심 삽입 기능](core-insertions.md)을 따른다. T010 전체 상태나 RHWP 일반 Undo/Redo 판정은 변경하지 않는다. Linux native GUI 수용은 NOT RUN이다.
+
+## RHWP 일반 글자 서식 — 2026-11-12
+
+제품 일반 빌드의 HWP/HWPX 굵게·기울임·밑줄·취소선 capability, 실행 조건과 선택 제한은 [RHWP 일반 글자 서식](rhwp-general-formatting.md)을 따른다. 기존 키보드 단축키와 취소선 리본 연결을 유지한다. 이 구현 기록은 전체 Stage 5/6 acceptance나 T010 전체 판정으로 확대하지 않는다.

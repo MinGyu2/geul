@@ -1,0 +1,53 @@
+diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
+--- a/src/document_core/commands/char_shape_compact.rs
++++ b/src/document_core/commands/char_shape_compact.rs
+@@ -494,6 +494,32 @@
+         self.document.doc_info.raw_stream_dirty = true;
+         self.rebuild_derived_state();
+         Ok("{\"ok\":true}".into())
++    }
++
++    /// General formatting derives new definitions without raw payloads. Refuse a
++    /// source whose opaque bytes cannot be reproduced by the existing serializer.
++    /// Original definitions remain untouched; T009 still checks the whole output.
++    pub fn can_format_characters_native(&self) -> bool {
++        use crate::parser::FileFormat;
++        use crate::serializer::char_shape::serialize_char_shape;
++        match self.source_format {
++            FileFormat::Hwpx => true,
++            FileFormat::Hwp => self.document.doc_info.char_shapes.iter().all(|cs| {
++                cs.raw_data.as_ref().is_none_or(|raw| *raw == serialize_char_shape(cs))
++            }) && self.document.sections.iter().all(|section| {
++                // An edit reconstructs its section. Opaque owner subtrees and
++                // range annotations have no general-formatting preservation proof.
++                // Capture this read-only source eligibility at load, before typing
++                // invalidates raw streams; the session owns that load generation.
++                section.raw_stream.as_ref().is_some_and(|raw| {
++                    crate::parser::record::Record::read_all(raw).is_ok_and(|records| {
++                        records.iter().all(|r| (66..=85).contains(&r.tag_id)
++                            && (r.tag_id != 70 || r.data.is_empty()))
++                    })
++                })
++            }),
++            _ => false,
++        }
+     }
+ 
+     /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7185,6 +7185,13 @@
+     ) -> Result<String, JsValue> {
+         self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
+             .map_err(|e| e.into())
++    }
++
++    /// [geul] Whether deriving character shapes can preserve this document's
++    /// source properties. Read-only; not a substitute for original preflight.
++    #[wasm_bindgen(js_name = canFormatCharacters)]
++    pub fn can_format_characters(&self) -> bool {
++        self.can_format_characters_native()
+     }
+ 
+     /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.

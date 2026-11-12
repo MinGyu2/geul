@@ -88,6 +88,8 @@ export interface RhwpDocument {
    * 참조 없는 것을 지우고 참조를 옮기는 정리. 결과 `{ok, before, after, skipped}`. 원본 정의는 바꾸지 않는다. 문서 스냅숏 기록과 함께
    * 서식 변경 안에서 부른다. 이 패치 이전 세대에는 없다.
    */
+  /** Read-only load-time proof: source shapes are reconstructible and HWP body records are understood. */
+  canFormatCharacters?(): boolean;
   charShapeCount?(): number;
   compactAppendedCharShapes?(baseline: number): string;
   captureCharShapePrefix?(): CharShapePrefix;

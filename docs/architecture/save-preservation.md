@@ -1721,3 +1721,7 @@ SIGKILL과 fsync 오류 주입을 그 시험의 대체 PASS로 삼지 않는다.
 새 시험은 기록 해시의 통제된 불일치를 검증하며, ctime 변화 없는 외부 쓰기나 원자적 파일시스템 compare-and-swap을 입증하지 않는다.
 제품 코드는 변경하지 않는다. FR-006·FR-010·SC-004 및 T014 상태와 과거 증거는 변경하지 않으며,
 T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저장·내구성·복구 구현/native 수용이 남아 부분 완료다.
+
+## RHWP 일반 글자 서식 저장 보존 — 2026-11-12
+
+지원 HWP/HWPX character-shape 변경의 original preflight, DocInfo append, 구조·내용 손실, 출력 재열기, preview 재생성, safe publication 및 fail-closed 조건은 [RHWP 일반 글자 서식](rhwp-general-formatting.md)에 기록했다. T009 검사를 낮추지 않았다. focused HWP/HWPX 저장 검증은 통과했으며 전체 Stage 5/6 또는 T014 native acceptance를 뜻하지 않는다.

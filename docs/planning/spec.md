@@ -318,3 +318,7 @@ Acceptance Scenarios:
 ## 핵심 삽입 구현 상태 — 2026-11-10
 
 `insert.table`, `insert.image`, `paragraph.bullets`의 DOCX/HWPX 구현과 HWP 비활성 경계, 검증 상태를 [핵심 삽입 기능 보고](../architecture/core-insertions.md)에 기록했다. Linux native GUI 수용은 NOT RUN이고 HWP 저장 보존은 미완료이므로 전체 성공 기준 완료로 취급하지 않는다.
+
+## RHWP 일반 글자 서식 구현 현황 — 2026-11-12
+
+HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소선을 지원하는 단계 1–4 구현과 focused 테스트 현황은 [RHWP 일반 글자 서식](../architecture/rhwp-general-formatting.md)을 따른다. Stage 5 전체 통합 acceptance와 Stage 6 native 제품 acceptance는 별도 미완료이며 제품 전체 완료나 릴리스 GO를 뜻하지 않는다.

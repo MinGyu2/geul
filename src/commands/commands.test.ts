@@ -82,11 +82,11 @@ describe("명령 레지스트리", () => {
     expect(new Set(ribbon).size).toBe(ribbon.length);
   });
 
-  it("엔진별 지원: rhwp 실행 취소·다시 실행은 일반 기록으로 지원(시험 flag 없이), 서식은 계속 미지원", () => {
+  it("엔진별 지원: rhwp 실행 취소·다시 실행은 일반 기록으로 지원(시험 flag 없이), 선택 서식도 시험 flag 없이 지원", () => {
     const supported = (engine: "rhwp" | "wordcraft") =>
       DOCUMENT_IDS.filter((id) => commandDefinition(id)!.engines![engine].level === "supported");
     expect(supported("wordcraft")).toEqual(DOCUMENT_IDS);
-    expect(supported("rhwp")).toEqual(["edit.undo", "edit.redo", "file.save"]);
+    expect(supported("rhwp")).toEqual(DOCUMENT_IDS);
     expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported" });
     expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported" });
   });

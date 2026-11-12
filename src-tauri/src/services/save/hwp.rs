@@ -732,8 +732,8 @@ const CHAR_SHAPE_SPACINGS: std::ops::Range<usize> = 21..28;
 /// `CHAR_SHAPE` 바로 뒤에 끼운 `CHAR_SHAPE` 하나뿐이고 나머지 레코드는 바이트까지 같다. 그래서 다음을 모두 요구한다.
 /// - 원본 `CHAR_SHAPE` 레코드는 이어져 있고, 출력 = 원본 앞부분 + 같은 수준의 새 `CHAR_SHAPE` k개(k ≥ 1) + 원본 뒷부분.
 /// - `ID_MAPPINGS`는 길이·나머지 바이트가 같고 글자 모양 수만 정확히 k만큼 늘었다. 그 밖의 레코드는 같다(문서 속성 캐럿만 예외).
-/// - 새 레코드마다 같은 길이의 **원본** 글자 모양 하나와 장평·자간 14바이트 밖이 모두 같고, 장평 7개는 같은 값 50–200, 자간 7개는
-///   같은 값 −50–50이다(앱이 쓰는 값 — 굵게 등 다른 속성 변경은 받지 않음).
+/// - 새 레코드마다 같은 길이의 **원본** 글자 모양 하나에서 일반 네 서식과 장평·자간만 파생된다.
+///   변경한 장평은 7개 같은 값 50–200, 자간은 7개 같은 값 −50–50이다. 다른 속성과 알 수 없는 비트는 보존한다.
 ///
 /// 새 모양이 모두 본문에서 쓰이는지는 `appended_char_shapes_referenced`가 따로 본다.
 fn docinfo_char_shapes_appended(
@@ -754,23 +754,11 @@ fn docinfo_char_shapes_appended(
     let level = before[first].1;
     let originals = &before[first..=last];
     let inserted = &after[last + 1..last + 1 + k];
-    let metric = |data: &[u8], range: std::ops::Range<usize>, ok: &dyn Fn(u8) -> bool| {
-        data.get(range)
-            .is_some_and(|v| v.iter().all(|b| *b == v[0]) && ok(v[0]))
-    };
     let valid = |r: &Record<'_>| {
         r.0 == TAG_CHAR_SHAPE
             && r.1 == level
             && matches!(r.2.len(), 68 | 70 | 74)
-            && metric(r.2, CHAR_SHAPE_RATIOS, &|v| (50..=200).contains(&v))
-            && metric(r.2, CHAR_SHAPE_SPACINGS, &|v| {
-                (-50..=50).contains(&(v as i8))
-            })
-            && originals.iter().any(|o| {
-                o.2.len() == r.2.len()
-                    && o.2[..CHAR_SHAPE_RATIOS.start] == r.2[..CHAR_SHAPE_RATIOS.start]
-                    && o.2[CHAR_SHAPE_SPACINGS.end..] == r.2[CHAR_SHAPE_SPACINGS.end..]
-            })
+            && originals.iter().any(|o| derived_char_shape(o.2, r.2))
     };
     if !inserted.iter().all(valid) {
         return None;
@@ -798,6 +786,40 @@ fn docinfo_char_shapes_appended(
     (rest_same && id_mappings == 1).then_some((positions.len(), k))
 }
 
+/// A derived definition may change only the four general flags and the existing T012
+/// metrics. All fonts, sizes, colors, decoration shapes, unknown bits and trailing bytes
+/// remain owned by one original definition. Existing nonuniform metrics are preserved.
+fn derived_char_shape(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() || a.len() < 68 {
+        return false;
+    }
+    let metric = |range: std::ops::Range<usize>, min: i16, max: i16, signed: bool| {
+        let old = &a[range.clone()];
+        let new = &b[range];
+        old == new
+            || (new.iter().all(|v| *v == new[0]) && {
+                let v = if signed {
+                    i16::from(new[0] as i8)
+                } else {
+                    i16::from(new[0])
+                };
+                (min..=max).contains(&v)
+            })
+    };
+    let attr = |d: &[u8]| u32::from_le_bytes(d[46..50].try_into().unwrap());
+    let (old, new) = (attr(a), attr(b));
+    let flags = 0x0f | (7 << 18);
+    let underline = |v: u32| (v >> 2) & 3;
+    let strike = |v: u32| (v >> 18) & 7;
+    a[..14] == b[..14]
+        && metric(CHAR_SHAPE_RATIOS, 50, 200, false)
+        && metric(CHAR_SHAPE_SPACINGS, -50, 50, true)
+        && a[28..46] == b[28..46]
+        && old & !flags == new & !flags
+        && (underline(new) == underline(old) || matches!(underline(new), 0 | 1))
+        && (strike(new) == strike(old) || strike(new) == 0 || strike(new) == strike(old).max(2))
+        && a[50..] == b[50..]
+}
 /// `ID_MAPPINGS`가 글자 모양 수만 `k`만큼 늘고 나머지 바이트는 같은지.
 fn id_mappings_grew(a: &[u8], b: &[u8], k: usize) -> bool {
     let at = ID_MAPPINGS_CHAR_SHAPES_AT;
@@ -1694,5 +1716,55 @@ mod id_mapping_tests {
         original.push(0);
         longer[40] = 1;
         assert!(!id_mappings_grew(&original, &longer, 1));
+    }
+}
+
+#[cfg(test)]
+mod general_format_tests {
+    use super::derived_char_shape;
+
+    #[test]
+    fn general_flags_preserve_all_other_shape_bytes() {
+        let mut original = vec![0; 74];
+        original[14..21].copy_from_slice(&[80, 90, 100, 110, 120, 130, 140]);
+        for flag in [1, 2, 4, 2 << 18, 1 | 2 | 4 | (2 << 18)] {
+            let mut next = original.clone();
+            next[46..50].copy_from_slice(&u32::to_le_bytes(flag));
+            assert!(derived_char_shape(&original, &next));
+            assert!(derived_char_shape(&next, &original));
+            for at in [0, 28, 42, 50, 52, 56, 60, 64, 68, 70, 73] {
+                let mut damaged = next.clone();
+                damaged[at] ^= 1;
+                assert!(!derived_char_shape(&original, &damaged), "byte {at}");
+            }
+            let mut unknown_attr = next.clone();
+            unknown_attr[48] ^= 0x80;
+            assert!(!derived_char_shape(&original, &unknown_attr));
+        }
+        let mut changed_metrics = original.clone();
+        changed_metrics[14..21].fill(150);
+        changed_metrics[21..28].fill((-20_i8) as u8);
+        changed_metrics[46] = 3;
+        assert!(derived_char_shape(&original, &changed_metrics));
+        changed_metrics[15] = 151;
+        assert!(!derived_char_shape(&original, &changed_metrics));
+    }
+
+    #[test]
+    fn decoration_variants_are_preserved_or_explicitly_toggled() {
+        let mut original = vec![0; 74];
+        let attr = 3_u32 << 2 | 5 << 18 | 7 << 4 | 4 << 26;
+        original[46..50].copy_from_slice(&attr.to_le_bytes());
+        let mut next = original.clone();
+        next[46..50].copy_from_slice(&(attr | 3).to_le_bytes());
+        assert!(derived_char_shape(&original, &next));
+        for invalid in [
+            attr ^ (1 << 4),
+            attr ^ (1 << 26),
+            (attr & !(7 << 18)) | (3 << 18),
+        ] {
+            next[46..50].copy_from_slice(&invalid.to_le_bytes());
+            assert!(!derived_char_shape(&original, &next));
+        }
     }
 }

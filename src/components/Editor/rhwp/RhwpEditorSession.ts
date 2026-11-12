@@ -38,9 +38,8 @@ import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClip
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
 // - 명령(T010, src/commands/): 저장(save())과 실행 취소·다시 실행(undo()·redo(), T010 Phase 2). 고정 rhwp에는 엔진이 가진 실행 취소
 //   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
-//   조정한다(문서 모델은 하나). 기록은 레지스트리가 rhwp 실행 취소를 지원으로 두는 빌드(지금은 시험 활성화 빌드)에서만 켠다: 제품
-//   빌드는 쓸 수 없는 실행 취소를 위해 그룹 시작마다 스냅숏을 찍거나 붙들지 않는다(세션 선택 `history`로 시험이 명시할 수 있음).
-//   글자 서식은 보존 검사가 저장을 막으므로 받지 않는다.
+//   조정한다(문서 모델은 하나). 일반 기록과 선택 글자 서식은 제품 capability이며 실제 세션의 IME·기록·소유권·원본 보존 조건으로
+//   가용성을 정한다. HWP는 원본 문자 모양을 파생 직렬화할 수 있어야 한다. 저장은 T009 전체 검증을 다시 통과해야 한다.
 import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
@@ -218,7 +217,7 @@ const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
     return support?.level === "supported" && support.historyScope !== "advanced";
   });
 
-/** 레지스트리가 rhwp 글자 서식을 지원으로 선언했는지(시험 활성화 빌드만 — registry.ts `RHWP_FORMAT`). */
+/** 레지스트리가 rhwp 글자 서식을 지원으로 선언했는지(제품 capability — registry.ts `RHWP_FORMAT`). */
 const RHWP_FORMAT_DECLARED = (["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const)
   .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
 
@@ -585,10 +584,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.doc = doc;
     this.hwpBaseline = null;
     this.hwpOriginal = null;
+    this.formatSourceCache = { key: String(epoch), safe: false };
     try {
       if (doc.getSourceFormat() === "hwp") {
         const { structure, complete } = hwpReopenModel(doc);
         this.hwpBaseline = { structure, complete };
+        // Immutable original-document eligibility: ordinary edits may discard the
+        // engine's raw section streams. Never infer source safety from edited IR.
+        this.formatSourceCache.safe = doc.canFormatCharacters?.() === true;
       }
     } catch { /* no baseline: export requires fresh evidence and structural commands stay unavailable */ }
     this.text = text;
@@ -1916,37 +1919,45 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return { accepted: applied };
   }
 
+  private formatSourceCache: { key: string; safe: boolean } | null = null;
   private formatCache: { key: string; value: Readonly<Record<CharFormatFlag, boolean>> | null } | null = null;
 
-  /**
-   * 선택의 글자 서식(T010 서식). 다음이 모두 맞을 때만 값을 낸다 — 아니면 null이라 서식 명령은 막힌다(fail closed):
-   * 서식 명령을 받는 빌드, HWPX(HWP는 글자 모양이 DocInfo를 바꾸고 미리보기가 낡아 T009 저장이 거부), 편집 가능, IME 트랜잭션 없음,
-   * 실행 취소 기록이 켜짐(서식도 되돌릴 수 있어야 함), 같은 문맥의 선택이 있음(빈 커서의 "다음 입력 서식"은 지원하지 않음).
-   * 눌림 상태는 선택 첫 글자의 서식이다. 모델 판·선택이 같으면 다시 읽지 않는다.
-   */
+  /** Full-selection state; runtime checks are shared by ribbon, shortcuts and execution.
+   * HWP additionally requires a complete reopen baseline and a SAFE owned original preflight. */
   private formatState(): Readonly<Record<CharFormatFlag, boolean>> | null {
     if (!(this.options.format ?? RHWP_FORMAT_DECLARED)) return null;
-    if (this.sessions.get(this.sessionId)?.format !== "hwpx") return null;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwp" && format !== "hwpx") return null;
+    if (this.sessions.snapshot().activeId !== this.sessionId) return null;
+    if (format === "hwp") {
+      if (!this.structuralFormat()) return null;
+      if (this.formatSourceCache?.key !== String(this.epoch) || !this.formatSourceCache.safe) return null;
+    }
     if (!this.editable || !this.doc || !this.text || !this.history || this.imeUnsettled) return null;
+    if (this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return null;
+    if (!this.text.hasCharShapeOwnership || !this.doc.compactAppendedCharShapes
+      || !this.doc.capturePublishingCharShapePrefix || !this.doc.reconcileCharShapePrefix) return null;
     if (!this.hasSelection || !sameContext(this.anchor, this.caret)) return null;
-    const [from] = this.ordered();
-    const key = `${this.modelVersion}|${RhwpEditorSession.positionKey(this.anchor)}|${RhwpEditorSession.positionKey(this.caret)}`;
-    if (this.formatCache?.key !== key) this.formatCache = { key, value: this.text.charFormat(from) };
+    const [from, to] = this.ordered();
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(this.anchor)}|${RhwpEditorSession.positionKey(this.caret)}`;
+    if (this.formatCache?.key !== key) this.formatCache = { key, value: this.text.formatSelection(from, to)?.state ?? null };
     return this.formatCache.value;
   }
 
   /**
-   * 선택에 글자 서식을 켜거나 끈다(첫 글자가 이미 그 서식이면 끔). 한 변경·한 실행 취소 단계다: 앞뒤 타자 그룹과 섞이지 않게
+   * 선택 전체에 글자 서식을 켜거나 끈다(모두 켜져 있을 때만 끔). 한 변경·한 실행 취소 단계다: 앞뒤 타자 그룹과 섞이지 않게
    * 기록 경계를 두고 `mutate`(기록 before 스냅숏 → 엔진 → 확정 대기열 → 다시 그리기)로 바꾼다. 선택은 그대로 둔다.
    */
   private applyFormat(flag: CharFormatFlag): boolean {
     const state = this.formatState();
     if (!state) return false;
     const [from, to] = this.ordered();
+    const apply = this.text!.prepareFlag(from, to, flag);
+    if (!apply) return false;
     const caret = this.caret, anchor = this.anchor;
     this.history?.boundary();
     const applied = this.mutate(() => {
-      this.text!.format(from, to, JSON.stringify({ [flag]: !state[flag] }));
+      apply();
       return { caret, anchor };
     }, true, "other", null, true);
     this.history?.boundary();

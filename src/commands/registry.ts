@@ -63,20 +63,15 @@ const UNSUPPORTED: EngineSupport = { level: "unsupported" };
  * activation flag is no longer required; T012 advanced commands keep their own session-level bounds. */
 const RHWP_HISTORY: EngineSupport = SUPPORTED;
 
-/**
- * 시험 빌드 전용 rhwp 글자 서식(T010 서식): 검사 훅 빌드이면서 `VITE_GEUL_TEST_RHWP_FORMAT=1`일 때만 지원으로 본다(위와 같은 빌드 상수).
- * 세션은 HWPX이고 선택이 있고 실행 취소 기록이 켜져 있을 때만 서식 상태를 내므로 HWP·선택 없음·기록 없음은 계속 막힌다.
- */
-const RHWP_FORMAT: EngineSupport =
-  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_FORMAT === "1"
-    ? (console.info("geul-test-build: rhwp-format-commands"), SUPPORTED)
-    : UNSUPPORTED;
+/** Selected-text formatting is a production capability. Session checks retain selection,
+ * IME/history/API/ownership and original-document preservation requirements. */
+const RHWP_FORMAT: EngineSupport = SUPPORTED;
 
 /**
  * 엔진별 지원(근거: docs/architecture/command-registry.md).
  * - WordCraft: 실행 취소·다시 실행은 엔진(`Session`)의 기록, 글자 서식은 WordCraft `format.*` 명령(Rust 시험·보존 검사 통과).
  * - rhwp: 일반 입력·IME history의 실행 취소·다시 실행(T010 제품 활성화 2026-11-12). 가용성은 세션 기록 상태로 정한다.
- *   일반 굵게·기울임 등의 서식은 여전히 시험 구성 전용이다.
+ *   일반 선택 글자 서식은 HWP/HWPX 세션의 실제 안전 조건으로 판정한다.
  * - 저장은 두 엔진 모두 기존 T009 저장 절차(사전 검사·출력 검사·게시)를 그대로 부른다.
  * - 장평·자간(T012): 독립 제품 capability. HWP/HWPX 단일 문단 선택·실제 문자 모양 ownership API·고급 기록이 필요하다.
  *   WordCraft에는 같은 의미의 명령을 연결하지 않았다.
@@ -96,7 +91,7 @@ const RHWP_FORMAT: EngineSupport =
  *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
 // Production advanced mutations require actual session capabilities and a history transaction
-// within the conditional T012 bounds. General RHWP formatting remains test-only.
+// within the conditional T012 bounds. General formatting uses its own session checks.
 const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {

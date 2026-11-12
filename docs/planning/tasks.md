@@ -292,3 +292,7 @@ Save cleanup exception safety is implemented in local commits `4e3e9b794e9098a32
 IBus 보고서는 실제 앱 바이너리, 제품 소스 내용, 입력 하네스, 제공된 RHWP generation/JS/WASM, WordCraft pin에 연결한다. 형식별 엔진 전환·trusted 조합·초점·문서 소유권과 실제 세션 환경·추적 파일·저장 파일을 검사한다. 경과 시간만으로 증거를 폐기하거나 허용하지 않는다. 재시작은 이전 프로세스 종료와 PID/시작 시각으로 증명한다. 이미지는 DOCX 관계 또는 RHWP 컨트롤을 따라 추출한 바이트를 원래 PNG와 비교한다.
 
 최종 명령은 `python3 scripts/tests/phase5-final-acceptance.py --run <증거 디렉터리>`다. 현재 파일·빌드·단계 결과·독립 구조·두 전용 세션 정리·실제로 검사한 스크린샷의 해시를 다시 검증한다. 보고서 자체 해시는 연결 수단이며 외부 전자서명으로 취급하지 않는다. 상세 명령·해시·제외 범위는 위 closure JSON을 따른다. 생성 문서·이미지·로그는 무시되는 `target/phase5-native-gui-ibus/`에 보존하고 커밋하지 않는다.
+
+## RHWP 일반 글자 서식 구현 단계 1–4 — 2026-11-12
+
+제품 HWP/HWPX 네 가지 선택 글자 서식과 집중 회귀/저장 검증은 [RHWP 일반 글자 서식](../architecture/rhwp-general-formatting.md)을 참조한다. 전체 Stage 5 통합 acceptance와 Stage 6 native 최종 acceptance는 별도 작업이며 미완료다. T010/T012/T013/T014의 전역 상태 및 acceptance 항목은 이 구현 상태로 변경하지 않는다.

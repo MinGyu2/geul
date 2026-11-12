@@ -207,3 +207,7 @@ T021 `6c0356e6ed51f52e60414717ce4439876762f63b` → T022 `3cd35663b98caa736b81c1
 ## 핵심 삽입 기능 부분 완료 — 2026-11-10
 
 표·그림·글머리표의 DOCX/HWPX 명령 및 저장 경계를 구현하고 실엔진 HWPX publication/reopen 검증을 기록했다. HWP는 세 명령이 보존 규칙 미입증으로 비활성이고 Linux native 수용은 NOT RUN이다. 세부 범위·다음 작업은 [핵심 삽입 기능 보고](../architecture/core-insertions.md)를 따른다. 전체 제품 계획 완료로 확대하지 않는다.
+
+## RHWP 일반 글자 서식 단계 1–4 — 2026-11-12
+
+HWP/HWPX 네 가지 선택 서식의 production code path, 저장 보존, history/IME 경계와 focused 증거를 [RHWP 일반 글자 서식](../architecture/rhwp-general-formatting.md)에 기록했다. 이 작업은 full Stage 5 integration acceptance 및 Stage 6 native final acceptance를 완료하지 않으며 그 단계들을 계획 완료로 표시하지 않는다.

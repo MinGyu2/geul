@@ -59,7 +59,7 @@ def validate_identity(identity):
         if not isinstance(integration["sourceTreeSha256"], str) or not HEX256.fullmatch(integration["sourceTreeSha256"]):
             raise ValueError("Invalid patched source tree digest")
         patches = integration["patches"]
-        if not isinstance(patches, list) or not 1 <= len(patches) <= 16:
+        if not isinstance(patches, list) or not 1 <= len(patches) <= 17:
             raise ValueError("Invalid patch series")
         names = set()
         for patch in patches:

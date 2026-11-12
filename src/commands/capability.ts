@@ -89,6 +89,10 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     return unavailable(snapshot.actionReasons?.[id] ?? "engineUnsupported");
   }
   const flag = FORMAT_FLAG[id];
+  if (flag && snapshot.engine === "rhwp") {
+    if (snapshot.pending) return unavailable("pendingEdits");
+    if (snapshot.saving) return unavailable("saving");
+  }
   if (!flag || !snapshot.format) return unavailable("engineUnsupported");
   if (snapshot.formatAccess === "protected") return unavailable("protected");
   return { available: true, pressed: snapshot.format[flag] };

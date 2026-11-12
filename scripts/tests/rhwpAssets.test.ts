@@ -38,6 +38,11 @@ describe("RHWP profile contract through Vite",()=>{
     const sign = (v: BuildIdentity) => {v.generation=hash(canonical(Object.fromEntries(Object.entries(v).filter(([k])=>k!=="generation")))+"\n");};
     sign(item.identity); install(p,item); await build(options(p));
     expect(JSON.parse(readFileSync(join(p,"dist/rhwp/BUILD.json"),"utf8"))).toEqual(item.identity);
+    const full = structuredClone(item.identity);
+    full.integration!.patches = Array.from({ length: 17 }, (_, i) => ({ name: `managed-${i}.patch`, sha256: "5".repeat(64) }));
+    sign(full); await expect(identityFrom(full)).resolves.toEqual(full);
+    full.integration!.patches.push({ name: "overflow.patch", sha256: "5".repeat(64) });
+    sign(full); await expect(identityFrom(full)).rejects.toThrow("source identity");
     const changed = structuredClone(item.identity); changed.integration!.patches[0]!.sha256="6".repeat(64);
     await expect(identityFrom(changed)).rejects.toThrow("generation");
     for (const mutate of [

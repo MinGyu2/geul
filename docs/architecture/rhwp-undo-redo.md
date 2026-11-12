@@ -1826,3 +1826,7 @@ IBus 1.5.33, ibus-hangul 1.5.5, Release `53b6ad7a…`, 실제 Tauri/WebKitGTK, X
 ## 2026-11-08 표 수식 기록 경계
 
 실제 Release WASM 세션에서 병합 표 및 지원되는 다중 문단 셀의 수식 변경·Undo/Redo·두 차례 HWP/HWPX 저장/재열기를 검증했다. 논리 좌표는 RHWP 물리 셀·span 메타데이터로 구성하며 덮임 좌표를 앵커 값에 합치지 않는다. 수식은 첫 문단 소유이고 뒤쪽 일반 문단은 보존한다. 알 수 없는 구조는 기록 생성 전에 거부한다. T010 일반 입력 history는 계속 INCOMPLETE다. [지원 범위와 증거](stage567-acceptance-2026-11-05.md#interoperability-repair-20261108).
+
+## RHWP 일반 글자 서식 history 경계 — 2026-11-12
+
+지원 선택 서식은 기존 `RhwpHistory`에 한 논리 변경으로 기록하고 selection/caret 및 character-shape publication prefix를 함께 복구한다. IME composition, pending/uncertain transaction, stale session/generation은 차단한다. 구현 범위와 focused 근거는 [RHWP 일반 글자 서식](rhwp-general-formatting.md)을 따른다. 과거 T010 Undo/Redo 통합 acceptance와 native D2/D4 증거의 상태는 이 addendum으로 변경하지 않는다.
