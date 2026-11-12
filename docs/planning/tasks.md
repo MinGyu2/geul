@@ -1,3 +1,5 @@
+> **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](../architecture/t010-production-activation-2026-11-12.json).
+
 > **Phase 5 — Linux Native GUI + IBus E2E: COMPLETED (2026-11-11).** 사용자 지정 인수 단계 5-1→5-5를 보강된 `geul.phase5.v2` 게이트로 새로 실행했다. 실제 Tauri/X11·Xvfb/IBus에서 DOCX·HWPX·HWP 각각 편집·저장·Save As·닫기·독립 재열기·프로세스 재시작을 통과했다. 필수 시나리오 111 PASS(3/47/18/30/13), 과거 시나리오 재사용 0, 검증기 19 PASS, HWPX 회귀 25 PASS/5 ignored, 생성 회귀 4 PASS/2 ignored. [실행 신원·산출물 해시·범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json). 아래 계획의 “Phase 5: 고급 기능”(T012/T013)과 다른 사용자 지정 단계다. T010/T012/T013/T014/T015/T016의 잔여 조건은 완료로 바꾸지 않는다. 물리 데스크톱·Wayland·외부 Word/Hancom은 NOT RUN.
 
 > **2026-11-12 D2 Option B (전향적 정책):** [지원 환경별 native 안전성 계약](spec.md#t010-d2-supported-runtime-v1)이 종전 무조건적 E→U→F 관측 의무를 대체한다. 원래 predicate·날짜별 결과는 보존하고 E→U→F는 독립 UNVERIFIED로 추적한다. 지원 환경 D2 **PASS**(native 안전 관문25·순서 trial14·추가34), E→U→F **NOT OBSERVED / UNVERIFIED**다. 정확한 범위·신원은 [증거 JSON](../architecture/t010-d2-supported-2026-11-12.json)을 따른다. 정책 변경만으로 PASS가 되지 않는다. T010 INCOMPLETE, 일반 RHWP history NO-GO, D4 성능 TARGET NOT MET 및 기존 수용 범위·T012 제한 유지. 아래 날짜별 이전 결과는 당시 기록이다.
@@ -49,7 +51,7 @@ GitHub 체크박스에 비표준 `[△]`를 쓰지 않고 task 설명에 `△`�
 | T007 | Linux X11/Xvfb·IBus의 HWP/HWPX 기본 입력·커서·표·선택·렌더 및 기록된 IME 지연 | 최신 앱/WASM 변경 영향과 추가 환경은 전체 수용 미완료 | 현 지원 경로의 회귀는 T007, GPU/Wayland/fcitx5/다른 OS·추가 부하/초점 조합은 T016. 실제 변경 경계만 집중 검증 |
 | T008 | WordCraft W-A의 DOCX 기본 편집·IME·raster/hit-test·IPC 근거 | 현재 공통 IME/Workspace 변경 영향 및 추가 환경 전체 미완료 | 현 경로 회귀는 T008, 확장 환경은 T016. RHWP 패치만 바뀌면 DOCX 전체 재실행을 자동 요구하지 않음 |
 | T009 | HWP/HWPX/DOCX 대표 지원 문서 저장·재열기와 안전 거절 | 최신 산출물의 적용 범위 정리·선행 전체 수용 잔여. 모든 외부 문서 저장 보장은 아님 | 대표 지원 범위는 T009, 추가 코퍼스 품질은 T015, 플랫폼은 T016. 새 문서 생성 수용은 T021–T023 |
-| T010 | 기능·안전·자원·재현 가능한 native 실사용성 필수 수용; 성능은 독립 평가 ([새 수용 정책](../planning/spec.md#t010-acceptance-policy-20261112)) | D2 지원 환경 PASS·E→U→F 독립 UNVERIFIED 및 별도 실사용성 증거 공백(2026-11-12: D1/D3/D5 현재 신원 PASS, D4 자원 PASS); 성능 목표 미달은 단독 기능 FAIL 사유 아님 | 필수 증거 공백은 INCOMPLETE, 확인된 안전·정확성 위반은 FAIL. 일반 RHWP history NO-GO와 체크 미완료 유지; 원 D4 목표·결과 보존 |
+| T010 | 기능·안전·자원·재현 가능한 native 실사용성 필수 수용; 성능은 독립 평가 ([새 수용 정책](../planning/spec.md#t010-acceptance-policy-20261112)) | **2026-11-12 PASS/GO**: 모든 필수 차원 최종 소스 재검증·native 실사용성 PASS; E→U→F 독립 UNVERIFIED | 체크 완료, 일반 RHWP history 제품 GO(지원 범위). 원 D4 목표·TARGET NOT MET 결과 보존 ([증거](../architecture/t010-production-activation-2026-11-12.json)) |
 
 ### T011 착수 조건 변경
 
@@ -84,7 +86,7 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
-- [ ] T010 [US3] △ 조건부 개발 / 기능 수용 미완료 — 필수 기능·안전·자원·재현 가능한 native 실사용성 모두 PASS여야 완료 가능. 성능 목표는 독립 보고하며 목표 미달만으로 기능 수용을 FAIL하지 않는다. 2026-11-12 Phase 1에서 D1/D3/D5는 현재 신원 PASS([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)). D4 자원은 Phase 3에서 PASS([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D2는 명시한 지원 환경에서 PASS이며 E→U→F는 독립 NOT OBSERVED / UNVERIFIED로 유지한다. 별도 native 실사용성 근거 공백으로 T010 미완료; D4 지연은 공식 FAIL / TARGET NOT MET로 유지. 일반 RHWP history NO-GO; T012 advanced-only 범위는 기존 승인 그대로 ([정책](../planning/spec.md#t010-acceptance-policy-20261112)).
+- [x] T010 [US3] **기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (2026-11-12, 지원 범위)** — 일반 제품 빌드에서 시험 flag 없이 HWP/HWPX 일반 타자·IME Undo/Redo 활성화. native 실사용성 705검사·제품 빌드 68검사, D1 33/33·D2 지원 환경(25/25·34/34·T011 26/26)·D3 19/19/strict 0·D4 자원 43/43·D5 4/4 최종 소스 재실행 PASS. D4 지연 TARGET NOT MET 독립, E→U→F NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 IM NOT RUN, T012 제한 유지 ([증거](../architecture/t010-production-activation-2026-11-12.json)). 이전 상태: △ 조건부 개발 / 기능 수용 미완료 — 필수 기능·안전·자원·재현 가능한 native 실사용성 모두 PASS여야 완료 가능. 성능 목표는 독립 보고하며 목표 미달만으로 기능 수용을 FAIL하지 않는다. 2026-11-12 Phase 1에서 D1/D3/D5는 현재 신원 PASS([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)). D4 자원은 Phase 3에서 PASS([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D2는 명시한 지원 환경에서 PASS이며 E→U→F는 독립 NOT OBSERVED / UNVERIFIED로 유지한다. 별도 native 실사용성 근거 공백으로 T010 미완료; D4 지연은 공식 FAIL / TARGET NOT MET로 유지. 일반 RHWP history NO-GO; T012 advanced-only 범위는 기존 승인 그대로 ([정책](../planning/spec.md#t010-acceptance-policy-20261112)).
 - [x] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (2026-11-04 완료, 선택 문맥 상황 탭은 빠진 능력으로 숨김 — 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
@@ -157,7 +159,7 @@ T014의 안전 게시·충돌·DOCX 체크포인트·복구는 이미 상당 부
 
 D2는 새 지원 환경 정책으로 native 필수 안전성 PASS이며, E(empty compositionend)→U(native Undo)→F(late final insert)는 독립 NOT OBSERVED / UNVERIFIED다. 일반 입력·합성 시험만으로 native 안전성 증거를 대체하지 않는다. D4는 마지막 공식 group-start 44/45/52/95ms, Undo 50/50/78/160ms 기록의 지연 FAIL이다(독립 성능 TARGET NOT MET). 새 기준·최신 WASM 측정으로 바꿔 적지 않는다. D4 자원은 2026-11-12 Phase 3에서 PASS다([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). 새 근거 없는 반복 탐색은 보류하지만 실제 사용자 결함은 무시하지 않는다.
 
-2026-11-12부터 완료 판정은 [기능·안전·자원·native 실사용성 필수 수용과 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. 위 수치는 역사 기록 그대로다. 공식 D4 지연 FAIL은 TARGET NOT MET로 계속 보고하고 benchmark assertion·결과를 바꾸지 않는다. 별도 native 실사용성 증거 공백은 차단하므로 T010 체크는 유지한다; 일반 history NO-GO이며 T012 고급 전용 승인 범위는 그대로다.
+2026-11-12부터 완료 판정은 [기능·안전·자원·native 실사용성 필수 수용과 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. 위 수치는 역사 기록 그대로다. 공식 D4 지연 FAIL은 TARGET NOT MET로 계속 보고하고 benchmark assertion·결과를 바꾸지 않는다. 별도 native 실사용성 증거 공백은 차단하므로 T010 체크는 유지한다; 일반 history NO-GO이며 T012 고급 전용 승인 범위는 그대로다. **2026-11-12 갱신:** 그 공백을 native 실사용성 수용으로 채워 T010을 체크했고 일반 RHWP history를 제품에서 켰다([기록](../architecture/rhwp-undo-redo.md#t010-production-activation-20261112)).
 
 ### 신규 생성과 기타 작업
 

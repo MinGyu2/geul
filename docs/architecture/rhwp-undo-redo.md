@@ -1,5 +1,7 @@
 # rhwp 실행 취소·다시 실행 계약 (T010 Phase 1 설계 2026-10-21 · 고침 2026-10-22 · Phase 2 구현 2026-10-22)
 
+> **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](t010-production-activation-2026-11-12.json).
+
 > **2026-11-12 D2 Option B:** 현재 D2 규범은 [지원 환경별 native 안전성 계약](../planning/spec.md#t010-d2-supported-runtime-v1)이다. 아래 종전 E→U→F 의무/INCONCLUSIVE는 역사적 판정으로 보존한다. 지원 환경 D2는 실제 native 필수 검사를 통과해 PASS다. 정확한 실행 신원은 [증거 JSON](t010-d2-supported-2026-11-12.json)에 기록한다. E→U→F는 독립 NOT OBSERVED / UNVERIFIED이며 그 순서가 불가능하거나 native 검증됐다고 주장하지 않는다.
 
 <a id="advanced-only-history-20261106"></a>
@@ -43,11 +45,25 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 | D3 저장 보존 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | `undo_save.py --release` 19/19, strict 저장 23행 CURRENT0/DESIRED0, Rust 저장·복구·세션 304/0. 4행은 이력과 무관한 T009 정책 거부로 판정(기준 출력과 근거·바이트 동일) |
 | D5 실패·복구 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | 실제 WASM 경계 18/18, 통합 시험 3구성, PoC 50/50, native discard 예외·새 세대 reload 4/4 |
 | D4 자원·메모리 안전 | **PASS — 현재 신원 (2026-11-12 Phase 3)** | 엔진 전역 그림 캐시의 문서별 소유·해제 교정 뒤 native 수명주기 43/43(소유 참조·화면 Canvas·엔진 보유 Canvas 0, WASM warm-up 뒤 증가 0). RSS는 규범 기준이 없어 진단으로만 기록([Phase 3](#t010-phase3-20261112)) |
-| Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | D2 대표 문서 안전성만 이번에 수용; 복잡 문서·연속 편집·backlog 수렴의 별도 native 실사용성은 미완료 |
+| Native 실사용성 | **PASS — 2026-11-12 제품 활성화** | 일반 history 제품 구성 native 16시나리오 705검사(영문·한글 IME·한/영 전환·선택·문단/쪽 경계·빠른 입력·렌더 대기 중 편집·문서 전환·닫기·저장/재열기·복잡 문서) + 제품 빌드 68검사([증거](t010-production-activation-2026-11-12.json)). 이전 판정: INCONCLUSIVE(증거 부족) |
 | D4 성능 | TARGET NOT MET — 기존 공식 FAIL | 목표·원 표본/fixture/workload/warmup/3RAF/평가법 고정; 기능 수용과 독립 보고 |
-| T010 전체 기능 / 제품 일반 RHWP Undo/Redo | INCOMPLETE / NO-GO | 체크·제품 일반 활성화 불가; T012 advanced-only 범위는 별도 승인 그대로 |
+| T010 전체 기능 / 제품 일반 RHWP Undo/Redo | **PASS / GO (2026-11-12, 지원 범위)** | D1 33/33·D2 지원 환경(25/25·34/34·T011 26/26)·D3 19/19·strict 0·D4 자원 43/43·D5 4/4를 최종 소스로 재실행. Windows/macOS/Wayland/다른 IM NOT RUN, E→U→F UNVERIFIED. T012 제한 유지. 이전: INCOMPLETE / NO-GO |
 
 이 표는 2026-11-12 현재 정책 적용 요약이며 과거 D1–D5 표와 날짜별 증거를 수정하지 않는다. 아래 2026-11-01/02 절의 “단일 요약” 및 일괄 성능 관문 표현은 당시 판정으로 보존하며, 앞으로의 완료·활성화 집계는 위 새 정책이 우선한다. D4 producer/evaluator의 PASS/FAIL·종료 코드는 기능 완료 판정이 아니므로 그대로 유지한다. 성능 정책 개정만으로 제품 활성화가 승인되지 않으며, 활성화할 기능의 별도 정확성·안전·자원·usability 근거가 필요하다.
+
+<a id="t010-production-activation-20261112"></a>
+
+### 일반 RHWP Undo/Redo 제품 활성화 (2026-11-12)
+
+**구현.** `src/commands/registry.ts`의 RHWP `edit.undo`·`edit.redo`를 시험 flag 없이 `supported`(범위 표시 없음)로 선언했다. 세션은 일반 타자·IME 기록을 만들고, 가용성은 그대로 세션 상태(편집 가능·IME 트랜잭션 없음·단계 유무·limit·세대)와 실행 직전 재확인으로 정한다. T012 고급 명령은 같은 기록에 들어가되 원본 128 KiB·현재 8쪽·commit 대기 거부를 일반 모드에서도 유지한다(`RhwpEditorSession.advancedSourceLimited`). 일반 RHWP 서식은 시험 전용 그대로다.
+
+**발견·교정한 기존 결함.** `f78acf7`이 초점 유지형 리본 누름을 `ImeInput.pointerDown()`에 연결해, 보이는 조합을 앱이 확정하고 WordCraft에 `mark` 연산을 보냈다(HEAD에서 T011 단위 시험 6건 실패). `ImeInput.commandPointerDown()`은 조합·커서·소유권을 두고, 조합으로 막 확정한 글자가 있을 때만 reset 반복 방어를 건다. 단위 1441/1441, native T011 리본 IME 26/26, D2 busy-button/busy-click PASS.
+
+**Native 실사용성(일반 history 제품 구성, `VITE_GEUL_TEST_HOOKS=1`만).** `scripts/tests/native-t010-usability.py`: HWP/HWPX 각 8시나리오(영문 연속·Undo/Redo·리본 단추·가지 무효화, 한글 IME·한/영 전환·확정 직후/조합 중 Ctrl+Z, 선택 교체·caret, 빠른 Return 40회로 쪽 경계·렌더 대기 중 편집·기록 깊이·빠른 Undo/Redo 10회, 문서 전환(일반·조합 중), 버리고 닫기·재열기, Undo/Redo 뒤 저장·재열기, 복잡 문서 `aift.hwp`(74쪽, 기존 화면 메모리 한도로 50%)·`연구노트(화학).hwp`·`3249937_asset_management_rules.hwpx`(50%)) 16/16, 705검사 PASS. 큰 문서에 ~140키/초로 110키를 넣으면 native 큐가 키당 약 65–95 ms로 소화해 7.1–10.5초 뒤 수렴한다(손실·중복 0, 적용 지연 ≤2, D4 TARGET NOT MET과 일치). ~16키/초에서 HWP는 대기열이 없고 큰 HWPX는 마지막 키 1.8초 뒤 수렴했다. 기록 깊이 한도에서는 가장 오래된 단계만 버려지고 Redo는 끝 상태로 정확히 돌아온다.
+
+**제품 빌드.** `npm run build`(시험 flag 없음) → Release 자산 검증 → `cargo build --features tauri/custom-protocol` 앱 `8c93a0d6…`(`tauri://localhost`, 시험 훅·trace 없음). `scripts/tests/native-t010-production.py`가 HWP/HWPX 각 34검사·저장 8회: Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z/리본 단추, 한글 IME, 가지 무효화, 재열기 뒤 빈 기록, 두 문서 기록 격리. 내용은 앱이 저장한 파일을 앱 밖 Release 런타임(`scripts/tests/rhwp-paragraphs.mjs`)으로 다시 읽어 확인했다.
+
+**하네스 교정(제품 변경 아님).** Redo는 각 상태의 caret checkpoint를 복원한다(기대값 수정), 상태 훅의 200자 절단, End=시각 줄 끝, 쪽 요소 대기, D1 러너 pinned probe, IBus 소켓 경로 길이, 비IME 게이트의 입력기 없는 구성(Phase 1과 같음). 원시 기록은 비공개 `geul-tests/reports/t010-production-activation-20261112/`에 있다.
 
 <a id="t010-d2-supported-20261112"></a>
 

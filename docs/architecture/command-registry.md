@@ -1,5 +1,7 @@
 > **2026-11-10 HWP 핵심 삽입:** `insert.table`·`insert.image`·`paragraph.bullets`가 HWP에서도 T009 제한 부분집합 안에서 활성화된다(상세 재열기 API·complete baseline·section 0·현재 원본 사전검사 SAFE 조건; 이유 `originalChecking`/`originalUnverified` 추가). Phase 4 비GUI 저장·재열기 수용과 측정된 지원 범위는 [Phase 4](core-insertions.md#hwp-비gui-저장재열기-통합-수용--phase-4-2026-11-10).. 경계와 검증은 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)을 따른다.
 
+> **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](t010-production-activation-2026-11-12.json).
+
 > **2026-11-12 D2 Option B:** [지원 환경 native 안전성](../planning/spec.md#t010-d2-supported-runtime-v1)과 E→U→F 독립 호환성을 구분한다. [현재 증거](t010-d2-supported-2026-11-12.json): 명시한 X11/IBus 환경 D2 PASS, E→U→F NOT OBSERVED / UNVERIFIED. 일반 RHWP history는 시험 활성화 경계 뒤에 있고 제품은 기존 advanced-only 범위만 유지한다. D2 PASS도 일반 history 제품 승인·T010 완료가 아니다. 날짜별 종전 gate 결과는 보존한다.
 > **2026-11-10 클립보드:** DOCX/HWP/HWPX의 plain-text Copy/Cut/Paste를 연결했다. 현재 계약과 제한은 [Plain-text clipboard](#plain-text-clipboard-2026-11-10)를 따른다. 기존 T010 전체 수용 판정은 바꾸지 않는다.
 
@@ -21,7 +23,7 @@
 |---|---|
 | `hangul.charWidth`, `hangul.charSpacing` | HWP/HWPX, 본문 또는 같은 표 셀 안의 단일 문단 선택, 실제 getter/setter·compaction·publication ownership API, 고급 전용 history, 정수 50–200 / -50–50, 7언어 값 유지 |
 | `hangul.insertTableFormula` | 유효한 단일 표 셀 커서에서 typed 식 입력/기존 식 교체/명시적 재계산. 소유 셀의 지원되는 기존 식만 입력창에 채우며 같은 식을 확인하면 캐시 값을 재계산. parser/engine 독립 검증(256/16/4096), 필드 소유권/구조 제한 유지. 결과를 넣을 셀을 직접·범위로 읽는 식(`=SUM(A1:B1)`을 B1에)은 재계산마다 값이 커지므로 입력창과 세션이 거부한다. 간접 순환도 `getCursorModel`·전체 `getControls`·필드 범위·읽기 전용 소유권 검증을 교차 확인한 표 의존성 그래프로 거부한다. 표는 비병합 직사각형·셀당 단일 문단이고, 기존 필드는 문단 전체의 지원 `%g` 수식 하나 또는 컨트롤 없는 일반 값이어야 한다. 불명확한 구조/메타데이터·4096을 넘는 노드+간선은 변경 전에 안전 거부한다. `??%g,;;` 형식이 아닌 기존 식(예: 한컴 `%.2f`)은 입력창에 채우지 않는다. 비어 있지 않은 셀의 글은 수식으로 바뀐다 |
-| `edit.undo`, `edit.redo` (RHWP) | 제품 선언은 `historyScope: advanced` 요구. 실제 고급 기록만 사용하며 일반 입력 시작 시 폐기. IME/최종 입력/commit 대기 거부. 일반 RHWP 입력 history 활성화가 아님 |
+| `edit.undo`, `edit.redo` (RHWP) | **2026-11-12부터 일반 타자·IME history로 제품 지원**(범위 표시 없음, [증거](t010-production-activation-2026-11-12.json)). 가용성은 세션 기록(단계 유무·편집 가능·IME 트랜잭션·limit·세대)으로 정한다. 고급 명령(장평·자간·영속 수식)은 같은 기록에 들어가되 원본 128 KiB·현재 8쪽·commit 대기 거부 경계를 그대로 둔다. 이전: `historyScope: advanced` 전용 |
 | RHWP 일반 글자 서식 | 기존 시험 구성 전용, 제품 미지원 |
 
 원본 128 KiB 이하·현재 8쪽 이하, 최대 4고급 단계만 허용한다. 문서 한도는 `limit`, 선택 없음/여러 문단은 `selectionRequired`, 표 밖은 `notInTable`, commit 대기는 `pendingEdits`, IME는 `composing`으로 거부한다. 시험 훅 활성화는 제품 기능의 전제가 아니다. 실질 getter/setter/ownership나 history가 없으면 capability를 내지 않는다. 저장은 변함없이 T009의 사전검사·실제 출력 검사·원자 게시·내구성 결과를 따른다. 한컴 원본처럼 비어 있지 않은 PrvText/PrvImage가 있는 HWP를 이 명령으로 고치면 안전한 미리보기 재생성 근거가 없어 T009가 저장을 거부한다. 명령은 메모리 모델만 바꾸고 원본은 그대로이며 dirty가 유지된다. 아래 이전 비활성/NO-GO 기록은 당시 결과다.
@@ -38,7 +40,7 @@ FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령
 
 > **2026-11-05 Stage 5–7 재검증:** 명령 경계상 RHWP 실행 취소·장평/자간·영속 수식은 제품에서 계속 비활성이다. 수식은 기존 읽기 전용 계산과 분리한 typed command로 controlled 설정에서만 연결했으며, 13개 패치의 실제 Release WASM에서 검증했다. D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 원래 문턱 6 PASS/2 FAIL이라 제품 history·metrics·formula는 NO-GO다. T012/T013 완료 여부·현재 native 범위와 외부 Word/Hancom NOT RUN은 [통합 수용 보고서](stage567-acceptance-2026-11-05.md)를 참조한다. DOCX 추적 표식 교정 뒤 실제 native10개와 단계별 저장검사10개·재개방이 통과했다.
 
-현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO다. T011은 2026-11-04 착수 조건 변경 뒤 구현·검증해 완료했다(아래 "T011 리본", 선택 문맥 상황 탭은 빠진 능력으로 숨김). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
+**2026-11-12 현재: T010 기능 수용 PASS, 일반 RHWP Undo/Redo 제품 GO(명시한 지원 범위, [증거](t010-production-activation-2026-11-12.json)).** 아래 “INCOMPLETE — ON HOLD·NO-GO”는 그 이전 기록이다. 이전 기록: T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO였다. T011은 2026-11-04 착수 조건 변경 뒤 구현·검증해 완료했다(아래 "T011 리본", 선택 문맥 상황 탭은 빠진 능력으로 숨김). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
 
 ## 구조
 
@@ -97,8 +99,8 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
 
 | 명령 | 단축키 | WordCraft(DOCX) | rhwp(HWP·HWPX) |
 |------|--------|-----------------|----------------|
-| `edit.undo` | Ctrl+Z | 지원(엔진 기록) | 미지원(세션 기록 구현, 활성화 관문 미통과) |
-| `edit.redo` | Ctrl+Y, Ctrl+Shift+Z | 지원(엔진 기록) | 미지원(세션 기록 구현, 활성화 관문 미통과) |
+| `edit.undo` | Ctrl+Z | 지원(엔진 기록) | 지원(세션 일반 기록, 2026-11-12 활성화; 이전: 활성화 관문 미통과) |
+| `edit.redo` | Ctrl+Y, Ctrl+Shift+Z | 지원(엔진 기록) | 지원(세션 일반 기록, 2026-11-12 활성화; 이전: 활성화 관문 미통과) |
 | `format.bold` | Ctrl+B | 지원 | 미지원(HWP: 보존 검사가 막음 · HWPX: 저장 규칙만 준비, 명령 미구현) |
 | `format.italic` | Ctrl+I | 지원 | 미지원 |
 | `format.underline` | Ctrl+U | 지원 | 미지원 |

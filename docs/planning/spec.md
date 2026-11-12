@@ -1,12 +1,14 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](../architecture/t010-production-activation-2026-11-12.json).
+
 > **2026-11-12 T014: 부분 완료, 체크하지 않음.** Linux X11/Xvfb·WebKitGTK·격리 IBus의 지원 대표 DOCX/WordCraft·HWP/HWPX/RHWP에서 중단 저장 시작 정리, 실패·충돌·게시/내구성 상태, 체크포인트·SIGKILL·재시작·복원 수용을 확인했다. 정전·실제 파일시스템 고장과 Windows/macOS 안전 저장 게시·내구성·복구의 기존 T014 의무는 미완료다. T015 품질 행렬과 T016 출시 수용도 그대로 남긴다. [증거·실행 신원·26행 결과 행렬·미완료 근거](../architecture/t014-final-acceptance-2026-11-12.json).
 
 > **2026-11-11 Linux native GUI + IBus Phase 5: COMPLETED.** 새 스키마의 실제 X11/Xvfb·IBus 인수 111개와 최종 집계가 통과했다(과거 시나리오 재사용 0). [실행 신원·검증 범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json), [증거 재사용 계약](tasks.md#linux-native-guiibus-인수-증거-계약--2026-11-11). 이 사용자 지정 단계는 계획의 T012/T013 고급 기능 Phase 5와 구분한다. T014/T015/T016 및 기존 미완료 조건, 물리 데스크톱·Wayland·Word/Hancom NOT RUN은 유지한다.
 
 Created: 2026-10-13
 Updated: 2026-11-12
-Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 지원 환경 PASS/E→U→F UNVERIFIED, D4 latency TARGET NOT MET/resources Phase 3 범위 PASS), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
+Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 기능 수용 PASS·일반 RHWP Undo/Redo 제품 GO(2026-11-12, Linux X11/IBus 지원 범위; E→U→F UNVERIFIED, D4 latency TARGET NOT MET 독립), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
@@ -69,10 +71,10 @@ benchmark 실행의 FAIL은 그대로 FAIL이며, 그것만으로 별도 기능 
 | 5 | 모든 필수 조건 PASS | TARGET MET | 기능 PASS 가능, 성능도 목표 달성. 활성화 자동 승인 아님 |
 | 6 | T012 advanced-only만 PASS, 일반 history 수용 증거 부족 | 어느 상태든 | 일반 RHWP Undo/Redo 활성화 불가 |
 
-**현재 판정은 변경하지 않는다:** T010 INCOMPLETE, 일반 RHWP Undo/Redo NO-GO.
+**정책 제정 당시 판정(역사 기록):** T010 INCOMPLETE, 일반 RHWP Undo/Redo NO-GO. **2026-11-12 활성화 뒤 현재 판정:** T010 기능 수용 PASS, 일반 RHWP Undo/Redo 제품 GO(명시한 Linux X11/IBus 지원 범위·기록한 HWP/HWPX 문서), D4 지연 TARGET NOT MET 독립 유지([증거](../architecture/t010-production-activation-2026-11-12.json)).
 D2의 종전 순서 계약 결과는 INCONCLUSIVE(E→U→F 미관측, [역사 기록](../architecture/rhwp-undo-redo.md#t010-phase2-20261112)). 전향적 지원 환경 D2는 아래 정책의 실제 native 필수 검사를 통과해 **PASS**다([새 증거](../architecture/t010-d2-supported-2026-11-12.json)). D4 자원은 2026-11-12 Phase 3에서 엔진 그림 캐시 소유를 교정한 뒤 현재 신원(Release `0559a2ba…`)으로 PASS다([기록](../architecture/rhwp-undo-redo.md#t010-phase3-20261112)). D1/D3/D5는 2026-11-12 Phase 1에서 현재 신원(Release `97abf6bd…`)으로 다시 실행해 PASS다. Phase 3 엔진 변경 뒤 최종 Release `0559a2ba…`에서도 다시 PASS다. 재실행에서 찾은 결함 2건(한컴 글자 겹치기 sentinel 때문에 Undo가 멈춤, HWP 내보내기 검사 레이아웃이 화면에 남음)은 교정했다([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)).
 문서에 남은 공식 D4 지연 FAIL은 독립 성능 `TARGET NOT MET`과 함께 보고하며 새 측정이 아니다.
-지원 환경 D2 PASS는 대표 문서의 IME 안전성 수용이다. 복잡한 문서의 연속 편집·상호작용·backlog 수렴 등 별도 native 실사용성 증거가 아직 충분하지 않다.
+지원 환경 D2 PASS는 대표 문서의 IME 안전성 수용이다. 당시 부족했던 복잡한 문서의 연속 편집·상호작용·backlog 수렴 native 실사용성 증거는 2026-11-12 활성화 수용에서 PASS로 채웠다.
 [수용 기록과 남은 조건](../architecture/rhwp-undo-redo.md#t010-current-status)을 따른다.
 [조건부 T012 승인](#conditional-advanced-20261106)의 범위·제한은 바꾸지 않는다.
 

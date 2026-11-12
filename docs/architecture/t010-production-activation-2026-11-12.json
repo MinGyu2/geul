@@ -1,0 +1,407 @@
+{
+  "schema": "geul.t010.production-activation.v1",
+  "date": "2026-11-12",
+  "reportTimezone": "Asia/Seoul",
+  "decisions": {
+    "t010FunctionalAcceptance": "PASS",
+    "generalRhwpUndoRedoProduction": "GO",
+    "d4Latency": "TARGET NOT MET (not re-measured; latency path unchanged)",
+    "eufCompatibility": "NOT OBSERVED / UNVERIFIED"
+  },
+  "supportedScope": {
+    "platform": "Linux 7.2.14-arch1-1 x86_64, X11 (Xvfb 21.1.23), Tauri 2, WebKitGTK 2.54.1/GTK 3.24.52, IBus 1.5.33 + ibus-hangul 1.5.5 (two-set, preedit)",
+    "documents": "HWP/HWPX: generated basic-ko fixtures; public multi-section/large samples aift.hwp (74 pages, zoom 50% because of the existing canvas-memory render limit at 100%), rnote/연구노트(화학).hwp, issue6031/3249937_asset_management_rules.hwpx (zoom 50%)",
+    "notRun": [
+      "Windows",
+      "macOS",
+      "Wayland",
+      "XIM and other input methods/engines",
+      "physical desktop/GPU",
+      "documents outside the listed scope"
+    ]
+  },
+  "identity": {
+    "startHead": "f78acf71f68118484882192ff5f81230f8ab3670",
+    "branch": "master",
+    "submodules": {
+      "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "external/wordcraft": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+    },
+    "rhwpRelease": {
+      "generation": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6",
+      "artifacts": {
+        "rhwp.js": "3dc17d30c86235e94bc750149fe99bab4b97e7fd04973f5783c173b7800cc1e8",
+        "rhwp_bg.wasm": "94a00e6809210a7905ee35c9427cb8be329201318d23e2c6768021dfc57e6dc0"
+      },
+      "patches": 16,
+      "sourceTreeSha256": "444180e8620281bcc74e94ae4b314936c5e9eb22eb8973fd79424fcfda316ccb"
+    },
+    "applicationSourceSha256": {
+      "src/commands/registry.ts": "eb5a4532b7126778540e6fbcd0eec5745d9144c9928e878f87016729b839b345",
+      "src/commands/capability.ts": "830acc6164b74de89dbc5cae11ee093387201c821cfa71691d592bc769885730",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts": "a80f749b0bc599962bc1a10aa65e084cb05e6dee35f832912ac908d35510d105",
+      "src/components/Editor/rhwp/rhwpHistory.ts": "d736d8719725aad7595184a1485b36a831b955b78b2c583ba6c499d490c56029",
+      "src/components/Editor/rhwp/imeInput.ts": "53c3892c107cc59ac6749b0670d4cf27446d9053b004eb00a47a136b45cae1ba",
+      "src/components/Editor/textInput.ts": "b12751c1d2e5c7c328459b88dfdb58e0a9361217ec41306a6c45b4040b0a17fd",
+      "src/components/CommandButton/editorFocus.ts": "c2367174dfaa7f4fea3a70187a6134cb69247660680510d3e63ff2e476cae9b2",
+      "src/components/Editor/rhwp/RhwpSurface.tsx": "c38f751833fc371480915805869d11dc49ad4207b0f40291d03889950bb8c859"
+    },
+    "nativeHookHost": {
+      "app": "src-tauri/target/debug/geul dev-URL host",
+      "sha256": "4c88dee83572f8e31b98058c038474a70417f614f96cad5efa90097300dc2e38",
+      "frontend": "Vite source, VITE_GEUL_TEST_HOOKS=1 only; VITE_GEUL_TEST_RHWP_HISTORY unset (general history from the product registry)"
+    },
+    "productionApp": {
+      "build": [
+        "npm run build (no VITE_GEUL_TEST_* flags)",
+        "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+        "python3 scripts/cargo-geul.py build --bin geul --features tauri/custom-protocol"
+      ],
+      "sha256": "8c93a0d6515828f7fa9c5c52259bd74af8ec7d657acb0a8088bca971f8aa07be",
+      "location": "tauri://localhost",
+      "testTraceAbsent": true,
+      "servedGeneration": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6"
+    },
+    "harnessSha256": {
+      "scripts/tests/native-t010-usability.py": "4ee38114899d02152e7105d2d0504dbc28c534e2ce153c7f2cb7e6c69b69e960",
+      "scripts/tests/native-t010-production.py": "526b8ed99e4e7eabf18ac55b4982be8f1c4f5f6a869666985a726989e9ad1656",
+      "scripts/tests/rhwp-paragraphs.mjs": "4fbe9c71481b6f1728f84e3e611ec1936b8aa684cadf391e63611e4a04dd4d4a",
+      "scripts/tests/native-d2-supported.py": "e2c4d8f8f257f35aa85184d7d882aa98b66c4c5c21628661403111de29eb04ec"
+    }
+  },
+  "results": {
+    "nativeUsability": {
+      "status": "PASS",
+      "scenarios": {
+        "hwp:english": {
+          "status": "PASS",
+          "checks": 33,
+          "failed": []
+        },
+        "hwp:korean": {
+          "status": "PASS",
+          "checks": 35,
+          "failed": []
+        },
+        "hwp:selection": {
+          "status": "PASS",
+          "checks": 20,
+          "failed": []
+        },
+        "hwp:boundary": {
+          "status": "PASS",
+          "checks": 187,
+          "failed": []
+        },
+        "hwp:switch": {
+          "status": "PASS",
+          "checks": 21,
+          "failed": []
+        },
+        "hwp:close": {
+          "status": "PASS",
+          "checks": 10,
+          "failed": []
+        },
+        "hwp:save": {
+          "status": "PASS",
+          "checks": 17,
+          "failed": []
+        },
+        "hwp:complex": {
+          "status": "PASS",
+          "checks": 39,
+          "failed": []
+        },
+        "hwpx:english": {
+          "status": "PASS",
+          "checks": 33,
+          "failed": []
+        },
+        "hwpx:korean": {
+          "status": "PASS",
+          "checks": 35,
+          "failed": []
+        },
+        "hwpx:selection": {
+          "status": "PASS",
+          "checks": 20,
+          "failed": []
+        },
+        "hwpx:boundary": {
+          "status": "PASS",
+          "checks": 187,
+          "failed": []
+        },
+        "hwpx:switch": {
+          "status": "PASS",
+          "checks": 21,
+          "failed": []
+        },
+        "hwpx:close": {
+          "status": "PASS",
+          "checks": 10,
+          "failed": []
+        },
+        "hwpx:save": {
+          "status": "PASS",
+          "checks": 17,
+          "failed": []
+        },
+        "hwpx:complex": {
+          "status": "PASS",
+          "checks": 20,
+          "failed": []
+        }
+      },
+      "checks": 705,
+      "complexRerunWithHumanRate": {
+        "hwp:complex": {
+          "status": "PASS",
+          "checks": 45,
+          "failed": []
+        },
+        "hwpx:complex": {
+          "status": "PASS",
+          "checks": 23,
+          "failed": []
+        }
+      },
+      "backlog": [
+        {
+          "document": "u-complex-77401a8a.hwp",
+          "chars": 110,
+          "keySendSeconds": 0.64,
+          "convergedAfterKeysSeconds": 7.11,
+          "singleKeySettleSeconds": 0.82,
+          "format": "hwp"
+        },
+        {
+          "document": "u-complex-77401a8a.hwp",
+          "mode": "human-rate 120ms",
+          "chars": 32,
+          "keySendSeconds": 2.0,
+          "settleAfterKeysSeconds": 0.752,
+          "maxKeydownMinusAppliedLag": 1,
+          "keydownsReceived": 33,
+          "receiptSpanSeconds": 1.94,
+          "format": "hwp"
+        },
+        {
+          "document": "u-complex-ce4dd8fc.hwp",
+          "chars": 110,
+          "keySendSeconds": 0.62,
+          "convergedAfterKeysSeconds": 7.09,
+          "singleKeySettleSeconds": 0.82,
+          "format": "hwp"
+        },
+        {
+          "document": "u-complex-ce4dd8fc.hwp",
+          "mode": "human-rate 120ms",
+          "chars": 32,
+          "keySendSeconds": 2.02,
+          "settleAfterKeysSeconds": 0.768,
+          "maxKeydownMinusAppliedLag": 1,
+          "keydownsReceived": 33,
+          "receiptSpanSeconds": 2.01,
+          "format": "hwp"
+        },
+        {
+          "document": "u-complex-810bdfd0.hwpx",
+          "chars": 110,
+          "keySendSeconds": 0.69,
+          "convergedAfterKeysSeconds": 10.5,
+          "singleKeySettleSeconds": 0.84,
+          "format": "hwpx"
+        },
+        {
+          "document": "u-complex-810bdfd0.hwpx",
+          "mode": "human-rate 120ms",
+          "chars": 32,
+          "keySendSeconds": 2.0,
+          "settleAfterKeysSeconds": 1.818,
+          "maxKeydownMinusAppliedLag": 1,
+          "keydownsReceived": 33,
+          "receiptSpanSeconds": 3.01,
+          "format": "hwpx"
+        }
+      ],
+      "interpretation": "110-key bursts injected at ~140 keys/s on large documents queue in the native event loop and drain at ~65-95 ms/key (consistent with D4 TARGET NOT MET); no loss/duplication, applied lag <=2, convergence 7.1-10.5 s after the last key, then a single key settles at the 0.7 s quiet window. At ~16 keys/s HWP shows no queue; the large HWPX converges 1.8 s after the last key."
+    },
+    "productionBuild": {
+      "status": "PASS",
+      "summary": {
+        "hwp": {
+          "status": "PASS",
+          "checks": 34,
+          "saves": 8,
+          "error": null
+        },
+        "hwpx": {
+          "status": "PASS",
+          "checks": 34,
+          "saves": 8,
+          "error": null
+        }
+      },
+      "oracle": "saved files reopened outside the app with the hash-verified Release runtime (scripts/tests/rhwp-paragraphs.mjs)"
+    },
+    "D1": {
+      "status": "PASS",
+      "native": "33/33 gates (undo_native --render --native-keys via d1_entry window 1280x1024, as Phase 1)"
+    },
+    "D2": {
+      "status": "PASS (supported environment)",
+      "originalNative": "safety 25/25 PASS, ordering 2 INCONCLUSIVE (exit 1, unchanged predicate); gap trials 14/14 safe, E->U->F observed 0",
+      "supplement": "34/34 scenarios PASS (17 per format)",
+      "t011RibbonIme": "26/26 PASS (HWP/HWPX/DOCX)"
+    },
+    "D3": {
+      "status": "PASS",
+      "undoSave": "19/19 (4 history-independent T009 refusals, as Phase 1)",
+      "strictSave": "23 rows CURRENT 0 / DESIRED 0",
+      "rust": "not re-run: src-tauri unchanged since Phase 1/3 (304/0)"
+    },
+    "D4resources": {
+      "status": "PASS",
+      "native": "undo_native --lifecycle --cycles 6: 43/43"
+    },
+    "D5": {
+      "status": "PASS",
+      "native": "4/4 (failure-safety)"
+    },
+    "frontend": {
+      "vitest": "1441/1441",
+      "typecheck": "PASS",
+      "eslint": "PASS",
+      "wasmIntegration": {
+        "default": "47 pass / 9 skipped",
+        "hooksOnly": "47/9",
+        "historyEnabled": "pass except hangul-tools (needs FORMAT flag; same at HEAD)",
+        "historyFormatEnabled": "hangul-tools/format-enabled pass; history-config/history-enabled format premise not for this flag set (same at HEAD)"
+      },
+      "scriptsWasm": "278 pass / 5 skipped; hwp-hardening needs a corpus path (fails identically at HEAD)"
+    }
+  },
+  "defectsFound": [
+    {
+      "id": "pre-existing-ribbon-ime",
+      "summary": "f78acf7 routed focus-preserving ribbon presses through ImeInput.pointerDown(), which committed a visible composition and sent WordCraft mark ops; 6 existing T011 unit tests failed at HEAD",
+      "fix": "ImeInput.commandPointerDown(): leaves composition/caret/ownership, only arms the reset-repeat guard after a composed commit",
+      "verification": "unit 1441/1441, native T011 26/26, D2 supplement busy-button/busy-click PASS"
+    }
+  ],
+  "harnessCorrections": [
+    "Redo restores each state caret checkpoint (expectation fixed)",
+    "status hook truncates paragraph text at 200 chars (compare engine paragraph)",
+    "End moves to visual line end in wrapped paragraphs",
+    "page element wait before pointer focus",
+    "pinned probe config applied to the D1 runner",
+    "IBus socket path length (short XDG cache dir)",
+    "non-IME gates without input method as in Phase 1"
+  ],
+  "t012": "Advanced commands keep source<=128KiB, pages<=8 and no-pending-commit refusals in general history mode; general formatting remains test-only",
+  "evidence": [
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/usability-final/run/result.json",
+      "sha256": "c3ac993cb0f6c6026594621da0f6aa59c5621e141c02ba736a6e913c8c2fc291"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/usability-final/execution.json",
+      "sha256": "866701e9ef178303f5e3d61c0f7f61c4212a1451462b158409c0570b94685f7d"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/complex-final/run/result.json",
+      "sha256": "417fc822cc7dcf862ccc406b69e1f97a2948112051ec2d8be378bcf14e3c928a"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/complex-final/execution.json",
+      "sha256": "4e002ccebd8d062573ff9f85141f29889a6f83870b6a9968e86b6ea562d42c33"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d2-orig/report.json",
+      "sha256": "e1ee09d58f4c7d4688e5cf1811f71127e57370a83fc67eca5479ec91fb3038e4"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d2-orig/execution.json",
+      "sha256": "04ea6bbf1eb4ac146a7579e6367b93a7dccc247ca235b51d89c270dd9646539f"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d2-supp/report.json",
+      "sha256": "a1cc7c6892dbdc180950931e9af726a0a17753c66b59ca63838aba78ae015bd5"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d2-supp/execution.json",
+      "sha256": "b1cd7b4c177f956c682a4bbdc9a5f4560afa541ea14d8a7fc01df09192315d25"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/t011/report.json",
+      "sha256": "220c96cbfe1d9ce2d6ef8f4cab1f0f795d6da85e9ebbdc18ebc15a5b02d0d08b"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/t011/execution.json",
+      "sha256": "7ce54cc1804c93bff05d187d58c8f1d9a40ded096a2148c73948c827a0ecb520"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d1/report.json",
+      "sha256": "b6907fcd6ac911be10c4026f793deb0a82cc081520774cc5a82a0694ab22cf0c"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d1/execution.json",
+      "sha256": "f34a31f21750cad28a4f31aac55894866e68f53af4c2e5592fdd7a0713d75df5"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d5/report.json",
+      "sha256": "45e5dee103d38ba17bae573bbc2ae33099051779754264c5bc1df32451daf718"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d5/execution.json",
+      "sha256": "d09fb668b644f36b920f904757a92d2ac50b21ccab0abddfd377dbd30d733198"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/lc/report.json",
+      "sha256": "06212b01f3b3730094b17412438739201664fbbf3e0cff14fb2539262da5ab00"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/lc/execution.json",
+      "sha256": "4573fdc3cd91ae71686cfd83745c3b76eb520e234eaced4d38463b446c2fd6d1"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/production/run2/result.json",
+      "sha256": "fee33c997fa16b6e35f93a1a7c52a0868c7eab638e5d3f5f2fb06b5260783615"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/production/session2/cleanup.json",
+      "sha256": "86e81f577560bf2600c5968ada09bdcd17ab82ce701f5fe8b614ca9012fc961e"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/checks/d3-undo-save.json",
+      "sha256": "4a4d7f75b2f674cd0e4fe9b7b01fb2410f64bd3fdf07ece390f6b1b462741479"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/checks/d3-undo-save.log",
+      "sha256": "494f2365c2d3446a80482a742159ea3fd68fd41eeac58594f976b9c08adf18a4"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/checks/d3-strict-save.log",
+      "sha256": "20d8a699d8aba1c96e2a8d9aa7027776f3e6b9b600cc5f4fa9d983488ab21c56"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/launch.py",
+      "sha256": "7e8b2305910baf6a8c2a40bc60204ec0402614e7b724585891c04f6ac19da80c"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/pinned-perf.vite.config.mjs",
+      "sha256": "dce16c3e8a9cbcad93926865cf692541a048e8523cdd7f4d48561d71ccf39525"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/d1_entry.py",
+      "sha256": "8a8000f0043a5462d691904963b10e337bfbd987d899c723461b8b3877030abd"
+    },
+    {
+      "path": "../geul-tests/reports/t010-production-activation-20261112/native/native_entry.py",
+      "sha256": "c50c6e6ac6f6c8cad5afd13e3da9d6aabdf49d2169c7e63209a067bf6f7bada8"
+    }
+  ],
+  "pushPerformed": false
+}
