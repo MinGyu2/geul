@@ -679,6 +679,95 @@ fn 저장_요청_프레임은_정확한_모양만_받는다() {
 
 // ---- 실제 WordCraft 엔진: 열기 → 편집 → 사전 검사 → 저장 → 다시 열기 ----
 
+#[cfg(target_os = "linux")]
+#[test]
+fn read_original_rejects_recorded_hash_mismatch_with_unchanged_file() {
+    let original = basic::basic_ko().unwrap();
+    let actual_hash = crate::document::content_hash(&original);
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+
+    let identified = identify(doc.path.to_str().unwrap(), &Limits::default()).unwrap();
+    let identity = identified.identity;
+    let fingerprint = identified.fingerprint;
+    let registry = doc.state.registry();
+    let before = registry.get(doc.info.session_id).unwrap();
+    let mut ticket = registry
+        .begin_save(
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+        )
+        .unwrap();
+
+    assert_eq!(ticket.source.content_hash, actual_hash);
+    assert_eq!(ticket.source.load.identity, identity);
+    assert_eq!(ticket.source.load.fingerprint, fingerprint);
+    assert_eq!(
+        service::read_original(&ticket.source, &Limits::default()).unwrap(),
+        original
+    );
+
+    // Isolate the recorded expected hash: the file, its inode, and its fingerprint stay untouched.
+    let correct_source = ticket.source.clone();
+    ticket.source.content_hash ^= 1_u64;
+    assert_ne!(ticket.source.content_hash, actual_hash);
+    assert_eq!(ticket.source.load.identity, correct_source.load.identity);
+    assert_eq!(
+        ticket.source.load.fingerprint,
+        correct_source.load.fingerprint
+    );
+    assert_eq!(ticket.source.load.format, correct_source.load.format);
+    assert_eq!(
+        ticket.source.load.generation,
+        correct_source.load.generation
+    );
+    assert_eq!(ticket.source.preflight, correct_source.preflight);
+    assert_eq!(std::fs::read(&doc.path).unwrap(), original);
+    assert_eq!(
+        crate::document::content_hash(&std::fs::read(&doc.path).unwrap()),
+        actual_hash
+    );
+    let still_identified = identify(doc.path.to_str().unwrap(), &Limits::default()).unwrap();
+    assert_eq!(still_identified.identity, identity);
+    assert_eq!(still_identified.fingerprint, fingerprint);
+    assert_eq!(
+        crate::document::read_identified(&ticket.source.load, &Limits::default()).unwrap(),
+        original
+    );
+    assert_eq!(
+        service::read_original(&ticket.source, &Limits::default()).unwrap_err(),
+        DocumentError::FileConflict
+    );
+
+    // The real service rejects before staging/publication; dropping the ticket permits a valid retry.
+    let error =
+        service::save(registry, &ticket, &Limits::default(), &original, None, true).unwrap_err();
+    assert_eq!(error, DocumentError::FileConflict);
+    assert_eq!(std::fs::read(&doc.path).unwrap(), original);
+    assert_eq!(
+        std::fs::read_dir(doc.path.parent().unwrap())
+            .unwrap()
+            .count(),
+        1
+    );
+    let after = identify(doc.path.to_str().unwrap(), &Limits::default()).unwrap();
+    assert_eq!(after.identity, identity);
+    assert_eq!(after.fingerprint, fingerprint);
+    assert_eq!(registry.get(doc.info.session_id).unwrap(), before);
+    assert!(before.dirty);
+    assert!(doc.leftovers().is_empty());
+
+    drop(ticket);
+    let saved = doc.save().expect("정상 해시로 다시 저장");
+    assert!(saved.durable);
+    assert!(!saved.session.dirty);
+    assert_eq!(registry.get(doc.info.session_id).unwrap(), saved.session);
+    assert!(doc.bytes() != original);
+    assert!(doc.leftovers().is_empty());
+}
+
 struct Docx {
     state: DocumentState,
     dir: TempDir,
@@ -943,7 +1032,8 @@ fn 불러온_뒤_디스크의_파일이_바뀌면_사전_검사도_저장도_덮
     std::fs::write(&doc.path, b"external").unwrap();
     assert_eq!(doc.preflight().err(), Some(DocumentError::FileConflict));
     assert_eq!(doc.bytes(), b"external");
-    // 사전 검사 뒤, 같은 크기·수정 시각으로 내용만 바뀜(지문으로는 못 잡음 → 해시).
+    // 사전 검사 뒤, 같은 크기·수정 시각으로 내용을 바꾸면 안전하게 거부한다.
+    // 실제 쓰기는 ctime도 바꾸므로 이 사례만으로 해시 비교 경계를 독립 입증하지는 않는다.
     let mut doc = open_docx(&original);
     doc.edit(edits());
     doc.preflight().unwrap();
