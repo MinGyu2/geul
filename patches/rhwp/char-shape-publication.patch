@@ -1,7 +1,7 @@
 diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
 --- a/src/document_core/commands/char_shape_compact.rs
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -333,6 +333,165 @@
+@@ -337,6 +337,165 @@
          })
      }
 -
@@ -168,7 +168,7 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
      /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
      pub fn char_shape_count_native(&self) -> usize {
          self.document.doc_info.char_shapes.len()
-@@ -342,3 +501,192 @@
+@@ -346,3 +505,253 @@
  #[cfg(test)]
  #[path = "char_shape_compact_tests.rs"]
  mod tests;
@@ -359,6 +359,67 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 +            core.clipboard.as_ref().unwrap().paragraphs[0].char_shapes[0].char_shape_id,
 +            original as u32
 +        );
++    }
++}
++
++#[cfg(test)]
++mod publication_overlap_sentinel_tests {
++    use super::*;
++
++    fn overlap_ids(core: &DocumentCore) -> Vec<u32> {
++        fn walk(paragraphs: &[Paragraph], out: &mut Vec<u32>) {
++            for p in paragraphs {
++                for control in &p.controls {
++                    match control {
++                        Control::CharOverlap(o) => out.extend(&o.char_shape_ids),
++                        Control::Table(t) => {
++                            for cell in &t.cells {
++                                walk(&cell.paragraphs, out);
++                            }
++                        }
++                        _ => {}
++                    }
++                }
++            }
++        }
++        let mut out = Vec::new();
++        for section in &core.document.sections {
++            walk(&section.paragraphs, &mut out);
++        }
++        out
++    }
++
++    /// Hancom documents write 0xFFFFFFFF as "no shape" in character overlaps. History restore
++    /// on such a document must reconcile (fresh and with appended published shapes) and keep
++    /// the sentinel; a paragraph-run 0xFFFFFFFF stays a dangling refusal (tested above).
++    #[test]
++    fn geul_publication_reconciles_hancom_char_overlap_sentinel() {
++        for name in ["aift.hwp", "issue6031/3249937_asset_management_rules.hwpx"] {
++            let bytes = std::fs::read(format!("{}/samples/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap();
++            let mut core = DocumentCore::from_bytes(&bytes).unwrap();
++            let sentinels = overlap_ids(&core);
++            assert!(sentinels.contains(&u32::MAX), "{name}");
++            let original = core.char_shape_count_native();
++            let loaded = core.capture_char_shapes_native();
++            core.reconcile_char_shapes_native(&loaded, original).unwrap();
++            let snapshot = core.save_snapshot_native();
++            let para = core.document.sections[0]
++                .paragraphs
++                .iter()
++                .position(|p| p.text.chars().filter(|c| !c.is_control()).count() >= 4)
++                .unwrap();
++            core.apply_char_format_native(0, para, 0, 3, r#"{"ratios":[150,150,150,150,150,150,150]}"#)
++                .unwrap();
++            assert_eq!(core.char_shape_count_native(), original + 1, "{name}");
++            let published = core.capture_char_shapes_native();
++            core.restore_snapshot_native(snapshot).unwrap();
++            core.reconcile_char_shapes_native(&published, original).unwrap();
++            assert_eq!(core.char_shape_count_native(), original + 1, "{name}");
++            assert_eq!(overlap_ids(&core), sentinels, "{name}");
++            let before = format!("{:?}", core.document);
++            core.reconcile_char_shapes_native(&published, original).unwrap();
++            assert_eq!(format!("{:?}", core.document), before, "{name}");
++        }
 +    }
 +}
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs

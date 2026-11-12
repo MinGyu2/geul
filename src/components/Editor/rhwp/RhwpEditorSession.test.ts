@@ -243,6 +243,56 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
 });
 
 
+describe("rhwp 편집 세션: HWP 비교용 새 레이아웃은 화면에 남지 않음 (T010 D1)", () => {
+  async function hwpSession(patch: (doc: FakeDocument & Record<string, unknown>, log: string[]) => void) {
+    const { backend, take } = controlledBackend();
+    const sessions = new DocumentSessions(backend);
+    const opening = sessions.open("/a.hwp");
+    take("open").reply(ok(base));
+    await opening;
+    const log: string[] = [];
+    const body = (bytes: Uint8Array) => new TextDecoder().decode(bytes[0] === CFB_SIGNATURE[0] ? bytes.subarray(CFB_SIGNATURE.length) : bytes);
+    let live: (FakeDocument & Record<string, unknown>) | null = null;
+    const module: RhwpModule = {
+      openDocument: (bytes) => {
+        const doc = new FakeDocument(body(bytes).split("\n")) as FakeDocument & Record<string, unknown>;
+        if (!live) { live = doc; patch(doc, log); }
+        return doc as unknown as RhwpDocument;
+      },
+    };
+    const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
+    const loading = editor.load();
+    take("load").reply(loaded(new TextEncoder().encode("가\nb")));
+    await flush();
+    take("session").reply(ok(info({ state: "loading", sequence: 1 })));
+    take("setState").reply(ok(info({ state: "ready", sequence: 2 })));
+    await loading;
+    return { editor, log };
+  }
+
+  it("rebuildLayout로 비교한 뒤 restoreSessionLayout으로 편집 세션 레이아웃을 되돌린다", async () => {
+    const { editor, log } = await hwpSession((doc, log) => {
+      const exportHwp = doc.exportHwpWithReport.bind(doc);
+      doc.rebuildLayout = () => { log.push("rebuild"); return 1; };
+      doc.restoreSessionLayout = () => { log.push("restore"); return 1; };
+      doc.exportHwpWithReport = () => { log.push("export"); return exportHwp(); };
+    });
+    expect(editor.roundTrip("hwp")).toMatchObject({ passed: true });
+    expect(log).toEqual(["rebuild", "export", "restore"]);
+    expect(editor.editable).toBe(true);
+  });
+
+  it("되돌리기 trap은 레이아웃을 알 수 없으므로 편집을 멈추고 근거를 통과시키지 않는다", async () => {
+    const { editor, log } = await hwpSession((doc, log) => {
+      doc.rebuildLayout = () => { log.push("rebuild"); return 1; };
+      doc.restoreSessionLayout = () => { log.push("restore"); throw new Error("trap"); };
+    });
+    expect(editor.roundTrip("hwp")).toMatchObject({ passed: false });
+    expect(log).toEqual(["rebuild", "restore"]);
+    expect(editor.editable).toBe(false);
+  });
+});
+
 describe("문서 해제 예외 안전성", () => {
   it.each(["render", "free", "both"])("%s 예외 뒤에도 문서 참조와 구독을 정리하고 원래 오류를 보존한다", async kind => {
     const { editor, doc } = await readySession();

@@ -1474,13 +1474,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
     };
     let reopened: RhwpDocument | null = null;
+    let rebuilt = false;
     try {
       let bytes: Uint8Array;
       this.text?.prepareExport();
       // HWP: incremental pagination after edits can differ from a fresh layout of the same model (the export
       // reopens with a fresh layout). Rebuild the live derived layout first so page evidence compares like
-      // with like; the model itself is unchanged.
+      // with like; the model itself is unchanged. The display layout is restored below (T010 D1).
       if (format === "hwp" && typeof doc.rebuildLayout === "function") {
+        rebuilt = true;
         doc.rebuildLayout();
         try { this.pages = readPages(doc); } catch { /* the comparison below still uses the engine's page count */ }
       }
@@ -1535,6 +1537,19 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         report.failure = "reopen";
         this.saveCleanupFailed(error, this.epoch);
         if (strict) output = null;
+      }
+      // T010 D1: the fresh layout was comparison evidence only. A background checkpoint or save must not
+      // change the displayed pagination of an unchanged model, and Undo/Redo (snapshot restore = edit-session
+      // layout) must return the page the user saw. A trap here leaves the layout unknown: fail closed.
+      if (rebuilt && typeof doc.restoreSessionLayout === "function") {
+        try {
+          doc.restoreSessionLayout();
+          this.pages = readPages(doc);
+        } catch (error) {
+          report.failure ??= "export";
+          this.saveCleanupFailed(error, this.epoch);
+          if (strict) output = null;
+        }
       }
     }
     report.passed = report.failure === null && report.lossValid && report.lossCount === 0 && report.formatEqual

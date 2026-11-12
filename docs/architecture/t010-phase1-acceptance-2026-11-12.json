@@ -1,0 +1,180 @@
+{
+ "schema": "geul.t010.phase1.v1",
+ "date": "2026-11-12",
+ "status": "PASS",
+ "scope": "T010 Phase 1: D1/D3/D5 current-identity acceptance. T010 remains INCOMPLETE (D2, D4 resources, native usability). General RHWP history remains NO-GO in production; T012 advanced-only scope unchanged.",
+ "startingHead": "070b4f32037a8008111bbae1009923e731303aa2",
+ "historicalEvidence": {
+  "D1": {
+   "head": "d1ec33515839f733f707f99b31ff2dde82ddb2af",
+   "releaseGeneration": "ca284e06df589b15bb7bc99163472203644621efffa024be6ad315908bdeb855",
+   "result": "PASS 31/31",
+   "reusable": false
+  },
+  "D3_D5": {
+   "head": "9cd7484503e69027e094fcc470c04e10045220c0",
+   "releaseGeneration": "853a0689147be17336110a227b22bef2054629430d53126076b84879308329b4",
+   "patches": 11,
+   "result": "PASS",
+   "reusable": false
+  },
+  "reason": "157 commits, 5 additional RHWP patches and RHWP session/history/save changes between those identities and the starting HEAD"
+ },
+ "identity": {
+  "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "patches": [
+   {
+    "name": "hwpx-textdir-ltr.patch",
+    "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+   },
+   {
+    "name": "hwpx-duplicate-paragraph-ids.patch",
+    "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+   },
+   {
+    "name": "hwpx-clipboard-paragraph-ids.patch",
+    "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+   },
+   {
+    "name": "hwpx-spine-linear.patch",
+    "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+   },
+   {
+    "name": "hwpx-spine-validation.patch",
+    "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+   },
+   {
+    "name": "hwpx-manifest-order.patch",
+    "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+   },
+   {
+    "name": "hwpx-charpr-child-presence.patch",
+    "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+   },
+   {
+    "name": "hwpx-strikeout-3d-placeholder.patch",
+    "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+   },
+   {
+    "name": "hwpx-strike3d-derived-styles.patch",
+    "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+   },
+   {
+    "name": "hwpx-secpr-tabstop-presence.patch",
+    "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+   },
+   {
+    "name": "hwpx-empty-text-boundaries.patch",
+    "sha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2"
+   },
+   {
+    "name": "char-shape-compaction.patch",
+    "sha256": "44bf18d47d3e6e0cf0b65c43316147578483e61a79701da9d5d517459852d529"
+   },
+   {
+    "name": "table-formula-field.patch",
+    "sha256": "ba11170978c1177e77b87b347c14a1904218bdd36874e72a71dff809671722bd"
+   },
+   {
+    "name": "char-shape-publication.patch",
+    "sha256": "ca20c93189638f042e76a9154bcd5a55577f6ddc845bd84dd9f72868de28f575"
+   },
+   {
+    "name": "table-formula-paragraphs.patch",
+    "sha256": "d71da9acaf71d1e4f23e618cfe72bf2db991689c8a9d4424b6eca15ae38ff8c3"
+   },
+   {
+    "name": "hwp-source-preservation.patch",
+    "sha256": "9ac72fe6f1491bc27b29926518e225d8f1db9138913573516e8162b2d9b4e7fe"
+   }
+  ],
+  "sourceTreeSha256": "0fbbd1c1553ecc5a57d16197eb2018a0b43b39497b364408acedd7607bc0128f",
+  "releaseGeneration": "97abf6bd9997e28a12694c05fa53018303b64ecac4df643cfae0c2572dee2a32",
+  "releaseArtifacts": {
+   "rhwp.js": "284a5bab3e2ca277c3e81b51ec9d459e39b96173e57048f7cf588106845be412",
+   "rhwp_bg.wasm": "18eeb2e8826a1467f2abad26367499ace09b56b1245f9212d56de834957bf40f"
+  },
+  "debugGeneration": "a2aa24a264ffa1292aaee6820fbbaa4d5ed0dec73aed185bd55b01e1bb2b1a75",
+  "debugArtifacts": {
+   "rhwp.js": "78edb47cca1ea64c2f43776280d28349930d2e85061508a29d0a97c99e2b9a1b",
+   "rhwp_bg.wasm": "3e45e4bc9b672e942bda5606614f8d74c71984426767405fdadf02b89dd266cf"
+  },
+  "nativeDebugAppSha256": "4c88dee83572f8e31b98058c038474a70417f614f96cad5efa90097300dc2e38",
+  "tools": {
+   "rust": "1.99.1",
+   "wasm-bindgen": "0.2.127",
+   "webkitgtk": "2.54.1",
+   "xvfb": "21.1.23",
+   "node": "24.21.0"
+  },
+  "wordcraftGitlink": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+ },
+ "corrections": [
+  {
+   "id": "A",
+   "defect": "history restore/rollback on Hancom documents with CharOverlap 0xFFFFFFFF sentinel fails char-shape reconciliation and stops the editor (uncertain)",
+   "files": [
+    "patches/rhwp/char-shape-compaction.patch",
+    "patches/rhwp/char-shape-publication.patch"
+   ],
+   "tests": "native rhwp lib (patches 1-14 tree) char_shape_compact+geul_publication 13 PASS; 2 new tests FAIL before fix"
+  },
+  {
+   "id": "B",
+   "defect": "HWP export evidence rebuildLayout left the fresh layout displayed; background checkpoint changed pagination and native Redo did not match the pre-Undo page (9191 px)",
+   "files": [
+    "patches/rhwp/hwp-source-preservation.patch",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/RhwpEditorSession.test.ts"
+   ],
+   "tests": "unit 2; real WASM export-layout 3; native D1 33/33"
+  }
+ ],
+ "results": {
+  "D3": {
+   "undoSave": "19/19 (4 history-independent T009 refusals, identical baseline findings and bytes)",
+   "strictSave": "23 rows CURRENT 0 / DESIRED 0",
+   "rust": "304 passed / 0 failed / 28 ignored"
+  },
+  "D5": {
+   "historyBoundary": "18/18",
+   "poc": "50/50",
+   "integrationDefault": "46 passed / 9 skipped",
+   "integrationHistoryEnabled": "34 passed / 1 skipped",
+   "integrationFormatEnabled": "12 passed / 3 skipped",
+   "native": "4/4"
+  },
+  "D1": {
+   "native": "31 items / 33 gates PASS"
+  },
+  "common": {
+   "srcVitest": "1429/1429",
+   "typecheck": "PASS",
+   "lint": "PASS"
+  }
+ },
+ "privateTests": {
+  "tests/integration/rhwp/undo-save.wasm.test.ts": "3e2110b0674a03846fc838be830d9da802be38f7b8b9df6ff14e4785cc647722",
+  "tests/integration/rhwp/undo_save.py": "8eeccd0161f781dc1a0a9a038d6c1e8634f5ec7b912820dcba55efd6e24e71dd",
+  "tests/poc/t010-phase0/save_service.py": "8f5e1453f7527b341a1ba35ba9e505f9c9b84955ca5756d742655d519762a35e",
+  "tests/integration/rhwp/history-config.wasm.test.ts": "2d31b17f54b64861ed374bd8ed4686b1dbc9fd7e522eaba0e9c5215e30142c3a",
+  "tests/integration/rhwp/hangul-tools.wasm.test.ts": "7c528f57413b82d1f19f3d88406527b3df0f43b52c979638c92ff29be92ea8ac",
+  "tests/integration/rhwp/export-layout.wasm.test.ts": "fd3451d8a1b0b5b8e81b71df34440b0d0e7abef1b5d45b033df8a318d0e2495f",
+  "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+  "tests/integration/rhwp/native_probe.py": "757095fa82e45358df6d3e5a84a3a2e7674d9330a5b48fe74f97b092819b848b",
+  "tests/poc/t010-phase0/history_boundary.mjs": "8d9882a82ee58d466daf90ba2c99eea6eb7600706ea4b062d158662245b3a5ca"
+ },
+ "privateEvidence": "geul-tests/reports/t010-phase123-20261112/phase1/ (raw logs, JSON results, native execution/report/screenshots, preserved failures, originals/)",
+ "preservedFailures": [
+  "phase1/d3-undo-save-release.before-fix-907eabb2.FAIL.log",
+  "phase1/d3-undo-save-release.62e15b0b.fixedtable-4mismatch.{log,json}",
+  "phase1/d3-strict-save-release.stale-current-table.log",
+  "phase1/native/d1-native-62e15b0b-FAIL/",
+  "phase1/superseded-62e15b0b/"
+ ],
+ "openFindings": [
+  "aift.hwp roundtrip is refused outputMalformed{DocInfo} by save insertions::basic_bullet (non-canonical Hancom bullet, 3363fde): fail-closed over-refusal independent of history (T009/T015 follow-up)"
+ ],
+ "pushPerformed": false
+}

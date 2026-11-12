@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..017b123
 --- /dev/null
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -0,0 +1,344 @@
+@@ -0,0 +1,348 @@
 +//! [geul] 세션 중 덧붙인 글자 모양 중 어디서도 쓰지 않는 것을 정리한다(T012 장평·자간 연속 변경).
 +//!
 +//! `find_or_create_char_shape` 는 같은 모양을 다시 쓰지만 글자 모양 표는 덧붙임 전용이다. 같은 범위에
@@ -157,7 +157,11 @@ index 0000000..017b123
 +            }
 +            Control::CharOverlap(overlap) => {
 +                for id in &mut overlap.char_shape_ids {
-+                    f(id, Site::Remappable);
++                    // 한컴 저장본은 글자 겹치기의 "모양 없음"을 0xFFFFFFFF 로 쓴다(aift.hwp,
++                    // issue6031 HWPX 실측). 번호 머리 표지처럼 참조가 아니므로 옮기지도 세지도 않는다.
++                    if *id != u32::MAX {
++                        f(id, Site::Remappable);
++                    }
 +                }
 +            }
 +            Control::SectionDef(section_def) => {
@@ -353,7 +357,7 @@ new file mode 100644
 index 0000000..d68ee91
 --- /dev/null
 +++ b/src/document_core/commands/char_shape_compact_tests.rs
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,279 @@
 +//! [geul] 덧붙인 글자 모양 정리 시험. 실제 한컴 저장 표본을 실제 RHWP 내보내기·다시 열기로 확인한다.
 +use super::*;
 +use crate::parser::cfb_reader::CfbReader;
@@ -530,6 +534,49 @@ index 0000000..d68ee91
 +        core.compact_appended_char_shapes(baseline).unwrap().skipped,
 +        Some("dangling")
 +    );
++}
++
++/// 글자 겹치기의 0xFFFFFFFF(모양 없음)는 참조가 아니다: 정리를 막지 않고 값도 그대로 남는다.
++/// 문단 글자 범위의 같은 값은 위 시험대로 계속 dangling 이다.
++fn overlap_ids(core: &DocumentCore) -> Vec<u32> {
++    fn walk(paragraphs: &[crate::model::paragraph::Paragraph], out: &mut Vec<u32>) {
++        for p in paragraphs {
++            for control in &p.controls {
++                match control {
++                    Control::CharOverlap(o) => out.extend(&o.char_shape_ids),
++                    Control::Table(t) => {
++                        for cell in &t.cells {
++                            walk(&cell.paragraphs, out);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++        }
++    }
++    let mut out = Vec::new();
++    for section in &core.document.sections {
++        walk(&section.paragraphs, &mut out);
++    }
++    out
++}
++
++#[test]
++fn char_overlap_sentinel_is_not_a_dangling_reference() {
++    for name in ["aift.hwp", "issue6031/3249937_asset_management_rules.hwpx"] {
++        let mut core = open(&sample(name));
++        let sentinels = overlap_ids(&core);
++        assert!(sentinels.contains(&u32::MAX), "{name}: 표본에 글자 겹치기 모양 없음 값이 있어야 한다");
++        let baseline = core.char_shape_count_native();
++        let para = text_para(&core);
++        apply(&mut core, para, W150);
++        apply(&mut core, para, W80);
++        assert_eq!(core.char_shape_count_native(), baseline + 2, "{name}");
++        let r = core.compact_appended_char_shapes(baseline).unwrap();
++        assert_eq!(r.skipped, None, "{name}");
++        assert_eq!(r.after, baseline + 1, "{name}");
++        assert_eq!(overlap_ids(&core), sentinels, "{name}");
++    }
 +}
 +
 +/// 증거 기록: 한컴 HWP에 장평 한 번(+정리)을 저장했을 때 DocInfo 레코드 차이.

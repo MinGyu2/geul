@@ -362,7 +362,7 @@
                  self.char_offsets[prev_idx] + Self::char_stream_len(text_chars[prev_idx])
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -3295,13 +3295,34 @@
+@@ -3295,13 +3295,44 @@
          self.preserve_source_caret = enabled;
      }
  
@@ -399,5 +399,15 @@
 +        }
 +        pages
      }
++
++    /// [geul] `rebuildLayout`는 저장 근거 비교만을 위한 것이다. 비교가 끝나면 이것으로 화면용 파생
++    /// 레이아웃을 편집 세션 규칙(봉인 그대로)으로 다시 만든다. 스냅숏 복원이 만드는 레이아웃과 같은
++    /// 규칙이라 내보내기·복구 기록이 실행 취소·다시 실행의 화면 동등성을 바꾸지 않는다. 모델 데이터는
++    /// 바꾸지 않는다. 반환값은 다시 계산한 쪽 수.
++    #[wasm_bindgen(js_name = restoreSessionLayout)]
++    pub fn restore_session_layout(&mut self) -> u32 {
++        self.rebuild_derived_state();
++        self.page_count()
++    }
  
      /// 표의 행/열/셀 수를 반환한다.

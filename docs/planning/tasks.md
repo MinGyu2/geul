@@ -82,7 +82,7 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
-- [ ] T010 [US3] △ 조건부 개발 / 기능 수용 미완료 — 필수 기능·안전·자원·재현 가능한 native 실사용성 모두 PASS여야 완료 가능. 성능 목표는 독립 보고하며 목표 미달만으로 기능 수용을 FAIL하지 않는다. 현재 D2 E→U→F INCONCLUSIVE·D4 자원 INCONCLUSIVE 및 실사용성 근거 공백으로 미완료; D4 지연은 공식 FAIL / TARGET NOT MET로 유지. 일반 RHWP history NO-GO; T012 advanced-only 범위는 기존 승인 그대로 ([정책](../planning/spec.md#t010-acceptance-policy-20261112)).
+- [ ] T010 [US3] △ 조건부 개발 / 기능 수용 미완료 — 필수 기능·안전·자원·재현 가능한 native 실사용성 모두 PASS여야 완료 가능. 성능 목표는 독립 보고하며 목표 미달만으로 기능 수용을 FAIL하지 않는다. 2026-11-12 Phase 1에서 D1/D3/D5는 현재 신원 PASS([기록](../architecture/rhwp-undo-redo.md#t010-phase1-20261112)). 현재 D2 E→U→F INCONCLUSIVE·D4 자원 INCONCLUSIVE 및 실사용성 근거 공백으로 미완료; D4 지연은 공식 FAIL / TARGET NOT MET로 유지. 일반 RHWP history NO-GO; T012 advanced-only 범위는 기존 승인 그대로 ([정책](../planning/spec.md#t010-acceptance-policy-20261112)).
 - [x] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (2026-11-04 완료, 선택 문맥 상황 탭은 빠진 능력으로 숨김 — 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)

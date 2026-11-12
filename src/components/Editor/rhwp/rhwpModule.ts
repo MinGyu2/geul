@@ -23,6 +23,9 @@ export interface RhwpDocument {
   getSectionCount?(): number;
   /** geul engine patch: rebuild the derived layout (fresh pagination) from the model; returns the page count. */
   rebuildLayout?(): number;
+  /** geul engine patch: after the export comparison, rebuild the display layout under the edit-session rules
+   * (the same layout a snapshot restore produces); returns the page count. */
+  restoreSessionLayout?(): number;
   getBulletList?(): string;
   getTableProperties?(section: number, paragraph: number, control: number): string;
   getCellProperties?(section: number, paragraph: number, control: number, cell: number): string;

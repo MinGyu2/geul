@@ -35,16 +35,63 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 
 | 현재 차원 | 판정 | 범위·영향 |
 |---|---|---|
-| D1 렌더·커서 | 공식 PASS (마지막 기록 범위) | 새 실행 아님; 범위 밖 증거로 확대하지 않음 |
+| D1 렌더·커서 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | native 원본 `undo_native.py --render --native-keys` 33/33 관문; 교정 2건 뒤 Release `97abf6bd…`([Phase 1](#t010-phase1-20261112)) |
 | D2 IME 안전성 | INCONCLUSIVE | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 미관측; 면제/대체 불가, 완료 차단 |
-| D3 저장 보존 | 기록된 범위 PASS | 역사 결과, 새 실행 아님; 현재 전체 범위로 확대하지 않음 |
-| D5 실패·복구 | 기록된 범위 PASS | 역사 결과, 새 실행 아님; 전체 현 신원 수용과 구분 |
+| D3 저장 보존 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | `undo_save.py --release` 19/19, strict 저장 23행 CURRENT0/DESIRED0, Rust 저장·복구·세션 304/0. 4행은 이력과 무관한 T009 정책 거부로 판정(기준 출력과 근거·바이트 동일) |
+| D5 실패·복구 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | 실제 WASM 경계 18/18, 통합 시험 3구성, PoC 50/50, native discard 예외·새 세대 reload 4/4 |
 | D4 자원·메모리 안전 | INCONCLUSIVE | 필수 차원이라 계속 완료/활성화 차단 |
 | Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | 본 변경에서 native 실행 없음; benchmark만으로 대체 불가 |
 | D4 성능 | TARGET NOT MET — 기존 공식 FAIL | 목표·원 표본/fixture/workload/warmup/3RAF/평가법 고정; 기능 수용과 독립 보고 |
 | T010 전체 기능 / 제품 일반 RHWP Undo/Redo | INCOMPLETE / NO-GO | 체크·제품 일반 활성화 불가; T012 advanced-only 범위는 별도 승인 그대로 |
 
 이 표는 2026-11-12 현재 정책 적용 요약이며 과거 D1–D5 표와 날짜별 증거를 수정하지 않는다. 아래 2026-11-01/02 절의 “단일 요약” 및 일괄 성능 관문 표현은 당시 판정으로 보존하며, 앞으로의 완료·활성화 집계는 위 새 정책이 우선한다. D4 producer/evaluator의 PASS/FAIL·종료 코드는 기능 완료 판정이 아니므로 그대로 유지한다. 성능 정책 개정만으로 제품 활성화가 승인되지 않으며, 활성화할 기능의 별도 정확성·안전·자원·usability 근거가 필요하다.
+
+<a id="t010-phase1-20261112"></a>
+
+### Phase 1 — D1·D3·D5 현재 신원 재확인과 교정 (2026-11-12)
+
+**판정: D1 PASS, D3 PASS, D5 PASS(모두 아래 현재 신원).** T010 전체는 D2·D4 자원·native 실사용성 때문에 계속 INCOMPLETE이고,
+일반 RHWP history 제품 활성화는 NO-GO다. T012 고급 전용 범위는 바꾸지 않았다. D2/D4 판정과 성능 수치는 이 절에서 다루지 않는다.
+
+**과거 근거의 재사용 판단.** D1 PASS(`d1ec335`, Release `ca284e06…`)와 D3/D5 PASS(`9cd7484`, Release `853a0689…`, 패치 11개)는
+그 신원에서만 유효했다. 시작 HEAD `070b4f3`까지 157개 커밋이 있었다. 그 사이 패치 5개(글자 모양 정리·게시, 표 수식 2개,
+HWP 원본 보존)와 RHWP 세션·기록·저장 코드가 바뀌어 재사용할 수 없었다. 그래서 원래 시험을 현재 신원에서 다시 실행했다.
+과거 PASS는 지우지 않는다.
+
+**재실행으로 드러난 결함과 교정(제품 변경).**
+
+| # | 재현 | 원인 | 교정 | 검증 |
+|---|---|---|---|---|
+| A | D3 `undo_save.py`: 공개 다중 구역 `aift.hwp`에서 Undo를 하면 편집기가 uncertain으로 멈춘다. 편집 없이 연 문서에서도 `reconcileCharShapePrefix`가 `incompatible published character shapes`를 낸다 | 한컴 저장본은 글자 겹치기(`CharOverlap`)의 "모양 없음"을 `0xFFFFFFFF`로 쓴다(aift 9개, issue6031 HWPX 27개, native 진단으로 확인). 글자 모양 방문기가 이것을 참조로 보고, 게시 재조정이 dangling으로 거부한다. 기록 복원·롤백(`7825e94`, 2026-11-06 이후)이 모두 이 재조정을 거친다 | `char-shape-compaction.patch` 방문기가 번호 머리 표지처럼 `CharOverlap`의 `0xFFFFFFFF`를 건너뛴다. 문단 글자 범위의 같은 값은 계속 dangling으로 거부한다(기존 시험 유지). 정리(compaction)는 이런 문서에서도 더는 dangling으로 건너뛰지 않으며, 그 값은 바꾸지 않는다 | native rhwp 시험 13개 PASS(새 2개는 교정 전 FAIL 확인) |
+| B | native D1 `hwp: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y` → 편집 뒤 그림과 9,191 px 차이. HWPX는 PASS | `9b659b0` 이후 HWP 내보내기 검사(저장·T014 복구 checkpoint·보존 검사)는 `rebuildLayout()`으로 새 문서 기준 레이아웃을 만든다. 그 레이아웃이 화면에 남아, 입력 없이 checkpoint만으로 쪽 배치가 바뀌었다. 스냅숏 복원은 편집 세션 규칙으로 다시 조판하므로 Redo 화면이 직전 화면과 달랐다(WASM에서 재현: rebuild 뒤 Undo/Redo 결과 = rebuild 전) | `hwp-source-preservation.patch`에 `restoreSessionLayout()`(봉인 그대로 파생 상태 재구성)을 추가했다. `RhwpEditorSession.exportAndCompare`는 비교가 끝나면 편집 세션 레이아웃과 쪽 목록을 되돌린다. 되돌리기 trap은 레이아웃을 알 수 없으므로 uncertain·편집 중지·근거 불통과로 끝난다 | 단위 2개(순서, trap fail-closed); 실제 WASM `export-layout.wasm.test.ts` 3개(전제: rebuild만 하면 레이아웃이 달라짐 / 내보내기 검사 뒤 화면 레이아웃 그대로, Undo·Redo 동등 HWP·HWPX); native D1 33/33 |
+
+**시험 기대 갱신(근거를 남김, 원본 사본: 비공개 `phase1/../originals/`).**
+- `undo_save.py`의 고정 기대와 다른 행은 이력과 무관한 T009 정책 거부일 때만 인정한다. 조건은 넷이다. 게시하지 않았고, 원본 SHA·디렉터리·dirty를 보존했다.
+  같은 내용의 기준 출력(undone=편집 전 내보내기, 그 밖=history 없는 같은 키 재생)이 같은 서비스에서 같은 근거로 거부됐다. undone은 기준과 바이트까지 같아야 한다.
+  해당 행은 4개다. `aift.hwp` 3상태는 `outputMalformed{DocInfo}`로 거부됐다. 원인은 `3363fde` 좁은 삽입 증명의 `basic_bullet`이 한컴 글머리표 레코드를 표준 길이로 인정하지 않는 것이다.
+  편집 전 내보내기도 같은 근거로 거부된다. `cell-hwp` redone은 `recordsChanged`+`previewStale{PrvImage}`이며 history 없는 재생과 바이트가 같다. 모두 fail-closed이며 원본을 보존했다.
+- strict 저장 `hwp-bold-body`는 거부에서 게시로 바꿨다. 덧붙인 `CHAR_SHAPE`가 원본 #7과 바이트까지 같고, T012 Stage 5 규칙(`805ffc5`)이 받는 경우다. italic은 계속 거부된다.
+- `history-config`·`hangul-tools`의 제품 기본 전제를 승인된 T012 범위(`340f54d`)에 맞췄다. 제품 레지스트리 RHWP Undo는 `historyScope:"advanced"`이고, 일반 입력의 `saveSnapshot`은 0회다.
+  일반 history Undo는 거절된다. 장평·자간 시험은 문서화된 시험 활성화 flag에서만 실행한다(통과).
+
+**현재 신원과 실행 결과(모두 최종 신원).** geul 소스 = `070b4f3` + 이 Phase 1 변경, RHWP `1a76570e…` + 16개 패치
+(sourceTree `0fbbd1c1…`), Release generation `97abf6bd9997e28a12694c05fa53018303b64ecac4df643cfae0c2572dee2a32`
+(WASM `18eeb2e8…`, JS `284a5bab…`), native debug 앱 `4c88dee8…`, WebKitGTK 2.54.1, Xvfb 21.1.23, wasm-bindgen 0.2.127, Rust 1.99.1.
+
+| 범위 | 명령(비공개 근거 경로 `geul-tests/reports/t010-phase123-20261112/phase1/`) | 결과 |
+|---|---|---|
+| D3 Undo 저장 | `undo_save.py --release` | 19/19 일치(게시 11·거부 8, 위 4행 이력 무관 거부) |
+| D3 strict 저장 | `save_service.py --release --strict-desired` | 23행 CURRENT 0 / DESIRED 0 |
+| D3 Rust | `cargo test --lib -- services::save services::recovery document::`(0700 TMPDIR) | 304 PASS / 0 FAIL / 28 ignored |
+| D5 실제 WASM | `history_boundary.mjs` / PoC vitest | 18/18 / 50/50 |
+| D1·D5 통합 | rhwp 통합 vitest 기본·history 활성·서식 활성 구성 | 46 PASS(9 skip) / 34 PASS(1 skip) / 12 PASS(3 skip) |
+| 공통 | `vitest run src/`, `tsc --noEmit`, `eslint .` | 1429/1429, 0, 0 |
+| D1 native | 원본 `undo_native.py --render --native-keys`(공유 probe 모듈 동일성 수리만, 창 1280×1024) | 31 항목 / 33 관문 PASS |
+| D5 native | `undo_native.py --failure-safety --native-keys` | 4/4 PASS(HWP·HWPX discard 뒤 예외, 새 세대 reload) |
+
+실패 기록은 지우지 않았다: 교정 전 D3 FAIL `d3-undo-save-release.before-fix-907eabb2.FAIL.log`, 고정 기대 4건 불일치 `…fixedtable-4mismatch.*`,
+native D1 FAIL `native/d1-native-62e15b0b-FAIL/`, 중간 Release `62e15b0b…` 결과 `superseded-62e15b0b/`.
+신원·해시 상세는 [t010-phase1-acceptance-2026-11-12.json](t010-phase1-acceptance-2026-11-12.json)에 있다.
 
 ## 현재 수용 상태와 기술 보류 (2026-11-01 · 2026-11-02 재평가)
 
