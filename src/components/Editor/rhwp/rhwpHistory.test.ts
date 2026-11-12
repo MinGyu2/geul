@@ -495,12 +495,18 @@ describe("RhwpEditorSession 실행 취소 통합(가짜 문서)", () => {
     expect(documentCommandState("edit.undo", { ...base })).toEqual({ available: false, reason: "engineUnsupported" });
   });
 
-  it("레지스트리가 rhwp 실행 취소를 지원으로 바꾸기 전에는 execute가 거절한다(세션 기록이 있어도)", async () => {
+  it("레지스트리가 일반 rhwp 실행 취소를 지원하므로 execute는 세션 기록을 따르고, 조합 중에는 거절한다", async () => {
     const { editor, doc } = await readySession(["가"]);
     editor.typeText("a");
     expect(editor.snapshot().history).toEqual({ undo: true, redo: false });
+    editor.beginComposition();
+    editor.updateComposition("ㅎ");
     expect(editor.execute("edit.undo")).toEqual({ accepted: false });
+    editor.endComposition("");
     expect(doc.paragraphs[0]).toBe("a가");
+    expect(editor.execute("edit.undo")).toEqual({ accepted: true });
+    expect(doc.paragraphs[0]).toBe("가");
+    expect(editor.execute("edit.undo")).toEqual({ accepted: false });
   });
 });
 

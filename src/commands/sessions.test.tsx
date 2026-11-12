@@ -159,21 +159,31 @@ describe("WordCraft 세션의 명령(가짜 백엔드 흉내)", () => {
 });
 
 describe("rhwp 세션의 명령", () => {
-  it("실행 취소·서식은 엔진이 지원하지 않아 모델·revision·백엔드 호출을 바꾸지 않는다", async () => {
+  it("서식은 엔진이 지원하지 않아 아무것도 바꾸지 않고, 실행 취소·다시 실행은 세션 기록을 따른다", async () => {
     const { editor, doc, calls } = await readySession();
     editor.typeText("가");
     const { context, notices } = contextFor(editor);
     const before = { text: [...doc.paragraphs], revision: editor.localRevision, calls: calls.length };
-    for (const id of ["edit.undo", "edit.redo", "format.bold", "format.italic", "format.underline", "format.strikethrough"] as const) {
+    for (const id of ["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const) {
       expect(commandState(id, context)).toEqual({ available: false, reason: "engineUnsupported" });
       expect(executeCommand(id, undefined, context)).toBe(false);
       expect(editor.execute(id)).toEqual({ accepted: false });
     }
     expect({ text: doc.paragraphs, revision: editor.localRevision, calls: calls.length }).toEqual(before);
     expect(new Set(notices.map((notice) => notice.key))).toEqual(new Set(["command.unavailable.engineUnsupported"]));
-    // T010 Phase 2: 세션은 이제 기록(되돌릴 단계 1)을 알리지만, 레지스트리가 rhwp 실행 취소를 지원으로 바꾸기 전에는 가용성·실행이
-    // engineUnsupported로 거절된다(위 반복이 그 확인). 서식 상태는 여전히 없다.
     expect(editor.snapshot()).toMatchObject({ engine: "rhwp", history: { undo: true, redo: false }, format: null });
+    expect(editor.snapshot().historyScope).toBeUndefined();
+    // 일반 history(T010 제품 활성화): 단계가 있을 때만 가용하고, 실행하면 모델과 revision이 함께 움직인다.
+    expect(commandState("edit.redo", context)).toEqual({ available: false, reason: "nothingToRedo" });
+    expect(commandState("edit.undo", context)).toEqual({ available: true });
+    expect(executeCommand("edit.undo", undefined, context)).toBe(true);
+    expect(doc.paragraphs[0]).toBe(before.text[0]!.slice(1));
+    expect(editor.localRevision).toBe(before.revision + 1);
+    expect(commandState("edit.undo", context)).toEqual({ available: false, reason: "nothingToUndo" });
+    expect(commandState("edit.redo", context)).toEqual({ available: true });
+    expect(executeCommand("edit.redo", undefined, context)).toBe(true);
+    expect(doc.paragraphs[0]).toBe(before.text[0]);
+    expect(editor.localRevision).toBe(before.revision + 2);
   });
 
   it("저장 명령은 rhwp 세션의 저장 절차를 부른다(조합·대기 검사는 그 절차가 한다)", async () => {

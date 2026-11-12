@@ -1,6 +1,6 @@
 // rhwp 기록을 켜는 조건(T010 검토, docs/architecture/rhwp-undo-redo.md "T010 기록 수용·메모리 회계").
-// 1) 제품 빌드: `advanced` 범위로 선언된 실행 취소는 제한된 세션 기록에만 적용한다. 일반 타자·지우기는 스냅숏을 찍지 않고 기존
-//    고급 기록을 비운다. 전체 타자 기록을 다루는 시험은 세션 선택 `{ history: true }`로 명시한다(testing.ts readySession 기본).
+// 1) 제품 빌드: 레지스트리가 일반 rhwp 기록을 선언한다(T010 활성화). 세션 선택 없이도 타자·IME 기록을 남긴다.
+//    `{ history: false }`만 기록을 끈다.
 // 2) 깊이 어림: 원본 크기(보수적이지 않음 — 실측 근거는 설계 문서). 열기 때의 선형 메모리 증가는 그림 많은 문서에서 과대라 쓰지 않는다.
 // 3) 증가 감시: 기록을 켠 뒤 선형 메모리가 예산보다 더 자라면 새 그룹을 찍지 않고 기록을 끈다(limit, 편집은 계속).
 import { describe, expect, it } from "vitest";
@@ -36,30 +36,32 @@ async function memorySession(openGrowth: number, bytes = 1024) {
   return { editor, doc, memory };
 }
 
-describe("제품 빌드(advanced 범위만 지원)의 세션 기록", () => {
-  it("레지스트리는 rhwp 실행 취소·다시 실행을 advanced 범위로 제한한다", () => {
-    expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
-    expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
+describe("제품 빌드(일반 history 지원, T010 활성화)의 세션 기록", () => {
+  it("레지스트리는 rhwp 실행 취소·다시 실행을 범위 제한 없이(일반 기록) 지원한다", () => {
+    expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported" });
+    expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported" });
   });
 
-  it("일반 빌드: 타자·지우기는 advanced 기록을 비우고 스냅숏 없이 계속 편집한다", async () => {
+  it("일반 빌드: 세션 선택 없이도 타자·지우기를 일반 기록 단계로 남기고 실행 취소·다시 실행한다", async () => {
     const { editor, doc } = await readySession(["가나다", "abc"], {});
-    const saves = { n: 0 };
-    const original = doc.saveSnapshot.bind(doc);
-    (doc as FakeDocument).saveSnapshot = () => { saves.n += 1; return original(); };
+    expect(editor.advancedHistoryOnly).toBe(false);
     editor.typeText("x");
-    editor.moveHorizontal(1, false);
-    editor.typeText("y");
-    editor.backspace();
-    editor.enter();
-    expect(saves.n).toBe(0);
+    expect(doc.snapshots.length).toBe(1);
+    expect(editor.snapshot()).toMatchObject({ history: { undo: true, redo: false }, historyLimited: false });
+    expect(editor.snapshot().historyScope).toBeUndefined();
+    expect(editor.execute("edit.undo")).toEqual({ accepted: true });
+    expect(doc.paragraphs[0]).toBe("가나다");
+    expect(editor.execute("edit.redo")).toEqual({ accepted: true });
+    expect(doc.paragraphs[0]).toBe("x가나다");
+  });
+
+  it("기록을 명시적으로 끈 세션은 실행 취소를 하지 않는다", async () => {
+    const { editor, doc } = await readySession(["가나다", "abc"], { history: false });
+    editor.typeText("x");
     expect(doc.snapshots).toEqual([]);
-    expect(editor.snapshot()).toMatchObject({
-      history: { undo: false, redo: false }, historyScope: "advanced", historyLimited: false,
-    });
-    expect(editor.undo()).toBe(false);
+    expect(editor.snapshot().history).toBeNull();
     expect(editor.execute("edit.undo")).toEqual({ accepted: false });
-    expect(doc.paragraphs[0]).toContain("x");
+    expect(doc.paragraphs[0]).toBe("x가나다");
   });
 
   it("전체 기록을 명시한 시험 구성은 그룹 시작마다 스냅숏을 찍는다(대조)", async () => {

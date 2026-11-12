@@ -211,7 +211,7 @@ const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
 
-/** General typing history declaration, excluding the production advanced-only scope. */
+/** General typing history declaration (an "advanced" scope would restrict the session to the T012 timeline). */
 const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
   .every((id) => {
     const support = commandDefinition(id)?.engines?.rhwp;
@@ -325,6 +325,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private history: RhwpHistory | null = null;
   /** 기록이 없는 까닭: 문서가 예산 밖(limit) 또는 기록을 쓸 수 없게 됨(unavailable). 기록이 있거나 문서가 없으면 null. */
   private historyOff: "limit" | "unavailable" | null = null;
+  /** Source size outside the conditional T012 advanced-command bound (kept in both history modes). */
+  private advancedSourceLimited = false;
   /** 성공한 전체 그리기만 기억한다. 입력·쪽 크기·bitmap·배율이 모두 같을 때만 생략한다. */
   private drawnAt = new WeakMap<HTMLCanvasElement, {
     page: number; scale: number; width: number; height: number;
@@ -362,7 +364,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.committed + this.pending;
   }
 
-  /** General typing/IME history remains behind the original test-only activation gate. */
+  /** True only when general typing/IME history is not declared (or a session explicitly opts out). */
   get advancedHistoryOnly(): boolean {
     return !(this.options.history ?? RHWP_HISTORY_DECLARED);
   }
@@ -878,7 +880,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- 실행 취소 기록(T010 Phase 2) ----
 
   /**
-   * 문서를 열 때: 일반 history는 시험 선언/명시적 시험 선택만, 제품은 소문서 고급 전용 timeline만 만든다.
+   * 문서를 열 때: 레지스트리가 일반 history를 선언하면(제품·시험 공통) 일반 타자/IME 기록을, 세션이 명시적으로 뺀 경우에만
+   * 소문서 고급 전용 timeline을 만든다.
    * 예산(원본 크기 대용 — 보수적이지 않음, rhwpHistory.ts historyBudget)이 최소 깊이를 담고 모듈이 선형 메모리를 잴 때만 켠다. 측정이 없거나 시작 측정이
    * 계약에 어긋나면 감시 없는 기록을 만들지 않고 unavailable로 둔다(RhwpHistory가 읽은 값을 검사한다 — 여기서 대신 채우지 않는다).
    * 기록을 만들지 못해도 문서 세션은 그대로다.
@@ -886,6 +889,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private startHistory(doc: RhwpDocument, bytes: number) {
     this.history = null;
     this.historyOff = null;
+    this.advancedSourceLimited = bytes > ADVANCED_MAX_SOURCE_BYTES;
     if (this.options.history === false) return;
     const module = this.module;
     try {
@@ -1809,8 +1813,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
-    const limited = this.advancedHistoryOnly && (this.historyOff === "limit" || this.pages.length > ADVANCED_MAX_PAGES);
-    const pending = this.advancedHistoryOnly && (this.pending > 0 || this.committingEpoch === this.epoch);
+    // The conditional T012 bounds (source size, current pages, no pending commit) stay in force when
+    // general history records the same transactions; general Undo/Redo does not widen that approval.
+    const limited = this.historyOff === "limit" || this.advancedSourceLimited || this.pages.length > ADVANCED_MAX_PAGES;
+    const pending = this.pending > 0 || this.committingEpoch === this.epoch;
     const ownership = this.options.format === true || !!(this.text?.hasCharShapeOwnership && this.doc?.charShapeCount
       && this.doc.compactAppendedCharShapes && this.doc.captureCharShapePrefix
       && this.doc.capturePublishingCharShapePrefix && this.doc.reconcileCharShapePrefix);

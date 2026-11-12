@@ -82,13 +82,13 @@ describe("명령 레지스트리", () => {
     expect(new Set(ribbon).size).toBe(ribbon.length);
   });
 
-  it("엔진별 지원: rhwp 실행 취소·다시 실행은 advanced 기록 범위로만 지원", () => {
+  it("엔진별 지원: rhwp 실행 취소·다시 실행은 일반 기록으로 지원(시험 flag 없이), 서식은 계속 미지원", () => {
     const supported = (engine: "rhwp" | "wordcraft") =>
       DOCUMENT_IDS.filter((id) => commandDefinition(id)!.engines![engine].level === "supported");
     expect(supported("wordcraft")).toEqual(DOCUMENT_IDS);
     expect(supported("rhwp")).toEqual(["edit.undo", "edit.redo", "file.save"]);
-    expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
-    expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
+    expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported" });
+    expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported" });
   });
 
   it("단축키는 형식이 맞고 겹치지 않으며 모두 Mod 또는 기능 키를 쓴다(글자 입력과 겹치지 않음)", () => {
@@ -148,14 +148,19 @@ describe("가용성 결정", () => {
     }
   });
 
-  it("rhwp 문서: advanced 범위 없는 기록은 실행 취소에 쓸 수 없고, 선언된 범위는 기록 상태를 따른다", () => {
+  it("rhwp 문서: 일반·advanced 기록 모두 실제 기록 상태를 따르고, 기록이 없으면 하지 않는다", () => {
     const rhwp = snapshot({ engine: "rhwp", history: null, format: null });
     for (const id of DOCUMENT_IDS.filter((id) => id !== "file.save")) {
       expect(documentCommandState(id, rhwp)).toEqual({ available: false, reason: "engineUnsupported" });
     }
     expect(documentCommandState("file.save", rhwp)).toEqual({ available: true });
-    // 범위가 표시되지 않은 합성 상태는 advanced 전용 명령으로 쓰지 않는다.
-    expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", history: { undo: true, redo: true } }))).toMatchObject({ available: false, reason: "engineUnsupported" });
+    expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", history: null, historyLimited: true }))).toEqual({ available: false, reason: "limit" });
+    // 일반 기록(범위 표시 없음): 단계가 있을 때만, 조합·편집 불가에서는 하지 않는다.
+    const general = snapshot({ engine: "rhwp", history: { undo: true, redo: false } });
+    expect(documentCommandState("edit.undo", general)).toEqual({ available: true });
+    expect(documentCommandState("edit.redo", general)).toEqual({ available: false, reason: "nothingToRedo" });
+    expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", history: { undo: true, redo: true }, composing: true }))).toEqual({ available: false, reason: "composing" });
+    expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", history: { undo: true, redo: true }, editable: false }))).toEqual({ available: false, reason: "notReady" });
     const advanced = snapshot({ engine: "rhwp", historyScope: "advanced", history: { undo: true, redo: true } });
     expect(documentCommandState("edit.undo", advanced)).toEqual({ available: true });
     expect(documentCommandState("edit.redo", advanced)).toEqual({ available: true });

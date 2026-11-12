@@ -58,15 +58,15 @@ const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDow
 
 // The focus-preserving ribbon/tab mousedown can trigger the same IBus reset as
 // a page click. Route it to the currently attached controller without fabricating
-// an input event or changing cursor/document ownership.
+// an input event, committing a visible composition or changing cursor/document ownership.
 const inputControllers = new WeakMap<HTMLTextAreaElement, ImeInput>();
 
 export function prepareImePointerDown(input: HTMLElement): void {
   if (!(input instanceof HTMLTextAreaElement)) return;
   const controller = inputControllers.get(input);
   if (!controller) return;
-  controller.pointerDown();
-  trace("ime:pointerDown", () => controller.phase());
+  controller.commandPointerDown();
+  trace("ime:commandPointerDown", () => controller.phase());
 }
 
 /** textarea에 키보드·IME 리스너를 붙이고, 뗄 함수를 돌려준다. */

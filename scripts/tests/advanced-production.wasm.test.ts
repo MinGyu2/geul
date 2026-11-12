@@ -57,41 +57,52 @@ async function open(format: "hwp" | "hwpx", oversized = false) {
 const fields = (doc: RhwpDocument) => JSON.parse(doc.getFieldList!()) as { fieldId: number; command: string; value: string }[];
 const insert = (editor: RhwpEditorSession, formula: string) => editor.execute("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula });
 
-// This file must be invoked with all four VITE_GEUL_TEST_* flags disabled.
+// This file must be invoked with all four VITE_GEUL_TEST_* flags disabled (the production default is the subject).
 describe("production advanced history, actual Release WASM", () => {
   for (const format of ["hwp", "hwpx"] as const) {
-    it(`${format}: body metrics, coherent Undo/Redo, pending refusal, ordinary input invalidation and IME barrier`, async () => {
+    // 2026-11-12 T010 production activation: the production default records general typing/IME history; T012
+    // commands keep their pending/IME/bounds refusals inside that shared timeline.
+    it(`${format}: body metrics, coherent Undo/Redo, pending refusal, ordinary input history and IME barrier`, async () => {
       const { editor, doc, settle, selectBody, calls } = await open(format);
       const snapshots = vi.spyOn(doc, "saveSnapshot");
       try {
-        expect(editor.advancedHistoryOnly).toBe(true);
+        expect(editor.advancedHistoryOnly).toBe(false);
         expect(editor.typeText("한")).toBe(true); await settle();
-        expect(snapshots).not.toHaveBeenCalled();
+        expect(snapshots).toHaveBeenCalledTimes(1);
+        expect(editor.snapshot().history).toEqual({ undo: true, redo: false });
         selectBody();
         expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 130 }).accepted).toBe(true);
         expect(documentCommandState("hangul.charSpacing", editor.snapshot())).toEqual({ available: false, reason: "pendingEdits" });
         expect(editor.execute("hangul.charSpacing", { command: "hangul.charSpacing", percent: 10 }).accepted).toBe(false);
-        expect(editor.undo()).toBe(false); await settle();
+        await settle();
         const properties = () => JSON.parse(doc.getCharPropertiesAt!(0, 0, 0));
         expect(properties().ratios).toEqual(Array(7).fill(130));
         expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
         expect(properties().ratios).toEqual(Array(7).fill(100));
+        expect(doc.getTextRange(0, 0, 0, 1)).toBe("한");
         expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(properties().ratios).toEqual(Array(7).fill(130));
         selectBody(); expect(editor.execute("hangul.charSpacing", { command: "hangul.charSpacing", percent: -12 }).accepted).toBe(true); await settle();
         expect(properties().spacings).toEqual(Array(7).fill(-12));
         const beforeInput = snapshots.mock.calls.length;
         editor.caret = editor.anchor = body(0);
         expect(editor.typeText("글")).toBe(true); await settle();
-        expect(snapshots).toHaveBeenCalledTimes(beforeInput);
-        expect(editor.snapshot().history).toEqual({ undo: false, redo: false });
-        expect(editor.execute("edit.undo").accepted).toBe(false);
+        expect(snapshots.mock.calls.length).toBeGreaterThan(beforeInput);
+        expect(doc.getTextRange(0, 0, 0, 2)).toBe("글한");
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 0, 0, 1)).toBe("한");
+        expect(properties().spacings).toEqual(Array(7).fill(-12));
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
         expect(doc.getTextRange(0, 0, 0, 2)).toBe("글한");
         editor.beginComposition(); editor.updateComposition("가");
         expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 140 }).accepted).toBe(false);
+        expect(documentCommandState("edit.undo", editor.snapshot())).toEqual({ available: false, reason: "composing" });
+        expect(editor.execute("edit.undo").accepted).toBe(false);
         expect(editor.undo()).toBe(false);
         editor.endComposition("각"); await settle();
         expect(doc.getTextRange(0, 0, 0, 3)).toBe("글각한");
-        expect(snapshots).toHaveBeenCalledTimes(beforeInput);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 0, 0, 3)).not.toContain("각");
         // Only the pending HWP structural-eligibility original preflight (unanswered here) may be outstanding.
         expect(calls.filter(c => c.method !== "original")).toEqual([]);
       } finally { editor.dispose(); }
@@ -122,15 +133,23 @@ describe("production advanced history, actual Release WASM", () => {
       } finally { editor.dispose(); }
     });
   }
-  it("source/page bounds and missing context refuse before snapshots", async () => {
-    const { editor, doc, selectBody } = await open("hwp", true);
+  it("source/page bounds and missing context refuse T012 commands before snapshots; general history is separate", async () => {
+    const { editor, doc, selectBody, settle } = await open("hwp", true);
     const snapshots = vi.spyOn(doc, "saveSnapshot");
     try {
       selectBody();
       expect(documentCommandState("hangul.charWidth", editor.snapshot())).toEqual({ available: false, reason: "limit" });
-      expect(documentCommandState("edit.undo", editor.snapshot())).toEqual({ available: false, reason: "limit" });
+      expect(documentCommandState("hangul.charSpacing", editor.snapshot())).toEqual({ available: false, reason: "limit" });
+      expect(documentCommandState("edit.undo", editor.snapshot())).toEqual({ available: false, reason: "nothingToUndo" });
       expect(insert(editor, "=1+2").accepted).toBe(false);
+      expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 140 }).accepted).toBe(false);
       expect(snapshots).not.toHaveBeenCalled();
+      editor.caret = editor.anchor = body(0);
+      expect(editor.typeText("x")).toBe(true); await settle();
+      expect(snapshots).toHaveBeenCalledTimes(1);
+      expect(documentCommandState("edit.undo", editor.snapshot())).toEqual({ available: true });
+      selectBody();
+      expect(documentCommandState("hangul.charWidth", editor.snapshot())).toEqual({ available: false, reason: "limit" });
     } finally { editor.dispose(); }
     const small = await open("hwpx");
     try {
@@ -154,18 +173,22 @@ describe("production advanced history, actual Release WASM", () => {
       expect(calls.some(c => c.method === "save" || c.method === "commit")).toBe(false);
     } finally { editor.dispose(); }
   });
-  it("a discard trap while retiring history refuses ordinary input before changing it", async () => {
-    const { editor, doc, selectBody, settle } = await open("hwp");
+  it("a discard trap while new input invalidates the Redo branch fails closed and blocks saving", async () => {
+    const { editor, doc, selectBody, settle, calls } = await open("hwp");
     try {
       selectBody(); expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 140 }).accepted).toBe(true); await settle();
-      editor.caret = editor.anchor = body(0); const before = bytes(doc, "hwp"), revision = editor.localRevision;
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(editor.snapshot().history?.redo).toBe(true);
+      editor.caret = editor.anchor = body(0);
       const discard = doc.discardSnapshot.bind(doc);
       vi.spyOn(doc, "discardSnapshot").mockImplementation(id => { discard(id); throw new Error("injected after actual discard"); });
-      expect(editor.typeText("한")).toBe(false);
-      expect(bytes(doc, "hwp")).toEqual(before);
-      expect(editor.localRevision).toBe(revision);
+      editor.typeText("한");
       expect(editor.status.kind).toBe("failed");
       expect(editor.hasUncertainChanges).toBe(true);
+      expect(editor.snapshot().history).toBeNull();
+      expect(editor.execute("edit.redo").accepted).toBe(false);
+      expect((await editor.save()).ok).toBe(false);
+      expect(calls.some(c => c.method === "save")).toBe(false);
     } finally { editor.dispose(); }
   });
   it("history allocation trap refuses the advanced mutation and blocks saving an uncertain model", async () => {

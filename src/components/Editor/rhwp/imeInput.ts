@@ -415,6 +415,17 @@ export class ImeInput {
     if (!this.context.discarded) this.claim();
   }
 
+  /**
+   * 초점을 유지하는 페이지 밖 누름(리본 단추·탭). 조합·커서·소유권은 그대로 두고(T011: 누름 뒤에도 조합이 이어짐), 막 조합으로
+   * 확정한 글자가 있을 때만 페이지 클릭과 같은 입력기 reset 반복 방어를 건다(시작 없는 같은 글자 재확정만 소비).
+   */
+  commandPointerDown(): void {
+    this.syncOwner();
+    if (this.context.discarded || this.session.composing) return;
+    const terminal = this.context.terminal;
+    if (terminal && terminal.text && terminal.composed && !terminal.confirmedByView) this.context.terminal = { text: terminal.text, resetRepeat: true };
+  }
+
   /** textarea가 초점을 잃음. 조합 끝 없이 초점을 잃었으면 보이는 조합 글자를 그 자리에 확정한다. */
   blur(): void {
     this.syncOwner();

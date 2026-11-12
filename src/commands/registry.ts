@@ -58,13 +58,10 @@ export interface CommandDefinition {
 const SUPPORTED: EngineSupport = { level: "supported" };
 const UNSUPPORTED: EngineSupport = { level: "unsupported" };
 
-/** General RHWP typing history retains its original test-only gate. Normal builds
- * expose Undo/Redo only when the session declares an actual advanced-only timeline.
- * This conditional T012 support does not pass D2/D4 or activate general history. */
-const RHWP_HISTORY: EngineSupport =
-  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_HISTORY === "1"
-    ? (console.info("geul-test-build: rhwp-history-commands"), SUPPORTED)
-    : { level: "supported", historyScope: "advanced" };
+/** General RHWP typing/IME history (T010). Runtime availability still follows the session's actual
+ * history state (ready, no IME transaction, entries present, limits, generation). The former test-only
+ * activation flag is no longer required; T012 advanced commands keep their own session-level bounds. */
+const RHWP_HISTORY: EngineSupport = SUPPORTED;
 
 /**
  * 시험 빌드 전용 rhwp 글자 서식(T010 서식): 검사 훅 빌드이면서 `VITE_GEUL_TEST_RHWP_FORMAT=1`일 때만 지원으로 본다(위와 같은 빌드 상수).
@@ -78,7 +75,7 @@ const RHWP_FORMAT: EngineSupport =
 /**
  * 엔진별 지원(근거: docs/architecture/command-registry.md).
  * - WordCraft: 실행 취소·다시 실행은 엔진(`Session`)의 기록, 글자 서식은 WordCraft `format.*` 명령(Rust 시험·보존 검사 통과).
- * - rhwp: 일반 입력 history는 원래 시험 관문 뒤에 남는다. 제품 Undo/Redo는 세션의 advanced 전용 기록만 사용한다.
+ * - rhwp: 일반 입력·IME history의 실행 취소·다시 실행(T010 제품 활성화 2026-11-12). 가용성은 세션 기록 상태로 정한다.
  *   일반 굵게·기울임 등의 서식은 여전히 시험 구성 전용이다.
  * - 저장은 두 엔진 모두 기존 T009 저장 절차(사전 검사·출력 검사·게시)를 그대로 부른다.
  * - 장평·자간(T012): 독립 제품 capability. HWP/HWPX 단일 문단 선택·실제 문자 모양 ownership API·고급 기록이 필요하다.
@@ -98,8 +95,8 @@ const RHWP_FORMAT: EngineSupport =
  *   `review.rejectAll`(고정 DocxOp). 수정 기록 색인 일대일 비교(WordCraft `b74830b`) 뒤 추적 편집·IME 교정·수락·거절 출력이 저장 검증을
  *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
-// Production advanced mutations require actual session capabilities and an isolated
-// history transaction. General formatting and general typing history remain test-only.
+// Production advanced mutations require actual session capabilities and a history transaction
+// within the conditional T012 bounds. General RHWP formatting remains test-only.
 const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
