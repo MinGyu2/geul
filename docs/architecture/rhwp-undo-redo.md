@@ -2,6 +2,8 @@
 
 > **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](t010-production-activation-2026-11-12.json).
 
+> **2026-11-12 검증기 보강 추가 기록.** 한글 순서·삽입 위치·커서/거래, 내장 제품/Release 신원과 실행별 필수 teardown을 강제하고 음성 대조 및 실제 native 재실행으로 확인했다. 제품 HWP/HWPX 68검사·16저장 oracle PASS, 사용성은 전체 실행의 14 PASS와 교정 후 한글 2 PASS로 16시나리오·716검사 범위를 충족했다. 원래 전체 실행의 하네스 오류 2건과 FAIL은 보존한다. 회귀 24개·실제 Vite fixture 빌드 3개 PASS, 실제 증거 손상 33건 거부 및 재시도 범위는 [별도 증거](t010-validator-hardening-2026-11-12.json)에 기록했다. 원래 활성화 기록·수용 정책·D4 지연/E→U→F 판정은 변경하지 않는다.
+
 > **2026-11-12 D2 Option B:** 현재 D2 규범은 [지원 환경별 native 안전성 계약](../planning/spec.md#t010-d2-supported-runtime-v1)이다. 아래 종전 E→U→F 의무/INCONCLUSIVE는 역사적 판정으로 보존한다. 지원 환경 D2는 실제 native 필수 검사를 통과해 PASS다. 정확한 실행 신원은 [증거 JSON](t010-d2-supported-2026-11-12.json)에 기록한다. E→U→F는 독립 NOT OBSERVED / UNVERIFIED이며 그 순서가 불가능하거나 native 검증됐다고 주장하지 않는다.
 
 <a id="advanced-only-history-20261106"></a>

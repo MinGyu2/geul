@@ -1,0 +1,390 @@
+{
+  "schema": "geul.t010.validator-hardening.v1",
+  "date": "2026-11-12",
+  "reportTimezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "historicalRecord": {
+    "path": "docs/architecture/t010-production-activation-2026-11-12.json",
+    "sha256": "a42982a517e7b69d2c9fc97f5f24db71ac96639198cde0028b0f65df63bf6bdd",
+    "preserved": true
+  },
+  "decisions": {
+    "t010FunctionalAcceptance": "PASS (unchanged product source and Release; strengthened affected native paths verified)",
+    "generalRhwpUndoRedoProduction": "GO (existing Linux X11/IBus scope retained)",
+    "d4Latency": "TARGET NOT MET; not rerun; group-start p95 <=50ms and Undo p95 <=1500ms unchanged",
+    "eufCompatibility": "NOT OBSERVED / UNVERIFIED; bounded composition trial does not replace the original predicate"
+  },
+  "identity": {
+    "branch": "master",
+    "startHead": "79dd5040ea1bc345f32c7aa234ebed20a71b55ff",
+    "implementationCommit": "41bee8e72ff88c1b5f76dec70d66dffeda295c69",
+    "submodules": {
+      "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "external/wordcraft": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+    },
+    "productSourceUnchanged": true,
+    "productSourceSha256": {
+      "src/commands/registry.ts": "eb5a4532b7126778540e6fbcd0eec5745d9144c9928e878f87016729b839b345",
+      "src/commands/capability.ts": "830acc6164b74de89dbc5cae11ee093387201c821cfa71691d592bc769885730",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts": "a80f749b0bc599962bc1a10aa65e084cb05e6dee35f832912ac908d35510d105",
+      "src/components/Editor/rhwp/rhwpHistory.ts": "d736d8719725aad7595184a1485b36a831b955b78b2c583ba6c499d490c56029",
+      "src/components/Editor/rhwp/imeInput.ts": "53c3892c107cc59ac6749b0670d4cf27446d9053b004eb00a47a136b45cae1ba",
+      "src/components/Editor/textInput.ts": "b12751c1d2e5c7c328459b88dfdb58e0a9361217ec41306a6c45b4040b0a17fd",
+      "src/components/CommandButton/editorFocus.ts": "c2367174dfaa7f4fea3a70187a6134cb69247660680510d3e63ff2e476cae9b2",
+      "src/components/Editor/rhwp/RhwpSurface.tsx": "c38f751833fc371480915805869d11dc49ad4207b0f40291d03889950bb8c859"
+    },
+    "finalHarnessAndBuildSourceSha256": {
+      "scripts/tests/native-t010-usability.py": "ca54a6137e2b52da34d2793221f94bcaaaf9bc40496f09fd4bd8dbb96b580a97",
+      "scripts/tests/native-t010-production.py": "7b57644abb4b638d546240ea28106204bb1f1db07dd415f0ece54eb00027d513",
+      "scripts/tests/rhwp-paragraphs.mjs": "eb72c493fb43e8f4aa4dc9fce38c510e5fcb5041653cd23afaf754118d057fec",
+      "scripts/tests/native-ibus-session.py": "1d9134bba04257367a7ec07e2146ff5a7f50a17dc107a7a576ca39a8edc8f725",
+      "scripts/tests/t010_acceptance.py": "6472df6cf426e7337d8936d05d6b66e3738bdf5381ea0f51dd64ed41e48bc4ee",
+      "scripts/tests/t010_lifecycle.py": "ec71e07bc5f88e12e10581d214808d741ca1e77f04dd7b0e15cc85b48d623088",
+      "scripts/tests/test_t010_acceptance.py": "d3ca3dc910e2e74abef41c99ad147190cd986c7cb641288d860a4f54f3977498",
+      "scripts/frontendBuildIdentity.ts": "db128bafbd22e26425bcce95c7fa77a32a3d61e8a167b2c61cf2fd2e9976f90a",
+      "scripts/tests/frontendBuildIdentity.test.ts": "665547a26182eaeb10378d62289a0a9b8dc1201533759471e66214dab37395d2",
+      "vite.config.ts": "dfbed45c7a170dead7a4ca4e5df0ca21b9bdf2cfc8e871c9d90a214467622215"
+    },
+    "rhwpRelease": {
+      "generation": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6",
+      "artifacts": {
+        "rhwp.js": "3dc17d30c86235e94bc750149fe99bab4b97e7fd04973f5783c173b7800cc1e8",
+        "rhwp_bg.wasm": "94a00e6809210a7905ee35c9427cb8be329201318d23e2c6768021dfc57e6dc0"
+      },
+      "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "profile": "release"
+    },
+    "productionExecutableSha256": "bab2a97a48682c0f631ee566cc85e2e75c7f6abe1b6303505a81b8a8fc9dd098",
+    "productionRunningExecutable": [
+      {
+        "pid": 1103602,
+        "startTime": "32047473",
+        "sha256": "bab2a97a48682c0f631ee566cc85e2e75c7f6abe1b6303505a81b8a8fc9dd098",
+        "testFlags": []
+      }
+    ],
+    "diagnosticHostExecutableSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4",
+    "nativeHarnessHashes": {
+      "production2": "c0736d80e550230c271b6ff06e7b63a37092b5046d108485eacabadb919b6e42",
+      "fullUsability": "f2711fbfadacdd66395597bf7abe74e07d083f94bdc6c72e4aeb436fa281bb49",
+      "koreanRetry": "ca54a6137e2b52da34d2793221f94bcaaaf9bc40496f09fd4bd8dbb96b580a97"
+    },
+    "finalValidatorSha256": "6472df6cf426e7337d8936d05d6b66e3738bdf5381ea0f51dd64ed41e48bc4ee"
+  },
+  "sourcesOfTruth": {
+    "application": "Explicit --app-sha256 captured from the freshly built executable; running /proc executable bytes, PID and start time independently recorded. Normal origin is tauri://localhost.",
+    "release": "Inspected public/rhwp/RELEASE.json, captured before app reads; generation/artifacts independently match historical approved Release. Mutable legacy BUILD.json is Debug and is not the production expectation. Served metadata and both artifact hashes must match.",
+    "frontend": "npm run build emits frontend-build.json from Vite resolved build mode, process env and dotenv-resolved config.env. Explicit trusted --build-evidence must equal served manifest; all emitted JS/CSS hashes and entrypoint URLs must match. Runtime VITE_GEUL_TEST_* names are separate evidence and cannot prove build-time absence.",
+    "teardown": "Existing tests/e2e/tauri_smoke.py tauri_driver/end_session own app/WebDriver cleanup. t010_lifecycle.driver adds runId/dataHome/driverPid/session attribution and slices current-run records. Exactly one session per driver context is supported. Native launcher owns Xvfb/D-Bus/IBus descendants via subreaper.",
+    "verdict": "t010_acceptance.production/usability require complete rows/checks/oracles/inner teardown. Child is PENDING_CLEANUP, never PASS for future parent teardown. native-ibus-session --acceptance-report finalizes only after matching launcher evidence; direct runs lacking this evidence remain INCONCLUSIVE."
+  },
+  "weaknesses": [
+    {
+      "rootCause": "Counter-based character multisets lost order and insertion position; accepted/refused Undo outcomes were not fully identified.",
+      "correction": "Exact Unicode text at the observed caret, selection, synchronized revisions, transaction state and Undo/Redo depths. Trusted native Ctrl+Z/final insertion and complete ordered command trace distinguish accepted-after-commit from refused-then-committed. Subsequent typing checks exact anchor and caret.",
+      "functions": [
+        "native-t010-usability.py:Usability.korean/setup/state",
+        "t010_acceptance.py:insertion/composition_undo"
+      ]
+    },
+    {
+      "rootCause": "Recorded origin, runtime flags, Release metadata and oracle generation were not all mandatory verdict predicates; empty all() and missing format/scenario evidence could pass.",
+      "correction": "Enforce expected executable and running process SHA, exact embedded origin, build-time flag manifest plus JS/CSS bytes and entrypoints, absent hooks/traces, approved full Release metadata/artifact hashes and hash-verified independent oracle; both formats, mandatory named checks and eight exact saved-file oracles per format required.",
+      "functions": [
+        "native-t010-production.py:main/Production.paragraphs/save/run",
+        "t010_acceptance.py:production_identity/production/rows_complete/release",
+        "rhwp-paragraphs.mjs",
+        "frontendBuildIdentity.ts:frontendBuildIdentity",
+        "vite.config.ts"
+      ]
+    },
+    {
+      "rootCause": "Global diagnostic teardown records were not enforced as complete, successful evidence belonging to each current session; parent cleanup had not happened when a child could report PASS.",
+      "correction": "Bind run/session/process ownership to existing cleanup records; reject missing/extra/mismatched/incomplete/error records, unsuccessful DELETE, driver kill/nonzero or boolean exit, fallback cleanup or survivors. Parent cleanup includes run/command identity and raw ownership/survivor observations before final PASS.",
+      "functions": [
+        "t010_lifecycle.py:driver/running_application",
+        "t010_acceptance.py:teardown/launcher_cleanup/pending_cleanup",
+        "native-ibus-session.py:main"
+      ]
+    }
+  ],
+  "regressions": {
+    "syntheticValidatorTests": {
+      "normal": "24 PASS",
+      "pythonOptimized": "24 PASS",
+      "negativeCases": "Reordering, duplicate/missing syllables, wrong insertion/caret/revision/transaction/owner/native key/trace; executable/origin/runtime/build flags/entrypoint/Release/artifact/oracle errors; missing HWP/HWPX/mandatory checks/save assertions; missing/failed/extra/wrong-run/session/driver teardown; absent/malformed parent evidence.",
+      "positiveCases": "Exact insertion, both explicitly permitted composition Undo outcomes, complete production/usability rows, owned inner/outer cleanup; no parent -> INCONCLUSIVE, matching pending parent -> PENDING_CLEANUP."
+    },
+    "actualViteFixtureBuilds": {
+      "count": 3,
+      "result": "PASS",
+      "cases": [
+        "normal production hashes/entrypoints and empty flags",
+        "dotenv build flag captured with process variable absent",
+        "unknown process test flag and nonproduction mode recorded"
+      ]
+    },
+    "finalNativeReportReplay": {
+      "status": "PASS",
+      "positiveGates": 10,
+      "corruptionsRejected": 33,
+      "nativeRun": false,
+      "note": "Offline replay of preserved real native evidence under final validators, not new native input."
+    }
+  },
+  "nativeReruns": {
+    "supportedRuntime": "Linux X11/Xvfb 21.1.23, Tauri2, WebKitGTK2.54.1/GTK3.24.52, IBus1.5.33 + ibus-hangul1.5.5; actual X11 keyboard/pointer and native IBus; no synthetic composition events.",
+    "production": {
+      "status": "PASS",
+      "formats": {
+        "hwp": {
+          "status": "PASS",
+          "checks": 34,
+          "saves": 8,
+          "error": null
+        },
+        "hwpx": {
+          "status": "PASS",
+          "checks": 34,
+          "saves": 8,
+          "error": null
+        }
+      },
+      "checks": 68,
+      "savedFileOracles": 16,
+      "origin": "tauri://localhost",
+      "runtimeTestFlags": [],
+      "buildTestFlags": {},
+      "servedFrontendAndReleaseHashesVerified": true,
+      "innerAndOuterAcceptance": [
+        {
+          "status": "PASS"
+        },
+        {
+          "status": "PASS"
+        }
+      ]
+    },
+    "fullUsabilityRun": {
+      "status": "FAIL",
+      "scenarios": 16,
+      "passingRows": 14,
+      "checksExecuted": 708,
+      "failedRows": [
+        {
+          "format": "hwp",
+          "case": "korean",
+          "error": "TypeError: verdict() got an unexpected keyword argument 'end'"
+        },
+        {
+          "format": "hwpx",
+          "case": "korean",
+          "error": "TypeError: verdict() got an unexpected keyword argument 'end'"
+        }
+      ],
+      "note": "Both errors occurred in the new verdict wrapper keyword forwarding after correct native composition Undo. Original FAIL remains unchanged."
+    },
+    "correctedKoreanRetry": {
+      "status": "PASS",
+      "scenarios": 2,
+      "checks": 72,
+      "outcomes": {
+        "hwp": "accepted-after-commit",
+        "hwpx": "accepted-after-commit"
+      },
+      "innerAndOuterAcceptance": [
+        {
+          "status": "PASS"
+        },
+        {
+          "status": "PASS"
+        }
+      ],
+      "observed": "Commit then accepted Undo; revision21->23, caret43->42, historyUndo3/Redo1; next 달 at restored caret gives revision24/caret43. Refused-then-committed is a separately tested allowed contract, not claimed observed in this rerun."
+    },
+    "verifiedCoverage": {
+      "scenarios": 16,
+      "checks": 716,
+      "assembly": "14 unchanged passing rows from full execution + two successful affected Korean retries. rows_complete and per-run owned cleanup revalidated; no failed source report was overwritten."
+    }
+  },
+  "preservedFailures": [
+    {
+      "path": "production/result.json",
+      "status": "FAIL",
+      "cause": "Harness compared pre-Tauri HTML bytes with CSP-transformed embedded HTML; launch omitted historical --hangul-disable-latin. JS/CSS and Release bytes matched. Corrected to compare executable identity, source HTML build hash, actual JS/CSS bytes and actual entrypoints; production2 repeated with intended private Hangul configuration."
+    },
+    {
+      "path": "usability/result.json",
+      "status": "FAIL",
+      "cause": "New verdict wrapper lacked **kwargs for insertion(end=True); fixed forwarding, added regression and reran both affected Korean scenarios."
+    }
+  ],
+  "teardown": {
+    "selectedNativeSessions": 3,
+    "innerProcessCleanup": "PASS for production2, full usability and Korean retry; DELETE ok, driverExit int0, no forced driver kill/fallback/survivors.",
+    "outerProcessCleanup": "All three complete/proven, subreaper true, survivors empty. Full usability command exit1 is retained as failed execution despite successful process cleanup; only corrected retry/production2 have final overall PASS.",
+    "identity": "Each scope/runId/driverPid/sessionIds/command hash checked; wrong-run/session/driver cleanup regressions reject."
+  },
+  "newProductDefects": [],
+  "productChanges": "No src/ or submodule changes; general production Undo/Redo, history/IME ownership/guards, save preservation, snapshot limits, T012 restrictions and WordCraft/DOCX unchanged.",
+  "verificationCommands": [
+    "python3 -m unittest discover -s scripts/tests -p test_t010_acceptance.py -v",
+    "python3 -O -m unittest discover -s scripts/tests -p test_t010_acceptance.py",
+    "node node_modules/vitest/vitest.mjs run --config scripts/tests/vitest.config.ts scripts/tests/frontendBuildIdentity.test.ts",
+    "python3 -m py_compile scripts/tests/{t010_acceptance,t010_lifecycle,native-t010-usability,native-t010-production,native-ibus-session}.py",
+    "node --check scripts/tests/rhwp-paragraphs.mjs",
+    "node node_modules/eslint/bin/eslint.js scripts/frontendBuildIdentity.ts scripts/tests/frontendBuildIdentity.test.ts vite.config.ts",
+    "npm run build",
+    "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+    "python3 scripts/cargo-geul.py build --bin geul --features tauri/custom-protocol",
+    "python3 scripts/cargo-geul.py build --bin geul",
+    "native-ibus-session.py --acceptance-report ... (exact execution configurations retained in private *-command.json)",
+    "python3 ../geul-tests/reports/t010-validator-hardening-20261112/revalidate.py",
+    "python3 scripts/check-sensitive-info.py <changed files>",
+    "git diff --check"
+  ],
+  "remainingLimitations": [
+    "D4 latency not rerun; original targets and TARGET NOT MET preserved.",
+    "Original D2 E->U->F not observed/verified; no inferred compatibility upgrade.",
+    "No expansion to Windows/macOS/Wayland/other IMEs/physical desktop or unlisted documents.",
+    "Native product rerun uses the hash-recorded production2 harness. Subsequent metadata/preflight/report compatibility additions do not change native functional assertions; final gates replay all preserved production evidence.",
+    "Unrelated blocked T014 .agent-tmp.md was preserved; task checkpoint and raw evidence remain private. T012-T016 states unchanged."
+  ],
+  "evidence": [
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production/result.json",
+      "sha256": "d6713c6061782f2d3580e5eea2674006e5ba788a2ed222e7f90523a398d144ac"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2/result.json",
+      "sha256": "153c64df20599a692b7b916373f138caee83fa7b3452d328a82ce6e9abc6b441"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-session/session.json",
+      "sha256": "d0f3623097bc58f5a64763a4ffe920e369c9b8c7a4cfa83b459a171e43265e51"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-session/cleanup.json",
+      "sha256": "f4d7831b7a5b54b37a060c2544d1677c03baf26c5e4c6fd7e432f7f583906895"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-command.json",
+      "sha256": "8329317fbfcead5858792662603783948d7363617ed57886307520aa427d724b"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-harness.py",
+      "sha256": "c0736d80e550230c271b6ff06e7b63a37092b5046d108485eacabadb919b6e42"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-app.sha256",
+      "sha256": "1164237de3522a56b446861374c29b6ef84ed276d08126f17643561df97aacb0"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/frontend-build2.json",
+      "sha256": "173f900e6d468b479f722b773b36cd3fb75bee021549d2a70c40dc18ebf0fc85"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability/result.json",
+      "sha256": "cf1556b25a84180bce0dbb3c511654487d45885453342c4c5fce050e10db2608"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability-session/session.json",
+      "sha256": "41d47b78f1acd23fd3e2780cf567e0f790d35f7b14280d4fb5b08bdda18e2a27"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability-session/cleanup.json",
+      "sha256": "61b8fd043eec91660fb94eda8d42c2ad9be89cf20a4f03f237e49ce8f67a75bc"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability-launch-command.json",
+      "sha256": "5d087abdfed13f86986389e57990c299b978cdc66f62707f8efb053f9a1f7a19"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability-command.json",
+      "sha256": "a6f5607d43515e12abaa731dd72206059c20612eac05a0cbcb4d12ba4ff366db"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/korean-retry/result.json",
+      "sha256": "9e91e896b917dea52b05f96065c7d48c85e4b59c4b74f2917eca954c1e8e89a4"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/korean-retry-session/session.json",
+      "sha256": "e1ab8296c822c95dc63faff35354e46fe6b90ee2bef6e9940b1547a873bf195d"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/korean-retry-session/cleanup.json",
+      "sha256": "49ce6dd4535a82e88a003136cfa1d6f2b49d8541837676341421c4ab24129331"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/korean-retry-launch-command.json",
+      "sha256": "f8212c427798a3976577c146896b2b7d1bb420cc689a31e8bd93a4dfcecbad9f"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/korean-retry-command.json",
+      "sha256": "56cc40e6b69acaeb842498ca4f9ea86e7b7f7d09972d5dd6f44e5ee029bf94c7"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/regressions.log",
+      "sha256": "528aede65f6c9fb46bfde0e3857f8c674095e8e6b534b6ba2617081b2596408d"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/regressions-optimized.log",
+      "sha256": "f7ab22b79f52a42152ffbde1ad8c0839a428f0abbb96b03b4cff63c8cd39e1a5"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/frontend-identity-tests.log",
+      "sha256": "f80fc6dd84a9a4f04708f831b9a36f81de823ecf14cb004ef733f1deed503b33"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/source-security.log",
+      "sha256": "38ec5b5a4b512884c8358c62b0efd97fdfb9886867af57dfad9ea9c4d55700eb"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/final-revalidation.json",
+      "sha256": "eea078d65cb787dea30641f7502d32d01be8daa0bbe44eb682fae9f78c919703"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/revalidate.py",
+      "sha256": "dcd8e2606e1d7e6c6420549bd191e8b7cefa618d325a8bb2af30739a15b8bf6f"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/run-usability.py",
+      "sha256": "b1c5346b42a20a2a797dbaeacadb6c09f0496e42883b42edc7f0e0a697858f10"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/run-korean.py",
+      "sha256": "d1b6e80a6e52d707247c7c3561a723abf308d32e19ff48aa7fa5efd13d34e6ae"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/frontend-build.log",
+      "sha256": "7ac4573fad9675c880ec77dc86a1c8e74a45e25606945c2ebb03a59cfece5aca"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/production2-cargo-build.log",
+      "sha256": "fc12d115ed300f3c114f5d62580cbd8044f644c0c362052c6741003ca8313160"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/usability-cargo-build.log",
+      "sha256": "f89af0baccd6c143984a0989380746fb0be8e597914d139334e081d1c304a9ef"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-hardening-20261112/negative-executable/result.json",
+      "sha256": "8bb5f6125fddc915f6dc357cd8ac17afc26c920042e273c266206ceb4fccd47b"
+    }
+  ],
+  "pushPerformed": false,
+  "mergePerformed": false,
+  "security": {
+    "changedSourceScan": "PASS (10 files)",
+    "documentationScan": "PASS (3 files; rechecked before documentation commit)",
+    "implementationCommitHooks": {
+      "commit": "41bee8e72ff88c1b5f76dec70d66dffeda295c69",
+      "stagedSensitiveInfo": "PASS",
+      "gitleaks": "PASS",
+      "scannerRegression": "SKIPPED by existing path filter; scanner unchanged"
+    },
+    "hookBypass": false,
+    "pushGates": "NOT RUN; no push requested/performed"
+  }
+}
