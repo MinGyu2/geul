@@ -2,7 +2,9 @@
 import copy
 import ast
 import hashlib
-from pathlib import PurePosixPath
+import json
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 import unittest
 
 import t010_acceptance as gate
@@ -468,6 +470,73 @@ class UsabilityAssertions(unittest.TestCase):
         coverage = gate.usability_coverage(report, report['formatsRequested'], report['cases'])
         self.assertEqual(coverage['selectedScenarioAcceptance'], 'PASS')
         self.assertEqual(coverage['fullUsabilityCoverage'], 'INCOMPLETE')
+
+    def test_every_fixed_and_dynamic_final_checkpoint_requires_explicit_certainty(self):
+        source = complete_usability_evidence()
+        missing = object()
+        invalid_values = (missing, None, 'true', '', 'unknown', False, True, 0, [], {})
+
+        for row_index, source_row in enumerate(source['scenarios']):
+            required, checkpoints, _ = gate.usability_plan(source_row['format'], source_row['case'])
+            final_labels = ([label for label in checkpoints if label.endswith(' continued editing')]
+                            if source_row['case'] == 'complex' else [checkpoints[-1]])
+            for label in final_labels:
+                check_name = (label.removesuffix(' continued editing') + ' final ready/certain/settled'
+                              if source_row['case'] == 'complex'
+                              else next(name for name in required if name.endswith('ready/certain/settled')))
+                for value in invalid_values:
+                    with self.subTest(format=source_row['format'], case=source_row['case'],
+                                      checkpoint=label, uncertain=value):
+                        report = copy.deepcopy(source)
+                        row = report['scenarios'][row_index]
+                        state = next(s for s in row['states'] if s['label'] == label)
+                        if value is missing:
+                            state.pop('uncertain')
+                        else:
+                            state['uncertain'] = value
+                        # Keep the earlier ready/certain/settled assertion explicitly PASS.
+                        self.assertTrue(any(check['name'] == check_name and check['status'] == 'PASS'
+                                            for check in row['checks']))
+                        self.assertTrue(rejected(gate.usability, report,
+                                                 report['formatsRequested'], report['cases']))
+
+    def test_native_ready_check_requires_explicit_certain_status_value(self):
+        source_path = Path(__file__).with_name('native-t010-usability.py')
+        module = ast.parse(source_path.read_text(encoding='utf-8'), filename=str(source_path))
+        native_class = next(node for node in module.body
+                            if isinstance(node, ast.ClassDef) and node.name == 'Usability')
+        methods = [node for node in native_class.body
+                   if isinstance(node, ast.FunctionDef) and node.name in ('check', 'ready_ok')]
+        isolated_class = ast.ClassDef(name='IsolatedUsabilityObservation', bases=[], keywords=[],
+                                      body=methods, decorator_list=[])
+        isolated_module = ast.fix_missing_locations(ast.Module(body=[isolated_class], type_ignores=[]))
+        namespace = {'smoke': SimpleNamespace(Failure=RuntimeError), 'json': json}
+        exec(compile(isolated_module, str(source_path), 'exec'), namespace)
+        usability = namespace['IsolatedUsabilityObservation']()
+
+        def observe(state):
+            usability.current = {'format': 'hwp', 'case': 'english', 'checks': []}
+            try:
+                usability.ready_ok(state, 'english final')
+            except RuntimeError:
+                pass
+            return usability.current['checks'][-1]['status']
+
+        certain = {'status': 'ready', 'uncertain': 'false', 'composing': 'false',
+                   'localRevision': '7', 'revision': '7'}
+        self.assertEqual(observe(copy.deepcopy(certain)), 'PASS')
+        invalid_states = []
+        missing = copy.deepcopy(certain); del missing['uncertain']; invalid_states.append(missing)
+        for value in (None, 'true', '', 'unknown', False, True, 0, [], {}):
+            invalid = copy.deepcopy(certain); invalid['uncertain'] = value; invalid_states.append(invalid)
+        for state in invalid_states:
+            with self.subTest(state=state):
+                self.assertEqual(observe(state), 'FAIL')
+
+        for key, value in (('status', 'loading'), ('composing', 'true'), ('revision', '8')):
+            invalid = copy.deepcopy(certain); invalid[key] = value
+            with self.subTest(guard=key):
+                self.assertEqual(observe(invalid), 'FAIL')
 
     def test_rejects_arbitrary_only_korean_pass_and_missing_replaced_or_duplicate_checks(self):
         report = complete_usability_evidence(cases=['korean'])

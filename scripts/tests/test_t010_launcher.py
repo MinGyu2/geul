@@ -178,14 +178,69 @@ class FinalAcceptanceLifecycle(unittest.TestCase):
     def test_final_pass_and_zero_exit_require_inner_process_and_filesystem_success(self):
         with tempfile.TemporaryDirectory() as parent:
             path = Path(parent) / 'final.json'
-            self.write_pending(path)
+            report, _, _ = self.write_pending(path)
+            report['acceptance'] = {'status': 'PASS', 'source': 'child-inner-acceptance'}
+            launcher.atomic_json(path, report)
             _, identity, cleanup = lifecycle_fixture(path)
             self.assertEqual(launcher.finalize_report(path, identity, cleanup, 0), 0)
             final = json.loads(path.read_text())
             self.assertEqual(final['status'], 'PASS')
             self.assertEqual(final['launcherExit'], 0)
+            self.assertEqual(final['nativeExecutionStatus'], 'PENDING_CLEANUP')
+            self.assertEqual(final['nativeCommandExit'], 0)
+            self.assertEqual(final['nativeAcceptance'],
+                             {'status': 'PASS', 'source': 'child-inner-acceptance'})
             self.assertEqual(final['acceptance']['status'], 'PASS')
+            self.assertEqual(final['launcherCleanup'], cleanup)
             self.assertEqual(final['launcherAcceptance']['status'], 'PASS')
+
+    def test_only_exact_pending_cleanup_child_state_can_be_promoted_to_pass(self):
+        invalid_statuses = (
+            'RUNNING', 'PENDING', 'FAIL', 'INCONCLUSIVE', 'PASS', None, '',
+            'UNKNOWN', ' pending_cleanup ', 'pending_cleanup', False, True, 0,
+            [], {},
+        )
+        with tempfile.TemporaryDirectory() as parent:
+            for index, status in enumerate(invalid_statuses):
+                with self.subTest(status=status):
+                    path = Path(parent) / f'invalid-{index}.json'
+                    report, identity, cleanup = self.write_pending(path)
+                    report['acceptance'] = {'status': 'PASS', 'source': 'inner'}
+                    report['status'] = status
+                    launcher.atomic_json(path, report)
+
+                    code = launcher.finalize_report(path, identity, cleanup, 0)
+
+                    final = json.loads(path.read_text())
+                    self.assertNotEqual(final.get('status'), 'PASS')
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(final['launcherExit'], code)
+                    if status == 'PASS':
+                        self.assertEqual(final['phase'], 'finalization-failed')
+                        self.assertIn('child claimed PASS', final['error'])
+                        self.assertEqual(final['acceptance'],
+                                         {'status': 'PASS', 'source': 'inner'})
+                    else:
+                        self.assertEqual(final.get('nativeExecutionStatus'), status)
+                        self.assertEqual(final['nativeCommandExit'], 0)
+                        self.assertEqual(final['nativeAcceptance'],
+                                         {'status': 'PASS', 'source': 'inner'})
+
+    def test_missing_child_status_cannot_be_promoted_to_pass(self):
+        with tempfile.TemporaryDirectory() as parent:
+            path = Path(parent) / 'missing-status.json'
+            report, identity, cleanup = self.write_pending(path)
+            report['acceptance'] = {'status': 'PASS', 'source': 'inner'}
+            del report['status']
+            launcher.atomic_json(path, report)
+
+            code = launcher.finalize_report(path, identity, cleanup, 0)
+
+            final = json.loads(path.read_text())
+            self.assertNotEqual(final.get('status'), 'PASS')
+            self.assertNotEqual(code, 0)
+            self.assertIsNone(final['nativeExecutionStatus'])
+            self.assertEqual(final['nativeCommandExit'], 0)
 
     def test_process_success_with_filesystem_failure_is_nonpass_and_nonzero(self):
         with tempfile.TemporaryDirectory() as parent:

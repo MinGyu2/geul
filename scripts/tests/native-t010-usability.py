@@ -191,7 +191,7 @@ class Usability:
             raise smoke.Failure(f'{self.current["format"]}:{self.current["case"]}: {name} {json.dumps(detail, ensure_ascii=False) if detail is not None else ""}')
 
     def ready_ok(self, st, label):
-        self.check(label + ' ready/certain/settled', st['status'] == 'ready' and st.get('uncertain', 'false') == 'false' and st['composing'] == 'false'
+        self.check(label + ' ready/certain/settled', st['status'] == 'ready' and st.get('uncertain') == 'false' and st['composing'] == 'false'
                    and st['localRevision'] == st['revision'], {k: st.get(k) for k in ('status', 'uncertain', 'composing', 'localRevision', 'revision')})
 
     def chain(self, label, stop, direction='undo', limit=80, via=None):

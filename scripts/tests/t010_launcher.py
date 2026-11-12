@@ -120,7 +120,9 @@ def finalize_report(path, identity, cleanup, command_code, *, writer=atomic_json
         report['acceptance'] = inner
         report['launcherCleanup'] = cleanup
         report['launcherAcceptance'] = gate.verdict(gate.launcher_cleanup, report, identity, cleanup)
-        ok = not previous_failure and inner['status'] == 'PASS' and report['launcherAcceptance']['status'] == 'PASS'
+        # Only a completed child awaiting outer cleanup is eligible for final success.
+        ok = (report['nativeExecutionStatus'] == 'PENDING_CLEANUP' and not previous_failure
+              and inner['status'] == 'PASS' and report['launcherAcceptance']['status'] == 'PASS')
         report['status'] = 'PASS' if ok else 'FAIL'
         code = 0 if ok else (command_code or 3)
         report['launcherExit'] = code

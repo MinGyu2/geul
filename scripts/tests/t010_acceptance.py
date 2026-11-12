@@ -231,7 +231,7 @@ def usability_row(row, report):
     finals = [n for n in checkpoints if n.endswith(' continued editing')] if case == 'complex' else [checkpoints[-1]]
     for label in finals:
         st = by_label[label]
-        require(st.get('status') == 'ready' and st.get('composing') == 'false' and st.get('uncertain') in (None, 'false')
+        require(st.get('status') == 'ready' and st.get('composing') == 'false' and st.get('uncertain') == 'false'
                 and st.get('localRevision') == st.get('revision'), 'unsettled/failed final checkpoint')
     chains = row.get('chains', [])
     require(len(chains) == len(chain_plan), 'missing/extra history chain')
