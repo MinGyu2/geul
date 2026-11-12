@@ -11,6 +11,71 @@ Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, mas
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
 
+<a id="t010-acceptance-policy-20261112"></a>
+
+## T010 수용 정책 — 기능 완료와 성능 목표 분리 (2026-11-12)
+
+이 절은 앞으로의 T010 완료·제품 활성화 판단에 적용하는 기준이다. 종전의 D1–D5 일괄 관문에서 **D4 지연 목표 미달만으로
+기능 수용을 FAIL 처리하던 결합**을 대체한다. 기존 요구사항, 측정 계약, 날짜별 수치·PASS/FAIL 및 실행 신원은 소급 변경하지 않는다.
+T010 기능 완료는 아래 필수 차원과 해당 선행 계약의 충분한 증거가 모두 PASS일 때 가능하다. 성능 목표 달성은 독립 보고한다.
+
+| 수용 차원 | 필수 증거 | 완료·활성화에 미치는 영향 |
+|---|---|---|
+| 기능 정확성 | 두 엔진의 편집·명령, Undo/Redo 상태 복원·트랜잭션 경계, 텍스트 무손실·무중복·문서 간 격리, revision·세션 소유권, 정확한 렌더, 저장 무결성·원본 보존(D1/D3 포함) | 필수. 확인된 위반은 FAIL로 차단 |
+| IME 안전성 | 조합·최종 삽입·늦은 이벤트 안전성, 원래 D2 native E(empty compositionend)→U(Undo)→F(late final insertion) predicate와 원래 assertion | 필수. E→F→U, 일반 입력 성공, 합성 시험으로 대체 불가 |
+| 자원 안전성 | 기존 메모리 한도·snapshot 수명/깊이·회계·자원 소유권, 반복 편집/Undo/Redo/close 및 취소·실패·reload·cleanup(D4 자원/D5 포함) | 필수. 자원 INCONCLUSIVE는 계속 차단. RSS와 WASM high-water를 혼동하거나 한도를 올려 승인하지 않음 |
+| native 실사용성 | 아래 지원 native 환경의 재현 가능한 실제 사용 증거 | 필수. benchmark 수치만으로 PASS 불가 |
+| 성능 목표 달성 | 원래 D4 producer/evaluator의 지연 결과와 원시 표본·실행 신원 | 독립. TARGET NOT MET 하나만으로 기능 완료나 정당한 제품 활성화를 차단하지 않음 |
+| T010 전체 기능 수용 | 모든 필수 차원과 해당 선행 계약 PASS, 범위·산출물 신원에 맞는 충분한 증거 | 확인된 필수 위반은 FAIL, 필수 증거 공백은 INCOMPLETE. 이 조건을 충족할 때만 완료 체크 가능 |
+| 제품 활성화 결정 | 활성화할 실제 기능·지원 환경에 대해 기능·안전·자원·실사용성 증거를 별도로 검토 | T010 상태나 성능 결과만으로 자동 승인하지 않음. T012 고급 명령 부분집합은 일반 RHWP history 수용이 아님 |
+
+필수 차원의 `PASS`는 해당 범위의 관측 증거가 있을 때만 쓴다. 확인된 위반은 `FAIL`, 시험했으나 필수 순서·관측·판정 근거가
+부족하면 `INCONCLUSIVE`, 필요한 시험을 실행하지 않았으면 `NOT RUN`이다. 과거 산출물의 PASS는 그 신원·범위에 한정한다.
+필수 증거의 신원 연결이 검증되지 않았으면 증거 공백으로 남기며, 과거 PASS 자체를 FAIL로 다시 쓰지 않는다.
+
+### 필수 native 실사용성 증거
+
+기존 native 앱과 지원 환경에서 한글·영문 연속 타이핑, IME 조합·최종 삽입, 커서 이동·선택·편집, 실제 편집 중 Undo/Redo,
+복잡한 문서의 상호작용과 반복 편집을 평가한다. 지원을 주장하는 기능·문서 범위에 맞는 시나리오가 필요하며,
+시험 전용 일반 history 빌드의 증거를 제품 활성화 증거로 자동 승격하지 않는다.
+
+앱/소스/엔진/WASM·fixture·OS/runtime·입력기 신원, 입력 내용·순서·주입 방식/속도·반복 횟수, 기대 본문/선택/Undo 단위와
+실제 결과, 입력·처리·렌더 시점 및 종료/정리 상태를 남겨 재현할 수 있게 한다. native 입력 추적·revision·모델/화면 비교 등으로
+입력 backlog가 연속 입력 중 누적되는지, 입력 종료 후 처리·화면이 수렴하는지, 새 입력·커서·명령을 계속 처리하는지 확인한다.
+누락·중복·잘못 적용된 입력, 문서 간 오염, 지속적인 무응답 또는 편집을 계속할 수 없는 상태는 차단한다.
+단순한 “느리지만 괜찮다”는 소감이나 과거 p95만으로 승인하지 않는다. 중단/관측 실패로 판정할 수 없으면 INCONCLUSIVE,
+미실행이면 NOT RUN이다. 50 ms를 대신하는 임의의 새 지연 문턱은 만들지 않는다.
+기존 native 기록은 이 범위·행동·신원에 충분히 대응하는 경우만 재사용하고, 일반 타이핑 성공만으로 D2 특수 순서를 면제하지 않는다.
+
+### 독립 성능 계약과 결과 표기
+
+타이핑 group-start **p95 ≤ 50 ms**, Undo **p95 ≤ 1,500 ms**를 그대로 유지한다.
+원래 D4 네 fixture와 workload·문서/커서 순서·warmup·표본 수·측정/평가 방법·**3-requestAnimationFrame(3RAF)** 끝점,
+렌더 정확성·자원 제한을 바꾸지 않는다. 느린 표본 제외, 입력 축소/교체, 필수 렌더 지연, benchmark assertion 완화,
+메모리 한도 상향으로 달성 처리하지 않는다. 기존 성능 회귀 시험과 원본 benchmark PASS/FAIL·종료 결과도 유지한다.
+benchmark 실행의 FAIL은 그대로 FAIL이며, 그것만으로 별도 기능 수용의 FAIL을 추론하지 않는다.
+
+성능은 `TARGET MET`(원래 평가에서 모든 필수 지연 목표 충족), `TARGET NOT MET`(유효한 평가에서 목표 미달),
+`INCONCLUSIVE`(실행했으나 유효한 판정 근거 부족), `NOT RUN`(미실행)으로 보고한다.
+각 상태에 원래 수치·단위·fixture·실행 신원·benchmark PASS/FAIL을 병기한다. 표본/실행이 불완전하면 그 공백도 남기며
+미달이 관측됐다는 이유로 전체 측정 완전성을 주장하지 않는다. 성능 개선 책임과 원래 목표는 T010 안에서 계속 추적한다.
+
+| 판단 예 | 필수 차원 | 독립 성능 | T010 기능 수용·제품 판단 |
+|---|---|---|---|
+| 1 | 기능·안전·자원·실사용성 및 선행 계약 모두 PASS | TARGET NOT MET | 기능 PASS 가능. 제품 활성화는 해당 범위 증거의 별도 판단 |
+| 2 | IME 안전성 FAIL | TARGET MET | 기능 FAIL, 활성화 차단 |
+| 3 | 자원 안전성 INCONCLUSIVE | TARGET NOT MET | 기능 INCOMPLETE, 활성화 차단 |
+| 4 | 필수 D2 증거 부족 | TARGET MET | 기능 INCOMPLETE, 활성화 차단 |
+| 5 | 모든 필수 조건 PASS | TARGET MET | 기능 PASS 가능, 성능도 목표 달성. 활성화 자동 승인 아님 |
+| 6 | T012 advanced-only만 PASS, 일반 history 수용 증거 부족 | 어느 상태든 | 일반 RHWP Undo/Redo 활성화 불가 |
+
+**현재 판정은 변경하지 않는다:** T010 INCOMPLETE, 일반 RHWP Undo/Redo NO-GO.
+D1 마지막 공식 PASS, D3/D5 기록 범위 PASS, D2 INCONCLUSIVE(E→U→F 미관측), D4 자원 INCONCLUSIVE를 유지한다.
+문서에 남은 공식 D4 지연 FAIL은 독립 성능 `TARGET NOT MET`과 함께 보고하며 새 측정이 아니다.
+기능 완료를 위한 D2·자원 및 해당 기능의 native 실사용성 증거가 아직 충분하지 않다.
+[수용 기록과 남은 조건](../architecture/rhwp-undo-redo.md#t010-current-status)을 따른다.
+[조건부 T012 승인](#conditional-advanced-20261106)의 범위·제한은 바꾸지 않는다.
+
 ## 현재 최종 검증 — 2026-11-09
 
 세 패키지를 요청된 순서 B→C→A로 검증했다. WordCraft UI 포커스 교정과 전체 CI PASS, 지정 개발 브랜치의 정상 fast-forward 게시와 독립 fetch, 공개 geul SHA의 얕은 submodule 초기화, geul Rust 및 실제 native HWP 저장 회귀를 완료했다. unknown 원본 record가 내보내기 중 사라져도 빈 미리보기 저장이 거부되도록 geul HWP 수정 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`를 로컬 커밋했다. geul은 push하지 않았다. 전체 실행 신원·명령·결과는 [Stage 5–7 최종 검증](../architecture/stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109)에 있다.

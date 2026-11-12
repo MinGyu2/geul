@@ -4,6 +4,10 @@ Date: 2026-11-03
 Status: DESIGN ONLY; native performance NOT RUN. D4 해결 VERIFIED 아님.
 Source baseline: geul `8d3f21a2b4aed80c070a6ad874db479365e96caf`; RHWP gitlink `1a76570e833917d15817415a53c09ad61ab3203f`.
 
+## 2026-11-12 후속 정책 안내 (prospective)
+
+최신 완료 기준은 [T010 기능·성능 분리 정책](../planning/spec.md#t010-acceptance-policy-20261112)을 따른다. 원 D4 지연 목표 미달만으로 기능 수용 FAIL을 뜻하지 않지만, 이 문서의 DESIGN ONLY/NO-GO 후보 제한과 기존 측정 기록은 그대로다. 50ms group-start, 1,500ms Undo, 원 fixture/workload·warmup·표본·3RAF·정확성·자원 계약을 바꾸거나 구현 승인을 부여하지 않는다. 현재 D4 latency FAIL은 TARGET NOT MET, 자원 INCONCLUSIVE는 필수 차단으로 남는다. 이 정책은 이 문서에서 제안한 RHWP 최적화를 승인하지 않는다.
+
 ## 1. 결론과 변경하지 않는 계약
 
 단일 토글이나 UI 배치 변경으로 50ms를 달성한다는 근거는 없다. 그러나 원인과 줄일 계산을 구체적으로 지정할 수는 있다. 우선순위는 (A) 전체 그리기가 이미 필요한 요청의 불필요한 JSON 비교 제거, (B) 동일 편집 트랜잭션의 파생 결과 중복 생산 제거, (C) 완전한 의존성 계약을 갖춘 증분 쪽 나눔이다. A는 더 많은 계산/전체 그리기를 허용하는 보수적 경로라 기존 출력 재사용 증명을 우회할 이유가 없다. B/C의 결과 재사용에는 별도의 증명이 필요하다. 세 방법의 실측 이득이 단순 합산된다고 가정하지 않는다.

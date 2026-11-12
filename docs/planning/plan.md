@@ -57,6 +57,10 @@ RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결�
 - RHWP 모델·Canvas는 WebView WASM, WordCraft 모델·raster·hit-test는 Rust native W-A다. WordCraft egui UI 임베딩이 아니다.
 - `tests/`는 로컬 논리 경로다. 비공개 자료와 공개 스크립트를 구분하고 [보안 정책](../development/security-policy.md)을 유지한다. 이번 작업에서 로컬 geul-tests·설치 도구·훅을 실행한 것으로 간주하지 않는다.
 
+## T010 현재 수용 정책 (2026-11-12)
+
+완료에는 기능 정확성, IME/데이터 안전성, 자원·수명 안전성 및 재현 가능한 native 실사용성의 충분한 PASS 증거가 필요하다. 원 D4 지연 목표는 별도 성능 결과로 유지하며 미달만으로 기능 완료를 FAIL 처리하지 않는다. 확인된 기능/안전 위반과 필수 증거 공백은 각각 FAIL/INCOMPLETE다. 현재 D2 필수 E→U→F는 INCONCLUSIVE, D4 자원은 INCONCLUSIVE, native usability 증거는 부족하므로 T010은 INCOMPLETE로 남고 일반 RHWP history NO-GO다. T012 advanced-only 조건부 범위는 바꾸지 않는다. 수용 정의와 결과 분류는 [spec.md](./spec.md#t010-acceptance-policy-20261112)가 기준이며, 과거 D4 FAIL과 모든 측정은 그대로다.
+
 ## Constitution Check
 
 프로젝트 기준본은 spec.md, plan.md, tasks.md다. 원래 요구·안전 정책과 이번 사용자 승인 범위를 대조했다. 새로운 Spec Kit 초기화나 자동 재생성은 하지 않는다. 원격 기준 트리에서 루트 AGENTS.md 또는 .specify를 확인한 근거는 없으며, 사용자 로컬의 별도 지침·작업 트리·설치 상태 확인은 DEFERRED다. 문서 구조 검사 성공을 구현 준비 환경이나 제품 수용 PASS로 사용하지 않는다.

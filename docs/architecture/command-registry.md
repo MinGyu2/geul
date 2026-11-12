@@ -3,6 +3,9 @@
 
 # 명령 레지스트리·가용성·실행 취소 (T010)
 
+> **2026-11-12 T010 acceptance policy:** [필수 기능·안전·자원·native usability와 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. 이 문서 정책 변경으로 capability/source는 바뀌지 않았다: 일반 RHWP history는 일반 빌드에서 비활성이고, 제품의 `historyScope: advanced`는 기존 조건부 T012 범위만 뜻한다. 테스트 플래그 경계도 유지된다. 성능 목표 미달은 자동 기능 FAIL이나 명령 활성화 승인이 아니다. 현재 D2 E→U→F 및 D4 자원/실사용성 증거는 미완료이며 일반 RHWP Undo/Redo NO-GO다.
+
+
 ## 2026-11-06 T012 조건부 제품 capability
 
 2026-11-08 후속: 기존 수식 필드의 결과 서식은 `%g`와 한컴 고정소수 `%.Nf`(N 0–9, 캐시 값 소수 자릿수 정확)만 인정한다(genuine `calc-cell.hwp`). 천 단위 구분 기호 캐시·중첩 표·그 밖의 서식은 계속 거부. [기록](stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).

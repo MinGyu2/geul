@@ -27,6 +27,25 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 
 <a id="t010-current-status"></a>
 
+<a id="t010-current-policy-20261112"></a>
+
+## 현재 T010 판정 — 기능 수용과 성능 목표 분리 (2026-11-12)
+
+[기능 완료 정책](../planning/spec.md#t010-acceptance-policy-20261112)은 기능·안전·자원·native 실사용성의 필수 증거를 성능 목표와 분리한다. D4 지연 미달은 독립 `TARGET NOT MET`이며 원 benchmark FAIL·수치·assertion은 바꾸지 않았다. 성능 목표가 미달이어도 모든 필수 조건이 검증되면 기능 완료는 가능하다. 확인된 안전/정확성 실패는 차단하고, 필수 증거가 빠지면 INCONCLUSIVE/NOT RUN으로 남긴다.
+
+| 현재 차원 | 판정 | 범위·영향 |
+|---|---|---|
+| D1 렌더·커서 | 공식 PASS (마지막 기록 범위) | 새 실행 아님; 범위 밖 증거로 확대하지 않음 |
+| D2 IME 안전성 | INCONCLUSIVE | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 미관측; 면제/대체 불가, 완료 차단 |
+| D3 저장 보존 | 기록된 범위 PASS | 역사 결과, 새 실행 아님; 현재 전체 범위로 확대하지 않음 |
+| D5 실패·복구 | 기록된 범위 PASS | 역사 결과, 새 실행 아님; 전체 현 신원 수용과 구분 |
+| D4 자원·메모리 안전 | INCONCLUSIVE | 필수 차원이라 계속 완료/활성화 차단 |
+| Native 실사용성 | INCONCLUSIVE — 현 정책 기준 증거 부족 | 본 변경에서 native 실행 없음; benchmark만으로 대체 불가 |
+| D4 성능 | TARGET NOT MET — 기존 공식 FAIL | 목표·원 표본/fixture/workload/warmup/3RAF/평가법 고정; 기능 수용과 독립 보고 |
+| T010 전체 기능 / 제품 일반 RHWP Undo/Redo | INCOMPLETE / NO-GO | 체크·제품 일반 활성화 불가; T012 advanced-only 범위는 별도 승인 그대로 |
+
+이 표는 2026-11-12 현재 정책 적용 요약이며 과거 D1–D5 표와 날짜별 증거를 수정하지 않는다. 아래 2026-11-01/02 절의 “단일 요약” 및 일괄 성능 관문 표현은 당시 판정으로 보존하며, 앞으로의 완료·활성화 집계는 위 새 정책이 우선한다. D4 producer/evaluator의 PASS/FAIL·종료 코드는 기능 완료 판정이 아니므로 그대로 유지한다. 성능 정책 개정만으로 제품 활성화가 승인되지 않으며, 활성화할 기능의 별도 정확성·안전·자원·usability 근거가 필요하다.
+
 ## 현재 수용 상태와 기술 보류 (2026-11-01 · 2026-11-02 재평가)
 
 **T010: INCOMPLETE — ON HOLD / 제품 RHWP Undo/Redo: NO-GO / T011: NOT STARTED.**

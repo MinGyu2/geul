@@ -47,7 +47,7 @@ GitHub 체크박스에 비표준 `[△]`를 쓰지 않고 task 설명에 `△`�
 | T007 | Linux X11/Xvfb·IBus의 HWP/HWPX 기본 입력·커서·표·선택·렌더 및 기록된 IME 지연 | 최신 앱/WASM 변경 영향과 추가 환경은 전체 수용 미완료 | 현 지원 경로의 회귀는 T007, GPU/Wayland/fcitx5/다른 OS·추가 부하/초점 조합은 T016. 실제 변경 경계만 집중 검증 |
 | T008 | WordCraft W-A의 DOCX 기본 편집·IME·raster/hit-test·IPC 근거 | 현재 공통 IME/Workspace 변경 영향 및 추가 환경 전체 미완료 | 현 경로 회귀는 T008, 확장 환경은 T016. RHWP 패치만 바뀌면 DOCX 전체 재실행을 자동 요구하지 않음 |
 | T009 | HWP/HWPX/DOCX 대표 지원 문서 저장·재열기와 안전 거절 | 최신 산출물의 적용 범위 정리·선행 전체 수용 잔여. 모든 외부 문서 저장 보장은 아님 | 대표 지원 범위는 T009, 추가 코퍼스 품질은 T015, 플랫폼은 T016. 새 문서 생성 수용은 T021–T023 |
-| T010 | 공통 명령 기반·DOCX 연결, D1 마지막 공식 PASS, 2026-11-04 D3/D5 PASS 기록 | D2 INCONCLUSIVE, D4 지연 FAIL·자원 INCONCLUSIVE, RHWP 제품 Undo/Redo·서식 활성화/전체 SC-003 미완료 | D2/D4 조사는 보류. 새 근거·별도 승인 시 재개. 제품 차단과 현재 수용 기준은 유지 |
+| T010 | 기능·안전·자원·재현 가능한 native 실사용성 필수 수용; 성능은 독립 평가 ([새 수용 정책](../planning/spec.md#t010-acceptance-policy-20261112)) | D2 E→U→F 미관측, D4 자원 INCONCLUSIVE 및 실사용성 증거 공백; 성능 목표 미달은 단독 기능 FAIL 사유 아님 | 필수 증거 공백은 INCOMPLETE, 확인된 안전·정확성 위반은 FAIL. 일반 RHWP history NO-GO와 체크 미완료 유지; 원 D4 목표·결과 보존 |
 
 ### T011 착수 조건 변경
 
@@ -82,7 +82,7 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
-- [ ] T010 [US3] △ 조건부 개발 / 기술 수용 미완료 — D2 INCONCLUSIVE, D4 지연 FAIL·자원 INCONCLUSIVE. 일반 RHWP history는 NO-GO이며 별도 검증된 T012 고급 명령 부분집합의 제품 활성화 작업만 승인한다.
+- [ ] T010 [US3] △ 조건부 개발 / 기능 수용 미완료 — 필수 기능·안전·자원·재현 가능한 native 실사용성 모두 PASS여야 완료 가능. 성능 목표는 독립 보고하며 목표 미달만으로 기능 수용을 FAIL하지 않는다. 현재 D2 E→U→F INCONCLUSIVE·D4 자원 INCONCLUSIVE 및 실사용성 근거 공백으로 미완료; D4 지연은 공식 FAIL / TARGET NOT MET로 유지. 일반 RHWP history NO-GO; T012 advanced-only 범위는 기존 승인 그대로 ([정책](../planning/spec.md#t010-acceptance-policy-20261112)).
 - [x] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (2026-11-04 완료, 선택 문맥 상황 탭은 빠진 능력으로 숨김 — 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
@@ -125,7 +125,7 @@ Depends on은 ID 연결이다. 위 승인된 착수 조건과 전체 Done을 구
 | T007 | T006 | FR-005, SC-002 | src/components/Editor/, tests/integration/rhwp/ | 원래 IME·커서·선택·렌더 실측 | 표면 수용 근거와 현재 적용 범위 충족; 추가 환경은 T016 추적 |
 | T008 | T006 | FR-005, SC-002 | src-tauri/src/adapters/, src/components/Editor/wordcraft/, tests/integration/wordcraft/, tests/fixtures/wordcraft/ | IME·커서·선택·W-A raster/hit-test·IPC | 표면 수용 근거와 현재 적용 범위 충족; 추가 환경은 T016 추적 |
 | T009 | T007, T008 | FR-006, FR-015, SC-002 | src-tauri/src/services/, tests/roundtrip/ | 대표 실제 문서 왕복·안전 거절 | 원래 왕복·거절 수용 성공 및 근거 기록 |
-| T010 | T009, T005 | FR-007, SC-003 | src/commands/, tests/ui/ | 두 엔진 명령·미지원 차단 및 기존 RHWP 관문 | 전체 명령 수용과 활성화 조건 충족; △는 전체 완료가 아님 |
+| T010 | T009, T005 | FR-007, SC-003 | src/commands/, tests/ui/ | 편집·Undo/Redo transaction·IME·revision·렌더·저장/원본 보존·자원·실사용성, 성능 별도 보고 | 필수 정확성·안전·자원·native usability 증거 PASS; D4 지연 목표는 독립 상태. [정책](../planning/spec.md#t010-acceptance-policy-20261112) |
 | T011 | T010 | FR-008, FR-015, SC-003 | src/ribbon/, src/components/Ribbon/ | 형식·선택·모달·IME·탭 전환·단축키/버튼 일치 | 실제 지원 명령과 표시/실행 차단이 계약대로 동작하고 근거 기록 |
 | T012 | T011 | FR-009 | src/ribbon/HangulTools/, tests/integration/hangul/ | 장평·자간·표 등 실제 API·왕복 | 검증된 한글 전용 기능의 결과 기록 |
 | T013 | T011 | FR-009 | src/ribbon/References/, tests/integration/docx-advanced/ | 참조·검토 실제 지원·왕복 | 검증된 DOCX 고급 기능의 결과 기록 |
@@ -154,6 +154,8 @@ T014의 안전 게시·충돌·DOCX 체크포인트·복구는 이미 상당 부
 2026-11-04 [D3/D5/D2 재검증](../architecture/rhwp-undo-redo.md#t010-d3-d5-d2-20261104): Release `853a0689…`/WASM `77d01d6c…`의 D3 19/19 및 strict 23행, D5 실패 경계·native 폐기/재불러오기 PASS 기록을 인정한다. 이 문서 작업에서 새로 실행한 결과는 아니다.
 
 D2는 E(empty compositionend)→U(native Undo)→F(late final insert) 미관측이다. 일반 IME 성공이나 합성 시험으로 native 관문을 대체하지 않는다. D4는 마지막 공식 group-start 44/45/52/95ms, Undo 50/50/78/160ms 기록의 지연 FAIL·자원 INCONCLUSIVE다. 새 기준·최신 WASM 측정으로 바꿔 적지 않는다. 새 근거 없는 반복 탐색은 보류하지만 실제 사용자 결함은 무시하지 않는다.
+
+2026-11-12부터 완료 판정은 [기능·안전·자원·native 실사용성 필수 수용과 독립 성능 목표](../planning/spec.md#t010-acceptance-policy-20261112)를 구분한다. 위 수치는 역사 기록 그대로다. 공식 D4 지연 FAIL은 TARGET NOT MET로 계속 보고하고 benchmark assertion·결과를 바꾸지 않는다. 현재 D2/자원/실사용성 공백은 차단하므로 T010 체크는 유지한다; 일반 history NO-GO이며 T012 고급 전용 승인 범위는 그대로다.
 
 ### 신규 생성과 기타 작업
 

@@ -9,6 +9,10 @@
 
 현재 T010은 INCOMPLETE — ON HOLD이며 증분/출력 재사용 후보와 G1 구현은 NO-GO다. 이 계약 문서의 존재는 구현 승인이 아니다. [현재 수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)을 따른다.
 
+## 2026-11-12 후속 정책 안내 (prospective)
+
+T010의 [기능/성능 분리 완료 기준](../planning/spec.md#t010-acceptance-policy-20261112)은 D4 지연 목표 미달 단독으로 기능 완료를 막지 않되, 안전·자원·실사용성 의무를 유지한다. 이 계약은 여전히 계약 정의 및 격리 실험 전용이고 제품 RHWP/WASM에 적용되지 않는다. 정책 갱신은 증분 조판, record-only shadow 또는 G1 최적화 구현 허가가 아니다. 원 D4 지연 목표·측정과 역사 결과는 그대로 보존한다.
+
 ## 1. 실제 기본 경로 (고정 소스 확인)
 
 - 편집: `insert_text_at_caret_native`(`text_editing.rs:1434`) → `reflow_paragraph`(편집 문단 줄 나눔) →
