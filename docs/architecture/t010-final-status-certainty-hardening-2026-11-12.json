@@ -1,0 +1,395 @@
+{
+  "schema": "geul.t010.final-status-certainty-hardening.v1",
+  "date": "2026-11-12",
+  "reportTimezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "identity": {
+    "branch": "master",
+    "startHead": "c862c2c723dd43893d917ff5b1e3ab93e7336d81",
+    "implementationCommit": "c097ec4a355a94d8a40f238f0d8d9a59a7e0ca7f",
+    "sourceSha256": {
+      "scripts/tests/t010_launcher.py": "8ad62e2c583c01773a96bf761defa772b61ac4c9b6b3f58987c8838be3ed4bb9",
+      "scripts/tests/t010_acceptance.py": "a2eeacb7b620800251b9d9ea5bcbc24f0285a318e255a51749340d2ff27064ad",
+      "scripts/tests/native-t010-usability.py": "00f8b4b5b8573c12d536a93f70e3a1cec0ad4eac344f162f736c0d54acaa506a",
+      "scripts/tests/test_t010_launcher.py": "56a0f0f079bf6aa1e38aef55f43ffea51304c1fb8ef1e206b3e7943396f14435",
+      "scripts/tests/test_t010_acceptance.py": "9f49ca3dbdea4abe67142e5e03be3f805e0b025516689cc6cc3533471cfd1453"
+    },
+    "producerSha256": {
+      "src/components/Editor/Editor.tsx": "34d3c4070515b0db47a238ccd08ba6d4f4d1e5fbd565baedbbab8d3bd3dada90",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts": "a80f749b0bc599962bc1a10aa65e084cb05e6dee35f832912ac908d35510d105",
+      "tests/integration/rhwp/rhwp_poc.py": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a"
+    },
+    "submodules": {
+      "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "external/wordcraft": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+    }
+  },
+  "taskA": {
+    "rootCause": "The previous success predicate excluded only known FAIL/INCONCLUSIVE states and a nonzero command exit; complete other evidence could promote RUNNING, PENDING or a missing/null/unknown/malformed child status.",
+    "file": "scripts/tests/t010_launcher.py",
+    "function": "finalize_report",
+    "correction": "Require observed nativeExecutionStatus == 'PENDING_CLEANUP' in the final success predicate, in addition to existing inner acceptance, process/filesystem ownership and cleanup checks, identity and zero command exit.",
+    "onlySuccessfulTransition": "PENDING_CLEANUP -> PASS",
+    "rejectedChildStatuses": [
+      "RUNNING",
+      "PENDING",
+      "FAIL",
+      "INCONCLUSIVE",
+      "PASS",
+      "null",
+      "empty string",
+      "missing",
+      "UNKNOWN",
+      "lowercase/whitespace variants",
+      "boolean",
+      "number",
+      "list",
+      "object"
+    ],
+    "evidencePreservation": "Normal finalization still records nativeExecutionStatus/nativeCommandExit/nativeAcceptance/launcherCleanup/launcherAcceptance/launcherExit. Existing premature child PASS rejection retains its finalization-failed diagnostic and original input evidence. Previous failure and atomic replacement paths are unchanged.",
+    "positiveNativeCopyFinalization": {
+      "status": "PASS",
+      "exit": 0,
+      "nativeExecutionStatus": "PENDING_CLEANUP",
+      "nativeCommandExit": 0,
+      "nativeAcceptance": {
+        "status": "PASS"
+      },
+      "launcherAcceptance": {
+        "status": "PASS"
+      },
+      "launcherExit": 0,
+      "error": null,
+      "phase": null
+    },
+    "negativeStatusCases": 16,
+    "previousFalsePassNowRejected": 13
+  },
+  "taskB": {
+    "rootCause": "usability_row allowed uncertain in (None, 'false'); Usability.ready_ok defaulted a missing observation to 'false'. Ready status and synchronized revisions cannot replace explicit certainty evidence.",
+    "actualProducer": {
+      "internal": "RhwpEditorSession.hasUncertainChanges returns the boolean doc-present && uncertain flag.",
+      "DOM": "src/components/Editor/Editor.tsx binds data-uncertain={editor.hasUncertainChanges} on rhwp-status.",
+      "nativeReader": "tests/integration/rhwp/rhwp_poc.py status() spreads e.dataset; values are strings.",
+      "supportedObservedCertainValue": "false",
+      "requiredType": "str",
+      "evidence": "All346 stored native states explicitly contain the string false; all17 mandatory final checkpoints also do."
+    },
+    "filesAndFunctions": {
+      "scripts/tests/t010_acceptance.py": "usability_row",
+      "scripts/tests/native-t010-usability.py": "Usability.ready_ok"
+    },
+    "correction": "Both predicates now require st.get('uncertain') == 'false'; no fallback, normalization or boolean coercion.",
+    "scope": "All8 scenarios and both formats; complex uses every existing dynamically named continued-editing final checkpoint. Prior ready/composition/revision, IME, ownership and scenario-inventory guards remain unchanged.",
+    "rejectedValues": [
+      "missing",
+      "null",
+      "true",
+      "empty",
+      "unexpected string",
+      "boolean false/true",
+      "number",
+      "list",
+      "object"
+    ],
+    "validNativeFinalCheckpoints": 17,
+    "negativeNativeEvidenceMutations": 170,
+    "previousAggregateFalsePassNowRejected": 34,
+    "actualReadyMethodMissingObservationBeforeAfter": 17
+  },
+  "regressions": {
+    "normalPython": {
+      "launcher": 18,
+      "acceptance": 35,
+      "result": "PASS"
+    },
+    "optimizedPython": {
+      "launcher": 18,
+      "acceptance": 35,
+      "result": "PASS"
+    },
+    "positive": "Valid exact PENDING_CLEANUP with complete inner/cleanup/identity evidence finalizes PASS/exit0; explicit string false observations, full16 and declared selected subsets remain valid. Existing Korean accepted/refused contract fixture tests remain.",
+    "negative": "Status-only mutations keep inner acceptance PASS/cleanup PASS/command0 but all invalid child states reject. Certainty-only mutations keep prior ready/certain/settled PASS labels; every required fixed/dynamic final checkpoint rejects missing/null/invalid observations.",
+    "directNativeHelper": "AST extraction executes the actual Usability.ready_ok and normal check methods in isolation, with no private GUI dependency or duplicate implementation. Exact false succeeds; missing/null/invalid certainty and readiness/composition/revision failures record FAIL.",
+    "atomicAndFailurePreservation": "Existing actual atomic-replace failure, failed writer, process/filesystem failure and previous native failure tests all remain passing.",
+    "static": "py_compile all5 changed Python files PASS; diff checks PASS.",
+    "security": "Changed-file scanner and implementation commit normal staged-sensitive-info/Gitleaks hooks PASS; no hook bypass. Unchanged scanner regression hook skipped by existing path filter."
+  },
+  "nativeVerification": {
+    "kind": "Preserved real native evidence replay; no new native input or GUI run.",
+    "source": "../geul-tests/reports/t010-validator-p2-p3-20261112/usability/result.json",
+    "nativeRunId": "e54d6669eca14a7a8aadeacb9858d88e",
+    "nativeExecutionHead": "0ede5d5e4e59c63749f6505dcb25bb67743fec7c",
+    "scope": "Existing Linux X11/Xvfb, Tauri2, WebKitGTK2.54.1, IBus1.5.33+ibus-hangul1.5.5; same declared fixtures.",
+    "scenarios": 16,
+    "checks": 716,
+    "originalRun": "Single uninterrupted HWP/HWPX16/716, distinct from the earlier historical14+2 assembly.",
+    "allStatesObserved": 346,
+    "allStatesExplicitFalse": true,
+    "mandatoryFinalObservations": [
+      {
+        "format": "hwp",
+        "case": "english",
+        "label": "Undo new edit",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "korean",
+        "label": "typing after composition Undo",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "selection",
+        "label": "Redo insert via Ctrl+Shift+Z",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "boundary",
+        "label": "Undo merge",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "switch",
+        "label": "B Redo after switch",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "close",
+        "label": "new input after reopen",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "save",
+        "label": "Undo on reopened file",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "complex",
+        "label": "u-complex-77401a8a.hwp continued editing",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwp",
+        "case": "complex",
+        "label": "u-complex-ce4dd8fc.hwp continued editing",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "english",
+        "label": "Undo new edit",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "korean",
+        "label": "typing after composition Undo",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "selection",
+        "label": "Redo insert via Ctrl+Shift+Z",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "boundary",
+        "label": "Undo merge",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "switch",
+        "label": "B Redo after switch",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "close",
+        "label": "new input after reopen",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "save",
+        "label": "Undo on reopened file",
+        "observed": "false",
+        "type": "str"
+      },
+      {
+        "format": "hwpx",
+        "case": "complex",
+        "label": "u-complex-810bdfd0.hwpx continued editing",
+        "observed": "false",
+        "type": "str"
+      }
+    ],
+    "positiveGates": {
+      "usability": {
+        "status": "PASS"
+      },
+      "outerCleanup": {
+        "status": "PASS"
+      },
+      "finalizer": {
+        "status": "PASS",
+        "exit": 0,
+        "nativeExecutionStatus": "PENDING_CLEANUP",
+        "nativeCommandExit": 0,
+        "nativeAcceptance": {
+          "status": "PASS"
+        },
+        "launcherAcceptance": {
+          "status": "PASS"
+        },
+        "launcherExit": 0,
+        "error": null,
+        "phase": null
+      }
+    },
+    "finalizationReplayMethod": "On an isolated copy, restore only recorded nativeExecutionStatus and nativeAcceptance as the child status/acceptance; reuse the unchanged actual model/input/owner/process/filesystem evidence. No missing observation is invented, no cleanup is re-executed, and no historical source report is overwritten.",
+    "beforeAfterControls": {
+      "invalidStatusesRejected": 16,
+      "certaintyMutationsRejected": 170,
+      "nativeReadyMissingCertaintyRejected": 17
+    },
+    "sourceAndArtifactIdentity": {
+      "applicationSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4",
+      "release": {
+        "generation": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6",
+        "artifacts": {
+          "rhwp.js": "3dc17d30c86235e94bc750149fe99bab4b97e7fd04973f5783c173b7800cc1e8",
+          "rhwp_bg.wasm": "94a00e6809210a7905ee35c9427cb8be329201318d23e2c6768021dfc57e6dc0"
+        },
+        "commit": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "productSourceUnchanged": true,
+      "statusProducerUnchangedSinceNativeHead": true
+    },
+    "rerunCount": 0,
+    "rerunReason": "Not required: all mandatory explicit certainty observations, observed PENDING_CLEANUP and complete cleanup identities/results already exist and pass corrected revalidation.",
+    "failedOrInsufficientValidEvidence": []
+  },
+  "acceptanceImpact": {
+    "t010FunctionalAcceptance": "PASS in existing declared supported scope",
+    "generalRhwpUndoRedoProduction": "GO; activation and product code unchanged",
+    "d4Latency": "TARGET NOT MET; no benchmark rerun, group-start p95<=50ms and Undo p95<=1500ms unchanged",
+    "eufCompatibility": "NOT OBSERVED / UNVERIFIED; no independent new native contract verification",
+    "productDefects": [],
+    "protectedContracts": "Production build identity, P2 completeness/IME evidence, P3 process/filesystem cleanup, save preservation, history/memory limits, T012 restrictions and WordCraft/DOCX unchanged."
+  },
+  "verificationCommands": [
+    "python3 -m unittest discover -s scripts/tests -p test_t010_launcher.py -v",
+    "python3 -m unittest discover -s scripts/tests -p test_t010_acceptance.py -v",
+    "python3 -O -m unittest discover -s scripts/tests -p test_t010_launcher.py",
+    "python3 -O -m unittest discover -s scripts/tests -p test_t010_acceptance.py",
+    "python3 -m py_compile scripts/tests/t010_launcher.py scripts/tests/t010_acceptance.py scripts/tests/native-t010-usability.py scripts/tests/test_t010_launcher.py scripts/tests/test_t010_acceptance.py",
+    "python3 ../geul-tests/reports/t010-final-status-certainty-20261112/revalidate.py",
+    "python3 scripts/check-sensitive-info.py <the5 affected Python files>",
+    "git diff --check; normal commit hooks"
+  ],
+  "historicalRecords": [
+    {
+      "path": "docs/architecture/t010-production-activation-2026-11-12.json",
+      "sha256": "a42982a517e7b69d2c9fc97f5f24db71ac96639198cde0028b0f65df63bf6bdd",
+      "preserved": true
+    },
+    {
+      "path": "docs/architecture/t010-validator-hardening-2026-11-12.json",
+      "sha256": "2f0046742dbfeddee99510da5f1344ec8dc329a2d2b6a053d6f73680aab39c1d",
+      "preserved": true
+    },
+    {
+      "path": "docs/architecture/t010-validator-p2-p3-followup-2026-11-12.json",
+      "sha256": "aeb4f05073ea42ecf82448825918a776ec48cdbb145cb8f3640d7156e0279f9a",
+      "preserved": true
+    }
+  ],
+  "evidence": [
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/launcher-normal.log",
+      "sha256": "741d9a501f712b586bd4344e50e8353c92b9b5d8c44f974143578ad8f6451ec8"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/launcher-opt.log",
+      "sha256": "cf3610362f081609f1b923573927cb6bc3fceb38bd4c95578aa211889adf655a"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/acceptance-normal.log",
+      "sha256": "d3a6c1aac699e392ac430e249fe4412e9141a63bade96a2af6820bc4d00a7477"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/acceptance-opt.log",
+      "sha256": "a74897c354fe4ca54fb32d38ca5d88d6dd6fd4af2d2c0e4dd1b73604f27e1563"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/syntax.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/source-security.log",
+      "sha256": "d1f8a749b9313391266a754137c50dc6c4a56774f2b7cf2865ed6723b903edc3"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/native-replay.log",
+      "sha256": "9708bb7287ce11a6f5feac082d0df91fa7a05925a56c6ee0856e9bbf3a4a085c"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/native-replay.json",
+      "sha256": "b3b70da0f9d74744deed1c15da08e12a1c7d5bbde15c5abb88ad4d0c07f61a8a"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/identity-verification.json",
+      "sha256": "917eaf7143059508b86a51275ed2711f85dbede65008794894d6221622e8653e"
+    },
+    {
+      "path": "../geul-tests/reports/t010-final-status-certainty-20261112/revalidate.py",
+      "sha256": "1f3d94fffe5043e39e8f5294cdacfcdcc16c76f414453e276c66c43be20e0db1"
+    },
+    {
+      "path": "../geul/../geul-tests/reports/t010-validator-p2-p3-20261112/usability/result.json",
+      "sha256": "dd64c5f3a07ec0475036d774c2d98b90b1ab068e03ced60c884450413318c9eb",
+      "reusedNative": true
+    },
+    {
+      "path": "../geul/../geul-tests/reports/t010-validator-p2-p3-20261112/session/session.json",
+      "sha256": "c959aa63d737e0990eca5ece31420b0472d9b6bb33b8ae634022c0cb48420252",
+      "reusedNative": true
+    },
+    {
+      "path": "../geul/../geul-tests/reports/t010-validator-p2-p3-20261112/session/cleanup.json",
+      "sha256": "d9db40aa6711d55aa9ee96dbf53ec4d40b70dd7e93057078965fecf9351dacfd",
+      "reusedNative": true
+    }
+  ],
+  "remainingLimitations": [
+    "No new native GUI execution; reused matching complete actual native evidence as explicitly permitted.",
+    "D4 latency and original E->U->F compatibility remain independently limited as stated.",
+    "No supported-environment expansion or unrelated task completion changes."
+  ],
+  "pushPerformed": false,
+  "mergePerformed": false
+}
