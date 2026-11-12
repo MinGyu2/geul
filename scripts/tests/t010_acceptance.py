@@ -81,7 +81,8 @@ def composition_undo(committed, pre, after, events, trace):
     require(any(e.get('type') == 'compositionend' for e in events)
             and any(e.get('type') == 'input' and e.get('inputType') == 'insertFromComposition' and e.get('data') == '나' for e in events), 'no native final commit')
     require(trace.get('dropped') == 0 and trace.get('records'), 'incomplete command trace')
-    require([r[0] for r in trace['records']] == list(range(1, trace.get('seq', -1) + 1)), 'missing/out-of-order command trace records')
+    require(type(trace.get('seq')) is int and trace['seq'] == len(trace['records'])
+            and [r[0] for r in trace['records']] == list(range(1, len(trace['records']) + 1)), 'missing/out-of-order command trace records')
     requests = [r[3] for r in trace['records'] if r[2] == 'command:request' and r[3].get('id') == 'edit.undo']
     dispatch = [r[3] for r in trace['records'] if r[2] == 'command:dispatch' and r[3].get('id') == 'edit.undo']
     require(len(requests) == 1, 'missing/duplicate Undo request')
@@ -153,7 +154,7 @@ def rows_complete(rows, expected):
     require(sorted((r['format'], r.get('case', 'production')) for r in rows) == sorted(expected), 'missing/duplicate scenario identity')
     for row in rows:
         require(row.get('status') == 'PASS' and row.get('checks') and all(c.get('status') == 'PASS' for c in row['checks']), 'failed/missing mandatory assertions')
-        require(not row.get('cleanupError'), 'scenario cleanup failed')
+        require(not row.get('cleanupError') and not row.get('error'), 'scenario cleanup/execution failed')
 
 
 def production(report, expected):
@@ -173,13 +174,166 @@ def production(report, expected):
     require(not report.get('error'), 'execution error')
 
 
+def usability_plan(fmt, case):
+    """Expected names/limits come from the reviewed harness contract, never check rows."""
+    from hashlib import sha256
+    from pathlib import PurePosixPath
+    from t010_usability_contract import CHECKS, STATES, COMPLEX_SOURCES, COMPLEX_CHECKS, COMPLEX_STATES
+    checks, states = list(CHECKS[case]), list(STATES[case])
+    chains = []
+    if case == 'korean':
+        chains = [('Korean', 'undo', 80), ('Korean redo', 'redo', 80), ('mixed', 'undo', 80), ('mixed redo', 'redo', 80)]
+    elif case == 'boundary':
+        chains = [('boundary', 'undo', 145), ('boundary redo', 'redo', 145)]
+    elif case == 'complex':
+        checks.append('all editor input events trusted native')
+        for source in COMPLEX_SOURCES[fmt]:
+            p = PurePosixPath(source)
+            name = 'u-complex-' + sha256(p.name.encode()).hexdigest()[:8] + p.suffix
+            checks.extend(name + ' ' + suffix for suffix in COMPLEX_CHECKS)
+            states.extend(name + ' ' + suffix for suffix in COMPLEX_STATES)
+            chains.extend([(name, 'undo', 120), (name + ' redo', 'redo', 120)])
+    return checks, states, chains
+
+
+def usability_row(row, report):
+    from t010_usability_contract import KOREAN_STATES, COMPLEX_SOURCES
+    fmt, case = row['format'], row['case']
+    require(row.get('runId') == report['runId'] and bool(report['runId'])
+            and isinstance(row.get('scenarioId'), str) and bool(row['scenarioId']), 'wrong/missing scenario run identity')
+    require(not any(row.get(k) for k in ('error', 'cleanupError', 'diagnosticError', 'trace')), 'hidden scenario execution error')
+    required, checkpoints, chain_plan = usability_plan(fmt, case)
+    counts = Counter(c['name'] for c in row['checks'])
+    require(all(counts[name] == 1 for name in required), 'missing/replaced/duplicated mandatory usability check')
+    states = row.get('states')
+    require(isinstance(states, list) and states, 'missing scenario checkpoints')
+    labels = [s['label'] for s in states]
+    require(len(set(labels)) == len(labels), 'duplicate checkpoint identity')
+    by_label = {s['label']: s for s in states}
+    owners = row.get('documentSessions')
+    require(isinstance(owners, dict) and owners, 'missing document ownership')
+    if case == 'complex':
+        from hashlib import sha256
+        from pathlib import PurePosixPath
+        expected_documents = {'u-complex-' + sha256(PurePosixPath(p).name.encode()).hexdigest()[:8] + PurePosixPath(p).suffix for p in COMPLEX_SOURCES[fmt]}
+    elif case == 'switch':
+        expected_documents = {f'u-switch-a.{fmt}', f'u-switch-b.{fmt}'}
+    else:
+        expected_documents = {f'u-{case}.{fmt}'}
+    require(set(owners.values()) == expected_documents, 'wrong scenario document identity')
+    for st in states:
+        require(st.get('runId') == row['runId'] and st.get('scenarioId') == row['scenarioId']
+                and st.get('format') == fmt and isinstance(st.get('session'), str) and st['session'] in owners
+                and isinstance(st.get('document'), str) and bool(st['document']) and st['document'] == owners[st['session']], 'checkpoint from wrong execution/document')
+        require(counts[st['label'] + ': status paragraph is a prefix of the engine paragraph'] == 1,
+                'missing/duplicate model observation assertion')
+    require(all(label in by_label for label in checkpoints), 'missing required checkpoint')
+    finals = [n for n in checkpoints if n.endswith(' continued editing')] if case == 'complex' else [checkpoints[-1]]
+    for label in finals:
+        st = by_label[label]
+        require(st.get('status') == 'ready' and st.get('composing') == 'false' and st.get('uncertain') in (None, 'false')
+                and st.get('localRevision') == st.get('revision'), 'unsettled/failed final checkpoint')
+    chains = row.get('chains', [])
+    require(len(chains) == len(chain_plan), 'missing/extra history chain')
+    require([(c['label'], c['direction']) for c in chains] == [(label, direction) for label, direction, _ in chain_plan], 'wrong history chain identity/order')
+    expected_dynamic = set()
+    for chain, (label, direction, bound) in zip(chains, chain_plan):
+        names = chain['states']
+        require(isinstance(names, list) and 2 <= len(names) <= bound, 'missing/unbounded history steps')
+        require(type(chain.get('limit')) is int and len(names) <= chain['limit'] <= bound, 'wrong history limit')
+        wanted = [f'{label} before {direction} 0'] + [f'{label} {direction} {i}' for i in range(len(names)-1)]
+        require(names == wanted and all(n in by_label for n in names), 'missing/reordered history checkpoint')
+        for i, (a, b) in enumerate(zip(names, names[1:])):
+            check = f'{label} {direction} {i} advances revision by one'
+            expected_dynamic.add(check)
+            require(counts[check] == 1 and int(by_label[b]['localRevision']) == int(by_label[a]['localRevision']) + 1,
+                    'missing/duplicate/invalid history step assertion')
+    for undo, redo in zip(chains[::2], chains[1::2]):
+        require(undo['direction'] == 'undo' and redo['direction'] == 'redo'
+                and len(undo['states']) == len(redo['states']), 'incomplete Undo/Redo chain pair')
+    actual_dynamic = {name for name in counts if name.endswith(' advances revision by one')}
+    require(actual_dynamic == expected_dynamic, 'unaccounted history step assertion')
+    if case == 'boundary':
+        boundary = row['boundary']
+        presses, evicted = boundary['presses'], boundary['evicted']
+        require(type(presses) is int and 20 <= presses <= 140 and presses % 20 == 0, 'invalid Return workload')
+        require(type(evicted) is int and evicted == presses + 1 - (len(chains[0]['states'])-1) and evicted >= 0, 'invalid history eviction evidence')
+        for n in range(20, presses+1, 20):
+            require(counts[f'{n} rapid Returns all applied'] == 1 and f'after {n} Returns' in by_label, 'missing Return batch assertion')
+        observed_batches = {name for name in counts if name.endswith(' rapid Returns all applied')}
+        require(observed_batches == {f'{n} rapid Returns all applied' for n in range(20, presses+1, 20)}, 'unexpected Return batch')
+        require(counts['full Undo restores original model and pages'] == (1 if evicted == 0 else 0), 'missing/incorrect conditional full-Undo assertion')
+    if case == 'save':
+        require(row.get('save', {}).get('state') == 'saved' and digest(row.get('savedSha256')), 'missing saved-file evidence')
+    if case == 'complex':
+        docs = row.get('documents', [])
+        require(len(docs) == len(COMPLEX_SOURCES[fmt]) and {d['source'] for d in docs} == set(COMPLEX_SOURCES[fmt]), 'missing/unexpected complex document')
+        from hashlib import sha256
+        from pathlib import PurePosixPath
+        for doc in docs:
+            source = PurePosixPath(doc['source'])
+            require(doc['copy'] == 'u-complex-' + sha256(source.name.encode()).hexdigest()[:8] + source.suffix, 'wrong complex document copy')
+            require(digest(doc.get('sha256')) and doc.get('zoom') in (50, 100), 'missing complex document identity')
+            backlog = [b for b in row.get('backlog', []) if b.get('document') == doc['copy']]
+            require(len(backlog) == 2 and all(b.get('samples') for b in backlog), 'missing backlog observations')
+            human = [b for b in backlog if b.get('mode') == 'human-rate 120ms']
+            require(len(human) == 1 and type(human[0].get('maxKeydownMinusAppliedLag')) is int
+                    and human[0]['maxKeydownMinusAppliedLag'] <= 3 and human[0].get('keydownsReceived', 0) > 0, 'missing/failed human-rate evidence')
+    if case == 'korean':
+        require(len(owners) == 1, 'unexpected composition document owner')
+        evidence = row.get('compositionUndo')
+        require(isinstance(evidence, dict) and all(evidence.get(k) == row[k] for k in ('runId', 'scenarioId', 'format')), 'missing/wrong-run composition evidence')
+        require(evidence.get('stateLabels') == list(KOREAN_STATES), 'missing/wrong composition checkpoints')
+        committed, pre, after, continued = [by_label[n] for n in KOREAN_STATES]
+        require(committed['selection'] == '' and committed['composing'] == 'false'
+                and type(committed['ime']['generation']) is int and committed['ime']['generation'] > 0
+                and pre['ime']['historyUndo'] == committed['ime']['historyUndo']
+                and pre['ime']['historyRedo'] == committed['ime']['historyRedo'] == 0
+                and pre['ime']['provisional'] is False and pre['ime']['pendingCommit'] is False, 'invalid baseline/preedit history boundary')
+        session = evidence.get('session')
+        require(isinstance(session, str) and owners.get(session) == f'u-korean.{fmt}'
+                and all(s['session'] == session for s in (committed, pre, after, continued)), 'wrong composition document/session')
+        for st in (committed, pre, after, continued):
+            require(str(st['ime']['session']) == session and st['ime']['revision'] == int(st['localRevision'])
+                    and st['revision'] == st['localRevision'] and st['ime']['generation'] == committed['ime']['generation'], 'wrong model/IME owner or revision')
+        scope = {k: evidence[k] for k in ('runId', 'scenarioId', 'format', 'session')}
+        events, trace = evidence['events'], evidence['trace']
+        require(events and all(all(e.get(k) == v for k, v in scope.items()) for e in events), 'native events from wrong execution')
+        require(trace['records'][0][2:] == ['native:t010-composition-scope', scope], 'wrong/missing trace scope')
+        outcome = composition_undo(committed, pre, after, events, trace)
+        require(evidence.get('outcome') == outcome, 'stored composition disposition contradicts evidence')
+        insertion(after, continued, '달', end=True)
+        require(int(continued['localRevision']) == int(after['localRevision']) + 1
+                and continued['composing'] == 'false' and continued['ime']['historyTransaction'] is False
+                and all(s['ime']['provisional'] is False and s['ime']['pendingCommit'] is False for s in (committed, after, continued)), 'incomplete composition/continued transaction')
+
+
 def usability(report, formats, cases):
+    from t010_usability_contract import CASES
     require(formats and cases and len(set(formats)) == len(formats) and len(set(cases)) == len(cases)
-            and set(formats) <= set(FORMATS), 'invalid scenario selection')
+            and set(formats) <= set(FORMATS) and set(cases) <= set(CASES), 'invalid scenario selection')
+    require(report.get('formatsRequested') == formats and report.get('cases') == cases, 'missing/mismatched declared selection')
+    full = set(formats) == set(FORMATS) and set(cases) == set(CASES)
+    require(report.get('requestedCoverage') == ('full' if full else 'selected'), 'incorrect coverage claim')
+    require(full or report.get('usabilityCoverage', {}).get('fullUsabilityCoverage') != 'PASS', 'subset claimed as full coverage')
     rows_complete(report.get('scenarios'), [(f, c) for f in formats for c in cases])
+    require(len({r['scenarioId'] for r in report['scenarios']}) == len(report['scenarios']), 'duplicate scenario execution identity')
+    for row in report['scenarios']:
+        usability_row(row, report)
     teardown(report.get('teardown'), report.get('sessions'), report.get('runId'))
     require(not report.get('error'), 'execution error')
 
+
+def usability_coverage(report, formats, cases):
+    from t010_usability_contract import CASES
+    selected = verdict(usability, report, formats, cases)
+    full = isinstance(formats, list) and isinstance(cases, list) and set(formats) == set(FORMATS) and set(cases) == set(CASES)
+    rows = report.get('scenarios')
+    failed = bool(report.get('error')) or (isinstance(rows, list) and any(isinstance(r, dict) and (r.get('status') == 'FAIL' or r.get('error')) for r in rows))
+    return {'selectedScenarioAcceptance': selected['status'],
+            'fullUsabilityCoverage': 'FAIL' if failed else ('PASS' if full and selected['status'] == 'PASS' else 'INCOMPLETE'),
+            'scope': 'full' if full else 'selected', 'evidence': 'COMPLETE' if selected['status'] == 'PASS' else 'MISSING_OR_INVALID',
+            **({'reason': selected['reason']} if 'reason' in selected else {})}
 
 def verdict(validate, *args, **kwargs):
     try:
@@ -187,6 +341,27 @@ def verdict(validate, *args, **kwargs):
         return {'status': 'PASS'}
     except (ValueError, KeyError, TypeError, IndexError, AttributeError) as error:
         return {'status': 'FAIL', 'reason': str(error)}
+
+
+def directory_cleanup(session, cleanup):
+    resources, results = session.get('temporaryResources'), cleanup.get('directories')
+    require(isinstance(resources, list) and isinstance(results, list) and len(resources) == len(results) == 2,
+            'missing mandatory temporary directory cleanup')
+    require({r['name'] for r in resources} == {r['name'] for r in results} == {'work', 'socket'}, 'wrong/duplicate temporary resources')
+    require(len({r['path'] for r in resources}) == 2, 'duplicate temporary directory path')
+    expected = {r['name']: r for r in resources}
+    for result in results:
+        resource = expected[result['name']]
+        require(all(result.get(k) == resource.get(k) for k in ('name', 'runId', 'path', 'device', 'inode', 'uid', 'ownerMarker', 'ownerToken'))
+                and result.get('runId') == session.get('runId') and bool(result.get('runId')), 'wrong directory ownership/run identity')
+        require(isinstance(resource.get('path'), str) and resource['path'].startswith('/')
+                and type(resource.get('device')) is int and type(resource.get('inode')) is int and resource['inode'] > 0
+                and type(resource.get('uid')) is int and resource.get('ownerMarker') == '.geul-launcher-owner'
+                and digest(resource.get('ownerToken')), 'missing directory creation identity')
+        require(result.get('attempted') is True and result.get('ownershipVerified') is True
+                and result.get('remaining') is False and result.get('error') is None, 'temporary directory cleanup failed/incomplete')
+        require((result.get('status') == 'removed' and result.get('deleteAttempted') is True)
+                or (result.get('status') == 'already-absent' and result.get('deleteAttempted') is False), 'unproven temporary directory removal')
 
 
 def launcher_cleanup(report, session, cleanup):
@@ -199,6 +374,9 @@ def launcher_cleanup(report, session, cleanup):
             and isinstance(cleanup.get('leakedAfterManagedStop'), dict), 'missing launcher process observations')
     require(cleanup.get('complete') is True and cleanup.get('proven') is True and cleanup.get('subreaper') is True
             and cleanup.get('survivors') == [] and type(cleanup.get('exit')) is int and cleanup['exit'] == 0, 'launcher cleanup missing/unsuccessful')
+    require(cleanup.get('processErrors') == [], 'recorded process cleanup errors/missing observation')
+    directory_cleanup(session, cleanup)
+    require(cleanup.get('filesystemProven') is True, 'filesystem cleanup not proven')
     require(report.get('acceptance', {}).get('status') == 'PASS', 'inner native acceptance failed')
 
 

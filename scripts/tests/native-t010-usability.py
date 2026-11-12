@@ -39,7 +39,7 @@ COMPLEX = [SAMPLES / 'aift.hwp', SAMPLES / 'issue6031/3249937_asset_management_r
 SOURCES = ['src/commands/registry.ts', 'src/commands/capability.ts', 'src/components/Editor/rhwp/RhwpEditorSession.ts',
            'src/components/Editor/rhwp/rhwpHistory.ts', 'src/components/Editor/rhwp/imeInput.ts', 'src/components/Editor/textInput.ts',
            'src/components/CommandButton/editorFocus.ts', 'src/components/Editor/rhwp/RhwpSurface.tsx']
-CASES = ('english', 'korean', 'selection', 'boundary', 'switch', 'close', 'save', 'complex')
+from t010_usability_contract import CASES, KOREAN_STATES
 sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
@@ -49,6 +49,7 @@ class Usability:
         self.rows = report.setdefault('scenarios', [])
         self.latin = False
         self.current = None
+        self.session_documents = {}
 
     # ---- native input ----
     def run(self, *a):
@@ -84,7 +85,7 @@ class Usability:
           for(const type of ['keydown','compositionstart','compositionend','beforeinput','input'])
             document.addEventListener(type,e=>{
               if(!e.target?.matches?.('.rhwp-input'))return;
-              window.__uEvents.push({type,trusted:e.isTrusted,data:e.data??null,key:e.key??null,inputType:e.inputType??null,ctrlKey:!!e.ctrlKey,code:e.code??null,t:performance.now()});
+              window.__uEvents.push({...window.__uScope,session:document.querySelector('.document-tab__select[aria-selected=true]')?.dataset.session,type,trusted:e.isTrusted,data:e.data??null,key:e.key??null,inputType:e.inputType??null,ctrlKey:!!e.ctrlKey,code:e.code??null,t:performance.now()});
             },true);""")
         # Actual engine model per session: wrap the shared facade before any document opens.
         d.js("""window.__uReady=false;(async()=>{
@@ -167,7 +168,12 @@ class Usability:
         smoke.wait_until(self.d, "const e=document.querySelector('[data-testid=rhwp-status]');return e&&e.dataset.localRevision===e.dataset.revision", timeout=timeout)
         st = poc.status(self.d)
         st['settleSeconds'] = round(time.monotonic() - started, 3)
+        st['label'] = label
         st['session'] = self.sid()
+        if st['session'] not in self.session_documents:
+            self.session_documents.update({str(s['sessionId']): s['displayName'] for s in poc.ipc(self.d, 'document_sessions')['ok']})
+        st.update(runId=self.report['runId'], scenarioId=self.current['scenarioId'], format=self.current['format'], document=self.session_documents[st['session']])
+        self.current.setdefault('documentSessions', {})[st['session']] = st['document']
         st['model'] = self.d.js('return window.__uModel(arguments[0])', st['session'])
         # The status hook shows at most 200 characters; compare the whole caret paragraph from the engine model.
         full = self.d.js('return window.__uParagraph(arguments[0],arguments[1])', st['session'], st['caret'])
@@ -175,7 +181,7 @@ class Usability:
         st['paragraphText'] = full
         st['ime'] = self.d.js('return window.__uIme(arguments[0])', st['session'])
         st['undo'], st['redo'] = self.button('edit.undo'), self.button('edit.redo')
-        self.current['states'].append({'label': label, **{k: st.get(k) for k in ('session', 'paragraphText', 'caret', 'selection', 'localRevision', 'revision', 'composing', 'status', 'uncertain', 'pages', 'settleSeconds', 'undo', 'redo', 'ime')},
+        self.current['states'].append({'label': label, **{k: st.get(k) for k in ('runId', 'scenarioId', 'format', 'document', 'session', 'paragraphText', 'caret', 'selection', 'localRevision', 'revision', 'composing', 'status', 'uncertain', 'pages', 'settleSeconds', 'undo', 'redo', 'ime')},
                                        'modelParagraphs': st['model']['paragraphs'], 'modelPages': st['model']['pages'], 'modelSha256': hashlib.sha256(st['model']['text'].encode()).hexdigest()})
         return st
 
@@ -191,10 +197,13 @@ class Usability:
     def chain(self, label, stop, direction='undo', limit=80, via=None):
         """Press Undo/Redo one step at a time until `stop(state)` or the command becomes unavailable."""
         states = []
+        def finish(values):
+            self.current.setdefault('chains', []).append({'label': label, 'direction': direction, 'limit': limit, 'states': [s['label'] for s in values]})
+            return values
         for i in range(limit):
             st = self.state(f'{label} before {direction} {i}') if not states else states[-1]
             if stop(st) or st[direction]['disabled']:
-                return states if states else [st]
+                return finish(states if states else [st])
             rev = int(st['localRevision'])
             if via and via(i):
                 self.click(f'[data-command="edit.{direction}"]')
@@ -216,9 +225,10 @@ class Usability:
 
     # ---- scenarios ----
     def scenario(self, fmt, case, fn):
-        row = {'format': fmt, 'case': case, 'status': 'RUNNING', 'checks': [], 'states': [], 'started': time.time()}
+        row = {'runId': self.report['runId'], 'scenarioId': uuid.uuid4().hex, 'format': fmt, 'case': case, 'status': 'RUNNING', 'checks': [], 'states': [], 'started': time.time()}
         self.rows.append(row)
         self.current = row
+        self.d.js('window.__uScope=arguments[0]', {k: row[k] for k in ('runId', 'scenarioId', 'format')})
         try:
             fn(fmt)
             trusted, count = self.events_trusted()
@@ -326,14 +336,14 @@ class Usability:
         self.check('Redo restores the committed syllable', re['paragraphText'] == mixed['paragraphText'] + '가', re['paragraphText'])
         # Capture only this native trial; do not conflate it with the original E→U→F probe.
         self.reset_events()
-        self.d.js('window.__geulTrace={seq:0,dropped:0,records:[]}')
+        self.d.js("window.__geulTrace={seq:0,dropped:0,records:[]};window.__geulTraceRecord('native:t010-composition-scope',arguments[0])", {**{k:self.current[k] for k in ('runId','scenarioId','format')},'session':re['session']})
         self.typ('sk'); pre = self.state('preedit visible')
         gate.insertion(re, pre, '나')
         self.check('native preedit active before Ctrl+Z', pre['composing'] == 'true')
         self.key('ctrl+z'); cz = self.state('Ctrl+Z during composition')
         events = self.d.js('return window.__uEvents')
         trace = self.d.js('return window.__geulTrace')
-        self.current['compositionUndo'] = {'events': events, 'trace': trace}
+        self.current['compositionUndo'] = {**{k:self.current[k] for k in ('runId','scenarioId','format')}, 'session':re['session'], 'stateLabels':list(KOREAN_STATES), 'events': events, 'trace': trace}
         result = gate.verdict(gate.composition_undo, re, pre, cz, events, trace)
         self.check('composition Undo has exact native text/caret/revision/history outcome', result['status'] == 'PASS', result)
         self.current['compositionUndo']['outcome'] = gate.composition_undo(re, pre, cz, events, trace)
@@ -385,6 +395,7 @@ class Usability:
         steps = len(undo) - 1
         oldest = undo[-1]
         evicted = presses + 1 - steps
+        self.current['boundary'] = {'presses': presses, 'evicted': evicted}
         self.check('history depth bounded and oldest state consistent', 0 <= evicted and oldest['model']['paragraphs'] == m0['paragraphs'] + max(0, evicted),
                    {'steps': steps, 'presses': presses, 'paragraphs': oldest['model']['paragraphs']})
         if evicted <= 0:
@@ -568,9 +579,9 @@ def main():
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     selected = [c for c in args.only.split(',') if c] or list(CASES)
-    report = {'runId': os.environ.get('GEUL_NATIVE_RUN_ID') or uuid.uuid4().hex, 'status': 'RUNNING', 'harnessSha256': sha(__file__), 'validatorSha256': {n: sha(ROOT / 'scripts/tests' / n) for n in ('t010_acceptance.py', 't010_lifecycle.py', 'native-ibus-session.py')}, 'appSha256': sha(args.app), 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+    report = {'runId': os.environ.get('GEUL_NATIVE_RUN_ID') or uuid.uuid4().hex, 'status': 'RUNNING', 'harnessSha256': sha(__file__), 'validatorSha256': {n: sha(ROOT / 'scripts/tests' / n) for n in ('t010_acceptance.py', 't010_usability_contract.py', 't010_launcher.py', 't010_lifecycle.py', 'native-ibus-session.py')}, 'appSha256': sha(args.app), 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'sourceDiffSha256': hashlib.sha256(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src'], cwd=ROOT)).hexdigest(),
-              'sourceSha256': {p: sha(ROOT / p) for p in SOURCES}, 'cases': selected, 'formatsRequested': args.formats.split(','),
+              'sourceSha256': {p: sha(ROOT / p) for p in SOURCES}, 'cases': selected, 'formatsRequested': args.formats.split(','), 'requestedCoverage': 'full' if set(selected)==set(CASES) and set(args.formats.split(','))==set(gate.FORMATS) else 'selected',
               'environment': {'VITE_GEUL_TEST_HOOKS': os.environ.get('VITE_GEUL_TEST_HOOKS'), 'VITE_GEUL_TEST_RHWP_HISTORY': os.environ.get('VITE_GEUL_TEST_RHWP_HISTORY'),
                               'display': os.environ.get('DISPLAY'), 'gtkIm': os.environ.get('GTK_IM_MODULE'), 'syntheticComposition': False}}
     smoke.APP = os.path.abspath(args.app)
@@ -605,6 +616,9 @@ def main():
         report.update(status='FAIL', error=f'{type(error).__name__}: {error}', trace=traceback.format_exc())
     finally:
         report['acceptance'] = gate.verdict(gate.usability, report, args.formats.split(','), selected)
+        report['usabilityCoverage'] = gate.usability_coverage(report, args.formats.split(','), selected)
+        if report['usabilityCoverage']['fullUsabilityCoverage'] == 'PASS':
+            report['usabilityCoverage']['fullUsabilityCoverage'] = 'PENDING_CLEANUP'
         gate.pending_cleanup(report)
         report['summary'] = {f"{r['format']}:{r['case']}": {'status': r['status'], 'checks': len(r['checks']), 'failed': [c['name'] for c in r['checks'] if c['status'] != 'PASS']} for r in report.get('scenarios', [])}
         (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')

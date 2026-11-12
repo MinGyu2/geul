@@ -32,6 +32,9 @@ import sys
 import tempfile
 import time
 
+import t010_acceptance as gate
+import t010_launcher as launcher
+
 
 def store(pattern, required):
     """Resolve an installed Nix store path containing `required`; override with GEUL_<NAME>."""
@@ -87,6 +90,10 @@ def main():
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
+    run_id = uuid.uuid4().hex
+    if args.acceptance_report:
+        launcher.prepare_report(args.acceptance_report, run_id)
+
     ibus = tool('GEUL_IBUS', '*-ibus-1.5.*', 'libexec/ibus-dconf')
     hangul = tool('GEUL_IBUS_HANGUL', '*-ibus-hangul-*', 'libexec/ibus-engine-hangul')
     dconf = tool('GEUL_DCONF', '*-dconf-*-lib', 'libexec/dconf-service')
@@ -99,74 +106,77 @@ def main():
     # PR_SET_CHILD_SUBREAPER: orphaned descendants of the test command reparent to this launcher.
     import ctypes
     subreaper = ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
-    work = Path(tempfile.mkdtemp(prefix='geul-ibus-'))
-    sock = Path(tempfile.mkdtemp(prefix='gx-', dir='/tmp'))
-    env = {k: v for k, v in os.environ.items() if k not in (
-        'LD_LIBRARY_PATH', 'IBUS_USE_PORTAL', 'IBUS_ADDRESS', 'DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY',
-        'DISPLAY', 'XAUTHORITY', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'XMODIFIERS')}
-    for key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR'):
-        d = work / key
-        d.mkdir(mode=0o700)
-        env[key] = str(d)
-    tools = work / 'tools'
-    tools.mkdir()
-    for name, target in {'xdotool': xdotool + '/bin/xdotool', 'setxkbmap': setxkbmap + '/bin/setxkbmap',
-                         'ibus': ibus + '/bin/ibus'}.items():
-        (tools / name).symlink_to(target)
-    components = work / 'components'
-    components.mkdir()
-    for name in ('simple.xml', 'dconf.xml'):
-        shutil.copy(Path(ibus, 'share/ibus/component', name), components / name)
-    shutil.copy(Path(hangul, 'share/ibus/component/hangul.xml'), components / 'hangul.xml')
-    services = work / 'services'
-    services.mkdir()
-    (services / 'ca.desrt.dconf.service').write_text(
-        f'[D-BUS Service]\nName=ca.desrt.dconf\nExec={dconf}/libexec/dconf-service\n')
-    bus_conf = work / 'session.conf'
-    bus_conf.write_text(f'''<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig><type>session</type><listen>unix:dir={sock}</listen><servicedir>{services}</servicedir>
-<policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy>
-</busconfig>
-''')
-    cache = work / 'immodules.cache'
-    with cache.open('w') as f:
-        subprocess.run([gtk3dev + '/bin/gtk-query-immodules-3.0', ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so'],
-                       stdout=f, check=True, env=env)
-    env.update(PATH=str(tools) + ':' + env['PATH'], IBUS_ADDRESS='unix:path=' + str(sock / 'ibus'),
-               IBUS_COMPONENT_PATH=str(components), GSETTINGS_BACKEND='memory', GTK_IM_MODULE='ibus',
-               GTK_IM_MODULE_FILE=str(cache), XMODIFIERS='@im=ibus', GDK_BACKEND='x11')
-    if args.hangul_initial_mode or args.hangul_disable_latin:
-        schemas = work / 'schemas'
-        schemas.mkdir()
-        original_schema = next(Path(hangul, 'share').glob('gsettings-schemas/*/glib-2.0/schemas/org.freedesktop.ibus.engine.hangul.gschema.xml'))
-        shutil.copy(original_schema, schemas / original_schema.name)
-        settings = '[org.freedesktop.ibus.engine.hangul]\n'
-        if args.hangul_initial_mode:
-            settings += "initial-input-mode='" + args.hangul_initial_mode + "'\n"
-        if args.hangul_disable_latin:
-            settings += 'disable-latin-mode=true\n'
-        (schemas / 'phase5.gschema.override').write_text(settings)
-        compiler = shutil.which('glib-compile-schemas') or store('*-glib-*-dev', ['bin/glib-compile-schemas']) + '/bin/glib-compile-schemas'
-        subprocess.run([compiler, '--strict', str(schemas)], env=env, check=True)
-        env['GSETTINGS_SCHEMA_DIR'] = str(schemas)
-    run_id = uuid.uuid4().hex
-    argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
-    command_hash = hashlib.sha256(json.dumps(argv).encode()).hexdigest()
-    env['GEUL_NATIVE_RUN_ID'] = run_id
-    identity = {'runId': run_id, 'commandSha256': command_hash, 'acceptanceReport': str(args.acceptance_report.resolve()) if args.acceptance_report else None, 'work': str(work), 'ibus': ibus, 'ibusHangul': hangul, 'dconf': dconf, 'xvfb': xvfb,
-                'xdotool': xdotool, 'dbusDaemon': dbus_daemon, 'imModule': ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so',
-                'privateHangulInitialMode': args.hangul_initial_mode,
-                'privateHangulDisableLatin': args.hangul_disable_latin}
-    processes = []
+    resources, processes = [], []
     code = 1
-
-    def start(name, argv, **kw):
-        proc = subprocess.Popen(argv, env=env, stderr=(out / f'{name}.log').open('w'), start_new_session=True, **kw)
-        processes.append((name, proc))
-        return proc
-
+    identity = {'runId': run_id, 'temporaryResources': resources}
     try:
+        resources.append(launcher.create_directory('work', run_id))
+        work = Path(resources[-1]['path'])
+        resources.append(launcher.create_directory('socket', run_id, parent='/tmp'))
+        sock = Path(resources[-1]['path'])
+        gate.require(not any(r.get('creationError') for r in resources), 'temporary ownership marker creation failed')
+        env = {k: v for k, v in os.environ.items() if k not in (
+            'LD_LIBRARY_PATH', 'IBUS_USE_PORTAL', 'IBUS_ADDRESS', 'DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY',
+            'DISPLAY', 'XAUTHORITY', 'GTK_IM_MODULE', 'QT_IM_MODULE', 'XMODIFIERS')}
+        for key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR'):
+            d = work / key
+            d.mkdir(mode=0o700)
+            env[key] = str(d)
+        tools = work / 'tools'
+        tools.mkdir()
+        for name, target in {'xdotool': xdotool + '/bin/xdotool', 'setxkbmap': setxkbmap + '/bin/setxkbmap',
+                             'ibus': ibus + '/bin/ibus'}.items():
+            (tools / name).symlink_to(target)
+        components = work / 'components'
+        components.mkdir()
+        for name in ('simple.xml', 'dconf.xml'):
+            shutil.copy(Path(ibus, 'share/ibus/component', name), components / name)
+        shutil.copy(Path(hangul, 'share/ibus/component/hangul.xml'), components / 'hangul.xml')
+        services = work / 'services'
+        services.mkdir()
+        (services / 'ca.desrt.dconf.service').write_text(
+            f'[D-BUS Service]\nName=ca.desrt.dconf\nExec={dconf}/libexec/dconf-service\n')
+        bus_conf = work / 'session.conf'
+        bus_conf.write_text(f'''<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+     "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+    <busconfig><type>session</type><listen>unix:dir={sock}</listen><servicedir>{services}</servicedir>
+    <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy>
+    </busconfig>
+    ''')
+        cache = work / 'immodules.cache'
+        with cache.open('w') as f:
+            subprocess.run([gtk3dev + '/bin/gtk-query-immodules-3.0', ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so'],
+                           stdout=f, check=True, env=env)
+        env.update(PATH=str(tools) + ':' + env['PATH'], IBUS_ADDRESS='unix:path=' + str(sock / 'ibus'),
+                   IBUS_COMPONENT_PATH=str(components), GSETTINGS_BACKEND='memory', GTK_IM_MODULE='ibus',
+                   GTK_IM_MODULE_FILE=str(cache), XMODIFIERS='@im=ibus', GDK_BACKEND='x11')
+        if args.hangul_initial_mode or args.hangul_disable_latin:
+            schemas = work / 'schemas'
+            schemas.mkdir()
+            original_schema = next(Path(hangul, 'share').glob('gsettings-schemas/*/glib-2.0/schemas/org.freedesktop.ibus.engine.hangul.gschema.xml'))
+            shutil.copy(original_schema, schemas / original_schema.name)
+            settings = '[org.freedesktop.ibus.engine.hangul]\n'
+            if args.hangul_initial_mode:
+                settings += "initial-input-mode='" + args.hangul_initial_mode + "'\n"
+            if args.hangul_disable_latin:
+                settings += 'disable-latin-mode=true\n'
+            (schemas / 'phase5.gschema.override').write_text(settings)
+            compiler = shutil.which('glib-compile-schemas') or store('*-glib-*-dev', ['bin/glib-compile-schemas']) + '/bin/glib-compile-schemas'
+            subprocess.run([compiler, '--strict', str(schemas)], env=env, check=True)
+            env['GSETTINGS_SCHEMA_DIR'] = str(schemas)
+        argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
+        command_hash = hashlib.sha256(json.dumps(argv).encode()).hexdigest()
+        env['GEUL_NATIVE_RUN_ID'] = run_id
+        identity = {'runId': run_id, 'commandSha256': command_hash, 'acceptanceReport': str(args.acceptance_report.resolve()) if args.acceptance_report else None, 'temporaryResources': resources, 'work': str(work), 'ibus': ibus, 'ibusHangul': hangul, 'dconf': dconf, 'xvfb': xvfb,
+                    'xdotool': xdotool, 'dbusDaemon': dbus_daemon, 'imModule': ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so',
+                    'privateHangulInitialMode': args.hangul_initial_mode,
+                    'privateHangulDisableLatin': args.hangul_disable_latin}
+
+        def start(name, argv, **kw):
+            proc = subprocess.Popen(argv, env=env, stderr=(out / f'{name}.log').open('w'), start_new_session=True, **kw)
+            processes.append((name, proc))
+            return proc
+
         xv = start('xvfb', [xvfb + '/bin/Xvfb', '-displayfd', '1', '-screen', '0', '1440x1000x24', '-dpi', '96',
                             '-nolisten', 'tcp'], stdout=subprocess.PIPE, text=True)
         env['DISPLAY'] = ':' + xv.stdout.readline().strip()
@@ -196,67 +206,69 @@ def main():
         (out / 'session.json').write_text(json.dumps(identity, indent=2) + '\n')
         if probe.returncode != 0 or engine != 'hangul':
             print('BLOCKED: Hangul engine activation failed', json.dumps(identity['setGlobalEngine']), file=sys.stderr)
-            return 2
+            raise RuntimeError('Hangul engine activation failed')
         subprocess.run([ibus + '/bin/ibus', 'engine', 'xkb:us::eng'], env=env, check=True, timeout=30)
         env['GEUL_NATIVE_SESSION_REPORT'] = str(out / 'session.json')
         code = subprocess.run(argv, env=env).returncode
+    except Exception as error:
+        code = code or 2
+        identity['error'] = f'{type(error).__name__}: {error}'
+        print(identity['error'], file=sys.stderr)
     finally:
-        # Snapshot every test-owned process (pid + start time) before teardown; only these are touched.
-        owned = descendants(os.getpid())
-        for name, proc in reversed(processes):
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                proc.wait(timeout=5)
-            except ProcessLookupError:
-                pass
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
-        leaked = {}
-        deadline = time.monotonic() + 5
-        while True:
-            # Reap reparented orphans so they do not linger as zombies of this launcher.
-            try:
-                while os.waitpid(-1, os.WNOHANG)[0] > 0:
+        process_errors = []
+        owned, leaked, survivors = {}, {}, []
+        try:
+            # Snapshot every test-owned process (pid + start time) before teardown; only these are touched.
+            owned = descendants(os.getpid())
+            for name, proc in reversed(processes):
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    proc.wait(timeout=5)
+                except ProcessLookupError:
                     pass
-            except ChildProcessError:
-                pass
-            alive = {pid: start for pid, start in owned.items() if (proc_identity(pid) or (None, None))[1] == start}
-            if not alive or time.monotonic() > deadline:
-                break
-            for pid in alive:
-                leaked.setdefault(pid, Path(f'/proc/{pid}/cmdline').read_bytes().replace(b'\0', b' ').decode(errors='replace')[:200]
-                                  if Path(f'/proc/{pid}').exists() else '')
-                with contextlib.suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGTERM if time.monotonic() < deadline - 2 else signal.SIGKILL)
-            time.sleep(.1)
-        survivors = sorted(set(descendants(os.getpid())) | set(alive))
-        cleanup = {'runId': run_id, 'commandSha256': command_hash, 'complete': True, 'exit': code, 'subreaper': subreaper, 'ownedAtTeardown': len(owned),
-                   'leakedAfterManagedStop': leaked, 'survivors': survivors,
-                   'proven': subreaper and not survivors}
-        (out / 'cleanup.json').write_text(json.dumps(cleanup) + '\n')
-        if not cleanup['proven']:
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+            leaked = {}
+            deadline = time.monotonic() + 5
+            while True:
+                # Reap reparented orphans so they do not linger as zombies of this launcher.
+                try:
+                    while os.waitpid(-1, os.WNOHANG)[0] > 0:
+                        pass
+                except ChildProcessError:
+                    pass
+                alive = {pid: start for pid, start in owned.items() if (proc_identity(pid) or (None, None))[1] == start}
+                if not alive or time.monotonic() > deadline:
+                    break
+                for pid in alive:
+                    leaked.setdefault(pid, Path(f'/proc/{pid}/cmdline').read_bytes().replace(b'\0', b' ').decode(errors='replace')[:200]
+                                      if Path(f'/proc/{pid}').exists() else '')
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGTERM if time.monotonic() < deadline - 2 else signal.SIGKILL)
+                time.sleep(.1)
+            survivors = sorted(set(descendants(os.getpid())) | set(alive))
+        except Exception as error:
+            process_errors.append({'type': type(error).__name__, 'message': str(error)})
+            survivors = sorted(descendants(os.getpid()))
+        directory_results = launcher.cleanup_directories(resources, run_id)
+        filesystem = gate.verdict(gate.directory_cleanup, identity, {'directories': directory_results})
+        cleanup = {'runId': run_id, 'commandSha256': identity.get('commandSha256'), 'complete': True,
+                   'exit': code, 'subreaper': subreaper, 'ownedAtTeardown': len(owned),
+                   'leakedAfterManagedStop': leaked, 'survivors': survivors, 'proven': subreaper and not survivors and not process_errors, 'processErrors': process_errors,
+                   'directories': directory_results, 'filesystemProven': filesystem['status'] == 'PASS'}
+        if not cleanup['proven'] or not cleanup['filesystemProven']:
             print('CLEANUP NOT PROVEN', json.dumps(cleanup), file=sys.stderr)
             code = code or 3
-        shutil.rmtree(sock, ignore_errors=True)
-        shutil.rmtree(work, ignore_errors=True)
-    if args.acceptance_report:
-        import t010_acceptance as gate
+        # Persist raw cleanup before the final report; no fallible I/O follows a final PASS.
         try:
-            report = json.loads(args.acceptance_report.read_text())
-            report['launcherCleanup'] = cleanup
-            report['launcherAcceptance'] = gate.verdict(gate.launcher_cleanup, report, identity, cleanup)
-            # Re-evaluate required child evidence as well, after both lifecycle scopes have ended.
-            inner = gate.verdict(gate.production, report, report.get('expectedIdentity', {})) if 'formats' in report else gate.verdict(gate.usability, report, report.get('formatsRequested'), report.get('cases'))
-            report['status'] = 'PASS' if inner['status'] == 'PASS' and report['launcherAcceptance']['status'] == 'PASS' else 'FAIL'
-            report['acceptance'] = inner
-            pending = args.acceptance_report.with_suffix('.pending.json')
-            pending.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
-            pending.replace(args.acceptance_report)
-            code = code or (0 if report['status'] == 'PASS' else 1)
-        except (OSError, ValueError, KeyError, TypeError) as error:
-            print('ACCEPTANCE FINALIZATION FAILED:', error, file=sys.stderr)
+            launcher.atomic_json(out / 'session.json', identity)
+            launcher.atomic_json(out / 'cleanup.json', cleanup)
+        except OSError as error:
+            identity['error'] = f'cleanup evidence write failed: {error}'
             code = code or 2
+        if args.acceptance_report:
+            code = launcher.finalize_report(args.acceptance_report, identity, cleanup, code)
     return code
 
 
