@@ -268,6 +268,42 @@ describe("GTK XIM 입력기(ibus-x11) 순서: 확정이 조합 밖 insertText로
   });
 });
 
+// 2026-11-12 (T010 Phase 2, native 실측 phase2/native/dup-probe-1): UI main loop가 바쁜 동안 키(입력기 flush)와 클릭이 함께
+// 쌓이면 입력기의 확정(빈 끝 → 최종 글자) 뒤 mousedown이 오고, GTK IBus 문맥의 reset이 남은 preedit를 같은 글자로 한 번 더
+// 확정한다(229 keydown → 조합 시작 없는 insertFromComposition → 끝). 수정 전 '가가'였다.
+describe("확정 직후 클릭의 입력기 reset 재확정(바쁜 UI 실측)", () => {
+  const page = (t: Awaited<ReturnType<typeof mounted>>) => t.view.container.querySelector<HTMLDivElement>(".rhwp-page")!;
+  it("같은 글자의 시작 없는 재확정은 소비한다: '가' 한 번, revision 1, 커서는 클릭한 곳", async () => {
+    const t = await mounted();
+    t.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가")]);
+    act(() => void page(t).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
+    t.play([["key", false], ["input", "가", "insertFromComposition", true], ["end", "가"]]);
+    expect(t.doc.paragraphs).toEqual(["가가나다", "abc"]);
+    expect(t.editor.caret).toMatchObject({ paragraph: 1, offset: 2 });
+    expect(t.editor.localRevision).toBe(1);
+    // 그 뒤 새로 친 같은 음절은 조합 시작과 함께 오므로 넣는다.
+    t.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가")]);
+    expect(t.doc.paragraphs).toEqual(["가가나다", "ab가c"]);
+    expect(t.editor.localRevision).toBe(2);
+  });
+
+  it("다른 글자의 재확정, 클릭 없이 온 같은 글자 확정, 사이에 일반 키가 낀 경우는 새 입력이다", async () => {
+    const other = await mounted();
+    other.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가")]);
+    act(() => void page(other).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
+    other.play([["key", false], ["input", "나", "insertFromComposition", true], ["end", "나"]]);
+    expect(other.doc.paragraphs).toEqual(["가가나다", "ab나c"]);
+    const noClick = await mounted();
+    noClick.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가"), ["key", false], ["input", "가", "insertFromComposition", true], ["end", "가"]]);
+    expect(noClick.doc.paragraphs[0]).toBe("가가가나다");
+    const keyed = await mounted();
+    keyed.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가")]);
+    act(() => void page(keyed).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
+    keyed.play([["key", false, " "], ["input", " ", "insertText", false], ["key", false], ["input", "가", "insertFromComposition", true], ["end", "가"]]);
+    expect(keyed.doc.paragraphs).toEqual(["가가나다", "ab 가c"]);
+  });
+});
+
 describe("클릭이 입력기 확정의 빈 끝과 확정 절반 사이에 옴(실측 게이트)", () => {
   it("확정 절반은 원래 자리에 한 번, 커서는 클릭한 곳", async () => {
     const t = await mounted();

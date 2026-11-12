@@ -114,6 +114,15 @@ describe("DocxSurface", () => {
     expect(t.sessions.get(1)?.revision).toBe(1);
   });
 
+  it("바쁜 UI: 입력기 확정 뒤 클릭의 reset 재확정(같은 글자, 시작 없음)은 한 번만 넣는다(2026-11-12 native 실측 재생)", async () => {
+    const t = await mounted();
+    await t.play([...startWith("ㄱ"), ...update("가"), ...nativeCommit("가")]);
+    await t.click(10, 10);
+    await t.play([["key", false], ["input", "가", "insertFromComposition", true], ["end", "가"]]);
+    expect(t.fake.paragraphs[0]).toBe("가가나다");
+    expect(t.sessions.get(1)?.revision).toBe(1);
+  });
+
   it("GTK XIM 일반 확정(빈 끝 → 운반 keydown → insertText)은 그대로 한 번 넣는다", async () => {
     const t = await mounted();
     await t.play([...startWith("ㄱ"), ...update("가"), ["key", true], ["input", "", "deleteCompositionText", true], ["end", ""],

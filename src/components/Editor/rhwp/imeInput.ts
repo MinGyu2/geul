@@ -31,6 +31,12 @@
 //   isComposing=false) 바로 뒤의 같은 글자 insertText(isComposing=false)로 온다(XIM의 확정은 언제나 조합 밖 insertText다).
 //   이 운반 keydown은 기록을 지우지 않고, 바로 다음 input이 같은 글자의 insertText일 때만 소비한다. 다른 글자·다른 입력·운반
 //   keydown 없이 온 insertText는 새 입력이다. 빈 끝 뒤의 일반 XIM 확정은 이 기록이 없으므로 그대로 넣는다.
+// - 확정 직후 클릭의 입력기 reset 재확정(T010 Phase 2, 실측 2026-11-12 WebKitGTK 2.54 + IBus 1.5.33 GTK 모듈): UI main loop가
+//   바쁜 동안 입력기를 flush하는 키와 클릭이 함께 쌓이면, 입력기의 확정(조합으로 보인 글자의 빈 끝 → 최종 글자 → 끝)이 끝난 뒤
+//   mousedown이 오고 GTK IBus 문맥의 reset이 아직 남은 preedit를 같은 글자로 한 번 더 확정한다(229 keydown → 조합 시작 없는
+//   insertFromComposition → 끝). 조합으로 끝난 확정 바로 뒤의 클릭은 이 기록(resetRepeat)을 남기고, 229 keydown만 지나 온 같은
+//   글자의 시작 없는 insertFromComposition과 그 끝을 소비한다. preedit 플랫폼의 새 입력은 조합 시작·조합 입력과 함께 오므로
+//   남는다. 다른 글자·일반 키·다른 입력은 기록을 지운다.
 // - 조합이 끝 이벤트 없이 편집 세션 쪽에서 끝나면(엔진 예외·편집 중지) 그 조합의 늦은 이벤트도 끊긴 트랜잭션의 것이다
 //   (이미 끝남): 다시 불러온 모델이나 이어진 편집에 넣지 않는다. 끝의 완료 기록은 IME가 보낸 최종 글자로 남긴다(실패해
 //   문서에 남지 않았어도 같은 조합의 뒤따르는 알림을 소비).
@@ -110,8 +116,9 @@ export class ImeContext {
   owner: { session: Session; epoch: number } | null = null;
   discarded = false;
   interrupted: Interrupted | null = null;
-  /** confirmedByView: WebView가 스스로 확정해 끝난 조합(입력기가 같은 조합을 한 번 더 확정할 수 있음). */
-  terminal: { text: string; confirmedByView?: true } | null = null;
+  /** confirmedByView: WebView가 스스로 확정해 끝난 조합(입력기가 같은 조합을 한 번 더 확정할 수 있음).
+   * composed: 조합으로 끝난 확정. resetRepeat: 그 뒤 클릭이 와 입력기 reset이 같은 글자를 다시 확정할 수 있음. */
+  terminal: { text: string; confirmedByView?: true; composed?: true; resetRepeat?: true } | null = null;
   /** 빈 끝 뒤 최종 글자를 기다리는 세션(파일 머리 설명). */
   awaiting: Session | null = null;
 }
@@ -172,7 +179,7 @@ export class ImeInput {
     const viewConfirmed = !!this.context.terminal?.confirmedByView;
     this.ximRepeat = ximCommit && viewConfirmed;
     if (this.ximRepeat) return;
-    if (!(ime && viewConfirmed)) this.context.terminal = null;
+    if (!(ime && (viewConfirmed || this.context.terminal?.resetRepeat))) this.context.terminal = null;
     // 보이는 조합을 앱이 확정한 뒤 입력기가 그 조합을 끝내는 꼬리, 빈 끝과 확정 절반 사이의 클릭 뒤에도 229 keydown이
     // 섞여 온다(새 입력이 아님).
     const interrupted = this.context.interrupted;
@@ -289,7 +296,7 @@ export class ImeInput {
       return;
     }
     const terminal = this.context.terminal;
-    if (!session.composing && isComposing && inputType === "insertFromComposition" && terminal?.confirmedByView
+    if (!session.composing && isComposing && inputType === "insertFromComposition" && (terminal?.confirmedByView || terminal?.resetRepeat)
       && terminal.text === text) {
       // WebView가 확정한 조합을 입력기가 같은 글자로 한 번 더 확정했다(실측 WebKitGTK 2.54 + ibus: 창 초점 잃음).
       // 조합 시작 없이 온 같은 글자이므로 새 입력이 아니다. 뒤따르는 끝은 남은 완료 기록이 소비한다.
@@ -326,7 +333,8 @@ export class ImeInput {
     if (session.composing) {
       const awaited = finalText === "" && this.shown;
       session.endComposition(finalText);
-      this.context.terminal = this.viewConfirming && finalText ? { text: finalText, confirmedByView: true } : { text: finalText };
+      this.context.terminal = this.viewConfirming && finalText ? { text: finalText, confirmedByView: true }
+        : finalText ? { text: finalText, composed: true } : { text: finalText };
       this.viewConfirming = false;
       this.shown = false;
       if (awaited) {
@@ -388,7 +396,11 @@ export class ImeInput {
     if (this.finalizeVisible()) return;
     if (this.context.discarded) return;
     const terminal = this.context.terminal;
-    if (terminal && terminal.text) return; // 막 확정한 조합 뒤의 클릭
+    if (terminal && terminal.text) {
+      // 막 확정한 조합 뒤의 클릭. 조합으로 끝난 확정이면 입력기 reset이 같은 글자를 다시 확정할 수 있다(파일 머리 설명).
+      if (terminal.composed && !terminal.confirmedByView) this.context.terminal = { text: terminal.text, resetRepeat: true };
+      return;
+    }
     // 끊긴 조합이 아직 끝나지 않았으면(확정했거나 그 조합의 입력이 이미 옴) 그 트랜잭션의 자리를 그대로 둔다.
     // 아무 증거가 없으면 이번 클릭 전 커서를 기억한다(마지막 클릭 기준, 클릭 사이 미리보기 키는 페이지가 모른다).
     const current = this.context.interrupted;

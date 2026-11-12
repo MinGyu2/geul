@@ -36,7 +36,7 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 | 현재 차원 | 판정 | 범위·영향 |
 |---|---|---|
 | D1 렌더·커서 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | native 원본 `undo_native.py --render --native-keys` 33/33 관문; 교정 2건 뒤 Release `97abf6bd…`([Phase 1](#t010-phase1-20261112)) |
-| D2 IME 안전성 | INCONCLUSIVE | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 미관측; 면제/대체 불가, 완료 차단 |
+| D2 IME 안전성 | INCONCLUSIVE (2026-11-12 Phase 2 재조사) | 필수 native E(empty compositionend)→U(Undo)→F(late final insertion)는 새 기전(Undo 단추, 입력기 정지 중 단추, 바쁜 UI main loop)으로도 미관측. 면제/대체 불가, 완료 차단. 조사 중 찾은 바쁜 UI 중복 입력(`가가`)은 교정([Phase 2](#t010-phase2-20261112)) |
 | D3 저장 보존 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | `undo_save.py --release` 19/19, strict 저장 23행 CURRENT0/DESIRED0, Rust 저장·복구·세션 304/0. 4행은 이력과 무관한 T009 정책 거부로 판정(기준 출력과 근거·바이트 동일) |
 | D5 실패·복구 | **PASS — 현재 신원 (2026-11-12 Phase 1)** | 실제 WASM 경계 18/18, 통합 시험 3구성, PoC 50/50, native discard 예외·새 세대 reload 4/4 |
 | D4 자원·메모리 안전 | INCONCLUSIVE | 필수 차원이라 계속 완료/활성화 차단 |
@@ -92,6 +92,44 @@ HWP 원본 보존)와 RHWP 세션·기록·저장 코드가 바뀌어 재사용�
 실패 기록은 지우지 않았다: 교정 전 D3 FAIL `d3-undo-save-release.before-fix-907eabb2.FAIL.log`, 고정 기대 4건 불일치 `…fixedtable-4mismatch.*`,
 native D1 FAIL `native/d1-native-62e15b0b-FAIL/`, 중간 Release `62e15b0b…` 결과 `superseded-62e15b0b/`.
 신원·해시 상세는 [t010-phase1-acceptance-2026-11-12.json](t010-phase1-acceptance-2026-11-12.json)에 있다.
+
+<a id="t010-phase2-20261112"></a>
+
+### Phase 2 — native D2 E→U→F 재조사 (2026-11-12): INCONCLUSIVE 유지, 중복 입력 결함 교정
+
+**판정: D2 INCONCLUSIVE.** 원래 predicate·assertion(`scenario_ime_gap`, `scenario_ime_gap_matrix`의 E<U<F 판정과 safe 조건)은
+바꾸지 않았다. 과거 관측(E→F→U·취소 경로)을 PASS로 다시 세지 않는다. Phase 2 완료 커밋은 없다.
+
+**새로 시험한 기전(모두 실제 X11/XTest·IBus 1.5.33·ibus-hangul 1.5.5·WebKitGTK 2.54.1, 합성 DOM 이벤트·isTrusted 위조 없음).**
+1. **Undo 명령 단추의 native 누름(`button`).** `CommandButton`은 편집기 초점을 유지하고, 클릭이 아니라 누름에서 입력기가 확정한다(`editorFocus.ts` H1).
+   그래서 단추의 Undo 요청이 확정 두 반쪽 사이에 끼는지 보았다. 결과는 HWP/HWPX 각 2회 모두 E→F→U였다. 확정은 mousedown에서 끝났고 요청은 click에서 왔다.
+2. **입력기(ibus-engine-hangul)를 SIGSTOP한 채 단추 누름(`buttonStall` 20·80 ms).** 기존 `pointerStall`의 Ctrl+Z는 입력기를 거쳐 늦게 온다.
+   단추 클릭은 입력기를 거치지 않는 포인터 이벤트라는 차이를 이용했다. 결과는 HWP/HWPX 각 10회(5 cycle)+2회 모두 E→F→U였다. 엔진이 멈춰 있어도 E와 F가 클릭보다 먼저 왔다.
+   해석(INFERRED, 소스 대조): GTK IBus 문맥은 PREEDIT_COMMIT 모드의 남은 preedit를 reset 때 엔진 없이 직접 확정한다. 그래서 포인터 경로의 E·F는 같은 UI 반복 안에서 끝난다.
+3. **UI 프로세스 main loop 정지(바쁜 앱, `appStallKeyButton` 0·30·120 ms).** 앱 프로세스를 SIGSTOP한 동안 Ctrl+Z와 단추 누름을 X에 쌓은 뒤 재개했다.
+   E<U<F는 0회였다. 대신 **같은 음절이 두 번 확정되어 `가가`가 들어가는 결함**을 관측했다(Undo 없이 End+클릭으로도 3/3 재현).
+   순서는 키의 엔진 flush 확정(빈 끝 → `insertFromComposition` 가 → 끝) → mousedown → GTK IBus reset의 남은 preedit 재확정(229 keydown → 조합 시작 없는 `insertFromComposition` 가 → 끝)이다.
+
+키 경로는 ibus-hangul이 수식 키를 넘기기 전에 flush·commit하므로 commit(F)이 forward key(U)보다 앞선다(2026-11-01/06 근거와 같음).
+포인터 경로는 위 2의 로컬 확정 때문에 E·F가 클릭 처리보다 앞선다. 이번 환경에서 E→U→F를 만들 근거가 있는 기전은 모두 시험했다.
+다른 runtime·입력기(XIM은 2026-11-04 기각, fcitx·Wayland는 미설치/미지원)나 E→U→F의 일반적 불가능성은 입증하지 않았다(UNVERIFIED).
+
+**교정(공유 IME, RHWP·WordCraft 공통 `imeInput.ts`).** 조합으로 끝난 확정 직후 클릭은 `resetRepeat` 기록을 남긴다. 그 뒤 229 keydown만 지나
+조합 시작 없이 오는 **같은 글자**의 `insertFromComposition`과 그 끝은 소비한다. 다른 글자, 클릭 없는 같은 글자, 사이에 낀 일반 키는 새 입력으로 받는다.
+preedit 플랫폼의 새 입력은 조합 시작·조합 입력과 함께 오므로 같은 음절을 다시 친 경우는 남는다. 기존 WebView 확정·XIM 재확정 규칙과 같은 꼴이다.
+
+| 검증 | 결과 |
+|---|---|
+| 재생 단위 시험(실측 순서) | RHWP 2·WordCraft 1, 교정 전 FAIL → 교정 후 PASS; `vitest src/` 1432/1432, tsc·eslint PASS |
+| native 중복 탐침(교정 뒤, End+클릭 바쁜 UI) | 3/3 `가` 한 번·revision +1 (교정 전 `가가`·revision +2) |
+| native 공유 IME 회귀(Phase 6 `native_ime.py`) | RHWP 7/7, WordCraft 7/7(창 초점 이동은 과거와 같이 NOT RUN) |
+| native RHWP IME·Undo(`--ime`, 시험 활성화 history) | 25/25 |
+| 원래 D2 관문(교정 뒤 `--ime-gap` 7모드, 행렬 20모드) | HWP·HWPX safe, E<U<F 0 → INCONCLUSIVE |
+| 교정 전 행렬(`--ime-gap-matrix` 5 cycle) | 형식별 100회 safe, E<U<F 0 |
+
+`appStallKeyButton`은 Ctrl+Z와 단추로 Undo를 두 번 요청하므로 행렬의 단일 Undo safe 조건과 맞지 않는다. 그래서 행렬 모드에서 뺐고, 그 결과(교정 전 UNSAFE 6행: 중복 확정)는 보존했다.
+환경 신원: Release `97abf6bd…`, debug 앱 `4c88dee8…`, IBus 1.5.33·ibus-hangul 1.5.5. 원시 trace·실패·인프라 오류(엔진 미설정, socket 경로 길이)는
+비공개 `geul-tests/reports/t010-phase123-20261112/phase2/native/`에 있다(`d2-gap-2`, `d2-matrix-1`, `d2-matrix-2`, `dup-probe-1`, `dupfix1`, `ime7`, `ime25`, `gapfin`, `mtxfin`).
 
 ## 현재 수용 상태와 기술 보류 (2026-11-01 · 2026-11-02 재평가)
 
