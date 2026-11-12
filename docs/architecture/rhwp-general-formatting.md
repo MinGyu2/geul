@@ -86,3 +86,37 @@ A는 `getFormattingRuns` native API로 선택 구간의 scalar 경계와 UTF-16 
 동일한 Release engine과 여덟 개 동일 source/state 조합에서 분석 시 개별 character-property 읽기가 10,000회에서 0회로 줄었고, 단일 문단은 batch 1회, 20문단은 batch 20회였다. 10,000자 분석 시간은 이전 207.9–320.5 ms에서 새 경로 0.21–0.86 ms였다. 별도 짝지은 16자 adapter 측정 60개에서 median은 0.4745 ms에서 0.0153 ms, p95는 0.6049 ms에서 0.0368 ms였다. 이는 선택 분석 경로의 측정이며 전체 편집 지연 보장이 아니다. 20문단 적용과 제거에는 렌더링을 포함해 약 0.38–0.41초가 걸렸다.
 
 추가 hardening 24건과 기존 production 7건은 앞서 통과한 결과를 재사용했다. 최종 검증은 20건 publication 및 fresh reopen, focused frontend 230건, production WASM 22건, Rust HWP 36건(pass; 10 ignored), Python profile 3건, normal build, lint, Rust fmt/check/clippy를 통과했다. 상세 로그는 ignored evidence 경로 `src-tauri/target/general-formatting-hardening/final-checks/`에 있다. corpus와 benchmark JSON은 `src-tauri/target/general-formatting-hardening/`에 있다. 앞 절의 10-case 기록은 당시 실행된 역사적 증거로 보존한다. 이 A–C hardening 결과는 Stage 5/6 native acceptance 또는 릴리스 승인으로 확대하지 않는다.
+
+
+## Stage 5/6 native acceptance addendum — 2026-11-13
+
+앞 절의 단계 표("5/6 미실행")와 focused/hardening 기록은 당시 상태로 보존한다. 이 addendum이 Stage 5/6의 현재 상태다.
+
+**범위.** HWP 한 번, HWPX 한 번의 연속 native GUI 시나리오. 내부 알고리즘·저장 보존·부분 실패·성능 증거(20-case publication/reopen, frontend 230, WASM 22, Rust HWP 36, hardening 24, production 7)는 다시 실행하지 않고 identity로 재사용했다: HEAD `89a0fa2`, worktree의 `src`/`src-tauri`/`public`/`patches` diff 없음, RHWP pin `1a76570e`, WordCraft pin `dc25d8a2`, Release generation `c51dd0fe7fcf845cfe2b1e0c67400606babf65888279a1ebe0c722d15be3a101`(JS `436cd46b…`, WASM `ee44446b…`)이 A–C 기록과 같고 WASM은 다시 빌드하지 않았다.
+
+**환경.** Linux x86_64(kernel 7.2.14), WebKitGTK 2.54.1, Tauri 2 debug profile 일반 제품 빌드(`npm run build`, `python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release`, `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py build --bin geul --features tauri/custom-protocol`), 앱 SHA-256 `b974a28a2d03bbee13ccb5297186b64dc6261199e9ffa13d8689048c90f4ecf8`, origin `tauri://localhost`. `VITE_GEUL_TEST_*` 없음(frontend-build `testFlags: {}`, 실행 프로세스 환경 확인), test hook/trace 없음, 앱이 제공한 frontend asset과 RHWP artifact hash가 빌드 증거·Release와 일치. 입력은 test-owned 비공개 X11(Xvfb 1440x1000) + D-Bus + IBus 1.5.33 + ibus-hangul 1.5.5 세션(`scripts/tests/native-ibus-session.py --hangul-initial-mode hangul`)의 xdotool 키보드/포인터와 GTK 파일 선택기다. WebDriver(tauri-driver)는 DOM 속성, 쪽 Canvas, 스크린샷 관찰과 열기 경로 양식 제출에만 썼다. 물리 디스플레이/Wayland 세션, 사용자 IBus 설정은 사용하지 않았다.
+
+**시나리오**(`scripts/tests/native-formatting-acceptance.py`, 문서는 `tests/fixtures/rhwp/generate.mjs`가 만든 `basic-ko.hwp`/`.hwpx`의 일회용 사본): 열기 → 편집 가능·caret만 있을 때 네 명령 비활성 확인 → IBus 한글 `dkssud` → "안녕" 확정 → 그 글자를 선택해 Ctrl+B → Ctrl+I, Ctrl+U → 리본 취소선 → 둘째 문단 "Bold"에 리본 굵게/기울임/밑줄 → 표 셀 "Cell two"의 "Cell"에 Ctrl+B → Ctrl+Z → Ctrl+S → Ctrl+Y → Ctrl+S → 탭 닫기 → Ctrl+O native 선택기로 재열기 → 재열린 문서에서 선택별 리본 상태 확인. 서식 8회마다 revision +1, 선택 유지, 리본 pressed 상태, Canvas 픽셀 변화를 확인했다. Undo 뒤 Canvas는 서식 전과, Redo 뒤 Canvas는 서식 후와 같았다.
+
+**저장 파일 증거.** 제품이 저장한 실제 파일을 앱 밖에서 hash 검증된 Release runtime으로 열어(`scripts/tests/rhwp-char-flags.mjs`) 모든 본문·셀 문단의 글자와 글자별 bold/italic/underline/strikethrough를 기대값과 정확히 비교했다. Undo 저장본은 셀 서식이 없고, 최종 저장본은 `안녕`=B, `문단`=I, `입니다`=U, `Korean`=S, `Bold`=BIU, 셀 `Cell`=B이며 기존 `굵은 글씨` 굵게를 포함한 나머지 글자와 다른 셀은 변하지 않았다. 텍스트는 `안녕한글 문단입니다. Korean paragraph.`로 손실·중복이 없다. 재열기 세션은 revision 0/clean이고 저장 파일과 원본 fixture 바이트는 그대로였다.
+
+| 항목 | HWP | HWPX |
+|---|---|---|
+| 네 서식 명령(단축키 B/I/U, 리본 B/I/U/S) | PASS | PASS |
+| 일반 텍스트·표 셀 선택, 인접 글자 불변 | PASS | PASS |
+| Undo/Redo(Ctrl+Z/Ctrl+Y, Canvas·저장 파일) | PASS | PASS |
+| 실제 한국어 IME(IBus hangul, trusted composition) | PASS | PASS |
+| GUI 저장(2회, HWP는 preview 재생성 포함) | PASS | PASS |
+| 닫기 → native 재열기 후 글자·서식 보존 | PASS | PASS |
+| 검사 수 | 54/54 | 54/54 |
+
+실행: `python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --out <E>/run3-session -- python3 scripts/tests/native-formatting-acceptance.py --app <abs>/src-tauri/target/debug/geul --app-sha256 <sha> --driver <tauri-driver> --out <E>/run3 --xdotool @XDOTOOL@ --ibus @IBUS@`, `<E>` = ignored `src-tauri/target/general-formatting-native/`. 결과 `run3/result.json`(SHA-256 `f5f2e7850099ec38c485eddd99bdbfcd4e375ff235bf96ff5fe73904ada5858b`), launcher 정리 `run3-session/cleanup.json`(`proven`/`filesystemProven` true, 생존 프로세스 없음, SHA-256 `009e53c3…`), 스크린샷 10장과 저장본 4개가 같은 디렉터리에 있다. 앞선 두 실행은 하네스/환경 문제로 FAIL했고 제품 결함이 아니다: run1은 상대 `--out` 경로를 앱이 올바르게 거부, run2는 비공개 ibus-hangul이 기본 Latin 모드라 한글이 조합되지 않아 IME 검사가 FAIL. 제품 코드 수정은 없었다.
+
+**한계.** 승인 범위는 위 Linux/X11(Xvfb)/WebKitGTK/IBus-hangul 환경, debug profile 실행 파일, 생성된 `basic-ko` 두 문서에 한정한다. Windows/macOS, Wayland native 세션, 다른 IME(fcitx 등), 패키지된 release 번들, 한컴오피스/MS Word로 연 결과, 일반 문서 corpus는 시험하지 않았다. 취소선은 제품에 단축키가 없어 리본으로만 확인했다. T014(내구성/플랫폼), T015(corpus/외부 호환), T016(패키징/릴리스)은 별도이며 이 결과로 완료되지 않는다.
+
+| 단계 | 상태 | 근거 |
+|---|---|---|
+| 5 — full integration acceptance | COMPLETED | 일반 빌드 한 세션에서 IME 입력·선택·네 서식·표 셀·history·저장 서비스·재열기가 함께 동작하고 저장 파일 글자 속성이 정확함 |
+| 6 — native Tauri/product acceptance | COMPLETED | 같은 흐름을 실제 Tauri 창에서 native 키보드/포인터/IBus/GTK 선택기만으로 수행, test flag·hook 없음 |
+
+지원 native 환경(위 범위) 판정: GO.
