@@ -1,0 +1,546 @@
+{
+  "schema": "geul.t010.validator-p2-p3-followup.v1",
+  "date": "2026-11-12",
+  "reportTimezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "historicalRecords": [
+    {
+      "path": "docs/architecture/t010-validator-hardening-2026-11-12.json",
+      "sha256": "2f0046742dbfeddee99510da5f1344ec8dc329a2d2b6a053d6f73680aab39c1d",
+      "preserved": true
+    },
+    {
+      "path": "docs/architecture/t010-production-activation-2026-11-12.json",
+      "sha256": "a42982a517e7b69d2c9fc97f5f24db71ac96639198cde0028b0f65df63bf6bdd",
+      "preserved": true
+    }
+  ],
+  "identity": {
+    "branch": "master",
+    "startHead": "0ede5d5e4e59c63749f6505dcb25bb67743fec7c",
+    "implementationCommit": "a312634bc24dba5111b9ea15bdb6bc37be855d5e",
+    "nativeExecutionHead": "0ede5d5e4e59c63749f6505dcb25bb67743fec7c",
+    "sourceSha256": {
+      "scripts/tests/t010_acceptance.py": "8baaa51a41b42826fc3c141eb4130ba92059541f21824da288c1c643472ab66b",
+      "scripts/tests/t010_usability_contract.py": "1368b3323889e42e55fce511dc288ab34d2fe0da78771ce374410d9f21d56b39",
+      "scripts/tests/t010_launcher.py": "837746049cdd3a22e9bb68fd569eb2f67bc85b0d0e0f92d7c2196a59568ff4fe",
+      "scripts/tests/native-ibus-session.py": "9fafcc166eba5037ad5c7095b7dd976cdd9cb4c8be2d1dba1435ff1fa03e4b1d",
+      "scripts/tests/native-t010-usability.py": "5b4dd3ba9df20649def7025af8cb47e52cd9d7bdeba678dcdf28be42fe9b0dc0",
+      "scripts/tests/test_t010_acceptance.py": "e123c67daf04dc5a850d9b95de39eba6bc4ead325618d26666bdb03662b395ac",
+      "scripts/tests/test_t010_launcher.py": "c14bba12d345d0486babbd54e5b40af9b0795d604f5b4f961f76812ed5933e6e"
+    },
+    "nativeHarnessSha256": "5b4dd3ba9df20649def7025af8cb47e52cd9d7bdeba678dcdf28be42fe9b0dc0",
+    "nativeValidatorSha256": {
+      "t010_acceptance.py": "213b95a5d7bcfd221520e430646423791ef8317220de33b0016c4195d1692905",
+      "t010_usability_contract.py": "1368b3323889e42e55fce511dc288ab34d2fe0da78771ce374410d9f21d56b39",
+      "t010_launcher.py": "837746049cdd3a22e9bb68fd569eb2f67bc85b0d0e0f92d7c2196a59568ff4fe",
+      "t010_lifecycle.py": "ec71e07bc5f88e12e10581d214808d741ca1e77f04dd7b0e15cc85b48d623088",
+      "native-ibus-session.py": "9fafcc166eba5037ad5c7095b7dd976cdd9cb4c8be2d1dba1435ff1fa03e4b1d"
+    },
+    "finalValidatorSha256": "8baaa51a41b42826fc3c141eb4130ba92059541f21824da288c1c643472ab66b",
+    "productSourceSha256": {
+      "src/commands/registry.ts": "eb5a4532b7126778540e6fbcd0eec5745d9144c9928e878f87016729b839b345",
+      "src/commands/capability.ts": "830acc6164b74de89dbc5cae11ee093387201c821cfa71691d592bc769885730",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts": "a80f749b0bc599962bc1a10aa65e084cb05e6dee35f832912ac908d35510d105",
+      "src/components/Editor/rhwp/rhwpHistory.ts": "d736d8719725aad7595184a1485b36a831b955b78b2c583ba6c499d490c56029",
+      "src/components/Editor/rhwp/imeInput.ts": "53c3892c107cc59ac6749b0670d4cf27446d9053b004eb00a47a136b45cae1ba",
+      "src/components/Editor/textInput.ts": "b12751c1d2e5c7c328459b88dfdb58e0a9361217ec41306a6c45b4040b0a17fd",
+      "src/components/CommandButton/editorFocus.ts": "c2367174dfaa7f4fea3a70187a6134cb69247660680510d3e63ff2e476cae9b2",
+      "src/components/Editor/rhwp/RhwpSurface.tsx": "c38f751833fc371480915805869d11dc49ad4207b0f40291d03889950bb8c859"
+    },
+    "productSourceUnchanged": true,
+    "submodules": {
+      "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "external/wordcraft": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+    },
+    "applicationSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4",
+    "runningApplication": [
+      {
+        "pid": 1120766,
+        "startTime": "32906501",
+        "sha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4",
+        "testFlags": [
+          "VITE_GEUL_TEST_HOOKS"
+        ]
+      }
+    ],
+    "release": {
+      "generation": "0559a2ba2f260bf7184b46c9f70de8141242f8e8f391d7add0d6b8ebb2a483a6",
+      "profile": "release",
+      "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "artifacts": {
+        "rhwp.js": "3dc17d30c86235e94bc750149fe99bab4b97e7fd04973f5783c173b7800cc1e8",
+        "rhwp_bg.wasm": "94a00e6809210a7905ee35c9427cb8be329201318d23e2c6768021dfc57e6dc0"
+      }
+    },
+    "runId": "e54d6669eca14a7a8aadeacb9858d88e",
+    "commandSha256": "2e24ab5374cc9bceea4dc4c8aac9230879b42672b264d914590955044b527ae8"
+  },
+  "decisions": {
+    "p2": "PASS",
+    "p3": "PASS",
+    "t010FunctionalAcceptance": "PASS; existing native Linux X11/IBus scope retained",
+    "generalRhwpUndoRedoProduction": "GO; product code/activation unchanged",
+    "d4Latency": "TARGET NOT MET; no benchmark rerun; group-start p95<=50ms, Undo p95<=1500ms unchanged",
+    "eufCompatibility": "NOT OBSERVED / UNVERIFIED; no separate original-contract verification claimed"
+  },
+  "P2": {
+    "rootCause": "rows_complete accepted nonempty arbitrary PASS checks; final usability acceptance did not revalidate stored native composition evidence or mandatory dynamic assertions.",
+    "functions": [
+      "t010_acceptance.usability/rows_complete/usability_row/usability_plan/usability_coverage/composition_undo",
+      "native-t010-usability.Usability.state/scenario/chain/korean/boundary"
+    ],
+    "authoritativeContract": {
+      "path": "scripts/tests/t010_usability_contract.py",
+      "sha256": "1368b3323889e42e55fce511dc288ab34d2fe0da78771ce374410d9f21d56b39",
+      "formats": [
+        "hwp",
+        "hwpx"
+      ],
+      "cases": [
+        "english",
+        "korean",
+        "selection",
+        "boundary",
+        "switch",
+        "close",
+        "save",
+        "complex"
+      ],
+      "fixedMandatoryCheckCounts": {
+        "english": 17,
+        "korean": 16,
+        "selection": 10,
+        "boundary": 10,
+        "switch": 10,
+        "close": 5,
+        "save": 9,
+        "complex": 0
+      },
+      "fixedCheckpointCounts": {
+        "english": 16,
+        "korean": 8,
+        "selection": 10,
+        "boundary": 6,
+        "switch": 11,
+        "close": 5,
+        "save": 8,
+        "complex": 0
+      },
+      "scenarioRequirements": {
+        "english": "Exact continuous input, Undo/Redo text and caret, separated transactions, branch invalidation and no-op guards.",
+        "korean": "Exact typing and prefix/history/redo checks, mode switching, immediate composition Undo, four scoped transaction checkpoints, trusted native evidence and continued insertion.",
+        "selection": "Native selection, exact replacement/restoration/deletion and caret movement.",
+        "boundary": "Each 20-Return batch through observed page crossing (20..140); bounded history/eviction and conditional full Undo; rapid history travel and paragraph merge restoration.",
+        "switch": "Both documents and their independent Undo/Redo state, composition owner isolation.",
+        "close": "Discard/reopen creates a fresh session without stale content/history; no-op Undo and continued edit.",
+        "save": "Saved result and SHA, history availability, exact reopened model/fresh history and further editing.",
+        "complex": "Both prescribed HWP samples or prescribed HWPX sample; every document-specific assertion, model checkpoint and bounded chain; rapid/human backlog observations and continued editing."
+      },
+      "dynamicRules": [
+        "Every recorded state needs its unique engine-paragraph observation assertion and matching run/scenario/format/document owner.",
+        "Required named checks must occur exactly once; arbitrary replacements, duplicates and hidden errors reject.",
+        "Each allowed Undo/Redo chain must have complete ordered checkpoint labels and revision+1 assertions; paired travel lengths must match, bounded by the inspected producer limits (80/120 or Return workload<=145).",
+        "Conditional boundary full-Undo assertion is required exactly when evicted==0; no historical total such as716 is an acceptance rule.",
+        "AST regression compares literal/generated check/state inventory with the independent declaration."
+      ]
+    },
+    "compositionEvidence": {
+      "stateLabels": [
+        "Redo committed syllable",
+        "preedit visible",
+        "Ctrl+Z during composition",
+        "typing after composition Undo"
+      ],
+      "binding": [
+        "row runId/scenarioId/format",
+        "documentSessions and expected u-korean.<format> owner",
+        "each checkpoint run/scenario/document/model revision/generation",
+        "every native event scope and document session",
+        "trace scope marker followed by contiguous ordered command records"
+      ],
+      "revalidation": "Reuse composition_undo for exact Unicode insertion, caret/selection, revision and history outcome; validate subsequent 달 insertion and closed/nonprovisional transaction. The PASS label alone is insufficient.",
+      "permittedOutcomes": [
+        "accepted-after-commit",
+        "refused-then-committed"
+      ],
+      "observedNativeOutcomes": {
+        "hwp": "accepted-after-commit",
+        "hwpx": "accepted-after-commit"
+      },
+      "refusedOutcomeEvidence": "Synthetic validator regression only in this follow-up; not claimed observed natively."
+    },
+    "coverage": "Declared targeted subsets may PASS selected-scenario acceptance, but full coverage remains INCOMPLETE. Full coverage requires both formats and all eight matching sufficient rows; failed execution and missing/invalid evidence are reported separately. Child full coverage remains PENDING_CLEANUP until outer finalization."
+  },
+  "P3": {
+    "rootCause": "ignore_errors=True hid temporary root deletion failures, and complete=True was recorded before filesystem cleanup finished.",
+    "functions": [
+      "t010_launcher.create_directory/cleanup_directories/prepare_report/atomic_json/finalize_report",
+      "native-ibus-session.main",
+      "t010_acceptance.directory_cleanup/launcher_cleanup"
+    ],
+    "ownershipSchema": {
+      "mandatoryNames": [
+        "work",
+        "socket"
+      ],
+      "creationFields": [
+        "name",
+        "runId",
+        "path",
+        "device",
+        "inode",
+        "uid",
+        "ownerMarker",
+        "ownerToken"
+      ],
+      "note": "Only this invocation's mkdtemp roots are registered. Per-invocation marker content protects against replaced roots/inode reuse; root symlinks or mismatched ownership refuse deletion. Raw tokens remain private.",
+      "resultFields": [
+        "attempted",
+        "deleteAttempted",
+        "ownershipVerified",
+        "status",
+        "remaining",
+        "error"
+      ],
+      "statuses": [
+        "removed",
+        "already-absent",
+        "failed",
+        "not-performed"
+      ],
+      "alreadyAbsent": "Accepted only for a registered matching owned resource; deletion is explicitly not claimed."
+    },
+    "ordering": [
+      "Invalidate any existing PASS before invocation; do not precreate a new child output directory.",
+      "Preserve existing child subreaper, PID/start-time ownership, managed process shutdown and survivor detection.",
+      "Attempt cleanup of each registered root independently, even after another operation fails; retain errors and observed remaining paths.",
+      "Only after process and directory observations finish, record complete/process proven/filesystemProven and persist raw session/cleanup evidence.",
+      "Revalidate inner acceptance, process cleanup and raw directory results; reject contradictory processErrors even if proven is true.",
+      "Atomic final report replacement is the final fallible I/O before launcher return; failure gives nonzero exit and a non-PASS/diagnostic result.",
+      "Earlier native status/command failure stays FAIL despite successful cleanup; inner and outer diagnostics are retained."
+    ],
+    "failureInjection": "Real isolated temporary roots and actual cleanup function exercised. Selective rmtree PermissionError for work/socket/both; independent root still attempted. Replacement/symlink/wrong-run roots preserved. Actual os.replace and final writer failures leave no authoritative PASS. Process failure vs filesystem success and reverse both block; prior failed status/command remains failed.",
+    "actualCleanup": {
+      "processProven": true,
+      "subreaper": true,
+      "survivors": [],
+      "processErrors": [],
+      "filesystemProven": true,
+      "directoryResults": [
+        {
+          "name": "work",
+          "status": "removed",
+          "attempted": true,
+          "deleteAttempted": true,
+          "ownershipVerified": true,
+          "remaining": false
+        },
+        {
+          "name": "socket",
+          "status": "removed",
+          "attempted": true,
+          "deleteAttempted": true,
+          "ownershipVerified": true,
+          "remaining": false
+        }
+      ],
+      "physicalAbsenceRechecked": true
+    }
+  },
+  "regressions": {
+    "acceptanceNormal": {
+      "tests": 33,
+      "result": "PASS"
+    },
+    "acceptanceOptimized": {
+      "tests": 33,
+      "result": "PASS"
+    },
+    "lifecycleNormal": {
+      "tests": 16,
+      "result": "PASS"
+    },
+    "lifecycleOptimized": {
+      "tests": 16,
+      "result": "PASS"
+    },
+    "beforeAfterControls": {
+      "cases": 8,
+      "result": "All old false PASS -> final FAIL; complete positive fixture PASS",
+      "kind": "synthetic, not native input"
+    },
+    "actualNativeReportControls": {
+      "positive": 3,
+      "corruptionsRejected": 53,
+      "selectedProjectionFullCoverage": "INCOMPLETE",
+      "result": "PASS",
+      "kind": "offline replay of actual native evidence; not an additional native run"
+    },
+    "static": "py_compile all7 affected Python files PASS; diff checks PASS",
+    "security": "Changed7 source sensitive-info scan PASS; implementation commit normal sensitive-info/Gitleaks hooks PASS, no bypass. Unchanged scanner regression hook skipped by its existing path filter."
+  },
+  "nativeAcceptance": {
+    "kind": "One uninterrupted full HWP/HWPX native execution, followed by final stricter validator replay; not assembled from separate executions.",
+    "supportedRuntime": "Linux X11/Xvfb21.1.23, Tauri2, WebKitGTK2.54.1/GTK3.24.52, IBus1.5.33+ibus-hangul1.5.5; real X11 keys/pointer and IBus, no synthetic composition events.",
+    "formats": [
+      "hwp",
+      "hwpx"
+    ],
+    "cases": [
+      "english",
+      "korean",
+      "selection",
+      "boundary",
+      "switch",
+      "close",
+      "save",
+      "complex"
+    ],
+    "scenarios": 16,
+    "checks": 716,
+    "summary": {
+      "hwp:english": {
+        "status": "PASS",
+        "checks": 33,
+        "failed": []
+      },
+      "hwp:korean": {
+        "status": "PASS",
+        "checks": 36,
+        "failed": []
+      },
+      "hwp:selection": {
+        "status": "PASS",
+        "checks": 20,
+        "failed": []
+      },
+      "hwp:boundary": {
+        "status": "PASS",
+        "checks": 187,
+        "failed": []
+      },
+      "hwp:switch": {
+        "status": "PASS",
+        "checks": 21,
+        "failed": []
+      },
+      "hwp:close": {
+        "status": "PASS",
+        "checks": 10,
+        "failed": []
+      },
+      "hwp:save": {
+        "status": "PASS",
+        "checks": 17,
+        "failed": []
+      },
+      "hwp:complex": {
+        "status": "PASS",
+        "checks": 45,
+        "failed": []
+      },
+      "hwpx:english": {
+        "status": "PASS",
+        "checks": 33,
+        "failed": []
+      },
+      "hwpx:korean": {
+        "status": "PASS",
+        "checks": 36,
+        "failed": []
+      },
+      "hwpx:selection": {
+        "status": "PASS",
+        "checks": 20,
+        "failed": []
+      },
+      "hwpx:boundary": {
+        "status": "PASS",
+        "checks": 187,
+        "failed": []
+      },
+      "hwpx:switch": {
+        "status": "PASS",
+        "checks": 21,
+        "failed": []
+      },
+      "hwpx:close": {
+        "status": "PASS",
+        "checks": 10,
+        "failed": []
+      },
+      "hwpx:save": {
+        "status": "PASS",
+        "checks": 17,
+        "failed": []
+      },
+      "hwpx:complex": {
+        "status": "PASS",
+        "checks": 23,
+        "failed": []
+      }
+    },
+    "nativeStatus": "PASS",
+    "nativeInner": {
+      "status": "PASS"
+    },
+    "nativeOuter": {
+      "status": "PASS"
+    },
+    "coverage": {
+      "selectedScenarioAcceptance": "PASS",
+      "fullUsabilityCoverage": "PASS",
+      "scope": "full",
+      "evidence": "COMPLETE"
+    },
+    "childStatusBeforeOuter": "PENDING_CLEANUP",
+    "childExit": 0,
+    "finalExit": 0,
+    "observedLauncherExit": 0,
+    "finalValidatorReplay": "PASS, 3 positive gates and 53 corruptions rejected"
+  },
+  "preservedFailureAndCorrection": {
+    "kind": "Post-run offline corruption control, not a native product failure",
+    "record": "native-controls-pre-fix.json",
+    "initiallyAccepted": [
+      "cleanup:process-error-contradiction"
+    ],
+    "correction": "Require explicit empty processErrors as well as process proof; missing/error/contradictory evidence rejects. Added regression and reran49 normal/optimized tests.",
+    "reuseScope": "The uninterrupted native execution already recorded processErrors=[] and complete directory results. The added consistency guard needs no new observation; final validator accepts those exact preserved bytes. Native source snapshots/hashes and final validator hashes are recorded separately, without rewriting the original native report."
+  },
+  "historicalReuse": {
+    "previousCoverage": "Historical16/716 was14 previous PASS rows +2 corrected Korean retries, not one uninterrupted PASS; preserved unchanged.",
+    "newAssessment": "Older usability reports lack newly mandatory selection/run/scenario/trace bindings; older launcher records lack directory ledgers/results. They are insufficient for the new gates, not silently grandfathered or retroactively rewritten.",
+    "normalProduction": "Historical HWP/HWPX68 checks/16 saved oracles remain functional baseline; inner production validator replay PASS with unchanged product/Release. No new normal embedded production run claimed here; its old outer record is insufficient under P3.",
+    "currentDocumentation": "Current acceptance status and policy remain unchanged, so existing spec/architecture summaries and T012-T016 states were not edited."
+  },
+  "productDefects": [],
+  "productChanges": "None; general Undo/Redo activation, IME/history ownership, guards, save preservation, snapshot limits, T012 restrictions and WordCraft/DOCX unchanged.",
+  "verificationCommands": [
+    "python3 -m unittest discover -s scripts/tests -p test_t010_acceptance.py -v",
+    "python3 -O -m unittest discover -s scripts/tests -p test_t010_acceptance.py -v",
+    "python3 -m unittest discover -s scripts/tests -p test_t010_launcher.py -v",
+    "python3 -O -m unittest discover -s scripts/tests -p test_t010_launcher.py -v",
+    "python3 -m py_compile scripts/tests/{t010_acceptance,t010_usability_contract,t010_launcher,native-ibus-session,native-t010-usability,test_t010_acceptance,test_t010_launcher}.py",
+    "python3 scripts/check-sensitive-info.py <the7 affected Python files>",
+    "python3 ../geul-tests/reports/t010-validator-p2-p3-20261112/pre-post-controls.py",
+    "python3 ../geul-tests/reports/t010-validator-p2-p3-20261112/native-controls.py",
+    "python3 scripts/tests/native-ibus-session.py --out <session> --hangul-initial-mode hangul --acceptance-report <usability/result.json> -- python3 <private/run-usability.py> @XDOTOOL@ @IBUS@",
+    "git diff --check; normal commit hooks"
+  ],
+  "remainingLimitations": [
+    "D4 latency benchmark not rerun; original50/1500ms targets and TARGET NOT MET remain.",
+    "E->U->F remains NOT OBSERVED / UNVERIFIED; no synthetic fixture or bounded accepted-after-commit trial substitutes for the original native contract.",
+    "No expansion to Windows/macOS/Wayland/other IMEs/physical desktop support.",
+    "Historical production functionality reused only with its recorded source/Release identity; no fresh production cleanup PASS fabricated."
+  ],
+  "evidence": [
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/usability/result.json",
+      "sha256": "dd64c5f3a07ec0475036d774c2d98b90b1ab068e03ced60c884450413318c9eb"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/usability/scenarios.json",
+      "sha256": "ee13655561a487b1b8b584a639a5481bf11ade20a7f14f6b44ce8bfce87f08d0"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/session/session.json",
+      "sha256": "c959aa63d737e0990eca5ece31420b0472d9b6bb33b8ae634022c0cb48420252"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/session/cleanup.json",
+      "sha256": "d9db40aa6711d55aa9ee96dbf53ec4d40b70dd7e93057078965fecf9351dacfd"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native.log",
+      "sha256": "680c8d5c4b0775ab0b1d10698cd6188920751137359f706ece5d58eda28b887d"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-identity.json",
+      "sha256": "aad5f123cee9dfaeaab3905eeacf8a0bfdfd2050ba51fd94bcbc2821869ef696"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/launch-command.json",
+      "sha256": "ca95b4300f7de4333477a738bf833f7a2d3dfaaadf6b76922ff5d725809bc5c3"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/usability-command.json",
+      "sha256": "054bc555bbaecb963488470f49761cd08707db08ecb0ca6194c4cb5ee023e219"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/launcher-exit.json",
+      "sha256": "5bc232b82de377a5655a39a2af9d7ae0fc868de5b9df957e18905cb914606c88"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/run-usability.py",
+      "sha256": "b1c5346b42a20a2a797dbaeacadb6c09f0496e42883b42edc7f0e0a697858f10"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/historical-revalidation.json",
+      "sha256": "d678ceba0109f3a73ba5b4e2a6c2acbfb07d9de556e5fd63cd391c45e1e5377e"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/pre-post-controls.py",
+      "sha256": "16e3ebeb9f2f019cab6508be8e9bc76f878e3ac81c51d4584e91a070e74b2eb6"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/pre-post-controls.json",
+      "sha256": "a8a8239bf48a43826ee3b96635231e7da79c6ec8a3063b88d589efe5a44fcb02"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-controls.py",
+      "sha256": "debb6960dd1eebcec0de0a6e1161bace370430efca50922178480e5702155a44"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-controls-pre-fix.json",
+      "sha256": "d208b27706f6f04f50a8d95f04e276fc9939ba0a7895fa6169f6d76f28457665"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-controls-final.json",
+      "sha256": "c03ba9b75631f5bf01aeea6b528473ff6e35d9c6bc73595bdc8d747767dbc99a"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/regressions-acceptance-final2.log",
+      "sha256": "0eb5f6341ce5ab7c769c2ce203b9832d92bfabbd80b0fb943ad0fe0255cf9ef1"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/regressions-acceptance-final2-opt.log",
+      "sha256": "ecdaf84b14ff0661dc364600e91a999f84fd9e97b18619ffb3d5df70d753dca5"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/regressions-launcher-final2.log",
+      "sha256": "d0eea1440b63e57ab74462bf3bdacb659071fe96f3e43930e1eb604cd95846e6"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/regressions-launcher-final2-opt.log",
+      "sha256": "d0eea1440b63e57ab74462bf3bdacb659071fe96f3e43930e1eb604cd95846e6"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/source-security-final.log",
+      "sha256": "4a07d568a2ae99106e9cc789ab492bdcdd9df2459e75dc1afa83811e7fbed860"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-sources/t010_acceptance.py",
+      "sha256": "213b95a5d7bcfd221520e430646423791ef8317220de33b0016c4195d1692905"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-sources/t010_usability_contract.py",
+      "sha256": "1368b3323889e42e55fce511dc288ab34d2fe0da78771ce374410d9f21d56b39"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-sources/t010_launcher.py",
+      "sha256": "837746049cdd3a22e9bb68fd569eb2f67bc85b0d0e0f92d7c2196a59568ff4fe"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-sources/t010_lifecycle.py",
+      "sha256": "ec71e07bc5f88e12e10581d214808d741ca1e77f04dd7b0e15cc85b48d623088"
+    },
+    {
+      "path": "../geul-tests/reports/t010-validator-p2-p3-20261112/native-sources/native-ibus-session.py",
+      "sha256": "9fafcc166eba5037ad5c7095b7dd976cdd9cb4c8be2d1dba1435ff1fa03e4b1d"
+    }
+  ],
+  "pushPerformed": false,
+  "mergePerformed": false
+}
