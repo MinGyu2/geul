@@ -801,3 +801,52 @@ push 없음.
 기존 `target/t012-verifier-20261113/`는 변경하지 않았다. `identity-check.json`에서 당시 Release generation/manifest·제품 binary·source 2개·저장 상태 16개 SHA 및 동일 `native-rerun` 결과/cleanup의 기존 증거 hash 일치를 확인했다. 그 뒤 보강 oracle을 기존 geometry와 저장본에 적용하여 HWP 8개·HWPX 8개 PASS(`reopened.json`). 이는 새 oracle 실행이며, native 56/56은 이전의 동일 입력·제품 실행 기록이다. 이번 native GUI 재실행은 없고 관련 없는 WASM 전체·T009/T010 전체·CI·대용량·성능·DOCX/WordCraft·T015/T016도 재실행하지 않았다.
 
 제품 동작·엔진/패치·submodule pin은 그대로다. T012는 계속 조건부 미완료이며 Phase 2는 시작하지 않았다.
+
+
+<a id="t012-phase2-20261113"></a>
+
+## 2026-11-13 — T012 Phase 2: 중첩 표 직접 편집과 표 구조 명령
+
+**판정: PARTIALLY COMPLETED.** 아래 지원 범위는 구현·일반 Release 제품 활성화·검증했다. 중첩 표 생성, 중첩 표 안의 구조 변경, 필드/개체/캡션이 있는 표의 구조 변경, 여러 셀 범위 병합은 미지원으로 막혀 있다. T012 전체 완료나 외부 Hancom 호환, T015/T016 행렬 수용을 주장하지 않는다. 위의 날짜별 기록은 그대로 보존한다.
+
+시작 HEAD `e809b9327fe83dee20ec3b890701383d892100eb`, branch `master`. RHWP gitlink `1a76570e833917d15817415a53c09ad61ab3203f`, WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`는 바꾸지 않았다. **RHWP 패치는 추가하지 않았다**(18개 그대로). Release generation `18e5dafdadfa5a4754f98b575eb93d22947c8fda549248241a02c8d7f181f56b`, WASM SHA-256 `e50b71e4c29d7aea3fbacb09e7cbce5be00b0b2f5f0ce9db3b02fd188faff912` — 고정 엔진에 이미 있는 경로(`…ByPath`)·표 구조 API를 typed 경로로 사용했다.
+
+### 구현
+
+| 영역 | 변경 | 경계 |
+|---|---|---|
+| 위치·소유권 | `CellRef.nested`(바깥 셀 → … → 실제 셀의 명시적 경로, `rhwpText.ts`). 한 단계 셀은 기존 모양 그대로. `parsePosition`은 엔진 `cellPath`의 첫 단계가 scalar 필드와 정확히 같을 때만 받는다. `sameContext`는 모든 단계의 표 컨트롤·셀과 호스트 문단을 비교한다(부모 셀·형제 셀·다른 중첩 표와 구분). 캐시·기록 키(`positionKey`, `contextKey`)도 경로 전체를 포함 | 최대 깊이 4(바깥 + 3). 더 깊거나 모양이 다르면 `null`. 화면 좌표로 소유를 추정하지 않음 |
+| 소유 증명 | `RhwpText.ownsNestedCell`: cursor model의 셀 목록을 뿌리부터 단계마다 (호스트 목록, 호스트 문단, 컨트롤, 셀)로 정확히 하나 찾고, 각 단계 표의 셀 수·문단 수를 `…ByPath` 응답과 교차 확인. 세션은 구조 판(`structureVersion`)마다 결과를 캐시 | 클릭·Tab·세로 이동·모든 편집(`mutate`) 전에 확인. 실패하면 엔진 호출·history 없이 거절하고 캐럿을 문서 처음으로 옮김 |
+| 중첩 셀 편집 | 글 넣기·선택 바꾸기·Backspace/Delete·문단 나누기/합치기·조합(IME)·셀 사이 Tab·세로 이동·선택 사각형·캐럿을 `…ByPath`로. 엔진 응답의 `ok:true`를 요구 | Home/End는 엔진에 경로 줄 질의가 없어 문단 처음·끝. 장평·자간·서식·표 계산/수식은 중첩 셀에서 `nestedTable` 이유로 막음 |
+| 표 구조 | `tableStructure.ts` + 세션 `table.*` 9개 명령(위/아래 행 넣기, 왼/오른쪽 열 넣기, 행/열 지우기, 오른쪽/아래 셀과 합치기, 합친 셀 나누기). 엔진 호출 전 격자와 모든 셀 글로 **정확한 결과 표**를 계산하고, 호출 뒤 표를 다시 읽어 셀마다(좌표·span·문단 글) 비교. 다르면 던져 `mutate`가 직전 snapshot으로 되돌림. 캐럿은 결과 격자에서 다시 찾음 | 본문 수준 표만. 표의 어느 셀이든 필드가 있으면 `tableFormula`(좌표 참조 이동 미지원), 셀에 컨트롤(중첩 표·그림 등)·캡션이 있으면 `tableContent`, 걸친 병합·크기 한도(512행·64열·4096셀)·정의되지 않는 모양은 `tableShape`/`limit`. HWP는 기존 구조 편집과 같은 원본 preflight 증명이 필요. 연산마다 따로 판정 |
+| 명령·UI | registry/capability/parameters/target에 명령·이유 추가, 리본 "한글 도구 › 표 구조" 그룹, ko/en 문구 | 전역 flag 없음. 가용성은 세션의 실제 문서 구조로만 결정 |
+| HWP 재열기 모델 | `hwpReopenModel`이 중첩 셀(경로·좌표·문단 글)을 `model`에 포함 | 중첩 컨트롤은 여전히 `complete=false`(구조 인벤토리 변화에는 증명 불충분) |
+| T009 HWP 검사기 | `insertions.rs`: 같은 instance id의 원본 표가 행·열·병합(또는 셀별 문단 수)이 바뀐 경우 `restructured_table` 증명 — CTRL_HEADER 크기 외 동일, 표 속성 단어·셀 간격·안쪽 여백·테두리 동일·셀 영역 없음, 양쪽 모두 텍스트 문단만 있는 평범한 표, 출력 격자 정합·행별 셀 수 일치, 모든 출력 셀의 목록 속성·여백·테두리·후미 바이트가 어떤 원본 셀과 같음. 셀 글은 기존처럼 독립 live/reopen 모델 비교의 몫 | 격자가 같은데 글만 바뀐 원본 표, 깨진 격자, 컨트롤이 있는 표는 기존 계약(원본 객체 바이트 동일) 유지. 기존 거부 코드·순서 보존. HWPX 패키지 비교는 변경 없이 통과 |
+
+### 실행 증거 (최종 소스)
+
+로컬 ignored 증거: `src-tauri/target/t012-phase2-20261113/final/` (보호 sandbox 쓰기 허용 경로). 같은 디렉터리의 상위 `engine/`·`*.log`와 `target/t012-phase2-20261113/`는 최종 전 실행이며 성공 증거로 쓰지 않는다.
+
+| 실행 | 결과 |
+|---|---|
+| `GEUL_T012P2_PHASE=generate … vitest --config scripts/tests/vitest.config.ts table-phase2.wasm.test.ts` (시험 flag 없음) | 11 PASS: 위치 파싱/동일성 경계; HWP·HWPX 중첩 셀 클릭 배치·삽입·선택 바꾸기·Backspace/Delete·문단 나누기/합치기·IME 조합·셀 이동·Undo 전체/Redo 전체(정확한 원래/편집 모델)·부모/형제/다른 중첩 셀 불변·저장; 소유하지 않은 경로 5종 거절(문서·revision·history 불변); 형식별 구조 11단계(행/열 넣기·지우기, 병합 3종, 나누기) 각각 1 revision·Undo 1단계·Redo·정확한 격자/글, 3회 저장; 걸친 병합·선택·본문 캐럿·필드 표 거절; 세션 가드를 우회한 엔진 직접 구조 변경(필드 표)의 검사기 `recordsChanged` 거부. `1-generate.log` |
+| 실제 저장 서비스 1회차 | HWP `hwp_contract_real_engine_publication`: 4 durable 게시(PrvImage 재생성, dirty false) + 1 게시 거부·원본 bytes 유지. HWPX `t010_phase0_save_service`: 4 durable 게시. `engine/hwp/publication.json`, `engine/hwpx/results-first.json` |
+| repeat(게시 파일을 다시 열어 편집) + 2회차 게시 | 4 PASS(중첩 셀 재편집, 재구성된 표의 행 지우기·나누기·입력), HWP 2 + HWPX 2 durable. `3-repeat.log`, `publication-repeat.json`, `results-repeat.json` |
+| verify | 새 엔진으로 게시 파일 12개를 열어 저장 당시 모델(평문·컨트롤·표 격자/셀 글·중첩 셀)과 정확히 비교 2 PASS. `engine/*/published-reopen.json` |
+| HWPX 거부 | 손상 출력: `UnsafeSave/outputMalformed`, dirty 유지, 원본 SHA-256 `6d95c92c…` 전후 동일, 디렉터리 목록 불변. `engine/hwpx/negative-malformed/` |
+| Rust | `services::save` 215 PASS/25 ignored(기존 계약 포함), 새 `hwp_restructured_original_table_is_proven_or_refused` 1 PASS(양성 + 템플릿 위조·셀 간격·instance id·행 크기·셀 안 컨트롤 음성), fmt/clippy `-D warnings` PASS. `../rust-*.log` |
+| 프런트엔드 | tsc, 변경 TS ESLint PASS. 관련 단위 시험 899/900: 실패 1건 `src/commands/sessions.test.tsx`(rhwp 서식 이유 기대값)은 시작 HEAD에서도 같은 실패로 확인된 기존 결함이며 이번 변경과 무관 |
+| 일반 Release 제품 빌드 | `python3 scripts/tauri-geul.py build --no-bundle` PASS, `dist/frontend-build.json` production·`testFlags={}`, 실행 파일 SHA-256 `141ef74c95c6c35cfd064bebf50509e5db212e1ca638400718fd75cc055ceab7` |
+| native Tauri/X11/Xvfb/IBus (`native-t012-phase2.py`, `--hangul-initial-mode hangul`) | `native-4` 50/50 PASS: 형식별 native 클릭이 중첩 셀 경로로 해석, 중첩 셀에서 장평/수식/구조 명령 비활성, 입력·Undo/Redo, 조합 중 구조 명령 비활성, 신뢰된 compositionstart/end(`한`), 실제 Ctrl+S durable·GTK 재열기 clean; 표 리본 행 넣기·병합(각 1 revision, Undo/Redo), 저장·재열기; 원본 fixture 불변. launcher exit 0, cleanup complete/proven/filesystemProven, survivors 없음. `native-session-4/cleanup.json` |
+| native 저장본 독립 oracle | `t012-phase2-native-oracle.mjs` PASS: 중첩 저장본은 대상 중첩 셀 하나만 `N1한…`로 바뀜(셀 인벤토리·컨트롤·나머지 평문 불변), 표 저장본 격자 정확 일치. `native-4/oracle.json` |
+
+native 1–3회차 실패는 하네스 결함(캐럿 접미사 자르기, 사용 가능 버튼의 `aria-disabled` 부재를 `"false"`로 기대)이었고 제품 결함이 아니다. 로그를 보존했고 고친 뒤 한 번 재실행했다. HWPX 게시 드라이버는 보호 sandbox 안의 사용자 namespace에서 `shared-directory`로 거부되어 기존 기록과 같이 보호 compile 후 private TMPDIR로 직접 실행했다.
+
+### 미지원·잔여
+
+- **중첩 표 생성**: 고정 RHWP `createTable`은 본문 문단만 받는다. 셀 안 표 생성 API와 그 HWP/HWPX 직렬화·T009 증명이 필요하다(새 RHWP 패치 범위). 구현하지 않았다.
+- **중첩 표 안의 구조 변경**: 엔진 구조 API가 본문 수준 표만 받는다. 위와 같은 패치가 필요하다.
+- **필드·개체·캡션이 있는 표의 구조 변경**: 수식 참조 이동과 컨트롤 소유권 이동 증명이 없어 거부한다.
+- **여러 셀 범위 병합/선택**: 셀 범위 선택 모델이 없어 인접 셀 하나(오른쪽/아래)만 지원한다.
+- 중첩 셀의 서식·장평·자간·수식, 경로 줄 정보(Home/End는 문단 경계), 깊이 4 초과.
+- 미실행: 전체 WASM 117건, T009/T010 전체, 대용량·성능(D4), 전체 CI, DOCX/WordCraft, T015/T016, Windows/macOS/Wayland, 외부 Hancom.
