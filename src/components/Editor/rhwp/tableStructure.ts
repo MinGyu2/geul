@@ -8,6 +8,7 @@
 //      요청한 연산이 지운 셀(행·열 지우기)의 내용만 사라질 수 있고, 다른 내용은 옮겨진 셀에서 그대로 다시 보여야 한다.
 //   4) 계산식 필드는 같은 필드 ID로 옮겨진 셀에 남아야 하며, 절대 참조를 새 좌표로 다시 쓰고 의존 순서로 다시 계산한다.
 // 엔진이 성공을 돌려준 것만으로 지원한다고 보지 않는다: 3)·4)가 어긋나면 던지고, 세션이 그 변경을 되돌린다.
+import { paragraphFieldMap } from "./fieldOwnership";
 import { cachedFormula } from "./formulaDependencies";
 import { formulaDependencies, remapFormulaReferences } from "../../../commands/parameters";
 import { tableLayoutConsistent, type TableCellCoordinates } from "./hwpReopenModel";
@@ -65,7 +66,7 @@ export interface TableFormula { fieldId: number; cell: number; row: number; col:
 /** Proven content of a table (Stage 2): rich cells are compared by paragraph digest. */
 export interface TableContent { formulas: readonly TableFormula[]; rich: boolean; caption: string | null }
 export interface TableContentOptions {
-  /** Fields (formula/ClickHere) and captions may be kept/relocated: HWPX. HWP keeps refusing them. */
+  /** Supported fields and captions may be preserved and relocated in HWP/HWPX. */
   fields: boolean;
 }
 export interface TablePlan {
@@ -150,6 +151,11 @@ function inventory(doc: RhwpDocument): Inventory | TableStructureRefusal {
   const controls: unknown = JSON.parse(controlsRaw), model: unknown = JSON.parse(modelRaw), fields: unknown = JSON.parse(fieldsRaw);
   if (!Array.isArray(controls) || !isRecord(model) || !Array.isArray(model.lists) || !Array.isArray(fields)) return "engineUnsupported";
   if (!controls.every(isRecord) || !model.lists.every(isRecord) || !fields.every(isRecord)) return "engineUnsupported";
+  const ids = new Set<number>();
+  for (const field of fields) {
+    if (!isIndex(field.fieldId) || field.fieldId === 0 || ids.has(field.fieldId)) return "tableContent";
+    ids.add(field.fieldId);
+  }
   return { controls, lists: model.lists, fields };
 }
 
@@ -291,6 +297,7 @@ function paragraphDigest(c: DigestContext, path: { controlIndex: number; cellInd
   const text = paragraphText(c, path);
   const owned = c.inv.controls.filter(control => control.list === list && control.para === paragraph);
   if (!owned.length) return JSON.stringify([text]);
+  const fieldMap = paragraphFieldMap(c.inv.controls, c.inv.fields, list, paragraph);
   const parts = owned.map(control => {
     if (!isIndex(control.controlIndex)) throw new Error("control index");
     const base = { k: control.ctrlId, d: control.userDesc, i: control.controlIndex, p: control.pos, props: control.props };
@@ -316,11 +323,10 @@ function paragraphDigest(c: DigestContext, path: { controlIndex: number; cellInd
       return { ...base, size, cells };
     }
     if (control.ctrlId === "") {
-      const fields = c.inv.fields.filter(f => f.listId === list && f.paraInList === paragraph);
-      if (fields.length !== 1) throw new Error("field ownership");
-      const f = fields[0]!;
+      const f = fieldMap.get(control);
+      if (!f) throw new Error("field ownership");
       return { ...base, f: f.fieldType === "formula" ? { id: f.fieldId, type: "formula" }
-        : { id: f.fieldId, type: f.fieldType, name: f.name, command: f.command, guide: f.guide, start: f.startCharIdx, end: f.endCharIdx } };
+        : { id: f.fieldId, type: f.fieldType, name: f.name, command: f.command, guide: f.guide, editable: f.editableInForm, start: f.startCharIdx, end: f.endCharIdx, startPos: f.startPos, endPos: f.endPos } };
     }
     // Pictures, shapes and other objects: no owned text lists (a list hosted by the object is refused).
     if (c.inv.lists.some(l => l.hostListId === list && l.hostPara === paragraph && l.controlIndex === control.controlIndex)) throw new Error("object text list");

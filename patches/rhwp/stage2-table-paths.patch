@@ -869,3 +869,100 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
      #[wasm_bindgen(js_name = charShapeCount)]
      pub fn char_shape_count(&self) -> u32 {
+diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
+--- a/src/document_core/queries/field_query.rs
++++ b/src/document_core/queries/field_query.rs
+@@ -339,8 +339,21 @@
+                 let location_json = field_location_json(&fi.location);
+                 let (start_char_idx, end_char_idx) = field_range_bounds(self, fi)
+                     .unwrap_or((0, fi.value.chars().count()));
++                let para = para_at_location(self, &fi.location);
++                let range = para.and_then(|p| p.field_ranges.get(fi.field_range_index));
++                let linkage = range.and_then(|r| {
++                    let p = para?;
++                    match p.controls.get(r.control_idx)? {
++                        Control::Field(field) if field.field_id == fi.field.field_id
++                            && p.field_ranges.iter().filter(|r2| r2.control_idx == r.control_idx).count() == 1 =>
++                            Some((r.control_idx, field_content_start(p, fi.field_range_index).checked_sub(8)?)),
++                        _ => None,
++                    }
++                });
++                let (control_index, control_pos) = linkage.map(|(i, p)| (i.to_string(), p.to_string()))
++                    .unwrap_or_else(|| ("null".into(), "null".into()));
+                 format!(
+-                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{}}}",
++                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{},\"controlIndex\":{},\"controlPos\":{}}}",
+                     fi.field.field_id,
+                     fi.field.field_type_str(),
+                     // 셀 구역 이름(가상 필드)과 문단 안 누름틀은 다른 것이다. `fieldType` 은 둘 다
+@@ -359,6 +372,8 @@
+                     fi.para_in_list,
+                     fi.start_pos,
+                     fi.end_pos,
++                    control_index,
++                    control_pos,
+                 )
+             })
+             .collect();
+@@ -2859,31 +2874,7 @@
+
+ /// [geul] 한컴 계산식 필드의 결과 서식 `%g`(C printf: 유효 숫자 6, 뒤 0 제거, 지수 -4 미만·6 이상이면 지수 표기).
+ pub(crate) fn format_formula_g(value: f64) -> Option<String> {
+-    if !value.is_finite() {
+-        return None;
+-    }
+-    if value == 0.0 {
+-        return Some("0".into());
+-    }
+-    // 유효 숫자 6자리로 먼저 반올림한 지수로 표기를 고른다(999999.5 → 1e+06, printf 와 같음).
+-    let sci = format!("{:.5e}", value);
+-    let (mantissa, e) = sci.split_once('e')?;
+-    let e: i32 = e.parse().ok()?;
+-    if e < -4 || e >= 6 {
+-        let m = mantissa.trim_end_matches('0').trim_end_matches('.');
+-        let sign = if e < 0 { '-' } else { '+' };
+-        return Some(format!("{m}e{sign}{:02}", e.abs()));
+-    }
+-    let decimals = (5 - e).max(0) as usize;
+-    let fixed = format!("{:.*}", decimals, value);
+-    Some(if fixed.contains('.') {
+-        fixed
+-            .trim_end_matches('0')
+-            .trim_end_matches('.')
+-            .to_string()
+-    } else {
+-        fixed
+-    })
++    super::super::table_calc::format_formula_g(value)
+ }
+
+ impl DocumentCore {
+diff --git a/src/document_core/queries/hwpctrl_sets.rs b/src/document_core/queries/hwpctrl_sets.rs
+--- a/src/document_core/queries/hwpctrl_sets.rs
++++ b/src/document_core/queries/hwpctrl_sets.rs
+@@ -187,7 +187,14 @@
+         // `stream_pos` 로는 못 구한다 — 자리표 글자를 남기는 문단과 안 남기는 문단이 섞여
+         // 있어 그 함수 하나로 갈리지 않는다. 여기서는 **앞선 것들만** 세면 된다:
+         // 앞의 맨 글자 수 + 8 × 앞의 컨트롤 수.
+-        let pos = if let Some(rebuilt) = &rebuilt {
++        let field_anchor = if matches!(ctrl, Control::Field(_)) {
++            let ranges: Vec<_> = para.field_ranges.iter().enumerate().filter(|(_, r)| r.control_idx == ci).collect();
++            match ranges.as_slice() {
++                [(i, _)] => super::field_query::field_content_start(para, *i).checked_sub(8),
++                _ => None,
++            }
++        } else { None };
++        let pos = if let Some(anchor) = field_anchor { anchor } else if let Some(rebuilt) = &rebuilt {
+             rebuilt.get(ci).copied().unwrap_or(0)
+         } else {
+             control_positions
+diff --git a/src/document_core/table_calc/mod.rs b/src/document_core/table_calc/mod.rs
+--- a/src/document_core/table_calc/mod.rs
++++ b/src/document_core/table_calc/mod.rs
+@@ -14,5 +14,5 @@
+ mod parser;
+ mod tokenizer;
+
+-pub use evaluator::{evaluate_formula, TableContext};
++pub use evaluator::{evaluate_formula, format_formula_g, TableContext};
+ pub use parser::FormulaNode;

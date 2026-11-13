@@ -5,6 +5,14 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+// One authoritative RHWP evaluator, also overlaid by rhwp-patches.py into the WASM source.
+#[path = "../../../../../patches/rhwp/table-calc/evaluator.rs"]
+mod evaluator;
+#[path = "../../../../../patches/rhwp/table-calc/parser.rs"]
+mod parser;
+#[path = "../../../../../patches/rhwp/table-calc/tokenizer.rs"]
+mod tokenizer;
+
 type Checked<T> = Result<T, Finding>;
 type Defs<'a> = BTreeMap<u16, Vec<&'a [u8]>>;
 const BODY: &str = "BodyText/Section0";
@@ -131,6 +139,440 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
         return None;
     }
     Some(prove(a, b, &ar, &br))
+}
+
+/// Independent field boundary shared by ordinary and structural comparison paths.
+/// Unchanged legacy commands stay opaque. Only new/rewritten formulas enter the
+/// authoritative RHWP parser/evaluator, with the output table's real cell values.
+pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool) -> Checked<()> {
+    let mut original = BTreeMap::new();
+    let mut output = BTreeMap::new();
+    let mut old_ids = BTreeSet::new();
+    let mut new_ids = BTreeSet::new();
+    // Owned records are bounded by the existing container/record budgets.
+    for (container, inventory, ids) in [
+        (a, &mut original, &mut old_ids),
+        (b, &mut output, &mut new_ids),
+    ] {
+        for (name, raw) in &container.streams {
+            if !section_stream(name) {
+                continue;
+            }
+            let bytes = unpack(container, raw).map_err(|e| Side::Output.unpack_finding(e, name))?;
+            let rs = decode_records(&bytes, name)?;
+            let prior_count = ids.len();
+            unique_field_ids(&rs, ids, name)?;
+            if ids.len() == prior_count {
+                continue;
+            }
+            // Hierarchical paragraph/cell ownership, rather than global field order.
+            let mut owners: Vec<(u16, Vec<u8>)> = Vec::new();
+            let mut counters = BTreeMap::<Vec<(u16, Vec<u8>)>, usize>::new();
+            let mut control_counters = BTreeMap::<Vec<(u16, Vec<u8>)>, usize>::new();
+            for &(tag, level, payload) in &rs {
+                let depth = level * 3
+                    + match tag {
+                        72 => 0,
+                        66 => 1,
+                        _ => 2,
+                    };
+                if matches!(tag, 66 | 71 | 72) {
+                    while owners.last().is_some_and(|(l, _)| *l >= depth) {
+                        owners.pop();
+                    }
+                }
+                let control_index = if tag == 71 {
+                    let index = control_counters.entry(owners.clone()).or_default();
+                    let value = *index;
+                    *index += 1;
+                    value
+                } else {
+                    0
+                };
+                if tag == 66 {
+                    crate::document::resources::charge(
+                        crate::document::resources::Category::Comparison,
+                        owners.iter().map(|(_, v)| v.len() + 32).sum::<usize>() + 64,
+                    )
+                    .map_err(|_| finding(FindingCode::LimitExceeded, name))?;
+                    let n = counters.entry(owners.clone()).or_default();
+                    let identity = (*n as u64).to_le_bytes().to_vec();
+                    *n += 1;
+                    owners.push((depth, identity));
+                } else if tag == 72 {
+                    owners.push((depth, payload.get(8..16).unwrap_or(payload).to_vec()));
+                } else if tag == 71
+                    && (payload.starts_with(b"umf%") || payload.starts_with(b"klc%"))
+                {
+                    let record = [(tag, level, payload)];
+                    let field = Field::of(&record)
+                        .ok_or_else(|| finding(FindingCode::OutputMalformed, name))?;
+                    require(ids.len() <= 4096, FindingCode::LimitExceeded, name)?;
+                    crate::document::resources::charge(
+                        crate::document::resources::Category::Comparison,
+                        payload.len()
+                            + owners.iter().map(|(_, v)| v.len() + 32).sum::<usize>()
+                            + 128,
+                    )
+                    .map_err(|_| finding(FindingCode::LimitExceeded, name))?;
+                    // Splitting ordinary body text can shift the whole hosting
+                    // paragraph. A persistent body-table ID owns its cell fields
+                    // independently of that root paragraph's ordinal.
+                    let stable_table = owners.get(1).is_some_and(|(depth, id)| {
+                        *depth == 5 && id.len() == 4 && id.iter().any(|v| *v != 0)
+                    });
+                    let mut field_owner = owners[usize::from(stable_table)..].to_vec();
+                    field_owner.push((depth, (control_index as u64).to_le_bytes().to_vec()));
+                    inventory.insert(
+                        field.id,
+                        (name.clone(), field_owner, level, payload.to_vec()),
+                    );
+                } else if tag == 71 {
+                    let identity = if payload.starts_with(b" lbt") {
+                        payload.get(36..40).unwrap_or(payload)
+                    } else {
+                        &[]
+                    };
+                    owners.push((depth, identity.to_vec()));
+                }
+            }
+        }
+    }
+    for (id, (name, owner, level, bytes)) in &original {
+        let Some((new_name, new_owner, new_level, new_bytes)) = output.get(id) else {
+            preserved(structural, name)?; // structural cell deletion must be independently proven by evolved_table
+            continue;
+        };
+        if !structural {
+            preserved(
+                name == new_name && owner == new_owner && level == new_level,
+                name,
+            )?;
+            let old = [(71, *level, bytes.as_slice())];
+            let new = [(71, *new_level, new_bytes.as_slice())];
+            preserved(bytes == new_bytes || evolved_formula(&old, &new), name)?;
+        }
+    }
+    let changed: BTreeSet<_> = output
+        .iter()
+        .filter(|(id, v)| original.get(id) != Some(*v))
+        .map(|(id, _)| *id)
+        .collect();
+    for id in &changed {
+        let (_, _, level, bytes) = &output[id];
+        let record = [(71, *level, bytes.as_slice())];
+        let field =
+            Field::of(&record).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+        if !original.contains_key(id) {
+            preserved(
+                field.ctrl == b"umf%" && field.props == 0 && field.extra == 8,
+                BODY,
+            )?;
+            valid(
+                field.tail.len() == 8 && field.tail[4..] == [0; 4] && field.canonical_formula(),
+                BODY,
+            )?;
+        }
+    }
+    // Only command changes require evaluation; relocation of an unchanged legacy
+    // field must not subject its historical Hancom command to the canonical writer subset.
+    let rewritten: BTreeSet<_> = changed
+        .into_iter()
+        .filter(|id| original.get(id).is_none_or(|a| a.3 != output[id].3))
+        .collect();
+    if rewritten.is_empty() {
+        return Ok(());
+    }
+    let mut checked = BTreeSet::new();
+    for (name, raw) in &b.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let bytes = unpack(b, raw).map_err(|e| Side::Output.unpack_finding(e, name))?;
+        validate_formula_tables(&decode_records(&bytes, name)?, &rewritten, &mut checked)?;
+    }
+    for id in rewritten {
+        let record = [(71, output[&id].2, output[&id].3.as_slice())];
+        if Field::of(&record).is_some_and(|f| f.ctrl == b"umf%") {
+            preserved(checked.contains(&id), BODY)?;
+        }
+    }
+    Ok(())
+}
+
+fn cell_number(rs: &[Record<'_>], level: u16) -> Option<f64> {
+    let mut units = Vec::new();
+    for &(_, _, text) in rs.iter().filter(|r| r.0 == 67 && r.1 == level).take(1) {
+        let mut at = 0;
+        while at < text.len() / 2 {
+            let ch = word(text, at * 2).ok()? as u16;
+            if matches!(ch, 1..=9 | 11 | 12 | 14..=23) {
+                if ch == 9 {
+                    units.push(9);
+                } else if !matches!(ch, 3 | 4) {
+                    units.push(0xfffc);
+                }
+                at += 8;
+            } else {
+                units.push(ch);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf16(&units)
+        .ok()?
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ',')
+        .collect::<String>()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+}
+
+fn validate_formula_tables(
+    rs: &[Record<'_>],
+    changed: &BTreeSet<usize>,
+    checked: &mut BTreeSet<usize>,
+) -> Checked<()> {
+    let mut at = 0;
+    while at < rs.len() {
+        let r = rs[at];
+        if r.0 != 71 || !r.2.starts_with(b" lbt") {
+            at += 1;
+            continue;
+        }
+        let end = rs[at + 1..]
+            .iter()
+            .position(|r2| r2.1 <= r.1)
+            .map_or(rs.len(), |i| at + 1 + i);
+        let table = &rs[at..end];
+        // Unchanged unrelated legacy tables do not acquire a new schema merely
+        // because another table contains a rewritten formula.
+        if !table
+            .iter()
+            .filter(|r| r.0 == 71 && r.2.starts_with(b"umf%"))
+            .any(|r| Field::of(std::slice::from_ref(r)).is_some_and(|f| changed.contains(&f.id)))
+        {
+            at = end;
+            continue;
+        }
+        valid((1..=MAX_TABLE_LEVEL).contains(&r.1), BODY)?;
+        validate_existing_table(table)?;
+        let level = r.1 + 1;
+        let t = table
+            .iter()
+            .position(|r| r.0 == 77 && r.1 == level)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+        let rows = word(table[t].2, 4)?;
+        let cols = word(table[t].2, 6)?;
+        let starts: Vec<_> = table
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.0 == 72 && r.1 == level)
+            .map(|(i, _)| i)
+            .filter(|i| *i > t)
+            .collect();
+        let mut cells = Vec::new();
+        for (i, start) in starts.iter().enumerate() {
+            let stop = starts.get(i + 1).copied().unwrap_or(table.len());
+            cells.push((Geo::of(table[*start].2)?, &table[*start + 1..stop]));
+        }
+        validate_formula_dependencies(&cells, rows, cols, level, changed)?;
+        for (geo, records) in &cells {
+            for field_record in records
+                .iter()
+                .filter(|r| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+            {
+                let field = Field::of(std::slice::from_ref(field_record))
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+                if !changed.contains(&field.id) {
+                    continue;
+                }
+                valid(field.canonical_formula(), BODY)?;
+                let command = String::from_utf16(&field.command)
+                    .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?;
+                let (expression, cache) = command.split_once("??%g,;;").unwrap();
+                let first_end = records
+                    .iter()
+                    .skip(1)
+                    .position(|r| r.0 == 66 && r.1 == level)
+                    .map_or(records.len(), |i| i + 1);
+                let first = &records[..first_end];
+                valid(
+                    first
+                        .iter()
+                        .filter(|r| r.0 == 71 && r.1 == level + 1)
+                        .count()
+                        == 1
+                        && first.iter().any(|r| std::ptr::eq(r, field_record)),
+                    BODY,
+                )?;
+                let text = first
+                    .iter()
+                    .find(|r| r.0 == 67 && r.1 == level + 1)
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?
+                    .2;
+                let cache_bytes: Vec<_> = cache.encode_utf16().flat_map(u16::to_le_bytes).collect();
+                valid(
+                    text.len() == 34 + cache_bytes.len()
+                        && word(text, 0)? == 3
+                        && text.get(2..6) == Some(b"umf%")
+                        && text.get(16..16 + cache_bytes.len()) == Some(cache_bytes.as_slice())
+                        && word(text, 16 + cache_bytes.len())? == 4
+                        && text.ends_with(b"\r\0"),
+                    BODY,
+                )?;
+                let ctx = evaluator::TableContext {
+                    row_count: rows,
+                    col_count: cols,
+                    current_row: geo.row,
+                    current_col: geo.col,
+                };
+                let value = evaluator::evaluate_formula(expression, &ctx, &|col, row| {
+                    cells
+                        .iter()
+                        .find(|(g, _)| row == g.row && col == g.col)
+                        .and_then(|(_, cell)| cell_number(cell, level + 1))
+                })
+                .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?;
+                valid(
+                    evaluator::format_formula_g(value).as_deref() == Some(cache),
+                    BODY,
+                )?;
+                checked.insert(field.id);
+            }
+            validate_formula_tables(records, changed, checked)?;
+        }
+        at = end;
+    }
+    Ok(())
+}
+
+/// Reuse the evaluator's AST validation and coordinate resolution, including
+/// unselected IF branches. Cached numbers cannot turn a dependency cycle into
+/// a valid formula. Only graphs reached from new/rewritten fields are examined;
+/// untouched legacy fields elsewhere retain their opaque preservation contract.
+fn validate_formula_dependencies(
+    cells: &[(Geo, &[Record<'_>])],
+    rows: usize,
+    cols: usize,
+    level: u16,
+    changed: &BTreeSet<usize>,
+) -> Checked<()> {
+    type Coordinate = (usize, usize); // row, column
+    let mut formulas = BTreeMap::<Coordinate, Option<String>>::new();
+    let mut roots = Vec::new();
+    for (geo, records) in cells {
+        let end = records
+            .iter()
+            .skip(1)
+            .position(|r| r.0 == 66 && r.1 == level)
+            .map_or(records.len(), |i| i + 1);
+        let fields: Vec<_> = records[..end]
+            .iter()
+            .filter(|r| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+            .filter_map(|r| Field::of(std::slice::from_ref(r)))
+            .collect();
+        if fields.is_empty() {
+            continue;
+        }
+        let coordinate = (geo.row, geo.col);
+        if fields.iter().any(|f| changed.contains(&f.id)) {
+            roots.push(coordinate);
+        }
+        let expression = match fields.as_slice() {
+            [field] => String::from_utf16(&field.command).ok().and_then(|command| {
+                command
+                    .split_once("??")
+                    .map(|(expression, _)| expression.to_string())
+            }),
+            _ => None, // multiple formulas in an operand paragraph are not a supported formula cell
+        };
+        crate::document::resources::charge(
+            crate::document::resources::Category::Comparison,
+            expression.as_ref().map_or(0, String::len) + 64,
+        )
+        .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+        formulas.insert(coordinate, expression);
+    }
+    let dependencies = |at: Coordinate| -> Checked<Vec<Coordinate>> {
+        let expression = formulas[&at]
+            .as_ref()
+            .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
+        let ast = parser::parse_formula(expression)
+            .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
+        let ctx = evaluator::TableContext {
+            row_count: rows,
+            col_count: cols,
+            current_row: at.0,
+            current_col: at.1,
+        };
+        let mut visits = 0;
+        evaluator::validate_node(&ast, &ctx, &mut visits)
+            .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?;
+        crate::document::resources::charge(
+            crate::document::resources::Category::Comparison,
+            visits.saturating_mul(std::mem::size_of::<Coordinate>()) + 64,
+        )
+        .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+        let mut nodes = vec![&ast];
+        let mut targets = BTreeSet::new();
+        while let Some(node) = nodes.pop() {
+            let coordinates = match node {
+                parser::FormulaNode::CellRef { col, row } => {
+                    vec![evaluator::resolve_cell_ref(col, *row, &ctx)
+                        .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?]
+                }
+                parser::FormulaNode::Range { .. } | parser::FormulaNode::Direction(_) => {
+                    evaluator::collect_cells(node, &ctx)
+                        .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?
+                }
+                parser::FormulaNode::Negate(inner) => {
+                    nodes.push(inner);
+                    Vec::new()
+                }
+                parser::FormulaNode::BinOp { left, right, .. } => {
+                    nodes.extend([left.as_ref(), right.as_ref()]);
+                    Vec::new()
+                }
+                parser::FormulaNode::FuncCall { args, .. } => {
+                    nodes.extend(args);
+                    Vec::new()
+                }
+                parser::FormulaNode::Number(_) => Vec::new(),
+            };
+            targets.extend(
+                coordinates
+                    .into_iter()
+                    .map(|(col, row)| (row, col))
+                    .filter(|coordinate| formulas.contains_key(coordinate)),
+            );
+        }
+        Ok(targets.into_iter().collect())
+    };
+    let mut state = BTreeMap::new();
+    for root in roots {
+        if state.get(&root) == Some(&2) {
+            continue;
+        }
+        state.insert(root, 1);
+        let mut stack = vec![(root, dependencies(root)?, 0)];
+        while let Some((at, edges, next)) = stack.last_mut() {
+            if *next == edges.len() {
+                state.insert(*at, 2);
+                stack.pop();
+                continue;
+            }
+            let target = edges[*next];
+            *next += 1;
+            reference(state.get(&target) != Some(&1), BODY)?;
+            if state.get(&target) != Some(&2) {
+                state.insert(target, 1);
+                stack.push((target, dependencies(target)?, 0));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The legacy ordinary-edit path permits text deletion/replacement using the
@@ -1350,8 +1792,10 @@ fn table_header_preserved(a: &[u8], b: &[u8]) -> Checked<()> {
 struct EvolvedCell<'a> {
     header: &'a [u8],
     objects: Vec<Vec<Record<'a>>>,
+    object_paragraphs: Vec<usize>,
     /// PARA_TEXT payloads of the cell's own paragraphs (correspondence evidence for deletions).
     texts: Vec<&'a [u8]>,
+    evidence: Vec<Vec<u8>>,
 }
 
 fn evolved_cells<'a, 'r>(
@@ -1359,6 +1803,7 @@ fn evolved_cells<'a, 'r>(
     defs: &Defs<'_>,
     original_defs: &Defs<'_>,
     para_ids: &mut BTreeSet<usize>,
+    original_cells: Option<&[EvolvedCell<'_>]>,
 ) -> Checked<(Vec<EvolvedCell<'a>>, &'r [Record<'a>])> {
     let level = rs[0].1 + 1;
     // An optional caption list precedes TABLE. The caller holds it to the byte-identical contract: no
@@ -1380,6 +1825,8 @@ fn evolved_cells<'a, 'r>(
             .map_or(rs.len(), |p| at + p);
         let mut paragraphs = 0;
         let mut objects = Vec::new();
+        let mut object_paragraphs = Vec::new();
+        let mut evidence = Vec::new();
         let mut start = at;
         while start < end {
             valid(rs[start].0 == 66 && rs[start].1 == level, BODY)?;
@@ -1394,15 +1841,28 @@ fn evolved_cells<'a, 'r>(
                 paragraphs: 0,
                 breaks: Vec::new(),
             };
-            // Framing, counts, text units, shape/style references; range tags and fields are refused.
+            // Framing, text units, references and explicit field/control order; range tags stay refused.
             preserved(!rs[start..stop].iter().any(|r| r.0 == 70), BODY)?;
-            objects.extend(paragraph(
-                &rs[start..stop],
-                level,
-                defs,
-                original_defs,
-                &mut scratch,
-            )?);
+            let children = paragraph(&rs[start..stop], level, defs, original_defs, &mut scratch)?;
+            // Only modeled control kinds have relocation semantics. Unknown
+            // controls remain opaque in an unchanged table, never restructured.
+            for child in &children {
+                preserved(
+                    matches!(
+                        child[0].2.get(..4).unwrap_or_default(),
+                        b" lbt" | b"umf%" | b"klc%" | b" osg"
+                    ),
+                    BODY,
+                )?;
+            }
+            let text = rs[start..stop]
+                .iter()
+                .find(|r| r.0 == 67)
+                .map(|r| r.2)
+                .unwrap_or_default();
+            evidence.push(paragraph_evidence(text, &children, original_cells)?);
+            object_paragraphs.extend(std::iter::repeat_n(paragraphs, children.len()));
+            objects.extend(children);
             para_ids.extend(scratch.para_ids);
             paragraphs += 1;
             start = stop;
@@ -1416,12 +1876,91 @@ fn evolved_cells<'a, 'r>(
         cells.push(EvolvedCell {
             header: r.2,
             objects,
+            object_paragraphs,
             texts,
+            evidence,
         });
         at = end;
     }
     valid(!cells.is_empty(), BODY)?;
     Ok((cells, &rs[1..t]))
+}
+
+/// Stable paragraph witnesses: canonical formula result text may be recalculated,
+/// but its explicit field identity and begin/end position among other controls remain.
+/// Existing ClickHere content and other original bytes stay exact; newly proven
+/// child anchors are excluded from ancestry witnesses, never from schema checks.
+fn paragraph_evidence(
+    text: &[u8],
+    children: &[Vec<Record<'_>>],
+    original_cells: Option<&[EvolvedCell<'_>]>,
+) -> Checked<Vec<u8>> {
+    crate::document::resources::charge(
+        crate::document::resources::Category::Comparison,
+        text.len().saturating_add(children.len().saturating_mul(4)),
+    )
+    .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+    let mut out = Vec::new();
+    let mut at = 0;
+    let mut child = 0;
+    while at < text.len() / 2 {
+        let ch = word(text, at * 2)?;
+        let extended = matches!(ch, 2 | 3 | 11);
+        if extended {
+            let object = children
+                .get(child)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            child += 1;
+            let inserted = original_cells.is_some_and(|cells| {
+                !cells
+                    .iter()
+                    .flat_map(|c| &c.objects)
+                    .any(|old| same_child(old, object))
+            });
+            // New anchors carry no original ancestry. The child still must pass
+            // new_child's schema and global fresh-ID proof after correspondence.
+            if inserted {
+                at += 8;
+                if ch == 3 {
+                    while at < text.len() / 2 && word(text, at * 2)? != 4 {
+                        valid(word(text, at * 2)? >= 32, BODY)?;
+                        at += 1;
+                    }
+                    valid(at < text.len() / 2, BODY)?;
+                    at += 8;
+                }
+                continue;
+            }
+            if ch == 3 && object[0].2.starts_with(b"umf%") {
+                let field =
+                    Field::of(object).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+                out.extend_from_slice(
+                    text.get(at * 2..at * 2 + 16)
+                        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+                );
+                out.extend_from_slice(&(field.id as u32).to_le_bytes());
+                at += 8;
+                while at < text.len() / 2 && word(text, at * 2)? != 4 {
+                    let unit = word(text, at * 2)?;
+                    valid(unit >= 32, BODY)?;
+                    at += 1;
+                }
+                valid(at < text.len() / 2, BODY)?;
+                continue;
+            }
+        }
+        let count = if matches!(ch, 1..=9 | 11 | 12 | 14..=23) {
+            8
+        } else {
+            1
+        };
+        out.extend_from_slice(
+            text.get(at * 2..(at + count) * 2)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+        );
+        at += count;
+    }
+    Ok(out)
 }
 
 /// Stage 2: an original table (same control) whose content evolved through supported operations:
@@ -1450,8 +1989,9 @@ fn evolved_table(
     validate_existing_table(old)?;
     validate_existing_table(new)?;
     let mut ignored = BTreeSet::new();
-    let (before, caption_a) = evolved_cells(old, original_defs, original_defs, &mut ignored)?;
-    let (after, caption_b) = evolved_cells(new, defs, original_defs, &mut used.paras)?;
+    let (before, caption_a) = evolved_cells(old, original_defs, original_defs, &mut ignored, None)?;
+    let (after, caption_b) =
+        evolved_cells(new, defs, original_defs, &mut used.paras, Some(&before))?;
     preserved(caption_a == caption_b, BODY)?;
     let table_record = |rs: &[Record<'_>]| -> Checked<Vec<u8>> {
         rs.iter()
@@ -1513,11 +2053,18 @@ fn evolved_table(
     // only with a cell the operation deletes; absorbed cells' children must follow into the anchor.
     // A mapping that drops children is admitted only when it is the unique consistent mapping whose kept
     // cells keep byte-identical paragraph text: geometry alone cannot tell "delete the owning row" from
-    // "delete another row and lose the child". Anything ambiguous falls back to strict no-loss below.
-    let candidates: Vec<Mapping> = correspondences(&ga, dims(ta)?, &gb, dims(tb)?)
+    // "delete another row and lose the child". Ambiguous ownership is refused.
+    let mut candidates: Vec<Mapping> = correspondences(&ga, dims(ta)?, &gb, dims(tb)?)
         .into_iter()
         .filter(|m| m.consistent(&before, &after))
         .collect();
+    if candidates.is_empty() {
+        candidates.extend(
+            composite_correspondences(&ga, dims(ta)?, &gb, dims(tb)?, &before, &after)?
+                .into_iter()
+                .filter(|m| m.consistent(&before, &after)),
+        );
+    }
     let drops = |m: &Mapping| m.deleted.iter().any(|d| !before[*d].objects.is_empty());
     let mapping = match candidates.iter().position(|m| !drops(m)) {
         Some(p) => Some(&candidates[p]),
@@ -1535,6 +2082,11 @@ fn evolved_table(
     };
     match mapping {
         Some(mapping) => {
+            structural |= mapping
+                .sources
+                .iter()
+                .enumerate()
+                .any(|(i, sources)| sources.as_slice() != [i]);
             for (target, sources) in mapping.sources.iter().enumerate() {
                 let old: Vec<&Vec<Record<'_>>> =
                     sources.iter().flat_map(|s| &before[*s].objects).collect();
@@ -1555,15 +2107,9 @@ fn evolved_table(
                 .any(|d| !before[*d].objects.is_empty());
         }
         None => {
-            // A composite of several operations has no single proven correspondence: no original child may
-            // disappear, and all keep their original order (new children must prove the new-table schema).
-            preserved(!same_grid, BODY)?;
-            let old: Vec<&Vec<Record<'_>>> = before.iter().flat_map(|c| &c.objects).collect();
-            let new: Vec<Vec<Record<'_>>> = after
-                .iter()
-                .flat_map(|c| c.objects.iter().cloned())
-                .collect();
-            structural |= match_children(&old, &new, level, defs, original_defs, used, ids, total)?;
+            // Geometry and paragraph ownership must explain every surviving child.
+            // Aggregate order is never a substitute for a cell correspondence.
+            return Err(finding(FindingCode::RecordsChanged, BODY));
         }
     }
     preserved(structural, BODY)?;
@@ -1591,13 +2137,16 @@ impl Geo {
 
 /// For every output cell, the original cells whose content it owns (row-major), plus deleted originals.
 /// Output cells with no source are new empty cells of the operation.
+#[derive(Default)]
 struct Mapping {
     sources: Vec<Vec<usize>>,
     deleted: Vec<usize>,
+    /// Composite insertion/merge: fresh empty paragraphs precede some sources.
+    paragraph_offsets: BTreeMap<(usize, usize), usize>,
 }
 impl Mapping {
-    /// Pure pre-check: every source child appears in its target cell in order (equal or same evolved table)
-    /// and a new cell of the operation owns no child.
+    /// Every source child appears in its target cell/paragraph in order. A fresh
+    /// cell may contain only new children, whose schemas are checked afterwards.
     fn text_preserving(&self, before: &[EvolvedCell<'_>], after: &[EvolvedCell<'_>]) -> bool {
         self.sources
             .iter()
@@ -1617,12 +2166,33 @@ impl Mapping {
                 .any(|o| same_child(o, object))
         };
         self.sources.iter().enumerate().all(|(target, sources)| {
-            let mut old = sources.iter().flat_map(|s| &before[*s].objects).peekable();
-            if sources.is_empty() && !after[target].objects.is_empty() {
-                return false;
+            let mut offset = 0;
+            let mut expected = Vec::new();
+            for source in sources {
+                offset = self
+                    .paragraph_offsets
+                    .get(&(target, *source))
+                    .copied()
+                    .unwrap_or(offset);
+                expected.extend(
+                    before[*source]
+                        .objects
+                        .iter()
+                        .zip(&before[*source].object_paragraphs)
+                        .map(|(o, p)| (o, offset + p)),
+                );
+                offset += before[*source].texts.len();
             }
-            for object in &after[target].objects {
-                if old.peek().is_some_and(|o| same_child(o, object)) {
+            let mut old = expected.into_iter().peekable();
+            for (object, paragraph) in after[target]
+                .objects
+                .iter()
+                .zip(&after[target].object_paragraphs)
+            {
+                if old
+                    .peek()
+                    .is_some_and(|(o, p)| p == paragraph && same_child(o, object))
+                {
                     old.next();
                 } else if original(object) {
                     return false;
@@ -1661,7 +2231,11 @@ fn correspondences(
             .iter()
             .zip(&sources)
             .all(|(g, s)| !s.is_empty() || (g.cols == 1 && g.rows == 1));
-        fresh.then_some(Mapping { sources, deleted })
+        fresh.then_some(Mapping {
+            sources,
+            deleted,
+            ..Default::default()
+        })
     };
     let mut out = Vec::new();
     if (ra, ca) == (rb, cb) && before == after {
@@ -1734,6 +2308,7 @@ fn correspondences(
                     out.push(Mapping {
                         sources,
                         deleted: Vec::new(),
+                        ..Default::default()
                     });
                 }
             }
@@ -1756,6 +2331,395 @@ fn correspondences(
         }
     }
     out
+}
+
+/// Bounded polynomial correspondence for composite insertions and rectangular
+/// merges/splits. Unique paragraph witnesses anchor larger monotone axis shifts;
+/// small grids admit all single row/column insertion points. Completely collapsed
+/// witnessed axis gaps can delete their owning cells. No frontend history is
+/// consumed; ambiguous partial deletions or unmodeled compositions refuse.
+fn composite_correspondences(
+    before: &[Geo],
+    (ra, ca): (usize, usize),
+    after: &[Geo],
+    (rb, cb): (usize, usize),
+    old: &[EvolvedCell<'_>],
+    new: &[EvolvedCell<'_>],
+) -> Checked<Vec<Mapping>> {
+    let mut transformations = Vec::new();
+    // Enumerate small insertion grids only. Larger grids and compositions use
+    // the deterministic alignment instead of rejecting a provable edit on the
+    // candidate-search budget alone.
+    let insertion_work = (if rb > ra { ra + 1 } else { 1usize })
+        .saturating_mul(if cb > ca { ca + 1 } else { 1usize })
+        .saturating_mul(before.len())
+        .saturating_mul(after.len());
+    if rb >= ra && cb >= ca && rb - ra <= 1 && cb - ca <= 1 && insertion_work <= 4_000_000 {
+        let row_points: Vec<_> = if rb > ra {
+            (0..=ra).collect()
+        } else {
+            vec![ra]
+        };
+        let col_points: Vec<_> = if cb > ca {
+            (0..=ca).collect()
+        } else {
+            vec![ca]
+        };
+        let work = row_points
+            .len()
+            .saturating_mul(col_points.len())
+            .saturating_mul(before.len())
+            .saturating_mul(after.len());
+        require(work <= 4_000_000, FindingCode::LimitExceeded, BODY)?;
+        crate::document::resources::charge(
+            crate::document::resources::Category::Comparison,
+            row_points
+                .len()
+                .saturating_mul(col_points.len())
+                .saturating_mul(before.len())
+                .saturating_mul(std::mem::size_of::<Geo>()),
+        )
+        .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+        for row in row_points {
+            for col in &col_points {
+                transformations.push(
+                    before
+                        .iter()
+                        .map(|g| Geo {
+                            row: g.row + usize::from(rb > ra && g.row >= row),
+                            col: g.col + usize::from(cb > ca && g.col >= *col),
+                            rows: g.rows
+                                + usize::from(rb > ra && g.row < row && row < g.row + g.rows),
+                            cols: g.cols
+                                + usize::from(cb > ca && g.col < *col && *col < g.col + g.cols),
+                        })
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+    } else {
+        let mut old_witness = BTreeMap::<_, Vec<usize>>::new();
+        let mut new_witness = BTreeMap::<_, Vec<usize>>::new();
+        for (cells, witnesses) in [(old, &mut old_witness), (new, &mut new_witness)] {
+            for (i, cell) in cells.iter().enumerate() {
+                if cell.texts.iter().any(|t| *t != b"\r\0") {
+                    witnesses.entry(&cell.evidence).or_default().push(i);
+                }
+            }
+        }
+        let mut rows = vec![None; ra];
+        let mut cols = vec![None; ca];
+        let mut ok = true;
+        for (key, originals) in old_witness {
+            let (Some(&[a]), Some(&[b])) = (
+                Some(originals.as_slice()),
+                new_witness.get(key).map(Vec::as_slice),
+            ) else {
+                continue;
+            };
+            for (map, i, j) in [
+                (&mut rows, before[a].row, after[b].row),
+                (&mut cols, before[a].col, after[b].col),
+            ] {
+                if map[i].is_some_and(|v| v != j) {
+                    ok = false;
+                }
+                map[i] = Some(j);
+            }
+        }
+        fn align(anchors: Vec<Option<usize>>, count: usize) -> Option<Vec<Option<usize>>> {
+            let mut out = vec![None; anchors.len()];
+            let mut old_start = 0;
+            let mut new_start = 0;
+            for (old_end, new_end) in anchors
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| v.map(|v| (i, v)))
+                .chain(std::iter::once((anchors.len(), count)))
+            {
+                if new_end < new_start || new_end > count {
+                    return None;
+                }
+                let old_gap = old_end - old_start;
+                let new_gap = new_end - new_start;
+                // A completely collapsed witnessed gap proves deletion. Partly
+                // collapsed unanchored gaps cannot identify which rows survived.
+                if old_gap > new_gap && new_gap != 0 {
+                    return None;
+                }
+                if old_gap <= new_gap {
+                    for (offset, target) in out[old_start..old_end].iter_mut().enumerate() {
+                        *target = Some(new_start + offset);
+                    }
+                }
+                if old_end < anchors.len() {
+                    if new_end == count {
+                        return None;
+                    }
+                    out[old_end] = Some(new_end);
+                }
+                old_start = old_end + 1;
+                new_start = new_end + 1;
+            }
+            Some(out)
+        }
+        if ok {
+            if let (Some(rows), Some(cols)) = (align(rows, rb), align(cols, cb)) {
+                transformations.push(
+                    before
+                        .iter()
+                        .map(|g| {
+                            let rows: Vec<_> = rows[g.row..g.row + g.rows]
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .collect();
+                            let cols: Vec<_> = cols[g.col..g.col + g.cols]
+                                .iter()
+                                .flatten()
+                                .copied()
+                                .collect();
+                            match (rows.first(), rows.last(), cols.first(), cols.last()) {
+                                (Some(r), Some(end_r), Some(c), Some(end_c)) => Geo {
+                                    row: *r,
+                                    col: *c,
+                                    rows: end_r - r + 1,
+                                    cols: end_c - c + 1,
+                                },
+                                _ => Geo {
+                                    row: 0,
+                                    col: 0,
+                                    rows: 0,
+                                    cols: 0,
+                                }, // independently deleted cell
+                            }
+                        })
+                        .collect(),
+                );
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut work = 0usize;
+    for transformed in transformations {
+        let inside = |g: &Geo, m: &Geo| {
+            g.rows > 0
+                && g.cols > 0
+                && g.row >= m.row
+                && g.col >= m.col
+                && g.row + g.rows <= m.row + m.rows
+                && g.col + g.cols <= m.col + m.cols
+        };
+        let mut sources = vec![Vec::new(); after.len()];
+        let mut regions = after.to_vec();
+        let mut ok = true;
+        for (i, g) in transformed.iter().enumerate() {
+            if g.rows == 0 || g.cols == 0 {
+                continue;
+            }
+            // A merged cell owns all absorbed originals. A split retains all original
+            // paragraphs at its top-left anchor; remaining fragments must be empty.
+            let targets: Vec<_> = after
+                .iter()
+                .enumerate()
+                .filter(|(_, target)| {
+                    inside(g, target)
+                        || (target.row == g.row && target.col == g.col && inside(target, g))
+                })
+                .map(|(i, _)| i)
+                .collect();
+            if let [target] = targets[..] {
+                sources[target].push(i);
+            } else {
+                ok = false;
+                break;
+            }
+        }
+        if !ok {
+            continue;
+        }
+        // A merge followed by a split may restore the geometry. Its independent
+        // evidence is the exact ordered concatenation of original cell paragraphs
+        // at the rectangle's anchor, with every other resulting cell empty.
+        for (target, cell) in new.iter().enumerate() {
+            let baseline: Vec<_> = sources[target]
+                .iter()
+                .flat_map(|s| old[*s].evidence.iter())
+                .collect();
+            if cell.evidence.iter().eq(baseline) || cell.texts.iter().all(|t| *t == b"\r\0") {
+                continue;
+            }
+            let Some(first) = sources[target].first().copied() else {
+                continue;
+            };
+            let g = transformed[first];
+            let mut matches = Vec::new();
+            for last in first..old.len() {
+                work = work.saturating_add(before.len() + after.len());
+                require(work <= 4_000_000, FindingCode::LimitExceeded, BODY)?;
+                let end = transformed[last];
+                if end.row < g.row || end.col < g.col {
+                    continue;
+                }
+                let rect = Geo {
+                    row: g.row,
+                    col: g.col,
+                    rows: end.row + end.rows - g.row,
+                    cols: end.col + end.cols - g.col,
+                };
+                let group: Vec<_> = transformed
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| inside(c, &rect))
+                    .map(|(i, _)| i)
+                    .collect();
+                // Every paragraph comes from this rectangle; partial spans refuse.
+                if transformed.iter().any(|c| {
+                    c.row < rect.row + rect.rows
+                        && c.row + c.rows > rect.row
+                        && c.col < rect.col + rect.cols
+                        && c.col + c.cols > rect.col
+                        && !inside(c, &rect)
+                }) {
+                    continue;
+                }
+                let paragraphs = composite_paragraphs(&group, &transformed, rect, old, &mut work)?;
+                if cell.evidence != paragraphs.evidence {
+                    continue;
+                }
+                if after.iter().enumerate().any(|(i, c)| {
+                    i != target
+                        && inside(c, &rect)
+                        && (!new[i].objects.is_empty()
+                            || new[i].texts.iter().any(|t| *t != b"\r\0"))
+                }) {
+                    continue;
+                }
+                matches.push((group, rect));
+            }
+            if let [(group, rect)] = matches.as_slice() {
+                regions[target] = *rect;
+                for source in &mut sources {
+                    source.retain(|i| !group.contains(i));
+                }
+                sources[target] = group.clone();
+            }
+        }
+        let mut mapping = Mapping {
+            sources,
+            deleted: transformed
+                .iter()
+                .enumerate()
+                .filter(|(_, g)| g.rows == 0 || g.cols == 0)
+                .map(|(i, _)| i)
+                .collect(),
+            ..Default::default()
+        };
+        let mut witnessed = true;
+        for (target, sources) in mapping.sources.iter().enumerate() {
+            if sources.is_empty() {
+                // Original children are excluded by consistent(); every new child
+                // still proves its schema and fresh identity in match_children().
+                continue;
+            }
+            let paragraphs =
+                composite_paragraphs(sources, &transformed, regions[target], old, &mut work)?;
+            witnessed &= paragraphs.evidence == new[target].evidence;
+            mapping.paragraph_offsets.extend(
+                paragraphs
+                    .offsets
+                    .into_iter()
+                    .map(|(source, offset)| ((target, source), offset)),
+            );
+        }
+        if witnessed
+            && mapping.consistent(old, new)
+            && !out.iter().any(|m: &Mapping| m.sources == mapping.sources)
+        {
+            out.push(mapping);
+        }
+    }
+    Ok(out)
+}
+
+struct CompositeParagraphs {
+    evidence: Vec<Vec<u8>>,
+    offsets: BTreeMap<usize, usize>,
+}
+
+/// Row-major content of a merged rectangle, including the one empty paragraph
+/// created for each uncovered (inserted) unit cell. Surviving spans cover their
+/// own inserted interior, so those units must not invent additional paragraphs.
+fn composite_paragraphs(
+    sources: &[usize],
+    transformed: &[Geo],
+    rect: Geo,
+    old: &[EvolvedCell<'_>],
+    work: &mut usize,
+) -> Checked<CompositeParagraphs> {
+    let area = rect.rows.saturating_mul(rect.cols);
+    *work = work.saturating_add(area.saturating_add(sources.len()));
+    require(
+        *work <= 4_000_000 && area <= 65_536,
+        FindingCode::LimitExceeded,
+        BODY,
+    )?;
+    let bytes = sources
+        .iter()
+        .flat_map(|source| &old[*source].evidence)
+        .map(Vec::len)
+        .sum::<usize>()
+        .saturating_add(area.saturating_mul(2 + std::mem::size_of::<Option<usize>>()));
+    crate::document::resources::charge(crate::document::resources::Category::Comparison, bytes)
+        .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+    let mut owner = vec![None; area];
+    for source in sources {
+        let g = transformed[*source];
+        valid(
+            g.row >= rect.row
+                && g.col >= rect.col
+                && g.row + g.rows <= rect.row + rect.rows
+                && g.col + g.cols <= rect.col + rect.cols,
+            BODY,
+        )?;
+        for row in g.row..g.row + g.rows {
+            for col in g.col..g.col + g.cols {
+                valid(
+                    owner[(row - rect.row) * rect.cols + col - rect.col]
+                        .replace(*source)
+                        .is_none(),
+                    BODY,
+                )?;
+            }
+        }
+    }
+    let mut paragraphs = Vec::new();
+    let mut offsets = BTreeMap::new();
+    for (at, source) in owner.into_iter().enumerate() {
+        match source {
+            Some(source) if !offsets.contains_key(&source) => {
+                offsets.insert(source, paragraphs.len());
+                paragraphs.extend(old[source].evidence.iter().cloned());
+            }
+            Some(_) => {}
+            None => {
+                // A hole is an inserted cell, not lost original content.
+                let row = rect.row + at / rect.cols;
+                let col = rect.col + at % rect.cols;
+                preserved(
+                    !transformed.iter().any(|g| {
+                        row >= g.row && row < g.row + g.rows && col >= g.col && col < g.col + g.cols
+                    }),
+                    BODY,
+                )?;
+                paragraphs.push(b"\r\0".to_vec());
+            }
+        }
+    }
+    Ok(CompositeParagraphs {
+        evidence: paragraphs,
+        offsets,
+    })
 }
 
 /// Match original children against the children of their output cell(s) in order. Equal subtrees are kept,
@@ -1879,9 +2843,9 @@ impl<'a> Field<'a> {
         let Some((expression, value)) = text.split_once("??%g,;;") else {
             return false;
         };
-        expression.starts_with('=')
+        parser::parse_formula(expression).is_some()
+            && expression.starts_with('=')
             && expression.len() <= 257
-            && !expression.contains(['?', ';'])
             && !expression.chars().any(char::is_control)
             && value.parse::<f64>().is_ok_and(f64::is_finite)
     }

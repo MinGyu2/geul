@@ -1,3 +1,4 @@
+import { paragraphFieldMap } from "./fieldOwnership";
 import type { RhwpDocument } from "./rhwpModule";
 import { canonical } from "./rhwpArtifactIdentity";
 import { cachedFormula } from "./formulaDependencies";
@@ -200,7 +201,7 @@ export function insertedInlinePicture(doc: RhwpDocument, section: number, paragr
 }
 
 /** A blank getControls kind is not evidence of a field. Independently join the
- * cursor-list owner, sole paragraph control and complete field record. Only
+ * cursor-list owner, explicit paragraph control index/position and complete field range. Only
  * first-paragraph formulas and ClickHere fields (any paragraph) are
  * covered; nested/ambiguous/unknown controls still make the model incomplete. */
 function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: unknown) => unknown): Map<unknown, JsonObject> {
@@ -209,10 +210,8 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
   const model = json(doc.getCursorModel()), fields = json(doc.getFieldList());
   if (!isObject(model) || !Array.isArray(model.lists) || model.lists.length > 4096 || !Array.isArray(fields) || fields.length > 4096) return proven;
   const lists = new Map<number, JsonObject>(), ids = new Set<number>();
-  const owners = new Map<string, number>(), tables = new Set<string>(), byParagraph = new Map<string, JsonObject | null>();
+  const tables = new Set<string>(), byControl = new Map<unknown, JsonObject>();
   for (const c of controls) if (isObject(c)) {
-    const key = `${c.list}/${c.para}`;
-    owners.set(key, (owners.get(key) ?? 0) + 1);
     if (c.ctrlId === "tbl" && c.list === 0) tables.add(`${c.para}/${c.controlIndex}`);
   }
   const sectionCount = doc.getSectionCount();
@@ -226,11 +225,17 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
   for (const f of fields) {
     if (!isObject(f) || !isInt(f.fieldId, 1, 0xffffffff) || ids.has(f.fieldId)) return proven;
     ids.add(f.fieldId);
-    const key = `${f.listId}/${f.paraInList}`;
-    byParagraph.set(key, byParagraph.has(key) ? null : f);
   }
+  try {
+    const records = controls.filter(isObject), fieldRecords = fields.filter(isObject);
+    const paragraphs = new Set(records.filter(c => c.ctrlId === "").map(c => `${c.list}/${c.para}`));
+    for (const key of paragraphs) {
+      const [list, para] = key.split("/").map(Number);
+      for (const [control, field] of paragraphFieldMap(records, fieldRecords, list!, para!)) byControl.set(control, field);
+    }
+  } catch { return proven; }
   for (const c of controls) {
-    if (!isObject(c) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== "" || c.controlIndex !== 0 || c.pos !== 0
+    if (!isObject(c) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== "" || !isInt(c.controlIndex, 0) || !isInt(c.pos, 0)
       || !isObject(c.props) || Object.keys(c.props).length || !isInt(c.list, 2) || !isInt(c.para, 0)) continue;
     const list = lists.get(c.list);
     if (!list || list.isCell !== true
@@ -246,8 +251,7 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
     }
     if (chain[0]!.hostListId !== 0 || (chain.length > 1 && (!doc.getCellParagraphCountByPath || !doc.getCellParagraphLengthByPath
       || !doc.getTextInCellByPath || !doc.validateTableFormulaFieldByPath))) continue;
-    if (owners.get(`${c.list}/${c.para}`) !== 1) continue;
-    const f = byParagraph.get(`${c.list}/${c.para}`);
+    const f = byControl.get(c);
     if (!f) continue;
     const loc = f.location;
     const root = chain[0]!;

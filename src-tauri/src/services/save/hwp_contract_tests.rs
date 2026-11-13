@@ -2239,3 +2239,386 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
     nested.insert(first_para + 1, (71, 3, b" lbt".to_vec()));
     refused("control inside a restructured cell", nested);
 }
+
+/// Real serialized field anchors/ranges, using the existing compact HWP fixture builder.
+fn safety_field(id: u32, command: &str, click: bool) -> Records {
+    let mut b = if click {
+        b"klc%".to_vec()
+    } else {
+        b"umf%".to_vec()
+    };
+    b.extend(0u32.to_le_bytes());
+    b.push(8);
+    b.extend((command.encode_utf16().count() as u16).to_le_bytes());
+    b.extend(command.encode_utf16().flat_map(u16::to_le_bytes));
+    b.extend(id.to_le_bytes());
+    b.extend([0; 4]);
+    vec![(71, 3, b)]
+}
+fn safety_field_paragraph(fields: &[(u32, &str, &str, bool)]) -> Records {
+    let mut rs = paragraph_records(2, 0, "", &[]);
+    let mut text = Vec::new();
+    for (id, command, value, click) in fields {
+        text.extend(3u16.to_le_bytes());
+        text.extend(if *click { b"klc%" } else { b"umf%" });
+        text.extend([0; 8]);
+        text.extend(3u16.to_le_bytes());
+        text.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+        text.extend(4u16.to_le_bytes());
+        text.extend([0; 12]);
+        text.extend(4u16.to_le_bytes());
+        rs.extend(safety_field(*id, command, *click));
+    }
+    text.extend(13u16.to_le_bytes());
+    d(&mut rs[0].2, 0, (text.len() / 2) as u32);
+    d(&mut rs[0].2, 4, (1 << 3) | (1 << 4));
+    rs[1].2 = text;
+    rs
+}
+fn safety_grid(rows: u16, cols: u16, cells: Vec<Records>) -> Records {
+    assert_eq!(cells.len(), usize::from(rows * cols));
+    let template = existing_nonbasic_table();
+    let mut header = template[0].clone();
+    d(&mut header.2, 16, u32::from(cols) * 10000);
+    let mut table = template[1].2[..18].to_vec();
+    w(&mut table, 4, rows);
+    w(&mut table, 6, cols);
+    for _ in 0..rows {
+        table.extend(cols.to_le_bytes());
+    }
+    table.extend(1u16.to_le_bytes());
+    table.extend([0; 2]);
+    let mut rs = vec![header, (77, 2, table)];
+    for (i, paragraphs) in cells.into_iter().enumerate() {
+        let mut cell = template[2].clone();
+        w(
+            &mut cell.2,
+            0,
+            paragraphs.iter().filter(|r| r.0 == 66 && r.1 == 2).count() as u16,
+        );
+        w(&mut cell.2, 8, i as u16 % cols);
+        w(&mut cell.2, 10, i as u16 / cols);
+        rs.push(cell);
+        rs.extend(paragraphs);
+    }
+    rs
+}
+fn safety_document(cells: Vec<Records>, rows: u16, cols: u16) -> Vec<u8> {
+    fixture_with(false, &[safety_grid(rows, cols, cells)], "Keep 한글")
+}
+
+#[test]
+fn hwp_safety_field_only_real_checker() {
+    let plain = || paragraph_records(2, 0, "plain", &[]);
+    let document = |field| safety_document(vec![field, plain()], 1, 2);
+    let original = document(plain());
+    let formula = document(safety_field_paragraph(&[(10, "=1+2??%g,;;3", "3", false)]));
+    let replacement = document(safety_field_paragraph(&[(10, "=2*3??%g,;;6", "6", false)]));
+    for (a, b) in [(&original, &formula), (&formula, &replacement)] {
+        let findings = raw_findings(a, b, true);
+        assert!(only_stale_preview(&findings), "{findings:?}");
+    }
+    for (command, value) in [
+        ("=BOGUS(1)??%g,;;3", "3"),
+        ("=A0??%g,;;0", "0"),
+        ("=1+*2??%g,;;3", "3"),
+        ("=A3??%g,;;0", "0"),
+        ("=1/0??%g,;;0", "0"),
+        ("=A1??%g,;;3", "3"),
+        ("=1+2??%g,;;4", "4"),
+    ] {
+        let bad = document(safety_field_paragraph(&[(10, command, value, false)]));
+        assert!(
+            !only_stale_preview(&raw_findings(&original, &bad, true)),
+            "{command}"
+        );
+    }
+    let wrong_display = document(safety_field_paragraph(&[(10, "=1+2??%g,;;3", "4", false)]));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &wrong_display,
+        true
+    )));
+    for (command, value) in [("=B1+2??%g,;;2", "2"), ("=SUM(RIGHT)??%g,;;0", "0")] {
+        let valid = document(safety_field_paragraph(&[(10, command, value, false)]));
+        let findings = raw_findings(&original, &valid, true);
+        assert!(only_stale_preview(&findings), "{command}: {findings:?}");
+    }
+    let operands = safety_document(vec![plain(), plain(), plain()], 1, 3);
+    let chain = safety_document(
+        vec![
+            safety_field_paragraph(&[(10, "=B1+1??%g,;;4", "4", false)]),
+            safety_field_paragraph(&[(11, "=2+1??%g,;;3", "3", false)]),
+            plain(),
+        ],
+        1,
+        3,
+    );
+    let findings = raw_findings(&operands, &chain, true);
+    assert!(
+        only_stale_preview(&findings),
+        "acyclic formula chain: {findings:?}"
+    );
+    let cycle = safety_document(
+        vec![
+            safety_field_paragraph(&[(10, "=B1??%g,;;3", "3", false)]),
+            safety_field_paragraph(&[(11, "=A1??%g,;;3", "3", false)]),
+            plain(),
+        ],
+        1,
+        3,
+    );
+    assert!(
+        !only_stale_preview(&raw_findings(&operands, &cycle, true)),
+        "mutual formula dependency cycle"
+    );
+    let hidden_cycle = document(safety_field_paragraph(&[(
+        10,
+        "=IF(1,3,A1)??%g,;;3",
+        "3",
+        false,
+    )]));
+    assert!(
+        !only_stale_preview(&raw_findings(&original, &hidden_cycle, true)),
+        "unselected IF branch dependency cycle"
+    );
+    let invalid = document(safety_field_paragraph(&[(0, "=1+2??%g,;;3", "3", false)]));
+    let renamed = document(safety_field_paragraph(&[(11, "=1+2??%g,;;3", "3", false)]));
+    let duplicate = document(safety_field_paragraph(&[
+        (10, "=1+2??%g,;;3", "3", false),
+        (10, "=2+2??%g,;;4", "4", false),
+    ]));
+    let malformed = edit_records(&formula, "/BodyText/Section0", |rs| {
+        rs.iter_mut()
+            .find(|r| r.0 == 71 && r.2.starts_with(b"umf%"))
+            .unwrap()
+            .2
+            .truncate(12);
+    });
+    for bad in [&original, &renamed, &duplicate, &malformed, &invalid] {
+        assert!(!only_stale_preview(&raw_findings(&formula, bad, true)));
+    }
+    let fields = document(safety_field_paragraph(&[
+        (20, "Clickhere:one", "one", true),
+        (21, "Clickhere:two", "two", true),
+    ]));
+    let swapped = document(safety_field_paragraph(&[
+        (21, "Clickhere:two", "two", true),
+        (20, "Clickhere:one", "one", true),
+    ]));
+    assert!(
+        !only_stale_preview(&raw_findings(&fields, &swapped, true)),
+        "field-only reordering must retain per-control identity"
+    );
+    let ordinary = edit_records(&formula, "/BodyText/Section0", |rs| {
+        let r = rs
+            .iter_mut()
+            .find(|r| {
+                r.0 == 67
+                    && r.2
+                        == "plain\r"
+                            .encode_utf16()
+                            .flat_map(u16::to_le_bytes)
+                            .collect::<Vec<_>>()
+            })
+            .unwrap();
+        r.2 = "other\r"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+    });
+    assert!(only_stale_preview(&raw_findings(&formula, &ordinary, true)));
+    let split = edit_records(&formula, "/BodyText/Section0", |rs| {
+        let table_at = rs
+            .iter()
+            .position(|r| r.0 == 71 && r.2.starts_with(b" lbt"))
+            .unwrap();
+        let table = rs[table_at..].to_vec();
+        *rs = paragraph_records(0, 0, "Keep", &[section_control()]);
+        rs.extend(paragraph_records(0, 0, " 한글", &[table]));
+    });
+    let findings = raw_findings(&formula, &split, true);
+    assert!(
+        only_stale_preview(&findings),
+        "ordinary split before field-bearing table: {findings:?}"
+    );
+    let (result, disk, _) = publish(&formula, &duplicate, None);
+    assert!(result.is_err());
+    assert_eq!(disk, formula, "unsafe save must retain the original file");
+}
+
+#[test]
+fn hwp_safety_composite_cell_ownership_real_checker() {
+    let plain = |s: &str| paragraph_records(2, 0, s, &[]);
+    let child = || {
+        safety_field_paragraph(&[
+            (20, "Clickhere:guide", "memo", true),
+            (21, "Clickhere:second", "note", true),
+        ])
+    };
+    let original = safety_document(vec![plain("A"), child(), plain("C"), plain("D")], 2, 2);
+    // Insert row above + column left: B1's two fields now belong to C2.
+    let cells = || {
+        vec![
+            plain(""),
+            plain(""),
+            plain(""),
+            plain(""),
+            plain("A"),
+            child(),
+            plain(""),
+            plain("C"),
+            plain("D"),
+        ]
+    };
+    let valid = safety_document(cells(), 3, 3);
+    let findings = raw_findings(&original, &valid, true);
+    assert!(only_stale_preview(&findings), "{findings:?}");
+    // Larger compositions use unique paragraph witnesses for monotone axis alignment.
+    let mut larger = (0..16).map(|_| plain("")).collect::<Vec<_>>();
+    larger[10] = plain("A");
+    larger[11] = child();
+    larger[14] = plain("C");
+    larger[15] = plain("D");
+    let findings = raw_findings(&original, &safety_document(larger, 4, 4), true);
+    assert!(
+        only_stale_preview(&findings),
+        "multiple axis insertions: {findings:?}"
+    );
+    // A 16x16 + row/column edit exceeds the enumeration budget but has
+    // deterministic cell witnesses; it must use alignment instead of refusing.
+    let large_before = (0..256)
+        .map(|i| {
+            if i == 17 {
+                child()
+            } else {
+                plain(&format!("cell{i}"))
+            }
+        })
+        .collect();
+    let large_original = safety_document(large_before, 16, 16);
+    let mut large_after = (0..289).map(|_| plain("")).collect::<Vec<_>>();
+    for i in 0..256 {
+        large_after[(i / 16 + 1) * 17 + i % 16 + 1] = if i == 17 {
+            child()
+        } else {
+            plain(&format!("cell{i}"))
+        };
+    }
+    let findings = raw_findings(&large_original, &safety_document(large_after, 17, 17), true);
+    assert!(
+        only_stale_preview(&findings),
+        "bounded large-grid correspondence: {findings:?}"
+    );
+    let mut wrong = cells();
+    wrong.swap(4, 5); // whole child paragraph in the wrong surviving cell, aggregate order unchanged
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &safety_document(wrong, 3, 3),
+        true
+    )));
+    let mut missing = cells();
+    missing[5] = plain("");
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &safety_document(missing, 3, 3),
+        true
+    )));
+    let mut one_missing = cells();
+    one_missing[5] = safety_field_paragraph(&[(20, "Clickhere:guide", "memo", true)]);
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &safety_document(one_missing, 3, 3),
+        true
+    )));
+    let mut reordered = cells();
+    reordered[5] = safety_field_paragraph(&[
+        (21, "Clickhere:second", "note", true),
+        (20, "Clickhere:guide", "memo", true),
+    ]);
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &safety_document(reordered, 3, 3),
+        true
+    )));
+    let mut duplicate = cells();
+    duplicate[8] = child();
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &safety_document(duplicate, 3, 3),
+        true
+    )));
+    // Unique surviving paragraph evidence distinguishes deletion of the owning row.
+    let deleted = safety_document(vec![plain("C"), plain("D")], 1, 2);
+    assert!(only_stale_preview(&raw_findings(&original, &deleted, true)));
+    let wrong_deletion = safety_document(vec![plain("A"), plain("")], 1, 2);
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &wrong_deletion,
+        true
+    )));
+    // Insert row + column, then absorb the original field cell into a fresh
+    // cell above it: the fresh paragraph precedes the child's original paragraph.
+    let small = safety_document(vec![child(), plain("D")], 1, 2);
+    let mut combined = safety_grid(
+        2,
+        3,
+        vec![
+            plain(""),
+            plain(""),
+            plain(""),
+            plain(""),
+            child(),
+            plain("D"),
+        ],
+    );
+    let starts: Vec<_> = combined
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.0 == 72 && r.1 == 2)
+        .map(|(i, _)| i)
+        .collect();
+    let absorbed = combined[starts[4] + 1..starts[5]].to_vec();
+    combined.drain(starts[4]..starts[5]);
+    w(&mut combined[starts[1]].2, 0, 2);
+    w(&mut combined[starts[1]].2, 14, 2);
+    combined.splice(starts[2]..starts[2], absorbed);
+    w(&mut combined[1].2, 20, 2);
+    let merged_new_cell = fixture_with(false, &[combined.clone()], "Keep 한글");
+    let findings = raw_findings(&small, &merged_new_cell, true);
+    assert!(
+        only_stale_preview(&findings),
+        "insert+merge fresh cell: {findings:?}"
+    );
+    let mixed_delete = safety_document(vec![plain(""), plain("C"), plain("D")], 1, 3);
+    let findings = raw_findings(&original, &mixed_delete, true);
+    assert!(
+        only_stale_preview(&findings),
+        "delete owning row + insert column: {findings:?}"
+    );
+    let unknown = || paragraph_records(2, 0, "opaque", &[vec![(71, 3, b"zzzz".to_vec())]]);
+    let unknown_original = safety_document(vec![unknown(), plain("D")], 1, 2);
+    let unknown_moved = safety_document(
+        vec![
+            plain(""),
+            plain(""),
+            plain(""),
+            plain(""),
+            unknown(),
+            plain("D"),
+        ],
+        2,
+        3,
+    );
+    assert!(
+        !only_stale_preview(&raw_findings(&unknown_original, &unknown_moved, true)),
+        "unknown controls have no proven relocation contract"
+    );
+    // Merge both cells then split: both source paragraphs stay at the legitimate anchor.
+    let initial = safety_document(vec![plain("A"), child()], 1, 2);
+    let mut merged = plain("A");
+    merged.extend(child());
+    let restored_grid = safety_document(vec![merged, plain("")], 1, 2);
+    let findings = raw_findings(&initial, &restored_grid, true);
+    assert!(only_stale_preview(&findings), "{findings:?}");
+}

@@ -35,7 +35,7 @@ function exported(d: RhwpDocument, format: "hwp" | "hwpx") {
   const e = format === "hwp" ? d.exportHwpWithReport() : d.exportHwpxWithReport();
   try { return { loss: e.contentLoss(), bytes: e.takeBytes() }; } finally { e.free(); }
 }
-function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false) {
+function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false) {
   const d = engine.HwpDocument.createEmpty() as Doc;
   try {
     d.createBlankDocument();
@@ -48,6 +48,15 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
       // HWP field-rich original: a formula (B3 = A1+A2) and a ClickHere field (B1).
       expect(JSON.parse(d.insertTableFormulaField!(0, t.paraIdx, t.controlIdx, 2, 1, "=SUM(A1:A2)")).ok).toBe(true);
       expect(JSON.parse((d as unknown as Record<string, (...a: unknown[]) => string>).insertClickHereFieldInCell!(0, t.paraIdx, t.controlIdx, 1, 0, 0, false, "guide", "memo", "nm", true)).ok).toBe(true);
+    }
+    if (multiFields) {
+      // Two disjoint recognized fields in the same paragraph, on either side of a space.
+      const api = d as unknown as Record<string, (...a: unknown[]) => string>;
+      const first = (JSON.parse(d.getFieldList!()) as { fieldId: number; fieldType: string }[]).find(f => f.fieldType === "clickhere")!;
+      api.setFieldValue!(first.fieldId, "first");
+      d.insertTextInCell(0, t.paraIdx, t.controlIdx, 1, 0, 5, " ");
+      const second = JSON.parse(api.insertClickHereFieldInCell!(0, t.paraIdx, t.controlIdx, 1, 0, 6, false, "second", "note", "nm2", true));
+      expect(second.ok).toBe(true); api.setFieldValue!(second.fieldId, "second");
     }
     if (rich && format === "hwpx") {
       // The engine's cell picture is Hancom's floating sibling of the table paragraph (not a cell control).
@@ -67,8 +76,8 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
     return exported(d, format).bytes;
   } finally { d.free(); }
 }
-async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false) {
-  const original = fixture(format, emptyWrapper, nestedGuard, rich), { backend, take, calls } = controlledBackend();
+async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false) {
+  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
   let doc!: Doc;
@@ -284,6 +293,14 @@ describe("Stage 2 table paths", () => {
       const formulaId = nestedFormula()[0]!.fieldId;
       place(withCell(created, 0)); await run("table.insertRowAbove");
       expect(nestedFormula().map(f => [f.fieldId, f.command])).toEqual([[formulaId, "=2*3??%g,;;6"]]);
+      // A newly inserted outer cell can own a newly created child; it cannot
+      // borrow an original child merely because its bytes still occur globally.
+      place(withCell(at, 3)); await run("table.insertRowBelow");
+      place(withCell(at, 4)); await run("insert.table", { command: "insert.table", rows: 1, cols: 1 });
+      const fresh = editor.caret;
+      place(withCell(at, 5)); await run("table.insertColumnRight");
+      const freshMoved = { ...fresh, cell: { ...fresh.cell!, cell: 6 } };
+      expect(JSON.parse(doc.getTableDimensionsByPath!(0, at.paragraph, pathJson(freshMoved.cell)))).toMatchObject({ rowCount: 1, colCount: 1 });
       const saved = await save();
       expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
       expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
@@ -429,6 +446,60 @@ describe("Stage 2 table paths", () => {
         expect(fields(reopened)).toEqual(fields(doc));
         expect(reopened.getTableCaptionByPath!(0, para, JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]))).toBe(captionBefore);
       } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("HWP field-only replacement uses real T009 and persists identity/cache", async () => {
+    const { editor, doc, at, place, run, save } = await open("hwp");
+    try {
+      const fields = () => JSON.parse(doc.getFieldList!()) as { fieldId: number; fieldType: string; command: string; value: string }[];
+      place(withCell(at, 0));
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=1+2" });
+      const id = fields().find(f => f.fieldType === "formula")!.fieldId;
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=SUM(B?:B?)+6" });
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        const field = (JSON.parse(reopened.getFieldList!()) as { fieldId: number; fieldType: string; command: string; value: string }[]).find(f => f.fieldType === "formula")!;
+        expect([field.fieldId, field.command, field.value]).toEqual([id, "=SUM(B?:B?)+6??%g,;;6", "6"]);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("HWP multiple fields: explicit control positions/ranges survive composite product save/reopen", async () => {
+    const { editor, doc, at, place, run, save } = await open("hwp", false, false, true, true);
+    const clickFields = (d: RhwpDocument) => (JSON.parse(d.getFieldList!()) as Record<string, unknown>[]).filter(f => f.fieldType === "clickhere").sort((a, b) => Number(a.controlIndex) - Number(b.controlIndex));
+    const metadata = (d: RhwpDocument) => clickFields(d).map(f => ({ ...f, location: undefined, listId: undefined }));
+    try {
+      const initial = metadata(doc);
+      expect(initial).toHaveLength(2);
+      expect(new Set(initial.map(f => f.fieldId)).size).toBe(2);
+      expect(initial.map(f => f.controlIndex)).toEqual([0, 1]);
+      expect(initial[0]!.endCharIdx).toBeLessThanOrEqual(initial[1]!.startCharIdx as number);
+      place(withCell(at, 0)); await run("table.insertRowAbove");
+      place(withCell(at, 0)); await run("table.insertColumnLeft");
+      expect(metadata(doc)).toEqual(initial);
+      await run("edit.undo"); await run("edit.redo");
+      expect(metadata(doc)).toEqual(initial);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try { expect(clickFields(reopened)).toEqual(clickFields(doc)); } finally { reopened.free(); }
+      // A partial engine mutation that drops exactly one of the two fields must
+      // fail the digest proof and restore both independent identities/ranges.
+      const before = clickFields(doc), text = doc.getTextFileText();
+      const insert = doc.insertTableRow!.bind(doc);
+      doc.insertTableRow = (...args) => {
+        const result = insert(...args);
+        const api = doc as unknown as Record<string, (...a: unknown[]) => string>;
+        api.removeFieldAtInCell!(0, at.paragraph, at.cell!.control, 8, 0, 0, false);
+        return result;
+      };
+      place(withCell(at, 0));
+      expect(editor.execute("table.insertRowAbove").accepted).toBe(false);
+      expect(clickFields(doc)).toEqual(before);
+      expect(doc.getTextFileText()).toBe(text);
     } finally { editor.dispose(); }
   });
 

@@ -893,6 +893,11 @@ fn compare_with(
         .flatten();
     let proof = insertion.as_ref().and_then(|result| result.as_ref().ok());
     let mut findings = Vec::new();
+    if mode == Mode::Edited {
+        if let Err(finding) = insertions::field_preservation(&original, &output, proof.is_some()) {
+            findings.push(finding);
+        }
+    }
     if let Some(Err(finding)) = &insertion {
         findings.push(finding.clone());
     }

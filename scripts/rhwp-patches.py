@@ -23,6 +23,7 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/general-formatting-eligibility.patch",
           "patches/rhwp/table-formula-tail-preservation.patch",
           "patches/rhwp/stage2-table-paths.patch")
+SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"
 BUILD_PATHS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "assets", "crates", "vendor",
@@ -45,9 +46,13 @@ def patch_identity(integrity):
     return [{"path": name, "sha256": integrity.sha(ROOT / name)} for name in SERIES]
 
 
+def shared_identity(integrity):
+    return [{"path": name, "sha256": integrity.sha(ROOT / name)} for name in SHARED]
+
+
 def seal(integrity):
     """Record already prepared inputs; callers must verify provenance before sealing."""
-    record = {"pin": PIN, "patches": patch_identity(integrity), "files": hashes(integrity)}
+    record = {"pin": PIN, "patches": patch_identity(integrity), "shared": shared_identity(integrity), "files": hashes(integrity)}
     with tempfile.NamedTemporaryFile(mode="w", dir=MANIFEST.parent, prefix="rhwp-source-", suffix=".json.tmp", delete=False) as stream:
         temporary = Path(stream.name)
         json.dump(record, stream, indent=2)
@@ -66,6 +71,7 @@ def prepare(integrity):
         require(MANIFEST.is_file() and not MANIFEST.is_symlink(), "Prepared RHWP input manifest is missing")
         record = json.loads(MANIFEST.read_text())
         require(record["pin"] == PIN and record["patches"] == patches, "Prepared RHWP patch identity changed; preserve and inspect existing source")
+        require(record["shared"] == shared_identity(integrity), "Shared RHWP formula inputs changed; preserve and inspect existing source")
         require(record["files"] == hashes(integrity), "Prepared RHWP source changed; refusing stale/unreviewed build")
     else:
         SOURCE.mkdir(parents=True)
@@ -80,6 +86,8 @@ def prepare(integrity):
             for mode in (["--check"], []):
                 subprocess.run(["git", "apply", "--unsafe-paths", *mode,
                                 "--directory=" + str(SOURCE), str(ROOT / patch)], cwd=ROOT, check=True)
+        for name in SHARED:
+            (SOURCE / "src/document_core/table_calc" / Path(name).name).write_bytes((ROOT / name).read_bytes())
         record = seal(integrity)
     tree = hashlib.sha256((json.dumps(record["files"], sort_keys=True) + "\n").encode()).hexdigest()
     return SOURCE, {"kind": "patched-upstream", "sourceTreeSha256": tree,

@@ -60,12 +60,12 @@ function cellFieldModels(kind: "formula" | "clickhere" = "formula") {
   const field = kind === "formula" ? {
     fieldId: 1, listId: 2, paraInList: 0, fieldType: "formula", cellField: false, editableInForm: true,
     name: "", guide: "", command: "=A1+B1??%g,;;30", value: "30",
-    startCharIdx: 0, endCharIdx: 2, startPos: 0, endPos: 2,
+    startCharIdx: 0, endCharIdx: 2, startPos: 8, endPos: 10, controlIndex: 0, controlPos: 0,
     location: { sectionIndex: 0, paraIndex: 0, path: [{ type: "cell", controlIndex: 0, cellIndex: 0, paraIndex: 0 }] },
   } : {
     fieldId: 2, listId: 3, paraInList: 1, fieldType: "clickhere", cellField: false, editableInForm: true,
     name: "tail field", guide: "tail guide", command: "Clickhere:tail", value: "tail",
-    startCharIdx: 0, endCharIdx: 4, startPos: 0, endPos: 4,
+    startCharIdx: 0, endCharIdx: 4, startPos: 8, endPos: 12, controlIndex: 0, controlPos: 0,
     location: { sectionIndex: 0, paraIndex: 0, path: [{ type: "cell", controlIndex: 0, cellIndex: 1, paraIndex: 1 }] },
   };
   for (const fixture of [live, fresh]) {

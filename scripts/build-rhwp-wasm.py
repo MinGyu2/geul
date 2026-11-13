@@ -101,7 +101,7 @@ def build(dev, staging, *, optimize=False):
         interface = json.loads((staging / "interface.json").read_text())
         (staging / "rhwp_bg.optimized.wasm").replace(staging / "rhwp_bg.wasm")
     inputs = [upstream / "Cargo.toml", upstream / "Cargo.lock", ROOT / ".gitmodules",
-              ROOT / "scripts/rhwp-patches.py", *[ROOT / name for name in patches.SERIES],
+              ROOT / "scripts/rhwp-patches.py", *[ROOT / name for name in (*patches.SERIES, *patches.SHARED)],
               *[ROOT / "scripts" / name for name in ["build-rhwp-wasm.sh", "build-rhwp-wasm.py", "external-integrity.py", "rhwp-artifacts.py", "check-wasm-interface.mjs"]]]
     # Record Cargo configuration in the search path as well as compiler flags.
     cargo_home = Path(env.get("CARGO_HOME", str(Path.home() / ".cargo"))).resolve()
