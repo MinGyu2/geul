@@ -932,3 +932,13 @@ HWP 중첩 장평·자간의 추가 가용성 검토에서 원본 증명 범위�
 - **A2 계산식 사후 조건**: 참조 재작성 뒤 필드 목록을 다시 읽어 계획한 필드 ID 집합·소유 표/셀·최종 좌표·재작성된 식을 비교하고, 엔진의 읽기 전용 평가(`validateTableFormulaField(ByPath)`)가 `changed:false`로 같은 값을 내는지 확인한다. 어긋나면 세션 snapshot으로 되돌린다.
 - **A4 캡션**: `getTableCaptionByPath`가 문단 글, 문단/글자 모양 참조, 소유 컨트롤 수, 캡션 방향·정렬·폭·간격·최대 폭·여백 포함을 보고하고 구조 편집 전후 전체가 같아야 한다. HWP 독립 검사기는 캡션이 있는 표를 계속 바이트 동일 계약(구조 변경 거부)으로 둔다.
 - 검증: `cargo test --lib services::save` 217 PASS/25 ignored(새 ID 단위 시험 포함), fmt/clippy `-D warnings` PASS; Release 세대 `df6d968d3613841b70a4bdb56e874d13fae729b9de2ce17a88a494298c0858e0`(WASM `049b0acd…`)에서 `stage2-tables.wasm.test.ts` 12 PASS — 새 시나리오: 실제 검사기로 자식 유지/소유 행 삭제 수용, 같은 셀 수 감소의 자식 유실·병합 중 유실 거부; 엔진이 성공을 보고했지만 식이 적용되지 않은 재작성 탐지·롤백. `npm run build`/`lint`, 단위 23 PASS, 패치 신원 1 PASS.
+
+<a id="stage2-final-features-20261114"></a>
+## Stage 2 최종 기능 (Commit B) — 2026-11-14
+
+- **원인**: 앞선 HWP 중첩 계산식 저장 거부(`outputMalformed`)는 출력 결함이 아니었다. 구조 증명(`prove`)의 문단 파서가 필드 시작 컨트롤(문자 3, `%fmu` CTRL_HEADER)을 모델링하지 않았다. 같은 필드를 구조 변경 없이 넣은 출력은 기존 경로에서 SAFE였다. RHWP 직렬화와 패치는 바꾸지 않았다(Release 세대 `df6d968d…` 유지).
+- **T009 HWP 확장(`src-tauri/src/services/save/hwp/insertions.rs`)**: 문단 파서가 필드 시작을 확장 컨트롤 객체로 읽는다(필드 끝 문자 4는 기존 인라인 토큰). 셀 자식 대응에서 (1) 바이트 동일 필드, (2) 같은 계산식 필드(ctrl·속성·추가 속성·ID·꼬리 바이트 동일)의 정규형 명령 `={식}??%g,;;{수}`로의 재작성, (3) 엔진 형식의 새 계산식 필드(속성 0, 추가 0x08, 원본·출력과 겹치지 않는 ID)만 받는다. 누름틀은 바이트 동일만 허용한다. 출력의 모든 계산식/누름틀 필드 ID는 깊이와 무관하게 한 번만 나와야 한다. 캡션은 원본과 출력이 바이트 동일해야 하며(LIST_HEADER·문단·캡션 안 컨트롤) 셀 소유와 구별한다. 필드 글/값 일치는 독립 reopen 모델(누름틀은 모든 문단에서 증거로 인정)이 판정한다.
+- **제품**: HWP 표 구조 명령도 필드·캡션 이동 규칙(`tableContent` fields=true)을 쓴다. HWP 중첩 셀 계산식 삽입·교체는 완전한 baseline·SAFE 원본 preflight 아래 활성화된다(시험 flag 없음).
+- **검증**: `stage2-tables.wasm.test.ts` 14 PASS. 새 시나리오: HWP 계산식+누름틀+캡션 표의 행 넣기·범위 병합·나누기·열 넣기 → 식 `=SUM(B2:B3)` 재작성, 누름틀 ID·명령 유지, 캡션 정체성 유지, 끊어질 참조의 행 삭제 거부, 제품 저장 reopen 일치·검사기 `previewStale`만, 재열기 필드 목록 일치; HWP 새 중첩 표 계산식 삽입·교체(`=2*3`)·중첩 행 넣기 뒤 같은 필드 ID 유지, 저장·재열기; 실제 검사기 거부: 살아남은 셀의 누름틀 유실(unsafe). `cargo test --lib services::save` 217 PASS, fmt/clippy `-D warnings` PASS(새 `chunks_exact` 진단 1건은 수정), `npm run build`/`lint`, 단위 130 PASS.
+- 실제 저장 서비스의 durable publication은 이번에 실행하지 않았다(제품 세션 + T009 검사기 증거).
+- **잔여(Stage 2 범위 밖으로 명시된 것)**: 깊이 10 초과 기존 문서의 높이 측정 한도, 셀 inline 개체 생성 API 부재. 누름틀 명령 변경·새 누름틀 생성은 구조 편집 연산이 아니므로 HWP 증명에서 계속 거부한다.

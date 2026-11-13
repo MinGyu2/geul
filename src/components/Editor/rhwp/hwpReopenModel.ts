@@ -201,7 +201,7 @@ export function insertedInlinePicture(doc: RhwpDocument, section: number, paragr
 
 /** A blank getControls kind is not evidence of a field. Independently join the
  * cursor-list owner, sole paragraph control and complete field record. Only
- * first-paragraph formulas and untouched later-paragraph ClickHere fields are
+ * first-paragraph formulas and ClickHere fields (any paragraph) are
  * covered; nested/ambiguous/unknown controls still make the model incomplete. */
 function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: unknown) => unknown): Map<unknown, JsonObject> {
   const proven = new Map<unknown, JsonObject>();
@@ -284,7 +284,7 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
         : doc.validateTableFormulaField(s, p, ctrl, list.row, list.col, "=0"));
       if (!isObject(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text" || typeof probe.changed !== "boolean"
         || probe.ok !== true || probe.fieldId !== f.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") continue;
-    } else if (f.fieldType !== "clickhere" || c.para === 0 || !(f.command as string).startsWith("Clickhere:")) continue;
+    } else if (f.fieldType !== "clickhere" || !(f.command as string).startsWith("Clickhere:")) continue;
     proven.set(c, f);
   }
   return proven;

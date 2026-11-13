@@ -411,18 +411,21 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         reference(dword(bullet, 8)? < entries(&bc, 21).len(), "DocInfo")?;
     }
     let resources = resources(a, b, &ac, &bc)?;
-    let mut used = Used::default();
     // Instance-ID accounting over every table/picture control at any depth: original identities must be
     // unique, new objects must not reuse any original identity (`validate_table_at` inserts into this set),
     // and the output (checked after the loop) holds each identity at most once.
+    let mut used = Used::default();
     let mut table_ids = BTreeSet::new();
     let mut output_ids = BTreeSet::new();
+    let mut output_fields = BTreeSet::new();
     for (name, data) in &a.streams {
         if !section_stream(name) {
             continue;
         }
         let raw = unpack(a, data).map_err(|e| Side::Original.unpack_finding(e, name))?;
-        unique_ids(&decode_records(&raw, name)?, &mut table_ids, name)?;
+        let records = decode_records(&raw, name)?;
+        unique_ids(&records, &mut table_ids, name)?;
+        unique_field_ids(&records, &mut used.fields, name)?;
     }
     let mut table_total = 0;
     let mut picture_total = 0;
@@ -459,6 +462,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             }
         }
         unique_ids(&yr, &mut output_ids, name)?;
+        unique_field_ids(&yr, &mut output_fields, name)?;
         preserved(
             old.paragraphs <= new.paragraphs && old.breaks == new.breaks,
             name,
@@ -782,6 +786,8 @@ struct Used {
     bullets: BTreeSet<usize>,
     paras: BTreeSet<usize>,
     pictures: BTreeSet<usize>,
+    /// Field IDs of the original (seeded) and of new formula fields: a new field never reuses one.
+    fields: BTreeSet<usize>,
 }
 #[derive(PartialEq, Eq)]
 struct Token {
@@ -1031,7 +1037,8 @@ fn paragraph<'a>(
         while shape + 1 < shapes.len() && shapes[shape + 1].0 <= unit {
             shape += 1;
         }
-        if matches!(ch, 2 | 11) {
+        // Extended controls with a CTRL_HEADER object: section/column (2), field begin (3), objects (11).
+        if matches!(ch, 2 | 3 | 11) {
             valid(
                 unit + 8 <= text.len() / 2 && word(text, (unit + 7) * 2)? == ch as usize,
                 BODY,
@@ -1347,17 +1354,22 @@ struct EvolvedCell<'a> {
     texts: Vec<&'a [u8]>,
 }
 
-fn evolved_cells<'a>(
-    rs: &[Record<'a>],
+fn evolved_cells<'a, 'r>(
+    rs: &'r [Record<'a>],
     defs: &Defs<'_>,
     original_defs: &Defs<'_>,
     para_ids: &mut BTreeSet<usize>,
-) -> Checked<Vec<EvolvedCell<'a>>> {
+) -> Checked<(Vec<EvolvedCell<'a>>, &'r [Record<'a>])> {
     let level = rs[0].1 + 1;
-    // A caption list precedes TABLE; captions keep the byte-identical contract.
-    preserved(rs.get(1).is_some_and(|r| r.0 == 77 && r.1 == level), BODY)?;
+    // An optional caption list precedes TABLE. The caller holds it to the byte-identical contract: no
+    // structure operation owns a caption, so its LIST_HEADER, paragraphs and controls never change.
+    let t = rs
+        .iter()
+        .position(|r| r.0 == 77 && r.1 == level)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(t == 1 || (rs[1].0 == 72 && rs[1].1 == level), BODY)?;
     let mut cells = Vec::new();
-    let mut at = 2;
+    let mut at = t + 1;
     while at < rs.len() {
         let r = rs[at];
         valid(r.0 == 72 && r.1 == level && r.2.len() >= 38, BODY)?;
@@ -1409,7 +1421,7 @@ fn evolved_cells<'a>(
         at = end;
     }
     valid(!cells.is_empty(), BODY)?;
-    Ok(cells)
+    Ok((cells, &rs[1..t]))
 }
 
 /// Stage 2: an original table (same control) whose content evolved through supported operations:
@@ -1438,9 +1450,17 @@ fn evolved_table(
     validate_existing_table(old)?;
     validate_existing_table(new)?;
     let mut ignored = BTreeSet::new();
-    let before = evolved_cells(old, original_defs, original_defs, &mut ignored)?;
-    let after = evolved_cells(new, defs, original_defs, &mut used.paras)?;
-    let (ta, tb) = (old[1].2, new[1].2);
+    let (before, caption_a) = evolved_cells(old, original_defs, original_defs, &mut ignored)?;
+    let (after, caption_b) = evolved_cells(new, defs, original_defs, &mut used.paras)?;
+    preserved(caption_a == caption_b, BODY)?;
+    let table_record = |rs: &[Record<'_>]| -> Checked<Vec<u8>> {
+        rs.iter()
+            .find(|r| r.0 == 77 && r.1 == level + 1)
+            .map(|r| r.2.to_vec())
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
+    };
+    let (ta, tb) = (table_record(old)?, table_record(new)?);
+    let (ta, tb) = (ta.as_slice(), tb.as_slice());
     let same_grid = ta == tb
         && before.len() == after.len()
         && before
@@ -1594,7 +1614,7 @@ impl Mapping {
             before
                 .iter()
                 .flat_map(|c| &c.objects)
-                .any(|o| o == object || evolved_candidate(o, object))
+                .any(|o| same_child(o, object))
         };
         self.sources.iter().enumerate().all(|(target, sources)| {
             let mut old = sources.iter().flat_map(|s| &before[*s].objects).peekable();
@@ -1602,10 +1622,7 @@ impl Mapping {
                 return false;
             }
             for object in &after[target].objects {
-                if old
-                    .peek()
-                    .is_some_and(|o| *o == object || evolved_candidate(o, object))
-                {
+                if old.peek().is_some_and(|o| same_child(o, object)) {
                     old.next();
                 } else if original(object) {
                     return false;
@@ -1765,18 +1782,138 @@ fn match_children(
                 changed = true;
                 cursor += 1;
             }
+            Some(o) if evolved_formula(o, object) => {
+                changed = true;
+                cursor += 1;
+            }
             _ => {
-                valid(
-                    object[0].2.starts_with(b" lbt") && object[0].1 == level + 2,
-                    BODY,
-                )?;
-                validate_table_at(object, defs, used, ids, total)?;
+                new_child(object, level + 2, defs, used, ids, total)?;
                 changed = true;
             }
         }
     }
     preserved(cursor == old.len(), BODY)?;
     Ok(changed)
+}
+
+/// Same original child: identical subtree, the same table evolved, or the same formula field whose command
+/// was rewritten (`evolved_formula`).
+fn same_child(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    old == new || evolved_candidate(old, new) || evolved_formula(old, new)
+}
+
+/// A child control created by a supported operation: a new basic nested table, or a new formula field.
+fn new_child(
+    object: &[Record<'_>],
+    level: u16,
+    defs: &Defs<'_>,
+    used: &mut Used,
+    ids: &mut BTreeSet<usize>,
+    total: &mut usize,
+) -> Checked<()> {
+    valid(object[0].1 == level, BODY)?;
+    if object[0].2.starts_with(b" lbt") {
+        return validate_table_at(object, defs, used, ids, total);
+    }
+    let field = Field::of(object).ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    // Pinned RHWP formula field (table-formula-field.patch): attributes 0, extra 0x08, id + 4 zero bytes.
+    preserved(
+        field.ctrl == b"umf%" && field.props == 0 && field.extra == 0x08,
+        BODY,
+    )?;
+    valid(
+        field.tail.len() == 8
+            && field.tail[4..].iter().all(|v| *v == 0)
+            && field.canonical_formula(),
+        BODY,
+    )?;
+    reference(field.id != 0 && used.fields.insert(field.id), BODY)
+}
+
+/// A field control: CTRL_HEADER only (no child records), split per the pinned HWP field layout
+/// (ctrl id, attributes u32, extra u8, command length u16 + UTF-16 command, then id and trailing bytes).
+struct Field<'a> {
+    ctrl: &'a [u8],
+    props: u32,
+    extra: u8,
+    command: Vec<u16>,
+    tail: &'a [u8],
+    id: usize,
+}
+impl<'a> Field<'a> {
+    fn of(object: &[Record<'a>]) -> Option<Self> {
+        let [(71, _, b)] = object else {
+            return None;
+        };
+        let b: &'a [u8] = b;
+        let ctrl = b.get(..4)?;
+        if ctrl != b"umf%" && ctrl != b"klc%" {
+            return None;
+        }
+        let len = usize::from(u16::from_le_bytes([*b.get(9)?, *b.get(10)?]));
+        let end = 11 + 2 * len;
+        let command = b
+            .get(11..end)?
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|p| u16::from_le_bytes(*p))
+            .collect();
+        let tail = b.get(end..)?;
+        let id = u32::from_le_bytes(tail.get(..4)?.try_into().ok()?) as usize;
+        let props = u32::from_le_bytes(b[4..8].try_into().ok()?);
+        Some(Field {
+            ctrl,
+            props,
+            extra: b[8],
+            command,
+            tail,
+            id,
+        })
+    }
+    /// `={expression}??%g,;;{number}`: the only command form RHWP writes and the reopen model verifies.
+    fn canonical_formula(&self) -> bool {
+        let Ok(text) = String::from_utf16(&self.command) else {
+            return false;
+        };
+        let Some((expression, value)) = text.split_once("??%g,;;") else {
+            return false;
+        };
+        expression.starts_with('=')
+            && expression.len() <= 257
+            && !expression.contains(['?', ';'])
+            && !expression.chars().any(char::is_control)
+            && value.parse::<f64>().is_ok_and(f64::is_finite)
+    }
+}
+
+/// The same formula field (same ctrl, attributes, id and trailing bytes) whose command was rewritten to
+/// another canonical formula: reference rewriting/recalculation after a structure change, or a replaced
+/// formula. Field text and value agreement remain the reopen model's part.
+fn evolved_formula(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    let (Some(a), Some(b)) = (Field::of(old), Field::of(new)) else {
+        return false;
+    };
+    old[0].1 == new[0].1
+        && a.ctrl == b"umf%"
+        && b.ctrl == b"umf%"
+        && a.props == b.props
+        && a.extra == b.extra
+        && a.tail == b.tail
+        && a.command != b.command
+        && b.canonical_formula()
+}
+
+/// Field IDs of every formula/ClickHere field control at any depth into `seen`; duplicates are refused.
+fn unique_field_ids(rs: &[Record<'_>], seen: &mut BTreeSet<usize>, part: &str) -> Checked<()> {
+    for r in rs {
+        if r.0 == 71 && (r.2.starts_with(b"umf%") || r.2.starts_with(b"klc%")) {
+            let field = Field::of(std::slice::from_ref(r))
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, part))?;
+            reference(field.id != 0 && seen.insert(field.id), part)?;
+        }
+    }
+    Ok(())
 }
 
 /// Record every non-zero instance ID of a table/picture control at any depth of a section into `seen`;
@@ -2037,8 +2174,7 @@ fn validate_table_at(
             };
             let children = paragraph(&rs[at..stop], level + 1, defs, defs, &mut out)?;
             for child in &children {
-                valid(child[0].2.starts_with(b" lbt"), BODY)?;
-                validate_table_at(child, defs, used, ids, total)?;
+                new_child(child, level + 2, defs, used, ids, total)?;
             }
             used.paras.extend(out.para_ids);
             paragraphs += 1;

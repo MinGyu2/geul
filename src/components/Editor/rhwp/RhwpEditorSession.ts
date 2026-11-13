@@ -1830,8 +1830,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return { target, grid, content };
   }
 
-  /** HWPX relocates fields with their cells; the HWP T009 rule has no field relocation proof (kept refused). */
-  private tableContentOptions() { return { fields: this.sessions.get(this.sessionId)?.format === "hwpx" }; }
+  /** Fields and captions relocate with their cells in both formats; HWP saves are judged by the T009 field/caption model. */
+  private tableContentOptions() { return { fields: true }; }
 
   /**
    * Why a table structure command cannot run now (null = it can). Each operation is judged on its own: the
@@ -2017,10 +2017,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           // A new HWP field changes the control inventory. It needs a complete
           // original structural proof; replacement of an existing formula keeps
           // the established unchanged-inventory path for legacy documents.
-          // HWP nested formula fields: the T009 HWP body proof has no field-control model inside nested
-          // tables, so a save would be refused. Read-only evaluation stays available; insertion is gated.
-          if (format === "hwp" && this.caret.cell?.nested) parameterReasons["hangul.insertTableFormula"] = "nestedTable";
-          else if (format === "hwp" && formula === null && !this.hwpBaseline?.complete) parameterReasons["hangul.insertTableFormula"] = "originalUnverified";
+          // A new HWP field changes the control inventory: it needs a complete original structural proof
+          // (nested cells additionally the SAFE original preflight, as for other nested structural edits).
+          if (format === "hwp" && formula === null && (!this.hwpBaseline?.complete || (this.caret.cell?.nested && !this.structuralFormat())))
+            parameterReasons["hangul.insertTableFormula"] = "originalUnverified";
           else parameters["hangul.insertTableFormula"] = formula === null ? context : { ...context, formula };
         }
       }

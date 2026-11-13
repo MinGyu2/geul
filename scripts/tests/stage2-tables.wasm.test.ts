@@ -44,10 +44,17 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
     // Rich: column A holds 1, 2 and an empty formula target; B1 holds a picture.
     const texts = rich ? ["1", "", "2", "", "", ""] : emptyWrapper ? [] : ["outer0", "outer1", "outer2", "outer3"];
     texts.forEach((value, i) => value && d.insertTextInCell(0, t.paraIdx, t.controlIdx, i, 0, 0, value));
-    if (rich) {
+    if (rich && format === "hwp") {
+      // HWP field-rich original: a formula (B3 = A1+A2) and a ClickHere field (B1).
+      expect(JSON.parse(d.insertTableFormulaField!(0, t.paraIdx, t.controlIdx, 2, 1, "=SUM(A1:A2)")).ok).toBe(true);
+      expect(JSON.parse((d as unknown as Record<string, (...a: unknown[]) => string>).insertClickHereFieldInCell!(0, t.paraIdx, t.controlIdx, 1, 0, 0, false, "guide", "memo", "nm", true)).ok).toBe(true);
+    }
+    if (rich && format === "hwpx") {
       // The engine's cell picture is Hancom's floating sibling of the table paragraph (not a cell control).
       expect(JSON.parse(d.insertPicture!(0, t.paraIdx, 0, JSON.stringify([{ controlIndex: t.controlIdx, cellIndex: 1, cellParaIndex: 0 }]),
         PNG, 600, 600, 1, 1, "png", "")).ok).toBe(true);
+    }
+    if (rich) {
       d.setTableProperties!(0, t.paraIdx, t.controlIdx, JSON.stringify({ hasCaption: true }));
       d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify([{ controlIndex: t.controlIdx, cellIndex: 65534, cellParaIndex: 0 }]), 0, "Cap");
     }
@@ -267,10 +274,16 @@ describe("Stage 2 table paths", () => {
       expect(created.cell!.nested).toHaveLength(1);
       expect(editor.typeText("new")).toBe(true); await settle();
       await run("table.insertColumnRight");
-      // HWP nested formulas: read-only evaluation works; field insertion stays gated (no HWP nested field proof).
+      // HWP nested formula: persistent insertion, replacement, recalculation after a nested structure change.
       place(withCell(created, 2));
-      expect(documentCommandState("hangul.insertTableFormula", editor.snapshot()).available).toBe(false);
-      expect(editor.execute("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=1+2" }).accepted).toBe(true);
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=1+2" });
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=2*3" });
+      const nestedFormula = () => (JSON.parse(doc.getFieldList!()) as { fieldId: number; fieldType: string; command: string; location: { path: unknown[] } }[])
+        .filter(f => f.fieldType === "formula");
+      expect(nestedFormula().map(f => [f.command, f.location.path.length])).toEqual([["=2*3??%g,;;6", 2]]);
+      const formulaId = nestedFormula()[0]!.fieldId;
+      place(withCell(created, 0)); await run("table.insertRowAbove");
+      expect(nestedFormula().map(f => [f.fieldId, f.command])).toEqual([[formulaId, "=2*3??%g,;;6"]]);
       const saved = await save();
       expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
       expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
@@ -280,7 +293,9 @@ describe("Stage 2 table paths", () => {
         expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
         expect(JSON.parse(reopened.getTableDimensionsByPath!(0, at.paragraph, pathJson(child.cell)))).toMatchObject({ rowCount: 3, colCount: 2 });
         expect(JSON.parse(reopened.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(child.cell), 0)).ratios[0]).toBe(120);
-        expect(JSON.parse(reopened.getTableDimensionsByPath!(0, at.paragraph, pathJson(created.cell!)))).toMatchObject({ rowCount: 2, colCount: 3 });
+        expect(JSON.parse(reopened.getTableDimensionsByPath!(0, at.paragraph, pathJson(created.cell!)))).toMatchObject({ rowCount: 3, colCount: 3 });
+        expect((JSON.parse(reopened.getFieldList!()) as { fieldId: number; fieldType: string; command: string; location: { path: unknown[] } }[])
+          .filter(f => f.fieldType === "formula").map(f => [f.fieldId, f.command, f.location.path.length])).toEqual([[formulaId, "=2*3??%g,;;6", 2]]);
       } finally { reopened.free(); }
     } finally { editor.dispose(); }
   });
@@ -382,6 +397,55 @@ describe("Stage 2 table paths", () => {
     expect(accepted(variant((d, p, c) => d.mergeTableCells!(0, p, c, 0, 0, 0, 1))), "merge retained").toBe(true);
     expect(accepted(variant((d, p, c) => { d.mergeTableCells!(0, p, c, 0, 0, 0, 1);
       (d as unknown as Record<string, (...a: unknown[]) => string>).deleteCellTableControlByPath!(0, p, host(c), 0); })), "merge lost").toBe(false);
+  });
+
+  it("HWP field-rich captioned table: structure ops move formula/ClickHere fields and rewrite references; T009 save and reopen", async () => {
+    const { editor, doc, at, place, run, save } = await open("hwp", false, false, true);
+    try {
+      const control = at.cell!.control, para = at.paragraph;
+      const caption = () => doc.getTableCaptionByPath!(0, para, JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]));
+      const fields = (d: RhwpDocument) => (JSON.parse(d.getFieldList!()) as { fieldId: number; fieldType: string; command: string; value: string; location: unknown }[])
+        .map(f => ({ id: f.fieldId, type: f.fieldType, command: f.command, location: f.location })).sort((a, b) => a.id - b.id);
+      const captionBefore = caption(), clickBefore = fields(doc).find(f => f.type === "clickhere")!;
+      expect(captionBefore).toContain("Cap");
+      place(withCell(at, 0)); await run("table.insertRowAbove");
+      place(withCell(at, 0)); editor.caret = withCell(at, 1); await run("table.mergeCells");
+      await run("table.splitCell");
+      place(withCell(at, 0)); await run("table.insertColumnLeft");
+      const formula = fields(doc).find(f => f.type === "formula")!;
+      expect(formula.command).toBe("=SUM(B2:B3)??%g,;;3");
+      const click = fields(doc).find(f => f.type === "clickhere")!;
+      expect([click.id, click.command]).toEqual([clickBefore.id, clickBefore.command]);
+      expect(caption()).toBe(captionBefore);
+      // A reference that would dangle refuses the deletion before any engine call.
+      place(withCell(at, 3)); const unchanged = doc.getTextFileText();
+      expect(editor.execute("table.deleteRow").accepted).toBe(false);
+      expect(doc.getTextFileText()).toBe(unchanged);
+      const saved = await save();
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(fields(reopened)).toEqual(fields(doc));
+        expect(reopened.getTableCaptionByPath!(0, para, JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]))).toBe(captionBefore);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("T009 HWP: a field lost from a surviving cell during a structure change is refused", () => {
+    const original = fixture("hwp", false, false, true);
+    const d = new engine.HwpDocument(original) as Doc;
+    try {
+      const t = JSON.parse(d.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      d.insertTableRow!(0, t.para, t.controlIndex, 0, false);
+      // The ClickHere field of B1 (now B2) disappears although its cell survives.
+      (d as unknown as Record<string, (...a: unknown[]) => string>).removeFieldAtInCell!(0, t.para, t.controlIndex, 3, 0, 0, false);
+      expect((JSON.parse(d.getFieldList!()) as { fieldType: string }[]).some(f => f.fieldType === "clickhere")).toBe(false);
+      const e = exported(d, "hwp");
+      const result = check("hwp", "saved", original, e.bytes, e.loss, true);
+      expect(result.outcome, JSON.stringify(result)).toBe("unsafe");
+      expect(result.findings.some(f => f.code !== "previewStale")).toBe(true);
+    } finally { d.free(); }
   });
 
   it("formula rewrite success without the applied final state is detected and rolled back", async () => {
