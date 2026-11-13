@@ -91,7 +91,7 @@ const RHWP_FORMAT: EngineSupport = SUPPORTED;
  *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
 // Production advanced mutations require actual session capabilities and a history transaction
-// within the conditional T012 bounds. General formatting uses its own session checks.
+// within snapshot memory and operation-specific T012 bounds. General formatting uses its own session checks.
 const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {

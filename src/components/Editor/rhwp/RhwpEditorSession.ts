@@ -221,7 +221,9 @@ const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
 const RHWP_FORMAT_DECLARED = (["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const)
   .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
 
-/** Conditional production subset; these bounds do not replace the original D4 gate. */
+/** Legacy advanced-only timeline bounds. Production general history instead uses
+ * historyBudget + measured WASM growth; formula projection has its own V+E budget.
+ * Neither policy replaces the original D4 latency result. */
 export const ADVANCED_MAX_SOURCE_BYTES = 128 * 1024;
 export const ADVANCED_MAX_PAGES = 8;
 export const ADVANCED_HISTORY_DEPTH = 4;
@@ -324,7 +326,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private history: RhwpHistory | null = null;
   /** 기록이 없는 까닭: 문서가 예산 밖(limit) 또는 기록을 쓸 수 없게 됨(unavailable). 기록이 있거나 문서가 없으면 null. */
   private historyOff: "limit" | "unavailable" | null = null;
-  /** Source size outside the conditional T012 advanced-command bound (kept in both history modes). */
+  /** Source size outside the legacy advanced-only timeline bound. */
   private advancedSourceLimited = false;
   /** 성공한 전체 그리기만 기억한다. 입력·쪽 크기·bitmap·배율이 모두 같을 때만 생략한다. */
   private drawnAt = new WeakMap<HTMLCanvasElement, {
@@ -1816,9 +1818,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
-    // The conditional T012 bounds (source size, current pages, no pending commit) stay in force when
-    // general history records the same transactions; general Undo/Redo does not widen that approval.
-    const limited = this.historyOff === "limit" || this.advancedSourceLimited || this.pages.length > ADVANCED_MAX_PAGES;
+    // A general-history session already admits and monitors snapshots for this
+    // model. Metrics change a selected paragraph; formulas separately validate
+    // bounded table geometry/dependencies. Compressed file size/page count are
+    // not proxies for either operation's complexity. Keep the legacy limits for
+    // an explicitly advanced-only timeline, which has no general-input admission.
+    const limited = this.historyOff === "limit" || (this.advancedHistoryOnly
+      && (this.advancedSourceLimited || this.pages.length > ADVANCED_MAX_PAGES));
     const pending = this.pending > 0 || this.committingEpoch === this.epoch;
     const ownership = this.options.format === true || !!(this.text?.hasCharShapeOwnership && this.doc?.charShapeCount
       && this.doc.compactAppendedCharShapes && this.doc.captureCharShapePrefix
@@ -1843,9 +1849,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (cell) {
         const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
         parameters["hangul.tableFormula"] = context;
-        if (advanced && ownership && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending) {
+        if (this.caret.cell?.cellParagraph !== 0) parameterReasons["hangul.insertTableFormula"] = "formulaParagraphRequired";
+        else if (advanced && ownership && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending) {
           const formula = this.text!.existingFormula(this.caret);
-          parameters["hangul.insertTableFormula"] = formula === null ? context : { ...context, formula };
+          // A new HWP field changes the control inventory. It needs a complete
+          // original structural proof; replacement of an existing formula keeps
+          // the established unchanged-inventory path for legacy documents.
+          if (format === "hwp" && formula === null && !this.hwpBaseline?.complete) parameterReasons["hangul.insertTableFormula"] = "originalUnverified";
+          else parameters["hangul.insertTableFormula"] = formula === null ? context : { ...context, formula };
         }
       }
       else parameterReasons["hangul.tableFormula"] = parameterReasons["hangul.insertTableFormula"] = "notInTable";

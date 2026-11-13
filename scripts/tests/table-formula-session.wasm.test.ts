@@ -46,6 +46,20 @@ function seeded(format: "hwp" | "hwpx", rows: number, cols: number, merged: bool
   const original = bytes(seed, format); seed.free();
   return original;
 }
+function hwpWithUnverifiedBodyField(formula: boolean) {
+  const seed = engine.HwpDocument.createEmpty();
+  try {
+    seed.createBlankDocument();
+    expect(JSON.parse(seed.splitParagraph(0, 0, 0)).ok).toBe(true);
+    const placed = JSON.parse(seed.createTable(0, 0, 0, 2, 3));
+    expect(placed.ok).toBe(true);
+    seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 0, 0, 0, "10");
+    seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 1, 0, 0, "20");
+    if (formula) expect(JSON.parse(seed.insertTableFormulaField(0, placed.paraIdx, placed.controlIdx, 1, 0, "=A1+B1")).ok).toBe(true);
+    expect(JSON.parse(seed.insertClickHereField(0, 1, 0, "unverified body field", "", "body", true)).ok).toBe(true);
+    return bytes(seed, "hwp");
+  } finally { seed.free(); }
+}
 async function openBytes(format: "hwp" | "hwpx", original: Uint8Array) {
   const { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend);
@@ -535,6 +549,7 @@ describe.each(["hwp", "hwpx"] as const)("bounded persistent dependencies (%s)", 
 
 
 function emitComplexPublication(format: "hwp" | "hwpx", name: string, rounds: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["save"]>>[]) {
+  for (const round of rounds) expect(round.reopen).toEqual({ formatEqual: true, pagesEqual: true, textEqual: true, controlsEqual: true });
   const out = process.env.GEUL_COMPLEX_OUT;
   if (out) {
     mkdirSync(out, { recursive: true });
@@ -590,21 +605,170 @@ describe.each(["hwp", "hwpx"] as const)("complex table publication inputs (%s)",
       emitComplexPublication(format, name, [first, second]);
     } finally { editor.dispose(); }
   });
-  it("refuses a real imported trailing-paragraph field before history or mutation", async () => {
+  it("replaces formulas while preserving an imported trailing-paragraph field", async () => {
     const ctx = await open(format, 2, 3, false, "field");
     try {
-      const before = bytes(ctx.doc, format), inventory = fields(ctx.doc), revision = ctx.editor.localRevision;
-      const session = ctx.sessions.get(1), history = ctx.editor.snapshot().history, dirty = ctx.editor.hasUnpreservedChanges;
+      const inventory = fields(ctx.doc), revision = ctx.editor.localRevision;
       expect(inventory).toHaveLength(1); expect(inventory[0].location.path[0].paraIndex).toBe(1);
+      const tailText = ctx.doc.getTextInCell!(0, 0, ctx.editor.caret.cell!.control, 3, 1, 0,
+        ctx.doc.getCellParagraphLength!(0, 0, ctx.editor.caret.cell!.control, 3, 1));
+      expect(tailText).toBe("independent tail 한글");
+      const select = () => { ctx.editor.caret = ctx.editor.anchor = { ...at, cell: { ...ctx.editor.caret.cell!, cell: 3 } }; };
+      select();
+      expect(ctx.editor.snapshot().parameters?.["hangul.insertTableFormula"]?.formula).toBeUndefined();
+      expect(insert(ctx.editor, "=A1+B1").accepted).toBe(true); await ctx.settle();
+      const firstField = (f: { location: { path: { paraIndex: number }[] } }) => f.location.path[0]!.paraIndex === 0;
+      const id = fields(ctx.doc).find(firstField)!.fieldId;
+      expect(fields(ctx.doc)).toEqual(expect.arrayContaining(inventory));
+      expect(ctx.doc.getTextInCell!(0, 0, ctx.editor.caret.cell!.control, 3, 1, 0, tailText.length)).toBe(tailText);
+      expect(ctx.editor.execute("edit.undo").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc)).toEqual(inventory);
+      expect(ctx.editor.execute("edit.redo").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc).find(firstField)!.fieldId).toBe(id);
+      const first = await ctx.save();
+      const firstDoc = new engine.HwpDocument(first.output);
+      try {
+        expect(fields(firstDoc)).toEqual(fields(ctx.doc));
+        expect(firstDoc.getTextInCell!(0, 0, ctx.editor.caret.cell!.control, 3, 1, 0, tailText.length)).toBe(tailText);
+      } finally { firstDoc.free(); }
+      expect(insert(ctx.editor, "=A1+B1+1").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc).find(firstField)!.value).toBe("31");
+      const second = await ctx.save();
+      const secondDoc = new engine.HwpDocument(second.output);
+      try {
+        expect(fields(secondDoc)).toEqual(fields(ctx.doc));
+        expect(secondDoc.getTextInCell!(0, 0, ctx.editor.caret.cell!.control, 3, 1, 0, tailText.length)).toBe(tailText);
+      } finally { secondDoc.free(); }
+      emitComplexPublication(format, "tail-field", [first, second]);
+
+      // Later paragraphs remain readable and intact, but are not formula destinations.
+      ctx.editor.caret = ctx.editor.anchor = { ...ctx.editor.caret, cell: { ...ctx.editor.caret.cell!, cellParagraph: 1 } };
+      const before = bytes(ctx.doc, format), laterFields = fields(ctx.doc), laterRevision = ctx.editor.localRevision;
       const snapshot = vi.spyOn(ctx.doc, "saveSnapshot");
-      expect(insert(ctx.editor, "=2").accepted).toBe(false);
+      expect(insert(ctx.editor, "=9").accepted).toBe(false);
       expect(snapshot).not.toHaveBeenCalled(); snapshot.mockRestore();
-      expect(bytes(ctx.doc, format)).toEqual(before); expect(fields(ctx.doc)).toEqual(inventory);
-      expect(ctx.editor.localRevision).toBe(revision); expect(ctx.sessions.get(1)).toEqual(session);
-      expect(ctx.editor.snapshot().history).toEqual(history); expect(ctx.editor.hasUnpreservedChanges).toBe(dirty);
-      expect(ctx.calls.some(c => c.method === "commit" || c.method === "save")).toBe(false);
+      expect(bytes(ctx.doc, format)).toEqual(before); expect(fields(ctx.doc)).toEqual(laterFields);
+      expect(ctx.editor.localRevision).toBe(laterRevision);
+      expect(revision).toBe(0);
     } finally { ctx.editor.dispose(); }
   });
+  it("refuses malformed trailing-field ownership evidence before taking a snapshot", async () => {
+    const ctx = await open(format, 2, 3, false, "field");
+    try {
+      const getFields = ctx.doc.getFieldList!.bind(ctx.doc);
+      const getControls = ctx.doc.getControls!.bind(ctx.doc);
+      for (const defect of ["unsupported type", "nested path", "wrong owner", "missing control"] as const) {
+        const fieldRows = JSON.parse(getFields()) as Array<{
+          fieldType?: string; listId: number; paraInList: number; location: { path: unknown[] };
+        }>;
+        const controlRows = JSON.parse(getControls()) as Array<{ list: number; para: number }>;
+        const tail = fieldRows.find(field => field.fieldType === "clickhere");
+        expect(tail).toBeDefined();
+        if (defect === "unsupported type") tail!.fieldType = "unknown";
+        if (defect === "nested path") tail!.location.path.push({ type: "nested", controlIndex: 0 });
+        if (defect === "wrong owner") tail!.listId += 1000;
+        if (defect === "missing control") {
+          const index = controlRows.findIndex(control => control.list === tail!.listId && control.para === tail!.paraInList);
+          expect(index).toBeGreaterThanOrEqual(0);
+          controlRows.splice(index, 1);
+        }
+        const fieldSpy = vi.spyOn(ctx.doc, "getFieldList").mockReturnValue(JSON.stringify(fieldRows));
+        const controlSpy = vi.spyOn(ctx.doc, "getControls").mockReturnValue(JSON.stringify(controlRows));
+        const before = bytes(ctx.doc, format), revision = ctx.editor.localRevision;
+        const history = ctx.editor.snapshot().history;
+        const snapshot = vi.spyOn(ctx.doc, "saveSnapshot");
+        try {
+          expect(insert(ctx.editor, "=A1+B1").accepted, defect).toBe(false);
+          expect(snapshot).not.toHaveBeenCalled();
+          expect(bytes(ctx.doc, format)).toEqual(before);
+          expect(ctx.editor.localRevision).toBe(revision);
+          expect(ctx.editor.snapshot().history).toEqual(history);
+          expect(ctx.calls.some(call => call.method === "commit" || call.method === "save")).toBe(false);
+        } finally {
+          snapshot.mockRestore(); fieldSpy.mockRestore(); controlSpy.mockRestore();
+        }
+      }
+    } finally { ctx.editor.dispose(); }
+  });
+  it("edits, recalculates, saves and reopens a 480-row multipage table without changing distant geometry", async () => {
+    const ctx = await open(format, 480, 2);
+    const { editor, doc, settle } = ctx;
+    const control = editor.caret.cell!.control;
+    const tableInfo = () => JSON.parse(doc.getTableDimensions(0, 0, control));
+    const geometry = () => Array.from({ length: 960 }, (_, cell) =>
+      JSON.parse(doc.getCellInfo!(0, 0, control, cell)));
+    const cellText = (cell: number) => {
+      const count = doc.getCellParagraphCount!(0, 0, control, cell);
+      return Array.from({ length: count }, (_, paragraph) => {
+        const length = doc.getCellParagraphLength!(0, 0, control, cell, paragraph);
+        return doc.getTextInCell!(0, 0, control, cell, paragraph, 0, length);
+      });
+    };
+    const allCellText = () => Array.from({ length: 960 }, (_, cell) => cellText(cell));
+    const originalGeometry = geometry();
+    const originalText = allCellText();
+    const selectCell = (cell: number, offset = 0) => {
+      editor.caret = editor.anchor = { ...at, cell: { ...editor.caret.cell!, cell }, offset };
+    };
+    try {
+      expect(tableInfo()).toMatchObject({ rowCount: 480, colCount: 2, cellCount: 960 });
+      expect(doc.pageCount()).toBeGreaterThan(8);
+      expect(originalGeometry).toHaveLength(960);
+      selectCell(3);
+      expect(insert(editor, "=A1+B1").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ value: "30", command: "=A1+B1??%g,;;30" });
+
+      const beforeCycle = bytes(doc, format), revisionBeforeCycle = editor.localRevision;
+      const snapshots = vi.spyOn(doc, "saveSnapshot");
+      expect(insert(editor, "=B2").accepted).toBe(false);
+      expect(snapshots).not.toHaveBeenCalled(); snapshots.mockRestore();
+      expect(bytes(doc, format)).toEqual(beforeCycle);
+      expect(editor.localRevision).toBe(revisionBeforeCycle);
+
+      editor.anchor = { ...at, cell: { ...editor.caret.cell!, cell: 0 }, offset: 0 };
+      editor.caret = { ...editor.anchor, offset: 2 };
+      expect(editor.typeText("11")).toBe(true); await settle();
+      selectCell(3);
+      expect(insert(editor, "=A1+B1").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ value: "31", command: "=A1+B1??%g,;;31" });
+      expect(geometry()).toEqual(originalGeometry);
+      const afterSourceEdit = allCellText();
+      expect(afterSourceEdit[0]).toEqual(["11"]);
+      expect(afterSourceEdit[3]).toEqual(["31"]);
+      for (let cell = 1; cell < 959; cell += 1) if (cell !== 3) expect(afterSourceEdit[cell]).toEqual(originalText[cell]);
+      expect(afterSourceEdit[959]).toEqual(originalText[959]);
+
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ value: "30", command: "=A1+B1??%g,;;30" });
+      expect(cellText(0)).toEqual(["11"]); // Undo recalculation leaves its source edit intact.
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ value: "31", command: "=A1+B1??%g,;;31" });
+
+      const first = await ctx.save();
+      const firstDoc = new engine.HwpDocument(first.output);
+      try {
+        expect(JSON.parse(firstDoc.getTableDimensions(0, 0, control))).toEqual(tableInfo());
+        expect(Array.from({ length: 960 }, (_, cell) => JSON.parse(firstDoc.getCellInfo(0, 0, control, cell)))).toEqual(originalGeometry);
+        expect(fields(firstDoc)).toEqual(fields(doc));
+        expect(firstDoc.getTextInCell!(0, 0, control, 0, 0, 0, 2)).toBe("11");
+        expect(firstDoc.getTextInCell!(0, 0, control, 959, 0, 0,
+          firstDoc.getCellParagraphLength!(0, 0, control, 959, 0))).toBe(originalText[959]![0]);
+      } finally { firstDoc.free(); }
+
+      selectCell(3);
+      expect(insert(editor, "=A1+B1+1").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ value: "32", command: "=A1+B1+1??%g,;;32" });
+      expect(geometry()).toEqual(originalGeometry);
+      const second = await ctx.save();
+      const secondDoc = new engine.HwpDocument(second.output);
+      try {
+        expect(fields(secondDoc)).toEqual(fields(doc));
+        expect(Array.from({ length: 960 }, (_, cell) => JSON.parse(secondDoc.getCellInfo(0, 0, control, cell)))).toEqual(originalGeometry);
+        expect(secondDoc.getTextInCell!(0, 0, control, 0, 0, 0, 2)).toBe("11");
+      } finally { secondDoc.free(); }
+      emitComplexPublication(format, "multipage", [first, second]);
+    } finally { editor.dispose(); }
+  }, 120_000);
   it("preserves an independent second paragraph during insert/replace/undo/reopen", async () => {
     const ctx = await open(format, 2, 3, false, true);
     try {
@@ -670,6 +834,8 @@ describe.runIf(enabled).each(["hwp", "hwpx"] as const)("genuine Hancom multi-fie
       expect(initial[0]).toMatchObject({ command: "=AVG(ABOVE)??%.2f,;;2.00", value: "2.00" });
       const others = initial.slice(1);
       // Direct and indirect cycles through the genuine fields stay refused before mutation.
+      select(8);
+      expect(editor.snapshot().parameters?.["hangul.insertTableFormula"]?.formula).toBe("=AVG(ABOVE)");
       refuse(8, "=A3");
       refuse(0, "=A3+1"); // A3 = AVG(ABOVE) reads A1
       refuse(4, "=SUM(A3:B3)");
@@ -717,6 +883,56 @@ describe.runIf(enabled).each(["hwp", "hwpx"] as const)("genuine Hancom multi-fie
           expect(ctx.editor.localRevision).toBe(revision);
         } finally { spy.mockRestore(); }
       }
+    } finally { ctx.editor.dispose(); }
+  });
+});
+
+describe.runIf(enabled)("HWP formula eligibility with an unrelated body field", () => {
+  it("refuses a new formula when original body-field evidence is incomplete", async () => {
+    const ctx = await open("hwp", 2, 3, false, false, hwpWithUnverifiedBodyField(false));
+    try {
+      const state = ctx.editor.snapshot();
+      expect(state.parameterReasons?.["hangul.insertTableFormula"]).toBe("originalUnverified");
+      expect(state.parameters?.["hangul.insertTableFormula"]).toBeUndefined();
+      const before = bytes(ctx.doc, "hwp"), revision = ctx.editor.localRevision;
+      const history = state.history, snapshot = vi.spyOn(ctx.doc, "saveSnapshot");
+      try {
+        expect(insert(ctx.editor, "=A1+B1").accepted).toBe(false);
+        expect(snapshot).not.toHaveBeenCalled();
+        expect(bytes(ctx.doc, "hwp")).toEqual(before);
+        expect(ctx.editor.localRevision).toBe(revision);
+        expect(ctx.editor.snapshot().history).toEqual(history);
+        expect(ctx.calls.some(call => call.method === "commit" || call.method === "save")).toBe(false);
+      } finally { snapshot.mockRestore(); }
+    } finally { ctx.editor.dispose(); }
+  });
+
+  it("allows unchanged-inventory formula replacement, history, and HWP reopen proof", async () => {
+    const ctx = await open("hwp", 2, 3, false, false, hwpWithUnverifiedBodyField(true));
+    try {
+      const originalFields = fields(ctx.doc);
+      const originalFormula = originalFields.find((field: { fieldType: string }) => field.fieldType === "formula");
+      const bodyFields = originalFields.filter((field: { fieldType: string }) => field.fieldType === "clickhere");
+      expect(originalFormula).toMatchObject({ command: "=A1+B1??%g,;;30", value: "30" });
+      expect(bodyFields).toHaveLength(1);
+      expect(ctx.editor.snapshot().parameters?.["hangul.insertTableFormula"]).toMatchObject({ formula: "=A1+B1" });
+
+      expect(insert(ctx.editor, "=A1+B1+1").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc).find((field: { fieldType: string }) => field.fieldType === "formula"))
+        .toMatchObject({ command: "=A1+B1+1??%g,;;31", value: "31" });
+      expect(fields(ctx.doc).filter((field: { fieldType: string }) => field.fieldType === "clickhere")).toEqual(bodyFields);
+      expect(ctx.editor.execute("edit.undo").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc)).toEqual(originalFields);
+      expect(ctx.editor.execute("edit.redo").accepted).toBe(true); await ctx.settle();
+
+      const saved = await ctx.save();
+      expect(saved.reopen).toEqual({ formatEqual: true, pagesEqual: true, textEqual: true, controlsEqual: true });
+      const reopened = new engine.HwpDocument(saved.output);
+      try {
+        expect(fields(reopened)).toEqual(fields(ctx.doc));
+        expect(fields(reopened).filter((field: { fieldType: string }) => field.fieldType === "clickhere")).toEqual(bodyFields);
+      } finally { reopened.free(); }
+      emitComplexPublication("hwp", "body-field-formula-replacement", [saved]);
     } finally { ctx.editor.dispose(); }
   });
 });

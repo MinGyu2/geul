@@ -1,5 +1,7 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
+> **2026-11-13 T012 검증 범위 확대 · 전체는 조건부 미완료.** 일반 제품 빌드에서 장평·자간·영속 수식은 일반 history의 snapshot 예산·WASM 증가 감시와 연산별 소유권/복잡도 검사로 판정한다. 기존 128 KiB·8쪽·깊이 4는 별도 advanced-only timeline에 유지한다. 후속 ClickHere 필드가 있는 셀, 480행·960셀/10쪽 표, 실제 원본 128 KiB 초과·100쪽 문서의 검증 범위를 확대했다. 일반 입력/IME Undo/Redo는 T010의 기존 제품 활성화 상태다. 중첩 표 직접 편집·미지원 후속 컨트롤·불완전한 HWP 원본 구조에서의 새 수식은 계속 거부하며 외부 Hancom/T015/T016 수용은 완료하지 않았다. [구현·가드·새 실행 증거](../architecture/stage567-acceptance-2026-11-05.md#t012-advanced-20261113).
+
 > **2026-11-12 T010 기능 수용 PASS · 일반 RHWP Undo/Redo 제품 GO (명시한 지원 범위).** 일반 제품 빌드(시험 flag·훅 없음)에서 HWP/HWPX 일반 타자·IME Undo/Redo를 켰다(`src/commands/registry.ts`). 지원 범위는 Linux X11(Xvfb)·Tauri 2·WebKitGTK 2.54.1·IBus 1.5.33+ibus-hangul 1.5.5와 기록한 HWP/HWPX 문서다. native 실사용성 16시나리오 705검사, 제품 빌드 native 68검사(저장 파일을 앱 밖 Release 런타임으로 재확인), D1 33/33, D2 지원 환경(원래 안전 25/25·순서 2 INCONCLUSIVE 그대로·추가 34/34·T011 리본 IME 26/26), D3 19/19·strict 23행 0, D4 자원 43/43, D5 4/4가 최종 소스·Release `0559a2ba…`/WASM `94a00e68…`로 PASS다. D4 지연은 독립 **TARGET NOT MET**(재측정 안 함, 경로 불변), E→U→F는 NOT OBSERVED / UNVERIFIED, Windows/macOS/Wayland/다른 입력기는 NOT RUN. T012 고급 명령 제한은 유지한다. [증거·신원](../architecture/t010-production-activation-2026-11-12.json).
 
 

@@ -61,7 +61,7 @@ export interface DocumentCommandSnapshot {
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
   parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits" | "limit"
-    | "originalChecking" | "originalUnverified">>;
+    | "originalChecking" | "originalUnverified" | "formulaParagraphRequired">>;
   /**
    * 값 없이 실행하는 문맥 명령(T013 목차 넣기·갱신 등)을 지금 할 수 있는지. 세션이 엔진 보기로 판정한다. 없으면 `actionReasons`의
    * 이유 또는 engineUnsupported.

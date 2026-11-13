@@ -728,3 +728,50 @@ push는 하지 않았다. Microsoft Word·Hancom Office는 **NOT RUN**.
 | geul `efd4206575551a5abab914c5c0359b1b2dd5dd64` | gitlink |
 
 push 없음.
+
+
+<a id="t012-advanced-20261113"></a>
+
+## 2026-11-13 — T012 고급 기능 차단 원인 보정과 제품 범위 확대
+
+**판정: PARTIALLY COMPLETED.** 아래 구현과 명시한 내부/native 범위는 일반 Release 제품에서 활성화했다. T012 전체 완료나 임의의 복잡 HWP/HWPX·외부 한컴 호환성을 주장하지 않는다. 위 날짜별 수용 기록과 T010의 일반 입력/IME history 제품 GO는 보존한다. 과거의 “일반 history 비활성”, “128 KiB·8쪽”을 현재 일반 제품의 전역 한도로 읽지 않는다.
+
+### 실제 차단 원인과 구현
+
+| 기능 | 분류와 확인한 원인 | 현재 제품 경로와 남는 경계 |
+|---|---|---|
+| 기존 셀 글·다중 문단·병합 geometry | 이미 엔진/세션 지원. 새 표 생성과 기존 셀 편집은 다른 증명을 사용 | 기존 편집 유지. 병합 anchor/row·col·span 검사와 두 차례 왕복 회귀 유지. 병합에 덮인 비-anchor 좌표를 anchor 별칭으로 해석하지 않음 |
+| 첫 문단 계산식 + 후속 필드 | C: 엔진은 첫 문단 사본만 바꾸는데 후속 문단에 필드가 있으면 셀 전체를 거부 | `table-formula-tail-preservation.patch`로 후속 문단 모델/직렬화 자료를 보존. 세션은 소유권·범위·텍스트가 증명된 단일 후속 ClickHere 필드만 추가 지원. 다른/중첩/모순 컨트롤은 계속 거부 |
+| HWP 새 수식의 저장 | B: `hwpReopenModel`이 모든 child control을 unknown으로 보아 정확히 같은 live/reopen도 새 필드 inventory를 증명하지 못함 | cursor-list 소유자·문단의 단일 컨트롤·전체 field record를 교차 확인. 첫 문단 수식은 엔진의 읽기 전용 validator로 같은 fieldId/range를 확인하고 캐시·명령·이름·안내·위치를 비교. 모호한 소유권/누락/중복/미지원 종류는 incomplete 유지 |
+| 한컴 `%.Nf` 식의 입력창 | A: 의존성 검사는 지원했으나 `existingFormula`의 `%g` 전용 정규식이 식을 놓침 | 공통 `cachedFormula`로 일치하는 캐시만 prefill. malformed/미지원 표현 거부 유지. 편집 결과는 기존 `%g` 기록 방식 |
+| 큰 문서의 고급 명령 | E: 압축 원본 크기·쪽 수로 모든 연산을 거부. 일반 history는 이미 별도 자원 감시를 가짐 | 일반 timeline의 기존 `historyBudget`/snapshot capacity/실측 WASM 증가 감시 + 단일 문단 ownership/표 의존성 예산을 사용. advanced-only fallback의 128 KiB·8쪽·깊이 4는 유지; 일반 history 깊이는 기존 정책 그대로이며 한도를 올리지 않음 |
+| 새 표/중첩 표/구조 변경 | B/C/G: 엔진의 경로/행·열 primitive 존재와 앱의 typed operation·보존 증명은 별개 | 기존 새 HWP 표 생성 한도(32행·16열·256셀) 유지. 직접 중첩 경로·새 행/열·병합 구조 변경을 일괄 제품 지원으로 선언하지 않음 |
+| 외부 상호운용성 | F: 내부 왕복은 외부 Office 실행 증거가 아님 | Hancom Office 및 T015/T016 전체 corpus/platform 수용 NOT RUN/미완료 |
+
+수식의 256자·깊이 16·셀 방문 4096·의존성/직간접 순환 거부를 유지한다. 값은 참조 셀 편집 뒤 명시적으로 재계산하며, 자동 연쇄 재계산을 추가하지 않았다. 수식 목적지는 셀의 첫 문단뿐이고 다른 문단에는 전용 거부 이유를 표시한다. 새 HWP 필드는 원본의 완전한 구조 증명이 있어야 하며, 기존 수식의 교체는 이미 지원하던 unchanged-inventory 경로를 보존한다. registry flag만으로 기능을 켜지 않았다. IME/pending/save·revision/세션 소유권·history transaction·T009 safe/unsafe/unknown·원본/참조/preview/recovery 규칙은 유지했다. Rust 저장 검사기는 수정하지 않았다.
+
+### 실행 신원과 집중 증거
+
+시작 HEAD `5ee56e30dc9f92111fa2320279b4ba52a1d15e23`, branch `master`. RHWP `1a76570e833917d15817415a53c09ad61ab3203f`, WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`는 그대로다. 최종 로컬 커밋은 Git 로그를 따른다. push/원격 branch/PR 생성 없음.
+
+- 순서 있는 패치 18개. Python/TS 산출물 검증기는 정확히 18개까지 받으며 19개·중복·변조 provenance를 거부한다. 패치별 SHA/소스 트리/세대 digest 검사를 유지했다. Release generation `18e5dafdadfa5a4754f98b575eb93d22947c8fda549248241a02c8d7f181f56b`, WASM SHA-256 `e50b71e4c29d7aea3fbacb09e7cbce5be00b0b2f5f0ce9db3b02fd188faff912`.
+- 일반 `python3 scripts/tauri-geul.py build --no-bundle` 제품 빌드. `dist/frontend-build.json`: production, `testFlags={}`. Release 실행 파일 SHA-256 `c134290f6074ad7bfc408424ff9542f65416b47015155bf3196061c5748e1c1c`.
+- 로컬 ignored 증거: `target/t012-advanced-20261113/`. 초기 실패/거짓 reopen 증거도 보존했으며 성공 자료로 바꿔 쓰지 않았다. 이전 prepared source와 비활성 generation 하나는 소비자 종료 확인 후 해시 그대로 이 디렉터리에 보관했다. generation retention 한도는 늘리지 않았다.
+
+| 실행 | 실제 결과와 증거 |
+|---|---|
+| `scripts/build-rhwp-wasm.py` (locked/offline, read-only dependencies) | Release 성공, external unchanged. `wasm-build-final.log` |
+| `vitest --config scripts/tests/vitest.config.ts table-formula-session.wasm.test.ts advanced-production.wasm.test.ts -t '^(?!.*large .* document)' --testTimeout120000`, 네 시험 flag unset | 최종 117 PASS, 대용량 2건 의도적 제외. `wasm-activation-final.log`; 대용량은 아래 별도 근거 재사용 |
+| 실제 대용량 두 형식 | 2 PASS. 원본 HWP 195,584 B/HWPX 159,951 B, 각각 100쪽. 장평·자간·수식 삽입·참조 편집·명시적 재계산·6 Undo/Redo·두 번 편집/재열기. `wasm-large-final.log`, `large/` |
+| 다중 페이지 표 | HWP/HWPX 각각 480행×2열, 960셀, 10쪽. 모든 셀의 geometry·비대상 글 보존과 두 번 저장/재열기. `wasm-multipage.log`, `complex-activation-final/` |
+| HWP 상세 재열기 모델 | 73 PASS(known field 정상·누락·중복·다른 소유자·nested path·cache/필드 명령·name/guide 변조 거부). `hwp-reopen-model-tests.log` |
+| 집중 frontend·profile | 최종 소스 46 PASS(`frontend-activation-final.log`), Python profile 3 PASS(`profiles.log`); 18/19 경계·세대/provenance 변조 거부 포함 |
+| 타입·린트·빌드 | scoped script+제품 TypeScript, 변경 TS/JS ESLint, diff check 및 일반 Release 빌드 PASS. `script-types-activation.log`, `eslint-activation.log`, `product-build-activation.log` |
+| 실제 T009 service | 기존 보호된 `t010_phase0_save_service`의 generic driver 사용(관련 source compile만 수행, T010 전체 suite 아님). 후속 필드/다중 쪽 표/큰 문서 12 durable 저장, malformed HWP/HWPX 2건 `UnsafeSave/reopenMismatch` 거부·dirty 유지·원본 SHA/디렉터리 보존. `service-final/summary.json`; 원본 fixture 12개 hash 유지 |
+| 게시 파일 독립 재열기 | 실제 게시 12파일을 같은 Release로 열어 형식/쪽/글/컨트롤/전체 필드 비교 PASS. `service-final/published-reopen.json`. generic 요청 두 회차와 실제 파일을 연속 저장하는 native 흐름을 구별함 |
+| 최종 일반 Release native Tauri/X11/Xvfb/IBus | 두 형식 56/56 PASS: trusted Hangul/IME barrier, 일반 입력+고급 Undo/Redo, invalid width/식·self-cycle 거부, 장평·자간·수식 삽입/교체/참조 편집 뒤 재계산·반복 실제 저장/GTK 재열기. 후속 ClickHere 필드 fixture 사용. `native/result.json` |
+| native 종료·독립 oracle | launcher/child exit 0, complete/proven/filesystemProven true, survivors/processErrors 없음. fixture hash 유지. `native-session/cleanup.json`; 실제 저장 상태 16개(형식별 8개) 재열기·필드 identity/캐시·7개 언어 속성·후속 문단/필드 보존 PASS: `native-published-reopen.json` |
+
+큰 문서의 관측 WASM 선형 메모리는 HWP 24,641,536 B, HWPX 36,438,016 B였다. 이는 모듈 간 재사용을 포함한 high-water 관측이며 RSS/정확한 snapshot 크기/모든 입력의 상한 증거가 아니다. 기존 snapshot 증가 예산 256 MiB와 렌더 canvas/전체 픽셀 예산은 그대로다. 270k 문자/169쪽 fixture는 최소 배율에서도 렌더 예산을 넘어 `RenderLimit`로 안전 거부했다(`large-diagnostic.log`); 더 작은 실제 160k 문자/100쪽 fixture는 예산 안에서 검증했다. 기본 배율에서 표시 예산을 넘으면 낮은 배율이 필요하다. 원 T010 D4 지연 목표/결과는 재측정하거나 재정의하지 않았다.
+
+초기 실행의 fixture 기대값 오류·5초 test timeout, HWP child-field proof 부재, 도구/patch-count/retention/실행 경로 준비 오류와 보정 후 결과는 각각의 로그에 남겼다. source가 같은 통과 검사를 재실행해 숫자를 불리지 않았으며, 변경된 가드와 새 증거 생성에 필요한 검사만 갱신했다. 네이티브 결과는 이번 생성 fixture의 T012 흐름만 증명한다. 과거 run5/Stage 5–6/T010의 날짜별 PASS를 새 엔진의 전체 수용으로 재사용하지 않았다. 전체 CI·T015/T016 행렬·20-case corpus·frontend 전체·Rust HWP 전체·성능 benchmark·외부 Hancom/Word는 이번 작업에서 재실행하지 않았다.

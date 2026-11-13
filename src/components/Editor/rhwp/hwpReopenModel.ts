@@ -1,5 +1,6 @@
 import type { RhwpDocument } from "./rhwpModule";
 import { canonical } from "./rhwpArtifactIdentity";
+import { cachedFormula } from "./formulaDependencies";
 
 type JsonObject = Record<string, unknown>;
 export interface HwpReopenModel { model: string; structure: string; complete: boolean }
@@ -171,6 +172,76 @@ export function insertedInlinePicture(doc: RhwpDocument, section: number, paragr
   } catch { return false; }
 }
 
+/** A blank getControls kind is not evidence of a field. Independently join the
+ * cursor-list owner, sole paragraph control and complete field record. Only
+ * first-paragraph formulas and untouched later-paragraph ClickHere fields are
+ * covered; nested/ambiguous/unknown controls still make the model incomplete. */
+function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: unknown) => unknown): Map<unknown, JsonObject> {
+  const proven = new Map<unknown, JsonObject>();
+  if (!doc.getFieldList || !doc.getCursorModel || !doc.getSectionCount || !doc.validateTableFormulaField) return proven;
+  const model = json(doc.getCursorModel()), fields = json(doc.getFieldList());
+  if (!isObject(model) || !Array.isArray(model.lists) || model.lists.length > 4096 || !Array.isArray(fields) || fields.length > 4096) return proven;
+  const lists = new Map<number, JsonObject>(), ids = new Set<number>();
+  const owners = new Map<string, number>(), tables = new Set<string>(), byParagraph = new Map<string, JsonObject | null>();
+  for (const c of controls) if (isObject(c)) {
+    const key = `${c.list}/${c.para}`;
+    owners.set(key, (owners.get(key) ?? 0) + 1);
+    if (c.ctrlId === "tbl" && c.list === 0) tables.add(`${c.para}/${c.controlIndex}`);
+  }
+  const sectionCount = doc.getSectionCount();
+  if (!isInt(sectionCount, 1, 4096)) return proven;
+  const bases = [0];
+  for (let s = 0; s < sectionCount; s++) bases.push(bases[s]! + doc.getParagraphCount(s));
+  for (const list of model.lists) {
+    if (!isObject(list) || !isInt(list.listId, 2) || lists.has(list.listId)) return proven;
+    lists.set(list.listId, list);
+  }
+  for (const f of fields) {
+    if (!isObject(f) || !isInt(f.fieldId, 1, 0xffffffff) || ids.has(f.fieldId)) return proven;
+    ids.add(f.fieldId);
+    const key = `${f.listId}/${f.paraInList}`;
+    byParagraph.set(key, byParagraph.has(key) ? null : f);
+  }
+  for (const c of controls) {
+    if (!isObject(c) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== "" || c.controlIndex !== 0 || c.pos !== 0
+      || !isObject(c.props) || Object.keys(c.props).length || !isInt(c.list, 2) || !isInt(c.para, 0)) continue;
+    const list = lists.get(c.list);
+    if (!list || list.isCell !== true || list.hostListId !== 0
+      || ![list.sectionIndex, list.hostPara, list.controlIndex, list.cellIndex, list.paraCount].every(v => isInt(v, 0))
+      || c.para >= (list.paraCount as number)) continue;
+    if (owners.get(`${c.list}/${c.para}`) !== 1) continue;
+    const f = byParagraph.get(`${c.list}/${c.para}`);
+    if (!f) continue;
+    const loc = f.location;
+    if (!isObject(loc) || loc.sectionIndex !== list.sectionIndex || loc.paraIndex !== list.hostPara || !Array.isArray(loc.path) || loc.path.length !== 1) continue;
+    const path: unknown = loc.path[0];
+    if (!isObject(path) || path.type !== "cell" || path.controlIndex !== list.controlIndex || path.cellIndex !== list.cellIndex || path.paraIndex !== c.para
+      || f.cellField !== false || typeof f.editableInForm !== "boolean"
+      || ![f.name, f.guide, f.command, f.value].every(v => typeof v === "string")
+      || ![f.startCharIdx, f.endCharIdx, f.startPos, f.endPos].every(v => isInt(v, 0))) continue;
+    const s = list.sectionIndex as number, p = list.hostPara as number, ctrl = list.controlIndex as number, cell = list.cellIndex as number;
+    if (s >= sectionCount || !tables.has(`${bases[s]! + p}/${ctrl}`)) continue;
+    if (doc.getCellParagraphCount(s, p, ctrl, cell) !== list.paraCount) continue;
+    const length = doc.getCellParagraphLength(s, p, ctrl, cell, c.para);
+    if ((f.startCharIdx as number) > (f.endCharIdx as number) || (f.endCharIdx as number) > length
+      || Array.from(f.value as string).length !== (f.endCharIdx as number) - (f.startCharIdx as number)) continue;
+    if (doc.getTextInCell(s, p, ctrl, cell, c.para, f.startCharIdx as number,
+      (f.endCharIdx as number) - (f.startCharIdx as number)) !== f.value) continue;
+    if (f.fieldType === "formula") {
+      const cache = cachedFormula(f.command);
+      if (c.para !== 0 || f.startCharIdx !== 0 || f.endCharIdx !== length || !cache || cache.value !== f.value
+        || !Number.isFinite(Number(cache.value)) || !isInt(list.row, 0) || !isInt(list.col, 0)) continue;
+      // The engine independently proves sole full-paragraph field-range/control
+      // linkage. Validation is read-only; it must identify this exact field.
+      const probe = json(doc.validateTableFormulaField(s, p, ctrl, list.row, list.col, "=0"));
+      if (!isObject(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text" || typeof probe.changed !== "boolean"
+        || probe.ok !== true || probe.fieldId !== f.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") continue;
+    } else if (f.fieldType !== "clickhere" || c.para === 0 || !(f.command as string).startsWith("Clickhere:")) continue;
+    proven.set(c, f);
+  }
+  return proven;
+}
+
 /** Supplement the raw controls/text comparison with the supported HWP model.
  * No mutation, image hash supplied by the caller, or inferred WASM API is used.
  * Optional APIs may be absent for legacy edits; a changed structural inventory
@@ -210,6 +281,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   };
   const controls = json(doc.getControls!());
   if (!Array.isArray(controls) || controls.length > 100_000) throw new Error("HWP controls");
+  const cellFields = controls.some(c => isObject(c) && c.list !== 0 && c.ctrlId === "") ? cellFieldEvidence(doc, controls, json) : new Map<unknown, JsonObject>();
   const bullets = doc.getBulletList ? json(doc.getBulletList()) : null;
   if (bullets !== null && !Array.isArray(bullets)) throw new Error("HWP bullets");
   if (Array.isArray(bullets) && bullets.length > 65535) throw new Error("HWP bullets");
@@ -252,6 +324,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const tables: unknown[] = [];
   const pictures: unknown[] = [];
   const inventory: unknown[] = [];
+  const fields: unknown[] = [];
   let paragraphBase = 0;
   const sectionEnds = Array.from({ length: sectionCount }, (_, s) => {
     paragraphBase += count(doc.getParagraphCount(s)); return paragraphBase;
@@ -260,6 +333,8 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     node(); const c = object(value);
     if (c.ctrlId === "secd" || c.ctrlId === "cold") continue;
     inventory.push({ kind: c.ctrlId, type: c.userDesc, list: c.list, props: c.props });
+    const field = cellFields.get(c);
+    if (field) { fields.push(field); continue; }
     if (c.list !== 0) { complete = false; continue; } // legacy nested controls retain raw comparison
     const global = count(c.para);
     // getControls uses global root paragraph numbers; table APIs use section-local ones.
@@ -315,7 +390,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       pictures.push(picture);
     } else complete = false;
   }
-  return { model: canonical({ sections, tables, pictures }), structure: canonical({ inventory, headings }), complete };
+  return { model: canonical({ sections, tables, pictures, fields }), structure: canonical({ inventory, headings }), complete };
 }
 
 export function hwpReopenEqual(live: HwpReopenModel, reopened: HwpReopenModel, baseline: string | null): boolean {

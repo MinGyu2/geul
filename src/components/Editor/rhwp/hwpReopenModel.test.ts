@@ -12,7 +12,9 @@ function model() {
   const state = {
     paragraphs: ["ABC", "DEF"], headType: "None", numberingId: 1, paraShapeId: 0,
     bullet: "•", cells: ["one", "two"], coordinates: [0, 1], width: 7200, inline: true,
-    controls: [] as unknown[], rows: 1, cols: 2,
+    controls: [] as unknown[], rows: 1, cols: 2, extraParagraphs: {} as Record<number, string[]>,
+    cursorLists: [] as unknown[], fields: [] as unknown[],
+    validation: { ok: true, changed: false, fieldId: 1, text: "0", command: "=0??%g,;;0" } as Record<string, unknown>,
     para: null as Override, bullets: null as Override, dims: null as Override, tableProps: null as Override,
     cellInfo: null as Override, cellProps: null as Override, picture: null as Override,
   };
@@ -23,13 +25,22 @@ function model() {
     getParaPropertiesAt: () => encode(state.para, { alignment: "justify", paraShapeId: state.paraShapeId, headType: state.headType, paraLevel: 0, numberingId: state.numberingId }),
     getBulletList: () => encode(state.bullets, [{ id: state.numberingId, char: state.bullet, rawCode: state.bullet.charCodeAt(0) }]),
     getControls: () => JSON.stringify(state.controls),
+    getCursorModel: () => JSON.stringify({ lists: state.cursorLists }),
+    getFieldList: () => JSON.stringify(state.fields),
+    validateTableFormulaField: () => JSON.stringify(state.validation),
     getTableDimensions: () => encode(state.dims, { rowCount: state.rows, colCount: state.cols, cellCount: state.cells.length }),
     getTableProperties: () => encode(state.tableProps, { cellSpacing: 0, paddingLeft: 510, paddingRight: 510, paddingTop: 141, paddingBottom: 141, repeatHeader: false, borderFillId: 3, ...borders, tableWidth: 41952, tableHeight: 2564, treatAsChar: false, textWrap: "TopAndBottom" }),
     getCellInfo: (_s: number, _p: number, _c: number, cell: number) => encode(state.cellInfo, { row: 0, col: state.coordinates[cell], rowSpan: 1, colSpan: 1 }),
     getCellProperties: () => encode(state.cellProps, { width: 13984, height: 282, paddingLeft: 510, paddingRight: 510, paddingTop: 141, paddingBottom: 141, verticalAlign: 1, isHeader: false, borderFillId: 3, ...borders }),
-    getCellParagraphCount: () => 1,
-    getCellParagraphLength: (_s: number, _p: number, _c: number, cell: number) => state.cells[cell]!.length,
-    getTextInCell: (_s: number, _p: number, _c: number, cell: number) => state.cells[cell],
+    getCellParagraphCount: (_s: number, _p: number, _c: number, cell: number) => 1 + (state.extraParagraphs[cell]?.length ?? 0),
+    getCellParagraphLength: (_s: number, _p: number, _c: number, cell: number, paragraph = 0) => {
+      const text = paragraph === 0 ? state.cells[cell] : state.extraParagraphs[cell]?.[paragraph - 1];
+      return text?.length ?? 0;
+    },
+    getTextInCell: (_s: number, _p: number, _c: number, cell: number, paragraph = 0, start = 0, length?: number) => {
+      const text = paragraph === 0 ? state.cells[cell] : state.extraParagraphs[cell]?.[paragraph - 1];
+      return text?.slice(start, length === undefined ? undefined : start + length) ?? "";
+    },
     getPictureProperties: () => encode(state.picture, { width: state.width, height: 4800, treatAsChar: state.inline, textWrap: "Square", originalWidth: 7200 }),
   }) as unknown as RhwpDocument;
   return { doc, state };
@@ -37,6 +48,37 @@ function model() {
 const tableProps = { Lock: 0, TreatAsChar: 0, AllowOverlap: 0, TextWrap: 1, Width: 41952, Height: 2564, HorzOffset: 0, VertOffset: 0 };
 const table = { ctrlId: "tbl", userDesc: "표", list: 0, para: 0, controlIndex: 0, pos: 0, props: tableProps };
 const picture = { ...table, ctrlId: "gso", userDesc: "그림", props: { ...tableProps, TreatAsChar: 1, TextWrap: 0, Width: 7200, Height: 4800 } };
+
+const formulaFieldControl = { ctrlId: "", userDesc: "", list: 2, para: 0, controlIndex: 0, ctrlCh: 0, pos: 0, props: {} };
+const clickHereFieldControl = { ...formulaFieldControl, list: 3, para: 1 };
+function cellFieldModels(kind: "formula" | "clickhere" = "formula") {
+  const live = model(), fresh = model();
+  const list = (listId: number, cellIndex: number, paraCount: number, row: number, col: number) => ({
+    listId, hostListId: 0, sectionIndex: 0, hostPara: 0, controlIndex: 0, cellIndex, paraCount,
+    row, col, rowSpan: 1, colSpan: 1, cellCount: 2, isCell: true,
+  });
+  const field = kind === "formula" ? {
+    fieldId: 1, listId: 2, paraInList: 0, fieldType: "formula", cellField: false, editableInForm: true,
+    name: "", guide: "", command: "=A1+B1??%g,;;30", value: "30",
+    startCharIdx: 0, endCharIdx: 2, startPos: 0, endPos: 2,
+    location: { sectionIndex: 0, paraIndex: 0, path: [{ type: "cell", controlIndex: 0, cellIndex: 0, paraIndex: 0 }] },
+  } : {
+    fieldId: 2, listId: 3, paraInList: 1, fieldType: "clickhere", cellField: false, editableInForm: true,
+    name: "tail field", guide: "tail guide", command: "Clickhere:tail", value: "tail",
+    startCharIdx: 0, endCharIdx: 4, startPos: 0, endPos: 4,
+    location: { sectionIndex: 0, paraIndex: 0, path: [{ type: "cell", controlIndex: 0, cellIndex: 1, paraIndex: 1 }] },
+  };
+  for (const fixture of [live, fresh]) {
+    fixture.state.cells[kind === "formula" ? 0 : 1] = kind === "formula" ? "30" : "two";
+    fixture.state.controls = [table, kind === "formula" ? formulaFieldControl : clickHereFieldControl];
+    fixture.state.cursorLists = kind === "formula"
+      ? [list(2, 0, 1, 0, 0)]
+      : [list(3, 1, 2, 0, 1)];
+    if (kind === "clickhere") fixture.state.extraParagraphs[1] = ["tail"];
+    fixture.state.fields = [JSON.parse(JSON.stringify(field))];
+  }
+  return { live, fresh, field: live.state.fields[0] as Record<string, unknown>, baseline: hwpReopenModel(model().doc).structure };
+}
 
 /** Live/reopened pair carrying the same new structure (as after a supported insertion). */
 function inserted(control: unknown) {
@@ -248,5 +290,85 @@ describe("required HWP reopen evidence fields", () => {
     const a = hwpReopenModel(live.doc), b = hwpReopenModel(fresh.doc);
     expect(a.complete && b.complete).toBe(true);
     expect(hwpReopenEqual(a, b, hwpReopenModel(model().doc).structure)).toBe(true);
+  });
+});
+
+describe("joined HWP cell-field reopen evidence", () => {
+  it("accepts a sole full paragraph-zero formula field validated against its owning cell", () => {
+    const { live, fresh, baseline } = cellFieldModels("formula");
+    const a = hwpReopenModel(live.doc), b = hwpReopenModel(fresh.doc);
+    expect(a.complete).toBe(true);
+    expect(b.complete).toBe(true);
+    expect(hwpReopenEqual(a, b, baseline)).toBe(true);
+  });
+
+  it("accepts an untouched ClickHere field in a later cell paragraph", () => {
+    const { live, fresh, baseline } = cellFieldModels("clickhere");
+    const a = hwpReopenModel(live.doc), b = hwpReopenModel(fresh.doc);
+    expect(a.complete).toBe(true);
+    expect(b.complete).toBe(true);
+    expect(hwpReopenEqual(a, b, baseline)).toBe(true);
+  });
+
+  it.each([
+    "missing field metadata",
+    "duplicate field metadata",
+    "duplicate paragraph control",
+    "wrong field list",
+    "wrong field location",
+    "wrong cursor-list cell owner",
+    "nested field location",
+    "unsupported field type",
+    "field text differs from paragraph",
+    "cached result disagrees",
+    "engine probe returns another field",
+  ])("keeps %s incomplete and refuses a changed inventory", name => {
+    const { live, fresh, baseline, field } = cellFieldModels("formula");
+    switch (name) {
+      case "missing field metadata": live.state.fields = []; break;
+      case "duplicate field metadata": live.state.fields.push(JSON.parse(JSON.stringify(field))); break;
+      case "duplicate paragraph control": live.state.controls.push({ ...formulaFieldControl }); break;
+      case "wrong field list": field.listId = 99; break;
+      case "wrong field location":
+        ((field.location as Record<string, unknown>).path as Record<string, unknown>[])[0]!.cellIndex = 1;
+        break;
+      case "wrong cursor-list cell owner": live.state.cursorLists[0] = { ...(live.state.cursorLists[0] as object), cellIndex: 1 };
+        break;
+      case "nested field location":
+        ((field.location as Record<string, unknown>).path as unknown[]).push({ type: "cell", controlIndex: 1, cellIndex: 0, paraIndex: 0 });
+        break;
+      case "unsupported field type": (field as Record<string, unknown>).fieldType = "unknown";
+        break;
+      case "field text differs from paragraph": live.state.cells[0] = "31";
+        break;
+      case "cached result disagrees": field.command = "=A1+B1??%g,;;29";
+        break;
+      case "engine probe returns another field": live.state.validation.fieldId = 2;
+        break;
+    }
+    const a = hwpReopenModel(live.doc), b = hwpReopenModel(fresh.doc);
+    expect(a.complete).toBe(false);
+    expect(hwpReopenEqual(a, b, baseline)).toBe(false);
+  });
+
+  it("compares recognized formula and ClickHere metadata, not only cached/display text", () => {
+    {
+      const { live, fresh, baseline } = cellFieldModels("formula");
+      const a = hwpReopenModel(live.doc);
+      (fresh.state.fields[0] as Record<string, unknown>).command = "=A1+B1+1??%g,;;30";
+      const b = hwpReopenModel(fresh.doc);
+      expect(a.complete && b.complete).toBe(true);
+      expect(hwpReopenEqual(a, b, baseline)).toBe(false);
+    }
+    {
+      const { live, fresh, baseline } = cellFieldModels("clickhere");
+      const a = hwpReopenModel(live.doc);
+      const changed = fresh.state.fields[0] as Record<string, unknown>;
+      changed.name = "renamed field";
+      changed.guide = "different guide";
+      const b = hwpReopenModel(fresh.doc);
+      expect(a.complete && b.complete).toBe(true);
+      expect(hwpReopenEqual(a, b, baseline)).toBe(false);
+    }
   });
 });

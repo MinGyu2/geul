@@ -96,6 +96,7 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
   const destination = coordinates.get(cell.cell);
   if (destination === undefined) return "unknown";
   const tableFields = new Map<number, RecordValue>();
+  const tailFields = new Set<string>();
   const ids = new Set<number>();
   for (const f of fields) {
     const loc = f.location as RecordValue;
@@ -105,6 +106,25 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
     const part = loc.path[0];
     if (!part || !index(part.controlIndex)) return "unknown";
     if (part.controlIndex !== cell.control) continue;
+    // RHWP evaluates and replaces paragraph zero only. Only independently
+    // identified ordinary ClickHere tails are admitted here; unfamiliar/nested
+    // controls still require additional preservation implementation/evidence.
+    if (part.type === "cell" && index(part.paraIndex) && part.paraIndex > 0
+      && index(part.cellIndex) && cellLists.has(part.cellIndex)) {
+      const key = `${f.listId}/${part.paraIndex}`;
+      if (loc.path.length !== 1 || f.fieldType !== "clickhere" || f.cellField !== false || f.paraInList !== part.paraIndex
+        || f.listId !== cellLists.get(part.cellIndex) || !index(f.fieldId) || f.fieldId === 0 || ids.has(f.fieldId)
+        || typeof f.command !== "string" || !f.command.startsWith("Clickhere:") || tailFields.has(key)
+        || ![f.name, f.guide, f.value].every(v => typeof v === "string") || typeof f.editableInForm !== "boolean"
+        || !index(f.startCharIdx) || !index(f.endCharIdx) || f.startCharIdx > f.endCharIdx
+        || part.paraIndex >= doc.getCellParagraphCount(at.section, cell.parentParagraph, cell.control, part.cellIndex)) return "unknown";
+      const length = doc.getCellParagraphLength(at.section, cell.parentParagraph, cell.control, part.cellIndex, part.paraIndex);
+      if (f.endCharIdx > length || Array.from(f.value as string).length !== f.endCharIdx - f.startCharIdx
+        || doc.getTextInCell(at.section, cell.parentParagraph, cell.control, part.cellIndex, part.paraIndex,
+          f.startCharIdx, f.endCharIdx - f.startCharIdx) !== f.value) return "unknown";
+      ids.add(f.fieldId); tailFields.add(key);
+      continue;
+    }
     if (loc.path.length !== 1 || part.type !== "cell" || part.paraIndex !== 0 || !index(part.cellIndex)
       || !cellLists.has(part.cellIndex) || tableFields.has(part.cellIndex) || f.fieldType !== "formula" || f.cellField !== false
       || !index(f.fieldId) || f.fieldId === 0 || ids.has(f.fieldId) || f.listId !== cellLists.get(part.cellIndex)
@@ -112,13 +132,22 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
     ids.add(f.fieldId); tableFields.set(part.cellIndex, f);
   }
   const inventory = new Map<number, RecordValue[]>();
+  const observedTails = new Set<string>();
   const reverseLists = new Map([...cellLists].map(([physical, list]) => [list, physical]));
   for (const c of controls) {
     const physical = reverseLists.get(c.list as number);
     if (physical === undefined) continue;
+    if ((c.para as number) > 0) {
+      const key = `${c.list}/${c.para}`;
+      if (!tailFields.has(key) || observedTails.has(key) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== ""
+        || c.controlIndex !== 0 || c.pos !== 0 || !record(c.props) || Object.keys(c.props).length) return "unknown";
+      observedTails.add(key);
+      continue;
+    }
     const prior = inventory.get(physical) ?? [];
     prior.push(c); inventory.set(physical, prior);
   }
+  if (observedTails.size !== tailFields.size) return "unknown";
   const graph = new Map<number, number[]>();
   let budget = count;
   for (const [physical, coordinate] of coordinates) {

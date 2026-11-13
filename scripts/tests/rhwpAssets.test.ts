@@ -8,7 +8,7 @@ import { canonical, identityFrom, type BuildIdentity } from "../../src/component
 import { copyRhwpGeneration, readRhwpGeneration, rhwpGenerationPlugin } from "../rhwpAssets";
 const hash = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 const folders: string[] = [];
-function fixture(profile: "release" | "debug", label = profile) {
+function fixture(profile: "release" | "debug", label: string = profile) {
   const js = `export const label = '${label}';`, wasm = Buffer.from([0,97,115,109,1,0,0,0]);
   const identity: BuildIdentity = {schemaVersion: 1, engine: "rhwp", commit: "1".repeat(40), profile, tools: {cargo:"1.99.0",rustc:"1.99.0","wasm-bindgen":"0.2.127"}, sourceFingerprint: hash(label), artifacts: {"rhwp.js":hash(js),"rhwp_bg.wasm":hash(wasm)}, generation:""};
   const unsigned = Object.fromEntries(Object.entries(identity).filter(([key]) => key !== "generation"));
@@ -39,7 +39,7 @@ describe("RHWP profile contract through Vite",()=>{
     sign(item.identity); install(p,item); await build(options(p));
     expect(JSON.parse(readFileSync(join(p,"dist/rhwp/BUILD.json"),"utf8"))).toEqual(item.identity);
     const full = structuredClone(item.identity);
-    full.integration!.patches = Array.from({ length: 17 }, (_, i) => ({ name: `managed-${i}.patch`, sha256: "5".repeat(64) }));
+    full.integration!.patches = Array.from({ length: 18 }, (_, i) => ({ name: `managed-${i}.patch`, sha256: "5".repeat(64) }));
     sign(full); await expect(identityFrom(full)).resolves.toEqual(full);
     full.integration!.patches.push({ name: "overflow.patch", sha256: "5".repeat(64) });
     sign(full); await expect(identityFrom(full)).rejects.toThrow("source identity");

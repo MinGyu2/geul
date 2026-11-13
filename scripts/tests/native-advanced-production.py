@@ -92,7 +92,6 @@ def run(args, d, report):
         a.open(fmt, path)
         a.engine('xkb:us::eng')
         check(fmt + ' test-only text hook absent', d.js('return !document.querySelector("[data-testid=rhwp-status]").hasAttribute("data-paragraph-text")'))
-        check(fmt + ' advanced-only history explained', '글자 입력' in d.js('return document.querySelector("[data-testid=rhwp-status]").textContent'))
         # Native pointer calibration, ordinary DOM observation only.
         d.js('window.__advancedPointer=null;window.addEventListener("mousemove",e=>window.__advancedPointer=[e.clientX,e.clientY],true)')
         rhwp.perform(d, [{"type": "pointer", "id": "calibrate", "parameters": {"pointerType": "mouse"}, "actions": [{"type": "pointerMove", "x": 100, "y": 100, "origin": "viewport"}]}])
@@ -117,7 +116,8 @@ def run(args, d, report):
         input_command('hangul.charWidth', '180')
         undo_redo(fmt, 'cell metric')
         save(fmt, 'metrics-second-save')
-        # Genuine Korean input retires advanced history. Observe refusal while composing.
+        # General production history records Korean input; advanced commands
+        # must still refuse while composition is open.
         click_cell(2)
         d.js('window.__advancedIme=[];for(const t of ["compositionstart","compositionupdate","compositionend"])document.querySelector(".rhwp-input").addEventListener(t,e=>window.__advancedIme.push({type:t,data:e.data,trusted:e.isTrusted}),true)')
         a.engine('hangul'); a.type('gk')
@@ -128,7 +128,9 @@ def run(args, d, report):
         check(fmt + ' trusted native Korean composition', any(e['type'] == 'compositionstart' and e['trusted'] for e in events) and any(e['type'] == 'compositionend' and e['trusted'] for e in events))
         before = a.status(fmt)['localRevision']
         a.key('ctrl+z'); idle()
-        check(fmt + ' Undo cannot cross ordinary Korean input', a.status(fmt)['localRevision'] == before)
+        check(fmt + ' Korean input Undo committed', int(a.status(fmt)['localRevision']) == int(before) + 1)
+        a.key('ctrl+y'); idle()
+        check(fmt + ' Korean input Redo committed', int(a.status(fmt)['localRevision']) == int(before) + 2)
         report.setdefault('nativeIme', []).append({'format': fmt, 'events': events})
         # Formula insertion, first publication, native close/reopen, replacement.
         click_cell(3)

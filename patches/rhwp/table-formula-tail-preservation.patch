@@ -1,0 +1,34 @@
+--- a/src/document_core/queries/field_query.rs
++++ b/src/document_core/queries/field_query.rs
+@@ -2996,28 +2996,9 @@
+                 .position(|cell| cell.row as usize == target_row && cell.col as usize == target_col)
+                 .ok_or_else(|| HwpError::InvalidField("결과 셀을 찾을 수 없음".into()))?
+         };
+-        let ordinary_tail = {
+-            let Some(Control::Table(table)) = self.document.sections[section_idx].paragraphs
+-                [parent_para_idx]
+-                .controls
+-                .get(control_idx)
+-            else {
+-                return Err(HwpError::InvalidField("표 컨트롤이 아님".into()));
+-            };
+-            let paragraphs = &table.cells[cell_idx].paragraphs;
+-            !paragraphs.is_empty()
+-                && paragraphs
+-                    .iter()
+-                    .skip(1)
+-                    .all(|p| p.controls.is_empty() && p.field_ranges.is_empty())
+-        };
+-        // Only paragraph zero is replaced below. Independent ordinary paragraphs
+-        // retain their complete model, formatting and serialization metadata.
+-        if !ordinary_tail {
+-            return Err(HwpError::InvalidField(
+-                "계산식 셀의 후속 문단에 필드나 컨트롤이 있음".into(),
+-            ));
+-        }
++        // Only paragraph zero is replaced. All later paragraphs (including their
++        // field/control ownership and raw serialization data) stay in the cell.
++        // Their contents are not formula operands: get_cell reads paragraph zero.
+         let mut para = self
+             .get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)?
+             .clone();

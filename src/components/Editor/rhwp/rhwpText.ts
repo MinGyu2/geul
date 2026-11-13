@@ -5,7 +5,7 @@ import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipb
 // 다루는 호출(커서 사각형·삽입·삭제·문단 나누기·줄 정보)은 모두 여기서 본문용/셀용 API를 고르므로, 렌더·hit test·
 // 편집이 서로 다른 좌표를 쓰지 않는다. 글자 오프셋은 rhwp의 글자(char, 유니코드 스칼라) 단위다.
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
-import { tableFormulaSafety } from "./formulaDependencies";
+import { cachedFormula, tableFormulaSafety } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
 
 export interface CellRef {
@@ -542,8 +542,8 @@ export class RhwpText {
       if (matches.length !== 1) return null;
       const field: unknown = matches[0];
       if (!isRecord(field) || field.fieldType !== "formula" || typeof field.command !== "string") return null;
-      const match = /^(=[^?;]{1,255})\?\?%g,;;([-+0-9.eE]+)$/.exec(field.command);
-      return match && Number.isFinite(Number(match[2])) ? match[1]! : null;
+      const match = cachedFormula(field.command);
+      return match && match.value === field.value && Number.isFinite(Number(match.value)) ? match.expression : null;
     } catch { return null; }
   }
 

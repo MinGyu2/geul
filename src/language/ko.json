@@ -147,6 +147,8 @@
   "command.reason.notInTable": "커서가 표 셀 안에 있지 않음",
   "command.unavailable.caretRequired": "{command}: 선택을 해제하고 커서를 본문 문단(표 밖)에 두세요.",
   "command.reason.caretRequired": "본문 문단의 커서 필요(선택 없음, 표 밖)",
+  "command.unavailable.formulaParagraphRequired": "{command}: 계산식은 셀의 첫 문단에서만 넣거나 다시 계산할 수 있습니다. 후속 문단은 그대로 보존됩니다.",
+  "command.reason.formulaParagraphRequired": "셀의 첫 문단에 커서 필요",
   "command.unavailable.originalChecking": "{command}: 원본 문서의 안전 저장 가능 여부를 확인하는 중입니다. 잠시 뒤 다시 시도하세요.",
   "command.reason.originalChecking": "원본 문서 저장 안전성 확인 중",
   "command.unavailable.originalUnverified": "{command}: 원본 문서가 안전 저장 사전 검사를 통과하지 못했거나 확인하지 못했습니다. 저장 검사로 다시 확인할 수 있습니다.",

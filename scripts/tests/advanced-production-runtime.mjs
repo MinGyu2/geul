@@ -61,7 +61,7 @@ function tableControl(doc) {
   return { section: table.list, para: table.para, controlIndex: table.controlIndex };
 }
 
-function fixturesMode(outDir) {
+function fixturesMode(outDir, complex = false) {
   const { build, engine } = loadRelease();
   mkdirSync(outDir);
   const outputs = [];
@@ -73,6 +73,10 @@ function fixturesMode(outDir) {
       requireValue(table.ok === true, "fixture table creation refused");
       seed.insertTextInCell(0, table.paraIdx, table.controlIdx, 0, 0, 0, "10");
       seed.insertTextInCell(0, table.paraIdx, table.controlIdx, 1, 0, 0, "20");
+      if (complex) {
+        seed.splitParagraphInCell(0, table.paraIdx, table.controlIdx, 3, 0, 0);
+        seed.insertClickHereFieldInCell(0, table.paraIdx, table.controlIdx, 3, 1, 0, false, "Independent tail", "", "tail", true);
+      }
       const output = format === "hwp" ? seed.exportHwpWithReport() : seed.exportHwpxWithReport();
       try {
         requireValue(json(output.contentLoss()).count === 0, "fixture export reported loss");
@@ -85,7 +89,7 @@ function fixturesMode(outDir) {
       } finally { output.free(); }
     } finally { seed.free(); }
   }
-  writeNew(join(outDir, "fixtures.json"), { build, scope: "controlled generated fixtures, not Hancom authored", outputs });
+  writeNew(join(outDir, "fixtures.json"), { build, complex, scope: "controlled generated fixtures, not Hancom authored", outputs });
 }
 
 function captureGeometry(engine, format, source) {
@@ -205,6 +209,15 @@ function verifyFormat(engine, fixture, nativeDir) {
   requireValue(sourceHash === fixture.sha256, `${fixture.format} immutable source hash changed`);
   const rows = STAGES.map(stage => inspectSnapshot(engine, fixture.format,
     join(nativeDir, `${stage}.${fixture.format}`), stage, sourceHash));
+  const tail = doc => {
+    const t = tableControl(doc), count = doc.getCellParagraphCount(t.section, t.para, t.controlIndex, 3);
+    return { paragraphs: Array.from({ length: count - 1 }, (_, i) => doc.getTextInCell(t.section, t.para, t.controlIndex, 3, i + 1, 0,
+      doc.getCellParagraphLength(t.section, t.para, t.controlIndex, 3, i + 1))),
+      fields: json(doc.getFieldList()).filter(f => f.location?.path?.[0]?.paraIndex > 0) };
+  };
+  const originalTail = withDocument(engine, fixture.source, tail);
+  for (const stage of STAGES) requireValue(same(withDocument(engine, join(nativeDir, `${stage}.${fixture.format}`), tail), originalTail),
+    `${fixture.format}/${stage} changed independent trailing paragraphs/fields`);
   requireValue(sha256(readFileSync(fixture.source)) === sourceHash, `${fixture.format} source fixture changed during verification`);
   const firstFormulaId = rows[2].formulaFields[0].fieldId;
   for (const row of rows.slice(3)) requireValue(row.formulaFields[0].fieldId === firstFormulaId,
@@ -238,6 +251,7 @@ function verifyMode(geometryPath, nativeDir, resultPath) {
 function main(argv) {
   const [mode, ...args] = argv;
   if (mode === "fixtures" && args.length === 1) return fixturesMode(resolve(args[0]));
+  if (mode === "fixtures-complex" && args.length === 1) return fixturesMode(resolve(args[0]), true);
   if (mode === "geometry" && args.length === 2) return geometryMode(resolve(args[0]), resolve(args[1]));
   if (mode === "cell-geometry" && args.length === 3) return cellGeometryMode(resolve(args[0]), resolve(args[1]), args[2]);
   if (mode === "verify" && args.length === 3) return verifyMode(resolve(args[0]), resolve(args[1]), resolve(args[2]));
