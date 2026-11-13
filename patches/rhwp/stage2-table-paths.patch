@@ -101,7 +101,30 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
          let default_char_shape_id: u32 = current_para.char_shape_id_at(char_offset).unwrap_or(0);
          let default_para_shape_id: u16 = current_para.para_shape_id;
 
-@@ -1085,7 +1115,8 @@
+@@ -1060,6 +1090,10 @@
+             repeat_header: false,
+             caption: None,
+             common: crate::model::shape::CommonObjAttr {
++                // A nested (path) table's live attribute bits equal the CTRL_HEADER flags it
++                // serializes, so its control properties reopen unchanged. The legacy body
++                // API keeps its behavior (callers normalize it through table properties).
++                attr: if path.is_empty() { 0 } else { flags },
+                 instance_id,
+                 treat_as_char: true,
+                 text_wrap: crate::model::shape::TextWrap::TopAndBottom,
+@@ -1082,10 +1116,20 @@
+             raw_table_record_extra: Vec::new(),
+         };
+         table.rebuild_grid();
++        if !path.is_empty() {
++            // Live outer margins and vertical reference equal the CTRL_HEADER this table
++            // serializes (flags bits 3-4 = 0, which the HWP parser reads as Paper).
++            table.common.vert_rel_to = crate::model::shape::VertRelTo::Paper;
++            table.common.margin.left = outer_margin;
++            table.common.margin.right = outer_margin;
++            table.common.margin.top = outer_margin;
++            table.common.margin.bottom = outer_margin;
++        }
 
          // ── 기존 문단에 인라인 삽입 ──
          self.document.sections[section_idx].raw_stream = None;
@@ -111,7 +134,7 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 
          // controls에 표 추가
          let ctrl_idx = para.controls.len();
-@@ -1116,6 +1147,16 @@
+@@ -1116,6 +1160,16 @@
              }
          }
 
@@ -128,7 +151,7 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
          // char_count 갱신 (확장 제어문자 8 + 기존)
          para.char_count += 8;
 
-@@ -1130,6 +1171,11 @@
+@@ -1130,6 +1184,11 @@
          }
 
          // rebuild
@@ -140,7 +163,7 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
          self.rebuild_section(section_idx);
 
          self.event_log.push(DocumentEvent::TableRowInserted {
-@@ -1139,7 +1185,8 @@
+@@ -1139,7 +1198,8 @@
          });
          // 표 바로 뒤의 논리적 오프셋 계산
          let logical_after = crate::document_core::helpers::text_to_logical_offset(
@@ -153,12 +176,10 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
 --- a/src/document_core/commands/table_ops.rs
 +++ b/src/document_core/commands/table_ops.rs
-@@ -67,6 +67,41 @@
-         }
-         let section = &mut self.document.sections[section_idx];
+@@ -69,6 +69,41 @@
          navigate_path_to_table(&mut section.paragraphs, path)
-+    }
-+
+     }
+
 +    /// Path routing shares the existing table geometry implementation. The final
 +    /// entry identifies the table; its cell/paragraph selects no separate engine.
 +    pub fn edit_table_by_cell_path_native(&mut self, section: usize, paragraph: usize,
@@ -192,9 +213,136 @@ diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/command
 +        self.recompose_section(section);
 +        self.paginate_if_needed();
 +        Ok("{\"ok\":true}".into())
-     }
-
++    }
++
      /// 표에 행을 삽입한다 (네이티브).
+     pub fn insert_table_row_native(
+         &mut self,
+@@ -2680,7 +2715,22 @@
+                 ))
+             }
+         };
++        self.table_properties_json(table)
++    }
++
++    /// [geul] Properties of an explicitly path-owned (possibly nested) table, with
++    /// the same serializer as the body-level query.
++    pub(crate) fn get_table_properties_by_path_native(
++        &self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        path: &[(usize, usize, usize)],
++    ) -> Result<String, HwpError> {
++        let table = self.resolve_table_by_path(section_idx, parent_para_idx, path)?;
++        self.table_properties_json(table)
++    }
+
++    fn table_properties_json(&self, table: &crate::model::table::Table) -> Result<String, HwpError> {
+         let pb = match table.page_break {
+             crate::model::table::TablePageBreak::None => 0,
+             crate::model::table::TablePageBreak::CellBreak => 1,
+@@ -3574,35 +3624,7 @@
+             Some(Control::Table(t)) => t,
+             _ => return Err(HwpError::RenderError("표 컨트롤이 아님".into())),
+         };
+-
+-        let row_count = table.row_count as usize;
+-        let col_count = table.col_count as usize;
+-
+-        // 셀 값 조회 함수: 셀의 첫 문단 텍스트를 숫자로 파싱한다. 병합 뒤에는 비주 셀이
+-        // 제거되어 cells 배열 인덱스와 row * col_count + col이 일치하지 않으므로, 저장된
+-        // 논리 좌표로 찾아야 한다. 병합 셀이 덮는 비-anchor 좌표는 별도 셀이 아니어서
+-        // 값 없음으로 처리한다.
+-        let cells = &table.cells;
+-        let get_cell = |col: usize, row: usize| -> Option<f64> {
+-            cells
+-                .iter()
+-                .find(|cell| cell.row as usize == row && cell.col as usize == col)
+-                .and_then(|cell| cell.paragraphs.first())
+-                .and_then(|p| parse_cell_number(&p.text))
+-        };
+-        let target_cell_idx = cells
+-            .iter()
+-            .position(|cell| cell.row as usize == target_row && cell.col as usize == target_col);
+-
+-        let ctx = crate::document_core::table_calc::TableContext {
+-            row_count,
+-            col_count,
+-            current_row: target_row,
+-            current_col: target_col,
+-        };
+-
+-        let result = crate::document_core::table_calc::evaluate_formula(formula, &ctx, &get_cell)
+-            .map_err(|e| HwpError::RenderError(format!("계산식 오류: {}", e)))?;
++        let (result, target_cell_idx) = Self::evaluate_formula_in_table(table, target_row, target_col, formula)?;
+
+         // 결과를 셀에 기록
+         if write_result {
+@@ -3641,6 +3663,64 @@
+         Ok(format!(
+             "{{\"ok\":true,\"result\":{},\"formula\":{}}}",
+             result,
++            json_escape(formula)
++        ))
++    }
++
++    /// [geul] Evaluate a formula against one table's own logical grid. Shared by
++    /// body-level and path-owned nested tables; never writes.
++    pub(crate) fn evaluate_formula_in_table(
++        table: &crate::model::table::Table,
++        target_row: usize,
++        target_col: usize,
++        formula: &str,
++    ) -> Result<(f64, Option<usize>), HwpError> {
++        let row_count = table.row_count as usize;
++        let col_count = table.col_count as usize;
++
++        // 셀 값 조회 함수: 셀의 첫 문단 텍스트를 숫자로 파싱한다. 병합 뒤에는 비주 셀이
++        // 제거되어 cells 배열 인덱스와 row * col_count + col이 일치하지 않으므로, 저장된
++        // 논리 좌표로 찾아야 한다. 병합 셀이 덮는 비-anchor 좌표는 별도 셀이 아니어서
++        // 값 없음으로 처리한다.
++        let cells = &table.cells;
++        let get_cell = |col: usize, row: usize| -> Option<f64> {
++            cells
++                .iter()
++                .find(|cell| cell.row as usize == row && cell.col as usize == col)
++                .and_then(|cell| cell.paragraphs.first())
++                .and_then(|p| parse_cell_number(&p.text))
++        };
++        let target_cell_idx = cells
++            .iter()
++            .position(|cell| cell.row as usize == target_row && cell.col as usize == target_col);
++
++        let ctx = crate::document_core::table_calc::TableContext {
++            row_count,
++            col_count,
++            current_row: target_row,
++            current_col: target_col,
++        };
++
++        let result = crate::document_core::table_calc::evaluate_formula(formula, &ctx, &get_cell)
++            .map_err(|e| HwpError::RenderError(format!("계산식 오류: {}", e)))?;
++        Ok((result, target_cell_idx))
++    }
++
++    /// [geul] Read-only formula evaluation in an explicitly path-owned table.
++    pub fn evaluate_table_formula_by_path(
++        &self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        path: &[(usize, usize, usize)],
++        target_row: usize,
++        target_col: usize,
++        formula: &str,
++    ) -> Result<String, HwpError> {
++        let table = self.resolve_table_by_path(section_idx, parent_para_idx, path)?;
++        let (result, _) = Self::evaluate_formula_in_table(table, target_row, target_col, formula)?;
++        Ok(format!(
++            "{{\"ok\":true,\"result\":{},\"formula\":{}}}",
++            result,
+             json_escape(formula)
+         ))
+     }
 diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries/cursor_nav.rs
 --- a/src/document_core/queries/cursor_nav.rs
 +++ b/src/document_core/queries/cursor_nav.rs
@@ -253,6 +401,226 @@ diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries
      }
 
      /// 경로 기반으로 표를 탐색한다.
+diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
+--- a/src/document_core/queries/field_query.rs
++++ b/src/document_core/queries/field_query.rs
+@@ -2911,6 +2911,34 @@
+             target_col,
+             formula,
+             true,
++            None,
++        )
++    }
++
++    /// [geul] Path-owned (nested) table formula field. The final path entry names
++    /// the table; the same field model, evaluator and replacement rules apply.
++    pub fn table_formula_field_by_path_native(
++        &mut self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        path: &[(usize, usize, usize)],
++        target_row: usize,
++        target_col: usize,
++        formula: &str,
++        apply: bool,
++    ) -> Result<String, HwpError> {
++        let &(control_idx, _, _) = path
++            .last()
++            .ok_or_else(|| HwpError::InvalidField("빈 표 경로".into()))?;
++        self.table_formula_field_impl(
++            section_idx,
++            parent_para_idx,
++            control_idx,
++            target_row,
++            target_col,
++            formula,
++            apply,
++            Some(path),
+         )
+     }
+
+@@ -2931,9 +2959,11 @@
+             target_col,
+             formula,
+             false,
++            None,
+         )
+     }
+
++    #[allow(clippy::too_many_arguments)]
+     fn table_formula_field_impl(
+         &mut self,
+         section_idx: usize,
+@@ -2943,6 +2973,7 @@
+         target_col: usize,
+         formula: &str,
+         apply: bool,
++        path: Option<&[(usize, usize, usize)]>,
+     ) -> Result<String, HwpError> {
+         if formula.len() > 256 {
+             return Err(HwpError::InvalidField("계산식 길이 초과".into()));
+@@ -2956,15 +2987,25 @@
+                 "계산식은 '='로 시작하고 ?? ; 제어 문자를 포함할 수 없음".into(),
+             ));
+         }
+-        let evaluated = self.evaluate_table_formula(
+-            section_idx,
+-            parent_para_idx,
+-            control_idx,
+-            target_row,
+-            target_col,
+-            formula,
+-            false,
+-        )?;
++        let evaluated = match path {
++            Some(path) => self.evaluate_table_formula_by_path(
++                section_idx,
++                parent_para_idx,
++                path,
++                target_row,
++                target_col,
++                formula,
++            )?,
++            None => self.evaluate_table_formula(
++                section_idx,
++                parent_para_idx,
++                control_idx,
++                target_row,
++                target_col,
++                formula,
++                false,
++            )?,
++        };
+         let result = evaluated
+             .split("\"result\":")
+             .nth(1)
+@@ -2977,7 +3018,13 @@
+         let field_id = self.next_click_here_field_id();
+
+         // 검증과 변경은 문단 사본에서 한다(실패하면 문서는 그대로).
+-        let cell_idx = {
++        let cell_idx = if let Some(path) = path {
++            self.resolve_table_by_path(section_idx, parent_para_idx, path)?
++                .cells
++                .iter()
++                .position(|cell| cell.row as usize == target_row && cell.col as usize == target_col)
++                .ok_or_else(|| HwpError::InvalidField("결과 셀을 찾을 수 없음".into()))?
++        } else {
+             let section = self
+                 .document
+                 .sections
+@@ -2999,9 +3046,21 @@
+         // Only paragraph zero is replaced. All later paragraphs (including their
+         // field/control ownership and raw serialization data) stay in the cell.
+         // Their contents are not formula operands: get_cell reads paragraph zero.
+-        let mut para = self
+-            .get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)?
+-            .clone();
++        let cell_path = path.map(|path| {
++            let mut cell_path = path.to_vec();
++            let last = cell_path.len() - 1;
++            cell_path[last].1 = cell_idx;
++            cell_path[last].2 = 0;
++            cell_path
++        });
++        let mut para = match &cell_path {
++            Some(cell_path) => self
++                .get_cell_paragraph_mut_by_path(section_idx, parent_para_idx, cell_path)?
++                .clone(),
++            None => self
++                .get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)?
++                .clone(),
++        };
+         let text_len = para.text.chars().count();
+         let existing = match (para.controls.as_slice(), para.field_ranges.as_slice()) {
+             ([], []) => None,
+@@ -3102,11 +3161,17 @@
+         if !apply || unchanged {
+             return Ok(response);
+         }
+-        *self.get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)? =
+-            para;
+-
+-        self.mark_cell_control_dirty(section_idx, parent_para_idx, control_idx);
+-        self.reflow_cell_paragraph(section_idx, parent_para_idx, control_idx, cell_idx, 0);
++        if let Some(cell_path) = &cell_path {
++            *self.get_cell_paragraph_mut_by_path(section_idx, parent_para_idx, cell_path)? = para;
++            self.mark_cell_control_dirty(section_idx, parent_para_idx, cell_path[0].0);
++            self.reflow_cell_paragraph_by_path(section_idx, parent_para_idx, cell_path, 0);
++            self.recalculate_cell_paragraph_vpos_by_path(section_idx, parent_para_idx, cell_path, 0, None);
++        } else {
++            *self.get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)? =
++                para;
++            self.mark_cell_control_dirty(section_idx, parent_para_idx, control_idx);
++            self.reflow_cell_paragraph(section_idx, parent_para_idx, control_idx, cell_idx, 0);
++        }
+         if let Some(section) = self.document.sections.get_mut(section_idx) {
+             section.raw_stream = None;
+         }
+diff --git a/src/renderer/height_measurer.rs b/src/renderer/height_measurer.rs
+--- a/src/renderer/height_measurer.rs
++++ b/src/renderer/height_measurer.rs
+@@ -1561,7 +1561,14 @@
+     /// Measurement-session owner for the same derived probe used by layout.
+     /// A new measurer starts a new source/style revision scope.
+     single_line_overflow_cache: SingleLineOverflowCache,
++    /// [geul Stage 2] Nested-table measurements of this measurement session. One cell
++    /// asks for the same child table up to three times (controls height, unabsorbed
++    /// height, nested bottom), which re-measured every deeper level exponentially.
++    /// Same owner/lifetime rule as `single_line_overflow_cache`: a new measurer starts
++    /// a new source/style revision scope. Bounded; misses beyond the bound recompute.
++    nested_table_cache: std::cell::RefCell<std::collections::HashMap<(usize, usize, usize, usize, usize, u64), MeasuredTable>>,
+ }
++const NESTED_TABLE_CACHE_ENTRIES: usize = 4096;
+
+ /// [#6299] 이 저장 seg 가 **앞 줄의 가로 조각**인가 — 같은 물리 줄의 오른쪽 조각.
+ ///
+@@ -1661,6 +1668,7 @@
+             ),
+             float_carve_evidence: Vec::new(),
+             single_line_overflow_cache: SingleLineOverflowCache::default(),
++            nested_table_cache: Default::default(),
+         }
+     }
+
+@@ -2770,6 +2778,37 @@
+         // 1.0을 반환한다.
+         width_scale: f64,
+     ) -> MeasuredTable {
++        if depth == 0 {
++            return self.measure_table_uncached(table, para_index, control_index, styles, depth, width_scale);
++        }
++        let key = (
++            table as *const Table as usize,
++            styles as *const ResolvedStyleSet as usize,
++            para_index,
++            control_index,
++            depth,
++            width_scale.to_bits(),
++        );
++        if let Some(found) = self.nested_table_cache.borrow().get(&key) {
++            return found.clone();
++        }
++        let measured = self.measure_table_uncached(table, para_index, control_index, styles, depth, width_scale);
++        let mut cache = self.nested_table_cache.borrow_mut();
++        if cache.len() < NESTED_TABLE_CACHE_ENTRIES {
++            cache.insert(key, measured.clone());
++        }
++        measured
++    }
++
++    fn measure_table_uncached(
++        &self,
++        table: &Table,
++        para_index: usize,
++        control_index: usize,
++        styles: &ResolvedStyleSet,
++        depth: usize,
++        width_scale: f64,
++    ) -> MeasuredTable {
+         let width_scale =
+             width_scale.max(self.render_normalization.nested_table_width_scale(table));
+         if depth >= Self::MAX_NESTED_DEPTH {
 diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_layout.rs
 --- a/src/renderer/layout/table_layout.rs
 +++ b/src/renderer/layout/table_layout.rs
@@ -394,12 +762,10 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -7200,6 +7200,43 @@
-         cell: u32, cell_paragraph: u32, start: u32, end: u32) -> Result<String, JsValue> {
-         self.formatting_runs_native(section as usize, paragraph as usize, control,
+@@ -7202,6 +7202,92 @@
              cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
-+    }
-+
+     }
+
 +    /// Proven formatting inventory in the innermost explicitly owned paragraph.
 +    #[wasm_bindgen(js_name = getFormattingRunsByPath)]
 +    pub fn get_formatting_runs_by_path(&self, section: u32, paragraph: u32,
@@ -426,6 +792,55 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +        self.edit_table_by_cell_path_native(section as usize, paragraph as usize, &path, op, &args).map_err(Into::into)
 +    }
 +
++    #[wasm_bindgen(js_name = getTablePropertiesByPath)]
++    pub fn get_table_properties_by_path(&self, section: u32, paragraph: u32,
++        path_json: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.get_table_properties_by_path_native(section as usize, paragraph as usize, &path).map_err(Into::into)
++    }
++
++    /// [geul] Caption paragraphs of an explicitly path-owned table (read-only):
++    /// `{"paragraphs":[...]}` or `{"paragraphs":null}` when the table has none.
++    #[wasm_bindgen(js_name = getTableCaptionByPath)]
++    pub fn get_table_caption_by_path(&self, section: u32, paragraph: u32,
++        path_json: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        let table = self.resolve_table_by_path(section as usize, paragraph as usize, &path)?;
++        let Some(caption) = table.caption.as_ref() else { return Ok("{\"paragraphs\":null}".into()) };
++        if caption.paragraphs.len() > 10_000 || caption.paragraphs.iter().map(|p| p.text.len()).sum::<usize>() > 4 * 1024 * 1024 {
++            return Err(JsValue::from_str("caption budget"));
++        }
++        let texts: Vec<&str> = caption.paragraphs.iter().map(|p| p.text.as_str()).collect();
++        serde_json::to_string(&texts).map(|t| format!("{{\"paragraphs\":{t}}}"))
++            .map_err(|_| JsValue::from_str("caption json"))
++    }
++
++    /// Read-only evaluation in a path-owned table; never writes.
++    #[wasm_bindgen(js_name = evaluateTableFormulaByPath)]
++    pub fn evaluate_table_formula_by_path_api(&self, section: u32, paragraph: u32,
++        path_json: &str, row: u32, col: u32, formula: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.evaluate_table_formula_by_path(section as usize, paragraph as usize, &path,
++            row as usize, col as usize, formula).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = validateTableFormulaFieldByPath)]
++    pub fn validate_table_formula_field_by_path(&mut self, section: u32, paragraph: u32,
++        path_json: &str, row: u32, col: u32, formula: &str) -> String {
++        DocumentCore::parse_cell_path(path_json).ok()
++            .and_then(|path| self.table_formula_field_by_path_native(section as usize, paragraph as usize,
++                &path, row as usize, col as usize, formula, false).ok())
++            .unwrap_or_else(|| "{\"ok\":false}".into())
++    }
++
++    #[wasm_bindgen(js_name = insertTableFormulaFieldByPath)]
++    pub fn insert_table_formula_field_by_path(&mut self, section: u32, paragraph: u32,
++        path_json: &str, row: u32, col: u32, formula: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.table_formula_field_by_path_native(section as usize, paragraph as usize, &path,
++            row as usize, col as usize, formula, true).map_err(|e| JsValue::from_str(&e.to_string()))
++    }
++
 +    #[wasm_bindgen(js_name = createTableInCellByPath)]
 +    pub fn create_table_in_cell_by_path(&mut self, section: u32, paragraph: u32,
 +        path_json: &str, offset: u32, rows: u32, cols: u32) -> Result<String, JsValue> {
@@ -435,6 +850,8 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +        }
 +        self.create_table_with_path_native(section as usize, paragraph as usize, offset as usize,
 +            rows as u16, cols as u16, true, None, None, &path).map_err(Into::into)
-     }
-
++    }
++
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
+     #[wasm_bindgen(js_name = charShapeCount)]
+     pub fn char_shape_count(&self) -> u32 {

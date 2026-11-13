@@ -239,6 +239,42 @@ export function formulaDependencies(formula: string, at: { row: number; col: num
   return [...refs];
 }
 
+function columnLetters(index: number): string {
+  let out = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+  return out;
+}
+
+/**
+ * Stage 2: rewrite the absolute cell references of a valid formula after a table structure change.
+ * `map` returns a reference's new coordinate, or null when the referenced row/column no longer
+ * exists (the caller then refuses the operation rather than silently changing the formula's meaning).
+ * Relative components (`?`), directions and function names are kept: they are relative to the
+ * formula cell, whose own new coordinate the caller supplies. Same tokenizer/grammar as evaluation.
+ */
+export function remapFormulaReferences(formula: string, from: { row: number; col: number; rows: number; cols: number },
+  to: { row: number; col: number; rows: number; cols: number }, map: (row: number, col: number) => { row: number; col: number } | null): string | null {
+  if (formulaProblem(formula, from) !== null) return null;
+  const tokens = formulaTokens(formula.trim().replace(/^[=@]/, ""))!;
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    const match = tokens[i + 1] === "(" ? null : /^([A-Za-z]+|\?)([0-9]+|\?)$/.exec(token);
+    if (!match) { out.push(token); continue; }
+    const relativeCol = match[1] === "?", relativeRow = match[2] === "?";
+    if (relativeCol && relativeRow) { out.push(token); continue; }
+    const col = relativeCol ? from.col : columnIndex(match[1]!.toUpperCase()), row = relativeRow ? from.row : Number(match[2]) - 1;
+    if (!Number.isSafeInteger(col) || row < 0 || row >= from.rows || col < 0 || col >= from.cols) return null;
+    const moved = map(row, col);
+    if (!moved || moved.row < 0 || moved.row >= to.rows || moved.col < 0 || moved.col >= to.cols) return null;
+    // A relative component must still resolve to the same moved cell from the formula's new position.
+    if ((relativeCol && moved.col !== to.col) || (relativeRow && moved.row !== to.row)) return null;
+    out.push(`${relativeCol ? "?" : columnLetters(moved.col)}${relativeRow ? "?" : moved.row + 1}`);
+  }
+  const rewritten = `=${out.join("")}`;
+  return formulaProblem(rewritten, to) === null ? rewritten : null;
+}
+
 const integerIn = (value: unknown, range: { min: number; max: number }): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= range.min && value <= range.max;
 

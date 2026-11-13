@@ -36,6 +36,12 @@ export interface CellRef {
 // inventory work have independent budgets; paths are never silently truncated.
 export const MAX_TABLE_DEPTH = 64;
 export const MAX_CELL_PATH_BYTES = 32 * 1024;
+/**
+ * Deepest table level the product creates. The pinned engine's height measurer lays out nested
+ * tables to ten levels (deeper ones measure as zero height), so creating deeper tables would
+ * produce silently wrong pagination. Opening/editing existing deeper paths is unaffected.
+ */
+export const MAX_CREATED_TABLE_DEPTH = 10;
 
 /** Innermost level of a cell path: the cell and paragraph the caret is actually in. */
 export function innermost(cell: CellRef): NestedCell {
@@ -693,20 +699,24 @@ export class RhwpText {
     }
   }
 
-  /** Exact top-level cell ownership; unfamiliar fields are never interpreted or rewritten. */
+  /** Exact cell ownership at every path level; unfamiliar fields are never interpreted or rewritten. */
   existingFormula(at: DocPosition): string | null {
     const cell = at.cell;
-    if (!cell || cell.nested || !this.doc.getFieldList) return null;
+    if (!cell || !this.doc.getFieldList) return null;
+    if (cell.nested && !this.doc.validateTableFormulaFieldByPath) return null;
     try {
       const fields: unknown = json(this.doc.getFieldList());
       if (!Array.isArray(fields)) return null;
+      const levels = [cell, ...(cell.nested ?? [])];
       const matches = fields.filter((field: unknown) => {
         if (!isRecord(field) || !isRecord(field.location) || !Array.isArray(field.location.path)) return false;
         const location = field.location, path = location.path as unknown[];
-        const part = path[0];
-        return location.sectionIndex === at.section && location.paraIndex === cell.parentParagraph && path.length === 1
-          && isRecord(part) && part.type === "cell" && part.controlIndex === cell.control && part.cellIndex === cell.cell
-          && part.paraIndex === cell.cellParagraph;
+        return location.sectionIndex === at.section && location.paraIndex === cell.parentParagraph && path.length === levels.length
+          && levels.every((level, i) => {
+            const part = path[i];
+            return isRecord(part) && part.type === "cell" && part.controlIndex === level.control && part.cellIndex === level.cell
+              && part.paraIndex === level.cellParagraph;
+          });
       });
       if (matches.length !== 1) return null;
       const field: unknown = matches[0];
@@ -719,17 +729,20 @@ export class RhwpText {
   /** Read-only engine preparation. A normal refusal opens no history transaction. */
   prepareFormula(at: DocPosition, row: number, col: number, formula: string): FormulaFieldResult | null {
     const c = at.cell;
-    if (!c || c.nested || !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField) return null;
+    if (!c || (c.nested ? !this.doc.validateTableFormulaFieldByPath || !this.doc.insertTableFormulaFieldByPath
+      : !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField)) return null;
     if (tableFormulaSafety(this.doc, at, formula) !== "safe") return null;
-    const value = json(this.doc.validateTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula));
+    const value = json(c.nested ? this.doc.validateTableFormulaFieldByPath!(at.section, c.parentParagraph, pathJson(c), row, col, formula)
+      : this.doc.validateTableFormulaField!(at.section, c.parentParagraph, c.control, row, col, formula));
     if (isRecord(value) && Object.keys(value).join(",") === "ok" && value.ok === false) return null;
     return formulaFieldResult(value, formula);
   }
 
   insertFormula(at: DocPosition, row: number, col: number, formula: string, expected: FormulaFieldResult): void {
     const c = at.cell;
-    if (!c || c.nested || !this.doc.insertTableFormulaField) throw new Error("formula field unavailable");
-    const value = formulaFieldResult(json(this.doc.insertTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula)), formula);
+    if (!c || (c.nested ? !this.doc.insertTableFormulaFieldByPath : !this.doc.insertTableFormulaField)) throw new Error("formula field unavailable");
+    const value = formulaFieldResult(json(c.nested ? this.doc.insertTableFormulaFieldByPath!(at.section, c.parentParagraph, pathJson(c), row, col, formula)
+      : this.doc.insertTableFormulaField!(at.section, c.parentParagraph, c.control, row, col, formula)), formula);
     if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("formula preparation changed");
   }
 
@@ -739,9 +752,10 @@ export class RhwpText {
    */
   evaluateFormula(at: DocPosition, row: number, col: number, formula: string): number | null {
     const c = at.cell;
-    if (!c || c.nested || !this.doc.evaluateTableFormula) return null;
+    if (!c || (c.nested ? !this.doc.evaluateTableFormulaByPath : !this.doc.evaluateTableFormula)) return null;
     try {
-      const value = json(this.doc.evaluateTableFormula(at.section, c.parentParagraph, c.control, row, col, formula, false));
+      const value = json(c.nested ? this.doc.evaluateTableFormulaByPath!(at.section, c.parentParagraph, pathJson(c), row, col, formula)
+        : this.doc.evaluateTableFormula!(at.section, c.parentParagraph, c.control, row, col, formula, false));
       if (!isRecord(value) || value.ok !== true || !isNumber(value.result)) return null;
       return value.result;
     } catch (error) {

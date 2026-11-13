@@ -891,3 +891,35 @@ HWP 중첩 장평·자간의 추가 가용성 검토에서 원본 증명 범위�
 - 더 깊은 구조에서의 height-measurement 한도 처리, 큰 표의 국소 조판/이력 메모리 개선에 대한 추가 구현. 기존 viewport 렌더·snapshot 예산을 제거하거나 메모리 상한을 올리지 않았다. T010 D4 지연 목표는 이번 게이트가 아니다.
 
 기존 T010 제품 GO/자원 증거와 T012 Phase 2 native X11/IBus 50/50 등 날짜별 증거는 역사·변경하지 않은 범위에 한해 유지한다. 새 경로를 과거 PASS로 검증했다고 주장하지 않는다. 전체 T010/T012/DOCX·IBus·D4 행렬을 다시 실행하지 않는다. Stage 3의 기능 범위/보존 수용, Stage 4의 T012 통합, Stage 5의 T015/T016 외부 한컴·Word/다른 OS·출시 수용은 남는다. push하지 않는다.
+
+<a id="stage2-final-20261113"></a>
+## Stage 2 최종 구현 후속 — 2026-11-13 (2차)
+
+**PARTIALLY COMPLETED.** 시작 HEAD `cf2f99b3759c25eaffb82d217beb3ccb08fc0058`(clean, 서브모듈 핀 불변). 아래는 Stage 2 구현 범위이며 Stage 3–5 수용(기능 범위·보존 수용, T012 통합, T015/T016 호환·출시)이 아니다.
+
+### 구현
+
+- **A1 이동 결과**: `moveTo()`가 적용/거부를 돌려주고 `pointAt`·`moveHorizontal`·`moveVertical`·`moveLineEdge`·`moveCell`이 그대로 전달한다. 다른 문맥으로의 Shift 확장은 상태를 바꾸지 않고 `false`를 보고한다(이전에는 `pointAt`이 거부 후에도 `true`). 같은 셀/같은 표 선택 의미는 그대로다.
+- **A2 빈 중첩 셀 선택**: 글이 없는 2×2 중첩 표에서 Shift+클릭 범위가 4칸으로 식별·강조되고 범위 병합된다. 표/셀 provenance(기존 렌더 경로 수정)로 충분해 코드 변경은 없다.
+- **B HWP 중첩 보존**: `insertions.rs`에 같은 원본 표 control(인스턴스 ID·record level 동일)의 하위 구조 진화 증명(`evolved_table`)을 추가했다. 셀 글(독립 live/reopen 비교 몫), 새 기본 중첩 표(`validate_table_at`: 본문 42바이트 정규형, 중첩 TAC 형식 `0x002a0301`/TABLE `0x04000002`, 저장 전 재구성된 새 표는 46바이트 형식과 정확한 격자·기본 셀 템플릿), 원본 중첩 표의 동일/재귀 진화, 표 자체의 재구성(기존 템플릿 규칙), 셀 수가 줄어든 삭제에서만 원본 자식의 제거를 받는다. **구조 변화가 전혀 없는 원본 표의 글 변경은 기존 계약대로 거부**하며(기존 계약 시험이 확인), 필드·캡션·알 수 없는 레코드도 거부한다. TS `hwpReopenModel`은 중첩 표를 명시적 셀 목록 소유 경로로 완전 모델링(크기·셀 좌표/속성·표 속성·control wrap 일치)하고 중첩 셀의 필드 증거를 경로로 확장했다. 엔진의 경로 생성 표가 live `attr`·바깥 여백·세로 기준을 직렬화 값과 다르게 두던 불일치를 경로 생성에 한해 고쳤다(본문 API 불변). 제품은 HWP에서 중첩 생성(`insertedNestedTable` 검증)·중첩 구조 변경·중첩 장평/자간을 원본 구조 증명(완전 baseline·SAFE preflight) 아래 활성화한다.
+- **C 풍부한 내용 표 구조 편집**: `tableStructure.ts`가 셀 문단마다 digest(글, 소유 컨트롤의 종류·위치·속성, 필드 식별, 자식 표의 격자와 문단 digest를 재귀로)를 읽어 계획/결과를 비교한다. 요청한 행·열 삭제가 지운 셀 내용만 사라질 수 있다. 계산식 필드는 같은 필드 ID로 계획 좌표에 남아야 하고, 절대 참조를 새 좌표로 다시 써(`remapFormulaReferences`) 의존 순서대로 기존 엔진 필드 교체로 재계산한다. 지워질 셀을 참조하거나 병합으로 흡수되는 계산식은 엔진 호출 전에 거부한다. 캡션은 새 읽기 전용 `getTableCaptionByPath`로 전후 동일함을 증명한다. HWPX에서 자식 표·필드(계산식/ClickHere)·캡션을 지원한다. HWP는 T009 HWP 증명에 필드·캡션 이동 모델이 없어 해당 표를 계속 거부한다. 셀 안 inline 그림·기타 개체는 일반 digest 경로로 다루지만, 고정 엔진에 셀 inline 그림 생성 API가 없어(셀 그림은 한컴 방식의 표 문단 floating sibling) 직접 시험하지 못했다.
+- **D 중첩 계산식**: 엔진에 `evaluateTableFormulaByPath`, `validate/insertTableFormulaFieldByPath`(본문과 같은 구현·필드 모델, `evaluate_formula_in_table` 공유)를 추가했다. `RhwpText`·`formulaDependencies`(경로 소유 host list·필드 위치 접두 일치, 자식 표 안 필드는 그 표의 격자로 분리)·세션 가용성을 경로화했다. HWPX 삽입·교체·재계산·구조 변경 후 참조 재작성·저장/재열기를 확인했다. **HWP 중첩 계산식 삽입은 T009 HWP 증명에 중첩 필드 모델이 없어 저장이 거부되므로(시험으로 확인) 제품에서 막았다**(읽기 전용 계산은 가능).
+- **E 깊은 중첩**: 한 셀이 같은 자식 표를 최대 세 번(높이 합·미흡수 높이·하단) 재귀 측정해 깊이에 지수적이던 작업을 측정 세션 범위 캐시(4096 항목 한도, 기존 `SingleLineOverflowCache`와 같은 수명 규칙)로 없앴다. 엔진 높이 측정 재귀 한도 10은 올리지 않았다. 대신 제품의 새 표 생성은 측정 가능한 깊이 10까지만 허용한다(더 깊은 기존 경로는 편집 가능). 같은 2×2 중첩 문서에서 가장 깊은 셀 입력 시간(20회 평균): 이전 엔진 깊이 6/8/9 = 2.65/4.7/8.0 ms, 새 엔진 0.9/1.0/0.85 ms(로컬 일회 측정, 성능 수용 게이트 아님).
+
+### 엔진·산출물
+
+`stage2-table-paths.patch`를 갱신했다(서브모듈 핀 유지, series 수 19 불변). 새 준비 소스는 작업 사본과 파일 단위로 동일함을 확인했다. Release 세대 `3f3a649b691d5df615418025692f6faee3af98f5f1de4942720ef160f31fc054`, WASM SHA-256 `98f78277002ce3babf0a9b818cd96df481a4eff0332f541c3940cb995d9d5f92`(Rust 1.99.1, wasm-bindgen 0.2.127). 보관 한도 6은 유지하고, 소비자가 없는 상태에서 선택되지 않은 세대(이전 세대 2개와 이번 중간 세대 2개)를 `target/rhwp-retired-generations/stage2b/`로 옮겼다. 생성물·fixture는 커밋하지 않는다.
+
+### 검증(이번 실행)
+
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts`: 최종 세대에서 10 PASS. 새/변경 시나리오: A1/A2 빈 중첩 셀; HWP 원본 중첩 표 진화+새 중첩 표 재구성+중첩 장평 → 제품 저장의 live/reopen 비교 전부 일치, 실제 T009 검사기 결과 `previewStale`만(서비스가 재생성), 재열기 확인; HWPX 풍부한 표(자식 표·계산식·캡션·floating 그림) 행 넣기/지우기·참조 재작성·거부·Undo/Redo·중첩 계산식·중첩 열 넣기 → T009 SAFE 저장·재열기 수식 일치; 깊이 10 생성·11 거부. 기존 시나리오 7개도 함께 PASS.
+- `cargo test --lib services::save`: 216 PASS/25 ignored(계약 시험 2개가 처음 실패해 증명을 기존 계약에 맞게 좁힌 뒤 통과 — 텍스트만 바뀐 원본 표 거부, 잘못된 격자 코드). `cargo fmt --check`, `cargo clippy --lib --all-targets -- -D warnings` PASS.
+- `npm run build`, `npm run lint` PASS. 관련 단위 시험 6파일 140 PASS. `rhwpAssets` patched source identity 1 PASS.
+- 엔진 범위 Clippy(`-p rhwp --lib --no-deps`, wasm32): 41개, 코드 구성이 기존 기준과 같다. 변경 파일의 유일한 진단은 손대지 않은 `height_measurer.rs:1233` 기존 코드. **엄격 Clippy는 여전히 FAIL**이다.
+- 반복하지 않음: 전체 T009/T010/T012 행렬, native IBus, DOCX/WordCraft, D4, Windows/macOS, 외부 Hancom, 전체 WASM 시험.
+
+### 남은 Stage 2 구현
+
+- HWP 표의 필드(계산식/ClickHere)·캡션이 있을 때의 구조 편집, HWP 중첩 계산식 삽입: T009 HWP 본문 증명에 필드 control(`%fmu` 등)과 캡션 이동 모델이 필요하다. 지금은 거부한다.
+- 셀 inline 그림/개체: 일반 digest로 처리하지만 엔진 생성 API가 없어 실제 실행 증거가 없다.
+- 깊이 10을 넘는 기존 문서의 높이 측정(엔진 한도 10)은 그대로다.

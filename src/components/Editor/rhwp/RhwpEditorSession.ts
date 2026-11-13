@@ -40,7 +40,7 @@ import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClip
 //   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
 //   조정한다(문서 모델은 하나). 일반 기록과 선택 글자 서식은 제품 capability이며 실제 세션의 IME·기록·소유권·원본 보존 조건으로
 //   가용성을 정한다. HWP는 원본 문자 모양을 파생 직렬화할 수 있어야 한다. 저장은 T009 전체 검증을 다시 통과해야 한다.
-import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture } from "./hwpReopenModel";
+import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture, insertedNestedTable } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
@@ -77,6 +77,7 @@ import {
   sameTable,
   pathJson,
   MAX_TABLE_DEPTH,
+  MAX_CREATED_TABLE_DEPTH,
   innermost,
   withCell,
   withParagraph,
@@ -1337,14 +1338,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   // ---- 커서 이동 ----
 
-  private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false) {
-    if (extend && !sameContext(this.anchor, position) && !sameTable(this.anchor, position)) return; // 텍스트 문맥 또는 같은 표의 셀 범위만 확장한다.
+  /** Apply a caret move. false = refused (an extension outside the anchor's text context or table); state unchanged. */
+  private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false): boolean {
+    if (extend && !sameContext(this.anchor, position) && !sameTable(this.anchor, position)) return false; // 텍스트 문맥 또는 같은 표의 셀 범위만 확장한다.
     this.clipboardVersion += 1;
     this.history?.boundary(); // 이동·클릭·선택은 타자 그룹을 끊는다
     this.caret = position;
     if (!extend) this.anchor = position;
     if (!keepPreferredX) this.preferredX = -1;
     this.emit();
+    return true;
   }
 
   moveHorizontal(delta: -1 | 1, extend: boolean): boolean {
@@ -1352,8 +1355,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!text || !this.editable) return false;
     if (!extend && this.hasSelection && sameContext(this.anchor, this.caret)) {
       const [from, to] = this.ordered();
-      this.moveTo(delta < 0 ? from : to, false);
-      return true;
+      return this.moveTo(delta < 0 ? from : to, false);
     }
     const at = this.caret;
     const length = text.paragraphLength(at);
@@ -1368,8 +1370,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } else if (at.offset < length) next = { ...at, offset: at.offset + 1 };
     else if (paragraph + 1 < text.paragraphCount(at)) next = withParagraph(at, paragraph + 1, 0);
     if (!next) return false;
-    this.moveTo(next, extend);
-    return true;
+    return this.moveTo(next, extend);
   }
 
   moveVertical(delta: -1 | 1, extend: boolean): boolean {
@@ -1377,7 +1378,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!moved || !this.editable) return false;
     if (extend && !sameContext(this.anchor, moved.position)) return false;
     if (!this.ownsPosition(moved.position)) return false;
-    this.moveTo(moved.position, extend, true);
+    if (!this.moveTo(moved.position, extend, true)) return false;
     this.preferredX = moved.preferredX;
     return true;
   }
@@ -1387,8 +1388,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!line || !this.editable) return false;
     const length = this.text!.paragraphLength(this.caret);
     const offset = edge === "start" ? line.start : Math.min(line.end, length);
-    this.moveTo({ ...this.caret, offset }, extend);
-    return true;
+    return this.moveTo({ ...this.caret, offset }, extend);
   }
 
   /** 표 셀 사이 이동(Tab). 표 밖이거나 더 갈 셀이 없으면 false. */
@@ -1401,8 +1401,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (target < 0 || target >= cells) return false;
     const next = withCell(at, target);
     if (!this.ownsPosition(next)) return false;
-    this.moveTo(next, false);
-    return true;
+    return this.moveTo(next, false);
   }
 
   /** 페이지 좌표(배율 1)를 클릭했다. extend면 선택을 넓힌다. */
@@ -1419,8 +1418,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (position.cell && this.text?.cellCount(position) === null) return false;
     // 중첩 표: 엔진이 준 경로를 화면 좌표와 무관하게 커서 목록으로 다시 증명한다(부모 셀·형제 표로 읽지 않음). 지원 깊이 밖이면 거절.
     if (!this.ownsPosition(position)) return false;
-    this.moveTo(position, extend);
-    return true;
+    return this.moveTo(position, extend);
   }
 
   // ---- 확정·실패·정리 ----
@@ -1827,10 +1825,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const cached = this.tableCache;
     if (cached && cached.text === text && cached.version === this.structureVersion && cached.key === key) return { target, grid: cached.grid, content: cached.content };
     const grid = readTableGrid(doc, target);
-    const content = typeof grid === "string" ? null : tableContentRefusal(doc, target, grid);
+    const content = typeof grid === "string" ? null : tableContentRefusal(doc, target, grid, this.tableContentOptions());
     this.tableCache = { text, version: this.structureVersion, key, grid, content };
     return { target, grid, content };
   }
+
+  /** HWPX relocates fields with their cells; the HWP T009 rule has no field relocation proof (kept refused). */
+  private tableContentOptions() { return { fields: this.sessions.get(this.sessionId)?.format === "hwpx" }; }
 
   /**
    * Why a table structure command cannot run now (null = it can). Each operation is judged on its own: the
@@ -1876,7 +1877,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!table || typeof table.grid === "string") return false;
     const { target } = table, original = this.caret, cell = this.caret.cell!;
     let plan: ReturnType<typeof planTableOp>;
-    try { plan = planTableOp(doc, target, table.grid, innermost(cell).cell, op, this.selectedCellRange() ?? undefined); }
+    try { plan = planTableOp(doc, target, table.grid, innermost(cell).cell, op, this.selectedCellRange() ?? undefined, this.tableContentOptions()); }
     catch { return false; } // a getter failed: nothing was changed
     if (typeof plan === "string") return false;
     this.history?.boundary();
@@ -1964,7 +1965,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
     const structural = this.structuralFormat();
     if (structural && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.hasSelection
-      && (!this.caret.cell || (format === "hwpx" && this.canCreateNestedTable()))
+      && (!this.caret.cell || this.canCreateNestedTable())
       && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
     else parameterReasons["insert.table"] = format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties) ? "engineUnsupported"
       : !structural ? this.structuralBlock()! : this.pending > 0 ? "pendingEdits" : "caretRequired";
@@ -1997,30 +1998,29 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
       }
     }
-    if (this.caret.cell?.nested || this.anchor.cell?.nested) {
-      // HWP nested formatting also needs a complete original transformation
-      // proof. Keep its metrics aligned with the four general-format flags.
-      if (format !== "hwpx") for (const command of ["hangul.charWidth", "hangul.charSpacing"] as const) {
+    // HWP metrics/formatting additionally require the structural original proof (complete
+    // baseline including nested tables, SAFE preflight) — the same rule as body cells.
+    if ((this.caret.cell?.nested || this.anchor.cell?.nested) && format === "hwp" && !this.structuralFormat()) {
+      for (const command of ["hangul.charWidth", "hangul.charSpacing"] as const) {
         delete parameters[command];
-        parameterReasons[command] = "nestedTable";
+        parameterReasons[command] = "originalUnverified";
       }
-      // Formula fields still require a path-level dependency and persistence contract.
-      for (const command of ["hangul.tableFormula", "hangul.insertTableFormula"] as const) {
-        delete parameters[command];
-        parameterReasons[command] = "nestedTable";
-      }
-    } else if (usable) {
+    }
+    if (usable) {
       const cell = this.caret.cell ? this.text!.tableCell(this.caret) : null;
       if (cell) {
         const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
         parameters["hangul.tableFormula"] = context;
-        if (this.caret.cell?.cellParagraph !== 0) parameterReasons["hangul.insertTableFormula"] = "formulaParagraphRequired";
+        if (innermost(this.caret.cell!).cellParagraph !== 0) parameterReasons["hangul.insertTableFormula"] = "formulaParagraphRequired";
         else if (advanced && ownership && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending) {
           const formula = this.text!.existingFormula(this.caret);
           // A new HWP field changes the control inventory. It needs a complete
           // original structural proof; replacement of an existing formula keeps
           // the established unchanged-inventory path for legacy documents.
-          if (format === "hwp" && formula === null && !this.hwpBaseline?.complete) parameterReasons["hangul.insertTableFormula"] = "originalUnverified";
+          // HWP nested formula fields: the T009 HWP body proof has no field-control model inside nested
+          // tables, so a save would be refused. Read-only evaluation stays available; insertion is gated.
+          if (format === "hwp" && this.caret.cell?.nested) parameterReasons["hangul.insertTableFormula"] = "nestedTable";
+          else if (format === "hwp" && formula === null && !this.hwpBaseline?.complete) parameterReasons["hangul.insertTableFormula"] = "originalUnverified";
           else parameters["hangul.insertTableFormula"] = formula === null ? context : { ...context, formula };
         }
       }
@@ -2144,8 +2144,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private canCreateNestedTable(): boolean {
     const c = this.caret.cell;
+    // New tables are created only within the engine's measured layout depth (MAX_CREATED_TABLE_DEPTH);
+    // deeper existing paths stay addressable for editing up to MAX_TABLE_DEPTH.
     if (!c || !this.doc?.createTableInCellByPath || !this.history || !this.ownsPosition(this.caret)
-      || 1 + (c.nested?.length ?? 0) >= MAX_TABLE_DEPTH) return false;
+      || 1 + (c.nested?.length ?? 0) >= Math.min(MAX_TABLE_DEPTH, MAX_CREATED_TABLE_DEPTH)) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwpx" && (format !== "hwp" || !this.structuralFormat() || !this.doc.getTablePropertiesByPath)) return false;
     // The engine validates control slots before constructing a child. Match that
     // precondition here so a normal unsupported host never opens a transaction.
     try {
@@ -2192,6 +2196,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const grid = readTableGrid(doc, { section: at.section, paragraph: at.paragraph, control: value.controlIdx as number, path: cell });
           if (typeof grid === "string" || grid.rows !== args.rows || grid.cols !== args.cols || grid.cells.length !== args.rows * args.cols)
             throw new Error("nested table geometry differs");
+          // HWP: only the basic inline form proven by the T009 nested-table rule is admitted.
+          if (hwp && !insertedNestedTable(doc, at.section, cell.parentParagraph, JSON.parse(pathJson(cell)), args.rows, args.cols))
+            throw new Error("nested table normalization not verified");
           return next;
         }, true, "other", null, true) };
       }

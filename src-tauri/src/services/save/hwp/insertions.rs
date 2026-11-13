@@ -467,7 +467,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             };
             if o == object {
                 cursor += 1;
-            } else if restructure_candidate(o, object, &bc, &ac) {
+            } else if restructure_candidate(o, object, &bc, &ac) || evolved_candidate(o, object) {
                 restructured.push((object_digest(o), object_digest(object)));
                 cursor += 1;
             }
@@ -502,6 +502,25 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 .filter(|o| restructure_candidate(o, object, &bc, &ac))
             {
                 restructured_table(o, object, &bc, &ac, &mut used.paras)?;
+                cursor += 1;
+                continue;
+            }
+            // Stage 2: the same original table whose cells gained proven new nested tables,
+            // or whose nested tables were themselves restructured/evolved (recursively).
+            if let Some(o) = old
+                .objects
+                .get(cursor)
+                .filter(|o| evolved_candidate(o, object))
+            {
+                evolved_table(
+                    o,
+                    object,
+                    &bc,
+                    &ac,
+                    &mut used,
+                    &mut table_ids,
+                    &mut table_total,
+                )?;
                 cursor += 1;
                 continue;
             }
@@ -941,12 +960,14 @@ fn paragraph<'a>(
                 )?;
                 i += 1;
             }
-            71 if level == 0 => {
+            71 => {
+                // Root controls (level 0) and controls of cell paragraphs (Stage 2 nested
+                // tables). Callers that do not model a nested control still refuse any.
                 controls_started = true;
-                valid(r.1 == 1 && r.2.len() >= 4, BODY)?;
+                valid(r.1 == level + 1 && r.2.len() >= 4, BODY)?;
                 let end = rs[i + 1..]
                     .iter()
-                    .position(|r| r.1 <= 1)
+                    .position(|r| r.1 <= level + 1)
                     .map_or(rs.len(), |p| i + 1 + p);
                 let object = rs[i..end].to_vec();
                 generic_references(&object, defs)?;
@@ -1282,6 +1303,220 @@ fn restructured_table(
     )
 }
 
+/// Stage 2 candidate: the same original table control (non-zero instance id, same record level) whose
+/// subtree changed. Only `evolved_table` decides whether the change is a supported transformation.
+fn evolved_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    old != new
+        && old[0].1 == new[0].1
+        && old[0].2.starts_with(b" lbt")
+        && new[0].2.starts_with(b" lbt")
+        && dword(old[0].2, 36).is_ok_and(|id| id != 0 && dword(new[0].2, 36) == Ok(id))
+        && validate_existing_table(old).is_ok()
+        && validate_existing_table(new).is_ok()
+}
+
+/// The control header of a table that a supported operation may resize but not otherwise change
+/// (shared rule of `restructured_table`).
+fn table_header_preserved(a: &[u8], b: &[u8]) -> Checked<()> {
+    valid(b.len() >= 42, BODY)?;
+    preserved(a.len() >= 42, BODY)?;
+    let tail = if a.len() == b.len() {
+        a[24..] == b[24..]
+    } else {
+        a.len() == 42
+            && b.len() == 46
+            && a[24..40] == b[24..40]
+            && a[40..].iter().chain(&b[40..]).all(|v| *v == 0)
+    };
+    preserved(a[..16] == b[..16] && tail, BODY)?;
+    valid(dword(b, 16)? > 0 && dword(b, 20)? > 0, BODY)
+}
+
+/// One cell of an original/evolved table: LIST_HEADER, paragraph count and the controls of its
+/// paragraphs in order (each a complete control subtree).
+struct EvolvedCell<'a> {
+    header: &'a [u8],
+    objects: Vec<Vec<Record<'a>>>,
+}
+
+fn evolved_cells<'a>(
+    rs: &[Record<'a>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    para_ids: &mut BTreeSet<usize>,
+) -> Checked<Vec<EvolvedCell<'a>>> {
+    let level = rs[0].1 + 1;
+    // A caption list precedes TABLE; captions keep the byte-identical contract.
+    preserved(rs.get(1).is_some_and(|r| r.0 == 77 && r.1 == level), BODY)?;
+    let mut cells = Vec::new();
+    let mut at = 2;
+    while at < rs.len() {
+        let r = rs[at];
+        valid(r.0 == 72 && r.1 == level && r.2.len() >= 38, BODY)?;
+        at += 1;
+        let end = rs[at..]
+            .iter()
+            .position(|r| r.0 == 72 && r.1 == level)
+            .map_or(rs.len(), |p| at + p);
+        let mut paragraphs = 0;
+        let mut objects = Vec::new();
+        let mut start = at;
+        while start < end {
+            valid(rs[start].0 == 66 && rs[start].1 == level, BODY)?;
+            let stop = rs[start + 1..end]
+                .iter()
+                .position(|r| r.1 <= level)
+                .map_or(end, |p| start + 1 + p);
+            let mut scratch = Section {
+                tokens: Vec::new(),
+                objects: Vec::new(),
+                para_ids: BTreeSet::new(),
+                paragraphs: 0,
+                breaks: Vec::new(),
+            };
+            // Framing, counts, text units, shape/style references; range tags and fields are refused.
+            preserved(!rs[start..stop].iter().any(|r| r.0 == 70), BODY)?;
+            objects.extend(paragraph(
+                &rs[start..stop],
+                level,
+                defs,
+                original_defs,
+                &mut scratch,
+            )?);
+            para_ids.extend(scratch.para_ids);
+            paragraphs += 1;
+            start = stop;
+        }
+        valid(paragraphs > 0 && word(r.2, 0)? == paragraphs, BODY)?;
+        cells.push(EvolvedCell {
+            header: r.2,
+            objects,
+        });
+        at = end;
+    }
+    valid(!cells.is_empty(), BODY)?;
+    Ok(cells)
+}
+
+/// Stage 2: an original table (same control) whose content evolved through supported operations:
+/// - cell text (the independent live/reopen comparison owns which text each cell holds),
+/// - new basic nested tables created in cell paragraphs (`validate_table_at`),
+/// - original nested tables that are byte-identical, or themselves evolved (recursively, bounded),
+/// - its own grid restructured under the `restructured_table` template/attribute rules, where a
+///   deletion that reduces the cell count may drop original child objects of deleted cells.
+///
+/// Nothing is inferred from a surviving payload: every original child is matched in order, every
+/// unmatched output child must prove the new-table schema, and unknown records stay refused.
+/// A table with no structural change at any depth keeps the original contract (byte-identical):
+/// a text-only edit of an original table is never admitted through this proof.
+fn evolved_table(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    used: &mut Used,
+    ids: &mut BTreeSet<usize>,
+    total: &mut usize,
+) -> Checked<()> {
+    let level = old[0].1;
+    preserved(new[0].1 == level && level <= MAX_TABLE_LEVEL, BODY)?;
+    table_header_preserved(old[0].2, new[0].2)?;
+    validate_existing_table(old)?;
+    validate_existing_table(new)?;
+    let mut ignored = BTreeSet::new();
+    let before = evolved_cells(old, original_defs, original_defs, &mut ignored)?;
+    let after = evolved_cells(new, defs, original_defs, &mut used.paras)?;
+    let (ta, tb) = (old[1].2, new[1].2);
+    let same_grid = ta == tb
+        && before.len() == after.len()
+        && before
+            .iter()
+            .zip(&after)
+            .all(|(x, y)| x.header[2..] == y.header[2..]);
+    if !same_grid {
+        let (rows_a, rows_b) = (word(ta, 4)?, word(tb, 4)?);
+        valid(tb.len() >= 20 + 2 * rows_b, BODY)?;
+        preserved(ta.len() >= 20 + 2 * rows_a, BODY)?;
+        let (zones_a, zones_b) = (&ta[20 + 2 * rows_a..], &tb[20 + 2 * rows_b..]);
+        preserved(
+            ta[..4] == tb[..4]
+                && ta[8..18] == tb[8..18]
+                && ta[18 + 2 * rows_a..20 + 2 * rows_a] == tb[18 + 2 * rows_b..20 + 2 * rows_b]
+                && zones_a == zones_b
+                && (zones_a.is_empty() || zones_a == [0, 0]),
+            BODY,
+        )?;
+        let mut per_row = vec![0usize; rows_b];
+        for cell in &after {
+            let row = word(cell.header, 10)?;
+            *per_row
+                .get_mut(row)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
+            valid(dword(cell.header, 16)? > 0, BODY)?;
+            let template = |h: &[u8]| (h[4..8].to_vec(), h[24..34].to_vec(), h[38..].to_vec());
+            preserved(
+                before
+                    .iter()
+                    .any(|o| template(o.header) == template(cell.header)),
+                BODY,
+            )?;
+        }
+        for (row, count) in per_row.iter().enumerate() {
+            valid(word(tb, 18 + 2 * row)? == *count, BODY)?;
+        }
+    }
+    let old_objects: Vec<&Vec<Record<'_>>> = before.iter().flat_map(|c| &c.objects).collect();
+    let new_objects: Vec<&Vec<Record<'_>>> = after.iter().flat_map(|c| &c.objects).collect();
+    valid(new_objects.len() <= 4096 && old_objects.len() <= 4096, BODY)?;
+    let may_drop = after.len() < before.len();
+    let mut structural = !same_grid;
+    let mut cursor = 0;
+    for object in new_objects {
+        let identity = |o: &Vec<Record<'_>>| o == object || evolved_candidate(o, object);
+        let found = if may_drop {
+            old_objects[cursor..]
+                .iter()
+                .position(|o| identity(o))
+                .map(|p| cursor + p)
+        } else {
+            old_objects
+                .get(cursor)
+                .filter(|o| identity(o))
+                .map(|_| cursor)
+        };
+        match found {
+            Some(index) => {
+                let o = old_objects[index];
+                if o != object {
+                    evolved_table(o, object, defs, original_defs, used, ids, total)?;
+                    structural = true;
+                }
+                structural |= index != cursor;
+                cursor = index + 1;
+            }
+            None => {
+                valid(
+                    object[0].2.starts_with(b" lbt") && object[0].1 == level + 2,
+                    BODY,
+                )?;
+                validate_table_at(object, defs, used, ids, total)?;
+                structural = true;
+            }
+        }
+    }
+    preserved(may_drop || cursor == old_objects.len(), BODY)?;
+    preserved(structural, BODY)?;
+    // Original nested table ids remain unique among the evolved output.
+    for object in after.iter().flat_map(|c| &c.objects) {
+        if let Ok(id) = dword(object[0].2, 36) {
+            if id != 0 && !ids.contains(&id) {
+                ids.insert(id);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn generic_references(rs: &[Record<'_>], defs: &Defs<'_>) -> Checked<()> {
     // A LIST_HEADER can also be a caption/header/textbox. Decode cell offsets
     // only under a table control AFTER its TABLE record, never from size alone.
@@ -1372,15 +1607,49 @@ fn validate_existing_table(rs: &[Record<'_>]) -> Checked<()> {
     }
     valid(covered.iter().all(|c| *c), BODY)
 }
+/// A new basic table: a body table (control level 1, the normalized HWP form) or a
+/// Stage 2 nested table inside a cell paragraph (deeper level, the pinned engine's
+/// inline treat-as-char form). Cells hold text paragraphs and, recursively, only
+/// further new basic nested tables.
 fn validate_table(
     rs: &[Record<'_>],
     defs: &Defs<'_>,
     used: &mut Used,
     ids: &mut BTreeSet<usize>,
 ) -> Checked<()> {
+    let mut total = 0;
+    validate_table_at(rs, defs, used, ids, &mut total)
+}
+const MAX_TABLE_LEVEL: u16 = 129; // 64 nested table levels (two record levels each)
+fn validate_table_at(
+    rs: &[Record<'_>],
+    defs: &Defs<'_>,
+    used: &mut Used,
+    ids: &mut BTreeSet<usize>,
+    total: &mut usize,
+) -> Checked<()> {
+    let level = rs[0].1;
+    let nested = level != 1;
+    valid(
+        (1..=MAX_TABLE_LEVEL).contains(&level) && level % 2 == 1,
+        BODY,
+    )?;
+    *total += 1;
     let h = rs[0].2;
-    valid(h.len() == 42, BODY)?;
-    preserved((dword(h, 4)? & !1) == 0x082a2210, BODY)?;
+    // A new table is written with the 42-byte header; once a structure operation recomputes its
+    // size, pinned RHWP writes the 46-byte form with a zero page-break field (`table_header_preserved`).
+    valid(
+        h.len() == 42 || (h.len() == 46 && h[40..].iter().all(|v| *v == 0)),
+        BODY,
+    )?;
+    preserved(
+        if nested {
+            dword(h, 4)? == 0x002a0301
+        } else {
+            (dword(h, 4)? & !1) == 0x082a2210
+        },
+        BODY,
+    )?;
     valid(
         dword(h, 8)? == 0 && dword(h, 12)? == 0 && word(h, 40)? == 0,
         BODY,
@@ -1391,7 +1660,10 @@ fn validate_table(
         (1..=2_000_000).contains(&dword(h, 16)?) && (1..=2_000_000).contains(&dword(h, 20)?),
         BODY,
     )?;
-    valid(rs.get(1).is_some_and(|r| r.0 == 77 && r.1 == 2), BODY)?;
+    valid(
+        rs.get(1).is_some_and(|r| r.0 == 77 && r.1 == level + 1),
+        BODY,
+    )?;
     let table = rs[1].2;
     let rows = word(table, 4)?;
     let cols = word(table, 6)?;
@@ -1400,34 +1672,37 @@ fn validate_table(
             && (1..=16).contains(&cols)
             && rows * cols <= 256
             && table.len() == 22 + 2 * rows
-            && dword(table, 0)? == 0
+            && dword(table, 0)? == if nested { 0x0400_0002 } else { 0 }
             && word(table, 20 + 2 * rows)? == 0,
         BODY,
     )?;
-    for row in 0..rows {
-        valid(word(table, 18 + row * 2)? == cols, BODY)?;
+    // The 42-byte header is the pristine created table: the exact uniform grid (one paragraph per
+    // cell, consistent column widths/row heights). The 46-byte form is a new table restructured
+    // before saving: exact grid coverage, per-row counts and the basic cell template instead.
+    let pristine = h.len() == 42;
+    if pristine {
+        for row in 0..rows {
+            valid(word(table, 18 + row * 2)? == cols, BODY)?;
+        }
     }
+    validate_existing_table(rs)?;
+    let mut widths = vec![0; cols];
+    let mut row_height = 0;
+    let mut index = 0;
     let border = word(table, 18 + rows * 2)?;
     reference(border > 0 && border <= entries(defs, 20).len(), BODY)?;
     preserved(entries(defs, 20)[border - 1] == basic_border_fill(), BODY)?;
     used.borders.insert(border);
+    let mut per_row = vec![0usize; rows];
     let mut at = 2;
-    let mut widths = vec![0; cols];
-    let mut row_height = 0;
-    for cell in 0..rows * cols {
-        let r = rs
-            .get(at)
-            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-        valid(r.0 == 72 && r.1 == 2 && r.2.len() == 47, BODY)?;
+    while at < rs.len() {
+        let r = rs[at];
+        valid(r.0 == 72 && r.1 == level + 1 && r.2.len() == 47, BODY)?;
         let b = r.2;
         valid(
-            word(b, 0)? == 1
+            word(b, 0)? >= 1
                 && dword(b, 2)? == 0x00200000
                 && word(b, 6)? == 0x400
-                && word(b, 8)? == cell % cols
-                && word(b, 10)? == cell / cols
-                && word(b, 12)? == 1
-                && word(b, 14)? == 1
                 && dword(b, 16)? > 0
                 && dword(b, 20)? > 0
                 && dword(b, 20)? <= dword(h, 20)?,
@@ -1437,39 +1712,69 @@ fn validate_table(
             b[34..38] == b[16..20] && b[38..].iter().all(|v| *v == 0),
             BODY,
         )?;
-        let col = cell % cols;
-        if cell < cols {
-            widths[col] = dword(b, 16)?;
-        } else {
-            valid(widths[col] == dword(b, 16)?, BODY)?;
+        *per_row
+            .get_mut(word(b, 10)?)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
+        if pristine {
+            valid(
+                word(b, 0)? == 1
+                    && word(b, 8)? == index % cols
+                    && word(b, 10)? == index / cols
+                    && word(b, 12)? == 1
+                    && word(b, 14)? == 1,
+                BODY,
+            )?;
+            let col = index % cols;
+            if index < cols {
+                widths[col] = dword(b, 16)?;
+            } else {
+                valid(widths[col] == dword(b, 16)?, BODY)?;
+            }
+            if col == 0 {
+                row_height = dword(b, 20)?;
+            } else {
+                valid(row_height == dword(b, 20)?, BODY)?;
+            }
         }
-        if col == 0 {
-            row_height = dword(b, 20)?;
-        } else {
-            valid(row_height == dword(b, 20)?, BODY)?;
-        }
+        index += 1;
         let bf = word(b, 32)?;
         reference(bf == border, BODY)?;
         used.borders.insert(bf);
         at += 1;
         let end = rs[at..]
             .iter()
-            .position(|r| r.0 == 72)
+            .position(|r| r.0 == 72 && r.1 == level + 1)
             .map_or(rs.len(), |p| at + p);
-        let mut out = Section {
-            tokens: Vec::new(),
-            objects: Vec::new(),
-            para_ids: BTreeSet::new(),
-            paragraphs: 0,
-            breaks: Vec::new(),
-        };
-        let nested = paragraph(&rs[at..end], 2, defs, defs, &mut out)?;
-        valid(nested.is_empty(), BODY)?;
-        used.paras.extend(out.para_ids);
-        at = end;
+        let mut paragraphs = 0;
+        while at < end {
+            valid(rs[at].0 == 66 && rs[at].1 == level + 1, BODY)?;
+            let stop = rs[at + 1..end]
+                .iter()
+                .position(|r| r.1 <= level + 1)
+                .map_or(end, |p| at + 1 + p);
+            let mut out = Section {
+                tokens: Vec::new(),
+                objects: Vec::new(),
+                para_ids: BTreeSet::new(),
+                paragraphs: 0,
+                breaks: Vec::new(),
+            };
+            let children = paragraph(&rs[at..stop], level + 1, defs, defs, &mut out)?;
+            for child in &children {
+                valid(child[0].2.starts_with(b" lbt"), BODY)?;
+                validate_table_at(child, defs, used, ids, total)?;
+            }
+            used.paras.extend(out.para_ids);
+            paragraphs += 1;
+            at = stop;
+        }
+        valid(paragraphs == word(b, 0)?, BODY)?;
+    }
+    for (row, count) in per_row.iter().enumerate() {
+        valid(word(table, 18 + 2 * row)? == *count, BODY)?;
     }
     valid(
-        at == rs.len() && widths.iter().sum::<usize>() == dword(h, 16)?,
+        !pristine || (index == rows * cols && widths.iter().sum::<usize>() == dword(h, 16)?),
         BODY,
     )
 }

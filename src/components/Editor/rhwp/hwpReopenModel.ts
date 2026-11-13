@@ -160,6 +160,33 @@ export function insertedBasicTable(doc: RhwpDocument, section: number, paragraph
   } catch { return false; }
 }
 
+/**
+ * Stage 2: a freshly created nested table (createTableInCellByPath) is the basic inline form the
+ * T009 nested-table proof accepts: exact uniform grid, one paragraph per cell, treat-as-char and
+ * a control/common wrap agreement. `tablePath` names the table (any cell). Never throws.
+ */
+export function insertedNestedTable(doc: RhwpDocument, section: number, host: number, tablePath: readonly { controlIndex: number; cellIndex: number; cellParaIndex: number }[], rows: number, cols: number): boolean {
+  try {
+    if (!doc.getTablePropertiesByPath || !doc.getCellInfoByPath || !doc.getTableDimensionsByPath || !doc.getCellParagraphCountByPath) return false;
+    if (rows < 1 || cols < 1 || rows > HWP_TABLE_LIMITS.rows || cols > HWP_TABLE_LIMITS.cols || rows * cols > HWP_TABLE_LIMITS.cells) return false;
+    const path = (cell: number) => JSON.stringify(tablePath.map((l, i) => i === tablePath.length - 1 ? { ...l, cellIndex: cell, cellParaIndex: 0 } : l));
+    const dimensions = readObject(doc.getTableDimensionsByPath(section, host, path(0)));
+    checkTableDimensions(dimensions);
+    if (dimensions.rowCount !== rows || dimensions.colCount !== cols || dimensions.cellCount !== rows * cols) return false;
+    const cells: TableCellCoordinates[] = [];
+    for (let cell = 0; cell < rows * cols; cell++) {
+      const info = readObject(doc.getCellInfoByPath(section, host, path(cell)));
+      checkCellInfo(info);
+      if (info.rowSpan !== 1 || info.colSpan !== 1 || doc.getCellParagraphCountByPath(section, host, path(cell)) !== 1) return false;
+      cells.push(info as unknown as TableCellCoordinates);
+    }
+    if (!tableLayoutConsistent(rows, cols, cells)) return false;
+    const properties = readObject(doc.getTablePropertiesByPath(section, host, path(0)));
+    checkTableProperties(properties);
+    return properties.treatAsChar === true;
+  } catch { return false; }
+}
+
 /** A freshly inserted HWP picture is inline (treatAsChar) with positive size agreeing with its control. Never throws. */
 export function insertedInlinePicture(doc: RhwpDocument, section: number, paragraph: number, control: number): boolean {
   try {
@@ -206,34 +233,55 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
     if (!isObject(c) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== "" || c.controlIndex !== 0 || c.pos !== 0
       || !isObject(c.props) || Object.keys(c.props).length || !isInt(c.list, 2) || !isInt(c.para, 0)) continue;
     const list = lists.get(c.list);
-    if (!list || list.isCell !== true || list.hostListId !== 0
+    if (!list || list.isCell !== true
       || ![list.sectionIndex, list.hostPara, list.controlIndex, list.cellIndex, list.paraCount].every(v => isInt(v, 0))
       || c.para >= (list.paraCount as number)) continue;
+    // Stage 2: the cell may belong to a nested table. Its ownership chain must be cell lists up
+    // to a body-level table; every level must match the field's location path exactly.
+    const chain: JsonObject[] = [list];
+    while (chain[0]!.hostListId !== 0 && chain.length < 64) {
+      const parent = isInt(chain[0]!.hostListId, 2) ? lists.get(chain[0]!.hostListId) : undefined;
+      if (!parent || parent.isCell !== true || ![parent.sectionIndex, parent.hostPara, parent.controlIndex, parent.cellIndex].every(v => isInt(v, 0))) break;
+      chain.unshift(parent);
+    }
+    if (chain[0]!.hostListId !== 0 || (chain.length > 1 && (!doc.getCellParagraphCountByPath || !doc.getCellParagraphLengthByPath
+      || !doc.getTextInCellByPath || !doc.validateTableFormulaFieldByPath))) continue;
     if (owners.get(`${c.list}/${c.para}`) !== 1) continue;
     const f = byParagraph.get(`${c.list}/${c.para}`);
     if (!f) continue;
     const loc = f.location;
-    if (!isObject(loc) || loc.sectionIndex !== list.sectionIndex || loc.paraIndex !== list.hostPara || !Array.isArray(loc.path) || loc.path.length !== 1) continue;
-    const path: unknown = loc.path[0];
-    if (!isObject(path) || path.type !== "cell" || path.controlIndex !== list.controlIndex || path.cellIndex !== list.cellIndex || path.paraIndex !== c.para
-      || f.cellField !== false || typeof f.editableInForm !== "boolean"
+    const root = chain[0]!;
+    if (!isObject(loc) || loc.sectionIndex !== root.sectionIndex || loc.paraIndex !== root.hostPara || !Array.isArray(loc.path) || loc.path.length !== chain.length) continue;
+    const located = chain.every((level, i) => {
+      const entry: unknown = (loc.path as unknown[])[i];
+      const paragraph = i + 1 < chain.length ? chain[i + 1]!.hostPara : c.para;
+      return isObject(entry) && entry.type === "cell" && entry.controlIndex === level.controlIndex && entry.cellIndex === level.cellIndex && entry.paraIndex === paragraph;
+    });
+    if (!located || f.cellField !== false || typeof f.editableInForm !== "boolean"
       || ![f.name, f.guide, f.command, f.value].every(v => typeof v === "string")
       || ![f.startCharIdx, f.endCharIdx, f.startPos, f.endPos].every(v => isInt(v, 0))) continue;
-    const s = list.sectionIndex as number, p = list.hostPara as number, ctrl = list.controlIndex as number, cell = list.cellIndex as number;
-    if (s >= sectionCount || !tables.has(`${bases[s]! + p}/${ctrl}`)) continue;
-    if (doc.getCellParagraphCount(s, p, ctrl, cell) !== list.paraCount) continue;
-    const length = doc.getCellParagraphLength(s, p, ctrl, cell, c.para);
+    const s = root.sectionIndex as number, p = root.hostPara as number, ctrl = list.controlIndex as number, cell = list.cellIndex as number;
+    if (s >= sectionCount || !tables.has(`${bases[s]! + p}/${root.controlIndex}`)) continue;
+    const pathTo = (k: number, paragraph: number) => JSON.stringify(chain.map((level, i) => i + 1 < chain.length
+      ? { controlIndex: level.controlIndex, cellIndex: level.cellIndex, cellParaIndex: chain[i + 1]!.hostPara }
+      : { controlIndex: level.controlIndex, cellIndex: k, cellParaIndex: paragraph }));
+    const nestedCell = chain.length > 1;
+    const paraCount = nestedCell ? doc.getCellParagraphCountByPath!(s, p, pathTo(cell, 0)) : doc.getCellParagraphCount(s, p, ctrl, cell);
+    if (paraCount !== list.paraCount) continue;
+    const length = nestedCell ? doc.getCellParagraphLengthByPath!(s, p, pathTo(cell, c.para)) : doc.getCellParagraphLength(s, p, ctrl, cell, c.para);
     if ((f.startCharIdx as number) > (f.endCharIdx as number) || (f.endCharIdx as number) > length
       || Array.from(f.value as string).length !== (f.endCharIdx as number) - (f.startCharIdx as number)) continue;
-    if (doc.getTextInCell(s, p, ctrl, cell, c.para, f.startCharIdx as number,
-      (f.endCharIdx as number) - (f.startCharIdx as number)) !== f.value) continue;
+    const covered = (f.endCharIdx as number) - (f.startCharIdx as number);
+    if ((nestedCell ? doc.getTextInCellByPath!(s, p, pathTo(cell, c.para), f.startCharIdx as number, covered)
+      : doc.getTextInCell(s, p, ctrl, cell, c.para, f.startCharIdx as number, covered)) !== f.value) continue;
     if (f.fieldType === "formula") {
       const cache = cachedFormula(f.command);
       if (c.para !== 0 || f.startCharIdx !== 0 || f.endCharIdx !== length || !cache || cache.value !== f.value
         || !Number.isFinite(Number(cache.value)) || !isInt(list.row, 0) || !isInt(list.col, 0)) continue;
       // The engine independently proves sole full-paragraph field-range/control
       // linkage. Validation is read-only; it must identify this exact field.
-      const probe = json(doc.validateTableFormulaField(s, p, ctrl, list.row, list.col, "=0"));
+      const probe = json(nestedCell ? doc.validateTableFormulaFieldByPath!(s, p, pathTo(0, 0), list.row, list.col, "=0")
+        : doc.validateTableFormulaField(s, p, ctrl, list.row, list.col, "=0"));
       if (!isObject(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text" || typeof probe.changed !== "boolean"
         || probe.ok !== true || probe.fieldId !== f.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") continue;
     } else if (f.fieldType !== "clickhere" || c.para === 0 || !(f.command as string).startsWith("Clickhere:")) continue;
@@ -329,13 +377,20 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const sectionEnds = Array.from({ length: sectionCount }, (_, s) => {
     paragraphBase += count(doc.getParagraphCount(s)); return paragraphBase;
   });
+  // Stage 2: tables inside cells, addressed by their explicit cell-list ownership chain.
+  const cursorLists = controls.some(c => isObject(c) && c.list !== 0 && c.ctrlId === "tbl") && doc.getCursorModel
+    ? cursorListMap(object(json(doc.getCursorModel()))) : null;
   for (const value of controls) {
     node(); const c = object(value);
     if (c.ctrlId === "secd" || c.ctrlId === "cold") continue;
     inventory.push({ kind: c.ctrlId, type: c.userDesc, list: c.list, props: c.props });
     const field = cellFields.get(c);
     if (field) { fields.push(field); continue; }
-    if (c.list !== 0) { complete = false; continue; } // legacy nested controls retain raw comparison
+    if (c.list !== 0 && c.ctrlId === "tbl" && cursorLists) {
+      const table = nestedTableModel(doc, c, cursorLists, spend, node, count);
+      if (table) { tables.push(table); continue; }
+    }
+    if (c.list !== 0) { complete = false; continue; } // other nested controls retain raw comparison
     const global = count(c.para);
     // getControls uses global root paragraph numbers; table APIs use section-local ones.
     let low = 0, high = sectionEnds.length;
@@ -438,6 +493,73 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     }
   }
   return { model: canonical({ sections, tables, pictures, fields, nested }), structure: canonical({ inventory, headings }), complete };
+}
+
+function cursorListMap(cursor: JsonObject): Map<number, JsonObject> {
+  if (!Array.isArray(cursor.lists) || cursor.lists.length > 100_000) throw new Error("HWP cursor lists");
+  const byId = new Map<number, JsonObject>();
+  for (const value of cursor.lists) {
+    if (!isObject(value) || !isInt(value.listId, 0) || byId.has(value.listId)) throw new Error("HWP cursor list");
+    byId.set(value.listId, value);
+  }
+  return byId;
+}
+
+/**
+ * Complete model of one nested table control (Stage 2), or null when its ownership or any
+ * required getter cannot be proven (the caller then clears `complete`). The host chain must
+ * be cell lists all the way to a body-level table; the table is then read only through its
+ * explicit path, with the same required-field checks as a body table.
+ */
+function nestedTableModel(doc: RhwpDocument, c: JsonObject, lists: Map<number, JsonObject>,
+  spend: (n: number) => void, node: () => void, count: (n: unknown, max?: number) => number): JsonObject | null {
+  if (!doc.getTableDimensionsByPath || !doc.getCellInfoByPath || !doc.getCellPropertiesByPath || !doc.getTablePropertiesByPath
+    || !doc.getCellParagraphCountByPath || !doc.getCellParagraphLengthByPath || !doc.getTextInCellByPath) return null;
+  if (!isInt(c.list, 2) || !isInt(c.para, 0) || !isInt(c.controlIndex, 0) || !isObject(c.props)) return null;
+  const chain: JsonObject[] = [];
+  let at = lists.get(c.list);
+  while (at && at.isCell === true && chain.length < 64) {
+    chain.unshift(at);
+    if (at.hostListId === 0) break;
+    at = isInt(at.hostListId, 2) ? lists.get(at.hostListId) : undefined;
+  }
+  if (!at || at.hostListId !== 0 || !chain.length
+    || !chain.every(l => [l.sectionIndex, l.hostPara, l.controlIndex, l.cellIndex, l.paraCount].every(v => isInt(v, 0)))) return null;
+  if ((c.para as number) >= (chain[chain.length - 1]!.paraCount as number)) return null;
+  checkControlProps(c.props);
+  const section = chain[0]!.sectionIndex as number, host = chain[0]!.hostPara as number;
+  const levels = chain.map((l, i) => ({ controlIndex: l.controlIndex as number, cellIndex: l.cellIndex as number,
+    cellParaIndex: i + 1 < chain.length ? chain[i + 1]!.hostPara as number : c.para as number }));
+  const tablePath = (cell: number, paragraph = 0) => JSON.stringify([...levels, { controlIndex: c.controlIndex, cellIndex: cell, cellParaIndex: paragraph }]);
+  const dimensions = readObject(doc.getTableDimensionsByPath(section, host, tablePath(0)));
+  checkTableDimensions(dimensions);
+  const rows = count(dimensions.rowCount, MAX_TABLE_ROWS), cols = count(dimensions.colCount, MAX_TABLE_COLS);
+  const cellCount = count(dimensions.cellCount);
+  const cells: unknown[] = [], layout: TableCellCoordinates[] = [];
+  for (let cell = 0; cell < cellCount; cell++) {
+    node();
+    const coordinates = readObject(doc.getCellInfoByPath(section, host, tablePath(cell)));
+    checkCellInfo(coordinates); layout.push(coordinates as unknown as TableCellCoordinates);
+    const properties = readObject(doc.getCellPropertiesByPath(section, host, tablePath(0), cell));
+    checkCellProperties(properties); delete properties.borderFillId;
+    const paragraphs: string[] = [];
+    const paragraphCount = count(doc.getCellParagraphCountByPath(section, host, tablePath(cell)));
+    if (paragraphCount < 1) return null;
+    for (let p = 0; p < paragraphCount; p++) {
+      node();
+      const length = count(doc.getCellParagraphLengthByPath(section, host, tablePath(cell, p)), 2_000_000);
+      const text = doc.getTextInCellByPath(section, host, tablePath(cell, p), 0, length);
+      if (typeof text !== "string") throw new HwpEvidenceError("nested cell text");
+      spend(text.length * 2); paragraphs.push(text);
+    }
+    cells.push({ coordinates, properties, paragraphs });
+  }
+  if (!tableLayoutConsistent(rows, cols, layout)) return null;
+  const properties = readObject(doc.getTablePropertiesByPath(section, host, tablePath(0)));
+  checkTableProperties(properties); delete properties.borderFillId;
+  if (CONTROL_WRAP[c.props.TextWrap as number] !== properties.textWrap
+    || (c.props.TreatAsChar === 1) !== properties.treatAsChar) return null;
+  return { section, host, levels, control: c.controlIndex, dimensions, properties, cells };
 }
 
 export function hwpReopenEqual(live: HwpReopenModel, reopened: HwpReopenModel, baseline: string | null): boolean {

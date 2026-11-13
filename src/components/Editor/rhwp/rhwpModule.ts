@@ -137,6 +137,14 @@ export interface RhwpDocument {
   getCellCharPropertiesAtByPath?(section: number, paragraph: number, path: string, offset: number): string;
   getCursorRectByPathNear?(section: number, paragraph: number, path: string, offset: number, hintPage: number): string;
   getTableCellBboxesByPath?(section: number, paragraph: number, path: string): string;
+  // Stage 2: path-owned (nested) table properties and formula fields. Same serializers,
+  // evaluator and field model as the body-level APIs; the final path entry names the table.
+  getTablePropertiesByPath?(section: number, paragraph: number, path: string): string;
+  getTableCaptionByPath?(section: number, paragraph: number, path: string): string;
+  getCellPropertiesByPath?(section: number, paragraph: number, tablePath: string, cell: number): string;
+  evaluateTableFormulaByPath?(section: number, paragraph: number, path: string, row: number, col: number, formula: string): string;
+  validateTableFormulaFieldByPath?(section: number, paragraph: number, path: string, row: number, col: number, formula: string): string;
+  insertTableFormulaFieldByPath?(section: number, paragraph: number, path: string, row: number, col: number, formula: string): string;
   // T012 Phase 2 — nested-table cell paths (pinned rhwp `…ByPath`). `path` is the JSON array
   // `[{controlIndex, cellIndex, cellParaIndex}, …]`, outermost cell first; the last entry's paragraph is the target.
   getCellParagraphCountByPath?(section: number, parentParagraph: number, path: string): number;
