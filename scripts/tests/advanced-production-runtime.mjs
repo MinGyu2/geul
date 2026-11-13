@@ -23,7 +23,7 @@ const same = (left, right) => canonical(left) === canonical(right);
 const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 const json = value => JSON.parse(value);
 
-function loadRelease(expectedBuild) {
+export function loadRelease(expectedBuild) {
   const build = JSON.parse(readFileSync(RELEASE, "utf8"));
   requireValue(build?.profile === "release" && /^[0-9a-f]{64}$/.test(build.generation ?? ""), "selected RHWP manifest is not a Release identity");
   const { generation: expectedGeneration, ...identity } = build;
@@ -74,18 +74,20 @@ function fixturesMode(outDir, complex = false) {
       seed.insertTextInCell(0, table.paraIdx, table.controlIdx, 0, 0, 0, "10");
       seed.insertTextInCell(0, table.paraIdx, table.controlIdx, 1, 0, 0, "20");
       if (complex) {
-        seed.splitParagraphInCell(0, table.paraIdx, table.controlIdx, 3, 0, 0);
-        seed.insertClickHereFieldInCell(0, table.paraIdx, table.controlIdx, 3, 1, 0, false, "Independent tail", "", "tail", true);
+        requireValue(json(seed.splitParagraphInCell(0, table.paraIdx, table.controlIdx, 3, 0, 0)).ok === true, "fixture paragraph split refused");
+        requireValue(json(seed.insertClickHereFieldInCell(0, table.paraIdx, table.controlIdx, 3, 1, 0, false, "Independent tail", "", "tail", true)).ok === true, "fixture ClickHere insertion refused");
+        inspectRequiredTail(seed);
       }
       const output = format === "hwp" ? seed.exportHwpWithReport() : seed.exportHwpxWithReport();
       try {
         requireValue(json(output.contentLoss()).count === 0, "fixture export reported loss");
         const source = join(outDir, `created-${format}-normalized.${format}`);
         writeFileSync(source, output.takeBytes(), { flag: "wx" });
-        withDocument(engine, source, doc => {
+        const sourceTail = withDocument(engine, source, doc => {
           requireValue(doc.getSourceFormat() === format && doc.getTextRange(0, 0, 0, 9) === "Body text", "fixture body did not reopen");
+          return complex ? inspectRequiredTail(doc) : undefined;
         });
-        outputs.push({ format, source, sha256: sha256(readFileSync(source)) });
+        outputs.push({ format, source, sha256: sha256(readFileSync(source)), sourceTail });
       } finally { output.free(); }
     } finally { seed.free(); }
   }
@@ -111,7 +113,7 @@ function captureGeometry(engine, format, source) {
     requireValue(bodyParagraph !== undefined, `${format} fixture has no independent body paragraph`);
     const rect = json(doc.getCursorRect(0, bodyParagraph, 0));
     const body = { ...rect, page: json(doc.getPageInfo(rect.pageIndex)), paragraph: bodyParagraph };
-    return { format, source, sha256: sha256(readFileSync(source)), cells, body };
+    return { format, source, sha256: sha256(readFileSync(source)), cells, body, sourceTail: inspectRequiredTail(doc) };
   });
 }
 
@@ -170,7 +172,7 @@ function inspectSnapshot(engine, format, path, stage, originalHash) {
     if (stage === "width-first-save" || stage === "metrics-second-save") {
       requireValue(formulaFields.length === 0, `${format}/${stage} unexpectedly contains a formula field`);
       requireValue(cellTexts[0] === "10" && cellTexts[2] === "", `${format}/${stage} has unexpected source-cell text`);
-      return { dimensions, cellTexts, ratios: properties.ratios, spacings: properties.spacings, formulaFields, bodyProperties };
+      return { fieldInventory: fields, dimensions, cellTexts, ratios: properties.ratios, spacings: properties.spacings, formulaFields, bodyProperties };
     }
     requireValue(formulaFields.length === 1, `${format}/${stage} must contain exactly one formula field`);
     const formula = formulaFields[0];
@@ -191,7 +193,7 @@ function inspectSnapshot(engine, format, path, stage, originalHash) {
     const expectedSource = ["formula-first-save", "formula-replaced-save"].includes(stage) ? "10" : "11";
     requireValue(cellTexts[0] === expectedSource && cellTexts[2] === "한글", `${format}/${stage} did not preserve source edit and Korean input`);
     return {
-      dimensions, cellTexts, ratios: properties.ratios, spacings: properties.spacings, bodyProperties,
+      fieldInventory: fields, dimensions, cellTexts, ratios: properties.ratios, spacings: properties.spacings, bodyProperties,
       formulaFields: formulaFields.map(field => ({ fieldId: field.fieldId, fieldType: field.fieldType, command: field.command, value: field.value })),
     };
   });
@@ -202,22 +204,57 @@ function inspectSnapshot(engine, format, path, stage, originalHash) {
   return { format, stage, path, sha256: hash, originalSha256: originalHash, ...observed };
 }
 
+/** Required structure, independently read from the Release document APIs. */
+export function inspectRequiredTail(doc) {
+  const t = tableControl(doc);
+  const count = doc.getCellParagraphCount(t.section, t.para, t.controlIndex, 3);
+  requireValue(count === 2, "required trailing paragraph missing or duplicated");
+  const text = doc.getTextInCell(t.section, t.para, t.controlIndex, 3, 1, 0,
+    doc.getCellParagraphLength(t.section, t.para, t.controlIndex, 3, 1));
+  const inventory = json(doc.getFieldList());
+  const fields = inventory.filter(f => f.fieldType !== "formula");
+  requireValue(fields.length === 1, "required ClickHere field missing or duplicated");
+  const f = fields[0];
+  requireValue(f.fieldType === "clickhere" && f.name === "tail" && f.guide === "Independent tail"
+    && f.command === "Clickhere:set:59:Direction:wstring:16:Independent tail HelpState:wstring:0:  "
+    && f.value === "" && f.cellField === false && f.editableInForm === true,
+  "malformed required ClickHere field");
+  requireValue(Number.isSafeInteger(f.fieldId) && f.fieldId > 0, "invalid trailing field identity");
+  requireValue(same(f.location, { sectionIndex: t.section, paraIndex: t.para,
+    path: [{ type: "cell", controlIndex: t.controlIndex, cellIndex: 3, paraIndex: 1 }] }),
+  "incorrect trailing field location");
+  const lists = json(doc.getCursorModel()).lists.filter(l => l.listId === f.listId);
+  requireValue(lists.length === 1 && lists[0].isCell === true && lists[0].hostListId === 0
+    && lists[0].sectionIndex === t.section && lists[0].hostPara === t.para
+    && lists[0].controlIndex === t.controlIndex && lists[0].cellIndex === 3
+    && lists[0].paraCount === count && f.paraInList === 1, "incorrect trailing cursor-list owner");
+  const owners = json(doc.getControls()).filter(c => c.list === f.listId && c.para === f.paraInList);
+  requireValue(owners.length === 1 && owners[0].ctrlId === "" && owners[0].ctrlCh === 0
+    && owners[0].pos === 0 && owners[0].controlIndex === 0, "incorrect trailing control owner");
+  requireValue(f.startCharIdx === 0 && f.endCharIdx === 0 && f.startPos === 8 && f.endPos === 24
+    && text === f.value, "trailing field range disagrees with cell text");
+  return { paragraphCount: count, paragraphs: [text], fields };
+}
+
+export function compareRequiredTail(source, saved) {
+  requireValue(source?.fields?.length === 1 && saved?.fields?.length === 1,
+    "required source/saved field absent");
+  requireValue(same(source, saved), "changed independent trailing paragraphs/fields");
+}
+
 function verifyFormat(engine, fixture, nativeDir) {
   requireValue(FORMATS.includes(fixture.format), `unsupported format ${fixture.format}`);
   requireValue(Array.isArray(fixture.cells) && fixture.cells.length === 4, `${fixture.format} geometry does not contain four cells`);
   const sourceHash = sha256(readFileSync(fixture.source));
   requireValue(sourceHash === fixture.sha256, `${fixture.format} immutable source hash changed`);
+  withDocument(engine, fixture.source, inspectRequiredTail);
   const rows = STAGES.map(stage => inspectSnapshot(engine, fixture.format,
     join(nativeDir, `${stage}.${fixture.format}`), stage, sourceHash));
-  const tail = doc => {
-    const t = tableControl(doc), count = doc.getCellParagraphCount(t.section, t.para, t.controlIndex, 3);
-    return { paragraphs: Array.from({ length: count - 1 }, (_, i) => doc.getTextInCell(t.section, t.para, t.controlIndex, 3, i + 1, 0,
-      doc.getCellParagraphLength(t.section, t.para, t.controlIndex, 3, i + 1))),
-      fields: json(doc.getFieldList()).filter(f => f.location?.path?.[0]?.paraIndex > 0) };
-  };
-  const originalTail = withDocument(engine, fixture.source, tail);
-  for (const stage of STAGES) requireValue(same(withDocument(engine, join(nativeDir, `${stage}.${fixture.format}`), tail), originalTail),
-    `${fixture.format}/${stage} changed independent trailing paragraphs/fields`);
+  const originalTail = withDocument(engine, fixture.source, inspectRequiredTail);
+  for (const row of rows) {
+    row.requiredTail = withDocument(engine, row.path, inspectRequiredTail);
+    compareRequiredTail(originalTail, row.requiredTail);
+  }
   requireValue(sha256(readFileSync(fixture.source)) === sourceHash, `${fixture.format} source fixture changed during verification`);
   const firstFormulaId = rows[2].formulaFields[0].fieldId;
   for (const row of rows.slice(3)) requireValue(row.formulaFields[0].fieldId === firstFormulaId,
@@ -228,7 +265,7 @@ function verifyFormat(engine, fixture, nativeDir) {
     && same(rows.at(-2).spacings, rows.at(-1).spacings)
     && same(rows.at(-2).bodyProperties, rows.at(-1).bodyProperties),
   `${fixture.format} reopened final document does not retain the recalculated semantic state`);
-  return { format: fixture.format, source: fixture.source, sourceSha256: sourceHash, stages: rows };
+  return { format: fixture.format, source: fixture.source, sourceSha256: sourceHash, sourceTail: originalTail, stages: rows };
 }
 
 function verifyMode(geometryPath, nativeDir, resultPath) {
@@ -259,7 +296,7 @@ function main(argv) {
 }
 
 try {
-  main(process.argv.slice(2));
+  if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
 } catch (error) {
   console.error(error instanceof Error ? error.stack : String(error));
   process.exitCode = 1;

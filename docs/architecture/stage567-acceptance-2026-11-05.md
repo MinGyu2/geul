@@ -775,3 +775,16 @@ push 없음.
 큰 문서의 관측 WASM 선형 메모리는 HWP 24,641,536 B, HWPX 36,438,016 B였다. 이는 모듈 간 재사용을 포함한 high-water 관측이며 RSS/정확한 snapshot 크기/모든 입력의 상한 증거가 아니다. 기존 snapshot 증가 예산 256 MiB와 렌더 canvas/전체 픽셀 예산은 그대로다. 270k 문자/169쪽 fixture는 최소 배율에서도 렌더 예산을 넘어 `RenderLimit`로 안전 거부했다(`large-diagnostic.log`); 더 작은 실제 160k 문자/100쪽 fixture는 예산 안에서 검증했다. 기본 배율에서 표시 예산을 넘으면 낮은 배율이 필요하다. 원 T010 D4 지연 목표/결과는 재측정하거나 재정의하지 않았다.
 
 초기 실행의 fixture 기대값 오류·5초 test timeout, HWP child-field proof 부재, 도구/patch-count/retention/실행 경로 준비 오류와 보정 후 결과는 각각의 로그에 남겼다. source가 같은 통과 검사를 재실행해 숫자를 불리지 않았으며, 변경된 가드와 새 증거 생성에 필요한 검사만 갱신했다. 네이티브 결과는 이번 생성 fixture의 T012 흐름만 증명한다. 과거 run5/Stage 5–6/T010의 날짜별 PASS를 새 엔진의 전체 수용으로 재사용하지 않았다. 전체 CI·T015/T016 행렬·20-case corpus·frontend 전체·Rust HWP 전체·성능 benchmark·외부 Hancom/Word는 이번 작업에서 재실행하지 않았다.
+
+
+### T012 fixture/oracle 검증 보정 (2026-11-13)
+
+시작 HEAD `88d15b4469abe8ec7be1258088a6902ade75098f`. 위 기존 PASS는 당시 소스·fixture의 기록으로 보존한다. 당시 생성기는 문단 분리/ClickHere 삽입 반환값을 확인하지 않았고, oracle은 source와 saved의 필드 목록이 모두 비어도 같다고 판단할 수 있었다. 제품 결함으로 확인된 것은 아니다.
+
+생성기는 실제 JSON `ok`와 생성 직후/Release 재열기 후의 필수 후속 문단·ClickHere 존재를 확인한다. geometry 준비도 같은 검사를 요구한다. oracle은 필드 ID/type/command/name/guide/value, 표·물리 셀·문단·cursor-list·컨트롤 소유권, 비중첩 위치와 글 범위를 검증하고 저장본과 정확히 비교한다. 원본 SHA 검사를 유지하며 저장본의 전체 필드 inventory도 기록한다. 필드 없는 양쪽 목록의 동등성만으로는 PASS할 수 없다.
+
+새 증거는 ignored `target/t012-verifier-20261113/`에 분리했다. 실제 Release HWP/HWPX 양성 및 누락·실패한 연산·잘못된 소유권/위치/범위·중복·저장 후 변경 음성 회귀 4건 PASS. 새 두 fixture는 B2 두 번째 문단의 ClickHere 하나를 독립 재열기로 증명했다. 동일한 기존 Release 제품(native binary SHA `c134290f6074ad7bfc408424ff9542f65416b47015155bf3196061c5748e1c1c`)으로 coherent native harness 56/56 PASS, 형식별 8개 저장 상태 독립 재열기 PASS. Release generation과 WASM SHA는 위 기록과 동일하다.
+
+최초 native 실행은 IBus 초기 모드 미지정으로 HWP 조합 대기에서 실패했다(7개 선행 검사 PASS). 실패 자료를 보존하고 기존 실행과 동일한 `--hangul-initial-mode hangul` 설정으로 한 번 재실행했다. 성공 실행 launcher exit 0, cleanup complete/proven/filesystemProven true, survivors와 processErrors 없음. `native-rerun/result.json`, `session-rerun/cleanup.json`, `reopened-final.json`, `evidence.json`이 새 실행 근거다.
+
+이번에는 전체 WASM 117건·T009/T010 전체·100쪽·성능·전체 CI·DOCX/WordCraft·T015/T016을 재실행하지 않았다. RHWP/WordCraft pin과 제품 소스는 변경하지 않았다. T012는 계속 조건부 미완료이며 Phase 2 및 중첩 표/구조 편집은 시작하지 않았다.
