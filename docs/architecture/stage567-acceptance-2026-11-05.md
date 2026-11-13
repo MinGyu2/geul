@@ -850,3 +850,44 @@ native 1–3회차 실패는 하네스 결함(캐럿 접미사 자르기, 사용
 - **여러 셀 범위 병합/선택**: 셀 범위 선택 모델이 없어 인접 셀 하나(오른쪽/아래)만 지원한다.
 - 중첩 셀의 서식·장평·자간·수식, 경로 줄 정보(Home/End는 문단 경계), 깊이 4 초과.
 - 미실행: 전체 WASM 117건, T009/T010 전체, 대용량·성능(D4), 전체 CI, DOCX/WordCraft, T015/T016, Windows/macOS/Wayland, 외부 Hancom.
+
+<a id="stage2-implementation-20261113"></a>
+## Stage 2 구현 후속 — 2026-11-13
+
+**PARTIALLY COMPLETED.** 시작 HEAD는 `1595e2924044bada048be331c25eabef627d5eec`(master), 작업 전 tracked/untracked 변경과 두 서브모듈 변경은 없었다. 아래는 구현 범위이며 T012 전체 수용 완료 또는 출시 승인이 아니다.
+
+- `stage2-table-paths.patch`를 기존 재현 가능한 RHWP series에 추가했다. 서브모듈 핀은 유지했다. 기존 표 생성기를 경로 대상으로 확장하고, 기존 `Table` 행·열·병합·분할 구현을 명시적 경로로 호출한다. 부모 셀의 글과 후속 글자 모양 run 위치를 보존한다.
+- 일반 제품 HWPX의 평범한 셀 문단에서 중첩 표 생성, 평범한 중첩 표의 행/열 삽입·삭제, 병합/분할을 연결했다. 필드·개체·자식 표를 가진 대상 표는 여전히 거부한다. 생성은 실제 셀 경로의 ownership·격자·커서 기하를 증명하고, 구조 변경은 기대 격자/모든 셀 문단을 대조하며, 실패하면 기존 history snapshot으로 되돌린다.
+- 같은 표의 Shift+클릭/드래그 셀 선택과 `table.mergeCells` 리본 명령(ko/en)을 추가했다. 동일한 격자에서 기존 병합 span의 완전 포함 여부를 검사한다. 행 우선 순서로 참여 셀 문단을 보존한다. 범위 선택은 일반 텍스트 삭제·입력·IME 조합으로 넘기지 않는다. 본문 표는 HWP/HWPX, 중첩 표는 위 HWPX 지원 범위다.
+- 일반 제품 HWPX 중첩 셀의 굵게·기울임·밑줄·취소선·장평·자간에 경로 서식 proof/API를 연결했다. HWP 중첩 고급 서식은 원본 변환 증명 가드를 유지한다. 경로 줄 질의와 soft-wrap caret affinity를 적용했다. Undo/Redo의 기존 모델·선택 checkpoint를 재사용한다.
+- 고정 UI 깊이 4 대신 유한 경로 디코딩 예산(32 KiB·64단계), cursor inventory 8 MiB, 표 512행/64열/4096셀, 연산 proof의 총 4 Mi 문자/100,000문단 및 기존 snapshot/WASM 자원 가드를 함께 쓴다. **64단계의 모든 문서가 표시/저장된다는 보장은 아니다.** 기존 height measurer의 재귀 한도 10과 형식 파서/렌더 자원 한도도 별도로 남는다. 이번 직접 확인 대상은 깊이 6이다.
+- transparent 1×1 틀의 조판 최적화가 부모 소유 경로를 생략하던 결함을 부분 표/전체 표 렌더 경로에서 수정했다. 조판 기하는 그대로 두고 source path를 보존한다. 중첩 caret 조회는 기존 page-hint API를 사용하며, ownership inventory는 단계마다 전체 scan하는 대신 한 번 색인한다. 표 격자 cache는 마지막 셀/문단 이동에 재생성되지 않는다. 큰 문자열은 WASM에서 읽거나 scalar 배열을 만들기 전에 proof 예산으로 거부한다.
+
+### 집중 검증과 시행 이력
+
+최종 Release WASM 세대는 `0623152b5d718b5b42de349344d2db0c84a90304ead61b801d9d80ea056902f2`, WASM SHA-256은 `84b4cf70ac6b4d6f117707bc548bc2f8b6627f9243ffe024af03c62a4c743e92`다. 기존 로컬 wasm-bindgen 0.2.127 실행 디렉터리를 PATH 앞에 지정한 `python3 scripts/build-rhwp-wasm.py` PASS(Rust 1.99.1, wasm-bindgen 0.2.127, 보호 실행/고정 핀/오프라인; externalUnchanged=true).
+
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts`: 실제 제품 기본 설정/Release WASM 7/7 PASS. HWPX 중첩 생성·9 구조 연산·범위 병합·서식·history·T009 saved SAFE 및 파일 재열기, 빈 1×1 깊이 6의 Home/End·hit-test·HWP/HWPX 파일 재열기, 본문 두 형식 범위 병합, 변이 후 예외의 정확한 snapshot 복구, 기하/문자열 예산 거부를 묶었다. HWP T009 중첩 안전 저장 PASS를 뜻하지 않는다.
+- `npm run build`(tsc/Vite), `npm run lint`: PASS. Vite는 기존 큰 bundle 안내만 출력했다.
+- `npx vitest run src/ribbon/visibility.test.ts src/commands/parameters.test.ts src/components/Editor/rhwp/caretCache.test.ts`: 실제 존재하는 두 파일 12 PASS. `parameters.test.ts`는 지정 경로 실수로 없었고 실행되지 않았다. 새 명령의 런타임 ACTION_COMMANDS 연결은 위 실제 WASM 명령 검사에서 확인했다.
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/rhwpAssets.test.ts -t 'patched source identity'`: 1 PASS/11 필터 제외. `python3 scripts/tests/test_rhwp_profiles.py`: 3 PASS. 기존 깊이 경계 assertion은 새 디코더 상한 + 1 거부로 갱신하고 `GEUL_T012P2_DIR=target/stage2-focused/legacy-boundary npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/table-phase2.wasm.test.ts -t 'parses nested positions'`만 실행했다(1 PASS/16 필터 제외).
+- 엄격한 WASM Clippy는 **FAIL**이다. `CARGO_NET_OFFLINE=true python3 scripts/external-integrity.py --require external/rhwp --writable target/rhwp-wasm --report target/rhwp-wasm/stage2-clippy-integrity.json -- cargo clippy --manifest-path target/rhwp-patched-source/Cargo.toml -p rhwp --lib --target wasm32-unknown-unknown --target-dir target/rhwp-wasm --locked --offline -- -D warnings`는 변경하지 않은 password-crypto crate 경고 2개에서 멈췄다. 본체만 `--no-deps`로 선택한 검사도 41개 경고로 FAIL. 같은 compiler/options로 봉인된 Stage 2 이전 소스와 현재 소스의 JSON 진단을 비교하니 각각 41개, code/message/primary file/source text Counter 차이 0개였다(`target/stage2-focused/clippy-diff.json`). 새 Clippy 진단은 관측되지 않았지만 전체 lint PASS로 바꾸지 않는다. 린트 규칙/암호 코드는 수정하지 않았다.
+
+HWP 중첩 장평·자간의 추가 가용성 검토에서 원본 증명 범위를 넘는 활성화를 발견해 일반 서식과 같은 제한을 유지했다. `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'HWP nested metrics'`로 실제 HWP 중첩 fixture의 명령 거부·본문/리비전 불변을 확인했다(1 PASS/7 필터 제외). 이후 `npm run build`와 `npm run lint`도 PASS. 이 최종 TS 경계 변경은 HWPX/엔진 경로를 바꾸지 않아 앞서 통과한 7개를 반복하지 않았다. 따라서 고유 신규 집중 회귀는 8개 통과(7개 실행 + 추가 경계 1개 선택 실행)다. native GUI/새 durable publication은 실행하지 않았으며, 실제 세션 명령/엔진 파일 재열기/T009 판정과 구분한다. 모든 검증 프로세스는 종료됐다.
+
+최초 staging whitespace 검사에서 새 patch의 빈 context 공백을 발견해 제거했다. 별도 baseline copy에 정리한 패치를 정상 `git apply`로 재적용하여 기존 검증 소스 1,650파일의 해시가 모두 같은지 확인한 뒤 provenance를 다시 봉인했다. 실제 기능 검사는 직전 세대 `f1279e1a…`에서 실행했으며, 재게시한 위 최종 세대의 JS/WASM 바이트는 그 세대와 동일하다(WASM SHA-256 위 값 유지). Cargo Release 재실행은 캐시 재사용 0.29초였고, 기능 검사를 반복하지 않았다. 세대 신원을 새로 포장하는 최종 `npm run build`도 PASS였다.
+
+시행 이력: 최초 신규 WASM 집중 회귀는 4 PASS/1 FAIL(Home/End), 렌더 부분 경로 수정 후에는 6 PASS/1 FAIL(빈 깊은 셀 생성 시 실제 caret 기하 거부)이었다. 두 실패를 테스트 문제로 바꾸지 않았다. 원인은 각각 transparent wrapper의 부분 표/전체 표 렌더 provenance 누락으로 추적했고 엔진 패치에 반영했다.
+
+초기 CLI 버전 선택 오류(0.2.129 대신 lockfile의 기존 0.2.127 CLI 필요)는 올바른 로컬 도구 경로를 사용해 해결했다. Release 컴파일 후 게시가 두 번 거부됐다: 추가된 19번째 패치가 기존 신원 상한 18을 넘었고, 보관된 세대가 한도 6개에 도달했다. 신원 검증기 두 개와 기존 경계 검사를 허용 19/거부 20으로 갱신했다. 세대 보관 한도는 유지했다. geul/Vite 소비자가 없는 상태에서 선택되지 않은 이전 세대만 해시 확인 후 `target/rhwp-retired-generations/stage2/`로 이동해 보존했다. 생성 WASM/JS, fixture 및 검증 산출물은 커밋하지 않는다. 최초 커밋 시 민감정보 훅이 문서의 로컬 사용자 절대 경로를 거부해 도구 버전과 저장소 상대 명령 표기로 정리했다. 검사 규칙/훅 예외는 추가하지 않았다.
+
+### 남은 Stage 2 구현과 이후 단계
+
+다음은 **구현 잔여**이며 Stage 3–5 시험 의무로 대체하지 않는다.
+
+- HWP 중첩 생성/구조 변경/고급 서식을 허용하는 T009 원본 변환 증명 및 recursive HWP reopen 모델. 엔진의 HWP 내보내기/재열기와 제품의 안전 저장 지원은 별개다. 제품의 해당 HWP 가드는 유지한다.
+- 수식/일반 필드/그림·개체/캡션/자식 컨트롤이 있는 표의 구조 편집, 수식 참조·의존성 재작성과 소유 relocation proof. 기존 거부는 해제하지 않았다.
+- 중첩 셀의 수식 삽입·교체·재계산 API/의존성/영속화와 제품 연결.
+- 더 깊은 구조에서의 height-measurement 한도 처리, 큰 표의 국소 조판/이력 메모리 개선에 대한 추가 구현. 기존 viewport 렌더·snapshot 예산을 제거하거나 메모리 상한을 올리지 않았다. T010 D4 지연 목표는 이번 게이트가 아니다.
+
+기존 T010 제품 GO/자원 증거와 T012 Phase 2 native X11/IBus 50/50 등 날짜별 증거는 역사·변경하지 않은 범위에 한해 유지한다. 새 경로를 과거 PASS로 검증했다고 주장하지 않는다. 전체 T010/T012/DOCX·IBus·D4 행렬을 다시 실행하지 않는다. Stage 3의 기능 범위/보존 수용, Stage 4의 T012 통합, Stage 5의 T015/T016 외부 한컴·Word/다른 OS·출시 수용은 남는다. push하지 않는다.

@@ -39,7 +39,7 @@ export async function identityFrom(value: unknown): Promise<BuildIdentity> {
     const source = value.integration;
     if (!isRecord(source) || !keysAre(source, ["kind", "sourceTreeSha256", "patches"]) || source.kind !== "patched-upstream" ||
         typeof source.sourceTreeSha256 !== "string" || !digestPattern.test(source.sourceTreeSha256) ||
-        !Array.isArray(source.patches) || source.patches.length < 1 || source.patches.length > 18) throw new Error("rhwp patched source identity");
+        !Array.isArray(source.patches) || source.patches.length < 1 || source.patches.length > 19) throw new Error("rhwp patched source identity");
     const names = new Set<string>();
     for (const patch of source.patches) {
       if (!isRecord(patch) || !keysAre(patch, ["name", "sha256"]) || typeof patch.name !== "string" ||

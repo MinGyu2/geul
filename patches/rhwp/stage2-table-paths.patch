@@ -1,0 +1,440 @@
+diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
+--- a/src/document_core/commands/char_shape_compact.rs
++++ b/src/document_core/commands/char_shape_compact.rs
+@@ -529,7 +529,6 @@
+         &self, section: usize, paragraph: usize, control: u32, cell: usize,
+         cell_paragraph: usize, start: usize, end: usize,
+     ) -> Result<String, HwpError> {
+-        use crate::model::style::UnderlineType;
+         let fail = || HwpError::RenderError("unsupported formatting selection".into());
+         let in_cell = control != u32::MAX;
+         let para = if in_cell {
+@@ -537,6 +536,14 @@
+         } else {
+             self.document.sections.get(section).and_then(|s| s.paragraphs.get(paragraph)).ok_or_else(fail)?
+         };
++        self.formatting_runs_for_paragraph(para, in_cell, start, end)
++    }
++
++    pub(crate) fn formatting_runs_for_paragraph(
++        &self, para: &Paragraph, _in_cell: bool, start: usize, end: usize,
++    ) -> Result<String, HwpError> {
++        use crate::model::style::UnderlineType;
++        let fail = || HwpError::RenderError("unsupported formatting selection".into());
+         if start > end || end > para.char_offsets.len() || end - start > 1_048_576
+             || !para.field_ranges.is_empty() || !para.orphan_field_ends.is_empty()
+             || !para.title_marks.is_empty() || !para.range_tags.is_empty()
+@@ -547,7 +554,7 @@
+             for _ in 0..delta / 8 {
+                 let object = match &para.controls[ci] {
+                     Control::SectionDef(_) | Control::ColumnDef(_) => false,
+-                    Control::Table(_) if !in_cell => true,
++                    Control::Table(_) => true,
+                     Control::Picture(_) => true,
+                     Control::Shape(shape) if matches!(shape.as_ref(), ShapeObject::Picture(_)) => true,
+                     _ => return Err(fail()),
+diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/commands/object_ops/table.rs
+--- a/src/document_core/commands/object_ops/table.rs
++++ b/src/document_core/commands/object_ops/table.rs
+@@ -851,6 +851,17 @@
+         col_widths_hu: Option<&[u32]>,
+         row_heights_hu: Option<&[u32]>,
+     ) -> Result<String, HwpError> {
++        self.create_table_with_path_native(section_idx, para_idx, char_offset, row_count,
++            col_count, treat_as_char, col_widths_hu, row_heights_hu, &[])
++    }
++
++    #[allow(clippy::too_many_arguments)]
++    pub fn create_table_with_path_native(
++        &mut self, section_idx: usize, para_idx: usize, char_offset: usize,
++        row_count: u16, col_count: u16, treat_as_char: bool,
++        col_widths_hu: Option<&[u32]>, row_heights_hu: Option<&[u32]>,
++        path: &[(usize, usize, usize)],
++    ) -> Result<String, HwpError> {
+         use crate::model::paragraph::{CharShapeRef, LineSeg};
+         use crate::model::style::{
+             BorderFill, BorderLine, BorderLineType, CenterLine, DiagonalLine, Fill,
+@@ -886,6 +897,16 @@
+             );
+         }
+
++        let host = if path.is_empty() {
++            &self.document.sections[section_idx].paragraphs[para_idx]
++        } else {
++            self.resolve_paragraph_by_path(section_idx, para_idx, path)?
++        };
++        if !path.is_empty() && (char_offset > host.char_offsets.len() || !host.controls.is_empty()
++            || !host.field_ranges.is_empty() || !host.orphan_field_ends.is_empty()
++            || !host.range_tags.is_empty() || !host.title_marks.is_empty()) {
++            return Err(HwpError::RenderError("table host ownership is not proven".into()));
++        }
+         // ── 인라인 TAC 표 생성 ──
+
+         let instance_id = super::super::clone_identity::next_instance_id(&self.document)?;
+@@ -893,10 +914,18 @@
+         let pd = &self.document.sections[section_idx].section_def.page_def;
+         let outer_margin: i16 = 283;
+         let outer_margin_lr = (outer_margin * 2) as i32;
+-        let content_width =
++        let page_content_width =
+             (pd.width as i32 - pd.margin_left as i32 - pd.margin_right as i32 - outer_margin_lr)
+                 .max(7200) as u32;
+
++        let content_width = if path.is_empty() { page_content_width } else {
++            let table = self.resolve_table_by_path(section_idx, para_idx, path)?;
++            let cell = table.cells.get(path.last().unwrap().1)
++                .ok_or_else(|| HwpError::RenderError("missing host cell".into()))?;
++            cell.width.saturating_sub(cell.padding.left.max(0) as u32)
++                .saturating_sub(cell.padding.right.max(0) as u32)
++                .saturating_sub(outer_margin_lr as u32).max(col_count as u32)
++        };
+         // 열 폭 결정
+         let col_ws: Vec<u32> = if let Some(widths) = col_widths_hu {
+             if widths.len() == col_count as usize {
+@@ -976,7 +1005,8 @@
+         };
+
+         // create_table_native 와 동일 — 커서 offset 의 글자모양을 상속 기준으로 쓴다.
+-        let current_para = &self.document.sections[section_idx].paragraphs[para_idx];
++        let current_para = if path.is_empty() { &self.document.sections[section_idx].paragraphs[para_idx] }
++            else { self.resolve_paragraph_by_path(section_idx, para_idx, path)? };
+         let default_char_shape_id: u32 = current_para.char_shape_id_at(char_offset).unwrap_or(0);
+         let default_para_shape_id: u16 = current_para.para_shape_id;
+
+@@ -1085,7 +1115,8 @@
+
+         // ── 기존 문단에 인라인 삽입 ──
+         self.document.sections[section_idx].raw_stream = None;
+-        let para = &mut self.document.sections[section_idx].paragraphs[para_idx];
++        let para = if path.is_empty() { &mut self.document.sections[section_idx].paragraphs[para_idx] }
++            else { self.get_cell_paragraph_mut_by_path(section_idx, para_idx, path)? };
+
+         // controls에 표 추가
+         let ctrl_idx = para.controls.len();
+@@ -1116,6 +1147,16 @@
+             }
+         }
+
++        // Retain the source run ownership after inserting the eight-unit slot.
++        // The initial run must continue to cover position zero; later runs move
++        // with their original text. The legacy body API retains its behavior.
++        if !path.is_empty() {
++            for shape in &mut para.char_shapes {
++                if shape.start_pos > 0 && shape.start_pos >= insert_utf16_pos {
++                    shape.start_pos += 8;
++                }
++            }
++        }
+         // char_count 갱신 (확장 제어문자 8 + 기존)
+         para.char_count += 8;
+
+@@ -1130,6 +1171,11 @@
+         }
+
+         // rebuild
++        if !path.is_empty() {
++            self.reflow_cell_paragraph_by_path(section_idx, para_idx, path, path.last().unwrap().2);
++            self.recalculate_cell_paragraph_vpos_by_path(section_idx, para_idx, path, 0, None);
++            self.mark_cell_control_dirty(section_idx, para_idx, path[0].0);
++        }
+         self.rebuild_section(section_idx);
+
+         self.event_log.push(DocumentEvent::TableRowInserted {
+@@ -1139,7 +1185,8 @@
+         });
+         // 표 바로 뒤의 논리적 오프셋 계산
+         let logical_after = crate::document_core::helpers::text_to_logical_offset(
+-            &self.document.sections[section_idx].paragraphs[para_idx],
++            if path.is_empty() { &self.document.sections[section_idx].paragraphs[para_idx] }
++                else { self.resolve_paragraph_by_path(section_idx, para_idx, path)? },
+             char_offset,
+         ) + 1;
+         Ok(crate::document_core::helpers::json_ok_with(&format!(
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -67,6 +67,41 @@
+         }
+         let section = &mut self.document.sections[section_idx];
+         navigate_path_to_table(&mut section.paragraphs, path)
++    }
++
++    /// Path routing shares the existing table geometry implementation. The final
++    /// entry identifies the table; its cell/paragraph selects no separate engine.
++    pub fn edit_table_by_cell_path_native(&mut self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], op: &str, args: &[u16]) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("invalid table operation".into());
++        let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
++        match (op, args) {
++            ("insertRowAbove", [row, 0]) => table.insert_row(*row, false),
++            ("insertRowBelow", [row, 1]) => table.insert_row(*row, true),
++            ("insertColumnLeft", [col, 0]) => table.insert_column(*col, false),
++            ("insertColumnRight", [col, 1]) => table.insert_column(*col, true),
++            ("deleteRow", [row]) => table.delete_row(*row),
++            ("deleteColumn", [col]) => table.delete_column(*col),
++            ("mergeRight" | "mergeBelow" | "mergeCells", [r, c, er, ec]) => table.merge_cells(*r, *c, *er, *ec),
++            ("splitCell", [row, col]) => table.split_cell(*row, *col),
++            _ => return Err(fail()),
++        }.map_err(HwpError::RenderError)?;
++        let counts: Vec<usize> = table.cells.iter().map(|c| c.paragraphs.len()).collect();
++        let mut cell_path = path.to_vec();
++        let last = cell_path.len() - 1;
++        for (cell, count) in counts.into_iter().enumerate() {
++            for para in 0..count {
++                cell_path[last].1 = cell;
++                cell_path[last].2 = para;
++                self.reflow_cell_paragraph_by_path(section, paragraph, &cell_path, para);
++            }
++            self.recalculate_cell_paragraph_vpos_by_path(section, paragraph, &cell_path, 0, None);
++        }
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.document.sections[section].raw_stream = None;
++        self.recompose_section(section);
++        self.paginate_if_needed();
++        Ok("{\"ok\":true}".into())
+     }
+
+     /// 표에 행을 삽입한다 (네이티브).
+diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries/cursor_nav.rs
+--- a/src/document_core/queries/cursor_nav.rs
++++ b/src/document_core/queries/cursor_nav.rs
+@@ -598,44 +598,16 @@
+
+     /// JSON 문자열에서 CellPathEntry 배열을 파싱한다.
+     pub(crate) fn parse_cell_path(path_json: &str) -> Result<Vec<(usize, usize, usize)>, HwpError> {
+-        // 경량 JSON 파서: [{"controlIndex":N,"cellIndex":N,"cellParaIndex":N}, ...]
+-        let trimmed = path_json.trim();
+-        if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+-            return Err(HwpError::RenderError(
+-                "cellPath JSON은 배열이어야 합니다".to_string(),
+-            ));
+-        }
+-        let inner = &trimmed[1..trimmed.len() - 1];
+-        if inner.trim().is_empty() {
+-            return Ok(Vec::new());
+-        }
+-
+-        let mut entries = Vec::new();
+-        // 중괄호 기준으로 각 엔트리 분리
+-        let mut depth = 0;
+-        let mut start = 0;
+-        for (i, ch) in inner.char_indices() {
+-            match ch {
+-                '{' => {
+-                    if depth == 0 {
+-                        start = i;
+-                    }
+-                    depth += 1;
+-                }
+-                '}' => {
+-                    depth -= 1;
+-                    if depth == 0 {
+-                        let entry_str = &inner[start..=i];
+-                        let ci = super::super::helpers::json_usize(entry_str, "controlIndex")?;
+-                        let cei = super::super::helpers::json_usize(entry_str, "cellIndex")?;
+-                        let cpi = super::super::helpers::json_usize(entry_str, "cellParaIndex")?;
+-                        entries.push((ci, cei, cpi));
+-                    }
+-                }
+-                _ => {}
+-            }
+-        }
+-        Ok(entries)
++        // Bound decoding work and recursive layout/serialization stack use.
++        // This is a finite engine resource envelope, not unlimited nesting.
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct Entry { control_index: usize, cell_index: usize, cell_para_index: usize }
++        let fail = || HwpError::RenderError("invalid or over-budget cell path".into());
++        if path_json.len() > 32 * 1024 { return Err(fail()); }
++        let entries: Vec<Entry> = serde_json::from_str(path_json).map_err(|_| fail())?;
++        if entries.len() > 64 { return Err(fail()); }
++        Ok(entries.into_iter().map(|e| (e.control_index, e.cell_index, e.cell_para_index)).collect())
+     }
+
+     /// 경로 기반으로 표를 탐색한다.
+diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_layout.rs
+--- a/src/renderer/layout/table_layout.rs
++++ b/src/renderer/layout/table_layout.rs
+@@ -2743,17 +2743,18 @@
+                     .chars()
+                     .any(|ch| !ch.is_whitespace() && ch != '\r' && ch != '\n');
+                 if !has_visible_text {
+-                    if let Some(nested) = p
++                    if let Some((nested_control, nested)) = p
+                         .controls
+                         .iter()
+-                        .find_map(|c| {
++                        .enumerate()
++                        .find_map(|(ci, c)| {
+                             if let Control::Table(t) = c {
+-                                Some(t.as_ref())
++                                Some((ci, t.as_ref()))
+                             } else {
+                                 None
+                             }
+                         })
+-                        .filter(|nested| {
++                        .filter(|(_, nested)| {
+                             !single_table_wrapper_has_vertical_alignment_space(table, nested)
+                         })
+                     {
+@@ -2925,6 +2926,23 @@
+                         // 글자처럼 상자는 x 를 줄 배치가 준 inline_x_override 로 받으므로 그 값도 옮긴다.
+                         let inner_inline_x = inline_x_override.map(|x| x + pad_l + om_l);
+
++                        // Keep every transparent wrapper in the ownership path,
++                        // even when it contributes no separate render box.
++                        let mut source_context = enclosing_cell_ctx.clone().or_else(|| table_meta.map(|(pi, ci)| CellContext {
++                            in_textbox: false, parent_para_index: pi,
++                            path: vec![CellPathEntry { control_index: ci, cell_index: 0, cell_para_index: 0, text_direction: cell.text_direction }],
++                        }));
++                        if let Some(context) = source_context.as_mut() {
++                            if let Some(last) = context.path.last_mut() {
++                                last.cell_index = 0;
++                                last.cell_para_index = 0;
++                                last.text_direction = cell.text_direction;
++                            }
++                            context.path.push(CellPathEntry {
++                                control_index: nested_control, cell_index: 0, cell_para_index: 0, text_direction: 0,
++                            });
++                        }
++                        let source_meta = source_context.as_ref().and_then(CellContext::nested_table_meta).or(table_meta);
+                         let y_end = self.layout_table_with_wrapper_margin(
+                             tree,
+                             col_node,
+@@ -2937,9 +2955,9 @@
+                             bin_data_content,
+                             None,
+                             depth,
+-                            table_meta,
++                            source_meta,
+                             host_alignment,
+-                            enclosing_cell_ctx,
++                            source_context,
+                             host_margin_left,
+                             host_margin_right,
+                             inner_inline_x,
+diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_partial.rs
+--- a/src/renderer/layout/table_partial.rs
++++ b/src/renderer/layout/table_partial.rs
+@@ -4404,6 +4404,36 @@
+             outer_table
+         };
+
++        // Pagination may flatten several transparent 1x1 wrappers, but the
++        // rendered cells must retain every source owner. Geometry continues to
++        // use the original enclosing context; only provenance is extended.
++        let mut unwrapped_context = enclosing_cell_ctx.cloned().unwrap_or_else(|| CellContext {
++            in_textbox: false,
++            parent_para_index: para_index,
++            path: vec![CellPathEntry { control_index, cell_index: 0, cell_para_index: 0, text_direction: 0 }],
++        });
++        let mut source_table = outer_table;
++        while !std::ptr::eq(source_table, table) {
++            let source_cell = &source_table.cells[0];
++            let source_para = &source_cell.paragraphs[0];
++            let (ci, child) = source_para.controls.iter().enumerate().find_map(|(ci, c)| match c {
++                Control::Table(t) => Some((ci, t.as_ref())),
++                _ => None,
++            }).expect("transparent table traversal follows its source chain");
++            if let Some(last) = unwrapped_context.path.last_mut() {
++                last.cell_index = 0;
++                last.cell_para_index = 0;
++                last.text_direction = source_cell.text_direction;
++            }
++            unwrapped_context.path.push(CellPathEntry {
++                control_index: ci, cell_index: 0, cell_para_index: 0, text_direction: 0,
++            });
++            source_table = child;
++        }
++        let source_cell_ctx = if std::ptr::eq(table, outer_table) {
++            enclosing_cell_ctx
++        } else { Some(&unwrapped_context) };
++
+         if table.cells.is_empty() {
+             return y_start;
+         }
+@@ -5447,7 +5477,7 @@
+         // RenderNode provenance에는 원본 부모 셀 문단과 현재 표 control을 기록한다.
+         // TextRun이 없는 빈 셀 hit-test는 Table/TableCell traversal context만 사용하므로
+         // 이 metadata까지 실제 IR 경로여야 한다 (#4252).
+-        let (node_para_index, node_control_index) = enclosing_cell_ctx
++        let (node_para_index, node_control_index) = source_cell_ctx
+             .and_then(|context| {
+                 let table_entry = context.path.last()?;
+                 let parent_entry = context.path.get(context.path.len().checked_sub(2)?)?;
+@@ -5466,7 +5496,7 @@
+                 control_index: Some(node_control_index),
+                 // [#4334] 표 분할 조각(partial table)도 원본 부모 셀 경로를 그대로
+                 // 옮겨 담는다 — provenance para/control 과 같은 근거(#4252).
+-                cell_context: enclosing_cell_ctx.cloned(),
++                cell_context: source_cell_ctx.cloned(),
+             }),
+             BoundingBox::new(table_x, table_y, table_width, partial_table_height),
+         );
+@@ -5576,7 +5606,7 @@
+             &mut h_span_covered,
+             &mut v_span_covered,
+             measured_table,
+-            enclosing_cell_ctx,
++            source_cell_ctx,
+             clamp_header_negative_para_offset,
+             probe,
+             center_pinned_single_cell,
+@@ -5942,7 +5972,7 @@
+
+         // ── 캡션 렌더링 ──
+         // cell_index = 65534: 캡션 식별 센티널 (셀 0과 구분)
+-        let cap_cell_ctx = Some(if let Some(context) = enclosing_cell_ctx {
++        let cap_cell_ctx = Some(if let Some(context) = source_cell_ctx {
+             let mut context = context.clone();
+             if let Some(last) = context.path.last_mut() {
+                 last.cell_index = 65534;
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7200,6 +7200,43 @@
+         cell: u32, cell_paragraph: u32, start: u32, end: u32) -> Result<String, JsValue> {
+         self.formatting_runs_native(section as usize, paragraph as usize, control,
+             cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
++    }
++
++    /// Proven formatting inventory in the innermost explicitly owned paragraph.
++    #[wasm_bindgen(js_name = getFormattingRunsByPath)]
++    pub fn get_formatting_runs_by_path(&self, section: u32, paragraph: u32,
++        path_json: &str, start: u32, end: u32) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        let para = self.resolve_paragraph_by_path(section as usize, paragraph as usize, &path)?;
++        self.formatting_runs_for_paragraph(para, true, start as usize, end as usize).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = getLineInfoByPath)]
++    pub fn get_line_info_by_path(&self, section: u32, paragraph: u32,
++        path_json: &str, offset: u32) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        let para = self.resolve_paragraph_by_path(section as usize, paragraph as usize, &path)?;
++        DocumentCore::compute_line_info(para, offset as usize).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = editTableByPath)]
++    pub fn edit_table_by_path(&mut self, section: u32, paragraph: u32,
++        path_json: &str, op: &str, args_json: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        let args: Vec<u16> = serde_json::from_str(args_json)
++            .map_err(|_| JsValue::from_str("invalid table arguments"))?;
++        self.edit_table_by_cell_path_native(section as usize, paragraph as usize, &path, op, &args).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = createTableInCellByPath)]
++    pub fn create_table_in_cell_by_path(&mut self, section: u32, paragraph: u32,
++        path_json: &str, offset: u32, rows: u32, cols: u32) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        if path.is_empty() || path.len() >= 64 || rows == 0 || rows > 512 || cols == 0 || cols > 64 || rows * cols > 4096 {
++            return Err(JsValue::from_str("table resource budget"));
++        }
++        self.create_table_with_path_native(section as usize, paragraph as usize, offset as usize,
++            rows as u16, cols as u16, true, None, None, &path).map_err(Into::into)
+     }
+
+     /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.

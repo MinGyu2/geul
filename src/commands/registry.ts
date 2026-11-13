@@ -31,7 +31,7 @@ export type DocumentCommandId =
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | "insert.table" | "insert.image" | "paragraph.bullets"
   | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
-  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.splitCell"
+  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.mergeCells" | "table.splitCell"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -132,6 +132,7 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "table.deleteColumn": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.mergeRight": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.mergeBelow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeCells": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.splitCell": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };

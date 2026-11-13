@@ -38,7 +38,7 @@ const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
   "table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",
-  "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.splitCell",
+  "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell",
 ]);
 
 /** 값 입력 없이 세션 문맥으로만 실행하는 명령(입력 창을 열지 않음). */

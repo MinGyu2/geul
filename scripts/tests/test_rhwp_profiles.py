@@ -34,10 +34,10 @@ class ProfilePublicationTests(unittest.TestCase):
         self.assertEqual(identity['schemaVersion'], 3)
         self.assertEqual(a.validate_identity(identity), identity)
         full = copy.deepcopy(identity)
-        full['integration']['patches'] = [{'name': f'managed-{i}.patch', 'sha256': '5' * 64} for i in range(18)]
+        full['integration']['patches'] = [{'name': f'managed-{i}.patch', 'sha256': '5' * 64} for i in range(19)]
         full['generation'] = a.fingerprint({k: v for k, v in full.items() if k != 'generation'})
         self.assertEqual(a.validate_identity(full), full)
-        full['integration']['patches'].append({'name': 'overflow.patch', 'sha256': '5' * 64})
+        full['integration']['patches'].append({'name': 'overflow.patch', 'sha256': '5' * 64})  # 20 exceeds the explicit maximum.
         full['generation'] = a.fingerprint({k: v for k, v in full.items() if k != 'generation'})
         with self.assertRaisesRegex(ValueError, 'patch series'):
             a.validate_identity(full)

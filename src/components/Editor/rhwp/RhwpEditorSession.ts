@@ -64,7 +64,7 @@ import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   applyTablePlan, cellCovering, hasTableStructureApi, planTableOp, readTableGrid, tableContentRefusal, tableOpRefusal,
-  TABLE_STRUCTURE_OPS, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
+  rectangularRange, TABLE_STRUCTURE_OPS, type CellRange, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
 } from "./tableStructure";
 import {
   charCount,
@@ -74,6 +74,9 @@ import {
   parsePosition,
   RhwpText,
   sameContext,
+  sameTable,
+  pathJson,
+  MAX_TABLE_DEPTH,
   innermost,
   withCell,
   withParagraph,
@@ -803,7 +806,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   selectionRects(): PageRect[] {
-    if (!this.text || !this.hasSelection || !sameContext(this.anchor, this.caret)) return [];
+    if (!this.text || !this.hasSelection) return [];
+    if (!sameContext(this.anchor, this.caret)) {
+      const table = this.caretTable(), range = this.selectedCellRange();
+      if (!table || !range || !this.doc?.getTableCellBboxesByPath || !this.caret.cell) return [];
+      try {
+        const boxes: unknown = JSON.parse(this.doc.getTableCellBboxesByPath(this.caret.section,
+          this.caret.cell.parentParagraph, pathJson(this.caret.cell)));
+        if (!Array.isArray(boxes) || boxes.length > 16384) return [];
+        return boxes.filter(b => b && b.row >= range.startRow && b.row <= range.endRow
+          && b.col >= range.startCol && b.col <= range.endCol && Number.isSafeInteger(b.pageIndex)
+          && [b.x, b.y, b.w, b.h].every(Number.isFinite))
+          .map(b => ({ page: b.pageIndex, x: b.x, y: b.y, width: b.w, height: b.h }));
+      } catch { return []; }
+    }
     const [from, to] = this.ordered();
     return this.text.selection(from, to);
   }
@@ -849,6 +865,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false): boolean {
     if (!this.editable || !this.doc) return false;
+    // A cell rectangle is a structural selection, never a cross-owner text deletion.
+    if (this.hasSelection && !sameContext(this.anchor, this.caret) && !requireHistory) return false;
     // T012 Phase 2: a nested-cell target must be owned by the current model, level by level, before any engine
     // call. A path that no longer resolves (never expected: only this session changes the model) is refused
     // without touching the document; the caret leaves the unowned cell.
@@ -1181,7 +1199,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 지운 뒤 화면 갱신이 실패하면 markFailed가 이 조합(지운 것)을 변경 1개로 세고 끝낸다.
    */
   beginComposition(): void {
-    if (!this.editable || this.composition) return;
+    if (!this.editable || this.composition || (this.hasSelection && !sameContext(this.anchor, this.caret))) return;
     this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
@@ -1320,7 +1338,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- 커서 이동 ----
 
   private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false) {
-    if (extend && !sameContext(this.anchor, position)) return; // 선택은 한 문맥(본문 또는 한 셀) 안에서만
+    if (extend && !sameContext(this.anchor, position) && !sameTable(this.anchor, position)) return; // 텍스트 문맥 또는 같은 표의 셀 범위만 확장한다.
     this.clipboardVersion += 1;
     this.history?.boundary(); // 이동·클릭·선택은 타자 그룹을 끊는다
     this.caret = position;
@@ -1799,12 +1817,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   // ---- 표 구조(T012 Phase 2) ----
 
-  /** The body-level table of the caret with its geometry and content eligibility, cached per structural version. */
+  /** The explicitly owned table of the caret; geometry/content are cached independently of its selected cell. */
   private caretTable(): { target: TableTarget; grid: TableGrid | TableStructureRefusal; content: TableStructureRefusal | null } | null {
     const cell = this.caret.cell, doc = this.doc, text = this.text;
-    if (!cell || cell.nested || !doc || !text) return null;
-    const target = { section: this.caret.section, paragraph: cell.parentParagraph, control: cell.control };
-    const key = `${target.section}:${target.paragraph}:${target.control}`;
+    if (!cell || !doc || !text) return null;
+    const target: TableTarget = { section: this.caret.section, paragraph: cell.parentParagraph,
+      control: innermost(cell).control, ...(cell.nested ? { path: cell } : {}) };
+    const key = `${target.section}:${target.paragraph}:${target.control}:${target.path ? pathJson(withCell(this.caret, 0).cell!) : ""}`;
     const cached = this.tableCache;
     if (cached && cached.text === text && cached.version === this.structureVersion && cached.key === key) return { target, grid: cached.grid, content: cached.content };
     const grid = readTableGrid(doc, target);
@@ -1816,15 +1835,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /**
    * Why a table structure command cannot run now (null = it can). Each operation is judged on its own: the
    * session state, the format's preservation rule (HWP needs the same original proof as other structural
-   * edits), a caret in a cell of a body-level table, the table's content and the operation's own geometry.
+   * edits), an owned table path, the table's content and the operation's own geometry.
    */
   private tableOpState(op: TableStructureOp): NonNullable<DocumentCommandSnapshot["actionReasons"]>["table.splitCell"] | null {
     const doc = this.doc;
     if (!this.editable || !doc || !this.text || this.imeUnsettled || this.uncertain) return "engineUnsupported";
     if (!hasTableStructureApi(doc, op)) return "engineUnsupported";
     if (this.pending > 0 || this.committingEpoch === this.epoch) return "pendingEdits";
-    if (!this.caret.cell || this.hasSelection) return "notInTable";
-    if (this.caret.cell.nested) return "nestedTable";
+    if (!this.caret.cell || (this.hasSelection && op !== "mergeCells")) return "notInTable";
+    if (this.caret.cell.nested && (!doc.editTableByPath || !this.ownsPosition(this.caret))) return "engineUnsupported";
     if (!this.history) return this.historyOff === "limit" ? "limit" : "engineUnsupported";
     const block = this.structuralBlock();
     if (block) return block;
@@ -1832,8 +1851,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!table) return "notInTable";
     if (typeof table.grid === "string") return table.grid;
     if (table.content) return table.content;
-    if (this.caret.cell.cell >= table.grid.cells.length) return "tableShape";
-    return tableOpRefusal(table.grid, this.caret.cell.cell, op);
+    const index = innermost(this.caret.cell).cell;
+    if (index >= table.grid.cells.length) return "tableShape";
+    if (op === "mergeCells") return this.selectedCellRange() ? null : "tableShape";
+    return tableOpRefusal(table.grid, index, op);
+  }
+
+  private selectedCellRange(): CellRange | null {
+    if (!sameTable(this.anchor, this.caret) || !this.anchor.cell || !this.caret.cell) return null;
+    const table = this.caretTable();
+    if (!table || typeof table.grid === "string") return null;
+    return rectangularRange(table.grid, innermost(this.anchor.cell).cell, innermost(this.caret.cell).cell);
   }
 
   /**
@@ -1846,9 +1874,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.tableOpState(op) !== null) return false;
     const doc = this.doc!, table = this.caretTable();
     if (!table || typeof table.grid === "string") return false;
-    const { target } = table, section = this.caret.section, cell = this.caret.cell!;
+    const { target } = table, original = this.caret, cell = this.caret.cell!;
     let plan: ReturnType<typeof planTableOp>;
-    try { plan = planTableOp(doc, target, table.grid, cell.cell, op); }
+    try { plan = planTableOp(doc, target, table.grid, innermost(cell).cell, op, this.selectedCellRange() ?? undefined); }
     catch { return false; } // a getter failed: nothing was changed
     if (typeof plan === "string") return false;
     this.history?.boundary();
@@ -1857,8 +1885,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const index = cellCovering(grid, plan.caret.row, plan.caret.col);
       if (index < 0) throw new Error("table caret cell missing");
       // The caret never keeps an index of the old table: it is re-resolved from the proven result grid.
-      return { section, paragraph: target.paragraph, offset: 0,
-        cell: { parentParagraph: target.paragraph, control: target.control, cell: index, cellParagraph: 0 } };
+      return withCell(original, index);
     }, true, "other", null, true);
     this.history?.boundary();
     return applied;
@@ -1936,7 +1963,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
     const structural = this.structuralFormat();
-    if (structural && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.caret.cell && !this.hasSelection
+    if (structural && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.hasSelection
+      && (!this.caret.cell || (format === "hwpx" && this.canCreateNestedTable()))
       && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
     else parameterReasons["insert.table"] = format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties) ? "engineUnsupported"
       : !structural ? this.structuralBlock()! : this.pending > 0 ? "pendingEdits" : "caretRequired";
@@ -1962,16 +1990,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (advanced && this.options.format !== false && metricFormat) {
       const [from, to] = this.ordered();
       if (this.hasSelection && sameContext(from, to) && paragraphOf(from) === paragraphOf(to)) {
-        const api = from.cell ? this.doc?.applyCharFormatInCell : this.doc?.applyCharFormat;
-        const charShape = api && ownership ? this.text!.charShape(from) : null;
+        const api = from.cell?.nested ? this.doc?.applyCharFormatInCellByPath : from.cell ? this.doc?.applyCharFormatInCell : this.doc?.applyCharFormat;
+        const charShape = api && ownership && (!from.cell?.nested || this.text!.formatSelection(from, to)) ? this.text!.charShape(from) : null;
         if (charShape) parameters["hangul.charWidth"] = parameters["hangul.charSpacing"] = { charShape };
       } else {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
       }
     }
     if (this.caret.cell?.nested || this.anchor.cell?.nested) {
-      // Nested cells: plain text editing only. Metrics and formulas have no path-level ownership/field proof.
-      for (const command of ["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula"] as const) {
+      // HWP nested formatting also needs a complete original transformation
+      // proof. Keep its metrics aligned with the four general-format flags.
+      if (format !== "hwpx") for (const command of ["hangul.charWidth", "hangul.charSpacing"] as const) {
+        delete parameters[command];
+        parameterReasons[command] = "nestedTable";
+      }
+      // Formula fields still require a path-level dependency and persistence contract.
+      for (const command of ["hangul.tableFormula", "hangul.insertTableFormula"] as const) {
         delete parameters[command];
         parameterReasons[command] = "nestedTable";
       }
@@ -2079,7 +2113,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return null;
     if (!this.text.hasCharShapeOwnership || !this.doc.compactAppendedCharShapes
       || !this.doc.capturePublishingCharShapePrefix || !this.doc.reconcileCharShapePrefix) return null;
-    if (!this.doc.getFormattingRuns || !(this.caret.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
+    if (this.caret.cell?.nested ? !this.doc.getFormattingRunsByPath || !this.doc.applyCharFormatInCellByPath
+      : !this.doc.getFormattingRuns || !(this.caret.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
     if (!this.hasSelection || !sameContext(this.anchor, this.caret)) return null;
     const [from, to] = this.ordered();
     const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(this.anchor)}|${RhwpEditorSession.positionKey(this.caret)}`;
@@ -2107,6 +2142,30 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return applied;
   }
 
+  private canCreateNestedTable(): boolean {
+    const c = this.caret.cell;
+    if (!c || !this.doc?.createTableInCellByPath || !this.history || !this.ownsPosition(this.caret)
+      || 1 + (c.nested?.length ?? 0) >= MAX_TABLE_DEPTH) return false;
+    // The engine validates control slots before constructing a child. Match that
+    // precondition here so a normal unsupported host never opens a transaction.
+    try {
+      const raw = this.doc.getControls?.();
+      const modelRaw = this.doc.getCursorModel?.();
+      if (!raw || !modelRaw || raw.length + modelRaw.length > 16 * 1024 * 1024) return false;
+      const controls = JSON.parse(raw) as { list: number; para: number }[];
+      const model = JSON.parse(modelRaw) as { lists: { sectionIndex: number; hostListId: number; hostPara: number;
+        controlIndex: number; cellIndex: number; listId: number; isCell: boolean }[] };
+      let host = 0, para = c.parentParagraph;
+      for (const level of [c, ...(c.nested ?? [])]) {
+        const found = model.lists.filter(l => l.isCell && l.sectionIndex === this.caret.section
+          && l.hostListId === host && l.hostPara === para && l.controlIndex === level.control && l.cellIndex === level.cell);
+        if (found.length !== 1) return false;
+        host = found[0]!.listId; para = level.cellParagraph;
+      }
+      return !controls.some(control => control.list === host && control.para === para);
+    } catch { return false; }
+  }
+
   /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
@@ -2119,6 +2178,23 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command]) || !this.doc?.createTable || !this.doc.setTableProperties) return { accepted: false };
       const at = this.caret, doc = this.doc, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
+      if (at.cell) {
+        if (!this.canCreateNestedTable()) return { accepted: false };
+        return { accepted: this.mutate(() => {
+          const value = JSON.parse(doc.createTableInCellByPath!(at.section, at.cell!.parentParagraph,
+            pathJson(at.cell!), at.offset, args.rows, args.cols)) as Record<string, unknown>;
+          if (value.ok !== true || !Number.isSafeInteger(value.controlIdx) || (value.controlIdx as number) < 0)
+            throw new Error("nested table creation rejected");
+          const cell = { ...at.cell!, nested: [...(at.cell!.nested ?? []),
+            { control: value.controlIdx as number, cell: 0, cellParagraph: 0 }] };
+          const next = { ...at, offset: 0, cell };
+          if (!this.text!.ownsNestedCell(next) || !this.text!.caret(next)) throw new Error("nested table ownership or layout not proven");
+          const grid = readTableGrid(doc, { section: at.section, paragraph: at.paragraph, control: value.controlIdx as number, path: cell });
+          if (typeof grid === "string" || grid.rows !== args.rows || grid.cols !== args.cols || grid.cells.length !== args.rows * args.cols)
+            throw new Error("nested table geometry differs");
+          return next;
+        }, true, "other", null, true) };
+      }
       return { accepted: this.mutate(() => {
         const result: unknown = JSON.parse(doc.createTable!(at.section, at.paragraph, at.offset, args.rows, args.cols));
         if (!result || typeof result !== "object") throw new Error("invalid table result");

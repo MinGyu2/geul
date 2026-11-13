@@ -21,7 +21,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/table-formula-paragraphs.patch",
           "patches/rhwp/hwp-source-preservation.patch",
           "patches/rhwp/general-formatting-eligibility.patch",
-          "patches/rhwp/table-formula-tail-preservation.patch")
+          "patches/rhwp/table-formula-tail-preservation.patch",
+          "patches/rhwp/stage2-table-paths.patch")
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"
 BUILD_PATHS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "assets", "crates", "vendor",

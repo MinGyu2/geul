@@ -102,6 +102,7 @@
   "command.table.deleteColumn": "열 지우기",
   "command.table.mergeRight": "오른쪽 셀과 합치기",
   "command.table.mergeBelow": "아래 셀과 합치기",
+  "command.table.mergeCells": "선택 셀 합치기",
   "command.table.splitCell": "합친 셀 나누기",
   "commandInput.persistentFormula.hint": "현재 셀의 글이나 계산식을 계산식 필드로 바꿉니다. 같은 식을 적용하면 값을 다시 계산합니다. =로 시작하세요.",
   "command.hangul.tableFormula": "표 계산",

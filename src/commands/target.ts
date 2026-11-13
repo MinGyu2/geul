@@ -76,10 +76,10 @@ export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | TableStructureCommandId;
 
-/** 표 구조 명령(T012 Phase 2): 커서가 있는 본문 수준 표의 행·열·병합. 값 입력 없음. */
+/** 표 구조 명령(T012 Phase 2): 명시적 경로로 지정한 표의 행·열·병합. 값 입력 없음. */
 export type TableStructureCommandId =
   | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
-  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.splitCell";
+  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.mergeCells" | "table.splitCell";
 
 /**
  * 사용자 값이 필요한 문서 명령(T012·T013)의 값. 명령마다 정해진 모양 하나이며 화면(입력 창)과 세션이 같은 검증

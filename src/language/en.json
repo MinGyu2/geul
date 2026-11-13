@@ -102,6 +102,7 @@
   "command.table.deleteColumn": "Delete Column",
   "command.table.mergeRight": "Merge with Right Cell",
   "command.table.mergeBelow": "Merge with Cell Below",
+  "command.table.mergeCells": "Merge selected cells",
   "command.table.splitCell": "Split Merged Cell",
   "commandInput.persistentFormula.hint": "Replaces the cell text or existing formula. Apply the same expression to recalculate its cached result. Start with =.",
   "command.hangul.tableFormula": "Table Formula",

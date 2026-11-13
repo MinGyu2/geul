@@ -32,7 +32,10 @@ export interface CellRef {
 }
 
 /** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
-export const MAX_TABLE_DEPTH = 4;
+// Matches the engine path decoder's stack envelope. JSON size and ownership
+// inventory work have independent budgets; paths are never silently truncated.
+export const MAX_TABLE_DEPTH = 64;
+export const MAX_CELL_PATH_BYTES = 32 * 1024;
 
 /** Innermost level of a cell path: the cell and paragraph the caret is actually in. */
 export function innermost(cell: CellRef): NestedCell {
@@ -42,7 +45,7 @@ export function innermost(cell: CellRef): NestedCell {
 export const tableDepth = (at: DocPosition) => (at.cell ? 1 + (at.cell.nested?.length ?? 0) : 0);
 
 /** Engine path JSON (`…ByPath`), outermost first. */
-function pathJson(cell: CellRef, paragraph = innermost(cell).cellParagraph): string {
+export function pathJson(cell: CellRef, paragraph = innermost(cell).cellParagraph): string {
   const levels = [{ controlIndex: cell.control, cellIndex: cell.cell, cellParaIndex: cell.cellParagraph },
     ...(cell.nested ?? []).map(n => ({ controlIndex: n.control, cellIndex: n.cell, cellParaIndex: n.cellParagraph }))];
   levels[levels.length - 1]!.cellParaIndex = paragraph;
@@ -165,6 +168,11 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
     && (i === nx.length - 1 || level.cellParagraph === ny[i]!.cellParagraph));
 }
 
+/** Same explicitly owned table; only the innermost cell may differ. */
+export function sameTable(a: DocPosition, b: DocPosition): boolean {
+  return !!a.cell && !!b.cell && sameContext(withCell(a, innermost(b.cell).cell), b);
+}
+
 /** 같은 문맥(본문 또는 같은 셀)에서 문서 순서 비교. */
 export function compare(a: DocPosition, b: DocPosition): number {
   const paraA = paragraphOf(a), paraB = paragraphOf(b);
@@ -209,6 +217,7 @@ export class RhwpText {
   private readonly originalCharShapeCount: number | null;
   private publishedPrefix: CharShapePrefix | null = null;
   private publishingPrefix: CharShapePrefix | null = null;
+  private caretPageHint = 0;
 
   constructor(private readonly doc: RhwpDocument) {
     const count = doc.charShapeCount?.();
@@ -301,20 +310,25 @@ export class RhwpText {
   ownsNestedCell(at: DocPosition): boolean {
     const c = at.cell;
     if (!c?.nested?.length) return true;
-    if (!this.hasNestedEditing || tableDepth(at) > MAX_TABLE_DEPTH) return false;
+    if (!this.hasNestedEditing || tableDepth(at) > MAX_TABLE_DEPTH || pathJson(c).length > MAX_CELL_PATH_BYTES) return false;
     try {
       const raw = this.doc.getCursorModel!();
       if (raw.length > 8 * 1024 * 1024) return false;
       const model = json(raw);
       if (!isRecord(model) || !Array.isArray(model.lists)) return false;
       const levels = [c, ...c.nested];
+      // One bounded inventory pass replaces a full list scan for every depth.
+      const owners = new Map<string, Fields | null>();
+      for (const l of model.lists) {
+        if (!isRecord(l) || l.isCell !== true) continue;
+        const key = `${l.sectionIndex}:${l.hostListId}:${l.hostPara}:${l.controlIndex}:${l.cellIndex}`;
+        owners.set(key, owners.has(key) ? null : l);
+      }
       let host = 0, hostParagraph = c.parentParagraph;
       for (let depth = 0; depth < levels.length; depth++) {
         const level = levels[depth]!;
-        const matches = model.lists.filter(l => isRecord(l) && l.isCell === true && l.sectionIndex === at.section
-          && l.hostListId === host && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell);
-        const list: unknown = matches[0];
-        if (matches.length !== 1 || !isRecord(list) || !isIndex(list.listId) || list.listId < 2 || !isIndex(list.paraCount)
+        const list = owners.get(`${at.section}:${host}:${hostParagraph}:${level.control}:${level.cell}`);
+        if (!isRecord(list) || !isIndex(list.listId) || list.listId < 2 || !isIndex(list.paraCount)
           || !isIndex(list.cellCount) || level.cell >= list.cellCount || level.cellParagraph >= list.paraCount) return false;
         const prefix: CellRef = { ...c, nested: c.nested.slice(0, depth) };
         if (depth === 0) delete prefix.nested;
@@ -344,29 +358,42 @@ export class RhwpText {
   caret(at: DocPosition): CaretRect | null {
     const c = at.cell;
     try {
-      return parseCaretRect(json(
-        c?.nested ? this.doc.getCursorRectByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+      const rect = parseCaretRect(json(
+        c?.nested ? (this.doc.getCursorRectByPathNear
+          ? this.doc.getCursorRectByPathNear(at.section, c.parentParagraph, pathJson(c), at.offset, this.caretPageHint)
+          : this.doc.getCursorRectByPath!(at.section, c.parentParagraph, pathJson(c), at.offset))
         : c
           ? this.doc.getCursorRectInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
           : this.doc.getCursorRect(at.section, at.paragraph, at.offset),
       ));
+      if (rect) this.caretPageHint = rect.page;
+      return rect;
     } catch {
       return null;
     }
   }
 
-  /** 줄의 처음·끝 오프셋. 중첩 셀은 엔진에 경로 줄 질의가 없어 문단의 처음·끝을 준다(Home/End가 문단 끝으로 감). */
+  /** Rendered line boundaries in the explicitly owned paragraph, including nested cells. */
   line(at: DocPosition): { start: number; end: number } | null {
     const c = at.cell;
     try {
-      if (c?.nested) return { start: 0, end: this.paragraphLength(at) };
-      const value = json(
-        c
+      let value = json(
+        c?.nested ? this.doc.getLineInfoByPath!(at.section, c.parentParagraph, pathJson(c), at.offset) : c
           ? this.doc.getLineInfoInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
           : this.doc.getLineInfo(at.section, at.paragraph, at.offset),
       );
       if (!isRecord(value) || !isIndex(value.charStart) || !isIndex(value.charEnd)) return null;
-      return { start: value.charStart, end: value.charEnd };
+      // The path renderer gives a soft-wrap boundary to the preceding run.
+      // Match that visual affinity instead of making Home after End jump lines.
+      // Forced breaks remain on the next line (the caret rectangles differ).
+      if (c?.nested && at.offset > 0 && value.charStart === at.offset) {
+        const here = this.caret(at), previous = this.caret({ ...at, offset: at.offset - 1 });
+        if (here && previous && here.page === previous.page && Math.abs(here.y - previous.y) < 0.1) {
+          value = json(this.doc.getLineInfoByPath!(at.section, c.parentParagraph, pathJson(c), at.offset - 1));
+          if (!isRecord(value) || !isIndex(value.charStart) || !isIndex(value.charEnd)) return null;
+        }
+      }
+      return { start: value.charStart as number, end: value.charEnd as number };
     } catch {
       return null;
     }
@@ -500,16 +527,16 @@ export class RhwpText {
    */
   format(from: DocPosition, to: DocPosition, props: string): void {
     const c = from.cell;
-    if (c?.nested) throw new Error("char format unavailable in nested cells"); // no run/ownership proof by path
-    if (c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
+    if (c?.nested ? !this.doc.applyCharFormatInCellByPath : c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
     const first = paragraphOf(from), last = paragraphOf(to);
     for (let paragraph = first; paragraph <= last; paragraph += 1) {
       const at = withParagraph(from, paragraph, 0);
       const start = paragraph === first ? from.offset : 0;
       const end = paragraph === last ? to.offset : this.paragraphLength(at);
       if (end <= start) continue;
-      const result = json(c
-        ? this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props)
+      const result = json(c?.nested
+        ? this.doc.applyCharFormatInCellByPath!(from.section, c.parentParagraph, pathJson(c, paragraph), start, end, props)
+        : c ? this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props)
         : this.doc.applyCharFormat!(from.section, paragraph, start, end, props));
       if (!isRecord(result) || result.ok !== true) throw new Error("char format rejected");
     }
@@ -548,9 +575,10 @@ export class RhwpText {
     try {
       const valid = (at: DocPosition) => [at.section, at.paragraph, at.offset,
         ...(at.cell ? [at.cell.parentParagraph, at.cell.control, at.cell.cell, at.cell.cellParagraph] : [])].every(isIndex)
-        && (!at.cell || (at.paragraph === at.cell.parentParagraph && !at.cell.nested));
+        && (!at.cell || (at.paragraph === at.cell.parentParagraph && this.ownsNestedCell(at)));
       if (!valid(from) || !valid(to) || !sameContext(from, to) || compare(from, to) >= 0
-        || !this.doc.getFormattingRuns || !(from.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
+        || !(from.cell?.nested ? this.doc.getFormattingRunsByPath && this.doc.applyCharFormatInCellByPath
+          : this.doc.getFormattingRuns && (from.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat))) return null;
       const first = paragraphOf(from), last = paragraphOf(to);
       if (last - first >= 4096 || last >= this.paragraphCount(from)) return null;
       let count = 0, runCount = 0, mask = 15;
@@ -563,8 +591,10 @@ export class RhwpText {
         if (count > MAX_CLIPBOARD_CHARS) return null;
         // The exclusive final paragraph at offset zero is not selected.
         if (p === last && start === end) continue;
-        const raw = this.doc.getFormattingRuns(from.section, c ? c.parentParagraph : p,
-          c?.control ?? NO_CELL, c?.cell ?? 0, c ? p : 0, start, end);
+        const raw = c?.nested
+          ? this.doc.getFormattingRunsByPath!(from.section, c.parentParagraph, pathJson(c, p), start, end)
+          : this.doc.getFormattingRuns!(from.section, c ? c.parentParagraph : p,
+            c?.control ?? NO_CELL, c?.cell ?? 0, c ? p : 0, start, end);
         if (raw.length > 4 * 1024 * 1024) return null;
         const value = json(raw);
         if (!isRecord(value) || value.length !== length || !Array.isArray(value.runs)) return null;
@@ -595,10 +625,10 @@ export class RhwpText {
   /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */
   charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
     const c = at.cell;
-    if (c?.nested) return null;
     try {
-      const value = json(c
-        ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+      const value = json(c?.nested
+        ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+        : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
         : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
       if (!isRecord(value)) return null;
       const flags = ["bold", "italic", "underline", "strikethrough"] as const;
@@ -615,10 +645,10 @@ export class RhwpText {
    */
   charShape(at: DocPosition): { width: number; spacing: number } | null {
     const c = at.cell;
-    if (c?.nested) return null;
     try {
-      const value = json(c
-        ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+      const value = json(c?.nested
+        ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+        : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
         : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
       if (!isRecord(value)) return null;
       const seven = (array: unknown) => Array.isArray(array) && array.length === 7 && array.every((n) => Number.isSafeInteger(n));

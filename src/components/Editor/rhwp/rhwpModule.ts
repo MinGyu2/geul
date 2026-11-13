@@ -128,6 +128,15 @@ export interface RhwpDocument {
   splitParagraphInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   mergeParagraph(section: number, paragraph: number): string;
   mergeParagraphInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number): string;
+  // Stage 2: the same ownership path is used for reads, mutations and layout queries.
+  createTableInCellByPath?(section: number, paragraph: number, path: string, offset: number, rows: number, cols: number): string;
+  editTableByPath?(section: number, paragraph: number, path: string, op: string, args: string): string;
+  getFormattingRunsByPath?(section: number, paragraph: number, path: string, start: number, end: number): string;
+  getLineInfoByPath?(section: number, paragraph: number, path: string, offset: number): string;
+  applyCharFormatInCellByPath?(section: number, paragraph: number, path: string, start: number, end: number, props: string): string;
+  getCellCharPropertiesAtByPath?(section: number, paragraph: number, path: string, offset: number): string;
+  getCursorRectByPathNear?(section: number, paragraph: number, path: string, offset: number, hintPage: number): string;
+  getTableCellBboxesByPath?(section: number, paragraph: number, path: string): string;
   // T012 Phase 2 — nested-table cell paths (pinned rhwp `…ByPath`). `path` is the JSON array
   // `[{controlIndex, cellIndex, cellParaIndex}, …]`, outermost cell first; the last entry's paragraph is the target.
   getCellParagraphCountByPath?(section: number, parentParagraph: number, path: string): number;

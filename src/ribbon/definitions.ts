@@ -98,7 +98,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
         cmd("table.insertRowAbove", "table"), cmd("table.insertRowBelow", "table"),
         cmd("table.insertColumnLeft", "table"), cmd("table.insertColumnRight", "table"),
         cmd("table.deleteRow", "table"), cmd("table.deleteColumn", "table"),
-        cmd("table.mergeRight", "table"), cmd("table.mergeBelow", "table"), cmd("table.splitCell", "table"),
+        cmd("table.mergeRight", "table"), cmd("table.mergeBelow", "table"), cmd("table.mergeCells", "table"), cmd("table.splitCell", "table"),
       ]),
     ],
   },

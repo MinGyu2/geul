@@ -21,7 +21,7 @@ import type { DocumentCommandId } from "../../src/commands/registry";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import { hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { preserveSourceCaret, type RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
-import { parsePosition, sameContext, type DocPosition } from "../../src/components/Editor/rhwp/rhwpText";
+import { MAX_TABLE_DEPTH, parsePosition, sameContext, type DocPosition } from "../../src/components/Editor/rhwp/rhwpText";
 import { base, controlledBackend, fail, flush, info, loaded, ok } from "../../src/components/Editor/rhwp/testing";
 
 const captured = vi.hoisted(() => ({ docs: [] as unknown[] }));
@@ -285,7 +285,7 @@ describe.runIf(phase === "generate")("T012 Phase 2 product session (Release WASM
     expect(sameContext(nested, parsePosition({ ...hit, charOffset: 0, cellPath: [hit.cellPath[0], { controlIndex: 0, cellIndex: 5, cellParaIndex: 0 }] })!)).toBe(true);
     // Refused shapes: first level disagreeing with the scalar fields, too deep, malformed levels.
     expect(parsePosition({ ...hit, cellPath: [{ controlIndex: 2, cellIndex: 12, cellParaIndex: 4 }, hit.cellPath[1]] })).toBeNull();
-    expect(parsePosition({ ...hit, cellPath: [hit.cellPath[0], ...Array.from({ length: 4 }, () => hit.cellPath[1])] })).toBeNull();
+    expect(parsePosition({ ...hit, cellPath: [hit.cellPath[0], ...Array.from({ length: MAX_TABLE_DEPTH }, () => hit.cellPath[1])] })).toBeNull();
     expect(parsePosition({ ...hit, cellPath: [hit.cellPath[0], { controlIndex: 0, cellIndex: -1, cellParaIndex: 0 }] })).toBeNull();
     expect(parsePosition({ ...hit, cellPath: [hit.cellPath[0], { controlIndex: 0, cellIndex: 5, cellParaIndex: 1, extra: 1 }] })).toBeNull();
     expect(parsePosition({ ...hit, cellPath: "x" })).toBeNull();
