@@ -8,11 +8,45 @@ import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipb
 import { cachedFormula, tableFormulaSafety } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
 
+/** One further table level inside a cell: the table control of the host paragraph, its cell and that cell's paragraph. */
+export interface NestedCell {
+  control: number;
+  cell: number;
+  cellParagraph: number;
+}
+
+/**
+ * A table cell. Without `nested` this is the one-level form (a cell of a body-level table; `cellParagraph` is the
+ * caret paragraph). With `nested` (T012 Phase 2) the caret is in a table inside that cell: `cellParagraph` is then
+ * the paragraph of the outer cell that hosts the next table control, and likewise for every entry of `nested`
+ * except the last, whose `cellParagraph` is the caret paragraph. The explicit path is the ownership: positions are
+ * never resolved from display coordinates, and two positions share a context only if every level names the same
+ * table control and cell.
+ */
 export interface CellRef {
   parentParagraph: number;
   control: number;
   cell: number;
   cellParagraph: number;
+  nested?: readonly NestedCell[];
+}
+
+/** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
+export const MAX_TABLE_DEPTH = 4;
+
+/** Innermost level of a cell path: the cell and paragraph the caret is actually in. */
+export function innermost(cell: CellRef): NestedCell {
+  return cell.nested?.length ? cell.nested[cell.nested.length - 1]! : cell;
+}
+/** Number of table levels of a position (0 = body). */
+export const tableDepth = (at: DocPosition) => (at.cell ? 1 + (at.cell.nested?.length ?? 0) : 0);
+
+/** Engine path JSON (`…ByPath`), outermost first. */
+function pathJson(cell: CellRef, paragraph = innermost(cell).cellParagraph): string {
+  const levels = [{ controlIndex: cell.control, cellIndex: cell.cell, cellParaIndex: cell.cellParagraph },
+    ...(cell.nested ?? []).map(n => ({ controlIndex: n.control, cellIndex: n.cell, cellParaIndex: n.cellParagraph }))];
+  levels[levels.length - 1]!.cellParaIndex = paragraph;
+  return JSON.stringify(levels);
 }
 
 export interface DocPosition {
@@ -85,13 +119,23 @@ export function parsePosition(value: unknown): DocPosition | null {
   }
   if (isTextBox === true) return null; // 글상자는 이 PoC 범위 밖
   if (!isIndex(parentParaIndex) || !isIndex(controlIndex) || !isIndex(cellIndex) || !isIndex(cellParaIndex)) return null;
-  if (Array.isArray(value.cellPath) && value.cellPath.length > 1) return null; // 중첩 표는 범위 밖
-  return {
-    section: sectionIndex,
-    paragraph: parentParaIndex,
-    offset: charOffset,
-    cell: { parentParagraph: parentParaIndex, control: controlIndex, cell: cellIndex, cellParagraph: cellParaIndex },
-  };
+  const cell: CellRef = { parentParagraph: parentParaIndex, control: controlIndex, cell: cellIndex, cellParagraph: cellParaIndex };
+  if (value.cellPath !== undefined) {
+    // The engine repeats the whole path, outermost first. Its first entry must restate the scalar cell fields
+    // exactly; anything else (other shapes, extra keys, too deep) is refused rather than read as the outer cell.
+    const path = value.cellPath;
+    if (!Array.isArray(path) || path.length < 1 || path.length > MAX_TABLE_DEPTH) return null;
+    const levels: NestedCell[] = [];
+    for (const level of path) {
+      if (!isRecord(level) || Object.keys(level).sort().join(",") !== "cellIndex,cellParaIndex,controlIndex"
+        || !isIndex(level.controlIndex) || !isIndex(level.cellIndex) || !isIndex(level.cellParaIndex)) return null;
+      levels.push({ control: level.controlIndex, cell: level.cellIndex, cellParagraph: level.cellParaIndex });
+    }
+    const first = levels[0]!;
+    if (first.control !== controlIndex || first.cell !== cellIndex || first.cellParagraph !== cellParaIndex) return null;
+    if (levels.length > 1) cell.nested = levels.slice(1);
+  }
+  return { section: sectionIndex, paragraph: parentParaIndex, offset: charOffset, cell };
 }
 
 export function parseSelectionRects(value: unknown): PageRect[] | null {
@@ -106,30 +150,53 @@ export function parseSelectionRects(value: unknown): PageRect[] | null {
   return rects;
 }
 
-export const sameContext = (a: DocPosition, b: DocPosition) =>
-  a.section === b.section &&
-  (a.cell === undefined
-    ? b.cell === undefined
-    : b.cell !== undefined &&
-      a.cell.parentParagraph === b.cell.parentParagraph &&
-      a.cell.control === b.cell.control &&
-      a.cell.cell === b.cell.cell);
+/**
+ * Same editing context: the body of one section, or exactly the same cell. For nested cells every level must name
+ * the same table control and cell, and every host paragraph (all levels but the last) must be the same — a nested
+ * cell is never the same context as its parent cell or as a cell of a sibling table.
+ */
+export function sameContext(a: DocPosition, b: DocPosition): boolean {
+  if (a.section !== b.section) return false;
+  if (a.cell === undefined || b.cell === undefined) return a.cell === b.cell;
+  const x = a.cell, y = b.cell, nx = x.nested ?? [], ny = y.nested ?? [];
+  if (x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
+  if (nx.length && x.cellParagraph !== y.cellParagraph) return false;
+  return nx.every((level, i) => level.control === ny[i]!.control && level.cell === ny[i]!.cell
+    && (i === nx.length - 1 || level.cellParagraph === ny[i]!.cellParagraph));
+}
 
 /** 같은 문맥(본문 또는 같은 셀)에서 문서 순서 비교. */
 export function compare(a: DocPosition, b: DocPosition): number {
-  const paraA = a.cell ? a.cell.cellParagraph : a.paragraph;
-  const paraB = b.cell ? b.cell.cellParagraph : b.paragraph;
+  const paraA = paragraphOf(a), paraB = paragraphOf(b);
   return paraA !== paraB ? paraA - paraB : a.offset - b.offset;
 }
 
-/** 위치의 문단 번호(본문 문단 또는 셀 문단). */
-export const paragraphOf = (position: DocPosition) => (position.cell ? position.cell.cellParagraph : position.paragraph);
+/** 위치의 문단 번호(본문 문단 또는 가장 안쪽 셀의 문단). */
+export const paragraphOf = (position: DocPosition) => (position.cell ? innermost(position.cell).cellParagraph : position.paragraph);
 
-/** 같은 문맥에서 문단 번호만 바꾼 위치. */
+/** 같은 문맥에서 문단 번호만 바꾼 위치(중첩 셀이면 가장 안쪽 단계의 문단). */
 export function withParagraph(position: DocPosition, paragraph: number, offset: number): DocPosition {
-  return position.cell
-    ? { ...position, offset, cell: { ...position.cell, cellParagraph: paragraph } }
-    : { ...position, paragraph, offset };
+  const cell = position.cell;
+  if (!cell) return { ...position, paragraph, offset };
+  if (!cell.nested?.length) return { ...position, offset, cell: { ...cell, cellParagraph: paragraph } };
+  const nested = cell.nested.map((level, i) => (i === cell.nested!.length - 1 ? { ...level, cellParagraph: paragraph } : level));
+  return { ...position, offset, cell: { ...cell, nested } };
+}
+
+/** Same context with another innermost cell (first paragraph, offset 0). */
+export function withCell(position: DocPosition, index: number): DocPosition {
+  const cell = position.cell;
+  if (!cell) return position;
+  if (!cell.nested?.length) return { ...position, offset: 0, cell: { ...cell, cell: index, cellParagraph: 0 } };
+  const nested = cell.nested.map((level, i) => (i === cell.nested!.length - 1 ? { ...level, cell: index, cellParagraph: 0 } : level));
+  return { ...position, offset: 0, cell: { ...cell, nested } };
+}
+
+/** Stable identity of a position's context and paragraph path (cache/history keys; not display text). */
+export function contextKey(at: DocPosition): string {
+  const c = at.cell;
+  return c ? `${at.section}:${c.parentParagraph}/${[c, ...(c.nested ?? [])].map(l => `${l.control}.${l.cell}.${l.cellParagraph}`).join(">")}`
+    : `${at.section}:body:${at.paragraph}`;
 }
 
 const NO_CELL = 0xffffffff; // u32::MAX: rhwp가 본문을 뜻하는 값
@@ -216,13 +283,59 @@ export class RhwpText {
     if (errors.length) throw new AggregateError(errors, "char shape prefix release failed");
   }
 
+  /** Whether the engine exposes every path operation nested editing needs (never a partial set). */
+  get hasNestedEditing(): boolean {
+    const d = this.doc;
+    return !!(d.getCellParagraphCountByPath && d.getCellParagraphLengthByPath && d.getCursorRectByPath && d.moveVerticalByPath
+      && d.getSelectionRectsInCellByPath && d.getTextInCellByPath && d.insertTextInCellByPath && d.deleteTextInCellByPath
+      && d.deleteRangeInCellByPath && d.splitParagraphInCellByPath && d.mergeParagraphInCellByPath
+      && d.getTableDimensionsByPath && d.getCellInfoByPath && d.getCursorModel);
+  }
+
+  /**
+   * Ownership proof of a nested cell path, independent of display coordinates: the engine's cursor-list table must
+   * contain exactly one chain root cell → … → innermost cell whose host list, host paragraph, table control and cell
+   * index equal the path at every level, and every level must be a real table holding that cell. One-level and body
+   * positions keep their existing checks (true). Any missing API, ambiguity or mismatch is false.
+   */
+  ownsNestedCell(at: DocPosition): boolean {
+    const c = at.cell;
+    if (!c?.nested?.length) return true;
+    if (!this.hasNestedEditing || tableDepth(at) > MAX_TABLE_DEPTH) return false;
+    try {
+      const raw = this.doc.getCursorModel!();
+      if (raw.length > 8 * 1024 * 1024) return false;
+      const model = json(raw);
+      if (!isRecord(model) || !Array.isArray(model.lists)) return false;
+      const levels = [c, ...c.nested];
+      let host = 0, hostParagraph = c.parentParagraph;
+      for (let depth = 0; depth < levels.length; depth++) {
+        const level = levels[depth]!;
+        const matches = model.lists.filter(l => isRecord(l) && l.isCell === true && l.sectionIndex === at.section
+          && l.hostListId === host && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell);
+        const list: unknown = matches[0];
+        if (matches.length !== 1 || !isRecord(list) || !isIndex(list.listId) || list.listId < 2 || !isIndex(list.paraCount)
+          || !isIndex(list.cellCount) || level.cell >= list.cellCount || level.cellParagraph >= list.paraCount) return false;
+        const prefix: CellRef = { ...c, nested: c.nested.slice(0, depth) };
+        if (depth === 0) delete prefix.nested;
+        const size = json(this.doc.getTableDimensionsByPath!(at.section, c.parentParagraph, pathJson(prefix)));
+        if (!isRecord(size) || size.cellCount !== list.cellCount) return false;
+        if (this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(prefix)) !== list.paraCount) return false;
+        host = list.listId; hostParagraph = level.cellParagraph;
+      }
+      return true;
+    } catch { return false; }
+  }
+
   paragraphCount(at: DocPosition): number {
     const c = at.cell;
+    if (c?.nested) return this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(c));
     return c ? this.doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, c.cell) : this.doc.getParagraphCount(at.section);
   }
 
   paragraphLength(at: DocPosition): number {
     const c = at.cell;
+    if (c?.nested) return this.doc.getCellParagraphLengthByPath!(at.section, c.parentParagraph, pathJson(c));
     return c
       ? this.doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph)
       : this.doc.getParagraphLength(at.section, at.paragraph);
@@ -232,7 +345,8 @@ export class RhwpText {
     const c = at.cell;
     try {
       return parseCaretRect(json(
-        c
+        c?.nested ? this.doc.getCursorRectByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+        : c
           ? this.doc.getCursorRectInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
           : this.doc.getCursorRect(at.section, at.paragraph, at.offset),
       ));
@@ -241,10 +355,11 @@ export class RhwpText {
     }
   }
 
-  /** 줄의 처음·끝 오프셋. */
+  /** 줄의 처음·끝 오프셋. 중첩 셀은 엔진에 경로 줄 질의가 없어 문단의 처음·끝을 준다(Home/End가 문단 끝으로 감). */
   line(at: DocPosition): { start: number; end: number } | null {
     const c = at.cell;
     try {
+      if (c?.nested) return { start: 0, end: this.paragraphLength(at) };
       const value = json(
         c
           ? this.doc.getLineInfoInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
@@ -261,7 +376,9 @@ export class RhwpText {
   vertical(at: DocPosition, delta: number, preferredX: number): { position: DocPosition; preferredX: number } | null {
     const c = at.cell;
     try {
-      const value = json(this.doc.moveVertical(
+      const value = json(c?.nested
+        ? this.doc.moveVerticalByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, delta, preferredX)
+        : this.doc.moveVertical(
         at.section, at.paragraph, at.offset, delta, preferredX,
         c ? c.parentParagraph : NO_CELL, c ? c.control : 0, c ? c.cell : 0, c ? c.cellParagraph : 0,
       ));
@@ -277,7 +394,9 @@ export class RhwpText {
     const c = from.cell;
     try {
       return parseSelectionRects(json(
-        c
+        c?.nested ? this.doc.getSelectionRectsInCellByPath!(from.section, c.parentParagraph, pathJson(c),
+          paragraphOf(from), from.offset, paragraphOf(to), to.offset)
+        : c
           ? this.doc.getSelectionRectsInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset)
           : this.doc.getSelectionRects(from.section, from.paragraph, from.offset, to.paragraph, to.offset),
       )) ?? [];
@@ -288,6 +407,7 @@ export class RhwpText {
 
   text(at: DocPosition, count: number): string {
     const c = at.cell;
+    if (c?.nested) return this.doc.getTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, count);
     return c
       ? this.doc.getTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, count)
       : this.doc.getTextRange(at.section, at.paragraph, at.offset, count);
@@ -313,11 +433,15 @@ export class RhwpText {
         if (modelRaw.length > 2 * 1024 * 1024) return null;
         const model = json(modelRaw);
         if (!isRecord(model) || !Array.isArray(model.lists)) return null;
+        // Walk the explicit path: every level must resolve to exactly one cell list of its host list.
         const c = from.cell;
-        const matches = model.lists.filter(l => isRecord(l) && l.sectionIndex === from.section && l.hostListId === 0
-          && l.hostPara === c.parentParagraph && l.controlIndex === c.control && l.cellIndex === c.cell && l.isCell === true);
-        if (matches.length !== 1 || !isRecord(matches[0]) || !isIndex(matches[0].listId)) return null;
-        list = matches[0].listId;
+        let hostParagraph = c.parentParagraph;
+        for (const level of [c, ...(c.nested ?? [])]) {
+          const matches = model.lists.filter(l => isRecord(l) && l.sectionIndex === from.section && l.hostListId === list
+            && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell && l.isCell === true);
+          if (matches.length !== 1 || !isRecord(matches[0]) || !isIndex(matches[0].listId) || matches[0].listId < 2) return null;
+          list = matches[0].listId; hostParagraph = level.cellParagraph;
+        }
       } else {
         for (let section = 0; section < from.section; section++) base += this.doc.getParagraphCount(section);
       }
@@ -344,19 +468,29 @@ export class RhwpText {
 
   insert(at: DocPosition, text: string): void {
     const c = at.cell;
-    if (c) this.doc.insertTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, text);
+    if (c?.nested) this.nestedResult(this.doc.insertTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, text));
+    else if (c) this.doc.insertTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, text);
     else this.doc.insertText(at.section, at.paragraph, at.offset, text);
+  }
+
+  /** A nested edit must report success explicitly: a path the engine did not resolve never counts as an edit. */
+  private nestedResult(raw: string): void {
+    const value = json(raw);
+    if (!isRecord(value) || value.ok !== true) throw new Error("nested cell edit rejected");
   }
 
   delete(at: DocPosition, count: number): void {
     const c = at.cell;
-    if (c) this.doc.deleteTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, count);
+    if (c?.nested) this.nestedResult(this.doc.deleteTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, count));
+    else if (c) this.doc.deleteTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, count);
     else this.doc.deleteText(at.section, at.paragraph, at.offset, count);
   }
 
   deleteRange(from: DocPosition, to: DocPosition): void {
     const c = from.cell;
-    if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);
+    if (c?.nested) this.nestedResult(this.doc.deleteRangeInCellByPath!(from.section, c.parentParagraph, pathJson(c),
+      paragraphOf(from), from.offset, paragraphOf(to), to.offset));
+    else if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);
     else this.doc.deleteRange(from.section, from.paragraph, from.offset, to.paragraph, to.offset);
   }
 
@@ -366,6 +500,7 @@ export class RhwpText {
    */
   format(from: DocPosition, to: DocPosition, props: string): void {
     const c = from.cell;
+    if (c?.nested) throw new Error("char format unavailable in nested cells"); // no run/ownership proof by path
     if (c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
     const first = paragraphOf(from), last = paragraphOf(to);
     for (let paragraph = first; paragraph <= last; paragraph += 1) {
@@ -413,7 +548,7 @@ export class RhwpText {
     try {
       const valid = (at: DocPosition) => [at.section, at.paragraph, at.offset,
         ...(at.cell ? [at.cell.parentParagraph, at.cell.control, at.cell.cell, at.cell.cellParagraph] : [])].every(isIndex)
-        && (!at.cell || at.paragraph === at.cell.parentParagraph);
+        && (!at.cell || (at.paragraph === at.cell.parentParagraph && !at.cell.nested));
       if (!valid(from) || !valid(to) || !sameContext(from, to) || compare(from, to) >= 0
         || !this.doc.getFormattingRuns || !(from.cell ? this.doc.applyCharFormatInCell : this.doc.applyCharFormat)) return null;
       const first = paragraphOf(from), last = paragraphOf(to);
@@ -460,6 +595,7 @@ export class RhwpText {
   /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */
   charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
     const c = at.cell;
+    if (c?.nested) return null;
     try {
       const value = json(c
         ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
@@ -479,6 +615,7 @@ export class RhwpText {
    */
   charShape(at: DocPosition): { width: number; spacing: number } | null {
     const c = at.cell;
+    if (c?.nested) return null;
     try {
       const value = json(c
         ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
@@ -508,8 +645,10 @@ export class RhwpText {
     const c = at.cell;
     if (!c || !this.doc.getCellInfo) return null;
     try {
-      const info = json(this.doc.getCellInfo(at.section, c.parentParagraph, c.control, c.cell));
-      const size = json(this.doc.getTableDimensions(at.section, c.parentParagraph, c.control));
+      const info = json(c.nested ? this.doc.getCellInfoByPath!(at.section, c.parentParagraph, pathJson(c))
+        : this.doc.getCellInfo(at.section, c.parentParagraph, c.control, c.cell));
+      const size = json(c.nested ? this.doc.getTableDimensionsByPath!(at.section, c.parentParagraph, pathJson(c))
+        : this.doc.getTableDimensions(at.section, c.parentParagraph, c.control));
       if (!isRecord(info) || !isRecord(size)) return null;
       const { row, col, rowSpan, colSpan } = info;
       const { rowCount, colCount } = size;
@@ -527,7 +666,7 @@ export class RhwpText {
   /** Exact top-level cell ownership; unfamiliar fields are never interpreted or rewritten. */
   existingFormula(at: DocPosition): string | null {
     const cell = at.cell;
-    if (!cell || !this.doc.getFieldList) return null;
+    if (!cell || cell.nested || !this.doc.getFieldList) return null;
     try {
       const fields: unknown = json(this.doc.getFieldList());
       if (!Array.isArray(fields)) return null;
@@ -550,7 +689,7 @@ export class RhwpText {
   /** Read-only engine preparation. A normal refusal opens no history transaction. */
   prepareFormula(at: DocPosition, row: number, col: number, formula: string): FormulaFieldResult | null {
     const c = at.cell;
-    if (!c || !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField) return null;
+    if (!c || c.nested || !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField) return null;
     if (tableFormulaSafety(this.doc, at, formula) !== "safe") return null;
     const value = json(this.doc.validateTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula));
     if (isRecord(value) && Object.keys(value).join(",") === "ok" && value.ok === false) return null;
@@ -559,7 +698,7 @@ export class RhwpText {
 
   insertFormula(at: DocPosition, row: number, col: number, formula: string, expected: FormulaFieldResult): void {
     const c = at.cell;
-    if (!c || !this.doc.insertTableFormulaField) throw new Error("formula field unavailable");
+    if (!c || c.nested || !this.doc.insertTableFormulaField) throw new Error("formula field unavailable");
     const value = formulaFieldResult(json(this.doc.insertTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula)), formula);
     if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("formula preparation changed");
   }
@@ -570,7 +709,7 @@ export class RhwpText {
    */
   evaluateFormula(at: DocPosition, row: number, col: number, formula: string): number | null {
     const c = at.cell;
-    if (!c || !this.doc.evaluateTableFormula) return null;
+    if (!c || c.nested || !this.doc.evaluateTableFormula) return null;
     try {
       const value = json(this.doc.evaluateTableFormula(at.section, c.parentParagraph, c.control, row, col, formula, false));
       if (!isRecord(value) || value.ok !== true || !isNumber(value.result)) return null;
@@ -585,14 +724,16 @@ export class RhwpText {
   /** 위치에서 문단을 나눈다(Enter). */
   split(at: DocPosition): void {
     const c = at.cell;
-    if (c) this.doc.splitParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset);
+    if (c?.nested) this.nestedResult(this.doc.splitParagraphInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset));
+    else if (c) this.doc.splitParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset);
     else this.doc.splitParagraph(at.section, at.paragraph, at.offset);
   }
 
   /** `paragraph` 문단을 앞 문단에 붙인다. */
   mergeIntoPrevious(at: DocPosition, paragraph: number): void {
     const c = at.cell;
-    if (c) this.doc.mergeParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, paragraph);
+    if (c?.nested) this.nestedResult(this.doc.mergeParagraphInCellByPath!(at.section, c.parentParagraph, pathJson(c, paragraph)));
+    else if (c) this.doc.mergeParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, paragraph);
     else this.doc.mergeParagraph(at.section, paragraph);
   }
 
@@ -601,7 +742,8 @@ export class RhwpText {
     const c = at.cell;
     if (!c) return null;
     try {
-      const value = json(this.doc.getTableDimensions(at.section, c.parentParagraph, c.control));
+      const value = json(c.nested ? this.doc.getTableDimensionsByPath!(at.section, c.parentParagraph, pathJson(c))
+        : this.doc.getTableDimensions(at.section, c.parentParagraph, c.control));
       if (!isRecord(value)) return null;
       if (isIndex(value.cellCount)) return value.cellCount;
       return isIndex(value.rowCount) && isIndex(value.colCount) ? value.rowCount * value.colCount : null;

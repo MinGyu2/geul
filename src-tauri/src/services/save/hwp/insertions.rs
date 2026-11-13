@@ -457,14 +457,51 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             old.paragraphs <= new.paragraphs && old.breaks == new.breaks,
             name,
         )?;
-        // Insertion/splitting may add text; it must not delete/reformat original characters.
+        // Restructured original tables (candidates only; proven in the object loop below) keep their place in
+        // the token stream under a new anchor digest.
+        let mut restructured: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut cursor = 0;
+        for object in &new.objects {
+            let Some(o) = old.objects.get(cursor) else {
+                break;
+            };
+            if o == object {
+                cursor += 1;
+            } else if restructure_candidate(o, object, &bc, &ac) {
+                restructured.push((object_digest(o), object_digest(object)));
+                cursor += 1;
+            }
+        }
+        // Insertion/splitting may add text; it must not delete/reformat original characters. The anchor
+        // of a restructured table is preserved as the anchor of its (proven) successor.
         let mut tokens = new.tokens.iter();
         for token in &old.tokens {
-            preserved(tokens.any(|t| t.preserves(token)), name)?;
+            preserved(
+                tokens.any(|t| {
+                    t.preserves(token)
+                        || (t.unit == 0
+                            && token.unit == 0
+                            && restructured
+                                .iter()
+                                .any(|(a, b)| *token.para == a[..] && *t.para == b[..]))
+                }),
+                name,
+            )?;
         }
         let mut cursor = 0;
         for object in &new.objects {
             if old.objects.get(cursor).is_some_and(|o| o == object) {
+                cursor += 1;
+                continue;
+            }
+            // The same table control (non-zero instance id) at the same position with changed rows,
+            // columns or merges: it must prove the restructure contract, never the new-table schema.
+            if let Some(o) = old
+                .objects
+                .get(cursor)
+                .filter(|o| restructure_candidate(o, object, &bc, &ac))
+            {
+                restructured_table(o, object, &bc, &ac, &mut used.paras)?;
                 cursor += 1;
                 continue;
             }
@@ -975,18 +1012,10 @@ fn paragraph<'a>(
             let object = objects
                 .get(control_ids.len())
                 .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-            use sha2::{Digest, Sha256};
-            let mut digest = Sha256::new();
-            for &(tag, level, payload) in object {
-                digest.update(tag.to_le_bytes());
-                digest.update(level.to_le_bytes());
-                digest.update((payload.len() as u64).to_le_bytes());
-                digest.update(payload);
-            }
             out.tokens.push(Token {
                 unit: 0,
                 char_ids: vec![0].into(),
-                para: digest.finalize().to_vec().into(),
+                para: object_digest(object).into(),
                 style: 0,
             });
             control_ids.push(text[unit * 2 + 2..unit * 2 + 6].to_vec());
@@ -1052,6 +1081,207 @@ fn paragraph<'a>(
     valid(dword(header.2, 4)? == mask, BODY)?;
     Ok(objects)
 }
+/// Identity of a root control in the paragraph token stream: every record of its subtree.
+fn object_digest(object: &[Record<'_>]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    for &(tag, level, payload) in object {
+        digest.update(tag.to_le_bytes());
+        digest.update(level.to_le_bytes());
+        digest.update((payload.len() as u64).to_le_bytes());
+        digest.update(payload);
+    }
+    digest.finalize().to_vec()
+}
+
+/// One cell of a plain table: its LIST_HEADER payload and the number of paragraphs that follow it.
+struct PlainCell<'a> {
+    header: &'a [u8],
+    paragraphs: usize,
+}
+
+/// Cells of a table whose every cell holds text paragraphs only (no caption, no control of any kind,
+/// no range tags). `None` when the table is not of that form — such a table is never restructured.
+fn plain_cells<'a>(
+    rs: &[Record<'a>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    para_ids: &mut BTreeSet<usize>,
+) -> Option<Vec<PlainCell<'a>>> {
+    let level = rs[0].1 + 1;
+    if !rs.get(1).is_some_and(|r| r.0 == 77 && r.1 == level) {
+        return None;
+    }
+    let mut cells = Vec::new();
+    let mut at = 2;
+    while at < rs.len() {
+        let r = rs[at];
+        if r.0 != 72 || r.1 != level || r.2.len() < 38 {
+            return None;
+        }
+        at += 1;
+        // HWP5 writes a cell's paragraphs at the level of its LIST_HEADER (their children one deeper).
+        let end = rs[at..]
+            .iter()
+            .position(|r| r.0 == 72 && r.1 == level)
+            .map_or(rs.len(), |p| at + p);
+        let mut paragraphs = 0;
+        let mut start = at;
+        while start < end {
+            if rs[start].0 != 66 || rs[start].1 != level {
+                return None;
+            }
+            let stop = rs[start + 1..end]
+                .iter()
+                .position(|r| r.1 <= level)
+                .map_or(end, |p| start + 1 + p);
+            if rs[start..stop].iter().any(|r| r.0 == 70) {
+                return None;
+            }
+            let mut scratch = Section {
+                tokens: Vec::new(),
+                objects: Vec::new(),
+                para_ids: BTreeSet::new(),
+                paragraphs: 0,
+                breaks: Vec::new(),
+            };
+            // `paragraph` proves framing, counts, text units and every shape/style reference, and
+            // refuses any control record below the root level.
+            match paragraph(&rs[start..stop], level, defs, original_defs, &mut scratch) {
+                Ok(objects) if objects.is_empty() => para_ids.extend(scratch.para_ids),
+                _ => return None,
+            }
+            paragraphs += 1;
+            start = stop;
+        }
+        // The paragraph count is the low word (the high word carries list flags in pinned RHWP output).
+        if paragraphs == 0 || word(r.2, 0).ok()? != paragraphs {
+            return None;
+        }
+        cells.push(PlainCell {
+            header: r.2,
+            paragraphs,
+        });
+        at = end;
+    }
+    Some(cells)
+}
+
+/// The restructure proof applies only to the same table control (non-zero instance id), with both sides
+/// plain tables and a well-formed output grid that actually differs from the original grid (dimensions or
+/// cell coordinates/spans). Anything else — an unchanged grid with changed content, a malformed grid, a table
+/// holding controls — keeps the original contract: original objects must reappear byte-identical.
+fn restructure_candidate(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+) -> bool {
+    let same_id = old[0].2.starts_with(b" lbt")
+        && new[0].2.starts_with(b" lbt")
+        && dword(old[0].2, 36).is_ok_and(|id| id != 0 && dword(new[0].2, 36) == Ok(id));
+    if !same_id || validate_existing_table(new).is_err() || validate_existing_table(old).is_err() {
+        return false;
+    }
+    let mut ignored = BTreeSet::new();
+    let (Some(a), Some(b)) = (
+        plain_cells(old, original_defs, original_defs, &mut ignored),
+        plain_cells(new, defs, original_defs, &mut ignored),
+    ) else {
+        return false;
+    };
+    // Grid coordinates/spans and each cell's paragraph count: a merge followed by a split can restore the grid
+    // while the merged paragraphs stay in the anchor cell. Text edits alone never qualify.
+    let geometry = |cells: &[PlainCell<'_>]| -> Vec<(Vec<u8>, usize)> {
+        cells
+            .iter()
+            .map(|c| (c.header[8..16].to_vec(), c.paragraphs))
+            .collect()
+    };
+    let dims = |rs: &[Record<'_>]| rs[1].2.get(4..8).map(<[u8]>::to_vec);
+    dims(old) != dims(new) || geometry(&a) != geometry(&b)
+}
+
+/// T012 Phase 2: an original table whose rows, columns or merges were changed (row/column insertion and
+/// deletion, cell merge and split). The save does not carry the operations, and text may have been typed
+/// into the changed table before saving, so this proves invariants rather than replaying an edit:
+/// - the control is the same table (identical CTRL_HEADER apart from its width/height, same instance id),
+/// - table attributes that no structure operation owns are identical (attribute word, cell spacing, inner
+///   padding, border fill, and no cell zones on either side),
+/// - both tables are plain: no caption and only text paragraphs in every cell (`plain_cells`) — fields,
+///   pictures, nested tables and range tags have coordinate/ownership semantics this proof does not model,
+/// - the output grid is well formed (`validate_existing_table`), its per-row cell counts agree with its
+///   cells, and every output cell carries list attributes, padding, border fill and trailing bytes of some
+///   original cell (new cells are template copies; nothing is invented),
+/// - every paragraph reference resolves (checked while parsing).
+///
+/// Which text each cell holds is the independent live/reopen model comparison's part, exactly as for
+/// ordinary cell text edits.
+fn restructured_table(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    para_ids: &mut BTreeSet<usize>,
+) -> Checked<()> {
+    let (a, b) = (old[0].2, new[0].2);
+    valid(b.len() >= 42, BODY)?;
+    preserved(a.len() >= 42 && old[0].1 == new[0].1, BODY)?;
+    // Pinned RHWP writes a table it created with a 42-byte header and, once the table's size is
+    // recomputed, the 46-byte form with a zero page-break field before the zero description length.
+    let tail = if a.len() == b.len() {
+        a[24..] == b[24..]
+    } else {
+        a.len() == 42
+            && b.len() == 46
+            && a[24..40] == b[24..40]
+            && a[40..].iter().chain(&b[40..]).all(|v| *v == 0)
+    };
+    preserved(a[..16] == b[..16] && tail, BODY)?;
+    valid(dword(b, 16)? > 0 && dword(b, 20)? > 0, BODY)?;
+    validate_existing_table(new)?;
+    let mut ignored = BTreeSet::new();
+    let before = plain_cells(old, original_defs, original_defs, &mut ignored)
+        .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    let after = plain_cells(new, defs, original_defs, para_ids)
+        .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    let (ta, tb) = (old[1].2, new[1].2);
+    let (rows_a, rows_b) = (word(ta, 4)?, word(tb, 4)?);
+    valid(tb.len() >= 20 + 2 * rows_b, BODY)?;
+    preserved(ta.len() >= 20 + 2 * rows_a, BODY)?;
+    let (zones_a, zones_b) = (&ta[20 + 2 * rows_a..], &tb[20 + 2 * rows_b..]);
+    preserved(
+        ta[..4] == tb[..4]
+            && ta[8..18] == tb[8..18]
+            && ta[18 + 2 * rows_a..20 + 2 * rows_a] == tb[18 + 2 * rows_b..20 + 2 * rows_b]
+            && zones_a == zones_b
+            && (zones_a.is_empty() || zones_a == [0, 0]),
+        BODY,
+    )?;
+    let mut per_row = vec![0usize; rows_b];
+    for cell in &after {
+        let row = word(cell.header, 10)?;
+        *per_row
+            .get_mut(row)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
+        valid(dword(cell.header, 16)? > 0, BODY)?;
+        let template = |h: &[u8]| (h[4..8].to_vec(), h[24..34].to_vec(), h[38..].to_vec());
+        preserved(
+            before
+                .iter()
+                .any(|o| template(o.header) == template(cell.header)),
+            BODY,
+        )?;
+    }
+    for (row, count) in per_row.iter().enumerate() {
+        valid(word(tb, 18 + 2 * row)? == *count, BODY)?;
+    }
+    valid(
+        after.iter().map(|c| c.paragraphs).sum::<usize>() <= 1_000_000,
+        BODY,
+    )
+}
+
 fn generic_references(rs: &[Record<'_>], defs: &Defs<'_>) -> Checked<()> {
     // A LIST_HEADER can also be a caption/header/textbox. Decode cell offsets
     // only under a table control AFTER its TABLE record, never from size alone.

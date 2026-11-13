@@ -8,7 +8,7 @@
 //   I3 limit ≤ snapshotCapacity() − HEADROOM: 엔진의 말없는 넘침 지우기(가장 오래된 것부터)가 일어나지 않는다. 이 기록이 그 문서의
 //      유일한 스냅숏 호출자다.
 // 시험 전용 모델(tests/poc/t010-phase0/history_model.mjs)과 같은 알고리즘이며, 그 경계 시험을 이 구현에도 돌린다(rhwpHistory.test.ts).
-import type { DocPosition, RhwpText } from "./rhwpText";
+import { innermost, type DocPosition, type RhwpText } from "./rhwpText";
 
 /** 고정 rhwp `HwpDocument`의 스냅숏 함수(`src/wasm_api.rs`, `document_core/commands/document.rs`). */
 export interface SnapshotEngine {
@@ -81,7 +81,9 @@ function structurallyValid(text: RhwpText, at: DocPosition): boolean {
   try {
     if (at.cell) {
       const cells = text.cellCount(at);
-      if (cells === null || at.cell.cell >= cells || at.cell.cellParagraph >= text.paragraphCount(at)) return false;
+      const inner = innermost(at.cell);
+      // A nested path must still be owned level by level (a restored model may hold another table there).
+      if (cells === null || inner.cell >= cells || !text.ownsNestedCell(at) || inner.cellParagraph >= text.paragraphCount(at)) return false;
     } else if (at.paragraph >= text.paragraphCount(at)) return false;
     return at.offset >= 0 && at.offset <= text.paragraphLength(at);
   } catch {

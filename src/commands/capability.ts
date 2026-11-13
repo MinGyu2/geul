@@ -23,7 +23,8 @@ import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
   | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable" | "caretRequired"
-  | "tocRequired" | "revisionsRequired" | "originalChecking" | "originalUnverified" | "formulaParagraphRequired";
+  | "tocRequired" | "revisionsRequired" | "originalChecking" | "originalUnverified" | "formulaParagraphRequired"
+  | "nestedTable" | "tableFormula" | "tableContent" | "tableShape";
 
 export type CommandState =
   | { available: true; pressed?: boolean }
@@ -60,8 +61,9 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (id !== "edit.paste" && !snapshot.clipboard.selection) return unavailable("selectionRequired");
     return ENABLED;
   }
-  if (["insert.table", "insert.image", "paragraph.bullets"].includes(id) && snapshot.saving) return unavailable("saving");
-  if (["insert.table", "insert.image", "paragraph.bullets"].includes(id) && snapshot.formatAccess === "protected") return unavailable("protected");
+  const structural = ["insert.table", "insert.image", "paragraph.bullets"].includes(id) || id.startsWith("table.");
+  if (structural && snapshot.saving) return unavailable("saving");
+  if (structural && snapshot.formatAccess === "protected") return unavailable("protected");
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");
   if (snapshot.historyScope === "advanced" && snapshot.pending

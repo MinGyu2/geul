@@ -2166,3 +2166,76 @@ fn hwp_opaque_owner_requires_derived_line_position_movement() {
         assert!(info.dirty, "{name}");
     }
 }
+
+/// T012 Phase 2: an original plain table whose second row was deleted (the engine's row deletion shape).
+fn existing_table_without_second_row() -> Records {
+    let original = existing_nonbasic_table();
+    let mut t = original[1].2.clone();
+    w(&mut t, 4, 1);
+    // rows=1: per-row count [2], border fill, zone count.
+    let border = u16::from_le_bytes([t[22], t[23]]);
+    t.truncate(18);
+    t.extend(2u16.to_le_bytes());
+    t.extend(border.to_le_bytes());
+    t.extend(0u16.to_le_bytes());
+    let mut rs = vec![original[0].clone(), (77, 2, t)];
+    // Keep the two cells of row 0 with their paragraphs.
+    let second_row = original
+        .iter()
+        .position(|r| r.0 == 72 && r.2[10] == 1)
+        .unwrap();
+    rs.extend(original[2..second_row].iter().cloned());
+    rs
+}
+
+#[test]
+fn hwp_restructured_original_table_is_proven_or_refused() {
+    let original = fixture_with(false, &[existing_nonbasic_table()], "Keep 한글");
+    // Positive: the row-deleted table (same control/instance id, template cells, plain paragraphs).
+    let output = fixture_with(true, &[existing_table_without_second_row()], "Keep 한글");
+    let findings = raw_findings(&original, &output, true);
+    assert!(only_stale_preview(&findings), "{findings:?}");
+    let (saved, _, info) = publish(&original, &output, Some(&raster()));
+    assert!(saved.unwrap().durable && !info.dirty);
+
+    let refused = |name: &str, table: Records| {
+        let edited = fixture_with(true, &[table], "Keep 한글");
+        let findings = raw_findings(&original, &edited, true);
+        assert!(
+            !only_stale_preview(&findings),
+            "{name} accepted: {findings:?}"
+        );
+        let (result, bytes, info) = publish(&original, &edited, Some(&raster()));
+        assert!(
+            matches!(result, Err(DocumentError::UnsafeSave { .. })),
+            "{name}"
+        );
+        assert_eq!(bytes, original, "{name}");
+        assert!(info.dirty, "{name}");
+    };
+    // A cell whose border fill no original cell uses (an invented template).
+    let mut invented = existing_table_without_second_row();
+    w(
+        &mut invented.iter_mut().find(|r| r.0 == 72).unwrap().2,
+        32,
+        2,
+    );
+    refused("invented cell template", invented);
+    // A table attribute no structure operation owns (cell spacing).
+    let mut spacing = existing_table_without_second_row();
+    w(&mut spacing[1].2, 8, 77);
+    refused("changed cell spacing", spacing);
+    // Another table control (instance id differs): never a restructure of the original.
+    let mut other = existing_table_without_second_row();
+    d(&mut other[0].2, 36, 10);
+    refused("different instance id", other);
+    // Per-row cell counts that disagree with the cells.
+    let mut counts = existing_table_without_second_row();
+    w(&mut counts[1].2, 18, 3);
+    refused("row size mismatch", counts);
+    // A control inside a cell of the restructured table (not plain).
+    let mut nested = existing_table_without_second_row();
+    let first_para = nested.iter().position(|r| r.0 == 66 && r.1 == 2).unwrap();
+    nested.insert(first_para + 1, (71, 3, b" lbt".to_vec()));
+    refused("control inside a restructured cell", nested);
+}

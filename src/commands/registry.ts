@@ -30,6 +30,8 @@ export type DocumentCommandId =
   | "references.toc" | "references.updateToc"
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | "insert.table" | "insert.image" | "paragraph.bullets"
+  | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
+  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.splitCell"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -121,6 +123,16 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "paragraph.bullets": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "insert.image": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "insert.table": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  // 표 구조(T012 Phase 2): rhwp 본문 수준 표. 가용성은 세션이 연산마다 표 모양·내용·원본 증명으로 따로 판정한다.
+  "table.insertRowAbove": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertRowBelow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertColumnLeft": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertColumnRight": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.deleteRow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.deleteColumn": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeRight": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeBelow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.splitCell": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

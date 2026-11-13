@@ -128,6 +128,30 @@ export interface RhwpDocument {
   splitParagraphInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   mergeParagraph(section: number, paragraph: number): string;
   mergeParagraphInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number): string;
+  // T012 Phase 2 — nested-table cell paths (pinned rhwp `…ByPath`). `path` is the JSON array
+  // `[{controlIndex, cellIndex, cellParaIndex}, …]`, outermost cell first; the last entry's paragraph is the target.
+  getCellParagraphCountByPath?(section: number, parentParagraph: number, path: string): number;
+  getCellParagraphLengthByPath?(section: number, parentParagraph: number, path: string): number;
+  getCursorRectByPath?(section: number, parentParagraph: number, path: string, offset: number): string;
+  moveVerticalByPath?(section: number, parentParagraph: number, path: string, offset: number, delta: number, preferredX: number): string;
+  getSelectionRectsInCellByPath?(section: number, parentParagraph: number, path: string,
+    startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number): string;
+  getTextInCellByPath?(section: number, parentParagraph: number, path: string, offset: number, count: number): string;
+  insertTextInCellByPath?(section: number, parentParagraph: number, path: string, offset: number, text: string): string;
+  deleteTextInCellByPath?(section: number, parentParagraph: number, path: string, offset: number, count: number): string;
+  deleteRangeInCellByPath?(section: number, parentParagraph: number, path: string,
+    startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number): string;
+  splitParagraphInCellByPath?(section: number, parentParagraph: number, path: string, offset: number): string;
+  mergeParagraphInCellByPath?(section: number, parentParagraph: number, path: string): string;
+  getCellInfoByPath?(section: number, parentParagraph: number, path: string): string;
+  getTableDimensionsByPath?(section: number, parentParagraph: number, path: string): string;
+  // T012 Phase 2 — structure of a top-level table. Each returns `{ok, rowCount, colCount}` or `{ok, cellCount}`.
+  insertTableRow?(section: number, parentParagraph: number, control: number, row: number, below: boolean): string;
+  insertTableColumn?(section: number, parentParagraph: number, control: number, col: number, right: boolean): string;
+  deleteTableRow?(section: number, parentParagraph: number, control: number, row: number): string;
+  deleteTableColumn?(section: number, parentParagraph: number, control: number, col: number): string;
+  mergeTableCells?(section: number, parentParagraph: number, control: number, startRow: number, startCol: number, endRow: number, endCol: number): string;
+  splitTableCell?(section: number, parentParagraph: number, control: number, row: number, col: number): string;
   exportHwpWithReport(): RhwpExport;
   exportHwpxWithReport(): RhwpExport;
   // 스냅숏(T010 Phase 2 실행 취소 기록, rhwpHistory.ts). 고정 rhwp: saveSnapshot·snapshotCapacity는 u32, restoreSnapshot은 성공 JSON 또는

@@ -63,12 +63,19 @@ import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
+  applyTablePlan, cellCovering, hasTableStructureApi, planTableOp, readTableGrid, tableContentRefusal, tableOpRefusal,
+  TABLE_STRUCTURE_OPS, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
+} from "./tableStructure";
+import {
   charCount,
   compare,
+  contextKey,
   paragraphOf,
   parsePosition,
   RhwpText,
   sameContext,
+  innermost,
+  withCell,
   withParagraph,
   type CaretRect,
   type DocPosition,
@@ -271,6 +278,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private text: RhwpText | null = null;
   /** 쪽 좌표는 zoom/DPR와 무관하다. 모델·문서 소유자·전체 위치가 같을 때만 마지막 성공 질의를 재사용한다. */
   private caretCache: { text: RhwpText; version: number; position: string; value: CaretRect } | null = null;
+  /** Bumped by every change that can move paragraphs, cells or controls (anything but in-paragraph typing). */
+  private structureVersion = 0;
+  /** Nested-cell paths proven against the current model's cursor lists (T012 Phase 2). */
+  private nestedProof: { text: RhwpText; version: number; owned: Map<string, boolean> } | null = null;
+  private tableCache: { text: RhwpText; version: number; key: string; grid: TableGrid | TableStructureRefusal; content: TableStructureRefusal | null } | null = null;
   private module: RhwpModule | null = null;
   private preferredX = -1;
   private committed = 0;
@@ -606,6 +618,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.preferredX = -1;
     this.pages = pages;
     this.modelVersion += 1;
+    this.structureVersion += 1;
     this.sessions.applyUpdate(ready.value);
     this.setStatus({ kind: "ready" });
     this.probeHwpOriginal();
@@ -779,8 +792,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const text = this.text;
     if (!text) return null;
     // positionKey의 표시 문자열은 parentParagraph를 생략한다. 캐시에는 셀 경로 전체를 포함한다.
-    const at = this.caret, cell = at.cell;
-    const position = `${at.section}:${at.paragraph}:${at.offset}:${cell ? `${cell.parentParagraph}/${cell.control}/${cell.cell}/${cell.cellParagraph}` : "body"}`;
+    const at = this.caret;
+    const position = `${contextKey(at)}:${at.offset}`;
     const cached = this.caretCache;
     if (cached?.text === text && cached.version === this.modelVersion && cached.position === position) return { ...cached.value };
     const value = text.caret(at);
@@ -803,6 +816,26 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.text.selection(composition.anchor, end);
   }
 
+  /**
+   * Whether `at` names a cell the current model owns. Body and one-level cells keep their existing checks; a nested
+   * path is proven once per structural version through the engine's cursor lists (RhwpText.ownsNestedCell).
+   */
+  private ownsPosition(at: DocPosition): boolean {
+    if (!at.cell?.nested) return true;
+    const text = this.text;
+    if (!text) return false;
+    if (this.nestedProof?.text !== text || this.nestedProof.version !== this.structureVersion) {
+      this.nestedProof = { text, version: this.structureVersion, owned: new Map() };
+    }
+    const key = contextKey(at);
+    let owned = this.nestedProof.owned.get(key);
+    if (owned === undefined) {
+      owned = text.ownsNestedCell(at);
+      if (this.nestedProof.owned.size < 64) this.nestedProof.owned.set(key, owned);
+    }
+    return owned;
+  }
+
   private ordered(): [DocPosition, DocPosition] {
     return compare(this.anchor, this.caret) <= 0 ? [this.anchor, this.caret] : [this.caret, this.anchor];
   }
@@ -816,6 +849,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false): boolean {
     if (!this.editable || !this.doc) return false;
+    // T012 Phase 2: a nested-cell target must be owned by the current model, level by level, before any engine
+    // call. A path that no longer resolves (never expected: only this session changes the model) is refused
+    // without touching the document; the caret leaves the unowned cell.
+    if (![this.caret, this.anchor, this.composition?.anchor, this.provisional?.anchor].every(at => !at || this.ownsPosition(at))) {
+      this.composition = null;
+      if (this.provisional) { this.provisional = null; this.cancelHistory(); }
+      this.caret = this.anchor = START;
+      this.emit();
+      return false;
+    }
     this.settleProvisional(); // 기다리던 조합은 이 변경보다 먼저 끝난 변경이다
     if (!this.editable) return false;
     const doc = this.doc;
@@ -850,6 +893,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.modified = true;
     this.lastRoundTrip = null; // 이전 모델의 내보내기 검사 결과는 더 이상 이 모델의 것이 아니다
     this.modelVersion += 1;
+    if (kind === "other") this.structureVersion += 1; // paragraphs/cells/controls may have moved (not plain typing)
     if ("caret" in next) {
       this.caret = next.caret;
       this.anchor = next.anchor;
@@ -1026,6 +1070,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.modified = true;
     this.lastRoundTrip = null;
     this.modelVersion += 1;
+    this.structureVersion += 1;
     const placed = placeCheckpoint(text, checkpoint);
     this.caret = placed.caret;
     this.anchor = placed.anchor;
@@ -1313,6 +1358,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const moved = this.text?.vertical(this.caret, delta, this.preferredX);
     if (!moved || !this.editable) return false;
     if (extend && !sameContext(this.anchor, moved.position)) return false;
+    if (!this.ownsPosition(moved.position)) return false;
     this.moveTo(moved.position, extend, true);
     this.preferredX = moved.preferredX;
     return true;
@@ -1332,9 +1378,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const at = this.caret;
     const cells = this.text?.cellCount(at);
     if (!at.cell || cells === null || cells === undefined || !this.editable) return false;
-    const target = at.cell.cell + delta;
+    // Tab stays inside the caret's own table: the innermost level of the path, never the parent table.
+    const target = innermost(at.cell).cell + delta;
     if (target < 0 || target >= cells) return false;
-    this.moveTo({ ...at, offset: 0, cell: { ...at.cell, cell: target, cellParagraph: 0 } }, false);
+    const next = withCell(at, target);
+    if (!this.ownsPosition(next)) return false;
+    this.moveTo(next, false);
     return true;
   }
 
@@ -1350,6 +1399,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!position) return false;
     // 셀 위치는 그 컨트롤이 실제 표일 때만(엔진이 표가 아닌 컨트롤 안을 셀처럼 돌려주는 경우가 있다 — 그 자리에 쓰면 엔진 예외로 편집이 멈춤).
     if (position.cell && this.text?.cellCount(position) === null) return false;
+    // 중첩 표: 엔진이 준 경로를 화면 좌표와 무관하게 커서 목록으로 다시 증명한다(부모 셀·형제 표로 읽지 않음). 지원 깊이 밖이면 거절.
+    if (!this.ownsPosition(position)) return false;
     this.moveTo(position, extend);
     return true;
   }
@@ -1726,7 +1777,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private coreActions(): NonNullable<DocumentCommandSnapshot["actions"]> {
     const key = [this.epoch, this.modelVersion, this.clipboardVersion, this.pending, this.committingEpoch === this.epoch,
       this.editable, this.imeUnsettled, this.uncertain, this.imageSelecting, this.sessions.get(this.sessionId)?.format,
-      this.structuralKey()].join("|");
+      this.structuralKey(), this.structureVersion, !!this.history, this.historyOff,
+      RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret)].join("|");
     if (this.coreActionCache?.key === key) return this.coreActionCache.value;
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
     if (this.structuralFormat() && this.doc?.insertPicture && this.doc.setPictureProperties
@@ -1740,14 +1792,87 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         actions["paragraph.bullets"] = { pressed: all };
       } catch { /* unavailable if the engine cannot report paragraph state */ }
     }
+    for (const op of TABLE_STRUCTURE_OPS) if (this.tableOpState(op) === null) actions[`table.${op}`] = {};
     this.coreActionCache = { key, value: actions };
     return actions;
+  }
+
+  // ---- 표 구조(T012 Phase 2) ----
+
+  /** The body-level table of the caret with its geometry and content eligibility, cached per structural version. */
+  private caretTable(): { target: TableTarget; grid: TableGrid | TableStructureRefusal; content: TableStructureRefusal | null } | null {
+    const cell = this.caret.cell, doc = this.doc, text = this.text;
+    if (!cell || cell.nested || !doc || !text) return null;
+    const target = { section: this.caret.section, paragraph: cell.parentParagraph, control: cell.control };
+    const key = `${target.section}:${target.paragraph}:${target.control}`;
+    const cached = this.tableCache;
+    if (cached && cached.text === text && cached.version === this.structureVersion && cached.key === key) return { target, grid: cached.grid, content: cached.content };
+    const grid = readTableGrid(doc, target);
+    const content = typeof grid === "string" ? null : tableContentRefusal(doc, target, grid);
+    this.tableCache = { text, version: this.structureVersion, key, grid, content };
+    return { target, grid, content };
+  }
+
+  /**
+   * Why a table structure command cannot run now (null = it can). Each operation is judged on its own: the
+   * session state, the format's preservation rule (HWP needs the same original proof as other structural
+   * edits), a caret in a cell of a body-level table, the table's content and the operation's own geometry.
+   */
+  private tableOpState(op: TableStructureOp): NonNullable<DocumentCommandSnapshot["actionReasons"]>["table.splitCell"] | null {
+    const doc = this.doc;
+    if (!this.editable || !doc || !this.text || this.imeUnsettled || this.uncertain) return "engineUnsupported";
+    if (!hasTableStructureApi(doc, op)) return "engineUnsupported";
+    if (this.pending > 0 || this.committingEpoch === this.epoch) return "pendingEdits";
+    if (!this.caret.cell || this.hasSelection) return "notInTable";
+    if (this.caret.cell.nested) return "nestedTable";
+    if (!this.history) return this.historyOff === "limit" ? "limit" : "engineUnsupported";
+    const block = this.structuralBlock();
+    if (block) return block;
+    const table = this.caretTable();
+    if (!table) return "notInTable";
+    if (typeof table.grid === "string") return table.grid;
+    if (table.content) return table.content;
+    if (this.caret.cell.cell >= table.grid.cells.length) return "tableShape";
+    return tableOpRefusal(table.grid, this.caret.cell.cell, op);
+  }
+
+  /**
+   * One table structure change = one mutation and one Undo step. The plan (target, engine arguments, exact
+   * expected table) is computed from the current model before any engine call; a refusal changes nothing and
+   * opens no history transaction. `applyTablePlan` proves the engine's result cell by cell and throws on any
+   * difference — `mutate` then rolls the model back to the snapshot taken before the call and stops editing.
+   */
+  private applyTableOp(op: TableStructureOp): boolean {
+    if (this.tableOpState(op) !== null) return false;
+    const doc = this.doc!, table = this.caretTable();
+    if (!table || typeof table.grid === "string") return false;
+    const { target } = table, section = this.caret.section, cell = this.caret.cell!;
+    let plan: ReturnType<typeof planTableOp>;
+    try { plan = planTableOp(doc, target, table.grid, cell.cell, op); }
+    catch { return false; } // a getter failed: nothing was changed
+    if (typeof plan === "string") return false;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const grid = applyTablePlan(doc, target, plan);
+      const index = cellCovering(grid, plan.caret.row, plan.caret.col);
+      if (index < 0) throw new Error("table caret cell missing");
+      // The caret never keeps an index of the old table: it is re-resolved from the proven result grid.
+      return { section, paragraph: target.paragraph, offset: 0,
+        cell: { parentParagraph: target.paragraph, control: target.control, cell: index, cellParagraph: 0 } };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
   }
   /** Distinguish "checking the original" / "original not verified" for the HWP action commands. */
   private coreActionReasons(): Pick<DocumentCommandSnapshot, "actionReasons"> {
     const block = this.structuralBlock();
-    if (block !== "originalChecking" && block !== "originalUnverified") return {};
-    return { actionReasons: { "insert.image": block, "paragraph.bullets": block } };
+    const actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]> = {};
+    for (const op of TABLE_STRUCTURE_OPS) {
+      const reason = this.tableOpState(op);
+      if (reason) actionReasons[`table.${op}`] = reason;
+    }
+    if (block === "originalChecking" || block === "originalUnverified") actionReasons["insert.image"] = actionReasons["paragraph.bullets"] = block;
+    return { actionReasons };
   }
   private toggleBullets(forceOff = false): boolean {
     const range = this.bulletRange(forceOff, forceOff), doc = this.doc;
@@ -1844,7 +1969,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
       }
     }
-    if (usable) {
+    if (this.caret.cell?.nested || this.anchor.cell?.nested) {
+      // Nested cells: plain text editing only. Metrics and formulas have no path-level ownership/field proof.
+      for (const command of ["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula"] as const) {
+        delete parameters[command];
+        parameterReasons[command] = "nestedTable";
+      }
+    } else if (usable) {
       const cell = this.caret.cell ? this.text!.tableCell(this.caret) : null;
       if (cell) {
         const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
@@ -1981,6 +2112,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
+    if (command.startsWith("table.")) {
+      const op = TABLE_STRUCTURE_OPS.find(candidate => `table.${candidate}` === command);
+      return { accepted: !!op && args === undefined && this.applyTableOp(op) };
+    }
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command]) || !this.doc?.createTable || !this.doc.setTableProperties) return { accepted: false };
       const at = this.caret, doc = this.doc, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
@@ -2314,7 +2449,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 커서 위치를 짧은 문자열로(진단 표시용). 예: "0:3:5", 셀이면 "0:2:1@0/3/0". */
   static positionKey(position: DocPosition): string {
     const c = position.cell;
-    return `${position.section}:${position.paragraph}:${position.offset}${c ? `@${c.control}/${c.cell}/${c.cellParagraph}` : ""}`;
+    const nested = c?.nested?.map(level => `>${level.control}/${level.cell}/${level.cellParagraph}`).join("") ?? "";
+    return `${position.section}:${position.paragraph}:${position.offset}${c ? `@${c.control}/${c.cell}/${c.cellParagraph}${nested}` : ""}`;
   }
 
   /** 커서가 있는 문단의 글자(진단 표시용, 200자까지). */

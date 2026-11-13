@@ -390,7 +390,54 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       pictures.push(picture);
     } else complete = false;
   }
-  return { model: canonical({ sections, tables, pictures, fields }), structure: canonical({ inventory, headings }), complete };
+  // T012 Phase 2 — nested table cells. The body-level table model above reads one level only, so text typed
+  // into a table inside a cell would otherwise be covered by the flat text comparison alone. Every cell list whose
+  // host chain is cells all the way up to a body-level table is read through its explicit path (never by list
+  // number, which serialization may renumber): geometry and each paragraph's text. Lists hosted by anything else
+  // (text boxes, captions, notes) stay outside this model as before. Nested controls still clear `complete` above.
+  const nested: unknown[] = [];
+  if (doc.getCursorModel && doc.getCellParagraphCountByPath && doc.getCellParagraphLengthByPath && doc.getTextInCellByPath && doc.getCellInfoByPath) {
+    const cursor = object(json(doc.getCursorModel()));
+    if (!Array.isArray(cursor.lists) || cursor.lists.length > 100_000) throw new Error("HWP cursor lists");
+    const byId = new Map<number, JsonObject>();
+    for (const value of cursor.lists) {
+      const list = object(value);
+      if (!isInt(list.listId, 0) || byId.has(list.listId)) throw new Error("HWP cursor list");
+      byId.set(list.listId, list);
+    }
+    for (const list of byId.values()) {
+      if (list.isCell !== true || list.hostListId === 0) continue;
+      const chain: JsonObject[] = [];
+      let at: JsonObject | undefined = list;
+      while (at && at.isCell === true && chain.length <= 8) {
+        chain.unshift(at);
+        if (at.hostListId === 0) break;
+        at = isInt(at.hostListId, 2) ? byId.get(at.hostListId) : undefined;
+      }
+      if (!at || at.isCell !== true || at.hostListId !== 0 || chain.length < 2 || chain.length > 8) continue;
+      if (!chain.every(l => [l.sectionIndex, l.hostPara, l.controlIndex, l.cellIndex, l.paraCount].every(v => isInt(v, 0)))) throw new Error("HWP cursor list");
+      node();
+      const section = chain[0]!.sectionIndex as number, host = chain[0]!.hostPara as number;
+      // Level i's paragraph is the paragraph hosting level i+1's table; the last level's is set per paragraph.
+      const levels = chain.map((l, i) => ({ controlIndex: l.controlIndex as number, cellIndex: l.cellIndex as number,
+        cellParaIndex: i + 1 < chain.length ? chain[i + 1]!.hostPara as number : 0 }));
+      const path = (paragraph: number) => JSON.stringify(levels.map((l, i) => (i + 1 < levels.length ? l : { ...l, cellParaIndex: paragraph })));
+      const paragraphCount = count(doc.getCellParagraphCountByPath(section, host, path(0)));
+      if (paragraphCount !== list.paraCount) throw new Error("HWP nested cell paragraphs");
+      const paragraphs: string[] = [];
+      for (let p = 0; p < paragraphCount; p++) {
+        node();
+        const length = count(doc.getCellParagraphLengthByPath(section, host, path(p)), 2_000_000);
+        const text = doc.getTextInCellByPath(section, host, path(p), 0, length);
+        if (typeof text !== "string") throw new HwpEvidenceError("nested cell text");
+        spend(text.length * 2); paragraphs.push(text);
+      }
+      const coordinates = object(json(doc.getCellInfoByPath(section, host, path(0))));
+      checkCellInfo(coordinates);
+      nested.push({ section, host, levels, coordinates, paragraphs });
+    }
+  }
+  return { model: canonical({ sections, tables, pictures, fields, nested }), structure: canonical({ inventory, headings }), complete };
 }
 
 export function hwpReopenEqual(live: HwpReopenModel, reopened: HwpReopenModel, baseline: string | null): boolean {

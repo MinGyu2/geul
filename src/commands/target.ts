@@ -61,18 +61,25 @@ export interface DocumentCommandSnapshot {
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
   parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits" | "limit"
-    | "originalChecking" | "originalUnverified" | "formulaParagraphRequired">>;
+    | "originalChecking" | "originalUnverified" | "formulaParagraphRequired" | "nestedTable">>;
   /**
    * 값 없이 실행하는 문맥 명령(T013 목차 넣기·갱신 등)을 지금 할 수 있는지. 세션이 엔진 보기로 판정한다. 없으면 `actionReasons`의
    * 이유 또는 engineUnsupported.
    */
   actions?: Partial<Record<ActionCommandId, { pressed?: boolean }>>;
-  actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "revisionsRequired" | "pendingEdits" | "originalChecking" | "originalUnverified">>;
+  actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "revisionsRequired" | "pendingEdits" | "originalChecking" | "originalUnverified"
+    | "notInTable" | "nestedTable" | "tableFormula" | "tableContent" | "tableShape" | "limit" | "engineUnsupported">>;
 }
 
 /** 값 입력 없이 세션 문맥으로만 가용성이 정해지는 문서 명령. */
 export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references.toc" | "references.updateToc"
-  | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll";
+  | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
+  | TableStructureCommandId;
+
+/** 표 구조 명령(T012 Phase 2): 커서가 있는 본문 수준 표의 행·열·병합. 값 입력 없음. */
+export type TableStructureCommandId =
+  | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
+  | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.splitCell";
 
 /**
  * 사용자 값이 필요한 문서 명령(T012·T013)의 값. 명령마다 정해진 모양 하나이며 화면(입력 창)과 세션이 같은 검증
