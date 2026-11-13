@@ -788,3 +788,16 @@ push 없음.
 최초 native 실행은 IBus 초기 모드 미지정으로 HWP 조합 대기에서 실패했다(7개 선행 검사 PASS). 실패 자료를 보존하고 기존 실행과 동일한 `--hangul-initial-mode hangul` 설정으로 한 번 재실행했다. 성공 실행 launcher exit 0, cleanup complete/proven/filesystemProven true, survivors와 processErrors 없음. `native-rerun/result.json`, `session-rerun/cleanup.json`, `reopened-final.json`, `evidence.json`이 새 실행 근거다.
 
 이번에는 전체 WASM 117건·T009/T010 전체·100쪽·성능·전체 CI·DOCX/WordCraft·T015/T016을 재실행하지 않았다. RHWP/WordCraft pin과 제품 소스는 변경하지 않았다. T012는 계속 조건부 미완료이며 Phase 2 및 중첩 표/구조 편집은 시작하지 않았다.
+
+
+### T012 ordinary geometry·필드 ID/컨트롤 증거 보정 (2026-11-13)
+
+시작 HEAD `694ec9ddceb9a035093435fa76777176a1d88be0`. ordinary `fixtures` 생성 후 `geometry`를 실제 실행하여 `required trailing paragraph missing or duplicated` 실패를 재현했다. 원인은 geometry가 complex 전용 `inspectRequiredTail`을 무조건 호출한 것이었다. CLI 인자는 유지하며 기존 생성 manifest `fixtures.json`의 boolean `complex`, Release 신원, 형식별 source 경로/SHA를 확인한 뒤 공통 geometry 구현에서 해당 구조를 검사한다. ordinary는 셀별 한 문단·빈 필드 목록을 요구하고 complex는 기존 필수 후속 ClickHere 검사를 유지한다. 모드 누락/비boolean·해시 불일치·선언과 실제 구조의 모순을 ordinary fallback으로 숨기지 않는다. 생성 manifest 없는 임의 디렉터리는 거부한다. 기존 native geometry 기록은 strict complex source 검사를 유지하는 조건으로 재사용한다.
+
+필드 ID는 Release의 `getFieldList`가 반환한 하나의 전체 inventory에서만 검사한다. 엔진의 ID 기반 조회와 기존 ID 최댓값 이후 할당 계약을 확인했으며, 중복 ID(ClickHere와 formula 사이 및 다른 formula들 사이 포함)를 거부한다. 여러 API의 메타데이터를 합쳐 중복 계산하지 않는다. 실제 Release ClickHere 컨트롤의 `ctrlId=""`, `ctrlCh=0`, `controlIndex=0`, `pos=0`, `userDesc=""`, `props={}`를 확인했고, 누락/비객체/비어 있지 않은 props와 예상 밖 userDesc 및 중복 소유자를 거부한다. 기존 위치·cursor-list·범위·값·원본 SHA 가드는 유지했다.
+
+새 로컬 증거: `target/t012-verifier-gaps-20261113/`. 집중 회귀 7/7 PASS(기존 양성·음성 유지, 실제 Release HWP/HWPX ordinary/complex geometry와 잘못된 선언·필드 누락·ID 충돌·컨트롤 메타데이터 변조 포함). `ordinary-geometry.json`, `complex-geometry.json` 모두 두 형식 PASS. 두 mjs 문법 검사와 diff 검사 PASS; 기존 ESLint 설정의 대상 glob은 mjs를 포함하지 않는다. 초기 회귀 실행의 테스트 기대/변조 대상 선택 오류를 수정한 뒤 관련 집중 검사만 다시 실행했다.
+
+기존 `target/t012-verifier-20261113/`는 변경하지 않았다. `identity-check.json`에서 당시 Release generation/manifest·제품 binary·source 2개·저장 상태 16개 SHA 및 동일 `native-rerun` 결과/cleanup의 기존 증거 hash 일치를 확인했다. 그 뒤 보강 oracle을 기존 geometry와 저장본에 적용하여 HWP 8개·HWPX 8개 PASS(`reopened.json`). 이는 새 oracle 실행이며, native 56/56은 이전의 동일 입력·제품 실행 기록이다. 이번 native GUI 재실행은 없고 관련 없는 WASM 전체·T009/T010 전체·CI·대용량·성능·DOCX/WordCraft·T015/T016도 재실행하지 않았다.
+
+제품 동작·엔진/패치·submodule pin은 그대로다. T012는 계속 조건부 미완료이며 Phase 2는 시작하지 않았다.

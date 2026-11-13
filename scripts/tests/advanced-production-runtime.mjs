@@ -94,7 +94,7 @@ function fixturesMode(outDir, complex = false) {
   writeNew(join(outDir, "fixtures.json"), { build, complex, scope: "controlled generated fixtures, not Hancom authored", outputs });
 }
 
-function captureGeometry(engine, format, source) {
+function captureGeometry(engine, format, source, complex) {
   return withDocument(engine, source, doc => {
     const control = tableControl(doc);
     const dimensions = json(doc.getTableDimensions(control.section, control.para, control.controlIndex));
@@ -113,17 +113,31 @@ function captureGeometry(engine, format, source) {
     requireValue(bodyParagraph !== undefined, `${format} fixture has no independent body paragraph`);
     const rect = json(doc.getCursorRect(0, bodyParagraph, 0));
     const body = { ...rect, page: json(doc.getPageInfo(rect.pageIndex)), paragraph: bodyParagraph };
-    return { format, source, sha256: sha256(readFileSync(source)), cells, body, sourceTail: inspectRequiredTail(doc) };
+    let sourceTail;
+    if (complex) sourceTail = inspectRequiredTail(doc);
+    else {
+      requireValue([0, 1, 2, 3].every(cell => doc.getCellParagraphCount(control.section, control.para, control.controlIndex, cell) === 1)
+        && same(json(doc.getFieldList()), []), "ordinary fixture contradicts declared mode");
+    }
+    requireValue(doc.getSourceFormat() === format, "fixture format contradicts manifest");
+    return { format, source, sha256: sha256(readFileSync(source)), cells, body, sourceTail };
   });
 }
 
 function geometryMode(outPath, fixtureDir) {
-  const { build, engine } = loadRelease();
-  const fixtures = [
-    ["hwp", "created-hwp-normalized.hwp"],
-    ["hwpx", "created-hwpx-normalized.hwpx"],
-  ].map(([format, name]) => captureGeometry(engine, format, resolve(fixtureDir, name)));
-  writeNew(outPath, { build, fixtures });
+  const manifest = json(readFileSync(join(fixtureDir, "fixtures.json"), "utf8"));
+  requireValue(typeof manifest.complex === "boolean", "fixture mode must be explicitly boolean");
+  const { build, engine } = loadRelease(manifest.build);
+  requireValue(Array.isArray(manifest.outputs) && manifest.outputs.length === 2
+    && new Set(manifest.outputs.map(row => row.format)).size === 2, "invalid fixture manifest outputs");
+  const fixtures = FORMATS.map(format => {
+    const source = resolve(fixtureDir, `created-${format}-normalized.${format}`);
+    const declared = manifest.outputs.find(row => row.format === format);
+    requireValue(declared && resolve(declared.source) === source
+      && declared.sha256 === sha256(readFileSync(source)), "fixture manifest identity mismatch");
+    return captureGeometry(engine, format, source, manifest.complex);
+  });
+  writeNew(outPath, { build, complex: manifest.complex, fixtures });
 }
 
 /** Geometry of one cell of a genuine fixture, for the stale-preview native stage. */
@@ -212,6 +226,13 @@ export function inspectRequiredTail(doc) {
   const text = doc.getTextInCell(t.section, t.para, t.controlIndex, 3, 1, 0,
     doc.getCellParagraphLength(t.section, t.para, t.controlIndex, 3, 1));
   const inventory = json(doc.getFieldList());
+  requireValue(Array.isArray(inventory), "malformed field inventory");
+  const ids = new Set();
+  for (const field of inventory) {
+    requireValue(field && Number.isSafeInteger(field.fieldId) && field.fieldId > 0
+      && !ids.has(field.fieldId), "invalid or duplicate field identity");
+    ids.add(field.fieldId);
+  }
   const fields = inventory.filter(f => f.fieldType !== "formula");
   requireValue(fields.length === 1, "required ClickHere field missing or duplicated");
   const f = fields[0];
@@ -228,9 +249,12 @@ export function inspectRequiredTail(doc) {
     && lists[0].sectionIndex === t.section && lists[0].hostPara === t.para
     && lists[0].controlIndex === t.controlIndex && lists[0].cellIndex === 3
     && lists[0].paraCount === count && f.paraInList === 1, "incorrect trailing cursor-list owner");
-  const owners = json(doc.getControls()).filter(c => c.list === f.listId && c.para === f.paraInList);
+  const owners = json(doc.getControls()).filter(c => c?.list === f.listId && c?.para === f.paraInList);
   requireValue(owners.length === 1 && owners[0].ctrlId === "" && owners[0].ctrlCh === 0
-    && owners[0].pos === 0 && owners[0].controlIndex === 0, "incorrect trailing control owner");
+    && owners[0].pos === 0 && owners[0].controlIndex === 0
+    && owners[0].userDesc === "" && owners[0].props !== null
+    && typeof owners[0].props === "object" && !Array.isArray(owners[0].props)
+    && Object.keys(owners[0].props).length === 0, "incorrect trailing control owner");
   requireValue(f.startCharIdx === 0 && f.endCharIdx === 0 && f.startPos === 8 && f.endPos === 24
     && text === f.value, "trailing field range disagrees with cell text");
   return { paragraphCount: count, paragraphs: [text], fields };
@@ -270,6 +294,7 @@ function verifyFormat(engine, fixture, nativeDir) {
 
 function verifyMode(geometryPath, nativeDir, resultPath) {
   const geometry = JSON.parse(readFileSync(geometryPath, "utf8"));
+  requireValue(geometry.complex === undefined || geometry.complex === true, "native oracle requires complex fixtures");
   requireValue(Array.isArray(geometry.fixtures) && geometry.fixtures.length === 2, "geometry must contain HWP and HWPX fixtures");
   requireValue(new Set(geometry.fixtures.map(fixture => fixture.format)).size === 2, "geometry contains duplicate formats");
   const { build, engine } = loadRelease(geometry.build);
