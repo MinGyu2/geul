@@ -356,6 +356,51 @@ describe("Stage 2 table paths", () => {
     } finally { editor.dispose(); }
   });
 
+  it("T009 HWP: child tables follow an explicit cell correspondence; unjustified loss is refused", () => {
+    // Original: 2x2 body table, child table in cell (0,0). Outputs are produced by the engine's own operations.
+    const original = fixture("hwp", false, true);
+    const variant = (edit: (d: Doc, para: number, control: number) => void) => {
+      const d = new engine.HwpDocument(original) as Doc;
+      try {
+        const t = JSON.parse(d.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+        edit(d, t.para, t.controlIndex);
+        const e = exported(d, "hwp");
+        return check("hwp", "saved", original, e.bytes, e.loss, true);
+      } finally { d.free(); }
+    };
+    const accepted = (r: ReturnType<typeof check>) => r.findings.every(f => f.code === "previewStale");
+    const host = (control: number) => JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]);
+    // 1. Deleting the other row keeps the child in its surviving cell.
+    { const r = variant((d, p, c) => d.deleteTableRow!(0, p, c, 1)); expect(accepted(r), JSON.stringify(r)).toBe(true); }
+    // 2. Deleting the row that owns the child legitimately removes it.
+    expect(accepted(variant((d, p, c) => d.deleteTableRow(0, p, c, 0))), "owner deleted").toBe(true);
+    // 3. Same cell-count reduction, but the child disappears from its surviving cell: refused.
+    const lost = variant((d, p, c) => { d.deleteTableRow(0, p, c, 1); (d as unknown as Record<string, (...a: unknown[]) => string>).deleteCellTableControlByPath!(0, p, host(c), 0); });
+    expect(accepted(lost), JSON.stringify(lost)).toBe(false);
+    expect(lost.outcome).toBe("unsafe");
+    // 4. A merge keeps the absorbed/anchor children; losing the child during the merge is refused.
+    expect(accepted(variant((d, p, c) => d.mergeTableCells!(0, p, c, 0, 0, 0, 1))), "merge retained").toBe(true);
+    expect(accepted(variant((d, p, c) => { d.mergeTableCells!(0, p, c, 0, 0, 0, 1);
+      (d as unknown as Record<string, (...a: unknown[]) => string>).deleteCellTableControlByPath!(0, p, host(c), 0); })), "merge lost").toBe(false);
+  });
+
+  it("formula rewrite success without the applied final state is detected and rolled back", async () => {
+    const { editor, doc, at, place, run } = await open("hwpx", false, false, true);
+    try {
+      place(withCell(at, 4));
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=SUM(A1:A2)" });
+      const before = doc.getTextFileText(), fields = doc.getFieldList!();
+      // The engine answers like a successful replacement (same response shape) but leaves the field unchanged.
+      doc.insertTableFormulaField = (...args) => doc.validateTableFormulaField!(...args);
+      place(withCell(at, 0));
+      expect(documentCommandState("table.insertRowAbove", editor.snapshot()).available).toBe(true);
+      expect(editor.execute("table.insertRowAbove").accepted).toBe(false);
+      expect(doc.getTextFileText()).toBe(before);
+      expect(doc.getFieldList!()).toBe(fields);
+      expect(JSON.parse(doc.getTableDimensions(0, at.paragraph, at.cell!.control)).rowCount).toBe(3);
+    } finally { editor.dispose(); }
+  });
+
   it("a partial nested engine failure restores the exact before snapshot", async () => {
     const c = await open(), { editor, doc, at, place, run } = c;
     try {

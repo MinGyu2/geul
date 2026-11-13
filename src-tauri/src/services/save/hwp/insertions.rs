@@ -412,7 +412,18 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     }
     let resources = resources(a, b, &ac, &bc)?;
     let mut used = Used::default();
+    // Instance-ID accounting over every table/picture control at any depth: original identities must be
+    // unique, new objects must not reuse any original identity (`validate_table_at` inserts into this set),
+    // and the output (checked after the loop) holds each identity at most once.
     let mut table_ids = BTreeSet::new();
+    let mut output_ids = BTreeSet::new();
+    for (name, data) in &a.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let raw = unpack(a, data).map_err(|e| Side::Original.unpack_finding(e, name))?;
+        unique_ids(&decode_records(&raw, name)?, &mut table_ids, name)?;
+    }
     let mut table_total = 0;
     let mut picture_total = 0;
     for (name, data) in &b.streams {
@@ -446,13 +457,8 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     name,
                 )?;
             }
-            if matches!(kind, b" lbt" | b" osg") {
-                let id = dword(object[0].2, 36)?;
-                if id != 0 {
-                    reference(table_ids.insert(id), name)?;
-                }
-            }
         }
+        unique_ids(&yr, &mut output_ids, name)?;
         preserved(
             old.paragraphs <= new.paragraphs && old.breaks == new.breaks,
             name,
@@ -1337,6 +1343,8 @@ fn table_header_preserved(a: &[u8], b: &[u8]) -> Checked<()> {
 struct EvolvedCell<'a> {
     header: &'a [u8],
     objects: Vec<Vec<Record<'a>>>,
+    /// PARA_TEXT payloads of the cell's own paragraphs (correspondence evidence for deletions).
+    texts: Vec<&'a [u8]>,
 }
 
 fn evolved_cells<'a>(
@@ -1388,9 +1396,15 @@ fn evolved_cells<'a>(
             start = stop;
         }
         valid(paragraphs > 0 && word(r.2, 0)? == paragraphs, BODY)?;
+        let texts = rs[at..end]
+            .iter()
+            .filter(|t| t.0 == 67 && t.1 == level + 1)
+            .map(|t| t.2)
+            .collect();
         cells.push(EvolvedCell {
             header: r.2,
             objects,
+            texts,
         });
         at = end;
     }
@@ -1465,52 +1479,314 @@ fn evolved_table(
             valid(word(tb, 18 + 2 * row)? == *count, BODY)?;
         }
     }
-    let old_objects: Vec<&Vec<Record<'_>>> = before.iter().flat_map(|c| &c.objects).collect();
-    let new_objects: Vec<&Vec<Record<'_>>> = after.iter().flat_map(|c| &c.objects).collect();
-    valid(new_objects.len() <= 4096 && old_objects.len() <= 4096, BODY)?;
-    let may_drop = after.len() < before.len();
+    let old_count: usize = before.iter().map(|c| c.objects.len()).sum();
+    let new_count: usize = after.iter().map(|c| c.objects.len()).sum();
+    valid(new_count <= 4096 && old_count <= 4096, BODY)?;
+    let dims = |t: &[u8]| -> Checked<(usize, usize)> { Ok((word(t, 4)?, word(t, 6)?)) };
+    let geos = |cells: &[EvolvedCell<'_>]| -> Checked<Vec<Geo>> {
+        cells.iter().map(|c| Geo::of(c.header)).collect()
+    };
+    let (ga, gb) = (geos(&before)?, geos(&after)?);
     let mut structural = !same_grid;
-    let mut cursor = 0;
-    for object in new_objects {
-        let identity = |o: &Vec<Record<'_>>| o == object || evolved_candidate(o, object);
-        let found = if may_drop {
-            old_objects[cursor..]
+    // Explicit cell correspondence of one supported operation (identity, row/column insertion or deletion,
+    // rectangular merge, split), consistent with the child controls each cell owns. Children may disappear
+    // only with a cell the operation deletes; absorbed cells' children must follow into the anchor.
+    // A mapping that drops children is admitted only when it is the unique consistent mapping whose kept
+    // cells keep byte-identical paragraph text: geometry alone cannot tell "delete the owning row" from
+    // "delete another row and lose the child". Anything ambiguous falls back to strict no-loss below.
+    let candidates: Vec<Mapping> = correspondences(&ga, dims(ta)?, &gb, dims(tb)?)
+        .into_iter()
+        .filter(|m| m.consistent(&before, &after))
+        .collect();
+    let drops = |m: &Mapping| m.deleted.iter().any(|d| !before[*d].objects.is_empty());
+    let mapping = match candidates.iter().position(|m| !drops(m)) {
+        Some(p) => Some(&candidates[p]),
+        None => {
+            let textual: Vec<&Mapping> = candidates
                 .iter()
-                .position(|o| identity(o))
-                .map(|p| cursor + p)
-        } else {
-            old_objects
-                .get(cursor)
-                .filter(|o| identity(o))
-                .map(|_| cursor)
-        };
-        match found {
-            Some(index) => {
-                let o = old_objects[index];
-                if o != object {
-                    evolved_table(o, object, defs, original_defs, used, ids, total)?;
-                    structural = true;
-                }
-                structural |= index != cursor;
-                cursor = index + 1;
+                .filter(|m| m.text_preserving(&before, &after))
+                .collect();
+            if let [m] = textual[..] {
+                Some(m)
+            } else {
+                None
             }
-            None => {
+        }
+    };
+    match mapping {
+        Some(mapping) => {
+            for (target, sources) in mapping.sources.iter().enumerate() {
+                let old: Vec<&Vec<Record<'_>>> =
+                    sources.iter().flat_map(|s| &before[*s].objects).collect();
+                structural |= match_children(
+                    &old,
+                    &after[target].objects,
+                    level,
+                    defs,
+                    original_defs,
+                    used,
+                    ids,
+                    total,
+                )?;
+            }
+            structural |= mapping
+                .deleted
+                .iter()
+                .any(|d| !before[*d].objects.is_empty());
+        }
+        None => {
+            // A composite of several operations has no single proven correspondence: no original child may
+            // disappear, and all keep their original order (new children must prove the new-table schema).
+            preserved(!same_grid, BODY)?;
+            let old: Vec<&Vec<Record<'_>>> = before.iter().flat_map(|c| &c.objects).collect();
+            let new: Vec<Vec<Record<'_>>> = after
+                .iter()
+                .flat_map(|c| c.objects.iter().cloned())
+                .collect();
+            structural |= match_children(&old, &new, level, defs, original_defs, used, ids, total)?;
+        }
+    }
+    preserved(structural, BODY)?;
+    Ok(())
+}
+
+/// Logical geometry of a cell LIST_HEADER: column, row, column span, row span.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Geo {
+    col: usize,
+    row: usize,
+    cols: usize,
+    rows: usize,
+}
+impl Geo {
+    fn of(h: &[u8]) -> Checked<Self> {
+        Ok(Geo {
+            col: word(h, 8)?,
+            row: word(h, 10)?,
+            cols: word(h, 12)?,
+            rows: word(h, 14)?,
+        })
+    }
+}
+
+/// For every output cell, the original cells whose content it owns (row-major), plus deleted originals.
+/// Output cells with no source are new empty cells of the operation.
+struct Mapping {
+    sources: Vec<Vec<usize>>,
+    deleted: Vec<usize>,
+}
+impl Mapping {
+    /// Pure pre-check: every source child appears in its target cell in order (equal or same evolved table)
+    /// and a new cell of the operation owns no child.
+    fn text_preserving(&self, before: &[EvolvedCell<'_>], after: &[EvolvedCell<'_>]) -> bool {
+        self.sources
+            .iter()
+            .enumerate()
+            .all(|(target, sources)| match sources[..] {
+                [source] => before[source].texts == after[target].texts,
+                _ => true,
+            })
+    }
+
+    fn consistent(&self, before: &[EvolvedCell<'_>], after: &[EvolvedCell<'_>]) -> bool {
+        // A child left unmatched must not be any original child: an original is never "new" elsewhere.
+        let original = |object: &Vec<Record<'_>>| {
+            before
+                .iter()
+                .flat_map(|c| &c.objects)
+                .any(|o| o == object || evolved_candidate(o, object))
+        };
+        self.sources.iter().enumerate().all(|(target, sources)| {
+            let mut old = sources.iter().flat_map(|s| &before[*s].objects).peekable();
+            if sources.is_empty() && !after[target].objects.is_empty() {
+                return false;
+            }
+            for object in &after[target].objects {
+                if old
+                    .peek()
+                    .is_some_and(|o| *o == object || evolved_candidate(o, object))
+                {
+                    old.next();
+                } else if original(object) {
+                    return false;
+                }
+            }
+            old.next().is_none()
+        })
+    }
+}
+
+/// Candidate correspondences of the supported single operations whose geometry yields exactly `after`.
+fn correspondences(
+    before: &[Geo],
+    (ra, ca): (usize, usize),
+    after: &[Geo],
+    (rb, cb): (usize, usize),
+) -> Vec<Mapping> {
+    let index = |g: &Geo| after.iter().position(|a| a == g);
+    // Map each original cell through `f` (None = deleted); unmapped output cells must be 1x1 and new.
+    let through = |f: &dyn Fn(Geo) -> Option<Geo>| -> Option<Mapping> {
+        let mut sources = vec![Vec::new(); after.len()];
+        let mut deleted = Vec::new();
+        for (i, g) in before.iter().enumerate() {
+            match f(*g) {
+                Some(m) => {
+                    let t = index(&m)?;
+                    if !sources[t].is_empty() {
+                        return None;
+                    }
+                    sources[t].push(i);
+                }
+                None => deleted.push(i),
+            }
+        }
+        let fresh = after
+            .iter()
+            .zip(&sources)
+            .all(|(g, s)| !s.is_empty() || (g.cols == 1 && g.rows == 1));
+        fresh.then_some(Mapping { sources, deleted })
+    };
+    let mut out = Vec::new();
+    if (ra, ca) == (rb, cb) && before == after {
+        out.extend(through(&|g| Some(g)));
+    } else if rb == ra + 1 && cb == ca {
+        for k in 0..=ra {
+            out.extend(through(&|g| {
+                Some(Geo {
+                    row: if g.row >= k { g.row + 1 } else { g.row },
+                    rows: g.rows + usize::from(g.row < k && k < g.row + g.rows),
+                    ..g
+                })
+            }));
+        }
+    } else if cb == ca + 1 && rb == ra {
+        for k in 0..=ca {
+            out.extend(through(&|g| {
+                Some(Geo {
+                    col: if g.col >= k { g.col + 1 } else { g.col },
+                    cols: g.cols + usize::from(g.col < k && k < g.col + g.cols),
+                    ..g
+                })
+            }));
+        }
+    } else if rb + 1 == ra && cb == ca {
+        for k in 0..ra {
+            out.extend(through(&|g| {
+                (g.row != k || g.rows != 1).then(|| Geo {
+                    row: if g.row > k { g.row - 1 } else { g.row },
+                    rows: g.rows - usize::from(g.row <= k && k < g.row + g.rows),
+                    ..g
+                })
+            }));
+        }
+    } else if cb + 1 == ca && rb == ra {
+        for k in 0..ca {
+            out.extend(through(&|g| {
+                (g.col != k || g.cols != 1).then(|| Geo {
+                    col: if g.col > k { g.col - 1 } else { g.col },
+                    cols: g.cols - usize::from(g.col <= k && k < g.col + g.cols),
+                    ..g
+                })
+            }));
+        }
+    } else if (ra, ca) == (rb, cb) && after.len() < before.len() {
+        // Rectangular merge: exactly one output cell is new; every original inside it is absorbed (row-major).
+        let anchors: Vec<&Geo> = after.iter().filter(|g| !before.contains(g)).collect();
+        if let [m] = anchors[..] {
+            let inside = |g: &Geo| {
+                g.row >= m.row
+                    && g.row + g.rows <= m.row + m.rows
+                    && g.col >= m.col
+                    && g.col + g.cols <= m.col + m.cols
+            };
+            if let Some(t) = index(m) {
+                let mut sources = vec![Vec::new(); after.len()];
+                let mut ok = true;
+                for (i, g) in before.iter().enumerate() {
+                    match (inside(g), index(g)) {
+                        (true, _) => sources[t].push(i),
+                        (false, Some(j)) if sources[j].is_empty() => sources[j].push(i),
+                        _ => ok = false,
+                    }
+                }
+                if ok
+                    && sources[t]
+                        .first()
+                        .is_some_and(|f| before[*f].row == m.row && before[*f].col == m.col)
+                {
+                    out.push(Mapping {
+                        sources,
+                        deleted: Vec::new(),
+                    });
+                }
+            }
+        }
+    } else if (ra, ca) == (rb, cb) && after.len() > before.len() {
+        // Split: one merged original becomes its 1x1 anchor plus new empty cells.
+        let gone: Vec<&Geo> = before.iter().filter(|g| !after.contains(g)).collect();
+        if let [m] = gone[..] {
+            out.extend(through(&|g| {
+                Some(if g == *m {
+                    Geo {
+                        cols: 1,
+                        rows: 1,
+                        ..g
+                    }
+                } else {
+                    g
+                })
+            }));
+        }
+    }
+    out
+}
+
+/// Match original children against the children of their output cell(s) in order. Equal subtrees are kept,
+/// the same table evolved is proven recursively, and an unmatched output child must be a new basic nested
+/// table. Every original child must be matched. Returns whether any child changed.
+#[allow(clippy::too_many_arguments)]
+fn match_children(
+    old: &[&Vec<Record<'_>>],
+    new: &[Vec<Record<'_>>],
+    level: u16,
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    used: &mut Used,
+    ids: &mut BTreeSet<usize>,
+    total: &mut usize,
+) -> Checked<bool> {
+    let mut changed = false;
+    let mut cursor = 0;
+    for object in new {
+        match old.get(cursor) {
+            Some(o) if *o == object => cursor += 1,
+            Some(o) if evolved_candidate(o, object) => {
+                evolved_table(o, object, defs, original_defs, used, ids, total)?;
+                changed = true;
+                cursor += 1;
+            }
+            _ => {
                 valid(
                     object[0].2.starts_with(b" lbt") && object[0].1 == level + 2,
                     BODY,
                 )?;
                 validate_table_at(object, defs, used, ids, total)?;
-                structural = true;
+                changed = true;
             }
         }
     }
-    preserved(may_drop || cursor == old_objects.len(), BODY)?;
-    preserved(structural, BODY)?;
-    // Original nested table ids remain unique among the evolved output.
-    for object in after.iter().flat_map(|c| &c.objects) {
-        if let Ok(id) = dword(object[0].2, 36) {
-            if id != 0 && !ids.contains(&id) {
-                ids.insert(id);
+    preserved(cursor == old.len(), BODY)?;
+    Ok(changed)
+}
+
+/// Record every non-zero instance ID of a table/picture control at any depth of a section into `seen`;
+/// an ID already present (in this or an earlier section) is a duplicate object identity.
+fn unique_ids(rs: &[Record<'_>], seen: &mut BTreeSet<usize>, part: &str) -> Checked<()> {
+    for r in rs {
+        if r.0 == 71 && (r.2.starts_with(b" lbt") || r.2.starts_with(b" osg")) {
+            let id = dword(r.2, 36)?;
+            if id != 0 {
+                reference(seen.insert(id), part)?;
             }
         }
     }
@@ -1918,6 +2194,34 @@ pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn instance_ids_are_unique_at_every_depth() {
+        let header = |id: u32| {
+            let mut h = b" lbt".to_vec();
+            h.resize(42, 0);
+            h[36..40].copy_from_slice(&id.to_le_bytes());
+            h
+        };
+        let (outer, child, twin) = (header(1), header(2), header(2));
+        let mut seen = BTreeSet::new();
+        // Distinct identities, the child nested two record levels below its owner.
+        let ok = vec![(71, 1, outer.as_slice()), (71, 3, child.as_slice())];
+        assert!(unique_ids(&ok, &mut seen, BODY).is_ok());
+        // A nested table duplicating an existing identity is refused, whatever its depth.
+        let mut seen = BTreeSet::new();
+        let dup = vec![
+            (71, 1, outer.as_slice()),
+            (71, 3, child.as_slice()),
+            (71, 5, twin.as_slice()),
+        ];
+        assert_eq!(
+            unique_ids(&dup, &mut seen, BODY).err(),
+            Some(Finding::at(FindingCode::ReferenceInvalid, BODY))
+        );
+        // Across sections the same accounting set is shared.
+        let mut seen = BTreeSet::from([2]);
+        assert!(unique_ids(&ok, &mut seen, BODY).is_err());
+    }
     #[test]
     fn cell_reference_offsets_require_table_context() {
         let mut caption = vec![0; 40];

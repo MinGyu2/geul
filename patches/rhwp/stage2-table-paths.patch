@@ -762,7 +762,7 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -7202,6 +7202,92 @@
+@@ -7202,6 +7202,106 @@
              cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
      }
 
@@ -810,9 +810,23 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +        if caption.paragraphs.len() > 10_000 || caption.paragraphs.iter().map(|p| p.text.len()).sum::<usize>() > 4 * 1024 * 1024 {
 +            return Err(JsValue::from_str("caption budget"));
 +        }
-+        let texts: Vec<&str> = caption.paragraphs.iter().map(|p| p.text.as_str()).collect();
-+        serde_json::to_string(&texts).map(|t| format!("{{\"paragraphs\":{t}}}"))
-+            .map_err(|_| JsValue::from_str("caption json"))
++        // Caption identity: paragraph texts, their paragraph/character shape references and owned
++        // control count, and the caption's own layout attributes (direction, alignment, sizes).
++        let value = serde_json::json!({
++            "paragraphs": caption.paragraphs.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(),
++            "shapes": caption.paragraphs.iter().map(|p| serde_json::json!({
++                "paraShape": p.para_shape_id,
++                "charShapes": p.char_shapes.iter().map(|c| [c.start_pos, c.char_shape_id]).collect::<Vec<_>>(),
++                "controls": p.controls.len(),
++            })).collect::<Vec<_>>(),
++            "attrs": {
++                "direction": format!("{:?}", caption.direction),
++                "vertAlign": format!("{:?}", caption.vert_align),
++                "width": caption.width, "spacing": caption.spacing,
++                "maxWidth": caption.max_width, "includeMargin": caption.include_margin,
++            },
++        });
++        Ok(value.to_string())
 +    }
 +
 +    /// Read-only evaluation in a path-owned table; never writes.

@@ -61,7 +61,7 @@ export interface TableGrid {
   cells: readonly TableCellCoordinates[];
 }
 /** One formula field of the table: its field id, physical cell and coordinate, expression. */
-export interface TableFormula { fieldId: number; cell: number; row: number; col: number; expression: string }
+export interface TableFormula { fieldId: number; cell: number; row: number; col: number; expression: string; value: string }
 /** Proven content of a table (Stage 2): rich cells are compared by paragraph digest. */
 export interface TableContent { formulas: readonly TableFormula[]; rich: boolean; caption: string | null }
 export interface TableContentOptions {
@@ -218,7 +218,7 @@ export function tableContent(doc: RhwpDocument, at: TableTarget, grid: TableGrid
         const coordinates = grid.cells[part.cellIndex];
         if (part.paraIndex !== 0 || !cached || cached.value !== field.value || field.startCharIdx !== 0 || !coordinates
           || !isIndex(field.fieldId) || field.fieldId === 0) return "tableFormula";
-        formulas.push({ fieldId: field.fieldId, cell: part.cellIndex, row: coordinates.row, col: coordinates.col, expression: cached.expression });
+        formulas.push({ fieldId: field.fieldId, cell: part.cellIndex, row: coordinates.row, col: coordinates.col, expression: cached.expression, value: cached.value });
       } else if (field.fieldType !== "clickhere") return "tableContent";
     }
     for (const control of inv.controls) {
@@ -226,7 +226,8 @@ export function tableContent(doc: RhwpDocument, at: TableTarget, grid: TableGrid
       if (byList.has(control.list)) rich = true;
     }
     if (formulas.length > 1024) return "limit";
-    // A caption is not a cell list; the structure operation never owns it and it must stay byte-for-byte.
+    // A caption is not a cell list; the structure operation never owns it, so its whole reported identity
+    // (content, shape references, attributes, ownership by this table path) must stay identical.
     let caption: string | null = null;
     if (doc.getTableCaptionByPath) {
       const raw = doc.getTableCaptionByPath(at.section, at.paragraph, JSON.stringify(pathLevels(at)));
@@ -235,7 +236,10 @@ export function tableContent(doc: RhwpDocument, at: TableTarget, grid: TableGrid
       if (!isRecord(value) || (value.paragraphs !== null && !Array.isArray(value.paragraphs))) return "engineUnsupported";
       if (value.paragraphs !== null) {
         if (!options.fields) return "tableContent";
-        caption = JSON.stringify(value.paragraphs); rich = true;
+        // Text alone is not caption identity: the engine reports paragraph/character shape references,
+        // owned control counts and the caption's layout attributes of this table's caption.
+        if (!Array.isArray(value.shapes) || !isRecord(value.attrs)) return "engineUnsupported";
+        caption = JSON.stringify(value); rich = true;
       }
     } else if (options.fields) return "engineUnsupported";
     return { formulas, rich, caption };
@@ -583,5 +587,29 @@ export function applyTablePlan(doc: RhwpDocument, target: TableTarget, plan: Tab
       : doc.insertTableFormulaField!(target.section, target.paragraph, target.control, f.row, f.col, f.formula));
     if (!isRecord(value) || value.ok !== true || value.fieldId !== f.fieldId) throw new Error("formula rewrite rejected");
   }
+  verifyFormulaState(doc, target, grid, plan);
   return grid;
+}
+
+/**
+ * Final-state contract of a structure change with formulas, read back from the engine (never inferred from
+ * `ok:true`): exactly the planned field ids, owned by this table at their planned coordinates, holding the
+ * rewritten expressions, and cached values that the engine's own read-only evaluation of the final table
+ * reproduces unchanged (`changed:false`). Any difference throws; the session restores its snapshot.
+ */
+function verifyFormulaState(doc: RhwpDocument, target: TableTarget, grid: TableGrid, plan: TablePlan): void {
+  if (!plan.formulas.length && !plan.options.fields) return;
+  const content = tableContent(doc, target, grid, plan.options);
+  if (typeof content === "string" || content.formulas.length !== plan.formulas.length) throw new Error("formula fields differ after rewrite");
+  const actual = new Map(content.formulas.map(f => [f.fieldId, f]));
+  for (const f of plan.formulas) {
+    const found = actual.get(f.fieldId);
+    if (!found || found.row !== f.row || found.col !== f.col || found.expression !== f.formula
+      || grid.cells[found.cell]?.row !== f.row || grid.cells[found.cell]?.col !== f.col) throw new Error("formula field state differs after rewrite");
+    const check: unknown = JSON.parse(target.path
+      ? doc.validateTableFormulaFieldByPath!(target.section, target.paragraph, pathJson(target.path), f.row, f.col, f.formula)
+      : doc.validateTableFormulaField!(target.section, target.paragraph, target.control, f.row, f.col, f.formula));
+    if (!isRecord(check) || check.ok !== true || check.fieldId !== f.fieldId || check.changed !== false || check.text !== found.value)
+      throw new Error("formula value not recalculated");
+  }
 }
