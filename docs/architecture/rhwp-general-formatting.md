@@ -168,3 +168,9 @@ A는 `getFormattingRuns` native API로 선택 구간의 scalar 경계와 UTF-16 
 | 6 — native Tauri/product acceptance | COMPLETED (보정 계약, run5) |
 
 판정 범위와 한계는 이전 addendum과 같다: Linux x86_64, X11/Xvfb, WebKitGTK 2.54.1, IBus 1.5.33 + ibus-hangul 1.5.5, 시험한 debug-profile 실행 파일, 생성된 `basic-ko` HWP/HWPX. 이 범위에서 GO. Windows/macOS, Wayland native, 다른 IME, release 패키지, 일반 외부 HWP/HWPX, 한컴오피스 호환은 시험하지 않았고 주장하지 않는다. 이벤트 로그는 WebView 문서 안의 DOM 이벤트만 본다(GTK 선택기 창의 입력은 대상이 아니다). T014, T015, T016은 별도이며 완료되지 않았다.
+
+### 독립 finalizer launcher 종료 코드 보정 — 2026-11-13
+
+독립 `finalize`는 `--launcher-exit`가 필수다. 예: `python3 scripts/tests/formatting_acceptance.py finalize --result RUN/native/result.json --session-dir RUN/session --app APP --verdict RUN/final-verdict.json --launcher-exit 0`. 종료 코드는 실제 launcher 실행에서 확보해야 하며, 정수 0만 cleanup PASS 조건을 만족한다. API에서 누락하거나 `None`, boolean, 비정수, 0이 아닌 값을 전달하면 FAIL이다. `--session-dir`의 부모에 `command.json`이 있으면 그 `launcherExit`도 정수이며 전달값과 같아야 한다. 읽을 수 없는 기록은 INCOMPLETE, 누락·잘못된 값·모순은 FAIL로 처리한다. `run`은 계속 실제 subprocess return code를 기록하고 자동 전달한다. 다른 수용 조건은 그대로다.
+
+위 run5의 Stage 5/6 PASS는 당시 하네스로 확립한 역사적 판정이다. 이번 보정은 `HARNESS_FILES`에 포함된 `formatting_acceptance.py`의 해시를 바꾸므로 run5는 수정된 하네스 기준으로 stale이다. 기존 원시 증거와 판정은 보존하며, 현재 하네스의 새 native PASS로 재사용하지 않는다. 이번 검증은 validator 단위 회귀 시험이며 native 실행이나 제품 호환성 재검증을 의미하지 않는다.

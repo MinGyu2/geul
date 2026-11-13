@@ -1,10 +1,13 @@
 """Contract tests for the RHWP formatting Stage 5/6 finalizer (pure validation; no Tauri, no RHWP build)."""
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import formatting_acceptance as contract
 import t010_launcher as launcher
@@ -143,6 +146,72 @@ class FinalizerTest(unittest.TestCase):
         self.e.cleanup['exit'] = 0
         self.assertEqual(self.status(launcher_exit=3), 'FAIL')
         self.assertEqual(self.status(launcher_exit=0), 'PASS')
+
+    def test_launcher_exit_must_be_explicit_integer_zero(self):
+        self.assertEqual(self.status(launcher_exit=0), 'PASS')
+        self.assertEqual(self.status(launcher_exit=None), 'FAIL')
+        for invalid in (False, True, 0.0, '0', -1, 1):
+            with self.subTest(launcher_exit=invalid):
+                self.assertEqual(self.status(launcher_exit=invalid), 'FAIL')
+
+    def test_missing_launcher_exit_cannot_pass_through_evaluate_or_finalize(self):
+        self.assertEqual(self.e.evaluate(launcher_exit=0)['status'], 'PASS')
+        verdict = contract.evaluate(self.e.result, self.e.session_dir, self.e.expected)
+        self.assertEqual(verdict['status'], 'FAIL')
+        target = self.e.folder / 'final-verdict.json'
+        verdict = contract.finalize(self.e.result, self.e.session_dir, target, self.e.expected)
+        self.assertEqual(verdict['status'], 'FAIL')
+        self.assertEqual(json.loads(target.read_text())['status'], 'FAIL')
+
+    def test_command_json_launcher_exit_must_match_explicit_exit(self):
+        command = self.e.folder / 'command.json'
+        command.write_text(json.dumps({'command': ['launcher'], 'launcherExit': 0}))
+        self.assertEqual(self.status(launcher_exit=0), 'PASS')
+        for record in ({}, {'launcherExit': 1}, {'launcherExit': False}, {'launcherExit': True},
+                       {'launcherExit': 0.0}, {'launcherExit': '0'}, {'launcherExit': None}):
+            with self.subTest(recorded=record):
+                command.write_text(json.dumps({'command': ['launcher'], **record}))
+                self.assertEqual(self.status(launcher_exit=0), 'FAIL')
+        command.write_text('{broken')
+        verdict = self.e.evaluate(launcher_exit=0)
+        self.assertEqual(verdict['status'], 'INCOMPLETE')
+        self.assertEqual(self.step(verdict, 'launcher-cleanup-verified')['status'], 'INCOMPLETE')
+
+    def test_finalize_cli_requires_launcher_exit_before_finalization(self):
+        argv = ['formatting_acceptance.py', 'finalize', '--result', str(self.e.result), '--session-dir', str(self.e.session_dir),
+                '--verdict', str(self.e.folder / 'final-verdict.json'), '--app', str(self.e.folder / 'app')]
+        with mock.patch.object(contract.sys, 'argv', argv), mock.patch.object(contract, 'trusted_inputs') as trusted_inputs, \
+                mock.patch.object(contract, 'finalize') as finalize, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                contract.main()
+        self.assertEqual(error.exception.code, 2)
+        trusted_inputs.assert_not_called()
+        finalize.assert_not_called()
+        self.assertFalse((self.e.folder / 'final-verdict.json').exists())
+
+    def test_run_mode_passes_actual_subprocess_return_code_to_finalize(self):
+        expected = {'appSha256': D}
+        for exit_code, final_status, expected_return in ((0, 'PASS', 0), (7, 'FAIL', 1)):
+            with self.subTest(exit_code=exit_code):
+                evidence = self.e.folder / f'run-{exit_code}'
+                finalized = []
+
+                def finalize(result, session, verdict, trusted, code):
+                    finalized.append((result, session, verdict, trusted, code))
+                    return {'status': final_status}
+
+                argv = ['formatting_acceptance.py', 'run', '--evidence', str(evidence), '--driver', str(self.e.folder / 'driver'),
+                        '--app', str(self.e.folder / 'app')]
+                completed = mock.Mock(returncode=exit_code)
+                with mock.patch.object(contract.sys, 'argv', argv), mock.patch.object(contract, 'trusted_inputs', return_value=expected), \
+                        mock.patch.object(contract.subprocess, 'run', return_value=completed) as run, \
+                        mock.patch.object(contract, 'finalize', side_effect=finalize), mock.patch.object(contract, 'sha', return_value=D), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(contract.main(), expected_return)
+                run.assert_called_once()
+                self.assertEqual(finalized[0][-1], exit_code)
+                recorded = json.loads((evidence / 'command.json').read_text())
+                self.assertEqual(recorded['launcherExit'], exit_code)
 
     def test_recorded_errors_fail(self):
         self.e.session['error'] = 'RuntimeError: IBus daemon did not start'

@@ -15,7 +15,7 @@ evidence gives INCOMPLETE, anything contradicting the contract gives FAIL. This 
 from the T010 Undo/Redo contract; only the T010 helpers whose meaning is identical are reused.
 
   python3 scripts/tests/formatting_acceptance.py run --evidence DIR --app APP --driver TAURI_DRIVER
-  python3 scripts/tests/formatting_acceptance.py finalize --result R --session-dir S --app APP --verdict V
+  python3 scripts/tests/formatting_acceptance.py finalize --result R --session-dir S --app APP --verdict V --launcher-exit 0
 """
 import argparse
 import hashlib
@@ -212,7 +212,7 @@ def identity(report, expected):
     require(report.get('contract') == {'schema': SCHEMA, 'formats': list(FORMATS), 'checks': list(CHECKS)}, 'run used a different contract')
 
 
-def launcher_cleanup(report, session, cleanup, launcher_exit, result_dir):
+def launcher_cleanup(report, session, cleanup, launcher_exit, result_dir, recorded_command=None):
     """Launcher/WebDriver teardown of the same execution. Mirrors gate.launcher_cleanup without the
     T010-only report hand-off (`acceptanceReport`), which this workflow deliberately does not use."""
     owner = report.get('nativeLauncher') or {}
@@ -227,7 +227,10 @@ def launcher_cleanup(report, session, cleanup, launcher_exit, result_dir):
     require(cleanup.get('complete') is True and cleanup.get('proven') is True and cleanup.get('subreaper') is True
             and cleanup.get('survivors') == [] and cleanup.get('processErrors') == [], 'launcher cleanup incomplete/unsuccessful')
     require(type(cleanup.get('exit')) is int and cleanup['exit'] == 0, 'native command exited nonzero')
-    require(launcher_exit is None or (type(launcher_exit) is int and launcher_exit == 0), 'launcher exited nonzero')
+    require(type(launcher_exit) is int and launcher_exit == 0, 'launcher exit missing, invalid or nonzero')
+    if recorded_command is not None:
+        require(type(recorded_command.get('launcherExit')) is int and recorded_command['launcherExit'] == launcher_exit,
+                'recorded launcher exit invalid or contradictory')
     gate.directory_cleanup(session, cleanup)
     require(cleanup.get('filesystemProven') is True, 'filesystem cleanup not proven')
 
@@ -252,12 +255,17 @@ def evaluate(result_path, session_dir, expected, launcher_exit=None):
     report = _load(result_path, verdict, 'result')
     session = _load(Path(session_dir) / 'session.json', verdict, 'session')
     cleanup = _load(Path(session_dir) / 'cleanup.json', verdict, 'cleanup')
+    command_path = Path(session_dir).parent / 'command.json'
+    has_command = command_path.exists() or command_path.is_symlink()
+    command = _load(command_path, verdict, 'command') if has_command else None
 
     def step(name, outcome):
         verdict['transitions'].append({'step': name, **outcome})
         return outcome['status']
 
     missing = [n for n, v in (('result', report), ('session', session), ('cleanup', cleanup)) if v is None]
+    if has_command and command is None:
+        missing.append('command')
     scenarios = native(report or {})
     verdict['formats'] = scenarios['formats']
     verdict['runId'] = (report or {}).get('runId')
@@ -269,7 +277,7 @@ def evaluate(result_path, session_dir, expected, launcher_exit=None):
     if missing:
         states.append(step('launcher-cleanup-verified', {'status': 'INCOMPLETE', 'reason': 'evidence missing/unreadable: ' + ', '.join(missing)}))
     else:
-        outcome = gate.verdict(launcher_cleanup, report, session, cleanup, launcher_exit, Path(result_path).resolve().parent)
+        outcome = gate.verdict(launcher_cleanup, report, session, cleanup, launcher_exit, Path(result_path).resolve().parent, command)
         order = verdict['evidence']['result']['mtimeNs'] <= verdict['evidence']['cleanup']['mtimeNs']
         states.append(step('launcher-cleanup-verified', outcome if outcome['status'] != 'PASS' or order
                            else {'status': 'FAIL', 'reason': 'contradictory evidence: native result written after launcher cleanup'}))
@@ -305,7 +313,7 @@ def main():
     fin.add_argument('--result', required=True, type=Path)
     fin.add_argument('--session-dir', required=True, type=Path)
     fin.add_argument('--verdict', required=True, type=Path)
-    fin.add_argument('--launcher-exit', type=int)
+    fin.add_argument('--launcher-exit', required=True, type=int, help='actual launcher return code; must be 0 for PASS (checked against ../command.json of --session-dir when present)')
     for p in (run, fin):
         p.add_argument('--app', required=True, type=Path)
     args = parser.parse_args()
