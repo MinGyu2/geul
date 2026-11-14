@@ -1396,3 +1396,147 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
      #[wasm_bindgen(js_name = charShapeCount)]
      pub fn char_shape_count(&self) -> u32 {
+diff --git a/src/renderer/typeset/table/block/entry.rs b/src/renderer/typeset/table/block/entry.rs
+--- a/src/renderer/typeset/table/block/entry.rs
++++ b/src/renderer/typeset/table/block/entry.rs
+@@ -7,5 +7,7 @@
+     para_has_visible_text, raw_table_ctrl_height_px, row_geometry_table,
+     rowbreak_table_has_internal_saved_vpos_reset, saved_bounds_overlap_current_flow,
+-    signed_hwpunit, single_line_visible_bounds_px, table, Control, PageItem, TypesetEngine,
++    signed_hwpunit, single_line_visible_bounds_px, table,
++    table_declared_height_has_stored_cell_content_frame,
++    table_declared_object_covers_cell_row_frames, Control, PageItem, TypesetEngine,
+     TypesetState, SINGLE_ROW_DECLARED_TRUST_MAX_RATIO,
+ };
+@@ -1766,5 +1768,5 @@
+         let legacy_whole_fits = !painted_rowbreak_exceeds_paper
+             && !self.stored_two_line_row_frames_require_split(table, styles)
+-            && (st.current_height + whole_fit_table_total <= available
++            && (st.current_height + whole_fit_table_total <= available + 0.5
+                 || fits_after_overlay_shapes
+                 || single_row_object_height_advance.is_some()
+@@ -1792,5 +1794,5 @@
+         if !painted_rowbreak_exceeds_paper
+             && resolved_host_placement.map_or(legacy_whole_fits, |p| {
+-                p.occupied_bottom <= whole_frame_budget
++                p.occupied_bottom <= whole_frame_budget + 0.5
+             })
+         {
+@@ -1956,5 +1958,13 @@
+             (st.layout.page_height - (st.layout.body_area.y + st.layout.body_area.height)).max(0.0);
+         let table_only_height = (table_total - host_spacing_total).max(0.0);
++        // The legacy below-body frame is a stored-source contract, not a fit
++        // allowance for newly generated or reflowed content. Without that evidence
++        // a page-larger row must enter the existing bounded row-cut continuation,
++        // just as it already does when it also exceeds the paper's bottom margin.
+         if matches!(table.page_break, crate::model::table::TablePageBreak::None)
++            && !st.profile.session_edited()
++            && !self.render_normalization.table_text_reflowed(table)
++            && table_declared_height_has_stored_cell_content_frame(table, self.dpi)
++            && table_declared_object_covers_cell_row_frames(table, self.dpi)
+             && table_only_height > st.base_available_height()
+             && table_only_height <= st.base_available_height() + below_body_slack
+diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_layout.rs
+--- a/src/renderer/layout/table_layout.rs
++++ b/src/renderer/layout/table_layout.rs
+@@ -10293,10 +10293,19 @@
+                         })
+                 });
+-            if canonical_stored_frame_profile
+-                && (stored_inline_child_frame
+-                    || stored_page_frame_boundaries >= 2
+-                    || has_authoritative_frame_boundary
+-                    || preserve_single_multi_page_boundary
+-                    || reset_free_multi_page_projection)
++            // Once content outgrows the declared object frame, that frame cannot
++            // authorize scalar replay/skip compensation. Project the exact child
++            // units even for a row only slightly taller than its page/viewport.
++            // With no saved reset there is no container-specific page marker to
++            // reinterpret. Preserve the existing stored-frame paths otherwise.
++            let reset_free_grown_content = table.row_count == 1
++                && stored_page_frame_boundaries == 0
++                && nested_content_height > declared_frame + 0.5;
++            if reset_free_grown_content
++                || (canonical_stored_frame_profile
++                    && (stored_inline_child_frame
++                        || stored_page_frame_boundaries >= 2
++                        || has_authoritative_frame_boundary
++                        || preserve_single_multi_page_boundary
++                        || reset_free_multi_page_projection))
+             {
+                 let closed_source_frames = self.profile.get().hwp5_stored_pagination_layout()
+diff --git a/src/renderer/typeset/table/block/prepare.rs b/src/renderer/typeset/table/block/prepare.rs
+--- a/src/renderer/typeset/table/block/prepare.rs
++++ b/src/renderer/typeset/table/block/prepare.rs
+@@ -7,4 +7,5 @@
+     native_hwp5_rowbreak_host_precedes_first_fragment, native_terminal_child_host_line_spacing,
+     none_table_is_atomic_here, notes, para_has_non_whitespace_text, para_has_visible_text,
++    table_declared_height_has_stored_cell_content_frame,
+     paragraph, partial_rowbreak_fragment_spacing_px, row_geometry_table,
+     rowbreak_table_has_internal_saved_vpos_reset, stored_square_picture_has_adjacent_text, table,
+@@ -188,4 +189,6 @@
+             .abs()
+                 <= 0.1;
++        let stored_cell_content_frame =
++            table_declared_height_has_stored_cell_content_frame(row_geometry_table, self.dpi);
+         let whole_row_fit_h: Vec<f64> = cut_row_h
+             .iter()
+@@ -207,6 +210,6 @@
+                     // 재조판에서는 원본 저장 프레임이나 저장 안전 여유를 재사용하지 않는다.
+                     cut.max(mt.row_heights[row])
+-                } else if declared_whole_table_matches_paint
+-                    && padding_explains_drift
++                } else if (!stored_cell_content_frame
++                    || (declared_whole_table_matches_paint && padding_explains_drift))
+                     && layout_engine
+                         .whole_fragment_row_uses_measured_height(row_geometry_table, row)
+diff --git a/src/renderer/typeset/table/scan/runner/row_step.rs b/src/renderer/typeset/table/scan/runner/row_step.rs
+--- a/src/renderer/typeset/table/scan/runner/row_step.rs
++++ b/src/renderer/typeset/table/scan/runner/row_step.rs
+@@ -387,6 +387,5 @@
+                 // 조각을 끝내고(`end_row = r`) 다음 쪽에서 행을 통째로 재개한다. 한/글
+                 // 정본: 편람 PDF 158→159쪽이 큰 행을 통째로 넘기며 앞쪽 바닥을 비운다.
+-                let row_needs_whole_band =
+-                    r == cursor_row && cut_row_h.get(r).copied().unwrap_or(0.0) > avail_for_rows;
++                let row_needs_whole_band = r == cursor_row && row_total > avail_for_rows;
+                 !(crate::renderer::typeset::none_table_is_atomic_here(table)
+                     || crate::renderer::typeset::cell_unit_row_is_atomic_here(table))
+@@ -415,4 +414,20 @@
+             }
+             let padding = row_entry.padding();
++            // A complete row can paint more padding than the content-cut ledger.
++            // Reserve that same physical difference before choosing source units;
++            // fully consuming the text must not force an overfull whole row.
++            let padding = if row_start_cut.is_empty()
++                && layout_engine.whole_fragment_row_uses_measured_height(table, r)
++                && layout_engine.whole_row_height_diff_is_padding_reduction(
++                    table,
++                    r,
++                    cut_row_h[r],
++                    row_total,
++                )
++            {
++                padding + (row_total - cut_row_h[r]).max(0.0)
++            } else {
++                padding
++            };
+             // 여러 쪽에 걸치는 1×1 셀은 작은 초기 셀 높이만 저장하고
+             // 바깥 표가 물리 상자를 소유할 수 있다. 전체 수직 안 여백을 복원하면
+diff --git a/src/renderer/typeset/table/continuation/fragment/budget.rs b/src/renderer/typeset/table/continuation/fragment/budget.rs
+--- a/src/renderer/typeset/table/continuation/fragment/budget.rs
++++ b/src/renderer/typeset/table/continuation/fragment/budget.rs
+@@ -6,4 +6,5 @@
+     partial_rowbreak_fragment_spacing_px, row_geometry_table,
+     saved_rowbreak_first_fragment_flow_overflow_allowance, table,
++    table_declared_height_has_stored_cell_content_frame,
+     table_declared_object_covers_cell_row_frames, Control, TypesetEngine, TypesetState,
+     SINGLE_ROW_DECLARED_TRUST_MAX_RATIO,
+@@ -1042,4 +1043,8 @@
+                 && !strict_following_plain_text_fit
+                 && total_rows_h > base
++                && !st.profile.session_edited()
++                && !self.render_normalization.table_text_reflowed(table)
++                && table_declared_height_has_stored_cell_content_frame(table, self.dpi)
++                && table_declared_object_covers_cell_row_frames(table, self.dpi)
+                 // 원본 높이도 넘으면 측정 오차가 아닌 실제 수용 불가다.
+                 // 저장 프레임이 들어갈 때만 작은 실측 증가를 보조 허용한다.

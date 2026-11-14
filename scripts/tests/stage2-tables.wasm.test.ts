@@ -37,7 +37,7 @@ function exported(d: RhwpDocument, format: "hwp" | "hwpx") {
 }
 /** Text of a deep fixture's innermost cell: numbered words, so dropped or duplicated page fragments are detectable. */
 const DEEP_WORDS = Array.from({ length: 1000 }, (_, i) => `w${i}`).join(" ");
-function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0) {
+function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS) {
   const d = engine.HwpDocument.createEmpty() as Doc;
   try {
     d.createBlankDocument();
@@ -77,7 +77,7 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
         path = [...path, { controlIndex: child.controlIdx, cellIndex: 0, cellParaIndex: 0 }];
       }
       for (let level = 1; level < deep; level++) d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify(path.slice(0, level)), 0, `L${level}`);
-      d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify(path), 0, DEEP_WORDS);
+      d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify(path), 0, rowWords);
     }
     if (nestedGuard) {
       const host = [{ controlIndex: t.controlIdx, cellIndex: 0, cellParaIndex: 0 }];
@@ -88,8 +88,8 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
     return exported(d, format).bytes;
   } finally { d.free(); }
 }
-async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0) {
-  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep), { backend, take, calls } = controlledBackend();
+async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS) {
+  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
   let doc!: Doc;
@@ -260,6 +260,142 @@ describe("Stage 2 table paths", () => {
         } finally { re.free(); }
       }
     } finally { editor.dispose(); }
+  });
+
+  type RowDoc = Doc & {
+    getPageRenderTree(page: number): string;
+    getPageDef(section: number): string;
+    getPageLayerTree(page: number): string;
+    insertParagraph(section: number, paragraph: number): string;
+    setPageDef(section: number, json: string): string;
+  };
+  type Box = { x: number; y: number; w: number; h: number };
+  type RenderNode = { type: string; text?: string; bbox: Box; children?: RenderNode[] };
+  const numbered = (count: number) => Array.from({ length: count }, (_, i) => `w${i}`).join(" ");
+  /** Check the visible body and every owning cell/table, not merely raw JSON text. */
+  function visibleRow(d: RowDoc, expected: string) {
+    const pages: { words: string[]; tables: Box[]; body: Box; hasText: boolean; labels: string[] }[] = [];
+    for (let page = 0; page < d.pageCount(); page++) {
+      const tree = JSON.parse(d.getPageRenderTree(page)) as RenderNode;
+      const body = tree.children!.find(n => n.type === "Body")!;
+      let text = "", hasText = false; const tables: Box[] = [];
+      const inside = (b: Box, owner: Box) => {
+        expect(b.y).toBeGreaterThanOrEqual(owner.y - 0.5);
+        expect(b.y + b.h).toBeLessThanOrEqual(owner.y + owner.h + 0.5);
+        expect(b.x).toBeGreaterThanOrEqual(owner.x - 0.5);
+        expect(b.x + b.w).toBeLessThanOrEqual(owner.x + owner.w + 0.5);
+      };
+      const walk = (n: RenderNode, owners: Box[]) => {
+        if (n.type === "Table") {
+          tables.push(n.bbox); inside(n.bbox, body.bbox);
+          for (const owner of owners) inside(n.bbox, owner);
+        }
+        if (n.type === "Table" || n.type === "Cell") owners = [...owners, n.bbox];
+        if (n.type === "TextRun" && n.text?.trim()) {
+          // Partial nested paint retains translated lines outside the cell clip.
+          // They are not visible content; require every visible line to fit fully.
+          if (owners.some(owner => n.bbox.y + n.bbox.h <= owner.y || n.bbox.y >= owner.y + owner.h)) return;
+          hasText = true; text += n.text; inside(n.bbox, body.bbox);
+          for (const owner of owners) inside(n.bbox, owner);
+        }
+        for (const child of n.children ?? []) walk(child, owners);
+      };
+      walk(body, []);
+      pages.push({ words: text.match(/w\d+/g) ?? [], tables, body: body.bbox, hasText, labels: text.match(/L\d+/g) ?? [] });
+    }
+    expect(pages.flatMap(p => p.words)).toEqual(expected.split(" "));
+    expect(d.getTextFileText().match(/w\d+/g)).toEqual(expected.split(" "));
+    expect(pages.flatMap(p => p.labels)).toEqual(d.getTextFileText().match(/L\d+/g) ?? []);
+    expect(pages.every(p => p.hasText)).toBe(true);
+    expect(pages.length).toBeLessThan(6);
+    return pages;
+  }
+
+  it.each([[1, 600], [4, 500], [4, 1000]])("row pagination boundary depth %i words %i: visible fragments and continuation ownership", (depth, count) => {
+    const words = numbered(count), d = new engine.HwpDocument(fixture("hwpx", true, false, false, false, depth, words)) as RowDoc;
+    try {
+      const pages = visibleRow(d, words);
+      expect(pages.length).toBeGreaterThan(1);
+      const control = JSON.parse(d.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      const at: DocPosition = { section: 0, paragraph: control.para, offset: words.length,
+        cell: { parentParagraph: control.para, control: control.controlIndex, cell: 0, cellParagraph: 0,
+          ...(depth > 1 ? { nested: Array.from({ length: depth - 1 }, () => ({ control: 0, cell: 0, cellParagraph: 0 })) } : {}) } };
+      const text = new RhwpText(d), caret = text.caret(at)!;
+      expect(text.ownsNestedCell(at)).toBe(true);
+      expect(caret.page).toBe(pages.length - 1);
+      expect(caret.y + caret.height).toBeLessThanOrEqual(pages[caret.page]!.body.y + pages[caret.page]!.body.h + 0.5);
+      if (depth === 1) for (const pageBreak of [1, 2]) {
+        d.setTableProperties!(0, control.para, control.controlIndex, JSON.stringify({ pageBreak }));
+        expect(visibleRow(d, words).length).toBe(2);
+      }
+    } finally { d.free(); }
+  });
+
+  it("row pagination boundary sweep uses measured physical height, including midpage insertion", () => {
+    const words = numbered(600), d = new engine.HwpDocument(fixture("hwpx", true, false, false, false, 1, words)) as RowDoc;
+    try {
+      const pageDef = JSON.parse(d.getPageDef(0)) as { height: number };
+      d.setPageDef(0, JSON.stringify({ height: pageDef.height + 75000 }));
+      visibleRow(d, words);
+      // The render-tree summary rounds to 0.1px, which can put the nominal
+      // equality case below the true boundary. Use the product paint layer's
+      // 0.001px boxes and round the page size upward to a real HWPUNIT (1/75px).
+      type Layer = { bounds: { y: number; height: number }; groupKind?: { kind: string }; child?: Layer; children?: Layer[] };
+      const layer = JSON.parse(d.getPageLayerTree(0)) as { root: Layer };
+      const find = (n: Layer, kind: string): Layer | undefined => n.groupKind?.kind === kind ? n
+        : [n.child, ...(n.children ?? [])].filter((c): c is Layer => !!c).map(c => find(c, kind)).find(Boolean);
+      const body = find(layer.root, "body")!.bounds, table = find(layer.root, "table")!.bounds;
+      const bottom = table.y + table.height - body.y;
+      const nonBodyHeight = (pageDef.height + 75000) / 75 - body.height;
+      for (const slack of [0.6, 0, -0.6, -20]) {
+        const height = Math.ceil((nonBodyHeight + bottom + slack) * 75);
+        d.setPageDef(0, JSON.stringify({ height }));
+        const layout = visibleRow(d, words);
+        expect(layout.length, JSON.stringify({ slack, height, bottom, nonBodyHeight })).toBe(slack >= 0 ? 1 : 2);
+      }
+      d.setPageDef(0, JSON.stringify({ height: pageDef.height }));
+      // Preceding text occupies half the page; a smaller row that fits a fresh
+      // page must defer intact under None instead of forcing an in-row cut.
+      const small = new engine.HwpDocument(fixture("hwpx", true, false, false, false, 1, numbered(350))) as RowDoc;
+      try {
+        small.insertParagraph(0, 0);
+        small.insertText(0, 0, 0, "prefix\n".repeat(20));
+        const deferred = visibleRow(small, numbered(350));
+        expect(deferred.map(page => page.words.length)).toEqual([0, 350]);
+        expect(deferred[0]!.tables).toHaveLength(0);
+        expect(deferred[1]!.tables).toHaveLength(1);
+      } finally { small.free(); }
+    } finally { d.free(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("row pagination boundary product edit/reflow/history and %s preservation", async format => {
+    const words = numbered(580), c = await open(format, true, false, false, false, 1, words);
+    const { editor, doc, at, place, settle, run } = c;
+    try {
+      const before = visibleRow(doc as RowDoc, words);
+      expect(before.length).toBe(1);
+      const tail = " " + numbered(40).replace(/w(\d+)/g, (_, i: string) => `w${580 + Number(i)}`);
+      place({ ...at, offset: words.length });
+      const revision = editor.snapshot().revision;
+      expect(editor.typeText(tail)).toBe(true); await settle();
+      expect(editor.snapshot().revision).toBeGreaterThan(revision);
+      const after = visibleRow(doc as RowDoc, words + tail);
+      expect(after.length).toBe(2);
+      const caret = new RhwpText(doc).caret(editor.caret)!;
+      expect(caret.page).toBe(1);
+      expect(editor.pointAt(caret.page, caret.x, caret.y + caret.height / 2, false)).toBe(true);
+      expect(editor.caret.cell).toMatchObject(at.cell!);
+      await run("edit.undo"); expect(visibleRow(doc as RowDoc, words).length).toBe(1);
+      await run("edit.redo"); expect(visibleRow(doc as RowDoc, words + tail).length).toBe(2);
+      const saved = await c.save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as RowDoc;
+      try {
+        expect(visibleRow(reopened, words + tail).length).toBe(2);
+        expect(new RhwpText(reopened).ownsNestedCell(at)).toBe(true);
+        expect(JSON.parse(reopened.getTableDimensionsByPath!(0, at.paragraph, pathJson(at.cell!)))).toMatchObject({ rowCount: 1, colCount: 1 });
+      } finally { reopened.free(); }
+    } finally { doc.free(); }
   });
 
   /** Every page's render tree: deepest Table nesting, and the numbered deep words in page order. */
