@@ -355,6 +355,65 @@ fn publish(
     let info = registry.get(info.session_id).unwrap();
     (result, bytes, info)
 }
+/// Cell ownership and image additions are judged by the real independent preservation service.
+#[test]
+fn hwp_contract_cell_inline_picture_preservation() {
+    let mut info = docinfo_records(true);
+    info.retain(|r| r.0 != 18 || r.2 == bin(1));
+    d(&mut nth(&mut info, 17, 0).2, 0, 1);
+    let png = encoded_image(image::ImageFormat::Png);
+    let build = |insert: bool, target: usize| {
+        let mut table = table_control();
+        let start = table.iter().enumerate().filter(|(_, r)| r.0 == 66).nth(target).unwrap().0;
+        let stop = table[start..].iter().position(|r| r.0 == 72).unwrap() + start;
+        let mut picture = picture_control();
+        d(&mut picture[0].2, 36, 7);
+        for r in &mut picture { r.1 += 2; }
+        table.splice(start..stop, paragraph_records(2, 0, &format!("cell {target}"), &if insert { vec![picture] } else { vec![] }));
+        let body = pack(&paragraph_records(0, 0, "Keep 한글", &[section_control(), table]));
+        let mut defs = info.clone();
+        if insert {
+            defs.insert(3, (18, 1, bin(2)));
+            d(&mut nth(&mut defs, 17, 0).2, 0, 2);
+        }
+        let mut extras = vec![("/PrvText", b"\r\0\n\0".as_slice()), ("/PrvImage", b"".as_slice()),
+            ("/BinData/BIN0001.png", png.as_slice())];
+        if insert { extras.push(("/BinData/BIN0002.png", png.as_slice())); }
+        hwp_doc(0, &pack(&defs), &body, &extras)
+    };
+    let original = build(false, 0);
+    let output = build(true, 0);
+    let loss = report("hwp", json!([]));
+    let safe = service::check_saved(Format::Hwp, &original, &output, Some(&loss), true);
+    assert!(safe.findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{safe:?}");
+    // The same original picture may not migrate to another surviving cell.
+    let moved = build(true, 1);
+    let verdict = service::check_saved(Format::Hwp, &output, &moved, Some(&loss), true);
+    assert_eq!(verdict.outcome, Outcome::Unsafe, "wrong surviving cell: {verdict:?}");
+    let (result, bytes, _) = publish(&output, &moved, Some(&raster()));
+    assert!(matches!(result, Err(DocumentError::UnsafeSave { .. })));
+    assert_eq!(bytes, output);
+    let mutations: [(&str, fn(&mut Records)); 5] = [
+        ("floating cell control", |rs| d(&mut nth(rs, 71, 2).2, 4, 0xa0310)),
+        ("colliding original identity", |rs| d(&mut nth(rs, 71, 2).2, 36, 1)),
+        ("missing BinData reference", |rs| w(&mut nth(rs, 85, 0).2, 71, 99)),
+        ("malformed hierarchy", |rs| nth(rs, 85, 0).1 -= 1),
+        ("malformed picture geometry", |rs| nth(rs, 85, 0).2[20] ^= 1),
+    ];
+    for (name, change) in mutations {
+        let invalid = edit_records(&output, "/BodyText/Section0", change);
+        let verdict = service::check_saved(Format::Hwp, &original, &invalid, Some(&loss), true);
+        assert_eq!(verdict.outcome, Outcome::Unsafe, "{name}: {verdict:?}");
+        let (result, bytes, _) = publish(&original, &invalid, Some(&raster()));
+        assert!(matches!(result, Err(DocumentError::UnsafeSave { .. })), "{name}");
+        assert_eq!(bytes, original, "{name}: original publication changed");
+    }
+    let mut missing = stream_map(&output);
+    missing.remove("/BinData/BIN0002.png");
+    let verdict = service::check_saved(Format::Hwp, &original, &from_map(&missing), Some(&loss), true);
+    assert_eq!(verdict.outcome, Outcome::Unsafe);
+}
+
 #[test]
 fn hwp_contract_mixed_structures_publish_and_stale_preview_does_not() {
     let original = fixture(false);

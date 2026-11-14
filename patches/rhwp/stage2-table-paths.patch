@@ -1540,3 +1540,429 @@ diff --git a/src/renderer/typeset/table/continuation/fragment/budget.rs b/src/re
 +                && table_declared_object_covers_cell_row_frames(table, self.dpi)
                  // 원본 높이도 넘으면 측정 오차가 아닌 실제 수용 불가다.
                  // 저장 프레임이 들어갈 때만 작은 실측 증가를 보조 허용한다.
+diff --git a/src/document_core/commands/object_ops/picture.rs b/src/document_core/commands/object_ops/picture.rs
+--- a/src/document_core/commands/object_ops/picture.rs
++++ b/src/document_core/commands/object_ops/picture.rs
+@@ -1579,66 +1579,12 @@
+         paragraph.char_count += 8;
+     }
+
+-    pub fn insert_picture_native(
+-        &mut self,
+-        section_idx: usize,
+-        para_idx: usize,
+-        char_offset: usize,
+-        cell_path: &[(usize, usize, usize)],
+-        image_data: &[u8],
+-        width: u32,
+-        height: u32,
+-        natural_width_px: u32,
+-        natural_height_px: u32,
+-        extension: &str,
+-        description: &str,
+-        paper_offset_x_hu: Option<i32>,
+-        paper_offset_y_hu: Option<i32>,
+-    ) -> Result<String, HwpError> {
++    /// Shared picture geometry for legacy placement and explicit cell-inline creation.
++    fn picture_from_embedded_image(common: crate::model::shape::CommonObjAttr,
++        position_id: u16, natural_width_px: u32, natural_height_px: u32) -> crate::model::image::Picture {
+         use crate::model::image::{CropInfo, ImageAttr, ImageEffect, Picture};
+-        use crate::model::paragraph::{CharShapeRef, LineSeg};
+-        use crate::model::shape::{CommonObjAttr, HorzRelTo, ShapeComponentAttr, VertRelTo};
+-        // 유효성 검사
+-        if section_idx >= self.document.sections.len() {
+-            return Err(HwpError::RenderError(format!(
+-                "구역 인덱스 {} 범위 초과 (총 {}개)",
+-                section_idx,
+-                self.document.sections.len()
+-            )));
+-        }
+-        if para_idx >= self.document.sections[section_idx].paragraphs.len() {
+-            return Err(HwpError::RenderError(format!(
+-                "문단 인덱스 {} 범위 초과",
+-                para_idx
+-            )));
+-        }
+-        if image_data.is_empty() {
+-            return Err(HwpError::RenderError(
+-                "이미지 데이터가 비어 있습니다".to_string(),
+-            ));
+-        }
+-        // cell_path 가 있으면 경로가 유효한지 사전 검증한다.
+-        //
+-        // 표 셀 picture 는 한컴 정합상 표 sibling floating 으로 삽입하지만,
+-        // 글상자(text_box) 내부 picture 는 글상자 문단의 control 로 들어가야 한다.
+-        // 기존 resolve_cell_by_path 는 마지막 엔트리가 표일 때만 성공하므로
+-        // 먼저 표/글상자를 구분한다.
+-        let cell_path_is_textbox = if !cell_path.is_empty() {
+-            let section = &self.document.sections[section_idx];
+-            let is_textbox = Self::cell_path_terminates_at_textbox(section, para_idx, cell_path)?;
+-            if !is_textbox {
+-                self.resolve_cell_by_path(section_idx, para_idx, cell_path)?;
+-            }
+-            is_textbox
+-        } else {
+-            false
+-        };
+-
+-        // --- 1·2. BinData 등록 (콘텐츠 + 메타데이터) ---
+-        // [Task #2230] 그림 지정(assign_picture_image_native)과 규칙 공유를 위해
+-        // register_embedded_bin_data 로 추출.
+-        let position_id = self.register_embedded_bin_data(image_data, extension);
+-
++        use crate::model::shape::ShapeComponentAttr;
++        let (width, height) = (common.width, common.height);
+         // --- 공통 자원 ---
+         let shape_attr = ShapeComponentAttr {
+             original_width: width,
+@@ -1681,6 +1627,229 @@
+             external_path: None,
+         };
+
++        Picture { common, shape_attr, border_x: bx, border_y: by, crop, img_dim, image_attr, ..Default::default() }
++    }
++
++    pub fn can_insert_picture_in_cell_by_path_native(&self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], offset: usize) -> bool {
++        if path.is_empty() || path.len() > 64
++            || self.document.bin_data_content.len() != self.document.doc_info.bin_data_list.len()
++            || self.document.bin_data_content.len() >= u16::MAX as usize
++            || self.document.doc_info.bin_data_list.iter().any(|b| b.storage_id == u16::MAX)
++            || self.document.bin_data_content.iter().any(|b| b.id == u16::MAX)
++        { return false; }
++        for depth in 1..=path.len() {
++            if self.resolve_cell_by_path(section, paragraph, &path[..depth]).is_err() { return false; }
++        }
++        self.resolve_paragraph_by_path(section, paragraph, path).is_ok_and(|host|
++            offset <= crate::document_core::helpers::logical_paragraph_length(host)
++            && host.field_ranges.is_empty() && host.orphan_field_ends.is_empty())
++    }
++
++    /// Product caret/text bridge for paragraphs containing newly supported inline pictures.
++    pub fn cell_inline_context_native(&self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], offset: usize, count: usize) -> Result<String, HwpError> {
++        let host = self.resolve_paragraph_by_path(section, paragraph, path)?;
++        let has_pictures = host.controls.iter().any(|c| matches!(c, Control::Picture(p) if p.common.treat_as_char));
++        let length = crate::document_core::helpers::logical_paragraph_length(host);
++        if offset > length { return Err(HwpError::RenderError("invalid logical cell range".into())); }
++        let (start, after) = crate::document_core::helpers::logical_to_text_offset(host, offset);
++        let (end, _) = crate::document_core::helpers::logical_to_text_offset(host, offset.saturating_add(count).min(length));
++        let positions = crate::document_core::helpers::find_logical_control_positions(host);
++        let contains_control = host.controls.iter().zip(positions).any(|(c,p)| c.is_logical_inline() && p >= offset && p < offset.saturating_add(count).min(length));
++        Ok(serde_json::json!({"hasPictures": has_pictures, "length": length,
++            "textOffset": start, "textCount": end - start, "afterControl": after, "containsControl": contains_control}).to_string())
++    }
++
++    pub fn insert_cell_inline_text_native(&mut self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], offset: usize, text: &str) -> Result<String, HwpError> {
++        if path.is_empty() || path.len() > 64 { return Err(HwpError::RenderError("invalid inline cell path".into())); }
++        for depth in 1..=path.len() { self.resolve_cell_by_path(section, paragraph, &path[..depth])?; }
++        let host = self.resolve_paragraph_by_path(section, paragraph, path)?;
++        if offset > crate::document_core::helpers::logical_paragraph_length(host)
++            || !host.field_ranges.is_empty() || !host.orphan_field_ends.is_empty() {
++            return Err(HwpError::RenderError("invalid inline cell text owner".into()));
++        }
++        let (at, after) = crate::document_core::helpers::logical_to_text_offset(host, offset);
++        let host = Self::resolve_cell_paragraph_mut(&mut self.document.sections[section], paragraph, path)?;
++        host.insert_text_at_caret(at, text, after);
++        self.document.sections[section].raw_stream = None;
++        self.reflow_cell_paragraph_by_path(section, paragraph, path, path.last().unwrap().2);
++        self.recalculate_cell_paragraph_vpos_by_path(section, paragraph, path, 0, None);
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.rebuild_section(section);
++        self.invalidate_page_tree_cache();
++        Ok("{\"ok\":true}".into())
++    }
++
++    /// Explicit table-cell paragraph ownership. Offsets count text and inline controls.
++    /// Every fallible admission check precedes resource registration.
++    #[allow(clippy::too_many_arguments)]
++    pub fn insert_picture_in_cell_by_path_native(&mut self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], offset: usize, bytes: &[u8], width: u32, height: u32,
++        natural_width: u32, natural_height: u32, extension: &str, description: &str,
++    ) -> Result<String, HwpError> {
++        use crate::model::shape::{CommonObjAttr, HorzRelTo, VertRelTo};
++        let invalid = || HwpError::RenderError("invalid cell picture ownership or resource".into());
++        if !self.can_insert_picture_in_cell_by_path_native(section, paragraph, path, offset) || bytes.is_empty() || bytes.len() > 16 * 1024 * 1024
++            || width == 0 || height == 0 || width > 2_000_000 || height > 2_000_000
++            || natural_width == 0 || natural_height == 0 || natural_width > 8192 || natural_height > 8192
++            || u64::from(natural_width) * u64::from(natural_height) > 16 * 1024 * 1024
++            || description.encode_utf16().count() > 256
++        { return Err(invalid()); }
++        let host = self.resolve_paragraph_by_path(section, paragraph, path)?;
++        let format = match extension {
++            "png" => image::ImageFormat::Png,
++            "jpeg" | "jpg" => image::ImageFormat::Jpeg,
++            _ => return Err(invalid()),
++        };
++        if image::guess_format(bytes).map_err(|_| invalid())? != format
++            || (format == image::ImageFormat::Jpeg && !bytes.ends_with(b"\xff\xd9"))
++            || (format == image::ImageFormat::Png && !bytes.ends_with(b"\0\0\0\0IEND\xaeB`\x82"))
++        { return Err(invalid()); }
++        let dimensions = image::ImageReader::with_format(std::io::Cursor::new(bytes), format)
++            .into_dimensions().map_err(|_| invalid())?;
++        if dimensions != (natural_width, natural_height) { return Err(invalid()); }
++        let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
++        let mut limits = image::Limits::default();
++        limits.max_image_width = Some(8192);
++        limits.max_image_height = Some(8192);
++        limits.max_alloc = Some(64 * 1024 * 1024);
++        reader.limits(limits);
++        let decoded = reader.decode().map_err(|_| invalid())?;
++        if decoded.width() != natural_width || decoded.height() != natural_height { return Err(invalid()); }
++        let instance_id = super::super::clone_identity::next_instance_id(&self.document)?;
++        let positions = crate::document_core::helpers::find_logical_control_positions(host);
++        let control = positions.iter().position(|p| *p >= offset).unwrap_or(host.controls.len());
++        let (text_offset, _) = crate::document_core::helpers::logical_to_text_offset(host, offset);
++        let before = self.document.clone();
++        let bin = self.register_embedded_bin_data(bytes, if format == image::ImageFormat::Png { "png" } else { "jpeg" });
++        let picture = Self::picture_from_embedded_image(CommonObjAttr {
++            ctrl_id: 0x67736f20, attr: 0x000a0311, treat_as_char: true,
++            horz_rel_to: HorzRelTo::Para, vert_rel_to: VertRelTo::Para,
++            width, height, z_order: 1, instance_id, description: description.into(), ..Default::default()
++        }, bin, natural_width, natural_height);
++        let host = Self::resolve_cell_paragraph_mut(&mut self.document.sections[section], paragraph, path)
++            .expect("validated cell path, no structural mutation");
++        host.align_ctrl_data_records();
++        host.controls.insert(control, Control::Picture(Box::new(picture)));
++        host.ctrl_data_records.insert(control, None);
++        Self::leave_coordinate_trace(host, control, text_offset);
++        host.control_mask |= 0x00000800;
++        self.document.sections[section].raw_stream = None;
++        self.reflow_cell_paragraph_by_path(section, paragraph, path, path.last().unwrap().2);
++        self.recalculate_cell_paragraph_vpos_by_path(section, paragraph, path, 0, None);
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.rebuild_section(section);
++        self.invalidate_page_tree_cache();
++        let outcome = self.get_cell_picture_by_path_native(section, paragraph, path, control)
++            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).map_err(|_| invalid()))
++            .and_then(|mut evidence| {
++                if evidence["position"].as_u64() != Some(offset as u64) { return Err(invalid()); }
++                evidence["logicalOffset"] = (offset + 1).into();
++                Ok(evidence.to_string())
++            });
++        if outcome.is_err() {
++            self.document = before;
++            self.rebuild_section(section);
++            self.invalidate_page_tree_cache();
++        } else {
++            self.event_log.push(DocumentEvent::PictureInserted { section, para: paragraph });
++        }
++        outcome
++    }
++
++    /// Read the actual paragraph-owned picture and its resolved embedded bytes.
++    pub fn get_cell_picture_by_path_native(&self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], control: usize) -> Result<String, HwpError> {
++        use sha2::{Digest, Sha256};
++        if path.is_empty() { return Err(HwpError::RenderError("cell path required".into())); }
++        for depth in 1..=path.len() { self.resolve_cell_by_path(section, paragraph, &path[..depth])?; }
++        let host = self.resolve_paragraph_by_path(section, paragraph, path)?;
++        let Some(Control::Picture(pic)) = host.controls.get(control) else {
++            return Err(HwpError::RenderError("missing cell picture".into()));
++        };
++        let id = pic.image_attr.bin_data_id;
++        let definition = id.checked_sub(1).and_then(|i| self.document.doc_info.bin_data_list.get(i as usize))
++            .ok_or_else(|| HwpError::RenderError("missing BinData definition".into()))?;
++        let mut resources = self.document.bin_data_content.iter().filter(|b| b.id == definition.storage_id);
++        let content = resources.next().ok_or_else(|| HwpError::RenderError("missing BinData bytes".into()))?;
++        if resources.next().is_some() { return Err(HwpError::RenderError("duplicate BinData storage".into())); }
++        let bytes = content.data.load_limited_shared(16 * 1024 * 1024)
++            .filter(|b| !b.is_empty()).ok_or_else(|| HwpError::RenderError("invalid BinData bytes".into()))?;
++        let positions = crate::document_core::helpers::find_logical_control_positions(host);
++        Ok(serde_json::json!({ "ok": true, "section": section, "paraIdx": paragraph,
++            "path": path.iter().map(|&(a,b,c)| serde_json::json!({"controlIndex": a, "cellIndex": b, "cellParaIndex": c})).collect::<Vec<_>>(),
++            "controlIdx": control, "position": positions[control], "instanceId": pic.common.instance_id,
++            "width": pic.common.width, "height": pic.common.height, "treatAsChar": pic.common.treat_as_char,
++            "binDataId": id, "storageId": definition.storage_id, "byteLength": bytes.len(),
++            "imageWidthHu": pic.img_dim.0, "imageHeightHu": pic.img_dim.1,
++            "crop": [pic.crop.left, pic.crop.top, pic.crop.right, pic.crop.bottom],
++            "horizontalOffset": pic.common.horizontal_offset, "verticalOffset": pic.common.vertical_offset,
++            "sha256": Sha256::digest(bytes.as_ref()).iter().map(|b| format!("{b:02x}")).collect::<String>()
++        }).to_string())
++    }
++
++    pub fn insert_picture_native(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        char_offset: usize,
++        cell_path: &[(usize, usize, usize)],
++        image_data: &[u8],
++        width: u32,
++        height: u32,
++        natural_width_px: u32,
++        natural_height_px: u32,
++        extension: &str,
++        description: &str,
++        paper_offset_x_hu: Option<i32>,
++        paper_offset_y_hu: Option<i32>,
++    ) -> Result<String, HwpError> {
++        use crate::model::paragraph::{CharShapeRef, LineSeg};
++        use crate::model::shape::{CommonObjAttr, HorzRelTo, VertRelTo};
++        // 유효성 검사
++        if section_idx >= self.document.sections.len() {
++            return Err(HwpError::RenderError(format!(
++                "구역 인덱스 {} 범위 초과 (총 {}개)",
++                section_idx,
++                self.document.sections.len()
++            )));
++        }
++        if para_idx >= self.document.sections[section_idx].paragraphs.len() {
++            return Err(HwpError::RenderError(format!(
++                "문단 인덱스 {} 범위 초과",
++                para_idx
++            )));
++        }
++        if image_data.is_empty() {
++            return Err(HwpError::RenderError(
++                "이미지 데이터가 비어 있습니다".to_string(),
++            ));
++        }
++        // cell_path 가 있으면 경로가 유효한지 사전 검증한다.
++        //
++        // 표 셀 picture 는 한컴 정합상 표 sibling floating 으로 삽입하지만,
++        // 글상자(text_box) 내부 picture 는 글상자 문단의 control 로 들어가야 한다.
++        // 기존 resolve_cell_by_path 는 마지막 엔트리가 표일 때만 성공하므로
++        // 먼저 표/글상자를 구분한다.
++        let cell_path_is_textbox = if !cell_path.is_empty() {
++            let section = &self.document.sections[section_idx];
++            let is_textbox = Self::cell_path_terminates_at_textbox(section, para_idx, cell_path)?;
++            if !is_textbox {
++                self.resolve_cell_by_path(section_idx, para_idx, cell_path)?;
++            }
++            is_textbox
++        } else {
++            false
++        };
++
++        // --- 1·2. BinData 등록 (콘텐츠 + 메타데이터) ---
++        // [Task #2230] 그림 지정(assign_picture_image_native)과 규칙 공유를 위해
++        // register_embedded_bin_data 로 추출.
++        let position_id = self.register_embedded_bin_data(image_data, extension);
++
++
+         if !cell_path.is_empty() {
+             if cell_path_is_textbox {
+                 // === 글상자 내부 picture 분기 (#1322 maintainer fix) ===
+@@ -1714,16 +1883,7 @@
+                     description: description.to_string(),
+                     ..Default::default()
+                 };
+-                let pic = Picture {
+-                    common,
+-                    shape_attr,
+-                    border_x: bx,
+-                    border_y: by,
+-                    crop,
+-                    img_dim,
+-                    image_attr,
+-                    ..Default::default()
+-                };
++                let pic = Self::picture_from_embedded_image(common, position_id, natural_width_px, natural_height_px);
+
+                 let (new_ctrl_idx, logical_after) = {
+                     let section = &mut self.document.sections[section_idx];
+@@ -1799,16 +1959,7 @@
+                 description: description.to_string(),
+                 ..Default::default()
+             };
+-            let pic = Picture {
+-                common,
+-                shape_attr,
+-                border_x: bx,
+-                border_y: by,
+-                crop,
+-                img_dim,
+-                image_attr,
+-                ..Default::default()
+-            };
++            let pic = Self::picture_from_embedded_image(common, position_id, natural_width_px, natural_height_px);
+
+             // table 같은 paragraph 의 sibling control 로 append.
+             //
+@@ -1880,16 +2031,7 @@
+             ..Default::default()
+         };
+
+-        let pic = Picture {
+-            common,
+-            shape_attr,
+-            border_x: bx,
+-            border_y: by,
+-            crop,
+-            img_dim,
+-            image_attr,
+-            ..Default::default()
+-        };
++        let pic = Self::picture_from_embedded_image(common, position_id, natural_width_px, natural_height_px);
+
+         // 현재 paragraph 의 sibling control 로 끼운다 (새 paragraph 생성 X).
+         self.document.sections[section_idx].raw_stream = None;
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7289,6 +7289,43 @@
+         let path = DocumentCore::parse_cell_path(path_json)?;
+         self.table_formula_field_by_path_native(section as usize, paragraph as usize, &path,
+             row as usize, col as usize, formula, true).map_err(|e| JsValue::from_str(&e.to_string()))
++    }
++
++    #[wasm_bindgen(js_name = getCellInlineContextByPath)]
++    pub fn get_cell_inline_context_by_path(&self, section: u32, paragraph: u32, path_json: &str,
++        offset: u32, count: u32) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.cell_inline_context_native(section as usize, paragraph as usize, &path, offset as usize, count as usize).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = insertCellInlineTextByPath)]
++    pub fn insert_cell_inline_text_by_path(&mut self, section: u32, paragraph: u32, path_json: &str,
++        offset: u32, text: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.insert_cell_inline_text_native(section as usize, paragraph as usize, &path, offset as usize, text).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = canInsertPictureInCellByPath)]
++    pub fn can_insert_picture_in_cell_by_path(&self, section: u32, paragraph: u32, path_json: &str,
++        offset: u32) -> bool {
++        DocumentCore::parse_cell_path(path_json).is_ok_and(|path|
++            self.can_insert_picture_in_cell_by_path_native(section as usize, paragraph as usize, &path, offset as usize))
++    }
++
++    #[wasm_bindgen(js_name = insertPictureInCellByPath)]
++    pub fn insert_picture_in_cell_by_path(&mut self, section: u32, paragraph: u32, path_json: &str,
++        offset: u32, bytes: &[u8], width: u32, height: u32, natural_width: u32, natural_height: u32,
++        extension: &str, description: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.insert_picture_in_cell_by_path_native(section as usize, paragraph as usize, &path,
++            offset as usize, bytes, width, height, natural_width, natural_height, extension, description).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = getCellPictureByPath)]
++    pub fn get_cell_picture_by_path(&self, section: u32, paragraph: u32, path_json: &str,
++        control: u32) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.get_cell_picture_by_path_native(section as usize, paragraph as usize, &path, control as usize).map_err(Into::into)
+     }
+
+     #[wasm_bindgen(js_name = createTableInCellByPath)]
+diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_partial.rs
+--- a/src/renderer/layout/table_partial.rs
++++ b/src/renderer/layout/table_partial.rs
+@@ -2722,6 +2722,16 @@
+                     for (ctrl_idx, ctrl) in para.controls.iter().enumerate() {
+                         match ctrl {
+                             Control::Picture(pic) => {
++                                // A TAC belongs to its source line, even when a continuation
++                                // paragraph has other visible text. The fallback must not
++                                // re-emit a picture whose line is outside this fragment.
++                                if pic.common.treat_as_char && line_ranges.is_some()
++                                    && super::control_line_seg_index(para, ctrl_idx)
++                                        .is_some_and(|line| line < start_line || line >= end_line)
++                                {
++                                    continue;
++                                }
++
+                                 let visible_non_inline_control =
+                                     cut_units.map_or(true, |(su, eu)| {
+                                         self.cell_cut_starts_non_inline_control(

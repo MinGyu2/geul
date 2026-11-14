@@ -856,7 +856,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     // Instance-ID accounting over every table/picture control at any depth: original identities must be
     // unique, new objects must not reuse any original identity (`validate_table_at` inserts into this set),
     // and the output (checked after the loop) holds each identity at most once.
-    let mut used = Used::default();
+    let mut used = Used { image_dimensions: resources.dimensions.clone(), ..Used::default() };
     let mut table_ids = BTreeSet::new();
     let mut output_ids = BTreeSet::new();
     let mut output_fields = BTreeSet::new();
@@ -870,7 +870,6 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         unique_field_ids(&records, &mut used.fields, name)?;
     }
     let mut table_total = 0;
-    let mut picture_total = 0;
     for (name, data) in &b.streams {
         if !section_stream(name) {
             continue;
@@ -980,8 +979,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 validate_table(object, &bc, &mut used, &mut table_ids)?;
                 table_total += 1;
             } else if object[0].2.starts_with(b" osg") {
-                validate_picture(object, &bc, &resources, &mut used)?;
-                picture_total += 1;
+                validate_picture(object, 1, &bc, &resources.dimensions, &mut used.pictures)?;
             } else {
                 return Err(finding(FindingCode::RecordsChanged, name));
             }
@@ -1009,7 +1007,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             reference(field.contains(&(index + usize::from(tag != 25))), "DocInfo")?;
         }
     }
-    reference(picture_total == resources.new_paths.len(), "DocInfo")?;
+    reference(used.pictures.len() == resources.new_paths.len(), "DocInfo")?;
     preserved(entries(&added, 20).is_empty() || table_total > 0, "DocInfo")?;
     Ok(Proof {
         streams: resources.new_paths,
@@ -1228,6 +1226,8 @@ struct Used {
     bullets: BTreeSet<usize>,
     paras: BTreeSet<usize>,
     pictures: BTreeSet<usize>,
+    /// Independently decoded additions, keyed by BinData definition ordinal.
+    image_dimensions: BTreeMap<usize, (u32, u32)>,
     /// Field IDs of the original (seeded) and of new formula fields: a new field never reuses one.
     fields: BTreeSet<usize>,
 }
@@ -1971,7 +1971,7 @@ fn paragraph_evidence(
 ///   deletion that reduces the cell count may drop original child objects of deleted cells.
 ///
 /// Nothing is inferred from a surviving payload: every original child is matched in order, every
-/// unmatched output child must prove the new-table schema, and unknown records stay refused.
+/// unmatched output child must prove its narrow new-control schema, and unknown records stay refused.
 /// A table with no structural change at any depth keeps the original contract (byte-identical):
 /// a text-only edit of an original table is never admitted through this proof.
 fn evolved_table(
@@ -2766,7 +2766,7 @@ fn same_child(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
     old == new || evolved_candidate(old, new) || evolved_formula(old, new)
 }
 
-/// A child control created by a supported operation: a new basic nested table, or a new formula field.
+/// New basic nested table, formula field, or paragraph-owned inline picture with fresh ID and verified BinData.
 fn new_child(
     object: &[Record<'_>],
     level: u16,
@@ -2778,6 +2778,11 @@ fn new_child(
     valid(object[0].1 == level, BODY)?;
     if object[0].2.starts_with(b" lbt") {
         return validate_table_at(object, defs, used, ids, total);
+    }
+    if object[0].2.starts_with(b" osg") {
+        let id = dword(object[0].2, 36)?;
+        reference(id != 0 && ids.insert(id), BODY)?;
+        return validate_picture(object, level, defs, &used.image_dimensions, &mut used.pictures);
     }
     let field = Field::of(object).ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
     // Pinned RHWP formula field (table-formula-field.patch): attributes 0, extra 0x08, id + 4 zero bytes.
@@ -3156,24 +3161,26 @@ fn validate_table_at(
 }
 fn validate_picture(
     rs: &[Record<'_>],
+    level: u16,
     defs: &Defs<'_>,
-    resources: &Resources,
-    used: &mut Used,
+    dimensions: &BTreeMap<usize, (u32, u32)>,
+    used_pictures: &mut BTreeSet<usize>,
 ) -> Checked<()> {
     valid(
         rs.len() == 3
-            && rs[0].1 == 1
+            && rs[0].1 == level && level <= MAX_TABLE_LEVEL + 2
             && rs[1].0 == 76
-            && rs[1].1 == 2
+            && rs[1].1 == level + 1
             && rs[2].0 == 85
-            && rs[2].1 == 3,
+            && rs[2].1 == level + 2,
         BODY,
     )?;
     let h = rs[0].2;
     valid(h.len() >= 46, BODY)?;
     preserved(dword(h, 4)? == 0x000a0311, BODY)?;
     valid(
-        dword(h, 8)? == 0 && dword(h, 12)? == 0 && dword(h, 36)? == 0 && dword(h, 40)? == 0,
+        dword(h, 8)? == 0 && dword(h, 12)? == 0
+            && (if level == 1 { dword(h, 36)? == 0 } else { dword(h, 36)? != 0 }) && dword(h, 40)? == 0,
         BODY,
     )?;
     let n = word(h, 44)?;
@@ -3222,11 +3229,11 @@ fn validate_picture(
     reference(
         id > 0
             && id <= entries(defs, 18).len()
-            && resources.dimensions.contains_key(&id)
-            && used.pictures.insert(id),
+            && dimensions.contains_key(&id)
+            && used_pictures.insert(id),
         BODY,
     )?;
-    let (pw, ph) = resources.dimensions[&id];
+    let (pw, ph) = dimensions[&id];
     let nw = pw as usize * 75;
     let nh = ph as usize * 75;
     let mut expected = vec![0u8; 91];
