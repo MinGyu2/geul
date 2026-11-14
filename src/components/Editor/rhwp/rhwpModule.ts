@@ -33,6 +33,11 @@ export interface RhwpDocument {
   getParaPropertiesAt?(section: number, paragraph: number): string;
   ensureDefaultBullet?(character: string): number;
   applyParaFormat?(section: number, paragraph: number, properties: string): string;
+  getCellInlineContextByPath?(section: number, paragraph: number, path: string, offset: number, count: number): string;
+  insertCellInlineTextByPath?(section: number, paragraph: number, path: string, offset: number, text: string): string;
+  canInsertPictureInCellByPath?(section: number, paragraph: number, path: string, offset: number): boolean;
+  insertPictureInCellByPath?(section: number, paragraph: number, path: string, offset: number, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
+  getCellPictureByPath?(section: number, paragraph: number, path: string, control: number): string;
   insertPicture?(section: number, paragraph: number, offset: number, cellPath: string, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
   setPictureProperties?(section: number, paragraph: number, control: number, properties: string): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;

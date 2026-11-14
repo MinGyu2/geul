@@ -40,7 +40,8 @@ import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClip
 //   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
 //   조정한다(문서 모델은 하나). 일반 기록과 선택 글자 서식은 제품 capability이며 실제 세션의 IME·기록·소유권·원본 보존 조건으로
 //   가용성을 정한다. HWP는 원본 문자 모양을 파생 직렬화할 수 있어야 한다. 저장은 T009 전체 검증을 다시 통과해야 한다.
-import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture, insertedNestedTable } from "./hwpReopenModel";
+import { sha256 } from "./rhwpArtifactIdentity";
+import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture, insertedCellPicture, insertedNestedTable } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
@@ -864,7 +865,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 이미 모델에 있으므로 센 채로 편집을 멈춘다. apply가 예외를 던지면 여러 엔진 호출 중 일부가 이미 모델을 바꿨을 수
    * 있으므로 세지 않고(확정하지 않음) 모델을 uncertain으로 표시한 뒤 편집을 멈춘다.
    */
-  private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false): boolean {
+  private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false, recoverable = false): boolean {
     if (!this.editable || !this.doc) return false;
     // A cell rectangle is a structural selection, never a cross-owner text deletion.
     if (this.hasSelection && !sameContext(this.anchor, this.caret) && !requireHistory) return false;
@@ -893,13 +894,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     try {
       next = apply();
       trace("rhwp:text-mutation", () => ({ ms: performance.now() - started }));
-    } catch {
+    } catch (error) {
       if (requireHistory) {
         // Restore a coherent before state even if a validated engine operation
         // threw after changing the model. A secondary trap still fails closed;
         // successful rollback does not claim the trapped module is healthy.
-        try { this.history?.rollback(); this.text?.reconcilePublishedCharShapes(); }
-        catch (error) { this.historyFailure(error); }
+        try {
+          this.history?.rollback(); this.text?.reconcilePublishedCharShapes();
+          if (recoverable && !(error instanceof WebAssembly.RuntimeError) && !this.uncertain) {
+            this.pages = readPages(doc); this.emit(); return false;
+          }
+        } catch (rollbackError) { this.historyFailure(rollbackError); }
       }
       // 진행 중인 조합도 이 실패로 끝난다. 그 조합은 성공한 변경으로 세지 않는다(markFailed가 세지 않게 먼저 비움).
       this.composition = null;
@@ -1797,8 +1802,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret)].join("|");
     if (this.coreActionCache?.key === key) return this.coreActionCache.value;
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
-    if (this.structuralFormat() && this.doc?.insertPicture && this.doc.setPictureProperties
-      && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && !this.caret.cell
+    if (this.structuralFormat() && this.history && this.doc?.insertPicture && this.doc.setPictureProperties
+      && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && (!this.caret.cell || this.canInsertCellPicture())
       && !this.pending && this.committingEpoch !== this.epoch && !this.imageSelecting) actions["insert.image"] = {};
     const range = this.bulletRange();
     if (range) {
@@ -1920,26 +1925,52 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     });
   }
 
+  private canInsertCellPicture(): boolean {
+    const at = this.caret, doc = this.doc;
+    if (!at.cell || !this.history || !this.ownsPosition(at) || !doc?.insertPictureInCellByPath
+      || !doc.getCellPictureByPath || !doc.canInsertPictureInCellByPath
+      || !doc.getCellInlineContextByPath || !doc.insertCellInlineTextByPath) return false;
+    try { return doc.canInsertPictureInCellByPath(at.section, at.cell.parentParagraph, pathJson(at.cell), at.offset); }
+    catch { return false; }
+  }
+
   private imageSelecting = false;
   async executeImage(owns: () => boolean, pick: () => Promise<import("../../../commands/target").ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed"> {
     if (this.imageSelecting || !owns() || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
-    const epoch = this.epoch, version = this.modelVersion, caret = this.clipboardVersion;
+    const epoch = this.epoch, version = this.modelVersion, caret = this.clipboardVersion, position = RhwpEditorSession.positionKey(this.caret);
     this.imageSelecting = true; this.emit();
     try {
       const picture = await pick();
-      this.imageSelecting = false;
       if (picture === null) return "cancelled";
       if (!owns() || !this.owns(epoch) || version !== this.modelVersion || caret !== this.clipboardVersion
-        || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+        || position !== RhwpEditorSession.positionKey(this.caret)) return "stale";
       const { data, width, height } = picture;
       if (typeof data !== "string" || data.length > Math.ceil(16 * 1024 * 1024 / 3) * 4
         || ![width, height].every(n => Number.isSafeInteger(n) && n > 0 && n <= 8192) || width * height > 16 * 1024 * 1024) return "failed";
       const raw = atob(data), bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
       const ext = bytes[0] === 0x89 && bytes[1] === 0x50 ? "png" : bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpeg" : null;
       if (!ext || !bytes.length || bytes.length > 16 * 1024 * 1024) return "failed";
+      const digest = this.caret.cell ? await sha256(bytes.buffer) : null;
+      this.imageSelecting = false;
+      if (!owns() || !this.owns(epoch) || version !== this.modelVersion || caret !== this.clipboardVersion
+        || position !== RhwpEditorSession.positionKey(this.caret)
+        || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
       const scale = Math.min(75, 43200 / width, 60000 / height);
       const at = this.caret, doc = this.doc!, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
       return this.mutate(() => {
+        if (at.cell) {
+          const path = pathJson(at.cell), host = at.cell.parentParagraph;
+          const result = JSON.parse(doc.insertPictureInCellByPath!(at.section, host, path, at.offset, bytes,
+            Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), width, height, ext, "")) as Record<string, unknown>;
+          if (result.ok !== true || result.section !== at.section || result.paraIdx !== host
+            || !Number.isSafeInteger(result.controlIdx)
+            || result.position !== at.offset || result.logicalOffset !== at.offset + 1
+            || result.sha256 !== digest || result.byteLength !== bytes.length
+            || result.width !== Math.max(1, Math.round(width * scale)) || result.height !== Math.max(1, Math.round(height * scale))
+            || !insertedCellPicture(doc, at.section, host, path, result.controlIdx as number, result)
+          ) throw new Error("cell picture ownership not verified");
+          return { ...at, offset: result.logicalOffset as number };
+        }
         const result = JSON.parse(doc.insertPicture!(at.section, at.paragraph, at.offset, "[]", bytes,
           Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), width, height, ext, "")) as Record<string, unknown>;
         if (result.ok !== true || !Number.isSafeInteger(result.paraIdx) || !Number.isSafeInteger(result.controlIdx)
@@ -1948,7 +1979,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (props.ok !== true) throw new Error("inline picture rejected");
         if (hwp && !insertedInlinePicture(doc, at.section, result.paraIdx as number, result.controlIdx as number)) throw new Error("inline picture not verified");
         return { section: at.section, paragraph: result.paraIdx as number, offset: result.logicalOffset as number };
-      }) ? "inserted" : "failed";
+      }, true, "other", null, true, true) ? "inserted" : "failed";
     } catch { return "failed"; }
     finally { this.imageSelecting = false; if (this.owns(epoch)) this.emit(); }
   }

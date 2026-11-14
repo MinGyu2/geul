@@ -200,6 +200,52 @@ export function insertedInlinePicture(doc: RhwpDocument, section: number, paragr
   } catch { return false; }
 }
 
+/** Actual cell-owned control, independently re-read by explicit path with resolved resource digest. */
+export function insertedCellPicture(doc: RhwpDocument, section: number, host: number, path: string,
+  control: number, expected?: JsonObject): boolean {
+  try {
+    const p = cellPictureEvidence(doc, section, host, path, control);
+    return p !== null && (!expected || ["section", "paraIdx", "path", "controlIdx", "instanceId", "position",
+      "width", "height", "treatAsChar", "binDataId", "storageId", "byteLength", "sha256",
+      "imageWidthHu", "imageHeightHu", "crop", "horizontalOffset", "verticalOffset"].every(k => canonical(p[k]) === canonical(expected[k])));
+  } catch { return false; }
+}
+
+function cellPictureEvidence(doc: RhwpDocument, section: number, host: number, path: string, control: number): JsonObject | null {
+  if (!doc.getCellPictureByPath) return null;
+  const p = readObject(doc.getCellPictureByPath(section, host, path, control));
+  if (p.ok !== true || p.section !== section || p.paraIdx !== host || p.controlIdx !== control
+    || canonical(p.path) !== canonical(JSON.parse(path)) || p.treatAsChar !== true
+    || !["instanceId", "width", "height", "binDataId", "storageId", "byteLength"].every(k => isInt(p[k], 1))
+    || !["imageWidthHu", "imageHeightHu"].every(k => isInt(p[k], 1))
+    || !Array.isArray(p.crop) || p.crop.length !== 4 || !p.crop.every(v => isInt(v, 0))
+    || p.horizontalOffset !== 0 || p.verticalOffset !== 0 || (p.byteLength as number) > 16 * 1024 * 1024
+    || !isInt(p.position, 0) || typeof p.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(p.sha256)) return null;
+  return p;
+}
+
+function nestedPictureModel(doc: RhwpDocument, c: JsonObject, lists: Map<number, JsonObject>): JsonObject | null {
+  if (!isInt(c.list, 2) || !isInt(c.para, 0) || !isInt(c.controlIndex, 0) || !isObject(c.props)) return null;
+  const chain: JsonObject[] = [];
+  let at = lists.get(c.list);
+  while (at && at.isCell === true && chain.length < 64) {
+    chain.unshift(at);
+    if (at.hostListId === 0) break;
+    at = isInt(at.hostListId, 2) ? lists.get(at.hostListId) : undefined;
+  }
+  if (!at || at.hostListId !== 0 || !chain.length || !chain.every(l =>
+    [l.sectionIndex, l.hostPara, l.controlIndex, l.cellIndex, l.paraCount].every(v => isInt(v, 0)))
+    || (c.para as number) >= (chain[chain.length - 1]!.paraCount as number)) return null;
+  const section = chain[0]!.sectionIndex as number, host = chain[0]!.hostPara as number;
+  const path = JSON.stringify(chain.map((l, i) => ({ controlIndex: l.controlIndex, cellIndex: l.cellIndex,
+    cellParaIndex: i + 1 < chain.length ? chain[i + 1]!.hostPara : c.para })));
+  const picture = cellPictureEvidence(doc, section, host, path, c.controlIndex);
+  checkControlProps(c.props);
+  if (!picture || c.props.TreatAsChar !== 1 || c.props.Width !== picture.width || c.props.Height !== picture.height
+    || !isInt(c.pos, 0)) return null;
+  return { ...picture, streamPosition: c.pos };
+}
+
 /** A blank getControls kind is not evidence of a field. Independently join the
  * cursor-list owner, explicit paragraph control index/position and complete field range. Only
  * first-paragraph formulas and ClickHere fields (any paragraph) are
@@ -382,7 +428,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     paragraphBase += count(doc.getParagraphCount(s)); return paragraphBase;
   });
   // Stage 2: tables inside cells, addressed by their explicit cell-list ownership chain.
-  const cursorLists = controls.some(c => isObject(c) && c.list !== 0 && c.ctrlId === "tbl") && doc.getCursorModel
+  const cursorLists = controls.some(c => isObject(c) && c.list !== 0 && (c.ctrlId === "tbl" || c.ctrlId === "gso")) && doc.getCursorModel
     ? cursorListMap(object(json(doc.getCursorModel()))) : null;
   for (const value of controls) {
     node(); const c = object(value);
@@ -393,6 +439,10 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     if (c.list !== 0 && c.ctrlId === "tbl" && cursorLists) {
       const table = nestedTableModel(doc, c, cursorLists, spend, node, count);
       if (table) { tables.push(table); continue; }
+    }
+    if (c.list !== 0 && c.ctrlId === "gso" && c.userDesc === "그림" && cursorLists) {
+      const picture = nestedPictureModel(doc, c, cursorLists);
+      if (picture) { pictures.push(picture); continue; }
     }
     if (c.list !== 0) { complete = false; continue; } // other nested controls retain raw comparison
     const global = count(c.para);

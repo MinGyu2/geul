@@ -354,8 +354,19 @@ export class RhwpText {
     return c ? this.doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, c.cell) : this.doc.getParagraphCount(at.section);
   }
 
-  paragraphLength(at: DocPosition): number {
+  /** Legacy cell APIs use plain-text offsets; new inline pictures use logical caret slots. */
+  private inlineCell(at: DocPosition, count = 0): { length: number; textOffset: number; textCount: number; containsControl: boolean } | null {
     const c = at.cell;
+    if (!c || !this.doc.getCellInlineContextByPath) return null;
+    const value = json(this.doc.getCellInlineContextByPath(at.section, c.parentParagraph, pathJson(c), at.offset, count));
+    if (!isRecord(value) || typeof value.hasPictures !== "boolean" || !isIndex(value.length)
+      || !isIndex(value.textOffset) || !isIndex(value.textCount) || typeof value.containsControl !== "boolean") throw new Error("invalid cell inline context");
+    return value.hasPictures ? value as { length: number; textOffset: number; textCount: number; containsControl: boolean } : null;
+  }
+
+  paragraphLength(at: DocPosition): number {
+    const c = at.cell, inline = this.inlineCell({ ...at, offset: 0 });
+    if (inline) return inline.length;
     if (c?.nested) return this.doc.getCellParagraphLengthByPath!(at.section, c.parentParagraph, pathJson(c));
     return c
       ? this.doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph)
@@ -440,6 +451,8 @@ export class RhwpText {
   }
 
   text(at: DocPosition, count: number): string {
+    const inline = this.inlineCell(at, count);
+    if (inline) { at = { ...at, offset: inline.textOffset }; count = inline.textCount; }
     const c = at.cell;
     if (c?.nested) return this.doc.getTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, count);
     return c
@@ -502,6 +515,10 @@ export class RhwpText {
 
   insert(at: DocPosition, text: string): void {
     const c = at.cell;
+    if (c && this.inlineCell(at)) {
+      this.nestedResult(this.doc.insertCellInlineTextByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, text));
+      return;
+    }
     if (c?.nested) this.nestedResult(this.doc.insertTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, text));
     else if (c) this.doc.insertTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, text);
     else this.doc.insertText(at.section, at.paragraph, at.offset, text);
@@ -514,6 +531,11 @@ export class RhwpText {
   }
 
   delete(at: DocPosition, count: number): void {
+    const inline = this.inlineCell(at, count);
+    if (inline) {
+      if (inline.containsControl) throw new Error("inline object selection requires object deletion");
+      at = { ...at, offset: inline.textOffset }; count = inline.textCount;
+    }
     const c = at.cell;
     if (c?.nested) this.nestedResult(this.doc.deleteTextInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, count));
     else if (c) this.doc.deleteTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, count);
@@ -522,6 +544,12 @@ export class RhwpText {
 
   deleteRange(from: DocPosition, to: DocPosition): void {
     const c = from.cell;
+    if (c && paragraphOf(from) === paragraphOf(to) && this.inlineCell(from, to.offset - from.offset)) {
+      this.delete(from, to.offset - from.offset); return;
+    }
+    if (c) for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
+      if (this.inlineCell(withParagraph(from, p, 0))) throw new Error("cross-paragraph inline object selection unsupported");
+    }
     if (c?.nested) this.nestedResult(this.doc.deleteRangeInCellByPath!(from.section, c.parentParagraph, pathJson(c),
       paragraphOf(from), from.offset, paragraphOf(to), to.offset));
     else if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);
@@ -538,9 +566,14 @@ export class RhwpText {
     const first = paragraphOf(from), last = paragraphOf(to);
     for (let paragraph = first; paragraph <= last; paragraph += 1) {
       const at = withParagraph(from, paragraph, 0);
-      const start = paragraph === first ? from.offset : 0;
-      const end = paragraph === last ? to.offset : this.paragraphLength(at);
+      let start = paragraph === first ? from.offset : 0;
+      let end = paragraph === last ? to.offset : this.paragraphLength(at);
       if (end <= start) continue;
+      const inline = this.inlineCell({ ...at, offset: start }, end - start);
+      if (inline) {
+        if (inline.containsControl) throw new Error("inline object formatting unsupported");
+        start = inline.textOffset; end = start + inline.textCount;
+      }
       const result = json(c?.nested
         ? this.doc.applyCharFormatInCellByPath!(from.section, c.parentParagraph, pathJson(c, paragraph), start, end, props)
         : c ? this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props)
@@ -633,6 +666,7 @@ export class RhwpText {
   charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
     const c = at.cell;
     try {
+      const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
       const value = json(c?.nested
         ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
         : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
@@ -653,6 +687,7 @@ export class RhwpText {
   charShape(at: DocPosition): { width: number; spacing: number } | null {
     const c = at.cell;
     try {
+      const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
       const value = json(c?.nested
         ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
         : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)

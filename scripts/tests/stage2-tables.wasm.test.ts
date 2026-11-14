@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // Focused Stage 2 implementation regression; product defaults, actual Release WASM.
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,8 +30,12 @@ const folder = join(root, "public/rhwp/generations", build.generation);
 const engine = createRequire(import.meta.url)(join(folder, "rhwp.js"));
 const wasm = engine.initSync({ module: readFileSync(join(folder, "rhwp_bg.wasm")) });
 const out = join(root, "target/stage2-focused"); mkdirSync(out, { recursive: true });
-type Doc = RhwpDocument & { createBlankDocument(): void; getTextFileText(): string };
+type Doc = RhwpDocument & { createBlankDocument(): void; getTextFileText(): string; getPageRenderTree(page: number): string; renderPageSvg(page: number): string };
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+// Generated solid 48×64 PNG/JPEG, large enough to occupy more than a text line.
+const CELL_PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC"), c => c.charCodeAt(0));
+const CELL_JPEG = Uint8Array.from(atob("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCABAADADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDi6KKK+5PnwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9k="), c => c.charCodeAt(0));
+const importedCellImage = (bytes: Uint8Array) => ({ data: btoa(String.fromCharCode(...bytes)), width: 48, height: 64 });
 function exported(d: RhwpDocument, format: "hwp" | "hwpx") {
   const e = format === "hwp" ? d.exportHwpWithReport() : d.exportHwpxWithReport();
   try { return { loss: e.contentLoss(), bytes: e.takeBytes() }; } finally { e.free(); }
@@ -143,7 +148,7 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     if (publishable) call.reply(ok({ session: info({ format, state: "ready", revision, dirty: false, sequence: ++sequence }), durable: true }));
     else call.reply(fail({ code: "UnsafeSave", preservation: raw as never }));
     await saving;
-    return { output, reopen, raw, publishable };
+    return { output, reopen, raw, publishable, contentLoss };
   };
   return { original, editor, doc, at, place, settle, run, save };
 }
@@ -167,6 +172,154 @@ function checkHwpx(original: Uint8Array, doc: Doc) {
 }
 
 describe("Stage 2 table paths", () => {
+  it.each(["hwpx", "hwp"] as const)("cell-inline picture Release command: %s ownership, layout, history and product save", async format => {
+    // HWP also crosses pages through an existing supported depth; HWPX is an ordinary cell with text.
+    const depth = format === "hwp" ? 16 : 0;
+    const c = await open(format, depth > 0, false, false, false, depth), { editor, doc, at, place, run, settle } = c;
+    const bytes = format === "hwp" ? CELL_JPEG : CELL_PNG;
+    const target = { ...at, offset: 3, cell: { ...at.cell!, ...(depth ? { nested: Array.from({ length: depth - 1 }, () => ({ control: 0, cell: 0, cellParagraph: 0 })) } : {}) } };
+    const path = pathJson(target.cell), text = new RhwpText(doc);
+    const owner = () => JSON.parse(doc.getCellPictureByPath!(0, at.paragraph, path, 0));
+    try {
+      place(target);
+      const originalText = doc.getTextFileText(), originalLength = text.paragraphLength(target), revision = editor.snapshot().revision;
+      const originalRootControls = JSON.parse(doc.getControls!()).filter((x: { list: number }) => x.list === 0);
+      expect(documentCommandState("insert.image", editor.snapshot()).available).toBe(true);
+      expect(await editor.executeImage(() => true, async () => importedCellImage(bytes))).toBe("inserted"); await settle();
+      expect(editor.caret).toEqual({ ...target, offset: 4 });
+      expect(editor.snapshot().revision).toBe(revision + 1);
+      expect(editor.hasUnpreservedChanges).toBe(true);
+      expect(text.paragraphLength(target)).toBe(originalLength + 1);
+      expect(doc.getTextFileText()).toBe(originalText);
+      const picture = owner();
+      expect(picture).toMatchObject({ ok: true, path: JSON.parse(path), position: 3, treatAsChar: true,
+        width: 3600, height: 4800, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+      expect(picture.instanceId).toBeGreaterThan(0);
+      expect(JSON.parse(doc.getControls!()).filter((x: { list: number }) => x.list === 0)).toEqual(originalRootControls);
+      const before = text.caret(target)!, after = text.caret(editor.caret)!;
+      expect(before).toBeTruthy(); expect(after).toBeTruthy();
+      expect(editor.pointAt(after.page, after.x + 1, after.y + after.height / 2, false)).toBe(true);
+      expect(editor.caret.cell).toEqual(target.cell);
+      const rendered = (expectedImages = 1) => {
+        type N = { type: string; text?: string; bbox: { x: number; y: number; w: number; h: number }; children?: N[] };
+        let images = 0; const renderedText: string[] = [];
+        for (let page = 0; page < doc.pageCount(); page++) {
+          const walk = (n: N, cells: N[]) => {
+            if (n.type === "Cell") cells = [...cells, n];
+            if (n.type === "TextRun" && n.text) renderedText.push(n.text);
+            if (n.type === "Image") {
+              images++; expect(cells).toHaveLength(depth || 1);
+              expect(n.bbox.w).toBeGreaterThan(40); expect(n.bbox.h).toBeGreaterThan(60);
+              for (const cell of cells) {
+                expect(n.bbox.y).toBeGreaterThanOrEqual(cell.bbox.y - 0.5);
+                expect(n.bbox.y + n.bbox.h).toBeLessThanOrEqual(cell.bbox.y + cell.bbox.h + 0.5);
+              }
+            }
+            for (const child of n.children ?? []) walk(child, cells);
+          };
+          walk(JSON.parse(doc.getPageRenderTree(page)), []);
+          const svg = doc.renderPageSvg(page);
+          expect(svg).toContain("<svg");
+          if (page === 0 || page === doc.pageCount() - 1) writeFileSync(join(out, `cell-inline-${format}-${page}.svg`), svg);
+        }
+        expect(images).toBe(expectedImages);
+        // An inline picture can split one word across TextRuns. Compare the complete rendered text stream.
+        if (depth) expect(renderedText.join("").replace(/\s+/g, " ").trim()).toBe(
+          Array.from({ length: depth - 1 }, (_, i) => `L${i + 1}`).join("") + DEEP_WORDS);
+      };
+      rendered();
+      if (depth) expect(doc.pageCount()).toBeGreaterThan(1);
+      await run("edit.undo"); expect(() => owner()).toThrow();
+      expect(doc.getTextFileText()).toBe(originalText); expect(text.paragraphLength(target)).toBe(originalLength);
+      await run("edit.redo"); expect(owner()).toEqual(picture); rendered();
+      // Logical caret slots must also type on each side without moving/loss of the picture.
+      place({ ...target, offset: 4 }); expect(editor.typeText("X")).toBe(true); await settle();
+      expect(owner().position).toBe(3); expect(text.text({ ...target, offset: 4 }, 1)).toBe("X");
+      await run("edit.undo"); expect(owner()).toEqual(picture);
+      place(target); expect(editor.typeText("Y")).toBe(true); await settle();
+      expect(owner().position).toBe(4); expect(text.text(target, 1)).toBe("Y");
+      await run("edit.undo"); expect(owner()).toEqual(picture);
+      // A second picture before the first preserves control order and all resource identities.
+      place({ ...target, offset: 1 });
+      expect(await editor.executeImage(() => true, async () => importedCellImage(bytes))).toBe("inserted"); await settle();
+      expect(owner().position).toBe(1);
+      expect(JSON.parse(doc.getCellPictureByPath!(0, at.paragraph, path, 1))).toMatchObject({ instanceId: picture.instanceId, position: 4, sha256: picture.sha256 });
+      await run("edit.undo"); expect(owner()).toEqual(picture);
+      let boundaryPicture: unknown = null;
+      if (depth) {
+        // Insert immediately before the existing first page break; the taller line must reflow as one owner.
+        let lo = 0, hi = text.paragraphLength(target);
+        while (lo < hi) { const mid = (lo + hi) >>> 1;
+          if (text.caret({ ...target, offset: mid })!.page === 0) lo = mid + 1; else hi = mid;
+        }
+        const boundary = Math.max(4, lo - 2);
+        place({ ...target, offset: boundary });
+        expect(await editor.executeImage(() => true, async () => importedCellImage(bytes))).toBe("inserted"); await settle();
+        boundaryPicture = JSON.parse(doc.getCellPictureByPath!(0, at.paragraph, path, 1));
+        expect(boundaryPicture).toMatchObject({ position: boundary, sha256: picture.sha256 });
+        rendered(2);
+      }
+      const saved = await c.save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      if (format === "hwp") {
+        // One authenticated current-product case for the existing native publication contract.
+        const evidence = join(out, "cell-inline-publication"), folder = join(evidence, "nested-cell-jpeg");
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(join(evidence, "cases.json"), JSON.stringify([{ id: "nested-cell-jpeg" }]));
+        writeFileSync(join(folder, "original.hwp"), c.original);
+        writeFileSync(join(folder, "edited.hwp"), saved.output);
+        writeFileSync(join(folder, "noop.hwp"), readFileSync(join(out, "noop.hwp")));
+        writeFileSync(join(folder, "noop-loss.json"), readFileSync(join(out, "noop-loss.json")));
+        writeFileSync(join(folder, "loss.json"), JSON.stringify(saved.contentLoss));
+        writeFileSync(join(folder, "render.svg"), readFileSync(join(out, "cell-inline-hwp-0.svg")));
+        writeFileSync(join(folder, "proof.json"), JSON.stringify({
+          originalSha256: createHash("sha256").update(c.original).digest("hex"),
+          editedSha256: createHash("sha256").update(saved.output).digest("hex"),
+          reopenEqual: Object.values(saved.reopen).every(Boolean), engineGeneration: build.generation,
+          section: 0, paragraph: at.paragraph, path: JSON.parse(path), pictures: [picture, boundaryPicture],
+        }));
+      }
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(JSON.parse(reopened.getCellPictureByPath!(0, at.paragraph, path, 0))).toEqual(picture);
+        expect(reopened.getTextFileText()).toBe(originalText);
+        if (boundaryPicture) expect(JSON.parse(reopened.getCellPictureByPath!(0, at.paragraph, path, 1))).toEqual(boundaryPicture);
+        expect(reopened.pageCount()).toBe(doc.pageCount());
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("cell-inline picture rejects invalid ownership/resources, rolls back false owner, and drops stale picker results", async () => {
+    const { editor, doc, at, place, settle } = await open();
+    try {
+      place({ ...at, offset: 2 });
+      const before = doc.getTextFileText(), controls = doc.getControls!(), revision = editor.snapshot().revision;
+      expect(() => doc.insertPictureInCellByPath!(0, at.paragraph, "[]", 2, CELL_PNG, 3600, 4800, 48, 64, "png", "")).toThrow();
+      expect(() => doc.insertPictureInCellByPath!(0, at.paragraph, pathJson(at.cell!), 999, CELL_PNG, 3600, 4800, 48, 64, "png", "")).toThrow();
+      expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG.slice(0, 40)))).toBe("failed");
+      const insert = doc.insertPictureInCellByPath!.bind(doc);
+      doc.insertPictureInCellByPath = (...args) => JSON.stringify({ ...JSON.parse(insert(...args)), path: [] });
+      expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG))).toBe("failed"); await settle();
+      expect(doc.getTextFileText()).toBe(before); expect(doc.getControls!()).toBe(controls);
+      expect(editor.snapshot().revision).toBe(revision);
+      expect(() => doc.getCellPictureByPath!(0, at.paragraph, pathJson(at.cell!), 0)).toThrow();
+      doc.insertPictureInCellByPath = insert;
+      let release!: (value: ReturnType<typeof importedCellImage>) => void;
+      const picking = editor.executeImage(() => true, () => new Promise(resolve => { release = resolve; }));
+      place(withCell(at, 1)); release(importedCellImage(CELL_PNG));
+      expect(await picking).toBe("stale"); expect(doc.getControls!()).toBe(controls);
+      // Existing body command remains independent of the new explicit cell API.
+      place({ section: 0, paragraph: 0, offset: 0 });
+      expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG))).toBe("inserted"); await settle();
+      expect(JSON.parse(doc.getControls!()).some((x: { list: number; ctrlId: string }) => x.list === 0 && x.ctrlId === "gso")).toBe(true);
+      // Other clients retain the legacy floating-cell API, distinct from product inline creation.
+      const legacy = JSON.parse(doc.insertPicture!(0, at.paragraph, 2, pathJson(at.cell!), CELL_PNG, 3600, 4800, 48, 64, "png", ""));
+      expect(legacy.ok).toBe(true);
+      expect(JSON.parse(doc.getPictureProperties!(0, at.paragraph, legacy.controlIdx)).treatAsChar).toBe(false);
+      expect(() => doc.getCellPictureByPath!(0, at.paragraph, pathJson(at.cell!), 0)).toThrow();
+    } finally { editor.dispose(); }
+  });
+
   it("product nested creation/structure/range merge/formatting/history and HWPX preservation", async () => {
     const c = await open(), { editor, doc, at, place, run, settle } = c;
     try {
