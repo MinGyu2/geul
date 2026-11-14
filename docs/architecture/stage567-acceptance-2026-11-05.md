@@ -1000,3 +1000,33 @@ Stage 2 잔여 구현 항목 하나(깊이 10 초과 기존 문서)를 구현하
 - 엔진 Clippy(`-p rhwp --lib --no-deps`, wasm32): 41개로 기존 기준과 같고, 변경 파일의 진단은 모두 손대지 않은 기존 줄이다. 엄격 Clippy는 여전히 FAIL로 둔다.
 - 엔진 단위 시험은 준비 소스에서 컴파일되지 않는다(샘플 누락·기존 구조체 필드 등 32개 오류, 변경 전후 동일). 갱신한 HWP5 깊이 시험은 실행하지 못했다(동작은 WASM 탐침과 위 HWPX 거부 시나리오로 확인).
 - 반복하지 않은 것: T009/T010/T012 전체, native IBus, DOCX/WordCraft, D4 벤치마크, Windows/macOS, 한컴/Word 상호 운용, 전체 WASM 시험.
+
+
+<a id="table-row-boundary-20261114"></a>
+### 2026-11-14 표 행 페이지 경계 수정 — COMPLETED / Release 집중 검증 PASS
+
+- 재현: 제품 생성 API로 만든 최소 1×1 HWPX 표(HWP는 같은 생성 모델의 편집/저장 대조), `TopAndBottom`, 기본 `pageBreak=None`, 한 셀에 `w0 … w599`(600단어). 기준 Release `03a37914…`에서 1쪽, 표 y=136.0/h=891.8/bottom=1027.8px, 본문 y=132.3/h=876.8/bottom=1009.1px. Native 진단은 effective/row=891.7600px, available/base=876.8267px, current=0, host spacing=3.7733px, 선언+host=20.8667px를 기록했다. 소스 600단어가 남아 있어도 마지막 글줄은 본문 밖이다. 깊이 4/500단어는 표 높이 943.3px, 하단 1079.3px. 깊이와 독립적인 결함이다.
+- 첫 잘못된 전이: `prepare_block_table_entry`의 None 호환 분기가 실제 저장 프레임 입증 없이 `body < measured <= body + bottom paper slack`이면 `place_table_with_text` 뒤 완료를 반환했다. 따라서 조금 큰 행은 스캐너를 건너뛰고, 훨씬 큰 행은 상한을 넘어 정상 분할 경로로 갔다. 기본 생성 표는 명시적 RowBreak가 아니며, RowBreak=2의 깊이 1 대조군은 이미 정상 분할된다. None/CellBreak의 새 쪽에 들어가는 원자 단위 이월 정책은 유지한다. 저장 내용/행 프레임이 실제 표 선언에 포함되고 미편집인 원본의 None 호환 프레임만 보존한다.
+- 직접 관련된 두 소비 경로도 수정한다. `nested_table_mixed_fragment_heights_uncached`의 scalar mixed fallback은 미소비 줄을 추가로 건너뛰어 깊이 4/1000단어에서 실제 표시가 976단어였다(원문·raw TextRun 집계로는 검출 불가). 저장 reset이 없고 내용이 선언 프레임을 초과한 단일 행·셀은 기존 canonical CellUnit → recursive RowCut으로 투영한다. `prepare_block_table_continuation`은 온전한 행의 실제 MeasuredTable 소유 높이를 예약하고, `scan_ordinary_row_step`은 그 높이로 강제 분할 여부를 판정하며 컷/출력의 실제 패딩 차이를 예산에서 예약한다. fragment budget의 2px whole-table drift 허용도 동일한 원본 프레임 근거를 요구한다. whole-fit과 확정 배치 프레임에는 기존 0.5px 기하 허용치를 적용해 같은 HWPUNIT 경계의 부동소수점 오차 때문에 불필요하게 쪽을 늘리지 않는다. 0.6px 초과 사례에서 내용 컷 889.9px와 출력 행 891.8px의 불일치를 검사한다.
+- 호출 경로: MeasuredTable/셀 유닛 → entry 통째 수용/이월 → prepare whole-row 예산 → ordinary row scanner의 start/end cut → 기존 continuation cursor/fragment emit → partial table paint의 동일 child source cut. 새 paginator, 확대 canvas, overflow 숨김, 텍스트 삭제, 무한 재시도는 추가하지 않는다. 저장 reset/rowspan/원자 개체는 기존 각 경로에 남는다. NestedHeightMemo/HeightMeasurer 캐시·세션·깊이 한도·파서 refusal·소스 경로·IME·T009 보호는 변경하지 않는다.
+- 유지 위치: 기존 19번째 `patches/rhwp/stage2-table-paths.patch`; upstream/WordCraft pin 변경 없음. `scripts/tests/stage2-tables.wasm.test.ts`의 생성 fixture를 재사용하여 원문, 순서·중복·누락, 본문 및 모든 셀/표 경계, 클립 안의 실제 표시 텍스트, 캐럿 소유, 제품 세션 revision/Undo/Redo, HWP/HWPX 저장과 실제 T009 검사기를 확인한다. 경계 sweep은 실제 출력 높이로 용지 본문을 산정한다. 클립 밖으로 완전히 이동한 이전 줄은 가시 내용으로 세지 않고, 부분 클리핑은 실패로 판정한다.
+- 검증 범위: 187/64문서 비교, 전체 T009/T010/T012, IBus, WordCraft/DOCX, D4, Windows/macOS·외부 한컴/Word 상호운용 캠페인은 이 수정으로 재실행하지 않는다. 합성 문서의 구조/기하/저장 증거이며 한컴 독립 PDF 일치나 native GUI 표시의 새 인증은 아니다. 다른 Stage 2 잔여 및 Stage 3–5 수용과 별개다.
+
+
+| 실제 본문/셀 클립 안의 완전한 표시 단어 | 수정 전 | 최종 Release |
+| --- | --- | --- |
+| 깊이 1, 600단어 | 1쪽: w0–w593(594개), w594–w599는 본문 밖 | 2쪽: w0–w579(580개) / w580–w599(20개) |
+| 깊이 4, 500단어 | 1쪽: w0–w466(467개), 나머지는 본문 밖 | 2쪽: w0–w418(419개) / w419–w499(81개) |
+| 깊이 4, 1000단어 | 3쪽: 419/456/101개, 총 976개(24개 미표시) | 3쪽 유지: 419/480/101개, 총 1000개 |
+
+- 조각 기하: 깊이 1은 y=132.3px에서 h=847.5/36.8px, 깊이 4/500단어의 외곽 표는 y=132.3px에서 h=864.1/156.6px. 모든 가시 글줄은 본문 및 조상 셀/표 안에 있고, L1/L2/L3도 원래 순서로 한 번씩 표시된다. 시작/끝 컷의 내용 연속성은 위 마지막/첫 단어 및 원문 순서 비교로 검사했다. 큰 행은 3쪽을 유지하며 빈 쪽·중복·누락 없이 끝난다.
+- 경계 sweep은 제품 paint layer의 0.001px 상자를 써서 완전 배치 점유 895.533px를 구하고 HWPUNIT(1/75px)으로 올림한다. 본문 약 896.133/895.533/894.933/875.533px에서 각각 1/1/2/2쪽, 모든 내용과 가시 기하 PASS. 처음 0.1px 요약 좌표로 만든 동일 높이는 실제보다 2 HWPUNIT 작았으므로, 입력 높이 계산을 고정밀 paint 상자로 바로잡았다. 비교를 완화하지 않았다. 별도 앞 문단(20줄) 뒤에서 새 쪽에는 들어가는 350단어 None 행은 원자 단위 이월한다. 같은 host 문단에 글을 넣는 탐침과 문단을 실제 앞에 넣는 API를 구별했다(`splitParagraph(…,0)`은 표를 앞에 남기므로 `insertParagraph(…,0)` 사용). 명시적 pageBreak=1/2의 쪽보다 큰 행도 기존 불가피 분할/행 분할 경로로 보존한다.
+- 실제 명령/결과:
+  - `PATH="$PWD/target/phase5-native-gui-ibus/20261111T172547+0900/environment/wasm-bindgen-cli/bin:$PATH" python3 scripts/build-rhwp-wasm.py`: Release 컴파일 PASS(6분28초). 첫 게시만 6세대 보관 한도로 거부됐고, 소비자 중단 확인 후 비선택 세대를 `target/stage2-focused/retained-generations/`에 이동 보존한 뒤 같은 명령의 캐시 재실행으로 PASS. 삭제·무결성 우회 없음.
+  - `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'row pagination boundary'`: **6 PASS / 18 필터 제외**. 위 세 문서, 4점 경계/중간 페이지 이월, HWP/HWPX 제품 편집(580→620단어), revision 증가·캐럿 쪽/셀 및 포인터 소유, Undo/Redo(1↔2쪽), 제품 저장/재열기·원문·1×1 구조를 확인했다. HWP는 실제 T009 검사기를 사용하며 서비스의 preview 재생성 대상인 `previewStale`만 허용한다. 재열기만으로 HWP 안전 게시를 판정하지 않는다.
+  - `npm run build`: **PASS**(TypeScript + Vite, 기존 큰 chunk 경고). `npm run lint`: **PASS**.
+  - `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/rhwpAssets.test.ts -t 'patched source identity'`: **1 PASS / 11 필터 제외**.
+  - `python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release`: **PASS**. 공개 Release 선택자/불변 세대/dist 제품 신원 및 JS/WASM 해시 일치, 패치 19개·현재 패치 해시 일치. `git diff --check` PASS. 최종 staged 검토에서 중첩 Table 상자 포함 및 None 행의 온전한 이월(0/350단어)을 명시적으로 강화한 뒤 같은 6개 시나리오와 `npx eslint scripts/tests/stage2-tables.wasm.test.ts`를 재실행해 PASS; 엔진 변경은 없어 Release 재빌드는 하지 않았다.
+- 최종 Release 세대: `882071ff593572efae60aa6dfe03db374f4dcce8d48e11627a2f3514020f98fc`; WASM SHA-256 `ecc48674b9360f98b764f82705e58bd061c9a4d1c5adbb20725259a7a9d074e6`; Stage 2 패치 SHA-256 `e08bc8ca8418d82c5cb125aa759b83ad60580c1fde281c4a656bc971d5f9f064`. 캐시 key/scope/한도는 그대로이며 canonical 조각 선택만 정확해졌다. frontend pagination 코드는 수정하지 않았다.
+- 증적(모두 ignored, 커밋 제외): `target/stage2-focused/row-final-release-build{,-retry}.log`, `row-final-tests.log`, `row-{before,after}-evidence.jsonl`, `before-1-600-0.png`, `after-{1-600,4-500}-{0,1}.{svg,png}`. 최종 WASM의 `renderPageSvg` → `rsvg-convert -w 600` 출력 4쪽과 기준 깊이1/600단어 1쪽 PNG를 직접 확인했다. 이는 SVG 출력 확인이며 브라우저/native GUI 상호작용 또는 독립 한컴 PDF 비교 PASS가 아니다. 기존 Rust strict Clippy/엔진 단위 시험의 과거 미해결 기록은 위에 보존했으며 이번에 재실행하지 않았다.
+- **COMPLETED**: 로컬 구현 commit `c2144ef09fb8142bff2f151aced25ddea16d5755` (`fix(rhwp): prevent table row clipping at page boundaries`). 시작 HEAD `b7aa7b53711bb847d3e10a699c0cc62efdce26d8`, branch `master`. RHWP `1a76570e833917d15817415a53c09ad61ab3203f`, WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` pin 유지. 생성 WASM/fixture/log/build/checkpoint는 커밋하지 않았다. 정상 pre-commit 민감정보/secret 검사 PASS, 회귀 훅은 대상 없음으로 skip. push 없음. 다른 Stage 2 구현 잔여 및 Stage 3–5 수용은 별도다.
