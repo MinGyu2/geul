@@ -1,7 +1,7 @@
 diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
 --- a/src/document_core/commands/char_shape_compact.rs
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -529,7 +529,6 @@
+@@ -529,7 +529,6 @@ impl DocumentCore {
          &self, section: usize, paragraph: usize, control: u32, cell: usize,
          cell_paragraph: usize, start: usize, end: usize,
      ) -> Result<String, HwpError> {
@@ -9,7 +9,7 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
          let fail = || HwpError::RenderError("unsupported formatting selection".into());
          let in_cell = control != u32::MAX;
          let para = if in_cell {
-@@ -537,6 +536,14 @@
+@@ -537,6 +536,14 @@ impl DocumentCore {
          } else {
              self.document.sections.get(section).and_then(|s| s.paragraphs.get(paragraph)).ok_or_else(fail)?
          };
@@ -24,7 +24,7 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
          if start > end || end > para.char_offsets.len() || end - start > 1_048_576
              || !para.field_ranges.is_empty() || !para.orphan_field_ends.is_empty()
              || !para.title_marks.is_empty() || !para.range_tags.is_empty()
-@@ -547,7 +554,7 @@
+@@ -547,7 +554,7 @@ impl DocumentCore {
              for _ in 0..delta / 8 {
                  let object = match &para.controls[ci] {
                      Control::SectionDef(_) | Control::ColumnDef(_) => false,
@@ -36,10 +36,11 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/commands/object_ops/table.rs
 --- a/src/document_core/commands/object_ops/table.rs
 +++ b/src/document_core/commands/object_ops/table.rs
-@@ -851,6 +851,17 @@
+@@ -850,6 +850,17 @@ impl DocumentCore {
+         treat_as_char: bool,
          col_widths_hu: Option<&[u32]>,
          row_heights_hu: Option<&[u32]>,
-     ) -> Result<String, HwpError> {
++    ) -> Result<String, HwpError> {
 +        self.create_table_with_path_native(section_idx, para_idx, char_offset, row_count,
 +            col_count, treat_as_char, col_widths_hu, row_heights_hu, &[])
 +    }
@@ -50,14 +51,13 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +        row_count: u16, col_count: u16, treat_as_char: bool,
 +        col_widths_hu: Option<&[u32]>, row_heights_hu: Option<&[u32]>,
 +        path: &[(usize, usize, usize)],
-+    ) -> Result<String, HwpError> {
+     ) -> Result<String, HwpError> {
          use crate::model::paragraph::{CharShapeRef, LineSeg};
          use crate::model::style::{
-             BorderFill, BorderLine, BorderLineType, CenterLine, DiagonalLine, Fill,
-@@ -886,6 +897,16 @@
+@@ -886,6 +897,16 @@ impl DocumentCore {
              );
          }
-
+ 
 +        let host = if path.is_empty() {
 +            &self.document.sections[section_idx].paragraphs[para_idx]
 +        } else {
@@ -69,9 +69,9 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +            return Err(HwpError::RenderError("table host ownership is not proven".into()));
 +        }
          // ── 인라인 TAC 표 생성 ──
-
+ 
          let instance_id = super::super::clone_identity::next_instance_id(&self.document)?;
-@@ -893,10 +914,18 @@
+@@ -893,10 +914,18 @@ impl DocumentCore {
          let pd = &self.document.sections[section_idx].section_def.page_def;
          let outer_margin: i16 = 283;
          let outer_margin_lr = (outer_margin * 2) as i32;
@@ -79,7 +79,7 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +        let page_content_width =
              (pd.width as i32 - pd.margin_left as i32 - pd.margin_right as i32 - outer_margin_lr)
                  .max(7200) as u32;
-
+ 
 +        let content_width = if path.is_empty() { page_content_width } else {
 +            let table = self.resolve_table_by_path(section_idx, para_idx, path)?;
 +            let cell = table.cells.get(path.last().unwrap().1)
@@ -91,17 +91,17 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
          // 열 폭 결정
          let col_ws: Vec<u32> = if let Some(widths) = col_widths_hu {
              if widths.len() == col_count as usize {
-@@ -976,7 +1005,8 @@
+@@ -976,7 +1005,8 @@ impl DocumentCore {
          };
-
+ 
          // create_table_native 와 동일 — 커서 offset 의 글자모양을 상속 기준으로 쓴다.
 -        let current_para = &self.document.sections[section_idx].paragraphs[para_idx];
 +        let current_para = if path.is_empty() { &self.document.sections[section_idx].paragraphs[para_idx] }
 +            else { self.resolve_paragraph_by_path(section_idx, para_idx, path)? };
          let default_char_shape_id: u32 = current_para.char_shape_id_at(char_offset).unwrap_or(0);
          let default_para_shape_id: u16 = current_para.para_shape_id;
-
-@@ -1060,6 +1090,10 @@
+ 
+@@ -1060,6 +1090,10 @@ impl DocumentCore {
              repeat_header: false,
              caption: None,
              common: crate::model::shape::CommonObjAttr {
@@ -112,7 +112,7 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
                  instance_id,
                  treat_as_char: true,
                  text_wrap: crate::model::shape::TextWrap::TopAndBottom,
-@@ -1082,10 +1116,20 @@
+@@ -1082,10 +1116,20 @@ impl DocumentCore {
              raw_table_record_extra: Vec::new(),
          };
          table.rebuild_grid();
@@ -125,19 +125,19 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +            table.common.margin.top = outer_margin;
 +            table.common.margin.bottom = outer_margin;
 +        }
-
+ 
          // ── 기존 문단에 인라인 삽입 ──
          self.document.sections[section_idx].raw_stream = None;
 -        let para = &mut self.document.sections[section_idx].paragraphs[para_idx];
 +        let para = if path.is_empty() { &mut self.document.sections[section_idx].paragraphs[para_idx] }
 +            else { self.get_cell_paragraph_mut_by_path(section_idx, para_idx, path)? };
-
+ 
          // controls에 표 추가
          let ctrl_idx = para.controls.len();
-@@ -1116,6 +1160,16 @@
+@@ -1116,6 +1160,16 @@ impl DocumentCore {
              }
          }
-
+ 
 +        // Retain the source run ownership after inserting the eight-unit slot.
 +        // The initial run must continue to cover position zero; later runs move
 +        // with their original text. The legacy body API retains its behavior.
@@ -150,10 +150,10 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +        }
          // char_count 갱신 (확장 제어문자 8 + 기존)
          para.char_count += 8;
-
-@@ -1130,6 +1184,11 @@
+ 
+@@ -1130,6 +1184,11 @@ impl DocumentCore {
          }
-
+ 
          // rebuild
 +        if !path.is_empty() {
 +            self.reflow_cell_paragraph_by_path(section_idx, para_idx, path, path.last().unwrap().2);
@@ -161,9 +161,9 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 +            self.mark_cell_control_dirty(section_idx, para_idx, path[0].0);
 +        }
          self.rebuild_section(section_idx);
-
+ 
          self.event_log.push(DocumentEvent::TableRowInserted {
-@@ -1139,7 +1198,8 @@
+@@ -1139,7 +1198,8 @@ impl DocumentCore {
          });
          // 표 바로 뒤의 논리적 오프셋 계산
          let logical_after = crate::document_core::helpers::text_to_logical_offset(
@@ -176,10 +176,10 @@ diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/
 diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
 --- a/src/document_core/commands/table_ops.rs
 +++ b/src/document_core/commands/table_ops.rs
-@@ -69,6 +69,41 @@
+@@ -69,6 +69,41 @@ impl DocumentCore {
          navigate_path_to_table(&mut section.paragraphs, path)
      }
-
+ 
 +    /// Path routing shares the existing table geometry implementation. The final
 +    /// entry identifies the table; its cell/paragraph selects no separate engine.
 +    pub fn edit_table_by_cell_path_native(&mut self, section: usize, paragraph: usize,
@@ -218,7 +218,7 @@ diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/command
      /// 표에 행을 삽입한다 (네이티브).
      pub fn insert_table_row_native(
          &mut self,
-@@ -2680,7 +2715,22 @@
+@@ -2680,7 +2715,22 @@ impl DocumentCore {
                  ))
              }
          };
@@ -236,12 +236,12 @@ diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/command
 +        let table = self.resolve_table_by_path(section_idx, parent_para_idx, path)?;
 +        self.table_properties_json(table)
 +    }
-
+ 
 +    fn table_properties_json(&self, table: &crate::model::table::Table) -> Result<String, HwpError> {
          let pb = match table.page_break {
              crate::model::table::TablePageBreak::None => 0,
              crate::model::table::TablePageBreak::CellBreak => 1,
-@@ -3574,35 +3624,7 @@
+@@ -3574,35 +3624,7 @@ impl DocumentCore {
              Some(Control::Table(t)) => t,
              _ => return Err(HwpError::RenderError("표 컨트롤이 아님".into())),
          };
@@ -275,17 +275,13 @@ diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/command
 -        let result = crate::document_core::table_calc::evaluate_formula(formula, &ctx, &get_cell)
 -            .map_err(|e| HwpError::RenderError(format!("계산식 오류: {}", e)))?;
 +        let (result, target_cell_idx) = Self::evaluate_formula_in_table(table, target_row, target_col, formula)?;
-
+ 
          // 결과를 셀에 기록
          if write_result {
-@@ -3641,6 +3663,64 @@
-         Ok(format!(
-             "{{\"ok\":true,\"result\":{},\"formula\":{}}}",
-             result,
-+            json_escape(formula)
-+        ))
-+    }
-+
+@@ -3645,6 +3667,64 @@ impl DocumentCore {
+         ))
+     }
+ 
 +    /// [geul] Evaluate a formula against one table's own logical grid. Shared by
 +    /// body-level and path-owned nested tables; never writes.
 +    pub(crate) fn evaluate_formula_in_table(
@@ -340,14 +336,18 @@ diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/command
 +        Ok(format!(
 +            "{{\"ok\":true,\"result\":{},\"formula\":{}}}",
 +            result,
-             json_escape(formula)
-         ))
-     }
++            json_escape(formula)
++        ))
++    }
++
+     /// 표의 칸 크기를 한 걸음 바꾼다 — 웹한글컨트롤 `Run("TableResize*")` 계열 열둘.
+     ///
+     /// 한글 저장본의 앞뒤 두 벌을 견줘 실측했다(`probes/pT-*.json`, 계획서 §4.21). 어느 API 도
 diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries/cursor_nav.rs
 --- a/src/document_core/queries/cursor_nav.rs
 +++ b/src/document_core/queries/cursor_nav.rs
-@@ -598,44 +598,16 @@
-
+@@ -598,44 +598,16 @@ impl DocumentCore {
+ 
      /// JSON 문자열에서 CellPathEntry 배열을 파싱한다.
      pub(crate) fn parse_cell_path(path_json: &str) -> Result<Vec<(usize, usize, usize)>, HwpError> {
 -        // 경량 JSON 파서: [{"controlIndex":N,"cellIndex":N,"cellParaIndex":N}, ...]
@@ -399,12 +399,77 @@ diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries
 +        if entries.len() > 64 { return Err(fail()); }
 +        Ok(entries.into_iter().map(|e| (e.control_index, e.cell_index, e.cell_para_index)).collect())
      }
-
+ 
      /// 경로 기반으로 표를 탐색한다.
 diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
 --- a/src/document_core/queries/field_query.rs
 +++ b/src/document_core/queries/field_query.rs
-@@ -2911,6 +2911,34 @@
+@@ -339,8 +339,21 @@ impl DocumentCore {
+                 let location_json = field_location_json(&fi.location);
+                 let (start_char_idx, end_char_idx) = field_range_bounds(self, fi)
+                     .unwrap_or((0, fi.value.chars().count()));
++                let para = para_at_location(self, &fi.location);
++                let range = para.and_then(|p| p.field_ranges.get(fi.field_range_index));
++                let linkage = range.and_then(|r| {
++                    let p = para?;
++                    match p.controls.get(r.control_idx)? {
++                        Control::Field(field) if field.field_id == fi.field.field_id
++                            && p.field_ranges.iter().filter(|r2| r2.control_idx == r.control_idx).count() == 1 =>
++                            Some((r.control_idx, field_content_start(p, fi.field_range_index).checked_sub(8)?)),
++                        _ => None,
++                    }
++                });
++                let (control_index, control_pos) = linkage.map(|(i, p)| (i.to_string(), p.to_string()))
++                    .unwrap_or_else(|| ("null".into(), "null".into()));
+                 format!(
+-                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{}}}",
++                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{},\"controlIndex\":{},\"controlPos\":{}}}",
+                     fi.field.field_id,
+                     fi.field.field_type_str(),
+                     // 셀 구역 이름(가상 필드)과 문단 안 누름틀은 다른 것이다. `fieldType` 은 둘 다
+@@ -359,6 +372,8 @@ impl DocumentCore {
+                     fi.para_in_list,
+                     fi.start_pos,
+                     fi.end_pos,
++                    control_index,
++                    control_pos,
+                 )
+             })
+             .collect();
+@@ -2859,31 +2874,7 @@ pub(crate) fn json_escape(s: &str) -> String {
+ 
+ /// [geul] 한컴 계산식 필드의 결과 서식 `%g`(C printf: 유효 숫자 6, 뒤 0 제거, 지수 -4 미만·6 이상이면 지수 표기).
+ pub(crate) fn format_formula_g(value: f64) -> Option<String> {
+-    if !value.is_finite() {
+-        return None;
+-    }
+-    if value == 0.0 {
+-        return Some("0".into());
+-    }
+-    // 유효 숫자 6자리로 먼저 반올림한 지수로 표기를 고른다(999999.5 → 1e+06, printf 와 같음).
+-    let sci = format!("{:.5e}", value);
+-    let (mantissa, e) = sci.split_once('e')?;
+-    let e: i32 = e.parse().ok()?;
+-    if e < -4 || e >= 6 {
+-        let m = mantissa.trim_end_matches('0').trim_end_matches('.');
+-        let sign = if e < 0 { '-' } else { '+' };
+-        return Some(format!("{m}e{sign}{:02}", e.abs()));
+-    }
+-    let decimals = (5 - e).max(0) as usize;
+-    let fixed = format!("{:.*}", decimals, value);
+-    Some(if fixed.contains('.') {
+-        fixed
+-            .trim_end_matches('0')
+-            .trim_end_matches('.')
+-            .to_string()
+-    } else {
+-        fixed
+-    })
++    super::super::table_calc::format_formula_g(value)
+ }
+ 
+ impl DocumentCore {
+@@ -2911,6 +2902,34 @@ impl DocumentCore {
              target_col,
              formula,
              true,
@@ -438,20 +503,20 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
 +            Some(path),
          )
      }
-
-@@ -2931,9 +2959,11 @@
+ 
+@@ -2931,9 +2950,11 @@ impl DocumentCore {
              target_col,
              formula,
              false,
 +            None,
          )
      }
-
+ 
 +    #[allow(clippy::too_many_arguments)]
      fn table_formula_field_impl(
          &mut self,
          section_idx: usize,
-@@ -2943,6 +2973,7 @@
+@@ -2943,6 +2964,7 @@ impl DocumentCore {
          target_col: usize,
          formula: &str,
          apply: bool,
@@ -459,7 +524,7 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
      ) -> Result<String, HwpError> {
          if formula.len() > 256 {
              return Err(HwpError::InvalidField("계산식 길이 초과".into()));
-@@ -2956,15 +2987,25 @@
+@@ -2956,15 +2978,25 @@ impl DocumentCore {
                  "계산식은 '='로 시작하고 ?? ; 제어 문자를 포함할 수 없음".into(),
              ));
          }
@@ -494,9 +559,9 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
          let result = evaluated
              .split("\"result\":")
              .nth(1)
-@@ -2977,7 +3018,13 @@
+@@ -2977,7 +3009,13 @@ impl DocumentCore {
          let field_id = self.next_click_here_field_id();
-
+ 
          // 검증과 변경은 문단 사본에서 한다(실패하면 문서는 그대로).
 -        let cell_idx = {
 +        let cell_idx = if let Some(path) = path {
@@ -509,7 +574,7 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
              let section = self
                  .document
                  .sections
-@@ -2999,9 +3046,21 @@
+@@ -2999,9 +3037,21 @@ impl DocumentCore {
          // Only paragraph zero is replaced. All later paragraphs (including their
          // field/control ownership and raw serialization data) stay in the cell.
          // Their contents are not formula operands: get_cell reads paragraph zero.
@@ -534,7 +599,7 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
          let text_len = para.text.chars().count();
          let existing = match (para.controls.as_slice(), para.field_ranges.as_slice()) {
              ([], []) => None,
-@@ -3102,11 +3161,17 @@
+@@ -3102,11 +3152,17 @@ impl DocumentCore {
          if !apply || unchanged {
              return Ok(response);
          }
@@ -557,10 +622,264 @@ diff --git a/src/document_core/queries/field_query.rs b/src/document_core/querie
          if let Some(section) = self.document.sections.get_mut(section_idx) {
              section.raw_stream = None;
          }
+diff --git a/src/document_core/queries/hwpctrl_sets.rs b/src/document_core/queries/hwpctrl_sets.rs
+--- a/src/document_core/queries/hwpctrl_sets.rs
++++ b/src/document_core/queries/hwpctrl_sets.rs
+@@ -187,7 +187,14 @@ fn collect_controls(
+         // `stream_pos` 로는 못 구한다 — 자리표 글자를 남기는 문단과 안 남기는 문단이 섞여
+         // 있어 그 함수 하나로 갈리지 않는다. 여기서는 **앞선 것들만** 세면 된다:
+         // 앞의 맨 글자 수 + 8 × 앞의 컨트롤 수.
+-        let pos = if let Some(rebuilt) = &rebuilt {
++        let field_anchor = if matches!(ctrl, Control::Field(_)) {
++            let ranges: Vec<_> = para.field_ranges.iter().enumerate().filter(|(_, r)| r.control_idx == ci).collect();
++            match ranges.as_slice() {
++                [(i, _)] => super::field_query::field_content_start(para, *i).checked_sub(8),
++                _ => None,
++            }
++        } else { None };
++        let pos = if let Some(anchor) = field_anchor { anchor } else if let Some(rebuilt) = &rebuilt {
+             rebuilt.get(ci).copied().unwrap_or(0)
+         } else {
+             control_positions
+diff --git a/src/document_core/table_calc/mod.rs b/src/document_core/table_calc/mod.rs
+--- a/src/document_core/table_calc/mod.rs
++++ b/src/document_core/table_calc/mod.rs
+@@ -14,5 +14,5 @@ mod evaluator;
+ mod parser;
+ mod tokenizer;
+ 
+-pub use evaluator::{evaluate_formula, TableContext};
++pub use evaluator::{evaluate_formula, format_formula_g, TableContext};
+ pub use parser::FormulaNode;
+diff --git a/src/parser/body_text.rs b/src/parser/body_text.rs
+--- a/src/parser/body_text.rs
++++ b/src/parser/body_text.rs
+@@ -56,6 +56,9 @@ pub enum BodyTextError {
+     ParseError(String),
+     /// An owned drawing text area is incomplete; never replace its section with an empty one.
+     DrawingTextStructure(String),
++    /// [geul] Table/cell nesting exceeds the parser envelope; the document is refused instead of
++    /// silently dropping the over-deep subtree or replacing the section with an empty one.
++    NestingLimit(String),
+ }
+ 
+ impl std::fmt::Display for BodyTextError {
+@@ -66,6 +69,7 @@ impl std::fmt::Display for BodyTextError {
+                 write!(f, "그리기 내부 영역 구조 오류: {}", e)
+             }
+             BodyTextError::ParseError(e) => write!(f, "BodyText 파싱 오류: {}", e),
++            BodyTextError::NestingLimit(e) => write!(f, "BodyText 중첩 한도 초과: {}", e),
+         }
+     }
+ }
+@@ -78,6 +82,7 @@ impl std::error::Error for BodyTextError {}
+ pub fn parse_body_text_section(data: &[u8]) -> Result<Section, BodyTextError> {
+     let records = Record::read_all(data).map_err(|e| BodyTextError::RecordError(e.to_string()))?;
+     drawing_text_structure::validate(&records)?;
++    HWP5_SECTION_DEPTH_EXCEEDED.with(|e| e.set(false));
+ 
+     let mut section = Section::default();
+     let mut idx = 0;
+@@ -109,6 +114,12 @@ pub fn parse_body_text_section(data: &[u8]) -> Result<Section, BodyTextError> {
+         }
+     }
+ 
++    if HWP5_SECTION_DEPTH_EXCEEDED.with(|e| e.replace(false)) {
++        return Err(BodyTextError::NestingLimit(format!(
++            "표·셀 중첩이 {MAX_HWP5_SECTION_DEPTH} 단계 문단 상한을 넘었습니다"
++        )));
++    }
++
+     link_orphan_field_ends(&mut section.paragraphs);
+ 
+     // 확장 바탕쪽 파싱: 마지막 문단 이후의 LIST_HEADER (level=1)
+@@ -238,6 +249,9 @@ const UNPAIRED_SURROGATE_CHAR: char = '\u{25A1}';
+ 
+ thread_local! {
+     static HWP5_SECTION_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
++    /// [geul] 이 구역을 파싱하는 동안 깊이 가드가 한 번이라도 거부했는가. 하위 트리 절단은
++    /// `parse_paragraph_list` 의 `if let Ok(..)` 에 가려지므로 구역 끝에서 이 표지로 거부한다.
++    static HWP5_SECTION_DEPTH_EXCEEDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+ }
+ 
+ /// `parse_paragraph` 진입 시 재귀 깊이를 +1 하고 이탈(Drop, 오류 전파·조기 반환 포함) 시
+@@ -248,7 +262,8 @@ impl SectionDepthGuard {
+     fn enter() -> Result<SectionDepthGuard, BodyTextError> {
+         HWP5_SECTION_DEPTH.with(|d| {
+             if d.get() >= MAX_HWP5_SECTION_DEPTH {
+-                return Err(BodyTextError::ParseError(format!(
++                HWP5_SECTION_DEPTH_EXCEEDED.with(|e| e.set(true));
++                return Err(BodyTextError::NestingLimit(format!(
+                     "문단 중첩이 {MAX_HWP5_SECTION_DEPTH} 단계를 초과했습니다(표·셀 상호재귀 상한)"
+                 )));
+             }
+diff --git a/src/parser/body_text/tests.rs b/src/parser/body_text/tests.rs
+--- a/src/parser/body_text/tests.rs
++++ b/src/parser/body_text/tests.rs
+@@ -1498,29 +1498,32 @@ fn max_table_nesting(paras: &[crate::model::paragraph::Paragraph]) -> usize {
+ 
+ #[test]
+ fn nested_table_recursion_is_depth_capped() {
+-    // 상한(64)을 크게 넘는 표 중첩을 파싱해도 크래시 없이 완주하고, 결과 트리의 표 중첩
+-    // 깊이가 상한 이내로 절단돼야 한다. 가드가 없으면 이 입력은 341겹 근처에서 스택을
+-    // 고갈시켜 SIGSEGV 를 내거나(비결정적) 입력 깊이 그대로 내려간다. 넉넉한 스택 전용
+-    // 스레드에서 경계를 결정론적으로 시험한다(HWPX #4759 형제 테스트와 같은 방식).
+-    let input_depth = MAX_HWP5_SECTION_DEPTH + 40;
+-    let nesting = std::thread::Builder::new()
+-        .stack_size(64 * 1024 * 1024)
+-        .spawn(move || {
+-            let stream = build_nested_table_stream(input_depth as u16);
+-            let section = parse_body_text_section(&stream).expect("파싱은 성공(하위 트리만 절단)");
+-            max_table_nesting(&section.paragraphs)
+-        })
+-        .expect("파서 스레드 생성 실패")
+-        .join()
+-        .expect("파서 스레드 패닉");
+-
++    // 상한(64)을 크게 넘는 표 중첩을 파싱해도 크래시 없이 끝나야 한다. 가드가 없으면 이 입력은
++    // 341겹 근처에서 스택을 고갈시켜 SIGSEGV 를 내거나(비결정적) 입력 깊이 그대로 내려간다.
++    // [geul] 상한을 넘은 하위 트리를 조용히 절단하면 내용이 사라진 문서가 열리므로, 구역 전체를
++    // `NestingLimit` 로 거부한다. 상한 바로 안쪽(표 63겹 = 문단 64단계)은 깊이 그대로 보존한다.
++    let run = |depth: u16| {
++        std::thread::Builder::new()
++            .stack_size(64 * 1024 * 1024)
++            .spawn(move || {
++                parse_body_text_section(&build_nested_table_stream(depth))
++                    .map(|s| max_table_nesting(&s.paragraphs))
++            })
++            .expect("파서 스레드 생성 실패")
++            .join()
++            .expect("파서 스레드 패닉")
++    };
+     assert!(
+-        nesting <= MAX_HWP5_SECTION_DEPTH as usize,
+-        "표 중첩이 상한을 넘겨 절단되지 않았다 — 상호재귀 깊이 가드 회귀 (nesting={nesting})"
++        matches!(
++            run((MAX_HWP5_SECTION_DEPTH + 40) as u16),
++            Err(BodyTextError::NestingLimit(_))
++        ),
++        "상한 초과 표 중첩이 거부되지 않았다 — 상호재귀 깊이 가드 회귀"
+     );
+-    assert!(
+-        nesting >= 8,
+-        "가드가 얕은 깊이에서 과잉 차단했다 (nesting={nesting})"
++    let inside = MAX_HWP5_SECTION_DEPTH as u16 - 1;
++    assert_eq!(
++        run(inside).expect("상한 안쪽 중첩은 파싱돼야 한다"),
++        inside as usize
+     );
+ }
+ 
+diff --git a/src/parser/hwpx/mod.rs b/src/parser/hwpx/mod.rs
+--- a/src/parser/hwpx/mod.rs
++++ b/src/parser/hwpx/mod.rs
+@@ -163,6 +163,8 @@ pub enum HwpxError {
+     /// Invalid/ambiguous secPr tab provenance must not become a default section.
+     SecPrTabStop(String),
+     TextTopology(String),
++    /// [geul] Table/cell nesting exceeds the parser envelope; refuse instead of an empty section.
++    NestingLimit(String),
+     /// 필수 파일 누락
+     MissingFile(String),
+     /// 데이터 변환 오류
+@@ -201,6 +203,7 @@ impl std::fmt::Display for HwpxError {
+             HwpxError::DrawingTextStructure(e) => write!(f, "그리기 내부 영역 구조 오류: {}", e),
+             HwpxError::SecPrTabStop(e) => write!(f, "{e}"),
+             HwpxError::TextTopology(e) => write!(f, "HWPX empty-text provenance: {e}"),
++            HwpxError::NestingLimit(e) => write!(f, "HWPX nesting limit: {e}"),
+             HwpxError::MissingFile(e) => write!(f, "필수 파일 누락: {}", e),
+             HwpxError::ConversionError(e) => write!(f, "변환 오류: {}", e),
+             HwpxError::Encrypted(e) => write!(f, "암호화된 문서: {}", e),
+@@ -359,7 +362,8 @@ fn attach_hwpx_master_page(
+             Err(
+                 e @ (HwpxError::DrawingTextStructure(_)
+                 | HwpxError::SecPrTabStop(_)
+-                | HwpxError::TextTopology(_)),
++                | HwpxError::TextTopology(_)
++                | HwpxError::NestingLimit(_)),
+             ) => Err(e),
+             Err(e) => {
+                 eprintln!("경고: {} 파싱 실패: {}", master_page_href, e);
+@@ -598,7 +602,8 @@ pub fn parse_hwpx(data: &[u8]) -> Result<Document, HwpxError> {
+             Err(
+                 e @ (HwpxError::DrawingTextStructure(_)
+                 | HwpxError::SecPrTabStop(_)
+-                | HwpxError::TextTopology(_)),
++                | HwpxError::TextTopology(_)
++                | HwpxError::NestingLimit(_)),
+             ) => return Err(e),
+             Err(e) => {
+                 eprintln!("경고: {} 파싱 실패: {}", section_href, e);
+diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -54,6 +54,7 @@ pub fn parse_hwpx_section(xml: &str) -> Result<Section, HwpxError> {
+     // 구역 없음)이나 다음 구역에 값이 새지 않게 한다.
+     let sized = section_xml_has_sized_lineseg(xml);
+     let _lineseg_scope = SectionLinesegScope::enter(sized);
++    HWPX_SECTION_DEPTH_EXCEEDED.with(|e| e.set(false));
+ 
+     loop {
+         match reader.read_event_into(&mut buf) {
+@@ -79,6 +80,12 @@ pub fn parse_hwpx_section(xml: &str) -> Result<Section, HwpxError> {
+         buf.clear();
+     }
+ 
++    if HWPX_SECTION_DEPTH_EXCEEDED.with(|e| e.replace(false)) {
++        return Err(HwpxError::NestingLimit(format!(
++            "section nesting exceeds {} levels",
++            MAX_HWPX_SECTION_DEPTH
++        )));
++    }
+     link_orphan_field_ends_recursive(&mut section.paragraphs);
+ 
+     Ok(section)
+@@ -550,6 +557,8 @@ const MAX_HWPX_SECTION_DEPTH: u32 = 16;
+ thread_local! {
+     // 완전 경로 — 이 모듈의 `Cell` 은 이미 `crate::model::table::Cell`(표 셀)이다.
+     static HWPX_SECTION_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
++    /// [geul] 이 구역 파싱 중 깊이 가드가 거부했는가 — 중간 호출자가 오류를 삼켜도 구역 끝에서 거부한다.
++    static HWPX_SECTION_DEPTH_EXCEEDED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+     /// [#4898] 이 구역의 lineseg 가 **배치 권위를 갖는가** — 0 아닌 높이가 하나라도 있으면 참.
+     ///
+     /// #2070 의 0높이 정규화를 문단이 아니라 **구역** 범위로 판단하기 위한 신호다.
+@@ -594,7 +603,8 @@ impl SectionDepthGuard {
+     fn enter() -> Result<SectionDepthGuard, HwpxError> {
+         HWPX_SECTION_DEPTH.with(|d| {
+             if d.get() >= MAX_HWPX_SECTION_DEPTH {
+-                return Err(HwpxError::XmlError(format!(
++                HWPX_SECTION_DEPTH_EXCEEDED.with(|e| e.set(true));
++                return Err(HwpxError::NestingLimit(format!(
+                     "section nesting exceeds {} levels",
+                     MAX_HWPX_SECTION_DEPTH
+                 )));
+diff --git a/src/parser/mod.rs b/src/parser/mod.rs
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -879,7 +879,8 @@ fn parse_sections_strict(
+                 section.raw_stream = Some(section_data);
+                 sections.push(section);
+             }
+-            Err(e @ body_text::BodyTextError::DrawingTextStructure(_)) => {
++            Err(e @ (body_text::BodyTextError::DrawingTextStructure(_)
++                | body_text::BodyTextError::NestingLimit(_))) => {
+                 return Err(ParseError::BodyTextError(e));
+             }
+             Err(e) => {
+@@ -997,7 +998,8 @@ fn parse_hwp_with_lenient(
+                 section.raw_stream = Some(section_data);
+                 sections.push(section);
+             }
+-            Err(e @ body_text::BodyTextError::DrawingTextStructure(_)) => {
++            Err(e @ (body_text::BodyTextError::DrawingTextStructure(_)
++                | body_text::BodyTextError::NestingLimit(_))) => {
+                 return Err(ParseError::BodyTextError(e));
+             }
+             Err(e) => {
 diff --git a/src/renderer/height_measurer.rs b/src/renderer/height_measurer.rs
 --- a/src/renderer/height_measurer.rs
 +++ b/src/renderer/height_measurer.rs
-@@ -1561,7 +1561,14 @@
+@@ -1561,7 +1561,14 @@ pub struct HeightMeasurer {
      /// Measurement-session owner for the same derived probe used by layout.
      /// A new measurer starts a new source/style revision scope.
      single_line_overflow_cache: SingleLineOverflowCache,
@@ -572,21 +891,40 @@ diff --git a/src/renderer/height_measurer.rs b/src/renderer/height_measurer.rs
 +    nested_table_cache: std::cell::RefCell<std::collections::HashMap<(usize, usize, usize, usize, usize, u64), MeasuredTable>>,
  }
 +const NESTED_TABLE_CACHE_ENTRIES: usize = 4096;
-
+ 
  /// [#6299] 이 저장 seg 가 **앞 줄의 가로 조각**인가 — 같은 물리 줄의 오른쪽 조각.
  ///
-@@ -1661,6 +1668,7 @@
+@@ -1661,6 +1668,7 @@ impl HeightMeasurer {
              ),
              float_carve_evidence: Vec::new(),
              single_line_overflow_cache: SingleLineOverflowCache::default(),
 +            nested_table_cache: Default::default(),
          }
      }
-
-@@ -2770,6 +2778,37 @@
+ 
+@@ -2494,8 +2502,15 @@ impl HeightMeasurer {
+         self.measure_table_impl(table, para_index, control_index, styles, 0, 1.0)
+     }
+ 
+-    /// 재귀적 높이 제한
+-    const MAX_NESTED_DEPTH: usize = 10;
++    /// 재귀적 높이 제한.
++    ///
++    /// [geul] 종전 10 은 파서가 받아들이는 표 중첩(HWP5 문단 상호재귀 64단계, 표 경로
++    /// 64단계)보다 작아, 11단계 이상의 표가 높이 0 으로 측정돼 내용이 잘리고 쪽 나눔이
++    /// 틀렸다. 측정기는 모델이 담을 수 있는 중첩 전체를 실제 내용으로 측정해야 하므로
++    /// 상한을 파서의 구조 상한과 같게 둔다(모델에 그보다 깊은 표는 생기지 않는다).
++    /// 반복 측정은 측정 세션 캐시(`nested_table_cache`, 4096 항목)가 막고, 63단계 WASM
++    /// 스택 사용량은 1 MiB 스택의 절반 이하로 측정됐다.
++    const MAX_NESTED_DEPTH: usize = crate::parser::body_text::MAX_HWP5_SECTION_DEPTH as usize;
+ 
+     /// 셀 내 중첩 표들의 총 높이를 계산한다.
+     pub fn cell_controls_height(
+@@ -2769,6 +2784,37 @@ impl HeightMeasurer {
+         // 확장은 PDF 줄바꿈·조각 높이를 바꾸므로 RenderNormalizationOverlay가
          // 1.0을 반환한다.
          width_scale: f64,
-     ) -> MeasuredTable {
++    ) -> MeasuredTable {
 +        if depth == 0 {
 +            return self.measure_table_uncached(table, para_index, control_index, styles, depth, width_scale);
 +        }
@@ -617,14 +955,44 @@ diff --git a/src/renderer/height_measurer.rs b/src/renderer/height_measurer.rs
 +        styles: &ResolvedStyleSet,
 +        depth: usize,
 +        width_scale: f64,
-+    ) -> MeasuredTable {
+     ) -> MeasuredTable {
          let width_scale =
              width_scale.max(self.render_normalization.nested_table_width_scale(table));
-         if depth >= Self::MAX_NESTED_DEPTH {
+diff --git a/src/renderer/layout.rs b/src/renderer/layout.rs
+--- a/src/renderer/layout.rs
++++ b/src/renderer/layout.rs
+@@ -3661,6 +3661,10 @@ pub struct LayoutEngine {
+     /// cell width. This lives for the layout session and is cleared at the same
+     /// source/style invalidation boundary as the other pointer-keyed caches.
+     single_line_overflow_cache: super::composer::SingleLineOverflowCache,
++    /// [geul] 중첩 표 높이 메모. 가장 바깥 `calc_nested_table_height` 호출 동안에만 존재하고
++    /// 그 호출이 끝나면 버린다(문서가 `&` 로 빌려진 구간이라 포인터 키가 안전하다). 한 단계
++    /// 안에서 같은 자식 표를 여러 경로로 다시 재던 일이 깊이에 지수적이었다.
++    nested_table_height_memo: std::cell::RefCell<Option<table_layout::NestedHeightMemo>>,
+     /// Issue #2214 test-only: cache miss가 실제 table-wide scan으로 이어진 횟수.
+     #[cfg(test)]
+     table_nested_text_flag_scan_count: std::cell::Cell<usize>,
+@@ -3781,6 +3785,7 @@ impl LayoutEngine {
+             table_nested_text_flag_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+             cursor_probe_block_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+             single_line_overflow_cache: Default::default(),
++            nested_table_height_memo: std::cell::RefCell::new(None),
+             #[cfg(test)]
+             table_nested_text_flag_scan_count: std::cell::Cell::new(0),
+         }
 diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_layout.rs
 --- a/src/renderer/layout/table_layout.rs
 +++ b/src/renderer/layout/table_layout.rs
-@@ -2743,17 +2743,18 @@
+@@ -2655,6 +2655,8 @@ impl LayoutEngine {
+         resolved_table_origin: Option<(Option<f64>, f64)>,
+         host_char_border_fill_id: TableCharBorder,
+     ) -> f64 {
++        // [geul] 이 표(와 중첩 표) 조판 동안 측정 메모를 공유한다 — `NestedHeightMemo`.
++        let _memo = self.open_nested_memo_scope();
+         self.layout_table_with_wrapper_margin(
+             tree,
+             col_node,
+@@ -2743,17 +2745,18 @@ impl LayoutEngine {
                      .chars()
                      .any(|ch| !ch.is_whitespace() && ch != '\r' && ch != '\n');
                  if !has_visible_text {
@@ -647,10 +1015,10 @@ diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_lay
                              !single_table_wrapper_has_vertical_alignment_space(table, nested)
                          })
                      {
-@@ -2925,6 +2926,23 @@
+@@ -2925,6 +2928,23 @@ impl LayoutEngine {
                          // 글자처럼 상자는 x 를 줄 배치가 준 inline_x_override 로 받으므로 그 값도 옮긴다.
                          let inner_inline_x = inline_x_override.map(|x| x + pad_l + om_l);
-
+ 
 +                        // Keep every transparent wrapper in the ownership path,
 +                        // even when it contributes no separate render box.
 +                        let mut source_context = enclosing_cell_ctx.clone().or_else(|| table_meta.map(|(pi, ci)| CellContext {
@@ -671,7 +1039,7 @@ diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_lay
                          let y_end = self.layout_table_with_wrapper_margin(
                              tree,
                              col_node,
-@@ -2937,9 +2955,9 @@
+@@ -2937,9 +2957,9 @@ impl LayoutEngine {
                              bin_data_content,
                              None,
                              depth,
@@ -683,13 +1051,148 @@ diff --git a/src/renderer/layout/table_layout.rs b/src/renderer/layout/table_lay
                              host_margin_left,
                              host_margin_right,
                              inner_inline_x,
+@@ -9309,9 +9329,60 @@ impl LayoutEngine {
+         table: &crate::model::table::Table,
+         styles: &ResolvedStyleSet,
+     ) -> f64 {
+-        self.nested_table_body_height(table, styles)
++        // [geul] 측정 범위 메모 — `NestedHeightMemo` 참고.
++        let key = self.nested_memo_key(table, styles);
++        let _scope = self.open_nested_memo_scope();
++        if let Some(h) = self
++            .nested_table_height_memo
++            .borrow()
++            .as_ref()
++            .and_then(|memo| memo.heights.get(&key).copied())
++            .and_then(|(profile, h)| (profile == self.profile.get()).then_some(h))
++        {
++            return h;
++        }
++        let height = self.nested_table_body_height(table, styles)
+             + hwpunit_to_px(table.outer_margin_top as i32, self.dpi)
+-            + hwpunit_to_px(table.outer_margin_bottom as i32, self.dpi)
++            + hwpunit_to_px(table.outer_margin_bottom as i32, self.dpi);
++        if let Some(memo) = self.nested_table_height_memo.borrow_mut().as_mut() {
++            if memo.heights.len() < NESTED_HEIGHT_MEMO_ENTRIES {
++                memo.heights.insert(key, (self.profile.get(), height));
++            }
++        }
++        height
++    }
++
++    /// [geul] 측정 결과가 의존하는 레이아웃 상태까지 포함한 메모 키.
++    fn nested_memo_key(
++        &self,
++        table: &crate::model::table::Table,
++        styles: &ResolvedStyleSet,
++    ) -> NestedMemoKey {
++        let body = self.current_body_area.get();
++        (
++            table as *const crate::model::table::Table as usize,
++            styles as *const ResolvedStyleSet as usize,
++            self.declared_trust_allowed.get(),
++            [body.0.to_bits(), body.1.to_bits(), body.2.to_bits(), body.3.to_bits()],
++        )
++    }
++
++    /// [geul] 표 하나를 배치하려고 방금 만든 임시 엔진(문서가 바뀌기 전에 버려진다)에서 측정
++    /// 메모를 엔진 수명 내내 켠다. 범위 가드는 이미 열린 메모를 닫지 않는다.
++    pub(crate) fn enable_scratch_nested_memo(&self) {
++        let mut memo = self.nested_table_height_memo.borrow_mut();
++        if memo.is_none() {
++            *memo = Some(NestedHeightMemo::default());
++        }
++    }
++
++    /// [geul] 가장 바깥 측정 호출이면 메모를 열고, 끝날 때(패닉 포함) 닫는 가드를 돌려준다.
++    pub(crate) fn open_nested_memo_scope(&self) -> Option<NestedHeightMemoScope<'_>> {
++        if self.nested_table_height_memo.borrow().is_some() {
++            return None;
++        }
++        *self.nested_table_height_memo.borrow_mut() = Some(NestedHeightMemo::default());
++        Some(NestedHeightMemoScope(&self.nested_table_height_memo))
+     }
+ 
+     /// Physical body size; the placement plan owns outer margins separately.
+@@ -10018,6 +10089,32 @@ impl LayoutEngine {
+         if table.row_count != 1 {
+             return Vec::new();
+         }
++        // [geul] `calc_nested_table_height` 와 같은 측정 범위 메모를 쓴다.
++        let key = self.nested_memo_key(table, styles);
++        let _scope = self.open_nested_memo_scope();
++        if let Some(found) = self
++            .nested_table_height_memo
++            .borrow()
++            .as_ref()
++            .and_then(|memo| memo.fragments.get(&key).cloned())
++            .and_then(|(profile, found)| (profile == self.profile.get()).then_some(found))
++        {
++            return found;
++        }
++        let fragments = self.nested_table_mixed_fragment_heights_uncached(table, styles);
++        if let Some(memo) = self.nested_table_height_memo.borrow_mut().as_mut() {
++            if memo.fragments.len() < NESTED_HEIGHT_MEMO_ENTRIES {
++                memo.fragments.insert(key, (self.profile.get(), fragments.clone()));
++            }
++        }
++        fragments
++    }
++
++    fn nested_table_mixed_fragment_heights_uncached(
++        &self,
++        table: &crate::model::table::Table,
++        styles: &ResolvedStyleSet,
++    ) -> Vec<NestedFlowFragment> {
+ 
+         // [#4069] 단일 셀 중첩 표는 별도 높이 추정식을 다시 만들지 않고 그 셀의
+         // canonical CellUnit 원장을 재사용한다. 저장 페이지 프레임 경계를 가진
+@@ -23365,3 +23462,29 @@ mod row_cut_tests {
+         );
+     }
+ }
++
++/// [geul] 중첩 표 측정 범위 메모. 가장 바깥 표 조판(`layout_table`/`layout_partial_table`),
++/// 표 조판 배치(`typeset_block_table_inner`) 또는 측정 호출(`calc_nested_table_height` /
++/// `nested_table_mixed_fragment_heights`) 동안만 살고 끝나면 버린다. 그 구간에서는
++/// 문서가 `&` 로 빌려져 있어 표 포인터 키가 안전하며, 결과가 의존하는 레이아웃 상태
++/// (선언 신뢰, 호환 프로필, 본문 영역)를 키에 넣는다. 한 단계 안에서 같은 자식 표를
++/// 여러 경로로 다시 재던 일이 깊이에 지수적이었다. 항목 수는 상한을 넘으면 더 넣지 않는다.
++type NestedMemoKey = (usize, usize, bool, [u64; 4]);
++type NestedMemoProfile = crate::model::provenance::LayoutCompatibilityProfile;
++
++/// 값에 호환 프로필을 함께 두고, 다르면 미스로 본다.
++#[derive(Default)]
++pub(crate) struct NestedHeightMemo {
++    heights: std::collections::HashMap<NestedMemoKey, (NestedMemoProfile, f64)>,
++    fragments: std::collections::HashMap<NestedMemoKey, (NestedMemoProfile, Vec<NestedFlowFragment>)>,
++}
++const NESTED_HEIGHT_MEMO_ENTRIES: usize = 4096;
++
++/// 가장 바깥 호출이 끝나면(패닉 포함) 메모를 버린다.
++pub(crate) struct NestedHeightMemoScope<'a>(&'a std::cell::RefCell<Option<NestedHeightMemo>>);
++
++impl Drop for NestedHeightMemoScope<'_> {
++    fn drop(&mut self) {
++        *self.0.borrow_mut() = None;
++    }
++}
 diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_partial.rs
 --- a/src/renderer/layout/table_partial.rs
 +++ b/src/renderer/layout/table_partial.rs
-@@ -4404,6 +4404,36 @@
+@@ -4257,6 +4257,8 @@ impl LayoutEngine {
+         probe: Option<&PartialTableCellProbe>,
+         resolved_table_top: Option<f64>,
+     ) -> f64 {
++        // [geul] 이 표 조각(과 중첩 표) 조판 동안 측정 메모를 공유한다 — `NestedHeightMemo`.
++        let _memo = self.open_nested_memo_scope();
+         let para = match paragraphs.get(para_index) {
+             Some(p) => p,
+             None => return y_start,
+@@ -4404,6 +4406,36 @@ impl LayoutEngine {
              outer_table
          };
-
+ 
 +        // Pagination may flatten several transparent 1x1 wrappers, but the
 +        // rendered cells must retain every source owner. Geometry continues to
 +        // use the original enclosing context; only provenance is extended.
@@ -723,7 +1226,7 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
          if table.cells.is_empty() {
              return y_start;
          }
-@@ -5447,7 +5477,7 @@
+@@ -5447,7 +5479,7 @@ impl LayoutEngine {
          // RenderNode provenance에는 원본 부모 셀 문단과 현재 표 control을 기록한다.
          // TextRun이 없는 빈 셀 hit-test는 Table/TableCell traversal context만 사용하므로
          // 이 metadata까지 실제 IR 경로여야 한다 (#4252).
@@ -732,7 +1235,7 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
              .and_then(|context| {
                  let table_entry = context.path.last()?;
                  let parent_entry = context.path.get(context.path.len().checked_sub(2)?)?;
-@@ -5466,7 +5496,7 @@
+@@ -5466,7 +5498,7 @@ impl LayoutEngine {
                  control_index: Some(node_control_index),
                  // [#4334] 표 분할 조각(partial table)도 원본 부모 셀 경로를 그대로
                  // 옮겨 담는다 — provenance para/control 과 같은 근거(#4252).
@@ -741,7 +1244,7 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
              }),
              BoundingBox::new(table_x, table_y, table_width, partial_table_height),
          );
-@@ -5576,7 +5606,7 @@
+@@ -5576,7 +5608,7 @@ impl LayoutEngine {
              &mut h_span_covered,
              &mut v_span_covered,
              measured_table,
@@ -750,8 +1253,8 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
              clamp_header_negative_para_offset,
              probe,
              center_pinned_single_cell,
-@@ -5942,7 +5972,7 @@
-
+@@ -5942,7 +5974,7 @@ impl LayoutEngine {
+ 
          // ── 캡션 렌더링 ──
          // cell_index = 65534: 캡션 식별 센티널 (셀 0과 구분)
 -        let cap_cell_ctx = Some(if let Some(context) = enclosing_cell_ctx {
@@ -759,13 +1262,37 @@ diff --git a/src/renderer/layout/table_partial.rs b/src/renderer/layout/table_pa
              let mut context = context.clone();
              if let Some(last) = context.path.last_mut() {
                  last.cell_index = 65534;
+diff --git a/src/renderer/typeset/table/block/prepare.rs b/src/renderer/typeset/table/block/prepare.rs
+--- a/src/renderer/typeset/table/block/prepare.rs
++++ b/src/renderer/typeset/table/block/prepare.rs
+@@ -75,6 +75,8 @@ impl TypesetEngine {
+         // Prime it before filling CellUnit caches, as actual paint does, so a
+         // small page cannot cache the 900px fallback's different child ledger.
+         let layout_engine = crate::renderer::layout::LayoutEngine::new(self.dpi);
++        // [geul] 이 표 배치 전용 임시 엔진 — 중첩 표 측정 메모를 수명 내내 공유한다.
++        layout_engine.enable_scratch_nested_memo();
+         layout_engine.set_layout_profile(st.profile);
+         layout_engine.prime_column_layout_env(&st.layout);
+         // 행 컷 측정도 같은 렌더링의 일부이므로 조판기와 동일한 표 출처를 사용한다.
+diff --git a/src/renderer/typeset/table/block/whole_fit.rs b/src/renderer/typeset/table/block/whole_fit.rs
+--- a/src/renderer/typeset/table/block/whole_fit.rs
++++ b/src/renderer/typeset/table/block/whole_fit.rs
+@@ -483,6 +483,8 @@ impl TypesetEngine {
+             && self.render_normalization.table_text_reflowed(table)
+         {
+             let layout_engine = crate::renderer::layout::LayoutEngine::new(self.dpi);
++            // [geul] 이 표 배치 전용 임시 엔진 — 중첩 표 측정 메모를 수명 내내 공유한다.
++            layout_engine.enable_scratch_nested_memo();
+             layout_engine.set_layout_profile(st.profile);
+             layout_engine.prime_column_layout_env(&st.layout);
+             layout_engine.set_render_normalization_overlay(std::sync::Arc::clone(
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -7202,6 +7202,106 @@
+@@ -7202,6 +7202,106 @@ impl HwpDocument {
              cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
      }
-
+ 
 +    /// Proven formatting inventory in the innermost explicitly owned paragraph.
 +    #[wasm_bindgen(js_name = getFormattingRunsByPath)]
 +    pub fn get_formatting_runs_by_path(&self, section: u32, paragraph: u32,
@@ -869,100 +1396,3 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
      #[wasm_bindgen(js_name = charShapeCount)]
      pub fn char_shape_count(&self) -> u32 {
-diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
---- a/src/document_core/queries/field_query.rs
-+++ b/src/document_core/queries/field_query.rs
-@@ -339,8 +339,21 @@
-                 let location_json = field_location_json(&fi.location);
-                 let (start_char_idx, end_char_idx) = field_range_bounds(self, fi)
-                     .unwrap_or((0, fi.value.chars().count()));
-+                let para = para_at_location(self, &fi.location);
-+                let range = para.and_then(|p| p.field_ranges.get(fi.field_range_index));
-+                let linkage = range.and_then(|r| {
-+                    let p = para?;
-+                    match p.controls.get(r.control_idx)? {
-+                        Control::Field(field) if field.field_id == fi.field.field_id
-+                            && p.field_ranges.iter().filter(|r2| r2.control_idx == r.control_idx).count() == 1 =>
-+                            Some((r.control_idx, field_content_start(p, fi.field_range_index).checked_sub(8)?)),
-+                        _ => None,
-+                    }
-+                });
-+                let (control_index, control_pos) = linkage.map(|(i, p)| (i.to_string(), p.to_string()))
-+                    .unwrap_or_else(|| ("null".into(), "null".into()));
-                 format!(
--                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{}}}",
-+                    "{{\"fieldId\":{},\"fieldType\":\"{}\",\"cellField\":{},\"name\":{},\"guide\":{},\"command\":{},\"value\":{},\"location\":{},\"startCharIdx\":{},\"endCharIdx\":{},\"editableInForm\":{},\"listId\":{},\"paraInList\":{},\"startPos\":{},\"endPos\":{},\"controlIndex\":{},\"controlPos\":{}}}",
-                     fi.field.field_id,
-                     fi.field.field_type_str(),
-                     // 셀 구역 이름(가상 필드)과 문단 안 누름틀은 다른 것이다. `fieldType` 은 둘 다
-@@ -359,6 +372,8 @@
-                     fi.para_in_list,
-                     fi.start_pos,
-                     fi.end_pos,
-+                    control_index,
-+                    control_pos,
-                 )
-             })
-             .collect();
-@@ -2859,31 +2874,7 @@
-
- /// [geul] 한컴 계산식 필드의 결과 서식 `%g`(C printf: 유효 숫자 6, 뒤 0 제거, 지수 -4 미만·6 이상이면 지수 표기).
- pub(crate) fn format_formula_g(value: f64) -> Option<String> {
--    if !value.is_finite() {
--        return None;
--    }
--    if value == 0.0 {
--        return Some("0".into());
--    }
--    // 유효 숫자 6자리로 먼저 반올림한 지수로 표기를 고른다(999999.5 → 1e+06, printf 와 같음).
--    let sci = format!("{:.5e}", value);
--    let (mantissa, e) = sci.split_once('e')?;
--    let e: i32 = e.parse().ok()?;
--    if e < -4 || e >= 6 {
--        let m = mantissa.trim_end_matches('0').trim_end_matches('.');
--        let sign = if e < 0 { '-' } else { '+' };
--        return Some(format!("{m}e{sign}{:02}", e.abs()));
--    }
--    let decimals = (5 - e).max(0) as usize;
--    let fixed = format!("{:.*}", decimals, value);
--    Some(if fixed.contains('.') {
--        fixed
--            .trim_end_matches('0')
--            .trim_end_matches('.')
--            .to_string()
--    } else {
--        fixed
--    })
-+    super::super::table_calc::format_formula_g(value)
- }
-
- impl DocumentCore {
-diff --git a/src/document_core/queries/hwpctrl_sets.rs b/src/document_core/queries/hwpctrl_sets.rs
---- a/src/document_core/queries/hwpctrl_sets.rs
-+++ b/src/document_core/queries/hwpctrl_sets.rs
-@@ -187,7 +187,14 @@
-         // `stream_pos` 로는 못 구한다 — 자리표 글자를 남기는 문단과 안 남기는 문단이 섞여
-         // 있어 그 함수 하나로 갈리지 않는다. 여기서는 **앞선 것들만** 세면 된다:
-         // 앞의 맨 글자 수 + 8 × 앞의 컨트롤 수.
--        let pos = if let Some(rebuilt) = &rebuilt {
-+        let field_anchor = if matches!(ctrl, Control::Field(_)) {
-+            let ranges: Vec<_> = para.field_ranges.iter().enumerate().filter(|(_, r)| r.control_idx == ci).collect();
-+            match ranges.as_slice() {
-+                [(i, _)] => super::field_query::field_content_start(para, *i).checked_sub(8),
-+                _ => None,
-+            }
-+        } else { None };
-+        let pos = if let Some(anchor) = field_anchor { anchor } else if let Some(rebuilt) = &rebuilt {
-             rebuilt.get(ci).copied().unwrap_or(0)
-         } else {
-             control_positions
-diff --git a/src/document_core/table_calc/mod.rs b/src/document_core/table_calc/mod.rs
---- a/src/document_core/table_calc/mod.rs
-+++ b/src/document_core/table_calc/mod.rs
-@@ -14,5 +14,5 @@
- mod parser;
- mod tokenizer;
-
--pub use evaluator::{evaluate_formula, TableContext};
-+pub use evaluator::{evaluate_formula, format_formula_g, TableContext};
- pub use parser::FormulaNode;

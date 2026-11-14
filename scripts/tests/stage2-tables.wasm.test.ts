@@ -35,7 +35,9 @@ function exported(d: RhwpDocument, format: "hwp" | "hwpx") {
   const e = format === "hwp" ? d.exportHwpWithReport() : d.exportHwpxWithReport();
   try { return { loss: e.contentLoss(), bytes: e.takeBytes() }; } finally { e.free(); }
 }
-function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false) {
+/** Text of a deep fixture's innermost cell: numbered words, so dropped or duplicated page fragments are detectable. */
+const DEEP_WORDS = Array.from({ length: 1000 }, (_, i) => `w${i}`).join(" ");
+function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0) {
   const d = engine.HwpDocument.createEmpty() as Doc;
   try {
     d.createBlankDocument();
@@ -67,6 +69,16 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
       d.setTableProperties!(0, t.paraIdx, t.controlIdx, JSON.stringify({ hasCaption: true }));
       d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify([{ controlIndex: t.controlIdx, cellIndex: 65534, cellParaIndex: 0 }]), 0, "Cap");
     }
+    if (deep) {
+      // An existing document with `deep` table levels: every level is labelled, the innermost holds DEEP_WORDS.
+      let path = [{ controlIndex: t.controlIdx, cellIndex: 0, cellParaIndex: 0 }];
+      for (let level = 2; level <= deep; level++) {
+        const child = JSON.parse(d.createTableInCellByPath!(0, t.paraIdx, JSON.stringify(path), 0, 1, 1));
+        path = [...path, { controlIndex: child.controlIdx, cellIndex: 0, cellParaIndex: 0 }];
+      }
+      for (let level = 1; level < deep; level++) d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify(path.slice(0, level)), 0, `L${level}`);
+      d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify(path), 0, DEEP_WORDS);
+    }
     if (nestedGuard) {
       const host = [{ controlIndex: t.controlIdx, cellIndex: 0, cellParaIndex: 0 }];
       const child = JSON.parse(d.createTableInCellByPath!(0, t.paraIdx, JSON.stringify(host), 3, 2, 2));
@@ -76,8 +88,8 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
     return exported(d, format).bytes;
   } finally { d.free(); }
 }
-async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false) {
-  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields), { backend, take, calls } = controlledBackend();
+async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0) {
+  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
   let doc!: Doc;
@@ -214,14 +226,14 @@ describe("Stage 2 table paths", () => {
     } finally { editor.dispose(); }
   });
 
-  it("depth ten, line-aware Home/End, strict path budget and HWP/HWPX engine roundtrip", async () => {
+  it("depth fifteen, line-aware Home/End, strict path budget and HWP/HWPX engine roundtrip", async () => {
     const c = await open("hwpx", true), { editor, doc, at, place, run, settle } = c;
     try {
       place(at);
-      for (let depth = 1; depth < 10; depth++) await run("insert.table", { command: "insert.table", rows: 1, cols: 1 });
+      for (let depth = 1; depth < 15; depth++) await run("insert.table", { command: "insert.table", rows: 1, cols: 1 });
       const deep = editor.caret;
-      expect(deep.cell!.nested).toHaveLength(9);
-      // Creation stops at the engine's measured layout depth; deeper paths would lay out with zero height.
+      expect(deep.cell!.nested).toHaveLength(14);
+      // Creation stops at the HWPX reader envelope (15 table levels) so the result reopens in both formats.
       expect(documentCommandState("insert.table", editor.snapshot()).available).toBe(false);
       expect(editor.typeText("long paragraph repeated words ".repeat(20))).toBe(true); await settle();
       const text = new RhwpText(doc), line = text.line({ ...deep, offset: 10 })!;
@@ -232,7 +244,7 @@ describe("Stage 2 table paths", () => {
       const rect = text.caret(editor.caret)!;
       expect(rect).not.toBeNull();
       expect(editor.pointAt(rect.page, rect.x + 1, rect.y + rect.height / 2, false)).toBe(true);
-      expect(editor.caret.cell!.nested).toHaveLength(9);
+      expect(editor.caret.cell!.nested).toHaveLength(14);
       const content = doc.getTextFileText();
       for (const path of ['[{"controlIndex":0}]', 'garbage', JSON.stringify(Array.from({ length: 65 }, () => ({ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 })))]) {
         expect(() => doc.insertTextInCellByPath!(0, at.paragraph, path, 0, "bad")).toThrow();
@@ -249,6 +261,109 @@ describe("Stage 2 table paths", () => {
       }
     } finally { editor.dispose(); }
   });
+
+  /** Every page's render tree: deepest Table nesting, and the numbered deep words in page order. */
+  function deepLayout(d: RhwpDocument & { pageCount(): number; getPageRenderTree(page: number): string }) {
+    type Node = { type: string; text?: string; bbox: { x: number; y: number; w: number; h: number }; children?: Node[] };
+    let nesting = 0; const words: string[] = [], tables: Node["bbox"][][] = [];
+    for (let page = 0; page < d.pageCount(); page++) {
+      /** Returns whether `n` contains a Table; a Table without a descendant Table ends one bounds chain. */
+      const walk = (n: Node, depth: number, chain: Node["bbox"][]): boolean => {
+        if (n.type === "Table") { depth++; chain = [...chain, n.bbox]; if (depth > nesting) nesting = depth; }
+        if (n.type === "TextRun" && n.text) words.push(...n.text.split(/\s+/).filter(w => /^w\d+$/.test(w)));
+        let inner = false;
+        for (const c of n.children ?? []) inner = walk(c, depth, chain) || inner;
+        if (n.type === "Table" && !inner) tables.push(chain);
+        return inner || n.type === "Table";
+      };
+      walk(JSON.parse(d.getPageRenderTree(page)), 0, []);
+    }
+    return { pages: d.pageCount(), nesting, words, tables };
+  }
+
+  it("existing 16-level HWP document: full layout, deep editing/IME/Undo/Redo, product T009 save and reopen", async () => {
+    const DEPTH = 16, c = await open("hwp", true, false, false, false, DEPTH), { editor, doc, at, place, run, settle } = c;
+    try {
+      const nested = Array.from({ length: DEPTH - 1 }, () => ({ control: 0, cell: 0, cellParagraph: 0 }));
+      const deep: DocPosition = { ...at, offset: 0, cell: { ...at.cell!, nested } };
+      const text = new RhwpText(doc);
+      expect(text.ownsNestedCell(deep)).toBe(true);
+      expect(text.text(deep, 6)).toBe("w0 w1 ");
+      // Measured and paginated from real content: all 16 levels, every word exactly once in order, across pages.
+      const layout = deepLayout(doc as never);
+      expect(layout.nesting).toBe(DEPTH);
+      expect(layout.pages).toBeGreaterThan(1);
+      expect(layout.words).toEqual(DEEP_WORDS.split(" "));
+      // Parent/child bounds nest on every page (no zero-height or escaping child).
+      for (const chain of layout.tables) for (let i = 1; i < chain.length; i++) {
+        const [o, n] = [chain[i - 1]!, chain[i]!];
+        expect(n.h).toBeGreaterThan(0);
+        expect(n.x).toBeGreaterThanOrEqual(o.x); expect(n.x + n.w).toBeLessThanOrEqual(o.x + o.w + 0.5);
+        expect(n.y).toBeGreaterThanOrEqual(o.y - 0.5); expect(n.y + n.h).toBeLessThanOrEqual(o.y + o.h + 0.5);
+      }
+      const last = text.caret({ ...deep, offset: text.paragraphLength(deep) })!;
+      expect(last.page).toBeGreaterThan(0);
+      // Caret by pointer: the hit resolves to the same explicit 16-level path.
+      const first = text.caret({ ...deep, offset: 1 })!;
+      expect(editor.pointAt(first.page, first.x + 1, first.y + first.height / 2, false)).toBe(true);
+      expect(editor.caret.cell!.nested).toEqual(nested);
+      // Insert/delete, Undo/Redo, IME and formatting at level 16.
+      const before = doc.getTextFileText(), length = text.paragraphLength(deep);
+      place({ ...deep, offset: 2 }); expect(editor.typeText("XY")).toBe(true); await settle();
+      expect(text.text(deep, 6)).toBe("w0XY w");
+      expect(editor.caret).toMatchObject({ offset: 4, cell: { nested } });
+      expect(editor.backspace()).toBe(true); await settle();
+      expect(text.text(deep, 5)).toBe("w0X w");
+      await run("edit.undo"); await run("edit.undo");
+      expect(doc.getTextFileText()).toBe(before);
+      await run("edit.redo"); await run("edit.redo");
+      expect(text.text(deep, 5)).toBe("w0X w");
+      place({ ...deep, offset: 3 });
+      editor.beginComposition(); expect(editor.composing).toBe(true);
+      editor.updateComposition("가"); editor.endComposition("가"); await settle();
+      expect(text.text(deep, 6)).toBe("w0X가 w");
+      expect(text.paragraphLength(deep)).toBe(length + 2);
+      place({ ...deep, offset: 0 }); editor.caret = { ...deep, offset: 2 };
+      expect(editor.selectionRects().length).toBeGreaterThan(0);
+      await run("format.bold");
+      expect(JSON.parse(doc.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(deep.cell!), 0)).bold).toBe(true);
+      expect(new RhwpText(doc).ownsNestedCell(deep)).toBe(true);
+      const edited = doc.getTextFileText(), relaid = deepLayout(doc as never);
+      expect(relaid.nesting).toBe(DEPTH);
+      // "w0X가" no longer matches the word pattern (the bold "w0" may form its own run); every other word stays once, in order.
+      expect(relaid.words.filter(w => w !== "w0")).toEqual(DEEP_WORDS.split(" ").slice(1));
+      // Product save: live/reopen comparison and the real T009 checker; then an independent engine reopen.
+      const saved = await c.save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      const re = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(re.getTextFileText()).toBe(edited);
+        const rt = new RhwpText(re);
+        expect(rt.ownsNestedCell(deep)).toBe(true);
+        expect(rt.text(deep, 6)).toBe("w0X가 w");
+        expect(JSON.parse(re.getTableDimensionsByPath!(0, at.paragraph, pathJson(deep.cell!)))).toMatchObject({ rowCount: 1, colCount: 1 });
+        expect(JSON.parse(re.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(deep.cell!), 0)).bold).toBe(true);
+        expect(deepLayout(re as never).nesting).toBe(DEPTH);
+      } finally { re.free(); }
+    } finally { editor.dispose(); }
+  }, 30_000);
+
+  it("existing 12-level HWPX document edits and saves; a 16-level HWPX is refused instead of opening empty", async () => {
+    const DEPTH = 12, c = await open("hwpx", true, false, false, false, DEPTH), { editor, doc, at, place, settle } = c;
+    try {
+      const nested = Array.from({ length: DEPTH - 1 }, () => ({ control: 0, cell: 0, cellParagraph: 0 }));
+      const deep: DocPosition = { ...at, offset: 0, cell: { ...at.cell!, nested } };
+      const layout = deepLayout(doc as never);
+      expect(layout.nesting).toBe(DEPTH);
+      expect(layout.words).toEqual(DEEP_WORDS.split(" "));
+      place({ ...deep, offset: 2 }); expect(editor.typeText("Z")).toBe(true); await settle();
+      const reopened = checkHwpx(c.original, doc);
+      try { expect(new RhwpText(reopened).text(deep, 4)).toBe("w0Z "); } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+    // Beyond the HWPX reader envelope: an explicit nesting refusal, never a silently empty section.
+    const over = fixture("hwpx", true, false, false, false, 16);
+    expect(() => new engine.HwpDocument(over)).toThrow(/nesting/i);
+  }, 30_000);
 
   it.each(["hwp", "hwpx"] as const)("%s: product body-table rectangular merge invokes the engine and reopens", async format => {
     const { editor, doc, at, place, run } = await open(format);

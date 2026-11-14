@@ -965,3 +965,38 @@ HWP 중첩 장평·자간의 추가 가용성 검토에서 원본 증명 범위�
 - `python3 scripts/build-rhwp-wasm.py`(기존 wasm-bindgen 0.2.127 경로 사용): Release PASS. 최종 세대 `11365b8a0eebb42c66f7c8739a375e14ae176b217b177063191666fd6e9e69d3`, WASM SHA-256 `0d1d8fbb7cf9d7962fb1efbaf88f515bf5e2bcbda34b2d6f49aeffd42e420621`. 유지 패치 19개와 공통 수식 소스의 신원/최종 소스 트리 해시를 기록하며, 패치 재적용 결과와 준비 소스의 일치를 확인했다. RHWP `1a76570e833917d15817415a53c09ad61ab3203f`, WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 핀은 유지한다. 보관 한도는 늘리지 않고 해시 검증한 비선택 세대만 `target/rhwp-retired-generations/final-safety/`로 보존 이동했다. 생성 WASM/JS·fixture·검증 로그는 커밋하지 않는다.
 
 **지원 경계**: 이번 다중 필드 확장은 명시적인 paragraph-control/range가 있는 비중첩 ClickHere 범위를 다룬다. 겹치거나 모호한 범위는 거부한다. 수식 `validate/insertTableFormulaField(ByPath)`는 기존의 첫 문단 전체를 덮는 단일 수식 계약을 유지하므로 같은 문단의 여러 수식/부분 수식 재작성은 미지원이다. 독립 문단 증거를 잃거나 어떤 축 구간이 삭제됐는지 모호한 복합 변환은 저장을 거부한다. 이는 현재 증명의 지원 범위이며 Stage 3–5의 향후 시험으로 해결됐다고 간주하지 않는다. 전체 T009/T010/T012, native IBus, DOCX/WordCraft, D4, 외부 한컴/Word 및 Windows/macOS 검증은 반복하지 않았다.
+
+<a id="stage2-deep-nesting-20261114"></a>
+## Stage 2 깊은 중첩 표 조판·편집 — 2026-11-14
+
+Stage 2 잔여 구현 항목 하나(깊이 10 초과 기존 문서)를 구현하고 집중 검증했다. 별도 잔여(셀 inline 개체 생성 API, 한 문단의 여러/부분 수식)는 그대로이며, Stage 3–5 수용은 수행하거나 완료로 바꾸지 않았다. 앞선 기록은 이력으로 보존한다.
+
+**원인(관측)**
+
+- `height_measurer.rs`의 `MAX_NESTED_DEPTH = 10`: 깊이 지수 10 이상(11번째 단계부터)의 표가 행 높이 0으로 측정됐다. 이전 Release `11365b8a…`에서 1500단어를 담은 깊이 12/16 문서는 1쪽으로 조판되고 각각 12/148단어만 보였다(나머지 무음 누락). 깊이 9/10은 정상.
+- 위 한도를 없애자 숨어 있던 반복 측정이 드러났다: 조판의 각 중첩 단계(`layout_partial_table_resolved`/`cells`)와 조판기(typeset)가 표마다 만드는 임시 `LayoutEngine`이 같은 하위 트리의 높이(`calc_nested_table_height` → `resolve_row_heights` → 셀 compose → `calc_nested_controls_bottom_height`/`nested_table_mixed_fragment_heights`)를 매번 새로 쟀다. 깊이 16·1000단어에서 편집 1회 약 5.4초, 렌더 트리 15.7초로 깊이에 지수적으로 늘었다(깊이 10/12/14/16 = 1.4/1.8/2.9/5.8초).
+- 파서 한도 밖 문서는 조용히 손상됐다: HWPX(문단 16단계 = 표 15단계)를 넘으면 구역 전체가 빈 구역으로 바뀌어 열렸고, HWP5(문단 64단계 = 표 63단계)를 넘으면 해당 하위 트리를 잘라냈다.
+- 스택: WASM 정지 스택(1 MiB, stack-first) 사용량을 stack painting으로 쟀다. 63단계 HWP 재열기+렌더가 최대 481 KiB, 측정기 재귀 추가분 포함 조판 56 KiB.
+
+**구현(`patches/rhwp/stage2-table-paths.patch`에 합침 — 산출물 신원 검증기가 패치 시리즈를 19개로 제한하므로 시리즈·검증기는 바꾸지 않았다)**
+
+- 측정기 한도를 파서 구조 한도(`MAX_HWP5_SECTION_DEPTH`, 64)와 같게 했다. 모델에 그보다 깊은 표는 생기지 않으며 실제 내용으로 측정한다. 기존 측정 세션 캐시(4096 항목)는 그대로 쓴다.
+- `NestedHeightMemo`(`table_layout.rs`): `calc_nested_table_height`와 `nested_table_mixed_fragment_heights` 결과를 (표 포인터, 스타일 포인터, 선언 신뢰 플래그, 본문 영역) 키와 호환 프로필 일치 조건으로 재사용한다. 범위는 가장 바깥 `layout_table`/`layout_partial_table`/측정 호출 동안(Drop 가드로 패닉 시에도 닫음)과, 표 하나를 배치하려고 만든 조판기 임시 엔진의 수명(`prepare.rs`, `whole_fit.rs`)뿐이다. 두 구간 모두 문서가 `&`로 빌려진 동안이라 포인터 재사용 오류가 없고, 항목 4096개 상한을 넘으면 다시 잰다. 결과: 깊이 16·1000단어 편집 0.06–0.11초, 렌더 트리 0.31–0.38초, 깊이 2는 0.15→0.09초.
+- `BodyTextError::NestingLimit`, `HwpxError::NestingLimit`: 깊이 가드가 거부하면 스레드 로컬 표지를 세우고 구역 끝에서 문서 열기를 명시적으로 거부한다(빈 구역/절단 대신). HWP5 상한 초과를 절단으로 고정하던 엔진 단위 시험은 거부 + 상한 안쪽 63단계 보존으로 갱신했다.
+- geul: `MAX_CREATED_TABLE_DEPTH` 10 → 15. 새 표는 두 형식 모두 다시 열리는 HWPX 읽기 한도 안에서만 만든다. 기존 HWP 문서는 엔진 한도(표 63단계, 경로 64)까지 열고 편집한다. 편집·IME·Undo/Redo·저장은 기존 경로 기반 연산 그대로이며 깊은 표 전용 구현은 없다.
+
+**지원 경계**
+
+- HWP: 표 63단계까지 열기·조판·편집·저장(직접 확인 16단계; 32·63단계는 엔진 탐침으로 열기/조판/HWP 재열기 확인). HWPX: 표 15단계까지(직접 확인 12단계, 생성 15단계), 16단계 이상은 명시적 거부. 경로 한도 64는 올리지 않았다.
+- 기하: 기본 1×1 셀 여백이면 단계마다 폭이 약 10.6px 줄어 A4에서 약 30단계부터 셀 폭이 0이 된다. 문서가 정하는 기하이며 엔진 한도가 아니다.
+- 기존 일반 결함(깊이 무관, 이번에 고치지 않음): 한 행이 쪽보다 약간 큰 표가 나뉘지 않고 쪽 아래로 잘리거나 다음 쪽에서 내용이 보이지 않는 경우가 있다(깊이 1·600단어, 깊이 4/8·500단어). 이전 Release에서도 같은 결과이며, 쪽을 충분히 넘는 행(1000/1500단어)은 깊이 4–16에서 모든 단어가 정확히 한 번씩 순서대로 나뉜다.
+
+**집중 검증(실제 실행)**
+
+- `scripts/build-rhwp-wasm.sh`(PATH에 기존 wasm-bindgen 0.2.127): Release PASS, 최종 세대 `03a37914dd4335d70f8fd4efe70a120eb433c09cef38182f8469a2222f263e49`, WASM `40848b54e79c8f53db782abc05018cd3cc07425d89e28f87ed1c86ef1ad34193`, `stage2-table-paths.patch` `90714a14…`. 세대 보관 한도 때문에 참조되지 않는 가장 오래된 세대 `c51dd0fe…`, `f1279e1a…`를 `target/rhwp-retired-generations/`로 옮겼다. 패치 재적용 결과가 작업 트리와 같음을 확인했다.
+- 렌더 동일성: 메모 이전 세대 `23fa145d…`(측정 한도만 수정)와 최종 WASM(바이트 동일한 실험 빌드)의 `getPageRenderTree` JSON을 `external/rhwp/samples`의 HWP/HWPX 187개(6개마다 1개, 1.5 MB 이하, 문서당 최대 40쪽)에서 비교: 187 동일 / 0 차이 / 0 열기 오류. 합성 중첩 문서(깊이 2/5/9/12 × 50/1500단어 × 라벨 유무 × 메모리/HWP 재열기 × 1/3행, 64개, 모든 쪽): 64 동일 / 0 차이. 첫 전체 합성 행렬(216개)은 50분 제한에 걸려 요약 없이 중단됐고(그 전까지 차이 출력 없음) 위 축소 행렬로 대신했다.
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts`: 18 PASS. 새 시나리오: (1) 기존 16단계 HWP(1000단어): 16단계 모두, 여러 쪽, 모든 단어 정확히 한 번·순서대로, 부모/자식 경계 포함; 포인터 캐럿이 같은 16단계 경로로 해석; 입력·삭제·Undo/Redo·IME·선택·굵게; 제품 저장의 live/reopen 비교와 실제 T009 검사기(`previewStale`만) 게시 가능; 독립 재열기에서 계층·대상 셀 글·1×1 구조·굵게 일치. (2) 기존 12단계 HWPX 조판·입력·T009 SAFE 저장·재열기, 16단계 HWPX는 `nesting` 오류로 거부. 기존 "깊이 10 생성·11 거부"는 "깊이 15 생성·16 거부"로 갱신, 나머지 기존 시나리오(얕은 표 회귀) PASS.
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/rhwpAssets.test.ts`: 12 PASS. `npx tsc --noEmit`, 변경 TS 파일 `npx eslint`: PASS.
+- 엔진 Clippy(`-p rhwp --lib --no-deps`, wasm32): 41개로 기존 기준과 같고, 변경 파일의 진단은 모두 손대지 않은 기존 줄이다. 엄격 Clippy는 여전히 FAIL로 둔다.
+- 엔진 단위 시험은 준비 소스에서 컴파일되지 않는다(샘플 누락·기존 구조체 필드 등 32개 오류, 변경 전후 동일). 갱신한 HWP5 깊이 시험은 실행하지 못했다(동작은 WASM 탐침과 위 HWPX 거부 시나리오로 확인).
+- 반복하지 않은 것: T009/T010/T012 전체, native IBus, DOCX/WordCraft, D4 벤치마크, Windows/macOS, 한컴/Word 상호 운용, 전체 WASM 시험.

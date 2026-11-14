@@ -2144,7 +2144,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private canCreateNestedTable(): boolean {
     const c = this.caret.cell;
-    // New tables are created only within the engine's measured layout depth (MAX_CREATED_TABLE_DEPTH);
+    // New tables are created only within the engine's reader envelope common to HWP/HWPX (MAX_CREATED_TABLE_DEPTH);
     // deeper existing paths stay addressable for editing up to MAX_TABLE_DEPTH.
     if (!c || !this.doc?.createTableInCellByPath || !this.history || !this.ownsPosition(this.caret)
       || 1 + (c.nested?.length ?? 0) >= Math.min(MAX_TABLE_DEPTH, MAX_CREATED_TABLE_DEPTH)) return false;

@@ -37,11 +37,12 @@ export interface CellRef {
 export const MAX_TABLE_DEPTH = 64;
 export const MAX_CELL_PATH_BYTES = 32 * 1024;
 /**
- * Deepest table level the product creates. The pinned engine's height measurer lays out nested
- * tables to ten levels (deeper ones measure as zero height), so creating deeper tables would
- * produce silently wrong pagination. Opening/editing existing deeper paths is unaffected.
+ * Deepest table level the product creates. The patched engine measures/lays out every nesting
+ * level its parsers accept (HWP 63 table levels, HWPX 15), and refuses deeper files. Creation
+ * stays within the smaller HWPX reader envelope so a created document always reopens in either
+ * format; existing deeper HWP paths remain openable/editable up to the engine bound.
  */
-export const MAX_CREATED_TABLE_DEPTH = 10;
+export const MAX_CREATED_TABLE_DEPTH = 15;
 
 /** Innermost level of a cell path: the cell and paragraph the caret is actually in. */
 export function innermost(cell: CellRef): NestedCell {
