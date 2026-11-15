@@ -502,6 +502,7 @@
   "recovery.retentionNote": "Recovery always creates a new file. Closing a window can leave earlier recovery records; review and explicitly discard them from this list.",
   "document.error.FilePublishedUnconfirmed": "The new file exists, but its durability is unconfirmed. Inspect and open the destination; the recovery record is retained.",
   "document.error.FilePublishedUnregistered": "The new file exists, but could not be opened as a session. Inspect and open the destination; do not create it again.",
+  "document.error.PdfReplacementUnverified": "After the PDF exchange, the displaced file identity or rollback could not be verified. The new PDF may already be visible at the destination. Preservation of the original file is unconfirmed. Inspect the destination and temporary files in the same folder.",
   "properties.paragraphStyle": "Caret paragraph style: {style}",
   "document.newTitle": "Create a document",
   "document.error.RestoredUnopened": "The recovered content was written to a new file, but it could not be opened ({reason}). Inspect that file and open it yourself. The recovery copy remains.",

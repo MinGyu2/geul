@@ -1152,6 +1152,141 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Only NEW first-verification/guarded-rollback boundaries, not the historical cleanup tests.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pdf_first_exchange_identity_failure_never_accepts_unverified_replacement() {
+        use crate::services::save::journal;
+        use crate::services::save::publish::{
+            Fault, BEFORE_EXCHANGE_ROLLBACK, BEFORE_RENAME, FAULT,
+        };
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let old = b"%PDF-1.7\nconfirmed A\n%%EOF";
+        let substitute = b"%PDF-1.7\nunconfirmed B\n%%EOF";
+        let unrelated = b"unrelated content";
+        let pdf = sample_pdf();
+        // A/B: first lookup fails, with and without replacement after the final pre-check.
+        // C/D/E: newly guarded rollback, including changes to EITHER entry before its guard.
+        for case in [
+            "lookup",
+            "substituted-lookup",
+            "guarded-rollback",
+            "target-moved",
+            "staging-moved",
+        ] {
+            let dir = private_dir(case);
+            let journal_dir = dir.join("journal");
+            journal::TEST_ROOT.with(|root| *root.borrow_mut() = Some(journal_dir.clone()));
+            let docs = dir.join("docs");
+            std::fs::create_dir(&docs).unwrap();
+            std::fs::set_permissions(&docs, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+                .unwrap();
+            let target = docs.join("out.pdf");
+            std::fs::write(&target, old).unwrap();
+            std::fs::write(docs.join("unrelated.txt"), unrelated).unwrap();
+            let expected = claim(&grant(&target), &target).unwrap();
+            let staged_name = Rc::new(RefCell::new(None));
+            let hook_name = staged_name.clone();
+            BEFORE_RENAME.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new(move |target, staged| {
+                    *hook_name.borrow_mut() = Some(staged.to_path_buf());
+                    if case != "lookup" {
+                        // Preserve A explicitly; a different file B occupies the destination at exchange.
+                        std::fs::rename(target, target.with_file_name("confirmed-kept.pdf"))
+                            .unwrap();
+                        std::fs::write(target, substitute).unwrap();
+                    }
+                }))
+            });
+            BEFORE_EXCHANGE_ROLLBACK.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new(move |target, staged| {
+                    if case == "target-moved" {
+                        std::fs::rename(target, target.with_file_name("moved-pdf.pdf")).unwrap();
+                        std::fs::write(target, unrelated).unwrap();
+                    } else if case == "staging-moved" {
+                        std::fs::rename(staged, target.with_file_name("moved-displaced.pdf"))
+                            .unwrap();
+                        std::fs::write(staged, unrelated).unwrap();
+                    }
+                }))
+            });
+            let first_lookup_fails = case == "lookup" || case == "substituted-lookup";
+            if first_lookup_fails {
+                FAULT.with(|fault| fault.set(Some(Fault::InspectExchanged)));
+            }
+            let result = publish_pdf(&target, &pdf, expected);
+            FAULT.with(|fault| fault.set(None));
+            BEFORE_RENAME.with(|hook| *hook.borrow_mut() = None);
+            BEFORE_EXCHANGE_ROLLBACK.with(|hook| *hook.borrow_mut() = None);
+            let staged = staged_name.borrow().clone().unwrap();
+            let records = std::fs::read_dir(&journal_dir)
+                .unwrap()
+                .filter(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .ends_with(".save")
+                })
+                .count();
+            if case == "guarded-rollback" {
+                assert_eq!(result.err(), Some(DocumentError::FileConflict), "{case}");
+                assert_eq!(std::fs::read(&target).unwrap(), substitute);
+                assert!(
+                    !staged.exists(),
+                    "only the rolled-back owned PDF is removed"
+                );
+                assert_eq!(records, 0);
+            } else {
+                let error = result.expect_err("unverified replacement is never export success");
+                assert_eq!(error, DocumentError::PdfReplacementUnverified, "{case}");
+                assert_eq!(
+                    serde_json::to_value(error).unwrap(),
+                    serde_json::json!({"code": "PdfReplacementUnverified"})
+                );
+                assert_eq!(records, 1, "{case}: ownership record preserved after Drop");
+                if case == "target-moved" {
+                    assert_eq!(std::fs::read(&target).unwrap(), unrelated);
+                    assert_eq!(std::fs::read(docs.join("moved-pdf.pdf")).unwrap(), pdf);
+                    assert_eq!(std::fs::read(&staged).unwrap(), substitute);
+                } else if case == "staging-moved" {
+                    assert_eq!(std::fs::read(&target).unwrap(), pdf);
+                    assert_eq!(std::fs::read(&staged).unwrap(), unrelated);
+                    assert_eq!(
+                        std::fs::read(docs.join("moved-displaced.pdf")).unwrap(),
+                        substitute
+                    );
+                } else {
+                    assert_eq!(
+                        std::fs::read(&target).unwrap(),
+                        pdf,
+                        "PDF already visible, not rolled back"
+                    );
+                    assert_eq!(
+                        std::fs::read(&staged).unwrap(),
+                        if case == "lookup" {
+                            old.as_slice()
+                        } else {
+                            substitute.as_slice()
+                        }
+                    );
+                }
+            }
+            if case != "lookup" {
+                assert_eq!(std::fs::read(docs.join("confirmed-kept.pdf")).unwrap(), old);
+            }
+            assert_eq!(
+                std::fs::read(docs.join("unrelated.txt")).unwrap(),
+                unrelated
+            );
+            journal::TEST_ROOT.with(|root| *root.borrow_mut() = None);
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn pdf_post_exchange_lookup_failure_preserves_uncertain_cleanup() {

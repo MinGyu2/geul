@@ -82,6 +82,8 @@ export type BackendError =
   | { code: "SaveFailure"; stage: SaveStage; io?: IoProblem; reason?: "formulaCache" }
   /** 저장(T009): 불러온 뒤 디스크의 파일이 바뀜(외부 수정). 덮어쓰지 않았다. */
   | { code: "FileConflict" }
+  /** PDF exchange happened, but replacement identity or rollback could not be verified. */
+  | { code: "PdfReplacementUnverified" }
   | { code: "FilePublishedUnconfirmed" | "FilePublishedUnregistered" }
   /** The RHWP blank output is not the audited creation output (unverified engine generation). Nothing was written. */
   | { code: "CreationUnverified"; format: DocumentFormat }
@@ -301,6 +303,7 @@ const ERROR_FIELDS: Record<
   SaveUnsupported: { reason: SAVE_UNSUPPORTED_REASONS },
   SaveFailure: { stage: SAVE_STAGES, io: "optional-io" },
   FileConflict: {},
+  PdfReplacementUnverified: {},
   FilePublishedUnconfirmed: {},
   FilePublishedUnregistered: {},
   CreationUnverified: { format: "format" },

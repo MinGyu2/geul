@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import en from "../../language/en.json";
 import { createTranslator, type Message, type MessageKey } from "../../language";
-import { parsePdfExported } from "../../adapters/contract";
-import { createNotificationState, isRetainedNotice, notificationReducer, pdfExportMessages } from "./publicationWarning";
+import { parseBackendError, parsePdfExported } from "../../adapters/contract";
+import { documentErrorMessage } from "../Editor/Editor";
+import { createNotificationState, isPublicationWarning, isRetainedNotice, notificationReducer, pdfExportMessages } from "./publicationWarning";
 
 const publication: Message = { key: "document.error.RestoredUnopenedAlreadyOpen" };
 const add = (state: ReturnType<typeof createNotificationState>, message: Message) => notificationReducer(state, { type: "notify", message });
@@ -98,5 +99,64 @@ describe("notification ownership", () => {
       expect(cleanup).toContain(language === "ko" ? "남아 있는지는 확인되지 않았으며" : "remains is unknown");
       expect(t(uncertainMessages[1]!.key)).toContain(language === "ko" ? "확인하지 못했습니다" : "could not be confirmed");
     }
+  });
+
+  it("retains unverified PDF replacement as a partial publication error", async () => {
+    const error = parseBackendError({ code: "PdfReplacementUnverified" });
+    expect(error).not.toBeNull();
+    expect(error?.code).toBe("PdfReplacementUnverified");
+    if (!error) return;
+
+    // Exercise the newly affected Workspace path too: a pending close must see a publication notice,
+    // and the existing grant-finally cleanup must still run for this backend outcome.
+    const { DocumentSessions } = await import("../../adapters/sessions");
+    const { DocumentWorkspace } = await import("../Editor/documentWorkspace");
+    const { FakeDocx, decodeFake, flush } = await import("../Editor/wordcraft/testing");
+    const fake = new FakeDocx(["PDF"]);
+    fake.exportPdfError = error;
+    const backend = {
+      open: async () => ({ ok: true, value: { ...fake.info } }),
+      sessions: async () => ({ ok: true, value: [] }),
+      close: async (sessionId: number) => ({ ok: true, value: { sessionId, alreadyClosed: false } }),
+    } as unknown as import("../../adapters/backend").DocumentBackend;
+    const token = "1".repeat(32);
+    const released: [number, string][] = [];
+    const files = {
+      chooseFile: async () => ({ ok: true as const, value: null }),
+      choosePdfDestination: async () => ({ ok: true as const, value: { path: "/docs/out.pdf", overwriteGrant: token } }),
+      releasePdfGrant: async (sessionId: number, grant: string) => {
+        released.push([sessionId, grant]);
+        return { ok: true as const, value: null };
+      },
+      createDocument: async () => ({ ok: false as const, error: { code: "Protocol" as const } }),
+    };
+    const sessions = new DocumentSessions(backend);
+    const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake, files);
+    await workspace.open("/docs/a.docx");
+    await flush();
+    expect(await workspace.exportPdf(1, { title: "PDF", accept: "Export", cancel: "Cancel" }))
+      .toEqual({ ok: false, error });
+    expect(workspace.publicationNoticeCount).toBe(1);
+    expect(released).toEqual([[1, token]]);
+    expect(workspace.fileBusy).toBe(false);
+    workspace.docxEditorFor(1)?.dispose();
+
+    const message = documentErrorMessage(error);
+    expect(message.key).toBe("document.error.PdfReplacementUnverified");
+    expect(isPublicationWarning(message)).toBe(true);
+    expect(isRetainedNotice(message)).toBe(true);
+
+    let state = createNotificationState(message);
+    state = add(state, { key: "status.ready" });
+    expect(state.pending.map(notice => notice.message.key)).toEqual([message.key]);
+    for (const language of ["ko", "en"] as const) {
+      const text = createTranslator(language)(state.pending[0]!.message.key);
+      expect(text).toContain(language === "ko" ? "이미 보일 수 있습니다" : "may already be visible");
+      expect(text).toContain(language === "ko" ? "보존되었는지는 확인되지 않았습니다" : "Preservation of the original file is unconfirmed");
+      expect(text.toLowerCase()).not.toContain("cleanup");
+    }
+    expect(state.pending[0]!.message.key).not.toBe("document.pdfCleanupUncertain");
+    state = notificationReducer(state, { type: "acknowledge", id: state.pending[0]!.id });
+    expect(state.pending).toHaveLength(0);
   });
 });

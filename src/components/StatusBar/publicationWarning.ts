@@ -7,6 +7,7 @@ export function isPublicationWarning(message: Message): boolean {
     || message.key === "document.error.RestoredUnopened"
     || message.key === "document.error.FilePublishedUnregistered"
     || message.key === "document.error.FilePublishedUnconfirmed"
+    || message.key === "document.error.PdfReplacementUnverified"
     || message.key === "document.createdUnconfirmed";
 }
 
@@ -32,6 +33,7 @@ const ACTIONABLE = new Set<MessageKey>([
   "document.error.SaveUnsupported",
   "document.error.SaveFailure",
   "document.error.FileConflict",
+  "document.error.PdfReplacementUnverified",
   "document.error.SaveInProgress",
   "document.error.SaveNotReady",
   "document.error.InvalidRequest",

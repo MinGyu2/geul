@@ -146,6 +146,8 @@ pub enum Fault {
     UnlinkReplaced,
     /// PDF exchange: status of the swapped-out name cannot be read before cleanup.
     InspectReplaced,
+    /// FIRST post-exchange identity verification fails, before cleanup is authorized.
+    InspectExchanged,
 }
 
 /// 시험용 훅(원본 경로, 임시 파일 경로를 받는다).
@@ -161,6 +163,8 @@ thread_local! {
     pub static BEFORE_CREATE: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
     /// 시험용: 임시 파일을 다 쓰고 검증한 직후(원본 다시 읽기 전)에 (원본 경로, 임시 파일 경로)로 부른다.
     pub static AFTER_STAGE: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
+    /// PDF test only: after failed verification, before checking whether rollback is safe.
+    pub static BEFORE_EXCHANGE_ROLLBACK: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
     /// 시험용: 원본 확인 뒤·교체 직전에 (원본 경로, 임시 파일 경로)로 부른다(상위 디렉터리 바꾸기 흉내).
     pub static BEFORE_RENAME: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
 }
@@ -962,9 +966,10 @@ fn exchange(dir: &File, a: &CStr, b: &CStr) -> io::Result<()> {
 ///    and the destination now holds the staged inode. A replacement, deletion/re-creation, data write, chmod
 ///    or link change between the pre-check and the exchange is caught; a metadata-only change that alters
 ///    nothing but ctime (e.g. an extended attribute) in that window is not (the pre-check compares ctime);
-/// 4. mismatch: exchange back (the other file returns to its name, the PDF returns to the staging name and
-///    is removed on drop) and report `FileConflict`. If the swap-back itself fails, the PDF stays visible and
-///    the other file stays under the staging name; neither is deleted and `SaveFailure{publish}` is reported;
+/// 4. lookup failure: preserve entries and journal, report `PdfReplacementUnverified` (the PDF may already
+///    be visible). Mismatch: recheck BOTH observed entries before attempting rollback. A verified rollback
+///    restores the observed displaced file and reports `FileConflict`; unsafe, failed or unconfirmed rollback
+///    preserves entries/journal and reports `PdfReplacementUnverified`. Never guess that the original survived;
 /// 5. match: unlink the swapped-out inode (only while the staging name still holds it), fsync the directory.
 ///    If that unlink fails the PDF stays published, the previous file stays under the staging name and is
 ///    reported (`ExchangeOutcome::retained_replaced`); the journal record is kept, not retired.
@@ -973,7 +978,8 @@ fn exchange(dir: &File, a: &CStr, b: &CStr) -> io::Result<()> {
 ///
 /// A filesystem without RENAME_EXCHANGE refuses the overwrite (`SaveUnsupported{platform}`) instead of
 /// falling back to an unconditional replacement. Residual: in the conflict case the PDF is visible at the
-/// destination between steps 2 and 4; writes through file descriptors opened before the exchange land in the
+/// destination between steps 2 and 4. Rollback checks cannot exclude same-owner/root mutation between
+/// the checks and exchange (no atomic conditional exchange primitive). Writes through open descriptors land in the
 /// replaced inode after step 3 (it is being retired). The staging name's journal record names the staged
 /// inode, so a crash after step 2 never lets cleanup delete the swapped-out file.
 #[cfg(target_os = "linux")]
@@ -1023,41 +1029,68 @@ pub fn publish_exchange(
     // The exchange itself updates both inodes' ctime, so after it the swapped-out inode is compared on
     // everything but ctime (device, inode, size, mtime, mode, one link).
     let without_ctime = |snap: &Snapshot| (snap.0, snap.1, snap.2, snap.3, snap.5);
-    let swapped_status = regular_at(&staged.dir, &staged.name);
-    let identity_uncertain = swapped_status.is_err();
-    let swapped_out = swapped_status
-        .ok()
-        .flatten()
-        .is_some_and(|(snap, links)| links == 1 && without_ctime(&snap) == without_ctime(expected));
-    let landed = same_inode_at(&staged.dir, &target_name, &before);
-    if (!swapped_out && !identity_uncertain) || !landed {
-        return match exchange(&staged.dir, &staged.name, &target_name) {
-            // Back as before: the staging name holds the PDF again and is removed on drop.
-            Ok(()) => Err(DocumentError::FileConflict),
-            Err(error) => {
-                // Visible PDF, other file under the staging name: keep both, never delete.
-                staged.published = true;
-                Err(failure(SaveStage::Publish, &error))
-            }
-        };
-    }
-    staged.published = true;
-    // The staging name now holds the replaced inode; remove it only while it is still that inode. The PDF is
-    // already published at this point: a cleanup failure is reported (the previous file is kept under the
-    // staging name), never turned into a publication failure or followed by a guessed deletion.
-    let (old_dev, old_ino) = (expected.0, expected.1);
-    let cleanup_status = if identity_uncertain {
-        Err(io::Error::other("post-exchange identity unavailable"))
+    #[cfg(test)]
+    let swapped_status = if fault() == Some(Fault::InspectExchanged) {
+        Err(io::Error::other(
+            "injected first post-exchange lookup failure",
+        ))
     } else {
-        #[cfg(test)]
-        if fault() == Some(Fault::InspectReplaced) {
-            Err(io::Error::other("injected post-exchange lookup failure"))
-        } else {
-            regular_at(&staged.dir, &staged.name)
-        }
-        #[cfg(not(test))]
         regular_at(&staged.dir, &staged.name)
     };
+    #[cfg(not(test))]
+    let swapped_status = regular_at(&staged.dir, &staged.name);
+    let displaced = match swapped_status {
+        Ok(found) => found,
+        Err(_) => {
+            // The PDF has been exchanged into the destination, but the displaced inode is unknown.
+            // Neither cleanup nor a guessed second exchange is authorized. Drop must preserve the
+            // staging entry AND release its journal, even if an external actor changed either name.
+            staged.published = true;
+            return Err(DocumentError::PdfReplacementUnverified);
+        }
+    };
+    let swapped_out = displaced
+        .is_some_and(|(snap, links)| links == 1 && without_ctime(&snap) == without_ctime(expected));
+    let landed = same_inode_at(&staged.dir, &target_name, &before);
+    if !swapped_out || !landed {
+        #[cfg(test)]
+        call(&BEFORE_EXCHANGE_ROLLBACK, target, &staged.path);
+        // Roll back only the observed pair: the destination must still hold our PDF and the staging
+        // entry the displaced inode we actually inspected (not necessarily the confirmed original).
+        // There is no kernel compare-and-exchange for two names: same-owner/root mutation between
+        // these checks and renameat2 remains a residual race in the trusted-directory threat model.
+        let rollback_safe = displaced.is_some()
+            && regular_at(&staged.dir, &staged.name).is_ok_and(|now| now == displaced)
+            && same_inode_at(&staged.dir, &target_name, &before)
+            && staged.at_path(target);
+        if rollback_safe && exchange(&staged.dir, &staged.name, &target_name).is_ok() {
+            let restored = regular_at(&staged.dir, &target_name).is_ok_and(|now| {
+                now.zip(displaced)
+                    .is_some_and(|((snap, links), (old, old_links))| {
+                        links == old_links && without_ctime(&snap) == without_ctime(&old)
+                    })
+            });
+            if restored && staged.owns_path() {
+                // Verified rollback: the observed displaced file is restored, and Drop removes only
+                // our PDF. This does not claim that the user's confirmed original was restored.
+                return Err(DocumentError::FileConflict);
+            }
+        }
+        // Rollback unsafe, failed, or unconfirmed: preserve entries and journal; visibility is uncertain.
+        staged.published = true;
+        return Err(DocumentError::PdfReplacementUnverified);
+    }
+    staged.published = true;
+    // Replacement identity was verified. Only failures of this SECOND lookup describe uncertain cleanup.
+    let (old_dev, old_ino) = (expected.0, expected.1);
+    #[cfg(test)]
+    let cleanup_status = if fault() == Some(Fault::InspectReplaced) {
+        Err(io::Error::other("injected post-exchange lookup failure"))
+    } else {
+        regular_at(&staged.dir, &staged.name)
+    };
+    #[cfg(not(test))]
+    let cleanup_status = regular_at(&staged.dir, &staged.name);
     let cleanup_uncertain = cleanup_status.is_err();
     let still_old = cleanup_status
         .ok()

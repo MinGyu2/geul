@@ -73,6 +73,9 @@ pub enum DocumentError {
     },
     /// 불러온 뒤 디스크의 파일이 바뀌거나 교체됨(외부 수정). 저장하지 않았다(덮어쓰지 않음).
     FileConflict,
+    /// PDF exchange occurred, but replacement verification or rollback was not established.
+    /// The destination may already contain the PDF; do not claim the original was preserved.
+    PdfReplacementUnverified,
     /// A new destination was published, but directory durability could not be confirmed. Do not retry blindly.
     FilePublishedUnconfirmed,
     /// A new destination exists, but could not be registered/opened. Preserve it for explicit reopening.

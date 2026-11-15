@@ -111,7 +111,7 @@ export class DocumentWorkspace {
 
   private notePublication(result: Result<unknown>) {
     if (!result.ok && (result.error.code === "FilePublishedUnregistered" || result.error.code === "FilePublishedUnconfirmed"
-      || result.error.code === "RestoredUnopened")) this.publicationNotices += 1;
+      || result.error.code === "RestoredUnopened" || result.error.code === "PdfReplacementUnverified")) this.publicationNotices += 1;
   }
 
   get supportsNativeFiles(): boolean {
@@ -336,7 +336,9 @@ export class DocumentWorkspace {
         return { ok: false, error: { code: "StaleSession", sessionId } };
       }
       try {
-        return await editor.exportPdf(destination.value.path, destination.value.overwriteGrant);
+        const result = await editor.exportPdf(destination.value.path, destination.value.overwriteGrant);
+        this.notePublication(result);
+        return result;
       } catch {
         return { ok: false, error: { code: "Protocol" } };
       }

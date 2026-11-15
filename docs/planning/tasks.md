@@ -134,6 +134,8 @@ Independent Test: 지원 기능 행렬과 각 OS의 실제 배포 실행.
 - [ ] T015 [US5] 기존·신규 문서 왕복 및 회귀 행렬 — `tests/roundtrip/`, `docs/quality-matrix.md` — Stage 5-A(2026-11-15) 로컬 범위 행렬 작성: 기존 PASS 재사용, 외부 작성 HWP/HWPX 3건 열기·PDF, DOCX 한글 글꼴 탐색 GAP(fontconfig 전용 호스트), 외부 corpus·S5-2/S5-3 남음 → 전체 미완료 ([행렬](../quality-matrix.md)) — PDF Package A 최종 예외 경계는 신규 회귀 4건과 typecheck PASS로 완료; 기존 PASS는 재실행하지 않았습니다. Stage 5-A 전체는 글꼴·Release path 작업이 남아 부분 완료입니다.
 - [ ] T016 [US5] 세 OS·확장 입력/그래픽 환경·PDF·고지·보안 출시 수용 — `src-tauri/tauri.conf.json`, `docs/release-checklist.md` — Stage 5-A(2026-11-15): Linux PDF 내보내기 구현·수용(DOCX 벡터, HWP/HWPX 쪽 그림), 고지 생성기·로컬 보안 PASS, .deb 생성되지만 NixOS 전용 바이너리(이식성 FAIL)·고지 미동봉·geul 라이선스 미정 → 출시 NO-GO, 전체 미완료 ([점검표](../release-checklist.md)). Phase 2(2026-11-15): PDF 기존 파일 덮어쓰기는 GTK 확인에 묶인 일회용 허가와 RENAME_EXCHANGE 신원 조건 교체로만, DOCX PDF는 게시 직전 세션·generation·revision 재확인. 후속 안정화: 허가 토큰을 내보내기·세션에 묶고 확인 뒤 삭제된 대상 거부, 교환 뒤 정리 실패를 보고, 두 엔진 게시를 레지스트리 잠금 안 게시 지점으로 선형화, 오라클 빈 쪽 RGB 비교. 라이선스: geul MIT 채택(루트 LICENSE), 서드파티 고지 누락 0(원문 없던 crate 6개 고정), 패키지 동봉·글꼴 탐색·Release 경로 정리는 남음 — 최종 PDF 예외 경계는 조회 불확실성·journal 소유권 보존, 조기 grant 회수, 동시 정리/내구성 경고를 신규 회귀 4건으로 확인하고 Package A 완료. Stage 5-A 글꼴 통합 및 Release private-path 정리는 남아 전체는 부분 완료입니다.
 
+PDF Safety 최종 마감(2026-11-15): 위 직전 4건의 기록은 역사 근거로 유지한다. 첫 교환 후 신원 조회 오류는 별도 부분 게시 오류로 거부하고, 관찰한 두 이름을 재검증한 경우에만 rollback한다. 신규 Rust 회귀 1건(5 하위 경우)·프런트엔드 회귀 1건·typecheck PASS. Package A PDF Safety COMPLETED, Package B COMPLETED 유지; Stage 5-A PARTIALLY COMPLETED, Stage 5 INCOMPLETE, 출시 NO-GO. 글꼴 및 Release 경로 작업은 시작하지 않았다.
+
 ## Task Contracts
 
 Depends on은 ID 연결이다. 위 승인된 착수 조건과 전체 Done을 구분한다. `T019(L)`은 기존 로컬 게이트이며 T019 전체를 의미하지 않는다. 새로운 T015→T023 연결은 신규 생성 수용을 품질 행렬에 포함하기 위한 명시적 추가다. T024는 기본 출시 선행이 아니다. 미착수 Files는 계획 경로이며 tests는 로컬 논리 경로다.
