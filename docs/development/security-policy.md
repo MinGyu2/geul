@@ -247,6 +247,11 @@ MERGE BLOCKING VERIFIED 모두 이번 음성 대조에서는 미확인이며, CI
 
 ## 6. 오탐 예외 절차
 
+2026-11-16 검토: `patches/wordcraft/system-font-source.commit`의 원본 author/committer 주소는 공개 WordCraft 부모
+[`dc25d8a`](https://github.com/MinGyu2/wordcraft/commit/dc25d8a27303b35d0ef7d61e56276f7b8f3feab5)의 작성자 메타데이터와 같다.
+고정 Git SHA 재구성을 위해 원문이 필요하므로 `email-address` 예외는 이 정확한 경로와 SHA-256
+`471dd92896d6341eb3762aedd057eeb0bd5b0efd97358720fa0b794d30b544e7`에만 묶는다. 다른 경로·변경된 내용·다른 규칙은 허용하지 않는다.
+
 예외는 검토를 거친 경우에만 추가하며, 규칙 자체를 끄지 않습니다.
 
 1. 정말 오탐인지 확인합니다. 테스트용 가짜 비밀은 파일에 원문으로 쓰지 말고 실행 시점에 조립합니다

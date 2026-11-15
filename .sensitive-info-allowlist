@@ -12,3 +12,4 @@ uninspected-binary src-tauri/icons/icon.png sha256=1c41541a9c04bb052f6cbcac81ae1
 uninspected-binary src-tauri/icons/icon.ico sha256=68b443b7c6413d53c18176122ebd4c9ab66a38a44885c9e03e2ca21bd573d15f -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
 uninspected-binary src-tauri/icons/icon.icns sha256=501d96737b1a3a52874364ce6ed4198dd144998eb4c0260347e9a8b6d1adbd5b -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
 email-address docs/licenses/third-party/dlopen2-0.8.2/LICENSE sha256=39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2 -- upstream dlopen2 0.8.2 MIT licence text fetched from its published commit; the copyright line (with the author address) must be reproduced verbatim under MIT
+email-address patches/wordcraft/system-font-source.commit sha256=471dd92896d6341eb3762aedd057eeb0bd5b0efd97358720fa0b794d30b544e7 -- Reviewed original author/committer metadata matches the public WordCraft parent; unchanged bytes are required to reconstruct the pinned Git commit
