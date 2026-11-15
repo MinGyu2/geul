@@ -10,19 +10,38 @@ const view = {
   collapsed: true, inTable: false,
   caretKey: "body:0:0", anchorKey: "body:0:0", paragraphText: "가나", caretOffset: 0,
   history: { undo: false, redo: false },
-  format: { bold: false, italic: false, underline: false, strikethrough: false },
+  format: { bold: false, italic: false, underline: false, strikethrough: false, font: "Source Serif 4", fontEastAsia: null },
   formatAccess: "allowed",
   trackedReadOnly: false,
   hasToc: false,
   tracking: false,
   hasRevisions: false,
+  fontGeneration: 3,
+};
+/** The parsed form of a wire view: font families move from `format` to `font` (Stage 5-A). */
+const parsed = <T extends typeof view>(wire: T) => {
+  const { font, fontEastAsia, ...flags } = wire.format;
+  return { ...wire, format: flags, font: { family: font, eastAsia: fontEastAsia } };
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 
 describe("DOCX 응답 검사", () => {
+  it("parses the selection's font families and the font generation (Stage 5-A)", () => {
+    expect(parseDocxView(view)?.font).toEqual({ family: "Source Serif 4", eastAsia: null });
+    expect(parseDocxView(view)?.fontGeneration).toBe(3);
+    expect(parseDocxView({ ...view, format: { ...view.format, font: null } })?.font.family).toBeNull();
+    for (const bad of [42, "", "x".repeat(257), undefined]) {
+      expect(parseDocxView({ ...view, format: { ...view.format, font: bad } })).toBeNull();
+    }
+    const { fontGeneration: _g, ...noGeneration } = view;
+    void _g;
+    expect(parseDocxView(noGeneration)).toBeNull();
+    expect(parseDocxView({ ...view, fontGeneration: -1 })).toBeNull();
+    expect(parseDocxView({ ...view, format: { ...view.format, extra: true } })).toBeNull();
+  });
   it("accepts bounded selection previews and actual paragraph style without changing legacy views", () => {
     const actual = { ...view, selectionText: "한😀글", paragraphStyle: "Heading 1" };
-    expect(parseDocxView(actual)).toEqual(actual);
+    expect(parseDocxView(actual)).toEqual(parsed(actual));
     expect(parseDocxView({ ...actual, selectionText: "😀".repeat(501) })).toBeNull();
     expect(parseDocxView({ ...actual, selectionText: null })).toBeNull();
     expect(parseDocxView({ ...actual, paragraphStyle: 42 })).toBeNull();
@@ -46,7 +65,7 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxState({ session, view: { ...view, trackedReadOnly: true } }, 3)?.view.trackedReadOnly).toBe(true);
   });
   it("보기는 계약의 모양만 받는다", () => {
-    expect(parseDocxView(view)).toEqual(view);
+    expect(parseDocxView(view)).toEqual(parsed(view));
     expect(parseDocxView({ ...view, caret: null })?.caret).toBeNull();
     expect(parseDocxView({ ...view, extra: 1 })).toBeNull();
     expect(parseDocxView({ ...view, pages: [] })).toBeNull();
@@ -58,7 +77,7 @@ describe("DOCX 응답 검사", () => {
 
   it("실행 취소 기록·글자 서식(T010)은 정해진 모양의 참·거짓만 받는다", () => {
     const pressed = { ...view, history: { undo: true, redo: false }, format: { ...view.format, bold: true } };
-    expect(parseDocxView(pressed)).toEqual(pressed);
+    expect(parseDocxView(pressed)).toEqual(parsed(pressed));
     const without = (key: string) => Object.fromEntries(Object.entries(view).filter(([name]) => name !== key));
     expect(parseDocxView(without("history"))).toBeNull();
     expect(parseDocxView(without("format"))).toBeNull();
@@ -158,7 +177,7 @@ describe("DOCX 응답 검사", () => {
 
 
 it("validates optional core insertion view flags without accepting malformed states", () => {
-  expect(parseDocxView({ ...view, bullets: true, imageInsertionAllowed: false })).toEqual({ ...view, bullets: true, imageInsertionAllowed: false });
+  expect(parseDocxView({ ...view, bullets: true, imageInsertionAllowed: false })).toEqual(parsed({ ...view, bullets: true, imageInsertionAllowed: false }));
   expect(parseDocxView({ ...view, bullets: null })?.bullets).toBeNull();
   expect(parseDocxView({ ...view, bullets: "yes" })).toBeNull();
   expect(parseDocxView({ ...view, imageInsertionAllowed: null })).toBeNull();

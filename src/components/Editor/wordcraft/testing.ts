@@ -28,14 +28,17 @@ type FakeState = {
   toc: { updates: number } | null;
   tracking: boolean;
   revisions: number;
+  fonts: [string, string][];
 };
 /** WordCraft에서 바꾸는 명령(`mutates`)으로 실행되는 연산. deleteSelection은 선택이 있을 때만 명령을 실행한다. */
 const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
-  "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "comment",
+  "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "font", "comment",
   "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
 ]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
+/** The fake document's base font family. */
+export const FAKE_FONT = "Fake Serif";
 const chars = (text: string) => [...text];
 /** 백엔드 MAX_TEXT_CHARS·MAX_OPS(engine.rs). */
 const MAX_TEXT = 4096;
@@ -121,6 +124,11 @@ export class FakeDocx implements DocxBackend {
   /** 서식을 준 선택 범위(`p:o-p:o`)마다 켠 서식, 선택이 없을 때 켠 다음 입력의 서식(T010 흉내). */
   private styled = new Map<string, Set<DocxCharFormat>>();
   private pendingFormat = new Set<DocxCharFormat>();
+  /** Stage 5-A: font family per selected range (fake model; the real engine is tested in Rust). */
+  private fonts = new Map<string, string>();
+  private pendingFont: string | null = null;
+  /** Font database generation reported by views. */
+  fontGeneration = 0;
   /** 이어 친 글자를 한 기록 단계로 묶는 중(WordCraft typing_open). */
   private typingOpen = false;
   trackedReadOnly = false;
@@ -166,6 +174,8 @@ export class FakeDocx implements DocxBackend {
       history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
       format: Object.fromEntries(FORMATS.map((flag) => [flag, this.currentFormat().has(flag)])) as DocxView["format"],
       formatAccess: this.formatAccess,
+      font: { family: cmp(this.caret, this.anchor) === 0 ? this.pendingFont ?? FAKE_FONT : this.fonts.get(this.rangeKey()) ?? FAKE_FONT, eastAsia: null },
+      fontGeneration: this.fontGeneration,
     };
   }
 
@@ -180,7 +190,7 @@ export class FakeDocx implements DocxBackend {
 
   /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
   private content(): string {
-    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions]);
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions, [...this.fonts].sort()]);
   }
 
   private capture(): FakeState {
@@ -188,6 +198,7 @@ export class FakeDocx implements DocxBackend {
       paragraphs: [...this.paragraphs], styled: [...this.styled].map(([key, set]) => [key, [...set]]),
       caret: { ...this.caret }, anchor: { ...this.anchor }, pending: [...this.pendingFormat], comments: [...this.comments],
       notes: [...this.notes], toc: this.toc && { ...this.toc }, tracking: this.tracking, revisions: this.revisions,
+      fonts: [...this.fonts],
     };
   }
 
@@ -202,6 +213,7 @@ export class FakeDocx implements DocxBackend {
     this.toc = state.toc && { ...state.toc };
     this.tracking = state.tracking;
     this.revisions = state.revisions;
+    this.fonts = new Map(state.fonts);
     // 엔진처럼 되돌리면 표지·마지막 넣기 기억을 버린다(그 자리를 다시 쓰지 않음).
     this.marks.clear();
     this.last = null;
@@ -460,6 +472,12 @@ export class FakeDocx implements DocxBackend {
         if (!flags.delete(op.format)) flags.add(op.format);
         if (flags.size > 0) this.styled.set(key, flags);
         else this.styled.delete(key);
+        return true;
+      }
+      case "font": {
+        if (this.formatAccess === "protected" || this.refuseFormat) return false;
+        if (cmp(this.caret, this.anchor) === 0) this.pendingFont = op.name;
+        else this.fonts.set(this.rangeKey(), op.name);
         return true;
       }
       case "tab":

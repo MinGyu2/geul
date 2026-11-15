@@ -384,6 +384,126 @@ button {
   max-width: 320px;
 }
 
+/* ---- 글꼴 선택기 (Stage 5-A) ---- */
+
+.font-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.font-picker__input {
+  width: 168px;
+  height: 28px;
+  padding: 0 24px 0 var(--space-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.font-picker__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.font-picker__toggle {
+  position: absolute;
+  right: 2px;
+  width: 22px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.font-picker__toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.font-picker__popup {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 2px);
+  left: 0;
+  width: 300px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+.font-picker__list {
+  max-height: 320px;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.font-picker__heading {
+  padding: 6px var(--space-2) 2px;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.font-picker__note {
+  padding: 6px var(--space-2);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.font-picker__option {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px var(--space-2);
+  cursor: default;
+}
+
+.font-picker__option--active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.font-picker__name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker__alt,
+.font-picker__meta {
+  color: var(--text-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.font-picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px var(--space-2);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.font-picker__action {
+  padding: 2px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.font-picker__action:disabled {
+  opacity: 0.5;
+}
+
 .ribbon__group-label {
   padding-top: 2px;
   color: var(--text-subtle);

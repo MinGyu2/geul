@@ -94,7 +94,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
+  "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
 ]);
 /**
@@ -109,7 +109,7 @@ const ACTION_IDS = [
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ] as const;
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
@@ -433,10 +433,32 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   private adopt(session: SessionInfo, view: DocxView) {
+    // Stage 5-A: a font database change re-lays the document out without a new revision; drop page rasters so every
+    // page is drawn again in full with the new fonts.
+    if (this.view && view.fontGeneration !== this.view.fontGeneration) {
+      for (const raster of this.rasters.values()) releaseCanvas(raster.backing);
+      this.rasters.clear();
+      this.failures.clear();
+    }
     this.generation = session.loadGeneration;
     this.revision = session.revision;
     this.view = view;
     this.sessions.applyUpdate(session);
+  }
+
+  /**
+   * Stage 5-A: the shared font database changed (a user font registered or removed, the system list refreshed). Fetch a
+   * fresh view — new layout, caret and selection geometry — and redraw. Never changes the document or its revision. While
+   * edits are in flight the next edit response carries the new view instead.
+   */
+  async fontsChanged(): Promise<void> {
+    const info = this.info;
+    if (this.disposed || this.status.kind !== "ready" || !info || this.busy || this.imeUnsettled) return;
+    const epoch = this.epoch;
+    const result = await this.backend.view(this.sessionId, info.loadGeneration);
+    if (epoch !== this.epoch || this.disposed || !result.ok || this.busy || this.status.kind !== "ready") return;
+    this.adopt(result.value.session, result.value.view);
+    this.emit();
   }
 
   private setStatus(status: DocxStatus) {
@@ -1023,6 +1045,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       },
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
+      font: this.view ? { family: this.view.font.family } : null,
       ...this.parameterState(),
     };
   }
@@ -1070,7 +1093,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (!this.editable || !view || this.imeUnsettled || view.trackedReadOnly) return {};
     if (this.busy) {
       return {
-        parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" },
+        parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits", "format.font": "pendingEdits" },
         actionReasons: Object.fromEntries(ACTION_IDS.map((id) => [id, "pendingEdits"])),
       };
     }
@@ -1105,6 +1128,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     else parameterReasons["references.footnote"] = parameterReasons["references.endnote"] = "caretRequired";
     if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) parameters["insert.table"] = {};
     else parameterReasons["insert.table"] = "caretRequired";
+    // Stage 5-A font: any selection or caret the engine formats (`format.font`; collapsed = the engine's word/next-text
+    // target). Protection that always refuses formatting blocks it here; region protection is decided by the engine.
+    if (view.formatAccess !== "protected") parameters["format.font"] = { font: { family: view.font.family } };
     return { parameters, parameterReasons, actions, actionReasons };
   }
 
@@ -1150,6 +1176,10 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
       return { accepted: this.push({ op: "table", rows: args.rows, cols: args.cols }) };
+    }
+    if (command === "format.font") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      return { accepted: this.push({ op: "font", name: args.family.trim() }) };
     }
     if (command === "review.comment" || command === "references.footnote" || command === "references.endnote") {
       // 값은 실행 직전에 다시 검증한다(창을 거치지 않은 호출 포함). 연산 하나로 같은 세션 대기열에 넣는다.

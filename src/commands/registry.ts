@@ -23,7 +23,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs" | "file.exp
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
   | "edit.undo" | "edit.redo" | "edit.copy" | "edit.cut" | "edit.paste"
-  | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough"
+  | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough" | "format.font"
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula" | "hangul.insertTableFormula"
   | "review.comment"
   | "references.footnote" | "references.endnote"
@@ -106,6 +106,10 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+I"], scope: "document" },
   "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+U"], scope: "document" },
   "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
+  // Stage 5-A font picker: WordCraft `format.font` (requested family stored as given; layout, rendering and PDF use the shared
+  // font database). RHWP: unsupported — HWP/HWPX save proofs do not yet admit font-id changes or new face-name records, so a
+  // font change could not be saved safely (docs/architecture/font-system.md).
+  "format.font": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },

@@ -943,6 +943,7 @@ fn 응답_json은_계약의_모양이다() {
             "caretOffset",
             "clipboardTextAvailable",
             "collapsed",
+            "fontGeneration",
             "format",
             "formatAccess",
             "hasRevisions",
@@ -963,10 +964,26 @@ fn 응답_json은_계약의_모양이다() {
         value["view"]["history"],
         json!({"undo": false, "redo": false})
     );
+    // Stage 5-A: the selection's stored font families (null when mixed) join the flags.
+    let format = value["view"]["format"].as_object().unwrap();
+    let mut format_keys: Vec<&str> = format.keys().map(String::as_str).collect();
+    format_keys.sort();
     assert_eq!(
-        value["view"]["format"],
-        json!({"bold": false, "italic": false, "underline": false, "strikethrough": false})
+        format_keys,
+        [
+            "bold",
+            "font",
+            "fontEastAsia",
+            "italic",
+            "strikethrough",
+            "underline"
+        ]
     );
+    for flag in ["bold", "italic", "underline", "strikethrough"] {
+        assert_eq!(format[flag], json!(false), "{flag}");
+    }
+    assert!(format["font"].is_string() || format["font"].is_null());
+    assert!(value["view"]["fontGeneration"].is_u64());
     assert_eq!(value["view"]["formatAccess"], "allowed");
     // 추적 정책은 언제나 불리언으로 직렬화한다(프런트엔드 parseDocxView의 필수 키).
     assert_eq!(value["view"]["trackedReadOnly"], json!(false));

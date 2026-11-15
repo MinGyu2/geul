@@ -52,6 +52,9 @@ export interface DocumentCommandSnapshot {
   historyLimited?: boolean;
   /** 선택(없으면 다음 입력)의 글자 서식. 엔진이 알려 주지 않으면 null. */
   format: Readonly<Record<CharFormatFlag, boolean>> | null;
+  /** Stage 5-A: the selection's stored font family for display (family null: mixed). Absent/null when the engine does
+   * not report it. Display only; whether a font can be applied is `format.font`'s availability. */
+  font?: { family: string | null } | null;
   /** 문서 보호가 직접 글자 서식을 허용하는지(엔진이 알려 주면). null이면 서식 상태가 없는 엔진. */
   formatAccess: DocxFormatAccess | null;
   /**
@@ -99,7 +102,10 @@ export type DocumentCommandArgs =
   | { command: "review.comment"; text: string }
   /** 새 각주·미주 글(T013, WordCraft `references.footnote`·`references.endnote`). 한 줄, 비어 있지 않음. */
   | { command: "references.footnote"; text: string }
-  | { command: "references.endnote"; text: string };
+  | { command: "references.endnote"; text: string }
+  /** Stage 5-A: font family for the selection (or the next typed text where the engine supports it). Chosen in the
+   * font picker, never from a free-form dialog. */
+  | { command: "format.font"; family: string };
 
 /** 값이 필요한 문서 명령. */
 export type ParameterCommandId = DocumentCommandArgs["command"];
@@ -114,6 +120,8 @@ export interface CommandParameterContext {
   formula?: string;
   /** 커서가 있는 표 셀(0부터)과 표 크기. */
   tableCell?: { row: number; col: number; rows: number; cols: number };
+  /** Stage 5-A: the selection's stored font family (null: mixed). */
+  font?: { family: string | null };
 }
 
 /**

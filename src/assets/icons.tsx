@@ -15,6 +15,7 @@ const ICONS = {
   paste: <>{P("M9 4H6a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-3")}{P("M9 3h6v3H9z")}</>,
   cut: <>{P("M8.5 8.5 20 20M8.5 15.5 20 4")}<circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /></>,
   copy: <>{P("M9 9h11v11H9z")}{P("M5 15H4V4h11v1")}</>,
+  font: <>{P("M4 20 10 4h1l6 16")}{P("M6.5 14h8")}{P("M17 20h4")}</>,
   bold: P("M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z"),
   italic: P("M10 4h8M6 20h8M15 4 9 20"),
   underline: P("M7 4v6a5 5 0 0 0 10 0V4M5 21h14"),

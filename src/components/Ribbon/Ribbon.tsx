@@ -8,6 +8,7 @@ import { useRovingFocus } from "../../hooks/useRovingFocus";
 import { useTranslation } from "../../language/LanguageContext";
 import { DEFAULT_RIBBON_TAB, resolveActiveRibbonTab, visibleRibbonTabs } from "../../ribbon/visibility";
 import { CommandButton } from "../CommandButton/CommandButton";
+import { FontPicker } from "../FontPicker/FontPicker";
 import { keepEditorFocusOnPointerDown } from "../CommandButton/editorFocus";
 
 interface RibbonProps {
@@ -158,7 +159,9 @@ export function Ribbon({ context, format }: RibbonProps) {
             {active.groups.map((group, groupIndex) => (
               <div key={group.id} className="ribbon__group" role="group" aria-label={t(group.labelKey)}>
                 <div className="ribbon__group-commands">
-                  {group.commands.map((command, commandIndex) => (
+                  {group.commands.map((command, commandIndex) => command.id === "format.font" ? (
+                    <FontPicker key={command.id} context={context} tabIndex={groupIndex === 0 && commandIndex === 0 ? 0 : -1} />
+                  ) : (
                     <CommandButton
                       key={command.id}
                       id={command.id}

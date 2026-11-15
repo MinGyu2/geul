@@ -79,6 +79,17 @@ export interface DocxView {
   tracking: boolean;
   /** 추적된 변경이 있음(수락·거절 가용성, 백엔드 `DocxModel::has_revisions`). */
   hasRevisions: boolean;
+  /** Stage 5-A: the selection's stored font families (null = mixed). */
+  font: DocxFont;
+  /** Stage 5-A: font database generation the layout reflects; pages are redrawn when it changes. */
+  fontGeneration: number;
+}
+
+export interface DocxFont {
+  /** Requested (stored) family of the whole selection; null when mixed. */
+  family: string | null;
+  /** East Asian family (`w:eastAsia`); null when mixed. */
+  eastAsia: string | null;
 }
 
 export type DocxFormatAccess = "allowed" | "protected" | "regions";
@@ -152,6 +163,8 @@ export type DocxOp =
   | { op: "redo" }
   /** 선택의 글자 서식 켜고 끄기(선택이 없으면 다음 입력의 서식, T010). */
   | { op: "format"; format: DocxCharFormat }
+  /** Stage 5-A: font family for the selection (WordCraft `format.font`; a CJK font is also the East Asian font). */
+  | { op: "font"; name: string }
   /** 새 메모(T013, WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모. 글자 수는 MAX_DOCX_COMMENT_CHARS 이하. */
   | { op: "comment"; text: string }
   | { op: "footnote"; text: string }
@@ -232,7 +245,7 @@ function parseRect(value: unknown): DocxRect | null {
 
 const VIEW_KEYS = [
   "pages", "caret", "selection", "collapsed", "inTable", "caretKey", "anchorKey", "paragraphText", "caretOffset", "history", "format",
-  "formatAccess", "trackedReadOnly", "hasToc", "tracking", "hasRevisions",
+  "formatAccess", "trackedReadOnly", "hasToc", "tracking", "hasRevisions", "fontGeneration",
 ];
 const FORMAT_ACCESS: readonly DocxFormatAccess[] = ["allowed", "protected", "regions"];
 const FORMAT_KEYS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
@@ -244,11 +257,20 @@ function parseHistory(value: unknown): DocxHistory | null {
 }
 
 function parseFormat(value: unknown): DocxFormat | null {
-  if (!isRecord(value) || !hasExactly(value, FORMAT_KEYS)) return null;
+  if (!isRecord(value) || !hasExactly(value, [...FORMAT_KEYS, "font", "fontEastAsia"])) return null;
   const { bold, italic, underline, strikethrough } = value;
   return [bold, italic, underline, strikethrough].every((flag) => typeof flag === "boolean")
     ? { bold: bold as boolean, italic: italic as boolean, underline: underline as boolean, strikethrough: strikethrough as boolean }
     : null;
+}
+
+const fontName = (value: unknown): string | null | undefined =>
+  value === null ? null : typeof value === "string" && value.length > 0 && value.length <= 256 ? value : undefined;
+
+function parseFont(value: unknown): DocxFont | null {
+  if (!isRecord(value)) return null;
+  const family = fontName(value.font), eastAsia = fontName(value.fontEastAsia);
+  return family === undefined || eastAsia === undefined ? null : { family, eastAsia };
 }
 
 export function parseDocxView(value: unknown): DocxView | null {
@@ -262,8 +284,9 @@ export function parseDocxView(value: unknown): DocxView | null {
   if (![trackedReadOnly, hasToc, tracking, hasRevisions].every((flag) => typeof flag === "boolean")) return null;
   const history = parseHistory(value.history);
   const format = parseFormat(value.format);
+  const font = parseFont(value.format);
   const formatAccess = FORMAT_ACCESS.find((access) => access === value.formatAccess);
-  if (!history || !format || !formatAccess) return null;
+  if (!history || !format || !font || !formatAccess || !isCount(value.fontGeneration)) return null;
   if (!Array.isArray(pages) || pages.length === 0 || !Array.isArray(selection)) return null;
   const parsedPages = pages.map(parsePage);
   const parsedSelection = selection.map(parseRect);
@@ -283,7 +306,7 @@ export function parseDocxView(value: unknown): DocxView | null {
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
     collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess, trackedReadOnly: trackedReadOnly as boolean, hasToc: hasToc as boolean,
-    tracking: tracking as boolean, hasRevisions: hasRevisions as boolean,
+    tracking: tracking as boolean, hasRevisions: hasRevisions as boolean, font, fontGeneration: value.fontGeneration as number,
     ...(typeof value.selectionText === "string" ? { selectionText: value.selectionText } : {}),
     ...(typeof value.paragraphStyle === "string" ? { paragraphStyle: value.paragraphStyle } : {}),
   };

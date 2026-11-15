@@ -17,6 +17,8 @@ import { trace } from "../components/Editor/imeTrace";
 export type { CommandState, UnavailableReason } from "./capability";
 
 export interface CommandContext {
+  /** Stage 5-A font catalog and its actions (absent outside the desktop app). */
+  fonts?: import("../fonts/useFonts").FontController | undefined;
   imageOwner?: (target: DocumentCommandTarget) => () => boolean;
   pickImage?: () => Promise<ImportedPicture | null>;
   /** Live ownership check; invalidates an async action on document/modal/focus changes. */
@@ -229,6 +231,8 @@ export function executeCommand(
     }).catch(() => context.notify({ key: "clipboard.failed" }));
     return true;
   }
+  // The font picker always supplies its family; there is no free-form font dialog.
+  if (id === "format.font" && args === undefined) return reject(unavailable("notImplemented"));
   if (isParameterCommandId(id) && args === undefined) {
     // 값이 필요한 명령: 입력 창을 연다(문서는 아직 바꾸지 않음). 창이 없는 문맥이면 실행할 수 없다.
     if (!context.requestInput || !label) return reject(unavailable("notImplemented"));

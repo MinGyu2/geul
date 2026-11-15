@@ -19,8 +19,22 @@ export const MAX_FORMULA_DEPTH = 16;
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
   "insert.table",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
-  "references.footnote", "references.endnote",
+  "references.footnote", "references.endnote", "format.font",
 ]);
+
+/** Font family length limit (bytes after trimming, the backend `valid_font_name` / WordCraft `format.font` limit). */
+export const MAX_FONT_FAMILY_BYTES = 128;
+
+/** A font family name the backend accepts: non-empty after trimming, at most 128 UTF-8 bytes, no control characters
+ * and none of `" , ; \ { }` (ambiguous in DOCX attributes and CSS font lists), no object placeholder (U+FFFC). */
+export function fontFamilyProblem(family: string): "empty" | "tooLong" | "characters" | null {
+  const trimmed = family.trim();
+  if (trimmed === "") return "empty";
+  if (new TextEncoder().encode(trimmed).length > MAX_FONT_FAMILY_BYTES) return "tooLong";
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f",;\\{}\ufffc]/.test(trimmed)) return "characters";
+  return null;
+}
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
 export const MAX_COMMENT_CHARS = 1000;
 
@@ -307,6 +321,8 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
     case "hangul.tableFormula":
       return keys === "command,formula" && typeof value.formula === "string" && !!context?.tableCell
         && formulaProblem(value.formula, context.tableCell) === null;
+    case "format.font":
+      return keys === "command,family" && !!context?.font && typeof value.family === "string" && fontFamilyProblem(value.family) === null;
     default:
       return false;
   }

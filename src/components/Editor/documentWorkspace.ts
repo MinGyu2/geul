@@ -445,6 +445,14 @@ export class DocumentWorkspace {
     if (result.ok) void this.anyEditorFor(result.value.sessionId)?.load();
   }
 
+  /**
+   * Stage 5-A: the shared font database / WebView fonts changed. Every open editor redraws with the new fonts (DOCX fetches
+   * a re-laid-out view; RHWP repaints its Canvas pages). Documents and revisions are unchanged.
+   */
+  fontsChanged(): void {
+    for (const editor of this.editors.values()) void editor.fontsChanged();
+  }
+
   /** rhwp 세션의 편집 세션(없으면 만든다). 목록에 없거나 rhwp가 아니면 null. */
   editorFor(sessionId: SessionId): RhwpEditorSession | null {
     const editor = this.anyEditorFor(sessionId);

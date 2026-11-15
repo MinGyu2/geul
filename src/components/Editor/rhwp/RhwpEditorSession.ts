@@ -737,6 +737,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.drawnAt = new WeakMap();
   }
 
+  /**
+   * Stage 5-A: fonts available to the WebView changed (a registered user font loaded or removed). The engine's layer tree
+   * is unchanged, so the unchanged-page check would skip painting; forget what was drawn so every page is painted again
+   * through the Canvas text path with the new fonts. Never changes the document.
+   */
+  fontsChanged(): void {
+    if (this.disposed) return;
+    this.drawnAt = new WeakMap();
+    this.emit();
+  }
+
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
     if (!this.prepareRendering(scale) || !this.doc) return false;
     const doc = this.doc;
@@ -1676,7 +1687,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       ...(this.advancedHistoryOnly ? { historyScope: "advanced" as const } : {}),
       historyLimited: this.history === null && this.historyOff === "limit",
-      format: this.formatState(), formatAccess: null,
+      format: this.formatState(), formatAccess: null, font: this.fontState(),
       ...this.parameterState(),
       actions: this.coreActions(),
       ...this.coreActionReasons(),
@@ -2142,6 +2153,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }, true, "other", null, true);
     this.history?.boundary();
     return { accepted: applied };
+  }
+
+  private fontCache: { key: string; value: { family: string | null } | null } | null = null;
+
+  /** Stage 5-A (display only): the stored font name at the selection start — the Hangul and Latin names when they agree,
+   * otherwise "mixed". Font changes stay unsupported for HWP/HWPX (registry). */
+  private fontState(): { family: string | null } | null {
+    if (!this.doc || !this.text || this.status.kind !== "ready") return null;
+    const [from] = this.hasSelection ? this.ordered() : [this.caret];
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}`;
+    if (this.fontCache?.key !== key) {
+      const families = this.text.fontFamilies(from);
+      const value = families ? { family: families[0] === families[1] ? families[0]! : null } : null;
+      this.fontCache = { key, value };
+    }
+    return this.fontCache.value;
   }
 
   private formatSourceCache: { key: string; safe: boolean } | null = null;

@@ -1,4 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { createFontBackend } from "./adapters/fonts";
+import { useFontController } from "./fonts/useFonts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { executeCommand, type CommandContext, type CommandInputRequest, type FileCommandActions } from "./commands/commands";
 import type { DocumentCommandArgs } from "./commands/target";
@@ -225,10 +227,14 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       if (next !== active) { active = next; clipboardOwnership.current += 1; imageOwnership.current += 1; }
     });
   }, [documents]);
+  // Stage 5-A font catalog (desktop app only: the backend owns the font system).
+  const fontBackend = useMemo(() => (isTauri() ? createFontBackend((command, args) => invoke(command, args as Record<string, unknown> | undefined)) : null), []);
+  const onFontsChanged = useCallback(() => documents?.fontsChanged(), [documents]);
+  const fonts = useFontController(fontBackend, notify, t, onFontsChanged);
   const context: CommandContext = useMemo<CommandContext>(
     () => ({
       layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
-      files: fileActions, requestInput,
+      files: fileActions, requestInput, fonts,
       pickImage: () => invoke<import("./commands/target").ImportedPicture | null>("picture_import", { title: t("command.insert.image"), accept: t("document.open"), cancel: t("document.cancel") }),
       imageOwner: target => {
         const epoch = imageOwnership.current;
@@ -244,7 +250,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
           && document.hasFocus();
       },
     }),
-    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents, t],
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents, t, fonts],
   );
   // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
   if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);

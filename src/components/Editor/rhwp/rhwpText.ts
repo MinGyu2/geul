@@ -735,6 +735,23 @@ export class RhwpText {
     return () => this.format(from, to, props);
   }
 
+  /** Stage 5-A: the stored font names (7 language slots) of the character at `at`. null when unreadable. */
+  fontFamilies(at: DocPosition): string[] | null {
+    const c = at.cell;
+    try {
+      const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
+      const value = json(c?.nested
+        ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+        : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+        : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
+      if (!isRecord(value) || !Array.isArray(value.fontFamilies) || value.fontFamilies.length !== 7) return null;
+      const names = value.fontFamilies as unknown[];
+      return names.every((n) => typeof n === "string" && n.length > 0 && n.length <= 256) ? names as string[] : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */
   charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
     const c = at.cell;

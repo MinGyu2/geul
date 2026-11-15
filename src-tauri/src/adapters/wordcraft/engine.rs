@@ -119,6 +119,13 @@ pub enum DocxOp {
     Format {
         format: CharFormat,
     },
+    /// Stage 5-A: font family for the selection (collapsed caret: the engine's `format.font` target —
+    /// the word at the caret or the next typed text). WordCraft `format.font {"name"}`; a CJK font also
+    /// becomes the East Asian font (`w:eastAsia`), as in Word. The requested name is stored as given even
+    /// when this machine lacks the font (layout then falls back).
+    Font {
+        name: String,
+    },
     /// 새 메모(T013, 앱 명령 `review.comment` → WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모를 단다.
     /// 글자는 `MAX_COMMENT_CHARS` 이하, 제어 문자 없음. 커서만 있거나(엔진은 커서의 단어를 고르지만 앱은 쓰지 않음) 선택이
     /// 본문 밖(각주·머리말 등)이면 거부한다.
@@ -241,6 +248,17 @@ fn valid_text(text: &str) -> bool {
     valid_chars(text, &[])
 }
 
+/// A font family name the engine accepts (`format.font`: 1–128 bytes after trimming) without control
+/// characters, quotes or separators that would make it ambiguous in DOCX or CSS.
+pub fn valid_font_name(name: &str) -> bool {
+    let name = name.trim();
+    !name.is_empty()
+        && name.len() <= 128
+        && !name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '"' | ',' | ';' | '\\' | '{' | '}' | '\u{FFFC}'))
+}
+
 /// Optional Cut guard, checked under the model lock immediately before deletion.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -262,6 +280,7 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::InsertText { text } | DocxOp::InsertAt { text, .. } => valid_text(text),
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
             DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
+            DocxOp::Font { name } => valid_font_name(name),
             DocxOp::DeleteSelection { selection: Some(s) } => {
                 s.anchor_key.len() <= 256 && s.caret_key.len() <= 256
             }
@@ -361,6 +380,9 @@ pub struct DocxView {
     pub format: FormatView,
     /// 문서 보호가 글자 서식 명령을 허용하는지(T010 안정화, WordCraft `review.restrict` 상태에서). 엔진이 실행할 때 다시 판정한다.
     pub format_access: FormatAccess,
+    /// Stage 5-A: font database generation the layout reflects; a change means pages must be drawn again
+    /// although the document revision is the same.
+    pub font_generation: u64,
 }
 
 /// 문서 보호(Restrict Editing)에서 직접 글자 서식(`format.bold` 등)을 할 수 있는지.
@@ -405,12 +427,17 @@ pub struct HistoryView {
     pub redo: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FormatView {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
+    /// Stage 5-A: the requested (stored) font family of the whole selection; `None` when mixed.
+    pub font: Option<String>,
+    /// The East Asian font family (`w:eastAsia`); `None` when mixed.
+    pub font_east_asia: Option<String>,
 }
 
 /// 한 요청의 실행 결과.
@@ -458,6 +485,9 @@ pub struct DocxModel {
     last_insert: Option<LastInsert>,
     /// 쪽·배율마다 마지막으로 그린 래스터와 그 판(바뀐 띠만 보낼 때 비교 기준). 최근 것부터 MAX_RASTERS개.
     rasters: Vec<Raster>,
+    /// The font database generation the cached layout and rasters were made with (Stage 5-A): a user font
+    /// registered or removed, or a system font refresh, lays the document out again.
+    font_generation: u64,
     /// 시험용 실패 주입: 명령 `id`의 `n`번째 실행을 엔진이 거부한 것처럼 실행하지 않고 돌려준다(한 번).
     #[cfg(test)]
     pub fail_at: Option<(&'static str, usize)>,
@@ -568,6 +598,7 @@ impl DocxModel {
             marks: Vec::new(),
             last_insert: None,
             rasters: Vec::new(),
+            font_generation: wordcraft_fonts::FontDb::global().generation(),
             #[cfg(test)]
             fail_at: None,
         };
@@ -612,7 +643,24 @@ impl DocxModel {
 
     /// 연산을 차례로 실행한다. 엔진이 거부한 연산은 건너뛰고 그 위치를 기록한다. 바로 앞 연산이 거부된 `chain` 조각은 실행하지
     /// 않고 거부로 기록한다.
+    /// Lay the document out again when the font database changed since the cached layout (fonts are
+    /// render state: the document and its revision do not change).
+    fn sync_fonts(&mut self) {
+        let generation = wordcraft_fonts::FontDb::global().generation();
+        if generation != self.font_generation {
+            self.font_generation = generation;
+            self.session.relayout();
+            self.rasters.clear();
+        }
+    }
+
+    /// The font database generation this model's layout reflects.
+    pub fn font_generation(&self) -> u64 {
+        self.font_generation
+    }
+
     pub fn apply(&mut self, ops: &[DocxOp]) -> EditOutcome {
+        self.sync_fonts();
         let mut outcome = EditOutcome {
             applied: 0,
             changed: 0,
@@ -709,6 +757,7 @@ impl DocxModel {
             DocxOp::Undo {} => self.undo_redo_step(false),
             DocxOp::Redo {} => self.undo_redo_step(true),
             DocxOp::Format { format } => self.run(format.command(), json!({})),
+            DocxOp::Font { name } => self.run("format.font", json!({ "name": name.trim() })),
             DocxOp::Comment { text } => self.new_comment(text),
             DocxOp::Footnote { text } => self.new_note("references.footnote", text),
             DocxOp::Endnote { text } => self.new_note("references.endnote", text),
@@ -1112,6 +1161,7 @@ impl DocxModel {
     }
 
     pub fn view(&mut self) -> DocxView {
+        self.sync_fonts();
         let layout = self.session.layout();
         let hint = self.session.page_hint;
         let sel = self.session.sel.clone();
@@ -1144,11 +1194,14 @@ impl DocxModel {
         };
         let state = wordcraft_engine::cmd::format::state(&self.session);
         let flag = |key: &str| state.get(key).and_then(Value::as_bool).unwrap_or(false);
+        let text = |key: &str| state.get(key).and_then(Value::as_str).map(str::to_owned);
         let format = FormatView {
             bold: flag("bold"),
             italic: flag("italic"),
             underline: flag("underline"),
             strikethrough: flag("strike"),
+            font: text("font"),
+            font_east_asia: text("fontEastAsia"),
         };
         let paragraph = self.session.doc.para_at(&sel.focus);
         let caret_offset = paragraph
@@ -1208,6 +1261,7 @@ impl DocxModel {
             history,
             format,
             format_access: FormatAccess::of(&self.session),
+            font_generation: self.font_generation,
         }
     }
 
@@ -1222,6 +1276,7 @@ impl DocxModel {
         if !(MIN_RENDER_SCALE..=MAX_RENDER_SCALE).contains(&scale) {
             return None;
         }
+        self.sync_fonts();
         let layout = self.session.layout();
         let size = layout.pages.get(page)?;
         let pixels = (f64::from(size.w) * f64::from(scale)).ceil()
@@ -1252,6 +1307,7 @@ impl DocxModel {
         revision: u64,
         base: Option<u64>,
     ) -> Option<PageRender> {
+        self.sync_fonts();
         let image = self.rasterize(page, scale)?;
         let key = scale.to_bits();
         let previous = self

@@ -12,6 +12,8 @@ pub mod engine;
 mod store;
 
 #[cfg(test)]
+mod font_tests;
+#[cfg(test)]
 pub(crate) mod tests;
 
 pub use store::WordcraftModels;
