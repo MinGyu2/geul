@@ -368,6 +368,7 @@
   "editor.save.stage.validate": "The exported document could not be validated.",
   "editor.save.stage.write": "The temporary file could not be written or verified.",
   "editor.save.stage.publish": "The original could not be replaced.",
+  "editor.save.reason.formulaCache": "A formula value was not recalculated after its source cells changed. Recalculate that formula, then save.",
   "editor.save.io.permission-denied": "Permission denied.",
   "editor.save.io.storage-full": "Not enough storage space.",
   "editor.save.io.read-only": "The location is read-only.",

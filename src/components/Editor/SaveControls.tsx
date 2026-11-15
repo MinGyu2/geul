@@ -18,7 +18,7 @@ function detailKey(error: DocumentError): MessageKey | null {
   switch (error.code) {
     case "UnsafeSave": return `editor.save.outcome.${error.preservation.outcome}` as MessageKey;
     case "SaveUnsupported": return `editor.save.unsupported.${error.reason}` as MessageKey;
-    case "SaveFailure": return `editor.save.stage.${error.stage}` as MessageKey;
+    case "SaveFailure": return error.reason === "formulaCache" ? "editor.save.reason.formulaCache" : `editor.save.stage.${error.stage}` as MessageKey;
     case "SaveNotReady": return `editor.save.notReady.${error.reason}` as MessageKey;
     default: return null;
   }

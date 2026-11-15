@@ -79,7 +79,7 @@ export type BackendError =
   /** 저장(T009): 이 환경·파일에서는 원본을 안전하게 바꿀 수 없다(원본 그대로). */
   | { code: "SaveUnsupported"; reason: SaveUnsupportedReason }
   /** 저장(T009): 그 단계가 실패함. 원본은 그대로다. */
-  | { code: "SaveFailure"; stage: SaveStage; io?: IoProblem }
+  | { code: "SaveFailure"; stage: SaveStage; io?: IoProblem; reason?: "formulaCache" }
   /** 저장(T009): 불러온 뒤 디스크의 파일이 바뀜(외부 수정). 덮어쓰지 않았다. */
   | { code: "FileConflict" }
   | { code: "FilePublishedUnconfirmed" | "FilePublishedUnregistered" }

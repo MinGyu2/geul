@@ -45,6 +45,7 @@ import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicT
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
+import { FormulaCacheRefusal } from "./formulaDependencies";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
@@ -1549,6 +1550,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     charShapeCount: number | null;
     releaseShapes: (() => void) | undefined;
     preview: PreviewRaster | null;
+    /** The strict export was refused because a changed formula cache is not proven current. */
+    formulaCache?: boolean;
   } | null {
     const doc = this.doc;
     const module = this.module;
@@ -1568,9 +1571,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     };
     let reopened: RhwpDocument | null = null;
     let rebuilt = false;
+    let formulaCache = false;
     try {
       let bytes: Uint8Array;
-      this.text?.prepareExport();
+      try { this.text?.prepareExport(); } catch (error) { formulaCache = error instanceof FormulaCacheRefusal; throw error; }
       // HWP: incremental pagination after edits can differ from a fresh layout of the same model (the export
       // reopens with a fresh layout). Rebuild the live derived layout first so page evidence compares like
       // with like; the model itself is unchanged. The display layout is restored below (T010 D1).
@@ -1653,7 +1657,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       textEqual: report.failure === null && report.textEqual,
       controlsEqual: report.failure === null && report.controlsEqual,
     };
-    return { report, bytes: output, contentLoss, reopen, charShapeCount, releaseShapes, preview: output ? preview : null };
+    return { report, bytes: output, contentLoss, reopen, charShapeCount, releaseShapes, preview: output ? preview : null, ...(formulaCache && !output ? { formulaCache } : {}) };
   }
 
   // ---- 명령(T010) ----
@@ -2438,7 +2442,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saving" });
       const exported = this.exportAndCompare(format, "publish");
       releaseShapes = exported?.releaseShapes;
-      if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
+      if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export", ...(exported?.formulaCache ? { reason: "formulaCache" as const } : {}) });
       let result: Result<SaveOutcome>;
       try {
         result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination, exported.preview);

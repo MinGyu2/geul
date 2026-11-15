@@ -1101,6 +1101,8 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
         writeFileSync(join(out, `dependent-reopen-${format}.json`), JSON.stringify({ fields: fields(reopened), text: reopened.getTextFileText() }, null, 2));
         expect(saved.publishable, "stale dependent cache must not publish").toBe(false);
         expect(saved.refusedBeforeBackend).toBe(true);
+        // Stage 4: the refusal is reported as an unrecalculated formula, not as an engine export failure.
+        expect(editor.saveState).toEqual({ kind: "failed", error: { code: "SaveFailure", stage: "export", reason: "formulaCache" } });
         expect(fields(reopened)[0].value).toBe("20"); // raw engine export is diagnostic, never published
         expect(editor.hasUnpreservedChanges).toBe(true);
         expect(editor.snapshot().revision).toBe(revision);

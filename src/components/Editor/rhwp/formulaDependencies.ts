@@ -268,6 +268,9 @@ export function publicationFormulas(doc: RhwpDocument): Map<number, PublicationF
   return result;
 }
 
+/** A publication refusal because a changed formula cache cannot be proven current (explicit recalculation needed). */
+export class FormulaCacheRefusal extends Error {}
+
 /** Publication never silently persists a dependent cache after its source changed.
  * Read-only validation reuses the engine evaluator and exact field owner; no ID/range is rewritten.
  * Unsupported legacy formats can still be preserved unchanged, but changed tables fail closed.
@@ -278,11 +281,11 @@ export function validatePublicationFormulaCaches(doc: RhwpDocument, baseline: Ma
     if (prior?.inputs === current.inputs && prior.identity === current.identity) continue;
     const { at, field } = current, cache = cachedFormula(field.command);
     if (!cache || !String(field.command).includes("??%g,;;") || field.value !== cache.value
-      || !index(field.startCharIdx) || !doc.validateTableFormulaAt) throw new Error("formula cache unverified");
-    if (tableFormulaSafety(doc, at, cache.expression, id) !== "safe") throw new Error("formula dependencies unverified");
+      || !index(field.startCharIdx) || !doc.validateTableFormulaAt) throw new FormulaCacheRefusal("formula cache unverified");
+    if (tableFormulaSafety(doc, at, cache.expression, id) !== "safe") throw new FormulaCacheRefusal("formula dependencies unverified");
     const path = [at.cell!, ...(at.cell!.nested ?? [])].map(p => ({ controlIndex: p.control, cellIndex: p.cell, cellParaIndex: p.cellParagraph }));
     const check = read(doc.validateTableFormulaAt(at.section, at.paragraph, JSON.stringify(path), field.startCharIdx, id, cache.expression));
     if (!record(check) || check.ok !== true || check.fieldId !== id || check.changed !== false
-      || check.text !== field.value || check.command !== field.command) throw new Error("stale formula cache");
+      || check.text !== field.value || check.command !== field.command) throw new FormulaCacheRefusal("stale formula cache");
   }
 }
