@@ -1064,3 +1064,23 @@ Stage 2 잔여 구현 항목 하나(깊이 10 초과 기존 문서)를 구현하
 - Initial implementation testing caught and corrected: SHA output formatting compile error; raw paragraph length APIs not counting inline picture slots; rollback for a success-shaped wrong-owner response; pictures repeated on continuation; and the old test's word tokenization falsely treating a split TextRun `w3` + `5` as missing `w35`. The final assertion compares the complete rendered stream, wrapper labels L1–L15 and all 1000 words without weakening content checks. A first publisher attempt with 600×849 preview was a fixture geometry mismatch; rerun at PAGE_DEF 724×1024 passed. Preserve these initial findings as history rather than describing them as final failures.
 - Supports direct picture creation in table-cell paragraphs only, including nested cells within existing path/depth and resource admission limits. Text-box/caption sentinel contexts, invalid paths/resources, and paragraphs containing `field_ranges` or `orphan_field_ends` remain unsupported and fail closed. This scope does not add complete picture-editing tools, arbitrary drawing/shape insertion, or deletion of selections containing objects.
 - Stage 2 multi/partial-formula implementation remains incomplete. Stage 3–5 acceptance statuses and historical PASS/FAIL records are unchanged. Full historical T009/T010/T012 matrices, render 187/64, deep-table benchmark, native GUI/IBus, DOCX/WordCraft/D4, other operating systems, and external Word/Hancom interoperability were not rerun. The Release SVGs were rasterized for direct inspection; this is not a new independent Hancom PDF/native GUI certification.
+
+<a id="stage2-cell-inline-stabilization-20261115"></a>
+### 2026-11-15 Stage 2 셀 inline 그림 P1/P2 안정화 — COMPLETED
+
+시작 HEAD `c6452d38ede1c1fb5f214c5653799f282dab95a3`. 검토 중이던 P1 원인은 지원하지 않는 inline picture 삭제가 `RhwpText.delete()`에서 예외를 내고, 일반 `mutate()`가 이를 불확실한 엔진 변경으로 분류해 세션 편집을 중단한 것이었다. `RhwpText.textRange()`와 `canDeleteRange()`가 기존 cell-inline context/소유권을 검증하며, session은 Backspace/Delete, 그림 포함 선택 대체·Enter·IME 선택 삭제·clipboard 삭제를 history 트랜잭션 전에 거부한다. 거부에서는 caret/anchor, picture owner와 digest, document controls/text, revision, history와 dirty 상태가 보존된다. 인접 일반 텍스트 삭제와 Undo/Redo는 성공하고 그림의 올바른 논리 위치를 유지한다. 의도치 않은 Error와 WASM trap, 부분 변경은 계속 fail-closed다.
+
+P2-A에서는 논리 caret 범위와 엔진 텍스트 범위를 함께 쓸 때 `formatSelection()`이 길이와 query 좌표를 서로 다른 단위로 비교했고, `selectedText()`가 선택 밖의 객체까지 문단 단위로 거부했다. 공통 scalar text-range 변환으로 길이 검증, formatting run 조회와 실제 변경의 좌표를 일치시켰다. 제어 슬롯을 포함하는 범위와 필드/모호한 control은 거부하며, 소유 경로가 확인된 inline 그림이 선택 밖에 있을 때 텍스트 복사를 허용한다. path 소유권 비교는 JSON key 정렬 순서와 무관하다. 테스트는 그림 양쪽 서식·정확한 copy, 그림이 포함된 선택 거절, non-BMP scalar offsets, 그리고 HWPX XML에서 picture-run `charPr`/그림 identity가 바뀌지 않는지 확인한다.
+
+P2-B에서는 `coreActions()`의 history 조건을 본문 명령에 적용하지 않도록 하고, `executeImage()`는 셀 삽입 또는 사용 가능한 history가 있는 경우에만 history를 요구한다. 셀 그림 삽입의 history/rollback 조건과 picker의 session epoch, document/model/caret 소유권 검증은 유지된다. history가 꺼진 본문 그림 삽입은 revision/dirty를 갱신하며 Undo가 있다고 가장하지 않고, 같은 상태의 셀 삽입은 비활성이다.
+
+**수정 전 관측:** 같은 Release WASM/session 집중 필터에서 8 FAIL / 2 PASS / 27 filtered. Backspace, Delete, 그림 선택 삭제 뒤 편집 중단, 양쪽 서식/복사 거부 및 history 없는 본문 그림 명령 비활성을 재현했다. 그림 인접 텍스트 삭제/Undo/Redo와 그림 포함 복사 거부는 통과했다. 수정 중간 실행은 clipboard 3 FAIL / 11 PASS / 24 skipped였고, 이후 path JSON key 순서에 의존하던 소유권 비교 및 lint callback 인자를 고쳤다.
+
+**최종 집중 검증:**
+
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'cell-inline picture'`: **16 PASS / 24 skipped**. 13개 안정화 회귀와 기존 HWPX PNG, 중첩 HWP JPEG, 제품 저장/재열기·T009 검사 시나리오 3개를 실행했다. 그림 뒤 일반 텍스트만 선택한 삭제의 성공과 Undo·그림 identity 보존을 확인하는 추가 assertion도 `-t 'keeps adjacent text deletion'`으로 **1 PASS / 39 skipped** 확인했다.
+- `GEUL_FORMAT_PHASE=hardening npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/general-formatting.wasm.test.ts -t 'object, exact touching|later native mutation'`: **16 PASS / 19 skipped**.
+- `npx vitest run src/components/Editor/rhwp/RhwpEditorSession.test.ts src/components/Editor/rhwp/historyAdmission.test.ts`: **29 PASS**.
+- `npm run typecheck`, 수정 파일 targeted ESLint 및 마지막 테스트 파일 ESLint, `git diff --check`: 모두 **PASS**.
+
+이번 안정화에서는 RHWP 엔진/패치, Release WASM, submodule pins를 변경하거나 재생성하지 않았다. RHWP `1a76570e833917d15817415a53c09ad61ab3203f`, WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` pin 유지. Full T009/T010/T012 matrix, native durable-publication 재실행, GUI/IBus, Stage 3–5, Windows/macOS 및 외부 한컴/Word 상호운용은 다시 실행하지 않았다. 그림 삭제와 그림 포함 clipboard 선택, 임의 객체 clipboard 및 그림이 있는 셀 문단의 문단 간 삭제/병합은 미지원이며 안전하게 거부한다. Stage 2 다중/부분 수식은 미완료이고 Stage 3–5 상태는 변경하지 않는다.

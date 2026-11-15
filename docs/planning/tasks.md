@@ -314,3 +314,7 @@ IBus 보고서는 실제 앱 바이너리, 제품 소스 내용, 입력 하네�
 ## RHWP 일반 글자 서식 구현 단계 1–4 — 2026-11-12
 
 제품 HWP/HWPX 네 가지 선택 글자 서식과 집중 회귀/저장 검증은 [RHWP 일반 글자 서식](../architecture/rhwp-general-formatting.md)을 참조한다. 전체 Stage 5 통합 acceptance와 Stage 6 native 최종 acceptance는 별도 작업이며 미완료다. T010/T012/T013/T014의 전역 상태 및 acceptance 항목은 이 구현 상태로 변경하지 않는다.
+
+### 2026-11-15 Stage 2 셀 inline 그림 P1/P2 안정화 — COMPLETED
+
+P1 삭제 거절을 트랜잭션 전 admission으로 옮기고 P2-A 서식/복사 좌표와 P2-B 본문 그림의 history 조건을 교정했다. 그림 소유권·Undo/Redo 및 T009 보존 계약을 유지했다. 집중 근거와 제한은 [상세 안정화 기록](../architecture/stage567-acceptance-2026-11-05.md#stage2-cell-inline-stabilization-20261115)에 기록했다. 셀 inline 그림 작업은 이 범위에서 완료이며 Stage 2 다중/부분 수식과 Stage 3–5 상태는 미완료/기존 상태 그대로다.

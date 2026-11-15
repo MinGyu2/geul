@@ -364,6 +364,35 @@ export class RhwpText {
     return value.hasPictures ? value as { length: number; textOffset: number; textCount: number; containsControl: boolean } : null;
   }
 
+  /** One range proof shared by formatting eligibility and application. All offsets are scalars. */
+  private textRange(at: DocPosition, count: number): { start: number; end: number; length: number } {
+    if (!isIndex(at.offset) || !isIndex(count) || (at.cell && !this.ownsNestedCell(at))) throw new Error("invalid text owner/range");
+    const inline = this.inlineCell(at, count), c = at.cell;
+    const length = c?.nested ? this.doc.getCellParagraphLengthByPath!(at.section, c.parentParagraph, pathJson(c))
+      : c ? this.doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph)
+      : this.doc.getParagraphLength(at.section, at.paragraph);
+    const start = inline ? inline.textOffset : at.offset;
+    if (!isIndex(length) || at.offset + count > (inline?.length ?? length)
+      || (inline && (inline.containsControl || inline.textCount !== count)) || start + count > length)
+      throw new Error("unsupported text range");
+    return { start, end: start + count, length };
+  }
+
+  /** Admission only: unsupported inline slots must never open a mutation/history transaction. */
+  canDeleteRange(from: DocPosition, to: DocPosition): boolean {
+    if (!sameContext(from, to) || compare(from, to) > 0) return false;
+    try {
+      for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
+        const at = withParagraph(from, p, p === paragraphOf(from) ? from.offset : 0);
+        if (!this.inlineCell({ ...at, offset: 0 })) continue;
+        // The legacy paragraph join API has no proven inline-control ownership contract.
+        if (paragraphOf(from) !== paragraphOf(to)) return false;
+        this.textRange(at, to.offset - from.offset);
+      }
+      return true;
+    } catch { return false; }
+  }
+
   paragraphLength(at: DocPosition): number {
     const c = at.cell, inline = this.inlineCell({ ...at, offset: 0 });
     if (inline) return inline.length;
@@ -466,8 +495,8 @@ export class RhwpText {
     const [from, to] = compare(a, b) < 0 ? [a, b] : [b, a];
     try {
       const start = paragraphOf(from), end = paragraphOf(to);
-      // Text APIs omit some nontext controls. Prove the selected paragraphs contain
-      // no objects/fields before reading or permitting range deletion.
+      // Text APIs omit controls. Resolve exact cell ownership before allowing
+      // unselected inline pictures; other objects/fields retain the strict refusal.
       if (!this.doc.getControls) return null;
       const raw = this.doc.getControls();
       if (raw.length > 2 * 1024 * 1024) return null;
@@ -492,8 +521,6 @@ export class RhwpText {
       } else {
         for (let section = 0; section < from.section; section++) base += this.doc.getParagraphCount(section);
       }
-      if (controls.some(c => c.list === list && c.para >= base + start && c.para <= base + end
-        && c.ctrlId !== "secd" && c.ctrlId !== "cold")) return null;
       if (end >= this.paragraphCount(from) || end - start > MAX_CLIPBOARD_CHARS) return null;
       const parts: string[] = [];
       let count = 0;
@@ -502,6 +529,26 @@ export class RhwpText {
         const length = this.paragraphLength(at);
         const until = p === end ? to.offset : length;
         if (!Number.isSafeInteger(length) || length < 0 || until > length || at.offset > until || at.offset < 0) return null;
+        const objects = controls.filter(c => c.list === list && c.para === base + p && c.ctrlId !== "secd" && c.ctrlId !== "cold");
+        if (objects.length) {
+          if (!at.cell || !this.inlineCell(at, until - at.offset) || !this.doc.getCellPictureByPath) return null;
+          // Only paragraph-owned inline pictures may be outside a plain-text clipboard range.
+          for (const object of objects) {
+            if (object.ctrlId !== "gso" || !isIndex(object.controlIndex)) return null;
+            const levels = [at.cell, ...(at.cell.nested ?? [])];
+            const path = pathJson(at.cell), picture = json(this.doc.getCellPictureByPath(at.section, at.cell.parentParagraph, path, object.controlIndex));
+            if (!isRecord(picture) || picture.ok !== true || picture.treatAsChar !== true
+              || picture.section !== at.section || picture.paraIdx !== at.cell.parentParagraph
+              || picture.controlIdx !== object.controlIndex || !Array.isArray(picture.path) || picture.path.length !== levels.length
+              || !picture.path.every((level: unknown, i: number) => isRecord(level)
+                && Object.keys(level).sort().join(",") === "cellIndex,cellParaIndex,controlIndex"
+                && level.controlIndex === levels[i]!.control && level.cellIndex === levels[i]!.cell
+                && level.cellParaIndex === levels[i]!.cellParagraph)) return null;
+          }
+          this.textRange(at, until - at.offset);
+          // Native range validation also excludes fields, unknown controls and ambiguous streams.
+          if (until > at.offset && !this.formatSelection(at, { ...at, offset: until })) return null;
+        }
         count += until - at.offset + (p > start ? 1 : 0);
         if (count > MAX_CLIPBOARD_CHARS) return null;
         const text = this.text(at, until - at.offset);
@@ -564,16 +611,19 @@ export class RhwpText {
     const c = from.cell;
     if (c?.nested ? !this.doc.applyCharFormatInCellByPath : c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
     const first = paragraphOf(from), last = paragraphOf(to);
+    if (!sameContext(from, to) || compare(from, to) >= 0) throw new Error("invalid formatting range");
+    const ranges: { paragraph: number; start: number; end: number }[] = [];
     for (let paragraph = first; paragraph <= last; paragraph += 1) {
       const at = withParagraph(from, paragraph, 0);
-      let start = paragraph === first ? from.offset : 0;
-      let end = paragraph === last ? to.offset : this.paragraphLength(at);
+      const start = paragraph === first ? from.offset : 0;
+      const end = paragraph === last ? to.offset : this.paragraphLength(at);
       if (end <= start) continue;
-      const inline = this.inlineCell({ ...at, offset: start }, end - start);
-      if (inline) {
-        if (inline.containsControl) throw new Error("inline object formatting unsupported");
-        start = inline.textOffset; end = start + inline.textCount;
-      }
+      const range = this.textRange({ ...at, offset: start }, end - start);
+      if (this.inlineCell(at) && !this.formatSelection({ ...at, offset: start }, { ...at, offset: end }))
+        throw new Error("inline formatting range not proven");
+      ranges.push({ paragraph, start: range.start, end: range.end });
+    }
+    for (const { paragraph, start, end } of ranges) {
       const result = json(c?.nested
         ? this.doc.applyCharFormatInCellByPath!(from.section, c.parentParagraph, pathJson(c, paragraph), start, end, props)
         : c ? this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props)
@@ -631,22 +681,23 @@ export class RhwpText {
         if (count > MAX_CLIPBOARD_CHARS) return null;
         // The exclusive final paragraph at offset zero is not selected.
         if (p === last && start === end) continue;
+        const range = this.textRange({ ...at, offset: start }, end - start);
         const raw = c?.nested
-          ? this.doc.getFormattingRunsByPath!(from.section, c.parentParagraph, pathJson(c, p), start, end)
+          ? this.doc.getFormattingRunsByPath!(from.section, c.parentParagraph, pathJson(c, p), range.start, range.end)
           : this.doc.getFormattingRuns!(from.section, c ? c.parentParagraph : p,
-            c?.control ?? NO_CELL, c?.cell ?? 0, c ? p : 0, start, end);
+            c?.control ?? NO_CELL, c?.cell ?? 0, c ? p : 0, range.start, range.end);
         if (raw.length > 4 * 1024 * 1024) return null;
         const value = json(raw);
-        if (!isRecord(value) || value.length !== length || !Array.isArray(value.runs)) return null;
-        let next = start;
+        if (!isRecord(value) || value.length !== range.length || !Array.isArray(value.runs)) return null;
+        let next = range.start;
         for (const run of value.runs) {
           if (!Array.isArray(run) || run.length !== 3) return null;
           const [a, b, flags] = run as unknown[];
           if (!isIndex(a) || !isIndex(b) || !isIndex(flags)
-            || a !== next || b <= next || b > end || flags > 15 || ++runCount > 65_536) return null;
+            || a !== next || b <= next || b > range.end || flags > 15 || ++runCount > 65_536) return null;
           next = b; mask &= flags;
         }
-        if (next !== end) return null;
+        if (next !== range.end) return null;
       }
       return runCount ? { state: { bold: !!(mask & 1), italic: !!(mask & 2), underline: !!(mask & 4), strikethrough: !!(mask & 8) } } : null;
     } catch { return null; }

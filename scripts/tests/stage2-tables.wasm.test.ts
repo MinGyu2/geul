@@ -93,7 +93,8 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
     return exported(d, format).bytes;
   } finally { d.free(); }
 }
-async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS) {
+async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS,
+  sessionOptions: { history?: boolean; format?: boolean } = {}) {
   const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
@@ -101,7 +102,7 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
   const editor = new RhwpEditorSession(1, backend, sessions, async () => ({
     openDocument: bytes => { const d = preserveSourceCaret(new engine.HwpDocument(bytes)) as Doc; doc ??= d; return d; },
     memoryBytes: () => wasm.memory.buffer.byteLength,
-  }));
+  }), sessionOptions);
   const loading = editor.load(); take("load").reply(loaded(original)); await flush();
   take("session").reply(ok(info({ format, state: "loading", sequence: 1 })));
   take("setState").reply(ok(info({ format, state: "ready", sequence: 2 }))); await loading;
@@ -171,7 +172,209 @@ function checkHwpx(original: Uint8Array, doc: Doc) {
   return reopened;
 }
 
+async function inlineCellPicture(options: { history?: boolean } = {}, contents = "ABCD", pictureOffset = 2) {
+  const c = await open("hwpx", false, false, false, false, 0, DEEP_WORDS, options);
+  const { editor, doc, at, place, settle } = c;
+  const target = { ...at, offset: pictureOffset };
+  const path = pathJson(target.cell!);
+  const text = new RhwpText(doc);
+  place({ ...at, offset: 0 }); editor.caret = { ...at, offset: 6 };
+  expect(editor.typeText(contents)).toBe(true); await settle();
+  place(target);
+  expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG))).toBe("inserted"); await settle();
+  const owner = () => JSON.parse(doc.getCellPictureByPath!(0, at.paragraph, path, 0));
+  expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, at.cell!.cell, at.cell!.cellParagraph, 0, Array.from(contents).length)).toBe(contents);
+  expect(text.paragraphLength(target)).toBe(Array.from(contents).length + 1);
+  expect(owner()).toMatchObject({ ok: true, path: JSON.parse(path), position: pictureOffset,
+    sha256: createHash("sha256").update(CELL_PNG).digest("hex"), byteLength: CELL_PNG.length });
+  return { ...c, target, path, text, owner };
+}
+
 describe("Stage 2 table paths", () => {
+  it("cell-inline picture stabilization safely refuses Backspace after the picture and keeps editing available", async () => {
+    const { editor, doc, at, target, text, owner, place, settle } = await inlineCellPicture();
+    try {
+      place({ ...target, offset: 3 }); // AB[picture]|CD
+      const caret = editor.caret, anchor = editor.anchor, beforeText = doc.getTextFileText(), controls = doc.getControls!();
+      const picture = owner(), state = editor.snapshot(), dirty = editor.hasUnpreservedChanges;
+      const snapshots = vi.spyOn(doc, "saveSnapshot");
+      expect(editor.backspace()).toBe(false);
+      expect(snapshots).not.toHaveBeenCalled(); expect(editor.hasUncertainChanges).toBe(false);
+      expect(editor.snapshot().editable).toBe(true);
+      expect(editor.caret).toEqual(caret); expect(editor.anchor).toEqual(anchor);
+      expect(doc.getTextFileText()).toBe(beforeText); expect(doc.getControls!()).toBe(controls);
+      expect(owner()).toEqual(picture); expect(text.paragraphLength(target)).toBe(5);
+      expect(editor.snapshot().revision).toBe(state.revision); expect(editor.snapshot().history).toEqual(state.history);
+      expect(editor.hasUnpreservedChanges).toBe(dirty);
+      expect(editor.typeText("Z")).toBe(true); await settle();
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, at.cell!.cell, at.cell!.cellParagraph, 0, 5)).toBe("ABZCD");
+      expect(owner()).toEqual(picture); expect(editor.snapshot().editable).toBe(true);
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["forward", "selection"] as const)("cell-inline picture stabilization safely refuses %s deletion", async operation => {
+    const { editor, doc, target, path, text, owner, place, settle } = await inlineCellPicture();
+    try {
+      if (operation === "forward") place({ ...target, offset: 2 }); // AB|[picture]CD
+      else { editor.anchor = { ...target, offset: 1 }; editor.caret = { ...target, offset: 4 }; } // B[picture]C
+      const caret = editor.caret, anchor = editor.anchor, beforeText = doc.getTextFileText(), controls = doc.getControls!();
+      const picture = owner(), state = editor.snapshot(), dirty = editor.hasUnpreservedChanges;
+      const snapshots = vi.spyOn(doc, "saveSnapshot");
+      expect(operation === "forward" ? editor.deleteForward() : editor.backspace()).toBe(false);
+      if (operation === "selection") {
+        expect(editor.deleteForward()).toBe(false);
+        expect(editor.typeText("X")).toBe(false); expect(editor.enter()).toBe(false);
+        editor.beginComposition(); expect(editor.snapshot().composing).toBeFalsy();
+        expect(editor.execute("format.bold").accepted).toBe(false);
+        expect(documentCommandState("hangul.charWidth", editor.snapshot()).available).toBe(false);
+      }
+      expect(snapshots).not.toHaveBeenCalled(); expect(editor.hasUncertainChanges).toBe(false);
+      expect(editor.snapshot().editable).toBe(true);
+      expect(editor.caret).toEqual(caret); expect(editor.anchor).toEqual(anchor);
+      expect(doc.getTextFileText()).toBe(beforeText); expect(doc.getControls!()).toBe(controls);
+      expect(owner()).toEqual(picture); expect(text.paragraphLength(target)).toBe(5);
+      expect(pathJson(editor.caret.cell!)).toBe(path);
+      expect(editor.snapshot().revision).toBe(state.revision); expect(editor.snapshot().history).toEqual(state.history);
+      expect(editor.hasUnpreservedChanges).toBe(dirty);
+      place({ ...target, offset: 3 }); expect(editor.typeText("Z")).toBe(true); await settle();
+      expect(text.text({ ...target, offset: 3 }, 1)).toBe("Z"); expect(owner()).toEqual(picture);
+    } finally { editor.dispose(); }
+  });
+
+  it("cell-inline picture stabilization keeps adjacent text deletion and history positions correct", async () => {
+    const { editor, doc, at, target, text, owner, place, run, settle } = await inlineCellPicture();
+    const cellText = () => doc.getTextInCell(0, at.paragraph, at.cell!.control, at.cell!.cell, at.cell!.cellParagraph, 0, 4);
+    try {
+      const picture = owner();
+      place({ ...target, offset: 4 }); // delete C, immediately after the picture
+      expect(editor.backspace()).toBe(true); await settle();
+      expect(cellText()).toBe("ABD"); expect(owner()).toEqual(picture); expect(owner().position).toBe(2);
+      await run("edit.undo"); expect(cellText()).toBe("ABCD"); expect(owner()).toEqual(picture);
+      await run("edit.redo"); expect(cellText()).toBe("ABD"); expect(owner()).toEqual(picture);
+      place({ ...target, offset: 1 }); // delete B, immediately before the picture
+      expect(editor.deleteForward()).toBe(true); await settle();
+      expect(cellText()).toBe("AD"); expect(owner().position).toBe(1);
+      await run("edit.undo"); expect(cellText()).toBe("ABD"); expect(owner()).toEqual(picture);
+      await run("edit.redo"); expect(cellText()).toBe("AD"); expect(owner().position).toBe(1);
+      expect(text.paragraphLength(target)).toBe(3);
+      // A text-only selection uses the same logical-to-text deletion bridge.
+      place({ ...target, offset: 2 }); editor.caret = { ...target, offset: 3 };
+      expect(editor.deleteForward()).toBe(true); await settle();
+      expect(cellText()).toBe("A"); expect(owner().position).toBe(1);
+      expect(owner().instanceId).toBe(picture.instanceId); expect(owner().sha256).toBe(picture.sha256);
+      await run("edit.undo"); expect(cellText()).toBe("AD"); expect(owner().position).toBe(1);
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["before", "after"] as const)("cell-inline picture stabilization formats text %s the picture in text coordinates", async side => {
+    const { editor, doc, at, target, path, owner, place, run } = await inlineCellPicture();
+    const shape = (offset: number) => JSON.parse(doc.getCellCharPropertiesAt!(0, at.paragraph,
+      at.cell!.control, at.cell!.cell, at.cell!.cellParagraph, offset));
+    const pictureRun = () => execFileSync("python3", ["-c", `import sys,io,zipfile,xml.etree.ElementTree as E,json
+z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); root=E.fromstring(z.read('Contents/section0.xml'))
+print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode')) for r in root.iter() for p in list(r) if p.tag=='{http://www.hancom.co.kr/hwpml/2011/paragraph}pic']))`], { input: exported(doc, "hwpx").bytes, encoding: "utf8" });
+    try {
+      const picture = owner(), slot = doc.getCellInlineContextByPath!(0, at.paragraph, path, 2, 1), runBefore = pictureRun();
+      if (side === "before") {
+        place({ ...target, offset: 0 }); editor.caret = { ...target, offset: 2 };
+        await run("format.bold");
+        expect(shape(0).bold).toBe(true); expect(shape(1).bold).toBe(true);
+        expect(shape(2).bold).toBe(false); expect(shape(3).bold).toBe(false);
+      } else {
+        place({ ...target, offset: 3 }); editor.caret = { ...target, offset: 5 };
+        await run("format.italic");
+        expect(shape(0).italic).toBe(false); expect(shape(1).italic).toBe(false);
+        expect(shape(2).italic).toBe(true); expect(shape(3).italic).toBe(true);
+      }
+      expect(doc.getCellInlineContextByPath!(0, at.paragraph, path, 2, 1)).toBe(slot);
+      expect(owner()).toEqual(picture); expect(pictureRun()).toBe(runBefore);
+      editor.anchor = { ...target, offset: 1 }; editor.caret = { ...target, offset: 4 };
+      expect(editor.execute("format.bold").accepted).toBe(false); expect(editor.hasUncertainChanges).toBe(false);
+    } finally { editor.dispose(); }
+  });
+
+  it.each([
+    { side: "before", start: 0, end: 2, expected: "AB" },
+    { side: "after", start: 3, end: 5, expected: "CD" },
+  ])("cell-inline picture stabilization copies text $side the picture", async ({ start, end, expected }) => {
+    const { editor, target, text, place } = await inlineCellPicture();
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      place({ ...target, offset: start }); editor.caret = { ...target, offset: end };
+      expect(text.selectedText(editor.anchor, editor.caret)).toBe(expected);
+      expect(documentCommandState("edit.copy", editor.snapshot()).available).toBe(true);
+      expect(await editor.executeClipboard("edit.copy", () => true, { readText: async () => "", writeText })).toBe(true);
+      expect(writeText).toHaveBeenLastCalledWith(expected);
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      editor.dispose();
+    }
+  });
+
+  it("cell-inline picture stabilization refuses copy selections that include the picture", async () => {
+    const { editor, target, text } = await inlineCellPicture();
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn(async () => {}) } });
+    try {
+      editor.anchor = { ...target, offset: 1 }; editor.caret = { ...target, offset: 4 };
+      expect(text.selectedText(editor.anchor, editor.caret)).toBeNull();
+      expect(documentCommandState("edit.copy", editor.snapshot()).available).toBe(false);
+      expect(await editor.executeClipboard("edit.copy", () => true, { readText: async () => "", writeText: async () => {} })).toBe(false);
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      editor.dispose();
+    }
+  });
+
+  it("cell-inline picture stabilization preserves scalar offsets around a non-BMP character", async () => {
+    const { editor, target, text, place } = await inlineCellPicture({}, "A😀BCD", 3);
+    try {
+      expect(text.paragraphLength(target)).toBe(6);
+      place({ ...target, offset: 0 }); editor.caret = { ...target, offset: 3 };
+      expect(text.text(editor.anchor, editor.caret.offset - editor.anchor.offset)).toBe("A😀B");
+      expect(text.selectedText(editor.anchor, editor.caret)).toBe("A😀B");
+      place({ ...target, offset: 4 }); editor.caret = { ...target, offset: 6 };
+      expect(text.text(editor.anchor, editor.caret.offset - editor.anchor.offset)).toBe("CD");
+      expect(text.selectedText(editor.anchor, editor.caret)).toBe("CD");
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["unexpected", "wasm"] as const)("cell-inline picture stabilization keeps %s mutation failures fail closed", async failure => {
+    const { editor, doc, target, place } = await inlineCellPicture();
+    const remove = doc.deleteTextInCell.bind(doc);
+    try {
+      place({ ...target, offset: 4 });
+      doc.deleteTextInCell = (...args) => {
+        remove(...args); // A real partial mutation must never be mistaken for a harmless refusal.
+        throw failure === "wasm" ? new WebAssembly.RuntimeError("test trap") : new Error("test engine failure");
+      };
+      expect(editor.backspace()).toBe(false);
+      expect(editor.hasUncertainChanges).toBe(true); expect(editor.snapshot().editable).toBe(false);
+      expect(editor.typeText("X")).toBe(false);
+    } finally { doc.deleteTextInCell = remove; editor.dispose(); }
+  });
+
+  it("cell-inline picture stabilization keeps body image insertion available without history", async () => {
+    const { editor, doc, at, settle } = await open("hwpx", false, false, false, false, 0, DEEP_WORDS, { history: false });
+    try {
+      expect(editor.snapshot().history).toBeNull();
+      expect(documentCommandState("insert.image", editor.snapshot()).available).toBe(true);
+      const revision = editor.snapshot().revision;
+      expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG))).toBe("inserted"); await settle();
+      expect(editor.snapshot().revision).toBe(revision + 1); expect(editor.hasUnpreservedChanges).toBe(true);
+      expect(editor.snapshot().history).toBeNull();
+      expect(documentCommandState("edit.undo", editor.snapshot()).available).toBe(false);
+      expect(JSON.parse(doc.getControls!()).some((control: { list: number; ctrlId: string }) => control.list === 0 && control.ctrlId === "gso")).toBe(true);
+      editor.anchor = editor.caret = at;
+      expect(documentCommandState("insert.image", editor.snapshot()).available).toBe(false);
+      expect(await editor.executeImage(() => true, async () => importedCellImage(CELL_PNG))).toBe("stale");
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwpx", "hwp"] as const)("cell-inline picture Release command: %s ownership, layout, history and product save", async format => {
     // HWP also crosses pages through an existing supported depth; HWPX is an ordinary cell with text.
     const depth = format === "hwp" ? 16 : 0;

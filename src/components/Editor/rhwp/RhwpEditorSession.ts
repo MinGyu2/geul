@@ -1110,6 +1110,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return true;
   }
 
+  private canDeleteSelection(): boolean {
+    if (!this.hasSelection) return true;
+    const [from, to] = this.ordered();
+    return this.text?.canDeleteRange(from, to) ?? false;
+  }
+
   private deleteSelectionRaw(): DocPosition {
     const [from, to] = this.ordered();
     this.text!.deleteRange(from, to);
@@ -1117,7 +1123,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   typeText(text: string): boolean {
-    if (!text || this.composition || !validClipboardText(text)) return false;
+    if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection()) return false;
     text = text.replace(/\r\n?|\u2029/g, "\n");
     if (text.includes("\n")) return this.mutate(() => {
       let at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
@@ -1142,11 +1148,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   backspace(): boolean {
-    if (this.hasSelection) return this.mutate(() => this.deleteSelectionRaw());
+    if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
     const at = this.caret;
     const text = this.text;
     if (!text) return false;
     if (at.offset > 0) {
+      if (!text.canDeleteRange({ ...at, offset: at.offset - 1 }, at)) return false;
       // 오프셋 단위가 유니코드 스칼라이므로 앞 글자 하나는 1이다(서로게이트 쌍을 나누지 않음).
       return this.mutate(() => {
         text.delete({ ...at, offset: at.offset - 1 }, 1);
@@ -1155,6 +1162,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const paragraph = paragraphOf(at);
     if (paragraph === 0) return false; // 문맥의 처음: 바꿀 것이 없음(변경 아님)
+    const previousEnd = withParagraph(at, paragraph - 1, text.paragraphLength(withParagraph(at, paragraph - 1, 0)));
+    if (!text.canDeleteRange(previousEnd, at)) return false;
     return this.mutate(() => {
       const previous = withParagraph(at, paragraph - 1, 0);
       const joinAt = text.paragraphLength(previous);
@@ -1164,11 +1173,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   deleteForward(): boolean {
-    if (this.hasSelection) return this.mutate(() => this.deleteSelectionRaw());
+    if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
     const at = this.caret;
     const text = this.text;
     if (!text) return false;
     if (at.offset < text.paragraphLength(at)) {
+      if (!text.canDeleteRange(at, { ...at, offset: at.offset + 1 })) return false;
       return this.mutate(() => {
         text.delete(at, 1);
         return at;
@@ -1176,6 +1186,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const paragraph = paragraphOf(at);
     if (paragraph + 1 >= text.paragraphCount(at)) return false;
+    if (!text.canDeleteRange(at, withParagraph(at, paragraph + 1, 0))) return false;
     return this.mutate(() => {
       text.mergeIntoPrevious(at, paragraph + 1);
       return at;
@@ -1183,6 +1194,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
+    if (!this.canDeleteSelection()) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
     // otherwise the same keystroke would split while the preflight is CHECKING and exit once it is SAFE.
@@ -1205,7 +1217,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 지운 뒤 화면 갱신이 실패하면 markFailed가 이 조합(지운 것)을 변경 1개로 세고 끝낸다.
    */
   beginComposition(): void {
-    if (!this.editable || this.composition || (this.hasSelection && !sameContext(this.anchor, this.caret))) return;
+    if (!this.editable || this.composition || !this.canDeleteSelection()) return;
     this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
@@ -1690,7 +1702,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   executeClipboard(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean> {
     return runClipboard(this, command, {
       read: async () => this.text?.selectedText(this.anchor, this.caret) ?? null,
-      remove: () => this.hasSelection && this.mutate(() => this.deleteSelectionRaw()),
+      remove: () => this.hasSelection && this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw()),
       insert: text => this.typeText(text),
     }, () => owns() && this.sessions.snapshot().activeId === this.sessionId && !this.uncertain, clipboard);
   }
@@ -1802,7 +1814,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret)].join("|");
     if (this.coreActionCache?.key === key) return this.coreActionCache.value;
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
-    if (this.structuralFormat() && this.history && this.doc?.insertPicture && this.doc.setPictureProperties
+    if (this.structuralFormat() && this.doc?.insertPicture && this.doc.setPictureProperties
       && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && (!this.caret.cell || this.canInsertCellPicture())
       && !this.pending && this.committingEpoch !== this.epoch && !this.imageSelecting) actions["insert.image"] = {};
     const range = this.bulletRange();
@@ -1957,6 +1969,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
       const scale = Math.min(75, 43200 / width, 60000 / height);
       const at = this.caret, doc = this.doc!, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
+      // Cells require rollback history; body insertion retains its history-optional contract.
+      // When body history is present, keep the existing atomic rollback/Undo step.
       return this.mutate(() => {
         if (at.cell) {
           const path = pathJson(at.cell), host = at.cell.parentParagraph;
@@ -1979,7 +1993,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (props.ok !== true) throw new Error("inline picture rejected");
         if (hwp && !insertedInlinePicture(doc, at.section, result.paraIdx as number, result.controlIdx as number)) throw new Error("inline picture not verified");
         return { section: at.section, paragraph: result.paraIdx as number, offset: result.logicalOffset as number };
-      }, true, "other", null, true, true) ? "inserted" : "failed";
+      }, true, "other", null, !!at.cell || !!this.history, true) ? "inserted" : "failed";
     } catch { return "failed"; }
     finally { this.imageSelecting = false; if (this.owns(epoch)) this.emit(); }
   }
@@ -2023,7 +2037,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const [from, to] = this.ordered();
       if (this.hasSelection && sameContext(from, to) && paragraphOf(from) === paragraphOf(to)) {
         const api = from.cell?.nested ? this.doc?.applyCharFormatInCellByPath : from.cell ? this.doc?.applyCharFormatInCell : this.doc?.applyCharFormat;
-        const charShape = api && ownership && (!from.cell?.nested || this.text!.formatSelection(from, to)) ? this.text!.charShape(from) : null;
+        const charShape = api && ownership && this.text!.canDeleteRange(from, to) && (!from.cell?.nested || this.text!.formatSelection(from, to)) ? this.text!.charShape(from) : null;
         if (charShape) parameters["hangul.charWidth"] = parameters["hangul.charSpacing"] = { charShape };
       } else {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
