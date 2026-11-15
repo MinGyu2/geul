@@ -1,0 +1,386 @@
+diff --git a/crates/fonts/src/fontdb.rs b/crates/fonts/src/fontdb.rs
+index 816ac2799e46b0bc177dd8b20ff46f1a7b747ff3..bf3d3dc8224094488ed06c1e07b583c80b428511 100644
+--- a/crates/fonts/src/fontdb.rs
++++ b/crates/fonts/src/fontdb.rs
+@@ -296,6 +296,34 @@ struct CatalogEntry {
+     path: std::path::PathBuf,
+ }
+ 
++/// Where the installed system fonts come from, in place of walking the platform's font folders
++/// ([`FontDb::set_system_font_source`]). An embedding app supplies one backed by the platform's own
++/// font configuration (fontconfig, a native font API…), so the catalog follows that configuration
++/// instead of a fixed folder list. Every method is called outside layout's hot path and must not
++/// panic; an error is an empty answer.
++pub trait SystemFontSource: Send + Sync {
++    /// A short name for diagnostics ("fontconfig").
++    fn name(&self) -> &str;
++    /// The installed font files (absolute paths), as the configuration lists them. Called on every
++    /// catalog scan; a path may repeat (one per face) and files that can't be read are skipped.
++    fn font_files(&self) -> Vec<std::path::PathBuf>;
++    /// The installed family the configuration's matching rules choose for `family` when no font
++    /// has that name: a generic family ("sans-serif", "serif", "monospace") or a configured alias.
++    /// `None` when nothing in the configuration names it (no catch-all default).
++    fn resolve_family(&self, _family: &str) -> Option<String> {
++        None
++    }
++    /// Families the configuration prefers for `c` when no loaded font covers it, best first. Only
++    /// families with a face that maps `c` should be listed; the database checks coverage anyway.
++    fn fallback_families(&self, _c: char) -> Vec<String> {
++        Vec::new()
++    }
++}
++
++/// Most font files a [`SystemFontSource`] scan catalogs.
++#[cfg(not(target_arch = "wasm32"))]
++const MAX_SOURCE_FILES: usize = 100_000;
++
+ /// Process-wide font database.
+ pub struct FontDb {
+     faces: RwLock<Vec<Arc<FontFace>>>,
+@@ -338,6 +366,12 @@ pub struct FontDb {
+     /// Counts the font folder scans, so the coverage index notices a rescan.
+     #[cfg(not(target_arch = "wasm32"))]
+     catalog_gen: AtomicU32,
++    /// The system font source replacing the folder walk ([`FontDb::set_system_font_source`]).
++    #[cfg(not(target_arch = "wasm32"))]
++    source: RwLock<Option<Arc<dyn SystemFontSource>>>,
++    /// [`FontDb::resolve_alias`] answers (lowercased family → installed family), dropped on rescan.
++    #[cfg(not(target_arch = "wasm32"))]
++    aliases: Mutex<HashMap<String, Option<String>>>,
+ }
+ 
+ #[cfg(not(target_arch = "wasm32"))]
+@@ -347,6 +381,8 @@ struct SysFallback {
+     misses: std::collections::HashSet<char>,
+     /// Preferred fallback families already loaded (or tried) by a fallback search.
+     tried: std::collections::HashSet<&'static str>,
++    /// The same for families a [`SystemFontSource`] preferred (lowercased).
++    tried_source: std::collections::HashSet<String>,
+ }
+ 
+ /// Characters remembered as covered by no installed font (a cap on memory: once full the set
+@@ -902,6 +938,10 @@ impl FontDb {
+             coverage: Mutex::new(CoverageIndex::default()),
+             #[cfg(not(target_arch = "wasm32"))]
+             catalog_gen: AtomicU32::new(0),
++            #[cfg(not(target_arch = "wasm32"))]
++            source: RwLock::new(None),
++            #[cfg(not(target_arch = "wasm32"))]
++            aliases: Mutex::new(HashMap::new()),
+         }
+     }
+ 
+@@ -1104,11 +1144,76 @@ impl FontDb {
+         // The first scan, or a rescan once it is done (never both at once).
+         let mut first = None;
+         self.cataloged.get_or_init(|| first = Some(self.scan_font_dirs()));
+-        first.unwrap_or_else(|| self.scan_font_dirs())
++        let n = first.unwrap_or_else(|| self.scan_font_dirs());
++        // Families may have appeared or gone: forget what lookups decided from the old catalog.
++        self.aliases.lock().unwrap_or_else(|e| e.into_inner()).clear();
++        {
++            let mut sys = self.sys.lock().unwrap_or_else(|e| e.into_inner());
++            sys.misses.clear();
++            sys.tried.clear();
++            sys.tried_source.clear();
++        }
++        self.fonts_changed();
++        n
++    }
++
++    /// Catalog the installed fonts from `source` instead of walking the font folders (`None`:
++    /// walk the folders again), and rescan now. An app whose platform font configuration isn't
++    /// available passes a source that lists no files: the bundled and user fonts stay usable and
++    /// no folder is walked in its place. Returns the number of faces cataloged.
++    #[cfg(not(target_arch = "wasm32"))]
++    pub fn set_system_font_source(&self, source: Option<Arc<dyn SystemFontSource>>) -> usize {
++        *self.source.write().unwrap_or_else(|e| e.into_inner()) = source;
++        self.load_system_fonts()
++    }
++
++    /// The name of the system font source in use ([`SystemFontSource::name`]), `None` while the
++    /// platform's font folders are walked.
++    #[cfg(not(target_arch = "wasm32"))]
++    pub fn system_font_source_name(&self) -> Option<String> {
++        self.read_source().map(|s| s.name().to_string())
++    }
++
++    #[cfg(not(target_arch = "wasm32"))]
++    fn read_source(&self) -> Option<Arc<dyn SystemFontSource>> {
++        self.source.read().unwrap_or_else(|e| e.into_inner()).clone()
++    }
++
++    /// The installed family the system font source maps `family` to (a generic family or a
++    /// configured alias), when no font has that name. `None` without a source, when the source
++    /// names nothing, or when what it names isn't available. Cached until the next rescan.
++    pub fn resolve_alias(&self, family: &str) -> Option<String> {
++        #[cfg(not(target_arch = "wasm32"))]
++        {
++            let family = family.trim();
++            if family.is_empty() || family.len() > 256 {
++                return None;
++            }
++            let key = family.to_lowercase();
++            if let Some(hit) = self.aliases.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
++                return hit.clone();
++            }
++            let source = self.read_source()?;
++            let found = source.resolve_family(family).filter(|f| !f.eq_ignore_ascii_case(family) && self.has_family(f));
++            let mut cache = self.aliases.lock().unwrap_or_else(|e| e.into_inner());
++            if cache.len() >= 4096 {
++                cache.clear();
++            }
++            cache.insert(key, found.clone());
++            found
++        }
++        #[cfg(target_arch = "wasm32")]
++        {
++            let _ = family;
++            None
++        }
+     }
+ 
+     #[cfg(not(target_arch = "wasm32"))]
+     fn scan_font_dirs(&self) -> usize {
++        if let Some(source) = self.read_source() {
++            return self.scan_source(source.as_ref());
++        }
+         let mut found = Vec::new();
+         let mut stack = self.font_dirs.clone();
+         // Each folder once, however links lead back to it.
+@@ -1147,6 +1252,38 @@ impl FontDb {
+         n
+     }
+ 
++    /// Catalog the files a [`SystemFontSource`] lists (each once, at most [`MAX_SOURCE_FILES`]),
++    /// reading only their name tables as the folder scan does.
++    #[cfg(not(target_arch = "wasm32"))]
++    fn scan_source(&self, source: &dyn SystemFontSource) -> usize {
++        let mut paths = source.font_files();
++        paths.sort();
++        paths.dedup();
++        paths.truncate(MAX_SOURCE_FILES);
++        let mut found = Vec::new();
++        for p in paths {
++            let ext = p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
++            if !matches!(ext.as_deref(), Some("ttf" | "otf" | "ttc" | "otc")) || !p.is_file() {
++                continue;
++            }
++            for f in file_face_names(&p) {
++                found.push(CatalogEntry {
++                    family: f.family,
++                    style: f.style,
++                    legacy: f.legacy,
++                    local: f.local,
++                    east_asian: f.east_asian,
++                    path: p.clone(),
++                });
++            }
++        }
++        let n = found.len();
++        log::debug!("cataloged {n} system font faces from {}", source.name());
++        *self.catalog.write().unwrap_or_else(|e| e.into_inner()) = found;
++        self.catalog_gen.fetch_add(1, Ordering::AcqRel);
++        n
++    }
++
+     /// Load the files of the installed `family`: the whole typographic family, also when asked for
+     /// by a legacy name ("Roboto Light" loads Roboto), so a family never loads with only some of
+     /// its styles. Returns whether any face was added.
+@@ -1202,6 +1339,19 @@ impl FontDb {
+                 }
+             }
+         }
++        // A generic family or configured alias the system font source maps to an installed one.
++        if let Some(alias) = self.resolve_alias(family) {
++            if let Some(f) = self.find(&alias, style) {
++                return f;
++            }
++            #[cfg(not(target_arch = "wasm32"))]
++            {
++                self.load_cataloged(&alias);
++                if let Some(f) = self.find(&alias, style) {
++                    return f;
++                }
++            }
++        }
+         self.find(FALLBACK_FAMILY, style)
+             .or_else(|| self.find(FALLBACK_FAMILY, "Regular"))
+             .or_else(|| self.read_faces().first().cloned())
+@@ -1563,6 +1713,21 @@ impl FontDb {
+         }
+         let covered = |db: &FontDb| db.read_faces().iter().any(|f| f.covers(c));
+         let cataloged: Vec<String> = self.read_catalog().iter().map(|e| e.family.clone()).collect();
++        // The system font source's own choice for the character (its matching and coverage rules).
++        if let Some(source) = self.read_source() {
++            for fam in source.fallback_families(c).into_iter().take(8) {
++                if self.is_loaded(&fam) || !cataloged.iter().any(|f| f.eq_ignore_ascii_case(&fam)) {
++                    continue;
++                }
++                if !self.sys.lock().unwrap_or_else(|e| e.into_inner()).tried_source.insert(fam.to_lowercase()) {
++                    continue;
++                }
++                self.load_cataloged(&fam);
++                if covered(self) {
++                    return true;
++                }
++            }
++        }
+         let rtl = crate::is_rtl(c) || arabic_block(c);
+         let preferred = RTL_FALLBACKS.iter().filter(|_| rtl);
+         for fam in crate::script_fallbacks(c).iter().chain(preferred).chain(SYSTEM_FALLBACKS.iter()) {
+diff --git a/crates/fonts/src/fontdb/user.rs b/crates/fonts/src/fontdb/user.rs
+index ff9cee66ebc7e679f759dc6350e07b543f33d372..d42f262521754bf4a9b85ab923314a6a82f9acc3 100644
+--- a/crates/fonts/src/fontdb/user.rs
++++ b/crates/fonts/src/fontdb/user.rs
+@@ -304,8 +304,9 @@ impl FontDb {
+     }
+ 
+     /// Forget cached fallback choices and tell watchers ([`FontDb::generation`]).
+-    fn fonts_changed(&self) {
++    pub(super) fn fonts_changed(&self) {
+         self.fallbacks.write().unwrap_or_else(|e| e.into_inner()).map.clear();
++        *self.ea_fallbacks.write().unwrap_or_else(|e| e.into_inner()) = super::EaFallbackCache::default();
+         self.generation.fetch_add(1, Ordering::AcqRel);
+     }
+ 
+diff --git a/crates/fonts/src/lib.rs b/crates/fonts/src/lib.rs
+index 0d04ac7aaa2a54bc55cd635801968e4219281db9..8e18798cddf6380a8462584cf528ccff5de578d7 100644
+--- a/crates/fonts/src/lib.rs
++++ b/crates/fonts/src/lib.rs
+@@ -14,8 +14,8 @@ mod ui_fallback;
+ pub mod word;
+ 
+ pub use fontdb::{
+-    FALLBACK_FAMILY, FONT_FILE_EXTS, FaceRef, FontDb, FontFace, FontFormat, Installed, LocalName, MAX_FONT_FILE_BYTES, UserFont, UserFontError,
+-    base_style, bundled, decode_font_file, is_font_file_name, name_language_matches, sniff, system_font_dirs,
++    FALLBACK_FAMILY, FONT_FILE_EXTS, FaceRef, FontDb, FontFace, FontFormat, Installed, LocalName, MAX_FONT_FILE_BYTES, SystemFontSource, UserFont,
++    UserFontError, base_style, bundled, decode_font_file, is_font_file_name, name_language_matches, sniff, system_font_dirs,
+ };
+ pub use harfrust::Feature;
+ use harfrust::{Direction, ShapeOptions, Tag, UnicodeBuffer};
+diff --git a/crates/fonts/src/tests_sysfonts.rs b/crates/fonts/src/tests_sysfonts.rs
+index d5db20633d317836b3dd1317e73de45ffe85aba8..6d3faa75d4af409f9907aafcbd950575bdc19314 100644
+--- a/crates/fonts/src/tests_sysfonts.rs
++++ b/crates/fonts/src/tests_sysfonts.rs
+@@ -1,6 +1,7 @@
+ //! Installed system fonts: found by family name by every lookup, whatever ran before it (#22).
+ 
+ use std::path::{Path, PathBuf};
++use std::sync::Arc;
+ 
+ use super::*;
+ 
+@@ -456,3 +457,90 @@ fn font_list_previews_load_nothing_for_good() {
+     assert_eq!(db.loaded_font_bytes(), used, "memory stays bounded across previews");
+     let _ = std::fs::remove_dir_all(&dir);
+ }
++
++/// A [`SystemFontSource`] listing fixed files, with fixed aliases and fallbacks.
++struct ListSource {
++    files: std::sync::Mutex<Vec<PathBuf>>,
++    aliases: Vec<(&'static str, &'static str)>,
++    fallbacks: Vec<String>,
++}
++
++impl SystemFontSource for ListSource {
++    fn name(&self) -> &str {
++        "test-list"
++    }
++    fn font_files(&self) -> Vec<PathBuf> {
++        self.files.lock().unwrap().clone()
++    }
++    fn resolve_family(&self, family: &str) -> Option<String> {
++        self.aliases.iter().find(|(a, _)| a.eq_ignore_ascii_case(family)).map(|(_, t)| t.to_string())
++    }
++    fn fallback_families(&self, _c: char) -> Vec<String> {
++        self.fallbacks.clone()
++    }
++}
++
++fn list_source(files: Vec<PathBuf>) -> Arc<ListSource> {
++    Arc::new(ListSource { files: std::sync::Mutex::new(files), aliases: vec![("sans-serif", FAMILY)], fallbacks: vec![] })
++}
++
++#[test]
++fn a_system_font_source_replaces_the_folder_walk() {
++    let dir = font_dir("source");
++    // The folder holds the family, but the source lists only the Regular file (twice, as a
++    // configuration does once per face) and a damaged one: the folder is not walked.
++    let db = FontDb::with_font_dirs(vec![dir.clone()]);
++    let src = list_source(vec![dir.join("Sysfont-Regular.ttf"), dir.join("Sysfont-Regular.ttf"), dir.join("damaged.ttf"), dir.join("missing.ttf")]);
++    assert_eq!(db.set_system_font_source(Some(src.clone())), 1);
++    assert_eq!(db.system_font_source_name().as_deref(), Some("test-list"));
++    assert_eq!(db.styles(FAMILY), ["Regular"]);
++    // A source listing nothing (no font configuration): no system fonts, the bundled ones remain.
++    let g = db.generation();
++    src.files.lock().unwrap().clear();
++    assert_eq!(db.load_system_fonts(), 0);
++    assert!(db.generation() > g, "a rescan tells watchers");
++    assert!(!db.has_family(FAMILY));
++    assert!(db.has_family(FALLBACK_FAMILY));
++    // Refreshing picks up files the configuration lists later.
++    src.files.lock().unwrap().push(dir.join("Sub/Sysfont-Bold.TTF"));
++    assert_eq!(db.load_system_fonts(), 1);
++    assert_eq!(db.styles(FAMILY), ["Bold"]);
++    // Back to the folder walk.
++    assert_eq!(db.set_system_font_source(None), 2);
++}
++
++#[test]
++fn source_aliases_resolve_generic_families_without_renaming_requests() {
++    let dir = font_dir("alias");
++    let db = FontDb::with_font_dirs(vec![]);
++    db.set_system_font_source(Some(list_source(vec![dir.join("Sysfont-Regular.ttf")])));
++    assert_eq!(db.resolve_alias("sans-serif").as_deref(), Some(FAMILY));
++    assert_eq!(db.face("sans-serif", "Regular").family, FAMILY);
++    // A name the configuration doesn't map keeps the bundled fallback.
++    assert_eq!(db.resolve_alias("No Such Font"), None);
++    assert_eq!(db.face("No Such Font", "Regular").family, FALLBACK_FAMILY);
++    // An alias to a family that isn't installed is no answer.
++    let db2 = FontDb::with_font_dirs(vec![]);
++    db2.set_system_font_source(Some(list_source(vec![])));
++    assert_eq!(db2.resolve_alias("sans-serif"), None);
++}
++
++#[test]
++fn source_fallback_families_are_tried_first_for_uncovered_characters() {
++    // The renamed Source Sans 3 maps Latin; ask for a character only it (as the source's choice)
++    // would be loaded for: no other cataloged family, and a preferred family isn't installed.
++    let dir = font_dir("srcfallback");
++    let db = FontDb::with_font_dirs(vec![]);
++    let src = Arc::new(ListSource {
++        files: std::sync::Mutex::new(vec![dir.join("Sysfont-Regular.ttf")]),
++        aliases: vec![],
++        fallbacks: vec!["Not Installed".into(), FAMILY.into()],
++    });
++    db.set_system_font_source(Some(src));
++    assert!(!db.is_loaded(FAMILY));
++    // 'ŉ' (U+0149) is in Source Sans 3; exclude every loaded face so the system search runs.
++    let c = '\u{0149}';
++    db.set_system_fallback(true);
++    let ok = db.system_fallback(c);
++    assert!(ok && db.is_loaded(FAMILY), "the source's family was loaded for the character");
++}
+diff --git a/crates/fonts/src/word.rs b/crates/fonts/src/word.rs
+index b3c5965508df6c075ce4462d96eafe8989209f21..5597304b1030b3109fd6c84bcf0cc095d56e259b 100644
+--- a/crates/fonts/src/word.rs
++++ b/crates/fonts/src/word.rs
+@@ -215,8 +215,15 @@ pub fn resolve(family: &str, bold: bool, italic: bool) -> Resolved {
+         // Windows maps the charset names to the font itself: not a substitution.
+         (base.to_string(), false)
+     } else {
+-        let s = substitutes(base).iter().find(|s| db.has_family(s)).copied().unwrap_or(crate::FALLBACK_FAMILY);
+-        (s.to_string(), true)
++        // Word's own substitutes first, then what the system font configuration maps the name to
++        // (a generic family or configured alias), then the bundled fallback.
++        let s = substitutes(base)
++            .iter()
++            .find(|s| db.has_family(s))
++            .map(|s| s.to_string())
++            .or_else(|| db.resolve_alias(family))
++            .unwrap_or_else(|| crate::FALLBACK_FAMILY.to_string());
++        (s, true)
+     };
+     let face = db.face(&fam, style_name(bold, italic));
+     let r = Resolved { synth_bold: bold && face.weight < 600.0, synth_italic: italic && !face.italic, substituted, face: FaceRef::of(&face) };

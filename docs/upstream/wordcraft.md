@@ -1,6 +1,8 @@
 # WordCraft 코어 검토 (T001)
 
-> **2026-11-05 Stage 7 후속:** 현재 geul gitlink는 로컬 `6c994e42dee106ca03c6f11628d2fe577fe27636`(부모 `b74830b`)다. TOC bookmark-end 추적 삭제의 실제 native 저장 거부를 재현해 DOCX writer의 bookmark/comment/permission range-marker revision wrapper를 보존했다. reader는 이미 해당 context를 받는다. 새 marker roundtrip48 PASS; 필수 upstream CI fmt/Clippy PASS, 실행 시험972 PASS/1기존 static `file_access` 실패(검사·원인 파일이 시작 커밋과 바이트 동일). 나머지 assets/layers/WASM16 PASS. geul 보호 빌드·fmt·Clippy PASS, 저장146 PASS/15 ignored. 새 어댑터 회귀는 caret 왼쪽 서식이 아닌 실제 표식 글자의 속성을 검사하도록 보완 후1 PASS(기존76 PASS 유지)다. 원격 발행·push 없음, fresh clone 재현에는 이 로컬 엔진 신원의 별도 공개가 필요하다. 아래 Stage 3 의존성 문구는 당시 기록이며, 최신 native 결과는 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다.
+> **2026-11-16 Stage 5-A 최신 상태:** geul gitlink `6931bcc12af12ff874a9ebb4c63cebe17b3f8b82`는 공개 원격에서 직접 fetch할 수 없지만 공개 부모 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`와 [`system-font-source.patch`](../../patches/wordcraft/system-font-source.patch), 원본 commit metadata를 [`prepare-wordcraft.py`](../../scripts/prepare-wordcraft.py)가 검증해 같은 commit/tree SHA로 재구성한다. 새 `--no-local` 체크아웃에서 깨끗한 submodule·부모·SHA와 보호된 `wordcraft-fonts` 컴파일을 확인했다. 메타데이터/패치 변조, 잘못된 gitlink, dirty 기존 checkout은 거부하며 integrity 검사도 유지한다. 공개 발행·push는 하지 않았다. 아래 이전 단계의 원격 재현 상태는 당시 기록이다.
+
+> **2026-11-05 Stage 7 후속(당시 상태 기록):** 당시 geul gitlink는 로컬 `6c994e42dee106ca03c6f11628d2fe577fe27636`(부모 `b74830b`)였다. TOC bookmark-end 추적 삭제의 실제 native 저장 거부를 재현해 DOCX writer의 bookmark/comment/permission range-marker revision wrapper를 보존했다. reader는 이미 해당 context를 받는다. 새 marker roundtrip48 PASS; 필수 upstream CI fmt/Clippy PASS, 실행 시험972 PASS/1기존 static `file_access` 실패(검사·원인 파일이 시작 커밋과 바이트 동일). 나머지 assets/layers/WASM16 PASS. geul 보호 빌드·fmt·Clippy PASS, 저장146 PASS/15 ignored. 새 어댑터 회귀는 caret 왼쪽 서식이 아닌 실제 표식 글자의 속성을 검사하도록 보완 후1 PASS(기존76 PASS 유지)다. 당시 fresh clone에는 로컬 pin 공개가 필요했다. 2026-11-16 현재 재현 절차는 위 최신 상태 기록을 따른다. 최신 native 결과는 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다.
 
 - 업스트림: https://github.com/storytold/wordcraft
 - 현재 geul 의존성(2026-11-05 Stage 3): 로컬 커밋 `b74830b293a49801b385b81efae865d65c905070`(`b74830b` "pair revision indices one-to-one in the semantic round trip", 부모 `af80638`). **미발행 — 원격 재현 불가.** 바뀐 파일: `crates/doc/src/roundtrip.rs`(수정 기록 색인 대응, `Difference::RevisionMapping`·`ExtraRevision`, `RoundTripError::DanglingRevision`), `crates/doc/src/roundtrip_tests.rs`, `crates/engine/tests/tracked_roundtrip.rs`. 검증: doc/docx/engine 875 통과 + 기존 실패 1(`file_access`), fmt·clippy `-D warnings`.
@@ -109,10 +111,8 @@ Cargo 워크스페이스, `edition = "2024"`, `rust-version = "1.90"`, 모든 �
   `cmd/tools.rs:431` 등이 인자로 받은 경로에 쓴다. 앱은 허용한 연산 목록(`DocxOp`)만 명령 ID로 바꾼다.
 - 열기는 관대하다: 본문 XML이 중간에서 끊긴 DOCX를 오류 없이 끊긴 곳까지 읽어 연다(뒤 내용은 조용히 빠짐). 열기 성공을
   무손실 근거로 쓰면 안 된다(T009 저장 판단). 시험: `adapters::wordcraft::tests::본문_xml이_끊긴_docx도_wordcraft는_끊긴_곳까지_읽어_연다`.
-- 글꼴: `FontDb::global()`은 정해진 폴더(Linux `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`, `~/.local/share/fonts`)만
-  찾고 fontconfig를 쓰지 않는다. NixOS처럼 그 폴더가 없으면 한글이 빈 상자로 그려진다(편집 모델은 정상).
-  - 2026-11-15 Stage 5-A: 로컬 엔진 커밋 `6931bcc`(`geul/stage5a-font-source`, 부모 `dc25d8a`)가 `SystemFontSource`/`FontDb::set_system_font_source`를
-    더했다. geul은 fontconfig 제공자를 설치하므로 위 폴더 순회를 쓰지 않는다. 소스가 없으면 위 동작 그대로다. [글꼴 시스템](../architecture/font-system.md).
+- 글꼴(2026-11-15 구현, 2026-11-16 재현성 검증): `FontDb::global()`은 embedder `SystemFontSource`가 있으면 고정 폴더 순회를
+  대신 사용한다. geul은 동적 fontconfig 제공자를 설치한다. 정의 읽기와 검증 범위는 [글꼴 시스템](../architecture/font-system.md)을 따른다.
 - 성능(이 환경, 1쪽 픽스처): 릴리스 빌드에서 배치 1 ms 미만, 100% 쪽 래스터 약 3 ms + PNG 약 4 ms, 200% 약 13 ms. 최적화 없는
   디버그 빌드는 키 입력 하나에 수백 ms라 `src-tauri`의 개발 프로필이 의존성을 최적화한다.
 

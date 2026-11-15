@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("integrity", ROOT / "scripts/external-integrity.py")
 integrity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(integrity)
+source_spec = importlib.util.spec_from_file_location("wordcraft_source", ROOT / "scripts/prepare-wordcraft.py")
+wordcraft_source = importlib.util.module_from_spec(source_spec)
+source_spec.loader.exec_module(wordcraft_source)
 
 
 def main():
@@ -25,6 +28,9 @@ def main():
     if not args or args[0] not in {"check", "build", "test", "clippy", "fmt", "fetch"}:
         raise RuntimeError("Usage: cargo-geul.py check|build|test|clippy|fmt --check|fetch [Cargo arguments]")
     action = args[0]
+    # Bootstrap only missing sources; an existing checkout must already be exact and clean.
+    # The protected build below independently enforces the original submodule identity contract.
+    wordcraft_source.prepare()
     if any(arg.split("=", 1)[0] in {"--manifest-path", "--target-dir", "--config"} for arg in args):
         raise RuntimeError("Use the recorded geul manifest/output configuration")
     cargo = shutil.which("cargo")

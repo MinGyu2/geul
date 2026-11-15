@@ -1,0 +1,22 @@
+tree 53f57b5436ecb7462d312dbbc6082adb353271f5
+parent dc25d8a27303b35d0ef7d61e56276f7b8f3feab5
+author MinGyu2 <mq04034@naver.com> 1794749402 +0900
+committer MinGyu2 <mq04034@naver.com> 1794749402 +0900
+
+geul Stage 5-A: system font source hook for platform font configuration
+
+FontDb can now catalog installed fonts from an embedder-supplied
+SystemFontSource (fontconfig, a native font API, ...) instead of walking
+the fixed platform font folders. The source also answers configured
+aliases/generic families (used by FontDb::face and word::resolve only
+after Word's own substitutes) and preferred fallback families for
+uncovered characters (tried before the built-in fallback list; coverage
+is still checked). A source that lists no files leaves only bundled and
+user fonts, without walking folders in its place.
+
+Rescans (load_system_fonts / set_system_font_source) now drop alias,
+miss and fallback caches and bump FontDb::generation, so layout caches
+keyed on it notice catalog changes. Without a source the behaviour is
+unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
