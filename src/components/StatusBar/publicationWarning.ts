@@ -1,3 +1,4 @@
+import type { PdfExported } from "../../adapters/contract";
 import type { Message, MessageKey } from "../../language";
 
 /** Publication warnings need deliberate acknowledgement, even if later commands report status. */
@@ -47,8 +48,8 @@ const ACTIONABLE = new Set<MessageKey>([
   "document.error.CreationUnavailable",
   "document.error.FileCreatedEditorFailed",
   "document.error.PdfExportUnavailable",
-  // PDF export failures (Stage 5-A): no PDF was written; the user must choose what to do next.
-  "document.pdfExportedUnconfirmed", "document.pdfExportedRetained", "document.pdfConflict", "document.pdfInvalid", "document.pdfFailed",
+  // PDF publication warnings and export failures require deliberate acknowledgement.
+  "document.pdfExportedUnconfirmed", "document.pdfExportedRetained", "document.pdfCleanupUncertain", "document.pdfConflict", "document.pdfInvalid", "document.pdfFailed",
   "document.pdf.unavailable.asyncContent", "document.pdf.unavailable.renderFailed",
   "document.pdf.unavailable.changed", "document.pdf.unavailable.tooLarge",
   "document.createdUnconfirmed", "document.saveAsConflict", "document.newConflict",
@@ -97,4 +98,14 @@ export function notificationReducer(state: NotificationState, action: Notificati
     Object.entries(message.vars).map(([key, value]) => [key, typeof value === "object" ? { ...value } : value]),
   ) } : {}) };
   return { ...state, pending: [...state.pending, { id: state.nextId, message: snapshot }], nextId: state.nextId + 1 };
+}
+
+/** Independent published-output facts use the existing acknowledgement queue. */
+export function pdfExportMessages(result: PdfExported): Message[] {
+  const messages: Message[] = [];
+  if (result.retainedReplaced !== null) messages.push({ key: "document.pdfExportedRetained", vars: { name: result.retainedReplaced } });
+  if (result.cleanupUncertain) messages.push({ key: "document.pdfCleanupUncertain" });
+  if (!result.durable) messages.push({ key: "document.pdfExportedUnconfirmed" });
+  if (!messages.length) messages.push({ key: result.raster ? "document.pdfExportedRaster" : "document.pdfExported", vars: { pages: result.pages } });
+  return messages;
 }

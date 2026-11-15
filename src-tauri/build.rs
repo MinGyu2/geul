@@ -54,6 +54,7 @@ fn main() {
         "document_save",
         "document_checkpoint",
         "document_export_pdf",
+        "pdf_release_overwrite_grant",
         "docx_export_pdf",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

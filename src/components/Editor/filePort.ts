@@ -31,6 +31,8 @@ export interface FilePort {
   chooseFile(request: FileDialogRequest): Promise<Result<string | null>>;
   /** Backend PDF chooser (GTK overwrite confirmation; the only source of overwrite grants). */
   choosePdfDestination?(request: PdfDialogRequest): Promise<Result<PdfDestination | null>>;
+  /** Release the exact chooser capability on completion/abandonment; harmless after consumption. */
+  releasePdfGrant?(sessionId: number, token: string): Promise<Result<null>>;
   createDocument(format: DocumentFormat, path: string, blank?: BlankExport): Promise<Result<SessionInfo>>;
 }
 
@@ -99,6 +101,7 @@ export function createTauriFilePort(invoke: Invoke): FilePort {
       return invokeFile(invoke, "document_file_dialog", args, parsePath);
     },
     choosePdfDestination: (request) => invokeFile(invoke, "pdf_export_dialog", { ...request }, parsePdfDestination),
+    releasePdfGrant: (sessionId, token) => invokeFile(invoke, "pdf_release_overwrite_grant", { sessionId, token }, value => value === null ? null : INVALID),
     createDocument: (format, path, blank) => invokeFile(invoke, "document_new", newDocumentFrame(format, path, blank), value => parseCreated(value, format)),
   };
 }

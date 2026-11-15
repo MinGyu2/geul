@@ -413,6 +413,7 @@
   "document.pdfExported": "Exported to PDF: {pages} pages. The document and its file were not changed.",
   "document.pdfExportedRaster": "Exported to PDF: {pages} pages (page-image PDF — text cannot be selected or searched). The document and its file were not changed.",
   "document.pdfExportedUnconfirmed": "The PDF was written, but storage durability could not be confirmed. Check the file.",
+  "document.pdfCleanupUncertain": "The PDF was exported, but cleanup of the previous file could not be verified. Whether the previous file remains is unknown; the ownership record was kept.",
   "document.pdfExportedRetained": "The PDF replaced the file, but the previous file could not be removed. Its content remains in the same folder as {name} (never deleted automatically). Check it and delete it yourself.",
   "document.pdfConflict": "The existing file was not replaced: overwriting was not confirmed, the file changed after confirmation, or it is not a regular file (a link, folder, …). Export again or choose another name.",
   "document.pdfInvalid": "Could not export the PDF. Make sure the file name ends in .pdf and the folder exists. Nothing was written.",

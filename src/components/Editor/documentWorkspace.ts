@@ -319,8 +319,9 @@ export class DocumentWorkspace {
     if (!this.beginFileOperation("exportPdf")) return { ok: false, error: { code: "Protocol" } };
     const session = this.sessions.get(sessionId);
     const editor = session ? this.anyEditorFor(sessionId) : null;
+    let operationGrant: string | null = null;
     try {
-      if (!this.filePort?.choosePdfDestination) return { ok: false, error: { code: "Protocol" } };
+      if (!this.filePort?.choosePdfDestination || !this.filePort.releasePdfGrant) return { ok: false, error: { code: "Protocol" } };
       if (!session || !editor) return { ok: false, error: { code: "UnknownSession", sessionId } };
       const stem = session.displayName.replace(/\.(hwpx?|docx)$/i, "");
       const loadGeneration = editor.snapshot().loadGeneration;
@@ -329,6 +330,7 @@ export class DocumentWorkspace {
       const destination = await this.filePort.choosePdfDestination({ sessionId, loadGeneration, suggestedName: stem, ...text });
       if (!destination.ok) return destination;
       if (destination.value === null) return null;
+      operationGrant = destination.value.overwriteGrant;
       if (!/\.pdf$/i.test(destination.value.path)) return { ok: false, error: { code: "InvalidRequest" } };
       if (this.sessions.get(sessionId) === null || this.editors.get(sessionId) !== editor) {
         return { ok: false, error: { code: "StaleSession", sessionId } };
@@ -339,7 +341,18 @@ export class DocumentWorkspace {
         return { ok: false, error: { code: "Protocol" } };
       }
     } finally {
-      this.endFileOperation();
+      try {
+        // Exact capability of this workflow only. Also safe after backend consumption. Keep the operation
+        // reservation until release completes, so a subsequent export cannot inherit abandoned authority.
+        if (operationGrant !== null) {
+          const released = await this.filePort!.releasePdfGrant!(sessionId, operationGrant);
+          if (!released.ok) reportDetachedSaveRejection(released.error);
+        }
+      } catch (error) {
+        reportDetachedSaveRejection(error);
+      } finally {
+        this.endFileOperation();
+      }
     }
   }
 

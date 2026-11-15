@@ -89,6 +89,7 @@ pub fn run() {
             services::save::commands::document_save,
             services::save::commands::document_checkpoint,
             services::pdf::document_export_pdf,
+            services::pdf::pdf_release_overwrite_grant,
             adapters::wordcraft::commands::docx_export_pdf,
         ])
         .run(tauri::generate_context!())

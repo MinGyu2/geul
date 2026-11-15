@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import en from "../../language/en.json";
 import { createTranslator, type Message, type MessageKey } from "../../language";
-import { createNotificationState, isRetainedNotice, notificationReducer } from "./publicationWarning";
+import { parsePdfExported } from "../../adapters/contract";
+import { createNotificationState, isRetainedNotice, notificationReducer, pdfExportMessages } from "./publicationWarning";
 
 const publication: Message = { key: "document.error.RestoredUnopenedAlreadyOpen" };
 const add = (state: ReturnType<typeof createNotificationState>, message: Message) => notificationReducer(state, { type: "notify", message });
@@ -62,5 +63,40 @@ describe("notification ownership", () => {
     expect(recovered.pending.map(notice => notice.id)).toEqual(state.pending.map(notice => notice.id));
     expect(recovered.pending[0]!.resolved).toBe(true);
     expect(recovered.pending[1]).toBe(state.pending[1]);
+  });
+
+  it("queues both PDF cleanup and durability warnings, including unverified cleanup", () => {
+    const base = { sessionId: 3, loadGeneration: 2, revision: 9, pages: 1, bytes: 100, raster: true };
+    const retainedAndUnconfirmed = parsePdfExported({
+      ...base, durable: false, retainedReplaced: ".geul-save-1-old.tmp",
+    }, 3, 2, 9)!;
+    let state = createNotificationState({ key: "status.ready" });
+    for (const message of pdfExportMessages(retainedAndUnconfirmed)) state = add(state, message);
+    state = add(state, { key: "status.ready" });
+    expect(state.pending.map(notice => notice.message.key)).toEqual([
+      "document.pdfExportedRetained", "document.pdfExportedUnconfirmed",
+    ]);
+    expect(state.transient.key).toBe("status.ready");
+    for (const language of ["ko", "en"] as const) {
+      const t = createTranslator(language);
+      const retained = t(state.pending[0]!.message.key, state.pending[0]!.message.vars);
+      const durability = t(state.pending[1]!.message.key);
+      expect(retained).toContain(language === "ko" ? "자동으로 지우지 않음" : "never deleted automatically");
+      expect(durability).toContain(language === "ko" ? "확인하지 못했습니다" : "could not be confirmed");
+    }
+
+    const uncertain = parsePdfExported({
+      ...base, durable: false, retainedReplaced: null, cleanupUncertain: true,
+    }, 3, 2, 9)!;
+    const uncertainMessages = pdfExportMessages(uncertain);
+    expect(uncertainMessages.map(message => message.key)).toEqual([
+      "document.pdfCleanupUncertain", "document.pdfExportedUnconfirmed",
+    ]);
+    for (const language of ["ko", "en"] as const) {
+      const t = createTranslator(language);
+      const cleanup = t(uncertainMessages[0]!.key);
+      expect(cleanup).toContain(language === "ko" ? "남아 있는지는 확인되지 않았으며" : "remains is unknown");
+      expect(t(uncertainMessages[1]!.key)).toContain(language === "ko" ? "확인하지 못했습니다" : "could not be confirmed");
+    }
   });
 });

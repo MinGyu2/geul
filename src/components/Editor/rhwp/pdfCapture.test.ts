@@ -160,7 +160,8 @@ describe("workspace PDF export", () => {
     const grant = "0123456789abcdef0123456789abcdef";
     const answers = [null, { path: "/docs/out.txt", overwriteGrant: null }, { path: "/docs/out.pdf", overwriteGrant: grant }];
     const choosePdfDestination = vi.fn(async () => ({ ok: true as const, value: answers.shift() ?? null }));
-    const files = { chooseFile: vi.fn(), choosePdfDestination, createDocument: vi.fn() };
+    const releasePdfGrant = vi.fn(async () => ({ ok: true as const, value: null }));
+    const files = { chooseFile: vi.fn(), choosePdfDestination, releasePdfGrant, createDocument: vi.fn() };
     const sessions = new DocumentSessions(backend);
     const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake, files);
     await workspace.open("/a.docx");
@@ -181,5 +182,61 @@ describe("workspace PDF export", () => {
     expect({ info: sessions.get(1), save: editor.saveState, revision: editor.snapshot().revision }).toEqual(before);
     expect(workspace.fileBusy).toBe(false);
     editor.dispose();
+  });
+
+  it("releases each early or overlapping workflow grant without letting another export inherit it", async () => {
+    const { DocumentSessions } = await import("../../../adapters/sessions");
+    const { DocumentWorkspace } = await import("../documentWorkspace");
+    const { controlledBackend, FakeDocument, flush, info, loaded, ok, base } = await import("./testing");
+    const { backend, take } = controlledBackend();
+    const exportPdf = vi.fn(async () => ({ ok: false as const, error: { code: "Protocol" as const } }));
+    const documentBackend = { ...backend, exportPdf } as typeof backend;
+    const sessions = new DocumentSessions(documentBackend);
+    const doc = new FakeDocument(["x"]);
+    (doc as unknown as { getPageLayerTreeWithProfile: () => string }).getPageLayerTreeWithProfile = () => ASYNC_TREE;
+    const module = {
+      openDocument: () => doc as unknown as import("./rhwpModule").RhwpDocument,
+      memoryBytes: () => 64 * 1024 * 1024,
+    };
+    const token1 = "11111111111111111111111111111111";
+    const token2 = "22222222222222222222222222222222";
+    const token3 = "33333333333333333333333333333333";
+    type DestinationResult = import("../../../adapters/contract").Result<import("../filePort").PdfDestination | null>;
+    const choices: DestinationResult[] = [
+      { ok: true as const, value: { path: "/docs/wrong.txt", overwriteGrant: token1 } },
+      { ok: true as const, value: { path: "/docs/async.pdf", overwriteGrant: token2 } },
+    ];
+    let resolveThird!: (value: DestinationResult) => void;
+    const thirdChoice = new Promise<DestinationResult>(resolve => { resolveThird = resolve; });
+    const choosePdfDestination = vi.fn(async (): Promise<DestinationResult> => choices.shift() ?? await thirdChoice);
+    const releasePdfGrant = vi.fn(async () => ({ ok: true as const, value: null }));
+    const files = {
+      chooseFile: vi.fn(), choosePdfDestination, releasePdfGrant,
+      createDocument: vi.fn(async () => ({ ok: false as const, error: { code: "Protocol" as const } })),
+    };
+    const workspace = new DocumentWorkspace(sessions, documentBackend, async () => module, undefined, undefined, undefined, files);
+    const opening = workspace.open("/docs/a.hwp");
+    take("open").reply(ok(base));
+    expect((await opening).ok).toBe(true);
+    await flush();
+    take("load").reply(loaded());
+    await flush();
+    take("session").reply(ok(info({ state: "loading", sequence: 1, loadGeneration: 1 })));
+    take("setState").reply(ok(info({ state: "ready", sequence: 2, loadGeneration: 1 })));
+    await flush();
+
+    const text = { title: "PDF", accept: "Export", cancel: "Cancel" };
+    expect(await workspace.exportPdf(1, text)).toEqual({ ok: false, error: { code: "InvalidRequest" } });
+    expect(await workspace.exportPdf(1, text)).toEqual({ ok: false, error: { code: "PdfExportUnavailable", reason: "asyncContent" } });
+    expect(exportPdf).not.toHaveBeenCalled();
+
+    const pending = workspace.exportPdf(1, text);
+    expect(await workspace.exportPdf(1, text)).toEqual({ ok: false, error: { code: "Protocol" } });
+    resolveThird({ ok: true, value: { path: "/docs/async-again.pdf", overwriteGrant: token3 } });
+    expect(await pending).toEqual({ ok: false, error: { code: "PdfExportUnavailable", reason: "asyncContent" } });
+    expect(releasePdfGrant.mock.calls).toEqual([[1, token1], [1, token2], [1, token3]]);
+    expect(new Set([token1, token2, token3]).size).toBe(3);
+    expect(workspace.fileBusy).toBe(false);
+    workspace.editorFor(1)?.dispose();
   });
 });

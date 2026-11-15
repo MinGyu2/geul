@@ -52,6 +52,9 @@ pub struct PdfExported {
     /// After a confirmed replacement, the previous file could not be removed: its current file name in the
     /// destination directory (the PDF itself is published). `None` normally.
     pub retained_replaced: Option<String>,
+    /// Published, but ownership/cleanup of the swapped-out name could not be verified.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cleanup_uncertain: bool,
 }
 
 /// One page of the RHWP request: physical size (points) and its decoded-and-checked PNG.
@@ -434,6 +437,13 @@ pub(crate) fn release_overwrite_grant(token: Option<&str>, session_id: SessionId
     }
 }
 
+/// Release only an already-issued capability; never creates overwrite authority. Missing/consumed tokens
+/// are harmless. Possession of the unpredictable token AND its owning session is required.
+#[tauri::command]
+pub fn pdf_release_overwrite_grant(session_id: SessionId, token: String) {
+    release_overwrite_grant(Some(&token), session_id);
+}
+
 /// A staged PDF ready to be committed at its destination.
 pub struct PdfPublication {
     target: PathBuf,
@@ -447,6 +457,7 @@ pub struct PdfPublication {
 pub struct PdfPublished {
     pub published: Published,
     pub retained_replaced: Option<String>,
+    pub cleanup_uncertain: bool,
 }
 
 /// Stage `bytes` for `target` (from [`destination`]) outside any session lock.
@@ -498,12 +509,14 @@ impl PdfPublication {
             None => publish::publish_new(&mut self.staged, &target).map(|published| PdfPublished {
                 published,
                 retained_replaced: None,
+                cleanup_uncertain: false,
             }),
             Some(expected) => {
                 publish::publish_exchange(&mut self.staged, &target, &expected).map(|outcome| {
                     PdfPublished {
                         published: outcome.published,
                         retained_replaced: outcome.retained_replaced,
+                        cleanup_uncertain: outcome.cleanup_uncertain,
                     }
                 })
             }
@@ -660,6 +673,7 @@ pub async fn document_export_pdf(
                 durable: published.published.durable,
                 raster: true,
                 retained_replaced: published.retained_replaced,
+                cleanup_uncertain: published.cleanup_uncertain,
             })
         })
         .await
@@ -1135,6 +1149,134 @@ mod tests {
             .count();
         assert_eq!(staging, 0);
         journal::TEST_ROOT.with(|root| *root.borrow_mut() = None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pdf_post_exchange_lookup_failure_preserves_uncertain_cleanup() {
+        use crate::services::save::journal;
+        use crate::services::save::publish::{Fault, FAULT};
+
+        let dir = private_dir("lookup-uncertain");
+        let journal_dir = dir.join("journal");
+        journal::TEST_ROOT.with(|root| *root.borrow_mut() = Some(journal_dir.clone()));
+        let docs = dir.join("docs");
+        std::fs::create_dir(&docs).unwrap();
+        std::fs::set_permissions(&docs, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+            .unwrap();
+        let target = destination(docs.join("out.pdf").to_str().unwrap()).unwrap();
+        let old = b"%PDF-1.7\nprevious content\n%%EOF";
+        std::fs::write(&target, old).unwrap();
+        let pdf = sample_pdf();
+
+        let expected = claim(&grant(&target), &target).unwrap();
+        FAULT.with(|fault| fault.set(Some(Fault::InspectReplaced)));
+        let result = publish_pdf(&target, &pdf, expected);
+        FAULT.with(|fault| fault.set(None));
+        let result = result.expect("the exchange already published the PDF");
+
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            pdf,
+            "the published PDF remains visible"
+        );
+        assert!(
+            result.retained_replaced.is_none(),
+            "the old name was not verified"
+        );
+        assert!(
+            result.cleanup_uncertain,
+            "lookup failure is reported explicitly"
+        );
+        let staged = std::fs::read_dir(&docs)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".geul-save-")
+            })
+            .expect("the previous inode was not deleted");
+        assert_eq!(std::fs::read(staged).unwrap(), old);
+        let records = std::fs::read_dir(&journal_dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".save")
+            })
+            .count();
+        assert_eq!(records, 1, "uncertain cleanup retains journal ownership");
+
+        let wire = serde_json::to_value(PdfExported {
+            session_id: 7,
+            load_generation: 2,
+            revision: 5,
+            pages: 1,
+            bytes: pdf.len(),
+            durable: result.published.durable,
+            raster: true,
+            retained_replaced: result.retained_replaced,
+            cleanup_uncertain: result.cleanup_uncertain,
+        })
+        .unwrap();
+        assert_eq!(wire["cleanupUncertain"], true);
+        assert_eq!(wire["retainedReplaced"], serde_json::Value::Null);
+        journal::TEST_ROOT.with(|root| *root.borrow_mut() = None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pdf_abandoned_grants_release_only_the_owned_capability() {
+        let dir = private_dir("grant-release");
+        let target = destination(dir.join("out.pdf").to_str().unwrap()).unwrap();
+        let old = b"%PDF-1.7\nprevious content\n%%EOF";
+        std::fs::write(&target, old).unwrap();
+        let (unrelated, abandoned, active) = (
+            grant(&target).unwrap(),
+            grant(&target).unwrap(),
+            grant(&target).unwrap(),
+        );
+        assert_ne!(
+            unrelated, abandoned,
+            "each chooser confirmation is operation-specific"
+        );
+        assert_ne!(abandoned, active);
+
+        assert_eq!(
+            claim_overwrite(Some(&unrelated), &target, 2, 1, std::time::Instant::now()),
+            Err(DocumentError::FileConflict),
+            "another session cannot consume the grant"
+        );
+        pdf_release_overwrite_grant(2, unrelated.clone());
+        assert!(claim(&Some(unrelated.clone()), &target).unwrap().is_some());
+        pdf_release_overwrite_grant(1, unrelated.clone()); // harmless after the other operation consumed it
+
+        // This confirmation belongs to an export that returned early before publication.
+        pdf_release_overwrite_grant(2, abandoned.clone());
+        pdf_release_overwrite_grant(1, abandoned.clone());
+        pdf_release_overwrite_grant(1, abandoned.clone());
+        assert_eq!(
+            claim(&Some(abandoned), &target),
+            Err(DocumentError::FileConflict)
+        );
+
+        let expected = claim(&Some(active.clone()), &target).unwrap();
+        pdf_release_overwrite_grant(1, active);
+        let pdf = sample_pdf();
+        let result = publish_pdf(&target, &pdf, expected).unwrap();
+        assert!(!result.cleanup_uncertain);
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            pdf,
+            "normal overwrite remains available"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

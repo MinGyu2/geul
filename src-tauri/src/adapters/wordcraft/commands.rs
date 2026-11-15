@@ -684,6 +684,7 @@ pub(crate) async fn export_pdf(
         durable: published.published.durable,
         raster: false,
         retained_replaced: published.retained_replaced,
+        cleanup_uncertain: published.cleanup_uncertain,
     })
 }
 

@@ -144,6 +144,8 @@ pub enum Fault {
     SwapAfterRename,
     /// PDF exchange: removing the swapped-out (replaced) file fails after a successful exchange.
     UnlinkReplaced,
+    /// PDF exchange: status of the swapped-out name cannot be read before cleanup.
+    InspectReplaced,
 }
 
 /// 시험용 훅(원본 경로, 임시 파일 경로를 받는다).
@@ -898,9 +900,9 @@ pub fn publish_new(_staged: &mut Staged, _target: &Path) -> Result<Published, Do
 }
 
 /// (status snapshot, link count) of the regular file named `name` in `dir` (not following links), or `None`
-/// when the name is missing or not a regular file.
+/// when the name is confirmed missing or not a regular file. Lookup errors remain errors.
 #[cfg(target_os = "linux")]
-fn regular_at(dir: &File, name: &CStr) -> Option<(Snapshot, u64)> {
+fn regular_at(dir: &File, name: &CStr) -> io::Result<Option<(Snapshot, u64)>> {
     use std::os::fd::AsRawFd;
     let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
     // SAFETY: dir is a live directory fd, name is NUL-terminated, stat is filled by fstatat.
@@ -913,11 +915,16 @@ fn regular_at(dir: &File, name: &CStr) -> Option<(Snapshot, u64)> {
         )
     } != 0
     {
-        return None;
+        let error = io::Error::last_os_error();
+        return if error.kind() == io::ErrorKind::NotFound {
+            Ok(None)
+        } else {
+            Err(error)
+        };
     }
     // SAFETY: fstatat succeeded and filled the buffer.
     let st = unsafe { stat.assume_init() };
-    (st.st_mode & libc::S_IFMT == libc::S_IFREG).then_some((
+    Ok((st.st_mode & libc::S_IFMT == libc::S_IFREG).then_some((
         (
             st.st_dev,
             st.st_ino,
@@ -927,7 +934,7 @@ fn regular_at(dir: &File, name: &CStr) -> Option<(Snapshot, u64)> {
             st.st_mode,
         ),
         st.st_nlink,
-    ))
+    )))
 }
 
 #[cfg(target_os = "linux")]
@@ -961,6 +968,8 @@ fn exchange(dir: &File, a: &CStr, b: &CStr) -> io::Result<()> {
 /// 5. match: unlink the swapped-out inode (only while the staging name still holds it), fsync the directory.
 ///    If that unlink fails the PDF stays published, the previous file stays under the staging name and is
 ///    reported (`ExchangeOutcome::retained_replaced`); the journal record is kept, not retired.
+///    If the swapped-out name cannot be inspected, keep it untouched and report `cleanup_uncertain`
+///    without claiming the previous inode remains. A confirmed absent/different inode is settled.
 ///
 /// A filesystem without RENAME_EXCHANGE refuses the overwrite (`SaveUnsupported{platform}`) instead of
 /// falling back to an unconditional replacement. Residual: in the conflict case the PDF is visible at the
@@ -986,7 +995,9 @@ pub fn publish_exchange(
         return Err(not_published());
     }
     let unchanged = |found: Option<(Snapshot, u64)>| found == Some((*expected, 1));
-    if !unchanged(regular_at(&staged.dir, &target_name)) {
+    if !unchanged(
+        regular_at(&staged.dir, &target_name).map_err(|e| failure(SaveStage::Publish, &e))?,
+    ) {
         return Err(DocumentError::FileConflict);
     }
     #[cfg(test)]
@@ -1012,10 +1023,14 @@ pub fn publish_exchange(
     // The exchange itself updates both inodes' ctime, so after it the swapped-out inode is compared on
     // everything but ctime (device, inode, size, mtime, mode, one link).
     let without_ctime = |snap: &Snapshot| (snap.0, snap.1, snap.2, snap.3, snap.5);
-    let swapped_out = regular_at(&staged.dir, &staged.name)
+    let swapped_status = regular_at(&staged.dir, &staged.name);
+    let identity_uncertain = swapped_status.is_err();
+    let swapped_out = swapped_status
+        .ok()
+        .flatten()
         .is_some_and(|(snap, links)| links == 1 && without_ctime(&snap) == without_ctime(expected));
     let landed = same_inode_at(&staged.dir, &target_name, &before);
-    if !swapped_out || !landed {
+    if (!swapped_out && !identity_uncertain) || !landed {
         return match exchange(&staged.dir, &staged.name, &target_name) {
             // Back as before: the staging name holds the PDF again and is removed on drop.
             Ok(()) => Err(DocumentError::FileConflict),
@@ -1031,7 +1046,22 @@ pub fn publish_exchange(
     // already published at this point: a cleanup failure is reported (the previous file is kept under the
     // staging name), never turned into a publication failure or followed by a guessed deletion.
     let (old_dev, old_ino) = (expected.0, expected.1);
-    let still_old = regular_at(&staged.dir, &staged.name)
+    let cleanup_status = if identity_uncertain {
+        Err(io::Error::other("post-exchange identity unavailable"))
+    } else {
+        #[cfg(test)]
+        if fault() == Some(Fault::InspectReplaced) {
+            Err(io::Error::other("injected post-exchange lookup failure"))
+        } else {
+            regular_at(&staged.dir, &staged.name)
+        }
+        #[cfg(not(test))]
+        regular_at(&staged.dir, &staged.name)
+    };
+    let cleanup_uncertain = cleanup_status.is_err();
+    let still_old = cleanup_status
+        .ok()
+        .flatten()
         .is_some_and(|(snap, _)| (snap.0, snap.1) == (old_dev, old_ino));
     #[cfg(test)]
     let injected_unlink = fault() == Some(Fault::UnlinkReplaced);
@@ -1050,7 +1080,7 @@ pub fn publish_exchange(
         // The record names the staged (now published) inode, so a later cleanup pass never deletes the
         // replaced file under the staging name (different inode → record retired, file kept). Retire it only
         // when everything under this staging name is settled and durable; otherwise keep it for that pass.
-        if synced && retained_replaced.is_none() {
+        if synced && retained_replaced.is_none() && !cleanup_uncertain {
             entry.retire();
         } else {
             entry.release();
@@ -1066,6 +1096,7 @@ pub fn publish_exchange(
             durable,
         },
         retained_replaced,
+        cleanup_uncertain,
     })
 }
 
@@ -1076,6 +1107,8 @@ pub fn publish_exchange(
 pub struct ExchangeOutcome {
     pub published: Published,
     pub retained_replaced: Option<String>,
+    /// The staging name could not be inspected: no claim about whether the previous inode remains.
+    pub cleanup_uncertain: bool,
 }
 
 #[cfg(not(target_os = "linux"))]

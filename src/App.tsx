@@ -12,7 +12,7 @@ import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel/PropertiesPanel";
 import { Ribbon } from "./components/Ribbon/Ribbon";
 import { Splitter } from "./components/Splitter/Splitter";
-import { createNotificationState, notificationReducer, type Notice } from "./components/StatusBar/publicationWarning";
+import { createNotificationState, notificationReducer, pdfExportMessages, type Notice } from "./components/StatusBar/publicationWarning";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import { NewDocumentDialog } from "./components/Editor/NewDocumentDialog";
@@ -187,9 +187,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       });
       if (result === null) return;
       if (result.ok) {
-        if (result.value.retainedReplaced !== null) notify({ key: "document.pdfExportedRetained", vars: { name: result.value.retainedReplaced } });
-        else if (!result.value.durable) notify({ key: "document.pdfExportedUnconfirmed" });
-        else notify({ key: result.value.raster ? "document.pdfExportedRaster" : "document.pdfExported", vars: { pages: result.value.pages } });
+        for (const message of pdfExportMessages(result.value)) notify(message);
         return;
       }
       const error = result.error;

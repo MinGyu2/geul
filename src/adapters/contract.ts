@@ -188,6 +188,8 @@ export interface PdfExported {
   raster: boolean;
   /** After a confirmed replacement the previous file could not be removed: its file name in the same folder. */
   retainedReplaced: string | null;
+  /** No verified claim that the old file remains; cleanup ownership could not be read. */
+  cleanupUncertain?: boolean;
 }
 
 /** A PDF export response for exactly this session, load attempt and revision. */
@@ -195,14 +197,15 @@ export function parsePdfExported(value: unknown, sessionId: SessionId, loadGener
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
   const keys = ["sessionId", "loadGeneration", "revision", "pages", "bytes", "durable", "raster", "retainedReplaced"];
-  if (Object.keys(v).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(v, key))) return null;
+  if (Object.keys(v).some(key => !keys.includes(key) && key !== "cleanupUncertain") || !keys.every((key) => Object.prototype.hasOwnProperty.call(v, key))) return null;
   const count = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
   if (v.sessionId !== sessionId || v.loadGeneration !== loadGeneration || v.revision !== revision) return null;
   if (!count(v.pages) || (v.pages as number) < 1 || !count(v.bytes) || (v.bytes as number) < 1) return null;
   if (typeof v.durable !== "boolean" || typeof v.raster !== "boolean") return null;
+  if (v.cleanupUncertain !== undefined && typeof v.cleanupUncertain !== "boolean") return null;
   const retained = v.retainedReplaced;
   if (retained !== null && !(typeof retained === "string" && retained.length > 0 && retained.length <= 255 && !/[\\/\0]/.test(retained))) return null;
-  return { sessionId, loadGeneration, revision, pages: v.pages as number, bytes: v.bytes as number, durable: v.durable, raster: v.raster, retainedReplaced: retained };
+  return { sessionId, loadGeneration, revision, pages: v.pages as number, bytes: v.bytes as number, durable: v.durable, raster: v.raster, retainedReplaced: retained, ...(v.cleanupUncertain === undefined ? {} : { cleanupUncertain: v.cleanupUncertain as boolean }) };
 }
 
 export type DocumentError = BackendError | ClientError;
