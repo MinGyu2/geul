@@ -1561,15 +1561,19 @@ fn paragraph<'a>(
             vec![id].into()
         } else {
             let new = entries(defs, 21)[id];
+            // A new definition is owned by every original it derives from: either a T012
+            // metrics variant or a general-format variant (bold/italic/underline/strike), the
+            // same derivation the appended-DocInfo proof (`derived_char_shape`) accepts.
             let parents = entries(original_defs, 21)
                 .iter()
                 .enumerate()
                 .filter_map(|(index, old)| {
-                    (old.len() == new.len()
+                    ((old.len() == new.len()
                         && new.len() >= 28
                         && old[..14] == new[..14]
                         && old[28..] == new[28..])
-                        .then_some(index)
+                        || super::derived_char_shape(old, new))
+                    .then_some(index)
                 })
                 .collect::<Vec<_>>();
             reference(!parents.is_empty(), BODY)?;

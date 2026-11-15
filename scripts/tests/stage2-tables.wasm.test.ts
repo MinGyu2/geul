@@ -1281,6 +1281,16 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
     } finally { editor.dispose(); }
   });
 
+  for (const format of ["hwp", "hwpx"] as const) it(`Stage 4 integration ${format}: a general character format and a table structure change publish in one save`, async () => {
+    const { editor, at, place, run, save } = await open(format);
+    place({ ...at, offset: 0 }); editor.caret = { ...at, offset: 6 };
+    await run("format.bold");
+    place({ ...at, offset: 0 });
+    await run("table.insertRowBelow");
+    const saved = await save(true);
+    expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+  });
+
   it("inline formulas preserve ClickHere neighbors and refuse an ambiguous empty-field boundary before mutation", () => {
     const doc = new engine.HwpDocument(fixture("hwp", true)) as Doc;
     try {
