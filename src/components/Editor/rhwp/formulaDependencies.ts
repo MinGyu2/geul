@@ -211,3 +211,78 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string, fieldId: 
   }
   return "safe";
 }
+
+interface PublicationFormula {
+  at: DocPosition;
+  field: RecordValue;
+  inputs: string;
+  identity: string;
+}
+/** Snapshot the owning table's operand text/geometry, not just the formula's paragraph.
+ * Unchanged legacy tables remain opaque. Budgets bound the additional publication proof.
+ */
+export function publicationFormulas(doc: RhwpDocument): Map<number, PublicationFormula> {
+  const result = new Map<number, PublicationFormula>();
+  if (!doc.getFieldList) return result;
+  const fields = read(doc.getFieldList());
+  if (!entries(fields)) throw new Error("formula inventory unavailable");
+  const tables = new Map<string, string>();
+  let visits = 0, chars = 0;
+  for (const field of fields) {
+    if (field.fieldType !== "formula") continue;
+    const loc = field.location;
+    if (!index(field.fieldId) || !field.fieldId || result.has(field.fieldId) || !record(loc)
+      || !index(loc.sectionIndex) || !index(loc.paraIndex) || !Array.isArray(loc.path)
+      || !loc.path.length || loc.path.length > 64) throw new Error("formula owner unavailable");
+    const levels = loc.path.map((p: unknown) => {
+      if (!record(p) || p.type !== "cell" || !index(p.controlIndex) || !index(p.cellIndex) || !index(p.paraIndex))
+        throw new Error("formula cell unavailable");
+      return { control: p.controlIndex, cell: p.cellIndex, cellParagraph: p.paraIndex };
+    });
+    const at: DocPosition = { section: loc.sectionIndex, paragraph: loc.paraIndex, offset: 0,
+      cell: { parentParagraph: loc.paraIndex, ...levels[0]!, nested: levels.slice(1) } };
+    const table = tableAccess(doc, at);
+    if (!table) throw new Error("formula table unavailable");
+    const key = JSON.stringify([at.section, at.paragraph, levels.map((p, i) => i === levels.length - 1 ? p.control : p)]);
+    let inputs = tables.get(key);
+    if (inputs === undefined) {
+      const dims = read(table.dims());
+      if (!record(dims) || !index(dims.cellCount) || !dims.cellCount
+        || dims.cellCount > MAX_FORMULA_CELL_VISITS) throw new Error("formula table budget");
+      const cells: unknown[] = [];
+      for (let cell = 0; cell < dims.cellCount; cell++) {
+        const count = table.paraCount(cell);
+        if (!index(count) || !count || (visits += count + 1) > MAX_FORMULA_CELL_VISITS) throw new Error("formula paragraph budget");
+        const texts: string[] = [];
+        for (let p = 0; p < count; p++) {
+          const length = table.paraLength(cell, p);
+          if (!index(length) || (chars += length) > MAX_METADATA_BYTES) throw new Error("formula text budget");
+          texts.push(table.text(cell, p, 0, length));
+        }
+        cells.push([read(table.info(cell)), texts]);
+      }
+      inputs = JSON.stringify([dims, cells]); tables.set(key, inputs);
+    }
+    result.set(field.fieldId, { at, field, inputs, identity: JSON.stringify(field) });
+  }
+  return result;
+}
+
+/** Publication never silently persists a dependent cache after its source changed.
+ * Read-only validation reuses the engine evaluator and exact field owner; no ID/range is rewritten.
+ * Unsupported legacy formats can still be preserved unchanged, but changed tables fail closed.
+ */
+export function validatePublicationFormulaCaches(doc: RhwpDocument, baseline: Map<number, PublicationFormula> | null): void {
+  for (const [id, current] of publicationFormulas(doc)) {
+    const prior = baseline?.get(id);
+    if (prior?.inputs === current.inputs && prior.identity === current.identity) continue;
+    const { at, field } = current, cache = cachedFormula(field.command);
+    if (!cache || !String(field.command).includes("??%g,;;") || field.value !== cache.value
+      || !index(field.startCharIdx) || !doc.validateTableFormulaAt) throw new Error("formula cache unverified");
+    if (tableFormulaSafety(doc, at, cache.expression, id) !== "safe") throw new Error("formula dependencies unverified");
+    const path = [at.cell!, ...(at.cell!.nested ?? [])].map(p => ({ controlIndex: p.control, cellIndex: p.cell, cellParaIndex: p.cellParagraph }));
+    const check = read(doc.validateTableFormulaAt(at.section, at.paragraph, JSON.stringify(path), field.startCharIdx, id, cache.expression));
+    if (!record(check) || check.ok !== true || check.fieldId !== id || check.changed !== false
+      || check.text !== field.value || check.command !== field.command) throw new Error("stale formula cache");
+  }
+}

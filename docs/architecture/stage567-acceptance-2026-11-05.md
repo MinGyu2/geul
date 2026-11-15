@@ -1119,3 +1119,77 @@ P2-B에서는 `coreActions()`의 history 조건을 본문 명령에 적용하지
 - 초기 검증에서 patch count 19 한도는 20번째 패치를 거부했고, 이를 정확한 20개 허용/21개 거부로 고쳤다. paragraph END slot affinity와 supplementary Unicode source unit 결함, SVG가 glyph별로 직렬화된다는 점을 반영하지 못한 기존 assertion도 수정했다. 직접 native 재현에서 빈 ClickHere와 같은 경계에 formula를 넣을 때 inverted range가 생기는 문제를 발견해, 편집 복사본의 원래 raw slot을 기준으로 post-proof/nonoverlap 검증을 응답·apply 전에 추가했다. 모호한 zero-width boundary는 mutation 없이 거부하고, nonempty ClickHere와 formula의 인접 조합은 HWP/HWPX preservation/reopen으로 확인했다. 검증된 cell path의 물리 cell을 유지하며 row/column coordinate로 재탐색하지 않는다. 기본 bwrap의 temp ancestor mapping은 protected `userns-root-bwrap`으로 해결했다. 최초 publisher report 위치는 허용된 artifact root 밖이라 거부되어 report를 허용된 `target/stage2-focused/`로 옮겨 같은 native publication을 통과시켰다. 첫 Vitest wrapper에서 zsh 예약변수 이름 오류는 종료 코드 전달에만 있었고 전체 로그는 9개 PASS를 기록했다. 검사기/기대값을 약화하지 않았다.
 - 수정할 문단은 ordinary text 및 서로 겹치지 않는 Formula/ClickHere fields 조합을 지원한다. picture/table/unknown control, 겹침 또는 미지원 serialized slot이 있는 대상 문단은 일반 schema 예외 없이 mutation 전에 거부한다. Formula control 삭제와 임의의 formula 내부 텍스트 편집은 미지원이다. formula range 시작/내부 caret은 해당 필드를 교체하고 END는 일반적으로 삽입 경계로 취급하지만, 문단 전체를 차지하는 단일 기존 수식의 END는 기존 edit affinity를 보존한다. 병합으로 수식 소유권이 흡수/모호해질 때는 안전 거부한다. 기존 깊이·자원·원본 preflight 제한을 그대로 둔다.
 - 최종 로컬 구현 commit 제목은 `feat(stage2): support multiple inline formula fields`; 정확한 SHA는 이 문서와 구현이 포함된 완료 commit에서 확인한다. 시작 HEAD `73df76b9b4c258fc9dd63723f69fef83b23d5cb0`, branch `master`, pin 유지, push 없음. 이 변경은 Stage 2의 마지막 구현 잔여를 완료한다. Stage 3–5 acceptance는 별도이며 변경하지 않는다.
+
+
+<a id="stage3-evidence-20261115"></a>
+## Stage 3 기능 범위·보존 수용 — 2026-11-15
+
+**COMPLETED — 명시한 Stage 2 지원 범위.** 구 계획의 User Story 2 “Phase 3”과 다른, 기능 범위·보존 수용 단계다. 시작 `c15e66e7eac53ec56e6c63b29624daeada0576f2`, `master`, clean. RHWP `1a76570e833917d15817415a53c09ad61ab3203f` / WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` pin 불변. spec/plan의 명시적 재계산·지원 범위 및 단계 구분과 모순이 없어 수정하지 않았다. Stage 4 T012 통합과 Stage 5 T015/T016 상호운용·출시는 시작하거나 완료로 변경하지 않았다.
+
+현재 `public/rhwp/RELEASE.json`과 선택된 불변 세대의 **실제 파일**을 대조했다. generation `1b09639e93bbbdb4f0c08af0e2f9ecfd534f64a4820b61b535bfe73e06a36565`, JS SHA-256 `3674b2349212646992d2880e45d8e9ae240d6bf5397bc6002199a17faf77d4c9`, WASM SHA-256 `669acfeb8df70d2ec2fa6cf35f40e6c6c87e9a343b9d187c2b64fcbf6e4c0831`. Stage 3에서 엔진/패치/핀/WASM은 변경·재생성하지 않았다. 제품 TypeScript 저장 검증 및 독립 Rust T009 검증을 보정했고 실제 Release WASM과 정상 제품 session 메서드로 실행했다. 새 frontend 패키지/native GUI 빌드·IBus 수용을 주장하지 않는다.
+
+**증거 출처·변경 영향.** 초기 목록 작성 중 시험은 실행하지 않았다. 초안은 13그룹 중 재사용 후보 11, source-only cache GAP 1, 후속 단계 OUT OF SCOPE 1이었다. 이후 원시 증거의 가용성까지 대조해 그림 P1/P2 문서 기록의 공백을 추가 식별했다. 아래 최종 분류는 **REUSED PASS 3 / CURRENT PASS 9 / OUT OF SCOPE 1**, 미해결 필수 GAP/FAIL/BLOCKED/NOT RUN 0이다. 서로 다른 실행의 PASS 수를 합쳐 새 실행으로 표시하지 않는다.
+
+- 2026-11-14 `b7aa7b5`: `scripts/tests/stage2-tables.wasm.test.ts`, `target/stage2-focused/deep-final.log` 원시 18 PASS와 fixture/조판 산출물 확인. 당시 Release `03a37914dd4335d70f8fd4efe70a120eb433c09cef38182f8469a2222f263e49`/WASM `40848b54…`. HWP 16단계/HWPX 12단계, 텍스트 순서·캐럿·입력·IME 메서드·서식·history·checker/reopen에 한정한다. 후속 row 보정은 아래 경계 증거로 보완됐고 inline 생성 코드는 그림/필드 없는 깊은 텍스트 fixture의 측정·소유 경로를 바꾸지 않았다. 187/64 전체 행렬은 재실행하지 않았다.
+- 2026-11-14 `c2144ef`/`49bee15`: 같은 시험 파일의 `row pagination boundary`, `target/stage2-focused/row-final-tests.log` 원시 6 PASS 및 JSONL/SVG/PNG 확인. 당시 Release `882071ff593572efae60aa6dfe03db374f4dcce8d48e11627a2f3514020f98fc`/WASM `ecc48674…`. 4점 경계·온전한 행 이월·HWP/HWPX 편집/history/checker/reopen. 이후 그림 변경은 그림 분기를 추가하고 inline formula 변경은 field 생성/편집 경로에 한정되어 이 텍스트 전용 row 계약을 다시 실행할 이유가 없다.
+- 2026-11-14 `1ddbbf3`/`c6452d3`: Release `89150643fa14c053a68da12e4c3bbb7a378eaeef5f936f30821948a2ac4926e8`/WASM `067897d8…`. `target/stage2-focused/cell-inline-publication/{publication.json,nested-cell-jpeg/}` 및 `target/stage2-inline-picture-publish.log`는 **원본 실행 증거 available**. 중첩 HWP JPEG/BinData/소유권, 실제 durable=true·dirty=false·preview 재생성·SAFE 및 게시 파일 재열기 증거다. Stage 2 patch SHA `00fb0369…`는 현재도 같고 새 inline formula는 그림 혼합 대상 문단을 거부한다. 정상 그림 durable publication을 반복하지 않았다. PNG/HWPX는 당시 render artifact만 남고 saved/reopen 원시 결과 신원이 불충분하여 해당 기존 한 사례만 새로 실행했다(`target/stage3-picture-hwpx/{vitest.log,evidence.json,a.hwpx,b.hwpx}`, 1 PASS/46 skipped). 기록된 정상 생성/저장/재열기 계약을 확인했으며 native durable 게시로 확대하지 않는다.
+- 2026-11-15 `73df76b` P1/P2 16 PASS·인접 삭제 추가 1 PASS·서식 hardening 16 PASS는 **문서화된 결과, 원시 실행 로그 unavailable**로 구분했다. 문서만 독립 실행 증거로 사용하지 않았다. 새 최소 대표 6개로 삭제 거부·양쪽 서식/복사·history 조건을 보완했다. 일반 서식의 원시 20-case publication/reopen 및 회귀는 `src-tauri/target/general-formatting-hardening/final-checks/`에 available(2026-11-12/13, Release `c51dd0fe…`/WASM `ee44446b…`, `rhwp-general-formatting.md` 참조). 기본 서식 엔진·명령은 불변이다. 과거 native run5는 당시 결과로만 남기고 변경된 finalizer/current GUI PASS로 승격하지 않는다.
+- 2026-11-15 `c15e66e`: 현재 Release의 `target/inline-formula-worker-final-selected.log` 9 PASS/36 skipped, `target/inline-formula-rust-final.log`, `target/inline-formula-worker-final-publication.log`, `target/stage2-focused/inline-formula-publication/` 원본 증거 available. 정확한 다중/부분 필드·Unicode·ID/range·dependency/cycle·rich table·rollback·실제 native HWP 게시/재열기를 입증한다. Stage 3의 export/cache admission 및 T009 table-input witness가 이 저장 계약을 바꿨으므로 해당 선택 9개만 현재 코드로 다시 확인했다. 이전 단일 수식 PASS를 다중 수식 증명으로 사용하지 않았다.
+
+위 WASM/session 증거의 환경은 Linux x86_64·Node/Vitest(jsdom)·Release RHWP와 실제 Rust `save_check`; native publisher는 Linux 보호 `userns-root-bwrap` 실행이다. 과거 Linux X11/Xvfb·WebKitGTK/IBus 증거는 각 문서에 기록된 소스/fixture/환경에 한정하며 Windows/macOS 또는 현재 GUI 실행으로 확대하지 않는다.
+
+| 요구 계약 | 근거 | 분류 | 남은 공백 | 결정 |
+|---|---|---|---|---|
+| 표 셀·중첩 소유권 및 편집 | deep-final 18, 현재 inline 소유권 근거 | REUSED PASS | 없음(기록된 경로/fixture) | 새 생성 경로를 과거 PASS로 확대하지 않음 |
+| 표 구조·필드/캡션·참조 재작성 | 현재 선택 rich HWP/HWPX 및 rollback (`target/stage3-cache-after/vitest.log`) | CURRENT PASS | 없음 | export 보정 영향 계약만 재확인 |
+| 깊은 중첩 조판·행 페이지 경계 | deep-final 18 / row-final 6, 원시 조판 산출물 | REUSED PASS | 없음(기하·지원 parser 깊이) | 187/64·전체 렌더 행렬 미반복 |
+| 셀 PNG/JPEG·BinData·실제 HWP 게시 | 새 HWPX PNG 1 PASS + 기존 HWP JPEG SAFE/durable/reopen | CURRENT PASS | 없음(지원 삽입/보존) | 정상 durable 게시 미반복 |
+| 다중/부분 수식·Unicode·ID/range | 현재 inline 선택, 기존 현재 Release 게시 파일 | CURRENT PASS | 없음 | 필드/일반 텍스트 경계·소유권 유지 |
+| 평가·dependency·참조 재작성·cycle | 현재 inline/rich 선택 및 기존 독립 Rust 근거 | CURRENT PASS | 없음 | source-only cache와 별도 구분 |
+| 숫자 source-only dependent cache | 아래 Release 양식별 회귀 + 새 Rust + 실제 native 거부 | CURRENT PASS | 없음 | stale 상태의 제품 저장/게시 거부 |
+| 일반 글자 서식·인접 편집/복사 | 기존 formatting 원시 근거 + 새 그림 양쪽 4개 | CURRENT PASS | 없음 | 제어 슬롯/인접 텍스트 단위 일치 |
+| Undo/Redo·revision·rollback | 기존 deep/inline/그림 계약, 현재 cache Undo/Redo 보완 | REUSED PASS | 없음 | 원래 history/부분 실패 계약 유지 |
+| HWP/HWPX export·reopen | 현재 inline 선택·source-only 거부 및 명시 재계산 22 재열기 | CURRENT PASS | 없음(제품 저장 경로) | raw export 진단과 게시 성공을 구분 |
+| T009 독립 HWP 보존·unsafe 게시 차단 | 기존 ownership/ID/range + 새 실제 Release stale native 거부 | CURRENT PASS | 없음 | T009 약화 없이 table-input 변경 재검증 |
+| 미지원 연산 안전 거부 | 현재 inline negative + 새 그림 Backspace/history 대표 | CURRENT PASS | 없음(명시한 지원 경계) | 원본/dirty/history 보존 |
+| T012 통합·외부 Office/다른 OS·출시 | Stage 4 T012 / Stage 5 T015/T016 | OUT OF SCOPE | 후속 단계 의무 유지 | Stage 3 실패나 새 PASS로 바꾸지 않음 |
+
+**확정 결함과 최소 보정.** 정상 제품 `typeText`로 A1=10을 11로 바꾸자 B1 `=A1*2??%g,;;20`의 cache/표시값이 20으로 남았다. 두 형식 모두 기존 session export 비교·실제 checker를 통과하고 독립 reopen도 20이었다(`target/stage3-cache-before/`, 2 FAIL/45 skipped). 이는 실제 결함이다. 자동 연쇄 재계산을 요구하지 않는 기존 계약(이 보고서의 Stage 6 및 2026-11-13 절: “자동 의존성 재계산을 주장하지 않는다”, “값은 참조 셀 편집 뒤 명시적으로 재계산”)을 유지하고, stale publication의 안전 거부를 구현했다. 실패 뒤 수용 정의를 바꿔 PASS로 삼지 않았다.
+
+`formulaDependencies.ts`/`RhwpText.prepareExport()`는 불러온 필드 identity와 소유 표의 bounded 텍스트/기하 입력 증거를 보관하고, 바뀐 표/필드의 캐시를 같은 native evaluator·정확한 ID/path로 읽기 전용 검증한다. 입력/문단 예산을 두고 표 입력 문자열은 필드 간 공유한다. stale 또는 증명 불가 시 제품 Save/Save As와 공통 export 경로를 사용하는 체크포인트가 서비스 호출 전에 거부된다(체크포인트 자체의 새 Stage 4 시험을 했다는 뜻은 아님). 원본 그대로인 legacy 표는 기존 opaque 보존을 유지한다. 변경된 legacy 고정 소수/미지원 형식의 캐시를 현재 검증 API로 동일하게 증명할 수 없으면 보수적으로 거부한다. 자동 재계산·형식 변환으로 캐시를 덮어쓰지 않는다.
+
+독립 HWP `field_preservation`은 각 필드에 가장 가까운 표의 텍스트 입력 해시를 연결해, 필드/control/owner paragraph가 그대로여도 operand 변화 시 기존 parser/evaluator/cache 검사를 실행한다. 중첩 소유권·원본 ID/unknown record·resource accounting·fail-closed를 유지한다. parser/evaluator/엔진은 고치지 않았다. 실제 trace는 cache 재계산 불일치의 기존 `valid()`가 `OutputMalformed`를 내는 것을 확인했다. HWPX 원시 engine export와 ZIP checker만으로는 stale cache를 검출하지 못한다. HWPX의 이번 안전성은 **정상 제품 export admission**으로 증명했으며 독립 HWP T009 결과로 대체하지 않았다.
+
+보정 후 두 형식 모두 A1=11/B1=20의 메모리·진단 raw export는 그대로지만 **제품 저장은 거부**, dirty/revision/field identity 유지. HWP는 실제 native publication도 거부하고 target 바이트 불변(`publicationPrevented=true`, `originalIntact=true`). 같은 생성 fixture의 SVG→PNG도 직접 확인해 11/20 표시를 확인했다(새 native GUI screenshot은 아님). Undo는 10/20 정상 저장, Redo는 다시 거부, 정상 수식 교체 명령으로 같은 ID를 유지해 22를 계산한 뒤 HWP/HWPX 저장·독립 engine reopen에서 22를 확인했다. 거부된 stale raw export를 게시 파일이라고 부르지 않는다.
+
+**실제 새 실행 — 아래는 독립 명령별 결과이며 재사용 PASS와 별개다.**
+
+```sh
+# 최초 결함 재현: 2 FAIL / 45 skipped
+GEUL_STAGE2_DIR=$PWD/target/stage3-cache-before npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'dependent cache'
+# 보정 영향 9개 + 새 양식별 2개: 10 PASS / 1 FAIL / 36 skipped
+GEUL_STAGE2_DIR=$PWD/target/stage3-cache-after npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'dependent cache|inline formulas|HWP field-only replacement|formula rewrite success without|HWP field-rich captioned table|HWPX rich table'
+# 실제 판정에 맞춘 기대값과 mock preflight 응답 보정 뒤, 실패했던 HWP만: 1 PASS / 46 skipped
+GEUL_STAGE2_DIR=$PWD/target/stage3-cache-verified npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'dependent cache hwp:'
+# source-only 독립 checker/실제 게시 거부·원본/dirty 보존, 올바른 22 게시: 1 PASS
+GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib hwp_dependent_cache_source_only_edit_cannot_publish -- --nocapture
+# 현재 checker 빌드 PASS (WASM rebuild 아님)
+GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py build --example save_check
+# Release stale output에 대한 실제 native 게시 거부: 1 PASS / 480 filtered
+GEUL_SANDBOX=userns-root-bwrap GEUL_HWP_CONTRACT_DIR=$PWD/src-tauri/target/stage3-cache-publication python3 scripts/cargo-geul.py test --lib services::save::tests::hwp_contract_tests::hwp_contract_real_engine_publication -- --ignored --exact --nocapture
+# HWPX PNG의 saved/reopen 원시 증거 공백만: 1 PASS / 46 skipped
+GEUL_STAGE2_DIR=$PWD/target/stage3-picture-hwpx npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'cell-inline picture Release command: hwpx'
+# 원시 로그 없는 P1/P2 계약의 대표만: 6 PASS / 41 skipped
+GEUL_STAGE2_DIR=$PWD/target/stage3-picture-proof npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts -t 'cell-inline picture stabilization safely refuses Backspace|cell-inline picture stabilization formats text|cell-inline picture stabilization copies text|cell-inline picture stabilization keeps body image insertion'
+npm run typecheck
+npx eslint src/components/Editor/rhwp/formulaDependencies.ts src/components/Editor/rhwp/rhwpText.ts scripts/tests/stage2-tables.wasm.test.ts
+git diff --check
+```
+
+최종 typecheck/targeted ESLint PASS는 `target/stage3-picture-proof/{typecheck,eslint}.log`. Rust 1 PASS 및 checker build 로그는 `target/stage3-cache-final/`; HWPX PASS와 영향 9 PASS는 `target/stage3-cache-after/vitest.log`에서 재사용(동일 관련 코드/입력, HWP 기대값·mock 응답 수정은 해당하지 않음). HWP 최종 1 PASS 및 실제 native 로그는 `target/stage3-cache-verified/`; native 최종 `src-tauri/target/stage3-cache-publication/publication.json`과 입력 9파일의 원본 SHA 대조를 보존했다. 원시 fixture/log/WASM/체크포인트는 커밋하지 않는다.
+
+중간 실패도 보존한다: 첫 Rust 회귀 1 FAIL와 선택 WASM HWP 1 FAIL는 기대 코드를 `ReferenceInvalid`로 잘못 지정한 시험 오류였고 실제 trace의 cache mismatch `OutputMalformed`로 교정했다. `target/stage3-cache-final/vitest.log` HWP 5초 timeout 1 FAIL는 성공 저장 뒤 background probe와 다음 preflight 중 한 요청만 답한 mock 오류다. 제한 시간을 늘리지 않고 응답을 보정해 위 HWP 1 PASS를 얻었다. 첫 native 시도는 보호 wrapper에서 `target/stage3-cache-verified/publication/publication.json` 쓰기가 read-only로 끝나 1 FAIL; 입력 SHA 일치를 확인해 기존 허용 산출물 경로 `src-tauri/target/`로 복사 후 같은 단일 사례 1 PASS. 이 실패들을 제품 PASS로 relabel하거나 전체 재시험 사유로 삼지 않았다. HWPX 그림 최초 filter `cell-inline picture hwpx:`는 실제 제목과 달라 47 skipped/0 executed였으며 PASS로 세지 않았다. 실제 제목으로 위 한 사례만 실행했다. 모든 명령 종료, 실행 중 task 프로세스 없음.
+
+**유지하는 지원 경계.** HWP 기존 표 parser 깊이 63/HWPX 15, 새 생성 15 및 기존 자원/원본 preflight 한도. 그림은 검증된 셀 문단 inline PNG/JPEG와 기존 지원 경로에 한정하며 caption/textbox sentinel·field와의 모호한 혼합·control 포함 삭제/복사·일반 drawing 도구는 확장하지 않는다. Formula 내부 임의 입력/삭제·control 삭제·겹친 field/모호한 marker/operand·cycle·소유권이 흡수되는 merge는 거부한다. source 편집 뒤 명시적 수식 재계산이 필요하며 증명되지 않은 캐시의 저장은 거부한다. 전체 T010/T012·DOCX/WordCraft·D4 성능·187/64 렌더·새 native IBus·다른 OS·외부 Hancom/Word·T015/T016은 수행하지 않았다. 기존 엔진 strict Clippy 41 진단과 독립 D4 TARGET NOT MET 이력도 PASS로 바꾸지 않는다.
+
+최종 상태: Stage 2 구현 COMPLETED, Stage 3 지원 범위 수용 COMPLETED, Stage 4/5 기존 미완료 상태 유지. 로컬 커밋 제목 `fix(stage3): preserve dependent formula cache integrity`; 정확한 SHA는 이 기록과 보정이 포함된 commit에서 확인한다. push 없음.

@@ -29,7 +29,7 @@ const build = await readRhwpGeneration(join(root, "public/rhwp"), "release");
 const folder = join(root, "public/rhwp/generations", build.generation);
 const engine = createRequire(import.meta.url)(join(folder, "rhwp.js"));
 const wasm = engine.initSync({ module: readFileSync(join(folder, "rhwp_bg.wasm")) });
-const out = join(root, "target/stage2-focused"); mkdirSync(out, { recursive: true });
+const out = process.env.GEUL_STAGE2_DIR ?? join(root, "target/stage2-focused"); mkdirSync(out, { recursive: true });
 type Doc = RhwpDocument & { createBlankDocument(): void; getTextFileText(): string; getPageRenderTree(page: number): string; renderPageSvg(page: number): string };
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
 // Generated solid 48×64 PNG/JPEG, large enough to occupy more than a text line.
@@ -101,8 +101,8 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
   } finally { d.free(); }
 }
 async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS,
-  sessionOptions: { history?: boolean; format?: boolean; inlineFormulas?: boolean } = {}) {
-  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords, sessionOptions.inlineFormulas), { backend, take, calls } = controlledBackend();
+  sessionOptions: { history?: boolean; format?: boolean; inlineFormulas?: boolean; original?: Uint8Array } = {}) {
+  const original = sessionOptions.original ?? fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords, sessionOptions.inlineFormulas), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
   let doc!: Doc;
@@ -139,13 +139,22 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     expect(editor.snapshot().editable).toBe(true);
   };
   /** Product Save: the session's own export, loss report and live/reopen comparison, judged by the real T009 checker. */
-  const save = async () => {
+  const save = async (drainPreflight = false) => {
     const saving = editor.save(); await flush();
-    if (calls.some(c => c.method === "original")) {
+    // A successful HWP save starts a background original probe. A subsequent save
+    // may also request its own preflight; answer both bounded requests in this scenario.
+    for (let attempt = 0; attempt < (drainPreflight ? 4 : 1) && calls.some(c => c.method === "original"); attempt++) {
       take("original").reply(ok(original)); await flush();
       const pf = take("preflight");
       pf.reply(ok({ preservation: check(format, "preflight", original, pf.args[2] as Uint8Array, JSON.stringify(pf.args[3])), platformSupported: true }));
       await flush();
+    }
+    if (!calls.some(c => c.method === "save")) {
+      await saving;
+      const diagnostic = exported(doc, format);
+      return { output: diagnostic.bytes, reopen: { formatEqual: false },
+        raw: check(format, "saved", original, diagnostic.bytes, diagnostic.loss),
+        publishable: false, contentLoss: JSON.parse(diagnostic.loss), refusedBeforeBackend: true };
     }
     const call = take("save");
     const [, , revision, output, contentLoss, reopen] = call.args as [number, number, number, Uint8Array, unknown, Record<string, boolean>];
@@ -156,7 +165,7 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     if (publishable) call.reply(ok({ session: info({ format, state: "ready", revision, dirty: false, sequence: ++sequence }), durable: true }));
     else call.reply(fail({ code: "UnsafeSave", preservation: raw as never }));
     await saving;
-    return { output, reopen, raw, publishable, contentLoss };
+    return { output, reopen, raw, publishable, contentLoss, refusedBeforeBackend: false };
   };
   return { original, editor, doc, at, place, settle, run, save };
 }
@@ -1060,6 +1069,72 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
         expect(fields(reopened)).toEqual(fields(doc));
         expect(reopened.getTableCaptionByPath!(0, para, JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]))).toBe(captionBefore);
       } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  for (const format of ["hwp", "hwpx"] as const) it(`dependent cache ${format}: numeric source edit cannot publish a stale formula`, async () => {
+    const seed = engine.HwpDocument.createEmpty() as Doc;
+    let original: Uint8Array;
+    try {
+      seed.createBlankDocument();
+      const t = JSON.parse(seed.createTable!(0, 0, 0, 1, 2));
+      seed.setTableProperties!(0, t.paraIdx, t.controlIdx, JSON.stringify(format === "hwp" ? HWP_TABLE_NORMALIZATION : { textWrap: "TopAndBottom" }));
+      seed.insertTextInCell(0, t.paraIdx, t.controlIdx, 0, 0, 0, "10");
+      expect(JSON.parse(seed.insertTableFormulaField!(0, t.paraIdx, t.controlIdx, 0, 1, "=A1*2")).ok).toBe(true);
+      original = exported(seed, format).bytes;
+    } finally { seed.free(); }
+    const c = await open(format, false, false, false, false, 0, DEEP_WORDS, { original });
+    const { editor, doc, at, place, settle, save } = c;
+    const fields = (d: RhwpDocument = doc) => JSON.parse(d.getFieldList!());
+    try {
+      const before = fields(); expect(before[0]).toMatchObject({ value: "20", command: "=A1*2??%g,;;20" });
+      place({ ...at, offset: 1 }); editor.anchor = { ...at, offset: 2 };
+      expect(editor.typeText("1")).toBe(true); await settle();
+      expect(new RhwpText(doc).text(at, 2)).toBe("11");
+      const revision = editor.snapshot().revision;
+      const saved = await save(true);
+      writeFileSync(join(out, `dependent-original.${format}`), original);
+      writeFileSync(join(out, `dependent-edited.${format}`), saved.output);
+      writeFileSync(join(out, `dependent-${format}.json`), JSON.stringify({ generation: build.generation, before, after: fields(), text: doc.getTextFileText(), ...saved }, (_, v) => v instanceof Uint8Array ? undefined : v, 2));
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        writeFileSync(join(out, `dependent-reopen-${format}.json`), JSON.stringify({ fields: fields(reopened), text: reopened.getTextFileText() }, null, 2));
+        expect(saved.publishable, "stale dependent cache must not publish").toBe(false);
+        expect(saved.refusedBeforeBackend).toBe(true);
+        expect(fields(reopened)[0].value).toBe("20"); // raw engine export is diagnostic, never published
+        expect(editor.hasUnpreservedChanges).toBe(true);
+        expect(editor.snapshot().revision).toBe(revision);
+        expect(fields()).toEqual(before); // refusal never rewrites ID/range/cache
+        if (format === "hwp") {
+          expect(saved.raw.findings.some(f => f.code === "outputMalformed")).toBe(true);
+          const evidence = join(out, "publication"), folder = join(evidence, "source-only-stale");
+          mkdirSync(folder, { recursive: true });
+          writeFileSync(join(evidence, "cases.json"), JSON.stringify([{ id: "source-only-stale", negative: true, expectedCode: "outputMalformed" }]));
+          writeFileSync(join(folder, "original.hwp"), original); writeFileSync(join(folder, "edited.hwp"), saved.output);
+          for (const name of ["noop.hwp", "noop-loss.json"]) writeFileSync(join(folder, name), readFileSync(join(out, name)));
+          writeFileSync(join(folder, "loss.json"), JSON.stringify(saved.contentLoss));
+          writeFileSync(join(folder, "render.svg"), doc.renderPageSvg(0));
+          execFileSync("rsvg-convert", ["--width", "724", "--height", "1024", "--output", join(folder, "render.png"), join(folder, "render.svg")]);
+          writeFileSync(join(folder, "proof.json"), JSON.stringify({ originalSha256: createHash("sha256").update(original).digest("hex"),
+            editedSha256: createHash("sha256").update(saved.output).digest("hex"), reopenEqual: true, engineGeneration: build.generation }));
+        }
+      } finally { reopened.free(); }
+      await c.run("edit.undo");
+      expect(new RhwpText(doc).text(at, 2)).toBe("10");
+      expect((await save(true)).publishable).toBe(true);
+      await c.run("edit.redo");
+      expect((await save(true)).refusedBeforeBackend).toBe(true);
+      // Existing explicit formula replacement recalculates without a new field ID.
+      place(withCell(at, 1));
+      await c.run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=A1*2" });
+      expect(fields()[0]).toMatchObject({ fieldId: before[0].fieldId, value: "22", command: "=A1*2??%g,;;22" });
+      const corrected = await save(true); expect(corrected.publishable, JSON.stringify(corrected.raw)).toBe(true);
+      const fresh = new engine.HwpDocument(corrected.output) as Doc;
+      try {
+        expect(fields(fresh)[0].value).toBe("22");
+        writeFileSync(join(out, `dependent-corrected.${format}`), corrected.output);
+        writeFileSync(join(out, `dependent-corrected-${format}.json`), JSON.stringify({ fields: fields(fresh), text: fresh.getTextFileText(), raw: corrected.raw }, null, 2));
+      } finally { fresh.free(); }
     } finally { editor.dispose(); }
   });
 

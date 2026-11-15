@@ -2806,3 +2806,37 @@ fn hwp_safety_composite_cell_ownership_real_checker() {
     let findings = raw_findings(&initial, &restored_grid, true);
     assert!(only_stale_preview(&findings), "{findings:?}");
 }
+
+#[test]
+fn hwp_dependent_cache_source_only_edit_cannot_publish() {
+    let document = |source, command, display| {
+        safety_document(
+            vec![
+                paragraph_records(2, 0, source, &[]),
+                safety_field_paragraph(&[(10, command, display, false)]),
+            ],
+            1,
+            2,
+        )
+    };
+    let original = document("10", "=A1*2??%g,;;20", "20");
+    let stale = document("11", "=A1*2??%g,;;20", "20");
+    let findings = raw_findings(&original, &stale, true);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.code == FindingCode::OutputMalformed),
+        "{findings:?}"
+    );
+    let (result, disk, info) = publish(&original, &stale, Some(&raster()));
+    assert!(result.is_err(), "stale cache published");
+    assert_eq!(disk, original);
+    assert!(info.dirty);
+    let fresh = document("11", "=A1*2??%g,;;22", "22");
+    assert!(only_stale_preview(&raw_findings(&original, &fresh, true)));
+    let (result, _, _) = publish(&original, &fresh, Some(&raster()));
+    assert!(result.is_ok(), "correct cache rejected: {result:?}");
+    assert!(only_stale_preview(&raw_findings(
+        &original, &original, true
+    )));
+}

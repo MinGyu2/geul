@@ -6,7 +6,7 @@ import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipb
 // 다루는 호출(커서 사각형·삽입·삭제·문단 나누기·줄 정보)은 모두 여기서 본문용/셀용 API를 고르므로, 렌더·hit test·
 // 편집이 서로 다른 좌표를 쓰지 않는다. 글자 오프셋은 rhwp의 글자(char, 유니코드 스칼라) 단위다.
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
-import { cachedFormula, tableFormulaSafety } from "./formulaDependencies";
+import { cachedFormula, publicationFormulas, tableFormulaSafety, validatePublicationFormulaCaches } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
 
 /** One further table level inside a cell: the table control of the host paragraph, its cell and that cell's paragraph. */
@@ -227,8 +227,10 @@ export class RhwpText {
   private publishedPrefix: CharShapePrefix | null = null;
   private publishingPrefix: CharShapePrefix | null = null;
   private caretPageHint = 0;
+  private readonly formulaBaseline: ReturnType<typeof publicationFormulas> | null;
 
   constructor(private readonly doc: RhwpDocument) {
+    try { this.formulaBaseline = publicationFormulas(doc); } catch { this.formulaBaseline = null; }
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
     this.originalCharShapeCount = this.charShapeBaseline;
@@ -291,7 +293,10 @@ export class RhwpText {
   }
 
   /** Remove unused, unpublished definitions left by a failed in-flight save or historical branch. */
-  prepareExport(): void { this.compactCharShapes(); }
+  prepareExport(): void {
+    validatePublicationFormulaCaches(this.doc, this.formulaBaseline);
+    this.compactCharShapes();
+  }
 
   release(): void {
     const prefixes = [this.publishingPrefix, this.publishedPrefix];

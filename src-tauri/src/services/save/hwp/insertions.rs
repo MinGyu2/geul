@@ -142,8 +142,8 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
 }
 
 /// Independent field boundary shared by ordinary and structural comparison paths.
-/// Unchanged legacy commands stay opaque. Only new/rewritten formulas enter the
-/// authoritative RHWP parser/evaluator, with the output table's real cell values.
+/// Unchanged legacy tables stay opaque. New/rewritten formulas and formulas whose
+/// table operand text changed enter the authoritative RHWP parser/evaluator.
 pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool) -> Checked<()> {
     let mut original = BTreeMap::new();
     let mut output = BTreeMap::new();
@@ -164,6 +164,43 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             unique_field_ids(&rs, ids, name)?;
             if ids.len() == prior_count {
                 continue;
+            }
+            // A numeric operand may change without changing its dependent field or
+            // owning paragraph. Bind each field to its nearest table's text inputs.
+            // Nested tables overwrite the enclosing-table witness; unchanged legacy
+            // tables remain opaque instead of acquiring a new formula schema.
+            let mut table_inputs = BTreeMap::new();
+            for (at, table) in rs
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.0 == 71 && r.2.starts_with(b" lbt"))
+            {
+                use sha2::{Digest, Sha256};
+                let end = rs[at + 1..]
+                    .iter()
+                    .position(|r| r.1 <= table.1)
+                    .map_or(rs.len(), |i| at + 1 + i);
+                let records = &rs[at..end];
+                crate::document::resources::charge(
+                    crate::document::resources::Category::Comparison,
+                    records.len().saturating_mul(8),
+                )
+                .map_err(|_| finding(FindingCode::LimitExceeded, name))?;
+                let mut hash = Sha256::new();
+                for r in records.iter().filter(|r| r.0 == 67) {
+                    hash.update(r.1.to_le_bytes());
+                    hash.update((r.2.len() as u64).to_le_bytes());
+                    hash.update(r.2);
+                }
+                let inputs: [u8; 32] = hash.finalize().into();
+                for r in records
+                    .iter()
+                    .filter(|r| r.0 == 71 && r.2.starts_with(b"umf%"))
+                {
+                    if let Some(field) = Field::of(std::slice::from_ref(r)) {
+                        table_inputs.insert(field.id, inputs);
+                    }
+                }
             }
             // Hierarchical paragraph/cell ownership, rather than global field order.
             let mut owners: Vec<(u16, Vec<u8>)> = Vec::new();
@@ -236,6 +273,7 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
                             level,
                             payload.to_vec(),
                             paragraph_text_hashes.get(&level).copied(),
+                            table_inputs.get(&field.id).copied(),
                         ),
                     );
                 } else if tag == 71 {
@@ -249,8 +287,8 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             }
         }
     }
-    for (id, (name, owner, level, bytes, _)) in &original {
-        let Some((new_name, new_owner, new_level, new_bytes, _)) = output.get(id) else {
+    for (id, (name, owner, level, bytes, _, _)) in &original {
+        let Some((new_name, new_owner, new_level, new_bytes, _, _)) = output.get(id) else {
             preserved(structural, name)?; // structural cell deletion must be independently proven by evolved_table
             continue;
         };
@@ -270,7 +308,7 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
         .map(|(id, _)| *id)
         .collect();
     for id in &changed {
-        let (_, _, level, bytes, _) = &output[id];
+        let (_, _, level, bytes, _, _) = &output[id];
         let record = [(71, *level, bytes.as_slice())];
         let field =
             Field::of(&record).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
@@ -285,15 +323,14 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             )?;
         }
     }
-    // Re-evaluate command OR owning paragraph text changes. Relocation alone
-    // retains the legacy preservation contract; reachable operands still prove
-    // their own cache through dependency validation.
+    // Re-evaluate command, owning paragraph OR table operand text changes.
+    // Relocation alone retains the legacy preservation contract.
     let rewritten: BTreeSet<_> = changed
         .into_iter()
         .filter(|id| {
             original
                 .get(id)
-                .is_none_or(|a| a.3 != output[id].3 || a.4 != output[id].4)
+                .is_none_or(|a| a.3 != output[id].3 || a.4 != output[id].4 || a.5 != output[id].5)
         })
         .collect();
     if rewritten.is_empty() {
