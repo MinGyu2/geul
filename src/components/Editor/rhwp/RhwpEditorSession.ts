@@ -2298,7 +2298,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * any model, load or revision change during capture refuses the export (nothing written). Never changes the
    * model, history, revision, dirty state or save state. The PDF pages are images (no selectable text).
    */
-  async exportPdf(destination: string, createCanvas?: () => HTMLCanvasElement, encode?: EncodePng): Promise<Result<PdfExported>> {
+  async exportPdf(destination: string, overwriteGrant: string | null = null, createCanvas?: () => HTMLCanvasElement, encode?: EncodePng): Promise<Result<PdfExported>> {
     const blocker = this.saveBlocker();
     if (blocker) return { ok: false, error: blocker };
     if (!this.backend.exportPdf) return { ok: false, error: { code: "Protocol" } };
@@ -2308,7 +2308,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       && this.committed === committed && this.modelVersion === modelVersion && this.saveBlocker() === null;
     const captured = await capturePdfPages(doc, this.pages.slice(), stillCurrent, createCanvas, encode);
     if (!captured.ok) return { ok: false, error: { code: "PdfExportUnavailable", reason: captured.reason } };
-    return this.backend.exportPdf(this.sessionId, generation, committed, destination, captured.pages);
+    return this.backend.exportPdf(this.sessionId, generation, committed, destination, captured.pages, overwriteGrant);
   }
 
   private saveBlocker(): DocumentError | null {

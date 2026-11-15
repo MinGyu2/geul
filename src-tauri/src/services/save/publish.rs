@@ -142,6 +142,8 @@ pub enum Fault {
     AfterCreate,
     /// 교체 직후 원본 이름이 다른 파일로 바뀜(믿는 쪽의 경합 흉내).
     SwapAfterRename,
+    /// PDF exchange: removing the swapped-out (replaced) file fails after a successful exchange.
+    UnlinkReplaced,
 }
 
 /// 시험용 훅(원본 경로, 임시 파일 경로를 받는다).
@@ -957,6 +959,8 @@ fn exchange(dir: &File, a: &CStr, b: &CStr) -> io::Result<()> {
 ///    is removed on drop) and report `FileConflict`. If the swap-back itself fails, the PDF stays visible and
 ///    the other file stays under the staging name; neither is deleted and `SaveFailure{publish}` is reported;
 /// 5. match: unlink the swapped-out inode (only while the staging name still holds it), fsync the directory.
+///    If that unlink fails the PDF stays published, the previous file stays under the staging name and is
+///    reported (`ExchangeOutcome::retained_replaced`); the journal record is kept, not retired.
 ///
 /// A filesystem without RENAME_EXCHANGE refuses the overwrite (`SaveUnsupported{platform}`) instead of
 /// falling back to an unconditional replacement. Residual: in the conflict case the PDF is visible at the
@@ -968,7 +972,7 @@ pub fn publish_exchange(
     staged: &mut Staged,
     target: &Path,
     expected: &Snapshot,
-) -> Result<Published, DocumentError> {
+) -> Result<ExchangeOutcome, DocumentError> {
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::MetadataExt;
@@ -1023,19 +1027,30 @@ pub fn publish_exchange(
         };
     }
     staged.published = true;
-    // The staging name now holds the replaced inode; remove it only while it is still that inode.
+    // The staging name now holds the replaced inode; remove it only while it is still that inode. The PDF is
+    // already published at this point: a cleanup failure is reported (the previous file is kept under the
+    // staging name), never turned into a publication failure or followed by a guessed deletion.
     let (old_dev, old_ino) = (expected.0, expected.1);
-    if regular_at(&staged.dir, &staged.name)
-        .is_some_and(|(snap, _)| (snap.0, snap.1) == (old_dev, old_ino))
-    {
+    let still_old = regular_at(&staged.dir, &staged.name)
+        .is_some_and(|(snap, _)| (snap.0, snap.1) == (old_dev, old_ino));
+    #[cfg(test)]
+    let injected_unlink = fault() == Some(Fault::UnlinkReplaced);
+    #[cfg(not(test))]
+    let injected_unlink = false;
+    let removed = still_old
+        && !injected_unlink
         // SAFETY: held directory fd and NUL-terminated name.
-        unsafe { libc::unlinkat(staged.dir.as_raw_fd(), staged.name.as_ptr(), 0) };
-    }
+        && unsafe { libc::unlinkat(staged.dir.as_raw_fd(), staged.name.as_ptr(), 0) } == 0;
+    let retained_replaced =
+        (still_old && !removed).then(|| staged.name.to_string_lossy().into_owned());
     let after = staged.file.metadata().unwrap_or(before);
     let (identity, fingerprint) = describe_published(target, &after);
     let synced = staged.dir.sync_all().is_ok();
     if let Some(entry) = staged.journal.take() {
-        if synced {
+        // The record names the staged (now published) inode, so a later cleanup pass never deletes the
+        // replaced file under the staging name (different inode → record retired, file kept). Retire it only
+        // when everything under this staging name is settled and durable; otherwise keep it for that pass.
+        if synced && retained_replaced.is_none() {
             entry.retire();
         } else {
             entry.release();
@@ -1044,11 +1059,23 @@ pub fn publish_exchange(
     let durable = same_inode(target, &after) && synced && after.nlink() == 1;
     #[cfg(test)]
     let durable = durable && fault() != Some(Fault::DirSync);
-    Ok(Published {
-        identity,
-        fingerprint,
-        durable,
+    Ok(ExchangeOutcome {
+        published: Published {
+            identity,
+            fingerprint,
+            durable,
+        },
+        retained_replaced,
     })
+}
+
+/// Outcome of a successful [`publish_exchange`]: the new file is published (`published.durable` reports the
+/// directory fsync). `retained_replaced`: the replaced file could not be removed and is still in the same
+/// directory under this file name (the user's previous content, never deleted automatically).
+#[derive(Debug)]
+pub struct ExchangeOutcome {
+    pub published: Published,
+    pub retained_replaced: Option<String>,
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -1056,6 +1083,6 @@ pub fn publish_exchange(
     _staged: &mut Staged,
     _target: &Path,
     _expected: &Snapshot,
-) -> Result<Published, DocumentError> {
+) -> Result<ExchangeOutcome, DocumentError> {
     Err(unsupported_platform())
 }

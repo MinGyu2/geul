@@ -4,18 +4,33 @@ import type { BlankExport } from "./rhwp/createBlank";
 
 export interface FileDialogRequest {
   mode: "open" | "save";
-  /** "pdf": PDF export destination (save mode only; the dialog confirms replacing an existing file). */
-  format?: DocumentFormat | "pdf";
-  /** PDF export only: file-name stem to suggest (no directory part). */
-  suggestedName?: string;
+  format?: DocumentFormat;
   title: string;
   accept: string;
   cancel: string;
 }
 
 /** Native file operations used by the editor. The browser never synthesizes a path. */
+/** PDF export destination; overwriteGrant: backend token issued only when GTK confirmed replacing an existing file. */
+export interface PdfDestination {
+  path: string;
+  overwriteGrant: string | null;
+}
+
+export interface PdfDialogRequest {
+  sessionId: number;
+  loadGeneration: number;
+  /** File-name stem to suggest (no directory part). */
+  suggestedName: string;
+  title: string;
+  accept: string;
+  cancel: string;
+}
+
 export interface FilePort {
   chooseFile(request: FileDialogRequest): Promise<Result<string | null>>;
+  /** Backend PDF chooser (GTK overwrite confirmation; the only source of overwrite grants). */
+  choosePdfDestination?(request: PdfDialogRequest): Promise<Result<PdfDestination | null>>;
   createDocument(format: DocumentFormat, path: string, blank?: BlankExport): Promise<Result<SessionInfo>>;
 }
 
@@ -38,6 +53,15 @@ async function invokeFile<T>(
   const parsed = parse(value);
   return parsed === INVALID ? { ok: false, error: { code: "Protocol" } } : { ok: true, value: parsed };
 }
+
+const parsePdfDestination = (value: unknown): Parsed<PdfDestination | null> => {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return INVALID;
+  const { path, overwriteGrant, ...rest } = value as Record<string, unknown>;
+  if (Object.keys(rest).length || parsePath(path) === INVALID || path === null) return INVALID;
+  if (overwriteGrant !== null && !(typeof overwriteGrant === "string" && /^[0-9a-f]{32}$/.test(overwriteGrant))) return INVALID;
+  return { path: path as string, overwriteGrant };
+};
 
 const parsePath = (value: unknown): Parsed<string | null> =>
   value === null ? null : typeof value === "string" && value.length > 0 && !value.includes("\0") ? value : INVALID;
@@ -72,9 +96,9 @@ export function createTauriFilePort(invoke: Invoke): FilePort {
         cancel: request.cancel,
       };
       if (request.format !== undefined) args.format = request.format;
-      if (request.suggestedName !== undefined) args.suggestedName = request.suggestedName;
       return invokeFile(invoke, "document_file_dialog", args, parsePath);
     },
+    choosePdfDestination: (request) => invokeFile(invoke, "pdf_export_dialog", { ...request }, parsePdfDestination),
     createDocument: (format, path, blank) => invokeFile(invoke, "document_new", newDocumentFrame(format, path, blank), value => parseCreated(value, format)),
   };
 }

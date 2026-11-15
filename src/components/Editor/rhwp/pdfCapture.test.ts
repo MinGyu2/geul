@@ -104,7 +104,7 @@ describe("PDF export contract", () => {
     expect([view.getUint32(4, true), view.getUint32(12, true), view.getUint32(20, true)]).toEqual([3, 2, 9]);
     const metaLength = view.getUint32(28, true);
     const meta = JSON.parse(new TextDecoder().decode(frame.subarray(32, 32 + metaLength)));
-    expect(meta).toEqual({ destination: "/docs/a.pdf", pages: [
+    expect(meta).toEqual({ destination: "/docs/a.pdf", overwriteGrant: null, pages: [
       { widthPt: 595.5, heightPt: 842.25, pixelWidth: 2, pixelHeight: 3, length: 3 },
       { widthPt: 595.5, heightPt: 842.25, pixelWidth: 2, pixelHeight: 3, length: 2 },
     ] });
@@ -112,8 +112,14 @@ describe("PDF export contract", () => {
   });
 
   it("accepts only a result for the requested session, load and revision", () => {
-    const value = { sessionId: 3, loadGeneration: 2, revision: 9, pages: 2, bytes: 100, durable: true, raster: true };
+    const value = { sessionId: 3, loadGeneration: 2, revision: 9, pages: 2, bytes: 100, durable: true, raster: true, retainedReplaced: null };
     expect(parsePdfExported(value, 3, 2, 9)).toEqual(value);
+    const retained = { ...value, retainedReplaced: ".geul-save-1-abc.tmp" };
+    expect(parsePdfExported(retained, 3, 2, 9)).toEqual(retained);
+    expect(parsePdfExported({ ...value, retainedReplaced: "../escape" }, 3, 2, 9)).toBeNull();
+    const missing: Partial<typeof value> = { ...value };
+    delete missing.retainedReplaced;
+    expect(parsePdfExported(missing, 3, 2, 9)).toBeNull();
     expect(parsePdfExported({ ...value, revision: 8 }, 3, 2, 9)).toBeNull();
     expect(parsePdfExported({ ...value, pages: 0 }, 3, 2, 9)).toBeNull();
     expect(parsePdfExported({ ...value, extra: 1 }, 3, 2, 9)).toBeNull();
@@ -151,9 +157,10 @@ describe("workspace PDF export", () => {
       sessions: async () => ({ ok: true, value: [] }),
       close: async (sessionId: number) => ({ ok: true, value: { sessionId, alreadyClosed: false } }),
     } as unknown as import("../../../adapters/backend").DocumentBackend;
-    const answers: (string | null)[] = [null, "/docs/out.txt", "/docs/out.pdf"];
-    const chooseFile = vi.fn(async () => ({ ok: true as const, value: answers.shift() ?? null }));
-    const files = { chooseFile, createDocument: vi.fn() };
+    const grant = "0123456789abcdef0123456789abcdef";
+    const answers = [null, { path: "/docs/out.txt", overwriteGrant: null }, { path: "/docs/out.pdf", overwriteGrant: grant }];
+    const choosePdfDestination = vi.fn(async () => ({ ok: true as const, value: answers.shift() ?? null }));
+    const files = { chooseFile: vi.fn(), choosePdfDestination, createDocument: vi.fn() };
     const sessions = new DocumentSessions(backend);
     const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake, files);
     await workspace.open("/a.docx");
@@ -168,7 +175,9 @@ describe("workspace PDF export", () => {
     const result = await workspace.exportPdf(1, text);
     expect(result).toMatchObject({ ok: true, value: { sessionId: 1, raster: false } });
     expect(fake.exportedPdfs).toEqual(["/docs/out.pdf"]);
-    expect(chooseFile).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "save", format: "pdf", suggestedName: "a" }));
+    expect(fake.exportGrants).toEqual([grant]); // the dialog's grant goes only to this export
+    expect(choosePdfDestination).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 1, loadGeneration: 1, suggestedName: "a" }));
+    expect(files.chooseFile).not.toHaveBeenCalled();
     expect({ info: sessions.get(1), save: editor.saveState, revision: editor.snapshot().revision }).toEqual(before);
     expect(workspace.fileBusy).toBe(false);
     editor.dispose();

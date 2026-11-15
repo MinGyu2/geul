@@ -93,7 +93,6 @@ pub async fn picture_import(
             title,
             accept,
             cancel,
-            None,
         )
         .await?;
         let Some(path) = path else {

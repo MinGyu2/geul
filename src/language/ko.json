@@ -413,6 +413,7 @@
   "document.pdfExported": "PDF로 내보냈습니다: {pages}쪽. 문서와 원본 파일은 바뀌지 않았습니다.",
   "document.pdfExportedRaster": "PDF로 내보냈습니다: {pages}쪽(쪽 그림 PDF — 글자 선택·검색 불가). 문서와 원본 파일은 바뀌지 않았습니다.",
   "document.pdfExportedUnconfirmed": "PDF를 썼지만 디스크 기록 완료를 확인하지 못했습니다. 파일을 확인하세요.",
+  "document.pdfExportedRetained": "PDF로 바꿔 썼지만 이전 파일을 지우지 못했습니다. 이전 내용은 같은 폴더의 {name}에 남아 있습니다(자동으로 지우지 않음). 확인한 뒤 직접 지우세요.",
   "document.pdfConflict": "선택한 기존 파일을 바꾸지 않았습니다. 덮어쓰기를 확인하지 않았거나, 확인한 뒤 파일이 바뀌었거나, 일반 파일이 아닙니다(링크·폴더 등). 다시 내보내거나 다른 이름을 고르세요.",
   "document.pdfInvalid": "PDF를 내보내지 못했습니다. 파일 이름이 .pdf로 끝나고 폴더가 있는지 확인하세요. 아무것도 쓰지 않았습니다.",
   "document.pdfFailed": "PDF를 쓰지 못했습니다(권한·공간 부족 등). 대상 파일은 바뀌지 않았습니다.",

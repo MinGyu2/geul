@@ -980,4 +980,4 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 
 ## PDF 내보내기 — 2026-11-15 (Stage 5-A)
 
-`file.exportPdf`는 `planned`에서 파일 명령(`kind: "file"`, 단축키 없음)으로 바뀌었다. 가용성: native 파일 대화상자 지원, 다른 파일 작업 없음, 문서 불러옴, 저장 중·조합 중·확정 대기 아님(`saving`·`composing`·`pendingEdits`). 실행은 `DocumentWorkspace.exportPdf` → GTK `pdf` 모드 대화상자 → 엔진별 `exportPdf`(DOCX `docx_export_pdf`, HWP/HWPX 쪽 그림 `document_export_pdf`)이며 문서 상태를 바꾸지 않는다. 계약·수용은 [품질 행렬](../quality-matrix.md#3-pdf-출력-수용-s5-4). `file.print`는 계속 `planned`다.
+`file.exportPdf`는 `planned`에서 파일 명령(`kind: "file"`, 단축키 없음)으로 바뀌었다. 가용성: native 파일 대화상자 지원, 다른 파일 작업 없음, 문서 불러옴, 저장 중·조합 중·확정 대기 아님(`saving`·`composing`·`pendingEdits`). 실행은 `DocumentWorkspace.exportPdf` → `pdf_export_dialog`(GTK; 기존 파일 덮어쓰기를 확인하면 그 세션·내보내기에만 쓰는 일회용 허가 토큰) → 엔진별 `exportPdf`(토큰 전달)(DOCX `docx_export_pdf`, HWP/HWPX 쪽 그림 `document_export_pdf`)이며 문서 상태를 바꾸지 않는다. 계약·수용은 [품질 행렬](../quality-matrix.md#3-pdf-출력-수용-s5-4). `file.print`는 계속 `planned`다.

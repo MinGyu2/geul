@@ -528,6 +528,56 @@ impl SessionRegistry {
         Ok(session.info.clone())
     }
 
+    /// PDF export publication point (Stage 5-A follow-up). Like [`SessionRegistry::finish_save`], the
+    /// publication runs inside the registry lock after the session is re-validated there: open, of `engine`,
+    /// at `generation`, `ready` and at the exported committed `revision`. Close, reload, failure transitions and
+    /// edit commits all take this lock, so they are ordered either before (the export is refused, nothing is
+    /// written) or after the publication (the PDF of that revision is already committed; later changes do not
+    /// make it stale). `publish` must only do the final atomic step (rename/exchange and directory fsync), never
+    /// staging, and must not call back into the registry.
+    pub fn publish_for_current<T>(
+        &self,
+        session_id: SessionId,
+        engine: Engine,
+        generation: u64,
+        revision: u64,
+        publish: impl FnOnce() -> Result<T, DocumentError>,
+    ) -> Result<T, DocumentError> {
+        let inner = self.lock()?;
+        let session = inner
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| Self::missing(&inner, session_id))?;
+        if session.info.engine != engine {
+            return Err(DocumentError::InvalidRequest);
+        }
+        if session.info.load_generation != generation {
+            return Err(DocumentError::StaleLoad {
+                session_id,
+                load_generation: session.info.load_generation,
+            });
+        }
+        if session.info.state != SessionState::Ready {
+            return Err(DocumentError::InvalidState {
+                session_id,
+                state: session.info.state,
+            });
+        }
+        if session.info.revision != revision {
+            return Err(DocumentError::RevisionMismatch {
+                session_id,
+                revision: session.info.revision,
+            });
+        }
+        publish()
+    }
+
+    /// Test-only: whether the registry lock is currently held (proves a publication runs under it).
+    #[cfg(test)]
+    pub(crate) fn locked(&self) -> bool {
+        self.inner.try_lock().is_err()
+    }
+
     fn missing(inner: &Inner, session_id: SessionId) -> DocumentError {
         if session_id >= 1 && session_id < inner.next_id {
             DocumentError::StaleSession { session_id }

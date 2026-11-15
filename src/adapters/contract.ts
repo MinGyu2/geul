@@ -186,19 +186,23 @@ export interface PdfExported {
   bytes: number;
   durable: boolean;
   raster: boolean;
+  /** After a confirmed replacement the previous file could not be removed: its file name in the same folder. */
+  retainedReplaced: string | null;
 }
 
 /** A PDF export response for exactly this session, load attempt and revision. */
 export function parsePdfExported(value: unknown, sessionId: SessionId, loadGeneration: number, revision: number): PdfExported | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
-  const keys = ["sessionId", "loadGeneration", "revision", "pages", "bytes", "durable", "raster"];
+  const keys = ["sessionId", "loadGeneration", "revision", "pages", "bytes", "durable", "raster", "retainedReplaced"];
   if (Object.keys(v).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(v, key))) return null;
   const count = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
   if (v.sessionId !== sessionId || v.loadGeneration !== loadGeneration || v.revision !== revision) return null;
   if (!count(v.pages) || (v.pages as number) < 1 || !count(v.bytes) || (v.bytes as number) < 1) return null;
   if (typeof v.durable !== "boolean" || typeof v.raster !== "boolean") return null;
-  return { sessionId, loadGeneration, revision, pages: v.pages as number, bytes: v.bytes as number, durable: v.durable, raster: v.raster };
+  const retained = v.retainedReplaced;
+  if (retained !== null && !(typeof retained === "string" && retained.length > 0 && retained.length <= 255 && !/[\\/\0]/.test(retained))) return null;
+  return { sessionId, loadGeneration, revision, pages: v.pages as number, bytes: v.bytes as number, durable: v.durable, raster: v.raster, retainedReplaced: retained };
 }
 
 export type DocumentError = BackendError | ClientError;

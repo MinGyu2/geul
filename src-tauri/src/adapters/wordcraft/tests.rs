@@ -3392,10 +3392,10 @@ fn pdf_내보내기_명령은_그_판만_쓰고_세션과_원본은_그대로다
     let path = target.to_str().unwrap().to_owned();
     // Stale revision, wrong generation and non-PDF destinations are refused before writing.
     assert!(matches!(
-        block_on(commands::export_pdf(&state, id, 1, 0, &path)),
+        block_on(commands::export_pdf(&state, id, 1, 0, &path, None)),
         Err(DocumentError::RevisionMismatch { revision: 1, .. })
     ));
-    assert!(block_on(commands::export_pdf(&state, id, 2, 1, &path)).is_err());
+    assert!(block_on(commands::export_pdf(&state, id, 2, 1, &path, None)).is_err());
     let docx_target = out.join("out.docx");
     assert_eq!(
         block_on(commands::export_pdf(
@@ -3403,13 +3403,14 @@ fn pdf_내보내기_명령은_그_판만_쓰고_세션과_원본은_그대로다
             id,
             1,
             1,
-            docx_target.to_str().unwrap()
+            docx_target.to_str().unwrap(),
+            None
         )),
         Err(DocumentError::InvalidRequest)
     );
     assert!(!target.exists() && !docx_target.exists());
     let before = state.registry().get(id).unwrap();
-    let exported = block_on(commands::export_pdf(&state, id, 1, 1, &path)).expect("export");
+    let exported = block_on(commands::export_pdf(&state, id, 1, 1, &path, None)).expect("export");
     assert_eq!(
         (exported.session_id, exported.revision, exported.raster),
         (id, 1, false)
@@ -3424,6 +3425,7 @@ fn pdf_내보내기_명령은_그_판만_쓰고_세션과_원본은_그대로다
 
 #[test]
 fn obsolete_docx_pdf_results_are_never_published() {
+    use crate::services::pdf::{destination, issue_overwrite_grant, BEFORE_PUBLICATION};
     let state = DocumentState::default();
     let dir = TempDir::new();
     let docx = loaded(&state, &dir);
@@ -3438,61 +3440,86 @@ fn obsolete_docx_pdf_results_are_never_published() {
         1,
         1,
         first.to_str().unwrap(),
+        None,
     ))
     .unwrap();
     let bytes = std::fs::read(&first).unwrap();
-    let publish = |gen: u64, rev: u64, name: &str| {
-        let target = crate::services::pdf::destination(out.join(name).to_str().unwrap()).unwrap();
-        let result = commands::publish_current_pdf(
-            state.registry(),
-            state.wordcraft(),
-            id,
-            gen,
-            rev,
-            &target,
-            &bytes,
-        );
+    let publish = |gen: u64, rev: u64, name: &str, grant: Option<&str>| {
+        let target = destination(out.join(name).to_str().unwrap()).unwrap();
+        let result =
+            commands::publish_current_pdf(state.registry(), id, gen, rev, &target, &bytes, grant);
         (result, target)
     };
-    // Still current: publishable.
-    let (ok, target) = publish(1, 1, "current.pdf");
+    // Still current: publishable; PDF export does not change the session record.
+    let before = state.registry().get(id).unwrap();
+    let (ok, target) = publish(1, 1, "current.pdf", None);
     ok.unwrap();
     assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    assert_eq!(state.registry().get(id).unwrap(), before);
 
-    // Revision changed after the snapshot: refused (documented policy), nothing written; an existing,
-    // confirmed destination keeps its bytes and the confirmation is not left for a later export.
-    block_on(commands::edit(&state, id, 1, 1, vec![insert("나")])).unwrap();
+    // An edit committed after staging but before the publication point (deterministic hook): refused,
+    // nothing written; an existing confirmed destination keeps its bytes and its grant is consumed.
     let kept = out.join("kept.pdf");
     std::fs::write(&kept, b"%PDF-1.7\nkept\n%%EOF").unwrap();
-    crate::services::pdf::authorize_confirmed_overwrite(kept.to_str().unwrap());
-    let (stale, kept_target) = publish(1, 1, "kept.pdf");
-    assert!(matches!(
-        stale,
-        Err(DocumentError::RevisionMismatch { revision: 2, .. })
-    ));
+    let grant = issue_overwrite_grant(kept.to_str().unwrap(), id, 1);
+    let registry = state.registry().clone();
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            registry.commit(id, 1, 1, 1).unwrap();
+        }))
+    });
+    let (stale, kept_target) = publish(1, 1, "kept.pdf", grant.as_deref());
+    BEFORE_PUBLICATION.with(|hook| *hook.borrow_mut() = None);
+    assert!(
+        matches!(
+            stale,
+            Err(DocumentError::RevisionMismatch { revision: 2, .. })
+        ),
+        "{stale:?}"
+    );
     assert_eq!(std::fs::read(&kept).unwrap(), b"%PDF-1.7\nkept\n%%EOF");
+    let (reused, _) = publish(2, 2, "kept.pdf", grant.as_deref());
     assert_eq!(
-        crate::services::pdf::publish_pdf(&kept_target, &bytes).err(),
+        reused.err(),
         Some(DocumentError::FileConflict),
         "the grant was consumed by the refused export"
     );
+    assert_eq!(
+        std::fs::read(&kept_target).unwrap(),
+        b"%PDF-1.7\nkept\n%%EOF"
+    );
+
+    // A grant issued for this session cannot be used by another session's export.
+    let other = issue_overwrite_grant(kept.to_str().unwrap(), id + 100, 1);
+    let (foreign, _) = publish(1, 2, "kept.pdf", other.as_deref());
+    assert_eq!(foreign.err(), Some(DocumentError::FileConflict));
 
     // Reload (new load generation, new model): the old generation's result is obsolete.
     block_on(commands::load(&state, id, Some(1))).unwrap();
-    let (reloaded, target) = publish(1, 1, "reloaded.pdf");
-    assert!(matches!(
-        reloaded,
-        Err(DocumentError::StaleLoad {
-            load_generation: 2,
-            ..
-        })
-    ));
+    let (reloaded, target) = publish(1, 2, "reloaded.pdf", None);
+    assert!(
+        matches!(
+            reloaded,
+            Err(DocumentError::StaleLoad {
+                load_generation: 2,
+                ..
+            })
+        ),
+        "{reloaded:?}"
+    );
     assert!(!target.exists());
 
-    // Closed session: obsolete.
-    state.registry().close(id).unwrap();
-    state.wordcraft().release(id);
-    let (closed, target) = publish(2, 0, "closed.pdf");
+    // Session closed (and its model released) right before the publication point.
+    let registry = state.registry().clone();
+    let models = state.wordcraft().clone();
+    BEFORE_PUBLICATION.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            registry.close(id).unwrap();
+            models.release(id);
+        }))
+    });
+    let (closed, target) = publish(2, 0, "closed.pdf", None);
+    BEFORE_PUBLICATION.with(|hook| *hook.borrow_mut() = None);
     assert!(
         matches!(
             closed,

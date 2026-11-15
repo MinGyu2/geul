@@ -198,7 +198,7 @@ export interface DocxBackend {
   /** Durable private snapshot; never clears document dirty state. */
   checkpoint?(sessionId: SessionId, generation: number, revision: number): Promise<Result<SaveOutcome>>;
   /** PDF export (Stage 5-A): the engine's vector PDF of exactly that revision, written to a chosen .pdf path. */
-  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string): Promise<Result<PdfExported>>;
+  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string, overwriteGrant?: string | null): Promise<Result<PdfExported>>;
 }
 
 // ---- 응답 검사 ----
@@ -375,8 +375,8 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
         return outcome?.session.sessionId === sessionId && outcome.session.loadGeneration === loadGeneration
           && outcome.session.revision === revision && outcome.durable ? outcome : null;
       }),
-    exportPdf: (sessionId, loadGeneration, revision, destination) =>
-      call(invoke, "docx_export_pdf", { sessionId, loadGeneration, revision, destination },
+    exportPdf: (sessionId, loadGeneration, revision, destination, overwriteGrant) =>
+      call(invoke, "docx_export_pdf", { sessionId, loadGeneration, revision, destination, overwriteGrant: overwriteGrant ?? null },
         (value) => { const parsed = parsePdfExported(value, sessionId, loadGeneration, revision); return parsed && !parsed.raster ? parsed : null; }),
     save: (sessionId, loadGeneration, revision, destination) =>
       call(invoke, destination === undefined ? "docx_save" : "docx_save_as", { sessionId, loadGeneration, revision, ...(destination === undefined ? {} : { destination }) }, (value) => {

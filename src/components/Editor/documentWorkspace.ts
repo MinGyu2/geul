@@ -320,18 +320,21 @@ export class DocumentWorkspace {
     const session = this.sessions.get(sessionId);
     const editor = session ? this.anyEditorFor(sessionId) : null;
     try {
-      if (!this.filePort) return { ok: false, error: { code: "Protocol" } };
+      if (!this.filePort?.choosePdfDestination) return { ok: false, error: { code: "Protocol" } };
       if (!session || !editor) return { ok: false, error: { code: "UnknownSession", sessionId } };
       const stem = session.displayName.replace(/\.(hwpx?|docx)$/i, "");
-      const destination = await this.filePort.chooseFile({ mode: "save", format: "pdf", suggestedName: stem, ...text });
+      const loadGeneration = editor.snapshot().loadGeneration;
+      // The backend binds an overwrite confirmation to this session and load attempt; the token is passed only to
+      // this export. A cancelled dialog issues nothing.
+      const destination = await this.filePort.choosePdfDestination({ sessionId, loadGeneration, suggestedName: stem, ...text });
       if (!destination.ok) return destination;
       if (destination.value === null) return null;
-      if (!/\.pdf$/i.test(destination.value)) return { ok: false, error: { code: "InvalidRequest" } };
+      if (!/\.pdf$/i.test(destination.value.path)) return { ok: false, error: { code: "InvalidRequest" } };
       if (this.sessions.get(sessionId) === null || this.editors.get(sessionId) !== editor) {
         return { ok: false, error: { code: "StaleSession", sessionId } };
       }
       try {
-        return await editor.exportPdf(destination.value);
+        return await editor.exportPdf(destination.value.path, destination.value.overwriteGrant);
       } catch {
         return { ok: false, error: { code: "Protocol" } };
       }

@@ -27,6 +27,7 @@ fn main() {
         "recovery_forget_session",
         "docx_checkpoint",
         "document_file_dialog",
+        "pdf_export_dialog",
         "document_new",
         "document_save_as",
         "docx_save_as",

@@ -598,8 +598,11 @@ export class FakeDocx implements DocxBackend {
   exportPdfError: DocumentError | null = null;
   /** Destinations of successful PDF exports (the fake never touches the session record). */
   readonly exportedPdfs: string[] = [];
-  exportPdf(sessionId: number, generation: number, revision: number, destination: string): Promise<Result<PdfExported>> {
-    this.calls.push({ method: "exportPdf", args: [sessionId, generation, revision, destination] });
+  /** Overwrite grants received by exportPdf (the fake never validates them). */
+  readonly exportGrants: (string | null)[] = [];
+  exportPdf(sessionId: number, generation: number, revision: number, destination: string, overwriteGrant: string | null = null): Promise<Result<PdfExported>> {
+    this.calls.push({ method: "exportPdf", args: [sessionId, generation, revision, destination, overwriteGrant] });
+    this.exportGrants.push(overwriteGrant);
     return this.respond(() => {
       const checked = this.check(sessionId, generation);
       if (!checked.ok) return checked;
@@ -610,7 +613,7 @@ export class FakeDocx implements DocxBackend {
         return { ok: false, error };
       }
       this.exportedPdfs.push(destination);
-      return { ok: true, value: { sessionId, loadGeneration: generation, revision, pages: 1, bytes: 1000, durable: true, raster: false } };
+      return { ok: true, value: { sessionId, loadGeneration: generation, revision, pages: 1, bytes: 1000, durable: true, raster: false, retainedReplaced: null } };
     });
   }
 

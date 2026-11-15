@@ -224,6 +224,74 @@ pub async fn document_file_dialog(
     title: String,
     accept: String,
     cancel: String,
+) -> Result<Option<String>, DocumentError> {
+    // PDF destinations go through `pdf_export_dialog` (it alone may issue an overwrite grant).
+    if format.as_deref() == Some("pdf") {
+        return Err(DocumentError::InvalidRequest);
+    }
+    native_file_dialog(window, mode, format, title, accept, cancel, None).await
+}
+
+/// PDF export destination chosen in the backend's GTK chooser, and — only when GTK's overwrite confirmation
+/// accepted an existing file — the one-time grant token bound to that file, `session_id` and
+/// `load_generation` (`services::pdf::issue_overwrite_grant`).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfDestination {
+    pub path: String,
+    pub overwrite_grant: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn pdf_export_dialog(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DocumentState>,
+    session_id: crate::document::SessionId,
+    load_generation: u64,
+    title: String,
+    accept: String,
+    cancel: String,
+    suggested_name: Option<String>,
+) -> Result<Option<PdfDestination>, DocumentError> {
+    let info = state.registry().get(session_id)?;
+    if info.load_generation != load_generation {
+        return Err(DocumentError::StaleLoad {
+            session_id,
+            load_generation: info.load_generation,
+        });
+    }
+    let chosen = native_file_dialog(
+        window,
+        "save".into(),
+        Some("pdf".into()),
+        title,
+        accept,
+        cancel,
+        suggested_name,
+    )
+    .await?;
+    Ok(chosen.map(|path| {
+        // GTK returned an accepted destination with overwrite confirmation on: if a file exists there, the user
+        // confirmed replacing it for this export.
+        let overwrite_grant =
+            crate::services::pdf::issue_overwrite_grant(&path, session_id, load_generation);
+        PdfDestination {
+            path,
+            overwrite_grant,
+        }
+    }))
+}
+
+#[cfg(target_os = "linux")]
+async fn native_file_dialog(
+    window: tauri::WebviewWindow,
+    mode: String,
+    format: Option<String>,
+    title: String,
+    accept: String,
+    cancel: String,
     suggested_name: Option<String>,
 ) -> Result<Option<String>, DocumentError> {
     use gtk::prelude::*;
@@ -303,18 +371,17 @@ pub async fn document_file_dialog(
         let _ = tx.send(Ok(value));
     })
     .map_err(|_| DocumentError::Internal)?;
-    let pdf = format.as_deref() == Some("pdf");
-    tauri::async_runtime::spawn_blocking(move || {
-        let chosen = rx.recv().map_err(|_| DocumentError::Internal)??;
-        // GTK returned an accepted PDF destination with overwrite confirmation on: if a file exists there,
-        // the user confirmed replacing it. Only this backend path issues the one-time grant.
-        if let (true, Some(path)) = (pdf, chosen.as_deref()) {
-            crate::services::pdf::authorize_confirmed_overwrite(path);
-        }
-        Ok(chosen)
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|_| DocumentError::Internal)?)
+        .await
+        .map_err(|_| DocumentError::Internal)?
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn pdf_export_dialog() -> Result<Option<PdfDestination>, DocumentError> {
+    Err(DocumentError::SaveUnsupported {
+        reason: crate::document::SaveUnsupportedReason::Platform,
     })
-    .await
-    .map_err(|_| DocumentError::Internal)?
 }
 
 #[cfg(not(target_os = "linux"))]

@@ -1187,11 +1187,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
    * Only from a settled model (no IME transaction or unsent edit). Never changes the model, history, revision, dirty
    * state or save state; the backend refuses a revision that is no longer current.
    */
-  async exportPdf(destination: string): Promise<Result<PdfExported>> {
+  async exportPdf(destination: string, overwriteGrant: string | null = null): Promise<Result<PdfExported>> {
     const blocker = this.saveBlocker();
     if (blocker) return { ok: false, error: blocker };
     if (!this.backend.exportPdf) return { ok: false, error: { code: "Protocol" } };
-    return this.backend.exportPdf(this.sessionId, this.generation, this.revision, destination);
+    return this.backend.exportPdf(this.sessionId, this.generation, this.revision, destination, overwriteGrant);
   }
 
   private saveBlocker(): DocumentError | null {

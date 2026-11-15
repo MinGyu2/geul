@@ -62,6 +62,7 @@ pub fn run() {
             services::recovery::recovery_forget_session,
             adapters::wordcraft::commands::docx_checkpoint,
             services::files::document_file_dialog,
+            services::files::pdf_export_dialog,
             services::files::document_new,
             services::save::commands::document_save_as,
             adapters::wordcraft::commands::docx_save_as,

@@ -10,8 +10,8 @@
 //  3. attribution to this document: the pixels must match an independent render of page 1 of the *published* file
 //     (Release RHWP `renderPageSvg` rasterized by librsvg, a different rasterizer from the WebView canvas) by block
 //     luminance correlation; an arbitrary, blank or other-document PNG does not. A genuinely blank page 1 (uniform
-//     reference) is accepted only with an equally uniform preview of the same colour (correlation is undefined
-//     there; Stage 5-A Phase 2);
+//     reference) is accepted only with an equally uniform preview of the same colour, compared per RGB channel
+//     (correlation is undefined there; Stage 5-A Phase 2, RGB criterion in the follow-up);
 //  4. regeneration: the original had a PrvImage and the bytes differ from it.
 // Not provable offline: byte identity with the PNG the service encoded in memory for that save. That remains the
 // product gate (hwp.rs compares the output PrvImage with this save's encoding) and its unit tests; it is reported as
@@ -154,32 +154,44 @@ export function blockCorrelation(a, b) {
   return dp === 0 || dq === 0 ? 0 : num / Math.sqrt(dp * dq);
 }
 
-/** Luminance range (max - min) and mean of an RGB raster. */
-function luminanceStats(img) {
-  let min = 255, max = 0, sum = 0;
+/** Per-channel (R, G, B) range (max - min) and mean of an RGB raster. */
+function channelStats(img) {
+  const min = [255, 255, 255], max = [0, 0, 0], sum = [0, 0, 0];
   for (let i = 0; i < img.rgb.length; i += 3) {
-    const y = 0.299 * img.rgb[i] + 0.587 * img.rgb[i + 1] + 0.114 * img.rgb[i + 2];
-    min = Math.min(min, y); max = Math.max(max, y); sum += y;
+    for (let c = 0; c < 3; c++) {
+      const v = img.rgb[i + c];
+      if (v < min[c]) min[c] = v;
+      if (v > max[c]) max[c] = v;
+      sum[c] += v;
+    }
   }
-  return { range: max - min, mean: sum / (img.rgb.length / 3) };
+  const n = img.rgb.length / 3;
+  return { range: max.map((m, c) => m - min[c]), mean: sum.map((v) => v / n) };
 }
 
-/** Maximum luminance range of a "uniform" raster and maximum mean difference of two uniform rasters. */
+/** A raster is uniform when every channel varies by at most UNIFORM_RANGE (8-bit levels). */
 export const UNIFORM_RANGE = 2;
-export const UNIFORM_MEAN_DELTA = 4;
+/** Two uniform rasters have the same colour when every channel mean differs by at most UNIFORM_CHANNEL_DELTA.
+ *  Both rasterizers paint an exact page colour (a blank page is exactly #ffffff in both, measured range 0);
+ *  4 levels absorb rounding of a resampled or alpha-composited background, far below a visible hue change. */
+export const UNIFORM_CHANNEL_DELTA = 4;
 
 /**
  * Does `preview` depict the independent `reference` render of page 1? Correlation is undefined for a uniform
- * (blank) raster, so a legitimately blank page 1 is judged separately: both must be uniform and of the same
- * colour. A uniform preview of a page with content, or a preview with content of a blank page, is rejected;
- * otherwise the block correlation must reach MIN_CORRELATION. Returns { correlation, blankPage }.
+ * (blank) raster, so a legitimately blank page 1 is judged separately and per RGB channel (never by luminance
+ * alone: equal-luminance colours such as red and gray must differ): both must be uniform and of the same colour.
+ * A uniform preview of a page with content, or a preview with content of a blank page, is rejected; otherwise the
+ * block correlation must reach MIN_CORRELATION. Returns { correlation, blankPage }.
  */
 export function previewMatchesReference(preview, reference) {
-  const [p, r] = [luminanceStats(preview), luminanceStats(reference)];
-  const [pu, ru] = [p.range <= UNIFORM_RANGE, r.range <= UNIFORM_RANGE];
+  const [p, r] = [channelStats(preview), channelStats(reference)];
+  const [pu, ru] = [p.range.every((v) => v <= UNIFORM_RANGE), r.range.every((v) => v <= UNIFORM_RANGE)];
   if (pu || ru) {
     if (!(pu && ru)) fail(`PrvImage does not depict page 1 of the published file (${pu ? "uniform preview of a page with content" : "content in a preview of a blank page"})`);
-    if (Math.abs(p.mean - r.mean) > UNIFORM_MEAN_DELTA) fail(`PrvImage does not depict page 1 of the published file (blank colours ${p.mean.toFixed(1)} vs ${r.mean.toFixed(1)})`);
+    const delta = p.mean.map((m, c) => Math.abs(m - r.mean[c]));
+    if (delta.some((d) => d > UNIFORM_CHANNEL_DELTA)) {
+      fail(`PrvImage does not depict page 1 of the published file (blank colours rgb(${p.mean.map((v) => v.toFixed(0))}) vs rgb(${r.mean.map((v) => v.toFixed(0))}))`);
+    }
     return { correlation: null, blankPage: true };
   }
   const correlation = blockCorrelation(preview, reference);

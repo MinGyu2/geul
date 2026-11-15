@@ -61,7 +61,7 @@ export interface DocumentBackend {
    */
   checkpoint?(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, preview?: PreviewRaster | null): Promise<Result<SaveOutcome>>;
   /** PDF export of RHWP page rasters (Stage 5-A): one PNG per page, in order, for exactly that committed revision. */
-  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[]): Promise<Result<PdfExported>>;
+  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[], overwriteGrant?: string | null): Promise<Result<PdfExported>>;
 }
 
 /** One captured page: physical size in points and the canvas PNG with its pixel size. */
@@ -74,9 +74,10 @@ export interface PdfPageRaster {
 }
 
 /** `GPD1` request (backend services/pdf.rs): same header layout as saveFrame, then page PNGs back to back. */
-export function pdfFrame(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[]): Uint8Array {
+export function pdfFrame(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[], overwriteGrant: string | null = null): Uint8Array {
   const meta = {
     destination,
+    overwriteGrant,
     pages: pages.map(({ widthPt, heightPt, pixelWidth, pixelHeight, png }) => ({ widthPt, heightPt, pixelWidth, pixelHeight, length: png.length })),
   };
   const total = pages.reduce((sum, page) => sum + page.png.length, 0);
@@ -211,8 +212,8 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
         return outcome?.session.sessionId === sessionId ? outcome : null;
       });
     },
-    exportPdf: (sessionId, generation, revision, destination, pages) =>
-      call(invoke, "document_export_pdf", pdfFrame(sessionId, generation, revision, destination, pages), (value) => {
+    exportPdf: (sessionId, generation, revision, destination, pages, overwriteGrant) =>
+      call(invoke, "document_export_pdf", pdfFrame(sessionId, generation, revision, destination, pages, overwriteGrant ?? null), (value) => {
         const parsed = parsePdfExported(value, sessionId, generation, revision);
         return parsed && parsed.raster && parsed.pages === pages.length ? parsed : null;
       }),

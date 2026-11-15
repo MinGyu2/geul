@@ -155,17 +155,25 @@ test("PAGE_DEF preview sizes follow the half-up short-side contract", () => {
   assert.throws(() => previewDimensions(0, 10, false));
 });
 
-test("a genuinely blank page 1 is judged by uniformity, not correlation; one-sided uniform images are rejected", () => {
-  const raster = (w, h, fill, mark) => {
-    const rgb = Buffer.alloc(w * h * 3, fill);
-    if (mark) for (let y = 40; y < 60; y++) for (let x = 20; x < 200; x++) rgb.fill(0, (y * w + x) * 3, (y * w + x) * 3 + 3);
-    return { width: w, height: h, rgb };
-  };
+test("a genuinely blank page 1 is judged per RGB channel, not by correlation or luminance", () => {
   const [w, h] = [362, 512];
-  assert.deepEqual(previewMatchesReference(raster(w, h, 255), raster(w, h, 255)), { correlation: null, blankPage: true });
-  assert.throws(() => previewMatchesReference(raster(w, h, 255, true), raster(w, h, 255)), /content in a preview of a blank page/);
-  assert.throws(() => previewMatchesReference(raster(w, h, 255), raster(w, h, 255, true)), /uniform preview of a page with content/);
-  assert.throws(() => previewMatchesReference(raster(w, h, 0), raster(w, h, 255)), /blank colours/);
+  const raster = (rgb, mark, noise = 0) => {
+    const data = Buffer.alloc(w * h * 3);
+    for (let i = 0; i < w * h; i++) for (let c = 0; c < 3; c++) data[i * 3 + c] = Math.min(255, Math.max(0, rgb[c] + (noise ? ((i * 13 + c * 5) % (noise + 1)) - (noise >> 1) : 0)));
+    if (mark) for (let y = 40; y < 60; y++) for (let x = 20; x < 200; x++) data.fill(0, (y * w + x) * 3, (y * w + x) * 3 + 3);
+    return { width: w, height: h, rgb: data };
+  };
+  const blank = { correlation: null, blankPage: true };
+  assert.deepEqual(previewMatchesReference(raster([255, 255, 255]), raster([255, 255, 255])), blank, "white = white");
+  assert.deepEqual(previewMatchesReference(raster([0, 0, 0]), raster([0, 0, 0])), blank, "black = black");
+  assert.deepEqual(previewMatchesReference(raster([250, 250, 250], false, 2), raster([251, 251, 251])), blank, "same colour, ±1 channel noise");
+  // Equal luminance (0.299·255 ≈ 76.2 vs 76), visibly different colours: rejected.
+  assert.throws(() => previewMatchesReference(raster([255, 0, 0]), raster([76, 76, 76])), /blank colours/);
+  assert.throws(() => previewMatchesReference(raster([0, 0, 255]), raster([255, 255, 255])), /blank colours/);
+  assert.throws(() => previewMatchesReference(raster([255, 255, 255]), raster([249, 255, 255])), /blank colours/, "a 6-level channel shift is a different colour");
+  assert.throws(() => previewMatchesReference(raster([255, 255, 255]), raster([255, 255, 255], true)), /uniform preview of a page with content/);
+  assert.throws(() => previewMatchesReference(raster([255, 255, 255], true), raster([255, 255, 255])), /content in a preview of a blank page/);
+  assert.throws(() => previewMatchesReference(raster([255, 255, 255], false, 6), raster([255, 255, 255])), /content in a preview of a blank page/, "noise beyond the uniform range is not blank");
   // Content on both sides still goes through the correlation threshold.
-  assert.equal(previewMatchesReference(raster(w, h, 255, true), raster(w, h, 255, true)).blankPage, false);
+  assert.equal(previewMatchesReference(raster([255, 255, 255], true), raster([255, 255, 255], true)).blankPage, false);
 });

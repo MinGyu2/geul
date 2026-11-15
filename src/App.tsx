@@ -187,7 +187,8 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       });
       if (result === null) return;
       if (result.ok) {
-        if (!result.value.durable) notify({ key: "document.pdfExportedUnconfirmed" });
+        if (result.value.retainedReplaced !== null) notify({ key: "document.pdfExportedRetained", vars: { name: result.value.retainedReplaced } });
+        else if (!result.value.durable) notify({ key: "document.pdfExportedUnconfirmed" });
         else notify({ key: result.value.raster ? "document.pdfExportedRaster" : "document.pdfExported", vars: { pages: result.value.pages } });
         return;
       }
