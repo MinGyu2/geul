@@ -106,10 +106,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+I"], scope: "document" },
   "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+U"], scope: "document" },
   "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
-  // Stage 5-A font picker: WordCraft `format.font` (requested family stored as given; layout, rendering and PDF use the shared
-  // font database). RHWP: unsupported — HWP/HWPX save proofs do not yet admit font-id changes or new face-name records, so a
-  // font change could not be saved safely (docs/architecture/font-system.md).
-  "format.font": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  // RHWP uses document-owned language IDs, derived shapes, font-bound history/publication
+  // prefixes and independent HWP/HWPX T009 proofs. Runtime eligibility is selection/source/API owned.
+  "format.font": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
   "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },

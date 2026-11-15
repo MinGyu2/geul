@@ -1,6 +1,6 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
-> **2026-11-16 Stage 5-A 글꼴 업데이트 · PARTIALLY COMPLETED:** WordCraft dependency is reproducible from its public parent plus a versioned exact patch and is verified by a fresh checkout/protected compile. fontconfig Boolean reading and bounded geul-side traversal are implemented; the real-API Boolean regression passes on NixOS. RHWP has a validated read-only document font inventory and focused Release-WASM tests. No HWP/HWPX font mutation or T009 save-proof extension exists; `format.font` stays unsupported for RHWP, and Stage 5/Release remain incomplete/NO-GO. [Implementation, evidence, and limits](../architecture/font-system.md).
+> **2026-11-16 Stage 5-A 글꼴 상태 · PARTIALLY COMPLETED:** HWP/HWPX 글꼴 변경, 좁은 T009 proof, session Undo/Redo, positive/negative native save/reopen 및 단순 Canvas/PDF 변화를 구현·검증했다. 자연 글꼴 메트릭, 사용자 글꼴 natural wrapping 및 complex-script shaping은 미구현/검증되지 않아 font package는 부분 완료다. 전체 Stage 5-A INCOMPLETE, Release NO-GO. Windows/macOS와 private-path cleanup은 별도 잔여다. [구현·증거·제한](../architecture/font-system.md).
 
 > **2026-11-13 T012 Phase 2 · PARTIALLY COMPLETED.** HWP/HWPX 중첩 표 셀 직접 편집(명시적 셀 경로·cursor-list 소유 증명, 입력·선택·삭제·문단 나누기/합치기·IME·Undo/Redo)과 본문 수준 평범한 표의 구조 명령 9개(행/열 넣기·지우기, 오른쪽/아래 셀 합치기, 합친 셀 나누기)를 일반 Release 제품에 연결했다. HWP는 T009 검사기에 같은 표의 재구성 증명을 더했다. 실제 저장 서비스 HWP/HWPX 각 6 durable·거부 2건 원본 보존, 게시 파일 독립 재열기, native X11/IBus 50/50 PASS. 중첩 표 생성·중첩 표 구조 변경·필드/개체가 있는 표·범위 병합은 미지원(거부)이며 T012 전체는 미완료다. [구현·증거·잔여](../architecture/stage567-acceptance-2026-11-05.md#t012-phase2-20261113).
 
@@ -334,5 +334,5 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 - 글꼴은 플랫폼 공통 카탈로그 하나로 노출한다(시스템·사용자·번들 출처 구분, 가족/스타일/얼굴 신원 분리, 지역화 이름).
 - 시스템 글꼴은 이식 가능한 제공자 인터페이스로 찾는다. 첫 제공자는 실행 시 적재하는 fontconfig이며 그 설정(시스템·사용자)을 따른다. 특정 배포판·경로를 가정하지 않고, 없으면 실패하지 않고 unavailable을 보고한다.
 - 사용자 글꼴: TTF/OTF/WOFF/WOFF2 직접 등록(검증·자원 상한), 앱 전용 폴더 한 곳에 영속, 두 엔진이 같은 등록을 쓴다. 저장 실패는 정확히 알린다.
-- 글꼴 선택은 실제 문서 서식이어야 하며, 없는 글꼴도 문서의 요청 이름은 바꾸지 않는다. 안전하게 표현할 수 없는 형식(현재 HWP/HWPX 글꼴 변경)은 명시적으로 거부한다.
+- 글꼴 선택은 실제 문서 서식이어야 하며, 없는 글꼴도 문서의 요청 이름은 바꾸지 않는다. 안전 증명이 허용하지 않는 HWP FACE_NAME variant 및 HWPX unknown XML 구조는 fail-closed 거부한다. 지원되는 plain definitions만 언어별로 추가하고 T009 증명으로 저장한다. 세부 계약과 잔여 메트릭 제한은 [글꼴 시스템](../architecture/font-system.md)을 따른다.
 - 현재 상태와 수용 근거: [글꼴 시스템](../architecture/font-system.md). Windows/macOS 실행 수용은 DEFERRED.

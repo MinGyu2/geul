@@ -527,6 +527,7 @@
   "font.systemFonts": "시스템 글꼴",
   "font.userFonts": "사용자 글꼴",
   "font.bundledFonts": "기본 제공 글꼴",
+  "font.documentFonts": "문서 글꼴",
   "font.noMatch": "\"{query}\"와 맞는 글꼴이 없습니다.",
   "font.add": "글꼴 추가…",
   "font.addTitle": "글꼴 파일 추가(TTF, OTF, WOFF, WOFF2)",

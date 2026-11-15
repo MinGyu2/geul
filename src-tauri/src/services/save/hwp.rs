@@ -786,6 +786,221 @@ fn docinfo_char_shapes_appended(
     (rest_same && id_mappings == 1).then_some((positions.len(), k))
 }
 
+/// A font edit has a separate proof: language tables come from ID_MAPPINGS,
+/// original FACE_NAME bytes remain in place within each language, and only plain
+/// nonembedded named definitions may be appended. Every appended face must be
+/// used by an appended shape (whose actual body use is proved by the caller).
+fn docinfo_font_shapes_appended(
+    before: &[Record<'_>],
+    after: &[Record<'_>],
+) -> Option<(usize, usize)> {
+    const FACE: u16 = 19;
+    let mapping = |records: &[Record<'_>]| {
+        let mut found = records.iter().filter(|r| r.0 == TAG_ID_MAPPINGS);
+        let row = found.next()?;
+        if found.next().is_some() || row.2.len() < 40 {
+            return None;
+        }
+        let mut counts = [0usize; 7];
+        for (lang, count) in counts.iter_mut().enumerate() {
+            *count =
+                u32::from_le_bytes(row.2[4 + lang * 4..8 + lang * 4].try_into().ok()?) as usize;
+            if *count == 0 || *count > 65_536 {
+                return None;
+            }
+        }
+        (counts.iter().sum::<usize>() <= 100_000).then_some(counts)
+    };
+    let old_counts = mapping(before)?;
+    let new_counts = mapping(after)?;
+    let faces = |rows: &[Record<'_>]| {
+        let first = rows.iter().position(|r| r.0 == FACE)?;
+        let last = rows.iter().rposition(|r| r.0 == FACE)?;
+        (rows[first..=last].iter().all(|r| r.0 == FACE && r.1 == 1)).then_some((first, last))
+    };
+    let (old_first, old_last) = faces(before)?;
+    let (new_first, new_last) = faces(after)?;
+    if old_first != new_first
+        || old_last >= before.iter().position(|r| r.0 == TAG_CHAR_SHAPE)?
+        || new_last >= after.iter().position(|r| r.0 == TAG_CHAR_SHAPE)?
+    {
+        return None;
+    }
+    if old_last - old_first + 1 != old_counts.iter().sum::<usize>()
+        || new_last - new_first + 1 != new_counts.iter().sum::<usize>()
+    {
+        return None;
+    }
+    // Bound additional matching work before scanning appended faces/shapes.
+    let original_shapes = before.iter().filter(|r| r.0 == TAG_CHAR_SHAPE).count();
+    let added_shapes = after
+        .iter()
+        .filter(|r| r.0 == TAG_CHAR_SHAPE)
+        .count()
+        .checked_sub(original_shapes)?;
+    let added_faces = new_counts
+        .iter()
+        .zip(old_counts)
+        .try_fold(0usize, |sum, (new, old)| {
+            sum.checked_add(new.checked_sub(old)?)
+        })?;
+    if original_shapes
+        .checked_add(added_faces)?
+        .checked_mul(added_shapes)?
+        > 4_000_000
+    {
+        return None;
+    }
+    let (mut oi, mut ni) = (old_first, new_first);
+    for lang in 0..7 {
+        if new_counts[lang] < old_counts[lang] {
+            return None;
+        }
+        for id in 0..old_counts[lang] {
+            if before[oi + id] != after[ni + id] {
+                return None;
+            }
+        }
+        for id in 0..new_counts[lang] {
+            // Validate complete known source variants, including strict UTF-16.
+            face_name(after[ni + id].2)?;
+            if id >= old_counts[lang] {
+                let raw = after[ni + id].2;
+                // New records have no substitution/type/default/unknown fields.
+                if raw.first() != Some(&0) {
+                    return None;
+                }
+                if !after
+                    .iter()
+                    .filter(|r| r.0 == TAG_CHAR_SHAPE)
+                    .skip(before.iter().filter(|r| r.0 == TAG_CHAR_SHAPE).count())
+                    .any(|r| {
+                        r.2.get(lang * 2..lang * 2 + 2) == Some(&(id as u16).to_le_bytes()[..])
+                    })
+                {
+                    return None;
+                }
+            }
+        }
+        oi += old_counts[lang];
+        ni += new_counts[lang];
+    }
+    // Exclude only the independently proved font lists; compare every remaining
+    // record in order. Original shape definitions themselves are never replaced.
+    let base = before.iter().filter(|r| r.0 == TAG_CHAR_SHAPE).count();
+    let total = after.iter().filter(|r| r.0 == TAG_CHAR_SHAPE).count();
+    let k = total.checked_sub(base).filter(|k| *k > 0)?;
+    for shape in before.iter().filter(|r| r.0 == TAG_CHAR_SHAPE) {
+        for (lang, count) in old_counts.iter().enumerate() {
+            let bytes = shape.2.get(lang * 2..lang * 2 + 2)?;
+            if u16::from_le_bytes(bytes.try_into().ok()?) as usize >= *count {
+                return None;
+            }
+        }
+    }
+    if total > 65_536 {
+        return None;
+    }
+    let mut a = before.iter().filter(|r| r.0 != FACE);
+    let mut b = after.iter().filter(|r| r.0 != FACE);
+    let mut shapes = 0;
+    while let Some(left) = a.next() {
+        let right = b.next()?;
+        if left.0 == TAG_ID_MAPPINGS {
+            if left.0 != right.0 || left.1 != right.1 || left.2.len() != right.2.len() {
+                return None;
+            }
+            for (offset, (x, y)) in left.2.iter().zip(right.2).enumerate() {
+                if !(4..32).contains(&offset) && !(36..40).contains(&offset) && x != y {
+                    return None;
+                }
+            }
+            let n = |raw: &[u8]| u32::from_le_bytes(raw[36..40].try_into().unwrap()) as usize;
+            if n(left.2) != base || n(right.2) != total {
+                return None;
+            }
+        } else if !same_record(left, right) {
+            return None;
+        }
+        if left.0 == TAG_CHAR_SHAPE {
+            shapes += 1;
+            if shapes == base {
+                for _ in 0..k {
+                    let next = b.next()?;
+                    if next.0 != TAG_CHAR_SHAPE
+                        || next.1 != left.1
+                        || !matches!(next.2.len(), 68 | 70 | 74)
+                        || !before.iter().filter(|r| r.0 == TAG_CHAR_SHAPE).any(|old| {
+                            if old.2.len() != next.2.len() {
+                                return false;
+                            }
+                            let mut normalized = [0u8; 74];
+                            normalized[..next.2.len()].copy_from_slice(next.2);
+                            normalized[..14].copy_from_slice(&old.2[..14]);
+                            derived_char_shape(old.2, &normalized[..next.2.len()])
+                        })
+                    {
+                        return None;
+                    }
+                    for (lang, count) in new_counts.iter().enumerate() {
+                        let id = u16::from_le_bytes(next.2[lang * 2..lang * 2 + 2].try_into().ok()?)
+                            as usize;
+                        if id >= *count {
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    b.next().is_none().then_some((base, k))
+}
+
+/// Fully consume a supported FACE_NAME variant. Unknown flag bits, partial
+/// optional fields, invalid UTF-16 and trailing extensions refuse font edits.
+fn face_name(raw: &[u8]) -> Option<()> {
+    let attr = *raw.first()?;
+    if attr & 0x1c != 0 {
+        return None;
+    }
+    let mut at = 1usize;
+    fn string(raw: &[u8], at: &mut usize) -> Option<()> {
+        let n = u16::from_le_bytes(raw.get(*at..*at + 2)?.try_into().ok()?) as usize;
+        *at += 2;
+        if n == 0 || n > 4096 {
+            return None;
+        }
+        let bytes = raw.get(*at..*at + n * 2)?;
+        for ch in char::decode_utf16(
+            bytes
+                .chunks_exact(2)
+                .map(|p| u16::from_le_bytes([p[0], p[1]])),
+        ) {
+            if ch.ok()?.is_control() {
+                return None;
+            }
+        }
+        *at += n * 2;
+        Some(())
+    }
+    string(raw, &mut at)?;
+    if attr & 0x80 != 0 {
+        if *raw.get(at)? > 3 {
+            return None;
+        }
+        at += 1;
+        string(raw, &mut at)?;
+    }
+    if attr & 0x40 != 0 {
+        raw.get(at..at + 10)?;
+        at += 10;
+    }
+    if attr & 0x20 != 0 {
+        string(raw, &mut at)?;
+    }
+    (at == raw.len()).then_some(())
+}
+
 /// A derived definition may change only the four general flags and the existing T012
 /// metrics. All fonts, sizes, colors, decoration shapes, unknown bits and trailing bytes
 /// remain owned by one original definition. Existing nonuniform metrics are preserved.
@@ -1012,6 +1227,7 @@ fn compare_with(
             proof.is_some()
                 || same_docinfo(&before_records, &after_records)
                 || docinfo_char_shapes_appended(&before_records, &after_records)
+                    .or_else(|| docinfo_font_shapes_appended(&before_records, &after_records))
                     .is_some_and(|(base, k)| appended_char_shapes_referenced(&output, base, k))
         } else {
             before_records == after_records
@@ -1771,5 +1987,94 @@ mod general_format_tests {
             next[46..50].copy_from_slice(&invalid.to_le_bytes());
             assert!(!derived_char_shape(&original, &next));
         }
+    }
+}
+
+#[cfg(test)]
+mod font_preservation_tests {
+    use super::*;
+    fn face(name: &str) -> Vec<u8> {
+        let units: Vec<_> = name.encode_utf16().collect();
+        let mut out = vec![0];
+        out.extend_from_slice(&(units.len() as u16).to_le_bytes());
+        for u in units {
+            out.extend_from_slice(&u.to_le_bytes());
+        }
+        out
+    }
+    fn fixture(append: bool, existing: bool) -> Vec<(u16, u16, Vec<u8>)> {
+        let mut mapping = vec![0; 64];
+        for lang in 0..7 {
+            mapping[4 + lang * 4..8 + lang * 4]
+                .copy_from_slice(&((lang + 1 + usize::from(append)) as u32).to_le_bytes());
+        }
+        mapping[36..40].copy_from_slice(&(if append || existing { 2u32 } else { 1 }).to_le_bytes());
+        let mut rows = vec![(17, 0, mapping)];
+        for lang in 0..7 {
+            for id in 0..=lang {
+                rows.push((19, 1, face(&format!("Existing {id}"))));
+            }
+            if append {
+                rows.push((19, 1, face("Registered Family")));
+            }
+        }
+        let mut shape = vec![0; 74];
+        shape[14..21].fill(100);
+        rows.push((21, 1, shape.clone()));
+        if append || existing {
+            for lang in 0..7 {
+                shape[lang * 2..lang * 2 + 2]
+                    .copy_from_slice(&((lang + usize::from(append)) as u16).to_le_bytes());
+            }
+            rows.push((21, 1, shape));
+        }
+        rows.push((999, 0, vec![12, 34, 56]));
+        rows
+    }
+    fn prove(a: &[(u16, u16, Vec<u8>)], b: &[(u16, u16, Vec<u8>)]) -> bool {
+        // Explicit lifetimes through locals keep all payloads owned by fixtures.
+        let a: Vec<_> = a.iter().map(|r| (r.0, r.1, r.2.as_slice())).collect();
+        let b: Vec<_> = b.iter().map(|r| (r.0, r.1, r.2.as_slice())).collect();
+        docinfo_font_shapes_appended(&a, &b) == Some((1, 1))
+    }
+    #[test]
+    fn font_proof_existing_and_appended_language_ids() {
+        let old = fixture(false, false);
+        assert!(prove(&old, &fixture(false, true)));
+        assert!(prove(&old, &fixture(true, false)));
+        let mut bad = fixture(true, false);
+        bad[0].2[4] += 1;
+        assert!(!prove(&old, &bad));
+        let mut bad = fixture(false, true);
+        let shape = bad.iter_mut().filter(|r| r.0 == 21).nth(1).unwrap();
+        shape.2[..2].copy_from_slice(&1u16.to_le_bytes()); // HANGUL has only id 0.
+        assert!(!prove(&old, &bad));
+    }
+    #[test]
+    fn font_proof_preserves_unknown_and_unrelated_shape_fields() {
+        let old = fixture(false, false);
+        for append in [false, true] {
+            let mut next = fixture(append, !append);
+            next.last_mut().unwrap().2[0] ^= 1;
+            assert!(!prove(&old, &next));
+            let mut next = fixture(append, !append);
+            next.iter_mut().filter(|r| r.0 == 21).nth(1).unwrap().2[50] = 1;
+            assert!(!prove(&old, &next));
+        }
+        let mut changed_original = fixture(true, false);
+        changed_original[1].2 = face("Replaced source family");
+        assert!(!prove(&old, &changed_original));
+        let mut malformed = fixture(true, false);
+        malformed.iter_mut().find(|r| r.0 == 19).unwrap().2.push(0);
+        assert!(!prove(&old, &malformed));
+        let mut unreferenced = fixture(true, false);
+        unreferenced
+            .iter_mut()
+            .filter(|r| r.0 == 21)
+            .nth(1)
+            .unwrap()
+            .2[..2]
+            .fill(0);
+        assert!(!prove(&old, &unreferenced));
     }
 }

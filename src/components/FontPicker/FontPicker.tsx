@@ -7,10 +7,13 @@ import type { MessageKey } from "../../language";
 
 /** Most options rendered at once (the list filters as the user types). */
 const MAX_OPTIONS = 300;
-const GROUPS: readonly { source: FontSource; labelKey: MessageKey }[] = [
-  { source: "user", labelKey: "font.userFonts" },
-  { source: "system", labelKey: "font.systemFonts" },
-  { source: "bundled", labelKey: "font.bundledFonts" },
+type FontGroup = { kind: "catalog"; source: FontSource; labelKey: MessageKey } | { kind: "document"; labelKey: MessageKey };
+type PickerOption = { kind: "catalog"; font: FontFamily } | { kind: "document"; family: string };
+const GROUPS: readonly FontGroup[] = [
+  { kind: "catalog", source: "user", labelKey: "font.userFonts" },
+  { kind: "catalog", source: "system", labelKey: "font.systemFonts" },
+  { kind: "catalog", source: "bundled", labelKey: "font.bundledFonts" },
+  { kind: "document", labelKey: "font.documentFonts" },
 ];
 
 interface FontPickerProps {
@@ -41,24 +44,34 @@ export function FontPicker({ context, tabIndex }: FontPickerProps) {
   const current = snapshot?.font ?? null;
   const shown = current === null ? "" : current.family ?? "";
   const catalog = fonts?.catalog ?? null;
+  const documentFamilies = snapshot?.font?.documentFamilies ?? [];
 
   const options = useMemo(() => {
     const q = (query ?? "").trim().toLowerCase();
-    const match = (f: FontFamily) => q === "" || f.family.toLowerCase().includes(q) || f.localized.some((l) => l.name.toLowerCase().includes(q));
-    const out: FontFamily[] = [];
+    const match = (family: string) => q === "" || family.toLowerCase().includes(q);
+    const out: PickerOption[] = [];
+    const availableFamilies = new Set((catalog?.families ?? []).filter((f) => f.available).map((f) => f.family));
     for (const group of GROUPS) {
-      for (const f of catalog?.families ?? []) {
-        if (f.source === group.source && f.available && match(f)) out.push(f);
-        if (out.length >= MAX_OPTIONS) return out;
+      if (group.kind === "catalog") {
+        for (const font of catalog?.families ?? []) {
+          if (font.source === group.source && font.available
+            && (match(font.family) || font.localized.some((l) => l.name.toLowerCase().includes(q)))) out.push({ kind: "catalog", font });
+          if (out.length >= MAX_OPTIONS) return out;
+        }
+      } else {
+        for (const family of documentFamilies.slice(0, MAX_OPTIONS)) {
+          if (!availableFamilies.has(family) && match(family)) out.push({ kind: "document", family });
+          if (out.length >= MAX_OPTIONS) return out;
+        }
       }
     }
     return out;
-  }, [catalog, query]);
+  }, [catalog, documentFamilies, query]);
 
   const close = () => { setOpen(false); setQuery(null); };
-  const choose = (family: FontFamily) => {
+  const choose = (family: string) => {
     close();
-    executeCommand("format.font", "command.format.font", context, { command: "format.font", family: family.family });
+    executeCommand("format.font", "command.format.font", context, { command: "format.font", family });
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -78,8 +91,8 @@ export function FontPicker({ context, tabIndex }: FontPickerProps) {
       setActive((i) => Math.max(0, Math.min(options.length - 1, i + (event.key === "ArrowDown" ? 1 : -1))));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const f = options[active];
-      if (open && f) choose(f);
+      const option = options[active];
+      if (open && option) choose(option.kind === "catalog" ? option.font.family : option.family);
       else setOpen(true);
     } else if (event.key === "Escape") {
       if (open) { event.preventDefault(); event.stopPropagation(); close(); }
@@ -122,24 +135,29 @@ export function FontPicker({ context, tabIndex }: FontPickerProps) {
             {!fonts?.catalog && <li role="presentation" className="font-picker__note">{t("font.loading")}</li>}
             {fonts?.catalog && options.length === 0 && <li role="presentation" className="font-picker__note">{t("font.noMatch", { query: query ?? "" })}</li>}
             {GROUPS.map((group) => {
-              const members = options.filter((f) => f.source === group.source);
+              const members = options.filter((option) => group.kind === "catalog"
+                ? option.kind === "catalog" && option.font.source === group.source
+                : option.kind === "document");
               if (members.length === 0) return null;
               return [
-                <li key={`h-${group.source}`} role="presentation" className="font-picker__heading">{t(group.labelKey)}</li>,
-                ...members.map((f) => {
-                  const i = options.indexOf(f);
-                  const name = displayName(f, language);
+                <li key={`h-${group.kind === "catalog" ? group.source : "document"}`} role="presentation" className="font-picker__heading">{t(group.labelKey)}</li>,
+                ...members.map((option) => {
+                  const i = options.indexOf(option);
+                  const font = option.kind === "catalog" ? option.font : null;
+                  const family = option.kind === "catalog" ? option.font.family : option.family;
+                  const id = font?.id ?? `document:${family}`;
+                  const name = font ? displayName(font, language) : family;
                   return (
-                    <li key={f.id} id={optionId(i)} role="option" aria-selected={i === active}
+                    <li key={id} id={optionId(i)} role="option" aria-selected={i === active}
                       className={`font-picker__option${i === active ? " font-picker__option--active" : ""}`}
-                      data-font-id={f.id}
+                      data-font-id={id}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setActive(i)}
-                      onClick={() => choose(f)}>
-                      <span className="font-picker__name" style={{ fontFamily: `"${f.family.replace(/"/g, "")}"` }}>{name}</span>
-                      {name !== f.family && <span className="font-picker__alt">{f.family}</span>}
-                      {f.styles.length > 1 && <span className="font-picker__meta">{t("font.styles", { count: f.styles.length })}</span>}
-                      {!f.renderable && <span className="font-picker__meta">{t("font.unavailable")}</span>}
+                      onClick={() => choose(family)}>
+                      <span className="font-picker__name" style={{ fontFamily: `"${family.replace(/"/g, "")}"` }}>{name}</span>
+                      {font && name !== family && <span className="font-picker__alt">{family}</span>}
+                      {font && font.styles.length > 1 && <span className="font-picker__meta">{t("font.styles", { count: font.styles.length })}</span>}
+                      {(!font || !font.renderable) && <span className="font-picker__meta">{t("font.unavailable")}</span>}
                     </li>
                   );
                 }),

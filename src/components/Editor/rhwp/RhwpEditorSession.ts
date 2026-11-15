@@ -55,6 +55,7 @@ import type {
   CharFormatFlag, CommandDispatch, CommandParameterContext, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget,
   ParameterCommandId,
 } from "../../../commands/target";
+import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
@@ -605,6 +606,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.doc = doc;
     this.hwpBaseline = null;
     this.hwpOriginal = null;
+    this.fontSourceSafe = doc.canFormatFonts?.() === true;
     this.formatSourceCache = { key: String(epoch), safe: false };
     try {
       if (doc.getSourceFormat() === "hwp") {
@@ -1770,7 +1772,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * automatic retry: a failure stays "originalUnverified" until a manual Save Check, reload or publication.
    */
   private probeHwpOriginal(): void {
-    if (this.sessions.get(this.sessionId)?.format !== "hwp" || !this.hwpStructuralStatic() || this.status.kind !== "ready") return;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (this.status.kind !== "ready" || (format === "hwp" ? !this.hwpStructuralStatic()
+      : format !== "hwpx" || !this.text?.hasFontOwnership)) return;
     const owner = this.originalOwner();
     if (this.hwpOriginal?.owner === owner) return;
     // `serial`: Save may reuse the verdict only while no save-check invalidation happened since it started.
@@ -1790,7 +1794,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** A manual Save Check result for the current original also decides structural eligibility (the retry path). */
   private recordOriginalCheck(checked: Result<SaveCheck>): void {
     const owner = this.originalOwner();
-    if (this.sessions.get(this.sessionId)?.format !== "hwp") return;
+    if (!["hwp", "hwpx"].includes(this.sessions.get(this.sessionId)?.format ?? "")) return;
     // Like `saveCheck`, a later check that could not establish safety supersedes an earlier SAFE verdict.
     this.hwpOriginal = checked.ok
       ? { owner, state: blockedBy(checked.value) ? "blocked" : "safe", check: checked.value, serial: this.checkSerial }
@@ -2018,8 +2022,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     const key = [
       this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
-      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending, this.committingEpoch === this.epoch, this.pages.length,
-      this.structuralKey(),
+      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending, this.saving, this.committingEpoch === this.epoch, this.pages.length,
+      this.structuralKey(), this.fontOwnerCurrent(),
     ].join("|");
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
@@ -2059,6 +2063,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
       }
     }
+    // Font mutation uses the same complete selected-text proof, history, original
+    // preflight and save/IME ownership as general formatting. Collapsed edits are
+    // deliberately unavailable; caret state is display-only.
+    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
+    if (this.fontOwnerCurrent() && this.fontSourceSafe && original?.state === "safe" && this.text?.hasFontOwnership && this.formatState()) {
+      const font = this.fontState();
+      if (font) parameters["format.font"] = { font };
+    } else parameterReasons["format.font"] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
     // HWP metrics/formatting additionally require the structural original proof (complete
     // baseline including nested tables, SAFE preflight) — the same rule as body cells.
     if ((this.caret.cell?.nested || this.anchor.cell?.nested) && format === "hwp" && !this.structuralFormat()) {
@@ -2155,20 +2167,41 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return { accepted: applied };
   }
 
-  private fontCache: { key: string; value: { family: string | null } | null } | null = null;
+  private fontSourceSafe = false;
+  private fontCache: { key: string; value: { family: string | null; documentFamilies?: readonly string[] } | null } | null = null;
 
-  /** Stage 5-A (display only): the stored font name at the selection start — the Hangul slot's font, the representative
-   * font Hangul word processors show (RHWP's own `fontFamily`). Font changes stay unsupported for HWP/HWPX (registry). */
-  private fontState(): { family: string | null } | null {
+  /** Full-selection family; collapsed display follows the engine's position
+   * affinity (the run at the caret; an explicit end run wins at paragraph end). */
+  private fontState(): { family: string | null; documentFamilies?: readonly string[] } | null {
     if (!this.doc || !this.text || this.status.kind !== "ready") return null;
-    const [from] = this.hasSelection ? this.ordered() : [this.caret];
-    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}`;
+    const [from, to] = this.ordered();
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}|${RhwpEditorSession.positionKey(to)}`;
     if (this.fontCache?.key !== key) {
-      const families = this.text.fontFamilies(from);
-      const value = families ? { family: families[0]! } : null;
-      this.fontCache = { key, value };
+      const value = this.hasSelection ? this.text.selectionFont(from, to)
+        : (() => { const refs = this.text!.fontReferences(this.caret); return refs && refs.languageIndex !== null ? { family: refs.faces[refs.languageIndex]!.definition.name } : null; })();
+      const table = documentFontTable(this.doc);
+      this.fontCache = { key, value: value && { ...value, documentFamilies: table ? existingFontFamilies(table) : [] } };
     }
     return this.fontCache.value;
+  }
+
+  private fontOwnerCurrent(): boolean {
+    const owner = this.sessions.get(this.sessionId);
+    return this.sessions.snapshot().activeId === this.sessionId && owner?.engine === "rhwp"
+      && owner.state === "ready" && owner.loadGeneration === this.generation && owner.revision === this.committed;
+  }
+
+  private applyFont(args: Extract<DocumentCommandArgs, { command: "format.font" }>): boolean {
+    if (!this.fontOwnerCurrent() || !this.formatState() || !validateCommandArgs(args.command, args, this.parameterState().parameters?.[args.command])) return false;
+    const [from, to] = this.ordered();
+    const apply = this.text!.prepareFont(from, to, args.family.trim());
+    if (apply === "unchanged") return true;
+    if (!apply) return false;
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => { apply(); return { caret, anchor }; }, true, "other", null, true, true);
+    this.history?.boundary();
+    return applied;
   }
 
   private formatSourceCache: { key: string; safe: boolean } | null = null;
@@ -2302,6 +2335,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const applied = this.applyCharShape(args);
       return applied ? { accepted: true } : { accepted: false };
     }
+    if (command === "format.font") return { accepted: args?.command === command && this.applyFont(args) };
     if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };
     const flag = FORMAT_FLAG[command];

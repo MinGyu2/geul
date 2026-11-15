@@ -64,6 +64,19 @@ describe("FontPicker", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
+  it("offers document-only families as selectable unavailable fonts through format.font", () => {
+    const { input, executed } = setup({ state: snapshot({
+      font: { family: "Source Sans 3", documentFamilies: ["Document Face"] },
+    }) });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const list = screen.getByRole("listbox");
+    expect(within(list).getByText("Document fonts")).toBeInTheDocument();
+    const option = within(list).getByRole("option", { name: /Document Face.*not installed/ });
+    expect(option).toHaveAttribute("data-font-id", "document:Document Face");
+    fireEvent.click(option);
+    expect(executed).toEqual([["format.font", { command: "format.font", family: "Document Face" }, 1]]);
+  });
+
   it("navigates with the keyboard and closes with Escape", () => {
     const { input, executed } = setup();
     fireEvent.keyDown(input, { key: "ArrowDown" });

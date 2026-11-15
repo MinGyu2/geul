@@ -1,8 +1,8 @@
 # 출시 점검표 (T016, Stage 5-A 로컬 범위 — 2026-11-16)
 
-> **2026-11-16 검토:** 출시 **NO-GO** 유지. WordCraft fresh-checkout dependency 재현, fontconfig 두 경계 및 RHWP read-only font inventory는 집중 검증했지만, HWP/HWPX font changes/save proofs/Undo-Redo/actual render and PDF acceptance는 아직 구현·검증하지 않았다. 상세 범위는 [font system](architecture/font-system.md)과 [quality matrix](quality-matrix.md)를 따른다.
+> **2026-11-16 검토:** 출시 **NO-GO** 유지. 지원되는 HWP/HWPX font mutation, T009 proofs, Undo/Redo, Linux Release native save/reopen, independent Canvas/PDF checks는 PASS다. Natural metrics/wrapping/complex shaping은 미구현/미검증이며 Windows/macOS·외부 Office·Release private-path cleanup도 남아 있다. font package PARTIALLY COMPLETED, Stage 5-A INCOMPLETE. 상세 증거는 [font system](architecture/font-system.md)과 [quality matrix](quality-matrix.md)를 따른다.
 
-**판정: 출시 NO-GO.** 이 표는 현재 Linux 개발 환경에서 실제로 할 수 있는 항목만 Stage 5-A에서 실행하고 나머지는 상태와 선행 조건을 적는다. 출시 GO, T016 Done, 전체 Stage 5 완료가 아니다. 근거 소스: `master` `9027acc`(PDF `639657a`) 이후 문서 커밋. 품질 근거는 [품질 행렬](quality-matrix.md).
+**판정: 출시 NO-GO.** 이 표는 현재 Linux 개발 환경에서 실행한 범위와 남은 선행 조건을 구분한다. 출시 GO, T016 Done, 전체 Stage 5 완료가 아니다. 검증된 앱(SHA-256 `29bd1c6ca0627d812c12d167834acc2bf5c451ecc6cd322d1b8c914289b75e74`, RHWP generation `cfb26d65…`)은 시작 HEAD `a42d7c0c4cfda033fc0e05b68f5d10e9d24623c1`의 제품 소스와 per-language selection/caret 수정을 포함한 최종 implementation diff로 빌드했으며, 그 뒤 제품 소스 변경은 없다. 품질 근거는 [품질 행렬](quality-matrix.md).
 
 | 영역 | 요구 | 상태 | 근거·구현 | 남은 차이 | 완료 선행 조건 |
 |---|---|---|---|---|---|
@@ -23,8 +23,8 @@
 | 로컬 보안: 산출물 | 생성물 추적 금지 | CURRENT PASS | `git ls-files`에 target/dist/WASM/PDF/deb 없음; `.agent-tmp.md`는 로컬 exclude | — | — |
 | 로컬 보안: 훅 | 로컬 훅 | CURRENT PASS | `.git/hooks/pre-commit`, `pre-push` 설치(pre-commit 프레임워크) | — | — |
 | T014 잔여 | 정전·실제 FS 고장, Windows/macOS 저장 | DEFERRED | [T014](architecture/t014-final-acceptance-2026-11-12.json) | 외부 환경 | 별도 승인 |
-| T015 잔여 | 외부 corpus·글꼴 GAP | GAP(외부 corpus) / WordCraft·fontconfig·inventory PASS | [품질 행렬 6·7절](quality-matrix.md#7-stage-5-a-글꼴-패키지-2026-11-16) | HWP/HWPX 글꼴 변경·T009 증명·render acceptance 미구현 | — |
-| 글꼴 시스템 | 시스템 글꼴 탐색·사용자 글꼴·선택·PDF | WordCraft/DOCX CURRENT PASS(NixOS); RHWP font inventory PASS, mutation INCOMPLETE; Windows/macOS DEFERRED | [글꼴 시스템](architecture/font-system.md): fontconfig 실행 시 적재, 사용자 글꼴 앱 전용 폴더, RHWP document-owned font IDs read-only 조회 | HWP/HWPX font mutation/save proof/session history/actual Canvas·PDF acceptance; Windows/macOS의 font provider와 파일 선택기 | 플랫폼별 수용(S5-3), RHWP T009 work |
+| T015 잔여 | 외부 corpus·글꼴 metrics GAP | HWP/HWPX supported font mutation/T009/native save-reopen PASS; external corpus remains GAP | [품질 행렬 6·7절](quality-matrix.md#7-stage-5-a-글꼴-패키지-2026-11-16) | natural metrics/wrapping/complex shaping; external corpus and S5-2/S5-3 | — |
+| 글꼴 시스템 | 시스템 글꼴 탐색·사용자 글꼴·선택·PDF | WordCraft/DOCX CURRENT PASS(NixOS); RHWP supported HWP/HWPX mutation/T009/native simple render CURRENT PASS; package PARTIAL | [글꼴 시스템](architecture/font-system.md): per-language document IDs, safe existing/new definitions, publication/history, native evidence | Natural advances/wrapping/complex shaping NOT IMPLEMENTED/VERIFIED; nested-cell native NOT RUN; Windows/macOS DEFERRED | metrics integration; platform acceptance (S5-3) |
 | 외부 Office 상호운용 (S5-2) | 한컴·Word GUI | DEFERRED / NOT RUN | 이번 작업 지시로 보류 | 전부 | 허가된 GUI 환경 |
 | Windows/macOS (S5-3) | 빌드·설치·IME·저장·PDF | DEFERRED / NOT RUN | 보류 | 전부 | 각 OS 환경 |
 | 다른 입력·그래픽 환경 | Wayland/fcitx5 등 | DEFERRED / NOT RUN | 보류 | 전부 | 해당 환경 |

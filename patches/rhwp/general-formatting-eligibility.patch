@@ -1,7 +1,6 @@
-diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
 --- a/src/document_core/commands/char_shape_compact.rs
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -494,6 +494,98 @@
+@@ -494,6 +494,106 @@
          self.document.doc_info.raw_stream_dirty = true;
          self.rebuild_derived_state();
          Ok("{\"ok\":true}".into())
@@ -81,12 +80,20 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 +        gap(para.char_count.saturating_sub(1).checked_sub(cursor).ok_or_else(fail)?, length)?;
 +        if ci != para.controls.len() { return Err(fail()); }
 +        let mut runs: Vec<[usize; 3]> = Vec::new();
++        let mut font_runs: Vec<[usize; 4]> = Vec::new();
++        let mut fonts_readable = true;
 +        let mut shape = 0usize;
-+        for offset in start..end {
++        for (offset, ch) in para.text.chars().enumerate().take(end).skip(start) {
 +            let pos = para.char_offsets[offset];
 +            while shape + 1 < para.char_shapes.len() && para.char_shapes[shape + 1].start_pos <= pos { shape += 1; }
 +            let id = para.char_shapes.get(shape).map_or(0, |s| s.char_shape_id);
 +            let style = self.styles.char_styles.get(id as usize).ok_or_else(fail)?;
++            let lang = crate::renderer::style_resolver::detect_lang_category(ch);
++            if fonts_readable {
++                if let Some(last) = font_runs.last_mut().filter(|r| r[2] == id as usize && r[3] == lang) { last[1] = offset + 1; }
++                else if font_runs.len() < 65_536 { font_runs.push([offset, offset + 1, id as usize, lang]); }
++                else { font_runs.clear(); fonts_readable = false; }
++            }
 +            let mask = usize::from(style.bold) | (usize::from(style.italic) << 1)
 +                | (usize::from(!matches!(style.underline, UnderlineType::None)) << 2)
 +                | (usize::from(style.strikethrough) << 3);
@@ -96,75 +103,13 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 +                runs.push([offset, offset + 1, mask]);
 +            }
 +        }
-+        Ok(serde_json::json!({"length":length,"runs":runs}).to_string())
++        Ok(serde_json::json!({"length":length,"runs":runs,"fontRuns":fonts_readable.then_some(font_runs)}).to_string())
      }
- 
+
      /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
-diff --git a/src/wasm_api.rs b/src/wasm_api.rs
---- a/src/wasm_api.rs
-+++ b/src/wasm_api.rs
-@@ -7185,6 +7185,28 @@
-     ) -> Result<String, JsValue> {
-         self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
-             .map_err(|e| e.into())
-+    }
-+
-+    /// [geul] Whether deriving character shapes can preserve this document's
-+    /// source properties. Read-only; not a substitute for original preflight.
-+    #[wasm_bindgen(js_name = canFormatCharacters)]
-+    pub fn can_format_characters(&self) -> bool {
-+        self.can_format_characters_native()
-+    }
-+
-+    /// [geul] Bounded document-owned font definitions and language-specific IDs.
-+    /// Read-only IR inventory, never permission to serialize a font-table mutation.
-+    #[wasm_bindgen(js_name = getDocumentFontTable)]
-+    pub fn get_document_font_table(&self) -> Result<String, JsValue> {
-+        self.document_font_table_native().map_err(|e| e.into())
-+    }
-+
-+    /// [geul] Proven text-only formatting runs; u32::MAX control means body.
-+    #[wasm_bindgen(js_name = getFormattingRuns)]
-+    pub fn get_formatting_runs(&self, section: u32, paragraph: u32, control: u32,
-+        cell: u32, cell_paragraph: u32, start: u32, end: u32) -> Result<String, JsValue> {
-+        self.formatting_runs_native(section as usize, paragraph as usize, control,
-+            cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
-     }
- 
-     /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
-diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
---- a/src/model/paragraph.rs
-+++ b/src/model/paragraph.rs
-@@ -2553,7 +2553,11 @@
-                 && matches!(self.controls.get(range.control_idx),
-                     Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink)
-         });
--        let utf16_end = if ends_hyperlink {
-+        // Text ending immediately before an object must not recolor the object's
-+        // eight-unit slot. Formatting selection proof excludes interior slots.
-+        let adjacent_object = self.field_ranges.is_empty() && self.orphan_field_ends.is_empty()
-+            && self.controls.iter().any(|c| matches!(c, Control::Picture(_) | Control::Table(_) | Control::Shape(_)));
-+        let utf16_end = if ends_hyperlink || adjacent_object {
-             *self.char_offsets.get(end - 1)?
-                 + self
-                     .text
-diff --git a/src/model/style.rs b/src/model/style.rs
---- a/src/model/style.rs
-+++ b/src/model/style.rs
-@@ -969,7 +969,9 @@
-         }
-         if let Some(v) = self.underline {
-             cs.underline_type = if v {
--                UnderlineType::Bottom
-+                // Enabling an already enabled underline preserves Top/Bottom.
-+                // An explicit underline_type below still requests a transformation.
-+                if matches!(cs.underline_type, UnderlineType::None) { UnderlineType::Bottom } else { cs.underline_type }
-             } else {
-                 UnderlineType::None
-             };
 --- /dev/null
 +++ b/src/document_core/commands/font_table.rs
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,263 @@
 +//! Read-only font inventory. IDs are per-language document ordinals, never CSS/catalog IDs.
 +use crate::document_core::DocumentCore;
 +use crate::error::HwpError;
@@ -228,9 +173,229 @@ diff --git a/src/model/style.rs b/src/model/style.rs
 +        String::from_utf8(out.0).map_err(|_| fail())
 +    }
 +}
++
++impl DocumentCore {
++    /// Explicit family intent applies to all seven language slots. Renderer
++    /// fallback never enters this table. Resolve every ordinal before mutation.
++    pub fn resolve_document_font_family_native(&mut self, name: &str) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("unsupported document font family".into());
++        if name.is_empty() || name.trim() != name || name.len() > 128
++            || name.chars().any(|c| c.is_control() || matches!(c, '\"' | ',' | ';' | '\\' | '{' | '}' | '\u{fffc}')) {
++            return Err(fail());
++        }
++        self.document_font_table_native()?;
++        let info = &self.document.doc_info;
++        let mut ids = [0u16; 7];
++        let mut missing = [false; 7];
++        for lang in 0..7 {
++            let matches: Vec<_> = info.font_faces[lang].iter().enumerate().filter(|(_, f)| f.name == name).collect();
++            ids[lang] = match matches.as_slice() {
++                [(id, _)] => u16::try_from(*id).map_err(|_| fail())?,
++                [] => { missing[lang] = true; u16::try_from(info.font_faces[lang].len()).map_err(|_| fail())? },
++                _ => return Err(fail()),
++            };
++        }
++        let total: usize = info.font_faces.iter().map(Vec::len).sum();
++        if total + missing.iter().filter(|m| **m).count() > 100_000 { return Err(fail()); }
++        // The narrow HWP append proof supports plain definitions only. Known
++        // compatibility default-name variants require a separate serializer proof.
++        let candidate = Font { raw_data: None, name: name.into(),
++            alt_type: if matches!(self.source_format, crate::parser::FileFormat::Hwpx) { 1 } else { 0 },
++            is_embedded: false, bin_item_id_ref: String::new(), resolved_bin_data_id: None,
++            alt_name: None, type_info: None, default_name: None, subst_font: None };
++        if missing.iter().any(|m| *m) && matches!(self.source_format, crate::parser::FileFormat::Hwp)
++            && crate::serializer::doc_info::serialize_face_name(&candidate).first() != Some(&0) { return Err(fail()); }
++        // Allocate every new face before committing any slot. No placeholders,
++        // no ignored surgical-insert errors, no partial language updates.
++        let mut fonts = info.font_faces.clone();
++        for lang in 0..7 {
++            if missing[lang] {
++                fonts[lang].push(candidate.clone());
++            }
++        }
++        let out = serde_json::to_string(&ids).map_err(|_| fail())?;
++        if missing.iter().any(|m| *m) {
++            self.document.doc_info.font_faces = fonts;
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        Ok(out)
++    }
++}
++
++impl DocumentCore {
++    /// Reconcile the restored font table before reconciling character shapes.
++    /// Prefix owns immutable definitions captured from the exact exported revision.
++    pub fn reconcile_font_shape_prefix_native(&mut self, prefix: &[crate::model::style::CharShape],
++        fonts: &[Vec<Font>], original_shapes: usize, original_fonts: [usize; 7]) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("incompatible published font table".into());
++        self.document_font_table_native()?;
++        if fonts.len() != 7 { return Err(fail()); }
++        let current = &self.document.doc_info.font_faces;
++        let mut merged = fonts.to_vec();
++        let mut maps: [Vec<u16>; 7] = std::array::from_fn(|_| Vec::new());
++        for lang in 0..7 {
++            let n = original_fonts[lang];
++            if n > current[lang].len() || n > fonts[lang].len() || fonts[lang].len() > 65_536 { return Err(fail()); }
++            let keys = |faces: &[Font]| faces.iter().map(serde_json::to_vec).collect::<Result<Vec<_>, _>>().map_err(|_| fail());
++            let old = keys(&current[lang])?;
++            let mut new = keys(&fonts[lang])?;
++            if old[..n] != new[..n] { return Err(fail()); }
++            for (id, key) in old.iter().enumerate() {
++                let next = if new.get(id) == Some(key) { id }
++                    else if let Some(found) = new.iter().position(|k| k == key) { found }
++                    else {
++                        let next = merged[lang].len();
++                        merged[lang].push(current[lang][id].clone()); new.push(key.clone()); next
++                    };
++                maps[lang].push(u16::try_from(next).map_err(|_| fail())?);
++            }
++        }
++        if merged.iter().map(Vec::len).sum::<usize>() > 100_000 { return Err(fail()); }
++        let mut shapes = self.document.doc_info.char_shapes.clone();
++        for (id, shape) in shapes.iter_mut().enumerate() {
++            for lang in 0..7 {
++                let next = *maps[lang].get(usize::from(shape.font_ids[lang])).ok_or_else(fail)?;
++                if id < original_shapes && next != shape.font_ids[lang] { return Err(fail()); }
++                shape.font_ids[lang] = next;
++                if let Some(raw) = shape.raw_data.as_mut() {
++                    raw.get_mut(lang * 2..lang * 2 + 2).ok_or_else(fail)?.copy_from_slice(&next.to_le_bytes());
++                }
++            }
++        }
++        // Existing shape reconciliation proves all mappings before it mutates
++        // references. Roll back staged DocInfo if that proof refuses; history
++        // snapshots and publication prefix are never modified.
++        if serde_json::to_vec(&self.document.doc_info.font_faces).map_err(|_| fail())?
++            == serde_json::to_vec(&merged).map_err(|_| fail())?
++            && serde_json::to_vec(&self.document.doc_info.char_shapes).map_err(|_| fail())?
++                == serde_json::to_vec(&shapes).map_err(|_| fail())? {
++            return self.reconcile_char_shapes_native(prefix, original_shapes);
++        }
++        let saved = self.document.doc_info.clone();
++        self.document.doc_info.font_faces = merged;
++        self.document.doc_info.char_shapes = shapes;
++        self.document.doc_info.raw_stream_dirty = true;
++        match self.reconcile_char_shapes_native(prefix, original_shapes) {
++            Ok(result) => { self.rebuild_derived_state(); Ok(result) }
++            Err(error) => { self.document.doc_info = saved; Err(error) }
++        }
++    }
++
++    /// Remove only unreferenced definitions after the protected font prefix.
++    /// All model font references are CHAR_SHAPE slots; snapshot tables remain owned
++    /// by snapshots and are reconciled when restored, never compacted in place.
++    pub fn compact_unpublished_fonts_native(&mut self, fonts: &[Vec<Font>]) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("font compaction proof refused".into());
++        self.document_font_table_native()?;
++        if fonts.len() != 7 { return Err(fail()); }
++        let current = &self.document.doc_info.font_faces;
++        let mut keep: [Vec<bool>; 7] = std::array::from_fn(|lang| vec![false; current[lang].len()]);
++        for lang in 0..7 {
++            if fonts[lang].len() > current[lang].len() { return Err(fail()); }
++            for (id, font) in fonts[lang].iter().enumerate() {
++                if serde_json::to_vec(font).map_err(|_| fail())? != serde_json::to_vec(&current[lang][id]).map_err(|_| fail())? { return Err(fail()); }
++                keep[lang][id] = true;
++            }
++        }
++        for shape in &self.document.doc_info.char_shapes {
++            for lang in 0..7 { keep[lang][usize::from(shape.font_ids[lang])] = true; }
++        }
++        let mut maps: [Vec<u16>; 7] = std::array::from_fn(|_| Vec::new());
++        let mut compacted: Vec<Vec<Font>> = Vec::new();
++        for lang in 0..7 {
++            let mut faces = Vec::new();
++            for (id, face) in current[lang].iter().enumerate() {
++                maps[lang].push(u16::try_from(faces.len()).map_err(|_| fail())?);
++                if keep[lang][id] { faces.push(face.clone()); }
++            }
++            compacted.push(faces);
++        }
++        if compacted.iter().zip(current).all(|(a,b)| a.len() == b.len()) { return Ok("{\"ok\":true}".into()); }
++        for shape in &mut self.document.doc_info.char_shapes {
++            for lang in 0..7 {
++                shape.font_ids[lang] = maps[lang][usize::from(shape.font_ids[lang])];
++                if let Some(raw) = shape.raw_data.as_mut() {
++                    raw[lang * 2..lang * 2 + 2].copy_from_slice(&shape.font_ids[lang].to_le_bytes());
++                }
++            }
++        }
++        self.document.doc_info.font_faces = compacted;
++        self.document.doc_info.raw_stream_dirty = true;
++        self.rebuild_derived_state();
++        Ok("{\"ok\":true}".into())
++    }
++
++    pub fn prove_publishing_fonts_native(&self, exported: &Self) -> Result<(), HwpError> {
++        use crate::parser::FileFormat;
++        let fail = || HwpError::RenderError("publication font identity mismatch".into());
++        self.document_font_table_native()?; exported.document_font_table_native()?;
++        let (a,b) = (&self.document.doc_info.font_faces, &exported.document.doc_info.font_faces);
++        if a.len() != b.len() { return Err(fail()); }
++        for (old, new) in a.iter().zip(b) {
++            if old.len() != new.len() { return Err(fail()); }
++            for (old, new) in old.iter().zip(new) {
++                let equal = match self.source_format {
++                    FileFormat::Hwp => {
++                        let x = crate::serializer::doc_info::serialize_face_name(old);
++                        let y = crate::serializer::doc_info::serialize_face_name(new);
++                        old.raw_data.as_deref().unwrap_or(&x) == new.raw_data.as_deref().unwrap_or(&y) && x == y
++                    }
++                    FileFormat::Hwpx => {
++                        let mut x = old.clone(); let mut y = new.clone();
++                        x.raw_data = None; y.raw_data = None;
++                        serde_json::to_vec(&x).map_err(|_| fail())? == serde_json::to_vec(&y).map_err(|_| fail())?
++                    }
++                    _ => false,
++                };
++                if !equal { return Err(fail()); }
++            }
++        }
++        Ok(())
++    }
++}
++
++impl DocumentCore {
++    /// Load-time source eligibility, complementary to the backend's independent
++    /// original preflight. HWP reconstruction must preserve the complete DocInfo.
++    pub fn can_format_fonts_native(&self) -> bool {
++        use crate::parser::FileFormat;
++        if self.document_font_table_native().is_err() { return false; }
++        match self.source_format {
++            FileFormat::Hwpx => true,
++            FileFormat::Hwp => {
++                if !self.document.doc_info.raw_stream.as_ref().is_some_and(|raw| raw.len() <= 8 * 1024 * 1024) { return false; }
++                let mut info = self.document.doc_info.clone();
++                info.raw_stream_dirty = true;
++                info.raw_stream.as_ref().is_some_and(|raw|
++                    *raw == crate::serializer::doc_info::serialize_doc_info(&info, &self.document.doc_properties))
++            }
++            _ => false,
++        }
++    }
++}
+--- a/src/document_core/commands/formatting.rs
++++ b/src/document_core/commands/formatting.rs
+@@ -429,7 +429,7 @@
+                         "\"subscript\":{},\"superscript\":{},",
+                         "\"emboss\":{},\"engrave\":{},",
+                         "\"emphasisDot\":{},\"underlineShape\":{},\"strikeShape\":{},\"kerning\":{},",
+-                        "\"charShapeId\":{},",
++                        "\"charShapeId\":{},\"languageIndex\":{},",
+                         "\"fontFamilies\":{},",
+                         "\"ratios\":{},\"spacings\":{},\"relativeSizes\":{},\"charOffsets\":{},",
+                         "{}",
+@@ -444,7 +444,7 @@
+                     subscript, superscript,
+                     emboss, engrave,
+                     emphasis_dot, underline_shape, strike_shape, kerning,
+-                    char_shape_id,
++                    char_shape_id, lang_index,
+                     font_families_json,
+                     ratios_json, spacings_json, relative_sizes_json, char_offsets_json,
+                     border_fill_json,
 --- a/src/document_core/commands/mod.rs
 +++ b/src/document_core/commands/mod.rs
-@@ -10,6 +10,7 @@
+@@ -11,6 +11,7 @@
  mod footnote_ops;
  mod foreign_paste;
  mod formatting;
@@ -238,3 +403,118 @@ diff --git a/src/model/style.rs b/src/model/style.rs
  mod formatting_runs;
  mod header_footer_ops;
  mod html_import;
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -2553,7 +2553,11 @@
+                 && matches!(self.controls.get(range.control_idx),
+                     Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink)
+         });
+-        let utf16_end = if ends_hyperlink {
++        // Text ending immediately before an object must not recolor the object's
++        // eight-unit slot. Formatting selection proof excludes interior slots.
++        let adjacent_object = self.field_ranges.is_empty() && self.orphan_field_ends.is_empty()
++            && self.controls.iter().any(|c| matches!(c, Control::Picture(_) | Control::Table(_) | Control::Shape(_)));
++        let utf16_end = if ends_hyperlink || adjacent_object {
+             *self.char_offsets.get(end - 1)?
+                 + self
+                     .text
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -969,7 +969,9 @@
+         }
+         if let Some(v) = self.underline {
+             cs.underline_type = if v {
+-                UnderlineType::Bottom
++                // Enabling an already enabled underline preserves Top/Bottom.
++                // An explicit underline_type below still requests a transformation.
++                if matches!(cs.underline_type, UnderlineType::None) { UnderlineType::Bottom } else { cs.underline_type }
+             } else {
+                 UnderlineType::None
+             };
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -411,6 +411,7 @@
+ #[wasm_bindgen]
+ pub struct CharShapePrefix {
+     shapes: Vec<crate::model::style::CharShape>,
++    fonts: Vec<Vec<crate::model::style::Font>>,
+ }
+
+ /// 한 번의 문서 내보내기 결과.
+@@ -7162,6 +7163,7 @@
+     pub fn capture_char_shape_prefix(&self) -> CharShapePrefix {
+         CharShapePrefix {
+             shapes: self.capture_char_shapes_native(),
++            fonts: if self.document_font_table_native().is_ok() { self.document.doc_info.font_faces.clone() } else { Vec::new() },
+         }
+     }
+
+@@ -7172,8 +7174,16 @@
+         exported: &HwpDocument,
+     ) -> Result<CharShapePrefix, JsValue> {
+         self.core.capture_publishing_char_shapes_native(&exported.core)
+-            .map(|shapes| CharShapePrefix { shapes })
+-            .map_err(|e| e.into())
++            .map(|shapes| CharShapePrefix { shapes, fonts: if self.document_font_table_native().is_ok() { self.document.doc_info.font_faces.clone() } else { Vec::new() } })
++            .map_err(|e| e.into())
++    }
++
++    /// Opt-in font publication proof; legacy text/format saves with an unreadable
++    /// inventory keep their existing character-only publication contract.
++    #[wasm_bindgen(js_name = capturePublishingFontShapePrefix)]
++    pub fn capture_publishing_font_shape_prefix(&self, exported: &HwpDocument) -> Result<CharShapePrefix, JsValue> {
++        self.core.prove_publishing_fonts_native(&exported.core).map_err(JsValue::from)?;
++        self.capture_publishing_char_shape_prefix(exported)
+     }
+
+     /// [geul] Restore publication identity after history travel (caller opt-in).
+@@ -7185,6 +7195,49 @@
+     ) -> Result<String, JsValue> {
+         self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
+             .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = reconcileFontShapePrefix)]
++    pub fn reconcile_font_shape_prefix(&mut self, prefix: &CharShapePrefix, original: u32, font_counts: &str) -> Result<String, JsValue> {
++        let counts: [usize; 7] = serde_json::from_str(font_counts).map_err(|_| JsValue::from_str("invalid original font counts"))?;
++        self.reconcile_font_shape_prefix_native(&prefix.shapes, &prefix.fonts, original as usize, counts).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = compactUnpublishedFonts)]
++    pub fn compact_unpublished_fonts(&mut self, prefix: &CharShapePrefix) -> Result<String, JsValue> {
++        self.compact_unpublished_fonts_native(&prefix.fonts).map_err(Into::into)
++    }
++
++    /// [geul] Whether deriving character shapes can preserve this document's
++    /// source properties. Read-only; not a substitute for original preflight.
++    #[wasm_bindgen(js_name = canFormatCharacters)]
++    pub fn can_format_characters(&self) -> bool {
++        self.can_format_characters_native()
++    }
++
++    #[wasm_bindgen(js_name = canFormatFonts)]
++    pub fn can_format_fonts(&self) -> bool { self.can_format_fonts_native() }
++
++    /// Resolve/append independently in seven language tables. Host must use a
++    /// history transaction; export still requires format-specific preservation.
++    #[wasm_bindgen(js_name = resolveDocumentFontFamily)]
++    pub fn resolve_document_font_family(&mut self, name: &str) -> Result<String, JsValue> {
++        self.resolve_document_font_family_native(name).map_err(Into::into)
++    }
++
++    /// [geul] Bounded document-owned font definitions and language-specific IDs.
++    /// Read-only IR inventory, never permission to serialize a font-table mutation.
++    #[wasm_bindgen(js_name = getDocumentFontTable)]
++    pub fn get_document_font_table(&self) -> Result<String, JsValue> {
++        self.document_font_table_native().map_err(|e| e.into())
++    }
++
++    /// [geul] Proven text-only formatting runs; u32::MAX control means body.
++    #[wasm_bindgen(js_name = getFormattingRuns)]
++    pub fn get_formatting_runs(&self, section: u32, paragraph: u32, control: u32,
++        cell: u32, cell_paragraph: u32, start: u32, end: u32) -> Result<String, JsValue> {
++        self.formatting_runs_native(section as usize, paragraph as usize, control,
++            cell as usize, cell_paragraph as usize, start as usize, end as usize).map_err(|e| e.into())
+     }
+
+     /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.

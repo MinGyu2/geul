@@ -1,16 +1,13 @@
 # 통합 글꼴 시스템 (Stage 5-A 글꼴 패키지) — 2026-11-16
 
-상태: **PARTIALLY COMPLETED**. 공유 카탈로그·fontconfig 제공자·사용자 글꼴 등록/영속/제거·글꼴 선택 UI·WordCraft(DOCX) 통합·PDF는
-구현 및 NixOS 검증 완료. RHWP(HWP/HWPX)는 document-owned 글꼴 inventory와 선택 글자의 font ID 참조를 읽을 수 있지만
-변경은 저장 보존 증명이 없어 명시적으로 거부한다(아래 5절). WordCraft pin 재현과 fontconfig 두 결함도 집중 검증했다.
-Windows/macOS 실행 검증은 DEFERRED. Stage 5-A 전체는 부분 완료, 출시 판단은 NO-GO다.
+상태: **PARTIALLY COMPLETED**. 공유 카탈로그·fontconfig 제공자·사용자 글꼴 등록/영속/제거·WordCraft(DOCX) 통합·PDF와 지원 범위의 RHWP HWP/HWPX font editing 및 narrow save proof는 구현·NixOS 검증 완료. RHWP natural font metrics, user-font wrapping, complex-script shaping은 미구현/미검증이다. Windows/macOS DEFERRED. Stage 5-A 전체는 INCOMPLETE, 출시 판단은 NO-GO다.
 
 ## 1. 구조
 
 ```
             ┌──────────── WebView (React) ─────────────┐
  리본 FontPicker ── format.font 명령(레지스트리·capability) ── DocxEditorSession → DocxOp::Font
-       │                                                └── RhwpEditorSession: 표시만, 변경 unsupported
+       │                                                └── RhwpEditorSession: 지원 범위 format.font 변경·저장 검증
  useFontController ── font_catalog / refresh / register / remove (IPC, 경로 없음)
  WebFontBridge ── font_user_face(가족, 스타일) → FontFace → document.fonts (RHWP Canvas)
             └──────────────────────────────────────────┘
@@ -99,28 +96,17 @@ Windows/macOS 실행 검증은 DEFERRED. Stage 5-A 전체는 부분 완료, 출�
 
 ### RHWP (HWP/HWPX) — 부분
 
-- 구현: 선택 시작 글자의 저장 글꼴 표시(`getCharPropertiesAt`의 한글 슬롯, 한글 워드프로세서의 대표 글꼴), 등록 사용자 글꼴의
-  WebView 전달, 글꼴 변경 시 모든 쪽 Canvas 다시 그리기(`fontsChanged`). RHWP patch는 read-only `getDocumentFontTable`을 추가한다:
-  7개 언어별 명시 ID·전체 Font record와 CHAR_SHAPE별 `fontIds`를 검증해 반환한다. TS는 inventory와 선택 글자의 ID→문서 정의 참조를
-  body 및 지원 셀 경로에서 읽는다. 인덱스·count·참조·응답 크기 오류는 거부한다. 이 IR inventory는 HWP `FACE_NAME`/`ID_MAPPINGS`나
-  HWPX 원본 XML preservation proof가 아니다.
-- **미구현 — 글꼴 변경**: 레지스트리 `format.font`는 RHWP `unsupported`이며 실행하면 "이 문서 형식에서는 지원하지 않습니다"로 거부하고
-  문서를 바꾸지 않는다. 이유: HWP 저장 증명 `derived_char_shape`(`services/save/hwp.rs`)는 덧붙인 글자 모양의 글꼴 ID 바이트
-  `[0..14)`가 원본과 같아야 하고, 새 `FACE_NAME` 레코드도 허용하지 않는다. HWPX 헤더 덧붙임 규칙(`services/save/special.rs`)도
-  `hh:fontRef` 변경·`hh:fontface` 추가 규칙이 없다. 편집을 허용하면 저장이 거부되거나 서식을 잃으므로 실행 전에 거부한다.
-  필요한 후속: 기존 정의를 포함한 CHAR_SHAPE font ID mutation, 안전한 언어별 신규 정의·사용자 글꼴 identity, HWP FACE_NAME/ID_MAPPINGS와
-  HWPX fontRef/fontface의 좁은 T009 proof, publication lease와 Undo/Redo의 font-table reconciliation. 기존 `findOrCreateFontId`는 Hangul
-  슬롯 ID를 반환하고 언어별 helper는 다른 슬롯에 placeholder를 쓰므로 shared identity로 바로 사용할 수 없다. `format.font`는 계속 비활성화한다.
-- T009는 미변경이다: HWP `derived_char_shape` font bytes `[0..14)` 동일성, 기존 정의·unknown records, ID_MAPPINGS, HWPX canonical header 비교가
-  그대로다. Read-only inventory와 reopen은 글꼴 mutation save proof가 아니다.
-- 레이아웃 메트릭: RHWP는 내장 메트릭 DB를 쓰며, DB에 없는 글꼴의 라틴 글자는 추정 폭이다(이미 있는 Canvas 보조 메트릭 경로는
-  geul이 쓰는 `getPageLayerTreeWithProfile`와 함께 켜지 않았다). `registerExactFontSource` WASM API는 있으나 host font bytes,
-  session/history와 active layer-tree metrics에 연결되지 않았다. 실제 Canvas glyph·cursor/selection geometry·PDF 일치성은 확인하지 않아
-  RHWP font rendering acceptance가 남아 있다.
+- 현재 구현은 `format.font`를 일반 RHWP 명령으로 연결한다. 선택 상태는 모든 formatting run을 살펴 uniform family만 표시하고, 혼합/읽을 수 없는 상태는 한 가족으로 추측하지 않는다. 본문과 지원되는 top-level table-cell selection은 한 번의 history action이며, 선택 밖 character properties, selection/caret ownership, Undo/Redo, IME boundary, revision/generation 및 save-state 검사를 기존 session transaction이 관리한다. 중첩 cell ownership은 기존 guard를 따르지만, 이 글꼴 변경의 nested-cell native acceptance는 NOT RUN이다. Collapsed-caret font mutation은 지원하지 않으며 표시 상태는 엔진의 right-affinity 규칙(명시적 end run 포함)을 따른다.
+- ID 해석은 picker/catalog 순서나 CSS fallback에서 만들지 않고 문서가 소유한 각 언어 table의 정확한 ID를 별도로 읽는다. 슬롯은 0 HANGUL, 1 LATIN, 2 HANJA, 3 JAPANESE, 4 OTHER, 5 SYMBOL, 6 USER이며 각 ID는 자기 table에서만 유효하다. 선택한 가족 의도는 일곱 슬롯에 각각 해석한다. 이미 있는 유효 정의는 재사용하고 빠진 정의는 지원되는 plain variant로 원자적으로 append한다. placeholder는 만들지 않는다. 중복/잘못된 이름, 잘못된 참조와 미지원 table variant는 fail-closed다. 이 문서 이름은 glyph fallback과 별개이며 글꼴 파일은 문서에 embed되지 않는다.
+- HWP에서는 기존 FACE_NAME 순서/바이트와 기존 ID_MAPPINGS identity를 유지하고, plain FACE_NAME attr 0만 추가 대상으로 허용한다. 새로운 CHAR_SHAPE font ID는 각 언어 표의 유효 정의로 해석되어야 하며, 모든 새 정의가 실제 body-referenced derived shape에서 사용되는지 증명한다. 새 HWP FACE_NAME은 plain `attr=0` name record만 append한다. compatibility-default/substitute variant는 만들지 않으며, 그런 미지원 기존 variant는 추측해 재생성하지 않고 글꼴 mutation을 거부한다.
+- HWPX에서는 ordered seven-language fontface/ordinal/count 및 각 char-shape fontRef 관계를 확인한다. 신규 face는 non-embedded TTF `alt_type=1` 형태만 허용한다. 기존 canonical subtree/wrapper/namespace/attribute는 그대로이며, 유효한 derived shape의 fontRef 변경만 증명 범위다. 알 수 없는 원본 XML 속성을 보존할 수 없는 입력은 거부한다.
+- publication은 immutable font+shape prefix identity를 정확히 reopen한 revision에 묶는다. Undo/Redo snapshot은 protected prefix에 remap되고 compaction은 unpublished/unreferenced entries만 제거한다. 실패한 publication은 lease를 해제하고 ID 의미를 바꾸지 않는다. HWP eligibility clone은 8 MiB로 제한되고 새 proof work는 4,000,000 단위 상한을 둔다.
+- T009는 HWP와 HWPX의 별도 proof path를 사용한다. HWP proof는 기존 face/order, 정확한 7개 font counts와 char-shape count, 그 밖의 ID_MAPPINGS bytes, 원본/derived shape의 허용 필드와 trailing unknown bytes, 실제 body reference를 확인한다. HWPX proof는 원본 canonical XML 구조, 7개 언어/ordinal/count, 새 face 사용, derived fontRef의 좁은 변경 및 나머지 원본 subtree를 비교한다. 원본 preflight, unknown record/content 검증, 원본 identity 및 atomic publication 경계는 그대로 유지된다. 전체 proof 조건은 [저장 보존](save-preservation.md)과 아래 검증 기록을 따른다.
+- 렌더링 한계: actual native acceptance에서 HWP/HWPX의 선택 글리프 픽셀, caret/selection 관계, PDF raster 변화는 확인했다. 그러나 RHWP는 여전히 portable HFT/heuristic metrics와 Canvas glyph-fit을 쓴다. derived rebuild는 exact font-source binding을 지우므로 natural font advances, 새 사용자 글꼴에 따른 줄바꿈/layout metrics, complex-script shaping은 active layer-tree layout에 연결되거나 검증되지 않았다. `FontFace.load()`만으로 완료라 하지 않는다. 따라서 font package는 PARTIALLY COMPLETED다.
 
 ## 6. 검증
 
-### 6.1 추가 검증 (2026-11-16, NixOS)
+### 6.1 이전 inventory-only 검증 기록 (2026-11-16, NixOS; superseded by 6.3)
 
 | 범위 | 명령/산출물 | 결과 |
 |---|---|---|
@@ -131,16 +117,15 @@ Windows/macOS 실행 검증은 DEFERRED. Stage 5-A 전체는 부분 완료, 출�
 | RHWP Release WASM | generation `2745ff0089af491711bed4ab1caf5ee60051950fe810fd2cfee2b1e5549fda8c`, source tree `a5265cb664d8e3a2cb57076afff19317ba3a711024e7b6e3ddd07b91f0461a0c`; `npx vitest run --config scripts/tests/font-table.vitest.config.ts -t 'document font inventory'` | build/publication PASS, `externalUnchanged: true`; WASM tests PASS 4/4 for HWP/HWPX read-only inventory, unchanged export/reopen, malformed reference rejection. |
 | TypeScript | `npm run typecheck` | PASS (valid prior result reused; relevant interface/source unchanged since run). |
 
-이 결과는 문서 글꼴 표 읽기만 증명한다. 신규 font ID 저장, 사용자 글꼴 정의 추가, Canvas glyph/metric/PDF 변경은 구현·검증하지 않았다.
-새 native font-change acceptance도 실행하지 않았다. WordCraft fonts 51, 기존 font Rust 15, native run10은 역사 결과로 재사용했고 재실행하지 않았다.
-Windows/macOS와 다른 배포판은 DEFERRED다. 이전 실패 이력도 유지한다: fresh harness의 상대 경로·manifest 오류는 수정됨; RHWP 초기 build는 CLI PATH와
+**역사 기록 — 당시 inventory-only 상태 (2026-11-16 초기 검증, superseded by §6.3):** 이 결과는 문서 글꼴 표 읽기만 증명했다. 당시에는 신규 font ID 저장, 사용자 글꼴 정의 추가, Canvas glyph/metric/PDF 변경을 구현·검증하지 않았고 새 native font-change acceptance도 실행하지 않았다. WordCraft fonts 51, 기존 font Rust 15, native run10은 역사 결과로 재사용했고 재실행하지 않았다.
+Windows/macOS와 다른 배포판은 DEFERRED다. 아래 실패 이력은 해당 inventory-only 검증 당시 기록이다: fresh harness의 상대 경로·manifest 오류는 수정됨; RHWP 초기 build는 CLI PATH와
 generation retention으로 publication이 거부됐으나 기존 올바른 CLI와 unselected artifact 보존 뒤 build PASS; 처음 Boolean test는 sandbox 실행 시 fontconfig
 library 경로를 찾지 못해 SKIP했고, 첫 실 API 실행의 integer fixture 오류를 고친 뒤 위 PASS다. WASM 테스트는 처음 기본 Vitest include에서 `No test files found`였으며,
 focused `scripts/tests/font-table.vitest.config.ts`를 추가해 별도 4개 검증을 통과했다.
 
 ### 6.2 이전 검증 기록 (2026-11-15, NixOS 26.05, Linux 7.2.14, fontconfig 2.18.3, WebKitGTK 2.54.1)
 
-### CURRENT PASS (새로 실행)
+### 당시 CURRENT PASS (2026-11-15 실행 기록)
 
 | 명령 | 결과 |
 |---|---|
@@ -190,10 +175,46 @@ PDF 게시, IME, RHWP 패치)를 바꾸지 않았다. DOCX PDF 경로는 같은 
   기존 명령). RHWP Canvas가 사용자 글꼴로 실제 그렸는지의 픽셀 비교, 사용자 글꼴의 RHWP 메트릭 반영은 미검증.
 - 글꼴 선택기 키보드: 단위 시험(화살표·Enter·Escape·모달)만, native 키보드 탐색 전체는 미실행(선택 입력은 native xdotool로 실행).
 
+
+### 6.3 RHWP 글꼴 변경 focused 및 native 검증 (2026-11-16, NixOS)
+
+상태: **CURRENT PASS** — 지원되는 HWP/HWPX 단순 본문 시나리오에 한정. 전체 font package는 natural metrics/shaping integration 미구현으로 **PARTIALLY COMPLETED**; 전체 Stage 5-A INCOMPLETE, Release NO-GO다.
+
+| 범위 | 실행/증거 | 결과 |
+|---|---|---|
+| T009 proof | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib font_preservation_tests -- --nocapture` | 4 PASS. `target/font-completion/font-proofs-final.log` |
+| Release WASM/session | `npx vitest run --config scripts/tests/font-table.vitest.config.ts scripts/tests/font-editing.wasm.test.ts`와 후속 exact filters `-t 'font (session|stale)'`, `-t 'font (cell|pending)'` | 최신 단일 실행 14 PASS(`target/font-completion/font-language-wasm.log`): core 4, session/stale 4, cell/pending 4, 선택·caret per-language(Latin vs Hangul) HWP/HWPX 2. generation `cfb26d65aaf99c16386dbd24497f8a79dcf4caa63e17bd9da53ba839700b619c`. 이전 generation `3622d808…`의 4+4+4 결과는 역사적 기록이다. |
+| resolver/UI | `npx vitest run src/components/Editor/rhwp/rhwpFonts.test.ts src/components/FontPicker/FontPicker.test.tsx` | 15 PASS(최종 소스로 재실행, `target/font-completion/font-resolver-resume5.log`); typecheck PASS(`font-typecheck-resume5.log`); production `npx vite build`, protected app build PASS(`native-language-frontend.log`, `native-language-app.log`). |
+| positive native | `python3 scripts/tests/native-ibus-session.py --out "$PWD/target/font-completion/native-run4-session" -- python3 scripts/tests/native-rhwp-font-editing.py --app "$PWD/src-tauri/target/debug/geul" --driver "$PWD/src-tauri/target/debug/tauri-driver" --xdotool @XDOTOOL@ --ibus @IBUS@ --fixtures "$PWD/target/font-completion/native-fixtures" --out "$PWD/target/font-completion/native-run4"` | HWP/HWPX에서 기존 NanumMyeongjo와 등록 GeulMono Test1 적용, visible Canvas glyph changes, Undo/Redo, save/close/reopen 및 7-slot family identity 확인. independent inspector PASS: CFB/XML original-prefix/ID mapping, page size, PDF before/after pixel changes and ink bounds; caret/selection relation 확인. app SHA-256 `29bd1c6c…`, Release generation `cfb26d65…`; fixture·JS/CSS·WASM hashes는 `native-run4/result.json`에 기록. independent result `native-run4/independent.json`(PASS, 2 formats). |
+| negative native | `python3 scripts/tests/native-ibus-session.py --out "$PWD/target/font-completion/native-negative3-session" -- python3 scripts/tests/native-rhwp-font-negative.py --app "$PWD/src-tauri/target/debug/geul" --driver "$PWD/src-tauri/target/debug/tauri-driver" --xdotool @XDOTOOL@ --ibus @IBUS@ --fixtures "$PWD/target/font-completion/native-negative-fixtures" --out "$PWD/target/font-completion/native-negative3"` | HWP opaque FACE_NAME variant와 HWPX unknown namespaced header attribute 각각 save refusal; HWP Undo recovery/HWPX revision unchanged, 원본 bytes 보존 PASS. |
+| non-run scope | — | Nested-cell font native scenario, Windows/macOS, Debug WASM runtime, other Office applications NOT RUN/DEFERRED. Release private-path cleanup remains separate. |
+
+재생성 명령은 `node scripts/tests/rhwp-font-editing.mjs --generate "$PWD/target/font-completion/native-fixtures"`와 `python3 scripts/tests/prepare-rhwp-font-negatives.py "$PWD/target/font-completion/native-fixtures" "$PWD/target/font-completion/native-negative-fixtures"`다. 독립 검사는 `python3 scripts/tests/inspect-rhwp-font-editing.py "$PWD/target/font-completion/native-run4" "$PWD/target/font-completion/native-fixtures"`로 실행한다. 결과는 `target/font-completion/native-run4/independent.json`, positive/negative result JSON 및 launcher logs에 있다. 초기 WASM session/stale mock은 `loadGeneration=0`을 돌려줘 실제 stale ownership을 증명하지 못했다. 최종 mock은 load/ready/commit generation 1로 맞춘 뒤 backend projection을 1→2로 바꾸며 거부를 확인해 ownership regression 4개가 PASS했다. 별도로 native-run1/run2는 PDF export 후 File 탭에서 picker가 unmount된 상태를 읽어 previous family가 null이 된 하네스 오류였고, negative-run1은 close/discard helper 오류였다. 이 실패들은 수정된 harness의 run3/negative2 PASS와 구분해 보존한다. 이후 최종 검토에서 Latin 선택이 Hangul 대표 ID만으로 균일하게 보고되는 UI 반례를 찾아 엔진 fontRuns/caret 속성에 languageIndex를 추가했고, 그 결과 generation `cfb26d65…`, run4/negative3/independent4로 전체 focused native 흐름을 다시 실행해 PASS했다(run3/negative2는 이전 generation의 역사적 PASS). 저장 산출물 해시는 run3과 byte-identical이다. 인접 단위 시험 `npx vitest run src/commands src/components/Editor/rhwp src/components/FontPicker`는 899 PASS/4 FAIL이며 4건(`hangulTools`, `sessions` 서식 미지원 기대, `hwpReopenModel` 2건)은 커밋 `a42d7c0` 깨끗한 worktree에서도 동일하게 실패하는 기존 실패다(`font-neighbors-resume5.log`). 전체 Rust/Vitest/WordCraft/RHWP suites, 기존 native corpus, D4는 재실행하지 않았다.
+
+#### Native Release 신원과 결과 해시
+
+| 항목 | SHA-256 / identity |
+|---|---|
+| 시작 HEAD | `a42d7c0c4cfda033fc0e05b68f5d10e9d24623c1` |
+| WordCraft gitlink | `6931bcc12af12ff874a9ebb4c63cebe17b3f8b82` |
+| RHWP gitlink | `1a76570e833917d15817415a53c09ad61ab3203f` |
+| Tauri app | `29bd1c6ca0627d812c12d167834acc2bf5c451ecc6cd322d1b8c914289b75e74` |
+| Frontend production | `testFlags={}`; JS `ac460ad8b3b9f0f6a6c44478d21bea72ed2771db94aafed6f5a381f26234eb3b`; CSS `89d241b51df8e53d748a641a07ba4c904dfe9c0763af382c511edcb38f2557d3`; index `33f0920807019123983e4cea0c9cf1ffae235ce934a8e4a0086a1e1ef3d8adee` |
+| RHWP Release | generation `cfb26d65aaf99c16386dbd24497f8a79dcf4caa63e17bd9da53ba839700b619c`; source tree `392b9194bce0bb471ec1c625ac2fa5af218b7e470e7332c5a78ad65a17ccb3f0`; `rhwp.js` `338cd08e488173bf899e33ce3d0c77000c0d7bac9a82907792dd616bea524ea3`; WASM `da5a0fdf7031c1a25e3f4727fcd8f6daab79685486d10e796d913a636bc10417` |
+| Positive inputs | HWP `fd995682e56e91d43c42056591bee08d418944f7f717799e4159f5a59c84523d`; HWPX `46da5760c1c57e00408f45b238eb38f0a8cd83746514292d643cc205bb470022` |
+| Positive saved HWP | existing NanumMyeongjo `0d5934a8550645f5bf72be5bc6d148ecca22c58ef7f690c98d5336813172fb74`; user GeulMono Test1 `cf879cbd72d86d22c6c3cfc535d7f43166f9d4c2e079b24d4ed93aaa3730e5de` |
+| Positive saved HWPX | existing NanumMyeongjo `0b49a612465a1ccd5f70d70e91e5f319f3fbd322412617343a13072009fbd275`; user GeulMono Test1 `b05eb1f5c9d2570ce5721aa79b2e133339607c88ca9cec68adc6e89b5518e4e8` |
+| Registered user font | `GeulMonoTest1.ttf` `2da55f36ea76c22b3484ec14d25205dbd4eaa04bdc58bc29402e2993c780c4a0` |
+| Negative source fixtures | HWP `20a5eff6790be112496ef5a80eaeff9595f0def86d70d4c841e988ee99ebc04e`; HWPX `f8a5ffd2b0820c5c782effd305b373c3e79cd46d522caa96dbdddfbaede45ec3` |
+| PDF raster baseline / changed | `0eeaf5374e5db17aea0aa5b0b283c296bff9f2c2167b47e3357c6e7d13af920c` → `0067851b55b6743e78e09858ac67614e780b046c8c858661d7c2ece2d1608e53` (1588×2245; 11,367 changed channels) |
+
+Saved-output hashes are the products from native-run4 (`result.json`; identical to run3); the independent inspector confirmed the expected family, seven language slots, preserved original definitions and changed PDF raster. Negative inputs were preserved after refusal. These identity records describe the supported Release run; they do not establish natural metrics/shaping or broader interoperability.
+
+
 ## 7. 알려진 제한
 
-1. HWP/HWPX 글꼴 변경 불가(5절).
+1. HWP/HWPX는 지원 범위에서 글꼴 변경을 지원한다. 미지원 FACE_NAME/XML variant는 6.3절의 보존 증명에 따라 거부한다.
 2. Linux 외 플랫폼: 글꼴 추가 대화상자 없음, fontconfig 동작 미검증.
-3. 사용자 글꼴은 WebView에 컬렉션 첫 얼굴만 전달.
-4. 가변 글꼴은 명명 인스턴스 단위로만 다룬다(WordCraft 기존 동작).
+3. portable HFT/heuristic metrics와 Canvas glyph-fit을 유지한다. Natural advances, user-font wrapping/layout metrics, complex-script shaping은 미구현/미검증이다.
+4. 사용자 글꼴은 WebView에 컬렉션 첫 얼굴만 전달하고 파일은 문서에 embed하지 않는다.
 5. 사용자·시스템 글꼴은 배포물에 넣지 않는다. 번들은 WordCraft OFL 4계열뿐(기존 고지 범위).

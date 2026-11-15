@@ -28,7 +28,7 @@
 | 13 | 보존·안전 거부 | IV | IV | IV | REUSED PASS | T009 보존 판정, Stage 3/4 거부 경로 | — |
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
-| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | 표시+read-only font inventory; mutation unsupported | 표시+read-only font inventory; mutation unsupported | CURRENT PASS(2026-11-15 native run10/DOCX 독립 검사; 2026-11-16 inventory API/tests) / 이전 CURRENT FAIL은 이력 | [글꼴 시스템](architecture/font-system.md) 6절 | HWP/HWPX font mutation·T009 proof·Canvas/PDF acceptance, Windows/macOS DEFERRED |
+| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | seven-slot mutation + existing/new definitions + narrow T009 save/reopen | seven-slot mutation + existing/new definitions + narrow T009 save/reopen | CURRENT PASS: supported Linux Release native HWP/HWPX cases and independent PDF/reopen; natural metrics remain incomplete | [글꼴 시스템](architecture/font-system.md) 6.3절 | natural advances/wrapping/complex shaping NOT IMPLEMENTED/VERIFIED; nested-cell native and Windows/macOS NOT RUN/DEFERRED |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 
@@ -106,19 +106,22 @@
 
 ## 5. 의도적으로 다시 실행하지 않은 것
 
-T009 전체, T010 D1–D5, native 50/50·56/56, Stage 2 그림/수식/깊은 표, Stage 3 수용, Stage 4 Scenario A/B native, 187/64 렌더 행렬, D4 벤치마크, WordCraft/DOCX 전체 시험. 관련 소스가 바뀌지 않았다. 프런트엔드 전체 vitest는 명령 레지스트리(전역) 변경 때문에 한 번 실행했다: 1460 PASS / 4 FAIL — 네 FAIL(`hangulTools` 1, `sessions` rhwp 1, `hwpReopenModel` 2)은 시작 HEAD 작업 트리에서 그대로 실패하는 기존 실패다.
+T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림/수식/깊은 표, Stage 3 수용, Stage 4 Scenario A/B native, 187/64 렌더 행렬, D4 벤치마크, WordCraft/DOCX 전체 시험. 글꼴 작업에는 별도 focused Rust/WASM/native 검증을 실행했으며, 위 전체 matrix들은 재실행하지 않았다. **역사 기록(PDF 단계):** 프런트엔드 전체 vitest는 당시 명령 레지스트리 변경 때문에 실행해 1460 PASS / 4 FAIL이었다. 네 FAIL(`hangulTools` 1, `sessions` rhwp 1, `hwpReopenModel` 2)은 당시 시작 HEAD 작업 트리에서도 재현된 기존 실패다. 이번 font task에서는 full Vitest suite를 실행하지 않았다.
 
 ## 6. 남은 T015 의무
 
-외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), HWP/HWPX 글꼴 변경 저장 증명, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014). 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
+외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), natural font metrics/wrapping/complex shaping, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014), Release private-path cleanup. 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
 
 ## 7. Stage 5-A 글꼴 패키지 (2026-11-16)
 
+상태: **PARTIALLY COMPLETED**. 지원되는 HWP/HWPX 변경과 독립 저장·재열기 검증은 통과했지만 natural metrics와 complex shaping integration은 미구현/미검증이다. Stage 5-A는 INCOMPLETE, Release NO-GO다.
+
 | 구분 | 내용 |
 |---|---|
-| IMPLEMENTED | 공유 카탈로그(시스템·사용자·번들), fontconfig 실행 시 적재 제공자(경로 하드코딩 없음, 없으면 unavailable 보고), TTF/OTF/WOFF/WOFF2 등록·앱 전용 저장·재적재·제거, 리본 글꼴 선택기(한/영), DOCX `format.font`·배치·저장·PDF, RHWP 글꼴 표시·사용자 글꼴 WebView 전달 |
-| CURRENT PASS | Historical: Rust 글꼴/DOCX 15, WordCraft fonts 51, native run10 and independent DOCX/PDF. 2026-11-16: WordCraft fresh bootstrap/compile 1, fontconfig Boolean/iteration 2, RHWP inventory unit 2 + Release-WASM 4, typecheck; details in [font system 6절](architecture/font-system.md#6-검증) |
-| REUSED PASS | PDF 게시 안전, T009, IME, Stage 2–4 (코드 경로 불변) |
-| NOT RUN / UNVERIFIED | 가변 CJK 대체 얼굴의 시각 굵기, RHWP Canvas 사용자 글꼴 픽셀 비교, 글꼴 선택기 native 키보드 전체 탐색 |
-| 미구현 | HWP/HWPX 글꼴 변경(저장 증명이 글꼴 ID·새 글꼴 이름을 받지 않음 — 명시적 거부) |
-| DEFERRED | Windows/macOS 빌드·설치·실행, 다른 Linux 배포판, fontconfig 배포 의존성 |
+| IMPLEMENTED | 공유 시스템/사용자/번들 카탈로그와 fontconfig 제공자, TTF/OTF/WOFF/WOFF2 사용자 등록·앱 전용 영속화, DOCX `format.font`/layout/save/PDF; RHWP seven-slot exact document ID resolution, existing face reuse, supported missing face append, `format.font` session/history integration, HWP/HWPX-specific T009 proofs and font+shape publication identity. |
+| CURRENT PASS | Rust `font_preservation_tests`: 4 PASS. Release WASM font-editing: 14 PASS (core, session/stale, cell/pending, per-language selection/caret). Resolver/picker: 15 PASS. Protected Release generation `cfb26d65aaf99c16386dbd24497f8a79dcf4caa63e17bd9da53ba839700b619c`; native run4/negative3/independent4 on that generation. Linux native Release: existing NanumMyeongjo and registered GeulMono Test1; HWP/HWPX apply, visible Canvas pixels, Undo/Redo, save/close/reopen and independent identity/PDF inspection PASS. Negative HWP unsupported FACE_NAME and HWPX unknown header attribute refusal plus original/recovery checks PASS. Details, hashes and reports: [font system 6.3절](architecture/font-system.md). |
+| REUSED PASS | WordCraft 51, prior geul font 15, font bootstrap/fontconfig, DOCX native run10, PDF publication safety, unrelated T009/T014 and IME/history evidence. These are historical/reused, not new font mutation proof. |
+| FAILED (historical, harness fixed) | Earlier native-run1/run2 and negative-run1 attempts failed on harness tab/close semantics; corrected harness runs are run3/negative2 PASS (prior generation); current-generation reruns run4/negative3 PASS. Initial Release build publication cap/retention and HWPX face type mismatch were corrected without relaxing caps or deleting retained artifacts. Logs remain under `target/font-completion/`. |
+| NOT IMPLEMENTED / NOT VERIFIED | Natural font advances, user-font-driven wrapping/layout metrics, complex-script shaping; exact source binding is not retained across derived rebuilds. Nested-cell native font flow and Debug runtime NOT RUN. `FontFace.load()` alone is not acceptance. |
+| DEFERRED | Windows/macOS, other Linux distributions, external Hancom/Word compatibility, Release private-path cleanup/package work. |
+| NOT RUN | Full Rust/Vitest/WordCraft/RHWP suites, old native corpus, D4 benchmark. No old acceptance corpus was rerun. |

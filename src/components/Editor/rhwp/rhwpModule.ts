@@ -91,6 +91,12 @@ export interface RhwpDocument {
   /** Read-only bounded IR inventory: document-owned per-language IDs and original face records.
    * Does not certify source preservation or permit font mutations. Older generations omit it. */
   getDocumentFontTable?(): string;
+  /** Explicit family intent across independently resolved language slots. Transaction-owned only. */
+  resolveDocumentFontFamily?(family: string): string;
+  canFormatFonts?(): boolean;
+  capturePublishingFontShapePrefix?(exported: RhwpDocument): CharShapePrefix;
+  reconcileFontShapePrefix?(prefix: CharShapePrefix, originalShapes: number, originalFontCounts: string): string;
+  compactUnpublishedFonts?(prefix: CharShapePrefix): string;
   /**
    * T012 Stage 5(geul RHWP patch `char-shape-compaction`): 지금 글자 모양 수, 그리고 불러온 직후 수(`baseline`) 뒤에 덧붙인 모양 중
    * 참조 없는 것을 지우고 참조를 옮기는 정리. 결과 `{ok, before, after, skipped}`. 원본 정의는 바꾸지 않는다. 문서 스냅숏 기록과 함께

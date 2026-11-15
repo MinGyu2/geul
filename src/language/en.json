@@ -527,6 +527,7 @@
   "font.systemFonts": "System fonts",
   "font.userFonts": "User fonts",
   "font.bundledFonts": "Bundled fonts",
+  "font.documentFonts": "Document fonts",
   "font.noMatch": "No font matches \"{query}\".",
   "font.add": "Add font…",
   "font.addTitle": "Add a font file (TTF, OTF, WOFF, WOFF2)",

@@ -54,7 +54,7 @@ export interface DocumentCommandSnapshot {
   format: Readonly<Record<CharFormatFlag, boolean>> | null;
   /** Stage 5-A: the selection's stored font family for display (family null: mixed). Absent/null when the engine does
    * not report it. Display only; whether a font can be applied is `format.font`'s availability. */
-  font?: { family: string | null } | null;
+  font?: { family: string | null; documentFamilies?: readonly string[] } | null;
   /** 문서 보호가 직접 글자 서식을 허용하는지(엔진이 알려 주면). null이면 서식 상태가 없는 엔진. */
   formatAccess: DocxFormatAccess | null;
   /**

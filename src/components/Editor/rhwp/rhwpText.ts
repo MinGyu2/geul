@@ -8,7 +8,7 @@ import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipb
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
 import { cachedFormula, publicationFormulas, tableFormulaSafety, validatePublicationFormulaCaches } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
-import { documentFontTable } from "./rhwpFonts";
+import { documentFontTable, resolveExistingFontIds } from "./rhwpFonts";
 
 /** One further table level inside a cell: the table control of the host paragraph, its cell and that cell's paragraph. */
 export interface NestedCell {
@@ -225,6 +225,7 @@ export class RhwpText {
   private charShapeBaseline: number | null;
   private publishingCharShapes: number | null = null;
   private readonly originalCharShapeCount: number | null;
+  private readonly originalFontCounts: readonly number[] | null;
   private publishedPrefix: CharShapePrefix | null = null;
   private publishingPrefix: CharShapePrefix | null = null;
   private caretPageHint = 0;
@@ -235,6 +236,7 @@ export class RhwpText {
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
     this.originalCharShapeCount = this.charShapeBaseline;
+    this.originalFontCounts = documentFontTable(doc)?.languages.map(slot => slot.fonts.length) ?? null;
     if (this.charShapeBaseline !== null && doc.reconcileCharShapePrefix && doc.captureCharShapePrefix) {
       const prefix = doc.captureCharShapePrefix();
       if (!prefix || typeof prefix.free !== "function") throw new Error("char shape prefix response invalid");
@@ -256,7 +258,8 @@ export class RhwpText {
       || count < this.charShapeBaseline || this.doc.charShapeCount?.() !== count
       || exported.charShapeCount?.() !== count)
       throw new Error("publication character shape identity unavailable");
-    const prefix = this.doc.capturePublishingCharShapePrefix(exported);
+    const prefix = this.hasFontOwnership ? this.doc.capturePublishingFontShapePrefix!(exported)
+      : this.doc.capturePublishingCharShapePrefix(exported);
     if (!prefix || typeof prefix.free !== "function") throw new Error("publication prefix response invalid");
     this.publishingPrefix = prefix;
     this.publishingCharShapes = count;
@@ -288,7 +291,9 @@ export class RhwpText {
   reconcilePublishedCharShapes(): void {
     const prefix = this.publishingPrefix ?? this.publishedPrefix;
     if (!prefix || this.originalCharShapeCount === null) return; // older engines retain strict safe refusal
-    const result = json(this.doc.reconcileCharShapePrefix!(prefix, this.originalCharShapeCount));
+    const result = json(this.doc.reconcileFontShapePrefix && this.originalFontCounts
+      ? this.doc.reconcileFontShapePrefix(prefix, this.originalCharShapeCount, JSON.stringify(this.originalFontCounts))
+      : this.doc.reconcileCharShapePrefix!(prefix, this.originalCharShapeCount));
     if (!isRecord(result) || Object.keys(result).join(",") !== "ok" || result.ok !== true)
       throw new Error("char shape reconciliation response invalid");
   }
@@ -677,6 +682,12 @@ export class RhwpText {
       || (value.skipped !== null && value.before !== value.after)) {
       throw new Error("char shape compaction response invalid");
     }
+    const prefix = this.publishingPrefix ?? this.publishedPrefix;
+    if (this.hasFontOwnership && prefix) {
+      const result = json(this.doc.compactUnpublishedFonts!(prefix));
+      if (!isRecord(result) || Object.keys(result).join(",") !== "ok" || result.ok !== true)
+        throw new Error("font compaction response invalid");
+    }
   }
 
   /** Formatting has a separate contract from clipboard extraction: native proof
@@ -736,6 +747,70 @@ export class RhwpText {
     return () => this.format(from, to, props);
   }
 
+  get hasFontOwnership(): boolean {
+    return this.hasCharShapeOwnership && !!this.originalFontCounts && !!this.doc.resolveDocumentFontFamily
+      && !!this.doc.reconcileFontShapePrefix && !!this.doc.compactUnpublishedFonts && !!this.doc.capturePublishingFontShapePrefix;
+  }
+
+  /** Read every owned run, including mixed shapes whose general flags are equal.
+   * Older generations cannot report a full selection and fail closed. */
+  private selectedFontShapes(from: DocPosition, to: DocPosition) {
+    if (!this.formatSelection(from, to)) return null;
+    const table = documentFontTable(this.doc);
+    if (!table) return null;
+    const shapes = new Set<number>(), families = new Set<string>();
+    let runCount = 0;
+    try {
+      for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
+        const at = withParagraph(from, p, 0), c = from.cell;
+        const start = p === paragraphOf(from) ? from.offset : 0;
+        const end = p === paragraphOf(to) ? to.offset : this.paragraphLength(at);
+        if (start === end) continue;
+        const range = this.textRange({ ...at, offset: start }, end - start);
+        const raw = c?.nested
+          ? this.doc.getFormattingRunsByPath!(from.section, c.parentParagraph, pathJson(c, p), range.start, range.end)
+          : this.doc.getFormattingRuns!(from.section, c ? c.parentParagraph : p, c?.control ?? NO_CELL,
+            c?.cell ?? 0, c ? p : 0, range.start, range.end);
+        const value = json(raw);
+        if (!isRecord(value) || value.length !== range.length || !Array.isArray(value.fontRuns)) return null;
+        let next = range.start;
+        for (const run of value.fontRuns) {
+          if (++runCount > 65_536 || !Array.isArray(run) || run.length !== 4 || !run.every(isIndex)
+            || run[0] !== next || run[1]! <= next || run[1]! > range.end || !table.charShapes[run[2]!] || run[3]! > 6) return null;
+          next = run[1]!; shapes.add(run[2]!);
+          const lang = run[3]!, id = table.charShapes[run[2]!]!.fontIds[lang]!;
+          families.add(table.languages[lang]!.fonts[id]!.definition.name);
+        }
+        if (next !== range.end) return null;
+      }
+      return shapes.size ? { table, shapes, families } : null;
+    } catch { return null; }
+  }
+
+  /** Inspect the actual language slot in every selected scalar run. The stored
+   * family is independent of rendering fallback; null family means mixed. */
+  selectionFont(from: DocPosition, to: DocPosition): { family: string | null } | null {
+    const selected = this.selectedFontShapes(from, to);
+    if (!selected) return null;
+    return { family: selected.families.size === 1 ? selected.families.values().next().value! : null };
+  }
+
+  prepareFont(from: DocPosition, to: DocPosition, family: string): (() => void) | "unchanged" | null {
+    if (!this.hasFontOwnership) return null;
+    const selected = this.selectedFontShapes(from, to);
+    if (!selected) return null;
+    const existing = resolveExistingFontIds(selected.table, family);
+    if (existing && [...selected.shapes].every(id => selected.table.charShapes[id]!.fontIds.every((v, lang) => v === existing[lang])))
+      return "unchanged";
+    return () => {
+      const raw = json(this.doc.resolveDocumentFontFamily!(family));
+      const table = documentFontTable(this.doc), ids = table && resolveExistingFontIds(table, family);
+      if (!ids || !Array.isArray(raw) || raw.length !== 7 || raw.some((id, lang) => id !== ids[lang]))
+        throw new Error("document font resolution refused");
+      this.format(from, to, JSON.stringify({ fontIds: ids }));
+    };
+  }
+
   /** Document-owned IDs/face definitions for the actual selected character, in all seven language slots.
    * Read-only: an inventory is never sufficient evidence for a save or a mutation. */
   fontReferences(at: DocPosition) {
@@ -753,7 +828,8 @@ export class RhwpText {
       const shape = table.charShapes[value.charShapeId];
       if (!shape) return null;
       const faces = shape.fontIds.map((id, lang) => table.languages[lang]!.fonts[id]!);
-      return { charShapeId: shape.id, fontIds: shape.fontIds, faces };
+      const languageIndex = isIndex(value.languageIndex) && value.languageIndex < 7 ? value.languageIndex : null;
+      return { charShapeId: shape.id, fontIds: shape.fontIds, faces, languageIndex };
     } catch { return null; }
   }
 

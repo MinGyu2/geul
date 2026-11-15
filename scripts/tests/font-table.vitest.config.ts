@@ -7,6 +7,6 @@ export default defineConfig({
   root: fileURLToPath(new URL("../..", import.meta.url)),
   test: {
     environment: "jsdom",
-    include: ["scripts/tests/document-font-table.wasm.test.ts"],
+    include: ["scripts/tests/document-font-table.wasm.test.ts", "scripts/tests/font-editing.wasm.test.ts"],
   },
 });
