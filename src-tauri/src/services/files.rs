@@ -285,7 +285,7 @@ pub async fn pdf_export_dialog(
 }
 
 #[cfg(target_os = "linux")]
-async fn native_file_dialog(
+pub(crate) async fn native_file_dialog(
     window: tauri::WebviewWindow,
     mode: String,
     format: Option<String>,
@@ -319,6 +319,8 @@ async fn native_file_dialog(
         Some("docx") => vec!["docx"],
         Some("pdf") if mode == "save" => vec!["pdf"],
         Some("image") if mode == "open" => vec!["png", "jpg", "jpeg"],
+        // Stage 5-A user font registration (fonts::commands::font_register). TTC/OTC stay accepted.
+        Some("font") if mode == "open" => vec!["ttf", "otf", "woff", "woff2", "ttc", "otc"],
         None if mode == "open" => vec!["hwp", "hwpx", "docx"],
         _ => return Err(DocumentError::InvalidRequest),
     };

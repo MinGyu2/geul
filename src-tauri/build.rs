@@ -56,6 +56,11 @@ fn main() {
         "document_export_pdf",
         "pdf_release_overwrite_grant",
         "docx_export_pdf",
+        "font_catalog",
+        "font_refresh",
+        "font_register",
+        "font_remove",
+        "font_user_face",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

@@ -9,6 +9,7 @@
 pub mod adapters;
 mod clipboard;
 pub mod document;
+pub mod fonts;
 mod ime;
 mod picture;
 pub mod services;
@@ -47,6 +48,10 @@ pub fn run() {
                     })
                     .ok();
             }
+            // Stage 5-A: install the system font provider (fontconfig, loaded at run time) into the shared
+            // font database and load user fonts from the private app-data `fonts` folder, before any document
+            // can be laid out. Without fontconfig only bundled and user fonts are cataloged.
+            fonts::init(data.as_ref().map(|p| p.join("fonts")));
             let root = data.map(|p| p.join("recovery")).unwrap_or_default();
             app.manage(std::sync::Arc::new(services::recovery::RecoveryStore::new(
                 root,
@@ -91,6 +96,11 @@ pub fn run() {
             services::pdf::document_export_pdf,
             services::pdf::pdf_release_overwrite_grant,
             adapters::wordcraft::commands::docx_export_pdf,
+            fonts::commands::font_catalog,
+            fonts::commands::font_refresh,
+            fonts::commands::font_register,
+            fonts::commands::font_remove,
+            fonts::commands::font_user_face,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션을 시작하지 못했습니다");

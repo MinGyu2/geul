@@ -45,6 +45,12 @@ krilla = { version = "=0.8.2", features = ["pdf"] }
 # T008 W-A: DOCX 문서 모델·렌더를 백엔드가 가진다(editor-surface-decision.md). 업스트림 소스는 고치지 않고 고정한
 # submodule(external/wordcraft, v0.7.0)을 path 의존성으로 링크한다. 그래서 이 크레이트를 빌드하려면 그 submodule이 필요하다.
 wordcraft-engine = { path = "../external/wordcraft/crates/engine" }
+# Stage 5-A font package (src/fonts/): the same process-wide WordCraft font database the engine lays out,
+# renders and embeds with (already in the graph through wordcraft-engine; no crate added).
+wordcraft-fonts = { path = "../external/wordcraft/crates/fonts" }
+# Stage 5-A: fontconfig is loaded at run time (src/fonts/fontconfig.rs) so geul starts where it is not
+# installed. Exact version already locked through Tauri's Linux tree (libappindicator-sys).
+libloading = "=0.7.4"
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 # wry가 끈 WebView IME preedit을 되돌린다(src/ime.rs). tauri가 이미 쓰는 판이며 기능만 명시한다.
