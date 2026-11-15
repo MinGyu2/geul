@@ -215,3 +215,10 @@ T021 `6c0356e6ed51f52e60414717ce4439876762f63b` → T022 `3cd35663b98caa736b81c1
 ## RHWP 일반 글자 서식 단계 1–4 — 2026-11-12
 
 HWP/HWPX 네 가지 선택 서식의 production code path, 저장 보존, history/IME 경계와 focused 증거를 [RHWP 일반 글자 서식](../architecture/rhwp-general-formatting.md)에 기록했다. 이 작업은 full Stage 5 integration acceptance 및 Stage 6 native final acceptance를 완료하지 않으며 그 단계들을 계획 완료로 표시하지 않는다.
+
+## Stage 5-A 글꼴 아키텍처 (2026-11-15)
+
+- 단일 글꼴 DB: WordCraft `FontDb::global()`. geul `src-tauri/src/fonts`가 `SystemFontProvider`(fontconfig, `libloading` 실행 시 적재)를 WordCraft `SystemFontSource`(로컬 엔진 커밋 `6931bcc`)로 설치한다. 카탈로그·DOCX 레이아웃·화면·PDF가 같은 얼굴을 쓴다.
+- 사용자 글꼴은 WordCraft `install_font`/`load_user_fonts`(앱 `app_local_data_dir()/fonts`). RHWP WebView에는 등록된 사용자 얼굴만 `FontFace` 바이트로 전달한다(경로·CSP 변경 없음).
+- 명령: `format.font`(WordCraft 지원, RHWP unsupported — HWP `derived_char_shape`와 HWPX 헤더 덧붙임 규칙이 글꼴 ID 변경·새 글꼴 이름을 받지 않음). 후속은 읽기 전용 글꼴 표 API와 저장 증명 확장(별도 T009 변경).
+- 검증 전략: 단위(Rust·Vitest) + NixOS native(`scripts/tests/native-font-acceptance.py`) + geul 코드를 쓰지 않는 독립 DOCX/PDF 검사(`scripts/tests/font-acceptance-inspect.mjs`). 세부: [글꼴 시스템](../architecture/font-system.md).

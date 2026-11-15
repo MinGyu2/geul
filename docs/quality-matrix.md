@@ -26,7 +26,7 @@
 | 13 | 보존·안전 거부 | IV | IV | IV | REUSED PASS | T009 보존 판정, Stage 3/4 거부 경로 | — |
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
-| 16 | 글꼴·글꼴 누락 | **GAP**(아래) | IV | IV | CURRENT FAIL(이 호스트 DOCX) / CURRENT PASS(사적 HOME에 한글 글꼴) | 2절 | 3절 |
+| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | 표시만(글꼴 변경 unsupported) | 표시만(글꼴 변경 unsupported) | CURRENT PASS(2026-11-15 글꼴 패키지, NixOS native run10 + 독립 검사) / 이전 CURRENT FAIL은 이력 | [글꼴 시스템](architecture/font-system.md) 6절 | HWP/HWPX 글꼴 변경, Windows/macOS DEFERRED |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 
@@ -36,6 +36,7 @@
 |---|---|---|---|---|
 | DOCX 한글 글꼴 | 이 NixOS 호스트에서 DOCX 편집 화면과 PDF 모두 한글이 .notdef(네모)로 보임. PDF에는 Source Sans 3 부분 글꼴만 들어감 | WordCraft `FontDb::global()`이 `/usr/share/fonts`·`/usr/local/share/fonts`·`~/.fonts`·`~/.local/share/fonts`만 훑는다(`external/wordcraft/crates/fonts/src/fontdb.rs` `system_font_dirs`). 이 호스트의 한글 글꼴은 fontconfig/Nix store에만 있다 | GAP (기존 동작, PDF 결함 아님: PDF가 화면과 같다) | fontconfig 경로 등록 또는 번들 한글 글꼴 결정(DOCX 레이아웃이 바뀌므로 별도 승인·회귀 필요). 표준 배포판(/usr/share/fonts에 한글 글꼴)에서는 NOT RUN |
 | 같은 실행을 사적 HOME(`~/.local/share/fonts/NanumGothic.ttf`, 시험 소유)으로 | DOCX 화면·PDF 한글 정상, PDF에 `NanumGothic` 부분 글꼴과 ToUnicode(한글 매핑) 포함 | — | CURRENT PASS | — |
+| **해결(2026-11-15 글꼴 패키지)** — 위 두 행은 이력 | WordCraft FontDb가 fontconfig 제공자(실행 시 적재)의 파일 목록으로 시스템 글꼴을 카탈로그한다. 이 호스트 기본 환경에서 시스템 얼굴 137개, DOCX 선택 글꼴 NanumMyeongjo가 화면·배치·PDF(`OUCARL+NanumMyeongjo`, 한글 ToUnicode, `.notdef` 0)에 쓰임 | 폴더 고정 순회 → fontconfig 설정 | CURRENT PASS | Windows/macOS·다른 배포판 DEFERRED, [글꼴 시스템](architecture/font-system.md) |
 | 외부 작성 DOCX 표본 | 로컬에 Word 작성 DOCX corpus 없음. PDF 시험 DOCX는 표준 라이브러리로 만든 OOXML(`rich-ko.docx`) | — | GAP / EXT | 외부 표본 확보는 S5-2와 함께 |
 
 ## 3. PDF 출력 수용 (S5-4)
@@ -107,4 +108,15 @@ T009 전체, T010 D1–D5, native 50/50·56/56, Stage 2 그림/수식/깊은 표
 
 ## 6. 남은 T015 의무
 
-외부 작성 DOCX/HWP corpus 확대, 글꼴 탐색 GAP 해결, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014). 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
+외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), HWP/HWPX 글꼴 변경 저장 증명, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014). 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
+
+## 7. Stage 5-A 글꼴 패키지 (2026-11-15)
+
+| 구분 | 내용 |
+|---|---|
+| IMPLEMENTED | 공유 카탈로그(시스템·사용자·번들), fontconfig 실행 시 적재 제공자(경로 하드코딩 없음, 없으면 unavailable 보고), TTF/OTF/WOFF/WOFF2 등록·앱 전용 저장·재적재·제거, 리본 글꼴 선택기(한/영), DOCX `format.font`·배치·저장·PDF, RHWP 글꼴 표시·사용자 글꼴 WebView 전달 |
+| CURRENT PASS | Rust 글꼴/DOCX 15, WordCraft fonts 51, 프런트엔드 새 시험 18(+영향 시험), native run10(등록 2·DOCX 2·HWP/HWPX 거부 2·재시작·재열기·제거), 독립 DOCX/PDF 검사 — 명령과 결과는 [글꼴 시스템 6절](architecture/font-system.md#6-검증-2026-11-15-nixos-2605-linux-7214-fontconfig-2183-webkitgtk-2541) |
+| REUSED PASS | PDF 게시 안전, T009, IME, Stage 2–4 (코드 경로 불변) |
+| NOT RUN / UNVERIFIED | 가변 CJK 대체 얼굴의 시각 굵기, RHWP Canvas 사용자 글꼴 픽셀 비교, 글꼴 선택기 native 키보드 전체 탐색 |
+| 미구현 | HWP/HWPX 글꼴 변경(저장 증명이 글꼴 ID·새 글꼴 이름을 받지 않음 — 명시적 거부) |
+| DEFERRED | Windows/macOS 빌드·설치·실행, 다른 Linux 배포판, fontconfig 배포 의존성 |

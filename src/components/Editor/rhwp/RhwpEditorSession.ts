@@ -2157,15 +2157,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private fontCache: { key: string; value: { family: string | null } | null } | null = null;
 
-  /** Stage 5-A (display only): the stored font name at the selection start — the Hangul and Latin names when they agree,
-   * otherwise "mixed". Font changes stay unsupported for HWP/HWPX (registry). */
+  /** Stage 5-A (display only): the stored font name at the selection start — the Hangul slot's font, the representative
+   * font Hangul word processors show (RHWP's own `fontFamily`). Font changes stay unsupported for HWP/HWPX (registry). */
   private fontState(): { family: string | null } | null {
     if (!this.doc || !this.text || this.status.kind !== "ready") return null;
     const [from] = this.hasSelection ? this.ordered() : [this.caret];
     const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}`;
     if (this.fontCache?.key !== key) {
       const families = this.text.fontFamilies(from);
-      const value = families ? { family: families[0] === families[1] ? families[0]! : null } : null;
+      const value = families ? { family: families[0]! } : null;
       this.fontCache = { key, value };
     }
     return this.fontCache.value;

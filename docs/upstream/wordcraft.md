@@ -111,6 +111,8 @@ Cargo 워크스페이스, `edition = "2024"`, `rust-version = "1.90"`, 모든 �
   무손실 근거로 쓰면 안 된다(T009 저장 판단). 시험: `adapters::wordcraft::tests::본문_xml이_끊긴_docx도_wordcraft는_끊긴_곳까지_읽어_연다`.
 - 글꼴: `FontDb::global()`은 정해진 폴더(Linux `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`, `~/.local/share/fonts`)만
   찾고 fontconfig를 쓰지 않는다. NixOS처럼 그 폴더가 없으면 한글이 빈 상자로 그려진다(편집 모델은 정상).
+  - 2026-11-15 Stage 5-A: 로컬 엔진 커밋 `6931bcc`(`geul/stage5a-font-source`, 부모 `dc25d8a`)가 `SystemFontSource`/`FontDb::set_system_font_source`를
+    더했다. geul은 fontconfig 제공자를 설치하므로 위 폴더 순회를 쓰지 않는다. 소스가 없으면 위 동작 그대로다. [글꼴 시스템](../architecture/font-system.md).
 - 성능(이 환경, 1쪽 픽스처): 릴리스 빌드에서 배치 1 ms 미만, 100% 쪽 래스터 약 3 ms + PNG 약 4 ms, 200% 약 13 ms. 최적화 없는
   디버그 빌드는 키 입력 하나에 수백 ms라 `src-tauri`의 개발 프로필이 의존성을 최적화한다.
 

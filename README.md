@@ -48,8 +48,9 @@ git submodule status
 Rust 백엔드는 WordCraft(DOCX, T008)를 path 의존성으로 링크하므로 빌드에 `external/wordcraft` submodule이 필요합니다
 (`git submodule update --init --depth 1 external/wordcraft`). rhwp(HWP/HWPX)는 WebView에서 WASM으로 불러오며
 (`scripts/build-rhwp-wasm.sh`, T007) 그 산출물이 없으면 HWP/HWPX 편집만 실패로 표시됩니다.
-WordCraft는 정해진 글꼴 폴더(`/usr/share/fonts`, `~/.fonts`, `~/.local/share/fonts` 등)만 찾습니다. 글꼴이 fontconfig로만
-있는 시스템(NixOS 등)에서는 한글이 빈 상자로 그려질 수 있습니다(시험 방법은 `tests/integration/wordcraft/wordcraft_poc.py`).
+시스템 글꼴은 fontconfig 설정으로 찾습니다(실행 시 `libfontconfig`를 적재, 없으면 기본 제공·사용자 글꼴만 사용). 사용자 글꼴(TTF·OTF·WOFF·WOFF2)은
+리본의 글꼴 선택기에서 추가하며 앱 전용 데이터 폴더에 저장됩니다. HWP/HWPX의 글꼴 변경은 아직 지원하지 않습니다
+([글꼴 시스템](docs/architecture/font-system.md), Windows/macOS 동작은 미검증).
 
 Rust 백엔드 검사와 Tauri `build`는 Linux bubblewrap 보호 래퍼를 사용하며, 초기화된
 모든 `external/` submodule을 읽기 전용으로 둡니다. Rust 백엔드 명령은 WordCraft를
