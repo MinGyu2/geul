@@ -105,6 +105,27 @@ pub(super) fn validate_node(
     Ok(())
 }
 
+/// Enumerate all references through the authoritative AST, including inactive IF branches.
+/// Return (column, row); bounded by validate_node's shared 4096 visit budget.
+pub fn formula_references(formula: &str, ctx: &TableContext) -> Result<Vec<(usize, usize)>, String> {
+    let ast = parse_formula(formula).ok_or("수식 파싱 실패")?;
+    let mut visits = 0;
+    validate_node(&ast, ctx, &mut visits)?;
+    let mut nodes = vec![&ast];
+    let mut out = std::collections::BTreeSet::new();
+    while let Some(node) = nodes.pop() {
+        match node {
+            FormulaNode::CellRef { col, row } => { out.insert(resolve_cell_ref(col, *row, ctx)?); }
+            FormulaNode::Range { .. } | FormulaNode::Direction(_) => { out.extend(collect_cells(node, ctx)?); }
+            FormulaNode::Negate(inner) => nodes.push(inner),
+            FormulaNode::BinOp { left, right, .. } => nodes.extend([left.as_ref(), right.as_ref()]),
+            FormulaNode::FuncCall { args, .. } => nodes.extend(args),
+            FormulaNode::Number(_) => {}
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
 fn eval_node(node: &FormulaNode, ctx: &TableContext, get_cell: CellValueFn) -> Result<f64, String> {
     match node {
         FormulaNode::Number(n) => Ok(*n),

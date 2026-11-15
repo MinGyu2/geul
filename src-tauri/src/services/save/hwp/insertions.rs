@@ -169,6 +169,7 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             let mut owners: Vec<(u16, Vec<u8>)> = Vec::new();
             let mut counters = BTreeMap::<Vec<(u16, Vec<u8>)>, usize>::new();
             let mut control_counters = BTreeMap::<Vec<(u16, Vec<u8>)>, usize>::new();
+            let mut paragraph_text_hashes = BTreeMap::new();
             for &(tag, level, payload) in &rs {
                 let depth = level * 3
                     + match tag {
@@ -180,6 +181,10 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
                     while owners.last().is_some_and(|(l, _)| *l >= depth) {
                         owners.pop();
                     }
+                }
+                if tag == 67 {
+                    use sha2::{Digest, Sha256};
+                    paragraph_text_hashes.insert(level, <[u8; 32]>::from(Sha256::digest(payload)));
                 }
                 let control_index = if tag == 71 {
                     let index = control_counters.entry(owners.clone()).or_default();
@@ -225,7 +230,13 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
                     field_owner.push((depth, (control_index as u64).to_le_bytes().to_vec()));
                     inventory.insert(
                         field.id,
-                        (name.clone(), field_owner, level, payload.to_vec()),
+                        (
+                            name.clone(),
+                            field_owner,
+                            level,
+                            payload.to_vec(),
+                            paragraph_text_hashes.get(&level).copied(),
+                        ),
                     );
                 } else if tag == 71 {
                     let identity = if payload.starts_with(b" lbt") {
@@ -238,8 +249,8 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             }
         }
     }
-    for (id, (name, owner, level, bytes)) in &original {
-        let Some((new_name, new_owner, new_level, new_bytes)) = output.get(id) else {
+    for (id, (name, owner, level, bytes, _)) in &original {
+        let Some((new_name, new_owner, new_level, new_bytes, _)) = output.get(id) else {
             preserved(structural, name)?; // structural cell deletion must be independently proven by evolved_table
             continue;
         };
@@ -259,7 +270,7 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
         .map(|(id, _)| *id)
         .collect();
     for id in &changed {
-        let (_, _, level, bytes) = &output[id];
+        let (_, _, level, bytes, _) = &output[id];
         let record = [(71, *level, bytes.as_slice())];
         let field =
             Field::of(&record).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
@@ -274,11 +285,16 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
             )?;
         }
     }
-    // Only command changes require evaluation; relocation of an unchanged legacy
-    // field must not subject its historical Hancom command to the canonical writer subset.
+    // Re-evaluate command OR owning paragraph text changes. Relocation alone
+    // retains the legacy preservation contract; reachable operands still prove
+    // their own cache through dependency validation.
     let rewritten: BTreeSet<_> = changed
         .into_iter()
-        .filter(|id| original.get(id).is_none_or(|a| a.3 != output[id].3))
+        .filter(|id| {
+            original
+                .get(id)
+                .is_none_or(|a| a.3 != output[id].3 || a.4 != output[id].4)
+        })
         .collect();
     if rewritten.is_empty() {
         return Ok(());
@@ -300,7 +316,122 @@ pub(super) fn field_preservation(a: &Container, b: &Container, structural: bool)
     Ok(())
 }
 
+/// Exact direct-paragraph control slots and nonoverlapping field spans. Each BEGIN
+/// consumes the next CTRL_HEADER; END closes that very control, never a guessed ID.
+fn formula_spans(rs: &[Record<'_>], level: u16) -> Checked<BTreeMap<usize, (String, bool)>> {
+    let controls: Vec<_> = rs.iter().filter(|r| r.0 == 71 && r.1 == level).collect();
+    let texts: Vec<_> = rs.iter().filter(|r| r.0 == 67 && r.1 == level).collect();
+    valid(texts.len() == 1, BODY)?;
+    let text = texts[0].2;
+    valid(text.len() % 2 == 0 && text.ends_with(b"\r\0"), BODY)?;
+    let mut at = 0;
+    let mut ci = 0;
+    let mut open: Option<(usize, usize, usize)> = None;
+    let mut spans = BTreeMap::new();
+    while at < text.len() / 2 {
+        let ch = word(text, at * 2)?;
+        if matches!(ch, 2 | 3 | 11) {
+            valid(
+                at + 8 <= text.len() / 2 && word(text, (at + 7) * 2)? == ch,
+                BODY,
+            )?;
+            let control = controls
+                .get(ci)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            valid(text.get(at * 2 + 2..at * 2 + 6) == control.2.get(..4), BODY)?;
+            if ch == 3 {
+                valid(open.is_none(), BODY)?; // nested/overlapping fields are outside this schema
+                let field = Field::of(std::slice::from_ref(*control))
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+                open = Some((field.id, ci, at));
+            } else {
+                valid(open.is_none(), BODY)?;
+            }
+            ci += 1;
+            at += 8;
+        } else if ch == 4 {
+            valid(
+                at + 8 <= text.len() / 2 && word(text, (at + 7) * 2)? == 4,
+                BODY,
+            )?;
+            let (id, control, start) = open
+                .take()
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            // HWP permits an all-zero END payload as well as the typed RHWP marker.
+            let payload = text
+                .get(at * 2 + 2..at * 2 + 14)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            valid(
+                payload.iter().all(|v| *v == 0)
+                    || (payload.get(..4) == controls[control].2.get(..4)
+                        && payload[4..].iter().all(|v| *v == 0)),
+                BODY,
+            )?;
+            let units = text[(start + 8) * 2..at * 2]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|u| u16::from_le_bytes(*u))
+                .collect::<Vec<_>>();
+            valid(units.iter().all(|u| *u >= 32), BODY)?;
+            let value = String::from_utf16(&units)
+                .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?;
+            let full = start == 0 && at + 9 == text.len() / 2 && controls.len() == 1;
+            valid(spans.insert(id, (value, full)).is_none(), BODY)?;
+            at += 8;
+        } else if matches!(ch,1..=9 | 12 | 14..=23) {
+            valid(
+                open.is_none() && at + 8 <= text.len() / 2 && word(text, (at + 7) * 2)? == ch,
+                BODY,
+            )?;
+            at += 8;
+        } else {
+            at += 1;
+        }
+    }
+    valid(open.is_none() && ci == controls.len(), BODY)?;
+    Ok(spans)
+}
+
+fn first_paragraph<'a, 'b>(rs: &'a [Record<'b>], level: u16) -> &'a [Record<'b>] {
+    let end = rs
+        .iter()
+        .skip(1)
+        .position(|r| r.0 == 66 && r.1 == level)
+        .map_or(rs.len(), |i| i + 1);
+    &rs[..end]
+}
+
 fn cell_number(rs: &[Record<'_>], level: u16) -> Option<f64> {
+    let first = first_paragraph(rs, level - 1);
+    if rs[first.len()..]
+        .iter()
+        .any(|r| r.0 == 71 && r.1 == level && r.2.starts_with(b"umf%"))
+    {
+        return None;
+    }
+    let rs = first;
+    if rs
+        .iter()
+        .any(|r| r.0 == 71 && r.1 == level && Field::of(std::slice::from_ref(r)).is_some())
+    {
+        let spans = formula_spans(rs, level).ok()?;
+        if spans.len() != 1 {
+            return None;
+        }
+        let (id, (_, full)) = spans.first_key_value()?;
+        if !full {
+            return None;
+        }
+        if !rs.iter().any(|r| {
+            r.0 == 71
+                && r.1 == level
+                && Field::of(std::slice::from_ref(r))
+                    .is_some_and(|f| f.id == *id && f.ctrl == b"umf%")
+        }) {
+            return None;
+        }
+    }
     let mut units = Vec::new();
     for &(_, _, text) in rs.iter().filter(|r| r.0 == 67 && r.1 == level).take(1) {
         let mut at = 0;
@@ -327,6 +458,19 @@ fn cell_number(rs: &[Record<'_>], level: u16) -> Option<f64> {
         .parse::<f64>()
         .ok()
         .filter(|v| v.is_finite())
+}
+
+fn formula_cache_text(value: f64, format: &str) -> Option<String> {
+    if format == "%g" {
+        evaluator::format_formula_g(value)
+    } else if format.len() == 4 && format.starts_with("%.") && format.ends_with('f') {
+        format[2..3]
+            .parse::<usize>()
+            .ok()
+            .map(|n| format!("{:.*}", n, value))
+    } else {
+        None
+    }
 }
 
 fn validate_formula_tables(
@@ -379,47 +523,35 @@ fn validate_formula_tables(
         }
         validate_formula_dependencies(&cells, rows, cols, level, changed)?;
         for (geo, records) in &cells {
-            for field_record in records
+            for (field_index, field_record) in records
                 .iter()
-                .filter(|r| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+                .enumerate()
+                .filter(|(_, r)| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
             {
                 let field = Field::of(std::slice::from_ref(field_record))
                     .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
                 if !changed.contains(&field.id) {
                     continue;
                 }
-                valid(field.canonical_formula(), BODY)?;
                 let command = String::from_utf16(&field.command)
                     .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?;
-                let (expression, cache) = command.split_once("??%g,;;").unwrap();
-                let first_end = records
+                let (expression, suffix) = command
+                    .split_once("??")
+                    .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
+                let (format, cache) = suffix
+                    .split_once(",;;")
+                    .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
+                // Find the exact owning paragraph (including nonzero paragraph indices).
+                let start = records[..field_index]
                     .iter()
-                    .skip(1)
-                    .position(|r| r.0 == 66 && r.1 == level)
-                    .map_or(records.len(), |i| i + 1);
-                let first = &records[..first_end];
+                    .rposition(|r| r.0 == 66 && r.1 == level)
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+                let paragraph = first_paragraph(&records[start..], level);
+                let spans = formula_spans(paragraph, level + 1)?;
                 valid(
-                    first
-                        .iter()
-                        .filter(|r| r.0 == 71 && r.1 == level + 1)
-                        .count()
-                        == 1
-                        && first.iter().any(|r| std::ptr::eq(r, field_record)),
-                    BODY,
-                )?;
-                let text = first
-                    .iter()
-                    .find(|r| r.0 == 67 && r.1 == level + 1)
-                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?
-                    .2;
-                let cache_bytes: Vec<_> = cache.encode_utf16().flat_map(u16::to_le_bytes).collect();
-                valid(
-                    text.len() == 34 + cache_bytes.len()
-                        && word(text, 0)? == 3
-                        && text.get(2..6) == Some(b"umf%")
-                        && text.get(16..16 + cache_bytes.len()) == Some(cache_bytes.as_slice())
-                        && word(text, 16 + cache_bytes.len())? == 4
-                        && text.ends_with(b"\r\0"),
+                    spans
+                        .get(&field.id)
+                        .is_some_and(|(value, _)| value == cache),
                     BODY,
                 )?;
                 let ctx = evaluator::TableContext {
@@ -436,7 +568,7 @@ fn validate_formula_tables(
                 })
                 .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?;
                 valid(
-                    evaluator::format_formula_g(value).as_deref() == Some(cache),
+                    formula_cache_text(value, format).as_deref() == Some(cache),
                     BODY,
                 )?;
                 checked.insert(field.id);
@@ -459,104 +591,114 @@ fn validate_formula_dependencies(
     level: u16,
     changed: &BTreeSet<usize>,
 ) -> Checked<()> {
-    type Coordinate = (usize, usize); // row, column
-    let mut formulas = BTreeMap::<Coordinate, Option<String>>::new();
-    let mut roots = Vec::new();
+    let mut formulas = BTreeMap::new();
+    let mut operands = BTreeMap::<(usize, usize), Option<usize>>::new();
     for (geo, records) in cells {
-        let end = records
+        let first = first_paragraph(records, level);
+        let direct: Vec<_> = first
             .iter()
-            .skip(1)
-            .position(|r| r.0 == 66 && r.1 == level)
-            .map_or(records.len(), |i| i + 1);
-        let fields: Vec<_> = records[..end]
-            .iter()
-            .filter(|r| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+            .filter(|r| r.0 == 71 && r.1 == level + 1)
             .filter_map(|r| Field::of(std::slice::from_ref(r)))
             .collect();
-        if fields.is_empty() {
-            continue;
+        if !direct.is_empty() {
+            let spans = formula_spans(first, level + 1)?;
+            let sole = if direct.len() == 1
+                && direct[0].ctrl == b"umf%"
+                && spans.get(&direct[0].id).is_some_and(|(_, full)| *full)
+            {
+                Some(direct[0].id)
+            } else {
+                None
+            };
+            operands.insert((geo.row, geo.col), sole);
         }
-        let coordinate = (geo.row, geo.col);
-        if fields.iter().any(|f| changed.contains(&f.id)) {
-            roots.push(coordinate);
+        if records[first.len()..]
+            .iter()
+            .any(|r| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+        {
+            operands.insert((geo.row, geo.col), None);
         }
-        let expression = match fields.as_slice() {
-            [field] => String::from_utf16(&field.command).ok().and_then(|command| {
-                command
-                    .split_once("??")
-                    .map(|(expression, _)| expression.to_string())
-            }),
-            _ => None, // multiple formulas in an operand paragraph are not a supported formula cell
-        };
-        crate::document::resources::charge(
-            crate::document::resources::Category::Comparison,
-            expression.as_ref().map_or(0, String::len) + 64,
-        )
-        .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
-        formulas.insert(coordinate, expression);
+        for (record_index, r) in records
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.0 == 71 && r.1 == level + 1 && r.2.starts_with(b"umf%"))
+        {
+            let field = Field::of(std::slice::from_ref(r))
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            let command = String::from_utf16(&field.command)
+                .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?;
+            let start = records[..record_index]
+                .iter()
+                .rposition(|r| r.0 == 66 && r.1 == level)
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+            let paragraph = first_paragraph(&records[start..], level);
+            reference(
+                formulas
+                    .insert(field.id, ((geo.row, geo.col), command, paragraph))
+                    .is_none(),
+                BODY,
+            )?;
+        }
     }
-    let dependencies = |at: Coordinate| -> Checked<Vec<Coordinate>> {
-        let expression = formulas[&at]
-            .as_ref()
+    let dependencies = |id: usize| -> Checked<Vec<usize>> {
+        let (at, command, paragraph) = &formulas[&id];
+        let (expression, suffix) = command
+            .split_once("??")
             .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
-        let ast = parser::parse_formula(expression)
+        let (format, cache) = suffix
+            .split_once(",;;")
             .ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?;
+        // Every reached operand proves its own display and cache, even when its
+        // control bytes survived unchanged from the original document.
+        valid(
+            formula_spans(paragraph, level + 1)?
+                .get(&id)
+                .is_some_and(|(v, _)| v == cache),
+            BODY,
+        )?;
         let ctx = evaluator::TableContext {
             row_count: rows,
             col_count: cols,
             current_row: at.0,
             current_col: at.1,
         };
-        let mut visits = 0;
-        evaluator::validate_node(&ast, &ctx, &mut visits)
+        let edges = evaluator::formula_references(expression, &ctx)
             .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?;
+        let value = evaluator::evaluate_formula(expression, &ctx, &|col, row| {
+            cells
+                .iter()
+                .find(|(g, _)| g.row == row && g.col == col)
+                .and_then(|(_, rs)| cell_number(rs, level + 1))
+        })
+        .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?;
+        valid(
+            formula_cache_text(value, format).as_deref() == Some(cache),
+            BODY,
+        )?;
         crate::document::resources::charge(
             crate::document::resources::Category::Comparison,
-            visits.saturating_mul(std::mem::size_of::<Coordinate>()) + 64,
+            edges.len() * 32 + 64,
         )
         .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
-        let mut nodes = vec![&ast];
-        let mut targets = BTreeSet::new();
-        while let Some(node) = nodes.pop() {
-            let coordinates = match node {
-                parser::FormulaNode::CellRef { col, row } => {
-                    vec![evaluator::resolve_cell_ref(col, *row, &ctx)
-                        .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?]
-                }
-                parser::FormulaNode::Range { .. } | parser::FormulaNode::Direction(_) => {
-                    evaluator::collect_cells(node, &ctx)
-                        .map_err(|_| finding(FindingCode::ReferenceInvalid, BODY))?
-                }
-                parser::FormulaNode::Negate(inner) => {
-                    nodes.push(inner);
-                    Vec::new()
-                }
-                parser::FormulaNode::BinOp { left, right, .. } => {
-                    nodes.extend([left.as_ref(), right.as_ref()]);
-                    Vec::new()
-                }
-                parser::FormulaNode::FuncCall { args, .. } => {
-                    nodes.extend(args);
-                    Vec::new()
-                }
-                parser::FormulaNode::Number(_) => Vec::new(),
-            };
-            targets.extend(
-                coordinates
-                    .into_iter()
-                    .map(|(col, row)| (row, col))
-                    .filter(|coordinate| formulas.contains_key(coordinate)),
-            );
+        let mut targets = Vec::new();
+        for (col, row) in edges {
+            reference(
+                (row, col) != *at && cells.iter().any(|(g, _)| g.row == row && g.col == col),
+                BODY,
+            )?;
+            if let Some(operand) = operands.get(&(row, col)) {
+                targets.push(operand.ok_or_else(|| finding(FindingCode::ReferenceInvalid, BODY))?);
+            }
         }
-        Ok(targets.into_iter().collect())
+        Ok(targets)
     };
     let mut state = BTreeMap::new();
-    for root in roots {
-        if state.get(&root) == Some(&2) {
+    for root in changed.iter().filter(|id| formulas.contains_key(id)) {
+        if state.get(root) == Some(&2) {
             continue;
         }
-        state.insert(root, 1);
-        let mut stack = vec![(root, dependencies(root)?, 0)];
+        state.insert(*root, 1);
+        let mut stack = vec![(*root, dependencies(*root)?, 0)];
         while let Some((at, edges, next)) = stack.last_mut() {
             if *next == edges.len() {
                 state.insert(*at, 2);
@@ -856,7 +998,10 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     // Instance-ID accounting over every table/picture control at any depth: original identities must be
     // unique, new objects must not reuse any original identity (`validate_table_at` inserts into this set),
     // and the output (checked after the loop) holds each identity at most once.
-    let mut used = Used { image_dimensions: resources.dimensions.clone(), ..Used::default() };
+    let mut used = Used {
+        image_dimensions: resources.dimensions.clone(),
+        ..Used::default()
+    };
     let mut table_ids = BTreeSet::new();
     let mut output_ids = BTreeSet::new();
     let mut output_fields = BTreeSet::new();
@@ -2782,7 +2927,13 @@ fn new_child(
     if object[0].2.starts_with(b" osg") {
         let id = dword(object[0].2, 36)?;
         reference(id != 0 && ids.insert(id), BODY)?;
-        return validate_picture(object, level, defs, &used.image_dimensions, &mut used.pictures);
+        return validate_picture(
+            object,
+            level,
+            defs,
+            &used.image_dimensions,
+            &mut used.pictures,
+        );
     }
     let field = Field::of(object).ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
     // Pinned RHWP formula field (table-formula-field.patch): attributes 0, extra 0x08, id + 4 zero bytes.
@@ -3168,7 +3319,8 @@ fn validate_picture(
 ) -> Checked<()> {
     valid(
         rs.len() == 3
-            && rs[0].1 == level && level <= MAX_TABLE_LEVEL + 2
+            && rs[0].1 == level
+            && level <= MAX_TABLE_LEVEL + 2
             && rs[1].0 == 76
             && rs[1].1 == level + 1
             && rs[2].0 == 85
@@ -3179,8 +3331,14 @@ fn validate_picture(
     valid(h.len() >= 46, BODY)?;
     preserved(dword(h, 4)? == 0x000a0311, BODY)?;
     valid(
-        dword(h, 8)? == 0 && dword(h, 12)? == 0
-            && (if level == 1 { dword(h, 36)? == 0 } else { dword(h, 36)? != 0 }) && dword(h, 40)? == 0,
+        dword(h, 8)? == 0
+            && dword(h, 12)? == 0
+            && (if level == 1 {
+                dword(h, 36)? == 0
+            } else {
+                dword(h, 36)? != 0
+            })
+            && dword(h, 40)? == 0,
         BODY,
     )?;
     let n = word(h, 44)?;
@@ -3301,6 +3459,59 @@ pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inline_formula_slots_bind_controls_ranges_and_values() {
+        fn header(id: u32) -> Vec<u8> {
+            let command = "=1??%g,;;1".encode_utf16().collect::<Vec<_>>();
+            let mut out = b"umf%".to_vec();
+            out.extend_from_slice(&0u32.to_le_bytes());
+            out.push(8);
+            out.extend_from_slice(&(command.len() as u16).to_le_bytes());
+            out.extend(command.into_iter().flat_map(u16::to_le_bytes));
+            out.extend_from_slice(&id.to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes());
+            out
+        }
+        fn marker(ch: u16) -> Vec<u8> {
+            let mut out = ch.to_le_bytes().to_vec();
+            out.extend_from_slice(b"umf%");
+            out.extend_from_slice(&[0; 8]);
+            out.extend_from_slice(&ch.to_le_bytes());
+            out
+        }
+        let (a, b) = (header(10), header(11));
+        let mut text = "Prefix: "
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        text.extend(marker(3));
+        text.extend_from_slice(b"1\0");
+        text.extend(marker(4));
+        text.extend_from_slice(b" \0");
+        text.extend(marker(3));
+        text.extend_from_slice(b"1\0");
+        text.extend(marker(4));
+        text.extend_from_slice(b"\r\0");
+        let records = |text| vec![(67, 3, text), (71, 3, a.as_slice()), (71, 3, b.as_slice())];
+        assert_eq!(
+            formula_spans(&records(&text), 3).unwrap(),
+            BTreeMap::from([(10, ("1".into(), false)), (11, ("1".into(), false))])
+        );
+        // A swapped marker/header, missing end, overlap or duplicate ID is not a count-based proof.
+        let mut bad = text.clone();
+        bad[18..22].copy_from_slice(b"klc%");
+        assert!(formula_spans(&records(&bad), 3).is_err());
+        let mut bad = text.clone();
+        bad[34..36].copy_from_slice(&3u16.to_le_bytes());
+        assert!(formula_spans(&records(&bad), 3).is_err());
+        let duplicated = vec![
+            (67, 3, text.as_slice()),
+            (71, 3, a.as_slice()),
+            (71, 3, a.as_slice()),
+        ];
+        assert!(formula_spans(&duplicated, 3).is_err());
+    }
+
     #[test]
     fn instance_ids_are_unique_at_every_depth() {
         let header = |id: u32| {

@@ -1,3 +1,4 @@
+import { paragraphFieldMap } from "./fieldOwnership";
 import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipboard";
 // rhwp 문서 위치와 본문·표 셀 API 선택(T007).
 //
@@ -83,13 +84,14 @@ export interface PageRect {
   height: number;
 }
 
-export interface FormulaFieldResult { changed: boolean; fieldId: number; text: string; command: string }
+export interface FormulaFieldResult { changed: boolean; fieldId: number; text: string; command: string; controlIndex: number; start: number; end: number }
 function formulaFieldResult(value: unknown, formula: string): FormulaFieldResult {
-  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "changed,command,fieldId,ok,text"
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "changed,command,controlIndex,end,fieldId,ok,start,text"
+    || !isIndex(value.controlIndex) || !isIndex(value.start) || !isIndex(value.end) || value.end < value.start
     || value.ok !== true || typeof value.changed !== "boolean" || !isIndex(value.fieldId)
     || value.fieldId === 0 || value.fieldId > 0xffffffff || typeof value.text !== "string" || !Number.isFinite(Number(value.text))
     || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.text) || value.command !== `${formula.trim()}??%g,;;${value.text}`) throw new Error("formula field response invalid");
-  return { changed: value.changed, fieldId: value.fieldId, text: value.text, command: value.command as string };
+  return { changed: value.changed, fieldId: value.fieldId, text: value.text, command: value.command as string, controlIndex: value.controlIndex, start: value.start, end: value.end };
 }
 
 type Fields = Record<string, unknown>;
@@ -384,6 +386,14 @@ export class RhwpText {
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
         const at = withParagraph(from, p, p === paragraphOf(from) ? from.offset : 0);
+        if (at.cell) {
+          const ranges = this.formulaInventory(at).filter(f => f.fieldType === "formula");
+          if (ranges.length && paragraphOf(from) !== paragraphOf(to)) return false;
+          const start = p === paragraphOf(from) ? from.offset : 0;
+          const end = p === paragraphOf(to) ? to.offset : this.paragraphLength(at);
+          if (ranges.some(f => !isIndex(f.startCharIdx) || !isIndex(f.endCharIdx)
+            || (start < f.endCharIdx && end > f.startCharIdx))) return false;
+        }
         if (!this.inlineCell({ ...at, offset: 0 })) continue;
         // The legacy paragraph join API has no proven inline-control ownership contract.
         if (paragraphOf(from) !== paragraphOf(to)) return false;
@@ -558,6 +568,13 @@ export class RhwpText {
       const result = parts.join("\n");
       return result || null;
     } catch { return null; }
+  }
+
+  canInsertText(at: DocPosition): boolean {
+    if (!at.cell) return true;
+    try { return !this.formulaInventory(at).some(f => f.fieldType === "formula" && isIndex(f.startCharIdx)
+      && isIndex(f.endCharIdx) && f.startCharIdx < at.offset && at.offset < f.endCharIdx); }
+    catch { return false; }
   }
 
   insert(at: DocPosition, text: string): void {
@@ -786,51 +803,87 @@ export class RhwpText {
     }
   }
 
-  /** Exact cell ownership at every path level; unfamiliar fields are never interpreted or rewritten. */
+  /** Complete paragraph field inventory, resolved through every explicit cell path entry. */
+  private formulaInventory(at: DocPosition): Fields[] {
+    if (!at.cell || !this.doc.getFieldList) throw new Error("formula inventory unavailable");
+    const fields: unknown = json(this.doc.getFieldList());
+    if (!Array.isArray(fields) || fields.length > 4096 || !fields.every(isRecord)) throw new Error("formula inventory invalid");
+    const cell = at.cell, levels = [cell, ...(cell.nested ?? [])];
+    return fields.filter(field => {
+      if (!isRecord(field.location) || !Array.isArray(field.location.path)) return false;
+      const location = field.location, path = location.path as unknown[];
+      return location.sectionIndex === at.section && location.paraIndex === cell.parentParagraph && path.length === levels.length
+        && levels.every((level, i) => {
+          const part = path[i];
+          return isRecord(part) && part.type === "cell" && part.controlIndex === level.control && part.cellIndex === level.cell
+            && part.paraIndex === level.cellParagraph;
+        });
+    });
+  }
+
+  private formulaTarget(at: DocPosition): Fields | null {
+    const offset = this.inlineCell(at)?.textOffset ?? at.offset;
+    const fields = this.formulaInventory(at);
+    const length = this.paragraphLength(at);
+    const matches = fields.filter(f => f.fieldType === "formula" && isIndex(f.startCharIdx) && isIndex(f.endCharIdx)
+      && ((f.startCharIdx <= offset && offset < f.endCharIdx)
+        || (fields.length === 1 && f.startCharIdx === 0 && f.endCharIdx === length && offset === length)));
+    if (matches.length > 1) throw new Error("ambiguous formula target");
+    return matches[0] ?? null;
+  }
+
   existingFormula(at: DocPosition): string | null {
-    const cell = at.cell;
-    if (!cell || !this.doc.getFieldList) return null;
-    if (cell.nested && !this.doc.validateTableFormulaFieldByPath) return null;
-    try {
-      const fields: unknown = json(this.doc.getFieldList());
-      if (!Array.isArray(fields)) return null;
-      const levels = [cell, ...(cell.nested ?? [])];
-      const matches = fields.filter((field: unknown) => {
-        if (!isRecord(field) || !isRecord(field.location) || !Array.isArray(field.location.path)) return false;
-        const location = field.location, path = location.path as unknown[];
-        return location.sectionIndex === at.section && location.paraIndex === cell.parentParagraph && path.length === levels.length
-          && levels.every((level, i) => {
-            const part = path[i];
-            return isRecord(part) && part.type === "cell" && part.controlIndex === level.control && part.cellIndex === level.cell
-              && part.paraIndex === level.cellParagraph;
-          });
-      });
-      if (matches.length !== 1) return null;
-      const field: unknown = matches[0];
-      if (!isRecord(field) || field.fieldType !== "formula" || typeof field.command !== "string") return null;
-      const match = cachedFormula(field.command);
-      return match && match.value === field.value && Number.isFinite(Number(match.value)) ? match.expression : null;
+    try { const field = this.formulaTarget(at), cache = cachedFormula(field?.command);
+      return cache && cache.value === field?.value ? cache.expression : null;
     } catch { return null; }
   }
 
-  /** Read-only engine preparation. A normal refusal opens no history transaction. */
-  prepareFormula(at: DocPosition, row: number, col: number, formula: string): FormulaFieldResult | null {
+  /** Read-only preparation, before opening history. ID zero always means insertion. */
+  prepareFormula(at: DocPosition, _row: number, _col: number, formula: string): FormulaFieldResult | null {
     const c = at.cell;
-    if (!c || (c.nested ? !this.doc.validateTableFormulaFieldByPath || !this.doc.insertTableFormulaFieldByPath
-      : !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField)) return null;
-    if (tableFormulaSafety(this.doc, at, formula) !== "safe") return null;
-    const value = json(c.nested ? this.doc.validateTableFormulaFieldByPath!(at.section, c.parentParagraph, pathJson(c), row, col, formula)
-      : this.doc.validateTableFormulaField!(at.section, c.parentParagraph, c.control, row, col, formula));
+    if (!c || !this.doc.validateTableFormulaAt || !this.doc.insertTableFormulaAt) return null;
+    const field = this.formulaTarget(at), id = field?.fieldId ?? 0;
+    if (!isIndex(id) || tableFormulaSafety(this.doc, at, formula, id) !== "safe") return null;
+    const offset = this.inlineCell(at)?.textOffset ?? at.offset;
+    const value = json(this.doc.validateTableFormulaAt(at.section, c.parentParagraph, pathJson(c), offset, id, formula));
     if (isRecord(value) && Object.keys(value).join(",") === "ok" && value.ok === false) return null;
-    return formulaFieldResult(value, formula);
+    const result = formulaFieldResult(value, formula);
+    if (id !== 0 && result.fieldId !== id) throw new Error("formula target changed");
+    return result;
   }
 
-  insertFormula(at: DocPosition, row: number, col: number, formula: string, expected: FormulaFieldResult): void {
+  insertFormula(at: DocPosition, _row: number, _col: number, formula: string, expected: FormulaFieldResult): void {
     const c = at.cell;
-    if (!c || (c.nested ? !this.doc.insertTableFormulaFieldByPath : !this.doc.insertTableFormulaField)) throw new Error("formula field unavailable");
-    const value = formulaFieldResult(json(c.nested ? this.doc.insertTableFormulaFieldByPath!(at.section, c.parentParagraph, pathJson(c), row, col, formula)
-      : this.doc.insertTableFormulaField!(at.section, c.parentParagraph, c.control, row, col, formula)), formula);
+    if (!c || !this.doc.insertTableFormulaAt) throw new Error("formula field unavailable");
+    const before = this.formulaInventory(at), target = this.formulaTarget(at), id = target?.fieldId ?? 0;
+    if (!isIndex(id)) throw new Error("formula identity invalid");
+    const offset = this.inlineCell(at)?.textOffset ?? at.offset;
+    const oldText = this.text({ ...at, offset: 0 }, this.paragraphLength(at));
+    const value = formulaFieldResult(json(this.doc.insertTableFormulaAt(at.section, c.parentParagraph, pathJson(c), offset, id, formula)), formula);
     if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("formula preparation changed");
+    const after = this.formulaInventory(at), edited = after.filter(f => f.fieldId === value.fieldId);
+    if (!this.doc.getControls || !after.length) throw new Error("formula controls unavailable");
+    const controls: unknown = json(this.doc.getControls());
+    if (!Array.isArray(controls) || !controls.every(isRecord) || !isIndex(after[0]!.listId) || !isIndex(after[0]!.paraInList))
+      throw new Error("formula controls invalid");
+    if (paragraphFieldMap(controls, after, after[0]!.listId, after[0]!.paraInList).size !== after.length)
+      throw new Error("formula control range differs");
+    if (after.length !== before.length + (id === 0 ? 1 : 0) || edited.length !== 1
+      || edited[0]!.controlIndex !== value.controlIndex || edited[0]!.startCharIdx !== value.start || edited[0]!.endCharIdx !== value.end
+      || edited[0]!.command !== value.command || edited[0]!.value !== value.text) throw new Error("formula inventory differs");
+    const start = target?.startCharIdx ?? offset, end = target?.endCharIdx ?? offset;
+    if (!isIndex(start) || !isIndex(end)) throw new Error("formula range invalid");
+    const chars = Array.from(oldText), updated = [...chars.slice(0, start), ...value.text, ...chars.slice(end)].join("");
+    if (this.text({ ...at, offset: 0 }, this.paragraphLength(at)) !== updated) throw new Error("neighboring formula text changed");
+    const delta = Array.from(value.text).length - (end - start);
+    for (const f of before.filter(f => f.fieldId !== id)) {
+      const found = after.find(g => g.fieldId === f.fieldId);
+      if (!found || !isIndex(f.startCharIdx) || !isIndex(f.endCharIdx) || !isIndex(f.controlIndex)) throw new Error("lost formula neighbor");
+      const shift = f.startCharIdx >= end ? delta : 0;
+      if (found.command !== f.command || found.value !== f.value || found.startCharIdx !== f.startCharIdx + shift
+        || found.endCharIdx !== f.endCharIdx + shift || found.controlIndex !== f.controlIndex + (id === 0 && f.controlIndex >= value.controlIndex ? 1 : 0)
+        || JSON.stringify(found.location) !== JSON.stringify(f.location)) throw new Error("formula neighbor changed");
+    }
   }
 
   /**

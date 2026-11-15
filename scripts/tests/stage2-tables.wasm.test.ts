@@ -42,7 +42,7 @@ function exported(d: RhwpDocument, format: "hwp" | "hwpx") {
 }
 /** Text of a deep fixture's innermost cell: numbered words, so dropped or duplicated page fragments are detectable. */
 const DEEP_WORDS = Array.from({ length: 1000 }, (_, i) => `w${i}`).join(" ");
-function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS) {
+function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS, inlineFormulas = false) {
   const d = engine.HwpDocument.createEmpty() as Doc;
   try {
     d.createBlankDocument();
@@ -90,12 +90,19 @@ function fixture(format: "hwp" | "hwpx", emptyWrapper = false, nestedGuard = fal
       d.insertTextInCellByPath!(0, t.paraIdx, JSON.stringify([...host,
         { controlIndex: child.controlIdx, cellIndex: 0, cellParaIndex: 0 }]), 0, "guard");
     }
+    if (inlineFormulas) {
+      const path = JSON.stringify([{ controlIndex: t.controlIdx, cellIndex: 5, cellParaIndex: 0 }]);
+      if (format === "hwpx") expect(JSON.parse(d.insertTableFormulaAt!(0, t.paraIdx, path, 0, 0, "=SUM(A1:A2)")).ok).toBe(true);
+      d.insertTextInCell(0, t.paraIdx, t.controlIdx, 5, 0, 0, "Sum😀: ");
+      d.insertTextInCell(0, t.paraIdx, t.controlIdx, 5, 0, 7, ", Double:  won");
+      expect(JSON.parse(d.insertTableFormulaAt!(0, t.paraIdx, path, 17, 0, "=A1*2")).ok).toBe(true);
+    }
     return exported(d, format).bytes;
   } finally { d.free(); }
 }
 async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, nestedGuard = false, rich = false, multiFields = false, deep = 0, rowWords = DEEP_WORDS,
-  sessionOptions: { history?: boolean; format?: boolean } = {}) {
-  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords), { backend, take, calls } = controlledBackend();
+  sessionOptions: { history?: boolean; format?: boolean; inlineFormulas?: boolean } = {}) {
+  const original = fixture(format, emptyWrapper, nestedGuard, rich, multiFields, deep, rowWords, sessionOptions.inlineFormulas), { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend), opening = sessions.open(`/stage2.${format}`);
   take("open").reply(ok({ ...base, format })); await opening;
   let doc!: Doc;
@@ -1056,6 +1063,178 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
     } finally { editor.dispose(); }
   });
 
+  for (const format of ["hwp", "hwpx"] as const) it(`inline formulas ${format}: exact second replacement, text, dependencies, structure, history and save`, async () => {
+    const c = await open(format, false, false, true, false, 0, DEEP_WORDS, { inlineFormulas: true });
+    const { editor, doc, at, place, run, settle, save } = c;
+    type Formula = { fieldId: number; command: string; value: string; startCharIdx: number; endCharIdx: number; controlIndex: number; controlPos: number; location: unknown };
+    const fields = (d: RhwpDocument = doc) => (JSON.parse(d.getFieldList!()) as (Formula & { fieldType: string })[]).filter(f => f.fieldType === "formula");
+    const target = { ...withCell(at, 5), offset: 17 };
+    const text = () => new RhwpText(doc).text({ ...target, offset: 0 }, new RhwpText(doc).paragraphLength(target));
+    try {
+      const initial = fields();
+      expect(initial).toHaveLength(2);
+      expect(new Set(initial.map(f => f.fieldId)).size).toBe(2);
+      expect(initial.map(f => [f.startCharIdx, f.endCharIdx, f.controlIndex])).toEqual([[6, 7, 0], [17, 18, 1]]);
+      expect(text()).toBe("Sum😀: 3, Double: 2 won");
+      place(target);
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=A1*30" });
+      expect(fields()[0]).toEqual(initial[0]);
+      expect(fields()[1]).toMatchObject({ fieldId: initial[1]!.fieldId, command: "=A1*30??%g,;;30", value: "30" });
+      expect(editor.caret.offset).toBe(19);
+      await run("edit.undo"); expect(fields()).toEqual(initial);
+      await run("edit.redo"); expect(text()).toBe("Sum😀: 3, Double: 30 won");
+      // Replacing the first partial SUM field also leaves the second formula exact.
+      const second = fields()[1]; place({ ...target, offset: 6 });
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=A1*3" });
+      expect(fields()[0]!.fieldId).toBe(initial[0]!.fieldId); expect(fields()[1]).toEqual(second);
+      expect(text()).toBe("Sum😀: 3, Double: 30 won");
+      // Ordinary text at both field boundaries is outside the formula, with stable ID.
+      place({ ...target, offset: 6 }); expect(editor.typeText("prefix ")).toBe(true); await settle();
+      place({ ...target, offset: new RhwpText(doc).paragraphLength(target) }); expect(editor.typeText(" suffix")).toBe(true); await settle();
+      expect(fields().map(f => f.fieldId)).toEqual(initial.map(f => f.fieldId));
+      const textBeforeDelete = doc.getTextFileText(), fieldsBeforeDelete = fields();
+      place({ ...target, offset: 6 }); editor.anchor = { ...editor.caret, offset: 13 }; // ordinary prefix only
+      expect(editor.deleteForward()).toBe(true); await settle();
+      expect(text()).toBe("Sum😀: 3, Double: 30 won suffix");
+      expect(fields().map(f => f.fieldId)).toEqual(initial.map(f => f.fieldId));
+      await run("edit.undo"); expect(fields()).toEqual(fieldsBeforeDelete); expect(doc.getTextFileText()).toBe(textBeforeDelete);
+      await run("edit.redo"); expect(text()).toBe("Sum😀: 3, Double: 30 won suffix");
+      await run("edit.undo");
+      place({ ...target, offset: fields()[0]!.endCharIdx });
+      expect(editor.moveHorizontal(1, false)).toBe(true); expect(editor.caret.offset).toBe(fields()[0]!.endCharIdx + 1);
+      expect(editor.moveHorizontal(-1, false)).toBe(true); expect(editor.caret.offset).toBe(fields()[0]!.endCharIdx);
+      const readonly = { revision: editor.snapshot().revision, history: editor.snapshot().history, dirty: editor.hasUnpreservedChanges, text: doc.getTextFileText(), fields: fields() };
+      expect(editor.execute("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=A1+A2" }).accepted).toBe(true);
+      expect({ revision: editor.snapshot().revision, history: editor.snapshot().history, dirty: editor.hasUnpreservedChanges, text: doc.getTextFileText(), fields: fields() }).toEqual(readonly);
+      const before = doc.getTextFileText(), inventory = fields();
+      // Unsupported formula-result deletion is an ordinary refusal, never uncertainty.
+      place({ ...target, offset: inventory[0]!.startCharIdx });
+      editor.anchor = { ...editor.caret, offset: inventory[0]!.endCharIdx };
+      expect(editor.deleteForward()).toBe(false);
+      expect(editor.snapshot().editable).toBe(true); expect(editor.hasUncertainChanges).toBe(false); expect(fields()).toEqual(inventory);
+      place({ ...target, offset: inventory[1]!.startCharIdx + 1 });
+      expect(editor.typeText("X")).toBe(false); expect(editor.enter()).toBe(false);
+      editor.beginComposition(); expect(editor.snapshot().composing).toBeFalsy();
+      expect(fields()).toEqual(inventory);
+      // Direct self-reference through an inactive IF branch is also refused atomically.
+      place({ ...target, offset: inventory[1]!.startCharIdx });
+      expect(editor.execute("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=IF(1,2,B3)" }).accepted).toBe(false);
+      expect(doc.getTextFileText()).toBe(before); expect(fields()).toEqual(inventory);
+      // Another cell must not treat mixed text/formulas as an arbitrary numeric operand.
+      place(withCell(at, 4));
+      expect(editor.execute("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=B3+1" }).accepted).toBe(false);
+      place(withCell(at, 0)); await run("table.insertRowAbove");
+      expect(fields().map(f => [f.fieldId, f.command])).toEqual([[initial[0]!.fieldId,"=A2*3??%g,;;3"],[initial[1]!.fieldId,"=A2*30??%g,;;30"]]);
+      // Insert before existing fields, shifting their control slots without changing identity.
+      place(withCell(at, 7));
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=4+1" });
+      expect(fields()).toHaveLength(3);
+      expect(fields().map(f => f.controlIndex)).toEqual([0,1,2]);
+      expect(fields().slice(1).map(f => f.fieldId)).toEqual(initial.map(f => f.fieldId));
+      expect(new Set(fields().map(f => f.fieldId)).size).toBe(3);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try { expect(fields(reopened)).toEqual(fields()); expect(reopened.getTextFileText()).toBe(doc.getTextFileText()); } finally { reopened.free(); }
+      const movedTarget = withCell(at, 7), textModel = new RhwpText(doc);
+      const expectedText = textModel.text(movedTarget, textModel.paragraphLength(movedTarget));
+      const rendered: string[] = [];
+      const walk = (v: unknown): void => {
+        if (Array.isArray(v)) { v.forEach(walk); return; }
+        if (!v || typeof v !== "object") return;
+        const n = v as Record<string, unknown>;
+        if (n.type === "TextRun" && typeof n.text === "string") rendered.push(n.text);
+        Object.values(n).forEach(walk);
+      };
+      for (let page = 0; page < doc.pageCount(); page++) walk(JSON.parse(doc.getPageRenderTree(page)));
+      expect(rendered.join("")).toContain(expectedText);
+      for (const offset of [0, ...fields().flatMap(f => [f.startCharIdx,f.endCharIdx]), textModel.paragraphLength(movedTarget)])
+        expect(textModel.caret({ ...movedTarget, offset })).not.toBeNull();
+      const svg = doc.renderPageSvg(0);
+      // SVG emits separate visible glyphs and represents spaces by advances; render-tree text above retains all whitespace.
+      const svgText = [...svg.matchAll(/<text\b[^>]*>(.*?)<\/text>/gs)].map(m => m[1]!.replace(/<[^>]*>/g, "")).join("");
+      expect(svgText.replace(/\s/g, "")).toContain(expectedText.replace(/\s/g, ""));
+      if (format === "hwp") {
+        const evidence = join(out, "inline-formula-publication"), folder = join(evidence, "multiple-partial");
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(join(evidence, "cases.json"), JSON.stringify([{ id: "multiple-partial" }]));
+        writeFileSync(join(folder, "original.hwp"), c.original);
+        writeFileSync(join(folder, "edited.hwp"), saved.output);
+        for (const name of ["noop.hwp", "noop-loss.json"]) writeFileSync(join(folder, name), readFileSync(join(out, name)));
+        writeFileSync(join(folder, "loss.json"), JSON.stringify(saved.contentLoss));
+        writeFileSync(join(folder, "render.svg"), svg);
+        execFileSync("rsvg-convert", ["--width", "724", "--height", "1024", "--output", join(folder, "render.png"), join(folder, "render.svg")]);
+        writeFileSync(join(folder, "proof.json"), JSON.stringify({ originalSha256: createHash("sha256").update(c.original).digest("hex"),
+          editedSha256: createHash("sha256").update(saved.output).digest("hex"), reopenEqual: Object.values(saved.reopen).every(Boolean),
+          engineGeneration: build.generation, fields: fields() }));
+      }
+    } finally { editor.dispose(); }
+  });
+
+  for (const format of ["hwp", "hwpx"] as const) it(`inline formulas nested ${format}: product insertion into a later paragraph, exact ownership and history`, async () => {
+    const { editor, doc, at, place, run, settle, save } = await open(format, false, true);
+    try {
+      const child = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 1, cellParagraph: 0 }] } };
+      place(child); expect(editor.typeText("Before ")).toBe(true); await settle();
+      expect(editor.enter()).toBe(true); await settle();
+      const paragraph = editor.caret;
+      expect(paragraph.cell!.nested![0]!.cellParagraph).toBe(1);
+      expect(editor.typeText("Sum:  / Double:  won")).toBe(true); await settle();
+      place({ ...paragraph, offset: 5 });
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=10+20" });
+      place({ ...paragraph, offset: 18 });
+      await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=10*2" });
+      const fields = () => (JSON.parse(doc.getFieldList!()) as Record<string, unknown>[]).filter(f => f.fieldType === "formula");
+      expect(fields().map(f => [f.value, f.startCharIdx, f.endCharIdx])).toEqual([["30",5,7],["20",18,20]]);
+      expect(fields().every(f => (f.location as { path: { paraIndex: number }[] }).path.length === 2
+        && (f.location as { path: { paraIndex: number }[] }).path[1]!.paraIndex === 1)).toBe(true);
+      expect(new RhwpText(doc).text({ ...paragraph, offset: 0 }, 25)).toBe("Sum: 30 / Double: 20 won");
+      const inserted = fields();
+      await run("edit.undo"); expect(fields()).toHaveLength(1);
+      await run("edit.redo"); expect(fields()).toEqual(inserted);
+      // A later-paragraph formula cell is mixed too; neither product nor native may read paragraph zero as an arbitrary operand.
+      const other = withCell(child,0), beforeReference = doc.getFieldList!(); place(other);
+      expect(editor.execute("hangul.insertTableFormula", { command:"hangul.insertTableFormula",formula:"=B1" }).accepted).toBe(false);
+      expect(JSON.parse(doc.validateTableFormulaAt!(0,at.paragraph,pathJson(other.cell!),0,0,"=B1"))).toEqual({ ok:false });
+      expect(doc.getFieldList!()).toBe(beforeReference);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try { expect(JSON.parse(reopened.getFieldList!())).toEqual(JSON.parse(doc.getFieldList!())); } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("inline formulas preserve ClickHere neighbors and refuse an ambiguous empty-field boundary before mutation", () => {
+    const doc = new engine.HwpDocument(fixture("hwp", true)) as Doc;
+    try {
+      const t = JSON.parse(doc.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      const path = JSON.stringify([{ controlIndex: t.controlIndex, cellIndex: 0, cellParaIndex: 0 }]);
+      const api = doc as unknown as Record<string, (...a: unknown[]) => string>;
+      const click = JSON.parse(api.insertClickHereFieldInCell!(0,t.para,t.controlIndex,0,0,0,false,"guide","","",true));
+      const state = () => [doc.getFieldList!(),doc.getControls!(),doc.getTextFileText()];
+      const before = state();
+      expect(JSON.parse(doc.validateTableFormulaAt!(0,t.para,path,0,0,"=1"))).toEqual({ ok:false });
+      let rejected = false;
+      try { doc.insertTableFormulaAt!(0,t.para,path,0,0,"=1"); } catch (error) { rejected=true; expect(error).not.toBeInstanceOf(WebAssembly.RuntimeError); }
+      expect(rejected).toBe(true); expect(state()).toEqual(before);
+      api.setFieldValue!(click.fieldId,"memo");
+      const neighbor = JSON.parse(doc.getFieldList!())[0];
+      const originals = { hwp:exported(doc,"hwp").bytes, hwpx:exported(doc,"hwpx").bytes };
+      const inserted = JSON.parse(doc.insertTableFormulaAt!(0,t.para,path,4,0,"=1+1"));
+      expect(inserted).toMatchObject({ ok:true, start:4,end:5,controlIndex:1,text:"2" });
+      expect(JSON.parse(doc.getFieldList!())[0]).toEqual(neighbor);
+      expect(inserted.fieldId).not.toBe(click.fieldId);
+      for (const format of ["hwp","hwpx"] as const) {
+        const output=exported(doc,format), verdict=check(format,"saved",originals[format],output.bytes,output.loss,true);
+        expect(verdict.findings.every(f=>f.code==="previewStale"),JSON.stringify(verdict)).toBe(true);
+        if (format==="hwpx") expect(verdict.outcome).toBe("safe");
+        const reopened=new engine.HwpDocument(output.bytes) as Doc;
+        try { expect(JSON.parse(reopened.getFieldList!())).toEqual(JSON.parse(doc.getFieldList!())); expect(reopened.getTextFileText()).toBe(doc.getTextFileText()); }
+        finally { reopened.free(); }
+      }
+    } finally { doc.free(); }
+  });
+
   it("HWP field-only replacement uses real T009 and persists identity/cache", async () => {
     const { editor, doc, at, place, run, save } = await open("hwp");
     try {
@@ -1063,6 +1242,7 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
       place(withCell(at, 0));
       await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=1+2" });
       const id = fields().find(f => f.fieldType === "formula")!.fieldId;
+      place(withCell(at, 0)); // Exact field-start affinity; the old ordinary cell text is retained.
       await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=SUM(B?:B?)+6" });
       const saved = await save();
       expect(saved.publishable, JSON.stringify(saved)).toBe(true);
@@ -1133,7 +1313,7 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
       await run("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula: "=SUM(A1:A2)" });
       const before = doc.getTextFileText(), fields = doc.getFieldList!();
       // The engine answers like a successful replacement (same response shape) but leaves the field unchanged.
-      doc.insertTableFormulaField = (...args) => doc.validateTableFormulaField!(...args);
+      doc.insertTableFormulaAt = (...args) => doc.validateTableFormulaAt!(...args);
       place(withCell(at, 0));
       expect(documentCommandState("table.insertRowAbove", editor.snapshot()).available).toBe(true);
       expect(editor.execute("table.insertRowAbove").accepted).toBe(false);

@@ -1,0 +1,495 @@
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -3675,6 +3675,7 @@
+         target_col: usize,
+         formula: &str,
+     ) -> Result<(f64, Option<usize>), HwpError> {
++        Self::validate_formula_references(table, target_row, target_col, formula)?;
+         let row_count = table.row_count as usize;
+         let col_count = table.col_count as usize;
+ 
+@@ -3687,8 +3688,7 @@
+             cells
+                 .iter()
+                 .find(|cell| cell.row as usize == row && cell.col as usize == col)
+-                .and_then(|cell| cell.paragraphs.first())
+-                .and_then(|p| parse_cell_number(&p.text))
++                .and_then(Self::formula_operand_cell_number)
+         };
+         let target_cell_idx = cells
+             .iter()
+@@ -3704,6 +3704,80 @@
+         let result = crate::document_core::table_calc::evaluate_formula(formula, &ctx, &get_cell)
+             .map_err(|e| HwpError::RenderError(format!("계산식 오류: {}", e)))?;
+         Ok((result, target_cell_idx))
++    }
++
++    /// Ordinary first-paragraph numbers and sole full-paragraph formulas retain their
++    /// existing value semantics. A partial/multiple/other field never supplies a number.
++    fn formula_operand_number(p: &crate::model::paragraph::Paragraph) -> Option<f64> {
++        if !p.field_ranges.is_empty() || p.controls.iter().any(|c| matches!(c, Control::Field(_))) {
++            let [range] = p.field_ranges.as_slice() else { return None };
++            if p.controls.len() != 1 || range.control_idx != 0 || range.start_char_idx != 0
++                || range.end_char_idx != p.text.chars().count()
++                || !matches!(p.controls.first(), Some(Control::Field(f)) if f.field_type == crate::model::control::FieldType::Formula) {
++                return None;
++            }
++        }
++        parse_cell_number(&p.text)
++    }
++
++    fn formula_operand_cell_number(cell: &crate::model::table::Cell) -> Option<f64> {
++        // A formula in a later paragraph makes the cell a mixed formula operand,
++        // even when paragraph zero alone happens to parse as a number.
++        if cell.paragraphs.iter().skip(1).any(|p|p.controls.iter().any(|c|
++            matches!(c,Control::Field(f) if f.field_type==crate::model::control::FieldType::Formula))) { return None; }
++        cell.paragraphs.first().and_then(Self::formula_operand_number)
++    }
++
++    /// Validate the entire dependency closure using real ownership and the parser's AST.
++    /// Multiple inline fields are independent roots; referenced cells must be unambiguous.
++    pub(crate) fn validate_formula_references(table: &crate::model::table::Table,
++        row: usize, col: usize, formula: &str) -> Result<(), HwpError> {
++        use crate::document_core::table_calc::{formula_references, TableContext};
++        let error = || HwpError::InvalidField("계산식 참조/순환 또는 모호한 셀 값".into());
++        let refs = |r, c, f: &str| formula_references(f, &TableContext {
++            row_count: table.row_count as usize, col_count: table.col_count as usize,
++            current_row: r, current_col: c,
++        }).map_err(|_| error());
++        let mut colors = std::collections::HashMap::new();
++        colors.insert((col, row), 1u8);
++        let mut stack = vec![((col,row), refs(row,col,formula)?, 0usize)];
++        let mut budget = stack[0].1.len();
++        while let Some((_, edges, next)) = stack.last_mut() {
++            if *next == edges.len() {
++                let (key,_,_) = stack.pop().unwrap(); colors.insert(key,2); continue;
++            }
++            let key = edges[*next]; *next += 1;
++            if colors.get(&key) == Some(&1) { return Err(error()); }
++            if colors.get(&key) == Some(&2) { continue; }
++            let cell = table.cells.iter().find(|c| (c.col as usize,c.row as usize)==key).ok_or_else(error)?;
++            if cell.paragraphs.iter().skip(1).any(|p|p.controls.iter().any(|c|
++                matches!(c,Control::Field(f) if f.field_type==crate::model::control::FieldType::Formula))) { return Err(error()); }
++            let p = cell.paragraphs.first().ok_or_else(error)?;
++            // Plain nonnumeric cells keep the evaluator's established empty/zero semantics.
++            // A field-bearing operand, however, must have one established numeric value.
++            if !p.field_ranges.is_empty() || p.controls.iter().any(|c| matches!(c, Control::Field(_))) {
++                Self::formula_operand_number(p).ok_or_else(error)?;
++                let Some(Control::Field(f)) = p.controls.first() else { return Err(error()) };
++                let expression = f.command.split_once("??").ok_or_else(error)?.0;
++                let edges = refs(key.1,key.0,expression)?;
++                let ctx = TableContext { row_count:table.row_count as usize,col_count:table.col_count as usize,
++                    current_row:key.1,current_col:key.0 };
++                let get = |c,r| table.cells.iter().find(|cell|cell.col as usize==c && cell.row as usize==r)
++                    .and_then(Self::formula_operand_cell_number);
++                let value = crate::document_core::table_calc::evaluate_formula(expression,&ctx,&get).map_err(|_|error())?;
++                let suffix=f.command.split_once("??").ok_or_else(error)?.1;
++                let (format,cache)=suffix.split_once(",;;").ok_or_else(error)?;
++                let expected = if format=="%g" { crate::document_core::table_calc::format_formula_g(value).ok_or_else(error)? }
++                    else if format.starts_with("%.") && format.ends_with('f') && format.len()==4 {
++                        let n=format[2..3].parse::<usize>().map_err(|_|error())?;format!("{:.*}",n,value)
++                    } else { return Err(error()) };
++                if expected!=cache || p.text!=cache { return Err(error()); }
++                budget += edges.len() + 1;
++                if budget > 4096 { return Err(error()); }
++                colors.insert(key,1); stack.push((key,edges,0));
++            } else { colors.insert(key,2); }
++        }
++        Ok(())
+     }
+ 
+     /// [geul] Read-only formula evaluation in an explicitly path-owned table.
+--- a/src/document_core/queries/field_query.rs
++++ b/src/document_core/queries/field_query.rs
+@@ -1103,6 +1103,7 @@
+         let start_idx = fr.start_char_idx;
+         let count = fr.end_char_idx.saturating_sub(start_idx);
+ 
++        let original_ranges = para.field_ranges.clone();
+         // 기존 텍스트 삭제 (char_shapes, line_segs, range_tags 등 자동 시프트)
+         if count > 0 {
+             para.delete_text_at(start_idx, count);
+@@ -1113,6 +1114,18 @@
+             para.insert_text_at(start_idx, value);
+         }
+ 
++        // A replacement owns precisely this field. Adjacent field boundaries never
++        // inherit the generic text insertion affinity at the shared boundary.
++        if original_ranges.windows(2).all(|r|r[0].end_char_idx<=r[1].start_char_idx) {
++            let delta = value.chars().count() as isize - count as isize;
++            para.field_ranges = original_ranges;
++            for (i, range) in para.field_ranges.iter_mut().enumerate() {
++                if i != field_range_index && range.start_char_idx >= fr.end_char_idx {
++                    range.start_char_idx = (range.start_char_idx as isize + delta) as usize;
++                    range.end_char_idx = (range.end_char_idx as isize + delta) as usize;
++                }
++            }
++        }
+         // field_ranges 갱신: start와 end를 명시적으로 재설정
+         let new_end = start_idx + value.chars().count();
+         let current_fr = para
+@@ -1655,7 +1668,8 @@
+                     + if fr.start_char_idx == fr.end_char_idx {
+                         guide_units(para, fr.control_idx)
+                     } else {
+-                        fr.end_char_idx - fr.start_char_idx
++                        para.text.chars().skip(fr.start_char_idx).take(fr.end_char_idx-fr.start_char_idx)
++                            .map(|c|if c=='\t' { EXTENDED_CTRL_UNITS } else { c.len_utf16() }).sum()
+                     },
+             });
+         }
+@@ -2020,7 +2034,7 @@
+     }
+ }
+ 
+-/// 탭이 스트림에서 더 차지하는 칸 수.
++/// 탭과 보조 평면 문자가 scalar보다 더 차지하는 UTF-16 유닛 수.
+ ///
+ /// 파서는 탭(`0x0009`)을 **글자 하나** `'\t'` 로 담는데 한글 스트림에서 탭은 **8칸**이다
+ /// (`parse_para_text` 의 탭 가지가 `pos += 16` 으로 넘어간다 — 16바이트 = 8 코드 유닛).
+@@ -2030,9 +2044,8 @@
+     para.text
+         .chars()
+         .take(char_idx)
+-        .filter(|c| *c == '\t')
+-        .count()
+-        * (EXTENDED_CTRL_UNITS - 1)
++        .map(|c| if c=='\t' { EXTENDED_CTRL_UNITS-1 } else { c.len_utf16()-1 })
++        .sum()
+ }
+ 
+ /// 빈 누름틀이 스트림에 담는 안내문 길이(글자 수). 안내문이 없으면 0.
+@@ -2790,6 +2803,27 @@
+     let text_chars: Vec<char> = para.text.chars().collect();
+     let text_len = text_chars.len();
+ 
++    // Explicit field-only ownership determines every BEGIN/END slot. Inferring
++    // leading controls from the first text offset puts later fields before text
++    // when inserting/replacing adjacent fields at paragraph start.
++    if para.controls.len() == para.field_ranges.len()
++        && para.controls.iter().all(|c| matches!(c, Control::Field(_)))
++        && para.field_ranges.iter().all(|r|r.start_char_idx <= r.end_char_idx && r.end_char_idx <= text_len)
++        && para.field_ranges.windows(2).all(|r|r[0].end_char_idx<=r[1].start_char_idx) {
++        let mut slots = vec![0u32; text_len+1];
++        for r in &para.field_ranges { slots[r.start_char_idx]+=8;slots[r.end_char_idx]+=8; }
++        let mut offsets = Vec::with_capacity(text_len);
++        let mut position = 0;
++        for i in 0..=text_len {
++            position += slots[i];
++            if i < text_len {
++                offsets.push(position);
++                position += if text_chars[i]=='\t' { 8 } else { text_chars[i].len_utf16() as u32 };
++            }
++        }
++        para.char_offsets=offsets;para.char_count=position+1;return;
++    }
++
+     // 원본 char_offsets에서 첫 문자 이전 컨트롤 수 추정
+     // (원본 gap / 8 = 컨트롤 수)
+     let ctrls_before_text = if !para.char_offsets.is_empty() {
+@@ -2903,6 +2937,7 @@
+             formula,
+             true,
+             None,
++            None,
+         )
+     }
+ 
+@@ -2930,6 +2965,7 @@
+             formula,
+             apply,
+             Some(path),
++            None,
+         )
+     }
+ 
+@@ -2951,7 +2987,27 @@
+             formula,
+             false,
+             None,
++            None,
+         )
++    }
++
++    /// Exact paragraph/range API. Offset is a scalar text index, never serialized marker units.
++    /// A zero ID inserts outside all fields; a nonzero ID replaces only that verified range.
++    pub fn table_formula_at_native(&mut self, section: usize, paragraph: usize,
++        path: &[(usize, usize, usize)], offset: usize, field_id: u32,
++        formula: &str, apply: bool) -> Result<String, HwpError> {
++        let &(control, cell, _) = path.last().ok_or_else(invalid_raw_slots)?;
++        // Validate the full path, including final paragraph, before evaluating.
++        self.get_cell_paragraph_mut_by_path(section, paragraph, path)?;
++        let mut ids = std::collections::HashSet::new();
++        if self.collect_all_fields().iter().any(|f|f.field.field_id==0 || !ids.insert(f.field.field_id))
++            || (field_id==0 && self.next_click_here_field_id()==u32::MAX) { return Err(invalid_raw_slots()); }
++        let table = self.resolve_table_by_path(section, paragraph, path)?;
++        let target = table.cells.get(cell).ok_or_else(invalid_raw_slots)?;
++        let (row, col) = (target.row as usize, target.col as usize);
++        Self::validate_formula_references(table, row, col, formula)?;
++        self.table_formula_field_impl(section, paragraph, control, row, col, formula,
++            apply, Some(path), Some((offset, field_id)))
+     }
+ 
+     #[allow(clippy::too_many_arguments)]
+@@ -2965,6 +3021,7 @@
+         formula: &str,
+         apply: bool,
+         path: Option<&[(usize, usize, usize)]>,
++        exact: Option<(usize, u32)>,
+     ) -> Result<String, HwpError> {
+         if formula.len() > 256 {
+             return Err(HwpError::InvalidField("계산식 길이 초과".into()));
+@@ -3009,7 +3066,11 @@
+         let field_id = self.next_click_here_field_id();
+ 
+         // 검증과 변경은 문단 사본에서 한다(실패하면 문서는 그대로).
+-        let cell_idx = if let Some(path) = path {
++        let cell_idx = if let (Some(path),Some(_)) = (path,exact) {
++            // The exact API already validated this physical owner; never resolve
++            // it again by a coordinate that could alias a malformed cell.
++            path.last().ok_or_else(invalid_raw_slots)?.1
++        } else if let Some(path) = path {
+             self.resolve_table_by_path(section_idx, parent_para_idx, path)?
+                 .cells
+                 .iter()
+@@ -3041,7 +3102,7 @@
+             let mut cell_path = path.to_vec();
+             let last = cell_path.len() - 1;
+             cell_path[last].1 = cell_idx;
+-            cell_path[last].2 = 0;
++            if exact.is_none() { cell_path[last].2 = 0; }
+             cell_path
+         });
+         let mut para = match &cell_path {
+@@ -3053,28 +3114,56 @@
+                 .clone(),
+         };
+         let text_len = para.text.chars().count();
+-        let existing = match (para.controls.as_slice(), para.field_ranges.as_slice()) {
+-            ([], []) => None,
+-            ([Control::Field(f)], [range])
+-                if f.field_type == FieldType::Formula
+-                    && range.control_idx == 0
+-                    && range.start_char_idx == 0
+-                    && range.end_char_idx == text_len =>
+-            {
+-                Some(())
+-            }
+-            _ => {
+-                return Err(HwpError::InvalidField(
+-                    "계산식 셀에 다른 컨트롤이나 필드가 있음".into(),
+-                ));
++        let existing = if let Some((offset, id)) = exact {
++            raw_slot_gaps(&para)?;
++            if offset > text_len || para.controls.iter().any(|c| !matches!(c,
++                Control::Field(f) if matches!(f.field_type, FieldType::Formula | FieldType::ClickHere))) {
++                return Err(invalid_raw_slots());
++            }
++            let mut end = 0;
++            let mut previous_control = None;
++            let mut seen = std::collections::HashSet::new();
++            for r in &para.field_ranges {
++                if r.start_char_idx < end || r.end_char_idx < r.start_char_idx || r.end_char_idx > text_len
++                    || previous_control.is_some_and(|ci|ci>=r.control_idx)
++                    || !seen.insert(r.control_idx) || !matches!(para.controls.get(r.control_idx), Some(Control::Field(_))) {
++                    return Err(invalid_raw_slots());
++                }
++                end = r.end_char_idx; previous_control=Some(r.control_idx);
++            }
++            if seen.len() != para.controls.len() { return Err(invalid_raw_slots()); }
++            if id == 0 {
++                // Boundaries are insertion positions; a strict interior needs an explicit field ID.
++                if para.field_ranges.iter().any(|r| r.start_char_idx < offset && offset < r.end_char_idx) {
++                    return Err(invalid_raw_slots());
++                }
++                None
++            } else {
++                let found: Vec<_> = para.field_ranges.iter().enumerate().filter(|(_, r)|
++                    matches!(para.controls.get(r.control_idx), Some(Control::Field(f))
++                        if f.field_type == FieldType::Formula && f.field_id == id)
++                    && r.start_char_idx <= offset && offset <= r.end_char_idx).collect();
++                if found.len() != 1 { return Err(invalid_raw_slots()); }
++                Some(found[0].0)
++            }
++        } else {
++            match (para.controls.as_slice(), para.field_ranges.as_slice()) {
++                ([], []) => None,
++                ([Control::Field(f)], [r]) if f.field_type == FieldType::Formula
++                    && r.control_idx == 0 && r.start_char_idx == 0 && r.end_char_idx == text_len => Some(0),
++                _ => return Err(invalid_raw_slots()),
+             }
+         };
+-        let unchanged = existing.is_some()
+-            && para.text == text
+-            && matches!(para.controls.first(), Some(Control::Field(f)) if f.command == command);
++        let unchanged = existing.is_some_and(|i| {
++            let r = &para.field_ranges[i];
++            para.text.chars().skip(r.start_char_idx).take(r.end_char_idx-r.start_char_idx).collect::<String>() == text
++                && matches!(para.controls.get(r.control_idx), Some(Control::Field(f)) if f.command == command)
++        });
++        let mut edited_range = existing.unwrap_or(0);
+         let field_id = match existing {
+-            Some(()) => {
+-                let Some(Control::Field(f)) = para.controls.get_mut(0) else {
++            Some(range_index) => {
++                let ci = para.field_ranges[range_index].control_idx;
++                let Some(Control::Field(f)) = para.controls.get_mut(ci) else {
+                     return Err(invalid_raw_slots());
+                 };
+                 let (properties, id) = (f.properties, f.field_id);
+@@ -3096,8 +3185,8 @@
+                         "계산식 Command 매개변수를 안전하게 바꿀 수 없음".into(),
+                     ));
+                 }
+-                Self::replace_field_text_model(&mut para, 0, &text)?;
+-                if let Some(Control::Field(f)) = para.controls.get_mut(0) {
++                Self::replace_field_text_model(&mut para, edited_range, &text)?;
++                if let Some(Control::Field(f)) = para.controls.get_mut(ci) {
+                     f.properties = properties;
+                 }
+                 id
+@@ -3110,7 +3199,7 @@
+                 {
+                     return Err(HwpError::InvalidField("계산식 필드 ID 공간 초과".into()));
+                 }
+-                if text_len > 0 {
++                if exact.is_none() && text_len > 0 {
+                     para.delete_text_at(0, text_len);
+                     rebuild_char_offsets(&mut para);
+                 }
+@@ -3133,10 +3222,15 @@
+                     guide_residue: None,
+                     hyperlink_format: None,
+                 };
+-                insert_field_control_at(&mut para, 0, 0, gaps[0].1, 0, &gaps, field)?;
+-                Self::replace_field_text_model(&mut para, 0, &text)?;
++                let start = exact.map_or(0, |t| t.0);
++                let len = para.text.chars().count();
++                let ci = gaps[..=start].iter().map(|&(a,b)| ((b-a)/8) as usize).sum::<usize>()
++                    - para.field_ranges.iter().filter(|r| r.end_char_idx <= start).count();
++                insert_field_control_at(&mut para, start, len, gaps[start].1, ci, &gaps, field)?;
++                edited_range = para.field_ranges.iter().position(|r| r.control_idx == ci).ok_or_else(invalid_raw_slots)?;
++                Self::replace_field_text_model(&mut para, edited_range, &text)?;
+                 // 한컴 저장본의 계산식 필드는 속성 0 이다(값을 채운 표시 비트 15를 남기지 않음).
+-                if let Some(Control::Field(f)) = para.controls.get_mut(0) {
++                if let Some(Control::Field(f)) = para.controls.get_mut(ci) {
+                     f.properties = 0;
+                 }
+                 field_id
+@@ -3149,14 +3243,25 @@
+             json_escape(&text),
+             json_escape(&command)
+         );
++        let response = if exact.is_some() {
++            // Prove the edited copy too. Zero-width neighboring fields can make
++            // boundary affinity ambiguous; never publish a success-shaped bad model.
++            raw_slot_gaps(&para)?;
++            if !para.field_ranges.windows(2).all(|r|r[0].end_char_idx<=r[1].start_char_idx) {
++                return Err(invalid_raw_slots());
++            }
++            let r = &para.field_ranges[edited_range];
++            format!("{},\"controlIndex\":{},\"start\":{},\"end\":{}}}",
++                &response[..response.len()-1], r.control_idx, r.start_char_idx, r.end_char_idx)
++        } else { response };
+         if !apply || unchanged {
+             return Ok(response);
+         }
+         if let Some(cell_path) = &cell_path {
+             *self.get_cell_paragraph_mut_by_path(section_idx, parent_para_idx, cell_path)? = para;
+             self.mark_cell_control_dirty(section_idx, parent_para_idx, cell_path[0].0);
+-            self.reflow_cell_paragraph_by_path(section_idx, parent_para_idx, cell_path, 0);
+-            self.recalculate_cell_paragraph_vpos_by_path(section_idx, parent_para_idx, cell_path, 0, None);
++            self.reflow_cell_paragraph_by_path(section_idx, parent_para_idx, cell_path, cell_path.last().unwrap().2);
++            self.recalculate_cell_paragraph_vpos_by_path(section_idx, parent_para_idx, cell_path, cell_path.last().unwrap().2, None);
+         } else {
+             *self.get_cell_paragraph_mut(section_idx, parent_para_idx, control_idx, cell_idx, 0)? =
+                 para;
+--- a/src/document_core/table_calc/mod.rs
++++ b/src/document_core/table_calc/mod.rs
+@@ -14,5 +14,5 @@
+ mod parser;
+ mod tokenizer;
+ 
+-pub use evaluator::{evaluate_formula, format_formula_g, TableContext};
++pub use evaluator::{evaluate_formula, formula_references, format_formula_g, TableContext};
+ pub use parser::FormulaNode;
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -1200,7 +1200,7 @@
+                 range.start_char_idx < range.end_char_idx
+                     && range.start_char_idx == char_offset
+                     && matches!(self.controls.get(range.control_idx),
+-                    Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink)
++                    Some(Control::Field(field)) if matches!(field.field_type, FieldType::Hyperlink | FieldType::Formula))
+             })
+             .count() as u32;
+         let at_hyperlink_start = hyperlink_starts > 0;
+@@ -1208,7 +1208,7 @@
+             range.start_char_idx < range.end_char_idx
+                 && range.end_char_idx == char_offset
+                 && matches!(self.controls.get(range.control_idx),
+-                    Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink)
++                    Some(Control::Field(field)) if matches!(field.field_type, FieldType::Hyperlink | FieldType::Formula))
+         });
+ 
+         // 범위뿐 아니라 FIELD_BEGIN의 raw 슬롯도 새 글자 뒤에 있어야 한다.
+@@ -1227,6 +1227,14 @@
+                 utf16_insert_pos
+             };
+ 
++        // At paragraph end no following character offset carries the closing
++        // formula marker. Outside typing must pass END before inserting text.
++        let formula_end_units = if char_offset==text_len {
++            self.field_ranges.iter().filter(|r|r.start_char_idx<r.end_char_idx && r.end_char_idx==char_offset
++                && matches!(self.controls.get(r.control_idx),Some(Control::Field(f)) if f.field_type==FieldType::Formula)).count() as u32 * 8
++        } else { 0 };
++        let utf16_insert_pos = utf16_insert_pos + formula_end_units;
++
+         let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
+         let old_shapes: Vec<_> = if topology.is_some() {
+             self.char_shapes
+@@ -1312,14 +1320,16 @@
+         for fr in &mut self.field_ranges {
+             let is_hyperlink = matches!(self.controls.get(fr.control_idx),
+                 Some(Control::Field(field)) if field.field_type == FieldType::Hyperlink);
++            let is_formula = matches!(self.controls.get(fr.control_idx),
++                Some(Control::Field(field)) if field.field_type == FieldType::Formula);
+             if fr.start_char_idx > char_offset
+-                || (is_hyperlink
++                || ((is_hyperlink || is_formula)
+                     && fr.start_char_idx == char_offset
+                     && fr.start_char_idx < fr.end_char_idx)
+             {
+                 fr.start_char_idx += inserted_len;
+             }
+-            if fr.end_char_idx > char_offset || (fr.end_char_idx == char_offset && !is_hyperlink) {
++            if fr.end_char_idx > char_offset || (fr.end_char_idx == char_offset && !is_hyperlink && !is_formula) {
+                 fr.end_char_idx += inserted_len;
+             }
+         }
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7272,6 +7272,23 @@
+         let path = DocumentCore::parse_cell_path(path_json)?;
+         self.evaluate_table_formula_by_path(section as usize, paragraph as usize, &path,
+             row as usize, col as usize, formula).map_err(Into::into)
++    }
++
++    #[wasm_bindgen(js_name = validateTableFormulaAt)]
++    pub fn validate_table_formula_at(&mut self, section: u32, paragraph: u32,
++        path_json: &str, offset: u32, field_id: u32, formula: &str) -> String {
++        DocumentCore::parse_cell_path(path_json).ok().and_then(|path|
++            self.table_formula_at_native(section as usize, paragraph as usize, &path,
++                offset as usize, field_id, formula, false).ok())
++            .unwrap_or_else(|| "{\"ok\":false}".into())
++    }
++
++    #[wasm_bindgen(js_name = insertTableFormulaAt)]
++    pub fn insert_table_formula_at(&mut self, section: u32, paragraph: u32,
++        path_json: &str, offset: u32, field_id: u32, formula: &str) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.table_formula_at_native(section as usize, paragraph as usize, &path,
++            offset as usize, field_id, formula, true).map_err(Into::into)
+     }
+ 
+     #[wasm_bindgen(js_name = validateTableFormulaFieldByPath)]

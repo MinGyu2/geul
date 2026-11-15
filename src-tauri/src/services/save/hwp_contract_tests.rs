@@ -2507,6 +2507,131 @@ fn hwp_safety_field_only_real_checker() {
 }
 
 #[test]
+fn hwp_inline_formulas_publish_and_negative_proof() {
+    let paragraph = |second: &str, value: &str| {
+        let mut rs = safety_field_paragraph(&[
+            (10, "=A1+B1??%g,;;30", "30", false),
+            (11, second, value, false),
+        ]);
+        let text = &mut rs[1].2;
+        let prefix = "Sum: "
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        text.splice(..0, prefix);
+        let between = " / Double: "
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        text.splice(2 * (5 + 8 + 2 + 8)..2 * (5 + 8 + 2 + 8), between);
+        let end = text.len() - 2;
+        text.splice(end..end, " won".encode_utf16().flat_map(u16::to_le_bytes));
+        let count = (text.len() / 2) as u32;
+        d(&mut rs[0].2, 0, count);
+        rs
+    };
+    let doc = |p| {
+        safety_document(
+            vec![
+                paragraph_records(2, 0, "10", &[]),
+                paragraph_records(2, 0, "20", &[]),
+                p,
+            ],
+            1,
+            3,
+        )
+    };
+    let original = doc(paragraph("=A1*2??%g,;;20", "20"));
+    let output = doc(paragraph("=A1*3??%g,;;30", "30"));
+    assert!(only_stale_preview(&raw_findings(&original, &output, true)));
+    let (result, disk, _) = publish(&original, &output, Some(&raster()));
+    assert!(result.is_ok(), "legitimate inline publication: {result:?}");
+    assert_ne!(disk, original);
+    let stale = doc(paragraph("=A1*3??%g,;;31", "31"));
+    let wrong_display = doc(paragraph("=A1*3??%g,;;30", "31"));
+    let cycle = doc(paragraph("=IF(1,30,C1)??%g,;;30", "30"));
+    let duplicate = edit_records(&output, "/BodyText/Section0", |rs| {
+        let r = rs
+            .iter_mut()
+            .filter(|r| r.0 == 71 && r.2.starts_with(b"umf%"))
+            .nth(1)
+            .unwrap();
+        let at = r.2.len() - 8;
+        d(&mut r.2, at, 10);
+    });
+    let malformed = edit_records(&output, "/BodyText/Section0", |rs| {
+        let r = rs
+            .iter_mut()
+            .find(|r| r.0 == 67 && r.2.starts_with(b"S\0u\0m\0"))
+            .unwrap();
+        // The first BEGIN cannot identify another control type.
+        r.2[12..16].copy_from_slice(b"klc%");
+    });
+    let neighbor = edit_records(&output, "/BodyText/Section0", |rs| {
+        let r = rs
+            .iter_mut()
+            .find(|r| r.0 == 67 && r.2.starts_with(b"S\0u\0m\0"))
+            .unwrap();
+        r.2[26..28].copy_from_slice(&u16::from(b'9').to_le_bytes());
+    });
+    let lost = doc(safety_field_paragraph(&[(
+        10,
+        "=A1+B1??%g,;;30",
+        "30",
+        false,
+    )]));
+    let mut moved = paragraph_records(2, 0, "", &[]);
+    moved.extend(paragraph("=A1*3??%g,;;30", "30"));
+    let wrong_paragraph = doc(moved);
+    for (name, bad) in [
+        ("lost neighbor", lost),
+        ("wrong paragraph", wrong_paragraph),
+        ("neighbor display", neighbor),
+        ("stale cache", stale),
+        ("wrong display", wrong_display),
+        ("hidden cycle", cycle),
+        ("duplicate ID", duplicate),
+        ("control marker", malformed),
+    ] {
+        assert!(
+            !only_stale_preview(&raw_findings(&original, &bad, true)),
+            "{name}"
+        );
+        let (result, disk, _) = publish(&original, &bad, Some(&raster()));
+        assert!(result.is_err(), "{name}");
+        assert_eq!(disk, original, "{name}: original must remain unchanged");
+    }
+    // A preserved but already stale original cache is not independent numeric evidence.
+    let bad_source = || safety_field_paragraph(&[(20, "=1+1??%g,;;3", "3", false)]);
+    let legacy = safety_document(vec![bad_source(), paragraph_records(2, 0, "", &[])], 1, 2);
+    let dependent = safety_document(
+        vec![
+            bad_source(),
+            safety_field_paragraph(&[(21, "=A1*2??%g,;;6", "6", false)]),
+        ],
+        1,
+        2,
+    );
+    assert!(
+        !only_stale_preview(&raw_findings(&legacy, &dependent, true)),
+        "unchanged operand cache must be independently evaluated"
+    );
+    let (result, disk, _) = publish(&legacy, &dependent, Some(&raster()));
+    assert!(result.is_err());
+    assert_eq!(disk, legacy);
+    let mixed_source=|| {
+        let mut rs=paragraph_records(2,0,"10",&[]);
+        rs.extend(safety_field_paragraph(&[(30,"=2??%g,;;2","2",false)]));rs
+    };
+    let mixed_original=safety_document(vec![mixed_source(),paragraph_records(2,0,"",&[])],1,2);
+    let mixed_reference=safety_document(vec![mixed_source(),safety_field_paragraph(&[(31,"=A1*2??%g,;;20","20",false)])],1,2);
+    assert!(!only_stale_preview(&raw_findings(&mixed_original,&mixed_reference,true)),"later-paragraph formulas are ambiguous operands too");
+    let (result,disk,_)=publish(&mixed_original,&mixed_reference,Some(&raster()));
+    assert!(result.is_err());assert_eq!(disk,mixed_original);
+
+}
+
+#[test]
 fn hwp_safety_composite_cell_ownership_real_checker() {
     let plain = |s: &str| paragraph_records(2, 0, s, &[]);
     let child = || {

@@ -248,7 +248,7 @@ function nestedPictureModel(doc: RhwpDocument, c: JsonObject, lists: Map<number,
 
 /** A blank getControls kind is not evidence of a field. Independently join the
  * cursor-list owner, explicit paragraph control index/position and complete field range. Only
- * first-paragraph formulas and ClickHere fields (any paragraph) are
+ * formulas and ClickHere fields in any cell paragraph are
  * covered; nested/ambiguous/unknown controls still make the model incomplete. */
 function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: unknown) => unknown): Map<unknown, JsonObject> {
   const proven = new Map<unknown, JsonObject>();
@@ -326,14 +326,11 @@ function cellFieldEvidence(doc: RhwpDocument, controls: unknown[], json: (raw: u
       : doc.getTextInCell(s, p, ctrl, cell, c.para, f.startCharIdx as number, covered)) !== f.value) continue;
     if (f.fieldType === "formula") {
       const cache = cachedFormula(f.command);
-      if (c.para !== 0 || f.startCharIdx !== 0 || f.endCharIdx !== length || !cache || cache.value !== f.value
-        || !Number.isFinite(Number(cache.value)) || !isInt(list.row, 0) || !isInt(list.col, 0)) continue;
-      // The engine independently proves sole full-paragraph field-range/control
-      // linkage. Validation is read-only; it must identify this exact field.
-      const probe = json(nestedCell ? doc.validateTableFormulaFieldByPath!(s, p, pathTo(0, 0), list.row, list.col, "=0")
-        : doc.validateTableFormulaField(s, p, ctrl, list.row, list.col, "=0"));
-      if (!isObject(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text" || typeof probe.changed !== "boolean"
-        || probe.ok !== true || probe.fieldId !== f.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") continue;
+      if (!cache || cache.value !== f.value || !Number.isFinite(Number(cache.value)) || !doc.validateTableFormulaAt) continue;
+      // Exact engine-owned ID and paragraph range; validation never changes the live document.
+      const probe = json(doc.validateTableFormulaAt(s, p, pathTo(cell, c.para), f.startCharIdx as number, f.fieldId as number, "=0"));
+      if (!isObject(probe) || probe.ok !== true || probe.fieldId !== f.fieldId || probe.start !== f.startCharIdx
+        || probe.controlIndex !== f.controlIndex || probe.text !== "0" || probe.command !== "=0??%g,;;0") continue;
     } else if (f.fieldType !== "clickhere" || !(f.command as string).startsWith("Clickhere:")) continue;
     proven.set(c, f);
   }

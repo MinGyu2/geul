@@ -1123,7 +1123,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   typeText(text: string): boolean {
-    if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection()) return false;
+    if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     text = text.replace(/\r\n?|\u2029/g, "\n");
     if (text.includes("\n")) return this.mutate(() => {
       let at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
@@ -1194,7 +1194,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (!this.canDeleteSelection()) return false;
+    if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
     // otherwise the same keystroke would split while the preflight is CHECKING and exit once it is SAFE.
@@ -1217,7 +1217,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 지운 뒤 화면 갱신이 실패하면 markFailed가 이 조합(지운 것)을 변경 1개로 세고 끝낸다.
    */
   beginComposition(): void {
-    if (!this.editable || this.composition || !this.canDeleteSelection()) return;
+    if (!this.editable || this.composition || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return;
     this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
@@ -2056,8 +2056,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (cell) {
         const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
         parameters["hangul.tableFormula"] = context;
-        if (innermost(this.caret.cell!).cellParagraph !== 0) parameterReasons["hangul.insertTableFormula"] = "formulaParagraphRequired";
-        else if (advanced && ownership && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending) {
+        if (advanced && ownership && this.doc?.validateTableFormulaAt && this.doc.insertTableFormulaAt && !this.hasSelection && !this.pending) {
           const formula = this.text!.existingFormula(this.caret);
           // A new HWP field changes the control inventory. It needs a complete
           // original structural proof; replacement of an existing formula keeps
@@ -2134,7 +2133,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.history!.boundary();
     const applied = this.mutate(() => {
       this.text!.insertFormula(caret, cell.row, cell.col, args.formula, prepared);
-      return { caret: { ...caret, offset: 0 }, anchor: { ...caret, offset: 0 } };
+      return { caret: { ...caret, offset: prepared.end }, anchor: { ...caret, offset: prepared.end } };
     }, true, "other", null, true);
     this.history?.boundary();
     return { accepted: applied };

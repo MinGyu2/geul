@@ -10,7 +10,7 @@
 // 엔진이 성공을 돌려준 것만으로 지원한다고 보지 않는다: 3)·4)가 어긋나면 던지고, 세션이 그 변경을 되돌린다.
 import { paragraphFieldMap } from "./fieldOwnership";
 import { cachedFormula } from "./formulaDependencies";
-import { formulaDependencies, remapFormulaReferences } from "../../../commands/parameters";
+import { formulaDependencies, remapFormulaReferences, MAX_FORMULA_CELL_VISITS } from "../../../commands/parameters";
 import { tableLayoutConsistent, type TableCellCoordinates } from "./hwpReopenModel";
 import type { RhwpDocument } from "./rhwpModule";
 import { pathJson, type CellRef } from "./rhwpText";
@@ -62,7 +62,7 @@ export interface TableGrid {
   cells: readonly TableCellCoordinates[];
 }
 /** One formula field of the table: its field id, physical cell and coordinate, expression. */
-export interface TableFormula { fieldId: number; cell: number; row: number; col: number; expression: string; value: string }
+export interface TableFormula { fieldId: number; cell: number; row: number; col: number; expression: string; value: string; paragraph: number; start: number }
 /** Proven content of a table (Stage 2): rich cells are compared by paragraph digest. */
 export interface TableContent { formulas: readonly TableFormula[]; rich: boolean; caption: string | null }
 export interface TableContentOptions {
@@ -198,8 +198,7 @@ function fieldOwner(field: Fields, at: TableTarget): "cell" | "below" | null {
 /**
  * Content eligibility of the whole table (Stage 2). Every cell is exactly one cursor list owned by this table.
  * Cell controls (nested tables, pictures and other objects, fields) are admitted when their whole subtree can
- * be read into the paragraph digest; formula fields additionally need the full-paragraph ownership the engine
- * validator proves, so that their references can be rewritten. Captions and text boxes (non-cell lists) stay
+ * be read into the paragraph digest; formula fields retain exact paragraph/range/ID ownership so that every expression can be rewritten. Captions and text boxes (non-cell lists) stay
  * refused. Never throws; an unreadable inventory is a refusal.
  */
 export function tableContent(doc: RhwpDocument, at: TableTarget, grid: TableGrid, options: TableContentOptions): TableContent | TableStructureRefusal {
@@ -222,9 +221,10 @@ export function tableContent(doc: RhwpDocument, at: TableTarget, grid: TableGrid
       if (field.fieldType === "formula") {
         const cached = cachedFormula(field.command);
         const coordinates = grid.cells[part.cellIndex];
-        if (part.paraIndex !== 0 || !cached || cached.value !== field.value || field.startCharIdx !== 0 || !coordinates
+        if (!isIndex(part.paraIndex) || !isIndex(field.startCharIdx) || !cached || cached.value !== field.value || !coordinates
           || !isIndex(field.fieldId) || field.fieldId === 0) return "tableFormula";
-        formulas.push({ fieldId: field.fieldId, cell: part.cellIndex, row: coordinates.row, col: coordinates.col, expression: cached.expression, value: cached.value });
+        formulas.push({ fieldId: field.fieldId, cell: part.cellIndex, row: coordinates.row, col: coordinates.col, expression: cached.expression, value: cached.value,
+          paragraph: part.paraIndex, start: field.startCharIdx });
       } else if (field.fieldType !== "clickhere") return "tableContent";
     }
     for (const control of inv.controls) {
@@ -528,22 +528,31 @@ export function planTableOp(doc: RhwpDocument, target: TableTarget, grid: TableG
 
 /** Dependencies first (operands are recalculated before formulas reading them). Null on a cycle/unknown grammar. */
 function formulaOrder<T extends { row: number; col: number; formula: string }>(formulas: T[], rows: number, cols: number): T[] | null {
-  const byKey = new Map(formulas.map(f => [f.row * cols + f.col, f]));
+  // Field identity is the graph node. A dependency coordinate may resolve to exactly
+  // one formula; multiple formulas at that coordinate are ambiguous operands.
+  const byCoordinate = new Map<number, number[]>();
+  formulas.forEach((f, i) => { const key = f.row * cols + f.col; byCoordinate.set(key, [...(byCoordinate.get(key) ?? []), i]); });
   const state = new Map<number, number>(), out: T[] = [];
-  for (const f of formulas) {
+  let budget = formulas.length;
+  for (let root = 0; root < formulas.length; root++) {
     const stack: { key: number; deps: number[]; next: number }[] = [];
     const push = (key: number) => {
-      const g = byKey.get(key)!;
-      const deps = formulaDependencies(g.formula, { row: g.row, col: g.col, rows, cols });
-      if (!deps) return false;
-      state.set(key, 1); stack.push({ key, deps: deps.filter(d => byKey.has(d)), next: 0 }); return true;
+      const g = formulas[key]!;
+      const edges = formulaDependencies(g.formula, { row: g.row, col: g.col, rows, cols });
+      if (!edges || (budget += edges.length) > MAX_FORMULA_CELL_VISITS) return false;
+      const deps: number[] = [];
+      for (const edge of edges) {
+        const matches = byCoordinate.get(edge) ?? [];
+        if (matches.length > 1) return false;
+        deps.push(...matches);
+      }
+      state.set(key, 1); stack.push({ key, deps, next: 0 }); return true;
     };
-    const root = f.row * cols + f.col;
     if (state.get(root) === 2) continue;
     if (!push(root)) return null;
     while (stack.length) {
       const frame = stack[stack.length - 1]!;
-      if (frame.next === frame.deps.length) { state.set(frame.key, 2); out.push(byKey.get(frame.key)!); stack.pop(); continue; }
+      if (frame.next === frame.deps.length) { state.set(frame.key, 2); out.push(formulas[frame.key]!); stack.pop(); continue; }
       const dep = frame.deps[frame.next++]!;
       if (state.get(dep) === 1) return null;
       if (state.get(dep) !== 2 && !push(dep)) return null;
@@ -588,9 +597,14 @@ export function applyTablePlan(doc: RhwpDocument, target: TableTarget, plan: Tab
     if (!found || found.row !== f.row || found.col !== f.col) throw new Error("formula field moved unexpectedly");
   }
   for (const f of plan.formulas) {
-    const value: unknown = JSON.parse(target.path
-      ? doc.insertTableFormulaFieldByPath!(target.section, target.paragraph, pathJson(target.path), f.row, f.col, f.formula)
-      : doc.insertTableFormulaField!(target.section, target.paragraph, target.control, f.row, f.col, f.formula));
+    // Read again after each edit: earlier result lengths may shift later field ranges.
+    const current = tableContent(doc, target, grid, plan.options);
+    if (typeof current === "string") throw new Error("formula ownership unavailable");
+    const owner = current.formulas.find(g => g.fieldId === f.fieldId);
+    if (!owner || !doc.insertTableFormulaAt) throw new Error("formula owner lost");
+    const path = pathLevels(target).map((l, i, a) => i === a.length - 1
+      ? { ...l, cellIndex: owner.cell, cellParaIndex: owner.paragraph } : l);
+    const value: unknown = JSON.parse(doc.insertTableFormulaAt(target.section, target.paragraph, JSON.stringify(path), owner.start, f.fieldId, f.formula));
     if (!isRecord(value) || value.ok !== true || value.fieldId !== f.fieldId) throw new Error("formula rewrite rejected");
   }
   verifyFormulaState(doc, target, grid, plan);
@@ -612,9 +626,9 @@ function verifyFormulaState(doc: RhwpDocument, target: TableTarget, grid: TableG
     const found = actual.get(f.fieldId);
     if (!found || found.row !== f.row || found.col !== f.col || found.expression !== f.formula
       || grid.cells[found.cell]?.row !== f.row || grid.cells[found.cell]?.col !== f.col) throw new Error("formula field state differs after rewrite");
-    const check: unknown = JSON.parse(target.path
-      ? doc.validateTableFormulaFieldByPath!(target.section, target.paragraph, pathJson(target.path), f.row, f.col, f.formula)
-      : doc.validateTableFormulaField!(target.section, target.paragraph, target.control, f.row, f.col, f.formula));
+    const path = pathLevels(target).map((l, i, a) => i === a.length - 1
+      ? { ...l, cellIndex: found.cell, cellParaIndex: found.paragraph } : l);
+    const check: unknown = JSON.parse(doc.validateTableFormulaAt!(target.section, target.paragraph, JSON.stringify(path), found.start, f.fieldId, f.formula));
     if (!isRecord(check) || check.ok !== true || check.fieldId !== f.fieldId || check.changed !== false || check.text !== found.value)
       throw new Error("formula value not recalculated");
   }

@@ -5,6 +5,7 @@
 // must independently be empty. Unknown/nested structures fail closed. Covered merged
 // coordinates have no value in RHWP (table_ops.rs exact-anchor lookup), not an alias.
 import { formulaDependencies, MAX_FORMULA_CELL_VISITS } from "../../../commands/parameters";
+import { paragraphFieldMap } from "./fieldOwnership";
 import type { RhwpDocument } from "./rhwpModule";
 import type { DocPosition } from "./rhwpText";
 
@@ -38,8 +39,8 @@ export function cachedFormula(command: unknown): { expression: string; value: st
   return { expression: fixed[1]!, value: fixed[3]! };
 }
 
-export function tableFormulaSafety(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaSafety {
-  try { return project(doc, at, proposed); }
+export function tableFormulaSafety(doc: RhwpDocument, at: DocPosition, proposed: string, fieldId = 0): FormulaSafety {
+  try { return project(doc, at, proposed, fieldId); }
   catch (error) {
     if (error instanceof WebAssembly.RuntimeError) throw error;
     return "unknown";
@@ -72,11 +73,11 @@ function tableAccess(doc: RhwpDocument, at: DocPosition) {
     validate: (r: number, c: number, f: string) => doc.validateTableFormulaFieldByPath!(s, host, path(0), r, c, f) };
 }
 
-function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaSafety {
+function project(doc: RhwpDocument, at: DocPosition, proposed: string, fieldId: number): FormulaSafety {
   const cell = at.cell;
   if (!cell || !doc.getCursorModel || !doc.getControls || !doc.getFieldList) return "unknown";
   const table = tableAccess(doc, at);
-  if (!table || table.inner.cellParagraph !== 0) return "unknown";
+  if (!table) return "unknown";
   const { levels, inner } = table;
   const dimensions = read(table.dims());
   if (!record(dimensions)) return "unknown";
@@ -133,120 +134,80 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
   if (coverage.size !== rows * cols) return "unknown";
   const destination = coordinates.get(inner.cell);
   if (destination === undefined) return "unknown";
-  const tableFields = new Map<number, RecordValue>();
-  const tailFields = new Set<string>();
-  const ids = new Set<number>();
+  // Every field has exact control/range ownership, including partial fields and later paragraphs.
+  const allIds = new Set<number>();
   for (const f of fields) {
-    const loc = f.location as RecordValue;
-    if (loc.sectionIndex !== at.section || loc.paraIndex !== cell.parentParagraph) continue;
-    if (loc.path === undefined) continue; // a body field is not a cell value
-    if (!Array.isArray(loc.path) || !loc.path.every(record)) return "unknown";
-    // Fields of other controls are not cell values; a field below this table's cells (deeper
-    // nesting) still falls through to the exact-shape checks and fails closed.
-    if (loc.path.length === 0) return "unknown";
-    if (loc.path.length < levels.length) continue;
-    if (!levels.slice(0, -1).every((level, i) => {
-      const entry = (loc.path as RecordValue[])[i]!;
-      return entry.type === "cell" && entry.controlIndex === level.control && entry.cellIndex === level.cell && entry.paraIndex === level.cellParagraph;
-    })) continue;
-    const part = loc.path[levels.length - 1] as RecordValue;
-    if (!part || !index(part.controlIndex)) return "unknown";
-    if (part.controlIndex !== inner.control) continue;
-    // A field inside a child table of one of these cells belongs to that table's own grid and lives in its
-    // cell lists (not this table's), so it never contributes to this table's cell values.
-    const deeper = (loc.path as RecordValue[])[levels.length];
-    if (deeper && deeper.type === "cell" && part.type === "cell") continue;
-    // RHWP evaluates and replaces paragraph zero only. Only independently
-    // identified ordinary ClickHere tails are admitted here; unfamiliar/nested
-    // controls still require additional preservation implementation/evidence.
-    if (part.type === "cell" && index(part.paraIndex) && part.paraIndex > 0
-      && index(part.cellIndex) && cellLists.has(part.cellIndex)) {
-      const key = `${f.listId}/${part.paraIndex}`;
-      if (loc.path.length !== levels.length || f.fieldType !== "clickhere" || f.cellField !== false || f.paraInList !== part.paraIndex
-        || f.listId !== cellLists.get(part.cellIndex) || !index(f.fieldId) || f.fieldId === 0 || ids.has(f.fieldId)
-        || typeof f.command !== "string" || !f.command.startsWith("Clickhere:") || tailFields.has(key)
-        || ![f.name, f.guide, f.value].every(v => typeof v === "string") || typeof f.editableInForm !== "boolean"
-        || !index(f.startCharIdx) || !index(f.endCharIdx) || f.startCharIdx > f.endCharIdx
-        || part.paraIndex >= table.paraCount(part.cellIndex)) return "unknown";
-      const length = table.paraLength(part.cellIndex, part.paraIndex);
-      if (f.endCharIdx > length || Array.from(f.value as string).length !== f.endCharIdx - f.startCharIdx
-        || table.text(part.cellIndex, part.paraIndex, f.startCharIdx, f.endCharIdx - f.startCharIdx) !== f.value) return "unknown";
-      ids.add(f.fieldId); tailFields.add(key);
-      continue;
-    }
-    if (loc.path.length !== levels.length || part.type !== "cell" || part.paraIndex !== 0 || !index(part.cellIndex)
-      || !cellLists.has(part.cellIndex) || tableFields.has(part.cellIndex) || f.fieldType !== "formula" || f.cellField !== false
-      || !index(f.fieldId) || f.fieldId === 0 || ids.has(f.fieldId) || f.listId !== cellLists.get(part.cellIndex)
-      || f.paraInList !== 0) return "unknown";
-    ids.add(f.fieldId); tableFields.set(part.cellIndex, f);
+    if (!index(f.fieldId) || f.fieldId === 0 || allIds.has(f.fieldId)) return "unknown";
+    allIds.add(f.fieldId);
   }
-  const inventory = new Map<number, RecordValue[]>();
-  const observedTails = new Set<string>();
+  const formulas: { id: number; coordinate: number; expression: string }[] = [];
+  const ambiguous = new Set<number>();
   const reverseLists = new Map([...cellLists].map(([physical, list]) => [list, physical]));
-  // Stage 2: identified child tables and drawing objects own no paragraph text (RHWP get_cell parses the
-  // paragraph text only), so they never change a cell's value. Blank-id (field) controls still need an exact
-  // field-list identity; any other control kind stays unknown.
-  const objectOnly = (c: RecordValue) => (c.ctrlId === "tbl" || c.ctrlId === "gso") && c.ctrlCh === 11;
-  for (const c of controls) {
-    const physical = reverseLists.get(c.list as number);
-    if (physical === undefined) continue;
-    if (objectOnly(c)) {
-      if (tableFields.has(physical) && c.para === 0) return "unknown"; // a formula cell holds only its field
-      continue;
+  for (const [physical, list] of cellLists) {
+    const coordinate = coordinates.get(physical)!;
+    for (let p = 0; p < table.paraCount(physical); p++) {
+      const mapping = paragraphFieldMap(controls, fields, list, p);
+      const length = table.paraLength(physical, p);
+      for (const f of mapping.values()) {
+        const loc = f.location;
+        if (!record(loc) || loc.sectionIndex !== at.section || loc.paraIndex !== cell.parentParagraph
+          || !Array.isArray(loc.path) || loc.path.length !== levels.length
+          || !levels.every((level, i) => {
+            const entry: unknown = (loc.path as unknown[])[i];
+            return record(entry) && entry.type === "cell" && entry.controlIndex === level.control
+              && entry.cellIndex === (i === levels.length - 1 ? physical : level.cell)
+              && entry.paraIndex === (i === levels.length - 1 ? p : level.cellParagraph);
+          }) || !index(f.startCharIdx) || !index(f.endCharIdx) || f.endCharIdx > length
+          || table.text(physical, p, f.startCharIdx, f.endCharIdx - f.startCharIdx) !== f.value) return "unknown";
+        if (f.fieldType === "formula") {
+          const cache = cachedFormula(f.command);
+          if (!cache || cache.value !== f.value || !Number.isFinite(Number(cache.value))) return "unknown";
+          formulas.push({ id: f.fieldId as number, coordinate, expression: cache.expression });
+          if (p > 0) ambiguous.add(coordinate);
+        } else if (f.fieldType !== "clickhere") return "unknown";
+      }
+      const owned = controls.filter(c => c.list === list && c.para === p);
+      if (owned.some(c => !mapping.has(c) && !((c.ctrlId === "tbl" || c.ctrlId === "gso") && c.ctrlCh === 11))) return "unknown";
+      if (p === 0 && mapping.size && !(mapping.size === 1 && owned.length === 1
+        && [...mapping.values()][0]!.fieldType === "formula" && [...mapping.values()][0]!.startCharIdx === 0
+        && [...mapping.values()][0]!.endCharIdx === length)) ambiguous.add(coordinate);
     }
-    if ((c.para as number) > 0) {
-      const key = `${c.list}/${c.para}`;
-      if (!tailFields.has(key) || observedTails.has(key) || c.ctrlId !== "" || c.ctrlCh !== 0 || c.userDesc !== ""
-        || c.controlIndex !== 0 || c.pos !== 0 || !record(c.props) || Object.keys(c.props).length) return "unknown";
-      observedTails.add(key);
-      continue;
-    }
-    const prior = inventory.get(physical) ?? [];
-    prior.push(c); inventory.set(physical, prior);
   }
-  if (observedTails.size !== tailFields.size) return "unknown";
-  const graph = new Map<number, number[]>();
+  if (fields.some(f => reverseLists.has(f.listId as number) && !index(f.paraInList))) return "unknown";
+  if (formulas.length > MAX_FORMULA_CELL_VISITS) return "unknown";
+  const target = formulas.filter(f => f.id === fieldId);
+  if (fieldId && (target.length !== 1 || target[0]!.coordinate !== destination)) return "unknown";
+  if (inner.cellParagraph > 0) ambiguous.add(destination);
+  if (inner.cellParagraph === 0 && !fieldId && (table.paraLength(inner.cell, 0) !== 0
+    || formulas.some(f => f.coordinate === destination))) ambiguous.add(destination);
+  const roots = [...formulas.filter(f => f.id !== fieldId), { id: fieldId, coordinate: destination, expression: proposed }];
+  // Cell coordinates group dependencies, never establish field identity. Multiple/partial fields
+  // can be roots, but a referenced formula cell must have a single established numeric value.
+  const graph = new Map<number, Set<number>>();
   let budget = count;
-  for (const [physical, coordinate] of coordinates) {
-    const owned = inventory.get(physical) ?? [], field = tableFields.get(physical);
-    if (!field) {
-      if (owned.length !== 0) return "unknown";
-      continue; // no controls AND no field ranges: proven plain cached value
+  for (const f of roots) {
+    const edges = formulaDependencies(f.expression, { row: Math.floor(f.coordinate / cols), col: f.coordinate % cols, rows, cols });
+    if (!edges || (budget += edges.length) > MAX_FORMULA_CELL_VISITS) return "unknown";
+    const set = graph.get(f.coordinate) ?? new Set<number>();
+    for (const edge of edges) {
+      if (edge === f.coordinate) return "cycle";
+      if (!coordinateKeys.has(edge) || ambiguous.has(edge)) return "unknown";
+      set.add(edge);
     }
-    if (owned.length !== 1 || owned[0]!.para !== 0 || owned[0]!.controlIndex !== 0 || owned[0]!.ctrlId !== ""
-      || typeof field.command !== "string" || typeof field.value !== "string" || field.startCharIdx !== 0
-      || field.endCharIdx !== field.value.length) return "unknown";
-    const match = cachedFormula(field.command);
-    if (!match || match.value !== field.value || !Number.isFinite(Number(field.value))) return "unknown";
-    const length = table.paraLength(physical, 0);
-    if (length !== field.value.length || table.text(physical, 0, 0, length) !== field.value) return "unknown";
-    const row = Math.floor(coordinate / cols), col = coordinate % cols;
-    // The existing read-only engine validator proves sole full-paragraph formula
-    // ownership, including field range/control linkage not exposed in the list.
-    const probe = read(table.validate(row, col, "=0"));
-    if (!record(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text"
-      || typeof probe.changed !== "boolean" || probe.ok !== true || probe.fieldId !== field.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") return "unknown";
-    const rawEdges = formulaDependencies(match.expression, { row, col, rows, cols });
-    const edges = rawEdges?.filter(edge => coordinateKeys.has(edge));
-    if (!edges) return "unknown";
-    if (coordinate !== destination) { budget += rawEdges!.length; graph.set(coordinate, edges); }
-    if (budget > MAX_FORMULA_CELL_VISITS) return "unknown";
+    graph.set(f.coordinate, set);
   }
-  const rawEdges = formulaDependencies(proposed, { row: Math.floor(destination / cols), col: destination % cols, rows, cols });
-  const edges = rawEdges?.filter(edge => coordinateKeys.has(edge));
-  if (!edges || budget + rawEdges!.length > MAX_FORMULA_CELL_VISITS) return "unknown";
-  graph.set(destination, edges); // replace, never append the old destination edges
-  // Iterative DFS over dependencies reachable from the destination. An already
-  // imported cycle reached by the new expression is unsafe too. Bounded V+E.
   const colors = new Map<number, number>();
-  const stack = [{ node: destination, next: 0 }]; colors.set(destination, 1);
-  while (stack.length) {
-    const frame = stack[stack.length - 1]!, children = graph.get(frame.node) ?? [];
-    if (frame.next === children.length) { colors.set(frame.node, 2); stack.pop(); continue; }
-    const child = children[frame.next++]!;
-    if (colors.get(child) === 1) return "cycle";
-    if (colors.get(child) === 2) continue;
-    colors.set(child, 1); stack.push({ node: child, next: 0 });
+  for (const root of graph.keys()) {
+    if (colors.get(root) === 2) continue;
+    const stack = [{ node: root, edges: [...(graph.get(root) ?? [])], next: 0 }]; colors.set(root, 1);
+    while (stack.length) {
+      const frame = stack[stack.length - 1]!;
+      if (frame.next === frame.edges.length) { colors.set(frame.node, 2); stack.pop(); continue; }
+      const child = frame.edges[frame.next++]!;
+      if (colors.get(child) === 1) return "cycle";
+      if (colors.get(child) === 2) continue;
+      colors.set(child, 1); stack.push({ node: child, edges: [...(graph.get(child) ?? [])], next: 0 });
+    }
   }
   return "safe";
 }

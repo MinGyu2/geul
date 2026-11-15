@@ -111,6 +111,8 @@ export interface RhwpDocument {
   getCursorModel?(): string;
   /** Read-only field range metadata; absence alone does not prove a plain cell. */
   getFieldList?(): string;
+  validateTableFormulaAt?(section: number, paragraph: number, path: string, offset: number, fieldId: number, formula: string): string;
+  insertTableFormulaAt?(section: number, paragraph: number, path: string, offset: number, fieldId: number, formula: string): string;
   validateTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   insertTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
