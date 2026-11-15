@@ -105,5 +105,7 @@ python3 scripts/check-sensitive-info.py --history  # 전체 Git 이력
 
 ## 라이선스
 
-이 저장소 자체의 라이선스는 아직 정하지 않았습니다. 외부 엔진의 라이선스와 고지 의무는
-[`docs/licenses/`](docs/licenses/)에 정리되어 있습니다.
+geul은 [MIT License](LICENSE)로 배포합니다(Copyright (c) 2026 MinGyu2). 이 라이선스는 geul 자체 코드에만 적용됩니다.
+외부 엔진(WordCraft: MIT OR Apache-2.0 + NOTICE, RHWP: MIT), 서드파티 crate·npm 패키지, 내장 글꼴·자산은 각자의
+라이선스를 그대로 따르며 MIT로 바뀌지 않습니다. 고지 의무와 근거는 [`docs/licenses/`](docs/licenses/)에, 배포용 고지
+파일은 `python3 scripts/generate-notices.py --out <dir>`로 생성합니다.

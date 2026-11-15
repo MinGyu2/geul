@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "HWP/HWPX와 DOCX를 함께 다루는 데스크톱 워드프로세서 (Tauri 2 + React)",
+  "license": "MIT",
   "engines": {
     "node": ">=22"
   },

@@ -1,0 +1,154 @@
+{
+  "schema": "geul.notice-fallbacks.v1",
+  "retrieved": "2026-11-15",
+  "purpose": "Verified, version-pinned licence texts for shipped crates whose published package contains no licence file. Used by scripts/generate-notices.py; keyed by exact name, version and Cargo.lock checksum; every file is integrity-checked.",
+  "provenance": "Each crate's .cargo_vcs_info.json in the pinned crates.io package records the upstream commit; files were fetched from that exact commit (or mozilla.org for the canonical MPL-2.0 text).",
+  "packages": [
+    {
+      "name": "alloc-stdlib",
+      "version": "0.3.0",
+      "checksum": "0b5c1865780388bfa186411ab5f247819487fc4864c6e9c3106611fa347586e1",
+      "declared": "BSD-3-Clause",
+      "vcs": {
+        "repository": "https://github.com/dropbox/rust-alloc-no-stdlib",
+        "commit": "0a81fd6928ea3b33c8cd484aa4575d50ffb98012",
+        "pathInVcs": "alloc-stdlib"
+      },
+      "files": [
+        {
+          "file": "LICENSE",
+          "source": "https://raw.githubusercontent.com/dropbox/rust-alloc-no-stdlib/0a81fd6928ea3b33c8cd484aa4575d50ffb98012/LICENSE",
+          "role": "licence",
+          "sha256": "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+        }
+      ],
+      "notes": "Repository-root BSD-3-Clause licence at the published commit; binary redistribution must reproduce the copyright notice, conditions and disclaimer.",
+      "directory": "alloc-stdlib-0.3.0"
+    },
+    {
+      "name": "dlopen2",
+      "version": "0.8.2",
+      "checksum": "5e2c5bd4158e66d1e215c49b837e11d62f3267b30c92f1d171c4d3105e3dc4d4",
+      "declared": "MIT",
+      "vcs": {
+        "repository": "https://github.com/OpenByteDev/dlopen2",
+        "commit": "cc80e4a0a90d499b677fdf7743699b4b3a43a989",
+        "pathInVcs": "dlopen2"
+      },
+      "files": [
+        {
+          "file": "LICENSE",
+          "source": "https://raw.githubusercontent.com/OpenByteDev/dlopen2/cc80e4a0a90d499b677fdf7743699b4b3a43a989/LICENSE",
+          "role": "licence",
+          "sha256": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2"
+        }
+      ],
+      "notes": "Repository-root MIT licence at the published commit (copyright lines reproduced verbatim, including an author address).",
+      "directory": "dlopen2-0.8.2"
+    },
+    {
+      "name": "krilla",
+      "version": "0.8.2",
+      "checksum": "27da593198b20eeba65caeb73c2bbeec3e53ab08fa549898312ce81c4fce5e33",
+      "declared": "MIT OR Apache-2.0",
+      "vcs": {
+        "repository": "https://github.com/LaurenzV/krilla",
+        "commit": "3ffdf0588cf98050aad6edba51ca70162e1fb5b5",
+        "pathInVcs": "crates/krilla"
+      },
+      "files": [
+        {
+          "file": "LICENSE_MIT",
+          "source": "https://raw.githubusercontent.com/LaurenzV/krilla/3ffdf0588cf98050aad6edba51ca70162e1fb5b5/LICENSE_MIT",
+          "role": "licence",
+          "sha256": "9d1eb142840c7acfd5511b4dd298cece3f0053f5809228906445cd8a3365592f"
+        },
+        {
+          "file": "LICENSE_APACHE",
+          "source": "https://raw.githubusercontent.com/LaurenzV/krilla/3ffdf0588cf98050aad6edba51ca70162e1fb5b5/LICENSE_APACHE",
+          "role": "licence",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "NOTICE.md",
+          "source": "https://raw.githubusercontent.com/LaurenzV/krilla/3ffdf0588cf98050aad6edba51ca70162e1fb5b5/NOTICE.md",
+          "role": "notice",
+          "sha256": "7aa87a70e18c9c160b5a14e24b46a8e407858b21fed635920c701657b4bd7976"
+        }
+      ],
+      "mplDerived": "NOTICE.md: the content_draw_path method (present in krilla 0.8.2 src/content.rs) is adapted from resvg, stated there to be available under the MPL; typst/svg2pdf snippets under Apache-2.0.",
+      "notes": "Dual licence: both texts are kept (MIT may be selected); NOTICE.md is reproduced because it carries attribution and the MPL-derived-code statement.",
+      "directory": "krilla-0.8.2"
+    },
+    {
+      "name": "libappindicator-sys",
+      "version": "0.9.0",
+      "checksum": "6e9ec52138abedcc58dc17a7c6c0c00a2bdb4f3427c7f63fa97fd0d859155caf",
+      "declared": "Apache-2.0 OR MIT",
+      "vcs": {
+        "repository": "https://github.com/tauri-apps/libappindicator-rs",
+        "commit": "eafd1e3682a1247f595410266091e9684021cb6f",
+        "pathInVcs": "sys"
+      },
+      "files": [
+        {
+          "file": "LICENSE-MIT",
+          "source": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-MIT",
+          "role": "licence",
+          "sha256": "eb227437252b2a7a9c1fc342c93ade1f3d7ce38cc6dd754f613db07d53ceff0b"
+        },
+        {
+          "file": "LICENSE-APACHE",
+          "source": "https://raw.githubusercontent.com/tauri-apps/libappindicator-rs/eafd1e3682a1247f595410266091e9684021cb6f/LICENSE-APACHE",
+          "role": "licence",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        }
+      ],
+      "notes": "The manifest names no repository. The sibling crate libappindicator 0.9.0 (same Cargo.lock graph) was published from the same commit at the repository root and ships byte-identical LICENSE-MIT/LICENSE-APACHE; that repository is tauri-apps/libappindicator-rs. Dual licence: both texts kept.",
+      "directory": "libappindicator-sys-0.9.0"
+    },
+    {
+      "name": "selectors",
+      "version": "0.38.0",
+      "checksum": "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d",
+      "declared": "MPL-2.0",
+      "vcs": {
+        "repository": "https://github.com/servo/stylo",
+        "commit": "572ecba2d1600e7c3d490586692a209faf703baa",
+        "pathInVcs": "selectors"
+      },
+      "files": [
+        {
+          "file": "MPL-2.0.txt",
+          "source": "https://www.mozilla.org/media/MPL/2.0/index.txt",
+          "role": "licence",
+          "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+        }
+      ],
+      "mpl": true,
+      "notes": "servo/stylo has no licence file at the published commit (repository root and selectors/ checked). Every one of the 16 .rs files in the published crate carries the MPL-2.0 Exhibit A header pointing to https://mozilla.org/MPL/2.0/; the canonical MPL-2.0 text is taken from mozilla.org. Unmodified; Source Code Form: crates.io selectors 0.38.0 and the commit above.",
+      "directory": "selectors-0.38.0"
+    },
+    {
+      "name": "wuff",
+      "version": "0.2.9",
+      "checksum": "200a7b806377b65f1ff9a985874332f15357c87e5dd7855f35f06dade95b8b3d",
+      "declared": "MIT",
+      "vcs": {
+        "repository": "https://github.com/nicoburns/wuff",
+        "commit": "78e67f52713c0a2c36bd083fea18ba029565c9ec",
+        "pathInVcs": "wuff"
+      },
+      "files": [
+        {
+          "file": "LICENSE",
+          "source": "https://raw.githubusercontent.com/nicoburns/wuff/78e67f52713c0a2c36bd083fea18ba029565c9ec/LICENSE",
+          "role": "licence",
+          "sha256": "4b373ba4395e35d44ba1f41202c179b57ca3c5ba5e4a1aaafa1547aede7e1eb7"
+        }
+      ],
+      "notes": "Repository-root MIT licence at the published commit (WOFF2 Authors and Nico Burns copyright lines).",
+      "directory": "wuff-0.2.9"
+    }
+  ]
+}

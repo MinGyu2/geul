@@ -11,6 +11,7 @@
 - **S5-6 PrvImage 오라클**: `9027acc`. PNG 서명만 보던 판정을 정규 PNG·PAGE_DEF 크기·독립 1쪽 렌더 상관·추가 근거 없음으로 교체했다. Stage 4 게시 10건 재검증 PASS(상관 0.9983), 음성 대조 5/5 PASS. 서비스 메모리 부호화와의 바이트 동일성은 `product-gate`로만 남는다.
 - **S5-1·S5-5**: [품질 행렬](../quality-matrix.md), [출시 점검표](../release-checklist.md), `scripts/generate-notices.py`. `.deb`는 생성되지만 NixOS 전용 바이너리라 이식성 FAIL, geul 자체 라이선스 미정 BLOCKED.
 - 판정: Stage 5-A **PARTIALLY COMPLETED**(남은 로컬 항목은 점검표), 전체 Stage 5 미완료, 출시 NO-GO. S5-2·S5-3 DEFERRED.
+- **Phase 1–2 후속(같은 날)**: `14880d6` PDF 덮어쓰기 일회용 허가(GTK 확인)·RENAME_EXCHANGE 신원 조건 교체·DOCX 게시 직전 세션 재확인·오라클 빈 첫 쪽 경계; 라이선스 커밋에서 geul MIT 채택과 서드파티 고지 누락 0. 글꼴 탐색·Release 경로 정리·패키지 고지 동봉은 남아 Stage 5-A는 여전히 PARTIALLY COMPLETED.
 
 <a id="wordcraft-rust-hwp-final-20261109"></a>
 

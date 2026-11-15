@@ -45,4 +45,4 @@
 ## 미확인 사항
 
 - 배포물 고지 파일 생성(크레이트별 라이선스 텍스트·NOTICE·번들 글꼴 OFL 텍스트)과 다른 플랫폼 대상의 전이 의존성 차이 (T016)
-  - 2026-11-15 Stage 5-A: `scripts/generate-notices.py`가 Linux x86_64 실제 링크 그래프(geul 326·RHWP WASM 138 crate, npm 4)와 OFL 글꼴·하이픈 패턴 고지를 생성한다. 상류 소스에 라이선스 파일이 없는 crate 6개와 패키지 동봉은 미해결([출시 점검표](../release-checklist.md)). 다른 OS 대상은 미생성.
+  - 2026-11-15 Stage 5-A: `scripts/generate-notices.py`가 Linux x86_64 실제 링크 그래프(geul 326·RHWP WASM 138 crate, npm 4)와 OFL 글꼴·하이픈 패턴 고지를 생성한다. Phase 2(같은 날)에서 원문이 없던 crate 6개를 게시 커밋 원문으로 고정해 해결([서드파티 근거](third-party.md)); 패키지 동봉은 미해결([출시 점검표](../release-checklist.md)). 다른 OS 대상은 미생성.

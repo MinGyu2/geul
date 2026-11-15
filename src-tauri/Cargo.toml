@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "HWP/HWPX와 DOCX를 함께 다루는 데스크톱 워드프로세서"
 edition = "2021"
 rust-version = "1.90"
+license = "MIT"
 publish = false
 
 [lib]
