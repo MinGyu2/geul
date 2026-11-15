@@ -9,7 +9,9 @@
 //     re-derived here, not taken from geul);
 //  3. attribution to this document: the pixels must match an independent render of page 1 of the *published* file
 //     (Release RHWP `renderPageSvg` rasterized by librsvg, a different rasterizer from the WebView canvas) by block
-//     luminance correlation; an arbitrary, blank or other-document PNG does not;
+//     luminance correlation; an arbitrary, blank or other-document PNG does not. A genuinely blank page 1 (uniform
+//     reference) is accepted only with an equally uniform preview of the same colour (correlation is undefined
+//     there; Stage 5-A Phase 2);
 //  4. regeneration: the original had a PrvImage and the bytes differ from it.
 // Not provable offline: byte identity with the PNG the service encoded in memory for that save. That remains the
 // product gate (hwp.rs compares the output PrvImage with this save's encoding) and its unit tests; it is reported as
@@ -152,6 +154,39 @@ export function blockCorrelation(a, b) {
   return dp === 0 || dq === 0 ? 0 : num / Math.sqrt(dp * dq);
 }
 
+/** Luminance range (max - min) and mean of an RGB raster. */
+function luminanceStats(img) {
+  let min = 255, max = 0, sum = 0;
+  for (let i = 0; i < img.rgb.length; i += 3) {
+    const y = 0.299 * img.rgb[i] + 0.587 * img.rgb[i + 1] + 0.114 * img.rgb[i + 2];
+    min = Math.min(min, y); max = Math.max(max, y); sum += y;
+  }
+  return { range: max - min, mean: sum / (img.rgb.length / 3) };
+}
+
+/** Maximum luminance range of a "uniform" raster and maximum mean difference of two uniform rasters. */
+export const UNIFORM_RANGE = 2;
+export const UNIFORM_MEAN_DELTA = 4;
+
+/**
+ * Does `preview` depict the independent `reference` render of page 1? Correlation is undefined for a uniform
+ * (blank) raster, so a legitimately blank page 1 is judged separately: both must be uniform and of the same
+ * colour. A uniform preview of a page with content, or a preview with content of a blank page, is rejected;
+ * otherwise the block correlation must reach MIN_CORRELATION. Returns { correlation, blankPage }.
+ */
+export function previewMatchesReference(preview, reference) {
+  const [p, r] = [luminanceStats(preview), luminanceStats(reference)];
+  const [pu, ru] = [p.range <= UNIFORM_RANGE, r.range <= UNIFORM_RANGE];
+  if (pu || ru) {
+    if (!(pu && ru)) fail(`PrvImage does not depict page 1 of the published file (${pu ? "uniform preview of a page with content" : "content in a preview of a blank page"})`);
+    if (Math.abs(p.mean - r.mean) > UNIFORM_MEAN_DELTA) fail(`PrvImage does not depict page 1 of the published file (blank colours ${p.mean.toFixed(1)} vs ${r.mean.toFixed(1)})`);
+    return { correlation: null, blankPage: true };
+  }
+  const correlation = blockCorrelation(preview, reference);
+  if (!(correlation >= MIN_CORRELATION)) fail(`PrvImage does not depict page 1 of the published file (correlation ${correlation.toFixed(3)})`);
+  return { correlation: Number(correlation.toFixed(4)), blankPage: false };
+}
+
 /** Evidence for a regenerated PrvImage of `published` (an edited save of `original`), or throws with the reason. */
 export function verifyRegeneratedPreview(engine, originalPath, publishedPath) {
   const before = hwpFacts(originalPath), after = hwpFacts(publishedPath);
@@ -163,10 +198,9 @@ export function verifyRegeneratedPreview(engine, originalPath, publishedPath) {
   const [w, h] = previewDimensions(...after.pageDef);
   if (decoded.width !== w || decoded.height !== h) fail(`PrvImage ${decoded.width}x${decoded.height} != ${w}x${h} from PAGE_DEF`);
   const reference = referenceRaster(engine, readFileSync(publishedPath), w, h);
-  const correlation = blockCorrelation(decoded, reference);
-  if (!(correlation >= MIN_CORRELATION)) fail(`PrvImage does not depict page 1 of the published file (correlation ${correlation.toFixed(3)})`);
+  const { correlation, blankPage } = previewMatchesReference(decoded, reference);
   return { sha256: sha(after.prvImage), bytes: after.prvImage.length, width: w, height: h, pageDef: after.pageDef,
-    correlation: Number(correlation.toFixed(4)), canonical: true, serviceIdentity: "product-gate" };
+    correlation, blankPage, canonical: true, serviceIdentity: "product-gate" };
 }
 
 /**

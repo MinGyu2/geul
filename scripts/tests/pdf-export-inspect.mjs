@@ -8,7 +8,8 @@
 // must embed fonts. Visual inspection (pdf.js) is recorded separately in docs/quality-matrix.md.
 import { inflateSync } from "node:zlib";
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { basename, join } from "node:path";
 import { loadRelease } from "./advanced-production-runtime.mjs";
 
 const out = process.argv[2];
@@ -43,6 +44,84 @@ function objects(bytes) {
   return found;
 }
 
+/** Decoded stream data of an object body ("<<dict>> stream ... endstream"). */
+function streamData(body) {
+  const at = body.indexOf("stream");
+  need(at >= 0, "object has no stream");
+  let start = at + 6;
+  if (body[start] === "\r") start++;
+  if (body[start] === "\n") start++;
+  const raw = Buffer.from(body.slice(start, body.lastIndexOf("endstream")), "latin1");
+  return /\/FlateDecode/.test(body.slice(0, at)) ? inflateSync(raw) : raw;
+}
+
+/** ToUnicode CMap: code (hex, as written) → text. bfchar and bfrange (both forms). */
+function parseCMap(text) {
+  const map = new Map();
+  const utf16 = (hex) => Buffer.from(hex.length % 4 ? hex.padStart(hex.length + 4 - (hex.length % 4), "0") : hex, "hex").swap16().toString("utf16le");
+  for (const block of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))
+    for (const m of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) map.set(parseInt(m[1], 16), utf16(m[2]));
+  for (const block of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))
+    for (const m of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]+>|\[[^\]]*\])/g)) {
+      const [lo, hi] = [parseInt(m[1], 16), parseInt(m[2], 16)];
+      if (m[3].startsWith("[")) [...m[3].matchAll(/<([0-9A-Fa-f]+)>/g)].forEach((d, k) => map.set(lo + k, utf16(d[1])));
+      else { const base = Buffer.from(m[3].slice(1, -1), "hex"); for (let c = lo; c <= hi; c++) { const b = Buffer.from(base); b.writeUInt16BE((b.readUInt16BE(b.length - 2) + c - lo) & 0xffff, b.length - 2); map.set(c, b.swap16().toString("utf16le")); } }
+    }
+  return map;
+}
+
+/** Literal "( … )" (with escapes) or hex "< … >" PDF string at `i`; returns [bytes, next index]. */
+function pdfString(src, i) {
+  if (src[i] === "<") { const end = src.indexOf(">", i); return [Buffer.from(src.slice(i + 1, end).replace(/\s/g, ""), "hex"), end + 1]; }
+  const out = [];
+  let depth = 0;
+  for (i++; i < src.length; i++) {
+    const c = src[i];
+    if (c === "\\") {
+      const n = src[++i];
+      if (/[0-7]/.test(n)) { let o = n; while (o.length < 3 && /[0-7]/.test(src[i + 1])) o += src[++i]; out.push(parseInt(o, 8) & 255); }
+      else out.push({ n: 10, r: 13, t: 9, b: 8, f: 12 }[n] ?? n.charCodeAt(0));
+    } else if (c === "(") { depth++; out.push(40); } else if (c === ")") { if (depth-- === 0) return [Buffer.from(out), i + 1]; out.push(41); } else out.push(c.charCodeAt(0));
+  }
+  throw new Error("unterminated string");
+}
+
+/** Text of one page's content: Tj/TJ strings decoded through the current font's ToUnicode (2-byte codes for
+ *  Type0 fonts, 1-byte otherwise). Returns { text, unmapped }. */
+function pageText(content, fonts) {
+  let font = null, text = "", unmapped = 0;
+  const show = (bytes) => {
+    if (!font) { unmapped += bytes.length; return; }
+    for (let k = 0; k < bytes.length; k += font.width) {
+      const code = font.width === 2 ? bytes.readUInt16BE(k) : bytes[k];
+      const value = font.cmap.get(code);
+      if (value === undefined) unmapped++; else text += value;
+    }
+  };
+  const src = content.toString("latin1");
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === "(" || (c === "<" && src[i + 1] !== "<")) {
+      const [bytes, next] = pdfString(src, i);
+      const op = /^\s*(Tj|'|")/.exec(src.slice(next, next + 4));
+      if (op) show(bytes);
+      i = next;
+    } else if (c === "[") {
+      const end = (() => { let j = i + 1; while (src[j] !== "]") { if (src[j] === "(" || src[j] === "<") j = pdfString(src, j)[1]; else j++; } return j; })();
+      if (/^\s*TJ/.test(src.slice(end + 1, end + 5))) {
+        for (let j = i + 1; j < end;) { if (src[j] === "(" || src[j] === "<") { const [b, n] = pdfString(src, j); show(b); j = n; } else j++; }
+        text += " ";
+      }
+      i = end + 1;
+    } else if (c === "/") {
+      const m = /^\/([^\s/<>[\]()]+)\s+[-\d.]+\s+Tf/.exec(src.slice(i, i + 64));
+      if (m) font = fonts.get(m[1]) ?? null;
+      i += m ? m[0].length : 1;
+    } else i++;
+  }
+  return { text, unmapped };
+}
+
 function inspect(path) {
   const bytes = readFileSync(path);
   const text = bytes.toString("latin1");
@@ -73,7 +152,19 @@ function inspect(path) {
     const xobjects = /\/XObject\s*<<([^>]*)>>/.exec(resources)?.[1].match(/\d+\s+0\s+R/g) ?? [];
     const images = xobjects.map(deref).filter(b => /\/Subtype\s*\/Image/.test(b))
       .map(b => ({ width: Number(/\/Width\s+(\d+)/.exec(b)[1]), height: Number(/\/Height\s+(\d+)/.exec(b)[1]) }));
-    return { width: box[2] - box[0], height: box[3] - box[1], images };
+    const fonts = new Map();
+    const fontDict = /\/Font\s*<<([^>]*)>>/.exec(resources)?.[1] ?? "";
+    for (const [, name, ref] of fontDict.matchAll(/\/([^\s/<>[\]]+)\s+(\d+\s+0\s+R)/g)) {
+      const body = deref(ref);
+      const toUnicode = /\/ToUnicode\s+(\d+\s+0\s+R)/.exec(body);
+      fonts.set(name, { width: /\/Subtype\s*\/Type0/.test(body) ? 2 : 1, cmap: toUnicode ? parseCMap(streamData(deref(toUnicode[1])).toString("latin1")) : new Map(),
+        baseFont: /\/BaseFont\s*\/([^\s/<>[\]]+)/.exec(body)?.[1] ?? null });
+    }
+    const contents = /\/Contents\s*(\[[^\]]*\]|\d+\s+0\s+R)/.exec(body)?.[1].match(/\d+\s+0\s+R/g) ?? [];
+    const content = Buffer.concat(contents.map((ref) => streamData(deref(ref))));
+    const { text, unmapped } = pageText(content, fonts);
+    const hangulFonts = [...fonts.values()].filter((f) => [...f.cmap.values()].some((v) => /[\uac00-\ud7a3]/.test(v))).map((f) => f.baseFont);
+    return { width: box[2] - box[0], height: box[3] - box[1], images, text, unmapped, hangulFonts };
   });
   const fonts = [...new Set([...objs.values()].flatMap(o => [...o.body.matchAll(/\/BaseFont\s*\/([^\s/<>[\]]+)/g)].map(m => m[1])))];
   const fontFiles = [...objs.values()].filter(o => /\/FontFile[23]?\s/.test(o.body)).length;
@@ -81,13 +172,28 @@ function inspect(path) {
 }
 
 function expected(row) {
-  if (row.format === "docx") return { pages: null, sizes: [[595.3, 841.9]] }; // fixture sectPr: 11906×16838 twips (A4)
+  if (row.format === "docx") {
+    // Independent of WordCraft: explicit page breaks in word/document.xml (+1). Valid as an exact count only for
+    // fixtures whose pages never overflow (rich-ko.docx); the editor's own status-bar count is compared too.
+    const xml = execFileSync("python3", ["-I", "-c", "import zipfile,sys;print(zipfile.ZipFile(sys.argv[1]).read('word/document.xml').decode())", row.source], { encoding: "utf8" });
+    const breaks = (xml.match(/<w:br w:type="page"\/>/g) ?? []).length;
+    return { pages: breaks + 1, sizes: [[595.3, 841.9]] }; // fixture sectPr: 11906×16838 twips (A4)
+  }
   const d = new engine.HwpDocument(readFileSync(row.source));
   try {
     const sizes = Array.from({ length: d.pageCount() }, (_, p) => { const i = JSON.parse(d.getPageInfo(p)); return [i.width * 0.75, i.height * 0.75]; });
     return { pages: sizes.length, sizes };
   } finally { d.free(); }
 }
+
+/** Phrases each page of a known DOCX fixture must contain as extractable text (rich-ko.docx, make_docx design). */
+const EXPECTED_TEXT = {
+  "rich-ko.docx": [
+    ["글 PDF 내보내기 시험 문서", "첫 쪽: 한글 문단입니다.", "굵게", "기울임", "밑줄", "빨간 글자", "Korean and English text.", "항목", "사과", "노랑", "그림:"],
+    ["둘째 쪽: 다람쥐 헌 쳇바퀴에 타고파."],
+    ["셋째 쪽: 마지막 쪽입니다. 끝."],
+  ],
+};
 
 const report = [];
 for (const row of result.positive) {
@@ -107,11 +213,23 @@ for (const row of result.positive) {
       need(Math.abs(page.images[0].height / page.height - scale) < 0.02 && scale > 2.6, `${row.pdf} page ${i + 1}: raster ${JSON.stringify(page.images[0])} does not cover the page at ≥192 px/in`);
     }
   });
-  if (!raster) need(got.fonts.length > 0 && got.fontFiles === got.fonts.length, `${row.pdf}: fonts not embedded ${JSON.stringify(got)}`);
+  const editorPages = Number(/(\d+)쪽 중/.exec(row.notice)?.[1]);
+  need(editorPages === got.pages.length, `${row.pdf}: editor shows ${editorPages} pages, file has ${got.pages.length}`);
+  let text = null;
+  if (!raster) {
+    need(got.fonts.length > 0 && got.fontFiles === got.fonts.length, `${row.pdf}: fonts not embedded ${JSON.stringify(got)}`);
+    // Extractable text through the embedded ToUnicode maps, page by page and in order.
+    const squash = (v) => v.replace(/\s+/g, "");
+    const phrases = EXPECTED_TEXT[basename(row.source)] ?? [];
+    phrases.forEach((pagePhrases, i) => pagePhrases.forEach((phrase) =>
+      need(squash(got.pages[i]?.text ?? "").includes(squash(phrase)), `${row.pdf} page ${i + 1}: text lacks ${JSON.stringify(phrase)}`)));
+    need(got.pages.every((p) => p.unmapped === 0), `${row.pdf}: glyph codes without ToUnicode mapping`);
+    text = { pages: got.pages.map((p) => p.text.length), hangulFonts: [...new Set(got.pages.flatMap((p) => p.hangulFonts))], phrases: phrases.flat().length };
+  }
   report.push({ format: row.format, pdf: row.pdf, pdfSha256: row.pdfSha256, pages: got.pages.length,
     sizes: [...new Set(got.pages.map(p => `${p.width.toFixed(1)}x${p.height.toFixed(1)}`))],
     raster, rasterPixels: raster ? [...new Set(got.pages.map(p => `${p.images[0].width}x${p.images[0].height}`))] : null,
-    images: got.pages.reduce((n, p) => n + p.images.length, 0), fonts: got.fonts, bytes: got.bytes });
+    images: got.pages.reduce((n, p) => n + p.images.length, 0), fonts: got.fonts, bytes: got.bytes, editorPages, sourcePages: want.pages, text });
 }
 writeFileSync(join(out, "inspect.json"), JSON.stringify({ status: "PASS", engineGeneration: build.generation, rows: report }, null, 2) + "\n");
 console.log("PASS", JSON.stringify(report.map(r => [r.format, r.pages, r.sizes, r.rasterPixels ?? r.fonts])));

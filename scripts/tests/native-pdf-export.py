@@ -113,6 +113,57 @@ def run(args, d, report):
         assert row['status'] == 'PASS', row
         assert rhwp.close_tab(d, name)
 
+    # Existing destination (Stage 5-A Phase 2): GTK asks to confirm the overwrite; only a confirmed choice lets
+    # the backend replace the file (one-time grant bound to the observed file identity).
+    def export_existing(target, confirm):
+        acknowledge()
+        d.js('for(const b of document.querySelectorAll("[role=tab]"))if(b.textContent.trim()===arguments[0])b.click()', KO['ribbon.tab.file'])
+        a.wait('const b=document.querySelector(\'[data-command="file.exportPdf"]\');return !!b && b.getAttribute("aria-disabled")!=="true"')
+        before = notice()
+        d.js('document.querySelector(\'[data-command="file.exportPdf"]\').click()')
+        chooser = a.chooser(target, TITLE)
+        # The first Return may only accept GTK's file-name completion (the chooser stays open, see the open
+        # dialog helper): activate the same chooser once more so it asks for the overwrite confirmation.
+        time.sleep(1.0)
+        if subprocess.run([args.xdotool, 'getwindowname', chooser], capture_output=True).returncode == 0:
+            a.command(args.xdotool, 'windowfocus', '--sync', chooser)
+            a.key('Return')
+        time.sleep(1.5)  # GTK overwrite confirmation dialog takes focus
+        if args.scrot:  # evidence: the native confirmation dialog on the private X display
+            subprocess.run([args.scrot, '-o', str(args.out / f'overwrite-confirm-{"accept" if confirm else "decline"}.png')], check=False)
+        if confirm:
+            a.key('alt+r')  # GTK "_Replace" (ko: 바꾸기(_R))
+            a.wait('return arguments[0].some(t=>(document.querySelector("footer.statusbar")?.textContent??"").includes(t))', [KO['document.pdfExported'].split(':')[0]], timeout=180)
+        else:
+            a.key('Escape')  # declines the overwrite and returns to the chooser
+            time.sleep(1.0)
+            a.command(args.xdotool, 'windowfocus', '--sync', chooser)
+            a.key('Escape')  # closes the chooser
+            a.wait('return !document.querySelector(\'[data-command="file.exportPdf"]\').closest("[aria-disabled=true]")')
+            time.sleep(1.5)
+        return notice(), before
+
+    src = work / 'overwrite.docx'
+    shutil.copyfile(args.fixtures / 'rich-ko.docx', src)
+    a.open('docx', src)
+    target = pdfs / 'rich-ko.pdf'
+    stat = lambda p: (p.stat().st_ino, p.stat().st_mtime_ns, sha(p))
+    first = stat(target)
+    text, _ = export_existing(target, True)
+    replaced = stat(target)
+    report['overwrite'] = [{'case': 'confirmed-replace', 'before': first, 'after': replaced, 'notice': text,
+                            'status': 'PASS' if replaced[0] != first[0] and target.read_bytes().startswith(b'%PDF-') else 'FAIL'}]
+    assert report['overwrite'][-1]['status'] == 'PASS', report['overwrite'][-1]
+    text, before = export_existing(target, False)
+    kept = stat(target)
+    report['overwrite'].append({'case': 'declined-confirmation', 'before': replaced, 'after': kept, 'notice': text,
+                                'noticeChanged': text != before, 'status': 'PASS' if kept == replaced else 'FAIL'})
+    assert report['overwrite'][-1]['status'] == 'PASS', report['overwrite'][-1]
+    leftovers = [p.name for p in pdfs.iterdir() if p.name.startswith('.geul-save-')]
+    report['overwrite'].append({'case': 'no-staging-leftovers', 'leftovers': leftovers, 'status': 'PASS' if not leftovers else 'FAIL'})
+    assert not leftovers, leftovers
+    assert rhwp.close_tab(d, 'overwrite.docx')
+
     # Negative 1: cancel writes nothing.
     src = work / 'cancel.docx'
     shutil.copyfile(args.fixtures / 'rich-ko.docx', src)
@@ -160,6 +211,7 @@ def main():
     parser.add_argument('--fixtures', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--port', type=int, default=4444)
+    parser.add_argument('--scrot', help='optional scrot binary for X screenshots of native dialogs')
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     args.fixtures = args.fixtures.resolve()
@@ -205,6 +257,7 @@ def main():
         report['teardown'] = smoke.TEARDOWN
         (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({'status': report['status'], 'positive': [(r['format'], r['status']) for r in report['positive']],
+                      'overwrite': [(r['case'], r['status']) for r in report.get('overwrite', [])],
                       'negative': [(r['case'], r['status']) for r in report['negative']], 'error': report.get('error')}, ensure_ascii=False))
     return 0 if report['status'] == 'PASS' else 1
 

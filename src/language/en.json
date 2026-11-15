@@ -413,7 +413,7 @@
   "document.pdfExported": "Exported to PDF: {pages} pages. The document and its file were not changed.",
   "document.pdfExportedRaster": "Exported to PDF: {pages} pages (page-image PDF — text cannot be selected or searched). The document and its file were not changed.",
   "document.pdfExportedUnconfirmed": "The PDF was written, but storage durability could not be confirmed. Check the file.",
-  "document.pdfConflict": "The chosen path is not a regular file (a link, folder, …) or cannot be replaced, so no PDF was written. Choose another name.",
+  "document.pdfConflict": "The existing file was not replaced: overwriting was not confirmed, the file changed after confirmation, or it is not a regular file (a link, folder, …). Export again or choose another name.",
   "document.pdfInvalid": "Could not export the PDF. Make sure the file name ends in .pdf and the folder exists. Nothing was written.",
   "document.pdfFailed": "Could not write the PDF (permission, storage full, …). The destination was not changed.",
   "document.error.PdfExportUnavailable": "The document cannot be exported to PDF.",

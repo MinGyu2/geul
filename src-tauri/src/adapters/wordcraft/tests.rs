@@ -3421,3 +3421,85 @@ fn pdf_내보내기_명령은_그_판만_쓰고_세션과_원본은_그대로다
     assert_eq!(std::fs::read(dir.path().join("a.docx")).unwrap(), original);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn obsolete_docx_pdf_results_are_never_published() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let docx = loaded(&state, &dir);
+    let id = docx.session.session_id;
+    block_on(commands::edit(&state, id, 1, 0, vec![insert("가")])).unwrap();
+    let out = private_dir("obsolete");
+    // A real PDF of revision 1 (the "asynchronous result").
+    let first = out.join("first.pdf");
+    block_on(commands::export_pdf(
+        &state,
+        id,
+        1,
+        1,
+        first.to_str().unwrap(),
+    ))
+    .unwrap();
+    let bytes = std::fs::read(&first).unwrap();
+    let publish = |gen: u64, rev: u64, name: &str| {
+        let target = crate::services::pdf::destination(out.join(name).to_str().unwrap()).unwrap();
+        let result = commands::publish_current_pdf(
+            state.registry(),
+            state.wordcraft(),
+            id,
+            gen,
+            rev,
+            &target,
+            &bytes,
+        );
+        (result, target)
+    };
+    // Still current: publishable.
+    let (ok, target) = publish(1, 1, "current.pdf");
+    ok.unwrap();
+    assert_eq!(std::fs::read(&target).unwrap(), bytes);
+
+    // Revision changed after the snapshot: refused (documented policy), nothing written; an existing,
+    // confirmed destination keeps its bytes and the confirmation is not left for a later export.
+    block_on(commands::edit(&state, id, 1, 1, vec![insert("나")])).unwrap();
+    let kept = out.join("kept.pdf");
+    std::fs::write(&kept, b"%PDF-1.7\nkept\n%%EOF").unwrap();
+    crate::services::pdf::authorize_confirmed_overwrite(kept.to_str().unwrap());
+    let (stale, kept_target) = publish(1, 1, "kept.pdf");
+    assert!(matches!(
+        stale,
+        Err(DocumentError::RevisionMismatch { revision: 2, .. })
+    ));
+    assert_eq!(std::fs::read(&kept).unwrap(), b"%PDF-1.7\nkept\n%%EOF");
+    assert_eq!(
+        crate::services::pdf::publish_pdf(&kept_target, &bytes).err(),
+        Some(DocumentError::FileConflict),
+        "the grant was consumed by the refused export"
+    );
+
+    // Reload (new load generation, new model): the old generation's result is obsolete.
+    block_on(commands::load(&state, id, Some(1))).unwrap();
+    let (reloaded, target) = publish(1, 1, "reloaded.pdf");
+    assert!(matches!(
+        reloaded,
+        Err(DocumentError::StaleLoad {
+            load_generation: 2,
+            ..
+        })
+    ));
+    assert!(!target.exists());
+
+    // Closed session: obsolete.
+    state.registry().close(id).unwrap();
+    state.wordcraft().release(id);
+    let (closed, target) = publish(2, 0, "closed.pdf");
+    assert!(
+        matches!(
+            closed,
+            Err(DocumentError::StaleSession { .. }) | Err(DocumentError::UnknownSession { .. })
+        ),
+        "{closed:?}"
+    );
+    assert!(!target.exists());
+    let _ = std::fs::remove_dir_all(&out);
+}

@@ -598,6 +598,37 @@ pub async fn docx_save_as(
     .await
 }
 
+/// Publish a DOCX PDF only while it is still the PDF of the session's current document: the session is
+/// open, a WordCraft session, `ready`, at the same load generation with its model in the store (not closed,
+/// reloaded or replaced), and still at the exported committed revision. Policy (same as the HWP/HWPX
+/// `document_export_pdf`): a revision change after the snapshot refuses the export (`RevisionMismatch`)
+/// rather than publishing an earlier state. Checked immediately before publication; an edit committed while
+/// the final rename runs leaves a PDF of exactly the revision that was checked.
+pub(crate) fn publish_current_pdf(
+    registry: &SessionRegistry,
+    models: &super::store::WordcraftModels,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+    target: &std::path::Path,
+    bytes: &[u8],
+) -> Result<crate::document::Published, DocumentError> {
+    let current = (|| {
+        let info = wordcraft_session(registry, session_id)?;
+        check_ready(&info, generation)?;
+        check_revision(&info, revision)?;
+        models
+            .get(session_id, generation)
+            .map(|_| ())
+            .ok_or(DocumentError::InvalidState {
+                session_id,
+                state: info.state,
+            })
+    })();
+    current.inspect_err(|_| crate::services::pdf::forget_overwrite_grant(target))?;
+    crate::services::pdf::publish_pdf(target, bytes)
+}
+
 /// PDF export of a WordCraft session (Stage 5-A S5-4): the engine's PDF of exactly the requested load
 /// generation and committed revision, written to an absolute `.pdf` destination (`services::pdf`). The model,
 /// revision, dirty state and history are not changed; an engine panic while writing the PDF is reported as
@@ -610,7 +641,7 @@ pub(crate) async fn export_pdf(
     destination: &str,
 ) -> Result<crate::services::pdf::PdfExported, DocumentError> {
     let target = crate::services::pdf::destination(destination)?;
-    let (bytes, pages) = with_model(
+    let generated = with_model(
         state,
         session_id,
         generation,
@@ -623,11 +654,20 @@ pub(crate) async fn export_pdf(
                 .ok_or(engine_failure(EngineStage::Export))
         },
     )
-    .await?;
-    crate::services::pdf::check_pdf_envelope(&bytes)?;
+    .await;
+    let (bytes, pages) =
+        generated.inspect_err(|_| crate::services::pdf::forget_overwrite_grant(&target))?;
+    crate::services::pdf::check_pdf_envelope(&bytes)
+        .inspect_err(|_| crate::services::pdf::forget_overwrite_grant(&target))?;
     let size = bytes.len();
+    let registry = state.registry().clone();
+    let models = state.wordcraft().clone();
     let published = state
-        .run_blocking(move || crate::services::pdf::publish_pdf(&target, &bytes))
+        .run_blocking(move || {
+            publish_current_pdf(
+                &registry, &models, session_id, generation, revision, &target, &bytes,
+            )
+        })
         .await?;
     Ok(crate::services::pdf::PdfExported {
         session_id,

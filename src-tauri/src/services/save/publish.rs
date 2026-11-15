@@ -226,8 +226,7 @@ pub struct Staged {
 
 /// 파일 상태 요약: 장치·inode, 크기, 수정 시각, 상태 변경 시각(ctime), 권한. 쓰기는 수정 시각·ctime을, chmod·chown·
 /// 확장 속성 변경은 ctime을 바꾼다(일반 프로세스는 ctime을 정할 수 없다).
-#[cfg(target_os = "linux")]
-type Snapshot = (u64, u64, u64, (i64, i64), (i64, i64), u32);
+pub(crate) type Snapshot = (u64, u64, u64, (i64, i64), (i64, i64), u32);
 
 /// 이름(`path`, 따라가지 않음)이 `held`와 같은 inode의 일반 파일인지.
 #[cfg(target_os = "linux")]
@@ -239,7 +238,7 @@ fn same_inode(path: &Path, held: &fs::Metadata) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn snapshot(metadata: &fs::Metadata) -> Snapshot {
+pub(crate) fn snapshot(metadata: &fs::Metadata) -> Snapshot {
     use std::os::unix::fs::MetadataExt;
     (
         metadata.dev(),
@@ -893,5 +892,170 @@ pub fn publish_new(staged: &mut Staged, target: &Path) -> Result<Published, Docu
 
 #[cfg(not(target_os = "linux"))]
 pub fn publish_new(_staged: &mut Staged, _target: &Path) -> Result<Published, DocumentError> {
+    Err(unsupported_platform())
+}
+
+/// (status snapshot, link count) of the regular file named `name` in `dir` (not following links), or `None`
+/// when the name is missing or not a regular file.
+#[cfg(target_os = "linux")]
+fn regular_at(dir: &File, name: &CStr) -> Option<(Snapshot, u64)> {
+    use std::os::fd::AsRawFd;
+    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: dir is a live directory fd, name is NUL-terminated, stat is filled by fstatat.
+    if unsafe {
+        libc::fstatat(
+            dir.as_raw_fd(),
+            name.as_ptr(),
+            stat.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    } != 0
+    {
+        return None;
+    }
+    // SAFETY: fstatat succeeded and filled the buffer.
+    let st = unsafe { stat.assume_init() };
+    (st.st_mode & libc::S_IFMT == libc::S_IFREG).then_some((
+        (
+            st.st_dev,
+            st.st_ino,
+            st.st_size as u64,
+            (st.st_mtime, st.st_mtime_nsec),
+            (st.st_ctime, st.st_ctime_nsec),
+            st.st_mode,
+        ),
+        st.st_nlink,
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn exchange(dir: &File, a: &CStr, b: &CStr) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let fd = dir.as_raw_fd();
+    // SAFETY: same held directory, NUL-terminated names. RENAME_EXCHANGE swaps the two directory entries
+    // atomically; neither inode is unlinked or modified.
+    if unsafe { libc::renameat2(fd, a.as_ptr(), fd, b.as_ptr(), libc::RENAME_EXCHANGE) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// Identity-conditional replacement of an existing file (Stage 5-A PDF export, confirmed overwrite only).
+///
+/// `expected` is the status snapshot (device, inode, size, mtime, ctime, mode) of the destination the user
+/// confirmed to replace. A plain `renameat` would replace whatever the name holds at that instant, so this
+/// uses Linux `renameat2(RENAME_EXCHANGE)` inside the held directory:
+/// 1. pre-check: the name is a single-link regular file with exactly `expected` (otherwise `FileConflict`,
+///    nothing changed);
+/// 2. exchange the staged file and the destination atomically (both inodes survive);
+/// 3. verify the inode that was swapped out — now under the staging name — is still `expected` (device,
+///    inode, size, mtime, mode; ctime is excluded here because the exchange itself updates it) with one link,
+///    and the destination now holds the staged inode. A replacement, deletion/re-creation, data write, chmod
+///    or link change between the pre-check and the exchange is caught; a metadata-only change that alters
+///    nothing but ctime (e.g. an extended attribute) in that window is not (the pre-check compares ctime);
+/// 4. mismatch: exchange back (the other file returns to its name, the PDF returns to the staging name and
+///    is removed on drop) and report `FileConflict`. If the swap-back itself fails, the PDF stays visible and
+///    the other file stays under the staging name; neither is deleted and `SaveFailure{publish}` is reported;
+/// 5. match: unlink the swapped-out inode (only while the staging name still holds it), fsync the directory.
+///
+/// A filesystem without RENAME_EXCHANGE refuses the overwrite (`SaveUnsupported{platform}`) instead of
+/// falling back to an unconditional replacement. Residual: in the conflict case the PDF is visible at the
+/// destination between steps 2 and 4; writes through file descriptors opened before the exchange land in the
+/// replaced inode after step 3 (it is being retired). The staging name's journal record names the staged
+/// inode, so a crash after step 2 never lets cleanup delete the swapped-out file.
+#[cfg(target_os = "linux")]
+pub fn publish_exchange(
+    staged: &mut Staged,
+    target: &Path,
+    expected: &Snapshot,
+) -> Result<Published, DocumentError> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::MetadataExt;
+    let target_name = target
+        .file_name()
+        .and_then(|name| CString::new(name.as_bytes()).ok())
+        .ok_or_else(not_published)?;
+    let before = staged.file.metadata().map_err(|_| not_published())?;
+    if staged.verified != Some(snapshot(&before)) || !staged.owns_path() || !staged.at_path(target)
+    {
+        return Err(not_published());
+    }
+    let unchanged = |found: Option<(Snapshot, u64)>| found == Some((*expected, 1));
+    if !unchanged(regular_at(&staged.dir, &target_name)) {
+        return Err(DocumentError::FileConflict);
+    }
+    #[cfg(test)]
+    call(&BEFORE_RENAME, target, &staged.path);
+    #[cfg(test)]
+    if let Some(Fault::Rename(kind)) = fault() {
+        return Err(failure(SaveStage::Publish, &io::Error::from(kind)));
+    }
+    match exchange(&staged.dir, &staged.name, &target_name) {
+        Ok(()) => {}
+        Err(error)
+            if matches!(
+                error.raw_os_error(),
+                Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
+            ) =>
+        {
+            return Err(DocumentError::SaveUnsupported {
+                reason: SaveUnsupportedReason::Platform,
+            });
+        }
+        Err(error) => return Err(failure(SaveStage::Publish, &error)),
+    }
+    // The exchange itself updates both inodes' ctime, so after it the swapped-out inode is compared on
+    // everything but ctime (device, inode, size, mtime, mode, one link).
+    let without_ctime = |snap: &Snapshot| (snap.0, snap.1, snap.2, snap.3, snap.5);
+    let swapped_out = regular_at(&staged.dir, &staged.name)
+        .is_some_and(|(snap, links)| links == 1 && without_ctime(&snap) == without_ctime(expected));
+    let landed = same_inode_at(&staged.dir, &target_name, &before);
+    if !swapped_out || !landed {
+        return match exchange(&staged.dir, &staged.name, &target_name) {
+            // Back as before: the staging name holds the PDF again and is removed on drop.
+            Ok(()) => Err(DocumentError::FileConflict),
+            Err(error) => {
+                // Visible PDF, other file under the staging name: keep both, never delete.
+                staged.published = true;
+                Err(failure(SaveStage::Publish, &error))
+            }
+        };
+    }
+    staged.published = true;
+    // The staging name now holds the replaced inode; remove it only while it is still that inode.
+    let (old_dev, old_ino) = (expected.0, expected.1);
+    if regular_at(&staged.dir, &staged.name)
+        .is_some_and(|(snap, _)| (snap.0, snap.1) == (old_dev, old_ino))
+    {
+        // SAFETY: held directory fd and NUL-terminated name.
+        unsafe { libc::unlinkat(staged.dir.as_raw_fd(), staged.name.as_ptr(), 0) };
+    }
+    let after = staged.file.metadata().unwrap_or(before);
+    let (identity, fingerprint) = describe_published(target, &after);
+    let synced = staged.dir.sync_all().is_ok();
+    if let Some(entry) = staged.journal.take() {
+        if synced {
+            entry.retire();
+        } else {
+            entry.release();
+        }
+    }
+    let durable = same_inode(target, &after) && synced && after.nlink() == 1;
+    #[cfg(test)]
+    let durable = durable && fault() != Some(Fault::DirSync);
+    Ok(Published {
+        identity,
+        fingerprint,
+        durable,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn publish_exchange(
+    _staged: &mut Staged,
+    _target: &Path,
+    _expected: &Snapshot,
+) -> Result<Published, DocumentError> {
     Err(unsupported_platform())
 }

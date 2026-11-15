@@ -292,16 +292,91 @@ pub fn destination(path: &str) -> Result<PathBuf, DocumentError> {
     Ok(parent.join(name))
 }
 
-/// Publish `bytes` at `target` (from [`destination`]). A missing name is created without replacing
-/// anything; an existing regular file is replaced atomically after verified staging. Symbolic links,
-/// directories and other non-regular files are refused (`FileConflict`) and left untouched.
+/// How long an overwrite confirmation from the native dialog stays usable.
+pub const OVERWRITE_GRANT_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+struct OverwriteGrant {
+    expected: publish::Snapshot,
+    issued: std::time::Instant,
+}
+
+/// One-time overwrite authorizations, keyed by canonical destination. Issued only by the backend's own GTK
+/// chooser after the user confirmed replacing an existing file ([`authorize_confirmed_overwrite`], never an
+/// IPC command), consumed by the next publication attempt for that destination whatever its outcome.
+fn grants() -> std::sync::MutexGuard<'static, std::collections::HashMap<PathBuf, OverwriteGrant>> {
+    static GRANTS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, OverwriteGrant>>,
+    > = std::sync::OnceLock::new();
+    GRANTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// Record that the user confirmed replacing the file now at `chosen` (the PDF chooser ran with GTK
+/// overwrite confirmation and returned it). The grant is bound to the canonical destination and to the
+/// observed status snapshot (device, inode, size, mtime, ctime, mode) of that regular file. A path that
+/// is missing, not a regular file or not a PDF destination gets no grant (and drops an older one).
+/// Residual: GTK checks existence before asking; a file created between that check and this snapshot is
+/// granted without having been shown — only this user (or root) can create it in the trusted directory.
+pub(crate) fn authorize_confirmed_overwrite(chosen: &str) {
+    let Ok(target) = destination(chosen) else {
+        return;
+    };
+    let mut grants = grants();
+    match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.file_type().is_file() => {
+            grants.insert(
+                target,
+                OverwriteGrant {
+                    expected: publish::snapshot(&meta),
+                    issued: std::time::Instant::now(),
+                },
+            );
+        }
+        _ => {
+            grants.remove(&target);
+        }
+    }
+}
+
+/// Drop any grant for `target`: an export that is refused before publication must not leave the user's
+/// one-time confirmation usable by a later export.
+pub(crate) fn forget_overwrite_grant(target: &Path) {
+    grants().remove(target);
+}
+
+/// Consume the grant for `target` (always removed: no replay), returning its snapshot while unexpired.
+fn take_grant(target: &Path, now: std::time::Instant) -> Option<publish::Snapshot> {
+    let grant = grants().remove(target)?;
+    (now.saturating_duration_since(grant.issued) <= OVERWRITE_GRANT_TTL).then_some(grant.expected)
+}
+
+/// Publish `bytes` at `target` (from [`destination`]).
+/// - Missing name: create-only (`RENAME_NOREPLACE`), never replacing anything that appears meanwhile.
+/// - Existing regular file: only with an unexpired one-time grant for exactly this destination from the
+///   native dialog's overwrite confirmation, through verified staging (`publish::stage`: same owner, no hard
+///   link, no shared file/directory, metadata kept) and the identity-conditional exchange
+///   (`publish::publish_exchange`): a destination replaced, re-created, modified, re-linked or re-moded since
+///   the confirmation is refused (`FileConflict`). Without a grant: `FileConflict`, nothing written.
+/// - Symbolic links, directories and other non-regular files: `FileConflict`, untouched.
+///
+/// Any outstanding grant for `target` is consumed by this call. A failure before the exchange leaves the
+/// destination untouched and removes the staged file.
 pub fn publish_pdf(target: &Path, bytes: &[u8]) -> Result<Published, DocumentError> {
+    let grant = take_grant(target, std::time::Instant::now());
     check_pdf_envelope(bytes)?;
     crate::document::resources::active()?;
     match std::fs::symlink_metadata(target) {
         Ok(existing) if existing.file_type().is_file() => {
+            let expected = grant.ok_or(DocumentError::FileConflict)?;
+            if publish::snapshot(&existing) != expected {
+                return Err(DocumentError::FileConflict);
+            }
             let mut staged = publish::stage(target, bytes)?;
-            crate::document::resources::publication(|| publish::publish(&mut staged, target))
+            crate::document::resources::publication(|| {
+                publish::publish_exchange(&mut staged, target, &expected)
+            })
         }
         Ok(_) => Err(DocumentError::FileConflict),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -373,25 +448,29 @@ pub async fn document_export_pdf(
         .run_admitted(pending, move || {
             let request = parse_raster_request(&body)?;
             drop(body);
-            let info = check_rhwp_session(
-                &registry,
-                request.session_id,
-                request.generation,
-                request.revision,
-            )?;
             let target = destination(&request.destination)?;
-            let title = info
-                .display_name
-                .rsplit_once('.')
-                .map_or(info.display_name.as_str(), |(stem, _)| stem);
-            let pdf = raster_pdf(&request.pages, Some(title))?;
-            // The session may have been closed or reloaded meanwhile: only publish for the same state.
-            check_rhwp_session(
-                &registry,
-                request.session_id,
-                request.generation,
-                request.revision,
-            )?;
+            let checked = (|| {
+                let info = check_rhwp_session(
+                    &registry,
+                    request.session_id,
+                    request.generation,
+                    request.revision,
+                )?;
+                let title = info
+                    .display_name
+                    .rsplit_once('.')
+                    .map_or(info.display_name.as_str(), |(stem, _)| stem);
+                let pdf = raster_pdf(&request.pages, Some(title))?;
+                // The session may have been closed or reloaded meanwhile: only publish for the same state.
+                check_rhwp_session(
+                    &registry,
+                    request.session_id,
+                    request.generation,
+                    request.revision,
+                )?;
+                Ok(pdf)
+            })();
+            let pdf = checked.inspect_err(|_| forget_overwrite_grant(&target))?;
             let published = publish_pdf(&target, &pdf)?;
             Ok(PdfExported {
                 session_id: request.session_id,
@@ -549,8 +628,15 @@ mod tests {
         let _ = std::fs::remove_file(&target);
         publish_pdf(&target, &pdf).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), pdf);
-        // Replace an existing regular file atomically.
+        // An existing file is not replaced without the dialog's confirmation grant…
         std::fs::write(&target, b"%PDF-old\n%%EOF").unwrap();
+        assert_eq!(
+            publish_pdf(&target, &pdf).err(),
+            Some(DocumentError::FileConflict)
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"%PDF-old\n%%EOF");
+        // …and is replaced atomically with it.
+        authorize_confirmed_overwrite(target.to_str().unwrap());
         publish_pdf(&target, &pdf).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), pdf);
         // A symbolic link destination is refused and its target untouched.
@@ -580,6 +666,178 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names.len(), 4, "{names:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn private_dir(tag: &str) -> PathBuf {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("geul-pdf-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+            .unwrap();
+        dir
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn overwrite_requires_a_fresh_destination_bound_one_time_grant() {
+        use crate::services::save::publish::{Fault, BEFORE_RENAME, FAULT};
+        let dir = private_dir("grant");
+        let pdf = raster_pdf(
+            &[RasterPage {
+                width_pt: 100.0,
+                height_pt: 141.0,
+                png: png(100, 141),
+            }],
+            None,
+        )
+        .unwrap();
+        let old: &[u8] = b"%PDF-1.7\nold\n%%EOF";
+        let fresh = |name: &str| {
+            let path = destination(dir.join(name).to_str().unwrap()).unwrap();
+            std::fs::write(&path, old).unwrap();
+            path
+        };
+        let leftovers = || {
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".geul-save-")
+                })
+                .count()
+        };
+        let conflict = Some(DocumentError::FileConflict);
+
+        // Confirmed replacement succeeds once; the grant is consumed (no replay).
+        let a = fresh("a.pdf");
+        authorize_confirmed_overwrite(a.to_str().unwrap());
+        publish_pdf(&a, &pdf).unwrap();
+        assert_eq!(std::fs::read(&a).unwrap(), pdf);
+        std::fs::write(&a, old).unwrap();
+        assert_eq!(publish_pdf(&a, &pdf).err(), conflict, "reused grant");
+        assert_eq!(std::fs::read(&a).unwrap(), old);
+
+        // A grant for another destination does not authorize this one.
+        let b = fresh("b.pdf");
+        let other = fresh("other.pdf");
+        authorize_confirmed_overwrite(other.to_str().unwrap());
+        assert_eq!(publish_pdf(&b, &pdf).err(), conflict);
+        assert_eq!(std::fs::read(&b).unwrap(), old);
+
+        // Content modified after confirmation (same inode, new size/mtime/ctime).
+        let c = fresh("c.pdf");
+        authorize_confirmed_overwrite(c.to_str().unwrap());
+        std::fs::write(&c, b"%PDF-1.7\nchanged by someone else\n%%EOF").unwrap();
+        assert_eq!(publish_pdf(&c, &pdf).err(), conflict);
+        assert_eq!(
+            std::fs::read(&c).unwrap(),
+            b"%PDF-1.7\nchanged by someone else\n%%EOF"
+        );
+
+        // Replaced by another file (rename over) after confirmation.
+        let d = fresh("d.pdf");
+        authorize_confirmed_overwrite(d.to_str().unwrap());
+        std::fs::write(dir.join("intruder"), old).unwrap();
+        std::fs::rename(dir.join("intruder"), &d).unwrap();
+        assert_eq!(publish_pdf(&d, &pdf).err(), conflict);
+        assert_eq!(std::fs::read(&d).unwrap(), old);
+
+        // Deleted and re-created at the same path after confirmation.
+        let e = fresh("e.pdf");
+        authorize_confirmed_overwrite(e.to_str().unwrap());
+        std::fs::remove_file(&e).unwrap();
+        std::fs::write(&e, old).unwrap();
+        assert_eq!(publish_pdf(&e, &pdf).err(), conflict);
+
+        // Symbolic link swapped in after confirmation: refused, link target untouched.
+        let f = fresh("f.pdf");
+        authorize_confirmed_overwrite(f.to_str().unwrap());
+        std::fs::remove_file(&f).unwrap();
+        std::fs::write(dir.join("victim.docx"), b"victim").unwrap();
+        std::os::unix::fs::symlink(dir.join("victim.docx"), &f).unwrap();
+        assert_eq!(publish_pdf(&f, &pdf).err(), conflict);
+        assert_eq!(std::fs::read(dir.join("victim.docx")).unwrap(), b"victim");
+
+        // Hard link to the confirmed file: the existing staging policy refuses it.
+        let g = fresh("g.pdf");
+        std::fs::hard_link(&g, dir.join("g-link")).unwrap();
+        authorize_confirmed_overwrite(g.to_str().unwrap());
+        assert!(matches!(
+            publish_pdf(&g, &pdf),
+            Err(DocumentError::SaveUnsupported { .. })
+        ));
+        assert_eq!(std::fs::read(&g).unwrap(), old);
+
+        // Expired grant.
+        let h = fresh("h.pdf");
+        authorize_confirmed_overwrite(h.to_str().unwrap());
+        let later =
+            std::time::Instant::now() + OVERWRITE_GRANT_TTL + std::time::Duration::from_secs(1);
+        assert!(take_grant(&h, later).is_none());
+        assert!(
+            take_grant(&h, std::time::Instant::now()).is_none(),
+            "an expired grant is consumed too"
+        );
+
+        // Failure before the exchange: destination untouched, staged file removed.
+        let i = fresh("i.pdf");
+        authorize_confirmed_overwrite(i.to_str().unwrap());
+        FAULT.with(|f| f.set(Some(Fault::Rename(std::io::ErrorKind::Other))));
+        assert!(matches!(
+            publish_pdf(&i, &pdf),
+            Err(DocumentError::SaveFailure { .. })
+        ));
+        FAULT.with(|f| f.set(None));
+        assert_eq!(std::fs::read(&i).unwrap(), old);
+
+        // Race: the destination is replaced after the final pre-check, right before the exchange. The
+        // post-exchange identity check detects it and swaps back; the intruding file keeps its name.
+        let j = fresh("j.pdf");
+        authorize_confirmed_overwrite(j.to_str().unwrap());
+        BEFORE_RENAME.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(|target: &Path, _staged: &Path| {
+                let tmp = target.with_file_name("race-intruder");
+                std::fs::write(&tmp, b"%PDF-1.7\nintruder\n%%EOF").unwrap();
+                std::fs::rename(&tmp, target).unwrap();
+            }));
+        });
+        let raced = publish_pdf(&j, &pdf);
+        BEFORE_RENAME.with(|hook| *hook.borrow_mut() = None);
+        assert_eq!(raced.err(), conflict);
+        assert_eq!(std::fs::read(&j).unwrap(), b"%PDF-1.7\nintruder\n%%EOF");
+
+        // Race: in-place write after the pre-check (same inode, new ctime) is detected the same way.
+        let k = fresh("k.pdf");
+        authorize_confirmed_overwrite(k.to_str().unwrap());
+        BEFORE_RENAME.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(|target: &Path, _staged: &Path| {
+                use std::io::Write;
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(target)
+                    .unwrap()
+                    .write_all(b"x")
+                    .unwrap();
+            }));
+        });
+        let raced = publish_pdf(&k, &pdf);
+        BEFORE_RENAME.with(|hook| *hook.borrow_mut() = None);
+        assert_eq!(raced.err(), conflict);
+        assert_eq!(std::fs::read(&k).unwrap(), [old, b"x"].concat());
+
+        // No grant is ever issued for a missing path; a new name is still created without replacing.
+        let n = destination(dir.join("new.pdf").to_str().unwrap()).unwrap();
+        authorize_confirmed_overwrite(n.to_str().unwrap());
+        publish_pdf(&n, &pdf).unwrap();
+        assert_eq!(std::fs::read(&n).unwrap(), pdf);
+        assert_eq!(leftovers(), 0, "no staging files remain");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

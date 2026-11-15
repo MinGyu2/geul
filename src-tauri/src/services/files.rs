@@ -303,9 +303,18 @@ pub async fn document_file_dialog(
         let _ = tx.send(Ok(value));
     })
     .map_err(|_| DocumentError::Internal)?;
-    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|_| DocumentError::Internal)?)
-        .await
-        .map_err(|_| DocumentError::Internal)?
+    let pdf = format.as_deref() == Some("pdf");
+    tauri::async_runtime::spawn_blocking(move || {
+        let chosen = rx.recv().map_err(|_| DocumentError::Internal)??;
+        // GTK returned an accepted PDF destination with overwrite confirmation on: if a file exists there,
+        // the user confirmed replacing it. Only this backend path issues the one-time grant.
+        if let (true, Some(path)) = (pdf, chosen.as_deref()) {
+            crate::services::pdf::authorize_confirmed_overwrite(path);
+        }
+        Ok(chosen)
+    })
+    .await
+    .map_err(|_| DocumentError::Internal)?
 }
 
 #[cfg(not(target_os = "linux"))]

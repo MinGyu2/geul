@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { deflateSync, crc32 } from "node:zlib";
 import { loadRelease } from "./advanced-production-runtime.mjs";
-import { decodeCanonicalPng, hwpFacts, judgeT009, previewDimensions, verifyRegeneratedPreview } from "./hwp-preview-oracle.mjs";
+import { decodeCanonicalPng, hwpFacts, judgeT009, previewDimensions, previewMatchesReference, verifyRegeneratedPreview } from "./hwp-preview-oracle.mjs";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const CHECKER = join(ROOT, "src-tauri/target/debug/examples/save_check");
@@ -153,4 +153,19 @@ test("PAGE_DEF preview sizes follow the half-up short-side contract", () => {
   assert.deepEqual(previewDimensions(59528, 84186, true), [1024, 724]);
   assert.deepEqual(previewDimensions(1000, 1000, false), [1024, 1024]);
   assert.throws(() => previewDimensions(0, 10, false));
+});
+
+test("a genuinely blank page 1 is judged by uniformity, not correlation; one-sided uniform images are rejected", () => {
+  const raster = (w, h, fill, mark) => {
+    const rgb = Buffer.alloc(w * h * 3, fill);
+    if (mark) for (let y = 40; y < 60; y++) for (let x = 20; x < 200; x++) rgb.fill(0, (y * w + x) * 3, (y * w + x) * 3 + 3);
+    return { width: w, height: h, rgb };
+  };
+  const [w, h] = [362, 512];
+  assert.deepEqual(previewMatchesReference(raster(w, h, 255), raster(w, h, 255)), { correlation: null, blankPage: true });
+  assert.throws(() => previewMatchesReference(raster(w, h, 255, true), raster(w, h, 255)), /content in a preview of a blank page/);
+  assert.throws(() => previewMatchesReference(raster(w, h, 255), raster(w, h, 255, true)), /uniform preview of a page with content/);
+  assert.throws(() => previewMatchesReference(raster(w, h, 0), raster(w, h, 255)), /blank colours/);
+  // Content on both sides still goes through the correlation threshold.
+  assert.equal(previewMatchesReference(raster(w, h, 255, true), raster(w, h, 255, true)).blankPage, false);
 });
