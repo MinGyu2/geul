@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 // Independent Release-WASM (+ HWP T009 save_check) oracle for files published by native-stage4.py.
-//   node scripts/tests/stage4-native-oracle.mjs GEOMETRY_JSON NATIVE_OUT [NATIVE_OUT...]
+//   node scripts/tests/stage4-native-oracle.mjs [--report-dir DIR] GEOMETRY_JSON NATIVE_OUT [NATIVE_OUT...]
+// With --report-dir, loss/T009/oracle reports go to DIR (named after each run) instead of the run directories, so a
+// re-verification of historical runs leaves their recorded evidence untouched.
 // Every published copy is reopened from its actual bytes and compared with the expected model derived from the
 // fixture (cell texts, nested cells, table geometry, formula field IDs/commands/caches/ranges, inline picture
 // instance and BinData digest, character format, unchanged fixture bytes). HWP copies are also judged by the
-// independent T009 checker against the original fixture.
+// independent T009 checker against the file they replaced; a regenerated PrvImage is accepted only through
+// hwp-preview-oracle.mjs (complete canonical PNG, PAGE_DEF size, independent page-1 render match — Stage 5-A S5-6).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { loadRelease } from "./advanced-production-runtime.mjs";
+import { judgeT009 } from "./hwp-preview-oracle.mjs";
 
-const [geometryPath, ...outs] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const reportDir = argv[0] === "--report-dir" ? argv.splice(0, 2)[1] : null;
+const [geometryPath, ...outs] = argv;
+const reportPath = (out, file) => reportDir ? join(reportDir, `${basename(out)}.${file}`) : join(out, file);
 if (!geometryPath || !outs.length) throw new Error("usage: stage4-native-oracle.mjs GEOMETRY_JSON NATIVE_OUT [NATIVE_OUT...]");
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const CHECKER = join(ROOT, "src-tauri/target/debug/examples/save_check");
@@ -70,23 +77,17 @@ function t009(format, original, published, name, out) {
   try { const e = d.exportHwpWithReport(); try { loss = e.contentLoss(); } finally { e.free(); } } finally { d.free(); }
   const parsed = JSON.parse(loss);
   need((parsed.count ?? parsed.losses?.length ?? -1) === 0, `${name}.hwp published-file loss report ${loss}`);
-  const lossPath = join(out, `${name}.loss.json`);
+  const lossPath = reportPath(out, `${name}.loss.json`);
   writeFileSync(lossPath, loss);
   const raw = execFileSync(CHECKER, ["saved", "hwp", original, published, lossPath, "true"], { encoding: "utf8" });
   const result = JSON.parse(raw);
-  writeFileSync(join(out, `${name}.t009.json`), raw);
-  // The save service accepts a changed PrvImage only as the exact PNG it encoded for that save from the
-  // page-1 render (hwp::refresh_previews); an offline check cannot reproduce that encoding. Every other part
-  // must be judged safe, and the regenerated preview must be a PNG.
-  const previewOnly = result.findings.length === 1 && result.findings[0].code === "partChanged" && result.findings[0].part === "PrvImage";
-  if (previewOnly) {
-    const head = execFileSync("python3", ["-I", "-c", `import importlib.util,sys
-s=importlib.util.spec_from_file_location('d',sys.argv[1]);d=importlib.util.module_from_spec(s);s.loader.exec_module(d)
-print(d.cfb_streams(open(sys.argv[2],'rb').read())['PrvImage'][:8].hex())`, join(ROOT, "scripts/tests/hwp_record_diff.py"), published], { encoding: "utf8" }).trim();
-    need(head === "89504e470d0a1a0a", `${name}.hwp regenerated PrvImage is not a PNG (${head})`);
-  }
-  need((result.outcome === "safe" && result.findings.length === 0) || previewOnly, `${name}.hwp independent T009 ${raw}`);
-  return { original, outcome: result.outcome, findings: result.findings, bodySafe: true, regeneratedPreviewPng: previewOnly };
+  writeFileSync(reportPath(out, `${name}.t009.json`), raw);
+  // Every part but a regenerated PrvImage must be judged safe; a regenerated PrvImage must independently be the
+  // complete canonical preview of the published file's page 1 at its PAGE_DEF size (hwp-preview-oracle.mjs). Byte
+  // identity with the service's in-memory encoding stays a product gate (reported as serviceIdentity).
+  let judged;
+  try { judged = judgeT009(result, engine, original, published); } catch (error) { throw new Error(`${name}.hwp independent T009: ${error.message} ${raw}`); }
+  return { original, outcome: result.outcome, findings: result.findings, bodySafe: true, regeneratedPreview: judged.preview };
 }
 
 const rows = [];
@@ -143,5 +144,5 @@ for (const out of outs) {
     rows.push(check);
   }
 }
-writeFileSync(join(outs.at(-1), "oracle.json"), JSON.stringify({ status: "PASS", engineGeneration: build.generation, checker: sha(readFileSync(CHECKER)), outs, rows }, null, 2) + "\n");
-console.log("PASS", rows.length, JSON.stringify(rows.map(r => [r.format, r.name, r.t009 ? (r.t009.regeneratedPreviewPng ? "body-safe+regenerated-PrvImage" : r.t009.outcome) : "hwpx-reopen"])));
+writeFileSync(reportPath(outs.at(-1), "oracle.json"), JSON.stringify({ status: "PASS", engineGeneration: build.generation, checker: sha(readFileSync(CHECKER)), outs, rows }, null, 2) + "\n");
+console.log("PASS", rows.length, JSON.stringify(rows.map(r => [r.format, r.name, r.t009 ? (r.t009.regeneratedPreview ? `body-safe+verified-PrvImage(r=${r.t009.regeneratedPreview.correlation})` : r.t009.outcome) : "hwpx-reopen"])));
