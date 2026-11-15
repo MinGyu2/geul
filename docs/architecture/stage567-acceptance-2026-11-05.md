@@ -1193,3 +1193,70 @@ git diff --check
 **유지하는 지원 경계.** HWP 기존 표 parser 깊이 63/HWPX 15, 새 생성 15 및 기존 자원/원본 preflight 한도. 그림은 검증된 셀 문단 inline PNG/JPEG와 기존 지원 경로에 한정하며 caption/textbox sentinel·field와의 모호한 혼합·control 포함 삭제/복사·일반 drawing 도구는 확장하지 않는다. Formula 내부 임의 입력/삭제·control 삭제·겹친 field/모호한 marker/operand·cycle·소유권이 흡수되는 merge는 거부한다. source 편집 뒤 명시적 수식 재계산이 필요하며 증명되지 않은 캐시의 저장은 거부한다. 전체 T010/T012·DOCX/WordCraft·D4 성능·187/64 렌더·새 native IBus·다른 OS·외부 Hancom/Word·T015/T016은 수행하지 않았다. 기존 엔진 strict Clippy 41 진단과 독립 D4 TARGET NOT MET 이력도 PASS로 바꾸지 않는다.
 
 최종 상태: Stage 2 구현 COMPLETED, Stage 3 지원 범위 수용 COMPLETED, Stage 4/5 기존 미완료 상태 유지. 로컬 커밋 제목 `fix(stage3): preserve dependent formula cache integrity`; 정확한 SHA는 이 기록과 보정이 포함된 commit에서 확인한다. push 없음.
+
+
+<a id="stage4-integration-20261115"></a>
+## Stage 4 최소 native 통합 수용 — 2026-11-15
+
+**COMPLETED — 명시한 Stage 2/3 지원 범위의 HWP/HWPX 통합.** 시작 `6aa50df78aea924eee139ff784f74b6a62b92c40`, `master`, clean. RHWP `1a76570e833917d15817415a53c09ad61ab3203f` / WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` pin, RHWP 패치 20개·Release WASM은 변경·재생성하지 않았다. 새 기능 개발이나 전체 회귀가 아니라, 개별 검증된 기능이 **실제 정상 Tauri 제품에서 함께** 동작하는지의 공백만 실행했다. T012 전체·T013–T016·Stage 5 상태는 바꾸지 않는다. plan.md/spec.md에는 Stage 4 계약과 모순되는 내용이 없어 수정하지 않았다.
+
+**제품·환경 신원.** Release generation `1b09639e93bbbdb4f0c08af0e2f9ecfd534f64a4820b61b535bfe73e06a36565`, JS `3674b2349212646992d2880e45d8e9ae240d6bf5397bc6002199a17faf77d4c9`, WASM `669acfeb8df70d2ec2fa6cf35f40e6c6c87e9a343b9d187c2b64fcbf6e4c0831`(RELEASE.json·불변 세대·`dist/rhwp` 일치, `rhwp-artifacts.py --verify-product dist/rhwp --profile release` PASS). 기존 `src-tauri/target/release/geul`은 2026-11-13 빌드로 그림/수식/캐시 변경 이전이라 정상 제품을 `python3 scripts/tauri-geul.py build --no-bundle`로 다시 만들었다(시험 flag 없음, `dist/frontend-build.json` `mode: production`, `testFlags: {}`; native runner가 `data-paragraph-text` 시험 훅 부재 확인). 실행 파일 SHA-256: 수정 전 `ec200758d10fb152c474cceefb6e703638449e7e0a9fd6d1141abca256aef03f`(frontend `index-Blu65vcn.js`), 1차 수정 `54683a1d51f88e8d28a6bbf33be61fb26608f1b4ffaceacc73ca6f8dfa4a5c53`, **최종(HEAD `fix(stage4): admit general-format…`) `04887637d49a2a91bda763c8bed0cf2c4f3c9ad63bd7a8c3da05397a93c7f10a`**(frontend `assets/index-BLHMG-Zv.js` `b1fcb13f…`). Linux 7.2.14 x86_64, Tauri 2 Release, WebKitGTK 2.54.1, test-owned Xvfb 21.1.23(1440x1000) + 비공개 D-Bus + IBus 1.5.33 + ibus-hangul 1.5.5(`native-ibus-session.py --hangul-initial-mode hangul`), xdotool 3.20211022.1 XTest 키보드/포인터, tauri-driver(관찰·열기 경로 양식만), Node 24.21.0, Python 3.14.8. 사용자 IBus/dconf/Wayland 설정은 건드리지 않았다. 독립 HWP T009 검사기 `save_check` SHA-256 `ec0d05cf…`(1차, Stage 3 소스)→최종 소스로 재빌드.
+
+**기존 증거 재사용(실행하지 않음).** 각 계약은 Stage 4 변경 영향 분석으로 유효성을 판단했다.
+
+| 기존 증거 | 재사용 범위 | 유효 근거 |
+|---|---|---|
+| T012 Phase 2 native 50/50 (`src-tauri/target/t012-phase2-20261113/final/`) | 중첩 셀 native 클릭·입력·IME·Undo/Redo·저장/재열기, 평범한 표 리본 구조 명령 | 중첩 셀 편집/구조 계획 코드는 Stage 4에서 바뀌지 않음. 이번 통합은 중첩 표를 구조 변경 뒤 보존하는지 확인 |
+| T012 advanced native 56/56 | 장평/자간·수식 대화상자 잘못된 입력 거부·조합 중 명령 거부 | 대화상자·명령 admission 코드 불변 |
+| T010 native IME/history(D1–D5, 705/68 검사) | IME 트랜잭션 경계·history snapshot·Redo caret 계약 | history 코드 불변; 이번 run1에서 caret 복원이 이 계약과 일치함을 재확인 |
+| T009 HWP 보존·Stage 3 실제 native 게시 거부(Rust) | 원본 preflight/게시 거부·원본 보존 | 이번에 GUI 경로를 추가 실행, 검사기 변경은 아래 회귀로 재검증 |
+| Stage 2 그림 picker epoch/소유권(Release WASM 세션) | 닫힌·전환된 문서에 오래된 picker 결과 적용 금지 | picker 코드 불변, Stage 4 흐름은 picker를 쓰지 않아 새 교차 소유권 공백 없음(native picker race는 미실행) |
+| Stage 2/3 다중·부분 수식, 그림 P1/P2, 깊은 중첩·행 경계 | 개별 기능 계약 | 반복하지 않음. 과거 PASS 수를 Stage 4 실행 수로 합산하지 않음 |
+
+**새 통합 fixture** (`scripts/tests/stage4-native-geometry.mjs`, Release WASM으로 생성·검증, 원본 불변 확인). `compound.{hwp,hwpx}`: 본문 3×3 표 — A1 `10`, B1 `20`, C1 `서식대상`(서식 대상), A2 `합 [=A1+B1→30] 배 [=B1*2→40] 끝`(한 문단 두 수식, 앞·사이·뒤 일반 텍스트, ID 2/1), B2 `그림`+inline PNG(instance 3, BinData `b2705510…`), C2 `중첩`+1×2 중첩 표(`내부0/1`), A3 `본문`(IME 대상). 수식과 그림은 서로 다른 문단. `stale.{hwp,hwpx}`: Stage 3 계약 A1 `10` / B1 `=A1*2`(캐시 20). SHA-256: compound.hwp `f5ed9915…`, compound.hwpx `4911de00…`, stale.hwp `f5fc4996…`, stale.hwpx `4e91e451…`.
+
+**Scenario A + B1(같은 세션, 형식별)** — `scripts/tests/native-stage4.py`: 열기 → A3 클릭·End → 실제 IBus 한글 조합 `dlqfur`→`입력`(신뢰된 compositionstart/end), **조합 중 표 구조 9개·수식 명령 비활성** → Undo/Redo(각 1 revision, caret 복원) → C1 전체 선택 Ctrl+B → A2 둘째 수식 클릭(필드 range 소유)·제품 수식 대화상자(기존 식 `=B1*2` prefill) `=A1*5` 교체 → B2 End(그림 뒤 caret 3) `P` 입력 → **거부 대표**: 그림을 포함한 선택 Delete, 수식 내부 caret에서 입력 `Z`·Backspace — 모두 revision/dirty 불변·세션 ready → 거부 뒤 Undo/Redo가 그림 옆 입력을 정확히 되돌림/복원(기록 손상 없음) → A3 End `!` 입력 성공 → C1에서 `table.insertRowBelow`(필드·그림·중첩 표가 있는 rich table에서 제품 활성, 1 revision) → Undo/Redo → 실제 Ctrl+S durable(`synced=true`, `changedSince=false`) → GTK 닫기·native 열기 대화상자로 재열기 clean. 구조 명령 가용성: 행/열 넣기·지우기·아래 합치기 활성, 오른쪽 합치기(마지막 열)·나누기(병합 없음)는 형태상 비활성 — 지원되지 않는 조합을 양성으로 바꾸지 않았다.
+
+**Scenario B2 stale 캐시(형식별)**: A1 끝 Backspace·`1` 입력(11) → Ctrl+S **거부**, 대상 파일 바이트가 fixture와 동일, dirty/revision 유지·세션 ready·uncertain false → B1 클릭·수식 대화상자의 같은 식 `=A1*2` 확인(명시적 재계산, 1 revision) → Ctrl+S durable → 재열기 clean. 자동 연쇄 재계산은 요구하지 않는다.
+
+**실행 결과(실행별, 합산하지 않음)** — 증거 `target/stage4-native/`(무시 경로, 커밋하지 않음):
+
+| 실행 | 앱 | 결과 | 분류 |
+|---|---|---|---|
+| run1 (A+B, 2회 저장 흐름) | `ec200758` | FAIL — 거부 뒤 Redo caret을 그림 셀로 기대; 제품은 Undo 시점 caret을 snapshot에 담아 Redo에서 복원(T010 계약) | 하네스 기대값 오류, 제품 결함 아님 |
+| run2 (같은 흐름, 기대값 정정) | `ec200758` | **PASS 76/76** — 단, stale 거부 문구가 `SaveFailure`/"엔진이 문서를 내보내지 못했습니다" | 결함 1 관측 |
+| run3-stale (`--only-stale`) | `54683a1d` | **PASS 22/22** — 거부 문구 "원본 셀이 바뀐 뒤 다시 계산하지 않은 수식 값이 있어 저장하지 않았습니다…원본 파일은 바뀌지 않았습니다" | 결함 1 수정 확인 |
+| run4-single (`--single-save`: Undo/Redo 뒤 한 번만 저장) | `54683a1d` | FAIL — HWP 저장을 T009가 `recordsChanged`·`referenceInvalid`(BodyText)·`previewStale`로 거부, 원본 보존(`run4-single-FAIL*`) | 결함 2 관측(안전한 잘못된 거부) |
+| run5-single | **`04887637`(최종)** | **PASS 54/54** — HWP/HWPX 한 번의 durable 게시 | 결함 2 수정 확인 |
+
+모든 세션 `cleanup.json`: `complete`/`proven`/`filesystemProven` true, `exit` 0, survivors·누수 없음(run1–run5). run2 Scenario A는 최종 앱 이전 빌드지만, 두 수정은 stale 거부 문구와 구조 변경 표의 새 글자 모양 증명에만 해당하며 run2의 각 게시(서식은 첫 게시, 행 삽입은 두 번째 게시)에 영향이 없고, 같은 GUI 순서를 최종 앱의 run5가 다시 통과했다. run3의 stale 게시는 구조 변경·새 글자 모양이 없어 결함 2 수정의 영향 밖이다.
+
+**독립 게시 파일 검증** — `node scripts/tests/stage4-native-oracle.mjs target/stage4-native/fixtures/geometry.json target/stage4-native/run2 target/stage4-native/run3-stale target/stage4-native/run5-single`: **PASS, 게시 파일 10개**(`target/stage4-native/oracle.log`, `run5-single/oracle.json` `472ed73f…`). 실제 게시 바이트(저장 직후 복사본의 SHA 대조)를 Release WASM으로 열어 형식, 본문 `Body`, 표 3×3/4×3 격자·span, 셀별 글(`본문입력!` 정확히 한 번, 거부된 `Z` 없음), 중첩 셀 `내부0/1`, 수식 ID 2(`=A1+B1??%g,;;30`, range 2–4 불변)와 ID 1(`=A1*5??%g,;;50`, range 유지), 수식 셀의 행 이동(셀 3→6), 그림 instance 3·BinData 1·SHA `b2705510…`·135 B·위치 2(셀 4→7), C1 4글자 bold·IME 셀 비굵게, 컨트롤 인벤토리, fixture 바이트 불변을 확인했다. Undo 게시본(행 없음)과 Redo 게시본(행 있음)을 각각 모델과 비교해 Undo/Redo 상태를 실제 파일로 확인했다. stale 게시본은 A1 `11`, B1 같은 ID·`=A1*2??%g,;;22`. HWP는 독립 T009 `save_check saved`를 **실제로 대체된 파일**(첫 게시는 fixture, 이후는 직전 게시본)과 게시본으로 실행했다: 서식·텍스트·수식·stale 게시는 `safe`/finding 0, 구조 변경이 1쪽 렌더를 바꾼 게시는 서비스가 재생성한 `PrvImage`(PNG 확인) 1건만 남고 다른 모든 부분은 safe — 서비스는 자신이 그 저장에서 인코딩한 정확한 PNG일 때만 바뀐 PrvImage를 받으며(`hwp::refresh_previews`) 오프라인 검사기는 그 인코딩을 재현할 수 없다. 손실 보고는 게시 바이트를 Release로 다시 내보낸 보고(count 0 요구)를 썼다. HWPX는 제품 durable 저장 + 독립 Release 재열기·구조/내용 비교로 판정했고 HWP T009로 HWPX 안전을 주장하지 않는다. fixture를 원본으로 둔 2단계(fixture→두 번째 게시) 비교는 T009 계약(직전 원본 대비)이 아니라 판정에 쓰지 않았다.
+
+**결함과 보정(통합 시험에서 재현된 것만).**
+
+1. *stale 수식 거부의 잘못된 안내* (`a1fe48f fix(stage4): report stale formula save refusal as recalculation needed`). Stage 3의 안전 거부는 정상이었지만 실제 GUI에 "저장하지 못했습니다. 엔진이 문서를 내보내지 못했습니다"로 표시되어 원인(재계산하지 않은 수식)과 복구 경로가 없었다. `validatePublicationFormulaCaches`가 `FormulaCacheRefusal`을 던지고 strict export가 이를 표시해 Save가 `SaveFailure{stage:"export", reason:"formulaCache"}`와 재계산 안내(ko/en)를 낸다. 거부 조건·admission·T009는 바꾸지 않았다. 회귀: `stage2-tables.wasm.test.ts -t 'dependent cache'` 수정 전 2 FAIL / 수정 후 **2 PASS**; typecheck·변경 파일 ESLint PASS; `save.test.tsx`·`formulaDependencies.test.ts`·`commandSaveRejection.test.tsx`·language **37 PASS**.
+2. *구조 변경 HWP 표 + 일반 서식의 한 번 저장 거부* (`a3097ba fix(stage4): admit general-format char shapes in restructured HWP tables`). 최소 재현: 필드·그림 없는 평범한 HWP 2×2 표에서 `format.bold` 후 `table.insertRowBelow`, 한 번 저장 → `referenceInvalid`(HWPX PASS). `GEUL_T009_TRACE`로 `insertions.rs` 구조 변경 표 문단 증명이 새 글자 모양의 부모를 T012 장평/자간 변형으로만 인정하는 것을 확인했다. 추가된 DocInfo 증명(`derived_char_shape`)은 이미 굵게/기울임/밑줄/취소선 파생을 안전하다고 증명하므로, 문단 증명도 같은 술어로 부모를 인정한다(기존 장평 규칙 유지, 정의의 다른 모든 바이트는 원본 하나와 일치해야 함). 회귀: `-t 'Stage 4 integration'` 수정 전 HWP 1 FAIL / 수정 후 **2 PASS**; `cargo-geul.py test --lib services::save` **249 PASS / 3 FAIL / 25 ignored** — 3건(`calc_cell_stale_previews…`, `calc_cell_two_durable_saves…`, `hwp_편집한_저장은…`)은 이 변경을 되돌린 HEAD에서도 같은 assertion으로 실패하는 기존 실패이며 Stage 4 범위 밖이라 고치지 않았다(PASS로 바꾸지 않음); `services::save::hwp` 35 PASS; clippy `-D warnings` PASS; 변경 파일 rustfmt clean(다른 파일의 기존 fmt diff는 그대로).
+
+**Stage 4 수용 행렬** (실행 수 합산 없음):
+
+| # | 요구 | 증거 | 분류 | 소스/Release 적용성 | 결정 |
+|---|---|---|---|---|---|
+| 1 | 현재 정상 제품/Release 신원 | 재빌드 앱 3개 SHA, frontend-build production·testFlags {}, Release 대조 | CURRENT PASS | HEAD `a3097ba`, generation `1b09639e…` | 확정 |
+| 2 | HWP 복합 편집 | run2 76·run5 54, oracle | CURRENT PASS | 최종 앱 run5 | 통과 |
+| 3 | HWPX 복합 편집 | run2·run5, oracle | CURRENT PASS | 최종 앱 run5 | 통과 |
+| 4 | 실제 IBus·교차 명령 전이 | 신뢰된 조합 `입력`, 조합 중 rich table 구조/수식 비활성 | CURRENT PASS (+T010/T012 REUSED) | 최종 앱 | 통과 |
+| 5 | 결합 연산 뒤 수식/그림 소유권 | oracle: ID·식·캐시·range, instance/BinData/위치, 행 이동 | CURRENT PASS | 최종 앱 게시본 | 통과 |
+| 6 | Undo/Redo·revision·문서 상태 | revision 전이 검사, Undo/Redo 게시본 모델 비교 | CURRENT PASS (+T010 REUSED) | run2/run5 | 통과 |
+| 7 | 미지원 연산 안전 거부 | 그림 포함 선택 삭제, 수식 내부 입력/삭제, 조합 중 구조 명령 | CURRENT PASS (+Stage 2/3 REUSED) | run2/run5 | 통과 |
+| 8 | stale 캐시 거부·명시적 재계산 | run3 22, 원본 바이트 불변, 22 게시·재열기 | CURRENT PASS | 결함 1 수정 뒤 | 통과 |
+| 9 | HWP 게시·T009 | service durable + 독립 T009(직전 원본) | CURRENT PASS | 결함 2 수정 뒤 | 통과 |
+| 10 | HWPX 저장·독립 재열기 | durable + Release 재열기 비교 | CURRENT PASS | 최종 앱 | 통과 |
+| 11 | native 수명주기·정리 | 5개 세션 cleanup proven, survivors 없음 | CURRENT PASS | 전부 | 통과 |
+| 12 | Stage 5/미지원 | 아래 경계 | OUT OF SCOPE | — | 상태 불변 |
+
+미해결 필수 GAP/FAIL/BLOCKED/NOT RUN: 없음. 실행하지 않은 것(의도적): 전체 T009/T010 D1–D5/T012 WASM, 과거 56/50 native 행렬, 그림·수식·캐시 전체 Stage 2/3 시험, 187/64 렌더, 큰 중첩 벤치마크, DOCX/WordCraft, D4, T014 전원/파일시스템 오류, T015/T016, native picker race.
+
+**유지하는 지원 경계.** 마지막 열의 오른쪽 합치기·병합 없는 나누기는 형태상 비활성; 수식 내부 임의 편집·수식 컨트롤 삭제·그림 포함 선택 삭제/복사는 거부; 수식과 그림을 한 문단에 섞지 않음; 소유권이 흡수되는 병합은 거부; 원본 수정 뒤 명시적 수식 재계산 필요. 외부 Hancom/Word, Windows/macOS/Wayland/fcitx5, T013 DOCX 고급, T014 전체, T015/T016 출시 수용, D4 지연은 수행하지 않았고 완료로 바꾸지 않는다.
+
+**판정.** Stage 2 구현 COMPLETED, Stage 3 지원 범위 수용 COMPLETED, **Stage 4 지원 범위 native 통합 수용 COMPLETED**, Stage 5 미착수/불변. T012 전체는 외부 Hancom 수용·미지원 조합·T015/T016 행렬이 남아 **미완료**로 유지한다. 실행 명령: fixture `node scripts/tests/stage4-native-geometry.mjs target/stage4-native/fixtures`; native `python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --out <E>/runN-session -- python3 scripts/tests/native-stage4.py [--only-stale|--single-save] --app <abs>/src-tauri/target/release/geul --driver <tauri-driver> --out <E>/runN --geometry <E>/fixtures/geometry.json --xdotool @XDOTOOL@ --ibus @IBUS@`; oracle는 위 명령. 로컬 커밋만, push 없음.
