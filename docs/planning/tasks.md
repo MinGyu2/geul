@@ -131,8 +131,8 @@ Independent Test: 세 형식의 실제 생성·입력·저장·재저장·재열
 
 ## Phase 8: User Story 5 - 품질 행렬 및 출시 (Priority: P1)
 Independent Test: 지원 기능 행렬과 각 OS의 실제 배포 실행.
-- [ ] T015 [US5] 기존·신규 문서 왕복 및 회귀 행렬 — `tests/roundtrip/`, `docs/quality-matrix.md`
-- [ ] T016 [US5] 세 OS·확장 입력/그래픽 환경·PDF·고지·보안 출시 수용 — `src-tauri/tauri.conf.json`, `docs/release-checklist.md`
+- [ ] T015 [US5] 기존·신규 문서 왕복 및 회귀 행렬 — `tests/roundtrip/`, `docs/quality-matrix.md` — Stage 5-A(2026-11-15) 로컬 범위 행렬 작성: 기존 PASS 재사용, 외부 작성 HWP/HWPX 3건 열기·PDF, DOCX 한글 글꼴 탐색 GAP(fontconfig 전용 호스트), 외부 corpus·S5-2/S5-3 남음 → 전체 미완료 ([행렬](../quality-matrix.md))
+- [ ] T016 [US5] 세 OS·확장 입력/그래픽 환경·PDF·고지·보안 출시 수용 — `src-tauri/tauri.conf.json`, `docs/release-checklist.md` — Stage 5-A(2026-11-15): Linux PDF 내보내기 구현·수용(DOCX 벡터, HWP/HWPX 쪽 그림), 고지 생성기·로컬 보안 PASS, .deb 생성되지만 NixOS 전용 바이너리(이식성 FAIL)·고지 미동봉·geul 라이선스 미정 → 출시 NO-GO, 전체 미완료 ([점검표](../release-checklist.md))
 
 ## Task Contracts
 

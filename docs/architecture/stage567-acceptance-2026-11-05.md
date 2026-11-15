@@ -1,6 +1,17 @@
 # Stage 5–7 통합·수용 재검증 (2026-11-05)
 
 
+<a id="stage5a-local-20261115"></a>
+
+## Stage 5-A — 로컬 개발·내부 품질 수용 (2026-11-15)
+
+시작 `9471d7edf467b85a1bddde2bae62927532aefefa`(`master`), RHWP `1a76570e`, WordCraft `dc25d8a2`, Release generation `1b09639e…a36565`(WASM `669acfeb…c0831`) 불변. 로컬 커밋만, push 없음.
+
+- **S5-4 PDF**: 구현 전에는 리본 `planned`뿐이었다. `639657a`에서 DOCX(WordCraft krilla 벡터)와 HWP/HWPX(RHWP 캔버스 쪽 그림 → krilla) PDF 내보내기를 구현했다. Linux native run2 4 양성·3 음성 PASS, 독립 구조·pdf.js 시각 검사 PASS. DOCX 한글은 WordCraft 글꼴 탐색 GAP(fontconfig 전용 호스트)이 있어 조건부다.
+- **S5-6 PrvImage 오라클**: `9027acc`. PNG 서명만 보던 판정을 정규 PNG·PAGE_DEF 크기·독립 1쪽 렌더 상관·추가 근거 없음으로 교체했다. Stage 4 게시 10건 재검증 PASS(상관 0.9983), 음성 대조 5/5 PASS. 서비스 메모리 부호화와의 바이트 동일성은 `product-gate`로만 남는다.
+- **S5-1·S5-5**: [품질 행렬](../quality-matrix.md), [출시 점검표](../release-checklist.md), `scripts/generate-notices.py`. `.deb`는 생성되지만 NixOS 전용 바이너리라 이식성 FAIL, geul 자체 라이선스 미정 BLOCKED.
+- 판정: Stage 5-A **PARTIALLY COMPLETED**(남은 로컬 항목은 점검표), 전체 Stage 5 미완료, 출시 NO-GO. S5-2·S5-3 DEFERRED.
+
 <a id="wordcraft-rust-hwp-final-20261109"></a>
 
 ## CURRENT — WordCraft·geul Rust·HWP 최종 검증 (2026-11-09)
