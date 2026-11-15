@@ -28,8 +28,8 @@ struct FcFontSet {
     fonts: *mut *mut c_void,
 }
 
-/// Bounds on what fontconfig output is read (a damaged cache or configuration cannot make geul allocate
-/// without limit).
+/// Bounds on what geul reads and stores from fontconfig output. This bounds geul-side traversal and
+/// allocation; fontconfig owns and constructs its font set independently.
 const MAX_FACES: usize = 100_000;
 const MAX_VALUES: c_int = 64;
 const MAX_STRING_BYTES: usize = 4096;
@@ -81,6 +81,7 @@ api! {
     FcPatternAddCharSet: fn(*mut c_void, *const c_char, *const c_void) -> FcBool;
     FcPatternGetString: fn(*const c_void, *const c_char, c_int, *mut *const u8) -> FcResult;
     FcPatternGetInteger: fn(*const c_void, *const c_char, c_int, *mut c_int) -> FcResult;
+    FcPatternGetBool: fn(*const c_void, *const c_char, c_int, *mut FcBool) -> FcResult;
     FcPatternGetCharSet: fn(*const c_void, *const c_char, c_int, *mut *mut c_void) -> FcResult;
     FcObjectSetCreate: fn() -> *mut c_void;
     FcObjectSetAdd: fn(*mut c_void, *const c_char) -> FcBool;
@@ -261,9 +262,11 @@ impl Provider {
             if set.is_null() {
                 return out;
             }
-            for p in font_set(&*set).into_iter().take(MAX_FACES) {
-                if let Some(face) = read_face(api, p) {
-                    out.push(face);
+            if let Some(patterns) = font_set(&*set, MAX_FACES) {
+                for p in patterns {
+                    if let Some(face) = read_face(api, p) {
+                        out.push(face);
+                    }
                 }
             }
             (api.FcFontSetDestroy)(set);
@@ -363,22 +366,24 @@ impl Provider {
             if set.is_null() {
                 return out;
             }
-            for p in font_set(&*set).into_iter().take(MAX_SORTED) {
-                let mut charset: *mut c_void = std::ptr::null_mut();
-                if (api.FcPatternGetCharSet)(p, obj(b"charset\0"), 0, &mut charset)
-                    != FC_RESULT_MATCH
-                    || charset.is_null()
-                    || (api.FcCharSetHasChar)(charset, c as c_uint) == 0
-                {
-                    continue;
-                }
-                if let Some(f) = get_string(api, p, b"family\0", 0) {
-                    if !out.iter().any(|o| o.eq_ignore_ascii_case(&f)) {
-                        out.push(f);
+            if let Some(patterns) = font_set(&*set, MAX_SORTED) {
+                for p in patterns {
+                    let mut charset: *mut c_void = std::ptr::null_mut();
+                    if (api.FcPatternGetCharSet)(p, obj(b"charset\0"), 0, &mut charset)
+                        != FC_RESULT_MATCH
+                        || charset.is_null()
+                        || (api.FcCharSetHasChar)(charset, c as c_uint) == 0
+                    {
+                        continue;
                     }
-                }
-                if out.len() >= 4 {
-                    break;
+                    if let Some(f) = get_string(api, p, b"family\0", 0) {
+                        if !out.iter().any(|o| o.eq_ignore_ascii_case(&f)) {
+                            out.push(f);
+                        }
+                    }
+                    if out.len() >= 4 {
+                        break;
+                    }
                 }
             }
             (api.FcFontSetDestroy)(set);
@@ -398,19 +403,49 @@ impl Drop for Provider {
     }
 }
 
-/// The patterns of a font set (bounded by its own count).
+/// Borrowed, bounded traversal of patterns in a fontconfig-owned font set.
+struct FontSetIter<'a> {
+    set: &'a FcFontSet,
+    next: usize,
+    end: usize,
+}
+
+impl Iterator for FontSetIter<'_> {
+    type Item = *const c_void;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.next < self.end {
+            // SAFETY: construction validates nonnegative consistent counts and a non-null array for
+            // positive capacity; `next < end <= nfont <= sfont`, and the borrow keeps the set alive.
+            let pattern = unsafe { *self.set.fonts.add(self.next) };
+            self.next += 1;
+            if !pattern.is_null() {
+                return Some(pattern.cast_const());
+            }
+        }
+        None
+    }
+}
+
+/// Validate the fontconfig-owned counts and expose at most `limit` patterns without allocating a
+/// second collection. The caller must keep the live font set until the iterator is dropped.
 ///
 /// # Safety
-/// `set` must be a live font set returned by fontconfig.
-unsafe fn font_set(set: &FcFontSet) -> Vec<*const c_void> {
-    let n = usize::try_from(set.nfont).unwrap_or(0);
-    if set.fonts.is_null() {
-        return Vec::new();
+/// `set` must be a live font set returned by fontconfig, and its `fonts` allocation must contain
+/// `sfont` entries as specified by `FcFontSet`.
+unsafe fn font_set(set: &FcFontSet, limit: usize) -> Option<FontSetIter<'_>> {
+    if set.nfont < 0 || set.sfont < 0 || set.nfont > set.sfont {
+        return None;
     }
-    (0..n)
-        .map(|i| *set.fonts.add(i) as *const c_void)
-        .filter(|p| !p.is_null())
-        .collect()
+    if set.sfont > 0 && set.fonts.is_null() {
+        return None;
+    }
+    let n = usize::try_from(set.nfont).ok()?;
+    Some(FontSetIter {
+        set,
+        next: 0,
+        end: n.min(limit),
+    })
 }
 
 /// # Safety
@@ -441,9 +476,23 @@ unsafe fn get_int(api: &Api, p: *const c_void, object: &'static [u8]) -> Option<
 
 /// # Safety
 /// `p` must be a live pattern.
+unsafe fn get_bool(api: &Api, p: *const c_void, object: &'static [u8]) -> Option<bool> {
+    let mut value: FcBool = 0;
+    if (api.FcPatternGetBool)(p, obj(object), 0, &mut value) != FC_RESULT_MATCH {
+        return None;
+    }
+    match value {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// # Safety
+/// `p` must be a live pattern.
 unsafe fn read_face(api: &Api, p: *const c_void) -> Option<FcFace> {
-    // FcBool is stored as an integer value.
-    if get_int(api, p, b"scalable\0") == Some(0) {
+    // An absent, mismatched, or invalid boolean is not evidence that this face is scalable.
+    if get_bool(api, p, b"scalable\0") != Some(true) {
         return None;
     }
     let file = get_string(api, p, b"file\0", 0)?;
@@ -465,4 +514,128 @@ unsafe fn read_face(api: &Api, p: *const c_void) -> Option<FcFace> {
         weight: get_int(api, p, b"weight\0").unwrap_or(80),
         slant: get_int(api, p, b"slant\0").unwrap_or(0),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_api() -> Option<Api> {
+        for name in library_names() {
+            // The runtime provider is optional on platforms without fontconfig; the test follows
+            // that contract and exercises the real dynamically loaded API wherever it is present.
+            let Ok(library) = (unsafe { libloading::Library::new(name) }) else {
+                continue;
+            };
+            if let Ok(api) = Api::load(library) {
+                return Some(api);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn scalable_boolean_property() {
+        let Some(api) = test_api() else {
+            eprintln!("SKIP scalable_boolean_property: fontconfig runtime unavailable");
+            return;
+        };
+        // SAFETY: these signatures are the fontconfig C API. Patterns are local and destroyed
+        // after read_face copies the strings it needs.
+        unsafe {
+            let add_bool = *api
+                ._lib
+                .get::<unsafe extern "C" fn(*mut c_void, *const c_char, FcBool) -> FcBool>(
+                    b"FcPatternAddBool\0",
+                )
+                .unwrap();
+            let add_integer = *api
+                ._lib
+                .get::<unsafe extern "C" fn(*mut c_void, *const c_char, c_int) -> FcBool>(
+                    b"FcPatternAddInteger\0",
+                )
+                .unwrap();
+            let add_string = api.FcPatternAddString;
+            let make_face = |scalable: Option<Result<FcBool, c_int>>| {
+                let pattern = (api.FcPatternCreate)();
+                assert!(!pattern.is_null());
+                assert_ne!(
+                    add_string(pattern, obj(b"file\0"), c"/tmp/test-font.ttf".as_ptr().cast()),
+                    0
+                );
+                assert_ne!(
+                    add_string(pattern, obj(b"family\0"), c"Test Family".as_ptr().cast()),
+                    0
+                );
+                if let Some(value) = scalable {
+                    match value {
+                        Ok(value) => {
+                            assert_ne!(add_bool(pattern, obj(b"scalable\0"), value), 0);
+                        }
+                        Err(value) => {
+                            // fontconfig refuses integer insertion into FC_SCALABLE itself.
+                            // Exercise the typed getter's mismatch result on a real integer
+                            // property, then verify a face without a proven scalable bool is rejected.
+                            assert_ne!(add_integer(pattern, obj(b"weight\0"), value), 0);
+                            assert_eq!(get_bool(&api, pattern, b"weight\0"), None);
+                        }
+                    }
+                }
+                let face = read_face(&api, pattern.cast_const());
+                (api.FcPatternDestroy)(pattern);
+                face
+            };
+
+            assert!(make_face(Some(Ok(1))).is_some());
+            assert!(make_face(Some(Ok(0))).is_none());
+            assert!(make_face(None).is_none());
+            assert!(make_face(Some(Err(1))).is_none());
+            assert!(make_face(Some(Ok(2))).is_none());
+            eprintln!("scalable_boolean_property: exercised real fontconfig Boolean API");
+        }
+    }
+
+    #[test]
+    fn font_set_traversal_bound() {
+        let patterns = [
+            std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+            std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+            std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+            std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+            std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+        ];
+        let set = FcFontSet {
+            nfont: 5,
+            sfont: 5,
+            fonts: patterns.as_ptr().cast_mut(),
+        };
+        // SAFETY: the synthetic set describes the five-entry array above; the iterator only
+        // returns pointers and never dereferences these pattern sentinels.
+        unsafe {
+            let bounded = font_set(&set, 2).expect("consistent set");
+            assert_eq!(bounded.count(), 2);
+            assert_eq!(font_set(&set, 10).expect("consistent set").count(), 5);
+
+            let negative = FcFontSet {
+                nfont: -1,
+                sfont: 0,
+                fonts: std::ptr::null_mut(),
+            };
+            assert!(font_set(&negative, 2).is_none());
+
+            let inconsistent = FcFontSet {
+                nfont: 2,
+                sfont: 1,
+                fonts: patterns.as_ptr().cast_mut(),
+            };
+            assert!(font_set(&inconsistent, 2).is_none());
+
+            let missing_array = FcFontSet {
+                nfont: 1,
+                sfont: 1,
+                fonts: std::ptr::null_mut(),
+            };
+            assert!(font_set(&missing_array, 2).is_none());
+        }
+    }
 }
