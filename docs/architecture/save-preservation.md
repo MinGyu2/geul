@@ -1,5 +1,7 @@
 # T009 원본 형식 저장과 보존 검사 (2026-10-19)
 
+> **2026-11-16 Stage 5-A 글꼴 경계:** RHWP `getDocumentFontTable`은 로드된 IR의 7개 언어별 font ID/정의와 CHAR_SHAPE 참조를 읽는 API이며, HWP `FACE_NAME`/`ID_MAPPINGS` 또는 HWPX XML의 원본 보존 증명은 아니다. 글꼴 ID 변경, 새 정의 추가, 글꼴 publication/history reconciliation에 대한 T009 허용 규칙은 아직 추가하지 않았다. HWP `derived_char_shape`의 기존 `[0..14)` 동일성, HWP DocInfo 검사, HWPX canonical header 비교는 그대로이며 글꼴 변경은 RHWP에서 계속 거부한다. 따라서 기존 T009 save/reopen 증거는 글꼴 변경의 근거가 아니다. 상세 상태는 [글꼴 시스템](font-system.md)을 따른다.
+
 > **2026-11-13 T012 Phase 2:** HWP `insertions.rs`에 같은 instance id를 가진 기존 평범한 표의 재구성 증명을 추가했다. 행·열·병합 또는 셀별 문단 수가 달라진 경우에만 후보가 되며, 원본/출력의 평문 셀·출력 격자·원본 셀 템플릿·표 속성 보존을 확인한다. 필드/개체/캡션이 있는 표는 이 경로로 허용하지 않는다. 셀 글은 독립 live/reopen 모델 비교로 확인하고, 중첩 셀도 명시적 경로·좌표·문단 글을 비교한다. HWPX 패키지 비교 규칙은 그대로다. [계약·실제 게시/거부 증거·한계](stage567-acceptance-2026-11-05.md#t012-phase2-20261113).
 
 상태: **이 환경(Linux)에서 구현·검증. T009 체크 안 함** — 선행 T007·T008이 플랫폼 기준으로 미체크이고, 원본 교체는 Linux에서만

@@ -1,8 +1,10 @@
-# 문서 품질 행렬 (T015 로컬 범위, Stage 5-A — 2026-11-15)
+# 문서 품질 행렬 (T015 로컬 범위, Stage 5-A — 2026-11-16)
+
+> **2026-11-16 추가 근거:** fresh WordCraft bootstrap/protected compile 1/1 PASS, fontconfig real Boolean 1/1 및 bounded traversal 1/1 PASS, RHWP inventory unit 2/2·generated Release WASM 4/4·TypeScript typecheck PASS. 이는 read-only inventory까지만 증명한다. HWP/HWPX font mutation·T009 proof·registered user font save/render/native acceptance는 구현되지 않았거나 NOT RUN이다. 자세한 identity와 명령은 [font system 6절](architecture/font-system.md#6-검증)을 따른다.
 
 이 행렬은 **지원 선언 범위** 안에서 이미 있는 PASS 근거를 재사용하고, Stage 5-A에서 새로 실행한 로컬 검사만 CURRENT로 적는다. 지원 범위를 넓히지 않는다. T015 전체 Done, 외부 Office 호환, Windows/macOS 수용, 출시 GO가 **아니다**.
 
-- 기준 소스: 시작 `9471d7e`, PDF 구현 `639657a`, 미리보기 오라클 `9027acc`(이 문서와 같은 브랜치 `master`). 엔진 고정: RHWP `1a76570e`, WordCraft `dc25d8a2`. RHWP Release generation `1b09639e…a36565`(WASM `669acfeb…c0831`, `scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release` PASS).
+- 기준 소스: 시작 `9471d7e`, PDF 구현 `639657a`, 미리보기 오라클 `9027acc`(이 문서와 같은 브랜치 `master`). 엔진 고정: RHWP `1a76570e`, WordCraft `6931bcc`(reproducible public-parent patch bootstrap). RHWP Release generation `2745ff0089af491711bed4ab1caf5ee60051950fe810fd2cfee2b1e5549fda8c`(WASM `7d63bfa38cbbc0919f78fe0c149cf18549071898afb4bf0c039df2689008503d`, source tree `a5265cb664d8e3a2cb57076afff19317ba3a711024e7b6e3ddd07b91f0461a0c`, build/publication and `externalUnchanged` PASS).
 - 분류: **REUSED PASS**(과거 실행, 관련 소스 불변 — 이번에 다시 실행하지 않음) · **CURRENT PASS**(Stage 5-A에서 실행) · **GAP** · **FAIL** · **NOT RUN** · **DEFERRED** · **OUT OF SCOPE**.
 - 구현 상태: **IV** 구현·검증 · **IU** 구현·미검증 · **SR** 미지원·안전 거부 · **IM** 구현 없음 · **EXT** 외부 수용 필요.
 - 적용성(change-impact): Stage 5-A 제품 변경은 PDF 명령·PDF 서비스·PDF 전용 대화상자·알림 키다. **정정(후속 안정화)**: 처음 기록(“저장 서비스·문서 판별 불변, diff 비어 있음”)은 `929a0a2`까지만 맞다. Phase 2(`14880d6`)와 후속 안정화에서 공유 게시 모듈 `src-tauri/src/services/save/publish.rs`에 PDF 전용 `publish_exchange`(+ `ExchangeOutcome`, 시험용 fault `UnlinkReplaced`)가 추가되고 `snapshot`이 crate 공개로 바뀌었으며, `src-tauri/src/document/session.rs`에 PDF 게시 지점 `SessionRegistry::publish_for_current`가 추가됐다. 일반 문서 저장 경로(`service`·`stage`/`publish`/`stage_new`/`publish_new`·`finish_save`·판정·journal)는 바뀌지 않았고, 공유 모듈 회귀 `--lib services::save`는 249 PASS/3 FAIL/25 ignored로 Stage 4 기록과 같다(같은 기존 3개 실패). 엔진·패치·WASM·IME·Undo/Redo 경로는 바뀌지 않았다. 그래서 아래 REUSED 행은 현재 소스에 그대로 적용된다.
@@ -26,7 +28,7 @@
 | 13 | 보존·안전 거부 | IV | IV | IV | REUSED PASS | T009 보존 판정, Stage 3/4 거부 경로 | — |
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
-| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | 표시만(글꼴 변경 unsupported) | 표시만(글꼴 변경 unsupported) | CURRENT PASS(2026-11-15 글꼴 패키지, NixOS native run10 + 독립 검사) / 이전 CURRENT FAIL은 이력 | [글꼴 시스템](architecture/font-system.md) 6절 | HWP/HWPX 글꼴 변경, Windows/macOS DEFERRED |
+| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | 표시+read-only font inventory; mutation unsupported | 표시+read-only font inventory; mutation unsupported | CURRENT PASS(2026-11-15 native run10/DOCX 독립 검사; 2026-11-16 inventory API/tests) / 이전 CURRENT FAIL은 이력 | [글꼴 시스템](architecture/font-system.md) 6절 | HWP/HWPX font mutation·T009 proof·Canvas/PDF acceptance, Windows/macOS DEFERRED |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 
@@ -110,12 +112,12 @@ T009 전체, T010 D1–D5, native 50/50·56/56, Stage 2 그림/수식/깊은 표
 
 외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), HWP/HWPX 글꼴 변경 저장 증명, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014). 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
 
-## 7. Stage 5-A 글꼴 패키지 (2026-11-15)
+## 7. Stage 5-A 글꼴 패키지 (2026-11-16)
 
 | 구분 | 내용 |
 |---|---|
 | IMPLEMENTED | 공유 카탈로그(시스템·사용자·번들), fontconfig 실행 시 적재 제공자(경로 하드코딩 없음, 없으면 unavailable 보고), TTF/OTF/WOFF/WOFF2 등록·앱 전용 저장·재적재·제거, 리본 글꼴 선택기(한/영), DOCX `format.font`·배치·저장·PDF, RHWP 글꼴 표시·사용자 글꼴 WebView 전달 |
-| CURRENT PASS | Rust 글꼴/DOCX 15, WordCraft fonts 51, 프런트엔드 새 시험 18(+영향 시험), native run10(등록 2·DOCX 2·HWP/HWPX 거부 2·재시작·재열기·제거), 독립 DOCX/PDF 검사 — 명령과 결과는 [글꼴 시스템 6절](architecture/font-system.md#6-검증-2026-11-15-nixos-2605-linux-7214-fontconfig-2183-webkitgtk-2541) |
+| CURRENT PASS | Historical: Rust 글꼴/DOCX 15, WordCraft fonts 51, native run10 and independent DOCX/PDF. 2026-11-16: WordCraft fresh bootstrap/compile 1, fontconfig Boolean/iteration 2, RHWP inventory unit 2 + Release-WASM 4, typecheck; details in [font system 6절](architecture/font-system.md#6-검증) |
 | REUSED PASS | PDF 게시 안전, T009, IME, Stage 2–4 (코드 경로 불변) |
 | NOT RUN / UNVERIFIED | 가변 CJK 대체 얼굴의 시각 굵기, RHWP Canvas 사용자 글꼴 픽셀 비교, 글꼴 선택기 native 키보드 전체 탐색 |
 | 미구현 | HWP/HWPX 글꼴 변경(저장 증명이 글꼴 ID·새 글꼴 이름을 받지 않음 — 명시적 거부) |

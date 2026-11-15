@@ -1,5 +1,7 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
+> **2026-11-16 Stage 5-A font package status · PARTIALLY COMPLETED:** exact WordCraft pin bootstrap and compile are independently verified; fontconfig Boolean and bounded traversal work is implemented (real API Boolean test PASS). RHWP font inventory read API and selected-ID resolution are implemented and tested. HWP/HWPX font editing, T009 publication proofs, Undo/Redo integration, exact metric/render/PDF verification remain required; RHWP `format.font` stays disabled. Release remains NO-GO. See [font system status](../architecture/font-system.md).
+
 > **2026-11-13 T012 Phase 2 · PARTIALLY COMPLETED.** HWP/HWPX 중첩 표 셀 직접 편집(명시적 셀 경로·cursor-list 소유 증명, 입력·선택·삭제·문단 나누기/합치기·IME·Undo/Redo)과 본문 수준 평범한 표의 구조 명령 9개(행/열 넣기·지우기, 오른쪽/아래 셀 합치기, 합친 셀 나누기)를 일반 Release 제품에 연결했다. HWP는 T009 검사기에 같은 표의 재구성 증명을 더했다. 실제 저장 서비스 HWP/HWPX 각 6 durable·거부 2건 원본 보존, 게시 파일 독립 재열기, native X11/IBus 50/50 PASS. 중첩 표 생성·중첩 표 구조 변경·필드/개체가 있는 표·범위 병합은 미지원(거부)이며 T012 전체는 미완료다. [구현·증거·잔여](../architecture/stage567-acceptance-2026-11-05.md#t012-phase2-20261113).
 
 > **2026-11-13 T012 검증 범위 확대 · 전체는 조건부 미완료.** 일반 제품 빌드에서 장평·자간·영속 수식은 일반 history의 snapshot 예산·WASM 증가 감시와 연산별 소유권/복잡도 검사로 판정한다. 기존 128 KiB·8쪽·깊이 4는 별도 advanced-only timeline에 유지한다. 후속 ClickHere 필드가 있는 셀, 480행·960셀/10쪽 표, 실제 원본 128 KiB 초과·100쪽 문서의 검증 범위를 확대했다. 일반 입력/IME Undo/Redo는 T010의 기존 제품 활성화 상태다. 중첩 표 직접 편집·미지원 후속 컨트롤·불완전한 HWP 원본 구조에서의 새 수식은 계속 거부하며 외부 Hancom/T015/T016 수용은 완료하지 않았다. [구현·가드·새 실행 증거](../architecture/stage567-acceptance-2026-11-05.md#t012-advanced-20261113).

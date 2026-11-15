@@ -8,6 +8,7 @@ import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipb
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
 import { cachedFormula, publicationFormulas, tableFormulaSafety, validatePublicationFormulaCaches } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
+import { documentFontTable } from "./rhwpFonts";
 
 /** One further table level inside a cell: the table control of the host paragraph, its cell and that cell's paragraph. */
 export interface NestedCell {
@@ -733,6 +734,27 @@ export class RhwpText {
     if (!selection) return null;
     const props = JSON.stringify({ [flag]: !selection.state[flag] });
     return () => this.format(from, to, props);
+  }
+
+  /** Document-owned IDs/face definitions for the actual selected character, in all seven language slots.
+   * Read-only: an inventory is never sufficient evidence for a save or a mutation. */
+  fontReferences(at: DocPosition) {
+    try {
+      if (!isIndex(at.section) || !isIndex(at.paragraph) || !isIndex(at.offset) || at.offset > this.paragraphLength(at)) return null;
+      const table = documentFontTable(this.doc);
+      if (!table) return null;
+      const c = at.cell, inline = this.inlineCell(at);
+      const offset = inline ? inline.textOffset : at.offset;
+      const value = json(c?.nested
+        ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), offset)
+        : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, offset)
+        : this.doc.getCharPropertiesAt!(at.section, at.paragraph, offset));
+      if (!isRecord(value) || !isIndex(value.charShapeId)) return null;
+      const shape = table.charShapes[value.charShapeId];
+      if (!shape) return null;
+      const faces = shape.fontIds.map((id, lang) => table.languages[lang]!.fonts[id]!);
+      return { charShapeId: shape.id, fontIds: shape.fontIds, faces };
+    } catch { return null; }
   }
 
   /** Stage 5-A: the stored font names (7 language slots) of the character at `at`. null when unreadable. */

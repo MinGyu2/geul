@@ -103,7 +103,7 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -7185,6 +7185,21 @@
+@@ -7185,6 +7185,28 @@
      ) -> Result<String, JsValue> {
          self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
              .map_err(|e| e.into())
@@ -114,6 +114,13 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +    #[wasm_bindgen(js_name = canFormatCharacters)]
 +    pub fn can_format_characters(&self) -> bool {
 +        self.can_format_characters_native()
++    }
++
++    /// [geul] Bounded document-owned font definitions and language-specific IDs.
++    /// Read-only IR inventory, never permission to serialize a font-table mutation.
++    #[wasm_bindgen(js_name = getDocumentFontTable)]
++    pub fn get_document_font_table(&self) -> Result<String, JsValue> {
++        self.document_font_table_native().map_err(|e| e.into())
 +    }
 +
 +    /// [geul] Proven text-only formatting runs; u32::MAX control means body.
@@ -155,3 +162,79 @@ diff --git a/src/model/style.rs b/src/model/style.rs
              } else {
                  UnderlineType::None
              };
+--- /dev/null
++++ b/src/document_core/commands/font_table.rs
+@@ -0,0 +1,63 @@
++//! Read-only font inventory. IDs are per-language document ordinals, never CSS/catalog IDs.
++use crate::document_core::DocumentCore;
++use crate::error::HwpError;
++use crate::model::style::Font;
++use std::io::Write;
++
++impl DocumentCore {
++    pub fn document_font_table_native(&self) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("unsupported document font table".into());
++        let info = &self.document.doc_info;
++        // Conservative read envelope; this API does not certify source XML/record preservation.
++        if info.font_faces.len() != 7 || info.char_shapes.len() > 65_536 {
++            return Err(fail());
++        }
++        if info.font_faces.iter().flatten().any(|f| f.name.is_empty() || f.name.len() > 4096) {
++            return Err(fail());
++        }
++        let count: usize = info.font_faces.iter().map(Vec::len).sum();
++        if count > 100_000 || info.font_faces.iter().any(|fonts| fonts.len() > 65_536) {
++            return Err(fail());
++        }
++        for cs in &info.char_shapes {
++            for (lang, id) in cs.font_ids.iter().enumerate() {
++                if info.font_faces[lang].get(usize::from(*id)).is_none() {
++                    return Err(fail());
++                }
++            }
++        }
++        #[derive(serde::Serialize)]
++        #[serde(rename_all = "camelCase")]
++        struct Face<'a> { id: usize, definition: &'a Font }
++        #[derive(serde::Serialize)]
++        #[serde(rename_all = "camelCase")]
++        struct Language<'a> { language_index: usize, language: &'static str, fonts: Vec<Face<'a>> }
++        #[derive(serde::Serialize)]
++        #[serde(rename_all = "camelCase")]
++        struct Shape { id: usize, font_ids: [u16; 7] }
++        #[derive(serde::Serialize)]
++        #[serde(rename_all = "camelCase")]
++        struct Inventory<'a> { schema_version: u8, languages: Vec<Language<'a>>, char_shapes: Vec<Shape> }
++        let names = ["HANGUL", "LATIN", "HANJA", "JAPANESE", "OTHER", "SYMBOL", "USER"];
++        let languages = info.font_faces.iter().enumerate().map(|(language_index, fonts)| {
++            Language { language_index, language: names[language_index],
++                fonts: fonts.iter().enumerate().map(|(id, definition)| Face { id, definition }).collect() }
++        }).collect();
++        let char_shapes = info.char_shapes.iter().enumerate().map(|(id, cs)| Shape { id, font_ids: cs.font_ids }).collect();
++        // Bound encoded bytes too, including opaque FACE_NAME payloads and XML-derived names.
++        struct Bounded(Vec<u8>);
++        impl Write for Bounded {
++            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++                if bytes.len() > (8 * 1024 * 1024usize).saturating_sub(self.0.len()) {
++                    return Err(std::io::Error::other("font inventory limit"));
++                }
++                self.0.extend_from_slice(bytes);
++                Ok(bytes.len())
++            }
++            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
++        }
++        let mut out = Bounded(Vec::new());
++        serde_json::to_writer(&mut out, &Inventory { schema_version: 1, languages, char_shapes }).map_err(|_| fail())?;
++        String::from_utf8(out.0).map_err(|_| fail())
++    }
++}
+--- a/src/document_core/commands/mod.rs
++++ b/src/document_core/commands/mod.rs
+@@ -10,6 +10,7 @@
+ mod footnote_ops;
+ mod foreign_paste;
+ mod formatting;
++mod font_table;
+ mod formatting_runs;
+ mod header_footer_ops;
+ mod html_import;

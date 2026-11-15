@@ -1,8 +1,9 @@
-# 통합 글꼴 시스템 (Stage 5-A 글꼴 패키지) — 2026-11-15
+# 통합 글꼴 시스템 (Stage 5-A 글꼴 패키지) — 2026-11-16
 
 상태: **PARTIALLY COMPLETED**. 공유 카탈로그·fontconfig 제공자·사용자 글꼴 등록/영속/제거·글꼴 선택 UI·WordCraft(DOCX) 통합·PDF는
-구현 및 NixOS 검증 완료. RHWP(HWP/HWPX)는 글꼴 표시·사용자 글꼴의 WebView 전달·Canvas 다시 그리기까지 구현했고, **HWP/HWPX 글꼴
-변경은 저장 보존 증명이 없어 명시적으로 거부**한다(아래 5절). Windows/macOS 실행 검증은 DEFERRED.
+구현 및 NixOS 검증 완료. RHWP(HWP/HWPX)는 document-owned 글꼴 inventory와 선택 글자의 font ID 참조를 읽을 수 있지만
+변경은 저장 보존 증명이 없어 명시적으로 거부한다(아래 5절). WordCraft pin 재현과 fontconfig 두 결함도 집중 검증했다.
+Windows/macOS 실행 검증은 DEFERRED. Stage 5-A 전체는 부분 완료, 출시 판단은 NO-GO다.
 
 ## 1. 구조
 
@@ -30,8 +31,12 @@
   가족(`resolve_family`, `FontDb::face`와 `word::resolve`에서 Word 대체 규칙 다음에만 사용)과 문자별 선호 대체 가족
   (`fallback_families`, 기존 대체 목록보다 먼저 시도하되 실제 cmap 포함 여부를 다시 확인)을 제공한다. 다시 훑기는 별칭·실패·대체
   캐시를 비우고 `FontDb::generation`을 올린다. 소스가 없으면 동작은 이전과 같다. fonts crate 시험 51개, clippy, wasm check 통과.
-- **gitlink**: geul `external/wordcraft`를 `dc25d8a` → `6931bcc`로 올렸다(커밋 `fa2228d`). 이 SHA는 원격에 없다(로컬 전용,
-  push 금지 정책 유지). RHWP는 변경·패치 추가 없음(`1a76570e`, Release generation `1b09639e…` 그대로).
+- **재현성 (2026-11-16):** 공개 포크에서 `6931bcc` direct SHA fetch는 `not our ref`; 공개 HTTPS 부모
+  `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`는 fetch된다. [`patches/wordcraft/system-font-source.patch`](../../patches/wordcraft/system-font-source.patch)
+  와 원본 commit metadata를 [`scripts/prepare-wordcraft.py`](../../scripts/prepare-wordcraft.py)가 확인해 같은 tree·commit SHA를 재구성한다.
+  새 `--no-local` geul clone에서 parent-only retrieval, exact `6931bcc`/parent, clean submodule/no alternates, protected
+  `cargo check -p wordcraft-fonts --locked --offline`를 검증했다. Cargo wrapper·CI도 같은 bootstrap을 쓴다. 잘못되거나 dirty한 기존 checkout은
+  보존하고 거부하며 integrity gate를 유지한다. 공개 발행·push는 하지 않았다. 옛 “원격 재현 불가” 상태는 당시 기록이다.
 
 ## 2. fontconfig 제공자와 플랫폼 경계
 
@@ -39,6 +44,10 @@
   Tauri Linux 트리에 잠긴 판, 새 crate 없음)로 **실행 시** 적재한다. 라이브러리는 플랫폼 파일 이름(`libfontconfig.so.1`,
   `libfontconfig-1.dll`, `libfontconfig.1.dylib` 등)으로만 찾고 경로는 플랫폼 로더가 정한다. 모든 fontconfig 객체는 한 함수 안에서
   만들고 버리며 한 mutex로 직렬화한다. 읽는 문자열·개수는 상한이 있다(얼굴 10만, 값 64, 문자열 4 KiB).
+- `FC_SCALABLE`은 동적 `FcPatternGetBool`(C ABI `FcBool`)로 읽는다. true만 허용하며 false·missing·type mismatch·비정규 bool은
+  제외한다. `FcFontSet`은 소유된 fontconfig 배열을 borrowed bounded iterator로 순회한다. `nfont/sfont` 음수·불일치 및 null array를
+  거부하고 `MAX_FACES`/`MAX_SORTED` 전에 범위를 자른다. 이는 geul의 traversal/result allocation만 제한하며 fontconfig 내부 font-set
+  메모리 사용량의 상한을 주장하지 않는다.
 - 탐색: `FcInitLoadConfigAndFonts`(시스템·사용자 `fonts.conf`, `FONTCONFIG_FILE`, 캐시를 그대로 따름) → `FcFontList`로 파일·색인·
   가족(언어 태그 포함)·스타일·굵기·기울기, 비트맵 글꼴 제외. `/nix/store`, `/usr/share/fonts`, `C:\Windows\Fonts` 등 어떤 경로도
   하드코딩하지 않는다.
@@ -91,18 +100,45 @@
 ### RHWP (HWP/HWPX) — 부분
 
 - 구현: 선택 시작 글자의 저장 글꼴 표시(`getCharPropertiesAt`의 한글 슬롯, 한글 워드프로세서의 대표 글꼴), 등록 사용자 글꼴의
-  WebView 전달, 글꼴 변경 시 모든 쪽 Canvas 다시 그리기(`fontsChanged`).
+  WebView 전달, 글꼴 변경 시 모든 쪽 Canvas 다시 그리기(`fontsChanged`). RHWP patch는 read-only `getDocumentFontTable`을 추가한다:
+  7개 언어별 명시 ID·전체 Font record와 CHAR_SHAPE별 `fontIds`를 검증해 반환한다. TS는 inventory와 선택 글자의 ID→문서 정의 참조를
+  body 및 지원 셀 경로에서 읽는다. 인덱스·count·참조·응답 크기 오류는 거부한다. 이 IR inventory는 HWP `FACE_NAME`/`ID_MAPPINGS`나
+  HWPX 원본 XML preservation proof가 아니다.
 - **미구현 — 글꼴 변경**: 레지스트리 `format.font`는 RHWP `unsupported`이며 실행하면 "이 문서 형식에서는 지원하지 않습니다"로 거부하고
   문서를 바꾸지 않는다. 이유: HWP 저장 증명 `derived_char_shape`(`services/save/hwp.rs`)는 덧붙인 글자 모양의 글꼴 ID 바이트
   `[0..14)`가 원본과 같아야 하고, 새 `FACE_NAME` 레코드도 허용하지 않는다. HWPX 헤더 덧붙임 규칙(`services/save/special.rs`)도
   `hh:fontRef` 변경·`hh:fontface` 추가 규칙이 없다. 편집을 허용하면 저장이 거부되거나 서식을 잃으므로 실행 전에 거부한다.
-  필요한 후속: (1) 문서 글꼴 표 읽기 API, (2) 기존 글꼴 ID로의 변경만 받는 HWP/HWPX 증명 확장과 회귀, (3) 새 글꼴 이름 추가의
-  DocInfo/header 보존 규칙. 이들은 T009 저장 안전 계약 변경이라 별도 작업으로 남긴다.
+  필요한 후속: 기존 정의를 포함한 CHAR_SHAPE font ID mutation, 안전한 언어별 신규 정의·사용자 글꼴 identity, HWP FACE_NAME/ID_MAPPINGS와
+  HWPX fontRef/fontface의 좁은 T009 proof, publication lease와 Undo/Redo의 font-table reconciliation. 기존 `findOrCreateFontId`는 Hangul
+  슬롯 ID를 반환하고 언어별 helper는 다른 슬롯에 placeholder를 쓰므로 shared identity로 바로 사용할 수 없다. `format.font`는 계속 비활성화한다.
+- T009는 미변경이다: HWP `derived_char_shape` font bytes `[0..14)` 동일성, 기존 정의·unknown records, ID_MAPPINGS, HWPX canonical header 비교가
+  그대로다. Read-only inventory와 reopen은 글꼴 mutation save proof가 아니다.
 - 레이아웃 메트릭: RHWP는 내장 메트릭 DB를 쓰며, DB에 없는 글꼴의 라틴 글자는 추정 폭이다(이미 있는 Canvas 보조 메트릭 경로는
-  geul이 쓰는 `getPageLayerTreeWithProfile`와 함께 켤 수 없음). 따라서 RHWP에서 WebView 글꼴이 바뀌어도 배치는 바뀌지 않을 수
-  있다(그리기만 바뀜). RHWP PDF는 화면과 같은 Canvas 쪽 그림이다.
+  geul이 쓰는 `getPageLayerTreeWithProfile`와 함께 켜지 않았다). `registerExactFontSource` WASM API는 있으나 host font bytes,
+  session/history와 active layer-tree metrics에 연결되지 않았다. 실제 Canvas glyph·cursor/selection geometry·PDF 일치성은 확인하지 않아
+  RHWP font rendering acceptance가 남아 있다.
 
-## 6. 검증 (2026-11-15, NixOS 26.05, Linux 7.2.14, fontconfig 2.18.3, WebKitGTK 2.54.1)
+## 6. 검증
+
+### 6.1 추가 검증 (2026-11-16, NixOS)
+
+| 범위 | 명령/산출물 | 결과 |
+|---|---|---|
+| WordCraft fresh dependency | `GEUL_SANDBOX=userns-root-bwrap python3 -m unittest scripts.tests.test_wordcraft_reproduction.WordcraftReproduction.test_fresh_public_base_exact_clean_source_and_compile` | PASS 1/1. 새 `--no-local` clone에서 공개 부모 fetch, exact commit/tree·parent·clean/no alternates 및 protected `cargo check -p wordcraft-fonts --locked --offline`. `target/font-completion/wordcraft-reproduction-final.log`. |
+| fontconfig Boolean | `LD_LIBRARY_PATH=/nix/store/p3y4rk4gjnhs80339qq7jixjbhplqc16-fontconfig-2.18.3-lib/lib GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib fonts::fontconfig::tests::scalable_boolean_property -- --exact --nocapture` | PASS 1/1, output confirms `exercised real fontconfig Boolean API`. `target/font-completion/fontconfig-boolean-fixed.log`. |
+| fontconfig traversal | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib fonts::fontconfig::tests::font_set_traversal_bound -- --exact --nocapture` | PASS 1/1 (earlier focused run reused; unchanged test not rerun). |
+| RHWP inventory unit | `npx vitest run src/components/Editor/rhwp/rhwpFonts.test.ts -t 'document font inventory'` | PASS 2/2; invalid slots/references and missing APIs fail closed. |
+| RHWP Release WASM | generation `2745ff0089af491711bed4ab1caf5ee60051950fe810fd2cfee2b1e5549fda8c`, source tree `a5265cb664d8e3a2cb57076afff19317ba3a711024e7b6e3ddd07b91f0461a0c`; `npx vitest run --config scripts/tests/font-table.vitest.config.ts -t 'document font inventory'` | build/publication PASS, `externalUnchanged: true`; WASM tests PASS 4/4 for HWP/HWPX read-only inventory, unchanged export/reopen, malformed reference rejection. |
+| TypeScript | `npm run typecheck` | PASS (valid prior result reused; relevant interface/source unchanged since run). |
+
+이 결과는 문서 글꼴 표 읽기만 증명한다. 신규 font ID 저장, 사용자 글꼴 정의 추가, Canvas glyph/metric/PDF 변경은 구현·검증하지 않았다.
+새 native font-change acceptance도 실행하지 않았다. WordCraft fonts 51, 기존 font Rust 15, native run10은 역사 결과로 재사용했고 재실행하지 않았다.
+Windows/macOS와 다른 배포판은 DEFERRED다. 이전 실패 이력도 유지한다: fresh harness의 상대 경로·manifest 오류는 수정됨; RHWP 초기 build는 CLI PATH와
+generation retention으로 publication이 거부됐으나 기존 올바른 CLI와 unselected artifact 보존 뒤 build PASS; 처음 Boolean test는 sandbox 실행 시 fontconfig
+library 경로를 찾지 못해 SKIP했고, 첫 실 API 실행의 integer fixture 오류를 고친 뒤 위 PASS다. WASM 테스트는 처음 기본 Vitest include에서 `No test files found`였으며,
+focused `scripts/tests/font-table.vitest.config.ts`를 추가해 별도 4개 검증을 통과했다.
+
+### 6.2 이전 검증 기록 (2026-11-15, NixOS 26.05, Linux 7.2.14, fontconfig 2.18.3, WebKitGTK 2.54.1)
 
 ### CURRENT PASS (새로 실행)
 

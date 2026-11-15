@@ -1,4 +1,6 @@
-# 출시 점검표 (T016, Stage 5-A 로컬 범위 — 2026-11-15)
+# 출시 점검표 (T016, Stage 5-A 로컬 범위 — 2026-11-16)
+
+> **2026-11-16 검토:** 출시 **NO-GO** 유지. WordCraft fresh-checkout dependency 재현, fontconfig 두 경계 및 RHWP read-only font inventory는 집중 검증했지만, HWP/HWPX font changes/save proofs/Undo-Redo/actual render and PDF acceptance는 아직 구현·검증하지 않았다. 상세 범위는 [font system](architecture/font-system.md)과 [quality matrix](quality-matrix.md)를 따른다.
 
 **판정: 출시 NO-GO.** 이 표는 현재 Linux 개발 환경에서 실제로 할 수 있는 항목만 Stage 5-A에서 실행하고 나머지는 상태와 선행 조건을 적는다. 출시 GO, T016 Done, 전체 Stage 5 완료가 아니다. 근거 소스: `master` `9027acc`(PDF `639657a`) 이후 문서 커밋. 품질 근거는 [품질 행렬](quality-matrix.md).
 
@@ -21,8 +23,8 @@
 | 로컬 보안: 산출물 | 생성물 추적 금지 | CURRENT PASS | `git ls-files`에 target/dist/WASM/PDF/deb 없음; `.agent-tmp.md`는 로컬 exclude | — | — |
 | 로컬 보안: 훅 | 로컬 훅 | CURRENT PASS | `.git/hooks/pre-commit`, `pre-push` 설치(pre-commit 프레임워크) | — | — |
 | T014 잔여 | 정전·실제 FS 고장, Windows/macOS 저장 | DEFERRED | [T014](architecture/t014-final-acceptance-2026-11-12.json) | 외부 환경 | 별도 승인 |
-| T015 잔여 | 외부 corpus·글꼴 GAP | GAP(외부 corpus) / 글꼴 GAP NixOS 해결 | [품질 행렬 6·7절](quality-matrix.md#7-stage-5-a-글꼴-패키지-2026-11-15) | HWP/HWPX 글꼴 변경 미구현 | — |
-| 글꼴 시스템 | 시스템 글꼴 탐색·사용자 글꼴·선택·PDF | CURRENT PASS(NixOS) / DEFERRED(Windows·macOS) | [글꼴 시스템](architecture/font-system.md): fontconfig 실행 시 적재(없으면 번들·사용자 글꼴만, 실패 없음), 사용자 글꼴은 앱 전용 폴더, 배포물에 사용자·시스템 글꼴을 넣지 않음 | Windows/macOS의 fontconfig 배포 또는 native 제공자, 그 OS의 글꼴 추가 대화상자, HWP/HWPX 글꼴 변경 | 플랫폼별 수용(S5-3) |
+| T015 잔여 | 외부 corpus·글꼴 GAP | GAP(외부 corpus) / WordCraft·fontconfig·inventory PASS | [품질 행렬 6·7절](quality-matrix.md#7-stage-5-a-글꼴-패키지-2026-11-16) | HWP/HWPX 글꼴 변경·T009 증명·render acceptance 미구현 | — |
+| 글꼴 시스템 | 시스템 글꼴 탐색·사용자 글꼴·선택·PDF | WordCraft/DOCX CURRENT PASS(NixOS); RHWP font inventory PASS, mutation INCOMPLETE; Windows/macOS DEFERRED | [글꼴 시스템](architecture/font-system.md): fontconfig 실행 시 적재, 사용자 글꼴 앱 전용 폴더, RHWP document-owned font IDs read-only 조회 | HWP/HWPX font mutation/save proof/session history/actual Canvas·PDF acceptance; Windows/macOS의 font provider와 파일 선택기 | 플랫폼별 수용(S5-3), RHWP T009 work |
 | 외부 Office 상호운용 (S5-2) | 한컴·Word GUI | DEFERRED / NOT RUN | 이번 작업 지시로 보류 | 전부 | 허가된 GUI 환경 |
 | Windows/macOS (S5-3) | 빌드·설치·IME·저장·PDF | DEFERRED / NOT RUN | 보류 | 전부 | 각 OS 환경 |
 | 다른 입력·그래픽 환경 | Wayland/fcitx5 등 | DEFERRED / NOT RUN | 보류 | 전부 | 해당 환경 |
