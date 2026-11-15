@@ -1325,6 +1325,16 @@ impl DocxModel {
         &mut self.session.doc
     }
 
+    /// PDF of the current model through WordCraft's own writer (`Session::print_pdf`, krilla): the engine's
+    /// print layout of every page, without comment balloons, as vector pages with embedded, subsetted fonts
+    /// (selectable text). Returns the bytes and the page count. Never changes the model, selection, history
+    /// or revision. `None` on an engine refusal (the message is dropped: it may contain document text).
+    pub fn export_pdf(&self) -> Option<(Vec<u8>, usize)> {
+        let (bytes, plan) = self.session.print_pdf(&json!({ "markup": false })).ok()?;
+        (plan.copies == 1 && plan.pages.len() == plan.chosen && !plan.pages.is_empty())
+            .then_some((bytes, plan.chosen))
+    }
+
     /// 지금 모델을 DOCX 바이트로 내보낸다(메모리 안, T009 저장의 출력). 실패하면 `None`(엔진 메시지는 버린다).
     pub fn export(&self) -> Option<Vec<u8>> {
         io::save_bytes(DOCX_NAME, &self.session.doc).ok()

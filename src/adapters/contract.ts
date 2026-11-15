@@ -166,7 +166,40 @@ export type ClientError =
    * 저장(T009)을 지금 시작할 수 없음: 확정을 기다리는 편집(pending)·조합(composing)이 있거나, 모델이 일부만 바뀌었을 수
    * 있거나(uncertain), 편집할 수 있는 상태가 아님(state). 아무것도 쓰지 않았다.
    */
-  | { code: "SaveNotReady"; reason: "pending" | "composing" | "uncertain" | "state" };
+  | { code: "SaveNotReady"; reason: "pending" | "composing" | "uncertain" | "state" }
+  /**
+   * PDF export (Stage 5-A) refused before anything was written: a page paints content the canvas renderer draws
+   * asynchronously (asyncContent — the capture could silently omit it), a page did not render (renderFailed), the
+   * document changed while pages were captured (changed), or the document exceeds the export limits (tooLarge).
+   */
+  | { code: "PdfExportUnavailable"; reason: PdfUnavailableReason };
+
+export const PDF_UNAVAILABLE_REASONS = ["asyncContent", "renderFailed", "changed", "tooLarge"] as const;
+export type PdfUnavailableReason = (typeof PDF_UNAVAILABLE_REASONS)[number];
+
+/** PDF export result. raster: pages are page images (HWP/HWPX, no selectable text); false: WordCraft vector pages. */
+export interface PdfExported {
+  sessionId: SessionId;
+  loadGeneration: number;
+  revision: number;
+  pages: number;
+  bytes: number;
+  durable: boolean;
+  raster: boolean;
+}
+
+/** A PDF export response for exactly this session, load attempt and revision. */
+export function parsePdfExported(value: unknown, sessionId: SessionId, loadGeneration: number, revision: number): PdfExported | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const keys = ["sessionId", "loadGeneration", "revision", "pages", "bytes", "durable", "raster"];
+  if (Object.keys(v).length !== keys.length || !keys.every((key) => Object.prototype.hasOwnProperty.call(v, key))) return null;
+  const count = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
+  if (v.sessionId !== sessionId || v.loadGeneration !== loadGeneration || v.revision !== revision) return null;
+  if (!count(v.pages) || (v.pages as number) < 1 || !count(v.bytes) || (v.bytes as number) < 1) return null;
+  if (typeof v.durable !== "boolean" || typeof v.raster !== "boolean") return null;
+  return { sessionId, loadGeneration, revision, pages: v.pages as number, bytes: v.bytes as number, durable: v.durable, raster: v.raster };
+}
 
 export type DocumentError = BackendError | ClientError;
 

@@ -18,7 +18,7 @@ export type LayoutCommandId =
   | "help.about";
 
 /** Native file workflows implemented by the application. */
-export type FileCommandId = "file.new" | "file.open" | "file.saveAs";
+export type FileCommandId = "file.new" | "file.open" | "file.saveAs" | "file.exportPdf";
 
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
@@ -154,6 +154,7 @@ const FILE_COMMANDS: Record<FileCommandId, Omit<CommandDefinition, "id" | "label
   "file.new": { shortcuts: ["Mod+N"], scope: "global" },
   "file.open": { shortcuts: ["Mod+O"], scope: "global" },
   "file.saveAs": { shortcuts: ["Mod+Shift+S"], scope: "global" },
+  "file.exportPdf": {},
 };
 
 const label = (id: string) => `command.${id}` as MessageKey;

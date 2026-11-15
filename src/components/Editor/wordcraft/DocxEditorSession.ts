@@ -65,7 +65,7 @@ import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../
 //   못했다). 엔진이 명령 연산을 거부하면 inputNotice "commandRejected"로 알린다.
 import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
-import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { ImeSession } from "../rhwp/imeInput";
 import { textOps } from "./textOps";
@@ -1180,6 +1180,18 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private setSave(state: SaveState) {
     this.saveState = state;
     this.emit();
+  }
+
+  /**
+   * PDF export (Stage 5-A S5-4): the backend WordCraft PDF of the committed revision (vector pages, selectable text).
+   * Only from a settled model (no IME transaction or unsent edit). Never changes the model, history, revision, dirty
+   * state or save state; the backend refuses a revision that is no longer current.
+   */
+  async exportPdf(destination: string): Promise<Result<PdfExported>> {
+    const blocker = this.saveBlocker();
+    if (blocker) return { ok: false, error: blocker };
+    if (!this.backend.exportPdf) return { ok: false, error: { code: "Protocol" } };
+    return this.backend.exportPdf(this.sessionId, this.generation, this.revision, destination);
   }
 
   private saveBlocker(): DocumentError | null {

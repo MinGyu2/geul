@@ -1308,6 +1308,7 @@ dependencies = [
  "flate2",
  "gtk",
  "image",
+ "krilla",
  "libc",
  "quick-xml 0.42.0",
  "serde",

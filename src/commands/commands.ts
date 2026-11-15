@@ -58,6 +58,8 @@ export interface FileCommandActions {
   open(): void;
   newDocument(): void;
   saveAs(sessionId: SessionId | null): void;
+  /** PDF export of the active document (Stage 5-A). Absent where the host has no native file dialog. */
+  exportPdf?(sessionId: SessionId | null): void;
 }
 
 interface UiCommand {
@@ -131,6 +133,21 @@ const FILE_COMMANDS: Record<string, {
       return ENABLED;
     },
     run: ({ document, files }) => files?.saveAs(document?.sessionId ?? null),
+  },
+  // PDF export (Stage 5-A S5-4): an output of the settled current revision; never changes the document.
+  "file.exportPdf": {
+    state: ({ document, files }) => {
+      if (!files?.exportPdf) return unavailable("notImplemented");
+      if (files.busy) return unavailable("dialogOpen");
+      const snapshot = document?.snapshot();
+      if (!snapshot) return unavailable("noDocument");
+      if (!snapshot.loaded) return unavailable("notReady");
+      if (snapshot.saving) return unavailable("saving");
+      if (snapshot.composing) return unavailable("composing");
+      if (snapshot.pending) return unavailable("pendingEdits");
+      return ENABLED;
+    },
+    run: ({ document, files }) => files?.exportPdf?.(document?.sessionId ?? null),
   },
 };
 

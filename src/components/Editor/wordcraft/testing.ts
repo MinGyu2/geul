@@ -7,7 +7,7 @@
 // 묶고 이동·선택·실행 취소가 묶음을 닫는다. 서식은 선택 범위 키마다 켠 서식. 실제 엔진 동작은 Rust 시험과
 // tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
-import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, PdfExported, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type {
   DocxBackend, DocxCharFormat, DocxEdited, DocxFormatAccess, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView,
 } from "../../../adapters/docx";
@@ -591,6 +591,26 @@ export class FakeDocx implements DocxBackend {
         return { ok: false, error };
       }
       return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: true } };
+    });
+  }
+
+  /** Next PDF export is refused with this error (nothing written). */
+  exportPdfError: DocumentError | null = null;
+  /** Destinations of successful PDF exports (the fake never touches the session record). */
+  readonly exportedPdfs: string[] = [];
+  exportPdf(sessionId: number, generation: number, revision: number, destination: string): Promise<Result<PdfExported>> {
+    this.calls.push({ method: "exportPdf", args: [sessionId, generation, revision, destination] });
+    return this.respond(() => {
+      const checked = this.check(sessionId, generation);
+      if (!checked.ok) return checked;
+      if (revision !== this.info.revision) return { ok: false, error: { code: "RevisionMismatch", sessionId, revision: this.info.revision } };
+      if (this.exportPdfError) {
+        const error = this.exportPdfError;
+        this.exportPdfError = null;
+        return { ok: false, error };
+      }
+      this.exportedPdfs.push(destination);
+      return { ok: true, value: { sessionId, loadGeneration: generation, revision, pages: 1, bytes: 1000, durable: true, raster: false } };
     });
   }
 

@@ -6,4 +6,5 @@ pub mod save;
 pub mod files;
 
 pub mod creation;
+pub mod pdf;
 pub mod recovery;

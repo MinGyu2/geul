@@ -25,7 +25,7 @@ import {
   type SidePanel,
 } from "./hooks/layoutState";
 import { useViewportWidth } from "./hooks/useViewportWidth";
-import type { Language, Message } from "./language";
+import type { Language, Message, MessageKey } from "./language";
 import { LanguageProvider, useTranslation } from "./language/LanguageContext";
 import { canPersist, createLocalStorageStore, loadSettings, RESTORE_NOTICE, type SettingsStore } from "./settings/settings";
 import { usePersistedSettings, type NotSavedReason } from "./settings/usePersistedSettings";
@@ -180,11 +180,30 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       if (result.error.code === "FileConflict") notify({ key: "document.saveAsConflict" });
       else if (!editor || editor.saveState === priorSaveState) notify(documentErrorMessage(result.error));
     };
+    const handleExportPdf = async (sessionId: number | null) => {
+      if (sessionId === null) return;
+      const result = await documents.exportPdf(sessionId, {
+        title: t("document.pdfTitle"), accept: t("document.pdfExport"), cancel: t("document.cancel"),
+      });
+      if (result === null) return;
+      if (result.ok) {
+        if (!result.value.durable) notify({ key: "document.pdfExportedUnconfirmed" });
+        else notify({ key: result.value.raster ? "document.pdfExportedRaster" : "document.pdfExported", vars: { pages: result.value.pages } });
+        return;
+      }
+      const error = result.error;
+      if (error.code === "PdfExportUnavailable") notify({ key: `document.pdf.unavailable.${error.reason}` as MessageKey });
+      else if (error.code === "FileConflict") notify({ key: "document.pdfConflict" });
+      else if (error.code === "InvalidRequest" || error.code === "InvalidPath") notify({ key: "document.pdfInvalid" });
+      else if (error.code === "SaveFailure" || error.code === "SaveUnsupported") notify({ key: "document.pdfFailed" });
+      else notify(documentErrorMessage(error));
+    };
     return {
       busy: fileBusy,
       open: () => { void handleOpen(); },
       newDocument: () => { void handleNew(); },
       saveAs: (sessionId) => { void handleSaveAs(sessionId); },
+      exportPdf: (sessionId) => { void handleExportPdf(sessionId); },
     };
   }, [documents, fileBusy, notify, t]);
   // 값 입력 명령(T012·T013)의 입력 창. 요청은 연 순간의 세션·불러오기 번호·revision을 담는다.

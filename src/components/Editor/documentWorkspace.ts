@@ -11,7 +11,7 @@
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocxBackend } from "../../adapters/docx";
-import type { CloseOutcome, DocumentError, DocumentFormat, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
+import type { CloseOutcome, DocumentError, DocumentFormat, PdfExported, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
 import type { FileDialogRequest, FilePort } from "./filePort";
 import { reportDetachedSaveRejection } from "./saveState";
@@ -51,7 +51,7 @@ export class DocumentWorkspace {
   private readonly checkpointJobs = new Map<SessionId, number>();
   private checkpointLane: Promise<unknown> = Promise.resolve();
   private readonly checkpointStates = new Map<SessionId, RecoveryCheckpointStatus>();
-  private fileOperation: "open" | "new" | "saveAs" | "restore" | "recovery" | null = null;
+  private fileOperation: "open" | "new" | "saveAs" | "exportPdf" | "restore" | "recovery" | null = null;
   private started = false;
   private windowClosing = false;
   private publicationNotices = 0;
@@ -134,7 +134,7 @@ export class DocumentWorkspace {
     for (const listener of this.recoveryListeners) listener();
   }
 
-  private beginFileOperation(operation: "open" | "new" | "saveAs" | "restore" | "recovery"): boolean {
+  private beginFileOperation(operation: "open" | "new" | "saveAs" | "exportPdf" | "restore" | "recovery"): boolean {
     if (this.fileOperation !== null || this.windowClosing) return false;
     this.fileOperation = operation;
     this.emit();
@@ -304,6 +304,35 @@ export class DocumentWorkspace {
       } catch (error) {
         // saveAs는 Result 계약이다. 저장 상태는 편집 세션이 이미 정했으므로 전송 거부만 Protocol로 바꾼다.
         reportDetachedSaveRejection(error);
+        return { ok: false, error: { code: "Protocol" } };
+      }
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  /**
+   * PDF export (Stage 5-A S5-4) of the captured editor to a chosen .pdf destination. A separate output: the session,
+   * its file and its save state are not changed. null = the user cancelled the dialog (nothing written).
+   */
+  async exportPdf(sessionId: SessionId, text: FileDialogText): Promise<Result<PdfExported> | null> {
+    if (!this.beginFileOperation("exportPdf")) return { ok: false, error: { code: "Protocol" } };
+    const session = this.sessions.get(sessionId);
+    const editor = session ? this.anyEditorFor(sessionId) : null;
+    try {
+      if (!this.filePort) return { ok: false, error: { code: "Protocol" } };
+      if (!session || !editor) return { ok: false, error: { code: "UnknownSession", sessionId } };
+      const stem = session.displayName.replace(/\.(hwpx?|docx)$/i, "");
+      const destination = await this.filePort.chooseFile({ mode: "save", format: "pdf", suggestedName: stem, ...text });
+      if (!destination.ok) return destination;
+      if (destination.value === null) return null;
+      if (!/\.pdf$/i.test(destination.value)) return { ok: false, error: { code: "InvalidRequest" } };
+      if (this.sessions.get(sessionId) === null || this.editors.get(sessionId) !== editor) {
+        return { ok: false, error: { code: "StaleSession", sessionId } };
+      }
+      try {
+        return await editor.exportPdf(destination.value);
+      } catch {
         return { ok: false, error: { code: "Protocol" } };
       }
     } finally {

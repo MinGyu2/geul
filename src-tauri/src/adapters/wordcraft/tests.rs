@@ -3351,3 +3351,73 @@ fn core_insertions_use_wordcraft_history_without_losing_resources() {
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
     assert!(m.same_as(&after));
 }
+
+// ---- PDF export (Stage 5-A S5-4) ----
+
+#[test]
+fn pdf_내보내기는_엔진_pdf를_만들고_모델을_바꾸지_않는다() {
+    let mut m = model();
+    m.apply(&[insert("가나다")]);
+    let before = (m.export().unwrap(), m.adapter_state(), m.view().pages.len());
+    let (pdf, pages) = m.export_pdf().expect("PDF");
+    assert!(pdf.starts_with(b"%PDF-"));
+    assert_eq!(pages, before.2, "every layout page is exported once");
+    assert_eq!(
+        (m.export().unwrap(), m.adapter_state(), m.view().pages.len()),
+        before
+    );
+}
+
+/// Private directory for publication (the protected sandbox /tmp is a shared tmpfs and is refused).
+fn private_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join(format!("geul-docx-pdf-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    dir
+}
+
+#[test]
+fn pdf_내보내기_명령은_그_판만_쓰고_세션과_원본은_그대로다() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let docx = loaded(&state, &dir);
+    let id = docx.session.session_id;
+    let original = std::fs::read(dir.path().join("a.docx")).unwrap();
+    block_on(commands::edit(&state, id, 1, 0, vec![insert("가")])).unwrap();
+    let out = private_dir("command");
+    let target = out.join("out.pdf");
+    let path = target.to_str().unwrap().to_owned();
+    // Stale revision, wrong generation and non-PDF destinations are refused before writing.
+    assert!(matches!(
+        block_on(commands::export_pdf(&state, id, 1, 0, &path)),
+        Err(DocumentError::RevisionMismatch { revision: 1, .. })
+    ));
+    assert!(block_on(commands::export_pdf(&state, id, 2, 1, &path)).is_err());
+    let docx_target = out.join("out.docx");
+    assert_eq!(
+        block_on(commands::export_pdf(
+            &state,
+            id,
+            1,
+            1,
+            docx_target.to_str().unwrap()
+        )),
+        Err(DocumentError::InvalidRequest)
+    );
+    assert!(!target.exists() && !docx_target.exists());
+    let before = state.registry().get(id).unwrap();
+    let exported = block_on(commands::export_pdf(&state, id, 1, 1, &path)).expect("export");
+    assert_eq!(
+        (exported.session_id, exported.revision, exported.raster),
+        (id, 1, false)
+    );
+    let bytes = std::fs::read(&target).unwrap();
+    assert!(bytes.starts_with(b"%PDF-") && bytes.len() == exported.bytes);
+    // Session record (revision, dirty, sequence) and the source file are unchanged.
+    assert_eq!(state.registry().get(id).unwrap(), before);
+    assert_eq!(std::fs::read(dir.path().join("a.docx")).unwrap(), original);
+    let _ = std::fs::remove_dir_all(&out);
+}

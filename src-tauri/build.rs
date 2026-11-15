@@ -52,6 +52,8 @@ fn main() {
         "document_preflight",
         "document_save",
         "document_checkpoint",
+        "document_export_pdf",
+        "docx_export_pdf",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

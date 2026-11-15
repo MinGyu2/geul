@@ -46,7 +46,8 @@ import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
 import { FormulaCacheRefusal } from "./formulaDependencies";
-import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
+import { capturePdfPages, type EncodePng } from "./pdfCapture";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
@@ -2291,6 +2292,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** 지금 저장을 시작할 수 없는 이유(없으면 null). */
+  /**
+   * PDF export (Stage 5-A S5-4): paint every page of the current model (pdfCapture.ts) and let the backend write the
+   * PDF to `destination`. Only from a settled model (no IME transaction, no pending commit, not uncertain/closing);
+   * any model, load or revision change during capture refuses the export (nothing written). Never changes the
+   * model, history, revision, dirty state or save state. The PDF pages are images (no selectable text).
+   */
+  async exportPdf(destination: string, createCanvas?: () => HTMLCanvasElement, encode?: EncodePng): Promise<Result<PdfExported>> {
+    const blocker = this.saveBlocker();
+    if (blocker) return { ok: false, error: blocker };
+    if (!this.backend.exportPdf) return { ok: false, error: { code: "Protocol" } };
+    const doc = this.doc!;
+    const { epoch, generation, committed, modelVersion } = this;
+    const stillCurrent = () => this.doc === doc && this.epoch === epoch && this.generation === generation
+      && this.committed === committed && this.modelVersion === modelVersion && this.saveBlocker() === null;
+    const captured = await capturePdfPages(doc, this.pages.slice(), stillCurrent, createCanvas, encode);
+    if (!captured.ok) return { ok: false, error: { code: "PdfExportUnavailable", reason: captured.reason } };
+    return this.backend.exportPdf(this.sessionId, generation, committed, destination, captured.pages);
+  }
+
   private saveBlocker(): DocumentError | null {
     if (this.status.kind !== "ready" || !this.doc || !this.module || this.closing) return { code: "SaveNotReady", reason: "state" };
     if (this.uncertain) return { code: "SaveNotReady", reason: "uncertain" };

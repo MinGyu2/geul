@@ -87,6 +87,8 @@ pub fn run() {
             services::save::commands::document_preflight,
             services::save::commands::document_save,
             services::save::commands::document_checkpoint,
+            services::pdf::document_export_pdf,
+            adapters::wordcraft::commands::docx_export_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션을 시작하지 못했습니다");

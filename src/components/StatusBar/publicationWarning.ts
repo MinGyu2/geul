@@ -46,6 +46,11 @@ const ACTIONABLE = new Set<MessageKey>([
   "document.error.CreationUnverified",
   "document.error.CreationUnavailable",
   "document.error.FileCreatedEditorFailed",
+  "document.error.PdfExportUnavailable",
+  // PDF export failures (Stage 5-A): no PDF was written; the user must choose what to do next.
+  "document.pdfExportedUnconfirmed", "document.pdfConflict", "document.pdfInvalid", "document.pdfFailed",
+  "document.pdf.unavailable.asyncContent", "document.pdf.unavailable.renderFailed",
+  "document.pdf.unavailable.changed", "document.pdf.unavailable.tooLarge",
   "document.createdUnconfirmed", "document.saveAsConflict", "document.newConflict",
   "recovery.restoreConflict", "settings.saveFailed", "settings.conflict",
   "settings.restore.unsupported", "settings.restore.unreadable",

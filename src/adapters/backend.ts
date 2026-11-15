@@ -12,8 +12,10 @@ import {
   parseBackendError,
   parseCloseOutcome,
   parseSaveCheck,
+  parsePdfExported,
   parseSaveOutcome,
   parseSessionInfo,
+  type PdfExported,
   type CloseOutcome,
   type SaveCheck,
   type SaveOutcome,
@@ -58,6 +60,32 @@ export interface DocumentBackend {
    * (the backend never stages or replaces the original, never clears dirty). Same frame as save, no destination.
    */
   checkpoint?(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, preview?: PreviewRaster | null): Promise<Result<SaveOutcome>>;
+  /** PDF export of RHWP page rasters (Stage 5-A): one PNG per page, in order, for exactly that committed revision. */
+  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[]): Promise<Result<PdfExported>>;
+}
+
+/** One captured page: physical size in points and the canvas PNG with its pixel size. */
+export interface PdfPageRaster {
+  widthPt: number;
+  heightPt: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  png: Uint8Array;
+}
+
+/** `GPD1` request (backend services/pdf.rs): same header layout as saveFrame, then page PNGs back to back. */
+export function pdfFrame(sessionId: SessionId, generation: number, revision: number, destination: string, pages: readonly PdfPageRaster[]): Uint8Array {
+  const meta = {
+    destination,
+    pages: pages.map(({ widthPt, heightPt, pixelWidth, pixelHeight, png }) => ({ widthPt, heightPt, pixelWidth, pixelHeight, length: png.length })),
+  };
+  const total = pages.reduce((sum, page) => sum + page.png.length, 0);
+  const payload = new Uint8Array(total);
+  let at = 0;
+  for (const page of pages) { payload.set(page.png, at); at += page.png.length; }
+  const frame = saveFrame(sessionId, generation, revision, meta, payload);
+  frame.set([0x47, 0x50, 0x44, 0x31], 0); // "GPD1"
+  return frame;
 }
 
 /**
@@ -183,6 +211,11 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
         return outcome?.session.sessionId === sessionId ? outcome : null;
       });
     },
+    exportPdf: (sessionId, generation, revision, destination, pages) =>
+      call(invoke, "document_export_pdf", pdfFrame(sessionId, generation, revision, destination, pages), (value) => {
+        const parsed = parsePdfExported(value, sessionId, generation, revision);
+        return parsed && parsed.raster && parsed.pages === pages.length ? parsed : null;
+      }),
     checkpoint: (sessionId, generation, revision, output, contentLoss, reopen, preview) => {
       const meta: Record<string, unknown> = { contentLoss, reopen };
       if (preview) meta.preview = preview.blankPage ? { width: preview.width, height: preview.height, blankPage: true } : { width: preview.width, height: preview.height };

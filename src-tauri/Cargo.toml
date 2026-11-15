@@ -38,6 +38,9 @@ serde_json = "=1.0.154"
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 # Existing locked Tauri dependency, used for recovery record integrity.
 sha2 = "=0.10.9"
+# Stage 5-A PDF export of RHWP page rasters (services/pdf.rs). Already locked through wordcraft-pdf with the
+# same features (krilla 0.8.2, "pdf"), so no crate is added to the graph.
+krilla = { version = "=0.8.2", features = ["pdf"] }
 # T008 W-A: DOCX 문서 모델·렌더를 백엔드가 가진다(editor-surface-decision.md). 업스트림 소스는 고치지 않고 고정한
 # submodule(external/wordcraft, v0.7.0)을 path 의존성으로 링크한다. 그래서 이 크레이트를 빌드하려면 그 submodule이 필요하다.
 wordcraft-engine = { path = "../external/wordcraft/crates/engine" }

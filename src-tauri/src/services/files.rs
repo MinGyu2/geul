@@ -224,6 +224,7 @@ pub async fn document_file_dialog(
     title: String,
     accept: String,
     cancel: String,
+    suggested_name: Option<String>,
 ) -> Result<Option<String>, DocumentError> {
     use gtk::prelude::*;
     use tauri::Manager;
@@ -232,10 +233,23 @@ pub async fn document_file_dialog(
     {
         return Err(DocumentError::InvalidRequest);
     }
+    // PDF export only: a plain file-name suggestion (no directory part), replaced by "Untitled" when unusable.
+    let suggested = suggested_name
+        .filter(|_| format.as_deref() == Some("pdf"))
+        .map(|name| name.trim().to_owned())
+        .filter(|name| {
+            !name.is_empty()
+                && name.len() <= 200
+                && !name.starts_with('.')
+                && !name
+                    .chars()
+                    .any(|c| c == '/' || c == '\\' || c.is_control())
+        });
     let extensions: Vec<&str> = match format.as_deref() {
         Some("hwp") => vec!["hwp"],
         Some("hwpx") => vec!["hwpx"],
         Some("docx") => vec!["docx"],
+        Some("pdf") if mode == "save" => vec!["pdf"],
         Some("image") if mode == "open" => vec!["png", "jpg", "jpeg"],
         None if mode == "open" => vec!["hwp", "hwpx", "docx"],
         _ => return Err(DocumentError::InvalidRequest),
@@ -271,7 +285,11 @@ pub async fn document_file_dialog(
         }
         chooser.add_filter(filter);
         if mode == "save" {
-            chooser.set_current_name(&format!("Untitled.{}", extensions[0]));
+            let stem = suggested.as_deref().unwrap_or("Untitled");
+            chooser.set_current_name(&format!("{stem}.{}", extensions[0]));
+            // PDF export may replace an existing PDF (atomic, services/pdf.rs) only after this confirmation.
+            // Document Save As stays create-only (no confirmation offered; an existing name is a conflict).
+            chooser.set_do_overwrite_confirmation(extensions[0] == "pdf");
         }
         let response = chooser.run();
         let value = if response == gtk::ResponseType::Accept {

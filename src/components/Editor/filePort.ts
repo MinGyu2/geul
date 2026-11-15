@@ -4,7 +4,10 @@ import type { BlankExport } from "./rhwp/createBlank";
 
 export interface FileDialogRequest {
   mode: "open" | "save";
-  format?: DocumentFormat;
+  /** "pdf": PDF export destination (save mode only; the dialog confirms replacing an existing file). */
+  format?: DocumentFormat | "pdf";
+  /** PDF export only: file-name stem to suggest (no directory part). */
+  suggestedName?: string;
   title: string;
   accept: string;
   cancel: string;
@@ -69,6 +72,7 @@ export function createTauriFilePort(invoke: Invoke): FilePort {
         cancel: request.cancel,
       };
       if (request.format !== undefined) args.format = request.format;
+      if (request.suggestedName !== undefined) args.suggestedName = request.suggestedName;
       return invokeFile(invoke, "document_file_dialog", args, parsePath);
     },
     createDocument: (format, path, blank) => invokeFile(invoke, "document_new", newDocumentFrame(format, path, blank), value => parseCreated(value, format)),

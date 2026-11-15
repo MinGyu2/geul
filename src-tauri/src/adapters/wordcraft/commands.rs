@@ -598,6 +598,59 @@ pub async fn docx_save_as(
     .await
 }
 
+/// PDF export of a WordCraft session (Stage 5-A S5-4): the engine's PDF of exactly the requested load
+/// generation and committed revision, written to an absolute `.pdf` destination (`services::pdf`). The model,
+/// revision, dirty state and history are not changed; an engine panic while writing the PDF is reported as
+/// `EngineFailure{export}` and keeps the session (writing a PDF does not mutate the model).
+pub(crate) async fn export_pdf(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+    destination: &str,
+) -> Result<crate::services::pdf::PdfExported, DocumentError> {
+    let target = crate::services::pdf::destination(destination)?;
+    let (bytes, pages) = with_model(
+        state,
+        session_id,
+        generation,
+        EngineStage::Export,
+        move |model, _, info| {
+            check_revision(&info, revision)?;
+            catch_unwind(AssertUnwindSafe(|| model.export_pdf()))
+                .ok()
+                .flatten()
+                .ok_or(engine_failure(EngineStage::Export))
+        },
+    )
+    .await?;
+    crate::services::pdf::check_pdf_envelope(&bytes)?;
+    let size = bytes.len();
+    let published = state
+        .run_blocking(move || crate::services::pdf::publish_pdf(&target, &bytes))
+        .await?;
+    Ok(crate::services::pdf::PdfExported {
+        session_id,
+        load_generation: generation,
+        revision,
+        pages,
+        bytes: size,
+        durable: published.durable,
+        raster: false,
+    })
+}
+
+#[tauri::command]
+pub async fn docx_export_pdf(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+    destination: String,
+) -> Result<crate::services::pdf::PdfExported, DocumentError> {
+    export_pdf(&state, session_id, load_generation, revision, &destination).await
+}
+
 #[tauri::command]
 pub async fn docx_checkpoint(
     state: State<'_, DocumentState>,

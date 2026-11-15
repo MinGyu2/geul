@@ -7,6 +7,8 @@
 // - 응답은 신뢰 경계를 넘어온 값이므로 모양을 검사하고, 맞지 않으면 Protocol 오류로 다룬다(backend.ts와 같음).
 import { call, type Invoke } from "./backend";
 import {
+  parsePdfExported,
+  type PdfExported,
   parseSaveCheck,
   parseSaveOutcome,
   parseSessionInfo,
@@ -195,6 +197,8 @@ export interface DocxBackend {
   save(sessionId: SessionId, generation: number, revision: number, destination?: string): Promise<Result<SaveOutcome>>;
   /** Durable private snapshot; never clears document dirty state. */
   checkpoint?(sessionId: SessionId, generation: number, revision: number): Promise<Result<SaveOutcome>>;
+  /** PDF export (Stage 5-A): the engine's vector PDF of exactly that revision, written to a chosen .pdf path. */
+  exportPdf?(sessionId: SessionId, generation: number, revision: number, destination: string): Promise<Result<PdfExported>>;
 }
 
 // ---- 응답 검사 ----
@@ -371,6 +375,9 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
         return outcome?.session.sessionId === sessionId && outcome.session.loadGeneration === loadGeneration
           && outcome.session.revision === revision && outcome.durable ? outcome : null;
       }),
+    exportPdf: (sessionId, loadGeneration, revision, destination) =>
+      call(invoke, "docx_export_pdf", { sessionId, loadGeneration, revision, destination },
+        (value) => { const parsed = parsePdfExported(value, sessionId, loadGeneration, revision); return parsed && !parsed.raster ? parsed : null; }),
     save: (sessionId, loadGeneration, revision, destination) =>
       call(invoke, destination === undefined ? "docx_save" : "docx_save_as", { sessionId, loadGeneration, revision, ...(destination === undefined ? {} : { destination }) }, (value) => {
         const outcome = parseSaveOutcome(value);
