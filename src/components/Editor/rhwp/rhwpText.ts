@@ -747,6 +747,55 @@ export class RhwpText {
     return () => this.format(from, to, props);
   }
 
+  /** Stage 1: size/text color/shade/script of the selection. Values are reported only when every selected run uses
+   * one character shape (otherwise null = mixed; never inferred from the first character alone). */
+  stage1Chars(from: DocPosition, to: DocPosition): {
+    size: number | null; color: string | null; highlight: string | null; superscript: boolean; subscript: boolean;
+  } | null {
+    const selected = this.selectedFontShapes(from, to);
+    if (!selected) return null;
+    if (selected.shapes.size !== 1) return { size: null, color: null, highlight: null, superscript: false, subscript: false };
+    const props = this.charProperties(from);
+    if (!props) return null;
+    const hex = (v: unknown) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v.slice(1).toUpperCase() : null;
+    const size = Number.isSafeInteger(props.fontSize) && (props.fontSize as number) > 0 ? (props.fontSize as number) / 100 : null;
+    const shade = hex(props.shadeColor);
+    return {
+      size, color: hex(props.textColor),
+      // HWP "no shading" reads as white (#FFFFFF): reported as no highlight.
+      highlight: shade === "FFFFFF" ? null : shade,
+      superscript: props.superscript === true, subscript: props.subscript === true,
+    };
+  }
+
+  private charProperties(at: DocPosition): Record<string, unknown> | null {
+    const c = at.cell;
+    try {
+      const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
+      const value = json(c?.nested
+        ? this.doc.getCellCharPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c), at.offset)
+        : c ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+        : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
+      return isRecord(value) ? value as Record<string, unknown> : null;
+    } catch { return null; }
+  }
+
+  /** Stage 1 character values for the whole proven selection in one engine call per paragraph (one history step
+   * at the session). Only the fixed keys below reach the engine; values are validated here again. */
+  prepareChars(from: DocPosition, to: DocPosition, props: { fontSize?: number; textColor?: string; shadeColor?: string;
+    superscript?: boolean; subscript?: boolean }) {
+    if (!this.formatSelection(from, to)) return null;
+    const keys = Object.keys(props);
+    const color = (v: unknown) => typeof v === "string" && /^#[0-9A-F]{6}$/.test(v);
+    if (keys.length !== 1
+      || (props.fontSize !== undefined && !(Number.isSafeInteger(props.fontSize) && props.fontSize >= 100 && props.fontSize <= 409_600))
+      || (props.textColor !== undefined && !color(props.textColor)) || (props.shadeColor !== undefined && !color(props.shadeColor))
+      || (props.superscript !== undefined && typeof props.superscript !== "boolean")
+      || (props.subscript !== undefined && typeof props.subscript !== "boolean")) return null;
+    const text = JSON.stringify(props);
+    return () => this.format(from, to, text);
+  }
+
   get hasFontOwnership(): boolean {
     return this.hasCharShapeOwnership && !!this.originalFontCounts && !!this.doc.resolveDocumentFontFamily
       && !!this.doc.reconcileFontShapePrefix && !!this.doc.compactUnpublishedFonts && !!this.doc.capturePublishingFontShapePrefix;

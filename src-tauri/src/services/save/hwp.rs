@@ -1001,8 +1001,9 @@ fn face_name(raw: &[u8]) -> Option<()> {
     (at == raw.len()).then_some(())
 }
 
-/// A derived definition may change only the four general flags and the existing T012
-/// metrics. All fonts, sizes, colors, decoration shapes, unknown bits and trailing bytes
+/// A derived definition may change only the four general flags, the existing T012 metrics and the Stage 1
+/// character values: base size (1–4096 pt), text color, shade color (highlight) and superscript/subscript (never
+/// both). Fonts, relative sizes/offsets, decoration shapes, underline/shadow colors, unknown bits and trailing bytes
 /// remain owned by one original definition. Existing nonuniform metrics are preserved.
 fn derived_char_shape(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() || a.len() < 68 {
@@ -1023,17 +1024,28 @@ fn derived_char_shape(a: &[u8], b: &[u8]) -> bool {
     };
     let attr = |d: &[u8]| u32::from_le_bytes(d[46..50].try_into().unwrap());
     let (old, new) = (attr(a), attr(b));
-    let flags = 0x0f | (7 << 18);
+    let flags = 0x0f | (3 << 15) | (7 << 18);
     let underline = |v: u32| (v >> 2) & 3;
     let strike = |v: u32| (v >> 18) & 7;
+    let size = |d: &[u8]| i32::from_le_bytes(d[42..46].try_into().unwrap());
+    // COLORREF 0x00BBGGRR (the high byte is never set by the serializer).
+    let color = |range: std::ops::Range<usize>| {
+        a[range.clone()] == b[range.clone()] || b[range.end - 1] == 0
+    };
     a[..14] == b[..14]
         && metric(CHAR_SHAPE_RATIOS, 50, 200, false)
         && metric(CHAR_SHAPE_SPACINGS, -50, 50, true)
-        && a[28..46] == b[28..46]
+        && a[28..42] == b[28..42]
+        && (size(a) == size(b) || (100..=409_600).contains(&size(b)))
         && old & !flags == new & !flags
+        && (new >> 15) & 3 != 3
         && (underline(new) == underline(old) || matches!(underline(new), 0 | 1))
         && (strike(new) == strike(old) || strike(new) == 0 || strike(new) == strike(old).max(2))
-        && a[50..] == b[50..]
+        && a[50..52] == b[50..52]
+        && color(52..56)
+        && a[56..60] == b[56..60]
+        && color(60..64)
+        && a[64..] == b[64..]
 }
 /// `ID_MAPPINGS`가 글자 모양 수만 `k`만큼 늘고 나머지 바이트는 같은지.
 fn id_mappings_grew(a: &[u8], b: &[u8], k: usize) -> bool {
@@ -1953,7 +1965,8 @@ mod general_format_tests {
             next[46..50].copy_from_slice(&u32::to_le_bytes(flag));
             assert!(derived_char_shape(&original, &next));
             assert!(derived_char_shape(&next, &original));
-            for at in [0, 28, 42, 50, 52, 56, 60, 64, 68, 70, 73] {
+            // 52..56 (text color) and 60..64 (shade) are Stage 1 values; their high byte stays guarded below.
+            for at in [0, 28, 42, 50, 55, 56, 63, 64, 68, 70, 73] {
                 let mut damaged = next.clone();
                 damaged[at] ^= 1;
                 assert!(!derived_char_shape(&original, &damaged), "byte {at}");
@@ -1962,6 +1975,27 @@ mod general_format_tests {
             unknown_attr[48] ^= 0x80;
             assert!(!derived_char_shape(&original, &unknown_attr));
         }
+        // Stage 1: base size, text color, shade color and one of superscript/subscript.
+        let mut stage1 = original.clone();
+        stage1[42..46].copy_from_slice(&1800_i32.to_le_bytes());
+        stage1[52..56].copy_from_slice(&[0xC0, 0, 0, 0]);
+        stage1[60..64].copy_from_slice(&[0, 0xFF, 0xFF, 0]);
+        for script in [1 << 15, 1 << 16] {
+            let mut next = stage1.clone();
+            next[46..50].copy_from_slice(&u32::to_le_bytes(script));
+            assert!(derived_char_shape(&original, &next));
+        }
+        let mut both = stage1.clone();
+        both[46..50].copy_from_slice(&u32::to_le_bytes(3 << 15));
+        assert!(!derived_char_shape(&original, &both));
+        for size in [99_i32, 409_601, -100] {
+            let mut next = stage1.clone();
+            next[42..46].copy_from_slice(&size.to_le_bytes());
+            assert!(!derived_char_shape(&original, &next), "size {size}");
+        }
+        let mut underline_color = stage1.clone();
+        underline_color[56] = 1;
+        assert!(!derived_char_shape(&original, &underline_color));
         let mut changed_metrics = original.clone();
         changed_metrics[14..21].fill(150);
         changed_metrics[21..28].fill((-20_i8) as u8);

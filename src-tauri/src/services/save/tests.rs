@@ -6778,8 +6778,9 @@ fn hwpx_header의_서식_덧붙임_밖_변경은_계속_partchanged다() {
             fmt_body(&[4]),
         ),
         (
-            "서식 밖 속성(height) 다름",
-            fmt_header(4, &d, &[&fmt_def(3, 1200, "")], "JUSTIFY"),
+            // Stage 1 allows height/textColor/shadeColor; every other definition attribute stays owned.
+            "서식 밖 속성(useKerning) 다름",
+            fmt_header(4, &d, &[&fmt_def(3, 1000, "").replace("<hh:charPr id=\"3\" ", "<hh:charPr id=\"3\" useKerning=\"1\" ")], "JUSTIFY"),
             fmt_body(&[3]),
         ),
         (
@@ -9813,8 +9814,8 @@ fn hwpx_header의_장평_자간_덧붙임_밖_변경은_계속_partchanged다() 
         ("ratio 둘", duplicate_child, vec![3]),
         ("ratio에 내용", content, vec![3]),
         (
-            "장평과 height 함께 다름",
-            metric_def(3, 1200, &langs(150), &ok_spacing, ""),
+            "장평과 useKerning 함께 다름",
+            metric_def(3, 1000, &langs(150), &ok_spacing, "").replace("<hh:charPr id=\"3\" ", "<hh:charPr id=\"3\" useKerning=\"1\" "),
             vec![3],
         ),
         (
@@ -13389,3 +13390,26 @@ fn general_formatting_seed_preview() {
 
 #[path = "stage1_docx_tests.rs"]
 mod stage1_docx;
+
+/// Stage 1 HWPX character values: an appended definition may differ from an original one in size (`height`),
+/// text/shade color and one of superscript/subscript; values must have the pinned serializer's form.
+#[test]
+fn stage1_hwpx_header_accepts_size_color_shade_script_appends_only() {
+    let (defs, _) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let changed = fmt_def(3, 1800, "<hh:supscript/>")
+        .replace(r##"textColor="#000000""##, r##"textColor="#C00000" shadeColor="#FFFF00""##);
+    assert_eq!(fmt_check(&fmt_header(4, &d, &[&changed], "JUSTIFY"), &fmt_body(&[3, 1])), vec![]);
+    let sub = fmt_def(3, 900, "<hh:subscript/>");
+    assert_eq!(fmt_check(&fmt_header(4, &d, &[&sub], "JUSTIFY"), &fmt_body(&[3])), vec![]);
+    for (label, def) in [
+        ("both scripts", fmt_def(3, 1000, "<hh:supscript/><hh:subscript/>")),
+        ("script attribute", fmt_def(3, 1000, r#"<hh:supscript x="1"/>"#)),
+        ("height leading zero", fmt_def(3, 1000, "").replace(r#"height="1000""#, r#"height="01000""#)),
+        ("height too large", fmt_def(3, 409_601, "")),
+        ("lowercase color", fmt_def(3, 1000, "").replace(r##"textColor="#000000""##, r##"textColor="#c00000""##)),
+    ] {
+        let findings = fmt_check(&fmt_header(4, &d, &[&def], "JUSTIFY"), &fmt_body(&[3]));
+        assert!(!findings.is_empty(), "{label}: accepted");
+    }
+}

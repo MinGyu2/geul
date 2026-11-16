@@ -11,6 +11,8 @@ struct Definition<'a> {
     seen: [bool; 4],
     /// `hh:ratio`·`hh:spacing`를 이미 봤는지(T012, 하나씩만).
     metrics: [bool; 2],
+    /// Stage 1: `hh:supscript`·`hh:subscript` already seen (at most one each, never both in an appended definition).
+    scripts: [bool; 2],
     policy: FormatPolicy,
     font_counts: Option<[usize; 7]>,
     font_ref_seen: bool,
@@ -27,6 +29,7 @@ impl<'a> Definition<'a> {
             started: false,
             seen: [false; 4],
             metrics: [false; 2],
+            scripts: [false; 2],
             policy,
             font_counts,
             font_ref_seen: false,
@@ -43,6 +46,38 @@ impl<'a> Definition<'a> {
                     return Err(Invalid);
                 };
                 attributes.retain(|(ns, key, _)| !(ns.is_none() && key == "id"));
+                // Stage 1 character formatting: size and text/shade color are values of the definition element.
+                // An appended definition must carry them exactly as the pinned serializer writes them
+                // (`write_char_pr`: decimal `height`, `color_hex` colors); the values themselves are then free.
+                if self.policy == FormatPolicy::Appended {
+                    // Present at most once and well formed (absence reads as the engine default, itself a
+                    // size/color value this rule allows).
+                    let well_formed = |key: &str, valid: &dyn Fn(&str) -> bool| {
+                        let mut found = attributes
+                            .iter()
+                            .filter(|(ns, k, _)| ns.is_none() && k == key);
+                        match (found.next(), found.next()) {
+                            (None, _) => true,
+                            (Some((_, _, v)), None) => valid(v),
+                            _ => false,
+                        }
+                    };
+                    let height = |v: &str| {
+                        !v.starts_with('0')
+                            && v.len() <= 6
+                            && v.bytes().all(|b| b.is_ascii_digit())
+                            && v.parse::<u32>().is_ok_and(|n| (1..=409_600).contains(&n))
+                    };
+                    if !well_formed("height", &height)
+                        || !well_formed("textColor", &super::package::serializer_color)
+                        || !well_formed("shadeColor", &super::package::serializer_color)
+                    {
+                        return Err(Invalid);
+                    }
+                }
+                attributes.retain(|(ns, key, _)| {
+                    !(ns.is_none() && ["height", "textColor", "shadeColor"].contains(&key.as_ref()))
+                });
                 self.started = true;
                 self.depth = 1;
                 return Ok(Some(piece));
@@ -67,6 +102,26 @@ impl<'a> Definition<'a> {
                                 return Err(Invalid);
                             }
                             self.seen[slot] = true;
+                            self.cursor.next()?;
+                            continue;
+                        }
+                    }
+                    // Stage 1 superscript/subscript: attribute-less empty children, removed like the four flags.
+                    if let Some(slot) = ["supscript", "subscript"]
+                        .iter()
+                        .position(|name| is_head(event, name))
+                    {
+                        if matches!(self.cursor.peek()?, Some(Piece::Event(Canonical::End))) {
+                            let Canonical::Start { attributes, .. } = event else {
+                                return Err(Invalid);
+                            };
+                            if self.scripts[slot]
+                                || (self.policy == FormatPolicy::Appended
+                                    && (!attributes.is_empty() || self.scripts[1 - slot]))
+                            {
+                                return Err(Invalid);
+                            }
+                            self.scripts[slot] = true;
                             self.cursor.next()?;
                             continue;
                         }

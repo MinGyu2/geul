@@ -58,6 +58,7 @@ import type {
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
+import { HIGHLIGHT_COLORS } from "../../../commands/stage1";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -1832,9 +1833,59 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       historyLimited: this.history === null && this.historyOff === "limit",
       format: this.formatState(), formatAccess: null, font: this.fontState(),
       ...this.parameterState(),
-      actions: this.coreActions(),
+      chars: this.stage1Chars(),
+      actions: { ...this.coreActions(), ...this.stage1Actions() },
       ...this.coreActionReasons(),
     };
+  }
+
+  // ---- Stage 1 character formatting (size, color, highlight/shade, superscript/subscript) ----
+
+  private stage1CharCache: { key: string; value: ReturnType<RhwpText["stage1Chars"]> } | null = null;
+  /** Same eligibility as the general selected-text formatting (selection, IME/history/pending/saving, HWP original proof). */
+  private stage1Chars(): ReturnType<RhwpText["stage1Chars"]> {
+    if (!this.formatState() || !this.text) return null;
+    const [from, to] = this.ordered();
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}|${RhwpEditorSession.positionKey(to)}`;
+    if (this.stage1CharCache?.key !== key) this.stage1CharCache = { key, value: this.text.stage1Chars(from, to) };
+    return this.stage1CharCache.value;
+  }
+
+  private stage1Actions(): NonNullable<DocumentCommandSnapshot["actions"]> {
+    const chars = this.stage1Chars();
+    return chars ? { "format.superscript": { pressed: chars.superscript }, "format.subscript": { pressed: chars.subscript } } : {};
+  }
+
+  private applyStage1Chars(props: Parameters<RhwpText["prepareChars"]>[2]): boolean {
+    if (!this.stage1Chars()) return false;
+    const [from, to] = this.ordered();
+    const apply = this.text!.prepareChars(from, to, props);
+    if (!apply) return false;
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => { apply(); return { caret, anchor }; }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
+  }
+
+  private executeStage1Chars(command: DocumentCommandId, args?: DocumentCommandArgs): boolean | null {
+    const chars = this.stage1Chars();
+    if (command === "format.superscript" || command === "format.subscript") {
+      if (args !== undefined || !chars) return false;
+      return command === "format.superscript" ? this.applyStage1Chars({ superscript: !chars.superscript })
+        : this.applyStage1Chars({ subscript: !chars.subscript });
+    }
+    if (command !== "format.fontSize" && command !== "format.fontColor" && command !== "format.highlight") return null;
+    if (!args || args.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
+    if (args.command === "format.fontSize") return this.applyStage1Chars({ fontSize: Math.round(args.size * 100) });
+    // HWP has no "automatic" text color: automatic is stored as black (the document default).
+    if (args.command === "format.fontColor") return this.applyStage1Chars({ textColor: `#${args.color === "auto" ? "000000" : args.color}` });
+    if (args.command === "format.highlight") {
+      const rgb = HIGHLIGHT_COLORS[args.color];
+      // Removing the highlight stores white shading: the engine API accepts only RGB shade colors.
+      return this.applyStage1Chars({ shadeColor: `#${rgb ?? "FFFFFF"}` });
+    }
+    return false;
   }
 
   /** Every model change bumps modelVersion (the caret and parameter caches rely on the same rule); the key
@@ -2212,6 +2263,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const font = this.fontState();
       if (font) parameters["format.font"] = { font };
     } else parameterReasons["format.font"] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
+    // Stage 1 character values: the general formatting eligibility (selection only; caret formatting is not offered).
+    const chars = this.stage1Chars();
+    for (const command of ["format.fontSize", "format.fontColor", "format.highlight"] as const) {
+      if (chars) parameters[command] = { chars };
+      else parameterReasons[command] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
+    }
     // HWP metrics/formatting additionally require the structural original proof (complete
     // baseline including nested tables, SAFE preflight) — the same rule as body cells.
     if ((this.caret.cell?.nested || this.anchor.cell?.nested) && format === "hwp" && !this.structuralFormat()) {
@@ -2477,6 +2534,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return applied ? { accepted: true } : { accepted: false };
     }
     if (command === "format.font") return { accepted: args?.command === command && this.applyFont(args) };
+    const stage1 = this.executeStage1Chars(command, args);
+    if (stage1 !== null) return { accepted: stage1 };
     if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };
     const flag = FORMAT_FLAG[command];

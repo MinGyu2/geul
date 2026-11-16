@@ -1223,7 +1223,7 @@ pub(super) fn serializer_metric_child(
 }
 
 /// 고정 rhwp 직렬화기 `color_hex`가 쓰는 색: `none`, `#RRGGBB`, `#AARRGGBB`(대문자 16진).
-fn serializer_color(value: &str) -> bool {
+pub(super) fn serializer_color(value: &str) -> bool {
     value == "none"
         || value.strip_prefix('#').is_some_and(|hex| {
             (hex.len() == 6 || hex.len() == 8)
