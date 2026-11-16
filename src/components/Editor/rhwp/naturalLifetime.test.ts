@@ -1,7 +1,7 @@
 // Stage 5-A: WebView faces used by a document's committed natural-font snapshot stay retained for as long as that
 // snapshot is active (document leases), across any number of catalog generations; they are released only after a
 // newer snapshot is adopted, or the document is reloaded/disposed. Stale bindings never attach ownership.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FontBackend, FontCatalog, FontFamily } from "../../../adapters/fonts";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { MAX_RETAINED_FACES, NaturalFontService } from "../../../fonts/naturalFonts";
@@ -22,15 +22,15 @@ class FakeFace {
   async load() { return this as unknown as FontFace; }
 }
 
-type CommitMode = "ok" | "reject" | "malformed" | "invalid" | "mutateThrow";
-type StatusMode = "ok" | "throw" | "garbage";
+type CommitMode = "ok" | "reject" | "malformed" | "invalid" | "missingGeneration" | "unsafeGeneration" | "unchangedReturn" | "mutateThrow";
+type StatusMode = "ok" | "throw" | "garbage" | "missingIdentity" | "sameDifferent" | "higherUnrelated";
 
 /** Natural engine surface on top of the editing fake, modelled on the pinned RHWP contract: a refusal throws a string
  *  before adoption; adoption bumps a per-document monotonic generation; getNaturalFontStatus reports the active
  *  snapshot's generation and each family key's alias/faces. `active` lists the aliases the snapshot paints with. */
 function natural(doc: FakeDocument, options: { failCommit?: () => boolean; onCommit?: () => void; commit?: () => CommitMode; status?: () => StatusMode } = {}) {
   type Entry = { key: string; alias: string; bold: boolean };
-  const engine = { active: [] as string[], entries: [] as Entry[], pending: [] as Entry[], commits: 0, generation: 0 };
+  const engine = { active: [] as string[], entries: [] as Entry[], pending: [] as Entry[], commits: 0, generation: 0, statusReads: 0 };
   const adopt = () => {
     engine.generation += 1; engine.entries = engine.pending; engine.active = engine.pending.map((e) => e.alias);
     engine.commits += 1; options.onCommit?.();
@@ -48,17 +48,27 @@ function natural(doc: FakeDocument, options: { failCommit?: () => boolean; onCom
         engine.pending = [];
         throw "natural font commit failed: count-mismatch"; // wasm-bindgen throws the HwpError string
       }
+      if (mode === "unchangedReturn") return "{}";
       adopt();
       if (mode === "mutateThrow") throw new WebAssembly.RuntimeError("unreachable"); // trap after adoption
       if (mode === "malformed") return "{not json";
+      if (mode === "missingGeneration") return "{}";
+      if (mode === "unsafeGeneration") return JSON.stringify({ generation: Number.MAX_SAFE_INTEGER + 1 });
       if (mode === "invalid") return JSON.stringify({ ok: true, generation: "?" });
       return JSON.stringify({ ok: true, generation: engine.generation, pageCount: 1 });
     },
     clearNaturalFonts: () => { engine.generation += 1; engine.entries = []; engine.active = []; return true; },
     getNaturalFontStatus: () => {
+      engine.statusReads += 1;
       const mode = options.status?.() ?? "ok";
       if (mode === "throw") throw new WebAssembly.RuntimeError("unreachable");
       if (mode === "garbage") return "{";
+      if (mode === "missingIdentity") return JSON.stringify({ generation: engine.generation });
+      // Defensive inconsistent readbacks, not normal engine adoption behavior.
+      if (mode === "sameDifferent" || mode === "higherUnrelated") return JSON.stringify({
+        active: true, generation: engine.generation - (mode === "sameDifferent" ? 1 : 0),
+        families: [{ family: "Doc Font", alias: "unrelated", faces: [{ bold: false }] }], fallbacks: [],
+      });
       if (engine.entries.length === 0) return JSON.stringify({ active: false, generation: engine.generation });
       const families = new Map<string, { family: string; alias: string; faces: { bold: boolean; italic: boolean }[] }>();
       const fallbacks = new Map<string, { alias: string; faces: { bold: boolean; italic: boolean }[] }>();
@@ -96,6 +106,7 @@ async function open(binder: NaturalFontService, docs: FakeDocument[]) {
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true, natural: binder });
   const load = async (generation: number, sequence: number) => {
     const loading = editor.load();
+    await flush(); // failed sessions acknowledge the failure transition before requesting load
     take("load").reply(loaded(new Uint8Array([1]), generation));
     await flush();
     take("session").reply(ok(info({ state: "loading", sequence, loadGeneration: generation })));
@@ -104,7 +115,7 @@ async function open(binder: NaturalFontService, docs: FakeDocument[]) {
     await flush();
   };
   await load(1, 1);
-  return { editor, load };
+  return { editor, load, take };
 }
 
 /** A9: every alias the engine snapshot paints with has a retained WebView face. */
@@ -249,20 +260,20 @@ describe("ambiguous natural commit outcomes", () => {
   async function scenario(mode: CommitMode, status: StatusMode = "ok") {
     const s = service();
     s.binder.configure(s.backend, catalog(1));
-    let commit: CommitMode = "ok", readback: StatusMode = "ok";
+    let commit: CommitMode = "ok", readback: StatusMode = "ok", reads = 0;
     const doc = new FakeDocument(["가"]);
-    const engine = natural(doc, { commit: () => commit, status: () => readback });
+    const engine = natural(doc, { commit: () => commit, status: () => ++reads === 1 ? "ok" : readback });
     const { editor } = await open(s.binder, [doc]);
     const before = engine.active[0]!;
     const layout = editor.layoutVersion;
-    commit = mode; readback = status;
+    commit = mode; readback = status; reads = 0;
     s.binder.configure(s.backend, catalog(2)); editor.fontsChanged(); await flush();
     commit = "ok"; readback = "ok";
     s.binder.configure(s.backend, catalog(3)); // a later catalog change collects every unleased older face
-    return { s, engine, editor, before, layout, set: (m: CommitMode) => { commit = m; } };
+    return { s, engine, editor, doc, before, layout, set: (m: CommitMode) => { commit = m; } };
   }
 
-  it.each(["malformed", "invalid", "mutateThrow"] as const)("T2-T4: an adopted snapshot whose commit response is %s is confirmed by readback and keeps its faces", async (mode) => {
+  it.each(["malformed", "invalid", "missingGeneration", "unsafeGeneration"] as const)("T2/T3: an adopted snapshot whose commit response is %s is confirmed by readback and keeps its faces", async (mode) => {
     const { s, engine, editor, before, layout } = await scenario(mode);
     expect(engine.commits).toBe(2); // the engine did adopt the generation-2 candidate
     expect(engine.active[0]).not.toBe(before);
@@ -274,8 +285,8 @@ describe("ambiguous natural commit outcomes", () => {
     expect(refs(s)).toBe(0);
   });
 
-  it("T1: a commit refused before adoption keeps the previous snapshot and releases the candidate", async () => {
-    const { s, engine, editor, before } = await scenario("reject");
+  it.each(["reject", "unchangedReturn"] as const)("T4/T6: %s before adoption keeps the previous snapshot and releases the candidate", async (mode) => {
+    const { s, engine, editor, before } = await scenario(mode);
     expect(engine.active).toEqual([before]);
     expect(consistent(engine, s.aliases())).toBe(true);
     expect(editor.naturalFontStatus).toMatchObject({ status: "failed", commitResponse: "invalid" });
@@ -286,17 +297,26 @@ describe("ambiguous natural commit outcomes", () => {
     expect(refs(s)).toBe(0);
   });
 
-  it.each([["mutateThrow", "throw"], ["mutateThrow", "garbage"], ["reject", "garbage"]] as const)(
-    "T5: commit %s with readback %s is uncertain: both snapshots' faces stay owned, the session stops, disposal releases",
+  it.each([["mutateThrow", "ok"], ["mutateThrow", "throw"], ["mutateThrow", "garbage"], ["reject", "garbage"], ["mutateThrow", "missingIdentity"], ["malformed", "sameDifferent"], ["malformed", "higherUnrelated"]] as const)(
+    "T5/T7-T9: commit %s with readback %s is uncertain: both snapshots' faces stay owned, the session stops, disposal releases",
     async (mode, status) => {
-      const { s, engine, editor, before } = await scenario(mode, status);
+      const { s, engine, editor, doc, before, layout } = await scenario(mode, status);
       expect(editor.naturalFontStatus).toMatchObject({ status: "uncertain", commitResponse: "invalid" });
       expect(editor.status.kind).toBe("failed"); // no editing or painting with a possibly mismatched binding
       expect(s.aliases().has(before)).toBe(true); // previous snapshot's face protected
       expect(consistent(engine, s.aliases())).toBe(true); // whatever the engine adopted is protected
       expect(refs(s)).toBe(2);
+      expect(editor.layoutVersion).toBe(layout + 1); // only fontsChanged invalidation, no adopted-layout refresh
+      const paint = vi.spyOn(doc, "renderPageToCanvas");
+      const paragraphs = [...doc.paragraphs];
+      editor.typeText("unsafe"); editor.beginComposition(); editor.updateComposition("unsafe"); editor.endComposition("unsafe");
+      editor.undo(); editor.redo();
+      expect(doc.paragraphs).toEqual(paragraphs);
+      expect(editor.prepareRendering(1)).toBe(false);
+      expect(editor.renderPage(0, {} as HTMLCanvasElement, 1)).toBe(false);
+      expect(paint).not.toHaveBeenCalled();
       const commits = engine.commits;
-      for (let i = 0; i < 5; i++) { editor.fontsChanged(); await flush(); } // T10: no retry, no accumulation
+      for (let i = 0; i < 5; i++) { s.binder.configure(s.backend, catalog(4 + i)); editor.fontsChanged(); await flush(); } // T10: no retry, no accumulation
       expect(engine.commits).toBe(commits);
       expect(refs(s)).toBe(2);
       editor.dispose();
@@ -305,10 +325,13 @@ describe("ambiguous natural commit outcomes", () => {
       expect(s.binder.retained().every((r) => r.refs === 0)).toBe(true);
     });
 
-  it("T6: a normal commit transfers exactly one lease and reports no response problem", async () => {
-    const { s, engine, editor, before } = await scenario("ok");
+  it("T1: a normal commit transfers exactly one lease and reports no response problem", async () => {
+    const { s, engine, editor, before, layout } = await scenario("ok");
     expect(editor.naturalFontStatus?.status).toBe("bound");
     expect(editor.naturalFontStatus?.commitResponse).toBeUndefined();
+    expect(engine.statusReads).toBe(2); // pre-commit identity only; no successful-path readback
+    expect(editor.layoutVersion).toBe(layout + 2);
+    expect(editor.naturalFontStatus).toMatchObject({ complete: true, styleGaps: [] });
     expect(refs(s)).toBe(1);
     expect(s.aliases().has(before)).toBe(false);
     expect(consistent(engine, s.aliases())).toBe(true);
@@ -328,7 +351,7 @@ describe("ambiguous natural commit outcomes", () => {
     expect(s.binder.retained().every((r) => r.refs >= 0)).toBe(true);
   });
 
-  it("T8: a superseded request whose commit was adopted (malformed response) keeps ownership until the newer one commits", async () => {
+  it.each(["malformed", "mutateThrow"] as const)("a superseded adopted %s commit obeys the uncertain-state guard", async (response) => {
     const s = service();
     s.binder.configure(s.backend, catalog(1));
     const doc = new FakeDocument(["x"]);
@@ -337,14 +360,41 @@ describe("ambiguous natural commit outcomes", () => {
       if (supersede) { supersede = false; mode = "ok"; s.binder.configure(s.backend, catalog(3)); editorRef?.fontsChanged(); }
     } });
     const { editor } = await open(s.binder, [doc]);
-    editorRef = editor; mode = "malformed"; supersede = true;
+    editorRef = editor; mode = response; supersede = true;
     s.binder.configure(s.backend, catalog(2)); editor.fontsChanged();
     await flush(); await flush(); await flush();
-    expect(engine.commits).toBe(3); // generation 2 (malformed), then the newer generation 3
+    expect(engine.commits).toBe(response === "malformed" ? 3 : 2);
     expect(consistent(engine, s.aliases())).toBe(true);
-    expect(refs(s)).toBe(1);
-    expect(editor.naturalFontStatus).toMatchObject({ status: "bound" });
+    expect(refs(s)).toBe(response === "malformed" ? 1 : 2);
+    expect(editor.naturalFontStatus?.status).toBe(response === "malformed" ? "bound" : "uncertain");
     editor.dispose();
+    expect(refs(s)).toBe(0);
+  });
+
+  it("T10: reload releases both uncertain leases before binding the replacement document", async () => {
+    const s = service();
+    s.binder.configure(s.backend, catalog(1));
+    const oldDoc = new FakeDocument(["old"]), newDoc = new FakeDocument(["new"]);
+    let mode: CommitMode = "ok";
+    natural(oldDoc, { commit: () => mode });
+    const replacement = natural(newDoc);
+    const { editor, load, take } = await open(s.binder, [oldDoc, newDoc]);
+    const oldLease = editor.naturalFontStatus!.lease!;
+    mode = "mutateThrow";
+    s.binder.configure(s.backend, catalog(2)); editor.fontsChanged(); await flush();
+    const candidateLease = editor.naturalFontStatus!.lease!;
+    expect(editor.status.kind).toBe("failed");
+    expect(refs(s)).toBe(2);
+    take("setState").reply(ok(info({ state: "failed", sequence: 3, loadGeneration: 1 })));
+    await load(2, 4);
+    expect(oldDoc.freed).toBe(true);
+    expect(oldLease.released).toBe(true);
+    expect(candidateLease.released).toBe(true);
+    expect(editor.naturalFontStatus?.lease).not.toBe(candidateLease);
+    expect(editor.naturalFontStatus?.status).toBe("bound");
+    expect(consistent(replacement, s.aliases())).toBe(true);
+    expect(refs(s)).toBe(1);
+    editor.dispose(); editor.dispose();
     expect(refs(s)).toBe(0);
   });
 

@@ -69,8 +69,8 @@ const sameFaces = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a
 export interface NaturalBinding {
   /** bound: a snapshot was committed; unbound: nothing resolvable (legacy metrics); unsupported: engine/host lacks the
    *  surface; stale: the document changed owner before commit (nothing committed); failed: engine refused the commit. */
-  /** uncertain: the engine may or may not have adopted the candidate (commit threw or answered unreliably and the
-   *  readback could not tell). The result then carries the candidate's lease, which the receiver must keep together
+  /** uncertain: snapshot identity or derived layout completion could not be established (including a commit that
+   *  threw after adoption). The result then carries the candidate's lease, which the receiver must keep together
    *  with the previous one until a safe reload/disposal boundary; the document must not keep editing or painting. */
   status: "bound" | "unbound" | "unsupported" | "stale" | "failed" | "uncertain";
   /** Engine snapshot generation after commit. */
@@ -78,8 +78,8 @@ export interface NaturalBinding {
   /** Ownership of the committed snapshot's WebView faces (status "bound"; the candidate's for "uncertain"). The
    *  receiver must release it. */
   lease?: NaturalLease | null;
-  /** The commit response could not be interpreted (threw or malformed) and the outcome was established by engine
-   *  readback ("bound"/"failed") or not at all ("uncertain"). Absent for an ordinary, well-formed response. */
+  /** The commit threw or its response was malformed. Readback established a safe outcome ("bound"/"failed"), or
+   *  snapshot identity or layout completion remains uncertain. Absent for an ordinary, well-formed response. */
   commitResponse?: "invalid";
   /** key → installed family/styles actually bound. */
   bound: { key: string; family: string; styles: string[]; alias: string }[];
@@ -389,9 +389,13 @@ export class NaturalFontService {
       }
       const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated
         && !result.faceLimited && result.styleGaps.length === 0;
-      let response: unknown;
+      let text: string | undefined;
       let threw = false;
-      try { response = JSON.parse(doc.commitNaturalFontSet(staged)); } catch { threw = true; }
+      try { text = doc.commitNaturalFontSet(staged); } catch { threw = true; }
+      let response: unknown;
+      if (!threw) {
+        try { response = JSON.parse(text!); } catch { /* Normal return with an invalid response: verify identity below. */ }
+      }
       const generation = (response as { generation?: unknown } | undefined)?.generation;
       if (!threw && typeof generation === "number" && Number.isSafeInteger(generation)) {
         return { ...result, status: "bound", complete, lease, generation };
@@ -401,8 +405,11 @@ export class NaturalFontService {
       const after = readSnapshot(doc);
       const adopted = after !== null && sameFaces(after.faces, candidate)
         && (prior === null ? false : after.generation > prior.generation);
-      const unchanged = after !== null && prior !== null && after.generation === prior.generation;
-      if (adopted) return { ...result, status: "bound", complete, lease, generation: after.generation, commitResponse: "invalid" };
+      const unchanged = after !== null && prior !== null && after.generation === prior.generation
+        && sameFaces(after.faces, prior.faces);
+      // A normal return reached the engine's return point after rebuilding layout. Adoption after a throw proves
+      // only snapshot identity: rebuilding derived layout may have trapped, so keep both leases and fail closed.
+      if (adopted && !threw) return { ...result, status: "bound", complete, lease, generation: after.generation, commitResponse: "invalid" };
       if (unchanged) { this.release(lease); return { ...result, status: "failed", commitResponse: "invalid" }; }
       return { ...result, status: "uncertain", lease, commitResponse: "invalid" };
     } catch {
