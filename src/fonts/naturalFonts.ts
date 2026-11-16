@@ -53,10 +53,16 @@ export interface NaturalBinding {
   omitted: string[];
   /** The engine reported more family keys than it enumerates; their names are unknown here (legacy metrics). */
   engineTruncated: boolean;
-  /** Staging reached MAX_NATURAL_FACES; keys that did not fit are in `unbound`. */
+  /** Staging reached MAX_NATURAL_FACES; keys whose regular face did not fit are in `unbound`, a bold face that did not
+   *  fit is in `styleGaps`, and a coverage fallback that did not fit leaves its characters on legacy metrics. */
   faceLimited: boolean;
-  /** True only when every document family key is bound (nothing unbound, omitted or truncated). A "bound" status
-   *  with complete=false is a partial binding: bound keys use natural metrics, the rest legacy metrics. */
+  /** Bound keys whose document requests Bold but whose exact Bold face is not natural-measured; their bold text uses
+   *  legacy metrics (the WebView would synthesize the weight). unavailable: the installed family has no Bold face or its
+   *  bytes could not be served; webFace: the WebView refused it; stage: the engine refused it; faceLimit: 64-face limit. */
+  styleGaps: { key: string; style: "bold"; reason: "unavailable" | "webFace" | "stage" | "faceLimit" }[];
+  /** True only when every document request and every style it requires is natural-measured: nothing unbound, omitted,
+   *  truncated, face-limited or style-gapped. A "bound" status with complete=false is a partial binding: covered
+   *  keys/styles use natural metrics, everything else the legacy path (never another family's or style's metrics). */
   complete: boolean;
 }
 
@@ -248,7 +254,7 @@ export class NaturalFontService {
 
   private async apply(doc: NaturalFontDocument, current: () => boolean): Promise<NaturalBinding> {
     const result: NaturalBinding = { status: "unsupported", generation: null, bound: [], unbound: [], fallbacks: [],
-      omitted: [], engineTruncated: false, faceLimited: false, complete: false };
+      omitted: [], engineTruncated: false, faceLimited: false, styleGaps: [], complete: false };
     const catalog = this.catalog;
     if (!catalog || !this.backend || !this.fonts || typeof doc.getNaturalFontRequests !== "function"
       || typeof doc.beginNaturalFontSet !== "function" || typeof doc.stageNaturalFontFace !== "function"
@@ -261,7 +267,7 @@ export class NaturalFontService {
     result.engineTruncated = parsed.engineTruncated;
 
     // Resolve and fetch outside the engine (asynchronous); stage only afterwards.
-    const plan: { request: Request; family: FontFamily; sources: Source[] }[] = [];
+    const plan: { request: Request; family: FontFamily; sources: Source[]; boldMissing: "unavailable" | null }[] = [];
     for (const request of requests) {
       const family = request.members.map((m) => catalogFamily(catalog, m)).find((f) => f !== null) ?? null;
       const regular = family && pickStyle(family, 400, 100, 599);
@@ -272,7 +278,7 @@ export class NaturalFontService {
       const boldStyle = request.bold ? pickStyle(family, 700, 600, 1000) : null;
       const boldSource = boldStyle && boldStyle.name !== regular.name ? await this.source(family, boldStyle, true) : null;
       if (boldSource) sources.push(boldSource);
-      plan.push({ request, family, sources });
+      plan.push({ request, family, sources, boldMissing: request.bold && !boldSource ? "unavailable" : null });
     }
     if (!current()) return { ...result, status: "stale" };
 
@@ -285,13 +291,16 @@ export class NaturalFontService {
       if (request.bold) group.boldKeys.push(request.key);
       groups.set(family.family, group);
     }
+    const boldUnavailable = new Set(plan.filter((p) => p.boldMissing).map((p) => p.request.key));
     doc.beginNaturalFontSet();
     let staged = 0;
     // Faces are leased as soon as they are staged, so no catalog change can release them before the commit.
     const lease: NaturalLease = { id: ++this.leaseCounter, faces: [], released: false };
     const leased = lease.faces as string[];
+    let lastRefusal: "faceLimit" | "stage" = "stage";
     const stage = (keys: string[], s: Source) => {
-      if (staged >= MAX_NATURAL_FACES) { result.faceLimited = true; return false; }
+      if (staged >= MAX_NATURAL_FACES) { result.faceLimited = true; lastRefusal = "faceLimit"; return false; }
+      lastRefusal = "stage";
       const entry = this.faces.get(this.faceKey(s));
       if (!entry) return false; // never stage bytes whose WebView face is not retained
       try { doc.stageNaturalFontFace!(keys.join("\n"), s.alias, s.bold, false, s.bytes, s.index); } catch { return false; }
@@ -306,7 +315,17 @@ export class NaturalFontService {
         if (!(await this.webFace(sources[0]!)) || !stage(chunk, sources[0]!)) { result.unbound.push(...chunk); continue; }
         const bold = sources[1];
         const boldChunk = chunk.filter((k) => boldKeys.includes(k));
-        const boldStaged = !!bold && boldChunk.length > 0 && (await this.webFace(bold)) && stage(boldChunk, bold);
+        let boldStaged = false;
+        if (boldChunk.length > 0) {
+          const missing = boldChunk.filter((k) => !bold || boldUnavailable.has(k));
+          for (const key of missing) result.styleGaps.push({ key, style: "bold", reason: "unavailable" });
+          const wanted = bold ? boldChunk.filter((k) => !boldUnavailable.has(k)) : [];
+          if (wanted.length > 0) {
+            const loaded = await this.webFace(bold!);
+            boldStaged = loaded && stage(wanted, bold!);
+            if (!boldStaged) for (const key of wanted) result.styleGaps.push({ key, style: "bold", reason: loaded ? lastRefusal : "webFace" });
+          }
+        }
         for (const key of chunk) {
           result.bound.push({ key, family: family.family, styles: boldStaged && boldChunk.includes(key) ? [sources[0]!.style, bold!.style] : [sources[0]!.style], alias: sources[0]!.alias });
         }
@@ -329,7 +348,8 @@ export class NaturalFontService {
         return { ...result, status: "unbound", lease: null };
       }
       const committed = JSON.parse(doc.commitNaturalFontSet(staged)) as { generation?: unknown };
-      const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated;
+      const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated
+        && !result.faceLimited && result.styleGaps.length === 0;
       return { ...result, status: "bound", complete, lease, generation: typeof committed.generation === "number" ? committed.generation : null };
     } catch {
       this.release(lease);

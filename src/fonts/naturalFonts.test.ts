@@ -23,7 +23,7 @@ class FakeFace {
   async load() { if (this.family === "refuse") throw new Error("x"); return this as unknown as FontFace; }
 }
 
-function setup(requests: { key: string; members: string[]; regular?: boolean; bold?: boolean }[], options: { refuseWeb?: string; collection?: string; truncated?: boolean } = {}) {
+function setup(requests: { key: string; members: string[]; regular?: boolean; bold?: boolean }[], options: { refuseWeb?: string; collection?: string; truncated?: boolean; refuseStage?: string } = {}) {
   const fetched: string[] = [];
   const backend = {
     faceData: async (f: string, s: string) => { fetched.push(`${f}/${s}`); return { ok: true as const, value: { index: f === options.collection ? 1 : 0, bytes: new TextEncoder().encode(`${f}/${s}`) } }; },
@@ -41,6 +41,7 @@ function setup(requests: { key: string; members: string[]; regular?: boolean; bo
     beginNaturalFontSet: () => { staged.length = 0; },
     stageNaturalFontFace: (key, alias, bold, _italic, bytes) => {
       if (new TextDecoder().decode(bytes).startsWith("Hangul Sans") && options.refuseWeb === "engine") throw new Error("unsupported-variation");
+      if (new TextDecoder().decode(bytes) === options.refuseStage) throw new Error("refused");
       staged.push([key, alias, bold, new TextDecoder().decode(bytes)]); return "{}";
     },
     commitNaturalFontSet: (n) => { if (n !== staged.length) throw new Error("count"); committed = n; return JSON.stringify({ generation: 7 }); },
@@ -211,5 +212,84 @@ describe("natural font request limit accounting", () => {
     t.service.configure(t.backend, catalog(1, FAMILIES));
     expect((await t.service.bind(t.doc, () => true)).status).toBe("failed");
     expect(t.state().committed).toBeNull();
+  });
+});
+
+describe("natural style coverage and the 64-face limit", () => {
+  const regularOnly = (name: string) => family(name, [["Regular", 400]]);
+  const withBold = (name: string) => family(name, [["Regular", 400], ["Bold", 700]]);
+  const req = (name: string, bold = false) => ({ key: name, members: [name], bold });
+
+  it("B1: exactly 64 regular faces bind completely without a false face-limit report", async () => {
+    const fams = Array.from({ length: MAX_NATURAL_FACES }, (_, i) => regularOnly(`R${i}`));
+    const t = setup(fams.map((f) => req(f.family)));
+    t.service.configure(t.backend, catalog(1, fams));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(t.staged).toHaveLength(64);
+    expect([r.status, r.faceLimited, r.complete, r.styleGaps]).toEqual(["bound", false, true, []]);
+  });
+
+  it("B2: 64 regular faces plus a required Bold face: the Bold is limited, the result is partial", async () => {
+    const fams = [...Array.from({ length: 63 }, (_, i) => regularOnly(`R${i}`)), withBold("LastFamily")];
+    const t = setup([...fams.slice(0, 63).map((f) => req(f.family)), req("LastFamily", true)]);
+    t.service.configure(t.backend, catalog(1, fams));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(t.state().committed).toBe(MAX_NATURAL_FACES);
+    expect(r.bound).toHaveLength(64);
+    expect(r.bound.find((b) => b.key === "LastFamily")?.styles).toEqual(["Regular"]); // no fabricated Bold coverage
+    expect(r.styleGaps).toEqual([{ key: "LastFamily", style: "bold", reason: "faceLimit" }]);
+    expect([r.status, r.faceLimited, r.complete, r.unbound, r.omitted]).toEqual(["bound", true, false, [], []]);
+  });
+
+  it("B3: a required Bold face missing from the installed family is reported, never fabricated", async () => {
+    const t = setup([req("Medium Only", true)]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.bound[0]?.styles).toEqual(["Medium"]);
+    expect(r.styleGaps).toEqual([{ key: "Medium Only", style: "bold", reason: "unavailable" }]);
+    expect(t.staged.some(([, , bold]) => bold)).toBe(false);
+    expect([r.status, r.complete]).toEqual(["bound", false]);
+  });
+
+  it("B4/B5: a Bold face the WebView or the engine refuses keeps the result partial", async () => {
+    const web = setup([req("Latin Serif", true)], { refuseWeb: "Latin Serif/Bold" });
+    web.service.configure(web.backend, catalog(1, FAMILIES));
+    const w = await web.service.bind(web.doc, () => true);
+    expect(w.styleGaps).toEqual([{ key: "Latin Serif", style: "bold", reason: "webFace" }]);
+    expect(w.complete).toBe(false);
+    const eng = setup([req("Latin Serif", true)], { refuseStage: "Latin Serif/Bold" });
+    eng.service.configure(eng.backend, catalog(1, FAMILIES));
+    const e = await eng.service.bind(eng.doc, () => true);
+    expect(e.styleGaps).toEqual([{ key: "Latin Serif", style: "bold", reason: "stage" }]);
+    expect([e.status, e.complete, e.faceLimited]).toEqual(["bound", false, false]);
+    expect(eng.service.retained().find((x) => x.key.endsWith("\ntrue"))?.refs ?? 0).toBe(0); // refused Bold not leased
+  });
+
+  it("B6: a fully supported mixed regular/Bold request is complete", async () => {
+    const t = setup([req("Latin Serif", true), req("Hangul Sans")]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.bound.find((b) => b.key === "Latin Serif")?.styles).toEqual(["Regular", "Bold"]);
+    expect([r.status, r.complete, r.styleGaps, r.faceLimited]).toEqual(["bound", true, [], false]);
+  });
+
+  it("B7: request-limit reporting is unchanged alongside style coverage", async () => {
+    const many = Array.from({ length: MAX_REQUESTS + 2 }, (_, i) => ({ key: `Missing ${i}`, members: [`Missing ${i}`] }));
+    const t = setup([req("Latin Serif", true), ...many], { truncated: true });
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.omitted).toHaveLength(3);
+    expect([r.engineTruncated, r.complete, r.styleGaps]).toEqual([true, false, []]);
+  });
+
+  it("B9: a refresh that installs the missing Bold face makes the result complete", async () => {
+    const t = setup([req("Growing", true)]);
+    t.service.configure(t.backend, catalog(1, [regularOnly("Growing")]));
+    const first = await t.service.bind(t.doc, () => true);
+    expect([first.complete, first.styleGaps.map((g) => g.reason)]).toEqual([false, ["unavailable"]]);
+    t.service.configure(t.backend, catalog(2, [withBold("Growing")]));
+    const second = await t.service.bind(t.doc, () => true);
+    t.service.release(first.lease);
+    expect([second.complete, second.styleGaps, second.bound[0]?.styles]).toEqual([true, [], ["Regular", "Bold"]]);
   });
 });

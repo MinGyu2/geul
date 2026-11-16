@@ -14,7 +14,7 @@ function fakeBinder() {
       const catalog = state.catalog;
       state.starts.push(catalog);
       await Promise.resolve(); // fetch/load happen asynchronously in the real binder
-      const base = { generation: null, bound: [], unbound: [], fallbacks: [], omitted: [], engineTruncated: false, faceLimited: false, complete: true };
+      const base = { generation: null, bound: [], unbound: [], fallbacks: [], omitted: [], engineTruncated: false, faceLimited: false, styleGaps: [], complete: true };
       if (!current()) return { ...base, status: "stale" };
       state.commits.push({ catalog, doc });
       if (state.partial) return { ...base, status: "bound", generation: catalog, omitted: ["Over Limit"], complete: false };

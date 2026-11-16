@@ -761,7 +761,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** Stage 5-A: outcome of the latest natural-metric binding of this document (null before the first one). `complete`
-   *  is false for a partial binding (unbound, omitted beyond MAX_REQUESTS, engine-truncated or face-limited keys use
+   *  is false for a partial binding (unbound, omitted beyond MAX_REQUESTS, engine-truncated, face-limited or style-gapped keys use
    *  legacy metrics); a partial "bound" result re-lays out and repaints exactly like a complete one. */
   naturalFontStatus: NaturalBinding | null = null;
   private naturalRequest = 0;
