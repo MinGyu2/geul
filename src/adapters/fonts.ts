@@ -150,6 +150,15 @@ export interface FontBackend {
   remove(family: string): Promise<FontResult<FontCatalog>>;
   /** One registered user face: its face index and font file bytes (for the WebView's FontFace). */
   userFace(family: string, style: string): Promise<FontResult<{ index: number; bytes: Uint8Array }>>;
+  /** One face of the shared font database (system, bundled or user) by exact family/style, for RHWP natural metrics. */
+  faceData(family: string, style: string): Promise<FontResult<{ index: number; bytes: Uint8Array }>>;
+}
+
+function parseFaceBytes(v: unknown): { index: number; bytes: Uint8Array } | null {
+  const bytes = v instanceof ArrayBuffer ? new Uint8Array(v) : v instanceof Uint8Array ? v : null;
+  if (!bytes || bytes.length < 8) return null;
+  const index = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, true);
+  return { index, bytes: bytes.subarray(4) };
 }
 
 export function createFontBackend(invoke: Invoke): FontBackend {
@@ -163,12 +172,8 @@ export function createFontBackend(invoke: Invoke): FontBackend {
       return { ok: true, value: "cancelled" in r.value ? null : r.value };
     },
     remove: (family) => call(invoke, "font_remove", { family }, parseFontCatalog),
-    userFace: (family, style) => call(invoke, "font_user_face", { family, style }, (v) => {
-      const bytes = v instanceof ArrayBuffer ? new Uint8Array(v) : v instanceof Uint8Array ? v : null;
-      if (!bytes || bytes.length < 8) return null;
-      const index = new DataView(bytes.buffer, bytes.byteOffset, 4).getUint32(0, true);
-      return { index, bytes: bytes.subarray(4) };
-    }),
+    userFace: (family, style) => call(invoke, "font_user_face", { family, style }, parseFaceBytes),
+    faceData: (family, style) => call(invoke, "font_face_data", { family, style }, parseFaceBytes),
   };
 }
 

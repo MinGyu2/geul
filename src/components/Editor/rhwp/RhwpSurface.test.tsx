@@ -87,3 +87,25 @@ it("안 바뀐 쪽 Canvas를 보존하면서 배율·커서 쪽·포인터 좌�
     expect(view.container.querySelector(".rhwp-caret")?.closest(".rhwp-page")?.getAttribute("data-page")).toBe("0");
   } finally { view.unmount();editor.dispose(); }
 });
+
+it("a derived relayout without a model change (natural font binding / font availability) repaints the Canvas", async () => {
+  const { editor, doc } = await readySession();
+  const paint = vi.fn((_page: number, canvas: HTMLCanvasElement, scale: number) => {
+    canvas.width = 800 * scale;
+    canvas.height = 1000 * scale;
+  });
+  Object.assign(doc, { renderPageToCanvas: paint });
+  const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><RhwpSurface session={editor} zoom={100} /></LanguageProvider>);
+  try {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    const before = paint.mock.calls.length;
+    const model = editor.modelVersion;
+    expect(before).toBeGreaterThanOrEqual(1);
+    await act(async () => { editor.fontsChanged(); await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(editor.modelVersion).toBe(model);
+    expect(paint.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    view.unmount();
+    editor.dispose();
+  }
+});

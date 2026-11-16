@@ -1,12 +1,14 @@
 // Stage 5-A font controller: the catalog the font picker shows and the actions it runs (refresh, register, remove).
 //
 // The catalog comes from the backend's shared font database. After every change the WebView's user faces are synced
-// (WebFontBridge) and open editors are told to redraw (DOCX re-lays out in the backend; RHWP repaints its Canvas).
+// (WebFontBridge), RHWP's natural-metric binder adopts the catalog (naturalFonts.ts) and open editors are told to
+// redraw (DOCX re-lays out in the backend; RHWP rebinds exact font sources, re-lays out and repaints its Canvas).
 // Browsing the list never edits a document; only choosing a family runs the `format.font` command.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FontBackend, FontCatalog, FontErrorCode } from "../adapters/fonts";
 import type { Message, MessageKey, Translate } from "../language";
 import { WebFontBridge } from "./webFonts";
+import { naturalFonts } from "./naturalFonts";
 
 export interface FontController {
   catalog: FontCatalog | null;
@@ -30,8 +32,11 @@ export function useFontController(
   const adopt = useCallback(async (next: FontCatalog, engineChanged: boolean) => {
     setCatalog(next);
     const webChanged = bridge ? await bridge.sync(next) : false;
-    if (engineChanged || webChanged) changed.current();
-  }, [bridge]);
+    // RHWP natural metrics resolve families against this catalog; configure before editors rebind on the change below.
+    const naturalWasReady = naturalFonts.ready();
+    naturalFonts.configure(backend, next);
+    if (engineChanged || webChanged || !naturalWasReady) changed.current();
+  }, [bridge, backend]);
 
   useEffect(() => {
     if (!backend) return;

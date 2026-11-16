@@ -48,6 +48,7 @@ import { capturePreviewRaster } from "./previewRaster";
 import { FormulaCacheRefusal } from "./formulaDependencies";
 import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { capturePdfPages, type EncodePng } from "./pdfCapture";
+import { naturalFonts, type NaturalBinding, type NaturalFontService } from "../../../fonts/naturalFonts";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
@@ -251,6 +252,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   anchor: DocPosition = START;
   /** 모델이 바뀔 때마다 는다(다시 그리기 판단용, revision과 무관). */
   modelVersion = 0;
+  /** Derived relayout/repaint without a model change (natural font binding, font availability); the surface repaints on it. */
+  layoutVersion = 0;
   /** 첫 페이지를 그리기까지 걸린 시간(바이트를 받은 뒤부터, ms). */
   firstPaintMs: number | null = null;
   loadStartedAt = 0;
@@ -363,7 +366,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     private readonly loadModule: () => Promise<RhwpModule>,
     /** history: 실행 취소 기록을 켤지. 없으면 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언했을 때만(빌드 때 정해짐). */
     /** format: 글자 서식 명령을 받을지. 없으면 레지스트리 선언(시험 활성화 빌드만). */
-    private readonly options: { history?: boolean; format?: boolean } = {},
+    /** natural: Stage 5-A natural-metric binder (default: the application's; null disables binding). */
+    private readonly options: { history?: boolean; format?: boolean; natural?: NaturalFontService | null } = {},
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -377,6 +381,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private emit() {
     this.changeVersion += 1;
+    if (this.naturalCheckedVersion !== this.modelVersion) this.checkNaturalKeys();
     for (const listener of this.listeners) listener();
   }
 
@@ -631,6 +636,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.sessions.applyUpdate(ready.value);
     this.setStatus({ kind: "ready" });
     this.probeHwpOriginal();
+    this.bindNaturalFonts();
     return LOADED;
   }
 
@@ -747,7 +753,68 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   fontsChanged(): void {
     if (this.disposed) return;
     this.drawnAt = new WeakMap();
+    this.layoutVersion += 1;
     this.emit();
+    this.bindNaturalFonts();
+  }
+
+  /** Stage 5-A: outcome of the latest natural-metric binding of this document (null before the first one). */
+  naturalFontStatus: NaturalBinding | null = null;
+  private naturalRequest = 0;
+  private naturalKeys: string | null = null;
+  private naturalCheckedVersion = -1;
+
+  /** The document's natural-font family keys (with bold use), or null when the engine cannot say. */
+  private naturalKeySet(doc: RhwpDocument): string | null {
+    try {
+      const value = JSON.parse(doc.getNaturalFontRequests?.() ?? "null") as { requests?: { key: string; bold: boolean }[] } | null;
+      return Array.isArray(value?.requests) ? JSON.stringify(value.requests.map((r) => [r.key, r.bold])) : null;
+    } catch { return null; }
+  }
+
+  /** A model change can introduce a family key the committed snapshot does not bind (font change, Undo/Redo, paste):
+   *  rebind only when the key set actually changed. */
+  private checkNaturalKeys(): void {
+    this.naturalCheckedVersion = this.modelVersion;
+    const binder = this.options.natural === undefined ? naturalFonts : this.options.natural;
+    const doc = this.doc;
+    if (!binder?.ready() || !doc || this.disposed || this.naturalKeys === null) return;
+    const keys = this.naturalKeySet(doc);
+    if (keys !== null && keys !== this.naturalKeys) this.bindNaturalFonts();
+  }
+
+  /**
+   * Bind this document's families to exact installed font sources (naturalFonts.ts). Layout-only: the engine keeps the
+   * snapshot across rebuilds/Undo/Redo and the document's stored family names never change. A newer request, a
+   * reload, or disposal supersedes an older one; an IME composition defers the commit (bounded retries).
+   */
+  private bindNaturalFonts(attempt = 0): void {
+    const binder = this.options.natural === undefined ? naturalFonts : this.options.natural;
+    const doc = this.doc;
+    if (!binder || !doc || this.disposed) return;
+    const epoch = this.epoch;
+    const request = ++this.naturalRequest;
+    this.naturalKeys = this.naturalKeySet(doc);
+    const current = () => this.doc === doc && this.owns(epoch) && !this.disposed && request === this.naturalRequest;
+    void binder.bind(doc, () => current() && this.composition === null).then((binding) => {
+      if (!current()) return;
+      if (binding.status === "stale") {
+        if (attempt < 20) setTimeout(() => { if (current()) this.bindNaturalFonts(attempt + 1); }, 250);
+        return;
+      }
+      this.naturalFontStatus = binding;
+      if (binding.status !== "bound" && binding.status !== "unbound") return;
+      // The engine re-laid out every page: refresh page sizes, caret geometry and painted pages (model unchanged).
+      try { this.pages = readPages(doc); } catch {
+        this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+        return;
+      }
+      this.caretCache = null;
+      this.preferredX = -1;
+      this.drawnAt = new WeakMap();
+      this.layoutVersion += 1;
+      this.emit();
+    }, () => undefined);
   }
 
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
@@ -1622,6 +1689,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // This evidence concerns the raw engine export. For HWP, the save service
       // verifies that final CFB reconstruction changes only PrvText before publication.
       reopened = module.openDocument(bytes);
+      // Stage 5-A: measure the reopened evidence with the live document's natural-font snapshot (shared, no bytes) so
+      // page evidence compares like with like. A trap fails this evidence closed (reopen stage).
+      if (typeof reopened.adoptNaturalFontsFrom === "function" && typeof doc.adoptNaturalFontsFrom === "function") {
+        reopened.adoptNaturalFontsFrom(doc);
+      }
       const shapeCount = reopened.charShapeCount?.();
       if (Number.isSafeInteger(shapeCount) && (shapeCount as number) >= 0) charShapeCount = shapeCount!;
       const reopenedFormat: unknown = reopened.getSourceFormat();

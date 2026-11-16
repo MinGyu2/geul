@@ -1,0 +1,135 @@
+// Stage 5-A natural-metric binder: resolution through the shared catalog, exact sources, fail-closed paths.
+import { describe, expect, it } from "vitest";
+import type { FontBackend, FontCatalog, FontFamily } from "../adapters/fonts";
+import { catalogFamily, NaturalFontService, pickStyle, type NaturalFontDocument } from "./naturalFonts";
+
+const family = (name: string, styles: [string, number][], localized: { lang: string; name: string }[] = []): FontFamily => ({
+  id: name, family: name, localized, source: "system", available: true, renderable: true,
+  styles: styles.map(([n, weight]) => ({ name: n, weight, italic: n.includes("Italic") })),
+});
+const catalog = (generation: number, families: FontFamily[]): FontCatalog => ({
+  status: { provider: "fontconfig", fontconfigAvailable: true, fontconfigVersion: "2", fontconfigError: null, systemFaces: 9, generation,
+    userFontStorage: true, skippedUserFonts: [] },
+  families, generics: [{ generic: "sans-serif", family: "Hangul Sans" }], userFonts: [],
+});
+const FAMILIES = [
+  family("Latin Serif", [["Regular", 400], ["Bold", 700], ["Italic", 400]]),
+  family("Hangul Sans", [["Regular", 400]], [{ lang: "ko", name: "한글 산스" }]),
+  family("Medium Only", [["Medium", 500]]),
+];
+
+class FakeFace {
+  constructor(readonly family: string, readonly bytes: Uint8Array, readonly descriptors: FontFaceDescriptors) {}
+  async load() { if (this.family === "refuse") throw new Error("x"); return this as unknown as FontFace; }
+}
+
+function setup(requests: { key: string; members: string[]; regular?: boolean; bold?: boolean }[], options: { refuseWeb?: string; collection?: string } = {}) {
+  const fetched: string[] = [];
+  const backend = {
+    faceData: async (f: string, s: string) => { fetched.push(`${f}/${s}`); return { ok: true as const, value: { index: f === options.collection ? 1 : 0, bytes: new TextEncoder().encode(`${f}/${s}`) } }; },
+  } as unknown as FontBackend;
+  const set = new Set<FontFace>();
+  const created: FakeFace[] = [];
+  const service = new NaturalFontService({ add: (f) => set.add(f), delete: (f) => set.delete(f) }, (alias, bytes, d) => {
+    const face = new FakeFace(new TextDecoder().decode(bytes) === options.refuseWeb ? "refuse" : alias, bytes, d);
+    created.push(face); return face as unknown as FontFace;
+  });
+  const staged: [string, string, boolean, string][] = [];
+  let committed: number | null = null, cleared = 0;
+  const doc: NaturalFontDocument = {
+    getNaturalFontRequests: () => JSON.stringify({ requests: requests.map((r) => ({ regular: true, bold: false, ...r })) }),
+    beginNaturalFontSet: () => { staged.length = 0; },
+    stageNaturalFontFace: (key, alias, bold, _italic, bytes) => {
+      if (new TextDecoder().decode(bytes).startsWith("Hangul Sans") && options.refuseWeb === "engine") throw new Error("unsupported-variation");
+      staged.push([key, alias, bold, new TextDecoder().decode(bytes)]); return "{}";
+    },
+    commitNaturalFontSet: (n) => { if (n !== staged.length) throw new Error("count"); committed = n; return JSON.stringify({ generation: 7 }); },
+    clearNaturalFonts: () => { cleared++; return true; },
+  };
+  return { service, backend, doc, staged, created, set, fetched, state: () => ({ committed, cleared }) };
+}
+
+describe("natural font binder", () => {
+  it("resolves members through typographic or localized catalog names and picks upright styles", () => {
+    const c = catalog(1, FAMILIES);
+    expect(catalogFamily(c, "한글 산스")?.family).toBe("Hangul Sans");
+    expect(catalogFamily(c, "latin serif")?.family).toBe("Latin Serif");
+    expect(catalogFamily(c, "Missing")).toBeNull();
+    expect(pickStyle(FAMILIES[0]!, 700, 600, 1000)?.name).toBe("Bold");
+    expect(pickStyle(FAMILIES[2]!, 400, 100, 599)?.name).toBe("Medium");
+    expect(pickStyle(FAMILIES[2]!, 700, 600, 1000)).toBeNull();
+  });
+
+  it("binds each key to exact sources, loads the same bytes as WebView faces, adds a Korean fallback and commits once", async () => {
+    const t = setup([{ key: "Missing,Latin Serif", members: ["Missing", "Latin Serif"], bold: true }, { key: "Unknown", members: ["Unknown"] }]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const result = await t.service.bind(t.doc, () => true);
+    expect(result.status).toBe("bound");
+    expect(result.unbound).toEqual(["Unknown"]);
+    expect(result.bound).toEqual([{ key: "Missing,Latin Serif", family: "Latin Serif", styles: ["Regular", "Bold"], alias: expect.stringMatching(/^__geul_nf_\d+$/) }]);
+    expect(result.fallbacks.map((f) => f.family)).toEqual(["Hangul Sans"]);
+    expect(t.staged.map(([k, , b, src]) => [k, b, src])).toEqual([["Missing,Latin Serif", false, "Latin Serif/Regular"],
+      ["Missing,Latin Serif", true, "Latin Serif/Bold"], ["", false, "Hangul Sans/Regular"]]);
+    expect(t.state().committed).toBe(3);
+    // The WebView face for every staged source has the identical bytes and the bound weight descriptor.
+    expect(t.created.map((f) => [new TextDecoder().decode(f.bytes), f.descriptors.weight])).toEqual([["Latin Serif/Regular", "400"],
+      ["Latin Serif/Bold", "700"], ["Hangul Sans/Regular", "400"]]);
+    expect(t.created.every((f, i) => f.family === t.staged[i]![1])).toBe(true);
+  });
+
+  it("keys that resolve to the same installed family share one staged face (one parse, one alias)", async () => {
+    const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }, { key: "Alias,Latin Serif", members: ["Alias", "Latin Serif"] }]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const result = await t.service.bind(t.doc, () => true);
+    expect(t.staged.filter(([, , , src]) => src === "Latin Serif/Regular").map(([k]) => k)).toEqual(["Latin Serif\nAlias,Latin Serif"]);
+    expect(new Set(result.bound.map((b) => b.alias)).size).toBe(1);
+    expect(t.fetched.filter((f) => f === "Latin Serif/Regular")).toHaveLength(1);
+  });
+
+  it("never commits for a stale document, and leaves unresolved documents on legacy metrics", async () => {
+    const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    expect((await t.service.bind(t.doc, () => false)).status).toBe("stale");
+    expect(t.state().committed).toBeNull();
+    const u = setup([{ key: "Nope", members: ["Nope"] }]);
+    u.service.configure(u.backend, catalog(1, FAMILIES));
+    expect((await u.service.bind(u.doc, () => true)).status).toBe("unbound");
+    expect(u.state()).toEqual({ committed: null, cleared: 1 });
+    const n = setup([{ key: "Latin Serif", members: ["Latin Serif"] }]);
+    expect((await n.service.bind(n.doc, () => true)).status).toBe("unsupported"); // no catalog yet
+  });
+
+  it("a face the WebView refuses is not measured; an engine-refused fallback tries the next candidate", async () => {
+    const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }], { refuseWeb: "Latin Serif/Regular" });
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.status).toBe("unbound");
+    expect(t.staged).toEqual([]);
+    const e = setup([{ key: "Latin Serif", members: ["Latin Serif"] }], { refuseWeb: "engine" });
+    e.service.configure(e.backend, catalog(1, FAMILIES));
+    const bound = await e.service.bind(e.doc, () => true);
+    expect(bound.status).toBe("bound");
+    expect(bound.fallbacks).toEqual([]); // the only Korean candidate was refused by the engine
+  });
+
+  it("a non-first collection face is never bound (the WebView would paint face 0)", async () => {
+    const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }], { collection: "Latin Serif" });
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.unbound).toEqual(["Latin Serif"]);
+    expect(t.staged.filter(([k]) => k === "Latin Serif")).toEqual([]);
+  });
+
+  it("a new catalog generation re-resolves; faces two generations old are released", async () => {
+    const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    await t.service.bind(t.doc, () => true);
+    const first = new Set(t.set);
+    t.service.configure(t.backend, catalog(2, FAMILIES));
+    await t.service.bind(t.doc, () => true);
+    expect([...first].every((f) => t.set.has(f))).toBe(true); // previous generation may still be painted
+    t.service.configure(t.backend, catalog(3, FAMILIES));
+    expect([...first].some((f) => t.set.has(f))).toBe(false);
+    expect(t.fetched.filter((f) => f === "Latin Serif/Regular")).toHaveLength(2);
+  });
+});

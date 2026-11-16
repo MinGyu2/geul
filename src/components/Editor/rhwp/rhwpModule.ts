@@ -185,6 +185,16 @@ export interface RhwpDocument {
   deleteTableColumn?(section: number, parentParagraph: number, control: number, col: number): string;
   mergeTableCells?(section: number, parentParagraph: number, control: number, startRow: number, startCol: number, endRow: number, endCol: number): string;
   splitTableCell?(section: number, parentParagraph: number, control: number, row: number, col: number): string;
+  // Stage 5-A natural font metrics (geul patch, derived layout only — never document data). Family keys come from
+  // getNaturalFontRequests; faces are staged from exact font bytes and published atomically by commit (which rebuilds
+  // layout). Adopt shares another document's immutable snapshot (save evidence). See src/fonts/naturalFonts.ts.
+  getNaturalFontRequests?(): string;
+  beginNaturalFontSet?(): void;
+  stageNaturalFontFace?(family: string, alias: string, bold: boolean, italic: boolean, bytes: Uint8Array, faceIndex: number): string;
+  commitNaturalFontSet?(expectedFaces: number): string;
+  clearNaturalFonts?(): boolean;
+  getNaturalFontStatus?(): string;
+  adoptNaturalFontsFrom?(source: RhwpDocument): boolean;
   exportHwpWithReport(): RhwpExport;
   exportHwpxWithReport(): RhwpExport;
   // 스냅숏(T010 Phase 2 실행 취소 기록, rhwpHistory.ts). 고정 rhwp: saveSnapshot·snapshotCapacity는 u32, restoreSnapshot은 성공 JSON 또는

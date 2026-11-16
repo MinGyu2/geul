@@ -61,6 +61,7 @@ fn main() {
         "font_register",
         "font_remove",
         "font_user_face",
+        "font_face_data",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

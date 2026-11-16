@@ -46,6 +46,7 @@
     "allow-font-refresh",
     "allow-font-register",
     "allow-font-remove",
-    "allow-font-user-face"
+    "allow-font-user-face",
+    "allow-font-face-data"
   ]
 }

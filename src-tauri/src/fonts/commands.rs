@@ -221,3 +221,34 @@ pub async fn font_user_face(family: String, style: String) -> Result<Response, F
     }
     blocking(move || user_face_bytes(&family, &style).map(Response::new)).await?
 }
+
+/// The font file bytes behind one face of the shared font database — system, bundled or user — for
+/// RHWP natural font metrics and the WebView `FontFace` that paints with exactly the same bytes.
+/// Only an exact family/style match is served (never a fallback face), the caller names no path, and
+/// variable-font named instances are refused: their advances depend on a design-space location the
+/// file alone does not select. Response: 4-byte little-endian face index, then the font file.
+pub fn face_data_bytes(family: &str, style: &str) -> Result<Vec<u8>, FontError> {
+    let face = FontDb::global().face(family, style);
+    if !face.family.eq_ignore_ascii_case(family) || !face.style.eq_ignore_ascii_case(style) {
+        return Err(FontError::InvalidRequest);
+    }
+    if face.is_variable() {
+        return Err(FontError::UnsupportedFont);
+    }
+    let data = face.data();
+    if data.len() > MAX_BRIDGE_BYTES {
+        return Err(FontError::FontTooLarge);
+    }
+    let mut out = Vec::with_capacity(4 + data.len());
+    out.extend_from_slice(&face.index().to_le_bytes());
+    out.extend_from_slice(data);
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn font_face_data(family: String, style: String) -> Result<Response, FontError> {
+    if family.is_empty() || family.len() > 256 || style.is_empty() || style.len() > 256 {
+        return Err(FontError::InvalidRequest);
+    }
+    blocking(move || face_data_bytes(&family, &style).map(Response::new)).await?
+}

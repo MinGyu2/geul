@@ -412,6 +412,20 @@ fn user_fonts_register_in_all_formats_persist_and_remove() {
         commands::user_face_bytes("Source Sans 3", "Regular"),
         Err(commands::FontError::NotUserFont)
     ));
+    // Natural-metric face data: exact family/style of any database face, never a fallback face.
+    let data = commands::face_data_bytes("GeulTest TTF1", "Regular").unwrap();
+    assert_eq!(data, bytes);
+    let web = commands::face_data_bytes("GeulTest WOF1", "Regular").unwrap();
+    assert_ne!(&web[4..8], b"wOFF", "web fonts are served as the decoded sfnt the engines use");
+    assert!(commands::face_data_bytes("Source Sans 3", "Regular").is_ok());
+    assert!(matches!(
+        commands::face_data_bytes("No Such Family 42", "Regular"),
+        Err(commands::FontError::InvalidRequest)
+    ));
+    assert!(matches!(
+        commands::face_data_bytes("GeulTest TTF1", "Black Condensed"),
+        Err(commands::FontError::InvalidRequest)
+    ));
     // Removal: user fonts only; the catalog and the database forget it.
     assert!(matches!(
         FontDb::global()
@@ -421,6 +435,10 @@ fn user_fonts_register_in_all_formats_persist_and_remove() {
     ));
     db.remove_user_font("GeulTest TTF1").unwrap();
     assert_ne!(db.face("GeulTest TTF1", "Regular").family, "GeulTest TTF1");
+    assert!(matches!(
+        commands::face_data_bytes("GeulTest TTF1", "Regular"),
+        Err(commands::FontError::InvalidRequest)
+    ));
     assert!(!catalog::build(&s)
         .families
         .iter()

@@ -146,7 +146,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const [ownContext] = useState(() => new ImeContext());
   const context = imeContext ?? ownContext;
   const dragging = useRef(false);
-  const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" });
+  const rendered = useRef({ version: -1, layout: -1, scale: 0, ratio: 0, pages: 0, sizes: "" });
   /** 지금 모델로 아직 다시 그리지 않은 쪽(커서 쪽 밖, 그리기 예약됨). */
   const stalePages = useRef(new Set<number>());
   const scheduleStale = useRef<(() => void) | null>(null);
@@ -173,7 +173,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     const last = rendered.current;
     const sizes = session.pages.map((size) => `${size.width}x${size.height}`).join(",");
     const all = last.scale !== scale || last.ratio !== ratio || last.pages !== session.pages.length || last.sizes !== sizes;
-    if (!all && last.version === session.modelVersion) {
+    // layoutVersion: derived relayout without a model change (Stage 5-A natural font binding, font availability).
+    if (!all && last.version === session.modelVersion && last.layout === session.layoutVersion) {
       inputAt.current = null; // 문서를 바꾸지 않은 입력(이동·처음에서 Backspace)은 측정하지 않는다
       return;
     }
@@ -190,7 +191,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // bitmap 크기가 바뀔 수 있으면(배율·DPR·쪽 수·쪽 크기) 이전 bitmap을 먼저 놓아 새 크기와 함께 예산을 넘지 않게 한다.
     // 크기가 같으면 놓지 않고 그 자리에서 다시 그린다(편집마다 bitmap을 새로 잡지 않음).
     if (all) session.releaseRendering();
-    rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length, sizes };
+    rendered.current = { version: session.modelVersion, layout: session.layoutVersion, scale, ratio, pages: session.pages.length, sizes };
     // 커서 쪽을 먼저 그리고 나머지는 다음 task에 그린다. WebView가 frame clock을 멈춰도 빈 쪽으로 남기지 않는다.
     const first = caret?.page ?? 0;
     const version = session.modelVersion;
@@ -301,7 +302,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     session.releaseRendering();
     // StrictMode replays setup with these same refs after cleanup has cleared
     // the backing stores. The next setup must repaint even at the same revision.
-    rendered.current = { version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" };
+    rendered.current = { version: -1, layout: -1, scale: 0, ratio: 0, pages: 0, sizes: "" };
   }, [session]);
 
   // 그리기를 기다리던 쪽이 보이게 되면 바로 그린다(입력이 이어져도 보이는 쪽이 옛 그림으로 남지 않게). 보이는 쪽은 스크롤 영역의
