@@ -23,7 +23,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/general-formatting-eligibility.patch",
           "patches/rhwp/table-formula-tail-preservation.patch",
           "patches/rhwp/stage2-table-paths.patch",
-          "patches/rhwp/table-formula-inline.patch")
+          "patches/rhwp/table-formula-inline.patch",
+          "patches/rhwp/stage1-editing.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"

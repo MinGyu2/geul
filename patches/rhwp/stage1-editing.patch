@@ -1,0 +1,154 @@
+--- a/src/document_core/commands/formatting.rs
++++ b/src/document_core/commands/formatting.rs
+@@ -438,7 +438,7 @@
+                     escaped_font, base_size, cs.bold, cs.italic,
+                     underline, underline_type_str, color_ref_to_css(cs.underline_color),
+                     cs.strikethrough, color_ref_to_css(raw_cs.map(|s| s.strike_color).unwrap_or(0)),
+-                    color_ref_to_css(cs.text_color), color_ref_to_css(shade_color),
++                    color_ref_to_css(cs.text_color), shade_css(shade_color),
+                     shadow_type, color_ref_to_css(shadow_color), shadow_offset_x, shadow_offset_y,
+                     outline_type,
+                     subscript, superscript,
+@@ -612,7 +612,7 @@
+                     escaped_font, base_size, cs.bold, cs.italic,
+                     underline, underline_type_str, color_ref_to_css(cs.underline_color),
+                     cs.strikethrough, color_ref_to_css(raw_cs.map(|s| s.strike_color).unwrap_or(0)),
+-                    color_ref_to_css(cs.text_color), color_ref_to_css(shade_color),
++                    color_ref_to_css(cs.text_color), shade_css(shade_color),
+                     shadow_type, color_ref_to_css(shadow_color), shadow_offset_x, shadow_offset_y,
+                     outline_type,
+                     subscript, superscript,
+@@ -1788,6 +1788,72 @@
+         Ok("{\"ok\":true}".to_string())
+     }
+ 
++    /// [geul Stage 1] `applyParaFormatInCell` for a cell at any nesting depth (explicit cell path).
++    /// Depth 1 delegates to the flat implementation; deeper cells use the same shape resolution,
++    /// indentation restamp and innermost-cell reflow as the flat path.
++    pub fn apply_para_format_in_cell_by_path(
++        &mut self,
++        sec_idx: usize,
++        parent_para_idx: usize,
++        path: &[(usize, usize, usize)],
++        props_json: &str,
++    ) -> Result<String, HwpError> {
++        if path.len() == 1 {
++            let (control_idx, cell_idx, cell_para_idx) = path[0];
++            return self.apply_para_format_in_cell_native(
++                sec_idx, parent_para_idx, control_idx, cell_idx, cell_para_idx, props_json,
++            );
++        }
++        if path.is_empty() || json_has_tab_keys(props_json) || json_has_border_keys(props_json) {
++            return Err(HwpError::RenderError("중첩 셀 문단 서식: 지원하지 않는 속성".to_string()));
++        }
++        let mods = parse_para_shape_mods(props_json);
++        let affects_vpos;
++        {
++            let base_id = self
++                .get_cell_paragraph_mut_by_path(sec_idx, parent_para_idx, path)?
++                .para_shape_id;
++            let new_id = self.document.find_or_create_para_shape(base_id, &mods);
++            affects_vpos = self
++                .document
++                .doc_info
++                .para_shapes
++                .get(base_id as usize)
++                .is_none_or(|old| {
++                    cell_para_shape_affects_vpos(old, &self.document.doc_info.para_shapes[new_id as usize])
++                });
++            let (old_indent, new_indent) = self.para_shape_indents(base_id, new_id);
++            let cell_para = self.get_cell_paragraph_mut_by_path(sec_idx, parent_para_idx, path)?;
++            cell_para.para_shape_id = new_id;
++            restamp_indentation(&mut cell_para.line_segs, old_indent, new_indent);
++            cell_para.cell_format_vpos_dirty |= affects_vpos;
++        }
++        if para_shape_mods_affect_text_flow(&mods) {
++            let inner_cpi = path.last().map(|e| e.2).unwrap_or(0);
++            self.reflow_cell_paragraph_by_path(sec_idx, parent_para_idx, path, inner_cpi);
++        }
++        self.pending_cell_format_vpos |= affects_vpos;
++        self.mark_cell_control_dirty(sec_idx, parent_para_idx, path[0].0);
++        self.document.sections[sec_idx].raw_stream = None;
++        self.rebuild_section_deferred_in_batch(sec_idx);
++        self.event_log.push(DocumentEvent::ParaFormatChanged {
++            section: sec_idx,
++            para: parent_para_idx,
++        });
++        Ok("{\"ok\":true}".to_string())
++    }
++
++    /// [geul Stage 1] `getCellParaPropertiesAt` for a cell at any nesting depth.
++    pub fn get_cell_para_properties_at_by_path(
++        &mut self,
++        sec_idx: usize,
++        parent_para_idx: usize,
++        path: &[(usize, usize, usize)],
++    ) -> Result<String, HwpError> {
++        let id = self.get_cell_paragraph_mut_by_path(sec_idx, parent_para_idx, path)?.para_shape_id;
++        Ok(self.build_para_properties_json(id, sec_idx))
++    }
++
+     /// 문단 서식 ID 직접 복원 (네이티브) — 셀 내 문단.
+     pub fn set_cell_para_shape_id_native(
+         &mut self,
+@@ -3170,3 +3236,12 @@
+         );
+     }
+ }
++
++/// [geul Stage 1] CSS color of a shade, or "none" for the format's no-shading value (0xFFFFFFFF).
++fn shade_css(color: crate::model::ColorRef) -> String {
++    if color == 0xFFFF_FFFF {
++        "none".to_string()
++    } else {
++        super::super::helpers::color_ref_to_css(color)
++    }
++}
+--- a/src/document_core/helpers.rs
++++ b/src/document_core/helpers.rs
+@@ -352,6 +352,9 @@
+     }
+     if let Some(v) = json_color(json, "shadeColor") {
+         mods.shade_color = Some(v);
++    } else if json_str(json, "shadeColor").as_deref() == Some("none") {
++        // [geul Stage 1] "no shading" is the format's own value (COLORREF 0xFFFFFFFF), distinct from white.
++        mods.shade_color = Some(0xFFFF_FFFF);
+     }
+     // 확장 속성
+     if let Some(v) = json_str(json, "underlineType") {
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -8463,6 +8463,33 @@
+         .map_err(|e| e.into())
+     }
+ 
++    /// [geul Stage 1] Paragraph formatting of a cell paragraph at any nesting depth.
++    #[wasm_bindgen(js_name = applyParaFormatInCellByPath)]
++    pub fn apply_para_format_in_cell_by_path_api(
++        &mut self,
++        section_idx: u32,
++        parent_para_idx: u32,
++        path_json: &str,
++        props_json: &str,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.apply_para_format_in_cell_by_path(section_idx as usize, parent_para_idx as usize, &path, props_json)
++            .map_err(|e| e.into())
++    }
++
++    /// [geul Stage 1] Paragraph properties of a cell paragraph at any nesting depth.
++    #[wasm_bindgen(js_name = getCellParaPropertiesAtByPath)]
++    pub fn get_cell_para_properties_at_by_path_api(
++        &mut self,
++        section_idx: u32,
++        parent_para_idx: u32,
++        path_json: &str,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.get_cell_para_properties_at_by_path(section_idx as usize, parent_para_idx as usize, &path)
++            .map_err(|e| e.into())
++    }
++
+     #[wasm_bindgen(js_name = applyCharFormatInCellByPath)]
+     #[allow(clippy::too_many_arguments)]
+     pub fn apply_char_format_in_cell_by_path_api(
