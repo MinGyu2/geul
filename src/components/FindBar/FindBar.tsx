@@ -29,6 +29,7 @@ export function FindBar({ context, replace, onClose }: { context: CommandContext
   const search = snapshot?.search ?? null;
   const sameQuery = !!search && search.text === text && search.matchCase === matchCase && search.wholeWord === wholeWord;
   const status = !valid ? "" : !sameQuery ? t("find.pending")
+    : search!.complete === false ? t("find.tooMany")
     : search!.count === 0 ? t("find.none")
     : t("find.count", { current: search!.current === null ? "-" : search!.current + 1, count: search!.count });
   const onKeyDown = (event: KeyboardEvent) => {
@@ -59,7 +60,8 @@ export function FindBar({ context, replace, onClose }: { context: CommandContext
           maxLength={MAX_REPLACE_CHARS * 2} spellCheck={false} autoComplete="off" data-testid="replace-text" onChange={(e) => setReplacement(e.target.value)} />
         <button type="button" className="document-bar__button" disabled={blocked || !canReplace || !sameQuery || search?.current == null}
           onClick={() => send({ kind: "replace", query, with: replacement })} data-testid="replace-one">{t("find.replace")}</button>
-        <button type="button" className="document-bar__button" disabled={blocked || !canReplace}
+        <button type="button" className="document-bar__button" disabled={blocked || !canReplace || search?.complete === false || (sameQuery && !!search?.replaceAllLimit && search.count > search.replaceAllLimit)}
+          title={sameQuery && search?.replaceAllLimit && search.count > search.replaceAllLimit ? t("find.replaceAllLimit", { limit: search.replaceAllLimit }) : undefined}
           onClick={() => send({ kind: "replaceAll", query, with: replacement })} data-testid="replace-all">{t("find.replaceAll")}</button>
       </>}
       <button type="button" className="document-bar__button" onClick={close} aria-label={t("find.close")} data-testid="find-close">×</button>

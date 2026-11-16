@@ -49,7 +49,8 @@ function model(d: Doc) {
   const read = (n: number, get: (i: number) => string) => Array.from({ length: n }, (_, i) => {
     const value = JSON.parse(get(i)); delete value.charShapeId; return value;
   });
-  const controls = JSON.parse(d.getControls!());
+  // Top-level tables only (nested tables are reached through their cells' text in this comparison).
+  const controls = JSON.parse(d.getControls!()).filter((c: { list: number }) => c.list === 0);
   return { text: d.getTextFileText(), controls, pages: d.pageCount(),
     body: Array.from({ length: d.getParagraphCount(0) }, (_, p) => read(d.getParagraphLength(0, p), i => d.getCharPropertiesAt!(0, p, i))),
     cells: controls.filter((c: {ctrlId: string}) => c.ctrlId === "tbl").map((c: {para: number; controlIndex: number}) => {
@@ -114,9 +115,9 @@ describe.skipIf(phase !== "generate")("Stage 1 character values, production sess
     it(`${format}: size, color, highlight, scripts; mixed state, cells, history, export`, async () => {
       const { editor, doc, original, settle, cell, cellProps } = await open(format);
       try {
-        // Caret-only formatting is not offered (selection required), and nothing changes.
+        // Caret-only formatting is offered as next-input formatting (covered by the caret scenario below).
         editor.anchor = body(0); editor.caret = body(0);
-        expect(documentCommandState("format.fontSize", editor.snapshot())).toEqual({ available: false, reason: "selectionRequired" });
+        expect(documentCommandState("format.fontSize", editor.snapshot())).toEqual({ available: true });
         editor.anchor = body(0); editor.caret = body(4);
         const chars = editor.snapshot().chars!;
         expect(chars.size).toBe(10);
@@ -155,10 +156,10 @@ describe.skipIf(phase !== "generate")("Stage 1 character values, production sess
         expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 5000 }).accepted).toBe(false);
         expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "red" }).accepted).toBe(false);
         record(`${format}-stage1-chars`, format, original, doc);
-        // Removing the highlight stores white shading and reports no highlight.
+        // Removing the highlight stores the format's no-shading value (not white) and reports no highlight.
         editor.anchor = body(0); editor.caret = body(4);
         expect(editor.execute("format.highlight", { command: "format.highlight", color: "none" }).accepted).toBe(true); await settle();
-        expect(properties(doc, 0, 0).shadeColor).toBe("#ffffff");
+        expect(properties(doc, 0, 0).shadeColor).toBe("none");
         expect(editor.snapshot().chars!.highlight).toBeNull();
         record(`${format}-stage1-highlight-off`, format, original, doc);
       } finally { editor.dispose(); }
@@ -299,9 +300,227 @@ describe.skipIf(phase !== "generate")("Stage 1 page setup, production session pa
   }
 });
 
+describe.skipIf(phase !== "generate")("Stage 1 complete search count and all-or-nothing replace all, actual Release WASM", () => {
+  function many(format: Format, count: number) {
+    const d = engine.HwpDocument.createEmpty();
+    try {
+      d.createBlankDocument();
+      const first = Math.ceil(count / 2);
+      // "가😀" matches across two paragraphs (code-point offsets, surrogate pairs) in a mixed-format paragraph.
+      d.insertText(0, 0, 0, "가😀b".repeat(first)); d.splitParagraph(0, 0, 3 * first);
+      d.insertText(0, 1, 0, "x가😀".repeat(count - first) + " 끝");
+      d.applyCharFormat!(0, 0, 0, 9, JSON.stringify({ bold: true }));
+      return exported(d, format).bytes;
+    } finally { d.free(); }
+  }
+  // HWPX: an engine-created HWP fails the original preflight (its PrvText changes on an unedited round trip), so the
+  // generated large source is HWPX; HWP shares the same session code path (covered by the smaller HWP replace case).
+  for (const format of ["hwpx"] as const) {
+    it(`${format}: over the bound refused whole (no change); within it complete, one history step, export`, async () => {
+      const over = await open(format, many(format, 520), format === "hwp");
+      try {
+        const q = { text: "가😀", matchCase: true, wholeWord: false };
+        expect(over.editor.search({ kind: "find", query: q, backward: false })).toBe(true);
+        expect(over.editor.snapshot().search).toMatchObject({ count: 520, complete: true });
+        const before = over.doc.getTextRange(0, 0, 0, 30);
+        expect(over.editor.search({ kind: "replaceAll", query: q, with: "나" })).toBe(false);
+        expect(over.editor.snapshot().revision).toBe(0);
+        expect(over.doc.getTextRange(0, 0, 0, 30)).toBe(before);
+      } finally { over.editor.dispose(); }
+      const { editor, doc, original, settle } = await open(format, many(format, 480), format === "hwp");
+      try {
+        const q = { text: "가😀", matchCase: true, wholeWord: false };
+        expect(editor.search({ kind: "find", query: q, backward: false })).toBe(true);
+        expect(editor.snapshot().search).toMatchObject({ count: 480, complete: true });
+        const replaced = editor.search({ kind: "replaceAll", query: q, with: "나" });
+        expect(replaced).toBe(true); await settle();
+        expect(editor.search({ kind: "find", query: q, backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(0);
+        expect(doc.getTextRange(0, 0, 0, 4)).toBe("나b나b");
+        expect(doc.getTextRange(0, 1, 240 * 2, 2)).toBe(" 끝");
+        expect(properties(doc, 0, 0).bold).toBe(true);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(editor.search({ kind: "find", query: q, backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(480);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        record(`${format}-stage1-replace-many`, format, original, doc, false);
+      } finally { editor.dispose(); }
+    }, 120_000);
+  }
+});
+
+describe.skipIf(phase !== "generate")("Stage 1 multicolumn layout, production session path, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: columns on the section's existing definition, page properties kept, history, export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        const cols = () => JSON.parse(doc.getColumnDef!(0));
+        const page = JSON.parse(doc.getPageDef!(0));
+        editor.anchor = editor.caret = body(0);
+        expect(editor.snapshot().page!.columns).toBe(1);
+        const svg = doc.renderPageSvgWithProfile(0, "screen");
+        expect(editor.execute("layout.columns", { command: "layout.columns", count: 2, space: 24 }).accepted).toBe(true); await settle();
+        expect(cols()).toMatchObject({ columnCount: 2, sameWidth: true, spacing: 2400 });
+        expect(editor.snapshot().page!.columns).toBe(2);
+        expect(doc.renderPageSvgWithProfile(0, "screen")).not.toBe(svg);
+        expect(JSON.parse(doc.getPageDef!(0))).toEqual(page);
+        expect(editor.execute("layout.columns", { command: "layout.columns", count: 12, space: 300 }).accepted).toBe(false);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(cols().columnCount).toBe(1);
+        expect(doc.renderPageSvgWithProfile(0, "screen")).toBe(svg);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(cols().columnCount).toBe(2);
+        record(`${format}-stage1-columns`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
+describe.skipIf(phase !== "generate")("Stage 1 mixed script state and caret next-input formatting, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: per-property uniformity across shapes; pending caret values for typing and IME; history; export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        // B1: different shapes (size differs) but uniform superscript → pressed; mixed with normal text → null.
+        editor.anchor = body(0); editor.caret = body(4);
+        expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
+        editor.anchor = body(0); editor.caret = body(2);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 16 }).accepted).toBe(true); await settle();
+        editor.anchor = body(0); editor.caret = body(4);
+        expect(editor.snapshot().chars).toMatchObject({ size: null, superscript: true, subscript: false });
+        expect(editor.snapshot().actions?.["format.superscript"]).toEqual({ pressed: true });
+        editor.anchor = body(2); editor.caret = body(7);
+        expect(editor.snapshot().chars).toMatchObject({ superscript: null, subscript: false });
+        expect(editor.snapshot().actions?.["format.superscript"]).toEqual({ pressed: false });
+        // Toggling a mixed selection turns the script on for all of it.
+        expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
+        expect([2, 6].map(i => properties(doc, 0, i).superscript)).toEqual([true, true]);
+        // B2: caret-only values are pending (no document change) and apply to the next typed text only.
+        const end = doc.getParagraphLength(0, 1);
+        editor.anchor = editor.caret = body(end, 1);
+        const revision = editor.snapshot().revision;
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 20 }).accepted).toBe(true);
+        expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "0070C0" }).accepted).toBe(true);
+        expect(editor.execute("format.subscript").accepted).toBe(true);
+        expect(editor.snapshot().revision).toBe(revision);
+        expect(editor.snapshot().chars).toMatchObject({ size: 20, color: "0070C0", subscript: true });
+        expect(editor.typeText("가b")).toBe(true); await settle();
+        const typed = properties(doc, 1, end);
+        expect([typed.fontSize, typed.textColor, typed.subscript]).toEqual([2000, "#0070c0", true]);
+        expect(properties(doc, 1, end + 1).fontSize).toBe(2000);
+        expect(properties(doc, 1, end - 1).fontSize).toBe(1000); // existing text untouched
+        // Korean IME composition and commit at the pending caret.
+        editor.anchor = editor.caret = body(0, 1);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 14 }).accepted).toBe(true);
+        editor.beginComposition(); editor.updateComposition("ㅎ"); editor.updateComposition("하"); editor.updateComposition("한");
+        editor.endComposition("한"); await settle();
+        expect(doc.getTextRange(0, 1, 0, 1)).toBe("한");
+        expect(properties(doc, 1, 0).fontSize).toBe(1400);
+        expect(properties(doc, 1, 1).fontSize).toBe(1000);
+        // Moving the caret makes pending values inert.
+        editor.anchor = editor.caret = body(3, 1);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 30 }).accepted).toBe(true);
+        editor.anchor = editor.caret = body(5, 1);
+        expect(editor.typeText("x")).toBe(true); await settle();
+        expect(properties(doc, 1, 5).fontSize).toBe(1000);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 1, 5, 1)).not.toBe("x");
+        record(`${format}-stage1-caret`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
+describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatting, production session path, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: numbered/multilevel/custom lists, levels, restart/continue, Enter exit, cells; history; export`, async () => {
+      const { editor, doc, original, settle, cell } = await open(format);
+      try {
+        const para = (p: number) => JSON.parse(doc.getParaPropertiesAt!(0, p));
+        const cellPara = (index = 0) => JSON.parse((doc as unknown as { getCellParaPropertiesAt(...a: number[]): string })
+          .getCellParaPropertiesAt(0, cell(0).cell.parentParagraph, cell(0).cell.control, index, 0));
+        // First (while the table's paragraph index is known): a list in a table cell; the adjacent cell is untouched.
+        editor.anchor = editor.caret = cell(0);
+        expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+        expect(cellPara(0).headType).toBe("Number");
+        expect(cellPara(1).headType).not.toBe("Number");
+        // Cell paragraph formatting.
+        expect(editor.execute("paragraph.alignCenter").accepted).toBe(true); await settle();
+        expect(cellPara(0).alignment).toBe("center");
+        expect(cellPara(1).alignment).not.toBe("center");
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: { spaceBefore: 4, indentLeft: 6 } }).accepted).toBe(true); await settle();
+        expect(editor.snapshot().paragraph).toMatchObject({ spaceBefore: 4, indentLeft: 6, align: "center" });
+        editor.anchor = body(0); editor.caret = body(3, 1);
+        expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+        const [a, b] = [para(0), para(1)];
+        expect([a.headType, b.headType]).toEqual(["Number", "Number"]);
+        expect(a.numberingId).toBe(b.numberingId);
+        expect(editor.snapshot().actions?.["paragraph.numbering"]).toEqual({ pressed: true });
+        // Level demotion/promotion.
+        editor.anchor = editor.caret = body(0, 1);
+        expect(editor.execute("paragraph.increaseIndent").accepted).toBe(true); await settle();
+        expect(para(1).paraLevel).toBe(1);
+        expect(editor.execute("paragraph.decreaseIndent").accepted).toBe(true); await settle();
+        expect(para(1).paraLevel).toBe(0);
+        // Restart: a new definition for this item; continue: back to the previous list.
+        expect(editor.execute("paragraph.restartNumbering").accepted).toBe(true); await settle();
+        expect(para(1).numberingId).not.toBe(para(0).numberingId);
+        expect(editor.execute("paragraph.continueNumbering").accepted).toBe(true); await settle();
+        expect(para(1).numberingId).toBe(para(0).numberingId);
+        // Enter at the end continues the list; Enter on the new empty item ends it.
+        editor.anchor = editor.caret = body(doc.getParagraphLength(0, 1), 1);
+        expect(editor.enter()).toBe(true); await settle();
+        expect(para(2).headType).toBe("Number");
+        expect(editor.enter()).toBe(true); await settle();
+        expect(para(2).headType).toBe("None");
+        // Custom styles: upper-letter numbering on paragraph 1, a custom bullet on paragraph 0.
+        editor.anchor = editor.caret = body(0, 1);
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "upperLetter" }).accepted).toBe(true); await settle();
+        expect(para(1).headType).toBe("Number");
+        expect(para(1).numberingId).not.toBe(para(0).numberingId);
+        editor.anchor = editor.caret = body(0);
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "bulletCircle" }).accepted).toBe(true); await settle();
+        expect(para(0).headType).toBe("Bullet");
+        // Multilevel on paragraph 1 (toggle on).
+        editor.anchor = editor.caret = body(0, 1);
+        expect(editor.execute("paragraph.multilevel").accepted).toBe(true); await settle();
+        expect(editor.snapshot().paragraph?.list?.multilevel).toBe(true);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(editor.snapshot().paragraph?.spaceBefore).not.toBe(4);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        record(`${format}-stage1-lists`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+    it(`${format}: nested cell paragraph formatting (explicit path), ownership, history, export`, async () => {
+      const { editor, doc, original, settle, cell } = await open(format);
+      try {
+        const len0 = doc.getCellParagraphLength(0, cell(0).cell.parentParagraph, cell(0).cell.control, 0, 0);
+        editor.anchor = editor.caret = cell(len0);
+        expect(editor.execute("insert.table", { command: "insert.table", rows: 1, cols: 2 }).accepted).toBe(true); await settle();
+        expect(editor.caret.cell?.nested?.length).toBe(1);
+        const at = editor.caret;
+        // State is read through the explicit-path engine API (getCellParaPropertiesAtByPath).
+        const nestedAlign = () => { editor.anchor = editor.caret = at; return editor.snapshot().paragraph?.align; };
+        const outerAlign = () => { editor.anchor = editor.caret = cell(0); return editor.snapshot().paragraph?.align; };
+        const outer = outerAlign();
+        editor.anchor = editor.caret = at;
+        expect(editor.execute("paragraph.alignRight").accepted).toBe(true); await settle();
+        expect(nestedAlign()).toBe("right");
+        expect(outerAlign()).toBe(outer); // the containing cell keeps its alignment
+        editor.anchor = editor.caret = at;
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(nestedAlign()).not.toBe("right");
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(nestedAlign()).toBe("right");
+        record(`${format}-stage1-nested-cell`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
-  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 10));
+  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 20));
   for (const { id, format } of all) {
     const dir = join(out, id), doc = new engine.HwpDocument(readFileSync(join(dir, `published.${format}`))) as Doc;
     try {
@@ -309,6 +528,11 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       expect(proof.generation).toBe(build.generation);
       expect(model(doc)).toEqual(proof.model);
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else if (id.includes("lists")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 0)).headType).toBe("Bullet");
+      else if (id.includes("nested")) expect(doc.pageCount()).toBeGreaterThan(0);
+      else if (id.includes("caret")) expect(properties(doc, 1, 0).fontSize).toBe(1400);
+      else if (id.includes("columns")) expect(JSON.parse(doc.getColumnDef!(0)).columnCount).toBe(2);
+      else if (id.includes("many")) expect(doc.getTextRange(0, 0, 0, 4)).toBe("나b나b");
       else if (id.includes("page")) expect(JSON.parse(doc.getPageDef!(0)).landscape).toBe(true);
       else if (id.includes("paragraph")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 1)).alignment).toBe("right");
       else expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");

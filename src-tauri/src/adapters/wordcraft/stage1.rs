@@ -19,8 +19,6 @@ use super::{DocxModel, Rejected};
 
 /// Search text length limit (characters).
 pub const MAX_SEARCH_CHARS: usize = 256;
-/// Matches reported for the current-result indication; counting continues past it as a bound only.
-pub const MAX_SEARCH_RESULTS: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -596,9 +594,9 @@ impl DocxModel {
         self.session
             .run("edit.advancedFind", &params)
             .map_err(|_| Rejected)?;
-        let mut results = self.session.find.results.clone();
-        results.truncate(MAX_SEARCH_RESULTS);
-        Ok(results)
+        // The engine's complete result set: the count is exact and navigation reaches every match
+        // (no display limit is applied; replace-all runs the engine's own complete search).
+        Ok(self.session.find.results.clone())
     }
 
     /// Select the next (or previous) match from the selection, wrapping. Navigation only (no revision).

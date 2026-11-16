@@ -627,5 +627,7 @@
   "find.replace": "Replace",
   "find.replaceAll": "Replace all",
   "find.close": "Close find",
-  "find.rejected": "The search request could not be run in the current document state."
+  "find.rejected": "The search request could not be run in the current document state.",
+  "find.tooMany": "Too many results to count; Replace All is unavailable",
+  "find.replaceAllLimit": "Replace All handles at most {limit} matches in this format; narrow the search"
 }

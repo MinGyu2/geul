@@ -627,5 +627,7 @@
   "find.replace": "바꾸기",
   "find.replaceAll": "모두 바꾸기",
   "find.close": "찾기 닫기",
-  "find.rejected": "현재 문서 상태에서는 찾기 요청을 실행할 수 없습니다."
+  "find.rejected": "현재 문서 상태에서는 찾기 요청을 실행할 수 없습니다.",
+  "find.tooMany": "결과가 너무 많아 셀 수 없습니다. 모두 바꾸기를 쓸 수 없습니다",
+  "find.replaceAllLimit": "이 형식에서 모두 바꾸기는 최대 {limit}개까지 합니다. 찾을 내용을 좁히세요"
 }

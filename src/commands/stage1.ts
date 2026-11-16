@@ -83,8 +83,9 @@ export interface CharState {
   color: string | null;
   /** `RRGGBB`; null when none or mixed. */
   highlight: string | null;
-  superscript: boolean;
-  subscript: boolean;
+  /** null: mixed across the selection (pressed state is shown only when uniformly true). */
+  superscript: boolean | null;
+  subscript: boolean | null;
 }
 
 export interface PageState {
@@ -102,8 +103,13 @@ export interface PageState {
 
 export interface SearchOptions { text: string; matchCase: boolean; wholeWord: boolean }
 
-/** Search state of the open search: current match count and the selected match (0-based). */
-export interface SearchState extends SearchOptions { count: number; current: number | null }
+/** Search state of the open search: current match count and the selected match (0-based). `complete: false` means the
+ * engine could not enumerate every match within its bound: the count is a lower bound and replace-all is refused. */
+export interface SearchState extends SearchOptions {
+  count: number; current: number | null; complete?: boolean;
+  /** Engine bound for replace-all (refused as a whole above it, never partial). Absent: no bound. */
+  replaceAllLimit?: number;
+}
 
 export type SearchRequest =
   | { kind: "find"; query: SearchOptions; backward: boolean }

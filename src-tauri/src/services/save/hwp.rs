@@ -1044,7 +1044,8 @@ fn derived_char_shape(a: &[u8], b: &[u8]) -> bool {
         && a[50..52] == b[50..52]
         && color(52..56)
         && a[56..60] == b[56..60]
-        && color(60..64)
+        // Shade: an RGB value or the format's no-shading value 0xFFFFFFFF (Stage 1 "no highlight").
+        && (color(60..64) || b[60..64] == [0xFF; 4])
         && a[64..] == b[64..]
 }
 /// `ID_MAPPINGS`가 글자 모양 수만 `k`만큼 늘고 나머지 바이트는 같은지.
@@ -1993,6 +1994,12 @@ mod general_format_tests {
             next[42..46].copy_from_slice(&size.to_le_bytes());
             assert!(!derived_char_shape(&original, &next), "size {size}");
         }
+        let mut no_shade = stage1.clone();
+        no_shade[60..64].fill(0xFF);
+        assert!(derived_char_shape(&original, &no_shade));
+        let mut text_none = stage1.clone();
+        text_none[52..56].fill(0xFF); // the text color has no "none" value
+        assert!(!derived_char_shape(&original, &text_none));
         let mut underline_color = stage1.clone();
         underline_color[56] = 1;
         assert!(!derived_char_shape(&original, &underline_color));

@@ -13413,3 +13413,39 @@ fn stage1_hwpx_header_accepts_size_color_shade_script_appends_only() {
         assert!(!findings.is_empty(), "{label}: accepted");
     }
 }
+
+/// Stage 1 HWPX list proof over the actual Release-WASM list export (header + section of `hwpx-stage1-lists`):
+/// the real append is accepted; invalid numbering definitions and headings are refused. Explicit opt-in.
+#[test]
+#[ignore = "requires the Stage 1 Release-WASM exports (GEUL_FORMAT_DIR)"]
+fn stage1_hwpx_list_proof_rejects_invalid_appends() {
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+    let folder = root.join("hwpx-stage1-lists");
+    let part = |name: &str, entry: &str| {
+        let bytes = std::fs::read(folder.join(name)).unwrap();
+        let p = package::open(&bytes, package::Side::Output).unwrap();
+        String::from_utf8(p.get(entry).unwrap().to_vec()).unwrap()
+    };
+    let (h0, s0) = (part("original.hwpx", "Contents/header.xml"), part("original.hwpx", "Contents/section0.xml"));
+    let (h1, s1) = (part("edited.hwpx", "Contents/header.xml"), part("edited.hwpx", "Contents/section0.xml"));
+    let before = pkg(&hwpx_package(&s0, &h0, true, true));
+    let check = |header: &str| {
+        let after = pkg(&hwpx_package(&s1, header, true, true));
+        package::compare_saved_hwpx(&before, &after)
+    };
+    assert!(check(&h1).iter().all(|f| f.code == FindingCode::PreviewStale), "{:?}", check(&h1));
+    let last = h1.rfind("<hh:numbering ").expect("appended numbering");
+    let mutate = |from: &str, to: &str| {
+        let (head, tail) = h1.split_at(last);
+        format!("{head}{}", tail.replacen(from, to, 1))
+    };
+    for (name, header) in [
+        ("unknown number format", mutate("numFormat=\"DIGIT\"", "numFormat=\"CIRCLED_DIGIT\"")),
+        ("char shape reference", mutate("charPrIDRef=\"0\"", "charPrIDRef=\"3\"")),
+        ("format text", mutate("^1.<", "x<")),
+        ("start number", mutate("start=\"1\"", "start=\"4\"")),
+    ] {
+        assert_ne!(header, h1, "{name}: mutation not applied");
+        assert!(check(&header).iter().any(|f| f.code != FindingCode::PreviewStale), "{name}: accepted");
+    }
+}

@@ -108,6 +108,7 @@ const RHWP_STAGE1_CHAR: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_PARAGRAPH: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_PAGE: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_SEARCH: EngineSupport = SUPPORTED;
+const RHWP_STAGE1_LIST: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },
@@ -163,17 +164,17 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "format.superscript": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
   "format.subscript": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
   "paragraph.settings": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH } },
-  "paragraph.numbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.multilevel": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.listStyle": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.increaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.decreaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.restartNumbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "paragraph.continueNumbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.numbering": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.multilevel": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.listStyle": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.increaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.decreaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.restartNumbering": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
+  "paragraph.continueNumbering": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_LIST } },
   "layout.margins": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
   "layout.orientation": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
   "layout.size": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
-  "layout.columns": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "layout.columns": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
   "edit.find": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+F"], scope: "global" },
   "edit.replace": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+H"], scope: "global" },
 };

@@ -1160,8 +1160,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     for (const id of STAGE1_PARAMETERS) parameters[id] = { paragraph, chars, page };
     for (const [id, align] of Object.entries(ALIGN_COMMANDS) as [AlignCommandId, ParagraphAlign][])
       actions[id] = { pressed: paragraph.align === align };
-    actions["format.superscript"] = { pressed: chars.superscript };
-    actions["format.subscript"] = { pressed: chars.subscript };
+    actions["format.superscript"] = { pressed: chars.superscript === true };
+    actions["format.subscript"] = { pressed: chars.subscript === true };
     // Body top-level or table-cell paragraphs (`body:<p>:<o>` / `body:<t>.<r>.<c>.<p>:<o>`), both ends in the same container.
     const container = (key: string) => /^body:(\d+|\d+\.\d+\.\d+\.\d+):\d+$/.test(key) ? key.slice(0, key.lastIndexOf(".") + 1 || key.indexOf(":") + 1) : null;
     const listTarget = container(view.caretKey) !== null && container(view.caretKey) === container(view.anchorKey);

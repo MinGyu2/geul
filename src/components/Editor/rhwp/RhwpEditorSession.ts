@@ -58,9 +58,31 @@ import type {
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
-import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type PageState, type PaperName, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
+import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type ListState, type ListStyle, type PageState, type PaperName, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
 
 /** Paper sizes in points (portrait), as offered by the shared page setup commands. */
+/** Upper bound of the engine's search result JSON (≈ 250k hits). Beyond it the search is reported incomplete and
+ * replace-all is refused before mutation (never a partial "replace all"). */
+const MAX_SEARCH_JSON = 16 * 1024 * 1024;
+/** Replace-all bound: each engine text edit re-paginates (measured ≈ 5 ms per replacement on the Release WASM, growing
+ * with paragraph length), so larger sets are refused as a whole before any mutation instead of freezing the editor or
+ * replacing only a part. The search count and navigation stay complete. */
+export const MAX_RHWP_REPLACE_ALL = 500;
+
+/** Numbering templates (HWP level format strings and number format codes: 0 digit, 2/3 upper/lower roman, 4/5 upper/lower
+ * latin, 8 hangul syllable). Each is created at most once per session through the engine's createNumbering. */
+const RHWP_NUMBERING = {
+  numbered: { formats: ["^1.", "^2.", "^3.", "^4.", "^5.", "^6.", "^7."], codes: [0, 5, 3, 0, 5, 3, 0] },
+  numberedParen: { formats: ["^1)", "^2)", "^3)", "^4)", "^5)", "^6)", "^7)"], codes: [0, 5, 3, 0, 5, 3, 0] },
+  upperLetter: { formats: ["^1.", "^2.", "^3.", "^4.", "^5.", "^6.", "^7."], codes: [4, 5, 3, 4, 5, 3, 4] },
+  lowerLetter: { formats: ["^1)", "^2)", "^3)", "^4)", "^5)", "^6)", "^7)"], codes: [5, 3, 0, 5, 3, 0, 5] },
+  lowerRoman: { formats: ["^1.", "^2.", "^3.", "^4.", "^5.", "^6.", "^7."], codes: [3, 5, 0, 3, 5, 0, 3] },
+  outline: { formats: ["^1.", "^2.", "^3.", "^4.", "^5.", "^6.", "^7."], codes: [2, 4, 0, 5, 3, 0, 5] },
+  multilevel: { formats: ["^1.", "^1.^2.", "^1.^2.^3.", "^1.^2.^3.^4.", "^1.^2.^3.^4.^5.", "^1.^2.^3.^4.^5.^6.", "^1.^2.^3.^4.^5.^6.^7."], codes: [0, 0, 0, 0, 0, 0, 0] },
+} as const;
+/** Custom bullet characters (engine ensureDefaultBullet reuses an existing definition of the same character). */
+const RHWP_BULLETS = { bulletCircle: "○", bulletSquare: "▪", bulletDash: "–", bulletCheck: "✓" } as const;
+
 const HWP_PAPER: Record<PaperName, [number, number]> = {
   "A3": [841.89, 1190.55], "A4": [595.28, 841.89], "A5": [419.53, 595.28], "B4 (JIS)": [728.5, 1031.8], "B5 (JIS)": [515.9, 728.5],
   "Letter": [612, 792], "Legal": [612, 1008],
@@ -1288,7 +1310,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const lines = text.split("\n");
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]!;
-        if (line) this.text!.insert(at, line);
+        if (line) this.insertText(at, line);
         at = { ...at, offset: at.offset + charCount(line) };
         if (i + 1 < lines.length) {
           this.text!.split(at);
@@ -1300,7 +1322,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const start = this.hasSelection ? null : RhwpEditorSession.positionKey(this.caret);
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
-      this.text!.insert(at, text);
+      this.insertText(at, text);
       return { ...at, offset: at.offset + charCount(text) };
     }, true, "typing", start);
   }
@@ -1361,6 +1383,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       try { if (JSON.parse(this.doc.getParaPropertiesAt(this.caret.section, this.caret.paragraph)).headType === "Bullet") return this.toggleBullets(true); }
       catch { return false; }
     }
+    // Enter on an empty numbered item (body or cell) ends the list: the paragraph leaves the numbering (no new item).
+    if (!this.hasSelection && this.text.paragraphLength(this.caret) === 0) {
+      const range = this.listRange();
+      if (range) {
+        try {
+          const raw = this.readPara(range.at, paragraphOf(this.caret));
+          if (raw.headType === "Number" || (raw.headType === "Bullet" && this.caret.cell)) {
+            return this.applyList(() => p => p === paragraphOf(this.caret) ? { headType: "None", numberingId: 0, paraLevel: 0 } : null);
+          }
+        } catch { return false; }
+      }
+    }
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       this.text!.split(at);
@@ -1406,7 +1440,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.mutate(() => {
       const current = charCount(composition.text);
       if (current > 0) this.text!.delete(composition.anchor, current);
-      if (text) this.text!.insert(composition.anchor, text);
+      if (text) this.insertText(composition.anchor, text);
       composition.text = text;
       return { ...composition.anchor, offset: composition.anchor.offset + charCount(text) };
     }, false, "typing", RhwpEditorSession.positionKey(composition.anchor)); // 갱신은 단계가 아님: 정리할 때 닫는다
@@ -1477,7 +1511,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           : position;
       const changed = this.mutate(() => {
         if (removed > 0) this.text!.delete(at, removed);
-        if (finalText) this.text!.insert(at, finalText);
+        if (finalText) this.insertText(at, finalText);
         provisional.text = finalText;
         return { caret: shift(this.caret), anchor: shift(this.anchor) };
       }, false, "typing", RhwpEditorSession.positionKey(at));
@@ -1506,7 +1540,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         ? { ...position, offset: position.offset + length }
         : position;
     return this.mutate(() => {
-      this.text!.insert(at, text);
+      this.insertText(at, text);
       return { caret: shift(this.caret), anchor: shift(this.anchor) };
     });
   }
@@ -1852,56 +1886,272 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- Stage 1 paragraph alignment and formatting (body paragraphs; bullet-path eligibility) ----
 
   private paragraphCache: { key: string; value: ParagraphState | null } | null = null;
-  /** Selected body paragraphs' formatting from the engine (`getParaPropertiesAt`); null values are mixed. Same range and
-   * eligibility as bullets (structural original proof, no cells, no IME/pending). Lengths are reported in points. */
+
+  /**
+   * Selected paragraphs of one owned context: body, a first-level cell, or a nested cell (explicit path). Same
+   * eligibility as bullets (structural original proof, editable, no IME/uncertain/pending); the exclusive end at offset
+   * zero of a later paragraph is not selected. Nested cells need the path APIs of the stage1-editing engine patch.
+   */
+  private stage1ParaRange(): { at: DocPosition; first: number; last: number } | null {
+    const doc = this.doc;
+    if (!doc || !this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain || this.pending > 0
+      || this.committingEpoch === this.epoch || this.saving || !sameContext(this.anchor, this.caret)
+      || !this.ownsPosition(this.caret) || !this.ownsPosition(this.anchor)) return null;
+    const c = this.caret.cell;
+    if (c?.nested ? !doc.applyParaFormatInCellByPath || !doc.getCellParaPropertiesAtByPath
+      : c ? !doc.applyParaFormatInCell || !doc.getCellParaPropertiesAt : !doc.applyParaFormat || !doc.getParaPropertiesAt) return null;
+    const [from, to] = this.ordered();
+    const first = paragraphOf(from), lastRaw = paragraphOf(to);
+    const last = lastRaw > first && to.offset === 0 ? lastRaw - 1 : lastRaw;
+    return last - first < 256 ? { at: from, first, last } : null;
+  }
+
+  private readPara(at: DocPosition, p: number): Record<string, unknown> {
+    const doc = this.doc!, c = at.cell;
+    return JSON.parse(c?.nested ? doc.getCellParaPropertiesAtByPath!(at.section, c.parentParagraph, pathJson(c, p))
+      : c ? doc.getCellParaPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, p)
+      : doc.getParaPropertiesAt!(at.section, p)) as Record<string, unknown>;
+  }
+
+  private applyPara(at: DocPosition, p: number, props: string): void {
+    const doc = this.doc!, c = at.cell;
+    const raw = c?.nested ? doc.applyParaFormatInCellByPath!(at.section, c.parentParagraph, pathJson(c, p), props)
+      : c ? doc.applyParaFormatInCell!(at.section, c.parentParagraph, c.control, c.cell, p, props)
+      : doc.applyParaFormat!(at.section, p, props);
+    if (JSON.parse(raw).ok !== true) throw new Error("paragraph formatting rejected");
+  }
+
+  /** Selected paragraphs' formatting from the engine; null values are mixed. Lengths are reported in points. */
   private stage1Paragraph(): ParagraphState | null {
-    const range = this.bulletRange();
-    if (!range || !this.doc?.getParaPropertiesAt) return null;
-    const key = `${this.epoch}|${this.modelVersion}|${range.section}|${range.first}|${range.last}`;
+    const range = this.stage1ParaRange();
+    if (!range) return null;
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(range.at)}|${range.first}|${range.last}`;
     if (this.paragraphCache?.key === key) return this.paragraphCache.value;
     let value: ParagraphState | null;
     try {
       // The engine reports px (96 dpi) with 0.1 px precision: points are shown to 0.1 pt.
       const px = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? Math.round(v * 72 / 96 * 10) / 10 : null;
-      const all: Omit<ParagraphState, "list">[] = [];
+      const all: (Omit<ParagraphState, "list"> & { list: string })[] = [];
+      const lists: (ListState | null)[] = [];
       for (let p = range.first; p <= range.last; p++) {
-        const raw = JSON.parse(this.doc.getParaPropertiesAt(range.section, p)) as Record<string, unknown>;
+        const raw = this.readPara(range.at, p);
         const align = ({ justify: "justify", left: "left", right: "right", center: "center" } as Record<string, ParagraphAlign>)[String(raw.alignment)] ?? null;
         const type = raw.lineSpacingType, ls = raw.lineSpacing;
         const lineSpacing = typeof ls !== "number" ? null : type === "Percent" ? { rule: "multiple" as const, value: ls / 100 }
           : type === "Fixed" ? { rule: "exactly" as const, value: px(ls)! } : type === "Minimum" ? { rule: "atLeast" as const, value: px(ls)! } : null;
+        const level = Number.isSafeInteger(raw.paraLevel) ? raw.paraLevel as number : 0;
+        const list = raw.headType === "Bullet" ? { bullets: true, numbering: false, multilevel: false, level }
+          : raw.headType === "Number" && Number.isSafeInteger(raw.numberingId) && (raw.numberingId as number) > 0
+            ? { bullets: false, numbering: true, multilevel: this.multilevelNumbering(raw.numberingId as number), level } : null;
+        lists.push(list);
         all.push({ align, lineSpacing, spaceBefore: px(raw.spacingBefore), spaceAfter: px(raw.spacingAfter),
-          indentLeft: px(raw.marginLeft), indentRight: px(raw.marginRight), indentFirst: px(raw.indent) });
+          indentLeft: px(raw.marginLeft), indentRight: px(raw.marginRight), indentFirst: px(raw.indent), list: JSON.stringify(list) });
       }
       const same = <K extends keyof Omit<ParagraphState, "list">>(k: K): ParagraphState[K] | null => {
         const first = JSON.stringify(all[0]![k]);
-        return all.every(x => JSON.stringify(x[k]) === first) ? all[0]![k] : null;
+        return all.every(x => JSON.stringify(x[k]) === first) ? all[0]![k] as ParagraphState[K] : null;
       };
+      // List state of the caret paragraph (as in DOCX).
+      const caretList = lists[Math.min(Math.max(paragraphOf(this.caret) - range.first, 0), lists.length - 1)] ?? null;
       value = { align: same("align"), lineSpacing: same("lineSpacing"), spaceBefore: same("spaceBefore"), spaceAfter: same("spaceAfter"),
-        indentLeft: same("indentLeft"), indentRight: same("indentRight"), indentFirst: same("indentFirst"), list: null };
+        indentLeft: same("indentLeft"), indentRight: same("indentRight"), indentFirst: same("indentFirst"), list: caretList };
     } catch { value = null; }
     this.paragraphCache = { key, value };
     return value;
   }
 
+  // ---- Stage 1 lists (numbering definitions appended with createNumbering; bullets via ensureDefaultBullet) ----
+
+  /** Numbering ids this session created, by style (reused instead of appending duplicates; known number formats). */
+  private numberingStyles = new Map<number, ListStyle>();
+
+  private multilevelNumbering(id: number): boolean {
+    const style = this.numberingStyles.get(id);
+    if (style) return style === "multilevel";
+    try {
+      const list = JSON.parse(this.doc?.getNumberingList?.() ?? "[]") as { id: number; levelFormats: string[] }[];
+      // A level that shows an outer level's number (e.g. "^1.^2.") is multilevel numbering.
+      return list.find(n => n.id === id)?.levelFormats.some((f, i) => [...f.matchAll(/\^(\d)/g)].some(m => Number(m[1]) !== i + 1)) ?? false;
+    } catch { return false; }
+  }
+
+  /** The numbering definition of `style` (created once per session and reused). */
+  private numberingFor(style: ListStyle): number {
+    for (const [id, known] of this.numberingStyles) if (known === style) return id;
+    const template = RHWP_NUMBERING[style as keyof typeof RHWP_NUMBERING];
+    if (!template || !this.doc?.createNumbering) throw new Error("numbering style unavailable");
+    const id = this.doc.createNumbering(JSON.stringify({ levelFormats: template.formats, numberFormats: template.codes, startNumber: 1 }));
+    if (!Number.isSafeInteger(id) || id < 1 || id > 65535) throw new Error("invalid numbering id");
+    this.numberingStyles.set(id, style);
+    return id;
+  }
+
+  private listRange(): { at: DocPosition; first: number; last: number } | null {
+    const range = this.stage1ParaRange();
+    return range && this.doc?.createNumbering && this.doc.ensureDefaultBullet && this.doc.getNumberingList ? range : null;
+  }
+
+  /** Previous paragraph of the same context that is a numbered list item (its numbering id and level), if any. */
+  private previousNumbered(at: DocPosition, before: number): { id: number; level: number } | null {
+    for (let p = before - 1; p >= 0 && p >= before - 64; p--) {
+      const raw = this.readPara(at, p);
+      if (raw.headType === "Number" && Number.isSafeInteger(raw.numberingId) && (raw.numberingId as number) > 0)
+        return { id: raw.numberingId as number, level: Number(raw.paraLevel) || 0 };
+      const empty = this.doc!.getParagraphLength(at.section, at.cell ? at.cell.parentParagraph : p) === 0;
+      if (!at.cell && !empty) return null; // a plain body paragraph ends the list
+      if (at.cell) return null;
+    }
+    return null;
+  }
+
+  /** Apply list membership to the selected paragraphs in one mutation (one history step). */
+  private applyList(build: (range: { at: DocPosition; first: number; last: number }) => (p: number) => Record<string, string | number> | null): boolean {
+    const range = this.listRange();
+    if (!range) return false;
+    let props: (p: number) => Record<string, string | number> | null;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      props = build(range);
+      for (let p = range.first; p <= range.last; p++) {
+        const value = props(p);
+        if (value) this.applyPara(range.at, p, JSON.stringify(value));
+      }
+      return { caret: this.caret, anchor: this.anchor };
+    }, true, "other", null, true, true);
+    this.history?.boundary();
+    return applied;
+  }
+
+  private executeStage1List(command: DocumentCommandId, args?: DocumentCommandArgs): boolean | null {
+    const lists = ["paragraph.numbering", "paragraph.multilevel", "paragraph.listStyle", "paragraph.increaseIndent",
+      "paragraph.decreaseIndent", "paragraph.restartNumbering", "paragraph.continueNumbering"];
+    if (!lists.includes(command)) return null;
+    const range = this.listRange(), state = this.stage1Paragraph();
+    if (!range || !state) return false;
+    const read = (p: number) => this.readPara(range.at, p);
+    const isNumber = (raw: Record<string, unknown>) => raw.headType === "Number" && Number(raw.numberingId) > 0;
+    if (command === "paragraph.numbering" || command === "paragraph.multilevel") {
+      if (args !== undefined) return false;
+      const style: ListStyle = command === "paragraph.multilevel" ? "multilevel" : "numbered";
+      const all = Array.from({ length: range.last - range.first + 1 }, (_, i) => read(range.first + i));
+      const off = all.every(raw => isNumber(raw) && this.multilevelNumbering(Number(raw.numberingId)) === (style === "multilevel"));
+      if (off) return this.applyList(() => () => ({ headType: "None", numberingId: 0, paraLevel: 0 }));
+      return this.applyList(r => {
+        // Continue the previous list of the same kind; otherwise this style's definition (created once).
+        const previous = this.previousNumbered(r.at, r.first);
+        const id = previous && this.multilevelNumbering(previous.id) === (style === "multilevel") ? previous.id : this.numberingFor(style);
+        return p => ({ headType: "Number", numberingId: id, paraLevel: isNumber(read(p)) ? Number(read(p).paraLevel) || 0 : 0 });
+      });
+    }
+    if (command === "paragraph.listStyle") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
+      const bullet = RHWP_BULLETS[args.style as keyof typeof RHWP_BULLETS];
+      return this.applyList(() => {
+        if (bullet) {
+          const id = this.doc!.ensureDefaultBullet!(bullet);
+          if (!Number.isSafeInteger(id) || id < 1 || id > 65535) throw new Error("invalid bullet id");
+          return () => ({ headType: "Bullet", numberingId: id, paraLevel: 0 });
+        }
+        const id = this.numberingFor(args.style);
+        return p => ({ headType: "Number", numberingId: id, paraLevel: isNumber(read(p)) ? Number(read(p).paraLevel) || 0 : 0 });
+      });
+    }
+    if (command === "paragraph.increaseIndent" || command === "paragraph.decreaseIndent") {
+      if (args !== undefined) return false;
+      const delta = command === "paragraph.increaseIndent" ? 1 : -1;
+      return this.applyList(() => p => {
+        const raw = read(p);
+        if (raw.headType === "Number" || raw.headType === "Bullet") {
+          const level = Math.min(6, Math.max(0, (Number(raw.paraLevel) || 0) + delta));
+          return level === (Number(raw.paraLevel) || 0) ? null : { paraLevel: level };
+        }
+        // Plain paragraphs: left indent by 10 mm steps (margins are stored doubled, see paragraph settings).
+        const left = typeof raw.marginLeft === "number" ? raw.marginLeft * 72 / 96 : 0;
+        return { marginLeft: Math.round(Math.max(0, left + delta * 28.35) * 200) };
+      });
+    }
+    const caretPara = paragraphOf(this.caret);
+    const here = read(caretPara);
+    if (!isNumber(here) || args !== undefined) return false;
+    const old = Number(here.numberingId);
+    // The run of this list's items from the caret paragraph on (stops at a different list or a non-empty plain paragraph).
+    const run = (from: number) => {
+      const out: number[] = [];
+      const count = range.at.cell ? Number.MAX_SAFE_INTEGER : this.doc!.getParagraphCount(range.at.section);
+      for (let p = from; p < count && out.length < 4096; p++) {
+        let raw: Record<string, unknown>;
+        try { raw = read(p); } catch { break; }
+        if (isNumber(raw) && Number(raw.numberingId) === old) out.push(p);
+        else if (isNumber(raw) || raw.headType === "Bullet" || this.doc!.getParagraphLength(range.at.section, range.at.cell ? range.at.cell.parentParagraph : p) !== 0) break;
+      }
+      return out;
+    };
+    if (command === "paragraph.restartNumbering") {
+      // Restart = a new definition of the same style for this item and the following items of the list (HWP numbering
+      // counts per definition; the paragraph restart flag of the engine model is not serialized).
+      const style = this.numberingStyles.get(old);
+      if (!style) return false;
+      const targets = run(caretPara);
+      this.history?.boundary();
+      const applied = this.mutate(() => {
+        const template = RHWP_NUMBERING[style as keyof typeof RHWP_NUMBERING];
+        const id = this.doc!.createNumbering!(JSON.stringify({ levelFormats: template.formats, numberFormats: template.codes, startNumber: 1 }));
+        if (!Number.isSafeInteger(id) || id < 1) throw new Error("invalid numbering id");
+        this.numberingStyles.set(id, style); // a distinct definition; reuse by style keeps the first
+        for (const p of targets) this.applyPara(range.at, p, JSON.stringify({ numberingId: id }));
+        return { caret: this.caret, anchor: this.anchor };
+      }, true, "other", null, true, true);
+      this.history?.boundary();
+      return applied;
+    }
+    const previous = this.previousNumberedBefore(range.at, caretPara, old);
+    if (!previous) return false;
+    const targets = run(caretPara);
+    return this.applyList(() => p => targets.includes(p) ? { numberingId: previous } : null);
+  }
+
+  /** Nearest earlier numbered list (a different definition) in the same context, for "continue numbering". */
+  private previousNumberedBefore(at: DocPosition, before: number, exclude: number): number | null {
+    for (let p = before - 1; p >= 0 && p >= before - 4096; p--) {
+      let raw: Record<string, unknown>;
+      try { raw = this.readPara(at, p); } catch { return null; }
+      const id = Number(raw.numberingId);
+      if (raw.headType === "Number" && id > 0 && id !== exclude) return id;
+    }
+    return null;
+  }
+
   private stage1ParagraphActions(): NonNullable<DocumentCommandSnapshot["actions"]> {
     const paragraph = this.stage1Paragraph();
     if (!paragraph) return {};
-    return Object.fromEntries((Object.entries(ALIGN_COMMANDS) as [AlignCommandId, ParagraphAlign][])
+    const actions: NonNullable<DocumentCommandSnapshot["actions"]> = Object.fromEntries((Object.entries(ALIGN_COMMANDS) as [AlignCommandId, ParagraphAlign][])
       .map(([id, align]) => [id, { pressed: paragraph.align === align }]));
+    if (this.listRange()) {
+      const list = paragraph.list;
+      actions["paragraph.numbering"] = { pressed: !!list?.numbering && !list.multilevel };
+      actions["paragraph.multilevel"] = { pressed: !!list?.multilevel };
+      actions["paragraph.increaseIndent"] = {};
+      actions["paragraph.decreaseIndent"] = {};
+      if (list?.numbering) {
+        actions["paragraph.continueNumbering"] = {};
+        // Restart needs the definition's number formats: definitions created in this session.
+        try {
+          const id = Number(this.readPara(this.stage1ParaRange()!.at, paragraphOf(this.caret)).numberingId);
+          if (this.numberingStyles.has(id)) actions["paragraph.restartNumbering"] = {};
+        } catch { /* unavailable */ }
+      }
+    }
+    return actions;
   }
 
   /** One engine call per selected paragraph inside one mutation (one history step). */
   private applyStage1Paragraph(props: Record<string, string | number>): boolean {
-    const range = this.bulletRange(), doc = this.doc;
-    if (!range || !doc?.applyParaFormat || !this.stage1Paragraph()) return false;
+    const range = this.stage1ParaRange();
+    if (!range || !this.stage1Paragraph()) return false;
     const text = JSON.stringify(props);
     this.history?.boundary();
     const applied = this.mutate(() => {
-      for (let p = range.first; p <= range.last; p++) {
-        const result = JSON.parse(doc.applyParaFormat!(range.section, p, text));
-        if (result.ok !== true) throw new Error("paragraph formatting rejected");
-      }
+      for (let p = range.first; p <= range.last; p++) this.applyPara(range.at, p, text);
       return { caret: this.caret, anchor: this.anchor };
     }, true, "other", null, true, true);
     this.history?.boundary();
@@ -1948,15 +2198,51 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const width = n("width"), height = n("height"), landscape = raw.landscape === true;
       const paper = (Object.entries(HWP_PAPER) as [PaperName, [number, number]][]).find(([, [w, h]]) =>
         Math.abs(Math.min(width, height) - w) < 1 && Math.abs(Math.max(width, height) - h) < 1)?.[0] ?? null;
+      const columns = this.columnState(this.caret.section);
       value = { width: landscape ? Math.max(width, height) : width, height: landscape ? Math.min(width, height) : height, landscape,
         marginTop: n("marginTop"), marginBottom: n("marginBottom"), marginLeft: n("marginLeft"), marginRight: n("marginRight"),
-        columns: 1, columnSpace: 0, paper };
+        columns: columns?.count ?? 1, columnSpace: columns?.spacing ?? 0, paper };
     } catch { value = null; }
     this.pageCache = { key, value };
     return value;
   }
 
+  /** The section's existing column definition (control `cold` in the section's paragraphs), or null when the section
+   * has none: the engine would then add a control without its text slot, so columns are not offered there. */
+  private columnState(section: number): { count: number; type: number; spacing: number } | null {
+    const doc = this.doc;
+    if (!doc?.getColumnDef || !doc.setColumnDef || !doc.getControls) return null;
+    try {
+      // `getControls` numbers body paragraphs across sections: locate this section's range.
+      let base = 0;
+      for (let s = 0; s < section; s++) base += doc.getParagraphCount(s);
+      const end = base + doc.getParagraphCount(section);
+      const controls = JSON.parse(doc.getControls()) as { ctrlId: string; list: number; para: number }[];
+      if (!controls.some(c => c.ctrlId === "cold" && c.list === 0 && c.para >= base && c.para < end)) return null;
+      const raw = JSON.parse(doc.getColumnDef(section)) as Record<string, unknown>;
+      const { columnCount, columnType, spacing } = raw;
+      if (!Number.isSafeInteger(columnCount) || !Number.isSafeInteger(columnType) || !Number.isSafeInteger(spacing)) return null;
+      return { count: Math.max(1, columnCount as number), type: columnType as number, spacing: (spacing as number) / 100 };
+    } catch { return null; }
+  }
+
   private executeStage1Page(command: DocumentCommandId, args?: DocumentCommandArgs): boolean | null {
+    if (command === "layout.columns") {
+      const page = this.stage1Page(), doc = this.doc, section = this.caret.section;
+      const current = this.columnState(section);
+      if (!page || !doc || !current || !args || args.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
+      // Same-width columns of the existing definition kind; the spacing is bounded by the text width.
+      const spacing = Math.round(args.space * 100);
+      if (args.count > 1 && (args.count - 1) * args.space >= page.width - page.marginLeft - page.marginRight - 36) return false;
+      this.history?.boundary();
+      const applied = this.mutate(() => {
+        const result = doc.setColumnDef!(section, args.count, current.type, 1, spacing);
+        if (!/"ok"\s*:\s*true/.test(result)) throw new Error("column definition rejected");
+        return { caret: this.caret, anchor: this.anchor };
+      }, true, "other", null, true, true);
+      this.history?.boundary();
+      return applied;
+    }
     if (command !== "layout.margins" && command !== "layout.orientation" && command !== "layout.size") return null;
     const page = this.stage1Page(), doc = this.doc;
     if (!page || !doc || !args || args.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
@@ -1988,7 +2274,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- Stage 1 find/replace ----
 
   private searchQuery: SearchOptions | null = null;
-  private searchCache: { key: string; value: { from: DocPosition; to: DocPosition }[] | null } | null = null;
+  private searchCache: { key: string; value: { matches: { from: DocPosition; to: DocPosition }[]; complete: boolean } | null } | null = null;
 
   /**
    * Current matches of the open query, from the engine's own model search (`searchAllText`). Only body paragraphs and
@@ -1997,22 +2283,29 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * touch a letter/digit on either side. Offsets are code points, so surrogate pairs are never split.
    */
   private searchMatches(query: SearchOptions): { from: DocPosition; to: DocPosition }[] | null {
+    return this.searchResult(query)?.matches ?? null;
+  }
+
+  /** Every match (no navigation cap). `complete` is false only when the engine's result exceeds MAX_SEARCH_JSON; then
+   * the list is empty, the count unknown and replace-all is refused before any mutation. */
+  private searchResult(query: SearchOptions): { matches: { from: DocPosition; to: DocPosition }[]; complete: boolean } | null {
     const doc = this.doc, text = this.text;
     if (!doc?.searchAllText || !text || !doc.getControls) return null;
     const key = `${this.epoch}|${this.modelVersion}|${JSON.stringify(query)}`;
     if (this.searchCache?.key === key) return this.searchCache.value;
-    let value: { from: DocPosition; to: DocPosition }[] | null = null;
+    let value: { matches: { from: DocPosition; to: DocPosition }[]; complete: boolean } | null = null;
     try {
       const raw = doc.searchAllText(query.text, query.matchCase, true);
       const controlsRaw = doc.getControls();
-      if (raw.length <= 8 * 1024 * 1024 && controlsRaw.length <= 2 * 1024 * 1024) {
+      if (raw.length > MAX_SEARCH_JSON) value = { matches: [], complete: false };
+      else if (controlsRaw.length <= 2 * 1024 * 1024) {
         const hits = JSON.parse(raw) as unknown, controls = JSON.parse(controlsRaw) as { ctrlId: string; para: number; controlIndex: number; list: number }[];
         const tables = new Set(controls.filter(c => c.ctrlId === "tbl" && c.list === 0).map(c => `${c.para}:${c.controlIndex}`));
         const word = /[\p{L}\p{N}_]/u;
         const fold = (v: string) => query.matchCase ? v : v.toLowerCase();
-        value = [];
+        const list: { from: DocPosition; to: DocPosition }[] = [];
+        value = { matches: list, complete: true };
         for (const hit of Array.isArray(hits) ? hits as Record<string, unknown>[] : []) {
-          if (value.length >= 10_000) break;
           const { sec, para, charOffset, length, cellContext } = hit as { sec: number; para: number; charOffset: number; length: number;
             cellContext?: { parentPara: number; ctrlIdx: number; cellIdx: number; cellPara: number } };
           if ("cellPath" in hit || "equationControl" in hit || ![sec, para, charOffset, length].every(n => Number.isSafeInteger(n) && n >= 0) || length === 0) continue;
@@ -2032,7 +2325,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             const after = charOffset + length < end ? text.text(to, 1) : "";
             if (word.test(before) || word.test(after)) continue;
           }
-          value.push({ from, to });
+          list.push({ from, to });
         }
       }
     } catch { value = null; }
@@ -2043,11 +2336,26 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private searchState(): NonNullable<DocumentCommandSnapshot["search"]> | null {
     const query = this.searchQuery;
     if (!query) return null;
-    const matches = this.searchMatches(query);
-    if (!matches) return null;
+    const result = this.searchResult(query);
+    if (!result) return null;
+    const matches = result.matches;
     const [a, b] = this.ordered();
     const current = this.hasSelection ? matches.findIndex(m => sameContext(m.from, a) && compare(m.from, a) === 0 && compare(m.to, b) === 0) : -1;
-    return { ...query, count: matches.length, current: current < 0 ? null : current };
+    return { ...query, count: matches.length, current: current < 0 ? null : current, complete: result.complete, replaceAllLimit: MAX_RHWP_REPLACE_ALL };
+  }
+
+  /**
+   * Replace one match so that the replacement takes the format of the match's first character (defined behaviour for
+   * mixed-format matches): insert after that character — engine insertion inherits the character before the caret —
+   * then delete the original characters around it.
+   */
+  private replaceMatch(match: { from: DocPosition; to: DocPosition }, replacement: string): void {
+    const length = match.to.offset - match.from.offset;
+    if (!replacement) { this.text!.delete(match.from, length); return; }
+    const after = { ...match.from, offset: match.from.offset + 1 };
+    this.text!.insert(after, replacement);
+    this.text!.delete(match.from, 1);
+    if (length > 1) this.text!.delete({ ...match.from, offset: match.from.offset + charCount(replacement) }, length - 1);
   }
 
   search(request: SearchRequest): boolean {
@@ -2086,35 +2394,109 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (!selected) return false;
       this.history?.boundary();
       const applied = this.mutate(() => {
-        this.text!.delete(selected.from, selected.to.offset - selected.from.offset);
-        if (replacement) this.text!.insert(selected.from, replacement);
+        this.replaceMatch(selected, replacement);
         const end = { ...selected.from, offset: selected.from.offset + Array.from(replacement).length };
         return { caret: end, anchor: end };
-      });
+      }, true, "other", null, true, true); // engine failure: history rollback, nothing published
       this.history?.boundary();
       if (applied) this.search({ kind: "find", query: request.query, backward: false });
       return applied;
     }
-    if (matches.length === 0) return false;
+    // Replace all is all-or-nothing: an incomplete enumeration is refused before any mutation.
+    if (matches.length === 0 || matches.length > MAX_RHWP_REPLACE_ALL || !this.searchResult(request.query)?.complete) return false;
     // Replace all: one model change and one history step, last match first so earlier positions stay valid.
     const caret = matches[0]!.from;
     this.history?.boundary();
     const applied = this.mutate(() => {
       for (const match of [...matches].reverse()) {
-        this.text!.delete(match.from, match.to.offset - match.from.offset);
-        if (replacement) this.text!.insert(match.from, replacement);
+        this.replaceMatch(match, replacement);
       }
       return { caret, anchor: caret };
-    });
+    }, true, "other", null, true, true); // any failure rolls the whole replace-all back
     this.history?.boundary();
     return applied;
   }
 
   // ---- Stage 1 character formatting (size, color, highlight/shade, superscript/subscript) ----
 
+  /**
+   * Stage 1 next-input formatting at a collapsed caret (session-owned, never stored in the document by itself). It is
+   * owned by this epoch/load generation and the positions it was set or extended at; text inserted at one of those
+   * positions (typing, paste, IME composition and its commit) gets the values in the same mutation and history step.
+   * Any other caret position, a new selection, a reload or a document switch makes it inert.
+   */
+  private pendingChars: { epoch: number; generation: number; keys: Set<string>; props: Record<string, string | number | boolean> } | null = null;
+
+  private pendingFor(at: DocPosition): Record<string, string | number | boolean> | null {
+    const pending = this.pendingChars;
+    return pending && pending.epoch === this.epoch && pending.generation === this.generation
+      && pending.keys.has(RhwpEditorSession.positionKey(at)) ? pending.props : null;
+  }
+
+  /** Every session text insertion goes through here (pending next-input values follow the inserted text). */
+  private insertText(at: DocPosition, text: string): void {
+    this.text!.insert(at, text);
+    const props = this.pendingFor(at);
+    if (!props || !text) return;
+    const length = charCount(text);
+    this.text!.formatInserted(at, length, props);
+    if (this.pendingChars!.keys.size < 64) this.pendingChars!.keys.add(RhwpEditorSession.positionKey({ ...at, offset: at.offset + length }));
+  }
+
+  /** Same eligibility as selected-text formatting, at a collapsed, owned caret. */
+  private caretFormatEligible(): boolean {
+    if (this.hasSelection || !this.text || !this.doc || !this.editable || !this.history || this.imeUnsettled || this.uncertain) return false;
+    if (this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if ((format !== "hwp" && format !== "hwpx") || this.sessions.snapshot().activeId !== this.sessionId) return false;
+    if (format === "hwp" && (!this.structuralFormat() || this.formatSourceCache?.key !== String(this.epoch) || !this.formatSourceCache.safe)) return false;
+    if (!this.text.hasCharShapeOwnership || !this.doc.compactAppendedCharShapes) return false;
+    const c = this.caret.cell;
+    return (c?.nested ? !!this.doc.applyCharFormatInCellByPath : c ? !!this.doc.applyCharFormatInCell : !!this.doc.applyCharFormat)
+      && this.ownsPosition(this.caret) && this.text.canInsertText(this.caret);
+  }
+
+  private caretCharCache: { key: string; value: ReturnType<RhwpText["stage1Chars"]> } | null = null;
+  private caretChars(): ReturnType<RhwpText["stage1Chars"]> {
+    if (!this.caretFormatEligible()) return null;
+    const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(this.caret)}|${JSON.stringify(this.pendingFor(this.caret))}`;
+    if (this.caretCharCache?.key !== key) this.caretCharCache = { key, value: this.readCaretChars() };
+    return this.caretCharCache.value;
+  }
+
+  private readCaretChars(): ReturnType<RhwpText["stage1Chars"]> {
+    const raw = this.text!.caretChars(this.caret);
+    if (!raw) return null;
+    const pending = this.pendingFor(this.caret) ?? {};
+    const value = { ...raw, ...pending };
+    const hex = (v: unknown) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v.slice(1).toUpperCase() : null;
+    const shade = value.shadeColor === "none" ? null : hex(value.shadeColor);
+    return {
+      size: Number.isSafeInteger(value.fontSize) && (value.fontSize as number) > 0 ? (value.fontSize as number) / 100 : null,
+      color: hex(value.textColor), highlight: shade,
+      superscript: value.superscript === true, subscript: value.subscript === true,
+    };
+  }
+
+  /** Record a next-input value at the caret (no document change, no revision). */
+  private setPendingChars(props: Record<string, string | number | boolean>): boolean {
+    if (!this.caretFormatEligible() || !RhwpText.validChars(props)) return false;
+    const key = RhwpEditorSession.positionKey(this.caret);
+    const current = this.pendingFor(this.caret);
+    const merged = { ...(current ?? {}), ...props };
+    // Superscript and subscript are exclusive, as in the engine.
+    if (props.superscript === true) merged.subscript = false;
+    if (props.subscript === true) merged.superscript = false;
+    this.pendingChars = { epoch: this.epoch, generation: this.generation, keys: new Set([key]), props: merged };
+    this.stage1CharCache = null;
+    this.emit();
+    return true;
+  }
+
   private stage1CharCache: { key: string; value: ReturnType<RhwpText["stage1Chars"]> } | null = null;
   /** Same eligibility as the general selected-text formatting (selection, IME/history/pending/saving, HWP original proof). */
   private stage1Chars(): ReturnType<RhwpText["stage1Chars"]> {
+    if (!this.hasSelection) return this.caretChars();
     if (!this.formatState() || !this.text) return null;
     const [from, to] = this.ordered();
     const key = `${this.epoch}|${this.modelVersion}|${RhwpEditorSession.positionKey(from)}|${RhwpEditorSession.positionKey(to)}`;
@@ -2124,10 +2506,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private stage1Actions(): NonNullable<DocumentCommandSnapshot["actions"]> {
     const chars = this.stage1Chars();
-    return chars ? { "format.superscript": { pressed: chars.superscript }, "format.subscript": { pressed: chars.subscript } } : {};
+    return chars ? { "format.superscript": { pressed: chars.superscript === true }, "format.subscript": { pressed: chars.subscript === true } } : {};
   }
 
   private applyStage1Chars(props: Parameters<RhwpText["prepareChars"]>[2]): boolean {
+    if (!this.hasSelection) return this.setPendingChars(props as Record<string, string | number | boolean>);
     if (!this.stage1Chars()) return false;
     const [from, to] = this.ordered();
     const apply = this.text!.prepareChars(from, to, props);
@@ -2153,8 +2536,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (args.command === "format.fontColor") return this.applyStage1Chars({ textColor: `#${args.color === "auto" ? "000000" : args.color}` });
     if (args.command === "format.highlight") {
       const rgb = HIGHLIGHT_COLORS[args.color];
-      // Removing the highlight stores white shading: the engine API accepts only RGB shade colors.
-      return this.applyStage1Chars({ shadeColor: `#${rgb ?? "FFFFFF"}` });
+      // No highlight is the format's own "no shading" value (engine `shadeColor: "none"`, stage1-editing patch),
+      // distinct from a white shade.
+      return this.applyStage1Chars({ shadeColor: rgb === null ? "none" : `#${rgb}` });
     }
     return false;
   }
@@ -2539,14 +2923,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (page) parameters[command] = { page };
       else parameterReasons[command] = "engineUnsupported";
     }
+    if (page && this.columnState(this.caret.section)) parameters["layout.columns"] = { page };
+    else parameterReasons["layout.columns"] = "engineUnsupported";
     const paragraph = this.stage1Paragraph();
     if (paragraph) parameters["paragraph.settings"] = { paragraph };
     else parameterReasons["paragraph.settings"] = "caretRequired";
-    // Stage 1 character values: the general formatting eligibility (selection only; caret formatting is not offered).
+    if (paragraph && this.listRange()) parameters["paragraph.listStyle"] = { paragraph };
+    else parameterReasons["paragraph.listStyle"] = "caretRequired";
+    // Stage 1 character values: selected text (general formatting eligibility) or the next input at a collapsed caret.
     const chars = this.stage1Chars();
     for (const command of ["format.fontSize", "format.fontColor", "format.highlight"] as const) {
       if (chars) parameters[command] = { chars };
-      else parameterReasons[command] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
+      else parameterReasons[command] = "engineUnsupported";
     }
     // HWP metrics/formatting additionally require the structural original proof (complete
     // baseline including nested tables, SAFE preflight) — the same rule as body cells.
@@ -2813,7 +3201,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return applied ? { accepted: true } : { accepted: false };
     }
     if (command === "format.font") return { accepted: args?.command === command && this.applyFont(args) };
-    const stage1 = this.executeStage1Chars(command, args) ?? this.executeStage1Paragraph(command, args) ?? this.executeStage1Page(command, args);
+    const stage1 = this.executeStage1Chars(command, args) ?? this.executeStage1Paragraph(command, args) ?? this.executeStage1Page(command, args)
+      ?? this.executeStage1List(command, args);
     if (stage1 !== null) return { accepted: stage1 };
     if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };

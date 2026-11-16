@@ -48,8 +48,10 @@ export function buildStage1Args(command: string, fields: Fields): Stage1Args | n
   if (command !== "paragraph.settings") return null;
   const format: ParagraphFormatArgs = {};
   const line = number(fields.line ?? "");
+  // A value needs its rule and a rule needs its value: never drop a requested change silently (a mixed
+  // selection starts with both empty).
   if (fields.rule && line !== undefined) format.lineSpacing = { rule: fields.rule as "multiple" | "atLeast" | "exactly", value: line };
-  else if (fields.rule && line === undefined) return null;
+  else if (fields.rule || line !== undefined) return null;
   const set = (key: keyof ParagraphFormatArgs, value: number | undefined, convert = (v: number) => v) => {
     if (value !== undefined) (format as Record<string, number>)[key] = Number.isNaN(value) ? Number.NaN : convert(value);
   };

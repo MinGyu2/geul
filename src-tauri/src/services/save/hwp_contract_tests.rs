@@ -2841,3 +2841,68 @@ fn hwp_dependent_cache_source_only_edit_cannot_publish() {
         &original, &original, true
     )));
 }
+
+/// Stage 1 HWP list/paragraph proofs, negative cases over the actual Release-WASM list export
+/// (scripts/tests/stage1-format.wasm.test.ts, case `hwp-stage1-lists`). Explicit opt-in: GEUL_FORMAT_DIR.
+#[test]
+#[ignore = "requires the Stage 1 Release-WASM exports (GEUL_FORMAT_DIR)"]
+fn stage1_hwp_list_paragraph_proof_rejects_invalid_appends() {
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+    let folder = root.join("hwp-stage1-lists");
+    let original = std::fs::read(folder.join("original.hwp")).unwrap();
+    let good = std::fs::read(folder.join("edited.hwp")).unwrap();
+    let loss = report("hwp", json!([]));
+    let check = |output: &[u8]| service::check_saved(Format::Hwp, &original, output, Some(&loss), true);
+    let base = check(&good);
+    assert!(base.findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{base:?}");
+    let count = |tag: u16| {
+        let mut n = 0;
+        edit_records(&good, "/DocInfo", |r| n = r.iter().filter(|x| x.0 == tag).count());
+        n
+    };
+    let (numberings, shapes) = (count(23), count(25));
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("numbering format text", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 23, numberings - 1).2; w(b, 14, u16::from(b'x'));
+        })),
+        ("numbering unknown number format", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 23, numberings - 1).2; d(b, 0, (1 << 3) | (15 << 5));
+        })),
+        ("numbering start number", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 23, numberings - 1).2; let n = b.len(); w(b, n - 30, 5);
+        })),
+        ("paragraph shape outline heading", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2;
+            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23)) | (1 << 23));
+        })),
+        ("paragraph shape level 7", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2;
+            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(7 << 25)) | (7 << 25) | (2 << 23));
+        })),
+        ("paragraph shape negative spacing", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; d(b, 16, (-5i32) as u32);
+        })),
+        ("paragraph shape alignment 7", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; b[0] |= 7 << 2;
+        })),
+        ("paragraph shape tab definition", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; w(b, 28, 0x7fff);
+        })),
+        ("paragraph shape border spacing", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; b[34] ^= 1;
+        })),
+        ("paragraph shape attr3 high bit", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; b[49] ^= 0x40;
+        })),
+        ("paragraph shape extended line spacing", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2; d(b, 50, 9_000_000);
+        })),
+    ];
+    for (name, output) in &cases {
+        let result = check(output);
+        assert!(
+            result.findings.iter().any(|f| f.code != FindingCode::PreviewStale),
+            "{name}: accepted {result:?}"
+        );
+    }
+}

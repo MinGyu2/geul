@@ -19,7 +19,8 @@ const BODY: &str = "BodyText/Section0";
 const BORDER: u16 = 20;
 const BULLET: u16 = 24;
 const MAX_UNITS: usize = 2_000_000;
-const ALLOWED: [u16; 5] = [18, 20, 21, 24, 25];
+const ALLOWED: [u16; 6] = [18, 20, 21, 23, 24, 25];
+const NUMBERING: u16 = 23;
 
 pub(super) struct Proof {
     pub streams: BTreeSet<String>,
@@ -954,8 +955,10 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             "DocInfo",
         )?;
         let new = added.entry(r.0).or_default();
+        // A restarted list is a byte-identical numbering definition with its own ID (HWP counts per definition);
+        // every appended numbering must still be referenced by a numbered paragraph shape (checked below).
         preserved(
-            !entries(&ac, r.0).contains(&r.2) && !new.contains(&r.2),
+            r.0 == NUMBERING || (!entries(&ac, r.0).contains(&r.2) && !new.contains(&r.2)),
             "DocInfo",
         )?;
         new.push(r.2);
@@ -966,6 +969,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             0 => 18,
             8 => 20,
             9 => 21,
+            11 => 23,
             12 => 24,
             13 => 25,
             _ => 0,
@@ -979,7 +983,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     if !entries(&added, 21).is_empty() {
         let mut reduced = Vec::new();
         let mut adjusted = entries(&bc, 17)[0].to_vec();
-        for index in [0, 8, 12, 13] {
+        for index in [0, 8, 11, 12, 13] {
             adjusted[index * 4..index * 4 + 4].copy_from_slice(&(am[index] as u32).to_le_bytes());
         }
         let mut ordinal = BTreeMap::<u16, usize>::new();
@@ -1007,13 +1011,20 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     for bullet in entries(&added, BULLET) {
         basic_bullet(bullet, &bc)?;
     }
+    for numbering in entries(&added, NUMBERING) {
+        basic_numbering(numbering, &bc)?;
+    }
     for ps in entries(&added, 25) {
         valid_para_shape(ps, &bc)?;
         let attr = dword(ps, 0)?;
+        let (head, level) = ((attr >> 23) & 3, (attr >> 25) & 7);
+        // Stage 1 lists: none (level 0), numbered or bullet heading at levels 1-7 (stored 0-6); the 58-byte tail is
+        // the outline level and must agree with attr1.
         preserved(
-            matches!((attr >> 23) & 3, 0 | 3)
-                && (attr >> 25) & 7 == 0
-                && (ps.len() == 54 || dword(ps, 54)? == 0),
+            matches!(head, 0 | 2 | 3)
+                && (head != 0 || level == 0)
+                && level <= 6
+                && (ps.len() == 54 || dword(ps, 54)? == level),
             "DocInfo",
         )?;
         stage1_para_values(ps)?;
@@ -1183,6 +1194,15 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     // an original one (`para_signature`, `stage1_para_values`, `valid_para_shape`); rhwp has no paragraph-shape
     // compaction, so repeated paragraph formatting leaves superseded derived shapes (the HWPX rule is the same).
     // Borders, bullets and pictures keep the reachability requirement.
+    // Every appended numbering definition is referenced by a numbered paragraph shape (no orphan definitions).
+    let numbered: BTreeSet<usize> = entries(&bc, 25)
+        .iter()
+        .filter(|ps| dword(ps, 0).is_ok_and(|a| (a >> 23) & 3 == 2))
+        .filter_map(|ps| word(ps, 30).ok())
+        .collect();
+    for index in entries(&ac, NUMBERING).len()..entries(&bc, NUMBERING).len() {
+        reference(numbered.contains(&(index + 1)), "DocInfo")?;
+    }
     for (tag, field) in [
         (20, &used.borders),
         (24, &used.bullets),
@@ -1206,7 +1226,10 @@ fn basic_bullet(bullet: &[u8], defs: &Defs<'_>) -> Checked<()> {
     let mut canonical = vec![0u8; 24];
     canonical[0] = 8;
     canonical[6] = 50;
-    canonical[12..14].copy_from_slice(&0x2022u16.to_le_bytes());
+    // Stage 1 custom bullets: the standard bullet or one of the offered characters (○ ▪ – ✓).
+    let ch = word(bullet, 12)? as u16;
+    preserved([0x2022, 0x25CB, 0x25AA, 0x2013, 0x2713].contains(&ch), "DocInfo")?;
+    canonical[12..14].copy_from_slice(&ch.to_le_bytes());
     canonical[8..12].copy_from_slice(&bullet[8..12]);
     preserved(bullet == canonical, "DocInfo")
 }
@@ -1231,8 +1254,51 @@ fn para_signature(ps: &[u8]) -> Checked<Vec<u8>> {
     out[..4].copy_from_slice(&(attr & !(0x1f << 23) & !0x1f).to_le_bytes());
     out[4..28].fill(0);
     out[30..32].fill(0);
-    out[46..54].fill(0);
+    // attr3: only the extended line-spacing kind (bits 0-4) may differ; every other bit stays owned.
+    let attr3 = dword(ps, 46)? as u32;
+    out[46..50].copy_from_slice(&(attr3 & !0x1f).to_le_bytes());
+    out[50..54].fill(0);
+    if out.len() == 58 {
+        out[54..58].fill(0); // outline level tail, bound to attr1 by the caller
+    }
     Ok(out)
+}
+
+/// Stage 1: an appended numbering definition exactly in the pinned serializer's structure for the
+/// engine's `createNumbering`: seven paragraph heads (attr = automatic indent + number format code, zero
+/// width adjust/distance/char shape) each with a format string of level placeholders and `.`/`)`, start
+/// number 1 and seven level start numbers 1. Nothing else may be present.
+fn basic_numbering(rec: &[u8], defs: &Defs<'_>) -> Checked<()> {
+    let mut at = 0usize;
+    for _ in 0..7 {
+        let attr = dword(rec, at)? as u32;
+        preserved(attr & !(0x0f << 5) == 1 << 3 && matches!((attr >> 5) & 0x0f, 0 | 2 | 3 | 4 | 5 | 8), "DocInfo")?;
+        preserved(word(rec, at + 4)? == 0 && word(rec, at + 6)? == 0 && dword(rec, at + 8)? == 0, "DocInfo")?;
+        reference(!entries(defs, 21).is_empty(), "DocInfo")?;
+        let len = word(rec, at + 12)?;
+        preserved((1..=32).contains(&len), "DocInfo")?;
+        let mut units = Vec::with_capacity(len);
+        for k in 0..len {
+            units.push(word(rec, at + 14 + 2 * k)? as u16);
+        }
+        let text = String::from_utf16(&units).map_err(|_| finding(FindingCode::RecordsChanged, "DocInfo"))?;
+        let mut chars = text.chars().peekable();
+        let mut valid = true;
+        while let Some(c) = chars.next() {
+            match c {
+                '^' => valid &= chars.next().is_some_and(|d| ('1'..='7').contains(&d)),
+                '.' | ')' => {}
+                _ => valid = false,
+            }
+        }
+        preserved(valid && text.contains('^'), "DocInfo")?;
+        at += 14 + 2 * len;
+    }
+    preserved(word(rec, at)? == 1, "DocInfo")?;
+    for k in 0..7 {
+        preserved(dword(rec, at + 2 + 4 * k)? == 1, "DocInfo")?;
+    }
+    preserved(rec.len() == at + 2 + 28, "DocInfo")
 }
 
 /// Stage 1 value bounds of an appended paragraph shape (HWPUNIT; margins are stored doubled).
@@ -1241,10 +1307,14 @@ fn stage1_para_values(ps: &[u8]) -> Checked<()> {
     let margins = [int(4)?, int(8)?, int(12)?];
     let spacing = [int(16)?, int(20)?, int(24)?];
     let align = (dword(ps, 0)? as u32 >> 2) & 7;
+    // Extended (5.0.2.5) line-spacing kind and value: a known kind and the same bounds as the 1x field.
+    let (kind3, value3) = (dword(ps, 46)? as u32 & 0x1f, dword(ps, 50)? as u32);
     preserved(
         margins.iter().all(|v| v.abs() <= 316_800)
             && spacing.iter().all(|v| (0..=158_400).contains(v))
-            && align <= 5,
+            && align <= 5
+            && kind3 <= 3
+            && value3 <= 316_800,
         "DocInfo",
     )
 }
@@ -1520,8 +1590,9 @@ fn paragraph<'a>(
     )?;
     out.para_ids.insert(ps);
     let signature: Arc<[u8]> = para_signature(entries(defs, 25)[ps])?.into();
+    // Stage 1: numbered paragraphs (heading 2) join none/bullet; `valid_para_shape` bounds the numbering reference.
     preserved(
-        matches!((dword(entries(defs, 25)[ps], 0)? >> 23) & 3, 0 | 3),
+        matches!((dword(entries(defs, 25)[ps], 0)? >> 23) & 3, 0 | 2 | 3),
         BODY,
     )?;
     let texts: Vec<_> = rs
@@ -2322,7 +2393,18 @@ fn evolved_table(
             return Err(finding(FindingCode::RecordsChanged, BODY));
         }
     }
-    preserved(structural, BODY)?;
+    // Stage 1: a formatting-only change inside cells (paragraph/character shape references of the cells' own
+    // paragraphs, e.g. cell paragraph formatting or lists) on an unchanged grid: every cell keeps its text and child
+    // objects exactly; the paragraph records themselves were validated by `evolved_cells`/`paragraph`.
+    let formatting_only = same_grid
+        && before.len() == after.len()
+        && before.iter().zip(&after).all(|(x, y)| {
+            x.texts == y.texts
+                && x.object_paragraphs == y.object_paragraphs
+                && x.objects.len() == y.objects.len()
+                && x.objects.iter().zip(&y.objects).all(|(a, b)| same_child(a, b))
+        });
+    preserved(structural || formatting_only, BODY)?;
     Ok(())
 }
 

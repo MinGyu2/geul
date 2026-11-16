@@ -750,21 +750,38 @@ export class RhwpText {
   /** Stage 1: size/text color/shade/script of the selection. Values are reported only when every selected run uses
    * one character shape (otherwise null = mixed; never inferred from the first character alone). */
   stage1Chars(from: DocPosition, to: DocPosition): {
-    size: number | null; color: string | null; highlight: string | null; superscript: boolean; subscript: boolean;
+    size: number | null; color: string | null; highlight: string | null; superscript: boolean | null; subscript: boolean | null;
   } | null {
     const selected = this.selectedFontShapes(from, to);
-    if (!selected) return null;
-    if (selected.shapes.size !== 1) return { size: null, color: null, highlight: null, superscript: false, subscript: false };
-    const props = this.charProperties(from);
-    if (!props) return null;
+    if (!selected || selected.samples.size > 256) return selected ? { size: null, color: null, highlight: null, superscript: null, subscript: null } : null;
+    // Each property's uniformity is decided independently over every distinct selected character shape:
+    // different shapes (fonts, colors…) can still agree on size or script. null = mixed.
+    const values: Record<string, unknown>[] = [];
+    const c = from.cell;
+    for (const { paragraph, offset } of selected.samples.values()) {
+      let raw: string;
+      try {
+        raw = c?.nested ? this.doc.getCellCharPropertiesAtByPath!(from.section, c.parentParagraph, pathJson(c, paragraph), offset)
+          : c ? this.doc.getCellCharPropertiesAt!(from.section, c.parentParagraph, c.control, c.cell, paragraph, offset)
+          : this.doc.getCharPropertiesAt!(from.section, paragraph, offset);
+      } catch { return null; }
+      const value = json(raw);
+      if (!isRecord(value)) return null;
+      values.push(value as Record<string, unknown>);
+    }
     const hex = (v: unknown) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v.slice(1).toUpperCase() : null;
-    const size = Number.isSafeInteger(props.fontSize) && (props.fontSize as number) > 0 ? (props.fontSize as number) / 100 : null;
-    const shade = hex(props.shadeColor);
+    const same = <T,>(read: (v: Record<string, unknown>) => T): T | null => {
+      const first = read(values[0]!);
+      return values.every(v => read(v) === first) ? first : null;
+    };
+    const size = same(v => Number.isSafeInteger(v.fontSize) && (v.fontSize as number) > 0 ? (v.fontSize as number) / 100 : -1);
+    const shade = same(v => typeof v.shadeColor === "string" ? (v.shadeColor === "none" ? "none" : hex(v.shadeColor) ?? "?") : "?");
+    const script = (key: string) => same(v => v[key] === true);
     return {
-      size, color: hex(props.textColor),
-      // HWP "no shading" reads as white (#FFFFFF): reported as no highlight.
-      highlight: shade === "FFFFFF" ? null : shade,
-      superscript: props.superscript === true, subscript: props.subscript === true,
+      size: size === -1 ? null : size, color: same(v => hex(v.textColor)),
+      // "none" = no shading (engine reports it only with the shade-none patch); white is a real shade value.
+      highlight: shade === "none" || shade === "?" ? null : shade,
+      superscript: script("superscript"), subscript: script("subscript"),
     };
   }
 
@@ -782,18 +799,37 @@ export class RhwpText {
 
   /** Stage 1 character values for the whole proven selection in one engine call per paragraph (one history step
    * at the session). Only the fixed keys below reach the engine; values are validated here again. */
-  prepareChars(from: DocPosition, to: DocPosition, props: { fontSize?: number; textColor?: string; shadeColor?: string;
+  prepareChars(from: DocPosition, to: DocPosition, props: Record<string, unknown> & { fontSize?: number; textColor?: string; shadeColor?: string;
     superscript?: boolean; subscript?: boolean }) {
-    if (!this.formatSelection(from, to)) return null;
-    const keys = Object.keys(props);
-    const color = (v: unknown) => typeof v === "string" && /^#[0-9A-F]{6}$/.test(v);
-    if (keys.length !== 1
-      || (props.fontSize !== undefined && !(Number.isSafeInteger(props.fontSize) && props.fontSize >= 100 && props.fontSize <= 409_600))
-      || (props.textColor !== undefined && !color(props.textColor)) || (props.shadeColor !== undefined && !color(props.shadeColor))
-      || (props.superscript !== undefined && typeof props.superscript !== "boolean")
-      || (props.subscript !== undefined && typeof props.subscript !== "boolean")) return null;
+    if (!this.formatSelection(from, to) || !RhwpText.validChars(props)) return null;
     const text = JSON.stringify(props);
     return () => this.format(from, to, text);
+  }
+
+  /** Stage 1 character values accepted by the engine boundary: only these keys, validated values. */
+  static validChars(props: Record<string, unknown>): boolean {
+    const keys = Object.keys(props);
+    const color = (v: unknown) => typeof v === "string" && /^#[0-9A-F]{6}$/.test(v);
+    if (keys.length < 1 || keys.some(k => !["fontSize", "textColor", "shadeColor", "superscript", "subscript"].includes(k))
+      || (props.fontSize !== undefined && !(Number.isSafeInteger(props.fontSize) && (props.fontSize as number) >= 100 && (props.fontSize as number) <= 409_600))
+      || (props.textColor !== undefined && !color(props.textColor))
+      || (props.shadeColor !== undefined && props.shadeColor !== "none" && !color(props.shadeColor))
+      || (props.superscript !== undefined && typeof props.superscript !== "boolean")
+      || (props.subscript !== undefined && typeof props.subscript !== "boolean")) return false;
+    return true;
+  }
+
+  /** Stage 1 caret formatting: the character values the next typed character would take (the shape before the caret,
+   * as the engine's insertion inherits it; the first character at a paragraph start). */
+  caretChars(at: DocPosition): Record<string, unknown> | null {
+    return this.charProperties(at.offset > 0 ? { ...at, offset: at.offset - 1 } : at);
+  }
+
+  /** Apply validated Stage 1 values to text just inserted at [at, at+length) (inside the caller's mutation). */
+  formatInserted(at: DocPosition, length: number, props: Record<string, unknown>): void {
+    if (length <= 0) return;
+    if (!RhwpText.validChars(props)) throw new Error("invalid pending character values");
+    this.format(at, { ...at, offset: at.offset + length }, JSON.stringify(props));
   }
 
   get hasFontOwnership(): boolean {
@@ -808,6 +844,8 @@ export class RhwpText {
     const table = documentFontTable(this.doc);
     if (!table) return null;
     const shapes = new Set<number>(), families = new Set<string>();
+    /** One engine position (paragraph, engine char offset) per distinct shape, for per-property reads. */
+    const samples = new Map<number, { paragraph: number; offset: number }>();
     let runCount = 0;
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
@@ -827,12 +865,13 @@ export class RhwpText {
           if (++runCount > 65_536 || !Array.isArray(run) || run.length !== 4 || !run.every(isIndex)
             || run[0] !== next || run[1]! <= next || run[1]! > range.end || !table.charShapes[run[2]!] || run[3]! > 6) return null;
           next = run[1]!; shapes.add(run[2]!);
+          if (!samples.has(run[2]!)) samples.set(run[2]!, { paragraph: p, offset: run[0]! });
           const lang = run[3]!, id = table.charShapes[run[2]!]!.fontIds[lang]!;
           families.add(table.languages[lang]!.fonts[id]!.definition.name);
         }
         if (next !== range.end) return null;
       }
-      return shapes.size ? { table, shapes, families } : null;
+      return shapes.size ? { table, shapes, families, samples } : null;
     } catch { return null; }
   }
 

@@ -2140,7 +2140,7 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
             } = &event
             {
                 if ns == HWPML_HEAD
-                    && matches!(name.as_str(), "paraProperties" | "bullets" | "borderFills")
+                    && matches!(name.as_str(), "paraProperties" | "bullets" | "borderFills" | "numberings")
                 {
                     if parents.last() != Some(&true)
                         || attributes.len() != 1
@@ -2155,6 +2155,7 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
                     let child = match name.as_str() {
                         "bullets" => "bullet",
                         "borderFills" => "borderFill",
+                        "numberings" => "numbering",
                         _ => "paraPr",
                     };
                     let first_id = if name == "paraProperties" { 0 } else { 1 };
@@ -2205,6 +2206,7 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
         def: &[xml::Canonical],
         appended: bool,
         bullet_count: usize,
+        numbering_count: usize,
     ) -> Option<Vec<xml::Canonical>> {
         let mut result = Vec::new();
         let mut iter = def.iter().cloned();
@@ -2254,9 +2256,13 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
                 if appended {
                     let kind = plain_attribute(&e, "type")?;
                     let id = plain_attribute(&e, "idRef")?.parse::<usize>().ok()?;
-                    if plain_attribute(&e, "level") != Some("0")
+                    let level = plain_attribute(&e, "level")?;
+                    // Stage 1 lists: bullet or numbered heading at levels 0-6; none at level 0.
+                    let level_ok = matches!(level, "0" | "1" | "2" | "3" | "4" | "5" | "6");
+                    if !level_ok
                         || !((kind == "BULLET" && id > 0 && id <= bullet_count)
-                            || (kind == "NONE" && id == 0))
+                            || (kind == "NUMBER" && id > 0 && id <= numbering_count)
+                            || (kind == "NONE" && id == 0 && level == "0"))
                     {
                         return None;
                     }
@@ -2338,10 +2344,28 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     }
     if let Some(extra) = bullets.get(old_bullets.len()) {
         let id = bullets.len();
-        let expected = format!(
-            r#"<hh:bullet xmlns:hh="{HWPML_HEAD}" id="{id}" char="•" useImage="0"><hh:paraHead level="0" align="LEFT" useInstWidth="0" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="0" checkable="0"/></hh:bullet>"#
-        );
-        if extra != &xml::canonical(expected.as_bytes()).ok()? {
+        // The standard bullet or one of the Stage 1 custom bullet characters, in the serializer's form.
+        let matches = ["•", "○", "▪", "–", "✓"].iter().any(|ch| {
+            let expected = format!(
+                r#"<hh:bullet xmlns:hh="{HWPML_HEAD}" id="{id}" char="{ch}" useImage="0"><hh:paraHead level="0" align="LEFT" useInstWidth="0" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="0" checkable="0"/></hh:bullet>"#
+            );
+            xml::canonical(expected.as_bytes()).ok().as_ref() == Some(extra)
+        });
+        if !matches {
+            return None;
+        }
+    }
+    // Stage 1 numbering definitions: original ones unchanged, appended ones in the createNumbering serializer form.
+    let old_numberings = old.get("numberings").unwrap_or(&empty);
+    let numberings = new.get("numberings").unwrap_or(&empty);
+    if numberings.len() < old_numberings.len()
+        || numberings.len() - old_numberings.len() > 64
+        || numberings.get(..old_numberings.len())? != old_numberings
+    {
+        return None;
+    }
+    for def in numberings.iter().skip(old_numberings.len()) {
+        if !hwpx_appended_numbering(def) {
             return None;
         }
     }
@@ -2355,15 +2379,74 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     }
     let bases: Vec<_> = old_paras
         .iter()
-        .map(|p| signature(p, false, bullets.len()))
+        .map(|p| signature(p, false, bullets.len(), numberings.len()))
         .collect::<Option<_>>()?;
     for p in paras.iter().skip(old_paras.len()) {
-        if !bases.contains(&signature(p, true, bullets.len())?) {
+        if !bases.contains(&signature(p, true, bullets.len(), numberings.len())?) {
             return None;
         }
     }
     // The ordinary output reference validator checks paragraph shape references.
     Some(true)
+}
+
+/// Stage 1: an appended `hh:numbering` exactly in the pinned serializer's fallback form (`write_numbering` without
+/// original paraHead bytes): `start="1"`, ten `hh:paraHead` children (levels 1-10) with the fixed attribute set,
+/// automatic indent, zero width/offset, character shape 0, a known number format and a level-placeholder text.
+fn hwpx_appended_numbering(def: &[xml::Canonical]) -> bool {
+    let mut iter = def.iter();
+    let Some(root) = iter.next() else { return false };
+    let xml::Canonical::Start { attributes, .. } = root else { return false };
+    if attributes.len() != 2 || plain_attribute(root, "start") != Some("1") || plain_attribute(root, "id").is_none() {
+        return false;
+    }
+    const KEYS: [&str; 11] = ["start", "level", "align", "useInstWidth", "autoIndent", "widthAdjust", "textOffsetType",
+        "textOffset", "numFormat", "charPrIDRef", "checkable"];
+    const FORMATS: [&str; 6] = ["DIGIT", "ROMAN_CAPITAL", "ROMAN_SMALL", "LATIN_CAPITAL", "LATIN_SMALL", "HANGUL_SYLLABLE"];
+    let mut level = 0;
+    loop {
+        let Some(event) = iter.next() else { return false };
+        if *event == xml::Canonical::End {
+            return level == 10 && iter.next().is_none();
+        }
+        if !is_head(event, "paraHead") {
+            return false;
+        }
+        let xml::Canonical::Start { attributes, .. } = event else { return false };
+        level += 1;
+        let fixed = [("start", "1"), ("align", "LEFT"), ("useInstWidth", "0"), ("autoIndent", "1"), ("widthAdjust", "0"),
+            ("textOffset", "0"), ("charPrIDRef", "0"), ("checkable", "0")];
+        if attributes.len() != KEYS.len()
+            || !attributes.iter().all(|(ns, k, _)| ns.is_none() && KEYS.contains(&k.as_ref()))
+            || plain_attribute(event, "level") != Some(level.to_string().as_str())
+            || !fixed.iter().all(|(k, v)| plain_attribute(event, k) == Some(*v))
+            || !plain_attribute(event, "numFormat").is_some_and(|f| FORMATS.contains(&f))
+            || plain_attribute(event, "textOffsetType").is_none()
+        {
+            return false;
+        }
+        // Text content: level placeholders and `.`/`)` only.
+        let mut text = String::new();
+        loop {
+            match iter.next() {
+                Some(xml::Canonical::Text(t)) => text.push_str(t),
+                Some(xml::Canonical::End) => break,
+                _ => return false,
+            }
+        }
+        let mut chars = text.chars();
+        let mut ok = text.contains('^');
+        while let Some(c) = chars.next() {
+            ok &= match c {
+                '^' => chars.next().is_some_and(|d| ('1'..='7').contains(&d)),
+                '.' | ')' => true,
+                _ => false,
+            };
+        }
+        if !ok {
+            return false;
+        }
+    }
 }
 
 fn default_table_border(total: u32) -> Option<Vec<xml::Canonical>> {

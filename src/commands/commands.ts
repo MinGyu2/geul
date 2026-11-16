@@ -11,6 +11,7 @@ import type { LayoutAction, LayoutState, Theme } from "../hooks/layoutState";
 import { documentCommandState, ENABLED, unavailable, type CommandState } from "./capability";
 import { commandDefinition, isDocumentCommandId } from "./registry";
 import { isParameterCommandId } from "./parameters";
+import { STAGE1_DIALOGS } from "./stage1";
 import type { CommandParameterContext, DocumentCommandArgs, DocumentCommandTarget, ImportedPicture, ParameterCommandId } from "./target";
 import { trace } from "../components/Editor/imeTrace";
 
@@ -249,7 +250,8 @@ export function executeCommand(
     context.requestInput({
       command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
       revision: snapshot.revision, context: parameters,
-      ...(id === "insert.table" && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
+      // Selection-owned values (table insertion, Stage 1 paragraph/margin dialogs): a moved caret makes the request stale.
+      ...((id === "insert.table" || (STAGE1_DIALOGS as readonly string[]).includes(id)) && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
     });
     trace("command:input", () => ({ id }));
     return true;

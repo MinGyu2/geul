@@ -77,8 +77,19 @@ export interface RhwpDocument {
     startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number,
   ): string;
   getTextRange(section: number, paragraph: number, offset: number, count: number): string;
+  /** Stage 1 paragraph formatting in table cells (first level and, with the stage1-editing patch, any depth). */
+  getCellParaPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number): string;
+  applyParaFormatInCell?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, props: string): string;
+  getCellParaPropertiesAtByPath?(section: number, parentParagraph: number, path: string): string;
+  applyParaFormatInCellByPath?(section: number, parentParagraph: number, path: string, props: string): string;
+  /** Stage 1 lists: append a numbering definition (1-based id). */
+  createNumbering?(json: string): number;
+  getNumberingList?(): string;
   /** Stage 1 page setup: the section's PageDef in HWPUNIT, and its change (repaginates). */
   getPageDef?(section: number): string;
+  /** Stage 1 columns: the section's initial ColumnDef and its change (existing definition only). */
+  getColumnDef?(section: number): string;
+  setColumnDef?(section: number, count: number, type: number, sameWidth: number, spacing: number): string;
   setPageDef?(section: number, json: string): string;
   /** Stage 1 find: every match of the engine's own model search (body; cells when requested), code-point offsets. */
   searchAllText?(query: string, caseSensitive: boolean, includeCells: boolean): string;
