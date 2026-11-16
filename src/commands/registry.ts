@@ -105,7 +105,7 @@ const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 /** Stage 1 HWP/HWPX support declarations (see docs/architecture/command-registry.md "Stage 1"). */
 const RHWP_STAGE1_CHAR: EngineSupport = SUPPORTED;
-const RHWP_STAGE1_PARAGRAPH: EngineSupport = UNSUPPORTED;
+const RHWP_STAGE1_PARAGRAPH: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_PAGE: EngineSupport = UNSUPPORTED;
 const RHWP_STAGE1_SEARCH: EngineSupport = SUPPORTED;
 

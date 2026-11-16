@@ -58,7 +58,7 @@ import type {
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
-import { HIGHLIGHT_COLORS, validSearchRequest, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
+import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -1836,9 +1836,92 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       chars: this.stage1Chars(),
       searchable: this.status.kind === "ready" && !!this.doc?.searchAllText && !!this.text,
       search: this.searchState(),
-      actions: { ...this.coreActions(), ...this.stage1Actions() },
+      actions: { ...this.coreActions(), ...this.stage1Actions(), ...this.stage1ParagraphActions() },
+      paragraph: this.stage1Paragraph(),
       ...this.coreActionReasons(),
     };
+  }
+
+  // ---- Stage 1 paragraph alignment and formatting (body paragraphs; bullet-path eligibility) ----
+
+  private paragraphCache: { key: string; value: ParagraphState | null } | null = null;
+  /** Selected body paragraphs' formatting from the engine (`getParaPropertiesAt`); null values are mixed. Same range and
+   * eligibility as bullets (structural original proof, no cells, no IME/pending). Lengths are reported in points. */
+  private stage1Paragraph(): ParagraphState | null {
+    const range = this.bulletRange();
+    if (!range || !this.doc?.getParaPropertiesAt) return null;
+    const key = `${this.epoch}|${this.modelVersion}|${range.section}|${range.first}|${range.last}`;
+    if (this.paragraphCache?.key === key) return this.paragraphCache.value;
+    let value: ParagraphState | null;
+    try {
+      // The engine reports px (96 dpi) with 0.1 px precision: points are shown to 0.1 pt.
+      const px = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? Math.round(v * 72 / 96 * 10) / 10 : null;
+      const all: Omit<ParagraphState, "list">[] = [];
+      for (let p = range.first; p <= range.last; p++) {
+        const raw = JSON.parse(this.doc.getParaPropertiesAt(range.section, p)) as Record<string, unknown>;
+        const align = ({ justify: "justify", left: "left", right: "right", center: "center" } as Record<string, ParagraphAlign>)[String(raw.alignment)] ?? null;
+        const type = raw.lineSpacingType, ls = raw.lineSpacing;
+        const lineSpacing = typeof ls !== "number" ? null : type === "Percent" ? { rule: "multiple" as const, value: ls / 100 }
+          : type === "Fixed" ? { rule: "exactly" as const, value: px(ls)! } : type === "Minimum" ? { rule: "atLeast" as const, value: px(ls)! } : null;
+        all.push({ align, lineSpacing, spaceBefore: px(raw.spacingBefore), spaceAfter: px(raw.spacingAfter),
+          indentLeft: px(raw.marginLeft), indentRight: px(raw.marginRight), indentFirst: px(raw.indent) });
+      }
+      const same = <K extends keyof Omit<ParagraphState, "list">>(k: K): ParagraphState[K] | null => {
+        const first = JSON.stringify(all[0]![k]);
+        return all.every(x => JSON.stringify(x[k]) === first) ? all[0]![k] : null;
+      };
+      value = { align: same("align"), lineSpacing: same("lineSpacing"), spaceBefore: same("spaceBefore"), spaceAfter: same("spaceAfter"),
+        indentLeft: same("indentLeft"), indentRight: same("indentRight"), indentFirst: same("indentFirst"), list: null };
+    } catch { value = null; }
+    this.paragraphCache = { key, value };
+    return value;
+  }
+
+  private stage1ParagraphActions(): NonNullable<DocumentCommandSnapshot["actions"]> {
+    const paragraph = this.stage1Paragraph();
+    if (!paragraph) return {};
+    return Object.fromEntries((Object.entries(ALIGN_COMMANDS) as [AlignCommandId, ParagraphAlign][])
+      .map(([id, align]) => [id, { pressed: paragraph.align === align }]));
+  }
+
+  /** One engine call per selected paragraph inside one mutation (one history step). */
+  private applyStage1Paragraph(props: Record<string, string | number>): boolean {
+    const range = this.bulletRange(), doc = this.doc;
+    if (!range || !doc?.applyParaFormat || !this.stage1Paragraph()) return false;
+    const text = JSON.stringify(props);
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      for (let p = range.first; p <= range.last; p++) {
+        const result = JSON.parse(doc.applyParaFormat!(range.section, p, text));
+        if (result.ok !== true) throw new Error("paragraph formatting rejected");
+      }
+      return { caret: this.caret, anchor: this.anchor };
+    }, true, "other", null, true, true);
+    this.history?.boundary();
+    return applied;
+  }
+
+  private executeStage1Paragraph(command: DocumentCommandId, args?: DocumentCommandArgs): boolean | null {
+    if (command in ALIGN_COMMANDS) {
+      if (args !== undefined) return false;
+      return this.applyStage1Paragraph({ alignment: ALIGN_COMMANDS[command as AlignCommandId] });
+    }
+    if (command !== "paragraph.settings") return null;
+    if (args?.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
+    const f = args.format, props: Record<string, string | number> = {};
+    // HWP units (as the engine's layout reads them): margins, indent and fixed/minimum line spacing are stored doubled
+    // (2 × 100 HWPUNIT per pt); spacing before/after 1×; percent line spacing in percent.
+    const hwp2 = (pt: number) => Math.round(pt * 200), hwp1 = (pt: number) => Math.round(pt * 100);
+    if (f.lineSpacing) {
+      props.lineSpacingType = f.lineSpacing.rule === "multiple" ? "Percent" : f.lineSpacing.rule === "exactly" ? "Fixed" : "Minimum";
+      props.lineSpacing = f.lineSpacing.rule === "multiple" ? Math.round(f.lineSpacing.value * 100) : hwp2(f.lineSpacing.value);
+    }
+    if (f.spaceBefore !== undefined) props.spacingBefore = hwp1(f.spaceBefore);
+    if (f.spaceAfter !== undefined) props.spacingAfter = hwp1(f.spaceAfter);
+    if (f.indentLeft !== undefined) props.marginLeft = hwp2(f.indentLeft);
+    if (f.indentRight !== undefined) props.marginRight = hwp2(f.indentRight);
+    if (f.indentFirst !== undefined) props.indent = hwp2(f.indentFirst);
+    return this.applyStage1Paragraph(props);
   }
 
   // ---- Stage 1 find/replace ----
@@ -2390,6 +2473,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const font = this.fontState();
       if (font) parameters["format.font"] = { font };
     } else parameterReasons["format.font"] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
+    const paragraph = this.stage1Paragraph();
+    if (paragraph) parameters["paragraph.settings"] = { paragraph };
+    else parameterReasons["paragraph.settings"] = "caretRequired";
     // Stage 1 character values: the general formatting eligibility (selection only; caret formatting is not offered).
     const chars = this.stage1Chars();
     for (const command of ["format.fontSize", "format.fontColor", "format.highlight"] as const) {
@@ -2661,7 +2747,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return applied ? { accepted: true } : { accepted: false };
     }
     if (command === "format.font") return { accepted: args?.command === command && this.applyFont(args) };
-    const stage1 = this.executeStage1Chars(command, args);
+    const stage1 = this.executeStage1Chars(command, args) ?? this.executeStage1Paragraph(command, args);
     if (stage1 !== null) return { accepted: stage1 };
     if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };

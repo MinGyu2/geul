@@ -223,9 +223,53 @@ describe.skipIf(phase !== "generate")("Stage 1 find/replace, production session 
   }
 });
 
+describe.skipIf(phase !== "generate")("Stage 1 paragraph alignment and formatting, production session path, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: alignment, mixed state, spacing/indents, history, export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        const para = (p: number) => JSON.parse(doc.getParaPropertiesAt!(0, p));
+        const before = [0, 1, 2].map(p => para(p));
+        editor.anchor = body(2); editor.caret = body(3, 1);
+        expect(editor.snapshot().paragraph?.align).toBe(before[0].alignment === "justify" ? "justify" : editor.snapshot().paragraph?.align);
+        const svg = doc.renderPageSvgWithProfile(0, "screen");
+        expect(editor.execute("paragraph.alignCenter").accepted).toBe(true); await settle();
+        expect([0, 1].map(p => para(p).alignment)).toEqual(["center", "center"]);
+        expect(para(2).alignment).toBe(before[2].alignment);
+        expect(doc.renderPageSvgWithProfile(0, "screen")).not.toBe(svg);
+        expect(editor.snapshot().actions?.["paragraph.alignCenter"]).toEqual({ pressed: true });
+        // Mixed selection (centered + unchanged paragraph) reports no uniform alignment.
+        editor.anchor = body(0, 1); editor.caret = body(2, 2);
+        expect(editor.snapshot().paragraph?.align ?? null).toBe(before[2].alignment === "center" ? "center" : null);
+        editor.anchor = body(2); editor.caret = body(3, 1);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(para(0).alignment).toBe(before[0].alignment);
+        expect(doc.renderPageSvgWithProfile(0, "screen")).toBe(svg);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(para(0).alignment).toBe("center");
+        expect(editor.execute("paragraph.alignRight").accepted).toBe(true); await settle();
+        expect(para(1).alignment).toBe("right");
+        const format_ = { lineSpacing: { rule: "multiple" as const, value: 1.6 }, spaceBefore: 6, spaceAfter: 4, indentLeft: 10, indentRight: 5, indentFirst: -8 };
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: format_ }).accepted).toBe(true); await settle();
+        const state = editor.snapshot().paragraph!;
+        expect(state.lineSpacing).toEqual({ rule: "multiple", value: 1.6 });
+        expect([state.spaceBefore, state.spaceAfter, state.indentLeft, state.indentRight, state.indentFirst]).toEqual([6, 4, 10, 5, -8]);
+        expect(state.align).toBe("right"); // unrelated paragraph value preserved
+        expect(para(2).lineSpacing).toBe(before[2].lineSpacing);
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: { lineSpacing: { rule: "exactly", value: 18 } } }).accepted).toBe(true); await settle();
+        expect(editor.snapshot().paragraph!.lineSpacing).toEqual({ rule: "exactly", value: 18 });
+        expect(editor.snapshot().paragraph!.indentLeft).toBe(10);
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: { spaceBefore: -1 } }).accepted).toBe(false);
+        // Table cells are not offered for paragraph formatting in RHWP (bullet-path eligibility: body only).
+        record(`${format}-stage1-paragraph`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
-  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 6));
+  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 8));
   for (const { id, format } of all) {
     const dir = join(out, id), doc = new engine.HwpDocument(readFileSync(join(dir, `published.${format}`))) as Doc;
     try {
@@ -233,6 +277,7 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       expect(proof.generation).toBe(build.generation);
       expect(model(doc)).toEqual(proof.model);
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else if (id.includes("paragraph")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 1)).alignment).toBe("right");
       else expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");
     } finally { doc.free(); }
   }

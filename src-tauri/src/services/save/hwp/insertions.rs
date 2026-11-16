@@ -1016,6 +1016,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 && (ps.len() == 54 || dword(ps, 54)? == 0),
             "DocInfo",
         )?;
+        stage1_para_values(ps)?;
         let signature = para_signature(ps)?;
         preserved(
             entries(&ac, 25)
@@ -1178,10 +1179,13 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             }
         }
     }
+    // Stage 1: appended paragraph shapes need not stay referenced. Each is still a validated definition derived from
+    // an original one (`para_signature`, `stage1_para_values`, `valid_para_shape`); rhwp has no paragraph-shape
+    // compaction, so repeated paragraph formatting leaves superseded derived shapes (the HWPX rule is the same).
+    // Borders, bullets and pictures keep the reachability requirement.
     for (tag, field) in [
         (20, &used.borders),
         (24, &used.bullets),
-        (25, &used.paras),
         (18, &used.pictures),
     ] {
         let start = entries(&ac, tag).len();
@@ -1216,13 +1220,33 @@ fn basic_border_fill() -> Vec<u8> {
     b[26] = 1;
     b
 }
+/// Appended paragraph shapes must equal an original one except the bullet heading (T011) and the Stage 1
+/// paragraph values: alignment and line-spacing kind (attr1 bits 0-4), left/right margin, first-line indent,
+/// spacing before/after and line spacing (bytes 4..28), and the 5.0.2.5 line-spacing extension (attr3 kind and
+/// value, bytes 46..54). Tabs, border, keep/widow flags, outline level and every unknown bit stay owned.
 fn para_signature(ps: &[u8]) -> Checked<Vec<u8>> {
     valid(matches!(ps.len(), 54 | 58), "DocInfo")?;
     let mut out = ps.to_vec();
     let attr = dword(ps, 0)? as u32;
-    out[..4].copy_from_slice(&(attr & !(0x1f << 23)).to_le_bytes());
+    out[..4].copy_from_slice(&(attr & !(0x1f << 23) & !0x1f).to_le_bytes());
+    out[4..28].fill(0);
     out[30..32].fill(0);
+    out[46..54].fill(0);
     Ok(out)
+}
+
+/// Stage 1 value bounds of an appended paragraph shape (HWPUNIT; margins are stored doubled).
+fn stage1_para_values(ps: &[u8]) -> Checked<()> {
+    let int = |at: usize| -> Checked<i64> { Ok(i64::from(dword(ps, at)? as u32 as i32)) };
+    let margins = [int(4)?, int(8)?, int(12)?];
+    let spacing = [int(16)?, int(20)?, int(24)?];
+    let align = (dword(ps, 0)? as u32 >> 2) & 7;
+    preserved(
+        margins.iter().all(|v| v.abs() <= 316_800)
+            && spacing.iter().all(|v| (0..=158_400).contains(v))
+            && align <= 5,
+        "DocInfo",
+    )
 }
 fn valid_para_shape(ps: &[u8], defs: &Defs<'_>) -> Checked<()> {
     valid(matches!(ps.len(), 54 | 58), "DocInfo")?;

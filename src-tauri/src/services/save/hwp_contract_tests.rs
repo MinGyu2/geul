@@ -545,8 +545,9 @@ fn hwp_contract_mutations_cannot_publish_even_with_reopen_true() {
         8,
         9
     ));
-    doc!("para unrelated alignment", Changed, |r| nth(r, 25, 2).2
-        [0] = 4);
+    // Stage 1 allows alignment/spacing/indent values; keep-with-next (attr1 bit 17) stays owned.
+    doc!("para unrelated keep-with-next", Changed, |r| nth(r, 25, 2).2
+        [2] ^= 0x02);
     body!("zero rows", Bad, |r| w(&mut nth(r, 77, 0).2, 4, 0));
     body!("columns out of range", Bad, |r| w(
         &mut nth(r, 77, 0).2,

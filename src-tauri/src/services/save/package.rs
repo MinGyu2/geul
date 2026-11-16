@@ -1156,6 +1156,8 @@ pub(super) const HWPX_SHAPE_LISTS: [&str; 2] = ["charProperties", "paraPropertie
 
 /// HWPML paragraph 이름공간(고정 rhwp `hp:` — `serializer/hwpx/content.rs`, 한컴 출력과 같음).
 const HWPML_PARAGRAPH: &str = "http://www.hancom.co.kr/hwpml/2011/paragraph";
+/// HWPML core namespace (`hc:` margin children of `hh:paraPr`).
+const HWPML_CORE: &str = "http://www.hancom.co.kr/hwpml/2011/core";
 
 /// 선 모양 토큰 13종(고정 rhwp `serializer/hwpx/char_shape_tables/line_shape.rs` `LINE_SHAPE_HWPX` — 파서
 /// `parser/hwpx/header.rs`의 밑줄·취소선 `shape` 표와 같다).
@@ -2212,7 +2214,38 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
         }
         result.push(root);
         let mut heading = false;
-        while let Some(e) = iter.next() {
+        while let Some(mut e) = iter.next() {
+            // Stage 1 paragraph values: alignment, margins/indent/spacing and line spacing are values
+            // of fixed elements; appended values must have the pinned serializer's form.
+            if let xml::Canonical::Start { namespace: Some(ns), name, attributes } = &mut e {
+                let integer = |v: &str| {
+                    let digits = v.strip_prefix('-').unwrap_or(v);
+                    !digits.is_empty() && digits.len() <= 7 && digits.bytes().all(|b| b.is_ascii_digit())
+                        && (digits == "0" || !digits.starts_with('0')) && v != "-0"
+                };
+                let mut take = |key: &str, ok: &dyn Fn(&str) -> bool| -> Option<()> {
+                    let mut found = attributes.iter().filter(|(n, k, _)| n.is_none() && k == key);
+                    match (found.next(), found.next()) {
+                        (Some((_, _, v)), None) if !appended || ok(v) => {}
+                        (None, _) => {}
+                        _ => return None,
+                    }
+                    attributes.retain(|(n, k, _)| !(n.is_none() && k == key));
+                    Some(())
+                };
+                if ns == HWPML_HEAD && name == "align" {
+                    take("horizontal", &|v| {
+                        ["JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_SPACE"].contains(&v)
+                    })?;
+                } else if ns == HWPML_HEAD && name == "lineSpacing" {
+                    take("type", &|v| ["PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST"].contains(&v))?;
+                    take("value", &integer)?;
+                } else if ns == HWPML_CORE
+                    && matches!(name.as_str(), "intent" | "left" | "right" | "prev" | "next")
+                {
+                    take("value", &integer)?;
+                }
+            }
             if is_head(&e, "heading") {
                 if heading || iter.next()? != xml::Canonical::End {
                     return None;
