@@ -13386,3 +13386,6 @@ fn general_formatting_seed_preview() {
     )
     .unwrap();
 }
+
+#[path = "stage1_docx_tests.rs"]
+mod stage1_docx;

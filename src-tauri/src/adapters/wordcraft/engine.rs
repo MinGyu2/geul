@@ -27,6 +27,9 @@ use wordcraft_engine::{io, Session};
 
 use crate::document::EngineStage;
 
+#[path = "stage1.rs"]
+pub mod stage1;
+
 /// WordCraft 입출력은 이름의 확장자로 형식을 고른다. 형식은 판별(T006)이 DOCX로 확정했다.
 const DOCX_NAME: &str = "document.docx";
 
@@ -170,6 +173,65 @@ pub enum DocxOp {
     /// 문서 전체 변경 수락·거절(WordCraft `review.acceptAll`·`review.rejectAll`). 변경이 없으면 거부한다.
     AcceptAll {},
     RejectAll {},
+    /// Stage 1: explicit paragraph alignment of the selected paragraphs (`para.align`, no toggling).
+    Align {
+        value: stage1::ParagraphAlign,
+    },
+    /// Stage 1: font size in points (`format.size`, half-point rounding by the engine).
+    FontSize {
+        size: f32,
+    },
+    /// Stage 1: font color `RRGGBB` or `auto` (`format.color`).
+    FontColor {
+        color: String,
+    },
+    /// Stage 1: highlight (`format.highlight`, one of `stage1::HIGHLIGHTS`).
+    Highlight {
+        color: String,
+    },
+    /// Stage 1: superscript/subscript/baseline with explicit values.
+    Script {
+        value: stage1::ScriptValue,
+    },
+    /// Stage 1: paragraph spacing and indents (one `para.set`).
+    Paragraph {
+        format: stage1::ParagraphFormat,
+    },
+    /// Stage 1: numbered/multilevel/custom bullet list (or off).
+    List {
+        style: stage1::ListStyle,
+        #[serde(default)]
+        off: bool,
+    },
+    /// Stage 1: list level demote (indent) / promote (outdent).
+    ListIndent {
+        #[serde(default)]
+        outdent: bool,
+    },
+    RestartNumbering {},
+    ContinueNumbering {},
+    /// Stage 1: page setup of the selection's section(s).
+    PageSetup {
+        setup: stage1::PageSetupOp,
+    },
+    /// Stage 1: select the next/previous match (navigation; no revision).
+    Find {
+        query: stage1::SearchQuery,
+        #[serde(default)]
+        backward: bool,
+    },
+    /// Stage 1: replace the selected match if it is still a current match.
+    Replace {
+        query: stage1::SearchQuery,
+        with: String,
+    },
+    /// Stage 1: replace every current match (one undo step).
+    ReplaceAll {
+        query: stage1::SearchQuery,
+        with: String,
+    },
+    /// Stage 1: close the search (stop reporting search state).
+    ClearSearch {},
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -311,6 +373,18 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     && x.abs() <= MAX_PAGE_SIDE_PT
                     && y.abs() <= MAX_PAGE_SIDE_PT
             }
+            DocxOp::FontSize { size } => size.is_finite() && (1.0..=1638.0).contains(size),
+            DocxOp::FontColor { color } => {
+                color == "auto"
+                    || (color.len() == 6 && color.bytes().all(|b| b.is_ascii_hexdigit()))
+            }
+            DocxOp::Highlight { color } => stage1::HIGHLIGHTS.contains(&color.as_str()),
+            DocxOp::Paragraph { format } => format.valid(),
+            DocxOp::PageSetup { setup } => setup.valid(),
+            DocxOp::Find { query, .. } => query.valid(),
+            DocxOp::Replace { query, with } | DocxOp::ReplaceAll { query, with } => {
+                query.valid() && stage1::valid_replacement(with)
+            }
             _ => true,
         })
 }
@@ -383,6 +457,15 @@ pub struct DocxView {
     /// Stage 5-A: font database generation the layout reflects; a change means pages must be drawn again
     /// although the document revision is the same.
     pub font_generation: u64,
+    /// Stage 1: size/color/highlight/script of the selection (or next typed text).
+    pub chars: stage1::CharView,
+    /// Stage 1: paragraph formatting and list state of the selection.
+    pub paragraph: stage1::ParagraphView,
+    /// Stage 1: page setup of the caret's section.
+    pub page: stage1::PageSetupView,
+    /// Stage 1: current search (count and selected match) while a search is open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<stage1::SearchView>,
 }
 
 /// 문서 보호(Restrict Editing)에서 직접 글자 서식(`format.bold` 등)을 할 수 있는지.
@@ -488,6 +571,8 @@ pub struct DocxModel {
     /// The font database generation the cached layout and rasters were made with (Stage 5-A): a user font
     /// registered or removed, or a system font refresh, lays the document out again.
     font_generation: u64,
+    /// Stage 1: the open search's query (search state is reported in the view while set).
+    search: Option<stage1::SearchQuery>,
     /// 시험용 실패 주입: 명령 `id`의 `n`번째 실행을 엔진이 거부한 것처럼 실행하지 않고 돌려준다(한 번).
     #[cfg(test)]
     pub fail_at: Option<(&'static str, usize)>,
@@ -599,6 +684,7 @@ impl DocxModel {
             last_insert: None,
             rasters: Vec::new(),
             font_generation: wordcraft_fonts::FontDb::global().generation(),
+            search: None,
             #[cfg(test)]
             fail_at: None,
         };
@@ -695,6 +781,8 @@ impl DocxModel {
                     | DocxOp::Pointer { .. }
                     | DocxOp::SelectAll
                     | DocxOp::Mark { .. }
+                    | DocxOp::Find { .. }
+                    | DocxOp::ClearSearch {}
             )
         {
             return Err(Rejected);
@@ -814,6 +902,24 @@ impl DocxModel {
             DocxOp::RejectChange {} => self.resolve("review.reject"),
             DocxOp::AcceptAll {} => self.resolve("review.acceptAll"),
             DocxOp::RejectAll {} => self.resolve("review.rejectAll"),
+            DocxOp::Align { value } => self.stage1_align(*value),
+            DocxOp::FontSize { size } => self.stage1_font_size(*size),
+            DocxOp::FontColor { color } => self.stage1_font_color(color),
+            DocxOp::Highlight { color } => self.stage1_highlight(color),
+            DocxOp::Script { value } => self.stage1_script(*value),
+            DocxOp::Paragraph { format } => self.stage1_paragraph(format),
+            DocxOp::List { style, off } => self.stage1_list(*style, *off),
+            DocxOp::ListIndent { outdent } => self.stage1_list_indent(*outdent),
+            DocxOp::RestartNumbering {} => self.stage1_restart_numbering(),
+            DocxOp::ContinueNumbering {} => self.stage1_continue_numbering(),
+            DocxOp::PageSetup { setup } => self.stage1_page_setup(setup),
+            DocxOp::Find { query, backward } => self.stage1_find(query, *backward),
+            DocxOp::Replace { query, with } => self.stage1_replace(query, with),
+            DocxOp::ReplaceAll { query, with } => self.stage1_replace_all(query, with),
+            DocxOp::ClearSearch {} => {
+                self.stage1_clear_search();
+                Ok(false)
+            }
         }
     }
 
@@ -1192,6 +1298,8 @@ impl DocxModel {
             undo: self.session.can_undo() && !self.session.step_lifts_protection(false),
             redo: self.session.can_redo() && !self.session.step_lifts_protection(true),
         };
+        // Search counting runs WordCraft's (pure) search: before reading the selection-dependent state.
+        let search = self.search_view();
         let state = wordcraft_engine::cmd::format::state(&self.session);
         let flag = |key: &str| state.get(key).and_then(Value::as_bool).unwrap_or(false);
         let text = |key: &str| state.get(key).and_then(Value::as_str).map(str::to_owned);
@@ -1262,6 +1370,10 @@ impl DocxModel {
             format,
             format_access: FormatAccess::of(&self.session),
             font_generation: self.font_generation,
+            chars: DocxModel::char_view(&state),
+            paragraph: self.paragraph_view(),
+            page: self.page_view(),
+            search,
         }
     }
 

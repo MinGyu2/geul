@@ -1806,33 +1806,115 @@ fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
     if extra.is_empty() {
         return Some(true);
     }
-    if extra.len() != 2 {
+    // Stage 1: any bounded number of new definitions/instances, each exactly a pinned-serializer unit:
+    // an abstract list is one of the engine's built-in list kinds (`levels_for`), and an instance points at an
+    // existing or new abstract list, either plainly or as a restart (start overrides equal to that abstract's level
+    // starts). Every new abstract list is used by an instance. Nothing else in the part may change.
+    if extra.len() > 64 {
         return None;
     }
-    let a = extra.iter().find(|u| u.0 == "abstractNum")?.1;
-    let n = extra.iter().find(|u| u.0 == "num")?.1;
-    if n == 0 {
-        return None;
-    }
-    let mut template = wordcraft_engine::blank_document(&Default::default());
     use wordcraft_engine::doc::numbering::{levels_for, AbstractNum, ListKind, Num};
-    template.numbering.abstracts = vec![AbstractNum {
-        id: a,
-        levels: levels_for(ListKind::Bullet),
-        ..Default::default()
-    }];
-    template.numbering.nums = vec![Num {
-        id: n,
-        abstract_id: a,
-        ..Default::default()
-    }];
-    let bytes = wordcraft_engine::io::save_bytes("x.docx", &template).ok()?;
-    let pkg = open(&bytes, Side::Output).ok()?;
-    let (expected_root, expected) = units(pkg.get(NUMBERING)?)?;
-    if original.get(NUMBERING).is_none() && root != expected_root {
-        return None;
+    let render = |abstracts: Vec<AbstractNum>, nums: Vec<Num>| -> Option<Vec<Unit>> {
+        let mut template = wordcraft_engine::blank_document(&Default::default());
+        template.numbering.abstracts = abstracts;
+        template.numbering.nums = nums;
+        let bytes = wordcraft_engine::io::save_bytes("x.docx", &template).ok()?;
+        let pkg = open(&bytes, Side::Output).ok()?;
+        Some(units(pkg.get(NUMBERING)?)?.1)
+    };
+    let mut kinds = vec![
+        ListKind::Bullet,
+        ListKind::Numbered,
+        ListKind::NumberedParen,
+        ListKind::Outline,
+        ListKind::UpperLetter,
+        ListKind::LowerLetter,
+        ListKind::LowerLetterDot,
+        ListKind::LowerRoman,
+        ListKind::Legal,
+    ];
+    kinds.extend(['○', '▪', '–', '✓', '•'].map(ListKind::BulletChar));
+    let mut used = std::collections::BTreeSet::new();
+    for unit in &extra {
+        match unit.0.as_str() {
+            "abstractNum" => {
+                let candidates: Vec<AbstractNum> = kinds
+                    .iter()
+                    .map(|kind| AbstractNum { id: unit.1, levels: levels_for(*kind), ..Default::default() })
+                    .collect();
+                // One rendering per kind (each in its own template: same id).
+                if !candidates
+                    .into_iter()
+                    .any(|candidate| render(vec![candidate], Vec::new()).is_some_and(|u| u.contains(unit)))
+                {
+                    return None;
+                }
+            }
+            "num" => {
+                if unit.1 == 0 {
+                    return None;
+                }
+                let (abstract_id, start_overrides) = num_unit_fields(&unit.2)?;
+                if !after.iter().any(|u| u.0 == "abstractNum" && u.1 == abstract_id) {
+                    return None;
+                }
+                let candidate = Num { id: unit.1, abstract_id, start_overrides, ..Default::default() };
+                if !render(Vec::new(), vec![candidate]).is_some_and(|u| u.contains(unit)) {
+                    return None;
+                }
+                used.insert(abstract_id);
+            }
+            _ => return None,
+        }
     }
-    Some(extra.iter().all(|unit| expected.contains(unit)))
+    for unit in after.iter().filter(|u| u.0 == "num") {
+        used.insert(num_unit_fields(&unit.2)?.0);
+    }
+    if original.get(NUMBERING).is_none() {
+        let mut template = wordcraft_engine::blank_document(&Default::default());
+        template.numbering.abstracts = vec![AbstractNum { id: 0, levels: levels_for(ListKind::Bullet), ..Default::default() }];
+        template.numbering.nums = vec![Num { id: 1, abstract_id: 0, ..Default::default() }];
+        let bytes = wordcraft_engine::io::save_bytes("x.docx", &template).ok()?;
+        let pkg = open(&bytes, Side::Output).ok()?;
+        if root != units(pkg.get(NUMBERING)?)?.0 {
+            return None;
+        }
+    }
+    Some(
+        extra
+            .iter()
+            .filter(|u| u.0 == "abstractNum")
+            .all(|u| used.contains(&u.1)),
+    )
+}
+
+/// `w:abstractNumId` and `w:lvlOverride/w:startOverride` values of a canonical `w:num` unit (bounded levels/values).
+/// Other children are left to the exact serializer comparison.
+fn num_unit_fields(events: &[xml::Canonical]) -> Option<(u32, Vec<(u8, u32)>)> {
+    let value = |event: &xml::Canonical| -> Option<u32> {
+        let xml::Canonical::Start { attributes, .. } = event else { return None };
+        let (_, _, v) = attributes.iter().find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "val")?;
+        v.parse().ok().filter(|n: &u32| v.as_str() == n.to_string())
+    };
+    let named = |event: &xml::Canonical, want: &str| {
+        matches!(event, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == WML && name == want)
+    };
+    let mut abstract_id = None;
+    let mut overrides = Vec::new();
+    let mut level: Option<u8> = None;
+    for event in events {
+        if named(event, "abstractNumId") {
+            abstract_id = Some(value(event)?);
+        } else if named(event, "lvlOverride") {
+            let xml::Canonical::Start { attributes, .. } = event else { return None };
+            let (_, _, v) = attributes.iter().find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "ilvl")?;
+            level = Some(v.parse::<u8>().ok().filter(|l| *l <= 8)?);
+        } else if named(event, "startOverride") {
+            let start = value(event).filter(|v| *v <= 32_767)?;
+            overrides.push((level?, start));
+        }
+    }
+    Some((abstract_id?, overrides))
 }
 
 /// RHWP createTable appends this one solid border when none can be reused.
