@@ -224,3 +224,7 @@ HWP/HWPX 네 가지 선택 서식의 production code path, 저장 보존, histor
 - 사용자 글꼴은 WordCraft `install_font`/`load_user_fonts`(앱 `app_local_data_dir()/fonts`). RHWP WebView에는 등록된 사용자 얼굴만 `FontFace` 바이트로 전달한다(경로·CSP 변경 없음).
 - 명령: `format.font`(WordCraft 지원, RHWP unsupported — HWP `derived_char_shape`와 HWPX 헤더 덧붙임 규칙이 글꼴 ID 변경·새 글꼴 이름을 받지 않음). 후속은 읽기 전용 글꼴 표 API와 저장 증명 확장(별도 T009 변경).
 - 검증 전략: 단위(Rust·Vitest) + NixOS native(`scripts/tests/native-font-acceptance.py`) + geul 코드를 쓰지 않는 독립 DOCX/PDF 검사(`scripts/tests/font-acceptance-inspect.mjs`). 세부: [글꼴 시스템](../architecture/font-system.md).
+
+## Stage 1 공통 문서 편집 — 2026-11-16
+
+공통 명령 의미(`src/commands/stage1.ts`)와 엔진별 실행(WordCraft 고정 명령, RHWP 기존 서식·문단·쪽·글자 편집 경로)을 나누고, 새 저장 결과는 T009 증명을 좁게 넓혀 받는다(DOCX 번호 정의, HWP/HWPX 글자·문단 모양 값). 형식별 지원·남은 일(RHWP 목록·다단, 글꼴 embedding)은 [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md)을 따른다. 제품 계획 전체 완료를 뜻하지 않는다.

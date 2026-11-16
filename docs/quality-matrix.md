@@ -129,3 +129,18 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | NOT SUPPORTED / NOT RUN | Ligatures, contextual/RTL shaping and kerning (per-cluster painter; documented). External office reopen NOT RUN (no suitable application installed). Native font removal/refresh flow and nested-cell native NOT RUN (engine/binder unit coverage only). Windows/macOS/other Linux DEFERRED. |
 | DEFERRED | Windows/macOS, other Linux distributions, external Hancom/Word compatibility, Release private-path cleanup/package work. |
 | NOT RUN | Full Rust/Vitest/WordCraft/RHWP suites, old native corpus, D4 benchmark. No old acceptance corpus was rerun. |
+
+## 8. Stage 1 공통 문서 편집 (2026-11-16)
+
+| 기능군 | DOCX | HWPX | HWP | 분류 | 근거 | 미검증 |
+|---|---|---|---|---|---|---|
+| 문단 정렬 | IV | IV(본문) | IV(본문) | CURRENT PASS | [Stage 1](architecture/stage1-common-editing.md) 3절 | native GUI NOT RUN |
+| 글자 크기·색·형광펜·첨자 | IV | IV(선택) | IV(선택) | CURRENT PASS | 같음 | 외부 호환 EXT |
+| 문단 간격·여백·들여쓰기 | IV | IV(본문) | IV(본문) | CURRENT PASS | 같음 | 셀 문단 RHWP IM |
+| 번호·다단계 목록 | IV | IM | IM | CURRENT PASS(DOCX) | 같음 | RHWP 저장 증명 없음 |
+| 찾기·바꾸기 | IV | IV | IV | CURRENT PASS | 같음 | 중첩 셀·글상자 RHWP 제외 |
+| 쪽 설정(여백·방향·용지) | IV | IV | IV | CURRENT PASS | 같음 | — |
+| 다단 | IV | IM | IM | CURRENT PASS(DOCX) | 같음 | — |
+| 글꼴 embedding | IM | IM | IM | NOT RUN | 같음 4절 | 생성 경로·저장 규칙 없음 |
+
+이 절은 이전 행과 판정을 바꾸지 않는다(행 4 "글자·문단 서식"의 역사 판정은 그대로).

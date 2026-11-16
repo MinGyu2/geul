@@ -336,3 +336,7 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 - 사용자 글꼴: TTF/OTF/WOFF/WOFF2 직접 등록(검증·자원 상한), 앱 전용 폴더 한 곳에 영속, 두 엔진이 같은 등록을 쓴다. 저장 실패는 정확히 알린다.
 - 글꼴 선택은 실제 문서 서식이어야 하며, 없는 글꼴도 문서의 요청 이름은 바꾸지 않는다. 안전 증명이 허용하지 않는 HWP FACE_NAME variant 및 HWPX unknown XML 구조는 fail-closed 거부한다. 지원되는 plain definitions만 언어별로 추가하고 T009 증명으로 저장한다. 세부 계약과 잔여 메트릭 제한은 [글꼴 시스템](../architecture/font-system.md)을 따른다.
 - 현재 상태와 수용 근거: [글꼴 시스템](../architecture/font-system.md). Windows/macOS 실행 수용은 DEFERRED.
+
+## Stage 1 공통 문서 편집 — 2026-11-16
+
+정렬·글자 크기/색/형광펜/첨자·문단 간격과 여백·찾기/바꾸기·쪽 설정은 각 형식의 원래 서식 의미(WordprocessingML 속성, HWP/HWPX 글자·문단 모양과 용지 정의)로 저장하며 화면 전용 상태를 두지 않는다. 섞인 선택은 균일 상태를 지어내지 않고, 낡은 찾기 결과는 문서를 바꾸지 않는다. 형식별 지원 경계와 미구현(RHWP 목록·다단, 글꼴 embedding)은 [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md)을 따른다.

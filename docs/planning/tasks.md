@@ -328,3 +328,7 @@ IBus 보고서는 실제 앱 바이너리, 제품 소스 내용, 입력 하네�
 ### 2026-11-15 Stage 2 셀 inline 그림 P1/P2 안정화 — COMPLETED
 
 P1 삭제 거절을 트랜잭션 전 admission으로 옮기고 P2-A 서식/복사 좌표와 P2-B 본문 그림의 history 조건을 교정했다. 그림 소유권·Undo/Redo 및 T009 보존 계약을 유지했다. 집중 근거와 제한은 [상세 안정화 기록](../architecture/stage567-acceptance-2026-11-05.md#stage2-cell-inline-stabilization-20261115)에 기록했다. 셀 inline 그림 작업은 이 범위에서 완료이며 Stage 2 다중/부분 수식과 Stage 3–5 상태는 미완료/기존 상태 그대로다.
+
+## Stage 1 공통 문서 편집 — 2026-11-16 (PARTIALLY COMPLETED)
+
+DOCX는 정렬·글자 값·문단 서식·목록·찾기/바꾸기·쪽 설정(다단 포함)을, HWP/HWPX는 정렬·글자 값·문단 서식(본문)·찾기/바꾸기·여백/방향/용지를 제품 빌드에서 활성화하고 실제 저장/재열기로 검증했다. RHWP 목록·다단·셀 문단 서식과 세 형식의 글꼴 embedding은 미구현이며 native GUI·외부 호환은 NOT RUN이다. 상세: [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md). 기존 task 항목의 체크·ID·상태는 바꾸지 않았다.

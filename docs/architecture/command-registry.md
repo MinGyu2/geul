@@ -981,3 +981,11 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 ## PDF 내보내기 — 2026-11-15 (Stage 5-A)
 
 `file.exportPdf`는 `planned`에서 파일 명령(`kind: "file"`, 단축키 없음)으로 바뀌었다. 가용성: native 파일 대화상자 지원, 다른 파일 작업 없음, 문서 불러옴, 저장 중·조합 중·확정 대기 아님(`saving`·`composing`·`pendingEdits`). 실행은 `DocumentWorkspace.exportPdf` → `pdf_export_dialog`(GTK; 기존 파일 덮어쓰기를 확인하면 그 세션·내보내기에만 쓰는 일회용 허가 토큰) → 엔진별 `exportPdf`(토큰 전달)(DOCX `docx_export_pdf`, HWP/HWPX 쪽 그림 `document_export_pdf`)이며 문서 상태를 바꾸지 않는다. 계약·수용은 [품질 행렬](../quality-matrix.md#3-pdf-출력-수용-s5-4). `file.print`는 계속 `planned`다.
+
+## Stage 1 공통 편집 명령 — 2026-11-16
+
+정렬(`paragraph.align*`), 글자 크기·색·형광펜·위/아래 첨자, 문단 서식(`paragraph.settings`), 목록(`paragraph.numbering|multilevel|listStyle|increaseIndent|decreaseIndent|restartNumbering|continueNumbering`),
+쪽 설정(`layout.margins|orientation|size|columns`), 찾기/바꾸기(`edit.find` Mod+F, `edit.replace` Mod+H)를 기존 레지스트리·capability에 연결했다(새 명령 기반구조 없음).
+엔진별 선언: WordCraft 전부 supported. RHWP는 글자 값·정렬/문단 서식·여백/방향/용지·찾기/바꾸기 supported(`RHWP_STAGE1_*`), 목록 명령과 `layout.columns`는 unsupported.
+가용성은 세션 문맥(선택·IME·대기·원본 증명)으로 정하며 찾기는 읽기 전용 문서에서도, 바꾸기는 편집 가능하고 서식 보호가 아닐 때만 가능하다.
+상세 범위·저장 증명·검증·남은 일: [Stage 1 공통 문서 편집](stage1-common-editing.md).
