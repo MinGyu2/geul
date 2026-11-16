@@ -48,7 +48,7 @@ import { capturePreviewRaster } from "./previewRaster";
 import { FormulaCacheRefusal } from "./formulaDependencies";
 import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { capturePdfPages, type EncodePng } from "./pdfCapture";
-import { naturalFonts, type NaturalBinding, type NaturalFontService } from "../../../fonts/naturalFonts";
+import { naturalFonts, type NaturalBinding, type NaturalFontService, type NaturalLease } from "../../../fonts/naturalFonts";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
@@ -790,6 +790,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** A binding was requested while an IME transaction was unsettled; owned by this session's current document and
    *  cleared when the deferred binding starts, on reload and on disposal. */
   private naturalDeferred = false;
+  /** Ownership of the WebView faces the current document's committed engine snapshot paints with (NaturalLease). Exactly
+   *  one per document; replaced on adoption of a newer snapshot, released on clear, reload and disposal. */
+  private naturalLease: NaturalLease | null = null;
+
+  private releaseNaturalLease(): void {
+    const lease = this.naturalLease;
+    this.naturalLease = null;
+    (this.options.natural === undefined ? naturalFonts : this.options.natural)?.release(lease);
+  }
 
   /**
    * Bind this document's families to exact installed font sources (naturalFonts.ts). Layout-only: the engine keeps the
@@ -814,7 +823,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const current = () => this.doc === doc && this.owns(epoch) && !this.disposed && request === this.naturalRequest;
     void binder.bind(doc, () => current() && !this.imeUnsettled).then((binding) => {
-      if (!current()) return;
+      const committed = binding.status === "bound" || binding.status === "unbound";
+      const sameDocument = this.doc === doc && this.owns(epoch) && !this.disposed;
+      if (committed && !sameDocument) {
+        binder.release(binding.lease); // the document it was committed to is gone: never attach it to a newer one
+        return;
+      }
+      if (committed) {
+        // The engine now holds this snapshot (even if a newer request is already pending): adopt its lease, then give
+        // up the previous snapshot's faces.
+        const previous = this.naturalLease;
+        this.naturalLease = binding.lease ?? null;
+        binder.release(previous);
+      }
+      if (!current() && !committed) return;
       if (binding.status === "stale") {
         // Still the newest request for this document: an IME transaction began after it started. Wait for settlement
         // (emit resumes it; if it already settled, resume now). Each retry needs a new IME transaction: bounded.
@@ -823,7 +845,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         return;
       }
       this.naturalFontStatus = binding;
-      if (binding.status !== "bound" && binding.status !== "unbound") return;
+      if (!committed) return;
       // The engine re-laid out every page: refresh page sizes, caret geometry and painted pages (model unchanged).
       try { this.pages = readPages(doc); } catch {
         this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
@@ -2813,6 +2835,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const doc = this.doc, history = this.history, text = this.text;
     // 먼저 소유 참조를 끊는다. 해제 예외 뒤에도 이전 문서를 편집하거나 재해제하지 않는다.
     this.doc = null;
+    this.releaseNaturalLease(); // the engine snapshot dies with the document
     this.history = null;
     this.historyOff = null;
     this.text = null;

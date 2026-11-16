@@ -22,6 +22,10 @@ export const MAX_REQUESTS = 128;
 /** Parse bound on the engine response's request list (above the engine's own 512-key bound). */
 const MAX_REPORTED_REQUESTS = 1024;
 const MAX_FALLBACK_CANDIDATES = 6;
+/** Most WebView FontFace objects the binder keeps (all leases plus the warm current-generation cache). */
+export const MAX_RETAINED_FACES = 256;
+/** Most font bytes held by those FontFace objects. */
+export const MAX_RETAINED_FACE_BYTES = 512 << 20;
 
 /** The engine surface this binder needs (a subset of RhwpDocument). */
 export interface NaturalFontDocument {
@@ -38,6 +42,8 @@ export interface NaturalBinding {
   status: "bound" | "unbound" | "unsupported" | "stale" | "failed";
   /** Engine snapshot generation after commit. */
   generation: number | null;
+  /** Ownership of the committed snapshot's WebView faces (status "bound" only). The receiver must release it. */
+  lease?: NaturalLease | null;
   /** key → installed family/styles actually bound. */
   bound: { key: string; family: string; styles: string[]; alias: string }[];
   /** Considered keys left on the legacy model (no exact installed face, or the face staging limit was reached). */
@@ -54,7 +60,14 @@ export interface NaturalBinding {
   complete: boolean;
 }
 
-interface Source { family: string; style: string; bold: boolean; alias: string; index: number; bytes: Uint8Array }
+interface Source { generation: number; family: string; style: string; bold: boolean; alias: string; index: number; bytes: Uint8Array }
+
+/**
+ * Ownership of the WebView faces a committed engine snapshot paints with. The session holding a document keeps exactly
+ * one lease for its committed snapshot and releases it when a newer snapshot is adopted, the snapshot is cleared, or
+ * the document is reloaded/disposed. Faces are released only when no lease references them (`release`).
+ */
+export interface NaturalLease { readonly id: number; readonly faces: readonly string[]; released: boolean }
 interface Request { key: string; members: string[]; regular: boolean; bold: boolean }
 
 type CreateFace = (family: string, bytes: Uint8Array, descriptors: FontFaceDescriptors) => FontFace;
@@ -103,7 +116,9 @@ export class NaturalFontService {
   private generation = -1;
   private previousGeneration = -1;
   private readonly sources = new Map<string, Promise<Source | null>>();
-  private readonly faces = new Map<string, { generation: number; face: FontFace }>();
+  private readonly faces = new Map<string, { generation: number; face: FontFace; bytes: number; refs: number }>();
+  private retainedFaceBytes = 0;
+  private leaseCounter = 0;
   private readonly aliases = new Map<string, string>();
   private cachedBytes = 0;
   private counter = 0;
@@ -114,8 +129,9 @@ export class NaturalFontService {
     private readonly create: CreateFace = (family, bytes, descriptors) => new FontFace(family, bytes as unknown as BufferSource, descriptors),
   ) {}
 
-  /** Adopt the current catalog. A new catalog generation (refresh/register/remove) re-resolves every family; faces of
-   *  the generation before the previous one are released (the previous one may still be painted until rebound). */
+  /** Adopt the current catalog. A new catalog generation (refresh/register/remove) re-resolves every family. Faces of
+   *  older generations are released once no document lease references them (a document whose rebinding is deferred
+   *  keeps painting its committed snapshot); cached source bytes of older generations are dropped. */
   configure(backend: FontBackend | null, catalog: FontCatalog | null): void {
     this.backend = backend;
     this.catalog = catalog;
@@ -123,10 +139,8 @@ export class NaturalFontService {
     if (next === this.generation) return;
     this.previousGeneration = this.generation;
     this.generation = next;
+    this.collect();
     const keep = new Set([this.generation, this.previousGeneration]);
-    for (const [key, entry] of this.faces) {
-      if (!keep.has(entry.generation)) { this.fonts?.delete(entry.face); this.faces.delete(key); }
-    }
     for (const key of [...this.sources.keys()]) {
       if (!keep.has(Number(key.split("\n")[0]))) {
         void this.sources.get(key)!.then((s) => { if (s) this.cachedBytes -= s.bytes.length; });
@@ -134,6 +148,33 @@ export class NaturalFontService {
       }
     }
     for (const key of [...this.aliases.keys()]) if (!keep.has(Number(key.split("\n")[0]))) this.aliases.delete(key);
+  }
+
+  /** Release faces nobody leases: older generations always, the current generation too when `all` (bound pressure). */
+  private collect(all = false): void {
+    for (const [key, entry] of this.faces) {
+      if (entry.refs === 0 && (all || entry.generation !== this.generation)) {
+        this.fonts?.delete(entry.face);
+        this.faces.delete(key);
+        this.retainedFaceBytes -= entry.bytes;
+      }
+    }
+  }
+
+  /** Give up one lease (idempotent). Faces no other lease references become collectable. */
+  release(lease: NaturalLease | null | undefined): void {
+    if (!lease || lease.released) return;
+    lease.released = true;
+    for (const key of lease.faces) {
+      const entry = this.faces.get(key);
+      if (entry && entry.refs > 0) entry.refs -= 1;
+    }
+    this.collect();
+  }
+
+  /** Diagnostics/tests: retained faces and their lease counts. */
+  retained(): { key: string; generation: number; refs: number }[] {
+    return [...this.faces].map(([key, e]) => ({ key, generation: e.generation, refs: e.refs }));
   }
 
   ready(): boolean { return this.backend !== null && this.catalog !== null; }
@@ -158,6 +199,7 @@ export class NaturalFontService {
     let pending = this.sources.get(key);
     if (!pending) {
       const backend = this.backend;
+      const generation = this.generation;
       const alias = this.alias(family.family);
       pending = (async () => {
         if (!backend) return null;
@@ -166,23 +208,31 @@ export class NaturalFontService {
         // from the ones measured, so it stays on the legacy model.
         if (!r.ok || r.value.index !== 0 || this.cachedBytes + r.value.bytes.length > MAX_NATURAL_CACHE_BYTES) return null;
         this.cachedBytes += r.value.bytes.length;
-        return { family: family.family, style: style.name, bold, alias, index: r.value.index, bytes: r.value.bytes };
+        return { generation, family: family.family, style: style.name, bold, alias, index: r.value.index, bytes: r.value.bytes };
       })().catch(() => null);
       this.sources.set(key, pending);
     }
     return pending;
   }
 
-  /** Load the same bytes into the WebView under the alias. False if the WebView refuses the face. */
+  private faceKey(source: Source): string { return `${source.generation}\n${source.alias}\n${source.bold}`; }
+
+  /** Load the same bytes into the WebView under the alias. False if the WebView refuses the face or the retained-face
+   *  bounds are reached even after releasing unleased faces (fail closed: the key stays on legacy metrics). */
   private async webFace(source: Source): Promise<boolean> {
-    const key = `${this.generation}\n${source.alias}\n${source.bold}`;
+    const key = this.faceKey(source);
     if (this.faces.has(key)) return true;
     if (!this.fonts) return false;
+    const over = () => this.faces.size >= MAX_RETAINED_FACES || this.retainedFaceBytes + source.bytes.length > MAX_RETAINED_FACE_BYTES;
+    if (over()) this.collect(true);
+    if (over()) return false;
     try {
       const face = this.create(source.alias, source.bytes, { weight: source.bold ? "700" : "400", style: "normal" });
       await face.load();
+      if (this.faces.has(key)) return true; // a concurrent load of the same source won
       this.fonts.add(face);
-      this.faces.set(key, { generation: this.generation, face });
+      this.faces.set(key, { generation: source.generation, face, bytes: source.bytes.length, refs: 0 });
+      this.retainedFaceBytes += source.bytes.length;
       return true;
     } catch { return false; }
   }
@@ -237,9 +287,17 @@ export class NaturalFontService {
     }
     doc.beginNaturalFontSet();
     let staged = 0;
+    // Faces are leased as soon as they are staged, so no catalog change can release them before the commit.
+    const lease: NaturalLease = { id: ++this.leaseCounter, faces: [], released: false };
+    const leased = lease.faces as string[];
     const stage = (keys: string[], s: Source) => {
       if (staged >= MAX_NATURAL_FACES) { result.faceLimited = true; return false; }
-      try { doc.stageNaturalFontFace!(keys.join("\n"), s.alias, s.bold, false, s.bytes, s.index); staged += 1; return true; } catch { return false; }
+      const entry = this.faces.get(this.faceKey(s));
+      if (!entry) return false; // never stage bytes whose WebView face is not retained
+      try { doc.stageNaturalFontFace!(keys.join("\n"), s.alias, s.bold, false, s.bytes, s.index); } catch { return false; }
+      staged += 1;
+      if (!leased.includes(this.faceKey(s))) { leased.push(this.faceKey(s)); entry.refs += 1; }
+      return true;
     };
     for (const { family, sources, keys, boldKeys } of groups.values()) {
       for (let i = 0; i < keys.length; i += 64) {
@@ -261,16 +319,20 @@ export class NaturalFontService {
         if (s && (await this.webFace(s)) && stage([""], s)) { result.fallbacks.push({ family: s.family, alias: s.alias }); break; }
       }
     }
-    if (!current()) return { ...result, status: "stale" };
+    // Only a committed snapshot keeps its lease; every other outcome gives it back (the previous snapshot and its own
+    // lease are untouched by a refused or stale binding).
+    if (!current()) { this.release(lease); return { ...result, status: "stale" }; }
     try {
       if (staged === 0) {
+        this.release(lease);
         doc.clearNaturalFonts?.();
-        return { ...result, status: "unbound" };
+        return { ...result, status: "unbound", lease: null };
       }
       const committed = JSON.parse(doc.commitNaturalFontSet(staged)) as { generation?: unknown };
       const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated;
-      return { ...result, status: "bound", complete, generation: typeof committed.generation === "number" ? committed.generation : null };
+      return { ...result, status: "bound", complete, lease, generation: typeof committed.generation === "number" ? committed.generation : null };
     } catch {
+      this.release(lease);
       return { ...result, status: "failed" };
     }
   }

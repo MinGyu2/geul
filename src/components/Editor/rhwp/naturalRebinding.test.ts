@@ -9,6 +9,7 @@ function fakeBinder() {
   const state = { catalog: 1, partial: false, starts: [] as number[], commits: [] as { catalog: number; doc: unknown }[] };
   const binder = {
     ready: () => true,
+    release: () => {},
     bind: async (doc: NaturalFontDocument, current: () => boolean): Promise<NaturalBinding> => {
       const catalog = state.catalog;
       state.starts.push(catalog);

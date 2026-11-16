@@ -120,17 +120,21 @@ describe("natural font binder", () => {
     expect(t.staged.filter(([k]) => k === "Latin Serif")).toEqual([]);
   });
 
-  it("a new catalog generation re-resolves; faces two generations old are released", async () => {
+  it("a new catalog generation re-resolves; old faces are released when their lease is, not by a generation window", async () => {
     const t = setup([{ key: "Latin Serif", members: ["Latin Serif"] }]);
     t.service.configure(t.backend, catalog(1, FAMILIES));
-    await t.service.bind(t.doc, () => true);
-    const first = new Set(t.set);
+    const first = await t.service.bind(t.doc, () => true);
+    const gen1 = new Set(t.set);
     t.service.configure(t.backend, catalog(2, FAMILIES));
-    await t.service.bind(t.doc, () => true);
-    expect([...first].every((f) => t.set.has(f))).toBe(true); // previous generation may still be painted
+    const second = await t.service.bind(t.doc, () => true);
     t.service.configure(t.backend, catalog(3, FAMILIES));
-    expect([...first].some((f) => t.set.has(f))).toBe(false);
+    expect([...gen1].every((f) => t.set.has(f))).toBe(true); // still leased: survives two newer generations
+    t.service.release(first.lease);
+    expect([...gen1].some((f) => t.set.has(f))).toBe(false); // released with its last lease
     expect(t.fetched.filter((f) => f === "Latin Serif/Regular")).toHaveLength(2);
+    t.service.release(second.lease);
+    t.service.release(second.lease); // idempotent
+    expect(t.service.retained().every((r) => r.refs === 0)).toBe(true);
   });
 });
 
