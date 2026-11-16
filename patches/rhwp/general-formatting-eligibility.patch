@@ -518,3 +518,1614 @@
      }
 
      /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
+diff --git a/src/diagnostics/ir_field_sweep.rs b/src/diagnostics/ir_field_sweep.rs
+index bee3647..671bf2f 100644
+--- a/src/diagnostics/ir_field_sweep.rs
++++ b/src/diagnostics/ir_field_sweep.rs
+@@ -657,6 +657,8 @@ fn sweep_paragraph(base: &str, a: &Paragraph, b: &Paragraph, out: &mut Divergenc
+         numbering_restart,
+         // 저장 LineSeg의 편집 후 provenance — 내용 비교는 line_segs가 담당한다.
+         stored_text_partition_dirty: _,
++        // geul natural-metric reflow provenance (session-only, not serialized).
++        natural_metric_generation: _,
+         // [#4677] 조판 전용 보강 줄 표식 — 파일에 실리지 않으므로 IR 비교 대상 아님.
+         layout_only_fill_lines: _,
+         cell_format_vpos_dirty: _,
+diff --git a/src/document_core/commands/document.rs b/src/document_core/commands/document.rs
+index f2f8b78..c95b4f1 100644
+--- a/src/document_core/commands/document.rs
++++ b/src/document_core/commands/document.rs
+@@ -283,6 +283,7 @@ impl DocumentCore {
+             styles,
+             canvas_metrics: None,
+             font_environment: None,
++            natural_fonts: Default::default(),
+             composed: Vec::new(),
+             render_normalization: super::super::RenderNormalizationState::default(),
+             dpi: DEFAULT_DPI,
+@@ -344,6 +345,8 @@ impl DocumentCore {
+         // 로드 경로의 모델 보정 차이로 죽는다(honbo-save imgDim 실측). 이 지점
+         // 이후 본문 변경은 편집 명령(raw_stream 무효화 동반) 또는 공개 모델 직접
+         // 변경(봉인이 잡아야 할 대상)뿐이다.
++        // geul: rows produced by load normalization are document-derived, not edit output.
++        super::super::natural_fonts::clear_natural_reflow_marks(&mut doc.document);
+         doc.document.seal_body_raw_provenance();
+         Ok(doc)
+     }
+@@ -2514,10 +2517,12 @@ impl DocumentCore {
+     /// 측정값**을 재사용했다.
+     pub fn set_document(&mut self, doc: Document) {
+         self.document = doc;
++        super::super::natural_fonts::clear_natural_reflow_marks(&mut self.document);
+         self.canvas_metrics = None;
+         self.render_normalization.text_reflowed_tables.clear();
+         self.bump_bin_data_epoch();
+         self.rebuild_derived_state();
++        super::super::natural_fonts::clear_natural_reflow_marks(&mut self.document);
+     }
+ 
+     /// Host font selection이 확정한 exact face를 글자모양·언어 slot에 등록한다.
+diff --git a/src/document_core/mod.rs b/src/document_core/mod.rs
+index 4d57daf..fa9e249 100644
+--- a/src/document_core/mod.rs
++++ b/src/document_core/mod.rs
+@@ -10,6 +10,7 @@ pub mod builders;
+ mod canvas_metric_requests;
+ mod canvas_metrics;
+ mod font_environment;
++mod natural_fonts;
+ pub use canvas_metric_requests::{CanvasMetricBatch, CanvasMetricReply, CanvasMetricRequest};
+ mod commands;
+ pub use commands::paragraph_block::{
+@@ -185,6 +186,8 @@ pub struct DocumentCore {
+     pub(crate) styles: ResolvedStyleSet,
+     pub(crate) canvas_metrics: Option<canvas_metrics::CanvasMetricSession>,
+     pub(crate) font_environment: Option<crate::renderer::font_environment::FontEnvironment>,
++    /// geul: host-bound natural font metrics (derived, session-only; survives rebuilds).
++    pub(crate) natural_fonts: crate::renderer::natural_metrics::NaturalFontOwner,
+     /// 구역별 구성된 문단 목록
+     pub(crate) composed: Vec<Vec<ComposedParagraph>>,
+     /// [#2308] source IR로부터 재생성되는 revision 기반 render normalization state.
+@@ -469,11 +472,15 @@ impl DocumentCore {
+     /// normalization. Layout provenance remains in `Document::layout_profile`
+     /// and is passed separately to cache-admission consumers.
+     pub(crate) fn resolve_render_styles(&self) -> ResolvedStyleSet {
+-        crate::renderer::style_resolver::resolve_styles_with_environment(
++        let mut styles = crate::renderer::style_resolver::resolve_styles_with_environment(
+             &self.document,
+             self.dpi,
+             self.font_environment.as_ref(),
+-        )
++        );
++        // Every resolve (full rebuild, incremental reflow, cursor queries) carries the same
++        // committed natural-font snapshot, so no path measures with a different model.
++        styles.natural_fonts = self.natural_fonts.active();
++        styles
+     }
+ 
+     pub(crate) fn rebuild_resolved_styles(&mut self) {
+@@ -518,6 +525,7 @@ impl DocumentCore {
+             styles: ResolvedStyleSet::default(),
+             canvas_metrics: None,
+             font_environment: None,
++            natural_fonts: Default::default(),
+             composed: Vec::new(),
+             render_normalization: RenderNormalizationState::default(),
+             dpi: DEFAULT_DPI,
+diff --git a/src/document_core/natural_fonts.rs b/src/document_core/natural_fonts.rs
+new file mode 100644
+index 0000000..d213c81
+--- /dev/null
++++ b/src/document_core/natural_fonts.rs
+@@ -0,0 +1,484 @@
++//! geul: commands owning the host-bound natural font metric snapshot.
++//!
++//! The snapshot is derived layout input, never document data: staging, committing or clearing it
++//! does not touch the model, history or serialization. A commit rebuilds derived layout with the
++//! same rule as `restoreSessionLayout`, so every page, caret and selection query afterwards reads
++//! the committed generation.
++use super::DocumentCore;
++use crate::error::HwpError;
++use crate::renderer::natural_metrics::{NaturalFace, NaturalFontError};
++
++/// Most distinct family keys reported to the host.
++const MAX_NATURAL_REQUESTS: usize = 512;
++
++fn visit_paragraph_marks(paragraph: &mut crate::model::paragraph::Paragraph, depth: usize) {
++    paragraph.natural_metric_generation = None;
++    if depth >= 32 {
++        return;
++    }
++    for control in &mut paragraph.controls {
++        if let crate::model::control::Control::Table(table) = control {
++            for cell in &mut table.cells {
++                for child in &mut cell.paragraphs {
++                    visit_paragraph_marks(child, depth + 1);
++                }
++            }
++        }
++    }
++}
++
++/// Forget edit-reflow provenance (load normalization and replaced documents are document data).
++pub(crate) fn clear_natural_reflow_marks(document: &mut crate::model::document::Document) {
++    for section in &mut document.sections {
++        for paragraph in &mut section.paragraphs {
++            visit_paragraph_marks(paragraph, 0);
++        }
++    }
++}
++
++fn natural_error(context: &str, error: NaturalFontError) -> HwpError {
++    HwpError::RenderError(format!("natural font {context} failed: {}", error.as_str()))
++}
++
++impl DocumentCore {
++    /// The exact family keys layout looks natural metrics up by (the resolved `TextStyle` family
++    /// strings of every character style and language slot), with their CSS chain members and
++    /// whether a bold/regular style uses them. Bounded; deterministic order.
++    pub fn natural_font_requests_native(&self) -> String {
++        let mut keys: std::collections::BTreeMap<String, (bool, bool)> = Default::default();
++        let mut truncated = false;
++        for style in &self.styles.char_styles {
++            for lang in 0..7 {
++                let key = style.font_family_for_lang(lang);
++                if key.is_empty() {
++                    continue;
++                }
++                if !keys.contains_key(key) && keys.len() >= MAX_NATURAL_REQUESTS {
++                    truncated = true;
++                    continue;
++                }
++                let entry = keys.entry(key.to_string()).or_default();
++                if style.bold {
++                    entry.1 = true;
++                } else {
++                    entry.0 = true;
++                }
++            }
++        }
++        let requests = keys
++            .into_iter()
++            .map(|(key, (regular, bold))| {
++                let members = key
++                    .split(',')
++                    .map(str::trim)
++                    .filter(|member| !member.is_empty())
++                    .map(str::to_string)
++                    .collect::<Vec<_>>();
++                serde_json::json!({ "key": key, "members": members, "regular": regular, "bold": bold })
++            })
++            .collect::<Vec<_>>();
++        serde_json::json!({
++            "generation": self.natural_fonts.generation(),
++            "truncated": truncated,
++            "requests": requests,
++        })
++        .to_string()
++    }
++
++    /// Re-wrap body and top-level table-cell paragraphs whose rows an edit reflow produced under a
++    /// different natural-font generation than the current styles carry. Rows with no mark (file
++    /// provided or load-normalized) are document data and are never touched, so an unedited document
++    /// keeps its stored line layout byte for byte. Nested-table and text-box paragraphs keep their
++    /// rows until their next edit (documented limitation).
++    pub(crate) fn reflow_stale_natural_paragraphs(&mut self) -> usize {
++        use crate::model::control::Control;
++        let current = self
++            .styles
++            .natural_fonts
++            .as_ref()
++            .map_or(0, |snapshot| snapshot.generation);
++        let stale = |mark: Option<u64>| mark.is_some_and(|generation| generation != current);
++        let mut body = Vec::new();
++        let mut cells = Vec::new();
++        for (s, section) in self.document.sections.iter().enumerate() {
++            for (p, paragraph) in section.paragraphs.iter().enumerate() {
++                if stale(paragraph.natural_metric_generation) {
++                    body.push((s, p));
++                }
++                for (c, control) in paragraph.controls.iter().enumerate() {
++                    if let Control::Table(table) = control {
++                        for (ci, cell) in table.cells.iter().enumerate() {
++                            for (cp, child) in cell.paragraphs.iter().enumerate() {
++                                if stale(child.natural_metric_generation) {
++                                    cells.push((s, p, c, ci, cp));
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        for &(s, p) in &body {
++            self.reflow_paragraph(s, p);
++        }
++        for &(s, p, c, ci, cp) in &cells {
++            self.reflow_cell_paragraph(s, p, c, ci, cp);
++        }
++        body.len() + cells.len()
++    }
++
++    pub fn begin_natural_font_set_native(&mut self) {
++        self.natural_fonts.begin();
++    }
++
++    /// Parse and stage one face. `family = None` stages a coverage fallback face.
++    #[allow(clippy::too_many_arguments)]
++    pub fn stage_natural_font_face_native(
++        &mut self,
++        family: Option<&str>,
++        alias: &str,
++        bold: bool,
++        italic: bool,
++        bytes: &[u8],
++        face_index: u32,
++    ) -> Result<String, HwpError> {
++        let face = NaturalFace::parse(bytes, face_index, bold, italic)
++            .map_err(|e| natural_error("parse", e))?;
++        let summary = serde_json::json!({
++            "unitsPerEm": face.units_per_em,
++            "codePoints": face.code_point_count(),
++            "sourceDigest": face.source_digest,
++        });
++        let staged = self
++            .natural_fonts
++            .stage(family, alias, face)
++            .map_err(|e| natural_error("stage", e))?;
++        Ok(serde_json::json!({ "ok": true, "staged": staged, "face": summary }).to_string())
++    }
++
++    /// Publish the staged set (atomically) and rebuild derived layout from it.
++    pub fn commit_natural_font_set_native(
++        &mut self,
++        expected_faces: usize,
++    ) -> Result<String, HwpError> {
++        let generation = self
++            .natural_fonts
++            .commit(expected_faces)
++            .map_err(|e| natural_error("commit", e))?;
++        self.rebuild_derived_state();
++        Ok(serde_json::json!({ "ok": true, "generation": generation, "pageCount": self.page_count() }).to_string())
++    }
++
++    /// Return to legacy metrics. Rebuilds only when a snapshot was active.
++    pub fn clear_natural_fonts_native(&mut self) -> bool {
++        let had = self.natural_fonts.clear();
++        if had {
++            self.rebuild_derived_state();
++        }
++        had
++    }
++
++    /// Measure with `source`'s committed snapshot (or none). Rebuilds only when it changed.
++    pub fn adopt_natural_fonts_native(&mut self, source: &DocumentCore) -> bool {
++        let changed = self.natural_fonts.adopt(source.natural_fonts.active());
++        if changed {
++            self.rebuild_derived_state();
++        }
++        changed
++    }
++
++    pub fn natural_font_status_native(&self) -> String {
++        match self.natural_fonts.active() {
++            Some(snapshot) => {
++                let mut status = snapshot.status_json();
++                status["active"] = serde_json::Value::Bool(true);
++                status.to_string()
++            }
++            None => serde_json::json!({ "active": false, "generation": self.natural_fonts.generation() }).to_string(),
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const LATIN: &[u8] = include_bytes!("../../tests/fixtures/fonts/RHWPExactKerningSmoke.ttf");
++    const KOREAN: &[u8] = include_bytes!("../../ttfs/opensource/NotoSansKR-Regular.ttf");
++
++    fn doc(text: &str) -> DocumentCore {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.insert_text_native(0, 0, 0, text).unwrap();
++        core
++    }
++
++    fn xs(core: &DocumentCore, offsets: &[usize]) -> Vec<f64> {
++        offsets
++            .iter()
++            .map(|&offset| {
++                let rect: serde_json::Value =
++                    serde_json::from_str(&core.get_cursor_rect_native(0, 0, offset).unwrap())
++                        .unwrap();
++                rect["x"].as_f64().unwrap()
++            })
++            .collect()
++    }
++
++    fn keys(core: &DocumentCore) -> Vec<String> {
++        let value: serde_json::Value =
++            serde_json::from_str(&core.natural_font_requests_native()).unwrap();
++        value["requests"]
++            .as_array()
++            .unwrap()
++            .iter()
++            .map(|r| r["key"].as_str().unwrap().to_string())
++            .collect()
++    }
++
++    fn bind(core: &mut DocumentCore, primary: &[u8], fallback: Option<&[u8]>) {
++        core.begin_natural_font_set_native();
++        let mut count = 0;
++        for (i, key) in keys(core).iter().enumerate() {
++            core.stage_natural_font_face_native(
++                Some(key),
++                &format!("__geul_nf_t{i}"),
++                false,
++                false,
++                primary,
++                0,
++            )
++            .unwrap();
++            count += 1;
++        }
++        if let Some(bytes) = fallback {
++            core.stage_natural_font_face_native(None, "__geul_nf_fb0", false, false, bytes, 0)
++                .unwrap();
++            count += 1;
++        }
++        core.commit_natural_font_set_native(count).unwrap();
++    }
++
++    #[test]
++    fn natural_binding_changes_advances_and_survives_rebuild_edit_and_clear() {
++        let text = "WWWWoooo가나다";
++        let mut core = doc(text);
++        let offsets = [0, 4, 8, 11];
++        let legacy = xs(&core, &offsets);
++
++        bind(&mut core, LATIN, Some(KOREAN));
++        let natural = xs(&core, &offsets);
++        assert_ne!(legacy, natural, "binding must change measured positions");
++
++        // The Latin run measures with the bound face; the ratio of the W and o spans follows its advances.
++        let face =
++            crate::renderer::natural_metrics::NaturalFace::parse(LATIN, 0, false, false).unwrap();
++        let (w, i) = (face.advance_em('W').unwrap(), face.advance_em('o').unwrap());
++        let ratio = (natural[1] - natural[0]) / (natural[2] - natural[1]);
++        assert!(
++            (ratio - w / i).abs() < 0.05 * (w / i),
++            "ratio {ratio} vs {}",
++            w / i
++        );
++        // Hangul is not in the Latin fixture: it measures with the Korean fallback face.
++        assert!(face.advance_em('가').is_none());
++        let korean =
++            crate::renderer::natural_metrics::NaturalFace::parse(KOREAN, 0, false, false).unwrap();
++        let hangul_span = natural[3] - natural[2];
++        let em_per_hangul = korean.advance_em('가').unwrap();
++        let latin_w_px = (natural[1] - natural[0]) / 4.0;
++        let expected = latin_w_px / w * em_per_hangul * 3.0;
++        assert!(
++            (hangul_span - expected).abs() < 0.6,
++            "hangul {hangul_span} vs {expected}"
++        );
++
++        // A full derived rebuild keeps the binding and the geometry.
++        core.rebuild_derived_state();
++        assert_eq!(xs(&core, &offsets), natural);
++
++        // Incremental layout after an edit equals the full rebuild of the same model.
++        core.insert_text_native(0, 0, 4, "W").unwrap();
++        let after_edit = xs(&core, &[0, 5, 9, 12]);
++        core.rebuild_derived_state();
++        assert_eq!(xs(&core, &[0, 5, 9, 12]), after_edit);
++
++        // Clearing returns to the legacy model; the document text and font names are untouched.
++        let names_before = keys(&core);
++        assert!(core.clear_natural_fonts_native());
++        assert_eq!(keys(&core), names_before);
++        core.delete_text_native(0, 0, 4, 1).unwrap();
++        assert_eq!(xs(&core, &offsets), legacy);
++    }
++
++    #[test]
++    fn adopted_snapshot_gives_a_second_document_identical_geometry() {
++        let text = "WWWWoooo가나다";
++        let mut live = doc(text);
++        let mut other = doc(text);
++        bind(&mut live, LATIN, Some(KOREAN));
++        assert_ne!(xs(&live, &[0, 11]), xs(&other, &[0, 11]));
++        assert!(other.adopt_natural_fonts_native(&live));
++        assert_eq!(xs(&live, &[0, 4, 8, 11]), xs(&other, &[0, 4, 8, 11]));
++        assert!(
++            !other.adopt_natural_fonts_native(&live),
++            "re-adopting the same snapshot is a no-op"
++        );
++        let empty = DocumentCore::new_empty();
++        assert!(other.adopt_natural_fonts_native(&empty));
++        assert_ne!(xs(&live, &[0, 11]), xs(&other, &[0, 11]));
++    }
++
++    #[test]
++    fn unbound_documents_and_bad_input_keep_legacy_layout() {
++        let mut core = doc("ABC");
++        let legacy = xs(&core, &[0, 3]);
++        core.begin_natural_font_set_native();
++        assert!(core
++            .stage_natural_font_face_native(
++                Some("Doc"),
++                "__geul_nf_x1",
++                false,
++                false,
++                b"not a font",
++                0
++            )
++            .is_err());
++        assert!(core
++            .stage_natural_font_face_native(Some("Doc"), "x", false, false, LATIN, 0)
++            .is_err());
++        // Binding a family the document does not use changes nothing.
++        core.stage_natural_font_face_native(
++            Some("Unused Family"),
++            "__geul_nf_x1",
++            false,
++            false,
++            LATIN,
++            0,
++        )
++        .unwrap();
++        core.commit_natural_font_set_native(1).unwrap();
++        assert_eq!(xs(&core, &[0, 3]), legacy);
++        // Commit without a stage fails closed and leaves the active set in place.
++        assert!(core.commit_natural_font_set_native(0).is_err());
++        let status: serde_json::Value =
++            serde_json::from_str(&core.natural_font_status_native()).unwrap();
++        assert_eq!(status["active"], true);
++    }
++}
++
++#[cfg(test)]
++mod rewrap_tests {
++    use super::*;
++
++    const SMOKE: &[u8] = include_bytes!("../../tests/fixtures/fonts/RHWPExactKerningSmoke.ttf");
++    const NOTO: &[u8] = include_bytes!("../../ttfs/opensource/NotoSansKR-Regular.ttf");
++
++    fn bind(core: &mut DocumentCore, font: &[u8], tag: &str) {
++        let value: serde_json::Value =
++            serde_json::from_str(&core.natural_font_requests_native()).unwrap();
++        let keys = value["requests"].as_array().unwrap().clone();
++        core.begin_natural_font_set_native();
++        for key in &keys {
++            core.stage_natural_font_face_native(
++                Some(key["key"].as_str().unwrap()),
++                &format!("__geul_nf_{tag}"),
++                false,
++                false,
++                font,
++                0,
++            )
++            .unwrap();
++        }
++        core.commit_natural_font_set_native(keys.len()).unwrap();
++    }
++
++    fn starts(paragraph: &crate::model::paragraph::Paragraph) -> Vec<u32> {
++        paragraph.line_segs.iter().map(|s| s.text_start).collect()
++    }
++
++    #[test]
++    fn natural_commit_rewraps_edited_rows_and_never_file_rows() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.insert_text_native(0, 0, 0, &"W".repeat(100)).unwrap();
++        let body = |core: &DocumentCore| starts(&core.document.sections[0].paragraphs[0]);
++        let legacy = body(&core);
++        bind(&mut core, NOTO, "n1");
++        let noto = body(&core);
++        bind(&mut core, SMOKE, "s1");
++        let smoke = body(&core);
++        assert!(
++            noto.len() >= 2 && smoke.len() >= 2,
++            "{legacy:?} {noto:?} {smoke:?}"
++        );
++        // W is 0.878em in Noto Sans KR and 0.6em in the smoke face: fewer W fit per Noto line.
++        assert!(noto[1] < smoke[1], "{noto:?} {smoke:?}");
++        assert_eq!(
++            core.document.sections[0].paragraphs[0]
++                .natural_metric_generation
++                .is_some(),
++            true
++        );
++
++        // Rows from a file are document data: binding changes neither the rows nor the export.
++        for hwpx in [false, true] {
++            let bytes = if hwpx {
++                core.export_hwpx_native().unwrap()
++            } else {
++                core.export_hwp_native().unwrap()
++            };
++            let mut reopened = DocumentCore::from_bytes(&bytes).unwrap();
++            let rows = body(&reopened);
++            let export = |d: &DocumentCore| {
++                if hwpx {
++                    d.export_hwpx_native().unwrap()
++                } else {
++                    d.export_hwp_native().unwrap()
++                }
++            };
++            let before = export(&reopened);
++            bind(&mut reopened, NOTO, "n2");
++            assert_eq!(body(&reopened), rows);
++            assert_eq!(export(&reopened), before, "hwpx={hwpx}");
++            assert!(reopened.clear_natural_fonts_native());
++            assert_eq!(export(&reopened), before, "hwpx={hwpx}");
++        }
++    }
++
++    #[test]
++    fn natural_commit_rewraps_an_edited_table_cell() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        let made: serde_json::Value =
++            serde_json::from_str(&core.create_table_native(0, 0, 0, 1, 2).unwrap()).unwrap();
++        let (p, c) = (
++            made["paraIdx"].as_u64().unwrap() as usize,
++            made["controlIdx"].as_u64().unwrap() as usize,
++        );
++        core.insert_text_in_cell_native(0, p, c, 0, 0, 0, &"W".repeat(40))
++            .unwrap();
++        let cell = |core: &DocumentCore| match &core.document.sections[0].paragraphs[p].controls[c]
++        {
++            crate::model::control::Control::Table(table) => starts(&table.cells[0].paragraphs[0]),
++            _ => unreachable!(),
++        };
++        let other = |core: &DocumentCore| match &core.document.sections[0].paragraphs[p].controls[c]
++        {
++            crate::model::control::Control::Table(table) => starts(&table.cells[1].paragraphs[0]),
++            _ => unreachable!(),
++        };
++        let untouched = other(&core);
++        bind(&mut core, NOTO, "n3");
++        let noto = cell(&core);
++        bind(&mut core, SMOKE, "s3");
++        let smoke = cell(&core);
++        assert!(noto.len() >= 2 && smoke.len() >= 2, "{noto:?} {smoke:?}");
++        assert!(noto[1] < smoke[1], "{noto:?} {smoke:?}");
++        assert_eq!(
++            other(&core),
++            untouched,
++            "the neighbouring cell keeps its rows"
++        );
++    }
++}
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+index c435fd5..110748e 100644
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -4534,6 +4534,10 @@ impl DocumentCore {
+     pub(crate) fn rebuild_derived_state(&mut self) {
+         self.pending_cell_format_vpos = false;
+         self.rebuild_resolved_styles();
++        // geul: edit-reflowed rows measured under another natural-font generation are re-wrapped
++        // with the current one (file-provided rows are never touched). Needs the styles above and
++        // the previous column map, so it runs before the derived caches are cleared.
++        self.reflow_stale_natural_paragraphs();
+         self.rebuild_embedded_exact_font_sources();
+         self.recompose_all_with_horizontal_shaping();
+         self.mark_all_sections_dirty();
+diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
+index 67c5425..dacd929 100644
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -147,6 +147,11 @@ pub struct Paragraph {
+     /// template until fresh rows are published.
+     #[serde(skip_serializing)]
+     pub stored_text_partition_dirty: bool,
++    /// geul natural metrics: the natural-font generation under which an edit reflow of this engine
++    /// produced `line_segs` (`None` = file-provided or load-normalized rows, which are document data
++    /// and never re-wrapped). Session-only layout provenance; never serialized.
++    #[serde(skip_serializing)]
++    pub natural_metric_generation: Option<u64>,
+     /// Pending cell-format vpos update. Travels with the paragraph during batch edits;
+     /// never serialized, and flushed before saving an undo snapshot.
+     #[serde(skip_serializing)]
+@@ -1885,6 +1890,7 @@ impl Paragraph {
+             markpen_marks: new_markpen_marks,
+             numbering_restart: None,
+             stored_text_partition_dirty: false,
++            natural_metric_generation: self.natural_metric_generation,
+             cell_format_vpos_dirty: self.cell_format_vpos_dirty,
+             cell_vpos_reset: Some(false),
+             // 번호는 문서 순서로 다시 계산해야 하는 파생값이다 (#7436).
+diff --git a/src/renderer/canvas_text_font.rs b/src/renderer/canvas_text_font.rs
+index c5422b7..78c1046 100644
+--- a/src/renderer/canvas_text_font.rs
++++ b/src/renderer/canvas_text_font.rs
+@@ -1,7 +1,7 @@
+ //! Shared font setup for horizontal positioned Canvas2D text and its provider.
+ //! This does not select an exact fallback face or authorize another backend.
+ 
+-use super::{canvas_font_family_chain, condensed_ratio_draw_params, TextStyle};
++use super::{canvas_font_family_chain_for_style, condensed_ratio_draw_params, TextStyle};
+ 
+ #[derive(Debug, Clone)]
+ pub struct CanvasTextFont {
+@@ -25,7 +25,7 @@ impl CanvasTextFont {
+         };
+         let (size, baseline) = style.script_draw_metrics(base_size, baseline);
+         let (draw_size, horizontal_scale) = condensed_ratio_draw_params(size, style.ratio);
+-        let family = canvas_font_family_chain(&style.font_family);
++        let family = canvas_font_family_chain_for_style(style);
+         let prefix = format!(
+             "{}{}{:.3}px ",
+             if style.italic { "italic " } else { "" },
+diff --git a/src/renderer/composer/line_breaking.rs b/src/renderer/composer/line_breaking.rs
+index cc89069..5deb6a3 100755
+--- a/src/renderer/composer/line_breaking.rs
++++ b/src/renderer/composer/line_breaking.rs
+@@ -4264,6 +4264,14 @@ fn reflow_line_segs_impl(
+     if !paragraph_box.is_usable() {
+         return false;
+     }
++    // geul: record which natural-metric generation measured these rows (see
++    // `DocumentCore::reflow_stale_natural_paragraphs`; load normalization clears it).
++    para.natural_metric_generation = Some(
++        styles
++            .natural_fonts
++            .as_ref()
++            .map_or(0, |snapshot| snapshot.generation),
++    );
+     // [#4677] 줄을 다시 계산하면 이전에 붙여 둔 조판 전용 보강 줄은 사라진다 — 표식을
+     // 남겨 두면 실제 줄을 저장에서 잘라 내게 된다.
+     para.layout_only_fill_lines = 0;
+diff --git a/src/renderer/layout/integration_tests.rs b/src/renderer/layout/integration_tests.rs
+index f50cde5..6f80b1f 100644
+--- a/src/renderer/layout/integration_tests.rs
++++ b/src/renderer/layout/integration_tests.rs
+@@ -101,6 +101,7 @@ mod tests {
+             kerning_measurement_context: None,
+             horizontal_shaping_context: None,
+             supplemental_metrics: None,
++            natural_fonts: None,
+         };
+ 
+         let page_content = PageContent {
+diff --git a/src/renderer/layout/paragraph_layout/issue_2439_lineseg_indent_tests.rs b/src/renderer/layout/paragraph_layout/issue_2439_lineseg_indent_tests.rs
+index 5f252aa..b6b7fb7 100644
+--- a/src/renderer/layout/paragraph_layout/issue_2439_lineseg_indent_tests.rs
++++ b/src/renderer/layout/paragraph_layout/issue_2439_lineseg_indent_tests.rs
+@@ -104,6 +104,7 @@ fn synthetic_lineseg_indent_tree() -> crate::renderer::render_tree::PageRenderTr
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     };
+     let page_content = PageContent {
+         page_index: 0,
+diff --git a/src/renderer/layout/tests.rs b/src/renderer/layout/tests.rs
+index 183873b..1b483a9 100644
+--- a/src/renderer/layout/tests.rs
++++ b/src/renderer/layout/tests.rs
+@@ -768,6 +768,7 @@ fn test_layout_with_composed_styles() {
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     };
+ 
+     let page_content = PageContent {
+@@ -907,6 +908,7 @@ fn test_layout_multi_run_x_position() {
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     };
+ 
+     let page_content = PageContent {
+@@ -1001,6 +1003,7 @@ fn test_resolved_to_text_style() {
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     };
+ 
+     let ts = resolved_to_text_style(&styles, 0, 0);
+@@ -1035,6 +1038,7 @@ fn test_resolved_to_text_style_with_ratio() {
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     };
+ 
+     let ts = resolved_to_text_style(&styles, 0, 0);
+diff --git a/src/renderer/layout/text_measurement.rs b/src/renderer/layout/text_measurement.rs
+index 1a1c56b..07db484 100644
+--- a/src/renderer/layout/text_measurement.rs
++++ b/src/renderer/layout/text_measurement.rs
+@@ -827,6 +827,7 @@ pub(crate) fn resolved_to_text_style(
+         TextStyle {
+             font_family: cs.font_family_for_lang(lang_index).to_string(),
+             supplemental_metrics: styles.supplemental_metrics.clone(),
++            natural_fonts: styles.natural_fonts.clone(),
+             font_metric_trusted: cs.font_metric_trusted_for_lang(lang_index),
+             // [#7391] 폭만 선언 face 의 표로 되돌린다. 표시 글꼴(`font_family`)은 그대로다.
+             metric_font_family: cs.metric_face_for_lang(lang_index).map(str::to_string),
+@@ -1361,6 +1362,40 @@ fn measure_char_width_embedded_decision_for_font<'a>(
+     }
+ }
+ 
++/// geul natural metrics: the advance (px, before ratio/spacing) of `c` in the host-bound face the
++/// WebView paints it with, or `None` when the legacy rules apply. Characters the painter treats
++/// specially (spaces under HWP's space rules, PUA, old-Hangul jamo, forced half-width punctuation)
++/// stay on the legacy path so measurement and paint keep describing the same glyph placement.
++fn natural_char_width(
++    style: &TextStyle,
++    latin: Option<&crate::renderer::LatinSlotMetrics>,
++    c: char,
++    font_size: f64,
++) -> Option<f64> {
++    let snapshot = style.natural_fonts.as_ref()?;
++    if c.is_whitespace()
++        || c.is_control()
++        || matches!(c as u32,
++            0xE000..=0xF8FF | 0xF0000..=0x10FFFF
++            | 0x1100..=0x11FF | 0xA960..=0xA97F | 0xD7B0..=0xD7FF
++            | 0x2018..=0x2027 | 0x00B7 | 0x318D)
++        || crate::renderer::boxed_pua_number(c).is_some()
++        || forces_halfwidth_cjk_quote(
++            &style.font_family,
++            style.bold,
++            style.italic,
++            c,
++            style.font_size,
++        )
++    {
++        return None;
++    }
++    let family = latin.map_or(style.font_family.as_str(), |l| l.font_family.as_str());
++    let advance = snapshot.lookup(family, style.bold, style.italic, c)?;
++    let width = advance.advance_em * font_size;
++    (width.is_finite() && width >= 0.0).then_some(width)
++}
++
+ pub(crate) fn char_width_decision<'a>(
+     chars: &[char],
+     cluster_len: &[u8],
+@@ -1445,6 +1480,9 @@ pub(crate) fn char_width_decision<'a>(
+     let (base_width_raw, width_source, metric, character_match) = if let Some(w) = font_space_width
+     {
+         (w, "useFontSpace", None, "notApplicable")
++    } else if let Some(w) = natural_char_width(style, latin, c, font_size) {
++        // geul: the advance of the exact face the Canvas paints this character with.
++        (w, "naturalFont", None, "notApplicable")
+     } else if let Some(w) = (c == '\u{318D}')
+         .then(|| area_dot_fallback_width(&style.font_family, font_size))
+         .flatten()
+diff --git a/src/renderer/mod.rs b/src/renderer/mod.rs
+index 9f9251f..e96530a 100644
+--- a/src/renderer/mod.rs
++++ b/src/renderer/mod.rs
+@@ -70,6 +70,7 @@ pub(crate) mod shaping_vertical;
+ pub mod skia;
+ pub(crate) mod static_svg;
+ pub(crate) mod stored_float_anchor;
++pub mod natural_metrics;
+ pub mod style_resolver;
+ pub mod supplemental_metrics;
+ pub mod svg;
+@@ -270,6 +271,9 @@ pub struct TextStyle {
+     #[serde(skip)]
+     pub supplemental_metrics:
+         Option<std::sync::Arc<supplemental_metrics::SupplementalMetricSnapshot>>,
++    /// geul: host-bound natural font metrics (session-only; never serialized).
++    #[serde(skip)]
++    pub natural_fonts: Option<std::sync::Arc<natural_metrics::NaturalFontSnapshot>>,
+     /// 글꼴 이름
+     pub font_family: String,
+     /// 글꼴 크기 (px)
+@@ -573,6 +577,7 @@ impl Default for TextStyle {
+     fn default() -> Self {
+         Self {
+             supplemental_metrics: None,
++            natural_fonts: None,
+             font_family: String::new(),
+             font_size: 0.0,
+             color: 0,
+@@ -2602,6 +2607,20 @@ pub fn render_font_family_chain_for_weight(font_family: &str, bold: bool) -> Str
+ /// [#3314] Canvas API가 요구하는 인용 형식을 유지하면서, 굵기 접미사 face
+ /// 바로 뒤에 base family를 넣어 generic 폴백보다 먼저 선택되게 한다.
+ /// 정적 DB 조회의 family key와는 다르다. Canvas 실측은 paint와 이 체인을 공유한다.
++/// geul: the Canvas family chain for `style`, led by the private aliases whose `FontFace` holds the
++/// exact bytes natural metrics were measured from. Unbound styles keep the legacy chain verbatim.
++pub fn canvas_font_family_chain_for_style(style: &TextStyle) -> String {
++    let legacy = canvas_font_family_chain(&style.font_family);
++    match style
++        .natural_fonts
++        .as_ref()
++        .and_then(|snapshot| snapshot.css_prefix(&style.font_family))
++    {
++        Some(prefix) => format!("{prefix}, {legacy}"),
++        None => legacy,
++    }
++}
++
+ pub fn canvas_font_family_chain(font_family: &str) -> String {
+     let requested = internal_font_family_members(font_family);
+     let Some(primary) = requested.first().copied() else {
+diff --git a/src/renderer/natural_metrics.rs b/src/renderer/natural_metrics.rs
+new file mode 100644
+index 0000000..3ae2d59
+--- /dev/null
++++ b/src/renderer/natural_metrics.rs
+@@ -0,0 +1,632 @@
++//! Host-bound natural font metrics (geul).
++//!
++//! A host that knows the exact font bytes its WebView paints with binds them here by the document's
++//! *requested* family name. Layout then measures glyph advances from those bytes instead of the HFT
++//! tables or heuristics, and Canvas paints with private CSS aliases whose `FontFace` was created from
++//! the very same bytes, so measurement, paint, caret, hit testing and selection consume one geometry.
++//!
++//! Ownership and invariants:
++//! - The snapshot is derived, session-only state owned by `DocumentCore`. It never enters the document
++//!   model, serialization or history: binding a face never rewrites a stored family name.
++//! - A snapshot is immutable once committed (`Arc`). Layout transactions read one snapshot; a commit
++//!   replaces it atomically and bumps the generation, after which the owner rebuilds derived layout.
++//! - Font bytes are parsed once at staging and are **not retained**: only a bounded code point →
++//!   advance table survives, so there is no font buffer to leak or to use after a host refresh.
++//! - Every input is bounded (face count, byte length, code points). Malformed faces are rejected.
++//! - Only faces whose advances are instance-independent for the CSS request are accepted: variable
++//!   fonts are accepted only when every axis is `wght`, with a default equal to the bound weight.
++//! - Lookup mirrors CSS per-character fallback over the bound chain (primary family, then fallback
++//!   families). When the face the WebView would use is not an exact style match (synthetic bold), or
++//!   no bound face covers the character, lookup returns `None` and the legacy measurement applies.
++use std::collections::HashMap;
++use std::sync::Arc;
++
++/// Most faces (all styles of all families) in one snapshot.
++pub const MAX_NATURAL_FACES: usize = 64;
++/// Most bytes accepted for one face's font file.
++pub const MAX_NATURAL_FACE_BYTES: usize = 64 << 20;
++/// Most code points recorded for one face.
++pub const MAX_NATURAL_CODEPOINTS: usize = 200_000;
++/// Most code points across a snapshot.
++pub const MAX_NATURAL_TOTAL_CODEPOINTS: usize = 2_000_000;
++/// Most fallback families in the chain.
++pub const MAX_NATURAL_FALLBACKS: usize = 8;
++/// Most document family keys one staged face may serve.
++pub const MAX_NATURAL_KEYS_PER_FACE: usize = 64;
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum NaturalFontError {
++    InvalidFamily,
++    InvalidAlias,
++    TooLarge,
++    TooMany,
++    Damaged,
++    UnsupportedVariation,
++    Conflict,
++    NoStage,
++    CountMismatch,
++}
++
++impl NaturalFontError {
++    pub fn as_str(self) -> &'static str {
++        match self {
++            Self::InvalidFamily => "invalid-family",
++            Self::InvalidAlias => "invalid-alias",
++            Self::TooLarge => "too-large",
++            Self::TooMany => "too-many",
++            Self::Damaged => "damaged",
++            Self::UnsupportedVariation => "unsupported-variation",
++            Self::Conflict => "conflict",
++            Self::NoStage => "no-stage",
++            Self::CountMismatch => "count-mismatch",
++        }
++    }
++}
++
++/// One parsed face: its style and code point → advance table (font units).
++#[derive(Debug)]
++pub struct NaturalFace {
++    pub bold: bool,
++    pub italic: bool,
++    pub units_per_em: u16,
++    /// Bytes and SHA-256 prefix of the source, for diagnostics/identity only.
++    pub source_len: usize,
++    pub source_digest: String,
++    advances: HashMap<u32, u16>,
++}
++
++impl NaturalFace {
++    /// Parse `bytes` (TTF/OTF or a collection face). The bytes are not retained.
++    pub fn parse(
++        bytes: &[u8],
++        face_index: u32,
++        bold: bool,
++        italic: bool,
++    ) -> Result<Self, NaturalFontError> {
++        if bytes.is_empty() || bytes.len() > MAX_NATURAL_FACE_BYTES {
++            return Err(NaturalFontError::TooLarge);
++        }
++        let face =
++            ttf_parser::Face::parse(bytes, face_index).map_err(|_| NaturalFontError::Damaged)?;
++        let units_per_em = face.units_per_em();
++        if units_per_em == 0 {
++            return Err(NaturalFontError::Damaged);
++        }
++        // CSS maps font-weight onto `wght` and font size onto `opsz`; any other axis, or a `wght`
++        // default that differs from the bound weight, would make WebView advances differ.
++        if face.is_variable() {
++            let expected = if bold { 700.0 } else { 400.0 };
++            for axis in face.variation_axes() {
++                let wght = axis.tag == ttf_parser::Tag::from_bytes(b"wght");
++                if !wght || (axis.def_value - expected).abs() > 0.5 {
++                    return Err(NaturalFontError::UnsupportedVariation);
++                }
++            }
++        }
++        let cmap = face.tables().cmap.ok_or(NaturalFontError::Damaged)?;
++        let mut advances = HashMap::new();
++        let mut overflow = false;
++        for subtable in cmap.subtables {
++            if !subtable.is_unicode() {
++                continue;
++            }
++            subtable.codepoints(|code_point| {
++                if overflow || advances.contains_key(&code_point) {
++                    return;
++                }
++                if advances.len() >= MAX_NATURAL_CODEPOINTS {
++                    overflow = true;
++                    return;
++                }
++                let Some(glyph) = subtable.glyph_index(code_point) else {
++                    return;
++                };
++                if glyph.0 == 0 {
++                    return;
++                }
++                if let Some(advance) = face.glyph_hor_advance(glyph) {
++                    advances.insert(code_point, advance);
++                }
++            });
++        }
++        if overflow {
++            return Err(NaturalFontError::TooLarge);
++        }
++        if advances.is_empty() {
++            return Err(NaturalFontError::Damaged);
++        }
++        Ok(Self {
++            bold,
++            italic,
++            units_per_em,
++            source_len: bytes.len(),
++            source_digest: crate::paint::resource_digest_hex(bytes)
++                .chars()
++                .take(16)
++                .collect(),
++            advances,
++        })
++    }
++
++    pub fn covers(&self, c: char) -> bool {
++        self.advances.contains_key(&(c as u32))
++    }
++
++    /// Advance of `c` in em units.
++    pub fn advance_em(&self, c: char) -> Option<f64> {
++        self.advances
++            .get(&(c as u32))
++            .map(|advance| f64::from(*advance) / f64::from(self.units_per_em))
++    }
++
++    pub fn code_point_count(&self) -> usize {
++        self.advances.len()
++    }
++}
++
++/// The faces bound to one CSS alias (one family, up to four styles).
++#[derive(Debug, Default)]
++pub struct NaturalFamily {
++    pub alias: String,
++    pub faces: Vec<Arc<NaturalFace>>,
++}
++
++impl NaturalFamily {
++    /// The face CSS font matching picks for `bold`/`italic` among the registered faces
++    /// (weight first, then style), and whether it is an exact weight match.
++    fn pick(&self, bold: bool, italic: bool) -> Option<&NaturalFace> {
++        self.faces
++            .iter()
++            .find(|face| face.bold == bold && face.italic == italic)
++            .or_else(|| self.faces.iter().find(|face| face.bold == bold))
++            .or_else(|| {
++                self.faces
++                    .iter()
++                    .find(|face| !face.bold && face.italic == italic)
++            })
++            .or_else(|| self.faces.first())
++            .map(|face| face.as_ref())
++    }
++}
++
++/// Immutable, committed binding set.
++#[derive(Debug, Default)]
++pub struct NaturalFontSnapshot {
++    pub generation: u64,
++    /// Requested document family → bound family.
++    families: HashMap<String, NaturalFamily>,
++    /// Coverage fallback chain, in CSS order.
++    fallbacks: Vec<NaturalFamily>,
++}
++
++/// Identity equality: two styles are equal only when they share the same committed snapshot.
++impl PartialEq for NaturalFontSnapshot {
++    fn eq(&self, other: &Self) -> bool {
++        std::ptr::eq(self, other)
++    }
++}
++
++/// Result of one natural lookup.
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub struct NaturalAdvance {
++    pub advance_em: f64,
++    /// 0 = requested family, n = fallback n-1.
++    pub chain_index: usize,
++}
++
++impl NaturalFontSnapshot {
++    pub fn is_bound(&self, family: &str) -> bool {
++        self.families.contains_key(family)
++    }
++
++    /// CSS per-character fallback over the bound chain. `None`: legacy measurement applies,
++    /// either because `family` is not bound, nothing bound covers `c`, or the WebView would
++    /// synthesize the weight (advance not derivable from the bound bytes).
++    pub fn lookup(
++        &self,
++        family: &str,
++        bold: bool,
++        italic: bool,
++        c: char,
++    ) -> Option<NaturalAdvance> {
++        let primary = self.families.get(family)?;
++        for (chain_index, bound) in std::iter::once(primary)
++            .chain(self.fallbacks.iter())
++            .enumerate()
++        {
++            let Some(face) = bound.pick(bold, italic) else {
++                continue;
++            };
++            if !face.covers(c) {
++                continue;
++            }
++            if face.bold != bold {
++                return None;
++            }
++            return face.advance_em(c).map(|advance_em| NaturalAdvance {
++                advance_em,
++                chain_index,
++            });
++        }
++        None
++    }
++
++    /// Quoted CSS aliases to put in front of the legacy family chain, or `None` if unbound.
++    pub fn css_prefix(&self, family: &str) -> Option<String> {
++        let primary = self.families.get(family)?;
++        let mut out = String::new();
++        for bound in std::iter::once(primary).chain(self.fallbacks.iter()) {
++            if !out.is_empty() {
++                out.push_str(", ");
++            }
++            out.push('"');
++            out.push_str(&bound.alias);
++            out.push('"');
++        }
++        Some(out)
++    }
++
++    pub fn status_json(&self) -> serde_json::Value {
++        let describe = |bound: &NaturalFamily| {
++            serde_json::json!({
++                "alias": bound.alias,
++                "faces": bound.faces.iter().map(|face| serde_json::json!({
++                    "bold": face.bold,
++                    "italic": face.italic,
++                    "unitsPerEm": face.units_per_em,
++                    "codePoints": face.code_point_count(),
++                    "sourceBytes": face.source_len,
++                    "sourceDigest": face.source_digest,
++                })).collect::<Vec<_>>(),
++            })
++        };
++        let mut families = self.families.iter().collect::<Vec<_>>();
++        families.sort_by(|a, b| a.0.cmp(b.0));
++        serde_json::json!({
++            "generation": self.generation,
++            "families": families.into_iter().map(|(name, bound)| {
++                let mut value = describe(bound);
++                value["family"] = serde_json::Value::String(name.clone());
++                value
++            }).collect::<Vec<_>>(),
++            "fallbacks": self.fallbacks.iter().map(describe).collect::<Vec<_>>(),
++        })
++    }
++}
++
++fn valid_family(name: &str) -> bool {
++    !name.is_empty()
++        && name.trim() == name
++        && name.len() <= 128
++        && !name
++            .chars()
++            .any(|c| c.is_control() || matches!(c, '"' | ',' | ';' | '\\' | '{' | '}' | '\u{fffc}'))
++}
++
++fn valid_alias(alias: &str) -> bool {
++    (8..=64).contains(&alias.len())
++        && alias.starts_with("__")
++        && alias
++            .bytes()
++            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
++}
++
++/// A set under construction. Nothing is visible to layout until `commit`.
++#[derive(Debug, Default)]
++pub struct NaturalFontStage {
++    families: HashMap<String, NaturalFamily>,
++    fallbacks: Vec<NaturalFamily>,
++    faces: usize,
++    code_points: usize,
++}
++
++impl NaturalFontStage {
++    /// Stage one face. `family = None` stages a coverage fallback; `Some` holds one or more document
++    /// family keys separated by `\n` (keys never contain control characters) that share this face.
++    /// The face is parsed once and shared. Every check runs before anything is staged.
++    pub fn stage(
++        &mut self,
++        family: Option<&str>,
++        alias: &str,
++        face: NaturalFace,
++    ) -> Result<usize, NaturalFontError> {
++        let keys: Vec<&str> = match family {
++            Some(names) => names.split('\n').collect(),
++            None => Vec::new(),
++        };
++        if family.is_some()
++            && (keys.is_empty()
++                || keys.len() > MAX_NATURAL_KEYS_PER_FACE
++                || !keys.iter().all(|k| valid_family(k)))
++        {
++            return Err(NaturalFontError::InvalidFamily);
++        }
++        if !valid_alias(alias) {
++            return Err(NaturalFontError::InvalidAlias);
++        }
++        if self.faces >= MAX_NATURAL_FACES
++            || self.code_points + face.code_point_count() > MAX_NATURAL_TOTAL_CODEPOINTS
++        {
++            return Err(NaturalFontError::TooMany);
++        }
++        // Several document keys may share one alias (one installed family), but an alias must never
++        // name different bytes for the same style: the WebView would paint one of them only.
++        let same_style_other_source = |bound: &NaturalFamily| {
++            bound.alias == alias
++                && bound.faces.iter().any(|f| {
++                    f.bold == face.bold
++                        && f.italic == face.italic
++                        && f.source_digest != face.source_digest
++                })
++        };
++        if self.families.values().any(same_style_other_source)
++            || self.fallbacks.iter().any(same_style_other_source)
++        {
++            return Err(NaturalFontError::Conflict);
++        }
++        let duplicate = |bound: &NaturalFamily| {
++            bound
++                .faces
++                .iter()
++                .any(|f| f.bold == face.bold && f.italic == face.italic)
++        };
++        for key in &keys {
++            if let Some(bound) = self.families.get(*key) {
++                if bound.alias != alias || duplicate(bound) {
++                    return Err(NaturalFontError::Conflict);
++                }
++            }
++        }
++        let fallback_index = self.fallbacks.iter().position(|b| b.alias == alias);
++        if family.is_none() {
++            match fallback_index {
++                Some(index) if duplicate(&self.fallbacks[index]) => {
++                    return Err(NaturalFontError::Conflict)
++                }
++                None if self.fallbacks.len() >= MAX_NATURAL_FALLBACKS => {
++                    return Err(NaturalFontError::TooMany)
++                }
++                _ => {}
++            }
++        }
++        let face = Arc::new(face);
++        if family.is_some() {
++            for key in keys {
++                self.families
++                    .entry(key.to_string())
++                    .or_insert_with(|| NaturalFamily {
++                        alias: alias.to_string(),
++                        faces: Vec::new(),
++                    })
++                    .faces
++                    .push(Arc::clone(&face));
++            }
++        } else if let Some(index) = fallback_index {
++            self.fallbacks[index].faces.push(Arc::clone(&face));
++        } else {
++            self.fallbacks.push(NaturalFamily {
++                alias: alias.to_string(),
++                faces: vec![Arc::clone(&face)],
++            });
++        }
++        self.code_points += face.code_point_count();
++        self.faces += 1;
++        Ok(self.faces)
++    }
++
++    pub fn face_count(&self) -> usize {
++        self.faces
++    }
++
++    pub fn commit(self, generation: u64) -> NaturalFontSnapshot {
++        NaturalFontSnapshot {
++            generation,
++            families: self.families,
++            fallbacks: self.fallbacks,
++        }
++    }
++}
++
++/// Owner held by `DocumentCore`.
++#[derive(Debug, Default)]
++pub struct NaturalFontOwner {
++    active: Option<Arc<NaturalFontSnapshot>>,
++    stage: Option<NaturalFontStage>,
++    generation: u64,
++}
++
++impl NaturalFontOwner {
++    pub fn active(&self) -> Option<Arc<NaturalFontSnapshot>> {
++        self.active.clone()
++    }
++
++    pub fn generation(&self) -> u64 {
++        self.generation
++    }
++
++    pub fn begin(&mut self) {
++        self.stage = Some(NaturalFontStage::default());
++    }
++
++    pub fn stage(
++        &mut self,
++        family: Option<&str>,
++        alias: &str,
++        face: NaturalFace,
++    ) -> Result<usize, NaturalFontError> {
++        self.stage
++            .as_mut()
++            .ok_or(NaturalFontError::NoStage)?
++            .stage(family, alias, face)
++    }
++
++    /// Publish the staged set. The caller rebuilds derived layout afterwards.
++    pub fn commit(&mut self, expected_faces: usize) -> Result<u64, NaturalFontError> {
++        let stage = self.stage.take().ok_or(NaturalFontError::NoStage)?;
++        if stage.face_count() != expected_faces {
++            return Err(NaturalFontError::CountMismatch);
++        }
++        self.generation = self.generation.saturating_add(1);
++        self.active = if stage.face_count() == 0 {
++            None
++        } else {
++            Some(Arc::new(stage.commit(self.generation)))
++        };
++        Ok(self.generation)
++    }
++
++    /// Share another owner's committed snapshot (same immutable `Arc`, no font bytes), e.g. so a
++    /// reopened export used as save evidence measures exactly like the live document.
++    pub fn adopt(&mut self, snapshot: Option<Arc<NaturalFontSnapshot>>) -> bool {
++        let changed = match (&self.active, &snapshot) {
++            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
++            (None, None) => false,
++            _ => true,
++        };
++        self.stage = None;
++        if changed {
++            self.generation = self.generation.saturating_add(1);
++            self.active = snapshot;
++        }
++        changed
++    }
++
++    /// Drop the active set and any stage. Returns whether layout depended on it.
++    pub fn clear(&mut self) -> bool {
++        self.stage = None;
++        let had = self.active.take().is_some();
++        if had {
++            self.generation = self.generation.saturating_add(1);
++        }
++        had
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn fake_face(bold: bool, entries: &[(char, u16)]) -> NaturalFace {
++        NaturalFace {
++            bold,
++            italic: false,
++            units_per_em: 1000,
++            source_len: 1,
++            source_digest: format!("{entries:?}"),
++            advances: entries.iter().map(|(c, a)| (*c as u32, *a)).collect(),
++        }
++    }
++
++    #[test]
++    fn lookup_follows_css_fallback_order_and_refuses_synthetic_bold() {
++        let mut stage = NaturalFontStage::default();
++        stage
++            .stage(Some("Doc"), "__geul_nf_a1", fake_face(false, &[('A', 600)]))
++            .unwrap();
++        stage
++            .stage(
++                None,
++                "__geul_nf_fb",
++                fake_face(false, &[('A', 100), ('가', 900)]),
++            )
++            .unwrap();
++        let snapshot = stage.commit(1);
++        assert_eq!(
++            snapshot
++                .lookup("Doc", false, false, 'A')
++                .unwrap()
++                .advance_em,
++            0.6
++        );
++        let hangul = snapshot.lookup("Doc", false, false, '가').unwrap();
++        assert_eq!((hangul.advance_em, hangul.chain_index), (0.9, 1));
++        assert!(snapshot.lookup("Doc", true, false, 'A').is_none());
++        assert!(snapshot.lookup("Other", false, false, 'A').is_none());
++        assert!(snapshot.lookup("Doc", false, false, 'Z').is_none());
++        assert_eq!(
++            snapshot.css_prefix("Doc").unwrap(),
++            "\"__geul_nf_a1\", \"__geul_nf_fb\""
++        );
++    }
++
++    #[test]
++    fn stage_rejects_invalid_and_conflicting_bindings() {
++        let mut stage = NaturalFontStage::default();
++        assert_eq!(
++            stage.stage(Some("a\"b"), "__geul_nf_a1", fake_face(false, &[('A', 1)])),
++            Err(NaturalFontError::InvalidFamily)
++        );
++        assert_eq!(
++            stage.stage(Some("Doc"), "bad alias", fake_face(false, &[('A', 1)])),
++            Err(NaturalFontError::InvalidAlias)
++        );
++        stage
++            .stage(Some("Doc"), "__geul_nf_a1", fake_face(false, &[('A', 1)]))
++            .unwrap();
++        assert_eq!(
++            stage.stage(Some("Doc"), "__geul_nf_a1", fake_face(false, &[('A', 1)])),
++            Err(NaturalFontError::Conflict)
++        );
++        // Another key may share the alias with identical bytes, never with different bytes.
++        assert!(stage
++            .stage(Some("Other"), "__geul_nf_a1", fake_face(false, &[('A', 1)]))
++            .is_ok());
++        assert_eq!(
++            stage.stage(Some("Third"), "__geul_nf_a1", fake_face(false, &[('B', 1)])),
++            Err(NaturalFontError::Conflict)
++        );
++    }
++
++    #[test]
++    fn one_face_serves_several_keys_atomically() {
++        let mut stage = NaturalFontStage::default();
++        assert_eq!(
++            stage.stage(
++                Some("A\nB"),
++                "__geul_nf_m1",
++                fake_face(false, &[('A', 500)])
++            ),
++            Ok(1)
++        );
++        // A bad key anywhere refuses the whole call.
++        assert_eq!(
++            stage.stage(
++                Some("C\nbad\"key"),
++                "__geul_nf_m2",
++                fake_face(false, &[('A', 1)])
++            ),
++            Err(NaturalFontError::InvalidFamily)
++        );
++        let snapshot = stage.commit(1);
++        assert_eq!(
++            snapshot.lookup("A", false, false, 'A').unwrap().advance_em,
++            0.5
++        );
++        assert_eq!(
++            snapshot.lookup("B", false, false, 'A').unwrap().advance_em,
++            0.5
++        );
++        assert!(!snapshot.is_bound("C"));
++    }
++
++    #[test]
++    fn owner_commit_is_atomic_and_generational() {
++        let mut owner = NaturalFontOwner::default();
++        assert_eq!(owner.commit(0), Err(NaturalFontError::NoStage));
++        owner.begin();
++        owner
++            .stage(Some("Doc"), "__geul_nf_a1", fake_face(false, &[('A', 1)]))
++            .unwrap();
++        assert_eq!(owner.commit(2), Err(NaturalFontError::CountMismatch));
++        assert!(owner.active().is_none());
++        owner.begin();
++        owner
++            .stage(Some("Doc"), "__geul_nf_a1", fake_face(false, &[('A', 1)]))
++            .unwrap();
++        let generation = owner.commit(1).unwrap();
++        assert_eq!(owner.active().unwrap().generation, generation);
++        assert!(owner.clear());
++        assert!(owner.active().is_none());
++        assert!(owner.generation() > generation);
++    }
++}
+diff --git a/src/renderer/style_resolver.rs b/src/renderer/style_resolver.rs
+index 3ae3232..53f9e1e 100644
+--- a/src/renderer/style_resolver.rs
++++ b/src/renderer/style_resolver.rs
+@@ -432,6 +432,8 @@ pub struct ResolvedStyleSet {
+     /// Shared session measurements for DB-missing glyphs, not document styles.
+     pub supplemental_metrics:
+         Option<std::sync::Arc<super::supplemental_metrics::SupplementalMetricSnapshot>>,
++    /// geul: host-bound natural font metrics, attached by the document owner on every resolve.
++    pub natural_fonts: Option<std::sync::Arc<super::natural_metrics::NaturalFontSnapshot>>,
+     /// 글자 스타일 목록 (char_shapes[id]에 대응)
+     pub char_styles: Vec<ResolvedCharStyle>,
+     /// 문단 스타일 목록 (para_shapes[id]에 대응)
+@@ -616,6 +618,7 @@ pub fn resolve_styles_with_variant(
+         kerning_measurement_context: None,
+         horizontal_shaping_context: None,
+         supplemental_metrics: None,
++        natural_fonts: None,
+     }
+ }
+ 
+diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
+index f9d5c03..74e04e4 100644
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -978,7 +978,7 @@ impl WebCanvasRenderer {
+             } else {
+                 12.0
+             };
+-            let font_family = super::canvas_font_family_chain(&run.style.font_family);
++            let font_family = super::canvas_font_family_chain_for_style(&run.style);
+             let font = format!(
+                 "{}{}{:.3}px {}",
+                 font_style_str, font_weight, font_size, font_family
+diff --git a/src/serializer/doc_info/tests.rs b/src/serializer/doc_info/tests.rs
+index 5aa0e7c..b370c0b 100644
+--- a/src/serializer/doc_info/tests.rs
++++ b/src/serializer/doc_info/tests.rs
+@@ -270,6 +270,7 @@ fn test_serialize_char_shape_use_font_space_bit() {
+ #[test]
+ fn test_serialize_para_shape_roundtrip() {
+     let ps = ParaShape {
++        source_level_tail_absent: false,
+         raw_data: None,
+         attr1: 0x04, // alignment = Left (1 << 2)
+         margin_left: 1000,
+@@ -665,6 +666,7 @@ fn test_serialize_doc_info_roundtrip() {
+         hwpx_inactive_strike_3d: false,
+     });
+     doc_info.para_shapes.push(ParaShape {
++        source_level_tail_absent: false,
+         raw_data: None,
+         attr1: 0,
+         margin_left: 0,
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index c05eaf1..a612b0a 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -43,6 +43,7 @@ use crate::renderer::svg::SvgRenderer;
+ use crate::renderer::DEFAULT_DPI;
+ 
+ mod canvas_metrics;
++mod natural_fonts;
+ mod hyperlink;
+ /// 어떤 렌더 export가 교체 가능한 경계 뒤에 있는지 선언하는 곳 (#4577, #4642).
+ mod render_patch_boundary;
+diff --git a/src/wasm_api/natural_fonts.rs b/src/wasm_api/natural_fonts.rs
+new file mode 100644
+index 0000000..831ccb6
+--- /dev/null
++++ b/src/wasm_api/natural_fonts.rs
+@@ -0,0 +1,63 @@
++//! geul: WASM surface for host-bound natural font metrics. Validation, limits and ownership live in
++//! `DocumentCore` / `renderer::natural_metrics`; this layer only converts arguments and errors.
++use super::HwpDocument;
++use wasm_bindgen::prelude::*;
++
++#[wasm_bindgen]
++impl HwpDocument {
++    /// JSON: the family keys layout looks natural metrics up by.
++    #[wasm_bindgen(js_name = getNaturalFontRequests)]
++    pub fn get_natural_font_requests(&self) -> String {
++        self.core.natural_font_requests_native()
++    }
++
++    /// Start a new staged set (discarding an unfinished one). Layout is unchanged until commit.
++    #[wasm_bindgen(js_name = beginNaturalFontSet)]
++    pub fn begin_natural_font_set(&mut self) {
++        self.core.begin_natural_font_set_native();
++    }
++
++    /// Stage one face bound to document family key `family` (empty string = coverage fallback).
++    #[wasm_bindgen(js_name = stageNaturalFontFace)]
++    pub fn stage_natural_font_face(
++        &mut self,
++        family: &str,
++        alias: &str,
++        bold: bool,
++        italic: bool,
++        font_bytes: &[u8],
++        face_index: u32,
++    ) -> Result<String, JsValue> {
++        let family = (!family.is_empty()).then_some(family);
++        self.core
++            .stage_natural_font_face_native(family, alias, bold, italic, font_bytes, face_index)
++            .map_err(JsValue::from)
++    }
++
++    /// Atomically publish the staged set (must hold exactly `expected_faces`) and rebuild layout.
++    #[wasm_bindgen(js_name = commitNaturalFontSet)]
++    pub fn commit_natural_font_set(&mut self, expected_faces: u32) -> Result<String, JsValue> {
++        self.core
++            .commit_natural_font_set_native(expected_faces as usize)
++            .map_err(JsValue::from)
++    }
++
++    /// Drop natural metrics (legacy measurement). Returns whether layout was rebuilt.
++    #[wasm_bindgen(js_name = clearNaturalFonts)]
++    pub fn clear_natural_fonts(&mut self) -> bool {
++        self.core.clear_natural_fonts_native()
++    }
++
++    /// Measure with `source`'s committed natural-font snapshot (shared, immutable; no font bytes are
++    /// copied). Used for reopened save evidence. Returns whether layout was rebuilt.
++    #[wasm_bindgen(js_name = adoptNaturalFontsFrom)]
++    pub fn adopt_natural_fonts_from(&mut self, source: &HwpDocument) -> bool {
++        self.core.adopt_natural_fonts_native(&source.core)
++    }
++
++    /// JSON: the committed snapshot's identity (generation, aliases, face digests).
++    #[wasm_bindgen(js_name = getNaturalFontStatus)]
++    pub fn get_natural_font_status(&self) -> String {
++        self.core.natural_font_status_native()
++    }
++}
