@@ -107,7 +107,9 @@
   - **측정.** `resolve_render_styles()`가 모든 해석(전체 rebuild, 증분 reflow, cursor/selection/hit-test 질의)에 같은 snapshot을 붙인다. `char_width_decision`의 `naturalFont` 갈래가 CSS per-character fallback 순서(요청 family → fallback family)로 실제 face의 advance를 쓴다. glyph가 없거나 WebView가 weight를 합성할 경우(bold face 없음)는 기존 규칙으로 남고 natural로 표시하지 않는다. HWP 공백 규칙, PUA, 옛한글 자모, 반각 강제 구두점은 painter가 특수 처리하므로 기존 규칙을 유지한다. 장평·자간·위/아래첨자는 기존과 같이 advance 뒤에 적용한다.
   - **줄바꿈과 rebuild.** 편집 reflow는 세션 전용 `Paragraph.natural_metric_generation`을 기록한다. 로드 정규화와 `set_document` 뒤에는 지운다. `rebuild_derived_state`는 다른 generation으로 편집 reflow된 본문·top-level 셀 문단만 현재 snapshot으로 다시 줄바꿈한다. 파일이 준 LineSeg는 문서 데이터이므로 건드리지 않으며, 편집하지 않은 문서는 binding 전후 HWP/HWPX export 바이트가 같다(시험). 이로써 글꼴 변경 직후(비동기 binding 전) 만든 줄도 commit 뒤 실제 advance로 다시 나뉜다.
   - **Paint와 PDF.** Canvas family chain 앞에 같은 바이트로 만든 `FontFace` 비공개 alias(`"__geul_nf_<n>", …fallback alias, <기존 chain>`)를 둔다. 따라서 측정한 glyph가 그려진 glyph다. raster PDF는 같은 `renderPageToCanvas`를 쓴다.
-  - **호스트.** `font_face_data`(Tauri)는 공유 FontDb에서 정확한 family/style face의 바이트만 준다(경로 없음, fallback face 없음, variable named instance 거부). `src/fonts/naturalFonts.ts`가 카탈로그(typographic/localized 이름)로 key를 해석하고, WebView `FontFace` load 성공 뒤에만 stage하며, 한국어 coverage fallback을 하나 붙인다. 카탈로그 generation이 바뀌면 다시 해석하고 두 세대 전 face를 놓는다. 세션은 load 뒤, 글꼴 변경(`fontsChanged`) 뒤, 그리고 model 변경으로 family key 집합이 달라질 때(글꼴 변경·Undo/Redo·붙여넣기) 다시 binding하며, 오래된 요청·reload·dispose·IME 조합 중에는 commit하지 않는다. 저장 증거용 reopen 문서는 `adoptNaturalFontsFrom`으로 같은 snapshot을 공유해 `pagesEqual`이 같은 측정으로 비교된다.
+  - **호스트.** `font_face_data`(Tauri)는 공유 FontDb에서 정확한 family/style face의 바이트만 준다(경로 없음, fallback face 없음, variable named instance 거부). `src/fonts/naturalFonts.ts`가 카탈로그(typographic/localized 이름)로 key를 해석하고, WebView `FontFace` load 성공 뒤에만 stage하며, 한국어 coverage fallback을 하나 붙인다. 카탈로그 generation이 바뀌면 다시 해석하고 두 세대 전 face를 놓는다. 세션은 load 뒤, 글꼴 변경(`fontsChanged`) 뒤, 그리고 model 변경으로 family key 집합이 달라질 때(글꼴 변경·Undo/Redo·붙여넣기) 다시 binding하며, 오래된 요청·reload·dispose에서는 commit하지 않는다. 저장 증거용 reopen 문서는 `adoptNaturalFontsFrom`으로 같은 snapshot을 공유해 `pagesEqual`이 같은 측정으로 비교된다.
+  - **IME 중 지연 binding (2026-11-16 안정화).** binding 요청이 IME 트랜잭션 중(`imeUnsettled`: 조합 중, 앱이 먼저 끝낸 provisional 조합, 입력기 최종 글자 대기)이면 commit하지 않고 현재 snapshot을 유지하며 세션 소유 `naturalDeferred` 표시만 남긴다. 새 요청은 이전 진행 중/지연 요청을 대체한다(`naturalRequest`). 트랜잭션이 완전히 끝난 뒤 `emit()`에서 한 번, 다음 microtask에, 같은 문서·load에 대해서만 binder의 최신 카탈로그로 binding한다. 같은 조합 중 여러 변경은 하나로 합쳐진다. reload·dispose는 표시를 지운다. 이전의 250 ms×20회 재시도(긴 조합 뒤 binding 유실)는 없어졌다(`naturalRebinding.test.ts`).
+  - **요청 수 한도 (2026-11-16 안정화).** 엔진은 family key를 최대 512개 열거하고 넘으면 `truncated`를 보고한다. binder는 응답 전체(최대 1024개, 넘거나 형식 오류면 fail-closed)를 검사하고 앞의 `MAX_REQUESTS`=128개만 해석한다. 나머지는 `omitted`(엔진 순서의 실제 key)로, 엔진 절단은 `engineTruncated`(이름을 만들지 않음)로, staging의 `MAX_NATURAL_FACES`=64 도달은 `faceLimited`로 보고한다. `complete`는 모든 key가 bound일 때만 true다. 일부만 bound인 결과도 status는 `bound`라 relayout·repaint가 같게 일어나며, bound key는 natural, 나머지 key(해석 불가·omitted·절단·face 한도)는 기존 legacy 측정을 쓰고 다른 family의 natural identity를 빌리지 않는다. 문서의 저장 family 이름은 바뀌지 않는다.
   - **Repaint 결함 수정.** `RhwpSurface`는 `modelVersion` 변화에만 다시 그렸으므로 model 변경 없는 relayout(natural commit, 그리고 기존 `fontsChanged`)이 Canvas에 반영되지 않았다(native run10 독립 검사에서 발견). 세션 `layoutVersion`을 추가해 surface가 이를 관찰한다.
 
 ## 6. 검증
@@ -184,7 +186,7 @@ PDF 게시, IME, RHWP 패치)를 바꾸지 않았다. DOCX PDF 경로는 같은 
 
 ### 6.3 RHWP 글꼴 변경 focused 및 native 검증 (2026-11-16, NixOS)
 
-상태: **CURRENT PASS** — 지원되는 HWP/HWPX 단순 본문 시나리오에 한정. 전체 font package는 natural metrics/shaping integration 미구현으로 **PARTIALLY COMPLETED**; 전체 Stage 5-A INCOMPLETE, Release NO-GO다.
+상태: **CURRENT PASS** — 지원되는 HWP/HWPX 단순 본문 시나리오에 한정. 역사 기록(이 절 작성 당시, 2026-11-16 natural metrics 이전): font package는 natural metrics/shaping 미구현으로 PARTIALLY COMPLETED였다. 현재 판정은 상단 상태와 6.4절(글꼴 패키지 COMPLETED, 지원 범위)을 따른다.
 
 | 범위 | 실행/증거 | 결과 |
 |---|---|---|
@@ -236,6 +238,8 @@ Saved-output hashes are the products from native-run4 (`result.json`; identical 
 
 Test contract 교정(`src/commands/sessions.test.tsx`): 실패 단언은 `format.font`가 아니라 `format.bold/italic/underline/strikethrough`가 `engineUnsupported`일 것을 기대했고 실제는 `pendingEdits`였다. 레지스트리는 RHWP 글자 서식을 조건부 지원(`RHWP_FORMAT`)으로 선언하므로 기대값이 낡은 것(A)이다. 대기 편집 중 `pendingEdits`, 확정 뒤 서식 근거가 없는 가짜 엔진 세션은 `engineUnsupported`로 거부됨을 단언하며, 유효 세션 가용성은 실제 엔진 시험(위 2 PASS)이 맡는다.
 
+IME 지연 binding·요청 한도 안정화(2026-11-16, 위 측정 이후 프런트엔드만 변경, Release WASM·엔진 변경 없음): `npx vitest run src/components/Editor/rhwp/naturalRebinding.test.ts` 7 PASS(긴 조합·provisional/대기·합치기·대체된 진행 중 binding·dispose·부분 결과 relayout; 이전 코드에서 4건 FAIL), `npx vitest run src/fonts/naturalFonts.test.ts` 16 PASS(127/128/129/512, 엔진 절단, bound/omitted 혼합, 64 face 한도, 카탈로그 재생성, 과대 목록 fail-closed), 인접 `npx vitest run src/components/Editor/rhwp src/fonts src/commands` 909 PASS/3 기존 FAIL, typecheck·lint PASS. native run12는 이 두 변경 전 앱에서 실행한 증거이며 다시 실행하지 않았다(바뀐 경로: IME 중 binding 시점과 결과 보고; 단위 시험으로 확인).
+
 NOT RUN/DEFERRED: 외부 오피스(Hancom/Word/LibreOffice 등 이 환경에 없음) 재열기 NOT RUN; native 글꼴 제거·카탈로그 refresh 흐름(엔진 clear/adopt·binder generation 단위 시험만 PASS); nested-cell native; Debug WASM; Windows/macOS·다른 배포판 DEFERRED; 전체 Rust/Vitest/RHWP suite·D4·이전 run4/run10 재실행 안 함.
 
 ## 7. 알려진 제한
@@ -246,4 +250,5 @@ NOT RUN/DEFERRED: 외부 오피스(Hancom/Word/LibreOffice 등 이 환경에 없
 4. 사용자 글꼴은 WebView에 컬렉션 첫 얼굴만 전달하고 파일은 문서에 embed하지 않는다. 같은 이유로 natural binder는 face index가 0이 아닌 컬렉션 얼굴을 binding하지 않는다(기존 측정 유지, 단위 시험).
 5. 사용자·시스템 글꼴은 배포물에 넣지 않는다. 번들은 WordCraft OFL 4계열뿐(기존 고지 범위).
 6. 복합 문자: painter가 cluster마다 그리므로 합자(예: `fi`는 두 glyph), 문맥형(아랍 문자), RTL/양방향, kerning(엔진 exact-slot kerning 경로는 비활성)은 지원하지 않는다. 결합 문자(예: `e`+U+0301)는 한 cluster로 base advance를 쓴다(시험). 히브리 문자처럼 bound face가 덮지 않는 문자는 휴리스틱으로 남는다(시험 증거, 지원 주장 아님). 한글·라틴·혼합 한글/라틴만 지원 범위로 검증했다.
-7. Natural binding 지연 중 편집된 중첩 표·글상자 문단은 다음 편집 때 다시 줄바꿈된다(본문·top-level 셀만 commit 시 re-wrap). 외부 오피스 재열기는 NOT RUN.
+7. Natural binding 지연 중 편집된 중첩 표·글상자 문단은 다음 편집 때 다시 줄바꿈된다(본문·top-level 셀만 commit 시 re-wrap). 외부 오피스 재열기는 NOT RUN. native 중첩 셀·글꼴 제거/refresh 시나리오는 단위 시험만 있고 native acceptance는 NOT RUN.
+8. 한 문서의 family key는 binding당 128개까지만 해석한다. 초과분(`omitted`)·엔진 512개 초과 절단(`engineTruncated`)·64 face 한도(`faceLimited`)에 걸린 key는 legacy 측정이며 결과의 `complete=false`로 드러난다.

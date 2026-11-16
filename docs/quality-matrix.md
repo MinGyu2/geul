@@ -1,6 +1,8 @@
 # 문서 품질 행렬 (T015 로컬 범위, Stage 5-A — 2026-11-16)
 
-> **2026-11-16 추가 근거:** fresh WordCraft bootstrap/protected compile 1/1 PASS, fontconfig real Boolean 1/1 및 bounded traversal 1/1 PASS, RHWP inventory unit 2/2·generated Release WASM 4/4·TypeScript typecheck PASS. 이는 read-only inventory까지만 증명한다. HWP/HWPX font mutation·T009 proof·registered user font save/render/native acceptance는 구현되지 않았거나 NOT RUN이다. 자세한 identity와 명령은 [font system 6절](architecture/font-system.md#6-검증)을 따른다.
+> **현재 글꼴 판정(2026-11-16):** Stage 5-A 글꼴 패키지 COMPLETED(지원 범위) — HWP/HWPX font editing·T009 proof·native save/reopen, RHWP natural metrics·줄바꿈·table-cell native acceptance PASS([7절](#7-stage-5-a-글꼴-패키지-2026-11-16), [font system 6.3·6.4절](architecture/font-system.md#64-rhwp-natural-font-metrics-검증-2026-11-16-nixos-release-generation-5dc438563e192fe4370b6ec0bb5f0b9bddf70f637b72e53ab889f77e8402e124)). 복합 shaping·Windows/macOS·다른 배포판·외부 오피스 재열기는 미수용. Stage 5-A 전체 PARTIALLY COMPLETED, Release NO-GO.
+>
+> **역사 기록(2026-11-16 초기, read-only inventory 단계):** fresh WordCraft bootstrap/protected compile 1/1 PASS, fontconfig real Boolean 1/1 및 bounded traversal 1/1 PASS, RHWP inventory unit 2/2·generated Release WASM 4/4·TypeScript typecheck PASS. 당시에는 read-only inventory까지만 증명했고 HWP/HWPX font mutation·T009 proof·registered user font save/render/native acceptance는 구현 전 또는 NOT RUN이었다(이후 위 현재 판정으로 대체). 자세한 identity와 명령은 [font system 6절](architecture/font-system.md#6-검증)을 따른다.
 
 이 행렬은 **지원 선언 범위** 안에서 이미 있는 PASS 근거를 재사용하고, Stage 5-A에서 새로 실행한 로컬 검사만 CURRENT로 적는다. 지원 범위를 넓히지 않는다. T015 전체 Done, 외부 Office 호환, Windows/macOS 수용, 출시 GO가 **아니다**.
 
