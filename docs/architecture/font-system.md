@@ -1,6 +1,6 @@
 # 통합 글꼴 시스템 (Stage 5-A 글꼴 패키지) — 2026-11-16
 
-상태: **PARTIALLY COMPLETED**. 공유 카탈로그·fontconfig 제공자·사용자 글꼴 등록/영속/제거·WordCraft(DOCX) 통합·PDF와 지원 범위의 RHWP HWP/HWPX font editing 및 narrow save proof는 구현·NixOS 검증 완료. RHWP natural font metrics, user-font wrapping, complex-script shaping은 미구현/미검증이다. Windows/macOS DEFERRED. Stage 5-A 전체는 INCOMPLETE, 출시 판단은 NO-GO다.
+상태: **Stage 5-A 글꼴 패키지 COMPLETED** (2026-11-16, 지원 범위·문서화한 제한 포함). 공유 카탈로그·fontconfig 제공자·사용자 글꼴 등록/영속/제거·WordCraft(DOCX) 통합·PDF, RHWP HWP/HWPX font editing과 narrow save proof, 그리고 **RHWP natural font metrics**(정확한 글꼴 원본 결합, 실제 advance 기반 줄바꿈·caret·selection·hit test·Canvas·raster PDF, HWP/HWPX table-cell native acceptance)를 구현·NixOS 검증했다(6.4절). 복합 문자 shaping(합자·문맥형·RTL)·kerning은 지원 범위 밖으로 문서화했다(7절). 외부 오피스 재열기 NOT RUN, Windows/macOS·다른 배포판 DEFERRED. Stage 5-A 전체는 PARTIALLY COMPLETED(Release private-path cleanup 별도), Stage 5 INCOMPLETE, 출시 판단은 NO-GO다.
 
 ## 1. 구조
 
@@ -94,7 +94,7 @@
 - 레이아웃·줄바꿈·쪽 나눔·화면·PDF가 같은 FontDb 얼굴과 메트릭을 쓴다. 혼합 한글/영문은 문서의 East Asian 글꼴 또는 fontconfig가
   고른 덮는 글꼴로 대체된다.
 
-### RHWP (HWP/HWPX) — 부분
+### RHWP (HWP/HWPX) — 구현 (지원 범위)
 
 - 현재 구현은 `format.font`를 일반 RHWP 명령으로 연결한다. 선택 상태는 모든 formatting run을 살펴 uniform family만 표시하고, 혼합/읽을 수 없는 상태는 한 가족으로 추측하지 않는다. 본문과 지원되는 top-level table-cell selection은 한 번의 history action이며, 선택 밖 character properties, selection/caret ownership, Undo/Redo, IME boundary, revision/generation 및 save-state 검사를 기존 session transaction이 관리한다. 중첩 cell ownership은 기존 guard를 따르지만, 이 글꼴 변경의 nested-cell native acceptance는 NOT RUN이다. Collapsed-caret font mutation은 지원하지 않으며 표시 상태는 엔진의 right-affinity 규칙(명시적 end run 포함)을 따른다.
 - ID 해석은 picker/catalog 순서나 CSS fallback에서 만들지 않고 문서가 소유한 각 언어 table의 정확한 ID를 별도로 읽는다. 슬롯은 0 HANGUL, 1 LATIN, 2 HANJA, 3 JAPANESE, 4 OTHER, 5 SYMBOL, 6 USER이며 각 ID는 자기 table에서만 유효하다. 선택한 가족 의도는 일곱 슬롯에 각각 해석한다. 이미 있는 유효 정의는 재사용하고 빠진 정의는 지원되는 plain variant로 원자적으로 append한다. placeholder는 만들지 않는다. 중복/잘못된 이름, 잘못된 참조와 미지원 table variant는 fail-closed다. 이 문서 이름은 glyph fallback과 별개이며 글꼴 파일은 문서에 embed되지 않는다.
@@ -102,7 +102,13 @@
 - HWPX에서는 ordered seven-language fontface/ordinal/count 및 각 char-shape fontRef 관계를 확인한다. 신규 face는 non-embedded TTF `alt_type=1` 형태만 허용한다. 기존 canonical subtree/wrapper/namespace/attribute는 그대로이며, 유효한 derived shape의 fontRef 변경만 증명 범위다. 알 수 없는 원본 XML 속성을 보존할 수 없는 입력은 거부한다.
 - publication은 immutable font+shape prefix identity를 정확히 reopen한 revision에 묶는다. Undo/Redo snapshot은 protected prefix에 remap되고 compaction은 unpublished/unreferenced entries만 제거한다. 실패한 publication은 lease를 해제하고 ID 의미를 바꾸지 않는다. HWP eligibility clone은 8 MiB로 제한되고 새 proof work는 4,000,000 단위 상한을 둔다.
 - T009는 HWP와 HWPX의 별도 proof path를 사용한다. HWP proof는 기존 face/order, 정확한 7개 font counts와 char-shape count, 그 밖의 ID_MAPPINGS bytes, 원본/derived shape의 허용 필드와 trailing unknown bytes, 실제 body reference를 확인한다. HWPX proof는 원본 canonical XML 구조, 7개 언어/ordinal/count, 새 face 사용, derived fontRef의 좁은 변경 및 나머지 원본 subtree를 비교한다. 원본 preflight, unknown record/content 검증, 원본 identity 및 atomic publication 경계는 그대로 유지된다. 전체 proof 조건은 [저장 보존](save-preservation.md)과 아래 검증 기록을 따른다.
-- 렌더링 한계: actual native acceptance에서 HWP/HWPX의 선택 글리프 픽셀, caret/selection 관계, PDF raster 변화는 확인했다. 그러나 RHWP는 여전히 portable HFT/heuristic metrics와 Canvas glyph-fit을 쓴다. derived rebuild는 exact font-source binding을 지우므로 natural font advances, 새 사용자 글꼴에 따른 줄바꿈/layout metrics, complex-script shaping은 active layer-tree layout에 연결되거나 검증되지 않았다. `FontFace.load()`만으로 완료라 하지 않는다. 따라서 font package는 PARTIALLY COMPLETED다.
+- **Natural font metrics (2026-11-16).** 원인: RHWP의 활성 측정은 HFT 표/휴리스틱(`char_width_decision`)이었고, geul은 엔진의 exact-source API를 쓰지 않았으며 엔진 `rebuild_derived_state`는 slot exact source를 지웠다. Canvas는 cluster마다 그 근사 advance에 glyph를 fit-scale해서 그렸으므로 글꼴을 바꾸면 글자 모양만 바뀌고 advance·줄바꿈·caret은 바뀌지 않았다. 구조(`patches/rhwp/general-formatting-eligibility.patch`에 병합, 20-patch 상한 유지):
+  - **원본 결합.** `NaturalFontOwner`(DocumentCore 소유, 파생 상태)가 불변 `Arc<NaturalFontSnapshot>`과 generation을 가진다. 키는 엔진이 보고하는 정확한 `TextStyle` family 문자열(`getNaturalFontRequests`)이며, 문서의 저장 family 이름은 바뀌지 않는다. stage → commit은 원자적이고(개수 불일치·stage 없음은 fail-closed), commit은 `restoreSessionLayout`과 같은 파생 rebuild를 한다. 글꼴 바이트는 parse 시 bounded code point→advance 표(face 64, 파일 64 MiB, face당 200k·총 2M code point, fallback 8, face당 key 64)로만 남고 보관되지 않는다(use-after-free·누수 없음). `wght` 외 축이 있거나 기본값이 bound weight와 다른 variable face는 거부한다. 같은 alias는 같은 바이트(digest)일 때만 여러 key가 공유한다.
+  - **측정.** `resolve_render_styles()`가 모든 해석(전체 rebuild, 증분 reflow, cursor/selection/hit-test 질의)에 같은 snapshot을 붙인다. `char_width_decision`의 `naturalFont` 갈래가 CSS per-character fallback 순서(요청 family → fallback family)로 실제 face의 advance를 쓴다. glyph가 없거나 WebView가 weight를 합성할 경우(bold face 없음)는 기존 규칙으로 남고 natural로 표시하지 않는다. HWP 공백 규칙, PUA, 옛한글 자모, 반각 강제 구두점은 painter가 특수 처리하므로 기존 규칙을 유지한다. 장평·자간·위/아래첨자는 기존과 같이 advance 뒤에 적용한다.
+  - **줄바꿈과 rebuild.** 편집 reflow는 세션 전용 `Paragraph.natural_metric_generation`을 기록한다. 로드 정규화와 `set_document` 뒤에는 지운다. `rebuild_derived_state`는 다른 generation으로 편집 reflow된 본문·top-level 셀 문단만 현재 snapshot으로 다시 줄바꿈한다. 파일이 준 LineSeg는 문서 데이터이므로 건드리지 않으며, 편집하지 않은 문서는 binding 전후 HWP/HWPX export 바이트가 같다(시험). 이로써 글꼴 변경 직후(비동기 binding 전) 만든 줄도 commit 뒤 실제 advance로 다시 나뉜다.
+  - **Paint와 PDF.** Canvas family chain 앞에 같은 바이트로 만든 `FontFace` 비공개 alias(`"__geul_nf_<n>", …fallback alias, <기존 chain>`)를 둔다. 따라서 측정한 glyph가 그려진 glyph다. raster PDF는 같은 `renderPageToCanvas`를 쓴다.
+  - **호스트.** `font_face_data`(Tauri)는 공유 FontDb에서 정확한 family/style face의 바이트만 준다(경로 없음, fallback face 없음, variable named instance 거부). `src/fonts/naturalFonts.ts`가 카탈로그(typographic/localized 이름)로 key를 해석하고, WebView `FontFace` load 성공 뒤에만 stage하며, 한국어 coverage fallback을 하나 붙인다. 카탈로그 generation이 바뀌면 다시 해석하고 두 세대 전 face를 놓는다. 세션은 load 뒤, 글꼴 변경(`fontsChanged`) 뒤, 그리고 model 변경으로 family key 집합이 달라질 때(글꼴 변경·Undo/Redo·붙여넣기) 다시 binding하며, 오래된 요청·reload·dispose·IME 조합 중에는 commit하지 않는다. 저장 증거용 reopen 문서는 `adoptNaturalFontsFrom`으로 같은 snapshot을 공유해 `pagesEqual`이 같은 측정으로 비교된다.
+  - **Repaint 결함 수정.** `RhwpSurface`는 `modelVersion` 변화에만 다시 그렸으므로 model 변경 없는 relayout(natural commit, 그리고 기존 `fontsChanged`)이 Canvas에 반영되지 않았다(native run10 독립 검사에서 발견). 세션 `layoutVersion`을 추가해 surface가 이를 관찰한다.
 
 ## 6. 검증
 
@@ -211,10 +217,33 @@ PDF 게시, IME, RHWP 패치)를 바꾸지 않았다. DOCX PDF 경로는 같은 
 Saved-output hashes are the products from native-run4 (`result.json`; identical to run3); the independent inspector confirmed the expected family, seven language slots, preserved original definitions and changed PDF raster. Negative inputs were preserved after refusal. These identity records describe the supported Release run; they do not establish natural metrics/shaping or broader interoperability.
 
 
+### 6.4 RHWP natural font metrics 검증 (2026-11-16, NixOS, Release generation `5dc438563e192fe4370b6ec0bb5f0b9bddf70f637b72e53ab889f77e8402e124`)
+
+상태: **CURRENT PASS** (지원 범위). 로그는 ignored `target/font-completion/`에 있다.
+
+| 범위 | 명령 | 결과 |
+| --- | --- | --- |
+| RHWP native unit | `target/font-metrics-work`(패치 적용 소스 사본)에서 `CARGO_TARGET_DIR=target/font-metrics-cargo cargo test --offline --locked --lib natural_` | 12 PASS: registry(CSS fallback 순서·합성 bold 거부·key 공유·충돌·원자 commit), rebuild/edit/clear 수명, adopt, 잘못된 입력 fail-closed, 편집 문단·셀 re-wrap, 파일 LineSeg 불변 및 편집 안 한 HWP/HWPX export 바이트 동일. 인접 `renderer::layout::text_measurement` 37, `renderer::composer` 93(+환경 실패 1: 사본에 `template/empty.hwp` 없음), `document_core::commands::document` 28 PASS. wasm32 `cargo check` PASS. |
+| Release WASM natural | `npx vitest run --config scripts/tests/natural-metrics.vitest.config.ts` | 9 PASS(`natural-metrics-wasm.log`, `natural-metrics/evidence.json`). 기대값은 독립 TS sfnt reader(cmap 4/12+hmtx)와 RHWP의 OFL fixture(NotoSansKR-Regular, RHWPExactKerningSmoke): 글자별 advance·fallback(한글은 fallback face) 오차 <0.35px; W 폭 비 1.4633; 줄바꿈 legacy 46 → Noto 48 → smoke 70, 두 break가 같은 열 [561.9, 568] px에 일치; rebuild=증분, snapshot 복원, adopt, clear→legacy; hit test(¼/¾ 지점)·selection 사각형; 편집 안 한 HWP/HWPX export SHA 동일; 결합 문자 cluster. |
+| 기존 안전 회귀 | `npx vitest run --config scripts/tests/font-table.vitest.config.ts scripts/tests/font-editing.wasm.test.ts`; `GEUL_FORMAT_PHASE=generate npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/general-formatting.wasm.test.ts -t "four flags"` | 14 PASS(T009 HWP/HWPX proof 포함), 2 PASS(유효 세션 서식 가용성) — 새 generation에서 재실행. |
+| Host | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib fonts::tests::user_fonts_register_in_all_formats_persist_and_remove -- --exact`; `npx vitest run src/fonts/naturalFonts.test.ts src/components/Editor/rhwp/RhwpSurface.test.tsx src/commands/sessions.test.tsx` | 1 PASS(`font_face_data`: 정확 face만, WOFF는 해독 sfnt, 제거 뒤 거부); binder 7, surface 4(새 relayout repaint 시험은 수정 전 FAIL·수정 후 PASS), sessions 10 PASS. |
+| 인접 단위 | `npx vitest run src/commands src/components/Editor/rhwp src/components/FontPicker src/fonts src/adapters/fonts.test.ts` | 913 PASS / 3 FAIL. 3건(`hangulTools` 1, `hwpReopenModel` 2)은 이전 기준선과 같은 기존 실패다. 이전 `sessions` 실패는 아래와 같이 교정했다. typecheck·lint·`npm run build`·`--verify-product` PASS. |
+| 성능(작은 측정 1회) | Node Release WASM, 8쪽 문서, 60회 입력 | 키당 legacy 9.8 ms / natural 5.5 ms, 4.7 MB NanumGothic stage 26 ms + commit rebuild 33 ms(`natural-perf.json`). 심각한 회귀 없음. D4는 실행하지 않았다. |
+| Native (NixOS, 실제 Tauri) | `python3 scripts/tests/native-ibus-session.py --out "$PWD/target/font-completion/natural-native-run12-session" -- python3 scripts/tests/native-rhwp-natural-metrics.py --app "$PWD/src-tauri/target/debug/geul" --driver "$PWD/src-tauri/target/debug/tauri-driver" --xdotool @XDOTOOL@ --ibus @IBUS@ --fixtures "$PWD/target/font-completion/natural-native-fixtures" --out "$PWD/target/font-completion/natural-native-run12"` | **PASS**, HWP·HWPX, 정리 후 잔존 프로세스 없음. 앱 SHA-256 `f038cb895aea722e023d18f6c5d1f3245286c0f33bb642abd837f07705e05c93`(최종 소스). 실제 FontDb 바이트(NanumGothic `48a28e97…`, 등록 GeulMono Test1 `2da55f36…`)를 `font_face_data`로 받아 독립 Python oracle(`scripts/tests/natural_oracle.py`)로 측정: 본문 혼합 줄 28 glyph 최대 잔차 0.083 px; 100×W 문단 GeulMono 변경 뒤 줄당 41→70, 예측 열 [560.2, 568.2] px가 566.9 px 열을 포함; 셀 0 monospace 잔차≈0(12 glyph), 셀 0 끝 249.0 < 셀 1 시작 402.7(겹침 없음), 셀 1 불변; 본문/셀 Undo·Redo 기하 동일; selection 폭=caret span; 저장·닫기·재열기 기하 동일. 저장 SHA HWP `f8ddd44459a267350362a878b9da76e693f4e19fa740dfdcf2d8592b03b593ae`, HWPX `5e2f50bfecaa980c609c21ecfea3e039a3259ed7e7e315aa82990fb4d8259b75`(run10/run11과 동일). fixture SHA HWP `663942ea…`, HWPX `5fef6ea9…`(`natural-native-fixtures/geometry.json`, `node scripts/tests/rhwp-natural-metrics.mjs --generate`). |
+| 독립 검사 | `python3 scripts/tests/inspect-rhwp-natural-metrics.py "$PWD/target/font-completion/natural-native-run12" "$PWD/target/font-completion/natural-native-fixtures"` | **PASS**: 저장 파일의 문자별 7-slot family(P0 NanumGothic, P1·셀0 GeulMono Test1, 셀1 NanumGothic), 1×2 표, 텍스트; `save_check` HWP/HWPX `safe`; Canvas PNG와 PDF 쪽 그림(표준 라이브러리 해독)의 글자 줄 band 최대 차 0.0031(쪽 폭 비), before→after PDF band 5→4(re-wrap). |
+
+역사 기록: native run1–run9는 harness 결함(셀 클릭 좌표·Ctrl+Home 미지원·줄끝 caret affinity·형식 간 상태 누수·준비 신호)으로 FAIL했고 product 판정에 쓰지 않았다. run10은 driver PASS였으나 독립 검사에서 화면 Canvas가 natural commit 뒤 다시 그려지지 않은 **실제 결함**을 드러냈다(재열기 뒤 줄 2 간격 6.67 px vs PDF 8.0 px). `layoutVersion` 수정 뒤 run11과 독립 검사가 PASS했고, 컬렉션 face index 보호를 더한 최종 소스로 다시 빌드한 run12와 독립 검사가 같은 측정값·저장 해시로 PASS했다(현재 증거). 중간 Release generation `4723c0ce…`는 최종 patch 이전 것으로 대체되었다. 보존 상한 6을 지키려고 선택되지 않은 옛 generation `7d3e…`, `bc58…`를 삭제하지 않고 `target/rhwp-retired-generations/`로 옮겼다.
+
+Test contract 교정(`src/commands/sessions.test.tsx`): 실패 단언은 `format.font`가 아니라 `format.bold/italic/underline/strikethrough`가 `engineUnsupported`일 것을 기대했고 실제는 `pendingEdits`였다. 레지스트리는 RHWP 글자 서식을 조건부 지원(`RHWP_FORMAT`)으로 선언하므로 기대값이 낡은 것(A)이다. 대기 편집 중 `pendingEdits`, 확정 뒤 서식 근거가 없는 가짜 엔진 세션은 `engineUnsupported`로 거부됨을 단언하며, 유효 세션 가용성은 실제 엔진 시험(위 2 PASS)이 맡는다.
+
+NOT RUN/DEFERRED: 외부 오피스(Hancom/Word/LibreOffice 등 이 환경에 없음) 재열기 NOT RUN; native 글꼴 제거·카탈로그 refresh 흐름(엔진 clear/adopt·binder generation 단위 시험만 PASS); nested-cell native; Debug WASM; Windows/macOS·다른 배포판 DEFERRED; 전체 Rust/Vitest/RHWP suite·D4·이전 run4/run10 재실행 안 함.
+
 ## 7. 알려진 제한
 
 1. HWP/HWPX는 지원 범위에서 글꼴 변경을 지원한다. 미지원 FACE_NAME/XML variant는 6.3절의 보존 증명에 따라 거부한다.
 2. Linux 외 플랫폼: 글꼴 추가 대화상자 없음, fontconfig 동작 미검증.
-3. portable HFT/heuristic metrics와 Canvas glyph-fit을 유지한다. Natural advances, user-font wrapping/layout metrics, complex-script shaping은 미구현/미검증이다.
-4. 사용자 글꼴은 WebView에 컬렉션 첫 얼굴만 전달하고 파일은 문서에 embed하지 않는다.
+3. Natural metrics는 카탈로그에서 정확히 해석되고 WebView가 load한 face에만 적용한다. 설치되지 않은 family(예: Linux의 한컴 전용 이름), bold face가 없는 bold(WebView 합성), `wght` 외 축의 variable face, bound face와 fallback 모두 glyph가 없는 문자는 기존 HFT/휴리스틱 측정을 쓰며 natural로 표시하지 않는다. 줄 높이·기준선은 HWP 줄간격 계약(글꼴 크기 기준)을 따르고 글꼴 ascent를 쓰지 않는다.
+4. 사용자 글꼴은 WebView에 컬렉션 첫 얼굴만 전달하고 파일은 문서에 embed하지 않는다. 같은 이유로 natural binder는 face index가 0이 아닌 컬렉션 얼굴을 binding하지 않는다(기존 측정 유지, 단위 시험).
 5. 사용자·시스템 글꼴은 배포물에 넣지 않는다. 번들은 WordCraft OFL 4계열뿐(기존 고지 범위).
+6. 복합 문자: painter가 cluster마다 그리므로 합자(예: `fi`는 두 glyph), 문맥형(아랍 문자), RTL/양방향, kerning(엔진 exact-slot kerning 경로는 비활성)은 지원하지 않는다. 결합 문자(예: `e`+U+0301)는 한 cluster로 base advance를 쓴다(시험). 히브리 문자처럼 bound face가 덮지 않는 문자는 휴리스틱으로 남는다(시험 증거, 지원 주장 아님). 한글·라틴·혼합 한글/라틴만 지원 범위로 검증했다.
+7. Natural binding 지연 중 편집된 중첩 표·글상자 문단은 다음 편집 때 다시 줄바꿈된다(본문·top-level 셀만 commit 시 re-wrap). 외부 오피스 재열기는 NOT RUN.

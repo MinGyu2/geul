@@ -28,7 +28,7 @@
 | 13 | 보존·안전 거부 | IV | IV | IV | REUSED PASS | T009 보존 판정, Stage 3/4 거부 경로 | — |
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
-| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | seven-slot mutation + existing/new definitions + narrow T009 save/reopen | seven-slot mutation + existing/new definitions + narrow T009 save/reopen | CURRENT PASS: supported Linux Release native HWP/HWPX cases and independent PDF/reopen; natural metrics remain incomplete | [글꼴 시스템](architecture/font-system.md) 6.3절 | natural advances/wrapping/complex shaping NOT IMPLEMENTED/VERIFIED; nested-cell native and Windows/macOS NOT RUN/DEFERRED |
+| 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | CURRENT PASS: Linux Release native HWP/HWPX natural metrics(advance·wrap·caret·selection·Canvas/PDF) and table-cell acceptance run12, independent inspection | [글꼴 시스템](architecture/font-system.md) 6.3·6.4절 | complex shaping(ligature/contextual/RTL/kerning) unsupported and documented; external office NOT RUN; nested-cell native NOT RUN; Windows/macOS DEFERRED |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 
@@ -110,11 +110,11 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 
 ## 6. 남은 T015 의무
 
-외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), natural font metrics/wrapping/complex shaping, Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014), Release private-path cleanup. 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
+외부 작성 DOCX/HWP corpus 확대, ~~글꼴 탐색 GAP 해결~~(2026-11-15 NixOS에서 해결, 다른 OS DEFERRED), ~~natural font metrics/wrapping~~(2026-11-16 해결; complex shaping은 지원 범위 밖으로 문서화), Word/한컴 외부 호환(S5-2), Windows/macOS(S5-3), 정전·FS 고장(T014), Release private-path cleanup. 이 문서는 T015 로컬 범위 수용 기록이며 T015 전체 Done이 아니다.
 
 ## 7. Stage 5-A 글꼴 패키지 (2026-11-16)
 
-상태: **PARTIALLY COMPLETED**. 지원되는 HWP/HWPX 변경과 독립 저장·재열기 검증은 통과했지만 natural metrics와 complex shaping integration은 미구현/미검증이다. Stage 5-A는 INCOMPLETE, Release NO-GO다.
+상태: **글꼴 패키지 COMPLETED (지원 범위, 2026-11-16 natural metrics 포함)**. 이전 기록(natural metrics 미구현)은 아래 표의 역사 행으로 남긴다. 복합 shaping은 지원 범위 밖으로 문서화했다. Stage 5-A 전체는 PARTIALLY COMPLETED(Release private-path cleanup 별도), Stage 5 INCOMPLETE, Release NO-GO다.
 
 | 구분 | 내용 |
 |---|---|
@@ -122,6 +122,8 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | CURRENT PASS | Rust `font_preservation_tests`: 4 PASS. Release WASM font-editing: 14 PASS (core, session/stale, cell/pending, per-language selection/caret). Resolver/picker: 15 PASS. Protected Release generation `cfb26d65aaf99c16386dbd24497f8a79dcf4caa63e17bd9da53ba839700b619c`; native run4/negative3/independent4 on that generation. Linux native Release: existing NanumMyeongjo and registered GeulMono Test1; HWP/HWPX apply, visible Canvas pixels, Undo/Redo, save/close/reopen and independent identity/PDF inspection PASS. Negative HWP unsupported FACE_NAME and HWPX unknown header attribute refusal plus original/recovery checks PASS. Details, hashes and reports: [font system 6.3절](architecture/font-system.md). |
 | REUSED PASS | WordCraft 51, prior geul font 15, font bootstrap/fontconfig, DOCX native run10, PDF publication safety, unrelated T009/T014 and IME/history evidence. These are historical/reused, not new font mutation proof. |
 | FAILED (historical, harness fixed) | Earlier native-run1/run2 and negative-run1 attempts failed on harness tab/close semantics; corrected harness runs are run3/negative2 PASS (prior generation); current-generation reruns run4/negative3 PASS. Initial Release build publication cap/retention and HWPX face type mismatch were corrected without relaxing caps or deleting retained artifacts. Logs remain under `target/font-completion/`. |
-| NOT IMPLEMENTED / NOT VERIFIED | Natural font advances, user-font-driven wrapping/layout metrics, complex-script shaping; exact source binding is not retained across derived rebuilds. Nested-cell native font flow and Debug runtime NOT RUN. `FontFace.load()` alone is not acceptance. |
+| CURRENT PASS (natural metrics, 2026-11-16) | RHWP natural font metrics on Release generation `5dc43856…`: native unit 12, Release WASM 9 (independent sfnt oracle), font-editing regression 14, general-formatting availability 2, binder 7, surface 4, sessions 10; neighbor unit 913 PASS / 3 pre-existing FAIL; native run12 HWP/HWPX PASS (body residual 0.083 px, wrap 41→70 with predicted column, cell monospace/no overlap/Undo/Redo/reopen) and independent inspection PASS (`save_check` safe, Canvas vs PDF band delta 0.0031). Details: [font system 6.4절](architecture/font-system.md). |
+| FAILED (historical) | Natural native run1–run9 harness failures; run10 independent inspection exposed a real stale-Canvas repaint defect (fixed by `layoutVersion`, re-verified run11/run12). |
+| NOT SUPPORTED / NOT RUN | Ligatures, contextual/RTL shaping and kerning (per-cluster painter; documented). External office reopen NOT RUN (no suitable application installed). Native font removal/refresh flow and nested-cell native NOT RUN (engine/binder unit coverage only). Windows/macOS/other Linux DEFERRED. |
 | DEFERRED | Windows/macOS, other Linux distributions, external Hancom/Word compatibility, Release private-path cleanup/package work. |
 | NOT RUN | Full Rust/Vitest/WordCraft/RHWP suites, old native corpus, D4 benchmark. No old acceptance corpus was rerun. |
