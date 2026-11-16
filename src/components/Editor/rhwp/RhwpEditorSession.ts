@@ -794,10 +794,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    *  one per document; replaced on adoption of a newer snapshot, released on clear, reload and disposal. */
   private naturalLease: NaturalLease | null = null;
 
+  /** The candidate of a commit whose outcome could not be established (status "uncertain"). Kept with
+   *  `naturalLease` because the engine may paint with either; at most one per document (binding stops after it);
+   *  released only at reload/disposal. */
+  private naturalUncertainLease: NaturalLease | null = null;
+
   private releaseNaturalLease(): void {
-    const lease = this.naturalLease;
+    const leases = [this.naturalLease, this.naturalUncertainLease];
     this.naturalLease = null;
-    (this.options.natural === undefined ? naturalFonts : this.options.natural)?.release(lease);
+    this.naturalUncertainLease = null;
+    const binder = this.options.natural === undefined ? naturalFonts : this.options.natural;
+    for (const lease of leases) binder?.release(lease);
   }
 
   /**
@@ -813,7 +820,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private bindNaturalFonts(): void {
     const binder = this.options.natural === undefined ? naturalFonts : this.options.natural;
     const doc = this.doc;
-    if (!binder || !doc || this.disposed) return;
+    // After an uncertain commit the engine's font binding is unknown: no further commit until reload.
+    if (!binder || !doc || this.disposed || this.naturalUncertainLease) return;
     const epoch = this.epoch;
     const request = ++this.naturalRequest; // supersedes any in-flight or deferred request
     this.naturalKeys = this.naturalKeySet(doc);
@@ -821,10 +829,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.naturalDeferred = true;
       return;
     }
-    const current = () => this.doc === doc && this.owns(epoch) && !this.disposed && request === this.naturalRequest;
+    const current = () => this.doc === doc && this.owns(epoch) && !this.disposed && request === this.naturalRequest
+      && this.naturalUncertainLease === null;
     void binder.bind(doc, () => current() && !this.imeUnsettled).then((binding) => {
       const committed = binding.status === "bound" || binding.status === "unbound";
       const sameDocument = this.doc === doc && this.owns(epoch) && !this.disposed;
+      if (binding.status === "uncertain") {
+        if (!sameDocument) { binder.release(binding.lease); return; } // that engine document is gone
+        // The engine may paint with the previous snapshot or this candidate: keep both leases and stop editing and
+        // painting (failed state) until a reload or disposal establishes a trustworthy boundary.
+        this.naturalUncertainLease = binding.lease ?? null;
+        this.naturalFontStatus = binding;
+        this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+        return;
+      }
       if (committed && !sameDocument) {
         binder.release(binding.lease); // the document it was committed to is gone: never attach it to a newer one
         return;

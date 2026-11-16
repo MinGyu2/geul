@@ -34,16 +34,53 @@ export interface NaturalFontDocument {
   stageNaturalFontFace?(family: string, alias: string, bold: boolean, italic: boolean, bytes: Uint8Array, faceIndex: number): string;
   commitNaturalFontSet?(expectedFaces: number): string;
   clearNaturalFonts?(): boolean;
+  getNaturalFontStatus?(): string;
 }
+
+/** Active-snapshot identity read back from the engine: per-document monotonic generation plus the exact
+ *  (family key, alias, bold) faces it paints with ("" key = coverage fallback). */
+interface EngineSnapshot { generation: number; faces: Set<string> }
+
+function readSnapshot(doc: NaturalFontDocument): EngineSnapshot | null {
+  try {
+    const text = doc.getNaturalFontStatus?.();
+    if (typeof text !== "string" || text.length > 4 << 20) return null;
+    const v = JSON.parse(text) as Record<string, unknown>;
+    if (typeof v.generation !== "number" || !Number.isSafeInteger(v.generation) || typeof v.active !== "boolean") return null;
+    const faces = new Set<string>();
+    if (!v.active) return { generation: v.generation, faces };
+    const add = (list: unknown, keyed: boolean): boolean => Array.isArray(list) && list.every((f) => {
+      if (!f || typeof f !== "object") return false;
+      const { family, alias, faces: fs } = f as Record<string, unknown>;
+      if (typeof alias !== "string" || (keyed && typeof family !== "string") || !Array.isArray(fs)) return false;
+      return fs.every((face) => {
+        const bold = (face as Record<string, unknown> | null)?.bold;
+        if (typeof bold !== "boolean") return false;
+        faces.add(`${keyed ? family : ""}\n${alias}\n${bold}`);
+        return true;
+      });
+    });
+    return add(v.families, true) && add(v.fallbacks, false) ? { generation: v.generation, faces } : null;
+  } catch { return null; }
+}
+
+const sameFaces = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x));
 
 export interface NaturalBinding {
   /** bound: a snapshot was committed; unbound: nothing resolvable (legacy metrics); unsupported: engine/host lacks the
    *  surface; stale: the document changed owner before commit (nothing committed); failed: engine refused the commit. */
-  status: "bound" | "unbound" | "unsupported" | "stale" | "failed";
+  /** uncertain: the engine may or may not have adopted the candidate (commit threw or answered unreliably and the
+   *  readback could not tell). The result then carries the candidate's lease, which the receiver must keep together
+   *  with the previous one until a safe reload/disposal boundary; the document must not keep editing or painting. */
+  status: "bound" | "unbound" | "unsupported" | "stale" | "failed" | "uncertain";
   /** Engine snapshot generation after commit. */
   generation: number | null;
-  /** Ownership of the committed snapshot's WebView faces (status "bound" only). The receiver must release it. */
+  /** Ownership of the committed snapshot's WebView faces (status "bound"; the candidate's for "uncertain"). The
+   *  receiver must release it. */
   lease?: NaturalLease | null;
+  /** The commit response could not be interpreted (threw or malformed) and the outcome was established by engine
+   *  readback ("bound"/"failed") or not at all ("uncertain"). Absent for an ordinary, well-formed response. */
+  commitResponse?: "invalid";
   /** key → installed family/styles actually bound. */
   bound: { key: string; family: string; styles: string[]; alias: string }[];
   /** Considered keys left on the legacy model (no exact installed face, or the face staging limit was reached). */
@@ -292,6 +329,8 @@ export class NaturalFontService {
       groups.set(family.family, group);
     }
     const boldUnavailable = new Set(plan.filter((p) => p.boldMissing).map((p) => p.request.key));
+    const prior = readSnapshot(doc); // identity before this candidate (null: readback unavailable)
+    const candidate = new Set<string>();
     doc.beginNaturalFontSet();
     let staged = 0;
     // Faces are leased as soon as they are staged, so no catalog change can release them before the commit.
@@ -305,6 +344,7 @@ export class NaturalFontService {
       if (!entry) return false; // never stage bytes whose WebView face is not retained
       try { doc.stageNaturalFontFace!(keys.join("\n"), s.alias, s.bold, false, s.bytes, s.index); } catch { return false; }
       staged += 1;
+      for (const key of keys) candidate.add(`${key}\n${s.alias}\n${s.bold}`);
       if (!leased.includes(this.faceKey(s))) { leased.push(this.faceKey(s)); entry.refs += 1; }
       return true;
     };
@@ -347,10 +387,24 @@ export class NaturalFontService {
         doc.clearNaturalFonts?.();
         return { ...result, status: "unbound", lease: null };
       }
-      const committed = JSON.parse(doc.commitNaturalFontSet(staged)) as { generation?: unknown };
       const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated
         && !result.faceLimited && result.styleGaps.length === 0;
-      return { ...result, status: "bound", complete, lease, generation: typeof committed.generation === "number" ? committed.generation : null };
+      let response: unknown;
+      let threw = false;
+      try { response = JSON.parse(doc.commitNaturalFontSet(staged)); } catch { threw = true; }
+      const generation = (response as { generation?: unknown } | undefined)?.generation;
+      if (!threw && typeof generation === "number" && Number.isSafeInteger(generation)) {
+        return { ...result, status: "bound", complete, lease, generation };
+      }
+      // The response does not tell what the engine did. Never release faces the engine may now paint with on that
+      // basis: classify by readback of the active snapshot's identity.
+      const after = readSnapshot(doc);
+      const adopted = after !== null && sameFaces(after.faces, candidate)
+        && (prior === null ? false : after.generation > prior.generation);
+      const unchanged = after !== null && prior !== null && after.generation === prior.generation;
+      if (adopted) return { ...result, status: "bound", complete, lease, generation: after.generation, commitResponse: "invalid" };
+      if (unchanged) { this.release(lease); return { ...result, status: "failed", commitResponse: "invalid" }; }
+      return { ...result, status: "uncertain", lease, commitResponse: "invalid" };
     } catch {
       this.release(lease);
       return { ...result, status: "failed" };
