@@ -107,7 +107,7 @@ const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_CHAR: EngineSupport = SUPPORTED;
 const RHWP_STAGE1_PARAGRAPH: EngineSupport = UNSUPPORTED;
 const RHWP_STAGE1_PAGE: EngineSupport = UNSUPPORTED;
-const RHWP_STAGE1_SEARCH: EngineSupport = UNSUPPORTED;
+const RHWP_STAGE1_SEARCH: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },

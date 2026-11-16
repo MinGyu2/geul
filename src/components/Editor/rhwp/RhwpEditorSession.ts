@@ -58,7 +58,7 @@ import type {
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
-import { HIGHLIGHT_COLORS } from "../../../commands/stage1";
+import { HIGHLIGHT_COLORS, validSearchRequest, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -1834,9 +1834,136 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       format: this.formatState(), formatAccess: null, font: this.fontState(),
       ...this.parameterState(),
       chars: this.stage1Chars(),
+      searchable: this.status.kind === "ready" && !!this.doc?.searchAllText && !!this.text,
+      search: this.searchState(),
       actions: { ...this.coreActions(), ...this.stage1Actions() },
       ...this.coreActionReasons(),
     };
+  }
+
+  // ---- Stage 1 find/replace ----
+
+  private searchQuery: SearchOptions | null = null;
+  private searchCache: { key: string; value: { from: DocPosition; to: DocPosition }[] | null } | null = null;
+
+  /**
+   * Current matches of the open query, from the engine's own model search (`searchAllText`). Only body paragraphs and
+   * first-level table cells are used (equations, text boxes and nested cells are not addressable here); every hit is
+   * re-read from the model, must be deletable plain text (no objects inside) and, for whole-word searches, must not
+   * touch a letter/digit on either side. Offsets are code points, so surrogate pairs are never split.
+   */
+  private searchMatches(query: SearchOptions): { from: DocPosition; to: DocPosition }[] | null {
+    const doc = this.doc, text = this.text;
+    if (!doc?.searchAllText || !text || !doc.getControls) return null;
+    const key = `${this.epoch}|${this.modelVersion}|${JSON.stringify(query)}`;
+    if (this.searchCache?.key === key) return this.searchCache.value;
+    let value: { from: DocPosition; to: DocPosition }[] | null = null;
+    try {
+      const raw = doc.searchAllText(query.text, query.matchCase, true);
+      const controlsRaw = doc.getControls();
+      if (raw.length <= 8 * 1024 * 1024 && controlsRaw.length <= 2 * 1024 * 1024) {
+        const hits = JSON.parse(raw) as unknown, controls = JSON.parse(controlsRaw) as { ctrlId: string; para: number; controlIndex: number; list: number }[];
+        const tables = new Set(controls.filter(c => c.ctrlId === "tbl" && c.list === 0).map(c => `${c.para}:${c.controlIndex}`));
+        const word = /[\p{L}\p{N}_]/u;
+        const fold = (v: string) => query.matchCase ? v : v.toLowerCase();
+        value = [];
+        for (const hit of Array.isArray(hits) ? hits as Record<string, unknown>[] : []) {
+          if (value.length >= 10_000) break;
+          const { sec, para, charOffset, length, cellContext } = hit as { sec: number; para: number; charOffset: number; length: number;
+            cellContext?: { parentPara: number; ctrlIdx: number; cellIdx: number; cellPara: number } };
+          if ("cellPath" in hit || "equationControl" in hit || ![sec, para, charOffset, length].every(n => Number.isSafeInteger(n) && n >= 0) || length === 0) continue;
+          if (cellContext && !tables.has(`${cellContext.parentPara}:${cellContext.ctrlIdx}`)) continue;
+          const from: DocPosition = cellContext
+            ? { section: sec, paragraph: cellContext.parentPara, offset: charOffset,
+              cell: { parentParagraph: cellContext.parentPara, control: cellContext.ctrlIdx, cell: cellContext.cellIdx, cellParagraph: cellContext.cellPara } }
+            : { section: sec, paragraph: para, offset: charOffset };
+          const to = { ...from, offset: charOffset + length };
+          if (!this.ownsPosition(from) || !text.canDeleteRange(from, to)) continue;
+          const found = text.text(from, length);
+          // Re-read from the model: the hit must still be exactly the query text (case folded when requested).
+          if (Array.from(found).length !== length || fold(found) !== fold(query.text)) continue;
+          if (query.wholeWord) {
+            const before = charOffset > 0 ? text.text({ ...from, offset: charOffset - 1 }, 1) : "";
+            const end = text.paragraphLength(from);
+            const after = charOffset + length < end ? text.text(to, 1) : "";
+            if (word.test(before) || word.test(after)) continue;
+          }
+          value.push({ from, to });
+        }
+      }
+    } catch { value = null; }
+    this.searchCache = { key, value };
+    return value;
+  }
+
+  private searchState(): NonNullable<DocumentCommandSnapshot["search"]> | null {
+    const query = this.searchQuery;
+    if (!query) return null;
+    const matches = this.searchMatches(query);
+    if (!matches) return null;
+    const [a, b] = this.ordered();
+    const current = this.hasSelection ? matches.findIndex(m => sameContext(m.from, a) && compare(m.from, a) === 0 && compare(m.to, b) === 0) : -1;
+    return { ...query, count: matches.length, current: current < 0 ? null : current };
+  }
+
+  search(request: SearchRequest): boolean {
+    if (!validSearchRequest(request) || this.status.kind !== "ready" || this.imeUnsettled) return false;
+    if (request.kind === "clear") { this.searchQuery = null; this.emit(); return true; }
+    if (request.kind !== "find" && (!documentCommandState("edit.replace", this.snapshot()).available || this.pending > 0
+      || this.committingEpoch === this.epoch || this.saving || this.uncertain)) return false;
+    this.searchQuery = { ...request.query };
+    const matches = this.searchMatches(request.query);
+    if (!matches) return false;
+    const [a, b] = this.ordered();
+    if (request.kind === "find") {
+      if (matches.length > 0) {
+        // Document order across body and cell contexts (`compare` is context-local).
+        const order = (p: DocPosition) => [p.section, p.cell ? p.cell.parentParagraph : p.paragraph, p.cell ? 1 : 0,
+          p.cell?.control ?? 0, p.cell?.cell ?? 0, p.cell?.cellParagraph ?? 0, p.offset];
+        const before = (x: DocPosition, y: DocPosition) => {
+          const [ox, oy] = [order(x), order(y)];
+          for (let i = 0; i < ox.length; i++) if (ox[i] !== oy[i]) return ox[i]! < oy[i]!;
+          return false;
+        };
+        const current = matches.findIndex(m => compare(m.from, a) === 0 && compare(m.to, b) === 0 && sameContext(m.from, a));
+        let at: number;
+        if (current >= 0) at = (current + (request.backward ? matches.length - 1 : 1)) % matches.length;
+        else if (request.backward) { at = matches.length - 1; for (let i = matches.length - 1; i >= 0; i--) if (!before(a, matches[i]!.to)) { at = i; break; } }
+        else at = Math.max(0, matches.findIndex(m => !before(m.from, b)));
+        this.anchor = matches[at]!.from; this.caret = matches[at]!.to; this.preferredX = -1;
+      }
+      this.emit();
+      return true;
+    }
+    const replacement = request.with;
+    if (request.kind === "replace") {
+      // Stale results never edit: the selection must still be exactly a current match of this query.
+      const selected = this.hasSelection ? matches.find(m => sameContext(m.from, a) && compare(m.from, a) === 0 && compare(m.to, b) === 0) : undefined;
+      if (!selected) return false;
+      this.history?.boundary();
+      const applied = this.mutate(() => {
+        this.text!.delete(selected.from, selected.to.offset - selected.from.offset);
+        if (replacement) this.text!.insert(selected.from, replacement);
+        const end = { ...selected.from, offset: selected.from.offset + Array.from(replacement).length };
+        return { caret: end, anchor: end };
+      });
+      this.history?.boundary();
+      if (applied) this.search({ kind: "find", query: request.query, backward: false });
+      return applied;
+    }
+    if (matches.length === 0) return false;
+    // Replace all: one model change and one history step, last match first so earlier positions stay valid.
+    const caret = matches[0]!.from;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      for (const match of [...matches].reverse()) {
+        this.text!.delete(match.from, match.to.offset - match.from.offset);
+        if (replacement) this.text!.insert(match.from, replacement);
+      }
+      return { caret, anchor: caret };
+    });
+    this.history?.boundary();
+    return applied;
   }
 
   // ---- Stage 1 character formatting (size, color, highlight/shade, superscript/subscript) ----

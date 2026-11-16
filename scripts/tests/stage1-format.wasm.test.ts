@@ -129,7 +129,7 @@ describe.skipIf(phase !== "generate")("Stage 1 character values, production sess
         expect(properties(doc, 0, 0).fontSize).toBe(1000);
         expect(doc.renderPageSvgWithProfile(0, "screen")).toBe(before);
         expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
-        expect(properties(doc, 0, 0).fontSize).toBe(1800);
+          expect(properties(doc, 0, 0).fontSize).toBe(1800);
         expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "C00000" }).accepted).toBe(true); await settle();
         expect(editor.execute("format.highlight", { command: "format.highlight", color: "yellow" }).accepted).toBe(true); await settle();
         expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
@@ -166,16 +166,74 @@ describe.skipIf(phase !== "generate")("Stage 1 character values, production sess
   }
 });
 
+describe.skipIf(phase !== "generate")("Stage 1 find/replace, production session path, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: model search, options, cells, stale refusal, replace, replace all, history, export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        const q = (text: string, matchCase = false, wholeWord = false) => ({ text, matchCase, wholeWord });
+        expect(editor.snapshot().searchable).toBe(true);
+        expect(editor.search({ kind: "find", query: q("text"), backward: false })).toBe(true);
+        // Body paragraph and the first table cell (model text, not rendered output).
+        expect(editor.snapshot().search).toMatchObject({ count: 2, current: 0 });
+        expect(doc.getTextRange(0, 0, editor.anchor.offset, 4)).toBe("text");
+        expect(editor.search({ kind: "find", query: q("text"), backward: false })).toBe(true);
+        expect(editor.snapshot().search).toMatchObject({ count: 2, current: 1 });
+        expect(editor.caret.cell).toBeTruthy();
+        expect(editor.search({ kind: "find", query: q("text"), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.current).toBe(0); // wraps
+        expect(editor.search({ kind: "find", query: q("TEXT", true), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(0);
+        expect(editor.search({ kind: "find", query: q("Cel", false, true), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(0);
+        expect(editor.search({ kind: "find", query: q("Cell", true, true), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(1);
+        expect(editor.search({ kind: "find", query: q("끝"), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(1);
+        expect(editor.snapshot().revision).toBe(0);
+        // Replace the selected match (surrogate pair in the replacement); a stale selection is refused.
+        editor.anchor = editor.caret = body(0);
+        expect(editor.search({ kind: "find", query: q("text"), backward: false })).toBe(true);
+        expect(editor.anchor.cell).toBeUndefined();
+        const at = editor.anchor;
+        expect(editor.search({ kind: "replace", query: q("text"), with: "글자😀" })).toBe(true); await settle();
+        expect(doc.getTextRange(0, 0, at.offset, 3)).toBe("글자😀");
+        expect(editor.snapshot().revision).toBe(1);
+        editor.anchor = editor.caret = body(0);
+        expect(editor.search({ kind: "replace", query: q("text"), with: "x" })).toBe(false);
+        expect(editor.snapshot().revision).toBe(1);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 0, at.offset, 4)).toBe("text");
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        // Replace all: one history step.
+        expect(editor.search({ kind: "replaceAll", query: q("e"), with: "E" })).toBe(true); await settle();
+        const all = doc.getTextRange(0, 1, 0, 16);
+        expect(all).toBe("SEcond paragraph".replace("S", "S"));
+        expect(editor.search({ kind: "find", query: q("e", true), backward: false })).toBe(true);
+        expect(editor.snapshot().search!.count).toBe(0);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 1, 0, 16)).toBe("Second paragraph");
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(editor.search({ kind: "replaceAll", query: q("없는"), with: "y" })).toBe(false);
+        expect(editor.search({ kind: "clear" })).toBe(true);
+        expect(editor.snapshot().search).toBeNull();
+        record(`${format}-stage1-replace`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
-  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 4));
+  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 6));
   for (const { id, format } of all) {
     const dir = join(out, id), doc = new engine.HwpDocument(readFileSync(join(dir, `published.${format}`))) as Doc;
     try {
       const proof = JSON.parse(readFileSync(join(dir, "proof.json"), "utf8"));
       expect(proof.generation).toBe(build.generation);
       expect(model(doc)).toEqual(proof.model);
-      expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");
     } finally { doc.free(); }
   }
 });

@@ -77,6 +77,8 @@ export interface RhwpDocument {
     startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number,
   ): string;
   getTextRange(section: number, paragraph: number, offset: number, count: number): string;
+  /** Stage 1 find: every match of the engine's own model search (body; cells when requested), code-point offsets. */
+  searchAllText?(query: string, caseSensitive: boolean, includeCells: boolean): string;
   getTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;
   insertText(section: number, paragraph: number, offset: number, text: string): string;
   insertTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, text: string): string;
