@@ -77,6 +77,9 @@ export interface RhwpDocument {
     startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number,
   ): string;
   getTextRange(section: number, paragraph: number, offset: number, count: number): string;
+  /** Stage 1 page setup: the section's PageDef in HWPUNIT, and its change (repaginates). */
+  getPageDef?(section: number): string;
+  setPageDef?(section: number, json: string): string;
   /** Stage 1 find: every match of the engine's own model search (body; cells when requested), code-point offsets. */
   searchAllText?(query: string, caseSensitive: boolean, includeCells: boolean): string;
   getTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;

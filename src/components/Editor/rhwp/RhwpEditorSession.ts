@@ -58,7 +58,13 @@ import type {
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
-import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
+import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type PageState, type PaperName, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
+
+/** Paper sizes in points (portrait), as offered by the shared page setup commands. */
+const HWP_PAPER: Record<PaperName, [number, number]> = {
+  "A3": [841.89, 1190.55], "A4": [595.28, 841.89], "A5": [419.53, 595.28], "B4 (JIS)": [728.5, 1031.8], "B5 (JIS)": [515.9, 728.5],
+  "Letter": [612, 792], "Legal": [612, 1008],
+};
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -1838,6 +1844,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       search: this.searchState(),
       actions: { ...this.coreActions(), ...this.stage1Actions(), ...this.stage1ParagraphActions() },
       paragraph: this.stage1Paragraph(),
+      page: this.stage1Page(),
       ...this.coreActionReasons(),
     };
   }
@@ -1922,6 +1929,60 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (f.indentRight !== undefined) props.marginRight = hwp2(f.indentRight);
     if (f.indentFirst !== undefined) props.indent = hwp2(f.indentFirst);
     return this.applyStage1Paragraph(props);
+  }
+
+  // ---- Stage 1 page setup (margins, orientation, paper size of the caret's section) ----
+
+  private pageCache: { key: string; value: PageState | null } | null = null;
+  /** Same structural eligibility as paragraph edits; one section (the selection must not span sections). */
+  private stage1Page(): PageState | null {
+    const doc = this.doc;
+    if (!doc?.getPageDef || !doc.setPageDef || !this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain
+      || this.pending > 0 || this.committingEpoch === this.epoch || this.saving || this.caret.section !== this.anchor.section) return null;
+    const key = `${this.epoch}|${this.modelVersion}|${this.caret.section}`;
+    if (this.pageCache?.key === key) return this.pageCache.value;
+    let value: PageState | null;
+    try {
+      const raw = JSON.parse(doc.getPageDef(this.caret.section)) as Record<string, unknown>;
+      const n = (k: string) => { const v = raw[k]; if (!Number.isSafeInteger(v) || (v as number) < 0) throw new Error("page def"); return (v as number) / 100; };
+      const width = n("width"), height = n("height"), landscape = raw.landscape === true;
+      const paper = (Object.entries(HWP_PAPER) as [PaperName, [number, number]][]).find(([, [w, h]]) =>
+        Math.abs(Math.min(width, height) - w) < 1 && Math.abs(Math.max(width, height) - h) < 1)?.[0] ?? null;
+      value = { width: landscape ? Math.max(width, height) : width, height: landscape ? Math.min(width, height) : height, landscape,
+        marginTop: n("marginTop"), marginBottom: n("marginBottom"), marginLeft: n("marginLeft"), marginRight: n("marginRight"),
+        columns: 1, columnSpace: 0, paper };
+    } catch { value = null; }
+    this.pageCache = { key, value };
+    return value;
+  }
+
+  private executeStage1Page(command: DocumentCommandId, args?: DocumentCommandArgs): boolean | null {
+    if (command !== "layout.margins" && command !== "layout.orientation" && command !== "layout.size") return null;
+    const page = this.stage1Page(), doc = this.doc;
+    if (!page || !doc || !args || args.command !== command || !validateCommandArgs(command, args, this.parameterState().parameters?.[command])) return false;
+    const unit = (pt: number) => Math.round(pt * 100);
+    let props: Record<string, number | boolean>;
+    if (args.command === "layout.margins") {
+      // The text area must keep at least half an inch (the same rule as the DOCX engine).
+      if (args.left + args.right > page.width - 36 || args.top + args.bottom > page.height - 36) return false;
+      props = { marginTop: unit(args.top), marginBottom: unit(args.bottom), marginLeft: unit(args.left), marginRight: unit(args.right) };
+    } else if (args.command === "layout.orientation") {
+      if (args.landscape === page.landscape) return true;
+      props = { landscape: args.landscape };
+    } else if (args.command === "layout.size") {
+      // HWP stores the paper's portrait dimensions; orientation is the landscape flag.
+      const [w, h] = HWP_PAPER[args.name];
+      props = { width: unit(w), height: unit(h) };
+    } else return false;
+    const section = this.caret.section, text = JSON.stringify(props);
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const result = doc.setPageDef!(section, text);
+      if (result && /"ok"\s*:\s*false/.test(result)) throw new Error("page setup rejected");
+      return { caret: this.caret, anchor: this.anchor };
+    }, true, "other", null, true, true);
+    this.history?.boundary();
+    return applied;
   }
 
   // ---- Stage 1 find/replace ----
@@ -2473,6 +2534,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const font = this.fontState();
       if (font) parameters["format.font"] = { font };
     } else parameterReasons["format.font"] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
+    const page = this.stage1Page();
+    for (const command of ["layout.margins", "layout.orientation", "layout.size"] as const) {
+      if (page) parameters[command] = { page };
+      else parameterReasons[command] = "engineUnsupported";
+    }
     const paragraph = this.stage1Paragraph();
     if (paragraph) parameters["paragraph.settings"] = { paragraph };
     else parameterReasons["paragraph.settings"] = "caretRequired";
@@ -2747,7 +2813,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return applied ? { accepted: true } : { accepted: false };
     }
     if (command === "format.font") return { accepted: args?.command === command && this.applyFont(args) };
-    const stage1 = this.executeStage1Chars(command, args) ?? this.executeStage1Paragraph(command, args);
+    const stage1 = this.executeStage1Chars(command, args) ?? this.executeStage1Paragraph(command, args) ?? this.executeStage1Page(command, args);
     if (stage1 !== null) return { accepted: stage1 };
     if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };

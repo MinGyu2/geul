@@ -267,9 +267,41 @@ describe.skipIf(phase !== "generate")("Stage 1 paragraph alignment and formattin
   }
 });
 
+describe.skipIf(phase !== "generate")("Stage 1 page setup, production session path, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: margins, orientation, paper size, repagination, history, export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        const def = () => JSON.parse(doc.getPageDef!(0));
+        const before = def();
+        editor.anchor = editor.caret = body(0);
+        const page = editor.snapshot().page!;
+        expect(page.paper).toBe("A4");
+        expect(editor.execute("layout.size", { command: "layout.size", name: "A5" }).accepted).toBe(true); await settle();
+        expect([def().width, def().height]).toEqual([41953, 59528]);
+        expect(editor.snapshot().page!.paper).toBe("A5");
+        expect(editor.execute("layout.orientation", { command: "layout.orientation", landscape: true }).accepted).toBe(true); await settle();
+        expect(def().landscape).toBe(true);
+        const info = JSON.parse(doc.getPageInfo(0));
+        expect(info.width).toBeGreaterThan(info.height);
+        expect(editor.execute("layout.margins", { command: "layout.margins", top: 36, bottom: 40, left: 50, right: 54 }).accepted).toBe(true); await settle();
+        expect([def().marginTop, def().marginBottom, def().marginLeft, def().marginRight]).toEqual([3600, 4000, 5000, 5400]);
+        expect([def().marginHeader, def().marginFooter]).toEqual([before.marginHeader, before.marginFooter]);
+        // Margins leaving no text area are refused without change.
+        expect(editor.execute("layout.margins", { command: "layout.margins", top: 300, bottom: 300, left: 10, right: 10 }).accepted).toBe(false);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(def().marginTop).toBe(before.marginTop);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(def().marginTop).toBe(3600);
+        record(`${format}-stage1-page`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
-  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 8));
+  expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 10));
   for (const { id, format } of all) {
     const dir = join(out, id), doc = new engine.HwpDocument(readFileSync(join(dir, `published.${format}`))) as Doc;
     try {
@@ -277,6 +309,7 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       expect(proof.generation).toBe(build.generation);
       expect(model(doc)).toEqual(proof.model);
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else if (id.includes("page")) expect(JSON.parse(doc.getPageDef!(0)).landscape).toBe(true);
       else if (id.includes("paragraph")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 1)).alignment).toBe("right");
       else expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");
     } finally { doc.free(); }
