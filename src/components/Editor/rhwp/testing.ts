@@ -167,7 +167,7 @@ export const FIXED_MEMORY_BYTES = 64 * 1024 * 1024;
  * 열고 불러온 세션. 백엔드 응답은 테스트가 직접 준다. options는 세션 선택이다: 기본은 실행 취소 기록을 켠 구성(시험 활성화 빌드와
  * 같음 — 기록을 다루는 시험들의 전제), `{}`면 이 빌드의 레지스트리를 따른다(제품 빌드 구성, productionHistory.test.ts).
  */
-export async function readySession(text = ["가나다", "abc"], options: { history?: boolean } = { history: true }) {
+export async function readySession(text = ["가나다", "abc"], options: ConstructorParameters<typeof RhwpEditorSession>[4] = { history: true }) {
   const { backend, calls, take } = controlledBackend();
   const sessions = new DocumentSessions(backend);
   const opening = sessions.open("/a.hwp");

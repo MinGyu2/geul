@@ -382,6 +382,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private emit() {
     this.changeVersion += 1;
     if (this.naturalCheckedVersion !== this.modelVersion) this.checkNaturalKeys();
+    this.resumeDeferredNaturalFonts();
     for (const listener of this.listeners) listener();
   }
 
@@ -511,6 +512,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const epoch = ++this.epoch;
     this.imeSerial += 1;
+    this.naturalDeferred = false; // a deferred binding belonged to the previous document
     this.committingEpoch = null;
     this.failure = null;
     this.checkSerial += 1;
@@ -783,23 +785,39 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (keys !== null && keys !== this.naturalKeys) this.bindNaturalFonts();
   }
 
+  /** A binding was requested while an IME transaction was unsettled; owned by this session's current document and
+   *  cleared when the deferred binding starts, on reload and on disposal. */
+  private naturalDeferred = false;
+
   /**
    * Bind this document's families to exact installed font sources (naturalFonts.ts). Layout-only: the engine keeps the
    * snapshot across rebuilds/Undo/Redo and the document's stored family names never change. A newer request, a
-   * reload, or disposal supersedes an older one; an IME composition defers the commit (bounded retries).
+   * reload, or disposal supersedes an older one.
+   *
+   * IME: while a transaction is unsettled (composition, app-finished provisional composition, or awaiting the input
+   * method's final text — `imeUnsettled`) nothing is committed and the current snapshot stays. The request is recorded
+   * (`naturalDeferred`) and resumed once from `emit()` after the transaction settles, using the binder's newest catalog;
+   * several requests during one transaction coalesce into that single binding. No timer polling.
    */
-  private bindNaturalFonts(attempt = 0): void {
+  private bindNaturalFonts(): void {
     const binder = this.options.natural === undefined ? naturalFonts : this.options.natural;
     const doc = this.doc;
     if (!binder || !doc || this.disposed) return;
     const epoch = this.epoch;
-    const request = ++this.naturalRequest;
+    const request = ++this.naturalRequest; // supersedes any in-flight or deferred request
     this.naturalKeys = this.naturalKeySet(doc);
+    if (this.imeUnsettled) {
+      this.naturalDeferred = true;
+      return;
+    }
     const current = () => this.doc === doc && this.owns(epoch) && !this.disposed && request === this.naturalRequest;
-    void binder.bind(doc, () => current() && this.composition === null).then((binding) => {
+    void binder.bind(doc, () => current() && !this.imeUnsettled).then((binding) => {
       if (!current()) return;
       if (binding.status === "stale") {
-        if (attempt < 20) setTimeout(() => { if (current()) this.bindNaturalFonts(attempt + 1); }, 250);
+        // Still the newest request for this document: an IME transaction began after it started. Wait for settlement
+        // (emit resumes it; if it already settled, resume now). Each retry needs a new IME transaction: bounded.
+        this.naturalDeferred = true;
+        this.resumeDeferredNaturalFonts();
         return;
       }
       this.naturalFontStatus = binding;
@@ -815,6 +833,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.layoutVersion += 1;
       this.emit();
     }, () => undefined);
+  }
+
+  /** Start the deferred binding once the IME transaction has fully settled (called from every emit). */
+  private resumeDeferredNaturalFonts(): void {
+    if (!this.naturalDeferred || this.imeUnsettled || this.disposed || !this.doc) return;
+    this.naturalDeferred = false;
+    const doc = this.doc, epoch = this.epoch;
+    // Not inside the emitting mutation: the next microtask, and only for the same document and load.
+    queueMicrotask(() => { if (this.doc === doc && this.owns(epoch) && !this.disposed) this.bindNaturalFonts(); });
   }
 
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
@@ -2807,6 +2834,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.naturalDeferred = false;
     this.epoch += 1;
     this.imeSerial += 1;
     this.checkSerial += 1;
