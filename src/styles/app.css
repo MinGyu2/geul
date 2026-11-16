@@ -143,6 +143,7 @@ button {
 }
 
 .workspace {
+  position: relative;
   display: flex;
   min-height: 0;
   min-width: 0;
@@ -1057,4 +1058,77 @@ button {
   .statusbar { gap: 4px; }
   .statusbar__item { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
   .statusbar__zoom { flex: none; }
+}
+
+/* ---- Stage 1 value pickers, paragraph/page dialog, find bar ---- */
+
+.value-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.value-picker__select {
+  height: 28px;
+  max-width: 132px;
+  padding: 0 var(--space-1, 4px);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius);
+  background: var(--panel-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.value-picker__select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.stage1-dialog__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.stage1-dialog__grid input,
+.stage1-dialog__grid select {
+  width: 9em;
+  font: inherit;
+}
+
+.find-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.find-bar input[type="text"] {
+  width: 14em;
+  height: 26px;
+  font: inherit;
+}
+
+.find-bar__count {
+  min-width: 6em;
+  color: var(--text-muted);
+}
+
+.find-bar__host {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
 }

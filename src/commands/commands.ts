@@ -41,6 +41,8 @@ export interface CommandContext {
    * 문서가 그 사이 바뀌었으면 실행하지 않는다. 없으면 값 입력 명령은 notImplemented.
    */
   requestInput?: ((request: CommandInputRequest) => void) | undefined;
+  /** Stage 1: open the find (or find-and-replace) bar for the active document. */
+  openSearch?: ((replace: boolean) => void) | undefined;
 }
 
 /** 값 입력 창 요청. 실행은 확인한 값으로 `executeCommand(command, labelKey, context, args)`를 다시 부른다. */
@@ -229,6 +231,11 @@ export function executeCommand(
     void target.executeClipboard(id, owns).then(success => {
       if (!success) context.notify({ key: "clipboard.failed" });
     }).catch(() => context.notify({ key: "clipboard.failed" }));
+    return true;
+  }
+  if (id === "edit.find" || id === "edit.replace") {
+    if (!context.openSearch) return reject(unavailable("notImplemented"));
+    context.openSearch(id === "edit.replace");
     return true;
   }
   // The font picker always supplies its family; there is no free-form font dialog.

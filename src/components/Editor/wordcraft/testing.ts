@@ -132,6 +132,10 @@ export class FakeDocx implements DocxBackend {
   /** 이어 친 글자를 한 기록 단계로 묶는 중(WordCraft typing_open). */
   private typingOpen = false;
   trackedReadOnly = false;
+  /** Stage 1 view fields to report (null: an older backend without them) and the Stage 1 operations received. */
+  stage1: Pick<DocxView, "chars" | "paragraph" | "page"> | null = null;
+  stage1Search: DocxView["search"] | null = null;
+  stage1Ops: DocxOp[] = [];
 
   constructor(text: string[] = ["가나다", "abc"]) {
     this.paragraphs = [...text];
@@ -176,6 +180,7 @@ export class FakeDocx implements DocxBackend {
       formatAccess: this.formatAccess,
       font: { family: cmp(this.caret, this.anchor) === 0 ? this.pendingFont ?? FAKE_FONT : this.fonts.get(this.rangeKey()) ?? FAKE_FONT, eastAsia: null },
       fontGeneration: this.fontGeneration,
+      ...(this.stage1 ? { ...this.stage1, ...(this.stage1Search ? { search: this.stage1Search } : {}) } : {}),
     };
   }
 
@@ -346,6 +351,14 @@ export class FakeDocx implements DocxBackend {
 
   private apply(op: DocxOp): boolean {
     const len = (p: number) => chars(this.paragraphs[p]!).length;
+    // Stage 1 operations are verified against the real engine (Rust tests); the fake only records them (accepted when
+    // it reports Stage 1 state, refused otherwise). It never models their document effect.
+    if (["align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
+      "continueNumbering", "pageSetup", "find", "replace", "replaceAll", "clearSearch"].includes(op.op)) {
+      if (!this.stage1) return false;
+      this.stage1Ops.push(op);
+      return true;
+    }
     switch (op.op) {
       case "insertText": {
         if (this.refuseText?.(op.text)) return false;
@@ -534,6 +547,8 @@ export class FakeDocx implements DocxBackend {
         this.last = null;
         return true;
       }
+      default:
+        return false;
     }
   }
 

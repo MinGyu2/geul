@@ -74,9 +74,10 @@ import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import type { DocumentCommandId } from "../../../commands/registry";
 import type {
-  CommandDispatch, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget, QueuedStep,
+  CommandDispatch, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget, ParameterCommandId, QueuedStep,
 } from "../../../commands/target";
 import { validateCommandArgs } from "../../../commands/parameters";
+import { ALIGN_COMMANDS, STAGE1_ACTIONS, STAGE1_PARAMETERS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type SearchRequest } from "../../../commands/stage1";
 
 export type DocxStatus =
   | { kind: "idle" }
@@ -96,12 +97,14 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
   "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
+  "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
+  "continueNumbering", "pageSetup", "replace", "replaceAll",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
  * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
  */
-const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark"]);
+const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark", "find", "clearSearch"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
 const ACTION_IDS = [
@@ -110,7 +113,9 @@ const ACTION_IDS = [
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ] as const;
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
-  "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll"]);
+  "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
+  "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
+  "pageSetup", "replace", "replaceAll"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1046,6 +1051,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
       font: this.view ? { family: this.view.font.family } : null,
+      paragraph: this.view?.paragraph ?? null, chars: this.view?.chars ?? null, page: this.view?.page ?? null,
+      searchable: true, search: this.view?.search ?? null,
       ...this.parameterState(),
     };
   }
@@ -1093,8 +1100,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (!this.editable || !view || this.imeUnsettled || view.trackedReadOnly) return {};
     if (this.busy) {
       return {
-        parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits", "format.font": "pendingEdits" },
-        actionReasons: Object.fromEntries(ACTION_IDS.map((id) => [id, "pendingEdits"])),
+        parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits", "format.font": "pendingEdits",
+          ...Object.fromEntries(STAGE1_PARAMETERS.map((id) => [id, "pendingEdits"])) },
+        actionReasons: Object.fromEntries([...ACTION_IDS, ...STAGE1_ACTIONS].map((id) => [id, "pendingEdits"])),
       };
     }
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
@@ -1131,7 +1139,47 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // Stage 5-A font: any selection or caret the engine formats (`format.font`; collapsed = the engine's word/next-text
     // target). Protection that always refuses formatting blocks it here; region protection is decided by the engine.
     if (view.formatAccess !== "protected") parameters["format.font"] = { font: { family: view.font.family } };
+    this.stage1State(view, parameters, parameterReasons, actions, actionReasons);
     return { parameters, parameterReasons, actions, actionReasons };
+  }
+
+  /**
+   * Stage 1 availability from the engine view (the backend re-checks every operation). Character and paragraph
+   * formatting follow the same document-protection rule as the other formatting commands; region protection is
+   * judged by the engine. Lists need a body or table-cell paragraph selection; restart/continue need a list item.
+   */
+  private stage1State(view: DocxView, parameters: NonNullable<DocumentCommandSnapshot["parameters"]>,
+    parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]>,
+    actions: NonNullable<DocumentCommandSnapshot["actions"]>, actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]>) {
+    if (view.formatAccess === "protected" || !view.paragraph || !view.chars || !view.page) {
+      for (const id of STAGE1_PARAMETERS) parameterReasons[id] = "engineUnsupported";
+      for (const id of STAGE1_ACTIONS) actionReasons[id] = "engineUnsupported";
+      return;
+    }
+    const { paragraph, chars, page } = view;
+    for (const id of STAGE1_PARAMETERS) parameters[id] = { paragraph, chars, page };
+    for (const [id, align] of Object.entries(ALIGN_COMMANDS) as [AlignCommandId, ParagraphAlign][])
+      actions[id] = { pressed: paragraph.align === align };
+    actions["format.superscript"] = { pressed: chars.superscript };
+    actions["format.subscript"] = { pressed: chars.subscript };
+    // Body top-level or table-cell paragraphs (`body:<p>:<o>` / `body:<t>.<r>.<c>.<p>:<o>`), both ends in the same container.
+    const container = (key: string) => /^body:(\d+|\d+\.\d+\.\d+\.\d+):\d+$/.test(key) ? key.slice(0, key.lastIndexOf(".") + 1 || key.indexOf(":") + 1) : null;
+    const listTarget = container(view.caretKey) !== null && container(view.caretKey) === container(view.anchorKey);
+    const list = paragraph.list;
+    for (const id of ["paragraph.numbering", "paragraph.multilevel", "paragraph.increaseIndent", "paragraph.decreaseIndent"] as const) {
+      if (listTarget) actions[id] = {};
+      else actionReasons[id] = "caretRequired";
+    }
+    if (listTarget) {
+      actions["paragraph.numbering"] = { pressed: !!list?.numbering && !list.multilevel };
+      actions["paragraph.multilevel"] = { pressed: !!list?.multilevel };
+    } else parameterReasons["paragraph.listStyle"] = "caretRequired";
+    if (!listTarget) delete parameters["paragraph.listStyle"];
+    for (const id of ["paragraph.restartNumbering", "paragraph.continueNumbering"] as const) {
+      if (listTarget && list?.numbering) actions[id] = {};
+      else actionReasons[id] = "caretRequired";
+    }
+    void page;
   }
 
   /**
@@ -1189,7 +1237,10 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       if (args.command !== "review.comment") return { accepted: false };
       return { accepted: this.push({ op: "comment", text: args.text }) };
     }
-    if (args !== undefined) return { accepted: false };
+    if (args !== undefined) {
+      const op = this.stage1ArgsOp(command, args);
+      return { accepted: op !== null && this.push(op) };
+    }
     if (command === "file.save") {
       void this.save();
       return { accepted: true };
@@ -1201,8 +1252,52 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       : command === "review.trackChanges" && this.view ? { op: "trackChanges", value: !this.view.tracking }
       : command === "review.acceptChange" ? { op: "acceptChange" } : command === "review.rejectChange" ? { op: "rejectChange" }
       : command === "review.acceptAll" ? { op: "acceptAll" } : command === "review.rejectAll" ? { op: "rejectAll" }
-      : flag ? { op: "format", format: flag } : null;
+      : flag ? { op: "format", format: flag } : this.stage1ActionOp(command);
     return { accepted: op !== null && this.push(op) };
+  }
+
+  private stage1ActionOp(command: DocumentCommandId): DocxOp | null {
+    const chars = this.view?.chars;
+    if (command in ALIGN_COMMANDS) return { op: "align", value: ALIGN_COMMANDS[command as AlignCommandId] };
+    if (command === "format.superscript") return { op: "script", value: chars?.superscript ? "baseline" : "superscript" };
+    if (command === "format.subscript") return { op: "script", value: chars?.subscript ? "baseline" : "subscript" };
+    const list = this.view?.paragraph?.list;
+    if (command === "paragraph.numbering") return { op: "list", style: "numbered", off: !!list?.numbering && !list.multilevel };
+    if (command === "paragraph.multilevel") return { op: "list", style: "multilevel", off: !!list?.multilevel };
+    if (command === "paragraph.increaseIndent") return { op: "listIndent", outdent: false };
+    if (command === "paragraph.decreaseIndent") return { op: "listIndent", outdent: true };
+    if (command === "paragraph.restartNumbering") return { op: "restartNumbering" };
+    if (command === "paragraph.continueNumbering") return { op: "continueNumbering" };
+    return null;
+  }
+
+  /** Stage 1 value commands → backend operations (values validated again here, immediately before queueing). */
+  private stage1ArgsOp(command: DocumentCommandId, args: DocumentCommandArgs): DocxOp | null {
+    if (args.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[args.command as ParameterCommandId])) return null;
+    switch (args.command) {
+      case "format.fontSize": return { op: "fontSize", size: args.size };
+      case "format.fontColor": return { op: "fontColor", color: args.color };
+      case "format.highlight": return { op: "highlight", color: args.color };
+      case "paragraph.listStyle": return { op: "list", style: args.style, off: false };
+      case "paragraph.settings": return { op: "paragraph", format: args.format };
+      case "layout.margins": return { op: "pageSetup", setup: { kind: "margins", top: args.top, bottom: args.bottom, left: args.left, right: args.right } };
+      case "layout.orientation": return { op: "pageSetup", setup: { kind: "orientation", landscape: args.landscape } };
+      case "layout.size": return { op: "pageSetup", setup: { kind: "size", name: args.name } };
+      case "layout.columns": return { op: "pageSetup", setup: { kind: "columns", count: args.count, space: args.space } };
+      default: return null;
+    }
+  }
+
+  /** Stage 1 find/replace: model-owned search on the backend (stale replacements are refused there). */
+  search(request: SearchRequest): boolean {
+    if (!validSearchRequest(request) || !this.editable && request.kind !== "find" && request.kind !== "clear") return false;
+    if (this.imeUnsettled || this.status.kind !== "ready") return false;
+    if ((request.kind === "replace" || request.kind === "replaceAll")
+      && !documentCommandState("edit.replace", this.snapshot()).available) return false;
+    const op: DocxOp = request.kind === "find" ? { op: "find", query: request.query, backward: request.backward }
+      : request.kind === "replace" ? { op: "replace", query: request.query, with: request.with }
+      : request.kind === "replaceAll" ? { op: "replaceAll", query: request.query, with: request.with } : { op: "clearSearch" };
+    return this.push(op, request.kind !== "find" && request.kind !== "clear");
   }
 
   // ---- 저장(T009) ----

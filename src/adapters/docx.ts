@@ -5,6 +5,7 @@
 //   (DocxOp)으로만 보낸다. 임의의 WordCraft 명령 ID는 보낼 수 없다(백엔드가 역직렬화에서 거부).
 // - 수명주기·revision은 백엔드가 정한다. 응답의 세션 정보는 DocumentSessions.applyUpdate로 반영한다.
 // - 응답은 신뢰 경계를 넘어온 값이므로 모양을 검사하고, 맞지 않으면 Protocol 오류로 다룬다(backend.ts와 같음).
+import { PAPER_NAMES, type CharState, type ListStyle, type PageState, type ParagraphAlign, type ParagraphState, type SearchOptions, type SearchState } from "../commands/stage1";
 import { call, type Invoke } from "./backend";
 import {
   parsePdfExported,
@@ -83,6 +84,11 @@ export interface DocxView {
   font: DocxFont;
   /** Stage 5-A: font database generation the layout reflects; pages are redrawn when it changes. */
   fontGeneration: number;
+  /** Stage 1: size/color/highlight/script, paragraph formatting + list state, page setup, open search. */
+  chars?: CharState;
+  paragraph?: ParagraphState;
+  page?: PageState;
+  search?: SearchState;
 }
 
 export interface DocxFont {
@@ -178,7 +184,34 @@ export type DocxOp =
   | { op: "acceptChange" }
   | { op: "rejectChange" }
   | { op: "acceptAll" }
-  | { op: "rejectAll" };
+  | { op: "rejectAll" }
+  // Stage 1 (backend `stage1.rs`).
+  | { op: "align"; value: ParagraphAlign }
+  | { op: "fontSize"; size: number }
+  | { op: "fontColor"; color: string }
+  | { op: "highlight"; color: string }
+  | { op: "script"; value: "superscript" | "subscript" | "baseline" }
+  | { op: "paragraph"; format: DocxParagraphFormat }
+  | { op: "list"; style: ListStyle; off: boolean }
+  | { op: "listIndent"; outdent: boolean }
+  | { op: "restartNumbering" }
+  | { op: "continueNumbering" }
+  | { op: "pageSetup"; setup: DocxPageSetup }
+  | { op: "find"; query: SearchOptions; backward: boolean }
+  | { op: "replace"; query: SearchOptions; with: string }
+  | { op: "replaceAll"; query: SearchOptions; with: string }
+  | { op: "clearSearch" };
+
+/** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
+export interface DocxParagraphFormat {
+  lineSpacing?: { rule: "multiple" | "atLeast" | "exactly"; value: number };
+  spaceBefore?: number; spaceAfter?: number; indentLeft?: number; indentRight?: number; indentFirst?: number;
+}
+export type DocxPageSetup =
+  | { kind: "margins"; top: number; bottom: number; left: number; right: number }
+  | { kind: "orientation"; landscape: boolean }
+  | { kind: "size"; name: string }
+  | { kind: "columns"; count: number; space: number };
 
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
 export const MAX_DOCX_COMMENT_CHARS = 1000;
@@ -273,7 +306,76 @@ function parseFont(value: unknown): DocxFont | null {
   return family === undefined || eastAsia === undefined ? null : { family, eastAsia };
 }
 
+const ALIGNS: readonly ParagraphAlign[] = ["left", "center", "right", "justify"];
+const num = (value: unknown): number | null | undefined => value === null ? null : isFinite(value) ? value : undefined;
+
+function parseChars(value: unknown): CharState | undefined {
+  if (!isRecord(value) || !hasExactly(value, ["size", "color", "highlight", "superscript", "subscript"])) return undefined;
+  const size = num(value.size);
+  const text = (v: unknown) => v === null ? null : typeof v === "string" && /^([0-9A-Fa-f]{6}|auto)$/.test(v) ? v.toUpperCase().replace("AUTO", "auto") : undefined;
+  const color = text(value.color), highlight = text(value.highlight);
+  if (size === undefined || color === undefined || highlight === undefined
+    || typeof value.superscript !== "boolean" || typeof value.subscript !== "boolean") return undefined;
+  return { size, color, highlight, superscript: value.superscript, subscript: value.subscript };
+}
+
+function parseParagraph(value: unknown): ParagraphState | undefined {
+  const keys = ["align", "lineSpacing", "spaceBefore", "spaceAfter", "indentLeft", "indentRight", "indentFirst", "list"];
+  if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
+  const align = value.align === null ? null : ALIGNS.find((a) => a === value.align);
+  const line = value.lineSpacing;
+  const lineSpacing = line === null ? null : isRecord(line) && hasExactly(line, ["rule", "value"])
+    && (line.rule === "multiple" || line.rule === "atLeast" || line.rule === "exactly") && isFinite(line.value)
+    ? { rule: line.rule, value: line.value } as ParagraphState["lineSpacing"] : undefined;
+  const numbers = ["spaceBefore", "spaceAfter", "indentLeft", "indentRight", "indentFirst"].map((k) => num(value[k]));
+  const l = value.list;
+  const list = l === null ? null : isRecord(l) && hasExactly(l, ["bullets", "numbering", "multilevel", "level"])
+    && typeof l.bullets === "boolean" && typeof l.numbering === "boolean" && typeof l.multilevel === "boolean" && isCount(l.level) && l.level <= 8
+    ? { bullets: l.bullets, numbering: l.numbering, multilevel: l.multilevel, level: l.level } : undefined;
+  if (align === undefined || lineSpacing === undefined || list === undefined || numbers.some((n) => n === undefined)) return undefined;
+  const [spaceBefore, spaceAfter, indentLeft, indentRight, indentFirst] = numbers as (number | null)[];
+  return { align, lineSpacing, spaceBefore: spaceBefore!, spaceAfter: spaceAfter!, indentLeft: indentLeft!, indentRight: indentRight!, indentFirst: indentFirst!, list };
+}
+
+function parsePageSetup(value: unknown): PageState | undefined {
+  const keys = ["width", "height", "landscape", "marginTop", "marginBottom", "marginLeft", "marginRight", "columns", "columnSpace", "paper"];
+  if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
+  const lengths = ["width", "height", "marginTop", "marginBottom", "marginLeft", "marginRight", "columnSpace"];
+  if (!lengths.every((k) => isFinite(value[k])) || typeof value.landscape !== "boolean" || !isCount(value.columns)) return undefined;
+  const paper = value.paper === null ? null : PAPER_NAMES.find((p) => p === value.paper);
+  if (paper === undefined) return undefined;
+  return {
+    width: value.width as number, height: value.height as number, landscape: value.landscape, marginTop: value.marginTop as number,
+    marginBottom: value.marginBottom as number, marginLeft: value.marginLeft as number, marginRight: value.marginRight as number,
+    columns: value.columns, columnSpace: value.columnSpace as number, paper,
+  };
+}
+
+function parseSearch(value: unknown): SearchState | undefined {
+  if (!isRecord(value) || !hasExactly(value, ["text", "matchCase", "wholeWord", "count", "current"])) return undefined;
+  const { text, matchCase, wholeWord, count, current } = value;
+  if (typeof text !== "string" || typeof matchCase !== "boolean" || typeof wholeWord !== "boolean" || !isCount(count)) return undefined;
+  if (current !== null && !(isCount(current) && current < count)) return undefined;
+  return { text, matchCase, wholeWord, count, current };
+}
+
+const STAGE1_VIEW: readonly [string, (value: unknown) => unknown][] = [["chars", parseChars], ["paragraph", parseParagraph], ["page", parsePageSetup], ["search", parseSearch]];
+
 export function parseDocxView(value: unknown): DocxView | null {
+  if (!isRecord(value)) return null;
+  // Stage 1 fields are validated when present; a malformed one rejects the whole view.
+  const stage1: Record<string, unknown> = {};
+  for (const [key, parse] of STAGE1_VIEW) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const parsed = parse(value[key]);
+    if (parsed === undefined) return null;
+    stage1[key] = parsed;
+  }
+  const base = parseDocxBaseView(Object.fromEntries(Object.entries(value).filter(([key]) => !STAGE1_VIEW.some(([k]) => k === key))));
+  return base && { ...base, ...stage1 };
+}
+
+function parseDocxBaseView(value: unknown): DocxView | null {
   if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "bullets") && typeof value.bullets !== "boolean" && value.bullets !== null) return null;

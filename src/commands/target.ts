@@ -8,6 +8,7 @@ import type { EngineId, SessionId } from "../adapters/contract";
 import type { DocxFormatAccess } from "../adapters/docx";
 import type { Message } from "../language";
 import type { DocumentCommandId } from "./registry";
+import type { CharState, PageState, ParagraphState, SearchRequest, SearchState, Stage1ActionCommandId, Stage1Args } from "./stage1";
 
 export type CharFormatFlag = "bold" | "italic" | "underline" | "strikethrough";
 
@@ -70,12 +71,19 @@ export interface DocumentCommandSnapshot {
    * 이유 또는 engineUnsupported.
    */
   actions?: Partial<Record<ActionCommandId, { pressed?: boolean }>>;
+  /** Stage 1: paragraph formatting / character values / page setup of the selection, and the open search. */
+  paragraph?: ParagraphState | null;
+  chars?: CharState | null;
+  page?: PageState | null;
+  /** The engine can search this document (find/replace availability). */
+  searchable?: boolean;
+  search?: SearchState | null;
   actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "revisionsRequired" | "pendingEdits" | "originalChecking" | "originalUnverified"
     | "notInTable" | "nestedTable" | "tableFormula" | "tableContent" | "tableShape" | "limit" | "engineUnsupported">>;
 }
 
 /** 값 입력 없이 세션 문맥으로만 가용성이 정해지는 문서 명령. */
-export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references.toc" | "references.updateToc"
+export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references.toc" | "references.updateToc" | Stage1ActionCommandId
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | TableStructureCommandId;
 
@@ -105,7 +113,9 @@ export type DocumentCommandArgs =
   | { command: "references.endnote"; text: string }
   /** Stage 5-A: font family for the selection (or the next typed text where the engine supports it). Chosen in the
    * font picker, never from a free-form dialog. */
-  | { command: "format.font"; family: string };
+  | { command: "format.font"; family: string }
+  /** Stage 1 value commands (src/commands/stage1.ts). */
+  | Stage1Args;
 
 /** 값이 필요한 문서 명령. */
 export type ParameterCommandId = DocumentCommandArgs["command"];
@@ -122,6 +132,10 @@ export interface CommandParameterContext {
   tableCell?: { row: number; col: number; rows: number; cols: number };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };
+  /** Stage 1: current paragraph / character / page values (initial dialog and picker values). */
+  paragraph?: ParagraphState;
+  chars?: CharState;
+  page?: PageState;
 }
 
 /**
@@ -143,4 +157,6 @@ export interface DocumentCommandTarget {
    * 아무것도 바꾸지 않고 거절한다(accepted: false).
    */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch;
+  /** Stage 1 find/replace through the session's edit path. Returns whether the request was queued. */
+  search?(request: SearchRequest): boolean;
 }

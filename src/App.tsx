@@ -5,6 +5,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { executeCommand, type CommandContext, type CommandInputRequest, type FileCommandActions } from "./commands/commands";
 import type { DocumentCommandArgs } from "./commands/target";
 import { CommandInputDialog } from "./components/Editor/CommandInputDialog";
+import { Stage1Dialog } from "./components/Editor/Stage1Dialog";
+import { FindBar } from "./components/FindBar/FindBar";
+import { STAGE1_PARAMETERS } from "./commands/stage1";
 import { handleShortcut } from "./commands/shortcuts";
 import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
 import { documentPanelState, navigateDocumentPage } from "./components/Editor/documentPanels";
@@ -210,6 +213,8 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   // 값 입력 명령(T012·T013)의 입력 창. 요청은 연 순간의 세션·불러오기 번호·revision을 담는다.
   const [inputRequest, setInputRequest] = useState<CommandInputRequest | null>(null);
   const requestInput = useCallback((request: CommandInputRequest) => setInputRequest(request), []);
+  // Stage 1 find/replace bar (non-modal) for the active document.
+  const [findBar, setFindBar] = useState<{ sessionId: number; replace: boolean } | null>(null);
   const clipboardOwnership = useRef(0);
   const imageOwnership = useRef(0);
   useLayoutEffect(() => { imageOwnership.current += 1; }, [activeEditor, modal, formatChoice, inputRequest, fileBusy]);
@@ -235,6 +240,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
     () => ({
       layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
       files: fileActions, requestInput, fonts,
+      openSearch: (replace: boolean) => { if (activeEditor) setFindBar({ sessionId: activeEditor.sessionId, replace }); },
       pickImage: () => invoke<import("./commands/target").ImportedPicture | null>("picture_import", { title: t("command.insert.image"), accept: t("document.open"), cancel: t("document.cancel") }),
       imageOwner: target => {
         const epoch = imageOwnership.current;
@@ -254,6 +260,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   );
   // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
   if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);
+  if (findBar && activeEditor?.sessionId !== findBar.sessionId) setFindBar(null);
   const confirmInput = (args: DocumentCommandArgs) => {
     const request = inputRequest;
     setInputRequest(null);
@@ -326,6 +333,12 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
             {splitter("navigation")}
           </>
         )}
+        {findBar && activeEditor && <div className="find-bar__host">
+          <FindBar key={`${findBar.sessionId}:${findBar.replace}`} context={context} replace={findBar.replace} onClose={() => {
+            setFindBar(null);
+            document.querySelector<HTMLTextAreaElement>(".editor__scroll textarea.rhwp-input")?.focus({ preventScroll: true });
+          }} />
+        </div>}
         <Editor zoom={layout.zoom} workspace={documents} fileActions={fileActions} notify={notify} onModalChange={setModal} />
         {layout.propertiesVisible && (
           <>
@@ -336,7 +349,9 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       </div>
       <StatusBar context={context} message={message} state={panel} noticeId={notice?.id} pendingCount={pendingCount} noticeResolved={notice?.resolved}
         onDismissMessage={notice ? () => onDismissMessage(notice.id) : undefined} />
-      {inputRequest && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
+      {inputRequest && (STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command) && <Stage1Dialog key={`${inputRequest.sessionId}:${inputRequest.command}`}
+        request={inputRequest} suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
+      {inputRequest && !(STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command) && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
         suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
       {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>

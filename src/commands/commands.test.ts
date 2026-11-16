@@ -142,7 +142,7 @@ describe("명령 레지스트리", () => {
 describe("가용성 결정", () => {
   it("열린 문서가 없으면 noDocument, 연결하지 않은 리본 명령은 notImplemented", () => {
     for (const id of DOCUMENT_IDS) expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "noDocument" });
-    expect(commandState("paragraph.alignCenter", { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
+    expect(commandState("insert.shape", { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     for (const id of ["no.such.command", "toString", "constructor"]) {
       expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     }
@@ -248,12 +248,12 @@ describe("명령 실행", () => {
     const { value, notices } = context(target);
     expect(executeCommand("format.bold", undefined, value)).toBe(false);
     expect(executeCommand("edit.undo", "command.edit.undo", value)).toBe(false);
-    expect(executeCommand("paragraph.alignCenter", "command.paragraph.alignCenter", value)).toBe(false);
+    expect(executeCommand("insert.shape", "command.insert.shape", value)).toBe(false);
     expect(executed).toEqual([]);
     expect(notices).toEqual([
       { key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.format.bold" } } },
       { key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.edit.undo" } } },
-      { key: "command.unavailable.notImplemented", vars: { command: { key: "command.paragraph.alignCenter" } } },
+      { key: "command.unavailable.notImplemented", vars: { command: { key: "command.insert.shape" } } },
     ]);
   });
 

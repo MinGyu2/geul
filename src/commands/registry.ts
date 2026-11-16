@@ -32,7 +32,14 @@ export type DocumentCommandId =
   | "insert.table" | "insert.image" | "paragraph.bullets"
   | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
   | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.mergeCells" | "table.splitCell"
-  | "file.save";
+  | "file.save"
+  // Stage 1 common editing (src/commands/stage1.ts).
+  | "paragraph.alignLeft" | "paragraph.alignCenter" | "paragraph.alignRight" | "paragraph.justify"
+  | "format.fontSize" | "format.fontColor" | "format.highlight" | "format.superscript" | "format.subscript"
+  | "paragraph.settings" | "paragraph.numbering" | "paragraph.multilevel" | "paragraph.listStyle"
+  | "paragraph.increaseIndent" | "paragraph.decreaseIndent" | "paragraph.restartNumbering" | "paragraph.continueNumbering"
+  | "layout.margins" | "layout.orientation" | "layout.size" | "layout.columns"
+  | "edit.find" | "edit.replace";
 
 /** 엔진 하나에서 명령의 지원. */
 export type EngineSupport =
@@ -96,6 +103,12 @@ const RHWP_FORMAT: EngineSupport = SUPPORTED;
 // within snapshot memory and operation-specific T012 bounds. General formatting uses its own session checks.
 const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
+/** Stage 1 HWP/HWPX support declarations (see docs/architecture/command-registry.md "Stage 1"). */
+const RHWP_STAGE1_CHAR: EngineSupport = UNSUPPORTED;
+const RHWP_STAGE1_PARAGRAPH: EngineSupport = UNSUPPORTED;
+const RHWP_STAGE1_PAGE: EngineSupport = UNSUPPORTED;
+const RHWP_STAGE1_SEARCH: EngineSupport = UNSUPPORTED;
+
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },
   "edit.cut": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+X"], scope: "document" },
@@ -138,6 +151,31 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "table.mergeCells": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.splitCell": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
+  // Stage 1 (docs/architecture/command-registry.md "Stage 1"). Runtime availability is the session's actual
+  // selection/engine context; RHWP_STAGE1_* declare the HWP/HWPX support verified in this build.
+  "paragraph.alignLeft": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH }, shortcuts: ["Mod+L"], scope: "document" },
+  "paragraph.alignCenter": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH }, shortcuts: ["Mod+E"], scope: "document" },
+  "paragraph.alignRight": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH }, shortcuts: ["Mod+R"], scope: "document" },
+  "paragraph.justify": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH }, shortcuts: ["Mod+J"], scope: "document" },
+  "format.fontSize": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
+  "format.fontColor": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
+  "format.highlight": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
+  "format.superscript": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
+  "format.subscript": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_CHAR } },
+  "paragraph.settings": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PARAGRAPH } },
+  "paragraph.numbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.multilevel": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.listStyle": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.increaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.decreaseIndent": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.restartNumbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.continueNumbering": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "layout.margins": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
+  "layout.orientation": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
+  "layout.size": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
+  "layout.columns": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "edit.find": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+F"], scope: "global" },
+  "edit.replace": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+H"], scope: "global" },
 };
 
 const LAYOUT_COMMANDS: Record<LayoutCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {

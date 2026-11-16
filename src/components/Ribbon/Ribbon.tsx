@@ -9,6 +9,7 @@ import { useTranslation } from "../../language/LanguageContext";
 import { DEFAULT_RIBBON_TAB, resolveActiveRibbonTab, visibleRibbonTabs } from "../../ribbon/visibility";
 import { CommandButton } from "../CommandButton/CommandButton";
 import { FontPicker } from "../FontPicker/FontPicker";
+import { VALUE_PICKERS, ValuePicker } from "./ValuePicker";
 import { keepEditorFocusOnPointerDown } from "../CommandButton/editorFocus";
 
 interface RibbonProps {
@@ -161,6 +162,9 @@ export function Ribbon({ context, format }: RibbonProps) {
                 <div className="ribbon__group-commands">
                   {group.commands.map((command, commandIndex) => command.id === "format.font" ? (
                     <FontPicker key={command.id} context={context} tabIndex={groupIndex === 0 && commandIndex === 0 ? 0 : -1} />
+                  ) : VALUE_PICKERS.has(command.id) ? (
+                    <ValuePicker key={command.id} id={command.id} labelKey={command.labelKey} context={context}
+                      tabIndex={groupIndex === 0 && commandIndex === 0 ? 0 : -1} />
                   ) : (
                     <CommandButton
                       key={command.id}

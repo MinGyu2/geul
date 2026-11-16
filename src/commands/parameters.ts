@@ -8,6 +8,7 @@
 //   `A1:ZZZ999999` 범위는 좌표 목록을 다 만든다). 그래서 글자 종류·길이·괄호 깊이를 묶고, 모든 셀 참조가 지금 표 안인지 확인한다.
 //   엔진의 결과 문자열은 계산 값일 뿐 표가 바뀌었다는 근거가 아니다(셀에 쓰기는 하지 않음).
 import type { ActionCommandId, CommandParameterContext, DocumentCommandArgs, ParameterCommandId } from "./target";
+import { STAGE1_ACTIONS, STAGE1_PARAMETERS, validStage1Args } from "./stage1";
 
 export const CHAR_WIDTH_RANGE = { min: 50, max: 200 } as const;
 export const CHAR_SPACING_RANGE = { min: -50, max: 50 } as const;
@@ -19,7 +20,7 @@ export const MAX_FORMULA_DEPTH = 16;
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
   "insert.table",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
-  "references.footnote", "references.endnote", "format.font",
+  "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
 
 /** Font family length limit (bytes after trimming, the backend `valid_font_name` / WordCraft `format.font` limit). */
@@ -53,6 +54,7 @@ const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
   "table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",
   "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell",
+  ...STAGE1_ACTIONS,
 ]);
 
 /** 값 입력 없이 세션 문맥으로만 실행하는 명령(입력 창을 열지 않음). */
@@ -324,7 +326,8 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
     case "format.font":
       return keys === "command,family" && !!context?.font && typeof value.family === "string" && fontFamilyProblem(value.family) === null;
     default:
-      return false;
+      // Stage 1: the session must have offered a context for the command (it decided the selection supports it).
+      return !!context && validStage1Args(command, value);
   }
 }
 
