@@ -1,7 +1,7 @@
 // Stage 5-A natural-metric binder: resolution through the shared catalog, exact sources, fail-closed paths.
 import { describe, expect, it } from "vitest";
 import type { FontBackend, FontCatalog, FontFamily } from "../adapters/fonts";
-import { catalogFamily, NaturalFontService, pickStyle, type NaturalFontDocument } from "./naturalFonts";
+import { catalogFamily, MAX_NATURAL_FACES, MAX_REQUESTS, NaturalFontService, pickStyle, type NaturalFontDocument } from "./naturalFonts";
 
 const family = (name: string, styles: [string, number][], localized: { lang: string; name: string }[] = []): FontFamily => ({
   id: name, family: name, localized, source: "system", available: true, renderable: true,
@@ -23,7 +23,7 @@ class FakeFace {
   async load() { if (this.family === "refuse") throw new Error("x"); return this as unknown as FontFace; }
 }
 
-function setup(requests: { key: string; members: string[]; regular?: boolean; bold?: boolean }[], options: { refuseWeb?: string; collection?: string } = {}) {
+function setup(requests: { key: string; members: string[]; regular?: boolean; bold?: boolean }[], options: { refuseWeb?: string; collection?: string; truncated?: boolean } = {}) {
   const fetched: string[] = [];
   const backend = {
     faceData: async (f: string, s: string) => { fetched.push(`${f}/${s}`); return { ok: true as const, value: { index: f === options.collection ? 1 : 0, bytes: new TextEncoder().encode(`${f}/${s}`) } }; },
@@ -37,7 +37,7 @@ function setup(requests: { key: string; members: string[]; regular?: boolean; bo
   const staged: [string, string, boolean, string][] = [];
   let committed: number | null = null, cleared = 0;
   const doc: NaturalFontDocument = {
-    getNaturalFontRequests: () => JSON.stringify({ requests: requests.map((r) => ({ regular: true, bold: false, ...r })) }),
+    getNaturalFontRequests: () => JSON.stringify({ truncated: options.truncated ?? false, requests: requests.map((r) => ({ regular: true, bold: false, ...r })) }),
     beginNaturalFontSet: () => { staged.length = 0; },
     stageNaturalFontFace: (key, alias, bold, _italic, bytes) => {
       if (new TextDecoder().decode(bytes).startsWith("Hangul Sans") && options.refuseWeb === "engine") throw new Error("unsupported-variation");
@@ -131,5 +131,81 @@ describe("natural font binder", () => {
     t.service.configure(t.backend, catalog(3, FAMILIES));
     expect([...first].some((f) => t.set.has(f))).toBe(false);
     expect(t.fetched.filter((f) => f === "Latin Serif/Regular")).toHaveLength(2);
+  });
+});
+
+describe("natural font request limit accounting", () => {
+  // Unresolvable keys (no catalog family) stay on legacy metrics without fetching anything.
+  const missing = (n: number, from = 0) => Array.from({ length: n }, (_, i) => ({ key: `Missing ${from + i}`, members: [`Missing ${from + i}`] }));
+  const bound = { key: "Latin Serif", members: ["Latin Serif"] };
+
+  it.each([[127, 0], [128, 0], [129, 1], [512, 512 - MAX_REQUESTS]])("B1-B4: %i reported requests -> %i omitted, bounded processing", async (n, omittedCount) => {
+    const requests = [bound, ...missing(n - 1)];
+    const t = setup(requests);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(MAX_REQUESTS).toBe(128);
+    expect(r.omitted).toHaveLength(omittedCount);
+    expect(r.omitted).toEqual(requests.slice(MAX_REQUESTS).map((q) => q.key)); // identities preserved, engine order
+    expect(r.bound.length + r.unbound.length).toBe(Math.min(n, MAX_REQUESTS)); // nothing beyond the limit considered
+    expect(r.status).toBe("bound");
+    expect(r.complete).toBe(false); // the missing families stay on legacy metrics
+    expect(t.fetched.length).toBeLessThanOrEqual(2);
+  });
+
+  it("B2/B5: a fully bound boundary is complete; the engine truncation flag forbids completeness", async () => {
+    const t = setup([bound]);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const full = await t.service.bind(t.doc, () => true);
+    expect([full.status, full.complete, full.omitted, full.engineTruncated]).toEqual(["bound", true, [], false]);
+    const tr = setup([bound], { truncated: true });
+    tr.service.configure(tr.backend, catalog(1, FAMILIES));
+    const truncated = await tr.service.bind(tr.doc, () => true);
+    expect([truncated.status, truncated.engineTruncated, truncated.complete]).toEqual(["bound", true, false]);
+    expect(truncated.omitted).toEqual([]); // no fabricated names for families the engine did not enumerate
+  });
+
+  it("B6: resolvable keys inside the limit bind; an excess resolvable key is omitted, not staged or borrowed", async () => {
+    const requests = [...missing(MAX_REQUESTS - 1), bound, { key: "Excess Latin", members: ["Latin Serif"] }];
+    const t = setup(requests);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(r.bound.map((b) => b.key)).toEqual(["Latin Serif"]);
+    expect(r.omitted).toEqual(["Excess Latin"]);
+    expect(t.staged.some(([k]) => k.split("\n").includes("Excess Latin"))).toBe(false);
+    expect(r.complete).toBe(false);
+  });
+
+  it("B7: staging stops at the face limit; the committed set and the result report it", async () => {
+    const families = Array.from({ length: 70 }, (_, i) => family(`F${i}`, [["Regular", 400]]));
+    const t = setup(families.map((f) => ({ key: f.family, members: [f.family] })));
+    t.service.configure(t.backend, catalog(1, families));
+    const r = await t.service.bind(t.doc, () => true);
+    expect(t.state().committed).toBe(MAX_NATURAL_FACES);
+    expect(t.staged).toHaveLength(MAX_NATURAL_FACES);
+    expect(r.bound).toHaveLength(MAX_NATURAL_FACES);
+    expect(r.unbound).toHaveLength(70 - MAX_NATURAL_FACES);
+    expect([r.status, r.faceLimited, r.complete]).toEqual(["bound", true, false]);
+  });
+
+  it("B8: a new catalog generation recalculates bound, unbound and omitted keys from the current requests", async () => {
+    const requests = [bound, { key: "Later Font", members: ["Later Font"] }, ...missing(MAX_REQUESTS)];
+    const t = setup(requests);
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    const first = await t.service.bind(t.doc, () => true);
+    expect(first.unbound).toContain("Later Font");
+    t.service.configure(t.backend, catalog(2, [...FAMILIES, family("Later Font", [["Regular", 400]])]));
+    const second = await t.service.bind(t.doc, () => true);
+    expect(second.bound.map((b) => b.key).sort()).toEqual(["Later Font", "Latin Serif"]);
+    expect(second.unbound).not.toContain("Later Font");
+    expect(second.omitted).toEqual(first.omitted);
+    expect(second.omitted).toHaveLength(2);
+  });
+
+  it("an oversized or malformed request list fails closed", async () => {
+    const t = setup(missing(1025));
+    t.service.configure(t.backend, catalog(1, FAMILIES));
+    expect((await t.service.bind(t.doc, () => true)).status).toBe("failed");
+    expect(t.state().committed).toBeNull();
   });
 });

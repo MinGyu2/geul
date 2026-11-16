@@ -6,16 +6,17 @@ import { flush, readySession } from "./testing";
 
 /** Controlled binder: records each bind, applies the commit gate like NaturalFontService (current() before commit). */
 function fakeBinder() {
-  const state = { catalog: 1, starts: [] as number[], commits: [] as { catalog: number; doc: unknown }[] };
+  const state = { catalog: 1, partial: false, starts: [] as number[], commits: [] as { catalog: number; doc: unknown }[] };
   const binder = {
     ready: () => true,
     bind: async (doc: NaturalFontDocument, current: () => boolean): Promise<NaturalBinding> => {
       const catalog = state.catalog;
       state.starts.push(catalog);
       await Promise.resolve(); // fetch/load happen asynchronously in the real binder
-      const base = { generation: null, bound: [], unbound: [], fallbacks: [] };
+      const base = { generation: null, bound: [], unbound: [], fallbacks: [], omitted: [], engineTruncated: false, faceLimited: false, complete: true };
       if (!current()) return { ...base, status: "stale" };
       state.commits.push({ catalog, doc });
+      if (state.partial) return { ...base, status: "bound", generation: catalog, omitted: ["Over Limit"], complete: false };
       return { ...base, status: "bound", generation: catalog };
     },
   } as unknown as NaturalFontService;
@@ -123,6 +124,18 @@ describe("natural font rebinding across IME settlement", () => {
     editor.setAwaitingCommit(false);
     await flush();
     expect(state.commits.map((c) => c.catalog)).toEqual([2]);
+  });
+
+  it("a partial binding (requests beyond the limit) still re-lays out and repaints, and is reported as partial", async () => {
+    const { editor, state } = await session();
+    const layout = editor.layoutVersion, revision = editor.localRevision;
+    state.partial = true; state.catalog = 5;
+    editor.fontsChanged();
+    await flush();
+    expect(state.commits.map((c) => c.catalog)).toEqual([5]);
+    expect(editor.naturalFontStatus).toMatchObject({ status: "bound", complete: false, omitted: ["Over Limit"] });
+    expect(editor.layoutVersion).toBe(layout + 2); // fontsChanged repaint + binding relayout
+    expect(editor.localRevision).toBe(revision);
   });
 
   it("a binding with no IME transaction still commits immediately", async () => {

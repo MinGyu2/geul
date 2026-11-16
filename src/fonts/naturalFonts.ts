@@ -16,7 +16,11 @@ import type { FontFaceSetLike } from "./webFonts";
 export const MAX_NATURAL_FACES = 64;
 /** Most font bytes the binder keeps for staging into documents. */
 export const MAX_NATURAL_CACHE_BYTES = 256 << 20;
-const MAX_REQUESTS = 128;
+/** Most document family keys one binding considers. Keys beyond it are reported in `omitted` (legacy metrics), never
+ *  dropped silently. The engine itself enumerates at most 512 keys and flags the rest as `truncated`. */
+export const MAX_REQUESTS = 128;
+/** Parse bound on the engine response's request list (above the engine's own 512-key bound). */
+const MAX_REPORTED_REQUESTS = 1024;
 const MAX_FALLBACK_CANDIDATES = 6;
 
 /** The engine surface this binder needs (a subset of RhwpDocument). */
@@ -36,9 +40,18 @@ export interface NaturalBinding {
   generation: number | null;
   /** key → installed family/styles actually bound. */
   bound: { key: string; family: string; styles: string[]; alias: string }[];
-  /** Keys left on the legacy model (no exact installed face). */
+  /** Considered keys left on the legacy model (no exact installed face, or the face staging limit was reached). */
   unbound: string[];
   fallbacks: { family: string; alias: string }[];
+  /** Reported keys beyond MAX_REQUESTS that were not considered (legacy metrics), in engine order. */
+  omitted: string[];
+  /** The engine reported more family keys than it enumerates; their names are unknown here (legacy metrics). */
+  engineTruncated: boolean;
+  /** Staging reached MAX_NATURAL_FACES; keys that did not fit are in `unbound`. */
+  faceLimited: boolean;
+  /** True only when every document family key is bound (nothing unbound, omitted or truncated). A "bound" status
+   *  with complete=false is a partial binding: bound keys use natural metrics, the rest legacy metrics. */
+  complete: boolean;
 }
 
 interface Source { family: string; style: string; bold: boolean; alias: string; index: number; bytes: Uint8Array }
@@ -48,20 +61,26 @@ type CreateFace = (family: string, bytes: Uint8Array, descriptors: FontFaceDescr
 
 const same = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
 
-function parseRequests(text: unknown): Request[] | null {
+interface Requests { requests: Request[]; omitted: string[]; engineTruncated: boolean }
+
+/** Validate the whole bounded engine response; keep the first MAX_REQUESTS for binding and account for the rest. */
+function parseRequests(text: unknown): Requests | null {
   if (typeof text !== "string" || text.length > 4 << 20) return null;
   try {
-    const value = JSON.parse(text) as { requests?: unknown };
-    if (!Array.isArray(value.requests)) return null;
+    const value = JSON.parse(text) as { requests?: unknown; truncated?: unknown };
+    if (!Array.isArray(value.requests) || value.requests.length > MAX_REPORTED_REQUESTS) return null;
+    if (value.truncated !== undefined && typeof value.truncated !== "boolean") return null;
     const out: Request[] = [];
-    for (const r of value.requests.slice(0, MAX_REQUESTS)) {
+    const omitted: string[] = [];
+    for (const r of value.requests) {
       if (!r || typeof r !== "object") return null;
       const { key, members, regular, bold } = r as Record<string, unknown>;
       if (typeof key !== "string" || !Array.isArray(members) || !members.every((m) => typeof m === "string")
         || typeof regular !== "boolean" || typeof bold !== "boolean") return null;
-      out.push({ key, members: members as string[], regular, bold });
+      if (out.length < MAX_REQUESTS) out.push({ key, members: members as string[], regular, bold });
+      else omitted.push(key);
     }
-    return out;
+    return { requests: out, omitted, engineTruncated: value.truncated === true };
   } catch { return null; }
 }
 
@@ -178,14 +197,18 @@ export class NaturalFontService {
   }
 
   private async apply(doc: NaturalFontDocument, current: () => boolean): Promise<NaturalBinding> {
-    const result: NaturalBinding = { status: "unsupported", generation: null, bound: [], unbound: [], fallbacks: [] };
+    const result: NaturalBinding = { status: "unsupported", generation: null, bound: [], unbound: [], fallbacks: [],
+      omitted: [], engineTruncated: false, faceLimited: false, complete: false };
     const catalog = this.catalog;
     if (!catalog || !this.backend || !this.fonts || typeof doc.getNaturalFontRequests !== "function"
       || typeof doc.beginNaturalFontSet !== "function" || typeof doc.stageNaturalFontFace !== "function"
       || typeof doc.commitNaturalFontSet !== "function") return result;
     if (!current()) return { ...result, status: "stale" };
-    const requests = parseRequests(doc.getNaturalFontRequests());
-    if (!requests) return { ...result, status: "failed" };
+    const parsed = parseRequests(doc.getNaturalFontRequests());
+    if (!parsed) return { ...result, status: "failed" };
+    const { requests } = parsed;
+    result.omitted = parsed.omitted;
+    result.engineTruncated = parsed.engineTruncated;
 
     // Resolve and fetch outside the engine (asynchronous); stage only afterwards.
     const plan: { request: Request; family: FontFamily; sources: Source[] }[] = [];
@@ -215,7 +238,7 @@ export class NaturalFontService {
     doc.beginNaturalFontSet();
     let staged = 0;
     const stage = (keys: string[], s: Source) => {
-      if (staged >= MAX_NATURAL_FACES) return false;
+      if (staged >= MAX_NATURAL_FACES) { result.faceLimited = true; return false; }
       try { doc.stageNaturalFontFace!(keys.join("\n"), s.alias, s.bold, false, s.bytes, s.index); staged += 1; return true; } catch { return false; }
     };
     for (const { family, sources, keys, boldKeys } of groups.values()) {
@@ -245,7 +268,8 @@ export class NaturalFontService {
         return { ...result, status: "unbound" };
       }
       const committed = JSON.parse(doc.commitNaturalFontSet(staged)) as { generation?: unknown };
-      return { ...result, status: "bound", generation: typeof committed.generation === "number" ? committed.generation : null };
+      const complete = result.unbound.length === 0 && result.omitted.length === 0 && !result.engineTruncated;
+      return { ...result, status: "bound", complete, generation: typeof committed.generation === "number" ? committed.generation : null };
     } catch {
       return { ...result, status: "failed" };
     }
