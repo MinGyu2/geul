@@ -13,7 +13,7 @@ import { DocumentSessions } from "../adapters/sessions";
 import { initialLayout } from "../hooks/layoutState";
 import type { Message } from "../language";
 import { DocumentWorkspace } from "../components/Editor/documentWorkspace";
-import { readySession } from "../components/Editor/rhwp/testing";
+import { info, ok, readySession } from "../components/Editor/rhwp/testing";
 import { decodeFake, docxInfo, FakeDocx, flush, readyDocx } from "../components/Editor/wordcraft/testing";
 import { commandState, executeCommand, type CommandContext } from "./commands";
 import type { DocumentCommandTarget } from "./target";
@@ -159,18 +159,32 @@ describe("WordCraft 세션의 명령(가짜 백엔드 흉내)", () => {
 });
 
 describe("rhwp 세션의 명령", () => {
-  it("서식은 엔진이 지원하지 않아 아무것도 바꾸지 않고, 실행 취소·다시 실행은 세션 기록을 따른다", async () => {
-    const { editor, doc, calls } = await readySession();
+  // Contract update (Stage 5-A): rhwp character formatting is registered as supported-but-conditional (registry
+  // RHWP_FORMAT). An unacknowledged edit answers pendingEdits first; once settled, a session whose source has not
+  // proven format eligibility (this fake engine has no canFormatCharacters) is still refused as engineUnsupported.
+  // Availability in a valid session is covered against the real engine in scripts/tests/general-formatting.wasm.test.ts.
+  it("서식은 대기 편집 중에는 기다리고, 서식 근거가 없는 엔진 세션에서는 아무것도 바꾸지 않으며, 실행 취소·다시 실행은 세션 기록을 따른다", async () => {
+    const { editor, doc, calls, take } = await readySession();
     editor.typeText("가");
     const { context, notices } = contextFor(editor);
     const before = { text: [...doc.paragraphs], revision: editor.localRevision, calls: calls.length };
-    for (const id of ["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const) {
-      expect(commandState(id, context)).toEqual({ available: false, reason: "engineUnsupported" });
+    const FORMAT = ["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const;
+    for (const id of FORMAT) {
+      expect(commandState(id, context)).toEqual({ available: false, reason: "pendingEdits" });
       expect(executeCommand(id, undefined, context)).toBe(false);
       expect(editor.execute(id)).toEqual({ accepted: false });
     }
     expect({ text: doc.paragraphs, revision: editor.localRevision, calls: calls.length }).toEqual(before);
-    expect(new Set(notices.map((notice) => notice.key))).toEqual(new Set(["command.unavailable.engineUnsupported"]));
+    take("commit").reply(ok(info({ state: "ready", revision: 1, dirty: true, sequence: 3, loadGeneration: 1 })));
+    await flush();
+    const settled = { text: [...doc.paragraphs], revision: editor.localRevision, calls: calls.length };
+    for (const id of FORMAT) {
+      expect(commandState(id, context)).toEqual({ available: false, reason: "engineUnsupported" });
+      expect(executeCommand(id, undefined, context)).toBe(false);
+      expect(editor.execute(id)).toEqual({ accepted: false });
+    }
+    expect({ text: doc.paragraphs, revision: editor.localRevision, calls: calls.length }).toEqual(settled);
+    expect(new Set(notices.map((notice) => notice.key))).toEqual(new Set(["command.unavailable.pendingEdits", "command.unavailable.engineUnsupported"]));
     expect(editor.snapshot()).toMatchObject({ engine: "rhwp", history: { undo: true, redo: false }, format: null });
     expect(editor.snapshot().historyScope).toBeUndefined();
     // 일반 history(T010 제품 활성화): 단계가 있을 때만 가용하고, 실행하면 모델과 revision이 함께 움직인다.
