@@ -81,6 +81,7 @@ const RHWP_NUMBERING = {
   multilevel: { formats: ["^1.", "^1.^2.", "^1.^2.^3.", "^1.^2.^3.^4.", "^1.^2.^3.^4.^5.", "^1.^2.^3.^4.^5.^6.", "^1.^2.^3.^4.^5.^6.^7."], codes: [0, 0, 0, 0, 0, 0, 0] },
 } as const;
 /** Custom bullet characters (engine ensureDefaultBullet reuses an existing definition of the same character). */
+type NumberingDef = { levelFormats: string[]; numberFormats: number[] | null; startNumber: number | null };
 const RHWP_BULLETS = { bulletCircle: "○", bulletSquare: "▪", bulletDash: "–", bulletCheck: "✓" } as const;
 
 const HWP_PAPER: Record<PaperName, [number, number]> = {
@@ -660,6 +661,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.pending = 0;
     this.modified = false;
     this.caret = this.anchor = START;
+    this.pendingChars = null;
     this.preferredX = -1;
     this.pages = pages;
     this.modelVersion += 1;
@@ -1056,6 +1058,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.composition = null;
       if (this.provisional) { this.provisional = null; this.cancelHistory(); }
       this.caret = this.anchor = START;
+      this.pendingChars = null;
       this.emit();
       return false;
     }
@@ -1082,12 +1085,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         try {
           this.history?.rollback(); this.text?.reconcilePublishedCharShapes();
           if (recoverable && !(error instanceof WebAssembly.RuntimeError) && !this.uncertain) {
-            this.pages = readPages(doc); this.emit(); return false;
+            this.pendingChars = null; this.pages = readPages(doc); this.emit(); return false;
           }
         } catch (rollbackError) { this.historyFailure(rollbackError); }
       }
       // 진행 중인 조합도 이 실패로 끝난다. 그 조합은 성공한 변경으로 세지 않는다(markFailed가 세지 않게 먼저 비움).
       this.composition = null;
+      this.pendingChars = null;
       this.uncertain = true;
       this.lastRoundTrip = null;
       this.modelVersion += 1;
@@ -1103,6 +1107,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.anchor = next.anchor;
     } else this.caret = this.anchor = next;
     this.preferredX = -1;
+    this.reconcilePending();
     if (count) this.recordMutation();
     if (!this.editable) return true; // 기록 정리 trap 뒤 엔진을 더 부르지 않음
     try {
@@ -1276,6 +1281,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.modelVersion += 1;
     this.structureVersion += 1;
     const placed = placeCheckpoint(text, checkpoint);
+    this.pendingChars = null; // Undo/Redo is not ordinary typing: next-input values never survive a history restore
     this.caret = placed.caret;
     this.anchor = placed.anchor;
     this.preferredX = -1;
@@ -1312,10 +1318,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         const line = lines[i]!;
         if (line) this.insertText(at, line);
         at = { ...at, offset: at.offset + charCount(line) };
-        if (i + 1 < lines.length) {
-          this.text!.split(at);
-          at = withParagraph(at, paragraphOf(at) + 1, 0);
-        }
+        if (i + 1 < lines.length) at = this.splitText(at);
       }
       return at;
     });
@@ -1397,8 +1400,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
-      this.text!.split(at);
-      return withParagraph(at, paragraphOf(at) + 1, 0);
+      return this.splitText(at);
     });
   }
 
@@ -1415,6 +1417,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!this.editable) return;
     if (!this.hasSelection) {
       this.composition = { anchor: this.caret, text: "", deletedSelection: false };
+      if (this.pendingFor(this.caret)) this.pendingChars!.origin = RhwpEditorSession.positionKey(this.caret);
       return;
     }
     this.mutate(() => {
@@ -1474,6 +1477,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const composition = this.composition;
     if (!composition) return;
     this.composition = null;
+    this.closePendingOrigin();
     if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
     else this.cancelHistory(); // 문서를 바꾸지 않은 조합: 단계 없음, 찍은 스냅숏만 버림
   }
@@ -1483,6 +1487,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const provisional = this.provisional;
     if (!provisional) return;
     this.provisional = null;
+    this.closePendingOrigin();
     if (provisional.text !== "" || provisional.deletedSelection) this.recordMutation();
     else this.cancelHistory();
   }
@@ -1555,6 +1560,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.caret = position;
     if (!extend) this.anchor = position;
     if (!keepPreferredX) this.preferredX = -1;
+    this.reconcilePending();
     this.emit();
     return true;
   }
@@ -1962,27 +1968,73 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   // ---- Stage 1 lists (numbering definitions appended with createNumbering; bullets via ensureDefaultBullet) ----
 
-  /** Numbering ids this session created, by style (reused instead of appending duplicates; known number formats). */
-  private numberingStyles = new Map<number, ListStyle>();
+  /**
+   * Numbering definitions are read from the engine model (authoritative, never an application-side id cache):
+   * after Undo/Redo, reload or a document switch the current model alone decides which ids exist and what they
+   * are. Parsed once per model version (keyed by epoch, load generation and modelVersion).
+   */
+  private numberingCache: { key: string; defs: Map<number, NumberingDef> } | null = null;
 
-  private multilevelNumbering(id: number): boolean {
-    const style = this.numberingStyles.get(id);
-    if (style) return style === "multilevel";
+  private numberingDefs(): Map<number, NumberingDef> {
+    const key = `${this.epoch}|${this.generation}|${this.modelVersion}`;
+    if (this.numberingCache?.key === key) return this.numberingCache.defs;
+    const defs = new Map<number, NumberingDef>();
     try {
-      const list = JSON.parse(this.doc?.getNumberingList?.() ?? "[]") as { id: number; levelFormats: string[] }[];
-      // A level that shows an outer level's number (e.g. "^1.^2.") is multilevel numbering.
-      return list.find(n => n.id === id)?.levelFormats.some((f, i) => [...f.matchAll(/\^(\d)/g)].some(m => Number(m[1]) !== i + 1)) ?? false;
-    } catch { return false; }
+      const list = JSON.parse(this.doc?.getNumberingList?.() ?? "[]") as unknown;
+      if (Array.isArray(list)) for (const n of list.slice(0, 65535)) {
+        const id = (n as { id?: unknown }).id, levelFormats = (n as { levelFormats?: unknown }).levelFormats;
+        const numberFormats = (n as { numberFormats?: unknown }).numberFormats, startNumber = (n as { startNumber?: unknown }).startNumber;
+        if (!Number.isSafeInteger(id) || !Array.isArray(levelFormats) || !levelFormats.every(f => typeof f === "string")) continue;
+        defs.set(id as number, {
+          levelFormats: levelFormats as string[],
+          // An engine without numberFormats reports no style identity (null): nothing is then treated as a known style.
+          numberFormats: Array.isArray(numberFormats) && numberFormats.every(c => Number.isSafeInteger(c)) ? numberFormats as number[] : null,
+          startNumber: Number.isSafeInteger(startNumber) ? startNumber as number : null,
+        });
+      }
+    } catch { /* unreadable: no definitions */ }
+    this.numberingCache = { key, defs };
+    return defs;
   }
 
-  /** The numbering definition of `style` (created once per session and reused). */
+  /** The geul list style a definition is, by exact semantics (level formats, per-level number format codes and start
+   * number of the template), or null for any other definition (document-defined or custom). Never by id alone. */
+  private numberingStyleOf(id: number): ListStyle | null {
+    const def = this.numberingDefs().get(id);
+    if (!def?.numberFormats || def.startNumber !== 1) return null;
+    for (const [style, t] of Object.entries(RHWP_NUMBERING) as [ListStyle, (typeof RHWP_NUMBERING)[keyof typeof RHWP_NUMBERING]][]) {
+      if (t.formats.every((f, i) => def.levelFormats[i] === f) && t.codes.every((c, i) => def.numberFormats![i] === c)) return style;
+    }
+    return null;
+  }
+
+  private multilevelNumbering(id: number): boolean {
+    const style = this.numberingStyleOf(id);
+    if (style) return style === "multilevel";
+    const def = this.numberingDefs().get(id);
+    // A level that shows an outer level's number (e.g. "^1.^2.") is multilevel numbering.
+    return def?.levelFormats.some((f, i) => [...f.matchAll(/\^(\d)/g)].some(m => Number(m[1]) !== i + 1)) ?? false;
+  }
+
+  /** May list items of `style` join the existing definition `id`? Only when it is exactly that style. */
+  private compatibleNumbering(id: number, style: ListStyle): boolean {
+    return this.numberingStyleOf(id) === style;
+  }
+
+  /** The definition of `style`: an existing one of exactly that style in the current model (lowest id; restart copies
+   * keep their own), or a new one (createNumbering). */
   private numberingFor(style: ListStyle): number {
-    for (const [id, known] of this.numberingStyles) if (known === style) return id;
+    for (const id of [...this.numberingDefs().keys()].sort((a, b) => a - b)) if (this.numberingStyleOf(id) === style) return id;
+    return this.createNumberingOf(style);
+  }
+
+  private createNumberingOf(style: ListStyle): number {
     const template = RHWP_NUMBERING[style as keyof typeof RHWP_NUMBERING];
     if (!template || !this.doc?.createNumbering) throw new Error("numbering style unavailable");
     const id = this.doc.createNumbering(JSON.stringify({ levelFormats: template.formats, numberFormats: template.codes, startNumber: 1 }));
     if (!Number.isSafeInteger(id) || id < 1 || id > 65535) throw new Error("invalid numbering id");
-    this.numberingStyles.set(id, style);
+    this.numberingCache = null; // the model gained a definition inside this mutation
+    if (this.numberingStyleOf(id) !== style) throw new Error("created numbering does not match its template");
     return id;
   }
 
@@ -2037,9 +2089,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const off = all.every(raw => isNumber(raw) && this.multilevelNumbering(Number(raw.numberingId)) === (style === "multilevel"));
       if (off) return this.applyList(() => () => ({ headType: "None", numberingId: 0, paraLevel: 0 }));
       return this.applyList(r => {
-        // Continue the previous list of the same kind; otherwise this style's definition (created once).
+        // Continue the previous list only when its definition is exactly this style; otherwise this style's definition.
         const previous = this.previousNumbered(r.at, r.first);
-        const id = previous && this.multilevelNumbering(previous.id) === (style === "multilevel") ? previous.id : this.numberingFor(style);
+        const id = previous && this.compatibleNumbering(previous.id, style) ? previous.id : this.numberingFor(style);
         return p => ({ headType: "Number", numberingId: id, paraLevel: isNumber(read(p)) ? Number(read(p).paraLevel) || 0 : 0 });
       });
     }
@@ -2089,15 +2141,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (command === "paragraph.restartNumbering") {
       // Restart = a new definition of the same style for this item and the following items of the list (HWP numbering
       // counts per definition; the paragraph restart flag of the engine model is not serialized).
-      const style = this.numberingStyles.get(old);
+      // Restart needs the definition's exact template (a known style in the current model); other definitions keep
+      // the documented limitation (refused, never reported as success).
+      const style = this.numberingStyleOf(old);
       if (!style) return false;
       const targets = run(caretPara);
       this.history?.boundary();
       const applied = this.mutate(() => {
-        const template = RHWP_NUMBERING[style as keyof typeof RHWP_NUMBERING];
-        const id = this.doc!.createNumbering!(JSON.stringify({ levelFormats: template.formats, numberFormats: template.codes, startNumber: 1 }));
-        if (!Number.isSafeInteger(id) || id < 1) throw new Error("invalid numbering id");
-        this.numberingStyles.set(id, style); // a distinct definition; reuse by style keeps the first
+        const id = this.createNumberingOf(style); // a distinct definition of the same style for the restarted run
         for (const p of targets) this.applyPara(range.at, p, JSON.stringify({ numberingId: id }));
         return { caret: this.caret, anchor: this.anchor };
       }, true, "other", null, true, true);
@@ -2110,13 +2161,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.applyList(() => p => targets.includes(p) ? { numberingId: previous } : null);
   }
 
-  /** Nearest earlier numbered list (a different definition) in the same context, for "continue numbering". */
+  /** Nearest earlier numbered list (a different definition of the same style) in the same context, for "continue
+   * numbering": continuing never changes the run's numbering style. */
   private previousNumberedBefore(at: DocPosition, before: number, exclude: number): number | null {
+    const style = this.numberingStyleOf(exclude);
+    if (style === null) return null;
     for (let p = before - 1; p >= 0 && p >= before - 4096; p--) {
       let raw: Record<string, unknown>;
       try { raw = this.readPara(at, p); } catch { return null; }
       const id = Number(raw.numberingId);
-      if (raw.headType === "Number" && id > 0 && id !== exclude) return id;
+      // Lists of another style are skipped (continuing never changes the run's style); an unknown style refuses.
+      if (raw.headType === "Number" && id > 0 && id !== exclude && style !== null && this.numberingStyleOf(id) === style) return id;
     }
     return null;
   }
@@ -2134,10 +2189,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       actions["paragraph.decreaseIndent"] = {};
       if (list?.numbering) {
         actions["paragraph.continueNumbering"] = {};
-        // Restart needs the definition's number formats: definitions created in this session.
+        // Restart needs a definition whose exact template is known (read from the current model).
         try {
           const id = Number(this.readPara(this.stage1ParaRange()!.at, paragraphOf(this.caret)).numberingId);
-          if (this.numberingStyles.has(id)) actions["paragraph.restartNumbering"] = {};
+          if (this.numberingStyleOf(id)) actions["paragraph.restartNumbering"] = {};
         } catch { /* unavailable */ }
       }
     }
@@ -2382,7 +2437,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (current >= 0) at = (current + (request.backward ? matches.length - 1 : 1)) % matches.length;
         else if (request.backward) { at = matches.length - 1; for (let i = matches.length - 1; i >= 0; i--) if (!before(a, matches[i]!.to)) { at = i; break; } }
         else at = Math.max(0, matches.findIndex(m => !before(m.from, b)));
-        this.anchor = matches[at]!.from; this.caret = matches[at]!.to; this.preferredX = -1;
+        this.anchor = matches[at]!.from; this.caret = matches[at]!.to; this.preferredX = -1; this.reconcilePending();
       }
       this.emit();
       return true;
@@ -2420,17 +2475,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- Stage 1 character formatting (size, color, highlight/shade, superscript/subscript) ----
 
   /**
-   * Stage 1 next-input formatting at a collapsed caret (session-owned, never stored in the document by itself). It is
-   * owned by this epoch/load generation and the positions it was set or extended at; text inserted at one of those
-   * positions (typing, paste, IME composition and its commit) gets the values in the same mutation and history step.
-   * Any other caret position, a new selection, a reload or a document switch makes it inert.
+   * Stage 1 next-input formatting at a collapsed caret (session-owned, never stored in the document by itself).
+   * Lifecycle (bounded: one insertion point, never a growing position collection):
+   * - set: a caret-only format command records `at` = the caret (owned by this epoch/load generation).
+   * - follow: text inserted at `at` (typing, paste, IME update/commit, late IME commit) gets the values in the same
+   *   mutation and history step, and `at` advances to the end of the insertion; a paragraph split at `at` (Enter,
+   *   multi-line paste) moves it to the start of the new paragraph.
+   * - IME: while a composition (or app-finished provisional composition) that started at `at` is open, `origin`
+   *   keeps its anchor so each update (delete + reinsert at the anchor) and a cancellation keep the values.
+   * - invalidate: any caret result other than `at` (caret move, selection, an unrelated or failed mutation),
+   *   Undo/Redo, reload, release or document switch (epoch/generation) clears it.
    */
-  private pendingChars: { epoch: number; generation: number; keys: Set<string>; props: Record<string, string | number | boolean> } | null = null;
+  private pendingChars: { epoch: number; generation: number; at: string; origin: string | null; props: Record<string, string | number | boolean> } | null = null;
 
   private pendingFor(at: DocPosition): Record<string, string | number | boolean> | null {
     const pending = this.pendingChars;
-    return pending && pending.epoch === this.epoch && pending.generation === this.generation
-      && pending.keys.has(RhwpEditorSession.positionKey(at)) ? pending.props : null;
+    if (!pending) return null;
+    if (pending.epoch !== this.epoch || pending.generation !== this.generation) { this.pendingChars = null; return null; }
+    const key = RhwpEditorSession.positionKey(at);
+    return key === pending.at || key === pending.origin ? pending.props : null;
   }
 
   /** Every session text insertion goes through here (pending next-input values follow the inserted text). */
@@ -2440,7 +2503,40 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!props || !text) return;
     const length = charCount(text);
     this.text!.formatInserted(at, length, props);
-    if (this.pendingChars!.keys.size < 64) this.pendingChars!.keys.add(RhwpEditorSession.positionKey({ ...at, offset: at.offset + length }));
+    this.pendingChars!.at = RhwpEditorSession.positionKey({ ...at, offset: at.offset + length });
+  }
+
+  /** Every session paragraph split goes through here (pending values move to the new paragraph's start). */
+  private splitText(at: DocPosition): DocPosition {
+    this.text!.split(at);
+    const next = withParagraph(at, paragraphOf(at) + 1, 0);
+    if (this.pendingFor(at) && this.pendingChars!.at === RhwpEditorSession.positionKey(at)) this.pendingChars!.at = RhwpEditorSession.positionKey(next);
+    return next;
+  }
+
+  /** After a caret change: pending values survive only at their insertion point (or an open IME transaction's anchor). */
+  private reconcilePending(): void {
+    const pending = this.pendingChars;
+    if (!pending) return;
+    if (pending.epoch !== this.epoch || pending.generation !== this.generation || this.hasSelection) { this.pendingChars = null; return; }
+    const key = RhwpEditorSession.positionKey(this.caret);
+    const imeOpen = this.composition !== null || this.provisional !== null;
+    if (key === pending.at) return;
+    if (pending.origin !== null && key === pending.origin) { pending.at = key; return; } // IME update to "" / cancellation
+    if (!imeOpen) this.pendingChars = null;
+  }
+
+  /** The IME transaction that started at the pending point ended: only the advanced insertion point remains. */
+  private closePendingOrigin(): void {
+    if (!this.pendingChars || this.composition !== null || this.provisional !== null) return;
+    this.pendingChars.origin = null;
+    this.reconcilePending();
+  }
+
+  /** Test/diagnostic view of the pending next-input state (null when inert). */
+  get pendingCharState(): { at: string; props: Record<string, string | number | boolean> } | null {
+    const p = this.pendingChars;
+    return p && p.epoch === this.epoch && p.generation === this.generation ? { at: p.at, props: { ...p.props } } : null;
   }
 
   /** Same eligibility as selected-text formatting, at a collapsed, owned caret. */
@@ -2487,7 +2583,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // Superscript and subscript are exclusive, as in the engine.
     if (props.superscript === true) merged.subscript = false;
     if (props.subscript === true) merged.superscript = false;
-    this.pendingChars = { epoch: this.epoch, generation: this.generation, keys: new Set([key]), props: merged };
+    this.pendingChars = { epoch: this.epoch, generation: this.generation, at: key, origin: null, props: merged };
     this.stage1CharCache = null;
     this.emit();
     return true;
@@ -3587,6 +3683,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.caretCache = null;
     this.composition = null;
     this.provisional = null;
+    this.pendingChars = null;
     this.awaiting = false;
     const errors: unknown[] = [];
     for (const release of [() => this.releaseRendering(), () => history?.release(false), () => text?.release(), () => doc?.free()]) {
