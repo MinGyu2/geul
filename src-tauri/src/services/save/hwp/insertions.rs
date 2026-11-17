@@ -990,7 +990,9 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         for r in br {
             let n = ordinal.entry(r.0).or_default();
             *n += 1;
-            if [18, 20, 24, 25].contains(&r.0) && *n > entries(&ac, r.0).len() {
+            // Appended records proved by their own rules above/below (BinData, border, numbering, bullet,
+            // paragraph shape) are left out, as their ID_MAPPINGS counts are reset to the original's.
+            if [18, 20, NUMBERING, 24, 25].contains(&r.0) && *n > entries(&ac, r.0).len() {
                 continue;
             }
             reduced.push(if r.0 == 17 {
@@ -1027,6 +1029,12 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 && (ps.len() == 54 || dword(ps, 54)? == level),
             "DocInfo",
         )?;
+        // A numbered appended shape must name an existing numbering definition (1-based; 0 is "none" and is only
+        // valid without a number heading). `valid_para_shape` keeps the original-document rule (id 0 tolerated).
+        if head == 2 {
+            let id = word(ps, 30)?;
+            reference(id >= 1 && id <= entries(&bc, NUMBERING).len(), "DocInfo")?;
+        }
         stage1_para_values(ps)?;
         let signature = para_signature(ps)?;
         preserved(
@@ -1264,10 +1272,20 @@ fn para_signature(ps: &[u8]) -> Checked<Vec<u8>> {
     Ok(out)
 }
 
-/// Stage 1: an appended numbering definition exactly in the pinned serializer's structure for the
-/// engine's `createNumbering`: seven paragraph heads (attr = automatic indent + number format code, zero
-/// width adjust/distance/char shape) each with a format string of level placeholders and `.`/`)`, start
-/// number 1 and seven level start numbers 1. Nothing else may be present.
+/// Stage 1: an appended numbering definition in the pinned serializer's structure for the engine's
+/// `createNumbering`: seven paragraph heads (attr = automatic indent + number format code, zero width
+/// adjust/distance/char shape) each with a format string of level placeholders and `.`/`)`, start number 1
+/// and seven level start numbers 1. Nothing else may be present.
+///
+/// Contract (P1-D, explicit): this is a **semantic structural** proof, not byte equality with geul's
+/// templates. Any combination of the allowed number-format codes (0 digit, 2/3 upper/lower roman, 4/5
+/// upper/lower latin, 8 hangul syllable) and placeholder strings is accepted, because every such record
+/// renders and reopens with the same meaning; codes outside that set, other attributes, other start
+/// numbers, longer/other text and trailing bytes are refused. Original definitions are compared byte for
+/// byte elsewhere (`preserved` over the original records), counts are tied to ID_MAPPINGS, and every
+/// numbered paragraph shape must reference an existing definition (appended shapes: 1..=count). An
+/// appended definition need not be referenced: restart followed by continue legitimately leaves one
+/// unused, and RHWP has no numbering compaction.
 fn basic_numbering(rec: &[u8], defs: &Defs<'_>) -> Checked<()> {
     let mut at = 0usize;
     for _ in 0..7 {

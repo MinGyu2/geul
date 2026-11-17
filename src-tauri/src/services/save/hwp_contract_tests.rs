@@ -2897,6 +2897,26 @@ fn stage1_hwp_list_paragraph_proof_rejects_invalid_appends() {
         ("paragraph shape extended line spacing", edit_records(&good, "/DocInfo", |r| {
             let b = &mut nth(r, 25, shapes - 1).2; d(b, 50, 9_000_000);
         })),
+        // P1-D: a numbered appended shape must reference an existing numbering definition.
+        ("numbered paragraph shape with numbering id 0", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2;
+            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23)); w(b, 30, 0);
+            if b.len() == 58 { d(b, 54, 0); }
+        })),
+        ("numbered paragraph shape beyond the numbering count", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 25, shapes - 1).2;
+            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23));
+            w(b, 30, numberings as u16 + 1);
+            if b.len() == 58 { d(b, 54, 0); }
+        })),
+        ("appended numbering without its ID_MAPPINGS count", edit_records(&good, "/DocInfo", |r| {
+            let extra = nth(r, 23, numberings - 1).clone();
+            let at = r.iter().rposition(|x| x.0 == 23).unwrap();
+            r.insert(at + 1, extra);
+        })),
+        ("numbering paragraph-head attribute bit", edit_records(&good, "/DocInfo", |r| {
+            let b = &mut nth(r, 23, numberings - 1).2; b[0] |= 1;
+        })),
     ];
     for (name, output) in &cases {
         let result = check(output);

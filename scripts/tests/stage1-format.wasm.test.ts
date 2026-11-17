@@ -13,6 +13,7 @@ import { DocumentSessions } from "../../src/adapters/sessions";
 import { documentCommandState } from "../../src/commands/capability";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import { preserveSourceCaret, type RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
+import { pathJson } from "../../src/components/Editor/rhwp/rhwpText";
 import { base, controlledBackend, flush, info, loaded, ok } from "../../src/components/Editor/rhwp/testing";
 
 const root = resolve(__dirname, "../..");
@@ -87,12 +88,25 @@ async function open(format: Format, original = source(format), answer = true, so
   const cellProps = (offset: number, index = 0) => JSON.parse(doc.getCellCharPropertiesAt!(0, table.para, table.controlIndex, index, 0, offset));
   return { editor, get doc() { return doc; }, clearLive: () => { doc = undefined!; }, original, settle, cell, cellProps, calls, sessions, take };
 }
-const cases: { id: string; format: Format; previewRequired: boolean }[] = [];
-function record(id: string, format: Format, original: Uint8Array, doc: Doc, previewRequired = true) {
+/** P1-D: exact paragraph properties of a nested-cell paragraph (read through the explicit-path engine API), its
+ * containing cell paragraph and the neighbouring top-level cell, plus the containing cell paragraph's length. */
+type NestedSpec = { parent: number; path: string; outer: [number, number, number]; neighbor: [number, number, number] };
+const PARA_KEYS = ["alignment", "lineSpacing", "lineSpacingType", "marginLeft", "marginRight", "indent", "spacingBefore", "spacingAfter", "headType", "paraLevel"];
+function nestedModel(d: RhwpDocument, spec: NestedSpec) {
+  const pick = (raw: string) => { const v = JSON.parse(raw); return Object.fromEntries(PARA_KEYS.map(k => [k, v[k]])); };
+  const api = d as unknown as { getCellParaPropertiesAtByPath(s: number, p: number, path: string): string; getCellParaPropertiesAt(...a: number[]): string };
+  const [c, cell, cp] = spec.outer, [nc, ncell, ncp] = spec.neighbor;
+  return { path: JSON.parse(spec.path), nested: pick(api.getCellParaPropertiesAtByPath(0, spec.parent, spec.path)),
+    outer: pick(api.getCellParaPropertiesAt(0, spec.parent, c, cell, cp)), neighbor: pick(api.getCellParaPropertiesAt(0, spec.parent, nc, ncell, ncp)),
+    outerLength: d.getCellParagraphLength(0, spec.parent, c, cell, cp) };
+}
+const cases: { id: string; format: Format; previewRequired: boolean; nested?: NestedSpec }[] = [];
+function record(id: string, format: Format, original: Uint8Array, doc: Doc, previewRequired = true, nested?: NestedSpec) {
   if (format === "hwp") doc.rebuildLayout!();
   const e = exported(doc, format), re = new engine.HwpDocument(e.bytes) as Doc;
   try {
     expect(model(re)).toEqual(model(doc));
+    if (nested) expect(nestedModel(re, nested)).toEqual(nestedModel(doc, nested));
     const fresh = new engine.HwpDocument(original), noop = exported(fresh, format); fresh.free();
     const dir = join(out, id); mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `original.${format}`), original); writeFileSync(join(dir, `noop.${format}`), noop.bytes);
@@ -104,8 +118,9 @@ function record(id: string, format: Format, original: Uint8Array, doc: Doc, prev
       execFileSync("rsvg-convert", ["--background-color", "white", "--width", String(Math.round(page.width / long * 1024)), "--height", String(Math.round(page.height / long * 1024)),
         "--output", join(dir, "render.png"), join(dir, "render.svg")]);
     }
-    json(join(dir, "proof.json"), { generation: build.generation, originalSha256: sha(original), editedSha256: sha(e.bytes), model: model(re) });
-    cases.push({ id, format, previewRequired }); json(join(out, "cases.json"), cases);
+    json(join(dir, "proof.json"), { generation: build.generation, originalSha256: sha(original), editedSha256: sha(e.bytes), model: model(re),
+      ...(nested ? { nested: nestedModel(re, nested) } : {}) });
+    cases.push({ id, format, previewRequired, ...(nested ? { nested } : {}) }); json(join(out, "cases.json"), cases);
   } finally { re.free(); }
 }
 
@@ -431,6 +446,196 @@ describe.skipIf(phase !== "generate")("Stage 1 mixed script state and caret next
   }
 });
 
+describe.skipIf(phase !== "generate")("P1-A continuous next-input formatting beyond 64 insertions, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: >64 typed chars, paste with newline, IME update/cancel/commit, caret move, Undo/Redo, export`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        const end = doc.getParagraphLength(0, 1);
+        editor.anchor = editor.caret = body(end, 1);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 22 }).accepted).toBe(true);
+        expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "C00000" }).accepted).toBe(true);
+        // 80 single-character insertions: the old position Set stopped following after 64 entries.
+        const typed = Array.from({ length: 80 }, (_, i) => String.fromCharCode(97 + (i % 26))).join("");
+        for (const ch of typed) expect(editor.typeText(ch)).toBe(true);
+        await settle();
+        expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2200, textColor: "#C00000" });
+        const sizes = Array.from({ length: 80 }, (_, i) => properties(doc, 1, end + i));
+        expect(sizes.every(p => p.fontSize === 2200 && p.textColor === "#c00000"), JSON.stringify(sizes.map(p => p.fontSize))).toBe(true);
+        expect(properties(doc, 1, end - 1).fontSize).toBe(1000);
+        // Paste (clipboard insert path = typeText) with a newline: both lines keep the values, across the split.
+        expect(editor.typeText("PQ\nRS")).toBe(true); await settle();
+        expect([properties(doc, 1, end + 80).fontSize, properties(doc, 1, end + 81).fontSize]).toEqual([2200, 2200]);
+        expect([properties(doc, 2, 0).fontSize, properties(doc, 2, 1).fontSize]).toEqual([2200, 2200]);
+        expect(editor.caret).toMatchObject({ paragraph: 2, offset: 2 });
+        // IME: updates (delete + reinsert at the anchor), a cancellation, then a committed syllable.
+        editor.beginComposition(); editor.updateComposition("ㄱ"); editor.updateComposition("");
+        editor.endComposition(""); await settle();
+        expect(editor.pendingCharState).not.toBeNull();
+        editor.beginComposition(); editor.updateComposition("ㄱ"); editor.updateComposition("가"); editor.updateComposition("각");
+        editor.endComposition("각"); await settle();
+        expect(doc.getTextRange(0, 2, 2, 1)).toBe("각");
+        expect(properties(doc, 2, 2).fontSize).toBe(2200);
+        for (const ch of "다라") expect(editor.typeText(ch)).toBe(true);
+        await settle();
+        expect([properties(doc, 2, 3).fontSize, properties(doc, 2, 4).fontSize]).toEqual([2200, 2200]);
+        // Caret movement makes the values inert: no stale formatting at an earlier point of the same run (the old
+        // position Set kept the start key and re-applied the values there after moving back).
+        expect(editor.moveHorizontal(-1, false)).toBe(true);
+        expect(editor.pendingCharState).toBeNull();
+        expect(editor.moveHorizontal(1, false)).toBe(true);
+        expect(editor.pendingCharState).toBeNull();
+        editor.anchor = editor.caret = body(3);
+        const before3 = properties(doc, 0, 2).fontSize;
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 30 }).accepted).toBe(true);
+        expect(editor.typeText("x")).toBe(true); await settle();
+        expect(properties(doc, 0, 3).fontSize).toBe(3000);
+        expect(editor.moveHorizontal(-1, false)).toBe(true);
+        expect(editor.pendingCharState).toBeNull();
+        expect(editor.typeText("y")).toBe(true); await settle();
+        expect(properties(doc, 0, 3).fontSize).toBe(before3); // inherits its neighbour, not the pending 30 pt
+        // Undo/Redo restores the model; pending values never revive from history.
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 9 }).accepted).toBe(true);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(editor.pendingCharState).toBeNull();
+        expect(doc.getTextRange(0, 0, 3, 1)).toBe("x"); // the "y" typing step was undone
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(doc.getTextRange(0, 0, 3, 2)).toBe("yx");
+        expect(editor.pendingCharState).toBeNull();
+        record(`${format}-stage1-caret-long`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
+type NumberingDef = { id: number; levelFormats: string[]; startNumber: number; numberFormats: number[] };
+const numberingOf = (d: RhwpDocument, id: number) => (JSON.parse(d.getNumberingList!()) as NumberingDef[]).find(n => n.id === id);
+const numberingStyle = (d: RhwpDocument, p: number) => {
+  const para = JSON.parse(d.getParaPropertiesAt!(0, p));
+  const def = para.headType === "Number" ? numberingOf(d, para.numberingId) : undefined;
+  return { head: para.headType as string, id: para.numberingId as number, codes: def?.numberFormats.slice(0, 2), formats: def?.levelFormats.slice(0, 2) };
+};
+
+describe.skipIf(phase !== "generate")("P1-B numbering style compatibility and engine-authoritative definitions, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: decimal/letter/roman never share a definition; continuation; Undo/Redo and stale ids; reopen`, async () => {
+      const { editor, doc, original, settle } = await open(format);
+      try {
+        expect(numberingOf(doc, 1) === undefined || Array.isArray(numberingOf(doc, 1)!.numberFormats)).toBe(true);
+        // Paragraph 0 upper-letter; paragraph 1 "numbering" must not join it (both are non-multilevel).
+        editor.anchor = editor.caret = body(0);
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "upperLetter" }).accepted).toBe(true); await settle();
+        const letter = numberingStyle(doc, 0);
+        expect(letter.codes?.[0]).toBe(4);
+        editor.anchor = editor.caret = body(0, 1);
+        expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+        const decimal = numberingStyle(doc, 1);
+        expect(decimal.head).toBe("Number");
+        expect(decimal.id).not.toBe(letter.id);
+        expect(decimal.codes?.[0]).toBe(0);
+        expect(numberingStyle(doc, 0)).toEqual(letter); // the letter list is unchanged
+        // Same-style continuation: a new paragraph after paragraph 1 joins the decimal definition.
+        editor.anchor = editor.caret = body(doc.getParagraphLength(0, 1), 1);
+        expect(editor.enter()).toBe(true); await settle();
+        expect(editor.typeText("third")).toBe(true); await settle();
+        expect(numberingStyle(doc, 2).id).toBe(decimal.id);
+        // Roman on paragraph 2: its own definition (roman code 3), not the decimal one.
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "lowerRoman" }).accepted).toBe(true); await settle();
+        const roman = numberingStyle(doc, 2);
+        expect(roman.codes?.[0]).toBe(3);
+        expect(new Set([letter.id, decimal.id, roman.id]).size).toBe(3);
+        // Continue numbering from a roman item never jumps to a list of another style.
+        expect(editor.snapshot().actions?.["paragraph.continueNumbering"]).toEqual({});
+        expect(editor.execute("paragraph.continueNumbering").accepted).toBe(false);
+        expect(numberingStyle(doc, 2).id).toBe(roman.id);
+        // Undo removes the roman definition from the model; applying roman again must not reuse a stale id.
+        const defsBefore = (JSON.parse(doc.getNumberingList!()) as NumberingDef[]).length;
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        expect(numberingStyle(doc, 2).id).toBe(decimal.id);
+        expect((JSON.parse(doc.getNumberingList!()) as NumberingDef[]).length).toBe(defsBefore - 1);
+        expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+        expect(numberingStyle(doc, 2)).toEqual(roman);
+        expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+        // A definition matching a template is reused by style (no duplicate), its id is present in the current model.
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "lowerRoman" }).accepted).toBe(true); await settle();
+        const again = numberingStyle(doc, 2);
+        expect(numberingOf(doc, again.id)).toBeDefined();
+        expect(again.codes?.[0]).toBe(3);
+        expect((JSON.parse(doc.getNumberingList!()) as NumberingDef[]).length).toBe(defsBefore);
+        // Restart is offered for an engine-identified template definition and makes a new definition of that style.
+        editor.anchor = editor.caret = body(0, 2);
+        expect(editor.snapshot().actions?.["paragraph.restartNumbering"]).toEqual({});
+        expect(editor.execute("paragraph.restartNumbering").accepted).toBe(true); await settle();
+        const restarted = numberingStyle(doc, 2);
+        expect(restarted.id).not.toBe(again.id);
+        expect(restarted.codes).toEqual(again.codes);
+        record(`${format}-stage1-numbering`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+    it(`${format}: a reopened document's template definitions are identified from the model (no session cache)`, async () => {
+      const first = await open(format);
+      let bytes: Uint8Array;
+      try {
+        first.editor.anchor = first.editor.caret = body(0);
+        expect(first.editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "upperLetter" }).accepted).toBe(true); await first.settle();
+        if (format === "hwp") first.doc.rebuildLayout!();
+        bytes = exported(first.doc, format).bytes;
+      } finally { first.editor.dispose(); }
+      const second = await open(format, bytes!, false);
+      try {
+        second.editor.anchor = second.editor.caret = body(0);
+        if (format === "hwpx") {
+          expect(second.editor.snapshot().actions?.["paragraph.restartNumbering"]).toEqual({});
+          second.editor.anchor = second.editor.caret = body(0, 1);
+          expect(second.editor.execute("paragraph.numbering").accepted).toBe(true); await second.settle();
+          expect(numberingStyle(second.doc, 1).codes?.[0]).toBe(0); // decimal, not the reopened letter list
+          expect(numberingStyle(second.doc, 1).id).not.toBe(numberingStyle(second.doc, 0).id);
+        } else {
+          // HWP structural editing needs the original-source proof (not answered here): the state is still read.
+          expect(numberingStyle(second.doc, 0).codes?.[0]).toBe(4);
+        }
+      } finally { second.editor.dispose(); }
+    });
+  }
+});
+
+describe.skipIf(phase !== "generate")("P1-C combined character + paragraph/list changes in one save, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: numbered+size, multilevel+color, custom bullet+superscript, paragraph+char, cell formatting; one export`, async () => {
+      const { editor, doc, original, settle, cell, cellProps } = await open(format);
+      try {
+        const para = (p: number) => JSON.parse(doc.getParaPropertiesAt!(0, p));
+        // Table cell formatting first (the table's paragraph index is known now): list + size + alignment in a cell.
+        editor.anchor = cell(0); editor.caret = cell(2);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 15 }).accepted).toBe(true); await settle();
+        expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+        expect(cellProps(0).fontSize).toBe(1500);
+        expect(cellProps(0, 1).fontSize).not.toBe(1500);
+        // Body paragraph 0: custom bullet + superscript; paragraph 1: multilevel + color; + paragraph settings.
+        editor.anchor = body(0); editor.caret = body(3);
+        expect(editor.execute("paragraph.listStyle", { command: "paragraph.listStyle", style: "bulletSquare" }).accepted).toBe(true); await settle();
+        expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
+        editor.anchor = body(0, 1); editor.caret = body(6, 1);
+        expect(editor.execute("paragraph.multilevel").accepted).toBe(true); await settle();
+        expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "00B050" }).accepted).toBe(true); await settle();
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: { spaceAfter: 6, lineSpacing: { rule: "multiple", value: 1.5 } } }).accepted).toBe(true); await settle();
+        // Numbered list + font size on a new third paragraph.
+        editor.anchor = editor.caret = body(doc.getParagraphLength(0, 1), 1);
+        expect(editor.enter()).toBe(true); await settle();
+        expect(editor.typeText("combined")).toBe(true); await settle();
+        editor.anchor = body(0, 2); editor.caret = body(8, 2);
+        expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 13 }).accepted).toBe(true); await settle();
+        expect([para(0).headType, para(1).headType, para(2).headType]).toEqual(["Bullet", "Number", "Number"]);
+        expect(properties(doc, 0, 1).superscript).toBe(true);
+        expect(properties(doc, 1, 1).textColor).toBe("#00b050");
+        expect(properties(doc, 2, 1).fontSize).toBe(1300);
+        record(`${format}-stage1-combined`, format, original, doc);
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
 describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatting, production session path, actual Release WASM", () => {
   for (const format of ["hwpx", "hwp"] as const) {
     it(`${format}: numbered/multilevel/custom lists, levels, restart/continue, Enter exit, cells; history; export`, async () => {
@@ -512,7 +717,18 @@ describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatti
         expect(nestedAlign()).not.toBe("right");
         expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
         expect(nestedAlign()).toBe("right");
-        record(`${format}-stage1-nested-cell`, format, original, doc);
+        // P1-D: further nested paragraph values (indent, spacing, line spacing) through the same path.
+        editor.anchor = editor.caret = at;
+        const outerBefore = nestedModel(doc, { parent: at.cell!.parentParagraph, path: pathJson(at.cell!), outer: [at.cell!.control, at.cell!.cell, at.cell!.cellParagraph], neighbor: [at.cell!.control, 1, 0] });
+        expect(editor.execute("paragraph.settings", { command: "paragraph.settings", format: { indentLeft: 8, indentFirst: 4, spaceBefore: 3, spaceAfter: 5, lineSpacing: { rule: "multiple", value: 1.5 } } }).accepted).toBe(true); await settle();
+        const c = at.cell!;
+        const spec: NestedSpec = { parent: c.parentParagraph, path: pathJson(c), outer: [c.control, c.cell, c.cellParagraph], neighbor: [c.control, 1, 0] };
+        const exact = nestedModel(doc, spec);
+        expect(exact.nested).toMatchObject({ alignment: "right", lineSpacingType: "Percent", lineSpacing: 150 });
+        expect(exact.nested.marginLeft).not.toBe(outerBefore.nested.marginLeft);
+        expect(exact.outer).toEqual(outerBefore.outer); // containing cell paragraph untouched
+        expect(exact.neighbor).toEqual(outerBefore.neighbor); // neighbouring cell untouched
+        record(`${format}-stage1-nested-cell`, format, original, doc, true, spec);
       } finally { editor.dispose(); }
     });
   }
@@ -521,15 +737,21 @@ describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatti
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
   expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 20));
-  for (const { id, format } of all) {
+  for (const { id, format, nested } of all) {
     const dir = join(out, id), doc = new engine.HwpDocument(readFileSync(join(dir, `published.${format}`))) as Doc;
     try {
       const proof = JSON.parse(readFileSync(join(dir, "proof.json"), "utf8"));
       expect(proof.generation).toBe(build.generation);
       expect(model(doc)).toEqual(proof.model);
+      // P1-D: the service-published bytes reopen with the exact nested-cell paragraph properties of the edit model.
+      if (nested) expect(nestedModel(doc, nested)).toEqual(proof.nested);
+      if (id.includes("nested")) expect(proof.nested?.nested?.alignment).toBe("right");
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else if (id.includes("combined")) expect([properties(doc, 0, 1).superscript, properties(doc, 1, 1).textColor, properties(doc, 2, 1).fontSize]).toEqual([true, "#00b050", 1300]);
+      else if (id.includes("numbering")) expect([0, 1, 2].map(p => numberingStyle(doc, p).codes?.[0])).toEqual([4, 0, 3]);
       else if (id.includes("lists")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 0)).headType).toBe("Bullet");
       else if (id.includes("nested")) expect(doc.pageCount()).toBeGreaterThan(0);
+      else if (id.includes("caret-long")) expect([79, 80].map(i => properties(doc, 1, doc.getParagraphLength(0, 1) - 82 + i).fontSize)).toEqual([2200, 2200]);
       else if (id.includes("caret")) expect(properties(doc, 1, 0).fontSize).toBe(1400);
       else if (id.includes("columns")) expect(JSON.parse(doc.getColumnDef!(0)).columnCount).toBe(2);
       else if (id.includes("many")) expect(doc.getTextRange(0, 0, 0, 4)).toBe("나b나b");

@@ -1093,6 +1093,7 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
                     if !super::special::header_equal_or_appended(before, after, output)
                         && hwpx_table_border_appended(before, after, output) != Some(true)
                         && hwpx_bullets_appended(before, after, output) != Some(true)
+                        && !hwpx_combined_appended(before, after, output)
                     {
                         findings.push(Finding::at(
                             resource_code(epoch, FindingCode::PartChanged),
@@ -2390,6 +2391,97 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     Some(true)
 }
 
+/// Stage 1 (P1-C): character-shape/font appends and paragraph/list appends made before one save. Each half is proved
+/// by its existing rule through an intermediate header `mid` = the output header with its `hh:fontfaces` and
+/// `hh:charProperties` lists replaced by the original's (byte splice of those two `hh:refList` children only):
+/// - `hwpx_bullets_appended(original, mid)`: everything except paragraph shapes, bullets, numberings and the first
+///   table border is equal to the original (including both character lists, which are the original's), and every
+///   appended paragraph shape/bullet/numbering has its authorized form and valid ids;
+/// - `header_equal_or_appended(mid, output)`: everything except the font tables and character shapes is equal to
+///   `mid` (so the paragraph/list lists are exactly the ones proved above), and the character/font changes are the
+///   authorized appends to the original's lists.
+///
+/// Together the output differs from the original only by the union of the two authorized changes. Malformed,
+/// duplicated or missing lists, and any other difference, refuse (fall back to the single-change rules).
+fn hwpx_combined_appended(before: &[u8], after: &[u8], output: &Package) -> bool {
+    let Some(mid) = hwpx_with_char_lists_of(before, after) else {
+        return false;
+    };
+    mid != after
+        && mid != before
+        && hwpx_bullets_appended(before, &mid, output) == Some(true)
+        && super::special::header_equal_or_appended(&mid, after, output)
+}
+
+/// `target` with its `hh:refList`/`hh:fontfaces` and `hh:refList`/`hh:charProperties` elements replaced by those of
+/// `source` (each present exactly once in both, or absent from both). UTF-8 documents only.
+fn hwpx_with_char_lists_of(source: &[u8], target: &[u8]) -> Option<Vec<u8>> {
+    let (source, target) = (std::str::from_utf8(source).ok()?, std::str::from_utf8(target).ok()?);
+    let (from, to) = (hwpx_ref_list_spans(source)?, hwpx_ref_list_spans(target)?);
+    let mut pairs = Vec::new();
+    for name in ["fontfaces", "charProperties"] {
+        match (from.get(name), to.get(name)) {
+            (Some(a), Some(b)) => pairs.push((a.clone(), b.clone())),
+            (None, None) => {}
+            _ => return None,
+        }
+    }
+    pairs.sort_by_key(|(_, b)| std::cmp::Reverse(b.start));
+    let mut out = target.to_string();
+    for (a, b) in pairs {
+        out.replace_range(b, source.get(a)?);
+    }
+    Some(out.into_bytes())
+}
+
+/// Byte ranges of the `hh:fontfaces` and `hh:charProperties` children of `hh:head`/`hh:refList` (whole elements).
+/// A duplicate refuses.
+fn hwpx_ref_list_spans(text: &str) -> Option<BTreeMap<&'static str, std::ops::Range<usize>>> {
+    use quick_xml::events::Event;
+    use quick_xml::name::ResolveResult;
+    let mut reader = quick_xml::reader::NsReader::from_str(text);
+    let mut stack: Vec<(bool, Option<(&'static str, usize)>)> = Vec::new(); // (is refList, open target)
+    let mut spans = BTreeMap::new();
+    loop {
+        let start = usize::try_from(reader.buffer_position()).ok()?;
+        let event = reader.read_event().ok()?;
+        match &event {
+            Event::Start(e) | Event::Empty(e) => {
+                let (ns, local) = reader.resolver().resolve_element(e.name());
+                let head = matches!(ns, ResolveResult::Bound(n) if n.as_ref() == HWPML_HEAD);
+                let parent_ref_list = stack.last().is_some_and(|(r, _)| *r);
+                let target = match local.as_ref() {
+                    "fontfaces" if head && parent_ref_list => Some("fontfaces"),
+                    "charProperties" if head && parent_ref_list => Some("charProperties"),
+                    _ => None,
+                };
+                let is_ref_list = head && local.as_ref() == "refList";
+                if matches!(event, Event::Empty(_)) {
+                    if let Some(name) = target {
+                        let end = usize::try_from(reader.buffer_position()).ok()?;
+                        if spans.insert(name, start..end).is_some() {
+                            return None;
+                        }
+                    }
+                } else {
+                    stack.push((is_ref_list, target.map(|n| (n, start))));
+                }
+            }
+            Event::End(_) => {
+                let (_, open) = stack.pop()?;
+                if let Some((name, from)) = open {
+                    let end = usize::try_from(reader.buffer_position()).ok()?;
+                    if spans.insert(name, from..end).is_some() {
+                        return None;
+                    }
+                }
+            }
+            Event::Eof => return stack.is_empty().then_some(spans),
+            _ => {}
+        }
+    }
+}
+
 /// Stage 1: an appended `hh:numbering` exactly in the pinned serializer's fallback form (`write_numbering` without
 /// original paraHead bytes): `start="1"`, ten `hh:paraHead` children (levels 1-10) with the fixed attribute set,
 /// automatic indent, zero width/offset, character shape 0, a known number format and a level-placeholder text.
@@ -2550,5 +2642,97 @@ mod omitted_hwpx_resource_lists {
             ),
             Some(true)
         );
+    }
+}
+
+/// P1-C: the combined character + paragraph/list proof over the actual Release-WASM export
+/// (`hwpx-stage1-combined`: numbered list + size, multilevel + color, custom bullet + superscript, paragraph
+/// settings, table-cell list + size, all before one save). Explicit opt-in (needs GEUL_FORMAT_DIR).
+#[cfg(test)]
+mod combined_hwpx_proof {
+    use super::*;
+
+    fn load(name: &str, side: Side) -> Package {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+        open(&std::fs::read(dir.join("hwpx-stage1-combined").join(name)).unwrap(), side).unwrap()
+    }
+
+    fn with(base: &Package, part: &str, edit: impl Fn(&str) -> String) -> Package {
+        let mut p = Package { order: base.order.clone(), parts: base.parts.clone() };
+        let entry = p.parts.get_mut(part).unwrap();
+        let changed = edit(std::str::from_utf8(&entry.1).unwrap());
+        assert_ne!(changed.as_bytes(), entry.1.as_slice(), "mutation not applied to {part}");
+        entry.1 = changed.into_bytes();
+        p
+    }
+
+    /// The package-level checks the save service runs for HWPX (structure, preservation, body references).
+    fn refused(original: &Package, output: &Package) -> bool {
+        validate_hwpx(original, output)
+            .into_iter()
+            .chain(compare_saved_hwpx(original, output))
+            .chain(validate_hwpx_references(output))
+            .any(|f| f.code != FindingCode::PreviewStale)
+    }
+
+    #[test]
+    #[ignore = "requires the Stage 1 Release-WASM exports (GEUL_FORMAT_DIR)"]
+    fn stage1_hwpx_combined_proof_accepts_union_and_rejects_invalid() {
+        let original = load("original.hwpx", Side::Original);
+        let edited = load("edited.hwpx", Side::Output);
+        let (before, after) = (original.get(HWPX_HEADER).unwrap(), edited.get(HWPX_HEADER).unwrap());
+        // Reproduction: each earlier single-change rule refuses this header on its own.
+        assert!(!super::super::special::header_equal_or_appended(before, after, &edited));
+        assert_ne!(hwpx_bullets_appended(before, after, &edited), Some(true));
+        assert!(hwpx_combined_appended(before, after, &edited));
+        let findings = compare_saved_hwpx(&original, &edited);
+        assert!(findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{findings:?}");
+        assert!(!refused(&original, &edited));
+
+        let header = |from: &'static str, to: &'static str, nth_last: bool| {
+            with(&edited, HWPX_HEADER, move |h| match nth_last {
+                true => {
+                    let at = h.rfind(from).expect(from);
+                    format!("{}{}{}", &h[..at], to, &h[at + from.len()..])
+                }
+                false => h.replacen(from, to, 1),
+            })
+        };
+        let section = |from: &'static str, to: &'static str| with(&edited, "Contents/section0.xml", move |s| s.replacen(from, to, 1));
+        let cases: Vec<(&str, Package)> = vec![
+            ("invalid character-shape reference", section(r#"charPrIDRef="10""#, r#"charPrIDRef="11""#)),
+            ("invalid paragraph-shape reference", section(r#"paraPrIDRef="24""#, r#"paraPrIDRef="25""#)),
+            ("invalid numbering id", header(r#"<hh:heading type="NUMBER" idRef="3" level="0"/>"#, r#"<hh:heading type="NUMBER" idRef="4" level="0"/>"#, true)),
+            ("bullet heading beyond the bullet count", header(r#"<hh:heading type="BULLET" idRef="1" level="0"/>"#, r#"<hh:heading type="BULLET" idRef="2" level="0"/>"#, true)),
+            ("altered original character definition", header(r#"<hh:charPr id="0" height="1000""#, r#"<hh:charPr id="0" height="1100""#, false)),
+            ("incorrect character definition count", header(r#"<hh:charProperties itemCnt="11">"#, r#"<hh:charProperties itemCnt="12">"#, false)),
+            ("incorrect numbering definition count", header(r#"<hh:numberings itemCnt="3">"#, r#"<hh:numberings itemCnt="4">"#, false)),
+            ("appended numbering with a foreign start", header(r#"<hh:numbering id="3" start="1">"#, r#"<hh:numbering id="3" start="2">"#, false)),
+            ("unrelated header change", header(r#"<hh:beginNum page="1""#, r#"<hh:beginNum page="2""#, false)),
+        ];
+        // Missing appended definition: drop the last appended character shape but keep the declared count.
+        let missing = with(&edited, HWPX_HEADER, |h| {
+            let start = h.rfind("<hh:charPr ").unwrap();
+            let end = start + h[start..].find("</hh:charPr>").unwrap() + "</hh:charPr>".len();
+            format!("{}{}", &h[..start], &h[end..])
+        });
+        for (name, output) in cases.iter().map(|(n, p)| (*n, p)).chain([("missing appended definition", &missing)]) {
+            assert!(refused(&original, output), "{name}: accepted");
+        }
+    }
+
+    #[test]
+    fn char_list_splice_requires_one_list_each() {
+        let head = |inner: &str| format!(r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:refList>{inner}</hh:refList></hh:head>"#);
+        let a = head(r#"<hh:charProperties itemCnt="0"/><hh:paraProperties itemCnt="0"/>"#);
+        let b = head(r#"<hh:charProperties itemCnt="1"><hh:charPr id="0"/></hh:charProperties><hh:paraProperties itemCnt="0"/>"#);
+        assert_eq!(hwpx_with_char_lists_of(a.as_bytes(), b.as_bytes()).unwrap(), a.as_bytes());
+        let twice = head(r#"<hh:charProperties itemCnt="0"/><hh:charProperties itemCnt="0"/>"#);
+        assert!(hwpx_with_char_lists_of(a.as_bytes(), twice.as_bytes()).is_none());
+        let none = head(r#"<hh:paraProperties itemCnt="0"/>"#);
+        assert!(hwpx_with_char_lists_of(a.as_bytes(), none.as_bytes()).is_none());
+        // Outside hh:refList the name is not a character list.
+        let foreign = format!(r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:charProperties itemCnt="0"/></hh:head>"#);
+        assert!(hwpx_with_char_lists_of(a.as_bytes(), foreign.as_bytes()).is_none());
     }
 }
