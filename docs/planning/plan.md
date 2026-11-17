@@ -232,3 +232,7 @@ HWP/HWPX 네 가지 선택 서식의 production code path, 저장 보존, histor
 ### Stage 1 P1·F 갱신 — 2026-11-17
 
 RHWP 다음 입력 서식·번호 정의 수명·HWPX 결합 저장·중첩 셀/HWP 번호 증명(P1)과 DOCX/HWPX 글꼴 embedding(F, HWP는 형식 제한)을 구현했다. 상세·검증·남은 일은 [Stage 1 공통 문서 편집 5절](../architecture/stage1-common-editing.md).
+
+### Stage 2 / Phase 1 DOCX 표 구조 편집 — 2026-11-17
+
+WordCraft 엔진(`23c0dc5…`, 패치 `patches/wordcraft/docx-table-structure.{patch,commit}`), Typed `DocxOp::TableStructure`와 `DocxTableView` 가용성/거부 계약, `visibleRibbonGroups`를 통한 DOCX 레이아웃 탭 노출, T009 저장·재열기 및 Linux native GUI 수락을 완료했다. RHWP와 기존 Stage 2/Phase 0 HWPX split-run 경로는 변경하지 않았다. 상세는 [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).

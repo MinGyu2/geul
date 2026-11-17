@@ -344,3 +344,7 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 ### Stage 1 P1·F 갱신 — 2026-11-17
 
 글꼴 embedding은 각 형식의 정의된 표현(OOXML 난독화 embed 글꼴, OWPML `hh:font` embed 참조)으로만 저장하며 라이선스 권한(OS/2 fsType)이 편집 가능 embed를 허용하는 TrueType 글꼴만 넣는다. HWP 5.0은 표현이 없어 지원하지 않는다. [Stage 1 공통 문서 편집 5절](../architecture/stage1-common-editing.md).
+
+### Stage 2 / Phase 1 DOCX 표 구조 편집 — 2026-11-17
+
+DOCX 표 구조 편집 10개 명령(`table.*`)은 WordCraft 문서 모델을 단일 출처로 삼아 `vMerge`/열 격자/twip 너비/중첩 표와 셀 내용을 보존하고, 마지막 행/열 삭제·불완전 병합 겹침·단일 셀 병합/분할·교차 표 선택·콘텐츠 컨트롤은 변경 전 명확한 사유로 거부하며 T009 `same_as()` 보존 검사를 거쳐 저장·재열기한다. [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).

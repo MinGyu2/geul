@@ -159,3 +159,9 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 항목 | HWPX | 판정 | 근거 |
 |---|---|---|---|
 | 분할 run·secPr handoff·표 셀 부분/교차/반복 글자 서식·Undo/Redo + T009 저장/재열기 | IV | CURRENT PASS (Release WASM `80024e5c…`, `stage2-p0-hwpx-split-run.patch`) | [Stage 1 6절](architecture/stage1-common-editing.md#6-stage-2--phase-0--hwpx-분할-run-글자-서식-및-안전-저장-안정화-2026-11-17), `native-stage2-p0.py` run2 PASS |
+
+### Stage 2 / Phase 1 — DOCX 표 구조 편집 (2026-11-17)
+
+| 항목 | DOCX | HWP/HWPX | 판정 | 근거 |
+|---|---|---|---|---|
+| 표 구조 10개 명령(행/열 삽입·삭제, 오른쪽/아래/선택 합치기, 합친 셀 나누기)·Undo/Redo·T009 저장/재열기 | IV | 불변(기존 HWP/HWPX) | CURRENT PASS (WordCraft `23c0dc5…`, Release `665ead58…`) | [Stage 1 7절](architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17), `native-docx-table-stage2-p1.py` PASS |

@@ -996,3 +996,10 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
   `executeEmbedFont(family, style)`을 부른다. 지원: wordcraft SUPPORTED, rhwp SUPPORTED(실행 가용성은 HWPX만; HWP는 `engineUnsupported` — 형식 제한).
 - RHWP 목록 명령은 세션 캐시 없이 엔진 정의로 스타일을 판정하고(P1-B), 커서 서식 상태는 삽입점 하나로 추적한다(P1-A). 상세는
   [Stage 1 공통 편집 5절](stage1-common-editing.md).
+
+## Stage 2 / Phase 1 — DOCX 표 구조 편집 (2026-11-17)
+
+- `src/commands/registry.ts`에서 표 구조 10개 명령(`table.insertRowAbove`, `table.insertRowBelow`, `table.insertColumnLeft`, `table.insertColumnRight`, `table.deleteRow`, `table.deleteColumn`, `table.mergeRight`, `table.mergeBelow`, `table.mergeCells`, `table.splitCell`)을 `wordcraft: SUPPORTED`로 활성화했다(`table.splitCell`은 `ActionCommandId`로 유지해 병합된 셀을 `1×1` 셀들로 되돌림).
+- 리본 UI: `RIBBON_TABS`에 중복 명령을 추가하지 않고 `visibleRibbonGroups(tab, format)`(`src/ribbon/visibility.ts`, `src/components/Ribbon/Ribbon.tsx`)로 `TABLE_STRUCTURE_GROUP`을 DOCX `ribbon.tab.layout`에 공유 노출한다(HWP/HWPX `hangulTools` 유지).
+- 가용성·안전 경계: `DocxEditorSession.parameterState()`가 `view.inTable` 및 `DocxView.table`(`DocxTableView`)의 명령별 거절 사유(`tableShape`·`tableContent`·`limit`)를 그대로 매핑한다. 표 밖·마지막 행/열 전체 삭제(`tableShape`)·단일 셀 또는 부분 겹침 직사각형(`mergeCells`)·비병합 `1×1` 셀(`splitCell`)·교차 표 선택·SDT 콘텐츠 컨트롤(`tableContent`)·행/열 상한(`limit`)을 UI와 Rust 어댑터에서 동일하게 거부한다.
+- 실행·원자성·저장: `DocxOp::TableStructure`는 `SelectionIdentity`를 검사해 낡은 대상 선택을 거부하고, `table_structure`(`src-tauri/src/adapters/wordcraft/table.rs`)가 `atomic()` 안에서 WordCraft 명령 실행·일관된 격자 확인·행/열 삭제 시 고아 미디어 정리(`retain_used_media`, Undo 스냅샷은 이전 `Document` 보존)·`export()` + `same_as()`(WordCraft `roundtrip_equivalent`) 통과를 확인한다. 상세: [Stage 1 공통 편집 7절](stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).

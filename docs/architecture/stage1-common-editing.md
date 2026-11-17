@@ -227,3 +227,27 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 | Linux native GUI 수용 | `scripts/tests/native-ibus-session.py` + `scripts/tests/native-stage2-p0.py` → `target/stage2-p0-native/run2/result.json` | PASS (`visualChangeConfirmed: true`, `save.state: "saved"`, `reopenUiSuperscriptPressed: "true"`, 독립 oracle에서 본문 `secPr`-handoff·다중 run·표 셀 서식 및 무관 run/이웃 셀 보존) |
 
 미검증/제외 범위: 한컴오피스/Word 외부 프로그램 재열기(NOT RUN), Windows/macOS(DEFERRED).
+
+## 7. Stage 2 / Phase 1 — DOCX 표 구조 편집 (2026-11-17)
+
+### 7.1 엔진·어댑터·UI 통합
+
+- **WordCraft 엔진(`23c0dc52d5cf7d197d06c0b539547b9cce364b49`, 패치 `patches/wordcraft/docx-table-structure.{patch,commit}`)**:
+  - `table.mergeCells`, `table.mergeRight`, `table.mergeBelow`, `table.splitCell` 명령을 WordCraft 엔진 표 명령에 등록하고 `crates/doc/src/table.rs`에 `quantize_twips`, `sync_cell_widths`, `is_grid_consistent`, `cell_extent`, `logical_rect_valid`, `rect_has_controls`, `delete_row_safe`(`vMerge` 승격·내용 보존), `merge_rect`(행 우선 내용 보존·부분 병합/컨트롤 거부·중첩 표 뒤 ECMA-376 빈 문단 보장), `split_merged_cell`을 구현했다.
+  - `insert_row`의 `vMerge` 상속 불변식, `Table::new`/`insert_col`/`delete_col`/`split_cell`의 twip 너비 양자화(OOXML 왕복 일치), `fix_caret`의 숨김 `VMerge::Continue` 회피 및 `column`/`widened` 정리를 수정했고, `DocxModel::view()`가 `table_mouse::cell_rects`로 다중 셀 선택 사각형을 노출하도록 연결했다.
+  - 재현 검증: `scripts/prepare-wordcraft.py`가 공개 `BASE`(`dc25d8a…`) → `6931bcc…`(`system-font-source`) → `23c0dc5…`(`docx-table-structure`) 순서로 결정적 재구성을 수행한다(`scripts/tests/test_wordcraft_reproduction.py`).
+- **geul 어댑터·UI**:
+  - `src-tauri/src/adapters/wordcraft/{table.rs, engine.rs}`: `DocxOp::TableStructure`와 `DocxTableView`를 추가하고, 낡은 `SelectionIdentity` 거부·어댑터/UI 일관 거절(`tableShape`/`tableContent`/`limit`)·`atomic()` + `is_grid_consistent()` + `retain_used_media`(이미지 포함 행·열 삭제 시 고아 `doc.media`로 인한 `roundtrip_equivalent` 실패 방지, Undo는 사전 스냅샷 복원) + `same_as()` 검증을 적용했다.
+  - `src/commands/registry.ts`, `src/ribbon/{definitions.ts, visibility.ts}`, `src/components/Ribbon/Ribbon.tsx`, `src/adapters/docx.ts`, `src/components/Editor/wordcraft/DocxEditorSession.ts`: 10개 `table.*` 명령을 `wordcraft: SUPPORTED`로 활성화하고 DOCX `ribbon.tab.layout`에서 `TABLE_STRUCTURE_GROUP`을 노출했다(RHWP 미수정).
+
+### 7.2 검증 결과 및 미검증 범위
+
+| 구분 | 실행 명령(요약) | 결과 |
+|---|---|---|
+| WordCraft 표 단위 | `cargo test --manifest-path external/wordcraft/Cargo.toml --offline --locked -p wordcraft-doc -- table` / `-p wordcraft-engine -- table` | `wordcraft-doc` 10 PASS (0 fail, 144 filtered) / `wordcraft-engine` 51 PASS + `toc_roundtrip` 1 PASS (0 fail) |
+| geul Rust 어댑터·저장 회귀 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib -- adapters::wordcraft::tests::stage2_p1_ adapters::wordcraft::tests::core_table adapters::wordcraft::tests::protected_ services::save::tests::docx` | 36 passed, 0 failed, 1 pre-existing ignored (`stage2_p1_*` 2건 포함, T009 실제 게시·독립 재열기·중첩 표·SDT·이미지 행/열 삭제·Undo/Redo) |
+| geul `clippy`·프런트엔드 검증 | `cargo-geul.py clippy --lib`, `npx eslint ...`, `npx tsc --noEmit`, `npx vitest run ...` (7파일) | `wordcraft` 어댑터 clippy 경고 0(기존 `save/{hwp.rs,special.rs}` 경고 3건은 `-D warnings` 외 pre-existing), ESLint·`tsc` PASS, Vitest 7파일 136 passed (0 failed) |
+| 일반 제품 Release 빌드 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `665ead58…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`) |
+| Linux native GUI 수용 | `scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin ... scripts/tests/native-docx-table-stage2-p1.py` → `target/stage2-p1-native/run/result.json` | PASS (`status: "PASS"`, 10개 버튼 표 밖 disabled·표 안 enabled, 행/열 삽입·삭제·Undo/Redo·`mergeRight`/`mergeBelow`/`mergeCells`/`splitCell`, `ibus-hangul` 한글 입력, `Ctrl+S` 저장 `state: "saved"`, 닫기/앱 재열기 `rows: 3, cols: 2`, Python XML 독립 검사 PASS) |
+
+미검증/제외 범위: Microsoft Word 등 외부 오피스 프로그램 재열기(NOT RUN), Windows/macOS·Wayland(DEFERRED), `sudo-bwrap` 및 전체 `test_wordcraft_reproduction.py` 네트워크 clone(`REMOTE` fetch 환경 분리), RHWP 표 명령/실행 범위 변경 없음.
