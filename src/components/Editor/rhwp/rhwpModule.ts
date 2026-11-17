@@ -85,6 +85,10 @@ export interface RhwpDocument {
   /** Stage 1 lists: append a numbering definition (1-based id). */
   createNumbering?(json: string): number;
   getNumberingList?(): string;
+  /** Stage 1 F (stage1-p1-fonts patch): embed a permitted TrueType font for an HWPX face; JSON {ok, binDataId, entries, created}. */
+  embedFont?(face: string, bytes: Uint8Array): string;
+  /** Stage 1 F: the document's embedded font faces (JSON array of {lang, id, face, binDataId, bytes}). */
+  getEmbeddedFonts?(): string;
   /** Stage 1 page setup: the section's PageDef in HWPUNIT, and its change (repaginates). */
   getPageDef?(section: number): string;
   /** Stage 1 columns: the section's initial ColumnDef and its change (existing definition only). */

@@ -5,6 +5,7 @@
 // redraw (DOCX re-lays out in the backend; RHWP rebinds exact font sources, re-lays out and repaints its Canvas).
 // Browsing the list never edits a document; only choosing a family runs the `format.font` command.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { configureEmbedding } from "./embedding";
 import type { FontBackend, FontCatalog, FontErrorCode } from "../adapters/fonts";
 import type { Message, MessageKey, Translate } from "../language";
 import { WebFontBridge } from "./webFonts";
@@ -35,6 +36,7 @@ export function useFontController(
     // RHWP natural metrics resolve families against this catalog; configure before editors rebind on the change below.
     const naturalWasReady = naturalFonts.ready();
     naturalFonts.configure(backend, next);
+    configureEmbedding(backend);
     if (engineChanged || webChanged || !naturalWasReady) changed.current();
   }, [bridge, backend]);
 

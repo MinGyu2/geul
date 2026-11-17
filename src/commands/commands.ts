@@ -44,6 +44,8 @@ export interface CommandContext {
   requestInput?: ((request: CommandInputRequest) => void) | undefined;
   /** Stage 1: open the find (or find-and-replace) bar for the active document. */
   openSearch?: ((replace: boolean) => void) | undefined;
+  /** Stage 1 F: open the font embedding dialog for the active document. */
+  openEmbedFont?: (() => void) | undefined;
 }
 
 /** 값 입력 창 요청. 실행은 확인한 값으로 `executeCommand(command, labelKey, context, args)`를 다시 부른다. */
@@ -232,6 +234,11 @@ export function executeCommand(
     void target.executeClipboard(id, owns).then(success => {
       if (!success) context.notify({ key: "clipboard.failed" });
     }).catch(() => context.notify({ key: "clipboard.failed" }));
+    return true;
+  }
+  if (id === "format.embedFont") {
+    if (args !== undefined || !context.openEmbedFont || !context.document.executeEmbedFont) return reject(unavailable("notImplemented"));
+    context.openEmbedFont();
     return true;
   }
   if (id === "edit.find" || id === "edit.replace") {

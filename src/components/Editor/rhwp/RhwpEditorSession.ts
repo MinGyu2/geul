@@ -49,12 +49,13 @@ import { FormulaCacheRefusal } from "./formulaDependencies";
 import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { capturePdfPages, type EncodePng } from "./pdfCapture";
 import { naturalFonts, type NaturalBinding, type NaturalFontService, type NaturalLease } from "../../../fonts/naturalFonts";
+import { embedFontData } from "../../../fonts/embedding";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
 import type {
   CharFormatFlag, CommandDispatch, CommandParameterContext, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget,
-  ParameterCommandId,
+  EmbedFontResult, EmbeddedFont, ParameterCommandId,
 } from "../../../commands/target";
 import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
 import { validateCommandArgs } from "../../../commands/parameters";
@@ -1882,10 +1883,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       chars: this.stage1Chars(),
       searchable: this.status.kind === "ready" && !!this.doc?.searchAllText && !!this.text,
       search: this.searchState(),
-      actions: { ...this.coreActions(), ...this.stage1Actions(), ...this.stage1ParagraphActions() },
+      actions: { ...this.coreActions(), ...this.stage1Actions(), ...this.stage1ParagraphActions(),
+        ...(this.embedFontEligible() ? { "format.embedFont": {} } : {}) },
       paragraph: this.stage1Paragraph(),
       page: this.stage1Page(),
-      ...this.coreActionReasons(),
+      ...this.embedReasons(this.coreActionReasons()),
+      embeddedFonts: this.embeddedFonts(),
     };
   }
 
@@ -2174,6 +2177,76 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (raw.headType === "Number" && id > 0 && id !== exclude && style !== null && this.numberingStyleOf(id) === style) return id;
     }
     return null;
+  }
+
+  // ---- Stage 1 F: document font embedding (HWPX: OWPML hh:font isEmbedded + manifest BinData) ----
+
+  private embeddedCache: { key: string; value: EmbeddedFont[] } | null = null;
+  /** Embedded font faces of the current model (unique face names), read from the engine (never a session cache). */
+  private embeddedFonts(): EmbeddedFont[] {
+    const key = `${this.epoch}|${this.generation}|${this.modelVersion}`;
+    if (this.embeddedCache?.key === key) return this.embeddedCache.value;
+    let value: EmbeddedFont[] = [];
+    try {
+      const list = JSON.parse(this.doc?.getEmbeddedFonts?.() ?? "[]") as unknown;
+      if (Array.isArray(list)) {
+        const faces = new Set<string>();
+        for (const e of list.slice(0, 4096)) {
+          const face = (e as { face?: unknown }).face, bytes = (e as { bytes?: unknown }).bytes;
+          if (typeof face === "string" && Number.isSafeInteger(bytes) && (bytes as number) > 0) faces.add(face);
+        }
+        value = [...faces].map(family => ({ family }));
+      }
+    } catch { value = []; }
+    this.embeddedCache = { key, value };
+    return value;
+  }
+
+  /** HWP sources report the format limitation; other blocked states use the existing transaction reasons. */
+  private embedReasons<T extends { actionReasons?: DocumentCommandSnapshot["actionReasons"] }>(base: T): T {
+    if (this.sessions.get(this.sessionId)?.format !== "hwp") return base;
+    return { ...base, actionReasons: { ...(base.actionReasons ?? {}), "format.embedFont": "engineUnsupported" } };
+  }
+
+  /** HWPX only (HWP 5.0 defines no font-embedding record); same transaction eligibility as other model edits. */
+  private embedFontEligible(): boolean {
+    const format = this.sessions.get(this.sessionId)?.format;
+    return format === "hwpx" && !!this.doc?.embedFont && !!this.doc.getEmbeddedFonts && !!this.history && this.editable
+      && !this.imeUnsettled && !this.uncertain && this.pending === 0 && this.committingEpoch !== this.epoch && !this.saving
+      && !this.embedding && this.sessions.snapshot().activeId === this.sessionId;
+  }
+
+  private embedding = false;
+  /**
+   * Stage 1 F: embed a face's program into an HWPX document. The bytes come from the backend, which serves only faces
+   * whose license permits editable embedding with TrueType outlines; the engine re-checks the permission, the outline
+   * format and that the face is a family name of the font used by the document. One history step; resolves after the
+   * model mutation succeeded (or was refused).
+   */
+  async executeEmbedFont(family: string, style: string): Promise<EmbedFontResult> {
+    if (!this.embedFontEligible() || !documentCommandState("format.embedFont", this.snapshot()).available) return "stale";
+    if (this.embeddedFonts().some(e => e.family === family)) return "unchanged";
+    const epoch = this.epoch, version = this.modelVersion;
+    this.embedding = true; this.emit();
+    let bytes: Uint8Array | null;
+    try { bytes = await embedFontData(family, style); }
+    catch { bytes = null; }
+    finally { this.embedding = false; }
+    if (!this.owns(epoch) || version !== this.modelVersion || !this.embedFontEligible()) { this.emit(); return "stale"; }
+    if (!bytes) { this.emit(); return "failed"; }
+    const doc = this.doc!;
+    let created = false;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const result = JSON.parse(doc.embedFont!(family, bytes)) as Record<string, unknown>;
+      if (result.ok !== true || !Number.isSafeInteger(result.binDataId) || !Number.isSafeInteger(result.entries) || (result.entries as number) < 1)
+        throw new Error("embedFont result");
+      created = result.created === true;
+      return { caret: this.caret, anchor: this.anchor };
+    }, true, "other", null, true, true);
+    this.history?.boundary();
+    if (!applied) return "failed";
+    return this.embeddedFonts().some(e => e.family === family) ? (created ? "embedded" : "unchanged") : "failed";
   }
 
   private stage1ParagraphActions(): NonNullable<DocumentCommandSnapshot["actions"]> {

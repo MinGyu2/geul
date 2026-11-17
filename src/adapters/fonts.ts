@@ -56,7 +56,7 @@ export interface FontRegistered {
 
 export type FontErrorCode =
   | "UnsupportedFont" | "DamagedFont" | "FontTooLarge" | "AlreadyAvailable" | "TooManyFonts" | "NotUserFont"
-  | "PlatformUnsupported" | "InvalidRequest" | "Internal" | "Protocol";
+  | "PlatformUnsupported" | "EmbeddingRestricted" | "InvalidRequest" | "Internal" | "Protocol";
 
 export type FontResult<T> = { ok: true; value: T } | { ok: false; error: FontErrorCode };
 
@@ -128,7 +128,7 @@ function parseRegistered(v: unknown): FontRegistered | null {
 }
 
 const CODES: readonly FontErrorCode[] = ["UnsupportedFont", "DamagedFont", "FontTooLarge", "AlreadyAvailable", "TooManyFonts", "NotUserFont",
-  "PlatformUnsupported", "InvalidRequest", "Internal"];
+  "PlatformUnsupported", "EmbeddingRestricted", "InvalidRequest", "Internal"];
 
 async function call<T>(invoke: Invoke, command: string, args: Record<string, unknown> | undefined, parse: (v: unknown) => T | null): Promise<FontResult<T>> {
   let value: unknown;
@@ -152,6 +152,47 @@ export interface FontBackend {
   userFace(family: string, style: string): Promise<FontResult<{ index: number; bytes: Uint8Array }>>;
   /** One face of the shared font database (system, bundled or user) by exact family/style, for RHWP natural metrics. */
   faceData(family: string, style: string): Promise<FontResult<{ index: number; bytes: Uint8Array }>>;
+  /** Stage 1 F: whether a face may be embedded into documents, and why not per format (no bytes). */
+  embedInfo(family: string, style: string): Promise<FontResult<FontEmbedInfo>>;
+  /** Stage 1 F: the program of an embeddable face (license permits editable embedding, TrueType outlines). */
+  embedData(family: string, style: string): Promise<FontResult<Uint8Array>>;
+}
+
+export type FontPermission = "installable" | "editable" | "previewPrint" | "restricted" | "bitmapOnly" | "malformed";
+export type EmbedRefusal = "permission" | "cffOutlines" | "collection" | "variable" | "damaged" | "tooLarge" | "unavailable"
+  | "formatUnsupported" | "style";
+export interface FontEmbedInfo {
+  family: string;
+  style: string;
+  program: { permission: FontPermission; fsType: number; noSubsetting: boolean; families: string[]; license: string | null; licenseUrl: string | null } | null;
+  refusal: EmbedRefusal | null;
+  docx: EmbedRefusal | null;
+  hwpx: EmbedRefusal | null;
+  hwp: EmbedRefusal | null;
+}
+
+const PERMISSIONS: readonly FontPermission[] = ["installable", "editable", "previewPrint", "restricted", "bitmapOnly", "malformed"];
+const REFUSALS: readonly EmbedRefusal[] = ["permission", "cffOutlines", "collection", "variable", "damaged", "tooLarge", "unavailable", "formatUnsupported", "style"];
+
+function parseRefusal(v: unknown): EmbedRefusal | null | undefined {
+  return v === null ? null : REFUSALS.find((r) => r === v);
+}
+
+export function parseEmbedInfo(v: unknown): FontEmbedInfo | null {
+  if (!isRecord(v) || !str(v.family, 512) || !str(v.style, 512)) return null;
+  const refusals = [v.refusal, v.docx, v.hwpx, v.hwp].map(parseRefusal);
+  if (refusals.some((r) => r === undefined)) return null;
+  let program: FontEmbedInfo["program"] = null;
+  if (v.program !== null) {
+    const p = v.program;
+    if (!isRecord(p) || !PERMISSIONS.includes(p.permission as FontPermission) || !count(p.fsType) || p.fsType > 0xffff
+      || typeof p.noSubsetting !== "boolean" || !Array.isArray(p.families) || !p.families.every((f) => str(f, 2000))
+      || !(p.license === null || str(p.license, 8000)) || !(p.licenseUrl === null || str(p.licenseUrl, 8000))) return null;
+    program = { permission: p.permission as FontPermission, fsType: p.fsType, noSubsetting: p.noSubsetting, families: p.families as string[],
+      license: p.license as string | null, licenseUrl: p.licenseUrl as string | null };
+  }
+  const [refusal, docx, hwpx, hwp] = refusals as (EmbedRefusal | null)[];
+  return { family: v.family, style: v.style, program, refusal: refusal!, docx: docx!, hwpx: hwpx!, hwp: hwp! };
 }
 
 function parseFaceBytes(v: unknown): { index: number; bytes: Uint8Array } | null {
@@ -174,6 +215,11 @@ export function createFontBackend(invoke: Invoke): FontBackend {
     remove: (family) => call(invoke, "font_remove", { family }, parseFontCatalog),
     userFace: (family, style) => call(invoke, "font_user_face", { family, style }, parseFaceBytes),
     faceData: (family, style) => call(invoke, "font_face_data", { family, style }, parseFaceBytes),
+    embedInfo: (family, style) => call(invoke, "font_embed_info", { family, style }, parseEmbedInfo),
+    embedData: (family, style) => call(invoke, "font_embed_data", { family, style }, (v) => {
+      const bytes = v instanceof ArrayBuffer ? new Uint8Array(v) : v instanceof Uint8Array ? v : null;
+      return bytes && bytes.length >= 12 && bytes.length <= 32 * 1024 * 1024 ? bytes : null;
+    }),
   };
 }
 

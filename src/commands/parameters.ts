@@ -49,7 +49,7 @@ export function commentProblem(text: string): "empty" | "tooLong" | "characters"
 }
 
 const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
-  "insert.image", "paragraph.bullets",
+  "insert.image", "paragraph.bullets", "format.embedFont",
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
   "table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",

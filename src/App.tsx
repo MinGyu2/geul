@@ -7,6 +7,7 @@ import type { DocumentCommandArgs } from "./commands/target";
 import { CommandInputDialog } from "./components/Editor/CommandInputDialog";
 import { Stage1Dialog } from "./components/Editor/Stage1Dialog";
 import { FindBar } from "./components/FindBar/FindBar";
+import { EmbedFontDialog } from "./components/EmbedFontDialog/EmbedFontDialog";
 import { STAGE1_PARAMETERS } from "./commands/stage1";
 import { handleShortcut } from "./commands/shortcuts";
 import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
@@ -215,6 +216,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   const requestInput = useCallback((request: CommandInputRequest) => setInputRequest(request), []);
   // Stage 1 find/replace bar (non-modal) for the active document.
   const [findBar, setFindBar] = useState<{ sessionId: number; replace: boolean } | null>(null);
+  const [embedFont, setEmbedFont] = useState<{ sessionId: number } | null>(null);
   const clipboardOwnership = useRef(0);
   const imageOwnership = useRef(0);
   useLayoutEffect(() => { imageOwnership.current += 1; }, [activeEditor, modal, formatChoice, inputRequest, fileBusy]);
@@ -238,9 +240,10 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   const fonts = useFontController(fontBackend, notify, t, onFontsChanged);
   const context: CommandContext = useMemo<CommandContext>(
     () => ({
-      layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
+      layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null || embedFont !== null,
       files: fileActions, requestInput, fonts,
       openSearch: (replace: boolean) => { if (activeEditor) setFindBar({ sessionId: activeEditor.sessionId, replace }); },
+      openEmbedFont: () => { if (activeEditor) setEmbedFont({ sessionId: activeEditor.sessionId }); },
       pickImage: () => invoke<import("./commands/target").ImportedPicture | null>("picture_import", { title: t("command.insert.image"), accept: t("document.open"), cancel: t("document.cancel") }),
       imageOwner: target => {
         const epoch = imageOwnership.current;
@@ -256,11 +259,12 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
           && document.hasFocus();
       },
     }),
-    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents, t, fonts],
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents, t, fonts, embedFont],
   );
   // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
   if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);
   if (findBar && activeEditor?.sessionId !== findBar.sessionId) setFindBar(null);
+  if (embedFont && activeEditor?.sessionId !== embedFont.sessionId) setEmbedFont(null);
   const confirmInput = (args: DocumentCommandArgs) => {
     const request = inputRequest;
     setInputRequest(null);
@@ -353,6 +357,10 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
         request={inputRequest} suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
       {inputRequest && !(STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command) && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
         suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
+      {embedFont && activeEditor && <EmbedFontDialog key={embedFont.sessionId} target={activeEditor}
+        format={documents?.sessions.get(activeEditor.sessionId)?.format ?? (activeEditor.engine === "wordcraft" ? "docx" : "hwpx")}
+        catalog={fonts?.catalog ?? null} initialFamily={activeEditor.snapshot().parameters?.["format.font"]?.font?.family ?? null}
+        suspended={modal} notify={notify} onClose={() => setEmbedFont(null)} />}
       {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>
   );

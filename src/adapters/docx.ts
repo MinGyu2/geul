@@ -89,6 +89,8 @@ export interface DocxView {
   paragraph?: ParagraphState;
   page?: PageState;
   search?: SearchState;
+  /** Stage 1 F: embedded fonts (font table embed slots). */
+  embeddedFonts?: DocxEmbeddedFont[];
 }
 
 export interface DocxFont {
@@ -171,6 +173,8 @@ export type DocxOp =
   | { op: "format"; format: DocxCharFormat }
   /** Stage 5-A: font family for the selection (WordCraft `format.font`; a CJK font is also the East Asian font). */
   | { op: "font"; name: string }
+  /** Stage 1 F: embed a face of the shared font database (font table embed slot + obfuscated font part). */
+  | { op: "embedFont"; family: string; style: string }
   /** 새 메모(T013, WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모. 글자 수는 MAX_DOCX_COMMENT_CHARS 이하. */
   | { op: "comment"; text: string }
   | { op: "footnote"; text: string }
@@ -359,7 +363,20 @@ function parseSearch(value: unknown): SearchState | undefined {
   return { text, matchCase, wholeWord, count, current };
 }
 
-const STAGE1_VIEW: readonly [string, (value: unknown) => unknown][] = [["chars", parseChars], ["paragraph", parseParagraph], ["page", parsePageSetup], ["search", parseSearch]];
+export interface DocxEmbeddedFont { family: string; slot: string; fontKey: string | null; part: string | null }
+
+function parseEmbeddedFonts(value: unknown): DocxEmbeddedFont[] | undefined {
+  if (!Array.isArray(value) || value.length > 4096) return undefined;
+  const out: DocxEmbeddedFont[] = [];
+  for (const e of value) {
+    if (!isRecord(e) || !hasExactly(e, ["family", "slot", "fontKey", "part"]) || typeof e.family !== "string" || typeof e.slot !== "string"
+      || !(e.fontKey === null || typeof e.fontKey === "string") || !(e.part === null || typeof e.part === "string")) return undefined;
+    out.push({ family: e.family, slot: e.slot, fontKey: e.fontKey as string | null, part: e.part as string | null });
+  }
+  return out;
+}
+
+const STAGE1_VIEW: readonly [string, (value: unknown) => unknown][] = [["chars", parseChars], ["paragraph", parseParagraph], ["page", parsePageSetup], ["search", parseSearch], ["embeddedFonts", parseEmbeddedFonts]];
 
 export function parseDocxView(value: unknown): DocxView | null {
   if (!isRecord(value)) return null;

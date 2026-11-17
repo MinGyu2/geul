@@ -80,10 +80,17 @@ export interface DocumentCommandSnapshot {
   search?: SearchState | null;
   actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "revisionsRequired" | "pendingEdits" | "originalChecking" | "originalUnverified"
     | "notInTable" | "nestedTable" | "tableFormula" | "tableContent" | "tableShape" | "limit" | "engineUnsupported">>;
+  /** Stage 1 F: fonts embedded in the document (family, and the DOCX style slot where the format has slots). */
+  embeddedFonts?: readonly EmbeddedFont[];
 }
 
+export interface EmbeddedFont { family: string; slot?: string }
+
+/** Stage 1 F result: embedded (model changed), unchanged (exactly this font already embedded), refused, or stale. */
+export type EmbedFontResult = "embedded" | "unchanged" | "failed" | "stale";
+
 /** 값 입력 없이 세션 문맥으로만 가용성이 정해지는 문서 명령. */
-export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references.toc" | "references.updateToc" | Stage1ActionCommandId
+export type ActionCommandId = "insert.image" | "paragraph.bullets" | "format.embedFont" | "references.toc" | "references.updateToc" | Stage1ActionCommandId
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | TableStructureCommandId;
 
@@ -152,6 +159,9 @@ export interface DocumentCommandTarget {
   snapshot(): DocumentCommandSnapshot;
   executeImage?(owns: () => boolean, pick: () => Promise<ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed">;
   executeClipboard?(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean>;
+  /** Stage 1 F: embed the font program of a face (`family`, `style`) of the shared font database. Resolves only after
+   * the document model holds the resource (or refused it); never reports success for a queued request. */
+  executeEmbedFont?(family: string, style: string): Promise<EmbedFontResult>;
   /**
    * 명령을 이 세션에 실행한다. 레지스트리가 가용성을 확인한 뒤 부르지만, 세션은 자기 상태로 다시 확인하고 맞지 않으면
    * 아무것도 바꾸지 않고 거절한다(accepted: false).

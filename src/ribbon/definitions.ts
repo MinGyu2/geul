@@ -55,7 +55,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
       group("clipboard", [cmd("edit.paste", "paste", "large"), cmd("edit.cut", "cut"), cmd("edit.copy", "copy")]),
       group("font", [cmd("format.font", "font", "small"), cmd("format.fontSize", "fontSize", "small"), cmd("format.bold", "bold", "icon"), cmd("format.italic", "italic", "icon"), cmd("format.underline", "underline", "icon"),
         cmd("format.strikethrough", "strikethrough", "icon"), cmd("format.superscript", "superscript", "icon"), cmd("format.subscript", "subscript", "icon"),
-        cmd("format.fontColor", "fontColor", "small"), cmd("format.highlight", "highlight", "small")]),
+        cmd("format.fontColor", "fontColor", "small"), cmd("format.highlight", "highlight", "small"), cmd("format.embedFont", "font", "small")]),
       group("paragraph", [cmd("paragraph.alignLeft", "alignLeft", "icon"), cmd("paragraph.alignCenter", "alignCenter", "icon"),
         cmd("paragraph.alignRight", "alignRight", "icon"), cmd("paragraph.justify", "justify", "icon"),
         cmd("paragraph.bullets", "bullets", "icon"), cmd("paragraph.numbering", "numbering", "icon"), cmd("paragraph.multilevel", "multilevel", "icon"),

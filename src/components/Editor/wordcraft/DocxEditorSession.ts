@@ -74,8 +74,9 @@ import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import type { DocumentCommandId } from "../../../commands/registry";
 import type {
-  CommandDispatch, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget, ParameterCommandId, QueuedStep,
+  CommandDispatch, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget, EmbedFontResult, ParameterCommandId, QueuedStep,
 } from "../../../commands/target";
+import { docxSlot } from "../../../fonts/embedding";
 import { validateCommandArgs } from "../../../commands/parameters";
 import { ALIGN_COMMANDS, STAGE1_ACTIONS, STAGE1_PARAMETERS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type SearchRequest } from "../../../commands/stage1";
 
@@ -95,7 +96,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
+  "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
   "continueNumbering", "pageSetup", "replace", "replaceAll",
@@ -108,11 +109,11 @@ const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move",
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
 const ACTION_IDS = [
-  "insert.image", "paragraph.bullets",
+  "insert.image", "paragraph.bullets", "format.embedFont",
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ] as const;
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
   "pageSetup", "replace", "replaceAll"]);
@@ -1053,6 +1054,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       font: this.view ? { family: this.view.font.family } : null,
       paragraph: this.view?.paragraph ?? null, chars: this.view?.chars ?? null, page: this.view?.page ?? null,
       searchable: true, search: this.view?.search ?? null,
+      embeddedFonts: (this.view?.embeddedFonts ?? []).map((e) => ({ family: e.family, slot: e.slot })),
       ...this.parameterState(),
     };
   }
@@ -1093,6 +1095,28 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       return this.push({ op: "image", data }) ? "inserted" : "stale";
     } catch { return "failed"; }
     finally { this.imageSelecting = false; if (!this.disposed) this.emit(); }
+  }
+
+  /**
+   * Stage 1 F: embed a face's program. The backend reads the font itself (bytes never cross the WebView), checks the
+   * license permission and outlines, and replaces the model only after a write/reopen check; this resolves after the
+   * edit response, from the engine view (never from the queued request).
+   */
+  async executeEmbedFont(family: string, style: string): Promise<EmbedFontResult> {
+    if (this.disposed || !documentCommandState("format.embedFont", this.snapshot()).available) return "stale";
+    const slot = docxSlot(style);
+    if (!slot || !family.trim() || family.length > 128 || style.length > 128) return "failed";
+    const has = () => (this.view?.embeddedFonts ?? []).some((e) => e.family === family.trim() && e.slot === slot && e.part !== null);
+    if (has()) return "unchanged";
+    const generation = this.generation, rejected = this.rejectedOps;
+    if (!this.push({ op: "embedFont", family: family.trim(), style })) return "stale";
+    await new Promise<void>((resolve) => {
+      const check = () => { if (this.disposed || !this.busy || this.status.kind !== "ready") { unsubscribe(); resolve(); } };
+      const unsubscribe = this.subscribe(check);
+      check();
+    });
+    if (this.disposed || generation !== this.generation) return "stale";
+    return has() && this.rejectedOps === rejected ? "embedded" : "failed";
   }
 
   private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons" | "actions" | "actionReasons"> {
@@ -1139,6 +1163,10 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // Stage 5-A font: any selection or caret the engine formats (`format.font`; collapsed = the engine's word/next-text
     // target). Protection that always refuses formatting blocks it here; region protection is decided by the engine.
     if (view.formatAccess !== "protected") parameters["format.font"] = { font: { family: view.font.family } };
+    // Stage 1 F: embedding changes package resources, not the text; refused by the engine under protection that
+    // blocks formatting (same rule as fonts).
+    if (view.formatAccess !== "protected") actions["format.embedFont"] = {};
+    else actionReasons["format.embedFont"] = "engineUnsupported";
     this.stage1State(view, parameters, parameterReasons, actions, actionReasons);
     return { parameters, parameterReasons, actions, actionReasons };
   }

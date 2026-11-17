@@ -14,6 +14,8 @@ import { documentCommandState } from "../../src/commands/capability";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import { preserveSourceCaret, type RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { pathJson } from "../../src/components/Editor/rhwp/rhwpText";
+import { configureEmbedding } from "../../src/fonts/embedding";
+import type { FontBackend } from "../../src/adapters/fonts";
 import { base, controlledBackend, flush, info, loaded, ok } from "../../src/components/Editor/rhwp/testing";
 
 const root = resolve(__dirname, "../..");
@@ -636,6 +638,88 @@ describe.skipIf(phase !== "generate")("P1-C combined character + paragraph/list 
   }
 });
 
+const fontAsset = (name: string) => new Uint8Array(readFileSync(join(root, "external/wordcraft/assets/fonts", name)));
+/** The same font with another OS/2 fsType (in memory only; never written as a font file). */
+function withFsType(bytes: Uint8Array, fsType: number) {
+  const out = bytes.slice(), view = new DataView(out.buffer);
+  for (let i = 0; i < view.getUint16(4); i++) {
+    const rec = 12 + i * 16;
+    if (String.fromCharCode(...out.subarray(rec, rec + 4)) === "OS/2") view.setUint16(view.getUint32(rec + 8) + 8, fsType);
+  }
+  return out;
+}
+const embedded = (d: RhwpDocument) => JSON.parse(d.getEmbeddedFonts!()) as { lang: number; face: string; binDataId: number; bytes: number }[];
+
+describe.skipIf(phase !== "generate")("F HWPX font embedding through the RHWP session, actual Release WASM", () => {
+  it("hwpx: embed an original face and a new face; char formatting, Undo/Redo, restricted refusal, export/reopen", async () => {
+    const inter = fontAsset("Inter-Regular.ttf"), mono = fontAsset("JetBrainsMono-Regular.ttf");
+    let served = inter;
+    configureEmbedding({ embedData: async () => ({ ok: true, value: served }) } as unknown as FontBackend);
+    // Source: a document that already uses Inter (an original face, inside the protected font prefix).
+    const seed = engine.HwpDocument.createEmpty();
+    let original: Uint8Array;
+    try {
+      seed.createBlankDocument(); seed.insertText(0, 0, 0, "Inter text and more"); seed.splitParagraph(0, 0, 19); seed.insertText(0, 1, 0, "Second line");
+      const id = seed.findOrCreateFontId("Inter"); seed.applyCharFormat(0, 0, 0, 10, JSON.stringify({ fontId: id }));
+      const monoId = seed.findOrCreateFontId("JetBrains Mono"); seed.applyCharFormat(0, 1, 7, 11, JSON.stringify({ fontId: monoId }));
+      original = exported(seed, "hwpx").bytes;
+    } finally { seed.free(); }
+    const { editor, doc, settle } = await open("hwpx", original);
+    try {
+      expect(documentCommandState("format.embedFont", editor.snapshot())).toEqual({ available: true });
+      expect(editor.snapshot().embeddedFonts).toEqual([]);
+      // Defence in depth: restricted bytes are refused by the engine; nothing changes.
+      served = withFsType(inter, 0x0002);
+      const revision = editor.snapshot().revision;
+      expect(await editor.executeEmbedFont("Inter", "Regular")).toBe("failed");
+      expect(embedded(doc)).toEqual([]);
+      expect(editor.snapshot().revision).toBe(revision);
+      served = inter;
+      expect(await editor.executeEmbedFont("Inter", "Regular")).toBe("embedded"); await settle();
+      expect(embedded(doc).map(e => [e.face, e.bytes])).toEqual(Array(7).fill(["Inter", inter.length]));
+      expect(editor.snapshot().embeddedFonts).toEqual([{ family: "Inter" }]);
+      expect(await editor.executeEmbedFont("Inter", "Regular")).toBe("unchanged");
+      // Character formatting afterwards (char-shape + font compaction against the protected prefix) still works.
+      editor.anchor = body(0, 1); editor.caret = body(6, 1);
+      expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 14 }).accepted).toBe(true); await settle();
+      expect(properties(doc, 1, 0).fontSize).toBe(1400);
+      expect(embedded(doc).length).toBe(7);
+      // Undo the size change and the embed; redo both (snapshot restores reconcile with the font prefix).
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(embedded(doc)).toEqual([]);
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      expect(embedded(doc).length).toBe(7);
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      expect(properties(doc, 1, 0).fontSize).toBe(1400);
+      // A second document face: embedded as a second, distinct resource.
+      served = mono;
+      expect(await editor.executeEmbedFont("JetBrains Mono", "Regular")).toBe("embedded"); await settle();
+      const faces = embedded(doc);
+      expect(new Set(faces.map(e => e.face))).toEqual(new Set(["Inter", "JetBrains Mono"]));
+      expect(new Set(faces.map(e => e.binDataId)).size).toBe(2);
+      // A face the document does not use is refused.
+      expect(await editor.executeEmbedFont("Source Serif 4", "Regular")).not.toBe("embedded");
+      record("hwpx-stage1-embed-font", "hwpx", original, doc);
+      const e = exported(doc, "hwpx"), re = new engine.HwpDocument(e.bytes) as Doc;
+      try {
+        expect(new Set(embedded(re).map(x => `${x.face}:${x.bytes}`))).toEqual(new Set([`Inter:${inter.length}`, `JetBrains Mono:${mono.length}`]));
+        // Rendering uses the embedded programs (@font-face from the document's own bytes).
+        expect(re.renderPageSvgWithProfile(0, "screen").length).toBeGreaterThan(0);
+      } finally { re.free(); }
+    } finally { editor.dispose(); configureEmbedding(null); }
+  });
+  it("hwp: font embedding is unavailable (HWP 5.0 defines no font-embedding record)", async () => {
+    const { editor, doc } = await open("hwp");
+    try {
+      expect(editor.snapshot().actionReasons?.["format.embedFont"]).toBe("engineUnsupported");
+      expect(documentCommandState("format.embedFont", editor.snapshot()).available).toBe(false);
+      expect(await editor.executeEmbedFont("Inter", "Regular")).toBe("stale");
+      expect(() => doc.embedFont!("Inter", fontAsset("Inter-Regular.ttf"))).toThrow(/only HWPX/);
+    } finally { editor.dispose(); }
+  });
+});
+
 describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatting, production session path, actual Release WASM", () => {
   for (const format of ["hwpx", "hwp"] as const) {
     it(`${format}: numbered/multilevel/custom lists, levels, restart/continue, Enter exit, cells; history; export`, async () => {
@@ -747,6 +831,7 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       if (nested) expect(nestedModel(doc, nested)).toEqual(proof.nested);
       if (id.includes("nested")) expect(proof.nested?.nested?.alignment).toBe("right");
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
+      else if (id.includes("embed-font")) expect(new Set(embedded(doc).map(x => x.face))).toEqual(new Set(["Inter", "JetBrains Mono"]));
       else if (id.includes("combined")) expect([properties(doc, 0, 1).superscript, properties(doc, 1, 1).textColor, properties(doc, 2, 1).fontSize]).toEqual([true, "#00b050", 1300]);
       else if (id.includes("numbering")) expect([0, 1, 2].map(p => numberingStyle(doc, p).codes?.[0])).toEqual([4, 0, 3]);
       else if (id.includes("lists")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 0)).headType).toBe("Bullet");

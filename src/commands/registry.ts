@@ -39,7 +39,9 @@ export type DocumentCommandId =
   | "paragraph.settings" | "paragraph.numbering" | "paragraph.multilevel" | "paragraph.listStyle"
   | "paragraph.increaseIndent" | "paragraph.decreaseIndent" | "paragraph.restartNumbering" | "paragraph.continueNumbering"
   | "layout.margins" | "layout.orientation" | "layout.size" | "layout.columns"
-  | "edit.find" | "edit.replace";
+  | "edit.find" | "edit.replace"
+  // Stage 1 F: document font embedding (src/components/EmbedFontDialog.tsx).
+  | "format.embedFont";
 
 /** 엔진 하나에서 명령의 지원. */
 export type EngineSupport =
@@ -177,6 +179,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "layout.columns": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_PAGE } },
   "edit.find": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+F"], scope: "global" },
   "edit.replace": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_STAGE1_SEARCH }, shortcuts: ["Mod+H"], scope: "global" },
+  // Stage 1 F: DOCX (OOXML embedded TrueType font) and HWPX (OWPML hh:font isEmbedded + BinData). HWP 5.0 defines no
+  // font-embedding record: the RHWP session reports it unavailable for HWP sources.
+  "format.embedFont": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
 };
 
 const LAYOUT_COMMANDS: Record<LayoutCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
