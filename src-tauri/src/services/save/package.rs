@@ -401,8 +401,11 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         name == BODY
             || (numbering && name == NUMBERING)
             || name == APP
-            || ((added.is_some() || pictures.is_some() || media_removed.is_some())
+            || ((added.is_some() || pictures.is_some())
                 && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
+            || media_removed.as_ref().is_some_and(|m| {
+                name == DOCUMENT_RELS || (m.content_types_changed && name == CONTENT_TYPES)
+            })
             || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
@@ -410,10 +413,12 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
                 f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
             })
     });
-    if let Some(removed) = &media_removed {
+    if let Some(media) = &media_removed {
         findings.retain(|f| {
             !(f.code == FindingCode::PartMissing
-                && f.part.as_deref().is_some_and(|name| removed.iter().any(|r| r == name)))
+                && f.part
+                    .as_deref()
+                    .is_some_and(|name| media.removed_media.iter().any(|r| r == name)))
         });
     }
     if let Some(fonts) = &fonts {
@@ -1754,13 +1759,21 @@ fn pictures_appended(original: &Package, output: &Package) -> Option<Vec<String>
     .then_some(added)
 }
 
+struct TableMediaChanges {
+    removed_media: Vec<String>,
+    content_types_changed: bool,
+}
+
 /// Narrow T009 proof for authorized media removal caused by deleting table rows/columns:
 /// permits removing `word/media/*` parts (and matching `word/_rels/document.xml.rels` /
-/// `[Content_Types].xml` entries, or pure `IMAGE_REL` ID renumbering when shared media remain)
+/// `[Content_Types].xml` entries, or pure `IMAGE_REL` ID renumbering when shared/unchanged media remain)
 /// only when every removed resource was bound exclusively by `<a:blip r:embed="..."/>` inside
 /// `<w:tbl>` of `original`'s `word/document.xml`, no other `.rels` part references it, no
 /// non-table/non-image bindings changed or were omitted, and no surviving `.rels` references it.
-fn authorized_table_media_changes(original: &Package, output: &Package) -> Option<Vec<String>> {
+/// Validates removed-media ownership at the package XML/rels level (not independent UI command history);
+/// when no media parts are removed, `[Content_Types].xml` is never exempted and non-image relationships
+/// must retain exact IDs.
+fn authorized_table_media_changes(original: &Package, output: &Package) -> Option<TableMediaChanges> {
     const IMAGE_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
     const REL_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -1814,7 +1827,9 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
             }
         }
     }
-    // Validate [Content_Types].xml changes: only unused removed extensions / overrides.
+    // Validate [Content_Types].xml changes only when media parts are actually removed.
+    // When no media is removed, content_types_changed stays false so compare() checks it strictly.
+    let mut content_types_changed = false;
     if !removed.is_empty() {
         let (root_a, types_a) = content_type_children(original.get(CONTENT_TYPES)?)?;
         let (root_b, types_b) = content_type_children(output.get(CONTENT_TYPES)?)?;
@@ -1833,6 +1848,7 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
         if !remaining_b.is_empty() {
             return None;
         }
+        content_types_changed = !omitted_types.is_empty();
         for entry in omitted_types {
             let tag = attr(entry, "");
             if tag == Some("Default") {
@@ -1909,8 +1925,16 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
             return None;
         }
     }
-    if removed.is_empty() && original.get(DOCUMENT_RELS) == output.get(DOCUMENT_RELS) {
-        return None;
+    if removed.is_empty() {
+        if original.get(DOCUMENT_RELS) == output.get(DOCUMENT_RELS) {
+            return None;
+        }
+        // Pure relationship renumbering without media removal must keep non-image rels identical (including Id).
+        for orig_rel in &rels_a {
+            if attr(orig_rel, "Type") != Some(IMAGE_REL) && !rels_b.contains(orig_rel) {
+                return None;
+            }
+        }
     }
     // Walk word/document.xml bindings with table nesting depth.
     type Binding = (String, String, String, Attrs);
@@ -1994,7 +2018,10 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
     if !removed.iter().all(|r| removed_seen.contains(r)) {
         return None;
     }
-    Some(removed)
+    Some(TableMediaChanges {
+        removed_media: removed,
+        content_types_changed,
+    })
 }
 
 const NUMBERING: &str = "word/numbering.xml";

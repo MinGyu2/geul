@@ -13623,3 +13623,202 @@ fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
     );
     assert!(!package::compare_saved_docx(&orig_bad_rel, &valid_out).is_empty());
 }
+
+#[test]
+fn docx_table_media_renumbering_rejects_unrelated_content_types() {
+    const IMAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    const STYLES_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+    const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const PNG_SIG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+    const JPG_SIG: &[u8] = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00";
+
+    let ct_png = concat!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+        r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>"#,
+        r#"<Default Extension="xml" ContentType="application/xml"/>"#,
+        r#"<Default Extension="png" ContentType="image/png"/>"#,
+        r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
+        r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+        r#"</Types>"#,
+    );
+    let styles = format!(r#"<w:styles xmlns:w="{W}"/>"#);
+    let rels_orig = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId2" Type="{IMAGE_REL}" Target="media/image1.png"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let rels_renumbered = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId7" Type="{IMAGE_REL}" Target="media/image1.png"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let doc_orig = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:p><w:r><a:blip r:embed="rId3"/></w:r></w:p>
+    <w:tbl><w:tr><w:tc><w:p><w:r><a:blip r:embed="rId2"/></w:r></w:p></w:tc></w:tr></w:tbl>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+    let doc_renumbered = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:p><w:r><a:blip r:embed="rId3"/></w:r></w:p>
+    <w:tbl><w:tr><w:tc><w:p><w:r><a:blip r:embed="rId7"/></w:r></w:p></w:tc></w:tr></w:tbl>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+
+    let build = |ct: &str, doc: &str, rels: &str, media: &[(&str, &[u8])]| {
+        let mut entries = vec![
+            entry("[Content_Types].xml", ct.as_bytes()),
+            entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+            entry("word/document.xml", doc.as_bytes()),
+            entry("word/_rels/document.xml.rels", rels.as_bytes()),
+            entry("word/styles.xml", styles.as_bytes()),
+        ];
+        for (p, b) in media {
+            entries.push(stored(p, b));
+        }
+        pkg(&entries)
+    };
+
+    let orig = build(
+        ct_png,
+        &doc_orig,
+        &rels_orig,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+    );
+
+    // T1: Valid relationship-ID renumbering with no media removal and unchanged [Content_Types].xml MUST pass
+    let t1_valid = build(
+        ct_png,
+        &doc_renumbered,
+        &rels_renumbered,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+    );
+    assert_eq!(package::validate_docx(&t1_valid), vec![]);
+    assert_eq!(package::compare_saved_docx(&orig, &t1_valid), vec![]);
+
+    // T2: Same T1 relationship-ID renumbering paired with unrelated well-formed [Content_Types].xml mutations MUST be refused
+    let ct_bad_mime = ct_png.replace(r#"ContentType="image/png""#, r#"ContentType="application/octet-stream""#);
+    let ct_bad_override = ct_png.replace(
+        r#"ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml""#,
+        r#"ContentType="application/xml""#,
+    );
+    let ct_extra_default = ct_png.replace(
+        r#"</Types>"#,
+        r#"<Default Extension="txt" ContentType="text/plain"/></Types>"#,
+    );
+    for (label, bad_ct) in [
+        ("altered png mime", ct_bad_mime),
+        ("altered styles override", ct_bad_override),
+        ("extra unrelated default", ct_extra_default),
+    ] {
+        let t2_invalid = build(
+            &bad_ct,
+            &doc_renumbered,
+            &rels_renumbered,
+            &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        );
+        assert_eq!(package::validate_docx(&t2_invalid), vec![], "{label}: validate_docx sees well-formed OPC");
+        let findings = package::compare_saved_docx(&orig, &t2_invalid);
+        assert!(
+            findings.contains(&Finding::at(FindingCode::PartChanged, "[Content_Types].xml")),
+            "{label}: expected PartChanged on [Content_Types].xml, got {findings:?}"
+        );
+    }
+
+    // T3: Real table-image deletion (image1.jpg removed along with its unused jpeg Default, while body image2.png survives)
+    let ct_png_jpg = ct_png.replace(
+        r#"<Default Extension="png" ContentType="image/png"/>"#,
+        r#"<Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/>"#,
+    );
+    let rels_orig_jpg = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId2" Type="{IMAGE_REL}" Target="media/image1.jpg"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let rels_after_jpg_del = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId7" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let doc_after_jpg_del = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:p><w:r><a:blip r:embed="rId7"/></w:r></w:p>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+    let orig_jpg = build(
+        &ct_png_jpg,
+        &doc_orig,
+        &rels_orig_jpg,
+        &[("word/media/image1.jpg", JPG_SIG), ("word/media/image2.png", PNG_SIG)],
+    );
+    let t3_valid = build(
+        ct_png,
+        &doc_after_jpg_del,
+        &rels_after_jpg_del,
+        &[("word/media/image2.png", PNG_SIG)],
+    );
+    assert_eq!(package::validate_docx(&t3_valid), vec![]);
+    assert_eq!(package::compare_saved_docx(&orig_jpg, &t3_valid), vec![]);
+
+    // Negative on T3: deleting table image1.jpg must STILL reject dropping surviving png Default or mutating styles Override
+    let ct_dropped_png = ct_png.replace(r#"<Default Extension="png" ContentType="image/png"/>"#, "");
+    let ct_t3_mutated_styles = ct_png.replace(
+        r#"ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml""#,
+        r#"ContentType="application/xml""#,
+    );
+    for (label, bad_ct) in [
+        ("dropped surviving png default", ct_dropped_png),
+        ("unrelated styles override change during media delete", ct_t3_mutated_styles),
+    ] {
+        let bad_t3 = build(
+            &bad_ct,
+            &doc_after_jpg_del,
+            &rels_after_jpg_del,
+            &[("word/media/image2.png", PNG_SIG)],
+        );
+        assert!(
+            !package::compare_saved_docx(&orig_jpg, &bad_t3).is_empty(),
+            "{label}: accepted unexpectedly"
+        );
+    }
+
+    // Negative: non-image relationship removal and broken relationship target MUST be refused
+    let rels_dropped_styles = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId7" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let bad_dropped_styles = build(
+        ct_png,
+        &doc_after_jpg_del,
+        &rels_dropped_styles,
+        &[("word/media/image2.png", PNG_SIG)],
+    );
+    assert!(!package::compare_saved_docx(&orig_jpg, &bad_dropped_styles).is_empty());
+
+    let rels_broken_target = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId7" Type="{IMAGE_REL}" Target="media/missing.png"/></Relationships>"#
+    );
+    let bad_broken_target = build(
+        ct_png,
+        &doc_after_jpg_del,
+        &rels_broken_target,
+        &[("word/media/image2.png", PNG_SIG)],
+    );
+    assert!(!package::compare_saved_docx(&orig_jpg, &bad_broken_target).is_empty());
+
+    // Negative: non-image relationship ID renumbering without media removal MUST be refused
+    let rels_non_image_renumbered = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId7" Type="{IMAGE_REL}" Target="media/image1.png"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let bad_non_image_id = build(
+        ct_png,
+        &doc_renumbered,
+        &rels_non_image_renumbered,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+    );
+    assert!(!package::compare_saved_docx(&orig, &bad_non_image_id).is_empty());
+}
