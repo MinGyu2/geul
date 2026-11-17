@@ -174,6 +174,56 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 
 ### 5.6 남은 일
 
-- HWP 글꼴 embedding: 형식 제한(5.3). 기존 run 분할 HWPX 문단의 글자 서식 저장 거부(위): 엔진 provenance 규칙 개선이 필요(이번 범위 밖, 기존 제한).
+- HWP 글꼴 embedding: 형식 제한(5.3). ~~기존 run 분할 HWPX 문단의 글자 서식 저장 거부(위): 엔진 provenance 규칙 개선이 필요(이번 범위 밖, 기존 제한).~~ → Stage 2 / Phase 0(아래 6절)에서 해결.
 - `calc_cell_*` 2건 기준부터 FAIL(원인 미조사). RHWP 모두 바꾸기 500개 상한, 기존(템플릿이 아닌) 번호 정의의 새로 시작, ColumnDef 없는 구역의 다단 생성은 그대로다.
 - Word·한컴 오피스 실제 재열기(DOCX embed 글꼴, HWPX embed 글꼴) NOT RUN.
+
+## 6. Stage 2 / Phase 0 — HWPX 분할 run 글자 서식 및 안전 저장 안정화 (2026-11-17)
+
+### 6.1 문제 재현 및 근본 원인
+
+1차 native 수용(run1/run2)에서 분리한 `target/stage1-p1f-native/run1/docs/stage1.hwpx`(문단 0이 `<hp:secPr/><hp:colPr/>` + 0폭 `<hp:t/>` handoff run과 `NanumGothic` text run을 함께 보유)로 Release WASM `a3e4cf73…`에서 재현한 결과, 본문 `"Font"`(`doc.applyCharFormat(0, 0, 5, 10, '{"superscript":true}')`, IME·embed 없이 선택 서식만 적용) 뒤 `exportHwpxWithReport()`가 `"지원하지 않는 입력: HWPX empty-text provenance: character formatting changed run occurrence boundaries"`(`FORMAT_BOUNDARY`)로 실패함을 확인했다.
+
+근본 원인은 두 곳이다.
+1. **`HwpxTextTopology::format_edit`의 보수적 불변식(`src/model/hwpx_topology.rs`)**: `secPr`/`colPr` handoff 등 0폭 `<hp:t/>`가 있는 문단은 `HwpxTextTopology`를 포착하는데, 기존 `format_edit()`은 편집 후 `char_shapes.len() != old.len()`이거나 어떤 `start_pos`가 달라지면 무조건 `FORMAT_BOUNDARY`로 무효화했다. 정상적인 부분 서식 분할·인접 run 걸친 서식 병합·반복 서식 경계 변화까지 모두 거부됐다.
+2. **문단 IR 글자 모양 0폭 occurrence 보존 누락(`src/model/paragraph.rs`)**:
+   - `map_char_shape_range_ids`가 `last.start_pos == insert_start`일 때 직전 0폭 `CharShapeRef`의 `char_shape_id`를 덮어써 handoff 0폭 run의 모양 ID를 망가뜨릴 수 있었고,
+   - 실행 취소/다시 실행의 `restore_char_shape_run_ids`가 `take_while(|r| r.start_pos < from)`로 `from` 위치의 0폭 run을 버려 `secPr` 0폭 occurrence가 사라졌다.
+
+### 6.2 provenance 재조정 계약 (지원 vs 안전 거부)
+
+관리 패치 `patches/rhwp/stage2-p0-hwpx-split-run.patch`(#23, `scripts/rhwp-patches.py`)는 위상 봉인(`seal_with`)이나 `format_edit()` 검사를 우회하지 않고, 편집 전후 char-shape occurrence와 원본 `SourceRun` 원자(`Text`, `EmptyText`, `Control`, `FieldEnd`) 사이의 결정적 source-aware 재조정(`reconcile_format_edit`)을 수행한다.
+
+- **IR 0폭 occurrence 보존**: `HwpxTextTopology`가 존재하는 문단(`preserve_zero_width = true`)에서는 `try_map_char_shape_range_preserving` / `restore_char_shape_run_ids_preserving`이 `insert_start`/`from`의 0폭 entry를 덮어쓰거나 버리지 않는다.
+- **지원(증명 가능한 변환)**:
+  - 일반 글자 `SourceRun` 내부 부분 범위 분할(한 run → 여러 출력 run, 다중 분할, 중첩 표/표 셀 문단 포함)
+  - 인접한 다중 `Text` run/경계에 걸친 선택 서식 및 반복 적용 + Undo/Redo(`restore()`)
+  - `Text` 뒤·사이에 있는 0폭 `EmptyText` / bare `EmptyRun` occurrence의 원래 구조 위치·속성(`xml:space` 등)·run 속성 보존
+  - 동일 문자 구간에 독립 배치된 컨트롤(`Text` 앞의 `secPr`/`colPr`/0폭 `EmptyText`, `Text` 앞뒤의 `FieldEnd` 등) 소유권·순서 불변
+  - `autoNum` 등 1글자 점유 컨트롤 run이 온전히 하나의 출력 char-shape run 안에 포함되는 경우(`control_is_auto_num`)
+  - 지원되는 글자 서식 + 목록/번호 결합 편집 및 T009 저장(`general_formatting_real_publication` + `hwpx_combined_appended`)
+- **안전 거부(Fail-closed 유지)**:
+  - `charStyleIDRef` 텍스트에 대한 직접 서식 (`FORMAT_STYLED`: `"character formatting of hp:t charStyleIDRef text is unsupported"`)
+  - non-formatting 변경 혼합 또는 text/control 범위 불일치 (`FORMAT_SCOPE`: `"character formatting edit changed more than run character shapes"`, 누락/추가 char-shape 범위·텍스트와 겹치지 않는 비-autoNum 컨트롤 중간 분할·문자 수 불일치)
+  - 선행 `STALE` 위상(직접 `char_shapes` 변조·구조 변경 후 서식 시도)
+  - `restore()` 시 0폭 handoff 소실 또는 순서 역전 등 증명 불가 변화 (`FORMAT_BOUNDARY`)
+  - 존재하지 않는 `charPrIDRef` (`HwpxHeader` 참조 검증)
+
+### 6.3 산출물 및 검증 (2026-11-17)
+
+- 패치·WASM: `patches/rhwp/stage2-p0-hwpx-split-run.patch` 추가(이전 22개 패치 불변), Release WASM generation `80024e5cbc5a859f7627cadb16838f3a80a5693be2bf44d791faa2a4ea13791b`(`externalUnchanged: true`; 구세대 `cfb26d65…`은 `target/rhwp-retired-generations/`로 보존 이동).
+- 직렬화기·원래 실패 fixture 직접 확인: `target/stage1-p1f-native/run1/docs/stage1.hwpx` + `applyCharFormat(0, 0, 5, 10, '{"superscript":true}')`가 `80024e5c…`에서 7,407 B로 내보내기 성공(loss 0), 재열기 text/superscript 일치.
+
+| 구분 | 실행 명령(요약) | 결과 |
+|---|---|---|
+| RHWP 단위(patched worktree) | `cargo test -p rhwp --lib` (`empty_text_` + `serializer::hwpx::` + `char_shape_compact` / `model::paragraph::` / `document_core::commands::formatting`) | 512 PASS / 60 PASS / 13 PASS (0 fail, `cargo check` 경고 0) |
+| WASM 서식 + split-run 회귀 | `GEUL_FORMAT_OUT=src-tauri/target/stage2-p0-format npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage1-format.wasm.test.ts` | 28 passed, 1 skipped(verify 단계), 27 case 생성 (`hwpx-stage2p0-split-runs` 포함) |
+| T009 실제 저장 게시 | `GEUL_FORMAT_DIR=src-tauri/target/stage2-p0-format GEUL_FORMAT_EXPECTED_CASES=27 GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib general_formatting_real_publication -- --ignored` | 1 passed, 0 failed (27 case 실제 게시) |
+| 게시 바이트 독립 재열기 | `GEUL_FORMAT_PHASE=verify GEUL_FORMAT_OUT=src-tauri/target/stage2-p0-format GEUL_FORMAT_EXPECTED_CASES=27 npx vitest run … stage1-format.wasm.test.ts` | 1 passed, 28 skipped (27 case 재열기 모델 일치) |
+| HWPX empty-text 코퍼스·편집·음성 | `python3 scripts/tests/hwpx-empty-text-roundtrip.py` (WASMDIST `80024e5c…`, `split-format` 양성 전환, `unsupported-format-styled` 음성 유지) + `save_check` | 19 positive + 12 editing PASS |
+| Rust 저장·header 보존 회귀 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib -- special:: hwpx_header stage1_` | 17 passed, 0 failed, 5 ignored |
+| 프런트엔드·UI 단위 | `npx tsc --noEmit && npx eslint scripts/tests/stage1-format.wasm.test.ts && npx vitest run src/components/Editor/stage1.test.tsx` | PASS (`stage1.test.tsx` 9/9) |
+| 일반 제품 Release 빌드 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle` | PASS (`geul` SHA-256 `fb3674d3…`, privacy/runtimePath PASS) |
+| Linux native GUI 수용 | `scripts/tests/native-ibus-session.py` + `scripts/tests/native-stage2-p0.py` → `target/stage2-p0-native/run2/result.json` | PASS (`visualChangeConfirmed: true`, `save.state: "saved"`, `reopenUiSuperscriptPressed: "true"`, 독립 oracle에서 본문 `secPr`-handoff·다중 run·표 셀 서식 및 무관 run/이웃 셀 보존) |
+
+미검증/제외 범위: 한컴오피스/Word 외부 프로그램 재열기(NOT RUN), Windows/macOS(DEFERRED).

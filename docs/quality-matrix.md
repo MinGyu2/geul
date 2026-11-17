@@ -153,3 +153,9 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 번호 스타일·정의 수명 | — | IV | IV | CURRENT PASS | 같음 |
 | 글자+목록 결합 저장 | — | IV | IV | CURRENT PASS | 같음 |
 | 글꼴 embedding | IV | IV | 형식 제한 | CURRENT PASS(native는 5.5) | 같음 |
+
+### Stage 2 / Phase 0 — HWPX 분할 run 글자 서식 (2026-11-17)
+
+| 항목 | HWPX | 판정 | 근거 |
+|---|---|---|---|
+| 분할 run·secPr handoff·표 셀 부분/교차/반복 글자 서식·Undo/Redo + T009 저장/재열기 | IV | CURRENT PASS (Release WASM `80024e5c…`, `stage2-p0-hwpx-split-run.patch`) | [Stage 1 6절](architecture/stage1-common-editing.md#6-stage-2--phase-0--hwpx-분할-run-글자-서식-및-안전-저장-안정화-2026-11-17), `native-stage2-p0.py` run2 PASS |

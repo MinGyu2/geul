@@ -1080,6 +1080,8 @@ FileConflict·잘못된 문단 ID 각 3건, stale preview·남은 unsafe section
 
 **글자 서식(2단계).** 실제 서식 경로(`try_map_char_shape_range`, 실행 취소의 `restore_char_shape_runs`)만 `format_edit`을 부른다. 모든 IR run 발생의 개수·순서·시작 위치가 같고, 이전 모양 ID를 넣은 봉인이 편집 전 봉인과 정확히 같을 때(즉 글자 모양 ID 외에는 바뀌지 않음)만 원본 run이 새 `charPrIDRef`를 따른다. 새 참조의 유효성은 기존 header 참조 검사가 바이트 전에 확인한다. 경계를 나누거나 합치는 서식(부분 범위, 엔진의 같은 ID 이웃 병합, 같은 위치의 0폭 발생 흡수)은 `character formatting changed run occurrence boundaries`, 서식 외 변경이 섞이면 `character formatting edit changed more than run character shapes`, `charStyleIDRef` 글에 직접 서식을 주면 `character formatting of hp:t charStyleIDRef text is unsupported`로 거부한다. `char_shapes` 직접 변경은 서식 명령이 아니므로 `stale`이다.
 
+> **후속 갱신(2026-11-17, Stage 2 / Phase 0):** 위 `hwpx-empty-text-boundaries.patch`의 고정 경계 제한은 `patches/rhwp/stage2-p0-hwpx-split-run.patch`에서 source-aware 재조정(`reconcile_format_edit`)으로 완화되었다. 일반 글자 run의 부분 분할·인접 run 경계 병합·반복 서식·Undo/Redo 및 0폭 `<hp:t/>` 보존은 증명 가능한 경우 허용하며, `charStyleIDRef`·non-formatting 변조(`FORMAT_SCOPE`)·컨트롤 중간 분할·0폭 handoff 소실(`FORMAT_BOUNDARY`)·`stale`·유효하지 않은 `charPrIDRef`는 계속 fail-closed로 거부한다. 자세한 계약과 검증은 [Stage 1/2-P0 문서](stage1-common-editing.md#6-stage-2--phase-0--hwpx-분할-run-글자-서식-및-안전-저장-안정화-2026-11-17)를 따른다.
+
 **새 거부 18건의 개별 분류(3단계).** 각 문서를 경로·원본 SHA-256로 고정해 `scripts/tests/hwpx-empty-text-roundtrip.py`의 `WIP_REFUSALS`가 결과와 정확한 원인을 단언한다.
 
 | 분류 | 문서 수 | 결정 | 근거 |

@@ -360,11 +360,19 @@ def edits(args):
         if '/p[2]/' in key:
             assert y['runs'][key] == value
     rows.append({'name': 'unrelated', 'node': state['operations']})
-    for name, method, values, cause in [
-        ('split', 'splitParagraph', [0, 1, 1], 'paragraph split has unsupported run correspondence'),
-        ('format', 'applyCharFormat', [0, 1, 0, 1, '{"bold":true}'], 'character formatting changed run occurrence boundaries'),
+    source = make_fixture(args.out, 'split-format', body)
+    folder = args.out/'split-format-run'
+    state = run(args.package, source, folder, [{'method': 'applyCharFormat', 'args': [0, 1, 0, 1, '{"bold":true}']}], reuse=args.reuse_focused)
+    assert state['ok'], state
+    xml = parts(folder/'edit-0.hwpx')['Contents/section0.xml'].decode()
+    assert '<hp:t>A</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t></hp:t><hp:t>B</hp:t></hp:run>' in xml, xml
+    rows.append({'name': 'split-format', 'node': state['operations']})
+    styled_body = r('<hp:t charStyleIDRef="12">A</hp:t><hp:t/><hp:t>B</hp:t>')
+    for name, src_body, method, values, cause in [
+        ('split', body, 'splitParagraph', [0, 1, 1], 'paragraph split has unsupported run correspondence'),
+        ('format-styled', styled_body, 'applyCharFormat', [0, 1, 0, 1, '{"bold":true}'], 'character formatting of hp:t charStyleIDRef text is unsupported'),
     ]:
-        source = make_fixture(args.out, 'unsupported-'+name, body)
+        source = make_fixture(args.out, 'unsupported-'+name, src_body)
         folder = args.out/('unsupported-'+name+'-run')
         before = sha(source)
         state = run(args.package, source, folder, [{'method': method, 'args': values, 'reject': cause}], reuse=args.reuse_focused)

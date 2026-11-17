@@ -823,6 +823,71 @@ describe.skipIf(phase !== "generate")("Stage 1 lists and cell paragraph formatti
   }
 });
 
+describe.skipIf(phase !== "generate")("Stage 2 Phase 0 HWPX split-run formatting & save preservation, actual Release WASM", () => {
+  it("hwpx: split-run paragraph (secPr handoff, cross-boundary, repeated, undo/redo, combined list, table cell); export & publish", async () => {
+    const seed = engine.HwpDocument.createEmpty();
+    let original: Uint8Array;
+    try {
+      seed.createBlankDocument();
+      seed.insertText(0, 0, 0, "한글 Font editing ABC 0123");
+      const fontId = seed.findOrCreateFontId("Inter");
+      seed.applyCharFormat(0, 0, 0, 24, JSON.stringify({ fontId }));
+      seed.splitParagraph(0, 0, 24);
+      seed.insertText(0, 1, 0, "FirstRunSecondRun");
+      seed.applyCharFormat(0, 1, 0, 8, JSON.stringify({ bold: true, fontSize: 1400 }));
+      seed.applyCharFormat(0, 1, 8, 17, JSON.stringify({ italic: true, textColor: "#0000ff" }));
+      seed.splitParagraph(0, 1, 17);
+      const t = JSON.parse(seed.createTable(0, 2, 0, 1, 2));
+      seed.insertTextInCell(0, t.paraIdx, t.controlIdx, 0, 0, 0, "CellFirstCellSecond");
+      seed.applyCharFormatInCell(0, t.paraIdx, t.controlIdx, 0, 0, 0, 9, JSON.stringify({ bold: true }));
+      seed.applyCharFormatInCell(0, t.paraIdx, t.controlIdx, 0, 0, 9, 19, JSON.stringify({ textColor: "#c00000" }));
+      seed.insertTextInCell(0, t.paraIdx, t.controlIdx, 1, 0, 0, "Neighbor");
+      original = exported(seed, "hwpx").bytes;
+    } finally { seed.free(); }
+
+    const { editor, doc, settle, cell, cellProps } = await open("hwpx", original);
+    try {
+      // R1 + original P1/F failure layout: partial selection inside secPr-handoff split paragraph + caret IME.
+      editor.anchor = body(5, 0); editor.caret = body(10, 0);
+      expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
+      expect([4, 5, 9, 10].map(i => properties(doc, 0, i).superscript)).toEqual([false, true, true, false]);
+      editor.anchor = editor.caret = body(24, 0);
+      expect(editor.execute("format.superscript").accepted).toBe(true);
+      expect(editor.typeText("xy")).toBe(true); await settle();
+      editor.beginComposition(); editor.updateComposition("ㅎ"); editor.updateComposition("하"); editor.updateComposition("한");
+      editor.endComposition("한"); await settle();
+      expect(properties(doc, 0, 24).superscript).toBe(true);
+      expect(properties(doc, 0, 26).superscript).toBe(true);
+
+      // R2 + R3 + R7: selection crossing existing run boundary, repeated formatting, Undo/Redo, combined numbering.
+      editor.anchor = body(4, 1); editor.caret = body(12, 1);
+      expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 18 }).accepted).toBe(true); await settle();
+      expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "C00000" }).accepted).toBe(true); await settle();
+      expect(editor.execute("format.superscript").accepted).toBe(true); await settle();
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(properties(doc, 1, 5).superscript).toBe(false);
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      expect(properties(doc, 1, 5).superscript).toBe(true);
+      expect(properties(doc, 1, 3).fontSize).toBe(1400);
+      expect(properties(doc, 1, 5).fontSize).toBe(1800);
+      expect(properties(doc, 1, 11).fontSize).toBe(1800);
+      expect(properties(doc, 1, 13).textColor).toBe("#0000ff");
+      expect(editor.execute("paragraph.numbering").accepted).toBe(true); await settle();
+
+      // R6: table cell split-run cross-boundary formatting; neighbor cell untouched.
+      editor.anchor = cell(5, 0); editor.caret = cell(14, 0);
+      expect(editor.execute("format.highlight", { command: "format.highlight", color: "yellow" }).accepted).toBe(true); await settle();
+      expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 16 }).accepted).toBe(true); await settle();
+      expect(cellProps(3, 0).shadeColor).not.toBe("#ffff00");
+      expect(cellProps(5, 0)).toMatchObject({ shadeColor: "#ffff00", fontSize: 1600, bold: true });
+      expect(cellProps(12, 0)).toMatchObject({ shadeColor: "#ffff00", fontSize: 1600, textColor: "#c00000" });
+      expect(cellProps(0, 1).fontSize).toBe(1000);
+
+      record("hwpx-stage2p0-split-runs", "hwpx", original, doc);
+    } finally { editor.dispose(); }
+  });
+});
+
 it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Stage 1 bytes with all character properties intact", () => {
   const all = JSON.parse(readFileSync(join(out, "cases.json"), "utf8")) as typeof cases;
   expect(all).toHaveLength(Number(process.env.GEUL_FORMAT_EXPECTED_CASES ?? 20));
@@ -834,7 +899,12 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       expect(model(doc)).toEqual(proof.model);
       // P1-D: the service-published bytes reopen with the exact nested-cell paragraph properties of the edit model.
       if (nested) expect(nestedModel(doc, nested)).toEqual(proof.nested);
-      if (id.includes("nested")) expect(proof.nested?.nested?.alignment).toBe("right");
+      if (id === "hwpx-stage2p0-split-runs") {
+        expect([4, 5, 9, 10, 24, 26].map(i => properties(doc, 0, i).superscript)).toEqual([false, true, true, false, true, true]);
+        expect(doc.getTextRange(0, 0, 24, 3)).toBe("xy한");
+        expect([properties(doc, 1, 3).fontSize, properties(doc, 1, 5).fontSize, properties(doc, 1, 11).fontSize, properties(doc, 1, 13).textColor]).toEqual([1400, 1800, 1800, "#0000ff"]);
+        expect(JSON.parse(doc.getParaPropertiesAt!(0, 1)).headType).toBe("Number");
+      } else if (id.includes("nested")) expect(proof.nested?.nested?.alignment).toBe("right");
       if (id.includes("chars") || id.includes("highlight")) expect(properties(doc, 0, 0).fontSize).toBe(1800);
       else if (id.includes("embed-font")) expect(new Set(embedded(doc).map(x => x.face))).toEqual(new Set(["Inter", "JetBrains Mono"]));
       else if (id.includes("combined")) expect([properties(doc, 0, 1).superscript, properties(doc, 1, 1).textColor, properties(doc, 2, 1).fontSize]).toEqual([true, "#00b050", 1300]);
@@ -847,7 +917,7 @@ it.skipIf(phase !== "verify")("fresh engine reopens actual service-published Sta
       else if (id.includes("many")) expect(doc.getTextRange(0, 0, 0, 4)).toBe("나b나b");
       else if (id.includes("page")) expect(JSON.parse(doc.getPageDef!(0)).landscape).toBe(true);
       else if (id.includes("paragraph")) expect(JSON.parse(doc.getParaPropertiesAt!(0, 1)).alignment).toBe("right");
-      else expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");
+      else if (id !== "hwpx-stage2p0-split-runs") expect(doc.getTextRange(0, 1, 0, 16)).toBe("SEcond paragraph");
     } finally { doc.free(); }
   }
 });
