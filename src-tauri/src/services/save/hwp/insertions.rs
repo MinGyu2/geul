@@ -1269,7 +1269,7 @@ fn valid_appended_border_fill(bf: &[u8], orig_borders: &[&[u8]]) -> Checked<()> 
     for at in [2, 8, 14, 20] {
         preserved(bf[at] <= 17 && bf[at + 1] <= 15, "DocInfo")?;
     }
-    let default_diag = [1u8, 1, 0, 0, 0, 0];
+    let default_diag = [1u8, 0, 0, 0, 0, 0];
     let no_diag = [0u8; 6];
     let attr_diag_default =
         bf[0..2] == [0, 0] && (bf[26..32] == default_diag || bf[26..32] == no_diag);
@@ -3661,7 +3661,8 @@ fn validate_table_at(
         let b = r.2;
         valid(
             word(b, 0)? >= 1
-                && dword(b, 2)? == 0x00200000
+                && (dword(b, 2)? & !(0x03 << 21)) == 0
+                && ((dword(b, 2)? >> 21) & 0x03) <= 2
                 && word(b, 6)? == 0x400
                 && dword(b, 16)? > 0
                 && dword(b, 20)? > 0

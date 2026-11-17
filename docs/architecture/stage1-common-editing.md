@@ -341,3 +341,44 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 - HWP 계산식+누름틀+캡션 표: A3에서 `X` Enter `Y`(교정 B 경로) → 저장 `saved` → 독립 oracle: A3 `X|Y`, 필드 2개 ID·명령·이름 동일(`=SUM(A1:A2)??%g,;;3`), 캡션 동일, 다른 셀 동일.
 - 입력은 xkb 영문으로 했다. 한글 IME 조합 자체는 이번 시나리오에서 재검증하지 않았다(기존 native IME 기록 유지).
 
+## 9. Stage 2 / Phase 3 — 형식 공통 표·셀 서식 (2026-11-18)
+
+DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP) 세 문서 형식에서 표 셀 배경색·테두리(`P3-1`), 가로·세로 맞춤(`P3-2`), 열 너비·행 높이(`P3-3`), 제품 GUI 수용·T009 저장·독립 재열기(`P3-4`)를 공용 명령·UI·어댑터 경로로 구현했다.
+
+### 9.1 명령·UI·형식별 지원 계약
+
+- **공용 명령 및 리본** (`src/commands/registry.ts`, `src/ribbon/definitions.ts`, `src/ribbon/visibility.ts`, `src/language/{ko,en}.json`):
+  - `table.shading`, `table.borders`, `table.alignment`, `table.columnWidth`, `table.rowHeight` 5개 명령을 `wordcraft: SUPPORTED` · `rhwp: SUPPORTED`로 추가해 `TABLE_FORMATTING_GROUP`으로 노출했다(HWP/HWPX `hangulTools`, DOCX `ribbon.tab.layout`; 기존 표 구조 10개 명령 유지).
+- **공용 대화상자 및 파라미터 문맥** (`src/components/Editor/TableFormattingDialog.tsx`, `src/commands/parameters.ts`, `validateCommandArgs`):
+  - 각 세션 `parameterState()`가 산출한 선택 범위·혼합 상태·현재값과 형식별 허용 집합만 대화상자에 노출하며 `selectionKey` 소유 검사를 적용한다.
+  - `table.shading`: `#RRGGBB` 지정과 배경 지우기(`color: null`).
+  - `table.borders`: `all`/`outside`/`inside`/`top`/`bottom`/`left`/`right`/`none`, 형식별 선 종류·두께(`widthUnit`: DOCX pt / RHWP mm)·색상. 선택 직사각형이 불완전하거나 비어 있으면 거부하고, 단일 셀 선택 등 내부 경계가 없을 때 `hasInsideBorders=false`로 `inside`를 비활성화한다.
+  - `table.alignment`: 가로(`left`/`center`/`right`/`justify`), 세로(`top`/`middle`/`bottom`), 혼합 표시(`horizontalMixed`/`verticalMixed`).
+  - `table.columnWidth`: 명시 `pt`(`minPt..=maxPt`) 및 `distribute` 균등 분배.
+  - `table.rowHeight`: 명시 `pt`, 형식별 높이 규칙(DOCX `supportedRules: ["atLeast", "exact"]`, `supportsAuto: true`; RHWP `supportedRules: ["atLeast"]`, `supportsAuto: false`), `distribute` 균등 분배.
+
+### 9.2 엔진·세션·T009 저장 경계
+
+- **DOCX / WordCraft** (`patches/wordcraft/docx-table-formatting.patch`, `docx-table-alignment.patch`, `docx-table-dimensions.patch`, 커밋 핀 `cae8c33058e620c02704a2414600b9cb7ecf0867`, `src-tauri/src/adapters/wordcraft/{table.rs, engine.rs}`, `src/adapters/docx.ts`, `src/components/Editor/wordcraft/DocxEditorSession.ts`):
+  - 선택 범위 `table.shading`·`table.borders`·`table.cellAlignment`·`table.setColumnWidth`·`table.setRowHeight`(`wordcraft_doc::table::quantize_twips`로 분배 값 twips 반올림 일관성 유지)를 추가했다.
+  - `DocxEditorSession`의 `MUTATING_OPS`와 `COMMAND_OPS`에 `tableShading`·`tableBorders`·`tableAlignment`·`tableColumnWidth`·`tableRowHeight`를 모두 포함해 Undo/Redo·상태 동기화·입력 직렬화를 보장하고, `src-tauri`는 임의 WordCraft 명령 문자열을 열지 않는 명시 `DocxOp`과 `atomic()` 스냅샷 롤백·`export()`/`same_as()` 검증을 사용한다.
+  - 출력은 `word/document.xml` 안에만 반영되므로 기존 `compare_saved_docx` 경계를 넓히지 않는다.
+- **HWP / HWPX / RHWP** (`patches/rhwp/stage2-p3-1-table-formatting.patch`, `stage2-p3-2-cell-alignment.patch`, `stage2-p3-3-table-dimensions.patch`, Release WASM `455452971ed81b0135cd94845c9c5b040363b8b03622fead68b1b661a5d418eb`, `src/components/Editor/rhwp/RhwpEditorSession.ts`):
+  - `getTableCellFormattingByPath`와 `formatTableCellsByPath`로 일반·병합·중첩 표 셀의 배경색/테두리/맞춤/열 너비·행 높이를 읽고 수정하며, `compactAppendedBorderFills`로 중복 `BorderFill`을 정리한다(셀 문단 줄 분리는 `p.line_segs`를 비우지 않고 유지해 HWP5 `HWPTAG_PARA_LINE_SEG` 계약을 보존).
+  - HWPX `package.rs` `authorized_hwpx_cell_border_fills`: 기존 `borderFill` 재사용 또는 `<hh:borderFills>` 끝의 검증된 `SOLID` 채움/허용 선·두께 정의 추가 및 `<hp:tc borderFillIDRef>` 참조만 좁게 허용(`Contents/header.xml` 전역 면제 없음).
+  - HWP `insertions.rs`: `valid_appended_border_fill`이 `basic_border_fill`과 동일한 기본 대각선 `[1, 0, 0, 0, 0, 0]`(및 `[0; 6]`)·유효 선/두께·`fill_type 0/1`을 허용하고(빈 문서 `orig_borders=0` 포함), 수평 맞춤은 기존 Stage 1 `ParaShape` 증명을 재사용하며 수직 맞춤은 `cell_header_matches_ignoring_border_fill` 및 신규 표 `validate_table_at`에서 셀 `list_attr` 비트 `21..=22`(바이트 4 마스크 `0x60`, 값 `0..=2`)만 좁게 허용한다.
+
+### 9.3 최종 검증 및 Native GUI 수용 (`P3-4`)
+
+| 검사 | 명령(요약) | 결과 |
+|---|---|---|
+| TypeScript / ESLint / 프런트엔드 | `npm run typecheck && npm run lint && npx vitest run TableFormattingDialog DocxEditorSession ribbon language commands` | `tsc` PASS, ESLint 오류 0(기존 경고 1 `FontPicker.tsx`), Vitest 6파일 68/68 PASS |
+| WordCraft 무결성 및 엔진 | `python3 scripts/prepare-wordcraft.py` · `cargo test -p wordcraft-engine --offline -- cmd::table::tests` | `cae8c33058e620c02704a2414600b9cb7ecf0867` exact match, 4/4 PASS |
+| `src-tauri` T009·어댑터 계약 | `cargo test --lib -- stage2_p3_ hwp_restructured_original_table_is_proven_or_refused hwpx_appended_cell_border_fill adapters::wordcraft::tests::stage2_p1_` | 11/11 PASS |
+| RHWP Release WASM 표 회귀 | `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts` | 73/73 PASS (P1·P2·P3 및 복합 내용·계산식/누름틀/캡션·중첩·T009·재열기) |
+| 일반 제품 Release 빌드 | `npm run tauri -- build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `71db683e…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`) |
+| Linux Native GUI 수용 | `scripts/tests/native-ibus-session.py -- scripts/tests/stage2-p3-native-acceptance.py --out target/p3-native-out` | PASS (`docx`, `hwpx`, `hwp` 모두 `#FEF08A`·이중선 `#DC2626`·가운데/아래 맞춤·`125pt`/`36pt`·Undo/Redo·`Ctrl+S` `saved`/`findings:""`/`synced:true`·재열기 복원·디스크 ZIP/XML/CFB 검사) |
+
+주의 사항(기준선 기존 결함·제외 범위): 기존 커밋 `de7079b`에서부터 남아 있는 무관한 단위 테스트 실패(`src/commands/hangulTools.test.tsx:426`, `src-tauri/src/services/save/tests.rs` `calc_cell_*` 등 3건)는 건드리지 않았으며, 외부 Microsoft Word/한컴오피스 프로그램 직접 열기와 Windows/macOS·Wayland 수용은 NOT RUN이다.
+
+

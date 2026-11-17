@@ -1753,3 +1753,11 @@ T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저�
 - `Proof.removed`: 증명된 셀 대응이 삭제한 셀의 자식 객체 digest multiset. `opaque_owners_preserved`는 이 digest와 subtree가 정확히 같고 출력에 없는 불투명 owner(예: 누름틀 `CTRL_DATA`)만 원본 목록에서 빼고, 나머지 owner는 기존 동일/위치 이동 규칙으로 판정한다. 살아남은 셀의 필드 유실·더 깊은 owner·증명 없는 삭제는 계속 거부한다.
 - 근거와 시험: [Stage 1/2 문서 8.2절](stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
 
+## Stage 2 / Phase 3 — 표·셀 서식 T009 저장 보존 경계 (2026-11-18)
+
+- **DOCX(`word/document.xml`)**: 셀 배경색·테두리·가로/세로 맞춤·열 너비·행 높이는 `word/document.xml` 내부의 `<w:tcPr>`/`<w:tcW>`/`<w:trHeight>`/`<w:pPr>/<w:jc>`로만 기록되므로, 기존 `compare_saved_docx` 패키징·스타일·관계·미디어 불변 계약을 넓히지 않았다. `table.setColumnWidth`·`table.setRowHeight`는 `wordcraft_doc::table::quantize_twips`를 거쳐 twips 왕복 일치를 보장한다.
+- **HWPX(`package.rs` `authorized_hwpx_cell_border_fills`)**: `Contents/header.xml` 전역 면제 없이, `<hh:borderFills>` 끝 추가만 허용하는 좁은 증명을 둔다. 기존 `borderFill`과 동등하면 재사용하고, 새 `borderFill`은 허용된 선 종류/두께·단색 채움(`SOLID`)·기본 또는 기존 속성에 맞을 때만 허용하며 `<hp:tc borderFillIDRef>` 참조와 무관 header 불변을 함께 검증한다(`hwpx_appended_cell_border_fill_accepts_valid_tc_and_rejects_bad_mutations`).
+- **HWP(`insertions.rs`)**:
+  - `DocInfo` `BORDER_FILL`(태그 20): `valid_appended_border_fill`이 유효한 선 종류(`<= 17`)·두께 버킷(`<= 15`)·기본 대각선(`[1, 0, 0, 0, 0, 0]` 또는 `[0; 6]`) 또는 원본 일치 속성 및 `fill_type` `0`(없음, 40B)/`1`(단색, 53B, `pattern_type in -1..=6`)/원본 일치 비단색 tail만 좁게 허용한다(빈 새 문서처럼 `orig_borders`가 비어 있을 때도 `basic_border_fill`과 같은 `[1, 0, 0, 0, 0, 0]` 대각선이 거부되지 않도록 보정).
+  - `PARA_SHAPE`(태그 25): 수평 맞춤은 기존 Stage 1 `ParaShape` 증명(`attr1` 비트 `2..=4`)과 원본 `ParaShape` 유래(`para_signature`)로 검증하고, 수직 맞춤은 `cell_header_matches_ignoring_border_fill`과 신규 표 검증 `validate_table_at`에서 셀 `list_attr` 비트 `21..=22`(바이트 4 마스크 `0x60`, 값 `0..=2`)만 좁게 허용하며 값 `3`이나 다른 비트는 계속 거부한다(`hwp_restructured_original_table_is_proven_or_refused`, `stage2_p3_new_table_border_fill_and_vertical_align_proven_or_refused`).
+

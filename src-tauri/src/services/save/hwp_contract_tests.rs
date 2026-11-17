@@ -2981,3 +2981,65 @@ fn stage1_hwp_list_paragraph_proof_rejects_invalid_appends() {
         );
     }
 }
+
+#[test]
+fn stage2_p3_new_table_border_fill_and_vertical_align_proven_or_refused() {
+    let base = fixture_with(false, &[], "Keep 한글");
+    let orig = edit_records(&base, "/DocInfo", |r| {
+        r.retain(|rec| rec.0 != 20);
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 0);
+    });
+    let mut tbl = table_control();
+    w(&mut tbl[1].2, 22, 1);
+    for cell in tbl.iter_mut().filter(|r| r.0 == 72) {
+        w(&mut cell.2, 32, 1);
+    }
+    // Make cell 0 vertical_align = bottom (code 2 -> bits 21..=22 = 0x0040_0000) and reference shaded BF #2.
+    {
+        let c0 = tbl.iter_mut().find(|r| r.0 == 72).unwrap();
+        d(&mut c0.2, 2, 0x0040_0000);
+        w(&mut c0.2, 32, 2);
+    }
+    let with_tbl = fixture_with(false, &[tbl], "Keep 한글");
+    let good = edit_records(&with_tbl, "/DocInfo", |r| {
+        let mut basic = vec![0u8; 40];
+        for at in [2, 8, 14, 20] {
+            basic[at] = 1;
+            basic[at + 1] = 1;
+        }
+        basic[26] = 1; // [1, 0, 0, 0, 0, 0] diagonal
+        let mut shaded = vec![0u8; 53];
+        shaded[..40].copy_from_slice(&basic);
+        d(&mut shaded, 32, 1);
+        d(&mut shaded, 36, 0x008A_F0FE);
+        d(&mut shaded, 40, 0xFFFF_FFFF);
+        d(&mut shaded, 44, 0xFFFF_FFFF);
+        r.retain(|rec| rec.0 != 20);
+        let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
+        r.insert(insert_at, (20, 1, shaded));
+        r.insert(insert_at, (20, 1, basic));
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 2);
+    });
+    let good_findings = raw_findings(&orig, &good, true);
+    assert!(only_stale_preview(&good_findings), "{good_findings:?}");
+
+    let bad_valign = edit_records(&good, "/BodyText/Section0", |r| {
+        let c0 = r.iter_mut().find(|rec| rec.0 == 72).unwrap();
+        d(&mut c0.2, 2, 0x0060_0000); // v_align code 3 invalid
+    });
+    assert!(!only_stale_preview(&raw_findings(&orig, &bad_valign, true)));
+
+    let bad_list_attr = edit_records(&good, "/BodyText/Section0", |r| {
+        let c0 = r.iter_mut().find(|rec| rec.0 == 72).unwrap();
+        d(&mut c0.2, 2, 0x0001_0000); // non-v_align list_attr bit
+    });
+    assert!(!only_stale_preview(&raw_findings(&orig, &bad_list_attr, true)));
+
+    let bad_diag = edit_records(&good, "/DocInfo", |r| {
+        let bf = &mut r.iter_mut().filter(|rec| rec.0 == 20).nth(1).unwrap().2;
+        bf[27] = 9; // non-default diagonal thickness with zero orig_borders
+    });
+    assert!(!only_stale_preview(&raw_findings(&orig, &bad_diag, true)));
+}
