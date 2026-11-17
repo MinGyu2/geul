@@ -1,0 +1,999 @@
+diff --git a/crates/doc/src/table.rs b/crates/doc/src/table.rs
+index 104bf96b823c0ab4fbf963ff4fad8f777e3dd580..988c5e547326ffc4cad699495d214b98981a7a9e 100644
+--- a/crates/doc/src/table.rs
++++ b/crates/doc/src/table.rs
+@@ -59,12 +59,25 @@ pub struct Table {
+ pub const MAX_ROWS: usize = 32_767;
+ pub const MAX_COLS: usize = 63;
+ 
++/// Quantize a table/cell width (pt) to twentieths of a point (OOXML `dxa`), matching DOCX
++/// write/read precision so serialized models round-trip cleanly.
++pub fn quantize_twips(pt: f32) -> f32 {
++    if !pt.is_finite() || pt <= 0.0 {
++        return 0.0;
++    }
++    (wordcraft_geom::to_twips(pt.clamp(0.0, 1584.0)).max(0) as f32) / 20.0
++}
++
++fn cell_has_content(blocks: &Blocks) -> bool {
++    blocks.len() > 1 || blocks.first().is_some_and(|b| b.as_para().is_none_or(|p| !p.is_empty()))
++}
++
+ impl Table {
+     /// A `rows × cols` table spanning `width` points, "Table Grid" style.
+     pub fn new(rows: usize, cols: usize, width: f32) -> Table {
+         let rows = rows.clamp(1, MAX_ROWS);
+         let cols = cols.clamp(1, MAX_COLS);
+-        let w = (width / cols as f32).max(6.0);
++        let w = quantize_twips((width / cols as f32).max(6.0)).max(6.0);
+         Table {
+             props: TableProps { style: Some("TableGrid".into()), ..Default::default() },
+             grid: vec![w; cols],
+@@ -107,23 +120,181 @@ impl Table {
+         None
+     }
+ 
+-    /// Insert a row copied (formatting, empty text) from row `like` at index `at`.
++    /// Sync every cell's preferred width with the sum of its grid columns (in twips).
++    pub fn sync_cell_widths(&mut self) {
++        let grid = self.grid.clone();
++        for row in &mut self.rows {
++            let mut g = 0usize;
++            for c in &mut row.cells {
++                let span = c.span();
++                let w: f32 = grid.get(g..g.saturating_add(span).min(grid.len())).unwrap_or(&[]).iter().sum();
++                let w = quantize_twips(w);
++                if w > 0.0 {
++                    c.props.width = Some(w);
++                    c.props.width_pct = None;
++                }
++                g += span;
++            }
++        }
++    }
++
++    /// Verify table grid and vertical-merge invariants: non-empty rows & grid, exact per-row grid
++    /// column coverage, and every `VMerge::Continue` aligns to a `Restart` above with identical span.
++    pub fn is_grid_consistent(&self) -> bool {
++        let ncols = self.grid.len();
++        if self.rows.is_empty() || ncols == 0 || ncols > MAX_COLS {
++            return false;
++        }
++        for (r, row) in self.rows.iter().enumerate() {
++            let mut g = 0usize;
++            for c in &row.cells {
++                let span = c.span();
++                if c.props.vmerge == VMerge::Continue {
++                    if r == 0 {
++                        return false;
++                    }
++                    let Some(prev_ci) = self.cell_at_grid(r - 1, g) else { return false };
++                    let prev_g = self.grid_col(r - 1, prev_ci);
++                    let prev_c = &self.rows[r - 1].cells[prev_ci];
++                    if prev_g != g
++                        || prev_c.span() != span
++                        || !matches!(prev_c.props.vmerge, VMerge::Restart | VMerge::Continue)
++                    {
++                        return false;
++                    }
++                }
++                g = g.saturating_add(span);
++            }
++            if g != ncols {
++                return false;
++            }
++        }
++        true
++    }
++
++    /// Inclusive logical rectangle `(r0, r1, g0, g1)` owned by cell `(r, c)`. Walks up if `c` is a
++    /// `VMerge::Continue` and down across continuation rows; returns `None` on invalid geometry.
++    pub fn cell_extent(&self, r: usize, c: usize) -> Option<(usize, usize, usize, usize)> {
++        let cell = self.rows.get(r)?.cells.get(c)?;
++        let g0 = self.grid_col(r, c);
++        let span = cell.span();
++        let g1 = g0.checked_add(span)?.checked_sub(1)?;
++        let mut r0 = r;
++        if cell.props.vmerge == VMerge::Continue {
++            while r0 > 0 {
++                let pr = r0 - 1;
++                let pci = self.cell_at_grid(pr, g0)?;
++                let pc = &self.rows[pr].cells[pci];
++                if self.grid_col(pr, pci) != g0 || pc.span() != span {
++                    return None;
++                }
++                r0 = pr;
++                if pc.props.vmerge == VMerge::Restart {
++                    break;
++                }
++                if pc.props.vmerge != VMerge::Continue {
++                    return None;
++                }
++            }
++            if self.rows[r0].cells[self.cell_at_grid(r0, g0)?].props.vmerge != VMerge::Restart {
++                return None;
++            }
++        }
++        let mut r1 = r0;
++        let owner_ci = self.cell_at_grid(r0, g0)?;
++        if self.rows[r0].cells[owner_ci].props.vmerge == VMerge::Restart {
++            while r1 + 1 < self.rows.len() {
++                let nr = r1 + 1;
++                let Some(nci) = self.cell_at_grid(nr, g0) else { break };
++                let nc = &self.rows[nr].cells[nci];
++                if self.grid_col(nr, nci) == g0 && nc.span() == span && nc.props.vmerge == VMerge::Continue {
++                    r1 = nr;
++                } else {
++                    break;
++                }
++            }
++        }
++        Some((r0, r1, g0, g1))
++    }
++
++    /// Validate that `(r0..=r1, g0..=g1)` is a closed rectangle of whole merged/unmerged cells (no
++    /// horizontal or vertical merge extends outside it). Returns distinct logical cell count.
++    pub fn logical_rect_valid(&self, r0: usize, r1: usize, g0: usize, g1: usize) -> Option<usize> {
++        if !self.is_grid_consistent() || r0 > r1 || r1 >= self.rows.len() || g0 > g1 || g1 >= self.grid.len() {
++            return None;
++        }
++        let mut count = 0usize;
++        for r in 0..self.rows.len() {
++            let mut g = 0usize;
++            for (c, cell) in self.rows[r].cells.iter().enumerate() {
++                let span = cell.span();
++                let cg0 = g;
++                let cg1 = g + span - 1;
++                g += span;
++                if cell.props.vmerge == VMerge::Continue {
++                    continue;
++                }
++                let (cr0, cr1, lg0, lg1) = self.cell_extent(r, c)?;
++                debug_assert_eq!((lg0, lg1), (cg0, cg1));
++                let overlaps = cr0 <= r1 && cr1 >= r0 && cg0 <= g1 && cg1 >= g0;
++                if overlaps {
++                    if cr0 < r0 || cr1 > r1 || cg0 < g0 || cg1 > g1 {
++                        return None;
++                    }
++                    count += 1;
++                }
++            }
++        }
++        Some(count)
++    }
++
++    /// Whether any row in `r0..=r1` or cell overlapping `(r0..=r1, g0..=g1)` carries SDT controls.
++    pub fn rect_has_controls(&self, r0: usize, r1: usize, g0: usize, g1: usize) -> bool {
++        for r in r0..=r1.min(self.rows.len().saturating_sub(1)) {
++            if !self.rows[r].controls.is_empty() {
++                return true;
++            }
++            let mut g = 0usize;
++            for cell in &self.rows[r].cells {
++                let span = cell.span();
++                let cg0 = g;
++                let cg1 = g + span - 1;
++                g += span;
++                if cg0 <= g1 && cg1 >= g0 && !cell.controls.is_empty() {
++                    return true;
++                }
++            }
++        }
++        false
++    }
++
++    /// Insert a row copied (formatting, empty text) from row `like` at index `at`, preserving any
++    /// ongoing vertical merges across `at` and avoiding orphaned `VMerge::Continue`.
+     pub fn insert_row(&mut self, at: usize, like: usize) {
+         let Some(src) = self.rows.get(like.min(self.rows.len().saturating_sub(1))) else { return };
+         if self.rows.len() >= MAX_ROWS {
+             return;
+         }
++        let at = at.min(self.rows.len());
+         let mut row = Row { props: src.props.clone(), cells: Vec::with_capacity(src.cells.len()), controls: ControlWrap::default() };
+         row.props.header = false;
++        row.props.fmt_change = None;
++        let mut g = 0usize;
+         for c in &src.cells {
++            let span = c.span();
+             let mut nc = Cell::empty();
+             nc.props = c.props.clone();
+-            if nc.props.vmerge == VMerge::Restart {
+-                nc.props.vmerge = VMerge::None;
+-            }
++            nc.props.fmt_change = None;
++            let mid_vmerge = at < self.rows.len()
++                && self.cell_at_grid(at, g).is_some_and(|ci| {
++                    let existing = &self.rows[at].cells[ci];
++                    self.grid_col(at, ci) == g && existing.span() == span && existing.props.vmerge == VMerge::Continue
++                });
++            nc.props.vmerge = if mid_vmerge { VMerge::Continue } else { VMerge::None };
+             row.cells.push(nc);
++            g += span;
+         }
+-        self.rows.insert(at.min(self.rows.len()), row);
++        self.rows.insert(at, row);
+     }
+ 
+     pub fn delete_row(&mut self, r: usize) {
+@@ -132,13 +303,74 @@ impl Table {
+         }
+     }
+ 
++    /// Delete row `r` cleanly while maintaining `vMerge` invariants (never orphans `Continue` or `Restart`),
++    /// refusing if `self.rows.len() <= 1`.
++    pub fn delete_row_safe(&mut self, r: usize) -> bool {
++        if self.rows.len() <= 1 || r >= self.rows.len() {
++            return false;
++        }
++        // Snapshot vertical-merge adjustments before removing `r`.
++        let mut next_row_vmerge: Vec<(usize, usize, VMerge)> = Vec::new();
++        let mut prev_row_clear: Vec<usize> = Vec::new();
++        let mut g = 0usize;
++        for (ci, c) in self.rows[r].cells.iter().enumerate() {
++            let span = c.span();
++            match c.props.vmerge {
++                VMerge::Restart => {
++                    if r + 1 < self.rows.len()
++                        && let Some(nci) = self.cell_at_grid(r + 1, g)
++                    {
++                        let nc = &self.rows[r + 1].cells[nci];
++                        if self.grid_col(r + 1, nci) == g && nc.span() == span && nc.props.vmerge == VMerge::Continue {
++                            let continues_further = r + 2 < self.rows.len()
++                                && self.cell_at_grid(r + 2, g).is_some_and(|n2| {
++                                    let c2 = &self.rows[r + 2].cells[n2];
++                                    self.grid_col(r + 2, n2) == g && c2.span() == span && c2.props.vmerge == VMerge::Continue
++                                });
++                            next_row_vmerge.push((ci, nci, if continues_further { VMerge::Restart } else { VMerge::None }));
++                        }
++                    }
++                }
++                VMerge::Continue => {
++                    let continues_further = r + 1 < self.rows.len()
++                        && self.cell_at_grid(r + 1, g).is_some_and(|nci| {
++                            let nc = &self.rows[r + 1].cells[nci];
++                            self.grid_col(r + 1, nci) == g && nc.span() == span && nc.props.vmerge == VMerge::Continue
++                        });
++                    if !continues_further && r > 0
++                        && let Some(pci) = self.cell_at_grid(r - 1, g)
++                    {
++                        let pc = &self.rows[r - 1].cells[pci];
++                        if self.grid_col(r - 1, pci) == g && pc.span() == span && pc.props.vmerge == VMerge::Restart {
++                            prev_row_clear.push(pci);
++                        }
++                    }
++                }
++                VMerge::None => {}
++            }
++            g += span;
++        }
++        for (ci, nci, vm) in next_row_vmerge {
++            let blocks = std::mem::replace(&mut self.rows[r].cells[ci].blocks, vec![para_block(Paragraph::new())]);
++            self.rows[r + 1].cells[nci].props.vmerge = vm;
++            if cell_has_content(&blocks) {
++                self.rows[r + 1].cells[nci].blocks = blocks;
++            }
++        }
++        for pci in prev_row_clear {
++            self.rows[r - 1].cells[pci].props.vmerge = VMerge::None;
++        }
++        self.rows.remove(r);
++        true
++    }
++
+     /// Insert a grid column at grid index `g` (cells spanning it widen instead).
+     pub fn insert_col(&mut self, g: usize) {
+         if self.grid.len() >= MAX_COLS {
+             return;
+         }
+         let g = g.min(self.grid.len());
+-        let w = self.grid.get(g.min(self.grid.len().saturating_sub(1))).copied().unwrap_or(72.0);
++        let w = quantize_twips(self.grid.get(g.min(self.grid.len().saturating_sub(1))).copied().unwrap_or(72.0)).max(6.0);
+         self.grid.insert(g, w);
+         for r in 0..self.rows.len() {
+             let mut x = 0;
+@@ -176,6 +408,7 @@ impl Table {
+                 }
+             }
+         }
++        self.sync_cell_widths();
+     }
+ 
+     /// Delete grid column `g` (spanning cells shrink).
+@@ -203,6 +436,7 @@ impl Table {
+             }
+         }
+         self.rows.retain(|r| !r.cells.is_empty());
++        self.sync_cell_widths();
+     }
+ 
+     /// Merge cells `c0..=c1` of row `r` horizontally (content is concatenated).
+@@ -211,21 +445,94 @@ impl Table {
+         if c1 <= c0 || c1 >= row.cells.len() {
+             return;
+         }
++        let g0 = row.cells.iter().take(c0).map(Cell::span).sum::<usize>();
+         let removed: Vec<Cell> = row.cells.drain(c0 + 1..=c1).collect();
+         if let Some(first) = row.cells.get_mut(c0) {
+             for c in removed {
+                 first.props.span += c.props.span.max(1);
+-                let nonempty: Vec<_> = c.blocks.into_iter().filter(|b| b.as_para().is_none_or(|p| !p.is_empty())).collect();
+-                first.blocks.extend(nonempty);
++                if cell_has_content(&c.blocks) {
++                    first.blocks.extend(c.blocks);
++                }
+             }
+             if first.blocks.len() > 1 && first.blocks.first().and_then(|b| b.as_para()).is_some_and(Paragraph::is_empty) {
+                 first.blocks.remove(0);
+             }
++            if first.blocks.last().is_some_and(|b| matches!(**b, crate::Block::Table(_))) {
++                first.blocks.push(para_block(Paragraph::new()));
++            }
++            first.props.fmt_change = None;
++            let w: f32 = self.grid.get(g0..g0.saturating_add(first.span()).min(self.grid.len())).unwrap_or(&[]).iter().sum();
++            let w = quantize_twips(w);
++            if w > 0.0 {
++                first.props.width = Some(w);
++                first.props.width_pct = None;
++            }
++        }
++    }
++
++    /// Safely merge a closed logical rectangle `(r0..=r1, g0..=g1)` of `>= 2` logical cells, preserving
++    /// nonempty content of all cells in row-major order, cell properties, and OOXML invariants.
++    pub fn merge_rect(&mut self, r0: usize, r1: usize, g0: usize, g1: usize) -> bool {
++        let Some(count) = self.logical_rect_valid(r0, r1, g0, g1) else { return false };
++        if count < 2 || self.rect_has_controls(r0, r1, g0, g1) {
++            return false;
++        }
++        let mut combined: Blocks = Vec::new();
++        for r in r0..=r1 {
++            let Some(a) = self.cell_at_grid(r, g0) else { return false };
++            let Some(b) = self.cell_at_grid(r, g1) else { return false };
++            for ci in a..=b {
++                let cell = &mut self.rows[r].cells[ci];
++                if cell.props.vmerge == VMerge::Continue {
++                    continue;
++                }
++                let blocks = std::mem::replace(&mut cell.blocks, vec![para_block(Paragraph::new())]);
++                if cell_has_content(&blocks) {
++                    combined.extend(blocks);
++                }
++            }
++        }
++        if combined.is_empty() {
++            combined.push(para_block(Paragraph::new()));
++        } else if combined.last().is_some_and(|b| matches!(**b, crate::Block::Table(_))) {
++            combined.push(para_block(Paragraph::new()));
++        }
++        let span = (g1 - g0 + 1) as u32;
++        let w = quantize_twips(self.grid.get(g0..=g1).unwrap_or(&[]).iter().sum());
++        for r in r0..=r1 {
++            let (Some(a), Some(b)) = (self.cell_at_grid(r, g0), self.cell_at_grid(r, g1)) else { continue };
++            if b > a {
++                self.rows[r].cells.drain(a + 1..=b);
++            }
++            if let Some(cell) = self.rows[r].cells.get_mut(a) {
++                cell.props.span = span;
++                if w > 0.0 {
++                    cell.props.width = Some(w);
++                    cell.props.width_pct = None;
++                }
++                cell.props.fmt_change = None;
++                cell.props.vmerge = if r1 == r0 {
++                    VMerge::None
++                } else if r == r0 {
++                    VMerge::Restart
++                } else {
++                    VMerge::Continue
++                };
++                if r == r0 {
++                    cell.blocks = std::mem::take(&mut combined);
++                } else {
++                    cell.blocks = vec![para_block(Paragraph::new())];
++                }
++            }
+         }
++        true
+     }
+ 
+     /// Merge a rectangle of cells (rows r0..=r1, grid columns g0..=g1).
+     pub fn merge(&mut self, r0: usize, r1: usize, g0: usize, g1: usize) {
++        if self.merge_rect(r0, r1, g0, g1) {
++            return;
++        }
+         for r in r0..=r1.min(self.rows.len().saturating_sub(1)) {
+             let (Some(a), Some(b)) = (self.cell_at_grid(r, g0), self.cell_at_grid(r, g1)) else { continue };
+             self.merge_right(r, a, b);
+@@ -247,15 +554,65 @@ impl Table {
+             for r in r0 + 1..=r1.min(self.rows.len().saturating_sub(1)) {
+                 if let Some(c) = self.cell_at_grid(r, g0).and_then(|ci| self.rows.get_mut(r).and_then(|row| row.cells.get_mut(ci))) {
+                     let blocks = std::mem::replace(&mut c.blocks, vec![para_block(Paragraph::new())]);
+-                    moved.extend(blocks.into_iter().filter(|b| b.as_para().is_none_or(|p| !p.is_empty())));
++                    if cell_has_content(&blocks) {
++                        moved.extend(blocks);
++                    }
+                 }
+             }
+             if let Some(c) = self.rows.get_mut(r0).and_then(|row| row.cells.get_mut(a)) {
+                 c.blocks.extend(moved);
++                if c.blocks.len() > 1 && c.blocks.first().and_then(|b| b.as_para()).is_some_and(Paragraph::is_empty) {
++                    c.blocks.remove(0);
++                }
+             }
+         }
+     }
+ 
++    /// Reverse a merged cell `(r, c)` (horizontal, vertical, or 2D) into `1×1` cells covering the
++    /// exact merged rectangle `(r0..=r1, g0..=g1)`. Preserves original content in the top-left cell.
++    pub fn split_merged_cell(&mut self, r: usize, c: usize) -> Option<(usize, usize)> {
++        if !self.is_grid_consistent() {
++            return None;
++        }
++        let (r0, r1, g0, g1) = self.cell_extent(r, c)?;
++        if r1 == r0 && g1 == g0 {
++            return None;
++        }
++        if self.rect_has_controls(r0, r1, g0, g1) {
++            return None;
++        }
++        let c0 = self.cell_at_grid(r0, g0)?;
++        let base_props = self.rows[r0].cells[c0].props.clone();
++        let col_span = g1 - g0 + 1;
++        for rr in r0..=r1 {
++            let ci = self.cell_at_grid(rr, g0)?;
++            let row = self.rows.get_mut(rr)?;
++            let cell = row.cells.get_mut(ci)?;
++            cell.props.span = 1;
++            cell.props.vmerge = VMerge::None;
++            cell.props.fmt_change = None;
++            let w0 = quantize_twips(self.grid.get(g0).copied().unwrap_or(72.0));
++            if w0 > 0.0 {
++                cell.props.width = Some(w0);
++                cell.props.width_pct = None;
++            }
++            for k in 1..col_span {
++                let mut nc = Cell::empty();
++                nc.props = base_props.clone();
++                nc.props.span = 1;
++                nc.props.vmerge = VMerge::None;
++                nc.props.fmt_change = None;
++                let wk = quantize_twips(self.grid.get(g0 + k).copied().unwrap_or(72.0));
++                if wk > 0.0 {
++                    nc.props.width = Some(wk);
++                    nc.props.width_pct = None;
++                }
++                row.cells.insert(ci + k, nc);
++            }
++        }
++        Some((r0, c0))
++    }
++
+     /// Split cell `c` of row `r` into `n` cells horizontally. When the cell spans fewer grid
+     /// columns than that, the grid is refined inside the cell only: the new borders divide it
+     /// into equal parts, and the cells of other rows widen over the new grid columns, so their
+@@ -267,16 +624,21 @@ impl Table {
+             return;
+         }
+         if span >= n {
++            let g0 = self.grid_col(r, c);
+             let Some(row) = self.rows.get_mut(r) else { return };
+             let Some(cell) = row.cells.get_mut(c) else { return };
+-            let w = cell.props.width.map(|w| w / n as f32);
++            let w = cell.props.width.map(|w| quantize_twips(w / n as f32));
+             cell.props.width = w;
++            if w.is_some() {
++                cell.props.width_pct = None;
++            }
+             cell.props.span = (span - (n - 1)) as u32;
+             for k in 1..n {
+                 let mut nc = Cell::empty();
+                 nc.props.width = w;
+                 row.cells.insert(c + k, nc);
+             }
++            let _ = g0;
+             return;
+         }
+         let g = self.grid_col(r, c);
+@@ -309,7 +671,7 @@ impl Table {
+                 }
+                 if x < acc + w - EPS {
+                     if x > acc + EPS {
+-                        hit = Some((j, Some((x - acc, w - (x - acc)))));
++                        hit = Some((j, Some((quantize_twips(x - acc).max(6.0), quantize_twips(w - quantize_twips(x - acc)).max(6.0)))));
+                     }
+                     break;
+                 }
+@@ -340,7 +702,7 @@ impl Table {
+         lines.dedup();
+         // The cell now spans `g..end`: cut it at the new lines.
+         let grid = self.grid.clone();
+-        let width = |a: usize, b: usize| grid.get(a..b).map(|x| x.iter().sum::<f32>());
++        let width = |a: usize, b: usize| grid.get(a..b).map(|x| quantize_twips(x.iter().sum::<f32>())).filter(|w| *w > 0.0);
+         let Some(row) = self.rows.get_mut(r) else { return };
+         let mut a = g;
+         let mut parts = Vec::with_capacity(lines.len() + 1);
+@@ -355,6 +717,9 @@ impl Table {
+                 if let Some(cell) = row.cells.get_mut(c) {
+                     cell.props.span = (b - a) as u32;
+                     cell.props.width = width(a, b);
++                    if cell.props.width.is_some() {
++                        cell.props.width_pct = None;
++                    }
+                 }
+             } else {
+                 let mut nc = Cell::empty();
+@@ -418,4 +783,49 @@ mod tests {
+         assert_eq!(v.rows[0].cells[0].props.vmerge, VMerge::Restart);
+         assert_eq!(v.rows[2].cells[0].props.vmerge, VMerge::Continue);
+     }
++
++    #[test]
++    fn merge_rect_preserves_content_rejects_overhang_and_splits_cleanly() {
++        let mut t = Table::new(3, 3, 300.0);
++        for r in 0..3 {
++            for c in 0..3 {
++                t.rows[r].cells[c] = Cell::with_text(&format!("R{r}C{c}"));
++            }
++        }
++        // 2x2 merge of (0..=1, 0..=1): preserves all 4 texts in row-major order.
++        assert!(t.merge_rect(0, 1, 0, 1));
++        assert!(t.is_grid_consistent());
++        assert_eq!(t.rows[0].cells[0].span(), 2);
++        assert_eq!(t.rows[0].cells[0].props.vmerge, VMerge::Restart);
++        assert_eq!(t.rows[1].cells[0].span(), 2);
++        assert_eq!(t.rows[1].cells[0].props.vmerge, VMerge::Continue);
++        let merged_texts: Vec<String> = t.rows[0].cells[0]
++            .blocks
++            .iter()
++            .filter_map(|b| b.as_para().map(Paragraph::plain_text))
++            .collect();
++        assert_eq!(merged_texts, ["R0C0", "R0C1", "R1C0", "R1C1"]);
++        // Overhanging rectangle (0..=0, 0..=2) partially intersects 2x2 merge -> rejected.
++        assert!(!t.merge_rect(0, 0, 0, 2));
++        // Inserting row below row 0 keeps ongoing vertical merge Continuous; below row 1 ends it.
++        t.insert_row(1, 0);
++        assert!(t.is_grid_consistent());
++        assert_eq!(t.rows[1].cells[0].props.vmerge, VMerge::Continue);
++        assert_eq!(t.rows[2].cells[0].props.vmerge, VMerge::Continue);
++        // Deleting top row of vertical merge promotes row 1 to Restart safely.
++        assert!(t.delete_row_safe(0));
++        assert!(t.is_grid_consistent());
++        assert_eq!(t.rows[0].cells[0].props.vmerge, VMerge::Restart);
++        assert_eq!(t.rows[1].cells[0].props.vmerge, VMerge::Continue);
++        // Splitting the 2x2 merged cell restores 1x1 grid cells and keeps content.
++        assert_eq!(t.split_merged_cell(1, 0), Some((0, 0)));
++        assert!(t.is_grid_consistent());
++        assert!(t.rows.iter().all(|row| row.cells.len() == 3 && row.cells.iter().all(|c| c.span() == 1 && c.props.vmerge == VMerge::None)));
++        assert_eq!(
++            t.rows[0].cells[0].blocks.iter().filter_map(|b| b.as_para().map(Paragraph::plain_text)).collect::<Vec<_>>(),
++            ["R0C0", "R0C1", "R1C0", "R1C1"]
++        );
++        // Unmerged cell cannot split via split_merged_cell.
++        assert_eq!(t.split_merged_cell(0, 0), None);
++    }
+ }
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index e1e09f7fb6c6afd275072cec53b1bb8893ba96e9..acb1b68317443af08f2171806f7619452944e5cb 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -36,6 +36,10 @@ pub fn specs() -> Vec<CommandSpec> {
+             fix_caret(s, &tp, r, 0)
+         })),
+         t(CommandSpec::new("table.merge", "Merge Cells", "Table Layout › Merge", merge)),
++        t(CommandSpec::new("table.mergeCells", "Merge Cells", "Table Layout › Merge", merge_cells_cmd)),
++        t(CommandSpec::new("table.mergeRight", "Merge Right", "Table Layout › Merge", merge_right_cmd)),
++        t(CommandSpec::new("table.mergeBelow", "Merge Below", "Table Layout › Merge", merge_below_cmd)),
++        t(CommandSpec::new("table.splitCell", "Split Merged Cell", "Table Layout › Merge", split_merged_cmd)),
+         t(CommandSpec::new("table.split", "Split Cells", "Table Layout › Merge", |s, v| {
+             let n = p::u64(v, "columns").unwrap_or(2).clamp(1, 63) as usize;
+             let (tp, r, c) = cell(s)?;
+@@ -456,10 +460,22 @@ fn fix_caret(s: &mut Session, tp: &Path, r: usize, c: usize) -> CmdResult {
+         s.sel = Selection::caret(s.doc.clamp(&Pos { story, path: tp.clone(), off: 0 }));
+         return sel_result(s);
+     };
+-    let r = r.min(t.rows.len().saturating_sub(1));
+-    let c = c.min(t.rows.get(r).map(|x| x.cells.len().saturating_sub(1)).unwrap_or(0));
++    let mut r = r.min(t.rows.len().saturating_sub(1));
++    let mut c = c.min(t.rows.get(r).map(|x| x.cells.len().saturating_sub(1)).unwrap_or(0));
++    if t.rows.get(r).and_then(|row| row.cells.get(c)).is_some_and(|cl| cl.props.vmerge == wordcraft_doc::props::VMerge::Continue) {
++        if let Some((r0, _, g0, _)) = t.cell_extent(r, c)
++            && let Some(c0) = t.cell_at_grid(r0, g0)
++        {
++            r = r0;
++            c = c0;
++        } else if let Some(first_vis) = t.rows.get(r).and_then(|row| row.cells.iter().position(|cl| cl.props.vmerge != wordcraft_doc::props::VMerge::Continue)) {
++            c = first_vis;
++        }
++    }
+     let mut path = tp.0.clone();
+     path.extend([r as u32, c as u32, 0]);
++    s.column = None;
++    s.widened = None;
+     s.sel = Selection::caret(Pos { story, path: Path(path), off: 0 });
+     sel_result(s)
+ }
+@@ -468,29 +484,58 @@ fn fix_caret(s: &mut Session, tp: &Path, r: usize, c: usize) -> CmdResult {
+ pub(super) fn row(s: &mut Session, below: bool) -> CmdResult {
+     let (tp, r, c) = cell(s)?;
+     let cells = selected_cells(s);
+-    let n = cells.iter().map(|x| x.0).collect::<std::collections::BTreeSet<_>>().len().max(1);
+-    let t = s.doc.table_mut(s.sel.focus.story, &tp)?;
++    let story = s.sel.focus.story;
++    let range = s.cell_range().filter(|cr| cr.story == story && cr.table == tp).cloned();
++    let (r_min, r_max) = range.as_ref().map_or_else(
++        || (cells.iter().map(|x| x.0).min().unwrap_or(r), cells.iter().map(|x| x.0).max().unwrap_or(r)),
++        |cr| cr.rows,
++    );
++    let n = r_max.saturating_sub(r_min) + 1;
++    let t = s.doc.table_mut(story, &tp)?;
++    if t.rows.len().saturating_add(n) > wordcraft_doc::table::MAX_ROWS {
++        return Err(CmdError::Failed("maximum rows reached".into()));
++    }
++    let g = t.grid_col(r, c);
++    let at = if below { r_max + 1 } else { r_min };
++    let like = if below { r_max } else { r_min };
++    if t.rect_has_controls(like, like, 0, t.cols().saturating_sub(1)) {
++        return Err(CmdError::Failed("row holds content controls".into()));
++    }
+     for _ in 0..n {
+-        t.insert_row(if below { r + 1 } else { r }, r);
++        t.insert_row(at, like);
+     }
+-    fix_caret(s, &tp, if below { r + 1 } else { r }, c)
++    let target_c = t.cell_at_grid(at, g).unwrap_or(c);
++    fix_caret(s, &tp, at, target_c)
+ }
+ 
+ /// Insert Left / Right: a column beside the caret's cell; the caret goes into it.
+ pub(super) fn col(s: &mut Session, right: bool) -> CmdResult {
+     let (tp, r, c) = cell(s)?;
+-    let t = s.doc.table_mut(s.sel.focus.story, &tp)?;
+-    let g = t.grid_col(r, c);
+-    let span = t.rows.get(r).and_then(|x| x.cells.get(c)).map(|x| x.span()).unwrap_or(1);
+-    t.insert_col(if right { g + span } else { g });
+-    // Keep the table within its width: shrink all columns proportionally.
++    let story = s.sel.focus.story;
++    let range = s.cell_range().filter(|cr| cr.story == story && cr.table == tp).cloned();
++    let t = s.doc.table_mut(story, &tp)?;
++    if t.grid.len() >= wordcraft_doc::table::MAX_COLS {
++        return Err(CmdError::Failed("maximum columns reached".into()));
++    }
++    let (g0, g1) = match &range {
++        Some(cr) => cr.cols,
++        None => grid_cols(t, r, c),
++    };
++    let insert_at = if right { g1 + 1 } else { g0 };
++    t.insert_col(insert_at);
++    // Keep the table within its width: shrink all columns proportionally, quantized to twips.
+     let total: f32 = t.grid.iter().sum();
+-    let before: f32 = total - t.grid.get(if right { g + span } else { g }).copied().unwrap_or(0.0);
+-    if before > 0.0 {
++    let added = t.grid.get(insert_at).copied().unwrap_or(0.0);
++    let before: f32 = total - added;
++    if before > 0.0 && total > 0.0 {
+         let k = before / total;
+-        t.grid.iter_mut().for_each(|w| *w *= k);
++        for w in &mut t.grid {
++            *w = wordcraft_doc::table::quantize_twips((*w * k).max(6.0)).max(6.0);
++        }
+     }
+-    fix_caret(s, &tp, r, if right { c + 1 } else { c })
++    t.sync_cell_widths();
++    let target_c = t.cell_at_grid(r, insert_at).unwrap_or(if right { c + 1 } else { c });
++    fix_caret(s, &tp, r, target_c)
+ }
+ 
+ fn del_row(s: &mut Session, _: &Value) -> CmdResult {
+@@ -501,8 +546,13 @@ fn del_row(s: &mut Session, _: &Value) -> CmdResult {
+     if rows.len() >= t.rows.len() {
+         return del_table(s, &Value::Null);
+     }
+-    for rr in rows.iter().rev() {
+-        t.delete_row(*rr);
++    for &rr in rows.iter().rev() {
++        if t.rect_has_controls(rr, rr, 0, t.cols().saturating_sub(1)) {
++            return Err(CmdError::Failed("row holds content controls".into()));
++        }
++        if !t.delete_row_safe(rr) {
++            t.delete_row(rr);
++        }
+     }
+     fix_caret(s, &tp, r, 0)
+ }
+@@ -528,38 +578,176 @@ fn del_col(s: &mut Session, _: &Value) -> CmdResult {
+     if cols.len() >= t.grid.len() {
+         return del_table(s, &Value::Null);
+     }
+-    for g in cols.iter().rev() {
+-        t.delete_col(*g);
++    let g_keep = cols.first().copied().unwrap_or(0);
++    for &g in cols.iter().rev() {
++        if t.rect_has_controls(0, t.rows.len().saturating_sub(1), g, g) {
++            return Err(CmdError::Failed("column holds content controls".into()));
++        }
++        t.delete_col(g);
+     }
+     // Rows left without cells are dropped; if that was every row, no table is left.
+     if t.rows.is_empty() {
+         return del_table(s, &Value::Null);
+     }
+-    fix_caret(s, &tp, r, c.saturating_sub(1))
++    let target_c = t.cell_at_grid(r.min(t.rows.len() - 1), g_keep.min(t.grid.len().saturating_sub(1))).unwrap_or(c.saturating_sub(1));
++    fix_caret(s, &tp, r, target_c)
+ }
+ 
+ fn del_table(s: &mut Session, _: &Value) -> CmdResult {
+     let (tp, _, _) = cell(s)?;
+     let story = s.sel.focus.story;
+     s.doc.remove_block(story, &tp)?;
++    s.column = None;
++    s.widened = None;
+     s.sel = Selection::caret(s.doc.clamp(&Pos { story, path: tp, off: 0 }));
+     sel_result(s)
+ }
+ 
+ fn merge(s: &mut Session, _: &Value) -> CmdResult {
+     let (tp, _, _) = cell(s)?;
++    let story = s.sel.focus.story;
++    if let Some(range) = s.cell_range().filter(|cr| cr.story == story && cr.table == tp).cloned() {
++        let t = s.doc.table_mut(story, &tp)?;
++        if !t.merge_rect(range.rows.0, range.rows.1, range.cols.0, range.cols.1) {
++            return Err(CmdError::Failed("select a valid cell rectangle of two or more cells to merge".into()));
++        }
++        let c0 = t.cell_at_grid(range.rows.0, range.cols.0).unwrap_or(0);
++        return fix_caret(s, &tp, range.rows.0, c0);
++    }
+     let cells = selected_cells(s);
+     if cells.len() < 2 {
+         return Err(CmdError::Failed("select two or more cells to merge".into()));
+     }
++    let t = s.doc.table_mut(story, &tp)?;
++    let (mut r0, mut r1, mut g0, mut g1) = (usize::MAX, 0usize, usize::MAX, 0usize);
++    for &(rr, cc) in &cells {
++        r0 = r0.min(rr);
++        r1 = r1.max(rr);
++        let (a, b) = grid_cols(t, rr, cc);
++        g0 = g0.min(a);
++        g1 = g1.max(b);
++    }
++    if !t.merge_rect(r0, r1, g0, g1) {
++        t.merge(r0, r1, g0, g1);
++    }
++    let c0 = t.cell_at_grid(r0, g0).unwrap_or(0);
++    fix_caret(s, &tp, r0, c0)
++}
++
++/// Strictly merge a rectangular multi-cell selection (`table.mergeCells`).
++fn merge_cells_cmd(s: &mut Session, _: &Value) -> CmdResult {
++    let (tp, _, _) = cell(s)?;
++    let story = s.sel.focus.story;
++    let (r0, r1, g0, g1) = if let Some(range) = s.cell_range().filter(|cr| cr.story == story && cr.table == tp) {
++        (range.rows.0, range.rows.1, range.cols.0, range.cols.1)
++    } else {
++        let (a, b) = s.sel.ordered();
++        let (Some((ta, ra, ca)), Some((tb, rb, cb))) = (a.path.cell(), b.path.cell()) else {
++            return Err(CmdError::Failed("select two or more cells to merge".into()));
++        };
++        if ta != tp || tb != tp || (ra == rb && ca == cb) {
++            return Err(CmdError::Failed("select two or more cells to merge".into()));
++        }
++        let t = s.doc.table(story, &tp).ok_or_else(|| CmdError::Failed("no table".into()))?;
++        let (ga0, ga1) = grid_cols(t, ra, ca);
++        let (gb0, gb1) = grid_cols(t, rb, cb);
++        (ra.min(rb), ra.max(rb), ga0.min(gb0), ga1.max(gb1))
++    };
++    let t = s.doc.table_mut(story, &tp)?;
++    if !t.merge_rect(r0, r1, g0, g1) {
++        return Err(CmdError::Failed("selection is not a valid mergeable rectangle".into()));
++    }
++    let c0 = t.cell_at_grid(r0, g0).unwrap_or(0);
++    fix_caret(s, &tp, r0, c0)
++}
++
++fn has_multi_cell_selection(s: &Session, tp: &Path, r: usize, c: usize) -> bool {
++    let story = s.sel.focus.story;
++    let Some(t) = s.doc.table(story, tp) else { return false };
++    let cur = t.cell_extent(r, c);
++    if let Some(range) = s.cell_range().filter(|cr| cr.story == story && cr.table == *tp) {
++        return cur.is_none_or(|ext| ext != (range.rows.0, range.rows.1, range.cols.0, range.cols.1));
++    }
++    let (a, b) = s.sel.ordered();
++    match (a.path.cell(), b.path.cell()) {
++        (Some((ta, ra, ca)), Some((tb, rb, cb))) if ta == *tp && tb == *tp => (ra, ca) != (rb, cb),
++        _ => false,
++    }
++}
++
++/// Merge the caret's cell (requiring single-cell focus) with its immediate right logical neighbor.
++fn merge_right_cmd(s: &mut Session, _: &Value) -> CmdResult {
++    let (tp, r, c) = cell(s)?;
++    if has_multi_cell_selection(s, &tp, r, c) {
++        return Err(CmdError::Failed("clear multi-cell selection before merging right".into()));
++    }
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    if !t.is_grid_consistent() {
++        return Err(CmdError::Failed("inconsistent table grid".into()));
++    }
++    let Some((r0, r1, g0, g1)) = t.cell_extent(r, c) else {
++        return Err(CmdError::Failed("invalid cell extent".into()));
++    };
++    let next_g = g1 + 1;
++    let Some(nc) = t.cell_at_grid(r0, next_g) else {
++        return Err(CmdError::Failed("no cell to the right".into()));
++    };
++    let Some((nr0, nr1, ng0, ng1)) = t.cell_extent(r0, nc) else {
++        return Err(CmdError::Failed("invalid right cell extent".into()));
++    };
++    if nr0 != r0 || nr1 != r1 || ng0 != next_g {
++        return Err(CmdError::Failed("right neighbor does not share vertical span".into()));
++    }
++    if !t.merge_rect(r0, r1, g0, ng1) {
++        return Err(CmdError::Failed("right merge is not allowed here".into()));
++    }
++    let c0 = t.cell_at_grid(r0, g0).unwrap_or(0);
++    fix_caret(s, &tp, r0, c0)
++}
++
++/// Merge the caret's cell (requiring single-cell focus) with the logical cell directly below it.
++fn merge_below_cmd(s: &mut Session, _: &Value) -> CmdResult {
++    let (tp, r, c) = cell(s)?;
++    if has_multi_cell_selection(s, &tp, r, c) {
++        return Err(CmdError::Failed("clear multi-cell selection before merging below".into()));
++    }
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    if !t.is_grid_consistent() {
++        return Err(CmdError::Failed("inconsistent table grid".into()));
++    }
++    let Some((r0, r1, g0, g1)) = t.cell_extent(r, c) else {
++        return Err(CmdError::Failed("invalid cell extent".into()));
++    };
++    let next_r = r1 + 1;
++    let Some(bc) = t.cell_at_grid(next_r, g0) else {
++        return Err(CmdError::Failed("no cell below".into()));
++    };
++    let Some((br0, br1, bg0, bg1)) = t.cell_extent(next_r, bc) else {
++        return Err(CmdError::Failed("invalid below cell extent".into()));
++    };
++    if br0 != next_r || bg0 != g0 || bg1 != g1 {
++        return Err(CmdError::Failed("below neighbor does not share horizontal span".into()));
++    }
++    if !t.merge_rect(r0, br1, g0, g1) {
++        return Err(CmdError::Failed("below merge is not allowed here".into()));
++    }
++    let c0 = t.cell_at_grid(r0, g0).unwrap_or(0);
++    fix_caret(s, &tp, r0, c0)
++}
++
++/// Split a merged cell (`table.splitCell`) back into `1×1` cells preserving its content.
++fn split_merged_cmd(s: &mut Session, _: &Value) -> CmdResult {
++    let (tp, r, c) = cell(s)?;
++    if has_multi_cell_selection(s, &tp, r, c) {
++        return Err(CmdError::Failed("clear multi-cell selection before splitting cell".into()));
++    }
+     let story = s.sel.focus.story;
+-    let (r0, r1) = (cells.iter().map(|x| x.0).min().unwrap_or(0), cells.iter().map(|x| x.0).max().unwrap_or(0));
+     let t = s.doc.table_mut(story, &tp)?;
+-    let c0 = cells.iter().map(|x| x.1).min().unwrap_or(0);
+-    let c1 = cells.iter().map(|x| x.1).max().unwrap_or(0);
+-    let g0 = t.grid_col(r0, c0);
+-    let g1 = t.grid_col(r0, c1) + t.rows.get(r0).and_then(|r| r.cells.get(c1)).map(|c| c.span()).unwrap_or(1) - 1;
+-    t.merge(r0, r1, g0, g1);
++    let Some((r0, c0)) = t.split_merged_cell(r, c) else {
++        return Err(CmdError::Failed("the caret cell cannot be split".into()));
++    };
+     fix_caret(s, &tp, r0, c0)
+ }
+ 
+@@ -990,3 +1178,109 @@ fn quick_table(s: &mut Session, v: &Value) -> CmdResult {
+     let _ = StoryRef::Body;
+     sel_result(s)
+ }
++
++#[cfg(test)]
++mod tests {
++    use serde_json::json;
++    use wordcraft_doc::roundtrip::roundtrip_equivalent;
++
++    use crate::{Session, blank_document};
++
++    fn new_session() -> Session {
++        Session::new(blank_document(&Default::default()))
++    }
++
++    fn cell_texts(s: &Session) -> Vec<Vec<Vec<String>>> {
++        let t = s.doc.body.iter().find_map(|b| b.as_table()).expect("table");
++        t.rows
++            .iter()
++            .map(|r| {
++                r.cells
++                    .iter()
++                    .map(|c| c.blocks.iter().filter_map(|b| b.as_para().map(|p| p.plain_text())).collect())
++                    .collect()
++            })
++            .collect()
++    }
++
++    #[test]
++    fn ten_table_structure_commands_preserve_content_undo_and_reopen() {
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 2, "cols": 2})).unwrap();
++        s.run("text.insert", &json!({"text": "A1"})).unwrap();
++        s.run("text.tab", &json!({})).unwrap();
++        s.run("text.insert", &json!({"text": "B1"})).unwrap();
++        s.run("text.tab", &json!({})).unwrap();
++        s.run("text.insert", &json!({"text": "A2"})).unwrap();
++        s.run("text.tab", &json!({})).unwrap();
++        s.run("text.insert", &json!({"text": "B2"})).unwrap();
++
++        // Caret is in (1, 1) "B2". Insert row above & below, column left & right.
++        s.run("table.insertRowAbove", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s).len(), 3);
++        s.run("table.insertRowBelow", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s).len(), 4);
++        s.run("table.insertColumnLeft", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0].len(), 3);
++        s.run("table.insertColumnRight", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0].len(), 4);
++
++        // Undo back to 2x2 cleanly.
++        for _ in 0..4 {
++            assert!(s.undo());
++        }
++        assert_eq!(cell_texts(&s), vec![vec![vec!["A1"], vec!["B1"]], vec![vec!["A2"], vec!["B2"]]]);
++
++        // Merge Right from (0, 0): preserves A1 and B1.
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++        s.run("table.mergeRight", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0][0], vec!["A1", "B1"]);
++        // Right neighbor at edge fails safely.
++        assert!(s.run("table.mergeRight", &json!({})).is_err());
++        // Split merged cell restores 2 cells in row 0.
++        s.run("table.splitCell", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0].len(), 2);
++        assert_eq!(cell_texts(&s)[0][0], vec!["A1", "B1"]);
++        // Unmerged cell refuses splitCell.
++        assert!(s.run("table.splitCell", &json!({})).is_err());
++
++        // Undo splitCell -> back to merged row 0. Now delete row 1 fails? No, 2 rows -> row 1 deletes cleanly.
++        assert!(s.undo());
++        assert_eq!(cell_texts(&s)[0].len(), 1);
++        assert!(s.redo());
++        assert_eq!(cell_texts(&s)[0].len(), 2);
++
++        // Merge Below on col 0: (0,0) + (1,0) -> preserves ["A1","B1","A2"].
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++        s.run("table.mergeBelow", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0][0], vec!["A1", "B1", "A2"]);
++        // Right neighbor (0,1) has rowSpan=1 while (0,0) has rowSpan=2 -> mergeRight refused cleanly!
++        assert!(s.run("table.mergeRight", &json!({})).is_err());
++
++        // Split vertical merge cleanly.
++        s.run("table.splitCell", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0][0], vec!["A1", "B1", "A2"]);
++
++        // Select 2x2 rectangle and run table.mergeCells.
++        s.run(
++            "caret.set",
++            &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}, "extend": false}),
++        )
++        .unwrap();
++        s.run(
++            "caret.set",
++            &json!({"pos": {"story": "body", "path": [0, 1, 1, 0], "off": 2}, "extend": true}),
++        )
++        .unwrap();
++        s.run("table.mergeCells", &json!({})).unwrap();
++        assert_eq!(cell_texts(&s)[0][0], vec!["A1", "B1", "A2", "B2"]);
++
++        // Undo -> redo -> splitCell -> export/reopen roundtrip matches authoritatively.
++        s.run("table.splitCell", &json!({})).unwrap();
++        assert!(s.undo());
++        assert!(s.redo());
++        let bytes = crate::io::save_bytes("table.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++    }
++}

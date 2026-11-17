@@ -10,11 +10,16 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN = "6931bcc12af12ff874a9ebb4c63cebe17b3f8b82"
 BASE = "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
+FONT_PIN = "6931bcc12af12ff874a9ebb4c63cebe17b3f8b82"
+PIN = "23c0dc52d5cf7d197d06c0b539547b9cce364b49"
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
-PATCH = "patches/wordcraft/system-font-source.patch"
-COMMIT = "patches/wordcraft/system-font-source.commit"
+STEPS = [
+    (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
+    (FONT_PIN, PIN, "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit"),
+]
+PATCH = STEPS[0][2]
+COMMIT = STEPS[0][3]
 
 
 def git(path, *args, input=None, env=None):
@@ -28,20 +33,22 @@ def require(condition, message):
 
 def reconstruct(repo):
     """Only writes Git objects and a temporary index; never patches a worktree."""
-    commit = (ROOT / COMMIT).read_bytes()
-    headers = commit.split(b"\n\n", 1)[0].splitlines()
-    require([h for h in headers if h.startswith(b"parent ")] == [b"parent " + BASE.encode()],
-            "WordCraft patch parent changed")
-    require(git(repo, "hash-object", "-t", "commit", "--stdin", input=commit).decode().strip() == PIN,
-            "WordCraft commit metadata identity changed")
-    with tempfile.TemporaryDirectory(prefix="geul-wordcraft-index-") as folder:
-        env = {**os.environ, "GIT_INDEX_FILE": str(Path(folder) / "index")}
-        git(repo, "read-tree", BASE, env=env)
-        git(repo, "apply", "--cached", "--whitespace=error", str(ROOT / PATCH), env=env)
-        tree = git(repo, "write-tree", env=env).strip()
-    require(headers[0] == b"tree " + tree, "WordCraft patched tree identity mismatch")
-    actual = git(repo, "hash-object", "-w", "-t", "commit", "--stdin", input=commit).decode().strip()
-    require(actual == PIN, "WordCraft reconstructed commit identity mismatch")
+    actual = BASE
+    for parent, target, patch_rel, commit_rel in STEPS:
+        commit = (ROOT / commit_rel).read_bytes()
+        headers = commit.split(b"\n\n", 1)[0].splitlines()
+        require([h for h in headers if h.startswith(b"parent ")] == [b"parent " + parent.encode()],
+                f"WordCraft patch parent changed ({commit_rel})")
+        require(git(repo, "hash-object", "-t", "commit", "--stdin", input=commit).decode().strip() == target,
+                f"WordCraft commit metadata identity changed ({commit_rel})")
+        with tempfile.TemporaryDirectory(prefix="geul-wordcraft-index-") as folder:
+            env = {**os.environ, "GIT_INDEX_FILE": str(Path(folder) / "index")}
+            git(repo, "read-tree", parent, env=env)
+            git(repo, "apply", "--cached", "--whitespace=error", str(ROOT / patch_rel), env=env)
+            tree = git(repo, "write-tree", env=env).strip()
+        require(headers[0] == b"tree " + tree, f"WordCraft patched tree identity mismatch ({patch_rel})")
+        actual = git(repo, "hash-object", "-w", "-t", "commit", "--stdin", input=commit).decode().strip()
+        require(actual == target, f"WordCraft reconstructed commit identity mismatch ({commit_rel})")
     return actual
 
 
