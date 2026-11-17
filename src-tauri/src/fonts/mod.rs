@@ -17,6 +17,7 @@
 
 pub mod catalog;
 pub mod commands;
+pub mod embedding;
 pub mod fontconfig;
 
 use std::collections::HashMap;

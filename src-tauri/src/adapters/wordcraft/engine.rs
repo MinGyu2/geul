@@ -29,6 +29,8 @@ use crate::document::EngineStage;
 
 #[path = "stage1.rs"]
 pub mod stage1;
+#[path = "embed_font.rs"]
+pub mod embed_font;
 
 /// WordCraft 입출력은 이름의 확장자로 형식을 고른다. 형식은 판별(T006)이 DOCX로 확정했다.
 const DOCX_NAME: &str = "document.docx";
@@ -188,6 +190,13 @@ pub enum DocxOp {
     /// Stage 1: highlight (`format.highlight`, one of `stage1::HIGHLIGHTS`).
     Highlight {
         color: String,
+    },
+    /// Stage 1 F: embed the font program of a face (`family`, `style`) of the shared font database into the
+    /// document (font table embed slot + obfuscated font part). Refused unless the license permits editable
+    /// embedding, the outlines are TrueType and the style has a DOCX slot.
+    EmbedFont {
+        family: String,
+        style: String,
     },
     /// Stage 1: superscript/subscript/baseline with explicit values.
     Script {
@@ -379,6 +388,9 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     || (color.len() == 6 && color.bytes().all(|b| b.is_ascii_hexdigit()))
             }
             DocxOp::Highlight { color } => stage1::HIGHLIGHTS.contains(&color.as_str()),
+            DocxOp::EmbedFont { family, style } => {
+                valid_font_name(family) && !style.is_empty() && style.len() <= 128 && !style.chars().any(char::is_control)
+            }
             DocxOp::Paragraph { format } => format.valid(),
             DocxOp::PageSetup { setup } => setup.valid(),
             DocxOp::Find { query, .. } => query.valid(),
@@ -466,6 +478,8 @@ pub struct DocxView {
     /// Stage 1: current search (count and selected match) while a search is open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search: Option<stage1::SearchView>,
+    /// Stage 1 F: fonts embedded in the document (font table embed slots).
+    pub embedded_fonts: Vec<embed_font::Embedded>,
 }
 
 /// 문서 보호(Restrict Editing)에서 직접 글자 서식(`format.bold` 등)을 할 수 있는지.
@@ -906,6 +920,7 @@ impl DocxModel {
             DocxOp::FontSize { size } => self.stage1_font_size(*size),
             DocxOp::FontColor { color } => self.stage1_font_color(color),
             DocxOp::Highlight { color } => self.stage1_highlight(color),
+            DocxOp::EmbedFont { family, style } => self.embed_font(family, style),
             DocxOp::Script { value } => self.stage1_script(*value),
             DocxOp::Paragraph { format } => self.stage1_paragraph(format),
             DocxOp::List { style, off } => self.stage1_list(*style, *off),
@@ -1374,6 +1389,7 @@ impl DocxModel {
             paragraph: self.paragraph_view(),
             page: self.page_view(),
             search,
+            embedded_fonts: embed_font::embedded(&self.session.doc),
         }
     }
 
@@ -1501,6 +1517,38 @@ impl DocxModel {
         let (bytes, plan) = self.session.print_pdf(&json!({ "markup": false })).ok()?;
         (plan.copies == 1 && plan.pages.len() == plan.chosen && !plan.pages.is_empty())
             .then_some((bytes, plan.chosen))
+    }
+
+    /// Stage 1 F: embed a face's font program (one undo step). The face must be an exact family/style of the
+    /// shared font database whose license permits editable embedding (installable/editable `fsType`) with
+    /// TrueType outlines, and its style must have a DOCX slot. The changed model must write and reopen to an
+    /// equal model through WordCraft (the T009 save contract) before it replaces the current one, so success is
+    /// never reported for a resource the writer would drop. `Ok(false)`: exactly this font is already embedded.
+    fn embed_font(&mut self, family: &str, style: &str) -> Result<bool, Rejected> {
+        use crate::fonts::embedding;
+        let slot = embedding::docx_slot(style).ok_or(Rejected)?;
+        let candidate = embedding::candidate(family.trim(), style).map_err(|_| Rejected)?;
+        embedding::embeddable(&candidate.program).map_err(|_| Rejected)?;
+        let mut doc = self.session.doc.clone();
+        match embed_font::embed(&mut doc, family.trim(), slot, &candidate.bytes) {
+            Ok(false) => return Ok(false),
+            Ok(true) => {}
+            Err(_) => return Err(Rejected),
+        }
+        let bytes = io::save_bytes(DOCX_NAME, &doc).map_err(|_| Rejected)?;
+        let reopened = io::open_bytes(DOCX_NAME, &bytes).map_err(|_| Rejected)?;
+        if !matches!(wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&doc, &reopened), Ok(true))
+            || !embed_font::embedded(&reopened)
+                .iter()
+                .any(|e| e.family == family.trim() && e.slot == slot && e.part.is_some())
+        {
+            return Err(Rejected);
+        }
+        self.session.checkpoint("Embed Font");
+        self.session.doc = doc;
+        self.session.touch();
+        self.last_insert = None;
+        Ok(true)
     }
 
     /// 지금 모델을 DOCX 바이트로 내보낸다(메모리 안, T009 저장의 출력). 실패하면 `None`(엔진 메시지는 버린다).

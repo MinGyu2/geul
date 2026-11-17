@@ -944,6 +944,7 @@ fn 응답_json은_계약의_모양이다() {
             "chars",
             "clipboardTextAvailable",
             "collapsed",
+            "embeddedFonts",
             "fontGeneration",
             "format",
             "formatAccess",

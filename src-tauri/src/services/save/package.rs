@@ -368,6 +368,12 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         notes.is_empty() || note_settings_added(original, output, &notes)
     });
     let pictures = pictures_appended(original, output);
+    // Stage 1 F: embedded fonts (font table embeds + obfuscated font parts); not composed with other additions.
+    let fonts = if added.is_none() && pictures.is_none() {
+        super::docx_fonts::docx_fonts_embedded(original, output)
+    } else {
+        None
+    };
     let numbering = numbering_appended(original, output) == Some(true);
     let notes_added = added.as_ref().is_some_and(|added| {
         added
@@ -395,7 +401,15 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
+            || fonts.as_ref().is_some_and(|f| {
+                f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
+            })
     });
+    if let Some(fonts) = &fonts {
+        findings.retain(|f| {
+            !(f.code == FindingCode::PartAdded && f.part.as_ref().is_some_and(|name| fonts.parts.contains(name)))
+        });
+    }
     if let Some(pictures) = &pictures {
         findings.retain(|f| {
             !(f.code == FindingCode::PartAdded
@@ -1061,8 +1075,10 @@ fn thumbnails(package: &Package) -> Vec<String> {
 /// 증명할 수 없어 막는다.
 pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> {
     let pictures = hwpx_pictures_appended(original, output);
+    // Stage 1 F: embedded fonts (manifest font items + hh:font references); not composed with pictures.
+    let fonts = if pictures.is_none() { super::hwpx_fonts::hwpx_fonts_embedded(original, output) } else { None };
     let mut findings = compare(original, output, &|name| {
-        (hwpx_body(name) || (pictures.is_some() && name == "Contents/content.hpf"))
+        (hwpx_body(name) || ((pictures.is_some() || fonts.is_some()) && name == "Contents/content.hpf"))
             || name == HWPX_HEADER
     });
     if let Some(names) = &pictures {
@@ -1071,10 +1087,18 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
                 && f.part.as_ref().is_some_and(|n| names.contains(n)))
         });
     }
+    if let Some(fonts) = &fonts {
+        findings.retain(|f| {
+            !(f.code == FindingCode::PartAdded && f.part.as_ref().is_some_and(|n| fonts.parts.contains(n)))
+        });
+    }
     // header는 원본과 같거나, 글자 서식이 덧붙인 글자 모양 정의만 다를 수 있다(T010 Phase 3B, `hwpx_char_shapes_appended`).
     // 빠지거나 생긴 header는 위 `compare`가 이미 적었다.
     // Validate both complete inputs first; then compare semantic pieces and the narrow append rule without retained trees.
-    if let (Some(before), Some(after)) = (original.get(HWPX_HEADER), output.get(HWPX_HEADER)) {
+    // With embedded fonts the header rules see the output header with exactly those references made non-embedded
+    // (the embeds themselves were proved by `hwpx_fonts_embedded`).
+    let normalized = fonts.as_ref().map(|f| f.normalized_header.as_slice());
+    if let (Some(before), Some(after)) = (original.get(HWPX_HEADER), normalized.or(output.get(HWPX_HEADER))) {
         if before != after {
             match (
                 xml::canonical_checked(before),

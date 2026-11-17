@@ -8,6 +8,8 @@ pub mod loss;
 #[cfg(target_os = "linux")]
 mod metadata;
 pub mod package;
+mod docx_fonts;
+mod hwpx_fonts;
 pub mod preserve;
 pub mod preview;
 pub mod publish;

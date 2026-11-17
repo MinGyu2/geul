@@ -30,6 +30,8 @@ pub enum FontError {
     NotUserFont,
     /// Registration through the native chooser is not available on this platform yet.
     PlatformUnsupported,
+    /// The font's license does not permit editable embedding, or its program cannot be embedded.
+    EmbeddingRestricted,
     InvalidRequest,
     Internal,
 }
@@ -251,4 +253,24 @@ pub async fn font_face_data(family: String, style: String) -> Result<Response, F
         return Err(FontError::InvalidRequest);
     }
     blocking(move || face_data_bytes(&family, &style).map(Response::new)).await?
+}
+
+/// Stage 1 F: whether a face (`family`, `style`) of the shared font database may be embedded, and why not, per
+/// document format (no bytes; no path).
+#[tauri::command]
+pub async fn font_embed_info(family: String, style: String) -> Result<super::embedding::EmbedInfo, FontError> {
+    if family.is_empty() || family.len() > 256 || style.is_empty() || style.len() > 256 {
+        return Err(FontError::InvalidRequest);
+    }
+    blocking(move || super::embedding::info(&family, &style)).await
+}
+
+/// Stage 1 F: the program bytes of an embeddable face, for HWPX embedding in the RHWP session. Only faces whose
+/// license permits editable embedding (installable/editable `fsType`) with TrueType outlines are served.
+#[tauri::command]
+pub async fn font_embed_data(family: String, style: String) -> Result<Response, FontError> {
+    if family.is_empty() || family.len() > 256 || style.is_empty() || style.len() > 256 {
+        return Err(FontError::InvalidRequest);
+    }
+    blocking(move || super::embedding::embeddable_bytes(&family, &style).map(Response::new)).await?
 }

@@ -8179,7 +8179,8 @@ fn special_header_full_findings_match_frozen_oracle() {
     let (defs, original) = fmt_original();
     let d: Vec<_> = defs.iter().map(String::as_str).collect();
     let good = fmt_header(4, &d, &[&italic_of_zero()], "JUSTIFY");
-    let other = fmt_def(4, 1100, "<hh:bold/>");
+    // Stage 1 authorized appended `height` (font size); a still-unauthorized difference keeps this case a refusal.
+    let other = fmt_def(4, 1000, "<hh:bold/>").replace("textColor=", "useKerning=\"1\" textColor=");
     let mut headers = vec![
         original.clone(),
         good.clone(),
@@ -8848,7 +8849,8 @@ fn special_header_hash_collision_still_requires_full_semantic_equality() {
     let (defs, _) = fmt_original();
     let d: Vec<_> = defs.iter().map(String::as_str).collect();
     let good = fmt_header(4, &d, &[&italic_of_zero()], "JUSTIFY");
-    let bad = fmt_header(4, &d, &[&fmt_def(3, 1200, "<hh:italic/>")], "JUSTIFY");
+    // Stage 1 authorized appended `height`; `useKerning` stays unauthorized, so this must still be refused.
+    let bad = fmt_header(4, &d, &[&fmt_def(3, 1000, "<hh:italic/>").replace("textColor=", "useKerning=\"1\" textColor=")], "JUSTIFY");
     super::special::with_colliding_hashes(|| {
         assert!(fmt_check(&good, &fmt_body(&[3])).is_empty());
         assert_eq!(fmt_check(&bad, &fmt_body(&[3])), vec![header_changed()]);
@@ -13390,6 +13392,9 @@ fn general_formatting_seed_preview() {
 
 #[path = "stage1_docx_tests.rs"]
 mod stage1_docx;
+
+#[path = "stage1_font_embed_tests.rs"]
+mod stage1_font_embed;
 
 /// Stage 1 HWPX character values: an appended definition may differ from an original one in size (`height`),
 /// text/shade color and one of superscript/subscript; values must have the pinned serializer's form.

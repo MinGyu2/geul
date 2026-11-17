@@ -102,6 +102,8 @@ pub fn run() {
             fonts::commands::font_remove,
             fonts::commands::font_user_face,
             fonts::commands::font_face_data,
+            fonts::commands::font_embed_info,
+            fonts::commands::font_embed_data,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션을 시작하지 못했습니다");
