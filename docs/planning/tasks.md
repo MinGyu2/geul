@@ -1,3 +1,5 @@
+> **2026-11-18 Stage 2 / Phase 3 — 형식 공통 표·셀 서식 · COMPLETED (명시한 지원 범위).** P3-1(`592f605`)·P3-2(`99eef72`)·P3-3(`8b1a994`)·P3-4(`7857267` + 본 HWP 테두리 재열기 및 문서 동기화 후속 커밋)를 완료했다. DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 5개 명령(`table.shading`, `table.borders`, `table.alignment`, `table.columnWidth`, `table.rowHeight`), Undo/Redo, T009 저장 및 독립 재열기를 지원하며 HWP 재열기 UI(`style:double`, `width:0.5 mm`, `color:#DC2626`, cell `0:0:0@2/0/0`) + 디스크 `DocInfo` `BORDER_FILL`/`rhwp` 오라클까지 PASS(`target/p3-hwp-border-native/acceptance.json`). 외부 Word/한컴 재열기 및 Windows/macOS/Wayland는 NOT RUN, T012/T013/T014/T015/T016 미완료·기존 체크박스 불변.
+
 > **2026-11-17 Stage 2 / Phase 2 Task 2 HWP/HWPX 복합 내용 표 편집 · COMPLETED (명시한 지원 범위).** 그림·중첩 표·분할 run 서식·계산식/누름틀/캡션·연속 구조 변경 × 구조 명령 감사 매트릭스(HWP/HWPX 140칸, 실제 T009·재열기)로 HWP 저장 거부 2종(셀 문단 수 변화, 증명된 삭제와 함께 사라진 누름틀)과 계산식 사후 거부·편집 중지를 교정했다. 137칸 저장·재열기, 3칸 의도된 사전 거부, native run1 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [감사·교정·경계](../architecture/stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
 
 > **2026-11-17 Stage 2 / Phase 2 Task 1 HWP/HWPX 일반 셀 나누기 · COMPLETED (명시한 지원 범위).** `table.splitCell`이 비병합 `1×1` 셀을 공용 분할 대화상자로 `행 × 열`(가로·세로·직사각형) 분할하고 병합 셀 복원은 유지한다. 엔진 `stage2-p2-cell-split.patch`(검증된 `splitCellInto`), HWP T009 격자 정제 대응, Release `5f3c8067…`에서 WASM 58/58·Rust 집중 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [구현·검증·경계](../architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
@@ -342,3 +344,14 @@ P1 삭제 거절을 트랜잭션 전 admission으로 옮기고 P2-A 서식/복�
 DOCX는 정렬·글자 값·문단 서식·목록·찾기/바꾸기·쪽 설정(다단 포함)을, HWP/HWPX는 정렬·글자 값·문단 서식(본문)·찾기/바꾸기·여백/방향/용지를 제품 빌드에서 활성화하고 실제 저장/재열기로 검증했다. RHWP 목록·다단·셀 문단 서식과 세 형식의 글꼴 embedding은 미구현이며 native GUI·외부 호환은 NOT RUN이다. 상세: [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md). 기존 task 항목의 체크·ID·상태는 바꾸지 않았다.
 
 > Stage 1 P1·F (2026-11-17): P1 안정화와 DOCX/HWPX 글꼴 embedding 구현·focused 검증 — [stage1-common-editing.md 5절](../architecture/stage1-common-editing.md). HWP 글꼴 embedding은 형식 제한, Word/한컴 외부 재열기 NOT RUN.
+
+## Stage 2 / Phase 3 — Cross-Format Table Formatting (2026-11-18, COMPLETED)
+
+- **P3-1 (Cell shading and borders) — COMPLETED** (`592f605ccf5465a6145fb9a2b86f354a885697e5`): DOCX/HWP/HWPX `table.shading`(#RRGGBB 지정/지우기) 및 `table.borders`(all/outside/inside/top/bottom/left/right/none, 형식별 선 스타일·두께 `pt`/`mm`·색상, 단일 셀 `inside` 비활성, 단일/직사각형/병합/지원 중첩 셀 및 HWP/HWPX/DOCX T009 저장 증명).
+- **P3-2 (Horizontal and vertical cell alignment) — COMPLETED** (`99eef725e8c04717705b10e369bb07d26c396b0d`): DOCX/HWP/HWPX `table.alignment`(가로 left/center/right/justify, 세로 top/middle/bottom, 혼합 상태 표시, 다문단 셀, HWP `ParaShape` + 셀 `list_attr` 비트 `21..=22` T009 증명).
+- **P3-3 (Column widths and row heights) — COMPLETED** (`8b1a994ec9fd70dbab2a47db9c0c8c8fe7c68fd8`): DOCX/HWP/HWPX `table.columnWidth`(명시 pt·균등 분배) 및 `table.rowHeight`(명시 pt·형식별 규칙 DOCX `atLeast`/`exact`/`auto` vs RHWP `atLeast`만·균등 분배, `quantize_twips` 포함).
+- **P3-4 (Production native acceptance and documentation finalization) — COMPLETED** (`78572675e417543baff9b29885f38c1856e856dd` 및 본 HWP 테두리 재열기·문서 동기화 후속 커밋):
+  - **현재 검증(CURRENT PASS)**: HWP 테두리 저장/재열기 강화 수용(`scripts/tests/stage2-p3-native-acceptance.py --formats hwp` → `target/p3-hwp-border-native/acceptance.json`, 앱 `71db683e…`, Release WASM `45545297…`)에서 저장 (`state: "saved"`, `findings: ""`, `synced: "true"`)·닫기·재열기 후 목표 셀 `0:0:0@2/0/0` UI 테두리(`style: "double"`, `width: "0.5"`, `color: "#DC2626"`)와 디스크 `DocInfo` `BORDER_FILL` ID 2 / 비대상 셀 `(1,1)` ID 1 분리·무관 셀 내용 보존 확인.
+  - **재사용 검증(REUSED PASS, 코드 불변)**: WordCraft 표 단위 4/4, `src-tauri` T009/어댑터 계약 11/11, 프런트엔드 집중 Vitest 6파일 68/68, RHWP Release WASM `stage2-tables.wasm.test.ts` 73/73, DOCX/HWPX/HWP 통합 native 수용(`target/p3-native-out/acceptance.json`).
+  - **지원 한계 및 미완료 항목 유지**: 외부 Word/한컴오피스 재열기 NOT RUN, Windows/macOS·Wayland NOT RUN, 기존 미완료 과제 T012/T013/T014/T015/T016 상태와 기존 미완 체크박스는 그대로 유지한다(기준선 기존 실패 `hangulTools.test.tsx:426`, `services::save::tests` 3건 불변).
+

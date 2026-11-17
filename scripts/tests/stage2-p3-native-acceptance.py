@@ -6,14 +6,18 @@ Drives the real production Tauri binary via tauri-driver + WebKitWebDriver + pri
 Undo/Redo, safe saving, independent reopening, and package structure inspection.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import struct
+import subprocess
 import sys
 import time
 import traceback
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests/e2e"))
@@ -130,9 +134,10 @@ class P3Acceptance(nd.Acceptance):
         def setup_borders():
             self.click("[data-testid=border-kind-outside]")
             self.d.js(
-                "const el=document.querySelector('[data-testid=table-border-style]');"
+                "for(const [sel,val] of [['[data-testid=table-border-style]','double'],['[data-testid=table-border-width]','0.5']]){"
+                "const el=document.querySelector(sel);"
                 "const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;"
-                "set.call(el,'double');el.dispatchEvent(new Event('change',{bubbles:true}))"
+                "set.call(el,val);el.dispatchEvent(new Event('change',{bubbles:true}));}"
             )
             self.set_input_value("table-border-color", "#DC2626")
 
@@ -227,18 +232,32 @@ class P3Acceptance(nd.Acceptance):
             )
             self.settle(fmt)
             y += 18
+        target_cell = self.d.js(f"return document.querySelector('[data-testid={prefix}-status]')?.dataset.caret ?? ''")
         if fmt != "docx":
+            def is_cell0(caret_str):
+                return "@" in caret_str and caret_str.split("@")[1].split("/")[1] == "0"
+
             for _ in range(4):
-                c = self.d.js("return document.querySelector('[data-testid=rhwp-status]')?.dataset.caret ?? ''")
-                if "@0/0/" in c:
+                if is_cell0(target_cell):
                     break
                 self.key("shift+Tab")
                 self.settle(fmt)
+                target_cell = self.d.js("return document.querySelector('[data-testid=rhwp-status]')?.dataset.caret ?? ''")
+            assert is_cell0(target_cell), (fmt, target_cell)
+        else:
+            assert self.d.js("return document.querySelector('[data-testid=docx-status]')?.dataset.inTable") == "true", (fmt, target_cell)
 
         shade_after = self.read_table_dialog(
             "table.shading",
             tab_label,
             "return document.querySelector('[data-testid=table-shading-color]')?.value ?? ''",
+        )
+        border_after = self.read_table_dialog(
+            "table.borders",
+            tab_label,
+            "return {style:document.querySelector('[data-testid=table-border-style]')?.value ?? '',"
+            "width:document.querySelector('[data-testid=table-border-width]')?.value ?? '',"
+            "color:document.querySelector('[data-testid=table-border-color]')?.value ?? ''}",
         )
         align_after = self.read_table_dialog(
             "table.alignment",
@@ -257,6 +276,9 @@ class P3Acceptance(nd.Acceptance):
             "return document.querySelector('[data-testid=table-row-height]')?.value ?? ''",
         )
         assert shade_after.upper() == "#FEF08A", (fmt, shade_after)
+        assert border_after["style"] == "double", (fmt, border_after)
+        assert float(border_after["width"]) == 0.5, (fmt, border_after)
+        assert border_after["color"].upper() == "#DC2626", (fmt, border_after)
         assert align_after == {"h": "true", "v": "true"}, (fmt, align_after)
         assert float(col_after) == 125.0, (fmt, col_after)
         assert float(row_after) == 36.0, (fmt, row_after)
@@ -264,6 +286,7 @@ class P3Acceptance(nd.Acceptance):
         self.d.screenshot(self.args.out / f"p3-{fmt}-reopened.png")
         assert rhwp_poc.close_tab(self.d, out_path.name)
 
+        oracle_summary = None
         # Independent package verification on disk
         if fmt == "docx":
             with zipfile.ZipFile(out_path) as zf:
@@ -291,17 +314,95 @@ class P3Acceptance(nd.Acceptance):
             streams = oracle.cfb_streams(out_path.read_bytes())
             assert streams["FileHeader"][35] == 5
 
-        return {
+            def hwp_records(stream_name):
+                raw = streams[stream_name]
+                if streams["FileHeader"][36] & 1:
+                    raw = zlib.decompress(raw, -15)
+                recs, pos = [], 0
+                while pos < len(raw):
+                    hdr = struct.unpack_from("<I", raw, pos)[0]
+                    pos += 4
+                    tag, lvl, sz = hdr & 0x3FF, (hdr >> 10) & 0x3FF, (hdr >> 20) & 0xFFF
+                    if sz == 0xFFF:
+                        sz = struct.unpack_from("<I", raw, pos)[0]
+                        pos += 4
+                    recs.append((tag, lvl, raw[pos : pos + sz]))
+                    pos += sz
+                return recs
+
+            bf_defs = [d for t, _, d in hwp_records("DocInfo") if t == 20]
+            cells_by_coord = {}
+            for t, _, d in hwp_records("BodyText/Section0"):
+                if t == 72 and len(d) >= 34:
+                    col, row = struct.unpack_from("<HH", d, 8)
+                    bf_id = struct.unpack_from("<H", d, 32)[0]
+                    cells_by_coord[(row, col)] = bf_id
+
+            bf_id_00 = cells_by_coord[(0, 0)]
+            bf_id_11 = cells_by_coord[(1, 1)]
+            assert 1 <= bf_id_00 <= len(bf_defs) and 1 <= bf_id_11 <= len(bf_defs)
+            assert bf_id_00 != bf_id_11, (bf_id_00, bf_id_11)
+            bf00 = bf_defs[bf_id_00 - 1]
+            for at in (2, 8, 14, 20):
+                assert bf00[at] == 8, (at, bf00[at])
+                assert bf00[at + 1] == 7, (at, bf00[at + 1])
+                assert bf00[at + 2 : at + 6] == b"\xdc\x26\x26\x00", (at, bf00[at + 2 : at + 6].hex())
+            assert struct.unpack_from("<I", bf00, 32)[0] == 1
+            assert bf00[36:40] == b"\xfe\xf0\x8a\x00", bf00[36:40].hex()
+            bf11 = bf_defs[bf_id_11 - 1]
+            assert bf11[2] == 1 and bf11[4:8] != b"\xdc\x26\x26\x00", bf11[:10].hex()
+            assert struct.unpack_from("<I", bf11, 32)[0] == 0
+
+            node_js = """
+const fs = require('fs');
+const path = require('path');
+const rel = JSON.parse(fs.readFileSync('public/rhwp/RELEASE.json', 'utf8'));
+const eng = require(path.resolve('public/rhwp/generations', rel.generation, 'rhwp.js'));
+eng.initSync({ module: fs.readFileSync(path.resolve('public/rhwp/generations', rel.generation, 'rhwp_bg.wasm')) });
+const doc = new eng.HwpDocument(new Uint8Array(fs.readFileSync(process.argv[1])));
+try {
+  const tbl = JSON.parse(doc.getControls()).find(c => c.ctrlId === 'tbl' && c.list === 0);
+  const dims = JSON.parse(doc.getTableDimensions(0, tbl.para, tbl.controlIndex));
+  const texts = [];
+  for (let i = 0; i < dims.cellCount; i++) {
+    const len = doc.getCellParagraphLength(0, tbl.para, tbl.controlIndex, i, 0);
+    texts.push(doc.getTextInCell(0, tbl.para, tbl.controlIndex, i, 0, 0, len));
+  }
+  const tp = JSON.stringify([{ controlIndex: tbl.controlIndex, cellIndex: 0, cellParaIndex: 0 }]);
+  const c00 = JSON.parse(doc.getTableCellFormattingByPath(0, tbl.para, tp, 0, 0, 0, 0));
+  const c11 = JSON.parse(doc.getTableCellFormattingByPath(0, tbl.para, tp, 1, 1, 1, 1));
+  console.log(JSON.stringify({ generation: rel.generation, rows: dims.rowCount, cols: dims.colCount, texts, c00, c11 }));
+} finally { doc.free(); }
+"""
+            oracle_summary = json.loads(subprocess.check_output(["node", "-e", node_js, str(out_path)], cwd=ROOT, text=True))
+            oracle_summary["diskCellBorderFillIds"] = {"c00": bf_id_00, "c11": bf_id_11}
+            assert (oracle_summary["rows"], oracle_summary["cols"]) == (2, 2), oracle_summary
+            assert oracle_summary["texts"] == ["A1", "B1", "", ""], oracle_summary["texts"]
+            c00 = oracle_summary["c00"]
+            c11 = oracle_summary["c11"]
+            assert c00["border"] == {"uniform": True, "lineType": 8, "width": 7, "color": "DC2626"}, c00["border"]
+            assert c00["shading"] == {"uniform": True, "color": "FEF08A"}, c00["shading"]
+            assert c00["alignment"]["horizontal"] == "center" and c00["alignment"]["vertical"] == "bottom", c00["alignment"]
+            assert float(c00["dimensions"]["colWidthPt"]) == 125.0 and float(c00["dimensions"]["rowHeightPt"]) == 36.0, c00["dimensions"]
+            assert c11["shading"]["color"] is None and c11["border"]["lineType"] != 8 and c11["border"]["color"] != "DC2626", c11
+
+        result = {
             "format": fmt,
             "status": "PASS",
+            "path": str(out_path),
+            "targetCell": target_cell,
             "saved": saved,
             "reopenedState": {
                 "shading": shade_after,
+                "borders": border_after,
                 "alignment": align_after,
                 "colWidth": col_after,
                 "rowHeight": row_after,
             },
         }
+        if oracle_summary is not None:
+            result["hwpOracle"] = oracle_summary
+        return result
 
 
 def main():
@@ -317,7 +418,13 @@ def main():
     args.xdotool, args.ibus = "xdotool", "ibus"
     smoke.APP = str(args.app.resolve())
     smoke.DRIVER_LOG = args.out / "driver.log"
-    report = {"status": "RUNNING", "app": smoke.APP, "results": []}
+    report = {
+        "status": "RUNNING",
+        "app": smoke.APP,
+        "appSha256": hashlib.sha256(args.app.read_bytes()).hexdigest(),
+        "wasmGeneration": json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())["generation"],
+        "results": [],
+    }
     with smoke.tauri_driver(args.driver, args.port, str(args.out / "data")) as start:
         d = start()
         try:

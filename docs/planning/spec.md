@@ -1,5 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-18 Stage 2 / Phase 3 형식 공통 표·셀 서식 · COMPLETED (명시한 지원 범위).** DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 `table.shading`, `table.borders`, `table.alignment`, `table.columnWidth`, `table.rowHeight` 5개 공용 명령, 리본(`TABLE_FORMATTING_GROUP`), 공용 대화상자(`TableFormattingDialog`), T009 저장 증명, 단일 Undo/Redo 및 프로덕션 Linux native GUI 저장/재열기 수용을 완료했다. 외부 Word/한컴 재열기 및 Windows/macOS/Wayland는 NOT RUN; T012/T015/T016 전체 미완료 유지. [아키텍처·검증](../architecture/stage1-common-editing.md#9-stage-2--phase-3--형식-공통-표셀-서식-2026-11-18).
+
 > **2026-11-17 Stage 2 / Phase 2 Task 2 HWP/HWPX 복합 내용 표 편집 · COMPLETED (명시한 지원 범위).** 그림·중첩 표·분할 run 서식·계산식/누름틀/캡션·연속 구조 변경 × 구조 명령 감사 매트릭스(HWP/HWPX 140칸, 실제 T009·재열기)로 HWP 저장 거부 2종(셀 문단 수 변화, 증명된 삭제와 함께 사라진 누름틀)과 계산식 사후 거부·편집 중지를 교정했다. 137칸 저장·재열기, 3칸 의도된 사전 거부, native run1 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [감사·교정·경계](../architecture/stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
 
 > **2026-11-17 Stage 2 / Phase 2 Task 1 HWP/HWPX 일반 셀 나누기 · COMPLETED (명시한 지원 범위).** `table.splitCell`이 비병합 `1×1` 셀을 공용 분할 대화상자로 `행 × 열`(가로·세로·직사각형) 분할하고 병합 셀 복원은 유지한다. 엔진 `stage2-p2-cell-split.patch`(검증된 `splitCellInto`), HWP T009 격자 정제 대응, Release `5f3c8067…`에서 WASM 58/58·Rust 집중 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [구현·검증·경계](../architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
@@ -352,3 +354,12 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 ### Stage 2 / Phase 1 DOCX 표 구조 편집 — 2026-11-17
 
 DOCX 표 구조 편집 10개 명령(`table.*`)은 WordCraft 문서 모델을 단일 출처로 삼아 `vMerge`(비어 있지 않은 continuation 내용 포함)·열 격자/twip 너비/중첩 표와 셀 내용을 보존하고, `table.splitCell`은 병합 셀 복원과 비병합 `1×1` 셀 `rows × columns` 분할을 함께 지원한다. 마지막 행/열 삭제·불완전 병합 겹침·안전 재배치가 불가능한 continuation 구조·교차 표 선택·콘텐츠 컨트롤·분할 한도 초과는 변경 전 명확한 사유로 거부하며 T009(`same_as()` 및 `authorized_table_media_changes`) 보존 검사를 거쳐 저장·재열기한다. [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).
+
+### Stage 2 / Phase 3 형식 공통 표·셀 서식 — 2026-11-18
+
+*(기존 기본 편집 Phase 3과 별개인 Stage 2 후속 표 서식 범위다. 기존 task/FR/SC 번호는 변경하지 않는다.)*
+
+- **범위 및 5개 공용 명령**: DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 `table.shading`(배경 `#RRGGBB` 지정/지우기), `table.borders`(all·outside·inside·top·bottom·left·right·none, 형식 지원 선 스타일·두께·색상), `table.alignment`(가로 left/center/right/justify·세로 top/middle/bottom·혼합 상태·다문단 셀), `table.columnWidth`(명시 `pt`·균등 분배), `table.rowHeight`(명시 `pt`·높이 규칙·균등 분배)를 공용 리본(`TABLE_FORMATTING_GROUP`: DOCX 레이아웃, HWP/HWPX 한글 도구)과 `TableFormattingDialog`로 제공한다.
+- **형식별 지원 경계**: 각 세션 `parameterState()`가 해당 형식에서 직렬화 가능한 옵션만 노출한다(테두리 두께 단위: DOCX `pt` vs RHWP `mm`; 행 높이 규칙: DOCX `["atLeast", "exact"]` + `supportsAuto: true` vs RHWP `["atLeast"]` + `supportsAuto: false`). 단일 셀 선택 등 내부 경계가 없으면 `inside` 테두리를 비활성화하고(`hasInsideBorders: false`), 표 밖·비직사각형·교차 표·SDT 콘텐츠 컨트롤·범위 밖 치수/지원하지 않는 선 스타일·낡은 `selectionKey` 요청은 변경 전 원자적으로 거부한다.
+- **보존·Undo/Redo·T009·네이티브 수용**: 서식 적용은 셀/행·열 수, 병합 기하, 문단 텍스트, 분할 run, inline 그림, 계산식/ClickHere 필드, 캡션, 중첩 표 소유권과 무관 패키지 파트를 바꾸지 않는다. 확정된 사용자 동작마다 단일 Undo/Redo 단계를 남기며, T009 저장(DOCX `word/document.xml` 한정, HWPX `authorized_hwpx_cell_border_fills`, HWP `BORDER_FILL`/`ParaShape`/`list_attr` 비트 `21..=22` 증명) 및 실제 프로덕션 앱 저장·닫기·독립 재열기(HWP 재열기 셀 테두리 스타일·색·선택 두께 및 디스크 `BORDER_FILL` 연결 검증 포함)를 통과해야 한다. 외부 Word/한컴 재열기 및 Windows/macOS/Wayland는 범위 밖(NOT RUN)이다. [Stage 1/2 문서 9절](../architecture/stage1-common-editing.md#9-stage-2--phase-3--형식-공통-표셀-서식-2026-11-18).
+

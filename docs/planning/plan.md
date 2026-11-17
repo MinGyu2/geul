@@ -1,5 +1,7 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
+> **2026-11-18 Stage 2 / Phase 3 형식 공통 표·셀 서식 · COMPLETED (명시한 지원 범위).** DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP) 셀 배경·테두리·가로/세로 맞춤·열 너비·행 높이를 공용 리본·대화상자·어댑터·T009 경계로 통합하고 프로덕션 native GUI 저장/재열기(HWP 재열기 테두리 스타일·색·두께·디스크 `BORDER_FILL` 연결 검증 포함)를 통과했다. T012/T015/T016 미완료 유지. [아키텍처·검증](../architecture/stage1-common-editing.md#9-stage-2--phase-3--형식-공통-표셀-서식-2026-11-18).
+
 > **2026-11-17 Stage 2 / Phase 2 Task 2 HWP/HWPX 복합 내용 표 편집 · COMPLETED (명시한 지원 범위).** 그림·중첩 표·분할 run 서식·계산식/누름틀/캡션·연속 구조 변경 × 구조 명령 감사 매트릭스(HWP/HWPX 140칸, 실제 T009·재열기)로 HWP 저장 거부 2종(셀 문단 수 변화, 증명된 삭제와 함께 사라진 누름틀)과 계산식 사후 거부·편집 중지를 교정했다. 137칸 저장·재열기, 3칸 의도된 사전 거부, native run1 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [감사·교정·경계](../architecture/stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
 
 > **2026-11-17 Stage 2 / Phase 2 Task 1 HWP/HWPX 일반 셀 나누기 · COMPLETED (명시한 지원 범위).** `table.splitCell`이 비병합 `1×1` 셀을 공용 분할 대화상자로 `행 × 열`(가로·세로·직사각형) 분할하고 병합 셀 복원은 유지한다. 엔진 `stage2-p2-cell-split.patch`(검증된 `splitCellInto`), HWP T009 격자 정제 대응, Release `5f3c8067…`에서 WASM 58/58·Rust 집중 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [구현·검증·경계](../architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
@@ -240,3 +242,10 @@ RHWP 다음 입력 서식·번호 정의 수명·HWPX 결합 저장·중첩 셀/
 ### Stage 2 / Phase 1 DOCX 표 구조 편집 — 2026-11-17
 
 WordCraft 엔진(`dd14a0ae…`, 패치 체인 `system-font-source` → `docx-table-structure` → `docx-table-stabilization`), Typed `DocxOp::TableStructure`와 `DocxTableView` 가용성/분할 한도 계약, `visibleRibbonGroups`·`CommandInputDialog`를 통한 DOCX 레이아웃 탭 노출 및 비병합 `1×1` 셀 분할, 비어 있지 않은 `vMerge::Continue` 보존, 표 이미지 삭제 T009 좁은 허용 증명(`authorized_table_media_changes`), 클린 체크아웃 재현성 검증 및 Linux native GUI 수락을 완료했다. RHWP와 기존 Stage 2/Phase 0 HWPX split-run 경로는 변경하지 않았다. 상세는 [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).
+
+### Stage 2 / Phase 3 형식 공통 표·셀 서식 — 2026-11-18
+
+- **공용 명령·UI**: `src/commands/registry.ts`와 `src/commands/parameters.ts`, `src/ribbon/{definitions,visibility}.ts`(`TABLE_FORMATTING_GROUP`), `src/components/Editor/TableFormattingDialog.tsx`로 5개 명령(`table.shading`, `table.borders`, `table.alignment`, `table.columnWidth`, `table.rowHeight`)을 공유한다.
+- **DOCX (WordCraft)**: 관리 패치 `patches/wordcraft/docx-table-formatting.patch`, `docx-table-alignment.patch`, `docx-table-dimensions.patch`(서브모듈 핀 `cae8c33058e620c02704a2414600b9cb7ecf0867`, `wordcraft_doc::table::quantize_twips` 포함)와 명시 `DocxOp::{TableShading, TableBorders, TableAlignment, TableColumnWidth, TableRowHeight}`(`src-tauri/src/adapters/wordcraft/{table.rs,engine.rs}`)로 `atomic()` 엔진 변이를 수행하며, `DocxEditorSession`(`MUTATING_OPS`/`COMMAND_OPS`)을 통해 Undo 스냅샷과 상태를 동기화한다. 출력은 `word/document.xml` 내부 서식 속성만 변경해 기존 DOCX T009 경계를 유지한다.
+- **HWP / HWPX (RHWP)**: 관리 패치 `patches/rhwp/stage2-p3-1-cell-shading-borders.patch`, `stage2-p3-2-cell-alignment.patch`, `stage2-p3-3-table-dimensions.patch`(상위 핀 `1a76570e…`, Release WASM `455452971ed81b0135cd94845c9c5b040363b8b03622fead68b1b661a5d418eb`)로 경로 소유 `getTableCellFormattingByPath`·`formatTableCellsByPath` 및 `compactAppendedBorderFills`를 제공하고, 문단 정렬(`ParaShape`)·셀 수직 정렬(`list_attr` 비트 `21..=22`, `HWPTAG_PARA_LINE_SEG` 유지)·열/행 크기 조절을 단일 Undo 단계로 실행한다. HWPX는 `package.rs` `authorized_hwpx_cell_border_fills`로 동등 정의 재사용 및 `<hh:borderFills>` 끝 추가와 `<hp:tc borderFillIDRef>` 참조만 검증하고, HWP는 `insertions.rs`에서 `DocInfo` `BORDER_FILL`(기본 대각선 `[1, 0, 0, 0, 0, 0]`/`[0; 6]`), `ParaShape`, 셀 `list_attr` 수직 정렬 비트만 좁게 증명해 안전 저장과 독립 재열기를 통과한다.
+

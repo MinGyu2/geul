@@ -19,7 +19,7 @@
 | 2 | 새 문서 생성 | IV | IV | IV | REUSED PASS | T021–T023, [native](architecture/new-document-native-acceptance-2026-11-04.json), [생성 계약](architecture/new-document-creation.md) | T024 DEFERRED |
 | 3 | 글자 입력·한글 IME | IV | IV | IV | REUSED PASS (Linux X11/IBus) | [T010 제품 활성화](architecture/t010-production-activation-2026-11-12.json), [phase5 IBus](architecture/phase5-native-gui-ibus-closure-2026-11-11.json) | Wayland/fcitx5·Windows·macOS DEFERRED |
 | 4 | 글자·문단 서식 | IV | IV | IV | REUSED PASS | T010/T011, [일반 서식](architecture/rhwp-general-formatting.md), [명령 레지스트리](architecture/command-registry.md) | 지원 명령 밖 서식 없음 |
-| 5 | 표·중첩 표 | IV(기본 표) | IV | IV | REUSED PASS | T012 Phase 2, Stage 2/4 기록([stage567](architecture/stage567-acceptance-2026-11-05.md)) | DOCX 표 구조 명령은 미지원(레지스트리 unsupported) |
+| 5 | 표·중첩 표 (생성·구조 편집·셀 서식) | IV(삽입·구조 10명령·`1×1` 분할·셀 서식) | IV(본문/중첩·구조·`1×1` 분할·셀 서식) | IV(본문/중첩·구조·`1×1` 분할·셀 서식) | CURRENT PASS(HWP 테두리 재열기) + REUSED PASS(P1/P2/P3 전체 및 DOCX/HWPX native) | [Stage 1/2 7–9절](architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17), [Stage 2/4](architecture/stage567-acceptance-2026-11-05.md) | RHWP 행 규칙 `exact`/auto 미지원(`atLeast`만), 비병합 외 병합 셀 재분할·교차 표/SDT/안전 재배치 불가 continuation 거부, 외부 Word/한컴 재열기 NOT RUN |
 | 6 | 그림·내장 자원 | IV(삽입) | IV | IV | REUSED PASS | Stage 2 그림, Stage 4 native(BinData 동일성) | 비동기 그림 MIME은 PDF에서 SR(아래 3절) |
 | 7 | 수식 필드(표 계산식) | OUT OF SCOPE | IV | IV | REUSED PASS | Stage 3 캐시 수용, Stage 4 native, [S5-6 오라클](#4-s5-6-hwp-미리보기-오라클) | 한컴 재계산 EXT |
 | 8 | 고급 요소 | IV(TOC·메모·각주·변경 추적 내부) | IV(장평·자간 등 T012 부분) | IV(동일) | REUSED PASS(내부) | T012·T013 기록 | Word/한컴 외부 호환 EXT(S5-2 DEFERRED) |
@@ -173,3 +173,10 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 |---|---|---|---|---|
 | 표 구조 10개 명령(행/열 삽입·삭제, 오른쪽/아래/선택 합치기, 합친 셀 나누기)·Undo/Redo·T009 저장/재열기 | IV | 불변(기존 HWP/HWPX) | CURRENT PASS (WordCraft `23c0dc5…`, Release `665ead58…`) | [Stage 1 7절](architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17), `native-docx-table-stage2-p1.py` PASS |
 | Stage 2 / Phase 1 최종 안정화(`1×1` 셀 분할 UI, 비빈 `vMerge` 보존, 표 이미지 삭제 T009 저장 + Content Types/비이미지 rel 보호, 소스 재구성) | IV | 불변(기존 HWP/HWPX) | CURRENT PASS (WordCraft `dd14a0ae…`, T009 집중 41 PASS; Release/native REUSED PASS) | [Stage 1 7.3절](architecture/stage1-common-editing.md#73-최종-안정화--11-셀-분할-ui-vmerge-내용-보존-표-이미지-삭제-t009-저장-소스-빌드-재현성-2026-11-17), [보존 규칙](architecture/save-preservation.md#stage-2--phase-1-최종-안정화--docx-표-이미지-삭제-t009-증명-및-content-types-보완-2026-11-17) |
+
+### Stage 2 / Phase 3 — 형식 공통 표·셀 서식 (2026-11-18)
+
+| 항목 | DOCX | HWPX | HWP | 판정 | 근거 |
+|---|---|---|---|---|---|
+| 셀 배경색(`table.shading`)·테두리(`table.borders`)·가로/세로 맞춤(`table.alignment`)·열 너비(`table.columnWidth`)·행 높이(`table.rowHeight`), Undo/Redo, T009 안전 저장 및 독립 재열기 | IV(`pt`, `atLeast`/`exact`/`auto`) | IV(`mm`, `atLeast`만) | IV(`mm`, `atLeast`만) | CURRENT PASS (HWP 테두리 재열기 및 디스크 `BORDER_FILL` 오라클 `stage2-p3-native-acceptance.py --formats hwp`) / REUSED PASS (P3-1·P3-2·P3-3 단위/WASM 73/73·Rust 11/11 및 DOCX/HWPX/HWP 통합 native `target/p3-native-out/acceptance.json`) | [Stage 1/2 9절](architecture/stage1-common-editing.md#9-stage-2--phase-3--형식-공통-표셀-서식-2026-11-18), [T009 경계](architecture/save-preservation.md#stage-2--phase-3--표셀-서식-t009-저장-보존-경계-2026-11-18) (외부 Word/한컴 재열기 및 Windows/macOS: NOT RUN) |
+
