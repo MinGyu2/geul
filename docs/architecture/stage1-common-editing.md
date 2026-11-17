@@ -283,7 +283,7 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 
 **지원 범위.** HWP/HWPX 본문·중첩 표의 비병합 셀, `1×2`…, `2×1`…, `2×2` 등 직사각형 분할(행 ≤ min(99, 513−행 수), 열 ≤ min(99, 65−열 수, 셀 폭/600), 행×열 ≤ 4097−셀 수). 텍스트·여러 문단·글자 서식·계산식/누름틀 필드·캡션이 있는 표, 병합 셀 옆 분할, 분할 뒤 병합 복원.
 
-**남은 제한(안전 거부).** 병합 셀의 `N×M` 재분할은 지원하지 않는다(복원만). 분할이 계산식 범위를 넓어진 병합 영역을 지나게 만드는 경우(예: `SUM(A1:A2)`가 `A1:A3`로 바뀌며 가려진 셀을 읽음) 엔진 계산식 검증이 거부하고 세션이 변경 전 snapshot으로 정확히 되돌린다. 이때 기존 표 구조 계약대로 편집이 중지된다(Task 2에서 재검토). HWPX는 변경 전 거부가 아닌 사후 증명 거부다. 텍스트 상자 등 자체 목록을 가진 개체가 든 표는 기존대로 거부한다.
+**남은 제한(안전 거부).** 병합 셀의 `N×M` 재분할은 지원하지 않는다(복원만). 분할이 계산식 범위를 넓어진 병합 영역을 지나게 만드는 경우(예: `SUM(A1:A2)`가 `A1:A3`로 바뀌며 가려진 셀을 읽음) Task 1 시점에는 엔진 계산식 검증이 사후 거부하고 세션이 snapshot으로 되돌린 뒤 편집을 중지했다. **Task 2(8.2)에서 엔진 호출 전 `tableFormula` 거부로 교정**했다(편집 계속). 텍스트 상자 등 자체 목록을 가진 개체가 든 표는 기존대로 거부한다.
 
 **검증 (2026-11-17, Release `5f3c8067…`).**
 
@@ -299,3 +299,45 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 저장 증거는 제품 세션이 보낸 실제 export·손실 보고·live/reopen 비교를 실제 `save_check`(T009)로 판정하고 엔진으로 독립 재열기한 것이다(HWP findings는 서비스가 재생성하는 `previewStale`만). 실제 저장 서비스 durable publication은 native 수용(8.3)에서 확인한다. 시험 harness 보정: HWPX 세션은 배경 원본 probe(글꼴 소유)로 저장 시 `original` 요청이 둘이라 `save()`가 HWPX에서 둘 다 답한다(기존 HWPX 저장 시험 4개가 이 때문에 멈추던 것을 같이 고침 — 기준 소스에서도 같은 멈춤 확인).
 
 **산출물.** RHWP 핀 `1a76570e…`, WordCraft 핀 `dd14a0ae…` 불변. 새 Release generation `5f3c8067f64facc7a7833b4eebe6341e8b8a2b7b342cd0b46cf148f882c4442f`(WASM `9f825543…`, JS `9a7109c1…`, 패치 24, source tree `054cc60c…`, `externalUnchanged: true`), 새로 준비한 소스의 `table_ops.rs`는 검토 사본과 바이트 동일. 보관 한도 6을 지키려고 선택되지 않은 `4723c0ce…`와 이전 준비 소스를 해시 확인 후 `target/rhwp-retired-generations/stage2-p2/`로 옮겼다(삭제 없음). 생성물은 커밋하지 않는다.
+
+### 8.2 Task 2 — 복합 내용 표 구조 편집 감사와 교정
+
+**감사 방법.** 기존 시험이 이미 증명한 경우(HWPX 풍부한 표 행 넣기/지우기·참조 재작성, HWP 필드·캡션 표의 행 넣기·범위 병합·나누기, 중첩 표 진화, 셀 inline 그림 생성 등)를 제외하지 않고, 대표 내용 5종 × 표 구조 명령 11개(행 위/아래·열 왼/오른 넣기, 행/열 지우기, 오른쪽/아래/범위 합치기, 일반 셀 `2×2` 분할, 합친 셀 복원) + 셀 안 입력·셀 안 문단 나누기·합친 뒤 입력 3개를 HWP/HWPX 각각 **새 제품 세션에서 실행 → 실제 T009 검사기 저장 판정 → 독립 재열기**로 확인했다(`stage2-tables.wasm.test.ts` "complex content matrix", 형식별 70칸, 결과 `target/stage2-focused/probe-<format>.tsv`). 내용 5종: 셀 inline 그림(HWP JPEG/HWPX PNG), 원본 중첩 표, 부분 굵게(분할 run), HWP 계산식 `=SUM(A1:A2)`+누름틀+캡션 / HWPX floating 그림+캡션, 앞선 구조 변경(행 넣기) 뒤 같은 저장.
+
+**지원 매트릭스 (교정 후, 140칸).**
+
+| 내용 | HWP | HWPX |
+|---|---|---|
+| 셀 inline 그림 | SUPPORTED: 11/11 구조 명령 + 입력·문단 나누기 저장·재열기 | SUPPORTED 11/11 |
+| 중첩 표(부모 표 구조 편집, 병합 흡수, 분할) | SUPPORTED: 11/11 (**교정 B**: 병합 뒤 복원 저장 거부 → 허용), 셀 안 문단 나누기(**교정 B**) | SUPPORTED 11/11 |
+| 부분 글자 서식(분할 run) | SUPPORTED 11/11 | SUPPORTED 11/11 (Stage 2 P0 재조정 유지) |
+| 계산식+누름틀+캡션 | SUPPORTED WITH CONDITIONS: 8/11 저장·재열기(**교정 C**: 필드 셀 열 지우기 저장 거부 → 허용; 문단 나누기 **교정 B**). 행 2 지우기·A1 아래 합치기·A1–B2 범위 합치기는 피연산자 A2를 지우거나 흡수하므로 엔진 호출 전 `tableFormula` 거부(편집 계속) | (HWPX 필드 표는 기존 시험) floating 그림+캡션 11/11 |
+| 앞선 구조 변경 뒤 추가 변경을 한 번에 저장 | SUPPORTED 11/11 | SUPPORTED 11/11 |
+
+**재현된 결함과 근본 원인 (P1-B 둘, P2 하나).**
+
+- **교정 A (P2, 모든 구조 명령)**: 계산식 참조를 다시 쓰면 넓어진 병합 영역 안의 가려진 좌표를 읽게 되는 계획(예: 분할 뒤 `A1:A3`)을 계획 단계는 받아들였다. 엔진 `validate_formula_references`가 변경 뒤 거부하자 세션은 snapshot으로 되돌린 뒤 편집을 중지했다. `planTableOp`이 엔진과 같은 규칙(셀·범위 내부·방향 참조의 모든 좌표가 결과 셀의 앵커)을 계획 격자에 적용해 **엔진 호출 전** `tableFormula`로 거부한다. 엔진 호출 0회, 편집 계속, 이후 유효한 분할은 그대로 가능하다(시험으로 확인).
+- **교정 B (P1-B, HWP)**: 자식 컨트롤(중첩 표·필드)이 있는 원본 HWP 표에서 **셀 안 문단 나누기(Enter)**나 **병합 뒤 복원**처럼 격자는 같고 셀의 문단 수만 바뀐 편집을 모델은 받아들였지만 저장이 `recordsChanged`로 거부됐다. 원인은 `evolved_table`의 `structural || formatting_only` 관문이다. 평범한 표 증명(`restructure_candidate`)은 셀 문단 수를 기하로 보는데, 이 경로는 그렇지 않았다. 같은 격자에서 셀 문단 수가 바뀌면 구조 변경으로 본다. 원본 자식은 여전히 같은 셀의 **같은 문단 번호**에 순서대로 있어야 하므로(`Mapping::consistent`), 자식 앞에서 Enter를 쳐 자식의 문단 번호가 바뀌면 계속 거부된다. 글은 독립 live/reopen 비교 몫이다.
+- **교정 C (P1-B, HWP)**: 누름틀 필드(불투명 `CTRL_DATA`)가 있는 셀을 지우는 **증명된** 행/열 삭제 저장이 `hwp.rs` `opaque_owners_preserved`에서 거부됐다. 이 검사가 불투명 owner 수 동일을 요구했기 때문이다(`evolved_table`·`field_preservation`은 이미 삭제를 증명). `evolved_table`이 증명된 대응으로 **삭제한 셀과 함께 사라진 자식 객체의 정확한 digest**를 `Proof.removed`(multiset)로 넘긴다. 불투명 owner 검사는 그 digest와 subtree가 정확히 같고 출력에 남아 있지 않은 owner만 원본 목록에서 빼고, 나머지에는 기존 동일/위치 이동 규칙을 그대로 적용한다. 전역 "구조 증명 있음" 표시로 넓히지 않았다. 음성 회귀: 행 3을 지우면서(계산식 필드 삭제는 정당) 살아남은 B1의 누름틀까지 사라지면 `unsafe`. 같은 행 삭제만 한 출력은 `previewStale`만(대조군).
+
+**여전히 거부하는 구조(UNSAFE/AMBIGUOUS, fail-closed).** 삭제된 셀 안 **중첩 표 내부**의 누름틀처럼 불투명 owner가 삭제된 자식 객체보다 깊은 경우(digest 불일치, 시험하지 않은 경계로 거부 예상), 자식 앞 문단 나누기로 자식의 문단 번호가 바뀌는 편집, 계산식이 지워지거나 흡수되거나 가려진 좌표를 읽게 되는 구조 명령, 텍스트 상자 등 자체 목록을 가진 셀 개체, 표 밖 캡션 이동, 병합 셀의 `N×M` 재분할. HWP와 HWPX는 별도 증명이다. HWPX는 위 매트릭스에서 교정이 필요하지 않았고 HWP 교정은 HWPX 경로를 바꾸지 않는다.
+
+**검증 (Release `5f3c8067…`, 최종 검사기).**
+
+| 검사 | 결과 |
+|---|---|
+| `stage2-tables.wasm.test.ts` 전체 | CURRENT PASS 61/61 (매트릭스 2, 필드 열/행 삭제 양성·음성, 계산식 모호 분할 사전 거부 포함) |
+| Rust 집중(`ordinary_split_correspondence_tests`, `services::save::hwp`, `hwp_restructured`, `hwp_safety_composite`, `hwp_boundary`) | CURRENT PASS 47 |
+| `--lib services::save` | 269 PASS / 3 FAIL — 3건(`calc_cell_*` 2, `hwp_편집한_저장은…`)은 `docs/release-checklist.md`에 기록된 기존 실패 |
+| `table-formula-session`·`table-phase2`·`general-formatting` WASM | 20·6·1 FAIL, 같은 Release WASM과 시작 커밋 `d7dc75c` 소스·검사기로 만든 기준선에서 20·6·5 FAIL. 현재 실패 집합은 기준선 실패 집합과 같거나 그 부분집합(새 회귀 없음, 옛 계약을 담은 기존 실패) |
+| 프런트엔드 | `tsc` PASS, ESLint PASS, 단위 132 PASS / 2 FAIL(`hwpReopenModel.test.ts` 필드 증거 2건 — 시작 커밋 소스에서도 같은 FAIL) |
+| 검사기 Clippy/fmt | 변경 파일 진단 없음(기존 3건·기존 fmt 차이 유지) |
+
+### 8.3 Native GUI 수용 (2026-11-17)
+
+`python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --out "$PWD/target/stage2-p2-native/run1-session" -- python3 scripts/tests/native-stage2-p2.py --app "$PWD/src-tauri/target/release/geul" --driver "$PWD/src-tauri/target/debug/tauri-driver" --out "$PWD/target/stage2-p2-native/run1" --xdotool @XDOTOOL@ --ibus @IBUS@` → **PASS (run1, 첫 실행)**. 일반 제품 빌드(`npm run build`, `rhwp-artifacts.py --verify-product dist/rhwp --profile release`, `GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle`), 앱 SHA-256 `de0033d511074c04bd17…`, Release `5f3c8067…`, Task 2 변경을 포함한 작업 트리(HEAD `757b3e9`). Xvfb·D-Bus·IBus(ibus-hangul) 세션, launcher 정리 `complete: true`, 잔존 프로세스 없음.
+
+- HWP·HWPX 각각: 키보드로 표 셀 A1 이동 → 한글 도구 리본 `셀 나누기` → 공용 대화상자(초기 `1×2`, 행 `0`은 오류로 남음, Escape 취소) → `1×2` 분할. 앱 안 Tab 도달 셀: 분할 전 3 → 분할 4 → Ctrl+Z 3 → Ctrl+Y 4. 새 하위 셀에 입력 → Ctrl+S 실제 T009 저장·게시 `saved` → 닫기 → 독립 oracle: `2×3`, `[outer0][NEW][outer1] / [outer2 (colSpan 2)][outer3]`. 앱 재열기에서 마지막 셀 4.
+- HWP 계산식+누름틀+캡션 표: A3에서 `X` Enter `Y`(교정 B 경로) → 저장 `saved` → 독립 oracle: A3 `X|Y`, 필드 2개 ID·명령·이름 동일(`=SUM(A1:A2)??%g,;;3`), 캡션 동일, 다른 셀 동일.
+- 입력은 xkb 영문으로 했다. 한글 IME 조합 자체는 이번 시나리오에서 재검증하지 않았다(기존 native IME 기록 유지).
+

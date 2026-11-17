@@ -1,5 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-17 Stage 2 / Phase 2 Task 2 HWP/HWPX 복합 내용 표 편집 · COMPLETED (명시한 지원 범위).** 그림·중첩 표·분할 run 서식·계산식/누름틀/캡션·연속 구조 변경 × 구조 명령 감사 매트릭스(HWP/HWPX 140칸, 실제 T009·재열기)로 HWP 저장 거부 2종(셀 문단 수 변화, 증명된 삭제와 함께 사라진 누름틀)과 계산식 사후 거부·편집 중지를 교정했다. 137칸 저장·재열기, 3칸 의도된 사전 거부, native run1 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [감사·교정·경계](../architecture/stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
+
 > **2026-11-17 Stage 2 / Phase 2 Task 1 HWP/HWPX 일반 셀 나누기 · COMPLETED (명시한 지원 범위).** `table.splitCell`이 비병합 `1×1` 셀을 공용 분할 대화상자로 `행 × 열`(가로·세로·직사각형) 분할하고 병합 셀 복원은 유지한다. 엔진 `stage2-p2-cell-split.patch`(검증된 `splitCellInto`), HWP T009 격자 정제 대응, Release `5f3c8067…`에서 WASM 58/58·Rust 집중 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [구현·검증·경계](../architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
 
 > **2026-11-16 Stage 5-A 글꼴 상태 · 글꼴 패키지 COMPLETED(지원 범위):** HWP/HWPX 글꼴 변경·좁은 T009 proof·Undo/Redo에 더해 RHWP natural font metrics(정확한 글꼴 원본 결합, 실제 advance 기반 줄바꿈·caret·selection·hit test·Canvas·raster PDF)와 HWP/HWPX table-cell native acceptance를 구현·검증했다. 합자·문맥형·RTL·kerning은 지원 범위 밖으로 문서화했다. 외부 오피스 재열기 NOT RUN, Windows/macOS DEFERRED. Stage 5-A 전체는 PARTIALLY COMPLETED(Release private-path cleanup 별도), Stage 5 INCOMPLETE, Release NO-GO. [구현·증거·제한](../architecture/font-system.md).

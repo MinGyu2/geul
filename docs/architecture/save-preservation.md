@@ -1746,3 +1746,10 @@ T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저�
 ## Stage 2 / Phase 2 — HWP 일반 셀 분할 대응 (2026-11-17)
 
 `insertions.rs`의 `correspondences`에 `ordinary_splits`(격자 정제 대응)를 더했다. 필드·캡션·자식 컨트롤이 있는 원본 HWP 표의 일반 셀 분할(한 번 또는 여러 번)은 원본 행/열 경계의 단조 사상과 영역 타일링(영역 왼쪽 위 = 원본, 나머지 = 새 셀)으로만 설명되며, 자식·필드 소유·순서는 기존 `Mapping::consistent`/`match_children`, 표 머리·격자·셀 템플릿·필드 ID 유일성 등 나머지 증명은 그대로다. 후보 열거는 256 이내, 출력 격자 512×64 이내로 묶고 초과는 거부한다. 다른 대응이나 기존 거부 규칙은 넓히지 않았다. 근거: [Stage 1/2 문서 8.1절](stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
+
+## Stage 2 / Phase 2 Task 2 — HWP 복합 내용 표의 좁은 증명 보완 (2026-11-17)
+
+- `evolved_table`: 같은 격자에서 셀 문단 수가 바뀐 경우(셀 안 문단 나누기·합치기, 병합 뒤 복원)를 구조 변경으로 본다(`restructure_candidate`와 같은 기준). 원본 자식의 셀·문단 번호·순서 동일, 새 자식 스키마, 캡션·표 머리 규칙은 그대로다.
+- `Proof.removed`: 증명된 셀 대응이 삭제한 셀의 자식 객체 digest multiset. `opaque_owners_preserved`는 이 digest와 subtree가 정확히 같고 출력에 없는 불투명 owner(예: 누름틀 `CTRL_DATA`)만 원본 목록에서 빼고, 나머지 owner는 기존 동일/위치 이동 규칙으로 판정한다. 살아남은 셀의 필드 유실·더 깊은 owner·증명 없는 삭제는 계속 거부한다.
+- 근거와 시험: [Stage 1/2 문서 8.2절](stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
+

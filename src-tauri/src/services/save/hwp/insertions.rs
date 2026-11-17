@@ -24,6 +24,9 @@ const NUMBERING: u16 = 23;
 
 pub(super) struct Proof {
     pub streams: BTreeSet<String>,
+    /// Stage 2 Phase 2: digests (`object_digest`) of original cell child objects that a proven
+    /// `evolved_table` correspondence dropped together with the cells it deleted, as a multiset.
+    pub removed: BTreeMap<Vec<u8>, usize>,
 }
 fn finding(code: FindingCode, part: &str) -> Finding {
     Finding::at(code, part)
@@ -1225,6 +1228,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     preserved(entries(&added, 20).is_empty() || table_total > 0, "DocInfo")?;
     Ok(Proof {
         streams: resources.new_paths,
+        removed: used.removed,
     })
 }
 
@@ -1524,6 +1528,8 @@ struct Used {
     image_dimensions: BTreeMap<usize, (u32, u32)>,
     /// Field IDs of the original (seeded) and of new formula fields: a new field never reuses one.
     fields: BTreeSet<usize>,
+    /// Original child objects dropped with cells a proven correspondence deleted (see `Proof::removed`).
+    removed: BTreeMap<Vec<u8>, usize>,
 }
 #[derive(PartialEq, Eq)]
 struct Token {
@@ -1857,7 +1863,7 @@ fn paragraph<'a>(
     Ok(objects)
 }
 /// Identity of a root control in the paragraph token stream: every record of its subtree.
-fn object_digest(object: &[Record<'_>]) -> Vec<u8> {
+pub(super) fn object_digest(object: &[Record<'_>]) -> Vec<u8> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     for &(tag, level, payload) in object {
@@ -2346,7 +2352,18 @@ fn evolved_table(
         cells.iter().map(|c| Geo::of(c.header)).collect()
     };
     let (ga, gb) = (geos(&before)?, geos(&after)?);
-    let mut structural = !same_grid;
+    // Stage 2 Phase 2: on an unchanged grid, a changed paragraph count of some cell (a paragraph break or join
+    // inside a cell, or a merge restored by a split whose merged paragraphs stay in the anchor) is a structural
+    // change of the cell list, exactly as `restructure_candidate` treats plain tables. The identity mapping
+    // below still requires every original child in its own cell at its own paragraph index and in order, and
+    // the independent live/reopen comparison still owns the text.
+    let mut paragraph_counts = Vec::with_capacity(before.len().min(after.len()));
+    if same_grid {
+        for (x, y) in before.iter().zip(&after) {
+            paragraph_counts.push(word(x.header, 0)? != word(y.header, 0)?);
+        }
+    }
+    let mut structural = !same_grid || paragraph_counts.iter().any(|changed| *changed);
     // Explicit cell correspondence of one supported operation (identity, row/column insertion or deletion,
     // rectangular merge, split), consistent with the child controls each cell owns. Children may disappear
     // only with a cell the operation deletes; absorbed cells' children must follow into the anchor.
@@ -2404,6 +2421,11 @@ fn evolved_table(
                 .deleted
                 .iter()
                 .any(|d| !before[*d].objects.is_empty());
+            for d in &mapping.deleted {
+                for object in &before[*d].objects {
+                    *used.removed.entry(object_digest(object)).or_default() += 1;
+                }
+            }
         }
         None => {
             // Geometry and paragraph ownership must explain every surviving child.

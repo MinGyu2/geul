@@ -1623,20 +1623,65 @@ describe("Stage 2 Phase 2: ordinary cell split", () => {
     } finally { editor.dispose(); }
   }, 120_000);
 
-  it("HWP field-rich table: a split whose formula range would read through a widened merge is refused atomically", async () => {
+  it("T009 HWP: fields leave only with the cells a proven column deletion removes", async () => {
+    // Positive (product): deleting column B removes the ClickHere (B1) and formula (B3) fields with their cells.
+    const { editor, doc, at, place, run, save } = await open("hwp", false, false, true);
+    try {
+      const para = at.paragraph, control = at.cell!.control;
+      place(withCell(at, 3)); await run("table.deleteColumn");
+      expect(gridOf(doc, para, control)).toEqual([[0, 0, 1, 1, "1"], [1, 0, 1, 1, "2"], [2, 0, 1, 1, ""]]);
+      expect(JSON.parse(doc.getFieldList!())).toEqual([]);
+      const saved = await save(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.publishable).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(gridOf(reopened, para, control)).toEqual(gridOf(doc, para, control));
+        expect(JSON.parse(reopened.getFieldList!())).toEqual([]);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+    // Negative (engine-level corruption): row 3 is deleted, which legitimately removes the formula field (B3) with
+    // its cell, but the ClickHere field of surviving B1 disappears too. Only the deleted cell's child may leave.
+    const original = fixture("hwp", false, false, true);
+    const d = new engine.HwpDocument(original) as Doc;
+    try {
+      const t = JSON.parse(d.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      d.deleteTableRow!(0, t.para, t.controlIndex, 2);
+      expect((JSON.parse(d.getFieldList!()) as { fieldType: string }[]).map(f => f.fieldType)).toEqual(["clickhere"]);
+      // Control: the row deletion alone is a provable save.
+      const clean = exported(d, "hwp");
+      const accepted = check("hwp", "saved", original, clean.bytes, clean.loss, true);
+      expect(accepted.findings.every(f => f.code === "previewStale"), JSON.stringify(accepted)).toBe(true);
+      (d as unknown as Record<string, (...a: unknown[]) => string>).removeFieldAtInCell!(0, t.para, t.controlIndex, 1, 0, 0, false);
+      expect(JSON.parse(d.getFieldList!())).toEqual([]);
+      const e = exported(d, "hwp");
+      const result = check("hwp", "saved", original, e.bytes, e.loss, true);
+      expect(result.outcome, JSON.stringify(result)).toBe("unsafe");
+      expect(result.findings.some(f => f.code !== "previewStale")).toBe(true);
+    } finally { d.free(); }
+  }, 120_000);
+
+  it("HWP field-rich table: a split whose formula range would read through a widened merge is refused before mutation", async () => {
     const { editor, doc, at, place, run } = await open("hwp", false, false, true);
     try {
       const para = at.paragraph, control = at.cell!.control;
       place(at); await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
       // A vertical split of the ClickHere cell (C1) shifts A2 below the widened A1 region, so the rewritten range
-      // A1:A3 would read through a covered cell: the engine's formula validation refuses it after the mutation and
-      // the session restores the exact before state (atomic rollback; the existing structure contract stops editing).
+      // A1:A3 would read a covered cell. The plan applies the engine's anchor rule and refuses before any engine
+      // call: no history step, no mutation, editing continues.
       const before = [doc.getTextFileText(), doc.getFieldList!(), JSON.stringify(gridOf(doc, para, control))];
       place(withCell(at, 2));
       expect(documentCommandState("table.splitCell", editor.snapshot()).available).toBe(true);
+      const editTable = doc.editTableByPath!.bind(doc);
+      let engineCalls = 0;
+      doc.editTableByPath = (...args) => { engineCalls++; return editTable(...args); };
       expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 2, columns: 1 }).accepted).toBe(false);
+      expect(engineCalls).toBe(0);
       expect([doc.getTextFileText(), doc.getFieldList!(), JSON.stringify(gridOf(doc, para, control))]).toEqual(before);
-      expect(editor.snapshot().editable).toBe(false);
+      expect(editor.snapshot().editable).toBe(true);
+      // The same field table still accepts a valid split afterwards.
+      await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
+      expect(engineCalls).toBe(1);
     } finally { editor.dispose(); }
   }, 120_000);
 
@@ -1668,4 +1713,74 @@ describe("Stage 2 Phase 2: ordinary cell split", () => {
       expect(gridOf(d, t.para, t.controlIndex)).toEqual(merged);
     } finally { d.free(); }
   });
+});
+
+/**
+ * Stage 2 Phase 2 audit matrix: every table structure command (and Enter/typing) on tables whose cells hold a
+ * cell-inline picture, a nested table, partial character formatting, formula + ClickHere fields with a caption
+ * (HWP; HWPX: floating picture + caption) or a prior structure change — each in a fresh product session, saved
+ * through the real T009 checker and reopened. Results are written to `probe-<format>.tsv`.
+ */
+describe("Stage 2 Phase 2: complex content matrix", () => {
+  const OPS = ["insertRowAbove", "insertRowBelow", "insertColumnLeft", "insertColumnRight", "deleteRow", "deleteColumn",
+    "mergeRight", "mergeBelow", "mergeCells", "splitCell", "splitMerged", "typeOnly", "mergeTypeOnly", "enterOnly"] as const;
+  const KINDS = ["picture", "nested", "bold", "fields", "twice"] as const;
+  // Refused before any engine call (editing continues): each would delete or absorb A2, an operand of B3 = SUM(A1:A2).
+  const REFUSED = new Set(["hwp/fields/deleteRow", "hwp/fields/mergeBelow", "hwp/fields/mergeCells"]);
+  it.each(["hwp", "hwpx"] as const)("%s matrix", async format => {
+    const rows: string[] = [];
+    for (const kind of KINDS) for (const op of OPS) {
+      const c = await open(format, false, kind === "nested", kind === "fields");
+      const { editor, doc, at, place, run, settle } = c;
+      let result = "";
+      try {
+        if (kind === "picture") {
+          place({ ...at, offset: 3 });
+          if (await editor.executeImage(() => true, async () => importedCellImage(format === "hwp" ? CELL_JPEG : CELL_PNG)) !== "inserted") { result = "setup-failed"; continue; }
+          await settle();
+        } else if (kind === "bold" || kind === "twice") {
+          place({ ...at, offset: 0 }); editor.caret = { ...at, offset: 3 }; await run("format.bold");
+        }
+        if (kind === "twice") { place(withCell(at, 1)); await run("table.insertRowBelow"); }
+        const deleteTarget = op === "deleteRow" || op === "deleteColumn" ? withCell(at, 3) : at;
+        place(deleteTarget);
+        let command = `table.${op}` as DocumentCommandId, args: DocumentCommandArgs | undefined;
+        if (op === "mergeCells") editor.caret = withCell(at, 3);
+        if (op === "splitCell") args = { command: "table.splitCell", rows: 2, columns: 2 };
+        if (op === "splitMerged") { await run("table.mergeRight"); place(at); command = "table.splitCell"; }
+        if (op === "enterOnly") {
+          place({ ...withCell(at, 3), offset: 0 }); expect(editor.typeText("Y")).toBe(true); await settle();
+          expect(editor.enter()).toBe(true); await settle();
+          const saved = await c.save(true);
+          result = `enter save=${saved.publishable ? "PUBLISH" : "REFUSED"} findings=${saved.raw.findings.filter(f => f.code !== "previewStale").map(f => f.code).join("+") || "-"}`;
+          continue;
+        }
+        if (op === "typeOnly" || op === "mergeTypeOnly") {
+          if (op === "mergeTypeOnly") { await run("table.mergeRight"); }
+          place({ ...withCell(at, op === "mergeTypeOnly" ? 2 : 3), offset: 0 }); expect(editor.typeText("Z")).toBe(true); await settle();
+          const saved = await c.save(true);
+          result = `typed save=${saved.publishable ? "PUBLISH" : "REFUSED"} findings=${saved.raw.findings.filter(f => f.code !== "previewStale").map(f => f.code).join("+") || "-"}`;
+          continue;
+        }
+        const state = documentCommandState(command, editor.snapshot());
+        if (!state.available) { result = `unavailable:${(state as { reason: string }).reason}`; continue; }
+        const accepted = editor.execute(command, args).accepted; await settle();
+        if (!accepted) { result = `refused editable=${editor.snapshot().editable}`; continue; }
+        const saved = await c.save(true);
+        const findings = saved.raw.findings.filter(f => f.code !== "previewStale").map(f => f.code).join("+");
+        let reopenText = "n/a";
+        if (saved.publishable) { const r = new engine.HwpDocument(saved.output) as Doc; try { reopenText = String(r.getTextFileText() === doc.getTextFileText()); } finally { r.free(); } }
+        result = `ok save=${saved.publishable ? "PUBLISH" : "REFUSED"} reopenEq=${Object.values(saved.reopen).every(Boolean)} findings=${findings || "-"} reopenText=${reopenText}`;
+      } catch (error) { result = `error:${String(error).slice(0, 120)}`; }
+      finally { rows.push(`${format}\t${kind}\t${op}\t${result}`); editor.dispose(); }
+    }
+    writeFileSync(join(out, `probe-${format}.tsv`), rows.join("\n") + "\n");
+    const unexpected = rows.filter(row => {
+      const [, kind, op, result] = row.split("\t");
+      if (REFUSED.has(`${format}/${kind}/${op}`)) return result !== "refused editable=true";
+      return !/^(ok save=PUBLISH reopenEq=true findings=- reopenText=true|typed save=PUBLISH findings=-|enter save=PUBLISH findings=-)$/.test(result!);
+    });
+    expect(unexpected).toEqual([]);
+    expect(rows).toHaveLength(KINDS.length * OPS.length);
+  }, 900_000);
 });

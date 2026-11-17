@@ -1007,4 +1007,5 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 ## Stage 2 / Phase 2 — HWP/HWPX 일반 셀 나누기 (2026-11-17)
 
 - `table.splitCell`(RHWP `RHWP_ADVANCED`)은 병합 셀이면 무인수 복원, 비병합 `1×1` 셀이면 `RhwpEditorSession.parameterState()`의 `tableSplit {maxRows, maxColumns, maxCells}` 문맥으로 공용 `CommandInputDialog`를 연다. `CommandParameterContext.tableSplit.maxCells`(선택)는 `validateCommandArgs`와 대화상자(`commandInput.splitCell.tooManyCells`)가 `행 × 열` 상한으로 쓴다. 세션 `execute`는 현재 표에서 다시 읽은 한도로 인수를 재검증하고, 엔진 경계(`editTableByPath` `splitCellInto`)가 같은 한도를 다시 검사한다. 가용성 거절 사유는 기존(`engineUnsupported`·`pendingEdits`·`notInTable`·`tableShape`·`tableContent`·`limit`·원본 검증 사유) 그대로다. [Stage 1/2 문서 8.1절](stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
+- (Task 2) 표 구조 명령의 계산식 사전 검사: 다시 쓴 참조가 결과 격자에서 앵커가 아닌(병합으로 가려진) 좌표를 읽으면 `planTableOp`이 엔진 호출 전 `tableFormula`로 거부한다(이전에는 변경 뒤 롤백·편집 중지). 가용성 표시는 바뀌지 않고 실행이 `accepted:false`를 돌려준다. [8.2절](stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정).
 

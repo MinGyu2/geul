@@ -160,6 +160,7 @@ fn opaque_owners_preserved(
     before: &[Record<'_>],
     after: &[Record<'_>],
     structural_proof: bool,
+    removed: Option<&BTreeMap<Vec<u8>, usize>>,
 ) -> bool {
     // Pinned RHWP: LineSeg is u32 + i32×7 + u32, HWPUNIT (1/7200 inch).
     // vpos is a stored flow/page/column coordinate, NOT paragraph-local. A reset may
@@ -401,8 +402,22 @@ fn opaque_owners_preserved(
         }
     }
     match (opaque_owners(before), opaque_owners(after)) {
-        (Some(a), Some(b)) => {
-            !a.is_empty()
+        (Some(mut a), Some(b)) => {
+            // Stage 2 Phase 2: an original opaque owner whose whole subtree is exactly a cell child object that
+            // the structural proof dropped together with its deleted cell (multiset, never one present in the
+            // output) leaves the stream with that cell. Every remaining owner keeps the rules below.
+            let original_owners = a.len();
+            if let Some(removed) = removed.filter(|_| a.len() > b.len()) {
+                let mut left = removed.clone();
+                a.retain(|x| match left.get_mut(&insertions::object_digest(x)) {
+                    Some(n) if *n > 0 && !b.contains(x) => {
+                        *n -= 1;
+                        false
+                    }
+                    _ => true,
+                });
+            }
+            original_owners > 0
                 && a.len() == b.len()
                 // Replay/provenance-check the longest changed prefix once per stream,
                 // rather than rescanning all prefixes for every opaque owner.
@@ -1230,7 +1245,12 @@ fn compare_with(
                 .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()));
             if opaque
                 && before_records != after_records
-                && !opaque_owners_preserved(&before_records, &after_records, proof.is_some())
+                && !opaque_owners_preserved(
+                    &before_records,
+                    &after_records,
+                    proof.is_some(),
+                    proof.map(|p| &p.removed),
+                )
             {
                 findings.push(Finding::at(FindingCode::RecordsChanged, name));
             }

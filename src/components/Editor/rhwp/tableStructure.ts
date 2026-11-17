@@ -602,6 +602,13 @@ export function planTableOp(doc: RhwpDocument, target: TableTarget, grid: TableG
   }
   const ordered = formulaOrder(formulas, rows, cols);
   if (!ordered) return "tableFormula";
+  // Engine rule (validate_formula_references): every coordinate a formula reads (cells, range interiors, directions)
+  // must be the anchor of a result cell; a position covered by a merge is ambiguous. Refuse such a plan before any
+  // engine call instead of mutating and rolling back.
+  for (const f of ordered) {
+    const deps = formulaDependencies(f.formula, { row: f.row, col: f.col, rows, cols });
+    if (!deps || deps.some(d => !cells.has(key(Math.floor(d / cols), d % cols)))) return "tableFormula";
+  }
   return { op, call, rows, cols, cells, caret, formulas: ordered, options, caption: content.caption, ...(ordinary && split ? { split: { ...split } } : {}) };
 }
 

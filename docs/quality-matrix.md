@@ -165,6 +165,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 항목 | DOCX | HWP/HWPX | 판정 | 근거 |
 |---|---|---|---|---|
 | 비병합 셀 `행×열` 분할(가로·세로·직사각형, 본문·중첩, 서식·필드·캡션 표)·병합 복원 유지·Undo/Redo·T009 저장/재열기 | 불변 | IV | CURRENT PASS (Release `5f3c8067…`, `stage2-p2-cell-split.patch`, WASM 58/58, Rust 2+2+47) | [Stage 1/2 8.1절](architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx) |
+| 복합 내용 표(셀 inline 그림·중첩 표·분할 run 서식·계산식/누름틀/캡션·연속 구조 변경) × 구조 명령 11 + 입력/문단 나누기, 감사 매트릭스 140칸 | 불변 | IV | CURRENT PASS (137 저장·재열기, 3 의도된 사전 `tableFormula` 거부; HWP 교정 A/B/C; native run1 PASS) | [Stage 1/2 8.2–8.3절](architecture/stage1-common-editing.md#82-task-2--복합-내용-표-구조-편집-감사와-교정) |
 
 ### Stage 2 / Phase 1 — DOCX 표 구조 편집 (2026-11-17)
 
