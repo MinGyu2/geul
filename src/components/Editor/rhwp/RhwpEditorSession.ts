@@ -2978,6 +2978,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         rect: { startRow: number; startCol: number; endRow: number; endCol: number };
         tableShading: NonNullable<CommandParameterContext["tableShading"]>;
         tableBorders: NonNullable<CommandParameterContext["tableBorders"]>;
+        tableAlignment: NonNullable<CommandParameterContext["tableAlignment"]>;
       } {
     const doc = this.doc, text = this.text;
     if (!this.editable || !doc || !text || this.imeUnsettled || this.uncertain) return { refusal: "engineUnsupported" };
@@ -3020,6 +3021,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         cellCount?: number;
         shading?: { uniform?: boolean; color?: string | null };
         border?: { uniform?: boolean; lineType?: number; width?: number; color?: string };
+        alignment?: {
+          horizontal?: "left" | "center" | "right" | "justify" | null;
+          horizontalMixed?: boolean;
+          vertical?: "top" | "middle" | "bottom" | null;
+          verticalMixed?: boolean;
+        };
       };
       if (info.hasZones) return { refusal: "tableShape" };
       const uniformShade = info.shading?.uniform === true;
@@ -3032,6 +3039,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             color: typeof info.border.color === "string" ? `#${info.border.color.toUpperCase()}` : null,
           }
         : null;
+      const selectedCells = typeof info.cellCount === "number" ? info.cellCount : 1;
+      const hVal = info.alignment?.horizontal ?? null;
+      const vVal = info.alignment?.vertical ?? null;
       return {
         target: table.target,
         rect,
@@ -3039,7 +3049,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           color: rawColor,
           mixed: !uniformShade,
           hasShading: !uniformShade || rawColor !== null,
-          selectedCells: typeof info.cellCount === "number" ? info.cellCount : 1,
+          selectedCells,
           supportsClear: true,
         },
         tableBorders: {
@@ -3050,13 +3060,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           defaultWidth: 0.12,
           current: edge ? { top: edge, bottom: edge, left: edge, right: edge } : null,
         },
+        tableAlignment: {
+          horizontal: hVal === "left" || hVal === "center" || hVal === "right" || hVal === "justify" ? hVal : null,
+          horizontalMixed: info.alignment?.horizontalMixed === true,
+          vertical: vVal === "top" || vVal === "middle" || vVal === "bottom" ? vVal : null,
+          verticalMixed: info.alignment?.verticalMixed === true,
+          selectedCells,
+        },
       };
     } catch {
       return { refusal: "tableShape" };
     }
   }
 
-  private applyCellFormatting(args: Extract<DocumentCommandArgs, { command: "table.shading" | "table.borders" }>): boolean {
+  private applyCellFormatting(args: Extract<DocumentCommandArgs, { command: "table.shading" | "table.borders" | "table.alignment" }>): boolean {
     const context = this.parameterState().parameters?.[args.command];
     const fmt = this.cellFormattingState();
     if (!context || "refusal" in fmt || !validateCommandArgs(args.command, args, context)) return false;
@@ -3067,7 +3084,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         rect: fmt.rect,
         shading: { color: args.color ? args.color.trim().replace(/^#/, "").toUpperCase() : null },
       };
-    } else {
+    } else if (args.command === "table.borders") {
       const style = args.kind === "none" ? "none" : (args.style ?? "single");
       const lineType = rhwpBorderStyleToCode(style);
       const widthIdx = args.width !== undefined ? rhwpBorderWidthToIndex(args.width) : 1;
@@ -3076,6 +3093,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       payload = {
         rect: fmt.rect,
         borders: { kind: args.kind, lineType, width: widthIdx, color },
+      };
+    } else {
+      payload = {
+        rect: fmt.rect,
+        alignment: {
+          ...(args.horizontal !== undefined ? { horizontal: args.horizontal } : {}),
+          ...(args.vertical !== undefined ? { vertical: args.vertical } : {}),
+        },
       };
     }
     const caret = this.caret, anchor = this.anchor;
@@ -3290,10 +3315,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const cellFmt = this.cellFormattingState();
     if ("refusal" in cellFmt) {
-      parameterReasons["table.shading"] = parameterReasons["table.borders"] = cellFmt.refusal;
+      parameterReasons["table.shading"] = parameterReasons["table.borders"] = parameterReasons["table.alignment"] = cellFmt.refusal;
     } else {
       parameters["table.shading"] = { tableShading: cellFmt.tableShading };
       parameters["table.borders"] = { tableBorders: cellFmt.tableBorders };
+      parameters["table.alignment"] = { tableAlignment: cellFmt.tableAlignment };
     }
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };
@@ -3481,7 +3507,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
-    if (command === "table.shading" || command === "table.borders") {
+    if (command === "table.shading" || command === "table.borders" || command === "table.alignment") {
       if (args?.command !== command) return { accepted: false };
       return { accepted: this.applyCellFormatting(args) };
     }

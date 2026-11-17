@@ -133,6 +133,12 @@ export type DocumentCommandArgs =
       width?: number;
       color?: string | null;
     }
+  /** Stage 2 / Phase 3 (P3-2): horizontal and/or vertical alignment of selected cell content. */
+  | {
+      command: "table.alignment";
+      horizontal?: "left" | "center" | "right" | "justify";
+      vertical?: "top" | "middle" | "bottom";
+    }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -173,6 +179,14 @@ export interface CommandParameterContext {
       left: { style: string; width: number; color: string | null } | null;
       right: { style: string; width: number; color: string | null } | null;
     } | null;
+  };
+  /** Stage 2 / Phase 3 (P3-2): selected-cell alignment context. */
+  tableAlignment?: {
+    horizontal: "left" | "center" | "right" | "justify" | null;
+    horizontalMixed: boolean;
+    vertical: "top" | "middle" | "bottom" | null;
+    verticalMixed: boolean;
+    selectedCells: number;
   };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };

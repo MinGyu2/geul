@@ -144,6 +144,11 @@ export interface DocxTableView {
   hasCellShading: boolean;
   cellBorders: DocxCellBordersView | null;
   supportedBorderStyles: string[];
+  cellAlignHorizontal: "left" | "center" | "right" | "justify" | null;
+  cellAlignHorizontalMixed: boolean;
+  cellAlignVertical: "top" | "middle" | "bottom" | null;
+  cellAlignVerticalMixed: boolean;
+  cellAlignmentRefusal: DocxTableFormatRefusal;
 }
 
 export interface DocxFont {
@@ -260,7 +265,8 @@ export type DocxOp =
   | { op: "clearSearch" }
   | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string }; rows?: number; columns?: number }
   | { op: "tableShading"; target: { anchorKey: string; caretKey: string }; color: string | null }
-  | { op: "tableBorders"; target: { anchorKey: string; caretKey: string }; kind: DocxTableBorderKind; style?: string; width?: number; color?: string | null };
+  | { op: "tableBorders"; target: { anchorKey: string; caretKey: string }; kind: DocxTableBorderKind; style?: string; width?: number; color?: string | null }
+  | { op: "tableAlignment"; target: { anchorKey: string; caretKey: string }; horizontal?: "left" | "center" | "right" | "justify"; vertical?: "top" | "middle" | "bottom" };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -463,6 +469,7 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     "maxSplitRows", "maxSplitColumns",
     "hasInsideBorders", "cellShadingRefusal", "cellBordersRefusal",
     "cellShading", "cellShadingMixed", "hasCellShading", "cellBorders", "supportedBorderStyles",
+    "cellAlignHorizontal", "cellAlignHorizontalMixed", "cellAlignVertical", "cellAlignVerticalMixed", "cellAlignmentRefusal",
   ];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
   for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns"] as const) {
@@ -472,13 +479,15 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
   }
-  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading"] as const) {
+  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed"] as const) {
     if (typeof value[k] !== "boolean") return undefined;
   }
-  for (const k of ["cellShadingRefusal", "cellBordersRefusal"] as const) {
+  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal"] as const) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_FORMAT_REFUSALS.has(v))) return undefined;
   }
+  if (value.cellAlignHorizontal !== null && (typeof value.cellAlignHorizontal !== "string" || !["left", "center", "right", "justify"].includes(value.cellAlignHorizontal))) return undefined;
+  if (value.cellAlignVertical !== null && (typeof value.cellAlignVertical !== "string" || !["top", "middle", "bottom"].includes(value.cellAlignVertical))) return undefined;
   if (value.cellShading !== null && typeof value.cellShading !== "string") return undefined;
   if (parseCellBordersView(value.cellBorders) === undefined) return undefined;
   if (!Array.isArray(value.supportedBorderStyles) || !value.supportedBorderStyles.every((s) => typeof s === "string")) return undefined;

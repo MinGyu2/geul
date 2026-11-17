@@ -1186,6 +1186,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       for (const id of TABLE_STRUCTURE_IDS) actionReasons[id] = "notInTable";
       parameterReasons["table.shading"] = "notInTable";
       parameterReasons["table.borders"] = "notInTable";
+      parameterReasons["table.alignment"] = "notInTable";
     } else {
       for (const id of TABLE_STRUCTURE_IDS) {
         const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
@@ -1224,6 +1225,19 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             supportedWidths: DOCX_BORDER_WIDTHS_PT,
             defaultWidth: 0.5,
             current: view.table.cellBorders,
+          },
+        };
+      }
+      if (view.table.cellAlignmentRefusal !== null) {
+        parameterReasons["table.alignment"] = mapFormatRefusal(view.table.cellAlignmentRefusal);
+      } else {
+        parameters["table.alignment"] = {
+          tableAlignment: {
+            horizontal: view.table.cellAlignHorizontal,
+            horizontalMixed: view.table.cellAlignHorizontalMixed,
+            vertical: view.table.cellAlignVertical,
+            verticalMixed: view.table.cellAlignVerticalMixed,
+            selectedCells: view.table.selectedCells,
           },
         };
       }
@@ -1349,6 +1363,19 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
           ...(args.style !== undefined ? { style: args.style } : {}),
           ...(args.width !== undefined ? { width: args.width } : {}),
           ...(args.color !== undefined ? { color: args.color } : {}),
+        }),
+      };
+    }
+    if (command === "table.alignment") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableAlignment",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          ...(args.horizontal !== undefined ? { horizontal: args.horizontal } : {}),
+          ...(args.vertical !== undefined ? { vertical: args.vertical } : {}),
         }),
       };
     }

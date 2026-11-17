@@ -47,6 +47,7 @@ export const TABLE_STRUCTURE_GROUP: RibbonGroupDefinition = group("tableStructur
 export const TABLE_FORMATTING_GROUP: RibbonGroupDefinition = group("tableFormatting", [
   cmd("table.shading", "palette"),
   cmd("table.borders", "table"),
+  cmd("table.alignment", "alignCenter"),
 ]);
 
 export const RIBBON_TABS: RibbonTabDefinition[] = [

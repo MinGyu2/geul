@@ -1893,4 +1893,108 @@ describe("Stage 2 Phase 2: complex content matrix", () => {
       } finally { reopened.free(); }
     } finally { editor.dispose(); }
   });
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-2 cell alignment: single/rect/nested/merged, mixed state, Undo/Redo, T009 save & reopen", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, true, false);
+    try {
+      // Negative: invalid alignment parameters or empty payload reject cleanly.
+      place(withCell(at, 0));
+      expect(documentCommandState("table.alignment", editor.snapshot())).toEqual({ available: true });
+      expect(editor.execute("table.alignment", { command: "table.alignment" }).accepted).toBe(false);
+
+      // Single cell (0,0): horizontal center -> Undo -> Redo -> vertical bottom.
+      const beforeH = editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal;
+      await run("table.alignment", { command: "table.alignment", horizontal: "center" });
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal).toBe("center");
+      await run("edit.undo");
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal).toBe(beforeH);
+      await run("edit.redo");
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal).toBe("center");
+
+      await run("table.alignment", { command: "table.alignment", vertical: "bottom" });
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal).toBe("center");
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.vertical).toBe("bottom");
+
+      // Multi-cell mixed reporting: cell 0 is center+bottom while cell 1 has default alignment.
+      place(at);
+      editor.caret = withCell(at, 1);
+      const mixed = editor.snapshot().parameters?.["table.alignment"]?.tableAlignment;
+      expect(mixed?.horizontalMixed).toBe(true);
+      expect(mixed?.verticalMixed).toBe(true);
+      // Applying only horizontal=justify unifies horizontal while preserving bottom/default vertical or setting rect.
+      await run("table.alignment", { command: "table.alignment", horizontal: "justify" });
+      expect(editor.snapshot().parameters?.["table.alignment"]?.tableAlignment?.horizontal).toBe("justify");
+
+      // Nested table cell formatting inside cell 0.
+      const nested = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] } };
+      place(nested);
+      await run("table.alignment", { command: "table.alignment", horizontal: "right", vertical: "middle" });
+
+      // Rich/merged table check + T009 save & independent reopen.
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
+        const fmt00 = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 0, 0,
+        ));
+        expect(fmt00.alignment).toEqual({
+          horizontal: "justify",
+          horizontalMixed: false,
+          vertical: "bottom",
+          verticalMixed: false,
+        });
+        const fmt01 = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 1, 0, 1,
+        ));
+        expect(fmt01.alignment.horizontal).toBe("justify");
+        const fmtNested = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([
+            { controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 },
+            { controlIndex: 0, cellIndex: 0, cellParaIndex: 0 },
+          ]),
+          0, 0, 0, 0,
+        ));
+        expect(fmtNested.alignment).toEqual({
+          horizontal: "right",
+          horizontalMixed: false,
+          vertical: "middle",
+          verticalMixed: false,
+        });
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-2 rich table: caption, formulas & ClickHere stay intact after cell alignment", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, false, true);
+    try {
+      const fieldsBefore = doc.getFieldList!();
+      place(withCell(at, 0));
+      await run("table.alignment", { command: "table.alignment", horizontal: "right", vertical: "bottom" });
+      expect(doc.getFieldList!()).toBe(fieldsBefore);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getFieldList!()).toBe(fieldsBefore);
+        const fmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 0, 0,
+        ));
+        expect(fmt.alignment).toEqual({
+          horizontal: "right",
+          horizontalMixed: false,
+          vertical: "bottom",
+          verticalMixed: false,
+        });
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
 });

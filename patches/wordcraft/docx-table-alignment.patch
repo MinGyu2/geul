@@ -1,0 +1,112 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index 6bafb90..b290b20 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -100,6 +100,8 @@ pub fn specs() -> Vec<CommandSpec> {
+             })
+         })
+         .params(r#"{"value": "topLeft|topCenter|…|bottomRight"}"#)),
++        t(CommandSpec::new("table.cellAlignment", "Cell Alignment", "Table Layout › Alignment", cell_alignment)
++            .params(r#"{"horizontal"?: "left|center|right|justify", "vertical"?: "top|middle|bottom"}"#)),
+         t(CommandSpec::new("table.textDirection", "Text Direction", "Table Layout › Alignment", text_direction)
+             .params(r#"{"value"?: "horizontal|down|up"} (default: the next direction after the caret cell's, like Word's button)"#)),
+         t(CommandSpec::new("table.autofit", "AutoFit", "Table Layout › Cell Size", autofit).params(r#"{"mode": "contents|window|fixed"}"#)),
+@@ -858,6 +860,60 @@ fn shading(s: &mut Session, v: &Value) -> CmdResult {
+     sel_result(s)
+ }
+ 
++fn cell_alignment(s: &mut Session, v: &Value) -> CmdResult {
++    let horizontal = match v.get("horizontal") {
++        None | Some(Value::Null) => None,
++        Some(Value::String(raw)) => Some(match raw.as_str() {
++            "left" => Align::Left,
++            "center" => Align::Center,
++            "right" => Align::Right,
++            "justify" => Align::Justify,
++            _ => return Err(CmdError::Params(format!("unknown horizontal alignment `{raw}`"))),
++        }),
++        Some(_) => return Err(CmdError::Params("`horizontal` must be a string".into())),
++    };
++    let vertical = match v.get("vertical") {
++        None | Some(Value::Null) => None,
++        Some(Value::String(raw)) => Some(match raw.as_str() {
++            "top" => VAlign::Top,
++            "middle" => VAlign::Center,
++            "bottom" => VAlign::Bottom,
++            _ => return Err(CmdError::Params(format!("unknown vertical alignment `{raw}`"))),
++        }),
++        Some(_) => return Err(CmdError::Params("`vertical` must be a string".into())),
++    };
++    if horizontal.is_none() && vertical.is_none() {
++        return Err(CmdError::Params("cellAlignment requires `horizontal` and/or `vertical`".into()));
++    }
++    let (tp, r0, r1, g0, g1, _) = selected_cell_rect(s)?;
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    for r in r0..=r1 {
++        let mut g = 0usize;
++        for cl in &mut t.rows[r].cells {
++            let span = cl.span();
++            let cg0 = g;
++            let cg1 = g + span - 1;
++            g += span;
++            if cg0 <= g1 && cg1 >= g0 {
++                if let Some(va) = vertical {
++                    cl.props.valign = va;
++                }
++                if let Some(h) = horizontal {
++                    for b in &mut cl.blocks {
++                        if let Block::Para(p) = std::sync::Arc::make_mut(b) {
++                            p.props.align = Some(h);
++                            p.touch();
++                        }
++                    }
++                }
++            }
++        }
++    }
++    touch_cells(s, &tp)?;
++    sel_result(s)
++}
++
+ fn parse_cell_border_style(s: &str) -> Result<BorderStyle, CmdError> {
+     match s {
+         "none" => Ok(BorderStyle::None),
+@@ -1583,4 +1639,37 @@ mod tests {
+         let reopened = crate::io::open_bytes("table_fmt.docx", &bytes).unwrap();
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
++
++    #[test]
++    fn cell_alignment_preserves_unrelated_and_roundtrips() {
++        use wordcraft_doc::props::{Align, VAlign};
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 3, "cols": 3})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++
++        assert!(s.run("table.cellAlignment", &json!({})).is_err());
++        assert!(s.run("table.cellAlignment", &json!({"horizontal": "diagonal"})).is_err());
++        assert!(s.run("table.cellAlignment", &json!({"vertical": "skew"})).is_err());
++
++        // Set only horizontal justify on (0,0)
++        s.run("table.cellAlignment", &json!({"horizontal": "justify"})).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].cells[0].blocks[0].as_para().unwrap().props.align, Some(Align::Justify));
++        assert_eq!(t.rows[0].cells[0].props.valign, VAlign::Top);
++        assert_eq!(t.rows[0].cells[1].blocks[0].as_para().unwrap().props.align, None);
++
++        // Set only vertical middle on 2x2 rect (0..=1, 0..=1), preserving justify on (0,0)
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}, "extend": false})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 1, 1, 0], "off": 0}, "extend": true})).unwrap();
++        s.run("table.cellAlignment", &json!({"vertical": "middle"})).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].cells[0].props.valign, VAlign::Center);
++        assert_eq!(t.rows[0].cells[0].blocks[0].as_para().unwrap().props.align, Some(Align::Justify));
++        assert_eq!(t.rows[1].cells[1].props.valign, VAlign::Center);
++        assert_eq!(t.rows[2].cells[2].props.valign, VAlign::Top);
++
++        let bytes = crate::io::save_bytes("table_align.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_align.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++    }
+ }

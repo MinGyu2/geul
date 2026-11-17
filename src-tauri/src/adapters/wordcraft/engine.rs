@@ -269,6 +269,14 @@ pub enum DocxOp {
         #[serde(default)]
         color: Option<String>,
     },
+    /// Stage 2 Phase 3 (P3-2): DOCX selected-cell content alignment with explicit target ownership.
+    TableAlignment {
+        target: SelectionIdentity,
+        #[serde(default)]
+        horizontal: Option<table::CellHAlign>,
+        #[serde(default)]
+        vertical: Option<table::CellVAlign>,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -458,6 +466,12 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     && style_ok
                     && width_ok
                     && color_ok
+            }
+            DocxOp::TableAlignment { target, horizontal, vertical } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key)
+                    && ok_key(&target.caret_key)
+                    && (horizontal.is_some() || vertical.is_some())
             }
             _ => true,
         })
@@ -1014,6 +1028,9 @@ impl DocxModel {
                     *width,
                     color.as_deref(),
                 )
+            }
+            DocxOp::TableAlignment { target, horizontal, vertical } => {
+                self.table_cell_alignment(target, *horizontal, *vertical)
             }
         }
     }

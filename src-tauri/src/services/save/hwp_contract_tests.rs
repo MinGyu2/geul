@@ -2306,6 +2306,33 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
     let first_para = nested.iter().position(|r| r.0 == 66 && r.1 == 2).unwrap();
     nested.insert(first_para + 1, (71, 3, b" lbt".to_vec()));
     refused("control inside a restructured cell", nested);
+
+    // Stage 2 P3-2: valid cell vertical_align (0=top, 1=center, 2=bottom in list_attr byte 4 bits 5..=6)
+    // passes both evolved_table and restructured_table, while vertical_align=3 or other list_attr bits fail.
+    for code in [0u8, 1u8, 2u8] {
+        let mut aligned_same = existing_nonbasic_table();
+        let h = &mut aligned_same.iter_mut().find(|r| r.0 == 72).unwrap().2;
+        h[4] = (h[4] & !0x60) | (code << 5);
+        let findings = raw_findings(&original, &fixture_with(true, &[aligned_same], "Keep 한글"), true);
+        assert!(only_stale_preview(&findings), "code {code} (same grid): {findings:?}");
+
+        let mut aligned_restruct = existing_table_without_second_row();
+        let h2 = &mut aligned_restruct.iter_mut().find(|r| r.0 == 72).unwrap().2;
+        h2[4] = (h2[4] & !0x60) | (code << 5);
+        let findings2 = raw_findings(&original, &fixture_with(true, &[aligned_restruct], "Keep 한글"), true);
+        assert!(only_stale_preview(&findings2), "code {code} (restructured): {findings2:?}");
+    }
+    for (label, mut_byte) in [
+        ("invalid vertical_align=3", 0x60u8),
+        ("text_direction bit", 0x01u8),
+        ("line_wrap bit", 0x08u8),
+        ("reserved list_attr bit 7", 0x80u8),
+    ] {
+        let mut bad_same = existing_nonbasic_table();
+        let h = &mut bad_same.iter_mut().find(|r| r.0 == 72).unwrap().2;
+        h[4] = if mut_byte == 0x60 { (h[4] & !0x60) | 0x60 } else { h[4] ^ mut_byte };
+        refused(label, bad_same);
+    }
 }
 
 /// Real serialized field anchors/ranges, using the existing compact HWP fixture builder.

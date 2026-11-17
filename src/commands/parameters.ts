@@ -18,13 +18,15 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
-  "insert.table", "table.splitCell", "table.shading", "table.borders",
+  "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
 
-export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders"] as const;
+export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment"] as const;
 const TABLE_BORDER_KINDS = new Set(["all", "outside", "inside", "none", "top", "bottom", "left", "right"]);
+const TABLE_H_ALIGN = new Set(["left", "center", "right", "justify"]);
+const TABLE_V_ALIGN = new Set(["top", "middle", "bottom"]);
 
 export function normalizeHexRgb(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -341,6 +343,18 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
       if (value.color !== undefined && value.color !== null && normalizeHexRgb(value.color) === null) {
         return false;
       }
+      return true;
+    }
+    case "table.alignment": {
+      if (!context?.tableAlignment) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "horizontal", "vertical"].includes(k)) return false;
+      }
+      const hasH = value.horizontal !== undefined;
+      const hasV = value.vertical !== undefined;
+      if (!hasH && !hasV) return false;
+      if (hasH && (typeof value.horizontal !== "string" || !TABLE_H_ALIGN.has(value.horizontal))) return false;
+      if (hasV && (typeof value.vertical !== "string" || !TABLE_V_ALIGN.has(value.vertical))) return false;
       return true;
     }
     case "hangul.charWidth":

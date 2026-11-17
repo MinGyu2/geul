@@ -83,4 +83,33 @@ describe("TableFormattingDialog", () => {
     fireEvent.click(screen.getByTestId("table-format-confirm"));
     expect(confirmed[1]).toEqual({ command: "table.borders", kind: "none" });
   });
+
+  it("supports independent horizontal/vertical cell alignment and mixed states", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const req: CommandInputRequest = {
+      command: "table.alignment",
+      labelKey: "command.table.alignment",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableAlignment: {
+          horizontal: null,
+          horizontalMixed: true,
+          vertical: "top",
+          verticalMixed: false,
+          selectedCells: 2,
+        },
+      },
+    };
+    renderFormattingDialog(req, "en", (a) => confirmed.push(a));
+
+    fireEvent.click(screen.getByTestId("align-v-bottom"));
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[0]).toEqual({ command: "table.alignment", vertical: "bottom" });
+
+    fireEvent.click(screen.getByTestId("align-h-justify"));
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[1]).toEqual({ command: "table.alignment", horizontal: "justify", vertical: "bottom" });
+  });
 });

@@ -14,13 +14,15 @@ BASE = "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
 FONT_PIN = "6931bcc12af12ff874a9ebb4c63cebe17b3f8b82"
 TABLE_PIN = "23c0dc52d5cf7d197d06c0b539547b9cce364b49"
 STABILIZATION_PIN = "dd14a0ae29d90a05a54918db641d97f952260882"
-PIN = "1864d4fd0b5c0afadfe4197563336a08aebd776a"
+FORMATTING_PIN = "1864d4fd0b5c0afadfe4197563336a08aebd776a"
+PIN = "5351d9b48fe073ee7eb5a5204f2ce06a5c78858a"
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
     (FONT_PIN, TABLE_PIN, "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit"),
     (TABLE_PIN, STABILIZATION_PIN, "patches/wordcraft/docx-table-stabilization.patch", "patches/wordcraft/docx-table-stabilization.commit"),
-    (STABILIZATION_PIN, PIN, "patches/wordcraft/docx-table-formatting.patch", "patches/wordcraft/docx-table-formatting.commit"),
+    (STABILIZATION_PIN, FORMATTING_PIN, "patches/wordcraft/docx-table-formatting.patch", "patches/wordcraft/docx-table-formatting.commit"),
+    (FORMATTING_PIN, PIN, "patches/wordcraft/docx-table-alignment.patch", "patches/wordcraft/docx-table-alignment.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

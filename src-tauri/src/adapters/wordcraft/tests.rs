@@ -4631,3 +4631,133 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
         Some(wordcraft_engine::doc::props::Rgb(0x15, 0x80, 0x3D))
     );
 }
+
+#[test]
+fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives() {
+    use super::engine::table::{CellHAlign as H, CellVAlign as V, TableStructureAction as A};
+    use crate::services::save::package;
+    use wordcraft_engine::doc::props::{Align, VAlign};
+
+    let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
+    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    for r in 0..3 {
+        for c in 0..3 {
+            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
+            assert!(m.apply(&[DocxOp::InsertText { text: format!("A{r}{c}") }]).rejected.is_empty());
+        }
+    }
+    let orig_bytes = wordcraft_engine::io::save_bytes("p3-2-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
+
+    // Empty alignment payload rejected in validation; stale target rejected at apply.
+    let t_single = table_target(&mut m);
+    assert!(!validate(&[DocxOp::TableAlignment {
+        target: t_single,
+        horizontal: None,
+        vertical: None,
+    }]));
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment {
+            target: super::engine::SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() },
+            horizontal: Some(H::Center),
+            vertical: None,
+        }])
+        .rejected,
+        vec![0]
+    );
+
+    // Single cell horizontal justify then vertical middle; Undo restores step-by-step.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    let t00 = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment { target: t00, horizontal: Some(H::Justify), vertical: None }]).changed,
+        1
+    );
+    let tv = m.view().table.unwrap();
+    assert_eq!(tv.cell_align_horizontal, Some("justify"));
+    assert_eq!(tv.cell_align_vertical, Some("top"));
+    let t00_v = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment { target: t00_v, horizontal: None, vertical: Some(V::Middle) }]).changed,
+        1
+    );
+    let tv2 = m.view().table.unwrap();
+    assert_eq!(tv2.cell_align_horizontal, Some("justify"));
+    assert_eq!(tv2.cell_align_vertical, Some("middle"));
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.view().table.unwrap().cell_align_vertical, Some("top"));
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.view().table.unwrap().cell_align_vertical, Some("middle"));
+
+    // Mixed state when selecting (0,0)..=(0,1): (0,0) is justify+middle, (0,1) is left+top.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+    })));
+    let tv_mix = m.view().table.unwrap();
+    assert!(tv_mix.cell_align_horizontal_mixed);
+    assert!(tv_mix.cell_align_vertical_mixed);
+    // Applying only vertical=bottom updates both cells' vertical while preserving (0,0) justify and (0,1) left!
+    let t_row = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment { target: t_row, horizontal: None, vertical: Some(V::Bottom) }]).changed,
+        1
+    );
+    let tv_after = m.view().table.unwrap();
+    assert_eq!(tv_after.cell_align_vertical, Some("bottom"));
+    assert!(tv_after.cell_align_horizontal_mixed);
+
+    // Merged cell (0,2)..=(1,2) formats safely; partial overhang rejects.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+    })));
+    assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
+    let t_merged = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment {
+            target: t_merged,
+            horizontal: Some(H::Right),
+            vertical: Some(V::Middle),
+        }])
+        .changed,
+        1
+    );
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+    })));
+    assert!(m.view().table.unwrap().cell_alignment_refusal.is_some());
+    let t_over = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment { target: t_over, horizontal: Some(H::Center), vertical: None }]).rejected,
+        vec![0]
+    );
+
+    // Nested table cell formats independently from outer cell.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
+    let nested_t = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableAlignment { target: nested_t, horizontal: Some(H::Center), vertical: Some(V::Bottom) }]).changed,
+        1
+    );
+
+    // T009 save check & independent reopen.
+    let saved_bytes = wordcraft_engine::io::save_bytes("p3-2-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
+    assert!(findings.is_empty(), "DOCX cell alignment must pass T009: {findings:?}");
+
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert_eq!(tbl.rows[0].cells[0].props.valign, VAlign::Bottom);
+    assert_eq!(tbl.rows[0].cells[0].blocks[0].as_para().unwrap().props.align, Some(Align::Justify));
+    assert_eq!(tbl.rows[0].cells[1].props.valign, VAlign::Bottom);
+    assert_eq!(tbl.rows[0].cells[1].blocks[0].as_para().unwrap().props.align, None);
+    assert_eq!(tbl.rows[0].cells[2].props.valign, VAlign::Center);
+    assert_eq!(tbl.rows[0].cells[2].blocks[0].as_para().unwrap().props.align, Some(Align::Right));
+    assert_eq!(tbl.rows[2].cells[2].props.valign, VAlign::Top);
+}

@@ -8,9 +8,22 @@ import type { MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 
 type BorderKind = "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right";
+type HorizontalAlign = "left" | "center" | "right" | "justify";
+type VerticalAlign = "top" | "middle" | "bottom";
 
 const SHADING_PRESETS = ["#FEF08A", "#DBEAFE", "#DCFCE7", "#FEE2E2", "#F3E8FF", "#F1F5F9", "#E2E8F0", "#FFFFFF"] as const;
 const BORDER_COLOR_PRESETS = ["#000000", "#475569", "#1E40AF", "#DC2626", "#15803D"] as const;
+const HORIZONTAL_ALIGNS: readonly { value: HorizontalAlign; labelKey: MessageKey }[] = [
+  { value: "left", labelKey: "tableFormat.alignment.left" },
+  { value: "center", labelKey: "tableFormat.alignment.center" },
+  { value: "right", labelKey: "tableFormat.alignment.right" },
+  { value: "justify", labelKey: "tableFormat.alignment.justify" },
+];
+const VERTICAL_ALIGNS: readonly { value: VerticalAlign; labelKey: MessageKey }[] = [
+  { value: "top", labelKey: "tableFormat.alignment.top" },
+  { value: "middle", labelKey: "tableFormat.alignment.middle" },
+  { value: "bottom", labelKey: "tableFormat.alignment.bottom" },
+];
 const BORDER_KINDS: readonly { kind: BorderKind; labelKey: MessageKey }[] = [
   { kind: "all", labelKey: "tableFormat.borders.all" },
   { kind: "outside", labelKey: "tableFormat.borders.outside" },
@@ -30,8 +43,10 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
 }) {
   const { t } = useTranslation();
   const isShading = request.command === "table.shading";
+  const isAlignment = request.command === "table.alignment";
   const shadingCtx = request.context.tableShading;
   const bordersCtx = request.context.tableBorders;
+  const alignCtx = request.context.tableAlignment;
   const sampleEdge = bordersCtx?.current?.top ?? bordersCtx?.current?.bottom ?? bordersCtx?.current?.left ?? bordersCtx?.current?.right;
   const initialStyle = sampleEdge && bordersCtx?.supportedStyles.includes(sampleEdge.style) && sampleEdge.style !== "none"
     ? sampleEdge.style
@@ -46,6 +61,8 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const [borderStyle, setBorderStyle] = useState(initialStyle);
   const [borderWidth, setBorderWidth] = useState(String(initialWidth));
   const [borderColor, setBorderColor] = useState(initialBorderColor);
+  const [hAlign, setHAlign] = useState<HorizontalAlign | null>(alignCtx?.horizontal ?? null);
+  const [vAlign, setVAlign] = useState<VerticalAlign | null>(alignCtx?.vertical ?? null);
   const [error, setError] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -87,6 +104,19 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
     onConfirm(args);
   };
 
+  const submitAlignment = () => {
+    const args: DocumentCommandArgs = {
+      command: "table.alignment",
+      ...(hAlign !== null ? { horizontal: hAlign } : {}),
+      ...(vAlign !== null ? { vertical: vAlign } : {}),
+    };
+    if (!validateCommandArgs("table.alignment", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
   const submit = () => {
     if (isShading) {
       const normalized = normalizeHexRgb(shadeColor);
@@ -95,6 +125,8 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
         return;
       }
       submitShading(normalized);
+    } else if (isAlignment) {
+      submitAlignment();
     } else {
       submitBorders();
     }
@@ -168,6 +200,52 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
                 </button>
               </div>
             )}
+          </div>
+        ) : isAlignment ? (
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div style={{ display: "grid", gap: "6px" }}>
+              <span>
+                {t("tableFormat.alignment.horizontal")}
+                {alignCtx?.horizontalMixed && hAlign === null ? ` (${t("tableFormat.alignment.mixed")})` : ""}
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {HORIZONTAL_ALIGNS.map(({ value, labelKey }, index) => (
+                  <button
+                    key={value}
+                    ref={index === 0 ? firstFocusRef as React.RefObject<HTMLButtonElement> : undefined}
+                    type="button"
+                    aria-pressed={hAlign === value}
+                    className="document-bar__button"
+                    data-testid={`align-h-${value}`}
+                    style={{ fontWeight: hAlign === value ? 700 : 400 }}
+                    onClick={() => { setHAlign(value); setError(false); }}
+                  >
+                    {t(labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: "6px" }}>
+              <span>
+                {t("tableFormat.alignment.vertical")}
+                {alignCtx?.verticalMixed && vAlign === null ? ` (${t("tableFormat.alignment.mixed")})` : ""}
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {VERTICAL_ALIGNS.map(({ value, labelKey }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={vAlign === value}
+                    className="document-bar__button"
+                    data-testid={`align-v-${value}`}
+                    style={{ fontWeight: vAlign === value ? 700 : 400 }}
+                    onClick={() => { setVAlign(value); setError(false); }}
+                  >
+                    {t(labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <div style={{ display: "grid", gap: "10px" }}>

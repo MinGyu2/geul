@@ -1,0 +1,262 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -194,8 +194,45 @@
+         let mut shading_color: Option<Option<String>> = None;
+         let mut uniform_border: Option<Option<BorderLine>> = None;
+         let mut border_uniform = true;
++        let mut h_align: Option<Option<&'static str>> = None;
++        let mut h_mixed = false;
++        let mut v_align: Option<&'static str> = None;
++        let mut v_mixed = false;
+         for &ci in &selected {
+             let cell = &table.cells[ci];
++            let cell_v = match cell.vertical_align {
++                crate::model::table::VerticalAlign::Top => "top",
++                crate::model::table::VerticalAlign::Center => "middle",
++                crate::model::table::VerticalAlign::Bottom => "bottom",
++            };
++            match v_align {
++                None => v_align = Some(cell_v),
++                Some(prev) if prev != cell_v => v_mixed = true,
++                _ => {}
++            }
++            for p in &cell.paragraphs {
++                if h_mixed {
++                    break;
++                }
++                let mapped = self
++                    .document
++                    .doc_info
++                    .para_shapes
++                    .get(p.para_shape_id as usize)
++                    .and_then(|ps| match ps.alignment {
++                        crate::model::style::Alignment::Left => Some("left"),
++                        crate::model::style::Alignment::Center => Some("center"),
++                        crate::model::style::Alignment::Right => Some("right"),
++                        crate::model::style::Alignment::Justify => Some("justify"),
++                        _ => None,
++                    });
++                match (&h_align, mapped) {
++                    (_, None) => h_mixed = true,
++                    (None, Some(v)) => h_align = Some(Some(v)),
++                    (Some(Some(prev)), Some(v)) if *prev != v => h_mixed = true,
++                    _ => {}
++                }
++            }
+             let Some(bf) = bf_of(cell.border_fill_id) else {
+                 shading_uniform = false;
+                 border_uniform = false;
+@@ -261,6 +298,12 @@
+                 "color": if shading_uniform { shading_color.flatten() } else { None },
+             },
+             "border": border_json,
++            "alignment": {
++                "horizontal": if h_mixed { None } else { h_align.flatten() },
++                "horizontalMixed": h_mixed,
++                "vertical": if v_mixed { None } else { v_align },
++                "verticalMixed": v_mixed,
++            },
+         })
+         .to_string())
+     }
+@@ -299,12 +342,22 @@
+         }
+         #[derive(serde::Deserialize)]
+         #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct AlignmentArg {
++            #[serde(default)]
++            horizontal: Option<String>,
++            #[serde(default)]
++            vertical: Option<String>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+         struct FormatSpec {
+             rect: RectArg,
+             #[serde(default)]
+             shading: Option<ShadingArg>,
+             #[serde(default)]
+             borders: Option<BordersArg>,
++            #[serde(default)]
++            alignment: Option<AlignmentArg>,
+         }
+ 
+         fn parse_hex_colorref(hex: &str) -> Option<u32> {
+@@ -329,10 +382,38 @@
+ 
+         let spec: FormatSpec = serde_json::from_str(spec_json)
+             .map_err(|_| HwpError::RenderError("invalid cell formatting payload".into()))?;
+-        if spec.shading.is_none() && spec.borders.is_none() {
++        if spec.shading.is_none() && spec.borders.is_none() && spec.alignment.is_none() {
+             return Err(HwpError::RenderError("empty cell formatting payload".into()));
+         }
+ 
++        let parsed_alignment: Option<(
++            Option<crate::model::style::Alignment>,
++            Option<crate::model::table::VerticalAlign>,
++        )> = match &spec.alignment {
++            None => None,
++            Some(a) => {
++                let h = match a.horizontal.as_deref() {
++                    None => None,
++                    Some("left") => Some(crate::model::style::Alignment::Left),
++                    Some("center") => Some(crate::model::style::Alignment::Center),
++                    Some("right") => Some(crate::model::style::Alignment::Right),
++                    Some("justify") => Some(crate::model::style::Alignment::Justify),
++                    Some(_) => return Err(HwpError::RenderError("invalid horizontal alignment".into())),
++                };
++                let v = match a.vertical.as_deref() {
++                    None => None,
++                    Some("top") => Some(crate::model::table::VerticalAlign::Top),
++                    Some("middle") => Some(crate::model::table::VerticalAlign::Center),
++                    Some("bottom") => Some(crate::model::table::VerticalAlign::Bottom),
++                    Some(_) => return Err(HwpError::RenderError("invalid vertical alignment".into())),
++                };
++                if h.is_none() && v.is_none() {
++                    return Err(HwpError::RenderError("empty cell alignment payload".into()));
++                }
++                Some((h, v))
++            }
++        };
++
+         let parsed_shading: Option<Option<u32>> = match &spec.shading {
+             None => None,
+             Some(s) => match &s.color {
+@@ -379,9 +460,10 @@
+         // Read-only validation before any DocInfo or table mutation.
+         let mut selected_set = std::collections::BTreeSet::new();
+         let mut cell_plans: Vec<(usize, [bool; 4], bool)> = Vec::new();
++        let mut para_base_ids: Vec<(usize, usize, u16)> = Vec::new();
+         {
+             let table = self.resolve_table_by_path(section, paragraph, path)?;
+-            if !table.zones.is_empty() {
++            if (parsed_shading.is_some() || parsed_borders.is_some()) && !table.zones.is_empty() {
+                 return Err(HwpError::RenderError(
+                     "tables with cellzone overlays are unsupported".into(),
+                 ));
+@@ -494,6 +576,67 @@
+                     }
+                 }
+             }
++            if let Some((Some(_), _)) = parsed_alignment {
++                for &ci in &selected_set {
++                    for (pi, p) in table.cells[ci].paragraphs.iter().enumerate() {
++                        para_base_ids.push((ci, pi, p.para_shape_id));
++                    }
++                }
++            }
++        }
++
++        // Resolve/create ParaShape entries before mutating anything.
++        let mut para_updates: Vec<(usize, usize, u16)> = Vec::with_capacity(para_base_ids.len());
++        let mut staged_new_pss: Vec<crate::model::style::ParaShape> = Vec::new();
++        if let Some((Some(align), _)) = parsed_alignment {
++            let align_code: u32 = match align {
++                crate::model::style::Alignment::Justify => 0,
++                crate::model::style::Alignment::Left => 1,
++                crate::model::style::Alignment::Right => 2,
++                crate::model::style::Alignment::Center => 3,
++                crate::model::style::Alignment::Distribute => 4,
++                crate::model::style::Alignment::Split => 5,
++            };
++            let existing_ps_len = self.document.doc_info.para_shapes.len();
++            for (ci, pi, base_id) in para_base_ids {
++                let mut modified = self
++                    .document
++                    .doc_info
++                    .para_shapes
++                    .get(base_id as usize)
++                    .cloned()
++                    .ok_or_else(|| HwpError::RenderError("missing paraShape".into()))?;
++                modified.raw_data = None;
++                modified.alignment = align;
++                modified.attr1 = (modified.attr1 & !(0x07 << 2)) | (align_code << 2);
++
++                let ps_id = if let Some(idx) = self
++                    .document
++                    .doc_info
++                    .para_shapes
++                    .iter()
++                    .position(|existing| *existing == modified)
++                {
++                    idx as u16
++                } else if let Some(pos) = staged_new_pss
++                    .iter()
++                    .position(|staged| *staged == modified)
++                {
++                    let total = existing_ps_len + pos;
++                    if total > u16::MAX as usize {
++                        return Err(HwpError::RenderError("paraShape limit exceeded".into()));
++                    }
++                    total as u16
++                } else {
++                    let total = existing_ps_len + staged_new_pss.len();
++                    if total > u16::MAX as usize {
++                        return Err(HwpError::RenderError("paraShape limit exceeded".into()));
++                    }
++                    staged_new_pss.push(modified);
++                    total as u16
++                };
++                para_updates.push((ci, pi, ps_id));
++            }
+         }
+ 
+         // Resolve/create BorderFill entries without leaving partial cell edits on error.
+@@ -584,11 +727,25 @@
+             self.document.doc_info.border_fills.extend(staged_new_bfs);
+             self.document.doc_info.raw_stream_dirty = true;
+         }
++        if !staged_new_pss.is_empty() {
++            self.document.doc_info.para_shapes.extend(staged_new_pss);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
+         {
+             let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
+             for (ci, bf_id) in updates {
+                 table.cells[ci].border_fill_id = bf_id;
+             }
++            if let Some((_, Some(va))) = parsed_alignment {
++                for &ci in &selected_set {
++                    table.cells[ci].vertical_align = va;
++                }
++            }
++            for (ci, pi, ps_id) in para_updates {
++                if let Some(p) = table.cells[ci].paragraphs.get_mut(pi) {
++                    p.para_shape_id = ps_id;
++                }
++            }
+         }
+         self.rebuild_resolved_styles();
+         self.mark_cell_control_dirty(section, paragraph, path[0].0);
+@@ -5828,5 +5985,30 @@
+         )
+         .unwrap();
+         assert_eq!(nested_info["shading"]["color"], "112233");
++
++        // Cell alignment: vertical + horizontal separately and mixed reporting
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":1},"alignment":{"horizontal":"right","vertical":"bottom"}}"#,
++        )
++        .unwrap();
++        let aligned_info: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_cell_formatting_by_path_native(0, para, &path, 0, 0, 0, 1)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(aligned_info["alignment"]["horizontal"], "right");
++        assert_eq!(aligned_info["alignment"]["vertical"], "bottom");
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"alignment":{"horizontal":"diagonal"}}"#,
++            )
++            .is_err());
+     }
+ }

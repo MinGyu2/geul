@@ -1296,7 +1296,13 @@ fn valid_appended_border_fill(bf: &[u8], orig_borders: &[&[u8]]) -> Checked<()> 
 }
 
 fn cell_header_matches_ignoring_border_fill(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.len() >= 34 && a[2..32] == b[2..32] && a[34..] == b[34..]
+    a.len() == b.len()
+        && a.len() >= 34
+        && a[2..4] == b[2..4]
+        && (a[4] & !0x60) == (b[4] & !0x60)
+        && ((b[4] >> 5) & 0x03) <= 2
+        && a[5..32] == b[5..32]
+        && a[34..] == b[34..]
 }
 /// Appended paragraph shapes must equal an original one except the bullet heading (T011) and the Stage 1
 /// paragraph values: alignment and line-spacing kind (attr1 bits 0-4), left/right margin, first-line indent,
@@ -2096,7 +2102,8 @@ fn restructured_table(
         let bf = word(cell.header, 32)?;
         reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
         used.borders.insert(bf);
-        let template = |h: &[u8]| (h[4..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
+        valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
+        let template = |h: &[u8]| (h[4] & !0x60, h[5..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
         preserved(
             before.iter().any(|o| {
                 template(o.header) == template(cell.header)
@@ -2395,7 +2402,8 @@ fn evolved_table(
                 .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
             valid(dword(cell.header, 16)? > 0, BODY)?;
             let bf = word(cell.header, 32)?;
-            let template = |h: &[u8]| (h[4..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
+            valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
+            let template = |h: &[u8]| (h[4] & !0x60, h[5..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
             preserved(
                 before.iter().any(|o| {
                     template(o.header) == template(cell.header)

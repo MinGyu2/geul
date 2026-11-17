@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wordcraft_engine::doc::props::{Border, BorderStyle, VMerge};
+use wordcraft_engine::doc::props::{Align, Border, BorderStyle, VAlign, VMerge};
 use wordcraft_engine::doc::table::{MAX_COLS, MAX_ROWS};
 use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, StoryRef, Table};
 
@@ -141,6 +141,49 @@ pub struct DocxTableView {
     pub has_cell_shading: bool,
     pub cell_borders: Option<DocxCellBordersView>,
     pub supported_border_styles: &'static [&'static str],
+    pub cell_align_horizontal: Option<&'static str>,
+    pub cell_align_horizontal_mixed: bool,
+    pub cell_align_vertical: Option<&'static str>,
+    pub cell_align_vertical_mixed: bool,
+    pub cell_alignment_refusal: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CellHAlign {
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+impl CellHAlign {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CellHAlign::Left => "left",
+            CellHAlign::Center => "center",
+            CellHAlign::Right => "right",
+            CellHAlign::Justify => "justify",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CellVAlign {
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl CellVAlign {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CellVAlign::Top => "top",
+            CellVAlign::Middle => "middle",
+            CellVAlign::Bottom => "bottom",
+        }
+    }
 }
 
 enum MultiCellState {
@@ -594,6 +637,69 @@ fn inspect_cell_shading(
     (if mixed { None } else { first_hex }, mixed, any_shaded)
 }
 
+fn inspect_cell_alignment(
+    doc: &Document,
+    t: &Table,
+    r0: usize,
+    r1: usize,
+    g0: usize,
+    g1: usize,
+) -> (Option<&'static str>, bool, Option<&'static str>, bool) {
+    let mut seen = BTreeSet::new();
+    let mut h_first: Option<&'static str> = None;
+    let mut h_mixed = false;
+    let mut v_first: Option<&'static str> = None;
+    let mut v_mixed = false;
+    for r in r0..=r1 {
+        for g in g0..=g1 {
+            let Some(ci) = t.cell_at_grid(r, g) else { continue };
+            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else { continue };
+            if cell.props.vmerge == VMerge::Continue {
+                continue;
+            }
+            if !seen.insert((r, ci)) {
+                continue;
+            }
+            let va = match cell.props.valign {
+                VAlign::Top => "top",
+                VAlign::Center => "middle",
+                VAlign::Bottom => "bottom",
+            };
+            match v_first {
+                None => v_first = Some(va),
+                Some(prev) if prev != va => v_mixed = true,
+                _ => {}
+            }
+            for b in &cell.blocks {
+                if h_mixed {
+                    break;
+                }
+                if let Block::Para(p) = b.as_ref() {
+                    let h = match doc.styles.resolve_para(&p.props).align {
+                        Align::Left => Some("left"),
+                        Align::Center => Some("center"),
+                        Align::Right => Some("right"),
+                        Align::Justify => Some("justify"),
+                        Align::Distribute => None,
+                    };
+                    match (h_first, h) {
+                        (_, None) => h_mixed = true,
+                        (None, Some(v)) => h_first = Some(v),
+                        (Some(prev), Some(v)) if prev != v => h_mixed = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    (
+        if h_mixed { None } else { h_first },
+        h_mixed,
+        if v_mixed { None } else { v_first },
+        v_mixed,
+    )
+}
+
 impl DocxModel {
     pub(super) fn table_view(&self) -> Option<DocxTableView> {
         let focus = &self.session.sel.focus;
@@ -631,6 +737,11 @@ impl DocxModel {
                 has_cell_shading: false,
                 cell_borders: None,
                 supported_border_styles: DOCX_BORDER_STYLES,
+                cell_align_horizontal: None,
+                cell_align_horizontal_mixed: false,
+                cell_align_vertical: None,
+                cell_align_vertical_mixed: false,
+                cell_alignment_refusal: Some("tableShape"),
             });
         };
         let multi = inspect_selection(self, &tp, t);
@@ -650,6 +761,16 @@ impl DocxModel {
             None
         } else {
             resolve_cell_borders(t, r0, r1, g0, g1)
+        };
+        let (
+            cell_align_horizontal,
+            cell_align_horizontal_mixed,
+            cell_align_vertical,
+            cell_align_vertical_mixed,
+        ) = if format_refusal.is_some() {
+            (None, false, None, false)
+        } else {
+            inspect_cell_alignment(&self.session.doc, t, r0, r1, g0, g1)
         };
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
@@ -691,6 +812,11 @@ impl DocxModel {
             has_cell_shading,
             cell_borders,
             supported_border_styles: DOCX_BORDER_STYLES,
+            cell_align_horizontal,
+            cell_align_horizontal_mixed,
+            cell_align_vertical,
+            cell_align_vertical_mixed,
+            cell_alignment_refusal: format_refusal,
         })
     }
 
@@ -863,6 +989,52 @@ impl DocxModel {
         });
         let changed = self.atomic(|model| {
             let changed = model.run("table.cellBorders", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn table_cell_alignment(
+        &mut self,
+        target: &SelectionIdentity,
+        horizontal: Option<CellHAlign>,
+        vertical: Option<CellVAlign>,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        if horizontal.is_none() && vertical.is_none() {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let params = json!({
+            "horizontal": horizontal.map(CellHAlign::as_str),
+            "vertical": vertical.map(CellVAlign::as_str),
+        });
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.cellAlignment", params.clone())?;
             if !changed {
                 return Ok(false);
             }

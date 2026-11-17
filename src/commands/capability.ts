@@ -75,7 +75,7 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");
   if (snapshot.historyScope === "advanced" && snapshot.pending
-    && ["edit.undo", "edit.redo", "hangul.charWidth", "hangul.charSpacing", "hangul.insertTableFormula", "table.shading", "table.borders"].includes(id))
+    && ["edit.undo", "edit.redo", "hangul.charWidth", "hangul.charSpacing", "hangul.insertTableFormula", "table.shading", "table.borders", "table.alignment"].includes(id))
     return unavailable("pendingEdits");
   if (id === "edit.undo" || id === "edit.redo") {
     // 지원한다고 선언했는데 엔진이 기록을 알려 주지 않으면 하지 않는다(기록을 화면에서 만들지 않음).

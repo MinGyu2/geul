@@ -1,0 +1,6 @@
+tree 9d11d879a34cb2f2043b1f130e57e6dcb73d9f66
+parent 1864d4fd0b5c0afadfe4197563336a08aebd776a
+author MinGyu2 <geul@users.noreply.github.com> 1794924265 +0900
+committer MinGyu2 <geul@users.noreply.github.com> 1794924265 +0900
+
+feat(table): add cellAlignment command with rectangular selection check
