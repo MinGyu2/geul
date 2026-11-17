@@ -365,7 +365,7 @@ DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP) 세 문서 형식에서 표 셀 배경색
   - 출력은 `word/document.xml` 안에만 반영되므로 기존 `compare_saved_docx` 경계를 넓히지 않는다.
 - **HWP / HWPX / RHWP** (`patches/rhwp/stage2-p3-1-table-formatting.patch`, `stage2-p3-2-cell-alignment.patch`, `stage2-p3-3-table-dimensions.patch`, Release WASM `455452971ed81b0135cd94845c9c5b040363b8b03622fead68b1b661a5d418eb`, `src/components/Editor/rhwp/RhwpEditorSession.ts`):
   - `getTableCellFormattingByPath`와 `formatTableCellsByPath`로 일반·병합·중첩 표 셀의 배경색/테두리/맞춤/열 너비·행 높이를 읽고 수정하며, `compactAppendedBorderFills`로 중복 `BorderFill`을 정리한다(셀 문단 줄 분리는 `p.line_segs`를 비우지 않고 유지해 HWP5 `HWPTAG_PARA_LINE_SEG` 계약을 보존).
-  - HWPX `package.rs` `authorized_hwpx_cell_border_fills`: 기존 `borderFill` 재사용 또는 `<hh:borderFills>` 끝의 검증된 `SOLID` 채움/허용 선·두께 정의 추가 및 `<hp:tc borderFillIDRef>` 참조만 좁게 허용(`Contents/header.xml` 전역 면제 없음).
+  - HWPX `package.rs` `hwpx_table_border_appended()` / `verify_appended_border_fills()`: `hwpx_table_border_appended()`가 `<hh:borderFills>` 끝 추가 외 무관 `Contents/header.xml` 불변을 판정하고(전역 면제 없음), `verify_appended_border_fills()`가 추가된 `borderFill` 정의(기본/기존 일치 속성 및 단색 `winBrush` 또는 기존 채움 일치)와 `<hp:tc borderFillIDRef>` 참조만 좁게 검증·허용한다(동등 `borderFill` 재사용은 RHWP가 처리).
   - HWP `insertions.rs`: `valid_appended_border_fill`이 `basic_border_fill`과 동일한 기본 대각선 `[1, 0, 0, 0, 0, 0]`(및 `[0; 6]`)·유효 선/두께·`fill_type 0/1`을 허용하고(빈 문서 `orig_borders=0` 포함), 수평 맞춤은 기존 Stage 1 `ParaShape` 증명을 재사용하며 수직 맞춤은 `cell_header_matches_ignoring_border_fill` 및 신규 표 `validate_table_at`에서 셀 `list_attr` 비트 `21..=22`(바이트 4 마스크 `0x60`, 값 `0..=2`)만 좁게 허용한다.
 
 ### 9.3 최종 검증 및 Native GUI 수용 (`P3-4`)
