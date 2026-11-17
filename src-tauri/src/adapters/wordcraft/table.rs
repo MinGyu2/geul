@@ -65,6 +65,8 @@ pub struct DocxTableView {
     pub merge_below: Option<&'static str>,
     pub merge_cells: Option<&'static str>,
     pub split_cell: Option<&'static str>,
+    pub max_split_rows: usize,
+    pub max_split_columns: usize,
 }
 
 enum MultiCellState {
@@ -180,8 +182,12 @@ fn refusal_for(
     ext: (usize, usize, usize, usize),
     multi: &MultiCellState,
     action: TableStructureAction,
+    split_dims: Option<(u32, u32)>,
 ) -> Option<&'static str> {
     if matches!(multi, MultiCellState::CrossTable) {
+        return Some("tableShape");
+    }
+    if !matches!(action, TableStructureAction::SplitCell) && split_dims.is_some() {
         return Some("tableShape");
     }
     let (r0, r1, g0, g1) = ext;
@@ -238,6 +244,17 @@ fn refusal_for(
                     return Some("tableContent");
                 }
             }
+            let mut probe = (rows_to_delete.len() > 1).then(|| t.clone());
+            for &rr in rows_to_delete.iter().rev() {
+                let ok = if let Some(ref mut p) = probe {
+                    p.delete_row_safe(rr)
+                } else {
+                    t.can_delete_row_safe(rr)
+                };
+                if !ok {
+                    return Some("tableContent");
+                }
+            }
             None
         }
         TableStructureAction::DeleteColumn => {
@@ -280,7 +297,7 @@ fn refusal_for(
             if nr0 != r0 || nr1 != r1 || ng0 != next_g {
                 return Some("tableShape");
             }
-            if t.rect_has_controls(r0, r1, g0, ng1) {
+            if t.rect_has_controls(r0, r1, g0, ng1) || !t.can_merge_rect(r0, r1, g0, ng1) {
                 return Some("tableContent");
             }
             None
@@ -299,14 +316,14 @@ fn refusal_for(
             if br0 != next_r || bg0 != g0 || bg1 != g1 {
                 return Some("tableShape");
             }
-            if t.rect_has_controls(r0, br1, g0, g1) {
+            if t.rect_has_controls(r0, br1, g0, g1) || !t.can_merge_rect(r0, br1, g0, g1) {
                 return Some("tableContent");
             }
             None
         }
         TableStructureAction::MergeCells => match multi {
             MultiCellState::Rect(ar0, ar1, ag0, ag1, count) if *count >= 2 => {
-                if t.rect_has_controls(*ar0, *ar1, *ag0, *ag1) {
+                if t.rect_has_controls(*ar0, *ar1, *ag0, *ag1) || !t.can_merge_rect(*ar0, *ar1, *ag0, *ag1) {
                     Some("tableContent")
                 } else {
                     None
@@ -315,11 +332,37 @@ fn refusal_for(
             _ => Some("tableShape"),
         },
         TableStructureAction::SplitCell => {
-            if multi_active || (r1 == r0 && g1 == g0) {
+            if multi_active {
                 return Some("tableShape");
             }
-            if t.rect_has_controls(r0, r1, g0, g1) {
+            let is_merged = r1 > r0 || g1 > g0;
+            if is_merged {
+                if split_dims.is_some() {
+                    return Some("tableShape");
+                }
+                if t.rect_has_controls(r0, r1, g0, g1) {
+                    return Some("tableContent");
+                }
+                return None;
+            }
+            let Some(ci) = t.cell_at_grid(r0, g0) else {
+                return Some("tableShape");
+            };
+            let Some(cell) = t.rows.get(r0).and_then(|row| row.cells.get(ci)) else {
+                return Some("tableShape");
+            };
+            if !cell.controls.is_empty() {
                 return Some("tableContent");
+            }
+            let Some((mr, mc)) = t.unmerged_split_limits(r0, ci) else {
+                let controls_block = t.rect_has_controls(r0, r0, 0, ncols.saturating_sub(1))
+                    || t.rect_has_controls(0, nrows.saturating_sub(1), g0, g0);
+                return Some(if controls_block { "tableContent" } else { "limit" });
+            };
+            if let Some((sr, sc)) = split_dims {
+                if sr == 0 || sc == 0 || sr * sc < 2 || sr as usize > mr || sc as usize > mc {
+                    return Some("limit");
+                }
             }
             None
         }
@@ -353,6 +396,8 @@ impl DocxModel {
                 merge_below: Some("tableShape"),
                 merge_cells: Some("tableShape"),
                 split_cell: Some("tableShape"),
+                max_split_rows: 0,
+                max_split_columns: 0,
             });
         };
         let multi = inspect_selection(self, &tp, t);
@@ -360,7 +405,18 @@ impl DocxModel {
             MultiCellState::Rect(_, _, _, _, count) => count,
             _ => 1,
         };
-        let reason = |a| refusal_for(self, t, ext, &multi, a);
+        let reason = |a| refusal_for(self, t, ext, &multi, a, None);
+        let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
+        let (max_split_rows, max_split_columns) = if is_merged
+            || matches!(multi, MultiCellState::CrossTable | MultiCellState::PartialOverhang)
+            || matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count > 1)
+        {
+            (0, 0)
+        } else if let Some(ci) = t.cell_at_grid(ext.0, ext.2) {
+            t.unmerged_split_limits(ext.0, ci).unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
         Some(DocxTableView {
             rows: t.rows.len(),
             cols: t.grid.len(),
@@ -379,6 +435,8 @@ impl DocxModel {
             merge_below: reason(TableStructureAction::MergeBelow),
             merge_cells: reason(TableStructureAction::MergeCells),
             split_cell: reason(TableStructureAction::SplitCell),
+            max_split_rows,
+            max_split_columns,
         })
     }
 
@@ -386,12 +444,19 @@ impl DocxModel {
         &mut self,
         action: TableStructureAction,
         target: &SelectionIdentity,
+        rows: Option<u32>,
+        columns: Option<u32>,
     ) -> Result<bool, Rejected> {
         if position_key(&self.session.sel.anchor) != target.anchor_key
             || position_key(&self.session.sel.focus) != target.caret_key
         {
             return Err(Rejected);
         }
+        let split_dims = match (rows, columns) {
+            (None, None) => None,
+            (Some(r), Some(c)) => Some((r, c)),
+            _ => return Err(Rejected),
+        };
         let focus = &self.session.sel.focus;
         if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
             return Err(Rejected);
@@ -403,11 +468,15 @@ impl DocxModel {
         }
         let ext = t.cell_extent(r, c).ok_or(Rejected)?;
         let multi = inspect_selection(self, &tp, t);
-        if refusal_for(self, t, ext, &multi, action).is_some() {
+        if refusal_for(self, t, ext, &multi, action, split_dims).is_some() {
             return Err(Rejected);
         }
+        let params = match split_dims {
+            Some((sr, sc)) => json!({ "rows": sr, "columns": sc }),
+            None => json!({}),
+        };
         let changed = self.atomic(|model| {
-            let changed = model.run(action.command(), json!({}))?;
+            let changed = model.run(action.command(), params.clone())?;
             if !changed {
                 return Err(Rejected);
             }

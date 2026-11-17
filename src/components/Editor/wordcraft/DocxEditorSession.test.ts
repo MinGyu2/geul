@@ -293,7 +293,7 @@ describe("DocxEditorSession", () => {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
       insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
       deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
-      mergeCells: "tableShape", splitCell: "tableShape",
+      mergeCells: "tableShape", splitCell: "tableShape", maxSplitRows: 1, maxSplitColumns: 1,
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: true });
@@ -306,6 +306,39 @@ describe("DocxEditorSession", () => {
     expect(editCall?.args[3]).toEqual([{ op: "tableStructure", action: "insertRowBelow", target: { anchorKey: "body:0:0", caretKey: "body:0:0" } }]);
     // Pending edit blocks table commands until committed.
     expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: false, reason: "pendingEdits" });
+    await flush();
+    // Unmerged 1x1 cell with split capacity exposes tableSplit parameter context and requires explicit dims;
+    // merged cell executes directly with no parameters.
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
+      mergeCells: "tableShape", splitCell: null, maxSplitRows: 16, maxSplitColumns: 4,
+    };
+    await editor.load({ discard: true });
+    expect(documentCommandState("table.splitCell", editor.snapshot())).toEqual({ available: true });
+    expect(editor.snapshot().parameters?.["table.splitCell"]).toEqual({ tableSplit: { maxRows: 16, maxColumns: 4 } });
+    expect(editor.execute("table.splitCell").accepted).toBe(false);
+    expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 1, columns: 5 }).accepted).toBe(false);
+    expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 1, columns: 3 }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableStructure", action: "splitCell", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, rows: 1, columns: 3 },
+    ]);
+    await flush();
+    // Merged cell (rowSpan > 1) omits tableSplit parameter context and splits directly without args.
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 2, colSpan: 1, selectedCells: 1,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: "tableShape",
+      mergeCells: "tableShape", splitCell: null, maxSplitRows: 1, maxSplitColumns: 1,
+    };
+    await editor.load({ discard: true });
+    expect(documentCommandState("table.splitCell", editor.snapshot())).toEqual({ available: true });
+    expect(editor.snapshot().parameters?.["table.splitCell"]).toBeUndefined();
+    expect(editor.execute("table.splitCell").accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableStructure", action: "splitCell", target: { anchorKey: "body:0:0", caretKey: "body:0:0" } },
+    ]);
     await flush();
     // Protected document blocks structural commands.
     fake.formatAccess = "protected";

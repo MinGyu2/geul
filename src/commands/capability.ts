@@ -87,16 +87,16 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (step === "unknown") return unavailable("pendingEdits");
     return unavailable(id === "edit.undo" ? "nothingToUndo" : "nothingToRedo");
   }
+  if (isActionCommandId(id)) {
+    // 값 없는 문맥 명령(T013 목차 등): 세션이 엔진 보기로 판정한 문맥이 있을 때만(문맥을 화면에서 만들지 않음).
+    const action = snapshot.actions?.[id];
+    if (action) return action.pressed === undefined ? ENABLED : { available: true, pressed: action.pressed };
+    return unavailable(snapshot.actionReasons?.[id] ?? "engineUnsupported");
+  }
   if (isParameterCommandId(id)) {
     // 값 입력 명령(T012·T013): 세션이 지금 엔진·선택으로 판정한 문맥이 있을 때만 한다(문맥을 화면에서 만들지 않음).
     if (snapshot.parameters?.[id]) return ENABLED;
     return unavailable(snapshot.parameterReasons?.[id] ?? "engineUnsupported");
-  }
-  if (isActionCommandId(id)) {
-    // 값 없는 문맥 명령(T013 목차): 세션이 엔진 보기로 판정한 문맥이 있을 때만(문맥을 화면에서 만들지 않음).
-    const action = snapshot.actions?.[id];
-    if (action) return action.pressed === undefined ? ENABLED : { available: true, pressed: action.pressed };
-    return unavailable(snapshot.actionReasons?.[id] ?? "engineUnsupported");
   }
   const flag = FORMAT_FLAG[id];
   if (flag && snapshot.engine === "rhwp") {

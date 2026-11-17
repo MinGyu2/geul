@@ -25,12 +25,24 @@ export function columnLetters(col: number): string {
 
 function initialText(request: CommandInputRequest): string {
   if (request.command === "insert.table") return "2";
+  if (request.command === "table.splitCell") {
+    const cols = request.context.tableSplit?.maxColumns ?? 1;
+    return cols >= 2 ? "1" : "2";
+  }
   const shape = request.context.charShape;
   if (request.command === "hangul.charWidth") return shape ? String(shape.width) : "100";
   if (request.command === "hangul.charSpacing") return shape ? String(shape.spacing) : "0";
   if (request.command === "hangul.insertTableFormula") return request.context.formula ?? "";
   // New comments and formulas start empty.
   return "";
+}
+
+function initialTableCols(request: CommandInputRequest): string {
+  if (request.command === "table.splitCell") {
+    const cols = request.context.tableSplit?.maxColumns ?? 1;
+    return cols >= 2 ? "2" : "1";
+  }
+  return "2";
 }
 
 export function CommandInputDialog({ request, onCancel, onConfirm, suspended = false }: {
@@ -42,7 +54,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
 }) {
   const { t } = useTranslation();
   const [text, setText] = useState(() => initialText(request));
-  const [tableCols, setTableCols] = useState("2");
+  const [tableCols, setTableCols] = useState(() => initialTableCols(request));
   const [error, setError] = useState<MessageKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -62,6 +74,9 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   if (suspended) return null;
 
   const table = request.command === "insert.table";
+  const splitCell = request.command === "table.splitCell";
+  const splitLimit = request.context.tableSplit ?? { maxRows: 1, maxColumns: 1 };
+  const gridDialog = table || splitCell;
   const formula = request.command === "hangul.tableFormula" || request.command === "hangul.insertTableFormula";
   const comment = request.command === "review.comment";
   const note = request.command === "references.footnote" || request.command === "references.endnote";
@@ -78,6 +93,15 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
       }
       if (rows * cols > 256) return setError("commandInput.table.tooManyCells");
       args = { command: "insert.table", rows, cols };
+    } else if (splitCell) {
+      const rows = /^\d{1,2}$/.test(text.trim()) ? Number(text.trim()) : NaN;
+      const columns = /^\d{1,2}$/.test(tableCols.trim()) ? Number(tableCols.trim()) : NaN;
+      if (!Number.isSafeInteger(rows) || rows < 1 || rows > splitLimit.maxRows
+        || !Number.isSafeInteger(columns) || columns < 1 || columns > splitLimit.maxColumns) {
+        return setError("commandInput.splitCell.dimensions");
+      }
+      if (rows * columns < 2) return setError("commandInput.splitCell.atLeastTwo");
+      args = { command: "table.splitCell", rows, columns };
     } else if (comment) {
       const problem = commentProblem(text);
       if (problem) return setError(`commandInput.comment.${problem}` as MessageKey);
@@ -125,7 +149,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
           }
         }}>
         <h2 id={titleId} className="discard-dialog__title">{t(request.labelKey)}</h2>
-        {table ? <>
+        {gridDialog ? <>
           <label style={{ display: "block" }}>
             {t("commandInput.table.rows.label")}{" "}
             <input type="text" inputMode="numeric" pattern="[0-9]*" data-testid="command-input-rows" value={text}
@@ -157,16 +181,18 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
           {!textual && <span aria-hidden="true"> %</span>}
         </label>}
         <p id={hintId} className="discard-dialog__hint">
-          {table ? t("commandInput.table.hint") : comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
+          {table ? t("commandInput.table.hint")
+            : splitCell ? t("commandInput.splitCell.hint", { maxRows: splitLimit.maxRows, maxColumns: splitLimit.maxColumns })
+            : comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
             ? t((request.command === "hangul.insertTableFormula" ? "commandInput.persistentFormula.hint" : "commandInput.formula.hint"), { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
         </p>
-        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment || note ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH })}</p>}
+        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment || note ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH, maxRows: splitLimit.maxRows, maxColumns: splitLimit.maxColumns })}</p>}
         <div className="discard-dialog__actions">
           <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
           <button type="button" className="document-bar__button" data-testid="command-input-confirm" onClick={submit}>
-            {t(table ? "commandInput.table.confirm" : comment ? "commandInput.comment.confirm" : note ? "commandInput.note.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
+            {t(table ? "commandInput.table.confirm" : splitCell ? "commandInput.splitCell.confirm" : comment ? "commandInput.comment.confirm" : note ? "commandInput.note.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
           </button>
         </div>
       </div>

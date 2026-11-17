@@ -13454,3 +13454,172 @@ fn stage1_hwpx_list_proof_rejects_invalid_appends() {
         assert!(check(&header).iter().any(|f| f.code != FindingCode::PreviewStale), "{name}: accepted");
     }
 }
+
+#[test]
+fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
+    const IMAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    const STYLES_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+    const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const PNG_SIG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+
+    let ct_with_png = concat!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+        r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>"#,
+        r#"<Default Extension="xml" ContentType="application/xml"/>"#,
+        r#"<Default Extension="png" ContentType="image/png"/>"#,
+        r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
+        r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+        r#"</Types>"#,
+    );
+    let ct_without_png = concat!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">"#,
+        r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>"#,
+        r#"<Default Extension="xml" ContentType="application/xml"/>"#,
+        r#"<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>"#,
+        r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#,
+        r#"</Types>"#,
+    );
+    let rels_all = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId2" Type="{IMAGE_REL}" Target="media/image1.png"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let rels_without_img1 = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let styles = format!(r#"<w:styles xmlns:w="{W}"/>"#);
+    let doc_orig = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:p><w:r><a:blip r:embed="rId3"/></w:r></w:p>
+    <w:tbl><w:tr><w:tc><w:p><w:r><a:blip r:embed="rId2"/></w:r></w:p></w:tc></w:tr></w:tbl>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+    let doc_after_table_delete = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:p><w:r><a:blip r:embed="rId3"/></w:r></w:p>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+
+    let build = |ct: &str, doc: &str, rels: &str, media: &[(&str, &[u8])], extra: &[(&str, &[u8])]| {
+        let mut entries = vec![
+            entry("[Content_Types].xml", ct.as_bytes()),
+            entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+            entry("word/document.xml", doc.as_bytes()),
+            entry("word/_rels/document.xml.rels", rels.as_bytes()),
+            entry("word/styles.xml", styles.as_bytes()),
+        ];
+        for (p, b) in media {
+            entries.push(stored(p, b));
+        }
+        for (p, b) in extra {
+            entries.push(entry(p, b));
+        }
+        pkg(&entries)
+    };
+
+    // Positive: removing table-bound image1.png while body-bound image2.png stays intact passes T009
+    let orig = build(
+        ct_with_png,
+        &doc_orig,
+        &rels_all,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[],
+    );
+    let valid_out = build(
+        ct_with_png,
+        &doc_after_table_delete,
+        &rels_without_img1,
+        &[("word/media/image2.png", PNG_SIG)],
+        &[],
+    );
+    assert_eq!(package::compare_saved_docx(&orig, &valid_out), vec![]);
+
+    // Negative 1: deleting body-paragraph image outside <w:tbl> MUST be refused
+    let doc_removed_body = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}">
+  <w:body>
+    <w:tbl><w:tr><w:tc><w:p><w:r><a:blip r:embed="rId2"/></w:r></w:p></w:tc></w:tr></w:tbl>
+    <w:p><w:r><w:t>Keep</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#
+    );
+    let rels_without_img2 = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId2" Type="{IMAGE_REL}" Target="media/image1.png"/></Relationships>"#
+    );
+    let body_deleted = build(
+        ct_with_png,
+        &doc_removed_body,
+        &rels_without_img2,
+        &[("word/media/image1.png", PNG_SIG)],
+        &[],
+    );
+    assert!(!package::compare_saved_docx(&orig, &body_deleted).is_empty());
+
+    // Negative 2: removing media referenced by another part's .rels (header1.xml.rels) MUST be refused
+    let header_rels = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{IMAGE_REL}" Target="media/image1.png"/></Relationships>"#
+    );
+    let orig_with_header = build(
+        ct_with_png,
+        &doc_orig,
+        &rels_all,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[("word/_rels/header1.xml.rels", header_rels.as_bytes())],
+    );
+    let out_missing_header_media = build(
+        ct_with_png,
+        &doc_after_table_delete,
+        &rels_without_img1,
+        &[("word/media/image2.png", PNG_SIG)],
+        &[("word/_rels/header1.xml.rels", header_rels.as_bytes())],
+    );
+    assert!(!package::compare_saved_docx(&orig_with_header, &out_missing_header_media).is_empty());
+
+    // Negative 3: deleting an unreferenced orphan word/media/orphan.png MUST be refused
+    let orig_with_orphan = build(
+        ct_with_png,
+        &doc_orig,
+        &rels_all,
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+            ("word/media/orphan.png", PNG_SIG),
+        ],
+        &[],
+    );
+    assert!(!package::compare_saved_docx(&orig_with_orphan, &valid_out).is_empty());
+
+    // Negative 4: deleting a non-media part (word/styles.xml) MUST be refused
+    let mut bad_entries = vec![
+        entry("[Content_Types].xml", ct_without_png.as_bytes()),
+        entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+        entry("word/document.xml", doc_after_table_delete.as_bytes()),
+        entry("word/_rels/document.xml.rels", rels_without_img1.as_bytes()),
+        stored("word/media/image2.png", PNG_SIG),
+    ];
+    let missing_styles = pkg(&bad_entries);
+    assert!(!package::compare_saved_docx(&orig, &missing_styles).is_empty());
+
+    // Negative 5: deleting media whose rel is a non-image relationship in document.xml.rels MUST be refused
+    bad_entries.push(entry("word/styles.xml", styles.as_bytes()));
+    let rels_bad_type = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{STYLES_REL}" Target="styles.xml"/><Relationship Id="rId2" Type="{STYLES_REL}" Target="media/image1.png"/><Relationship Id="rId3" Type="{IMAGE_REL}" Target="media/image2.png"/></Relationships>"#
+    );
+    let orig_bad_rel = build(
+        ct_with_png,
+        &doc_orig,
+        &rels_bad_type,
+        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[],
+    );
+    assert!(!package::compare_saved_docx(&orig_bad_rel, &valid_out).is_empty());
+}

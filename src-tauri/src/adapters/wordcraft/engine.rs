@@ -247,6 +247,10 @@ pub enum DocxOp {
     TableStructure {
         action: table::TableStructureAction,
         target: SelectionIdentity,
+        #[serde(default)]
+        rows: Option<u32>,
+        #[serde(default)]
+        columns: Option<u32>,
     },
 }
 
@@ -404,9 +408,17 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::Replace { query, with } | DocxOp::ReplaceAll { query, with } => {
                 query.valid() && stage1::valid_replacement(with)
             }
-            DocxOp::TableStructure { target, .. } => {
+            DocxOp::TableStructure { action, target, rows, columns } => {
                 let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
-                ok_key(&target.anchor_key) && ok_key(&target.caret_key)
+                let dims_ok = match (action, rows, columns) {
+                    (table::TableStructureAction::SplitCell, None, None) => true,
+                    (table::TableStructureAction::SplitCell, Some(r), Some(c)) => {
+                        (1..=16).contains(r) && (1..=16).contains(c) && r.saturating_mul(*c) >= 2
+                    }
+                    (_, None, None) => true,
+                    _ => false,
+                };
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dims_ok
             }
             _ => true,
         })
@@ -949,7 +961,9 @@ impl DocxModel {
                 self.stage1_clear_search();
                 Ok(false)
             }
-            DocxOp::TableStructure { action, target } => self.table_structure(*action, target),
+            DocxOp::TableStructure { action, target, rows, columns } => {
+                self.table_structure(*action, target, *rows, *columns)
+            }
         }
     }
 

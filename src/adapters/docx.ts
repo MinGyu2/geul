@@ -119,6 +119,8 @@ export interface DocxTableView {
   mergeBelow: DocxTableRefusal;
   mergeCells: DocxTableRefusal;
   splitCell: DocxTableRefusal;
+  maxSplitRows: number;
+  maxSplitColumns: number;
 }
 
 export interface DocxFont {
@@ -233,7 +235,7 @@ export type DocxOp =
   | { op: "replace"; query: SearchOptions; with: string }
   | { op: "replaceAll"; query: SearchOptions; with: string }
   | { op: "clearSearch" }
-  | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string } };
+  | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string }; rows?: number; columns?: number };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -412,9 +414,9 @@ const TABLE_ACTION_KEYS: readonly DocxTableAction[] = [
 const TABLE_REFUSALS = new Set(["tableShape", "tableContent", "limit"]);
 
 function parseTableView(value: unknown): DocxTableView | undefined {
-  const keys = ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", ...TABLE_ACTION_KEYS];
+  const keys = ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", ...TABLE_ACTION_KEYS, "maxSplitRows", "maxSplitColumns"];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
-  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells"] as const) {
+  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns"] as const) {
     if (!isCount(value[k])) return undefined;
   }
   for (const k of TABLE_ACTION_KEYS) {

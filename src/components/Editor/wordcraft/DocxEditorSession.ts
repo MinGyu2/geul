@@ -1189,6 +1189,12 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         if (refusal === null) actions[id] = {};
         else actionReasons[id] = refusal;
       }
+      if (view.table.splitCell === null && view.table.rowSpan === 1 && view.table.colSpan === 1
+        && (view.table.maxSplitRows > 1 || view.table.maxSplitColumns > 1)) {
+        parameters["table.splitCell"] = {
+          tableSplit: { maxRows: view.table.maxSplitRows, maxColumns: view.table.maxSplitColumns },
+        };
+      }
     }
     this.stage1State(view, parameters, parameterReasons, actions, actionReasons);
     return { parameters, parameterReasons, actions, actionReasons };
@@ -1275,6 +1281,17 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
       return { accepted: this.push({ op: "table", rows: args.rows, cols: args.cols }) };
+    }
+    if (command === "table.splitCell") {
+      const snap = this.snapshot();
+      const splitCtx = snap.parameters?.["table.splitCell"];
+      if (args !== undefined) {
+        if (args.command !== command || !this.view || !validateCommandArgs(command, args, splitCtx)) return { accepted: false };
+        return { accepted: this.push({ op: "tableStructure", action: "splitCell", target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey }, rows: args.rows, columns: args.columns }) };
+      }
+      // Without args: only allowed for already-merged cells (`!splitCtx?.tableSplit`); unmerged 1x1 requires explicit dims.
+      if (splitCtx?.tableSplit || !this.view) return { accepted: false };
+      return { accepted: this.push({ op: "tableStructure", action: "splitCell", target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey } }) };
     }
     if (command === "format.font") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };

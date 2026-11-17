@@ -249,19 +249,23 @@ export function executeCommand(
   // The font picker always supplies its family; there is no free-form font dialog.
   if (id === "format.font" && args === undefined) return reject(unavailable("notImplemented"));
   if (isParameterCommandId(id) && args === undefined) {
-    // 값이 필요한 명령: 입력 창을 연다(문서는 아직 바꾸지 않음). 창이 없는 문맥이면 실행할 수 없다.
-    if (!context.requestInput || !label) return reject(unavailable("notImplemented"));
+    // 값 필요한 명령: 입력 창을 연다(문서는 아직 바꾸지 않음). 창이 없는 문맥이면 실행할 수 없다.
+    // table.splitCell only opens the dimension dialog for an unmerged 1x1 cell (parameters.tableSplit present);
+    // merged cells restore immediately without a dialog.
     const snapshot = context.document.snapshot();
     const parameters = snapshot.parameters?.[id];
-    if (!parameters) return reject(unavailable("notReady"));
-    context.requestInput({
-      command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
-      revision: snapshot.revision, context: parameters,
-      // Selection-owned values (table insertion, Stage 1 paragraph/margin dialogs): a moved caret makes the request stale.
-      ...((id === "insert.table" || (STAGE1_DIALOGS as readonly string[]).includes(id)) && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
-    });
-    trace("command:input", () => ({ id }));
-    return true;
+    if (id !== "table.splitCell" || parameters?.tableSplit) {
+      if (!context.requestInput || !label) return reject(unavailable("notImplemented"));
+      if (!parameters) return reject(unavailable("notReady"));
+      context.requestInput({
+        command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
+        revision: snapshot.revision, context: parameters,
+        // Selection-owned values (table insertion, cell split, Stage 1 dialogs): a moved caret makes the request stale.
+        ...((id === "insert.table" || id === "table.splitCell" || (STAGE1_DIALOGS as readonly string[]).includes(id)) && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
+      });
+      trace("command:input", () => ({ id }));
+      return true;
+    }
   }
   const dispatch = args === undefined ? context.document.execute(id) : context.document.execute(id, args);
   const { accepted } = dispatch;

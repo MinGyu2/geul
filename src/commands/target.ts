@@ -121,6 +121,8 @@ export type DocumentCommandArgs =
   /** Stage 5-A: font family for the selection (or the next typed text where the engine supports it). Chosen in the
    * font picker, never from a free-form dialog. */
   | { command: "format.font"; family: string }
+  /** Stage 2 / Phase 1: subdivide an unmerged 1x1 cell into rows x columns. */
+  | { command: "table.splitCell"; rows: number; columns: number }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -137,6 +139,8 @@ export interface CommandParameterContext {
   formula?: string;
   /** 커서가 있는 표 셀(0부터)과 표 크기. */
   tableCell?: { row: number; col: number; rows: number; cols: number };
+  /** Unmerged 1x1 DOCX cell split limits from live engine view. */
+  tableSplit?: { maxRows: number; maxColumns: number };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };
   /** Stage 1: current paragraph / character / page values (initial dialog and picker values). */

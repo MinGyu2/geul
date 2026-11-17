@@ -368,8 +368,13 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         notes.is_empty() || note_settings_added(original, output, &notes)
     });
     let pictures = pictures_appended(original, output);
+    let media_removed = if added.is_none() && pictures.is_none() {
+        authorized_table_media_changes(original, output)
+    } else {
+        None
+    };
     // Stage 1 F: embedded fonts (font table embeds + obfuscated font parts); not composed with other additions.
-    let fonts = if added.is_none() && pictures.is_none() {
+    let fonts = if added.is_none() && pictures.is_none() && media_removed.is_none() {
         super::docx_fonts::docx_fonts_embedded(original, output)
     } else {
         None
@@ -396,7 +401,7 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         name == BODY
             || (numbering && name == NUMBERING)
             || name == APP
-            || ((added.is_some() || pictures.is_some())
+            || ((added.is_some() || pictures.is_some() || media_removed.is_some())
                 && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
             || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
@@ -405,6 +410,12 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
                 f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
             })
     });
+    if let Some(removed) = &media_removed {
+        findings.retain(|f| {
+            !(f.code == FindingCode::PartMissing
+                && f.part.as_deref().is_some_and(|name| removed.iter().any(|r| r == name)))
+        });
+    }
     if let Some(fonts) = &fonts {
         findings.retain(|f| {
             !(f.code == FindingCode::PartAdded && f.part.as_ref().is_some_and(|name| fonts.parts.contains(name)))
@@ -1741,6 +1752,249 @@ fn pictures_appended(original: &Package, output: &Package) -> Option<Vec<String>
             .iter()
             .all(|name| name == NUMBERING || used.contains(name)))
     .then_some(added)
+}
+
+/// Narrow T009 proof for authorized media removal caused by deleting table rows/columns:
+/// permits removing `word/media/*` parts (and matching `word/_rels/document.xml.rels` /
+/// `[Content_Types].xml` entries, or pure `IMAGE_REL` ID renumbering when shared media remain)
+/// only when every removed resource was bound exclusively by `<a:blip r:embed="..."/>` inside
+/// `<w:tbl>` of `original`'s `word/document.xml`, no other `.rels` part references it, no
+/// non-table/non-image bindings changed or were omitted, and no surviving `.rels` references it.
+fn authorized_table_media_changes(original: &Package, output: &Package) -> Option<Vec<String>> {
+    const IMAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    const REL_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const WORD_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const DRAWING_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+
+    if output.parts.keys().any(|n| !original.parts.contains_key(n)) {
+        return None;
+    }
+    let removed: Vec<String> = original
+        .parts
+        .keys()
+        .filter(|n| !output.parts.contains_key(*n))
+        .cloned()
+        .collect();
+    if removed.len() > 256 {
+        return None;
+    }
+    let mut removed_exts = std::collections::BTreeSet::new();
+    for name in &removed {
+        let tail = name.strip_prefix("word/media/")?;
+        if tail.is_empty() || tail.contains('/') || tail.contains("..") {
+            return None;
+        }
+        let ext = tail.rsplit('.').next()?.to_ascii_lowercase();
+        if !matches!(
+            ext.as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "svg" | "emf" | "wmf" | "ico"
+        ) {
+            return None;
+        }
+        removed_exts.insert(ext);
+    }
+    fn attr<'a>(a: &'a Attrs, key: &str) -> Option<&'a str> {
+        a.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
+    // Ensure no other .rels (headers, footers, comments, notes, etc.) references any removed media,
+    // and no surviving .rels in output references any removed media.
+    for (pkg, skip_doc) in [(original, true), (output, false)] {
+        for (rels_name, (_, data)) in &pkg.parts {
+            if !rels_name.ends_with(".rels") || (skip_doc && rels_name == DOCUMENT_RELS) {
+                continue;
+            }
+            let rels = xml::relationships(data).ok()?;
+            for r in rels.iter().filter(|r| !r.external) {
+                if let Some(target) = resolve(rels_name, &r.target) {
+                    if removed.iter().any(|m| m.eq_ignore_ascii_case(&target)) {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+    // Validate [Content_Types].xml changes: only unused removed extensions / overrides.
+    if !removed.is_empty() {
+        let (root_a, types_a) = content_type_children(original.get(CONTENT_TYPES)?)?;
+        let (root_b, types_b) = content_type_children(output.get(CONTENT_TYPES)?)?;
+        if root_a != root_b {
+            return None;
+        }
+        let mut remaining_b = types_b.clone();
+        let mut omitted_types = Vec::new();
+        for entry in &types_a {
+            if let Some(pos) = remaining_b.iter().position(|e| e == entry) {
+                remaining_b.swap_remove(pos);
+            } else {
+                omitted_types.push(entry);
+            }
+        }
+        if !remaining_b.is_empty() {
+            return None;
+        }
+        for entry in omitted_types {
+            let tag = attr(entry, "");
+            if tag == Some("Default") {
+                let ext = attr(entry, "Extension")?.to_ascii_lowercase();
+                if !removed_exts.contains(&ext) {
+                    return None;
+                }
+                let ext_still_used = output
+                    .parts
+                    .keys()
+                    .any(|p| p.rsplit('.').next().is_some_and(|e| e.eq_ignore_ascii_case(&ext)));
+                if ext_still_used {
+                    return None;
+                }
+            } else if tag == Some("Override") {
+                let part = attr(entry, "PartName")?.strip_prefix('/')?;
+                if !removed.iter().any(|r| r == part) {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+    }
+    let (root_a, rels_a) = flat_children(
+        original.get(DOCUMENT_RELS)?,
+        OPC_RELATIONSHIPS,
+        "Relationships",
+        "Relationship",
+        "",
+    )?;
+    let (root_b, rels_b) = flat_children(
+        output.get(DOCUMENT_RELS)?,
+        OPC_RELATIONSHIPS,
+        "Relationships",
+        "Relationship",
+        "",
+    )?;
+    if root_a != root_b {
+        return None;
+    }
+    // Check ID validity and verify only IMAGE_REL entries pointing at `removed` may leave document.xml.rels.
+    for rels in [&rels_a, &rels_b] {
+        let mut ids = std::collections::BTreeSet::new();
+        for a in rels {
+            let id = attr(a, "Id")?;
+            if id.is_empty() || !ids.insert(id) {
+                return None;
+            }
+        }
+    }
+    let without_id = |a: &Attrs| -> Attrs {
+        a.iter().filter(|(k, _)| k != "Id").cloned().collect()
+    };
+    let mut rem_b: Vec<Attrs> = rels_b.iter().map(without_id).collect();
+    let mut omitted_rels: Vec<Attrs> = Vec::new();
+    for entry in rels_a.iter().map(without_id) {
+        if let Some(pos) = rem_b.iter().position(|e| *e == entry) {
+            rem_b.swap_remove(pos);
+        } else {
+            omitted_rels.push(entry);
+        }
+    }
+    if !rem_b.is_empty() {
+        return None;
+    }
+    for rel in &omitted_rels {
+        let external = attr(rel, "TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("External"));
+        if external || attr(rel, "Type") != Some(IMAGE_REL) {
+            return None;
+        }
+        let target = resolve(DOCUMENT_RELS, attr(rel, "Target")?)?;
+        if !removed.iter().any(|m| m == &target) {
+            return None;
+        }
+    }
+    if removed.is_empty() && original.get(DOCUMENT_RELS) == output.get(DOCUMENT_RELS) {
+        return None;
+    }
+    // Walk word/document.xml bindings with table nesting depth.
+    type Binding = (String, String, String, Attrs);
+    let doc_bindings = |pkg: &Package, rels: &[Attrs]| -> Option<Vec<(bool, Option<String>, Binding)>> {
+        let mut out = Vec::new();
+        let mut tbl_stack: Vec<bool> = Vec::new();
+        let mut tbl_depth = 0usize;
+        for event in xml::canonical(pkg.get("word/document.xml")?).ok()? {
+            match event {
+                xml::Canonical::Start {
+                    namespace,
+                    name,
+                    attributes,
+                } => {
+                    let is_tbl = namespace.as_deref() == Some(WORD_NS) && name.as_str() == "tbl";
+                    if is_tbl {
+                        tbl_depth += 1;
+                    }
+                    tbl_stack.push(is_tbl);
+                    let in_tbl = tbl_depth > 0;
+                    for (ns, key, id) in attributes {
+                        if ns.as_deref() != Some(REL_NS) {
+                            continue;
+                        }
+                        let rel = rels.iter().find(|a| attr(a, "Id") == Some(id.as_str()))?;
+                        let external =
+                            attr(rel, "TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("External"));
+                        let resolved_img = (!external && attr(rel, "Type") == Some(IMAGE_REL))
+                            .then(|| attr(rel, "Target").and_then(|t| resolve(DOCUMENT_RELS, t)))
+                            .flatten();
+                        out.push((
+                            in_tbl,
+                            resolved_img,
+                            (
+                                namespace.as_deref().unwrap_or("").to_string(),
+                                name.as_str().to_string(),
+                                key.as_str().to_string(),
+                                without_id(rel),
+                            ),
+                        ));
+                    }
+                }
+                xml::Canonical::End => {
+                    if tbl_stack.pop() == Some(true) {
+                        tbl_depth -= 1;
+                    }
+                }
+                xml::Canonical::Text(_)
+                | xml::Canonical::Comment(_)
+                | xml::Canonical::Instruction(_) => {}
+            }
+        }
+        Some(out)
+    };
+    let before = doc_bindings(original, &rels_a)?;
+    let after = doc_bindings(output, &rels_b)?;
+    let mut after_idx = 0usize;
+    let mut removed_seen = std::collections::BTreeSet::new();
+    for (in_tbl, resolved_img, binding) in &before {
+        if after.get(after_idx).is_some_and(|(_, _, ab)| ab == binding) {
+            after_idx += 1;
+        } else {
+            // Only `<a:blip r:embed="..."/>` inside `<w:tbl>` targeting `word/media/*` may be omitted.
+            let target = resolved_img.as_deref()?;
+            if !*in_tbl
+                || binding.0 != DRAWING_NS
+                || binding.1 != "blip"
+                || binding.2 != "embed"
+                || !target.starts_with("word/media/")
+            {
+                return None;
+            }
+            if removed.iter().any(|r| r == target) {
+                removed_seen.insert(target.to_string());
+            }
+        }
+    }
+    if after_idx != after.len() {
+        return None;
+    }
+    if !removed.iter().all(|r| removed_seen.contains(r)) {
+        return None;
+    }
+    Some(removed)
 }
 
 const NUMBERING: &str = "word/numbering.xml";

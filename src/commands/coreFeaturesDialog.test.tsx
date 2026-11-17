@@ -80,6 +80,66 @@ describe.each([
   });
 });
 
+describe("table.splitCell input dialog & executeCommand routing", () => {
+  it("defaults to 1x2 when columns allowed >= 2, validates maxRows/maxColumns, and submits", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const splitReq: CommandInputRequest = {
+      command: "table.splitCell",
+      labelKey: "command.table.splitCell",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      selectionKey: "sel-1",
+      context: { tableSplit: { maxRows: 16, maxColumns: 4 } },
+    };
+    render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <CommandInputDialog request={splitReq} onConfirm={(a) => confirmed.push(a)} onCancel={() => {}} />
+      </LanguageProvider>,
+    );
+    const rows = screen.getByTestId("command-input-rows") as HTMLInputElement;
+    const cols = screen.getByTestId("command-input-cols") as HTMLInputElement;
+    expect(rows.value).toBe("1");
+    expect(cols.value).toBe("2");
+
+    fireEvent.change(rows, { target: { value: "1" } });
+    fireEvent.change(cols, { target: { value: "1" } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(screen.getByTestId("command-input-error")).toHaveTextContent("2 이상");
+    expect(confirmed).toHaveLength(0);
+
+    fireEvent.change(cols, { target: { value: "5" } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(screen.getByTestId("command-input-error")).toHaveTextContent("1–16");
+    expect(confirmed).toHaveLength(0);
+
+    fireEvent.change(rows, { target: { value: "2" } });
+    fireEvent.change(cols, { target: { value: "3" } });
+    fireEvent.keyDown(cols, { key: "Enter" });
+    expect(confirmed).toEqual([{ command: "table.splitCell", rows: 2, columns: 3 }]);
+    expect(validateCommandArgs("table.splitCell", { command: "table.splitCell", rows: 2, columns: 3 }, { tableSplit: { maxRows: 16, maxColumns: 4 } })).toBe(true);
+    expect(validateCommandArgs("table.splitCell", { command: "table.splitCell", rows: 1, columns: 1 }, { tableSplit: { maxRows: 16, maxColumns: 4 } })).toBe(false);
+  });
+
+  it("defaults to 2x1 when column is too narrow for horizontal split (maxColumns=1)", () => {
+    const splitReq: CommandInputRequest = {
+      command: "table.splitCell",
+      labelKey: "command.table.splitCell",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: { tableSplit: { maxRows: 16, maxColumns: 1 } },
+    };
+    render(
+      <LanguageProvider language="en" onLanguageChange={() => {}}>
+        <CommandInputDialog request={splitReq} onConfirm={() => {}} onCancel={() => {}} />
+      </LanguageProvider>,
+    );
+    expect((screen.getByTestId("command-input-rows") as HTMLInputElement).value).toBe("2");
+    expect((screen.getByTestId("command-input-cols") as HTMLInputElement).value).toBe("1");
+  });
+});
+
 describe("table command argument boundary", () => {
   it("rejects decimals, unknown fields, dimensions outside bounds, and excessive cell counts", () => {
     expect(validateCommandArgs("insert.table", { command: "insert.table", rows: 2, cols: 2 }, {})).toBe(true);
