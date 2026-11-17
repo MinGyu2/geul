@@ -277,6 +277,26 @@ pub enum DocxOp {
         #[serde(default)]
         vertical: Option<table::CellVAlign>,
     },
+    /// Stage 2 Phase 3 (P3-3): DOCX selected-column width or uniform distribution with explicit target ownership.
+    TableColumnWidth {
+        target: SelectionIdentity,
+        #[serde(default)]
+        width: Option<f32>,
+        #[serde(default)]
+        distribute: bool,
+    },
+    /// Stage 2 Phase 3 (P3-3): DOCX selected-row height (exact/atLeast/auto) or distribution with explicit target ownership.
+    TableRowHeight {
+        target: SelectionIdentity,
+        #[serde(default)]
+        height: Option<f32>,
+        #[serde(default)]
+        rule: Option<table::RowHeightRule>,
+        #[serde(default)]
+        clear: bool,
+        #[serde(default)]
+        distribute: bool,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -472,6 +492,26 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 ok_key(&target.anchor_key)
                     && ok_key(&target.caret_key)
                     && (horizontal.is_some() || vertical.is_some())
+            }
+            DocxOp::TableColumnWidth { target, width, distribute } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let dim_ok = match (*distribute, *width) {
+                    (true, None) => true,
+                    (false, Some(w)) => table::valid_docx_col_width(w),
+                    _ => false,
+                };
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dim_ok
+            }
+            DocxOp::TableRowHeight { target, height, rule, clear, distribute } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let dim_ok = if *distribute {
+                    height.is_none() && rule.is_none() && !*clear
+                } else if *clear {
+                    height.is_none() && rule.is_none()
+                } else {
+                    height.is_some_and(table::valid_docx_row_height)
+                };
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dim_ok
             }
             _ => true,
         })
@@ -1031,6 +1071,12 @@ impl DocxModel {
             }
             DocxOp::TableAlignment { target, horizontal, vertical } => {
                 self.table_cell_alignment(target, *horizontal, *vertical)
+            }
+            DocxOp::TableColumnWidth { target, width, distribute } => {
+                self.table_column_width(target, *width, *distribute)
+            }
+            DocxOp::TableRowHeight { target, height, rule, clear, distribute } => {
+                self.table_row_height(target, *height, *rule, *clear, *distribute)
             }
         }
     }

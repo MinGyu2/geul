@@ -112,4 +112,43 @@ describe("TableFormattingDialog", () => {
     fireEvent.click(screen.getByTestId("table-format-confirm"));
     expect(confirmed[1]).toEqual({ command: "table.alignment", horizontal: "justify", vertical: "bottom" });
   });
+
+  it("supports column width, distribute columns, row height, rule and auto height", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const colReq: CommandInputRequest = {
+      command: "table.columnWidth",
+      labelKey: "command.table.columnWidth",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableColumnWidth: { width: 100, mixed: false, minPt: 6, maxPt: 1584, selectedCols: 1, totalCols: 3 },
+      },
+    };
+    const { unmount } = renderFormattingDialog(colReq, "en", (a) => confirmed.push(a));
+    fireEvent.change(screen.getByTestId("table-col-width"), { target: { value: "135" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[0]).toEqual({ command: "table.columnWidth", width: 135 });
+    fireEvent.click(screen.getByTestId("table-distribute-cols"));
+    expect(confirmed[1]).toEqual({ command: "table.columnWidth", distribute: true });
+    unmount();
+
+    const rowReq: CommandInputRequest = {
+      command: "table.rowHeight",
+      labelKey: "command.table.rowHeight",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableRowHeight: { height: 24, mixed: false, rule: "atLeast", supportedRules: ["atLeast", "exact"], supportsAuto: true, minPt: 1, maxPt: 1584, selectedRows: 1, totalRows: 2 },
+      },
+    };
+    renderFormattingDialog(rowReq, "en", (a) => confirmed.push(a));
+    fireEvent.change(screen.getByTestId("table-row-height"), { target: { value: "40" } });
+    fireEvent.change(screen.getByTestId("table-row-rule"), { target: { value: "exact" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[2]).toEqual({ command: "table.rowHeight", height: 40, rule: "exact" });
+    fireEvent.click(screen.getByTestId("table-auto-row-height"));
+    expect(confirmed[3]).toEqual({ command: "table.rowHeight", height: null });
+  });
 });

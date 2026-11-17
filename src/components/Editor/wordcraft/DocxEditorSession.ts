@@ -1187,6 +1187,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       parameterReasons["table.shading"] = "notInTable";
       parameterReasons["table.borders"] = "notInTable";
       parameterReasons["table.alignment"] = "notInTable";
+      parameterReasons["table.columnWidth"] = "notInTable";
+      parameterReasons["table.rowHeight"] = "notInTable";
     } else {
       for (const id of TABLE_STRUCTURE_IDS) {
         const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
@@ -1238,6 +1240,37 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             vertical: view.table.cellAlignVertical,
             verticalMixed: view.table.cellAlignVerticalMixed,
             selectedCells: view.table.selectedCells,
+          },
+        };
+      }
+      if (view.table.columnWidthRefusal !== null) {
+        parameterReasons["table.columnWidth"] = mapFormatRefusal(view.table.columnWidthRefusal);
+      } else {
+        parameters["table.columnWidth"] = {
+          tableColumnWidth: {
+            width: view.table.colWidth,
+            mixed: view.table.colWidthMixed,
+            minPt: 6,
+            maxPt: 1584,
+            selectedCols: view.table.selectedCols,
+            totalCols: view.table.cols,
+          },
+        };
+      }
+      if (view.table.rowHeightRefusal !== null) {
+        parameterReasons["table.rowHeight"] = mapFormatRefusal(view.table.rowHeightRefusal);
+      } else {
+        parameters["table.rowHeight"] = {
+          tableRowHeight: {
+            height: view.table.rowHeight,
+            mixed: view.table.rowHeightMixed,
+            rule: view.table.rowHeightRule,
+            supportedRules: ["atLeast", "exact"],
+            supportsAuto: true,
+            minPt: 1,
+            maxPt: 1584,
+            selectedRows: view.table.selectedRows,
+            totalRows: view.table.rows,
           },
         };
       }
@@ -1376,6 +1409,34 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
           target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
           ...(args.horizontal !== undefined ? { horizontal: args.horizontal } : {}),
           ...(args.vertical !== undefined ? { vertical: args.vertical } : {}),
+        }),
+      };
+    }
+    if (command === "table.columnWidth") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableColumnWidth",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          ...(args.width !== undefined ? { width: args.width } : {}),
+          distribute: args.distribute === true,
+        }),
+      };
+    }
+    if (command === "table.rowHeight") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableRowHeight",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          ...(typeof args.height === "number" ? { height: args.height } : {}),
+          ...(args.rule !== undefined ? { rule: args.rule } : {}),
+          clear: args.height === null,
+          distribute: args.distribute === true,
         }),
       };
     }

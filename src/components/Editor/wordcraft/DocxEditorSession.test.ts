@@ -303,6 +303,15 @@ describe("DocxEditorSession", () => {
       cellAlignVertical: "top",
       cellAlignVerticalMixed: false,
       cellAlignmentRefusal: null,
+      colWidth: 100,
+      colWidthMixed: false,
+      rowHeight: 24,
+      rowHeightMixed: false,
+      rowHeightRule: "atLeast",
+      selectedCols: 1,
+      selectedRows: 1,
+      columnWidthRefusal: null,
+      rowHeightRefusal: null,
     } as const;
     fake.tableView = {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
@@ -370,6 +379,8 @@ describe("DocxEditorSession", () => {
     expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
     expect(documentCommandState("table.borders", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
     expect(documentCommandState("table.alignment", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
+    expect(documentCommandState("table.columnWidth", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
+    expect(documentCommandState("table.rowHeight", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
     fake.tableView = {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
       insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
@@ -380,11 +391,15 @@ describe("DocxEditorSession", () => {
       supportedBorderStyles: ["single", "double", "dotted", "dashed", "thick", "triple", "dotDash", "wave", "none"],
       cellAlignHorizontal: "left", cellAlignHorizontalMixed: false,
       cellAlignVertical: "top", cellAlignVerticalMixed: false, cellAlignmentRefusal: null,
+      colWidth: 100, colWidthMixed: false, rowHeight: 24, rowHeightMixed: false, rowHeightRule: "atLeast",
+      selectedCols: 1, selectedRows: 1, columnWidthRefusal: null, rowHeightRefusal: null,
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
     expect(documentCommandState("table.borders", editor.snapshot())).toEqual({ available: true });
     expect(documentCommandState("table.alignment", editor.snapshot())).toEqual({ available: true });
+    expect(documentCommandState("table.columnWidth", editor.snapshot())).toEqual({ available: true });
+    expect(documentCommandState("table.rowHeight", editor.snapshot())).toEqual({ available: true });
     // Invalid hex or unsupported style/inside-on-single-cell must reject before queueing.
     expect(editor.execute("table.shading", { command: "table.shading", color: "not-a-color" }).accepted).toBe(false);
     expect(editor.execute("table.borders", { command: "table.borders", kind: "inside", style: "single", width: 0.5, color: "#000000" }).accepted).toBe(false);
@@ -412,6 +427,17 @@ describe("DocxEditorSession", () => {
     expect(editor.execute("table.alignment", { command: "table.alignment", horizontal: "center", vertical: "bottom" }).accepted).toBe(true);
     expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
       { op: "tableAlignment", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, horizontal: "center", vertical: "bottom" },
+    ]);
+    await flush();
+    expect(editor.execute("table.columnWidth", { command: "table.columnWidth", width: 2 }).accepted).toBe(false);
+    expect(editor.execute("table.columnWidth", { command: "table.columnWidth", width: 120 }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableColumnWidth", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, width: 120, distribute: false },
+    ]);
+    await flush();
+    expect(editor.execute("table.rowHeight", { command: "table.rowHeight", height: 36, rule: "exact" }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableRowHeight", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, height: 36, rule: "exact", clear: false, distribute: false },
     ]);
   });
 });

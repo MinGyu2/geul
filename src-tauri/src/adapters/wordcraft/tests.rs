@@ -4761,3 +4761,145 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     assert_eq!(tbl.rows[0].cells[2].blocks[0].as_para().unwrap().props.align, Some(Align::Right));
     assert_eq!(tbl.rows[2].cells[2].props.valign, VAlign::Top);
 }
+
+#[test]
+fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_and_negatives() {
+    use super::engine::table::{RowHeightRule, TableStructureAction as A};
+    use crate::services::save::package;
+    use wordcraft_engine::doc::props::HeightRule;
+
+    let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
+    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    for r in 0..3 {
+        for c in 0..3 {
+            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
+            assert!(m.apply(&[DocxOp::InsertText { text: format!("D{r}{c}") }]).rejected.is_empty());
+        }
+    }
+    let orig_bytes = wordcraft_engine::io::save_bytes("p3-3-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
+
+    // Negative validations: out-of-range widths/heights and conflicting flags must fail validation or reject.
+    let t0 = table_target(&mut m);
+    assert!(!validate(&[DocxOp::TableColumnWidth {
+        target: t0.clone(),
+        width: Some(1.0),
+        distribute: false,
+    }]));
+    assert!(!validate(&[DocxOp::TableColumnWidth {
+        target: t0.clone(),
+        width: Some(100.0),
+        distribute: true,
+    }]));
+    assert!(!validate(&[DocxOp::TableRowHeight {
+        target: t0.clone(),
+        height: Some(0.1),
+        rule: Some(RowHeightRule::Exact),
+        clear: false,
+        distribute: false,
+    }]));
+    assert_eq!(
+        m.apply(&[DocxOp::TableColumnWidth {
+            target: super::engine::SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() },
+            width: Some(90.0),
+            distribute: false,
+        }])
+        .rejected,
+        vec![0]
+    );
+
+    // Single column width 140pt -> Undo restores -> Redo reapplies.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    let orig_col0 = m.view().table.as_ref().unwrap().col_width.unwrap();
+    let orig_col2 = m.diagnostic_document().body[tp_idx].as_table().unwrap().grid[2];
+    let t00 = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableColumnWidth { target: t00, width: Some(140.0), distribute: false }]).changed,
+        1
+    );
+    assert_eq!(m.view().table.as_ref().unwrap().col_width, Some(140.0));
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!((m.view().table.as_ref().unwrap().col_width.unwrap() - orig_col0).abs() < 0.05);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.view().table.as_ref().unwrap().col_width, Some(140.0));
+    assert!((m.diagnostic_document().body[tp_idx].as_table().unwrap().grid[2] - orig_col2).abs() < 0.05);
+
+    // Multi-row exact height 42pt on rows 0..=1; row 2 untouched.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    assert!(m.view().table.as_ref().unwrap().col_width_mixed);
+    let t_rect = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRowHeight {
+            target: t_rect,
+            height: Some(42.0),
+            rule: Some(RowHeightRule::Exact),
+            clear: false,
+            distribute: false,
+        }])
+        .changed,
+        1
+    );
+    let tv_rows = m.view().table.unwrap();
+    assert_eq!(tv_rows.row_height, Some(42.0));
+    assert_eq!(tv_rows.row_height_rule, Some("exact"));
+
+    // Merged cell (0,2)..=(1,2): partial overhang rejects dimension changes.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+    })));
+    assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+    })));
+    assert!(m.view().table.as_ref().unwrap().column_width_refusal.is_some());
+    let t_over = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableColumnWidth { target: t_over, width: Some(110.0), distribute: false }]).rejected,
+        vec![0]
+    );
+
+    // Distribute columns evenly from cell (2,2), then nested table resize.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 2, 0], "off": 0 } })));
+    let t_dist = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableColumnWidth { target: t_dist, width: None, distribute: true }]).changed,
+        1
+    );
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
+    let nested_t = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[
+            DocxOp::TableColumnWidth { target: nested_t.clone(), width: Some(80.0), distribute: false },
+            DocxOp::TableRowHeight {
+                target: nested_t,
+                height: Some(28.0),
+                rule: Some(RowHeightRule::AtLeast),
+                clear: false,
+                distribute: false,
+            },
+        ])
+        .changed,
+        2
+    );
+
+    // T009 save check + independent reopen.
+    let saved_bytes = wordcraft_engine::io::save_bytes("p3-3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
+    assert!(findings.is_empty(), "DOCX table dimensions must pass T009: {findings:?}");
+
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert!((tbl.grid[0] - tbl.grid[1]).abs() < 0.05);
+    assert_eq!(tbl.rows[0].props.height, Some(42.0));
+    assert_eq!(tbl.rows[0].props.height_rule, HeightRule::Exact);
+    assert_eq!(tbl.rows[2].props.height, None);
+}

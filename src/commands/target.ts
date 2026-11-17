@@ -139,6 +139,15 @@ export type DocumentCommandArgs =
       horizontal?: "left" | "center" | "right" | "justify";
       vertical?: "top" | "middle" | "bottom";
     }
+  /** Stage 2 / Phase 3 (P3-3): selected-column width or uniform distribution (pt). */
+  | { command: "table.columnWidth"; width?: number; distribute?: boolean }
+  /** Stage 2 / Phase 3 (P3-3): selected-row height (pt or null=auto) or distribution. */
+  | {
+      command: "table.rowHeight";
+      height?: number | null;
+      rule?: "atLeast" | "exact";
+      distribute?: boolean;
+    }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -187,6 +196,27 @@ export interface CommandParameterContext {
     vertical: "top" | "middle" | "bottom" | null;
     verticalMixed: boolean;
     selectedCells: number;
+  };
+  /** Stage 2 / Phase 3 (P3-3): selected-column width context (pt). */
+  tableColumnWidth?: {
+    width: number | null;
+    mixed: boolean;
+    minPt: number;
+    maxPt: number;
+    selectedCols: number;
+    totalCols: number;
+  };
+  /** Stage 2 / Phase 3 (P3-3): selected-row height context (pt). */
+  tableRowHeight?: {
+    height: number | null;
+    mixed: boolean;
+    rule: "atLeast" | "exact" | null;
+    supportedRules: readonly ("atLeast" | "exact")[];
+    supportsAuto: boolean;
+    minPt: number;
+    maxPt: number;
+    selectedRows: number;
+    totalRows: number;
   };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };

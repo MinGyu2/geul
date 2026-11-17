@@ -1997,4 +1997,92 @@ describe("Stage 2 Phase 2: complex content matrix", () => {
       } finally { reopened.free(); }
     } finally { editor.dispose(); }
   });
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-3 column widths & row heights: single/rect/nested/merged, distribute, Undo/Redo, T009 save & reopen", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, true, false);
+    try {
+      // Invalid width/height or unsupported `exact` rule / `null` height must be refused.
+      place(withCell(at, 0));
+      expect(documentCommandState("table.columnWidth", editor.snapshot())).toEqual({ available: true });
+      expect(documentCommandState("table.rowHeight", editor.snapshot())).toEqual({ available: true });
+      expect(editor.execute("table.columnWidth", { command: "table.columnWidth", width: 2 }).accepted).toBe(false);
+      expect(editor.execute("table.rowHeight", { command: "table.rowHeight", height: 30, rule: "exact" }).accepted).toBe(false);
+      expect(editor.execute("table.rowHeight", { command: "table.rowHeight", height: null }).accepted).toBe(false);
+
+      // Column 0 width 125pt -> Undo -> Redo.
+      const beforeW = editor.snapshot().parameters?.["table.columnWidth"]?.tableColumnWidth?.width;
+      await run("table.columnWidth", { command: "table.columnWidth", width: 125 });
+      expect(editor.snapshot().parameters?.["table.columnWidth"]?.tableColumnWidth?.width).toBe(125);
+      await run("edit.undo");
+      expect(editor.snapshot().parameters?.["table.columnWidth"]?.tableColumnWidth?.width).toBe(beforeW);
+      await run("edit.redo");
+      expect(editor.snapshot().parameters?.["table.columnWidth"]?.tableColumnWidth?.width).toBe(125);
+
+      // Row 0 height 36pt, then distribute columns & rows across whole table.
+      await run("table.rowHeight", { command: "table.rowHeight", height: 36, rule: "atLeast" });
+      expect(editor.snapshot().parameters?.["table.rowHeight"]?.tableRowHeight?.height).toBe(36);
+
+      // Merged cell (0,0)-(0,1) cannot be partially selected; full merge span or whole rect succeeds.
+      await run("table.columnWidth", { command: "table.columnWidth", distribute: true });
+      place(at);
+      editor.caret = withCell(at, 1);
+      expect(editor.snapshot().parameters?.["table.columnWidth"]?.tableColumnWidth?.mixed).toBe(false);
+      await run("table.rowHeight", { command: "table.rowHeight", distribute: true });
+
+      // Nested table dimension formatting inside cell 0.
+      const nested = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] } };
+      place(nested);
+      await run("table.columnWidth", { command: "table.columnWidth", width: 70 });
+      await run("table.rowHeight", { command: "table.rowHeight", height: 28 });
+
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
+        const outerFmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 1, 1,
+        ));
+        expect(outerFmt.dimensions.colWidthMixed).toBe(false);
+        expect(outerFmt.dimensions.rowHeightPt).toBe(36);
+        const nestedFmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([
+            { controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 },
+            { controlIndex: 0, cellIndex: 0, cellParaIndex: 0 },
+          ]),
+          0, 0, 0, 0,
+        ));
+        expect(nestedFmt.dimensions.colWidthPt).toBe(70);
+        expect(nestedFmt.dimensions.rowHeightPt).toBe(28);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-3 rich table: caption, formulas & ClickHere stay intact after width/height changes", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, false, true);
+    try {
+      const fieldsBefore = doc.getFieldList!();
+      place(withCell(at, 0));
+      await run("table.columnWidth", { command: "table.columnWidth", width: 110 });
+      await run("table.rowHeight", { command: "table.rowHeight", height: 34 });
+      expect(doc.getFieldList!()).toBe(fieldsBefore);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getFieldList!()).toBe(fieldsBefore);
+        const fmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 0, 0,
+        ));
+        expect(fmt.dimensions.colWidthPt).toBe(110);
+        expect(fmt.dimensions.rowHeightPt).toBe(34);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
 });

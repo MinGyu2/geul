@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wordcraft_engine::doc::props::{Align, Border, BorderStyle, VAlign, VMerge};
+use wordcraft_engine::doc::props::{Align, Border, BorderStyle, HeightRule, VAlign, VMerge};
 use wordcraft_engine::doc::table::{MAX_COLS, MAX_ROWS};
 use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, StoryRef, Table};
 
@@ -146,6 +146,39 @@ pub struct DocxTableView {
     pub cell_align_vertical: Option<&'static str>,
     pub cell_align_vertical_mixed: bool,
     pub cell_alignment_refusal: Option<&'static str>,
+    pub col_width: Option<f32>,
+    pub col_width_mixed: bool,
+    pub row_height: Option<f32>,
+    pub row_height_mixed: bool,
+    pub row_height_rule: Option<&'static str>,
+    pub selected_cols: usize,
+    pub selected_rows: usize,
+    pub column_width_refusal: Option<&'static str>,
+    pub row_height_refusal: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RowHeightRule {
+    AtLeast,
+    Exact,
+}
+
+impl RowHeightRule {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RowHeightRule::AtLeast => "atLeast",
+            RowHeightRule::Exact => "exact",
+        }
+    }
+}
+
+pub(super) fn valid_docx_col_width(w: f32) -> bool {
+    w.is_finite() && (6.0..=1584.0).contains(&w)
+}
+
+pub(super) fn valid_docx_row_height(h: f32) -> bool {
+    h.is_finite() && (1.0..=1584.0).contains(&h)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -700,6 +733,66 @@ fn inspect_cell_alignment(
     )
 }
 
+fn round_pt(v: f32) -> f32 {
+    (v * 100.0).round() / 100.0
+}
+
+fn inspect_dimensions(
+    t: &Table,
+    r0: usize,
+    r1: usize,
+    g0: usize,
+    g1: usize,
+) -> (Option<f32>, bool, Option<f32>, bool, Option<&'static str>) {
+    let mut w_first: Option<f32> = None;
+    let mut w_mixed = false;
+    for g in g0..=g1 {
+        if let Some(&w) = t.grid.get(g) {
+            match w_first {
+                None => w_first = Some(w),
+                Some(prev) if (prev - w).abs() > 0.05 => w_mixed = true,
+                _ => {}
+            }
+        }
+    }
+    let mut h_first: Option<Option<f32>> = None;
+    let mut h_mixed = false;
+    let mut rule_first: Option<&'static str> = None;
+    for r in r0..=r1 {
+        if let Some(row) = t.rows.get(r) {
+            let cur = row.props.height;
+            let rule = match row.props.height_rule {
+                HeightRule::AtLeast => Some("atLeast"),
+                HeightRule::Exact => Some("exact"),
+                HeightRule::Auto => None,
+            };
+            match h_first {
+                None => {
+                    h_first = Some(cur);
+                    rule_first = rule;
+                }
+                Some(prev) => {
+                    let eq = match (prev, cur) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => (a - b).abs() <= 0.05 && rule_first == rule,
+                        _ => false,
+                    };
+                    if !eq {
+                        h_mixed = true;
+                    }
+                }
+            }
+        }
+    }
+    (
+        if w_mixed { None } else { w_first.map(round_pt) },
+        w_mixed,
+        if h_mixed { None } else { h_first.flatten().map(round_pt) },
+        h_mixed,
+        if h_mixed { None } else { rule_first },
+    )
+}
+
 impl DocxModel {
     pub(super) fn table_view(&self) -> Option<DocxTableView> {
         let focus = &self.session.sel.focus;
@@ -742,6 +835,15 @@ impl DocxModel {
                 cell_align_vertical: None,
                 cell_align_vertical_mixed: false,
                 cell_alignment_refusal: Some("tableShape"),
+                col_width: None,
+                col_width_mixed: false,
+                row_height: None,
+                row_height_mixed: false,
+                row_height_rule: None,
+                selected_cols: 1,
+                selected_rows: 1,
+                column_width_refusal: Some("tableShape"),
+                row_height_refusal: Some("tableShape"),
             });
         };
         let multi = inspect_selection(self, &tp, t);
@@ -772,6 +874,12 @@ impl DocxModel {
         } else {
             inspect_cell_alignment(&self.session.doc, t, r0, r1, g0, g1)
         };
+        let (col_width, col_width_mixed, row_height, row_height_mixed, row_height_rule) =
+            if format_refusal.is_some() {
+                (None, false, None, false, None)
+            } else {
+                inspect_dimensions(t, r0, r1, g0, g1)
+            };
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
         let (max_split_rows, max_split_columns) = if is_merged
@@ -817,6 +925,15 @@ impl DocxModel {
             cell_align_vertical,
             cell_align_vertical_mixed,
             cell_alignment_refusal: format_refusal,
+            col_width,
+            col_width_mixed,
+            row_height,
+            row_height_mixed,
+            row_height_rule,
+            selected_cols: g1 - g0 + 1,
+            selected_rows: r1 - r0 + 1,
+            column_width_refusal: format_refusal,
+            row_height_refusal: format_refusal,
         })
     }
 
@@ -1035,6 +1152,112 @@ impl DocxModel {
         });
         let changed = self.atomic(|model| {
             let changed = model.run("table.cellAlignment", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn table_column_width(
+        &mut self,
+        target: &SelectionIdentity,
+        width: Option<f32>,
+        distribute: bool,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let params = match (distribute, width) {
+            (true, None) => json!({ "distribute": true }),
+            (false, Some(w)) if valid_docx_col_width(w) => json!({ "width": w }),
+            _ => return Err(Rejected),
+        };
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.setColumnWidth", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn table_row_height(
+        &mut self,
+        target: &SelectionIdentity,
+        height: Option<f32>,
+        rule: Option<RowHeightRule>,
+        clear: bool,
+        distribute: bool,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let params = if distribute {
+            if height.is_some() || rule.is_some() || clear {
+                return Err(Rejected);
+            }
+            json!({ "distribute": true })
+        } else if clear {
+            if height.is_some() || rule.is_some() {
+                return Err(Rejected);
+            }
+            json!({ "height": null })
+        } else if let Some(h) = height {
+            if !valid_docx_row_height(h) {
+                return Err(Rejected);
+            }
+            json!({
+                "height": h,
+                "rule": rule.unwrap_or(RowHeightRule::AtLeast).as_str(),
+            })
+        } else {
+            return Err(Rejected);
+        };
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.setRowHeight", params.clone())?;
             if !changed {
                 return Ok(false);
             }

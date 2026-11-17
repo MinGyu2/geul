@@ -2333,6 +2333,26 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
         h[4] = if mut_byte == 0x60 { (h[4] & !0x60) | 0x60 } else { h[4] ^ mut_byte };
         refused(label, bad_same);
     }
+
+    // Stage 2 P3-3: cell width (16..20), cell height (20..24), and table control width/height (16..24)
+    // updates pass evolved_table when positive and non-degenerate, while zero width or zero table size fails.
+    let mut resized = existing_nonbasic_table();
+    d(&mut resized[0].2, 16, 18000);
+    d(&mut resized[0].2, 20, 4800);
+    for rec in resized.iter_mut().filter(|r| r.0 == 72) {
+        d(&mut rec.2, 16, 9000);
+        d(&mut rec.2, 20, 2400);
+    }
+    let findings_p3_3 = raw_findings(&original, &fixture_with(true, &[resized], "Keep 한글"), true);
+    assert!(only_stale_preview(&findings_p3_3), "p3-3 resize: {findings_p3_3:?}");
+
+    let mut zero_cell_w = existing_nonbasic_table();
+    d(&mut zero_cell_w.iter_mut().find(|r| r.0 == 72).unwrap().2, 16, 0);
+    refused("zero cell width", zero_cell_w);
+
+    let mut zero_tbl_h = existing_nonbasic_table();
+    d(&mut zero_tbl_h[0].2, 20, 0);
+    refused("zero table height", zero_tbl_h);
 }
 
 /// Real serialized field anchors/ranges, using the existing compact HWP fixture builder.

@@ -1,0 +1,248 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -290,6 +290,31 @@
+             }),
+             _ => serde_json::json!({ "uniform": false }),
+         };
++        let col_widths = table.get_column_widths();
++        let mut col_first: Option<u32> = None;
++        let mut col_mixed = false;
++        for g in start_col..=end_col {
++            if let Some(&w) = col_widths.get(g as usize) {
++                match col_first {
++                    None => col_first = Some(w),
++                    Some(prev) if prev.abs_diff(w) > 5 => col_mixed = true,
++                    _ => {}
++                }
++            }
++        }
++        let row_heights = table.get_row_heights();
++        let mut row_first: Option<u32> = None;
++        let mut row_mixed = false;
++        for r in start_row..=end_row {
++            if let Some(&h) = row_heights.get(r as usize) {
++                match row_first {
++                    None => row_first = Some(h),
++                    Some(prev) if prev.abs_diff(h) > 5 => row_mixed = true,
++                    _ => {}
++                }
++            }
++        }
++        let round_pt = |hu: u32| -> f64 { ((hu as f64) / 100.0 * 100.0).round() / 100.0 };
+         Ok(serde_json::json!({
+             "hasZones": has_zones,
+             "cellCount": selected.len(),
+@@ -304,6 +329,16 @@
+                 "vertical": if v_mixed { None } else { v_align },
+                 "verticalMixed": v_mixed,
+             },
++            "dimensions": {
++                "selectedCols": end_col - start_col + 1,
++                "selectedRows": end_row - start_row + 1,
++                "totalCols": table.col_count,
++                "totalRows": table.row_count,
++                "colWidthPt": if col_mixed { None } else { col_first.map(round_pt) },
++                "colWidthMixed": col_mixed,
++                "rowHeightPt": if row_mixed { None } else { row_first.map(round_pt) },
++                "rowHeightMixed": row_mixed,
++            },
+         })
+         .to_string())
+     }
+@@ -350,6 +385,22 @@
+         }
+         #[derive(serde::Deserialize)]
+         #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct ColumnWidthArg {
++            #[serde(default)]
++            width_pt: Option<f64>,
++            #[serde(default)]
++            distribute: Option<bool>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct RowHeightArg {
++            #[serde(default)]
++            height_pt: Option<f64>,
++            #[serde(default)]
++            distribute: Option<bool>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+         struct FormatSpec {
+             rect: RectArg,
+             #[serde(default)]
+@@ -358,6 +409,10 @@
+             borders: Option<BordersArg>,
+             #[serde(default)]
+             alignment: Option<AlignmentArg>,
++            #[serde(default)]
++            column_width: Option<ColumnWidthArg>,
++            #[serde(default)]
++            row_height: Option<RowHeightArg>,
+         }
+ 
+         fn parse_hex_colorref(hex: &str) -> Option<u32> {
+@@ -382,10 +437,45 @@
+ 
+         let spec: FormatSpec = serde_json::from_str(spec_json)
+             .map_err(|_| HwpError::RenderError("invalid cell formatting payload".into()))?;
+-        if spec.shading.is_none() && spec.borders.is_none() && spec.alignment.is_none() {
++        if spec.shading.is_none()
++            && spec.borders.is_none()
++            && spec.alignment.is_none()
++            && spec.column_width.is_none()
++            && spec.row_height.is_none()
++        {
+             return Err(HwpError::RenderError("empty cell formatting payload".into()));
+         }
+ 
++        enum ColWidthOp {
++            Distribute,
++            Set(u32),
++        }
++        enum RowHeightOp {
++            Distribute,
++            Set(u32),
++        }
++
++        let parsed_col_width: Option<ColWidthOp> = match &spec.column_width {
++            None => None,
++            Some(cw) => match (cw.distribute.unwrap_or(false), cw.width_pt) {
++                (true, None) => Some(ColWidthOp::Distribute),
++                (false, Some(w)) if w.is_finite() && (6.0..=1584.0).contains(&w) => {
++                    Some(ColWidthOp::Set((w * 100.0).round() as u32))
++                }
++                _ => return Err(HwpError::RenderError("invalid column width payload".into())),
++            },
++        };
++        let parsed_row_height: Option<RowHeightOp> = match &spec.row_height {
++            None => None,
++            Some(rh) => match (rh.distribute.unwrap_or(false), rh.height_pt) {
++                (true, None) => Some(RowHeightOp::Distribute),
++                (false, Some(h)) if h.is_finite() && (1.0..=1584.0).contains(&h) => {
++                    Some(RowHeightOp::Set((h * 100.0).round() as u32))
++                }
++                _ => return Err(HwpError::RenderError("invalid row height payload".into())),
++            },
++        };
++
+         let parsed_alignment: Option<(
+             Option<crate::model::style::Alignment>,
+             Option<crate::model::table::VerticalAlign>,
+@@ -731,6 +821,7 @@
+             self.document.doc_info.para_shapes.extend(staged_new_pss);
+             self.document.doc_info.raw_stream_dirty = true;
+         }
++        let mut reflow_targets: Vec<(usize, usize)> = Vec::new();
+         {
+             let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
+             for (ci, bf_id) in updates {
+@@ -746,6 +837,75 @@
+                     p.para_shape_id = ps_id;
+                 }
+             }
++            if let Some(op) = parsed_col_width {
++                let old_cell_widths: Vec<u32> = table.cells.iter().map(|c| c.width).collect();
++                let mut new_cols = table.get_column_widths();
++                match op {
++                    ColWidthOp::Distribute => {
++                        let n = new_cols.len().max(1);
++                        let total: u64 = new_cols.iter().map(|&w| w as u64).sum();
++                        let base = (total / n as u64).max(200) as u32;
++                        let rem = if total / n as u64 >= 200 { (total % n as u64) as usize } else { 0 };
++                        for (idx, w) in new_cols.iter_mut().enumerate() {
++                            *w = base + u32::from(idx < rem);
++                        }
++                    }
++                    ColWidthOp::Set(hu) => {
++                        for g in spec.rect.start_col..=spec.rect.end_col {
++                            if let Some(col) = new_cols.get_mut(g as usize) {
++                                *col = hu;
++                            }
++                        }
++                    }
++                }
++                table
++                    .set_column_widths(&new_cols)
++                    .map_err(HwpError::RenderError)?;
++                for (ci, cell) in table.cells.iter().enumerate() {
++                    if old_cell_widths.get(ci).copied() != Some(cell.width) {
++                        reflow_targets.push((ci, cell.paragraphs.len()));
++                    }
++                }
++            }
++            if let Some(op) = parsed_row_height {
++                let mut new_rows = table.get_row_heights();
++                match op {
++                    RowHeightOp::Distribute => {
++                        let target_hu = new_rows.iter().copied().max().unwrap_or(1800).max(1800);
++                        for h in &mut new_rows {
++                            *h = target_hu;
++                        }
++                    }
++                    RowHeightOp::Set(hu) => {
++                        for r in spec.rect.start_row..=spec.rect.end_row {
++                            if let Some(row) = new_rows.get_mut(r as usize) {
++                                *row = hu;
++                            }
++                        }
++                    }
++                }
++                let rc = table.row_count as usize;
++                for cell in &mut table.cells {
++                    let r0 = cell.row as usize;
++                    if r0 >= rc {
++                        continue;
++                    }
++                    let r1 = (r0 + cell.row_span as usize).min(rc);
++                    cell.height = new_rows[r0..r1].iter().sum();
++                }
++                table.update_ctrl_dimensions();
++            }
++        }
++        if !reflow_targets.is_empty() {
++            let depth = path.len() - 1;
++            let last_ctrl = path[depth].0;
++            let mut inner_path = path.to_vec();
++            for (ci, para_count) in reflow_targets {
++                for pi in 0..para_count {
++                    inner_path[depth] = (last_ctrl, ci, pi);
++                    self.reflow_cell_paragraph_by_path(section, paragraph, &inner_path, pi);
++                }
++            }
+         }
+         self.rebuild_resolved_styles();
+         self.mark_cell_control_dirty(section, paragraph, path[0].0);
+@@ -6010,5 +6170,30 @@
+                 r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"alignment":{"horizontal":"diagonal"}}"#,
+             )
+             .is_err());
++
++        // Column width & row height
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"columnWidth":{"widthPt":90.0},"rowHeight":{"heightPt":32.0}}"#,
++        )
++        .unwrap();
++        let dim_info: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_cell_formatting_by_path_native(0, para, &path, 0, 0, 0, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(dim_info["dimensions"]["colWidthPt"], 90.0);
++        assert_eq!(dim_info["dimensions"]["rowHeightPt"], 32.0);
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"columnWidth":{"widthPt":1.0}}"#,
++            )
++            .is_err());
+     }
+ }

@@ -44,9 +44,13 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const { t } = useTranslation();
   const isShading = request.command === "table.shading";
   const isAlignment = request.command === "table.alignment";
+  const isColWidth = request.command === "table.columnWidth";
+  const isRowHeight = request.command === "table.rowHeight";
   const shadingCtx = request.context.tableShading;
   const bordersCtx = request.context.tableBorders;
   const alignCtx = request.context.tableAlignment;
+  const colWidthCtx = request.context.tableColumnWidth;
+  const rowHeightCtx = request.context.tableRowHeight;
   const sampleEdge = bordersCtx?.current?.top ?? bordersCtx?.current?.bottom ?? bordersCtx?.current?.left ?? bordersCtx?.current?.right;
   const initialStyle = sampleEdge && bordersCtx?.supportedStyles.includes(sampleEdge.style) && sampleEdge.style !== "none"
     ? sampleEdge.style
@@ -63,6 +67,13 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const [borderColor, setBorderColor] = useState(initialBorderColor);
   const [hAlign, setHAlign] = useState<HorizontalAlign | null>(alignCtx?.horizontal ?? null);
   const [vAlign, setVAlign] = useState<VerticalAlign | null>(alignCtx?.vertical ?? null);
+  const [colWidthText, setColWidthText] = useState(colWidthCtx?.width != null ? String(colWidthCtx.width) : "");
+  const [rowHeightText, setRowHeightText] = useState(rowHeightCtx?.height != null ? String(rowHeightCtx.height) : "");
+  const [rowRule, setRowRule] = useState<"atLeast" | "exact">(
+    rowHeightCtx?.rule && rowHeightCtx.supportedRules.includes(rowHeightCtx.rule)
+      ? rowHeightCtx.rule
+      : rowHeightCtx?.supportedRules[0] ?? "atLeast",
+  );
   const [error, setError] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -117,6 +128,36 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
     onConfirm(args);
   };
 
+  const submitColWidth = (distribute = false) => {
+    const trimmed = colWidthText.trim();
+    const args: DocumentCommandArgs = distribute
+      ? { command: "table.columnWidth", distribute: true }
+      : { command: "table.columnWidth", width: trimmed === "" ? NaN : Number(trimmed) };
+    if (!validateCommandArgs("table.columnWidth", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
+  const submitRowHeight = (mode: "set" | "auto" | "distribute" = "set") => {
+    const trimmed = rowHeightText.trim();
+    const args: DocumentCommandArgs = mode === "distribute"
+      ? { command: "table.rowHeight", distribute: true }
+      : mode === "auto"
+        ? { command: "table.rowHeight", height: null }
+        : {
+            command: "table.rowHeight",
+            height: trimmed === "" ? NaN : Number(trimmed),
+            rule: rowRule,
+          };
+    if (!validateCommandArgs("table.rowHeight", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
   const submit = () => {
     if (isShading) {
       const normalized = normalizeHexRgb(shadeColor);
@@ -127,6 +168,10 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
       submitShading(normalized);
     } else if (isAlignment) {
       submitAlignment();
+    } else if (isColWidth) {
+      submitColWidth(false);
+    } else if (isRowHeight) {
+      submitRowHeight("set");
     } else {
       submitBorders();
     }
@@ -245,6 +290,97 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        ) : isColWidth ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div className="stage1-dialog__grid">
+              <label htmlFor="table-col-width">
+                {t("tableFormat.dimensions.widthPt")}
+                {colWidthCtx?.mixed ? ` (${t("tableFormat.alignment.mixed")})` : ""}
+              </label>
+              <input
+                ref={firstFocusRef as React.RefObject<HTMLInputElement>}
+                id="table-col-width"
+                data-testid="table-col-width"
+                type="number"
+                step="0.5"
+                min={colWidthCtx?.minPt ?? 6}
+                max={colWidthCtx?.maxPt ?? 1584}
+                value={colWidthText}
+                onChange={(e) => { setColWidthText(e.target.value); setError(false); }}
+              />
+            </div>
+            {(colWidthCtx?.totalCols ?? 1) >= 2 && (
+              <div>
+                <button
+                  type="button"
+                  className="document-bar__button"
+                  data-testid="table-distribute-cols"
+                  onClick={() => submitColWidth(true)}
+                >
+                  {t("tableFormat.dimensions.distributeColumns")}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : isRowHeight ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div className="stage1-dialog__grid">
+              <label htmlFor="table-row-height">
+                {t("tableFormat.dimensions.heightPt")}
+                {rowHeightCtx?.mixed ? ` (${t("tableFormat.alignment.mixed")})` : ""}
+              </label>
+              <input
+                ref={firstFocusRef as React.RefObject<HTMLInputElement>}
+                id="table-row-height"
+                data-testid="table-row-height"
+                type="number"
+                step="0.5"
+                min={rowHeightCtx?.minPt ?? 1}
+                max={rowHeightCtx?.maxPt ?? 1584}
+                value={rowHeightText}
+                onChange={(e) => { setRowHeightText(e.target.value); setError(false); }}
+              />
+              {(rowHeightCtx?.supportedRules.length ?? 0) > 1 && (
+                <>
+                  <label htmlFor="table-row-rule">{t("tableFormat.dimensions.rule")}</label>
+                  <select
+                    id="table-row-rule"
+                    data-testid="table-row-rule"
+                    value={rowRule}
+                    onChange={(e) => { setRowRule(e.target.value as "atLeast" | "exact"); setError(false); }}
+                  >
+                    {rowHeightCtx!.supportedRules.map((rule) => (
+                      <option key={rule} value={rule}>
+                        {t(`tableFormat.dimensions.rule.${rule}` as MessageKey)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {(rowHeightCtx?.totalRows ?? 1) >= 2 && (
+                <button
+                  type="button"
+                  className="document-bar__button"
+                  data-testid="table-distribute-rows"
+                  onClick={() => submitRowHeight("distribute")}
+                >
+                  {t("tableFormat.dimensions.distributeRows")}
+                </button>
+              )}
+              {rowHeightCtx?.supportsAuto && (
+                <button
+                  type="button"
+                  className="document-bar__button"
+                  data-testid="table-auto-row-height"
+                  onClick={() => submitRowHeight("auto")}
+                >
+                  {t("tableFormat.dimensions.autoHeight")}
+                </button>
+              )}
             </div>
           </div>
         ) : (

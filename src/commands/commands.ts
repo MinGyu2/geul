@@ -261,7 +261,7 @@ export function executeCommand(
         command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
         revision: snapshot.revision, context: parameters,
         // Selection-owned values (table insertion, cell split, Stage 1 dialogs): a moved caret makes the request stale.
-        ...((id === "insert.table" || id === "table.splitCell" || id === "table.shading" || id === "table.borders" || id === "table.alignment" || (STAGE1_DIALOGS as readonly string[]).includes(id)) && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
+        ...((id === "insert.table" || id === "table.splitCell" || id === "table.shading" || id === "table.borders" || id === "table.alignment" || id === "table.columnWidth" || id === "table.rowHeight" || (STAGE1_DIALOGS as readonly string[]).includes(id)) && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
       });
       trace("command:input", () => ({ id }));
       return true;

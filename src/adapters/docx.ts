@@ -149,6 +149,15 @@ export interface DocxTableView {
   cellAlignVertical: "top" | "middle" | "bottom" | null;
   cellAlignVerticalMixed: boolean;
   cellAlignmentRefusal: DocxTableFormatRefusal;
+  colWidth: number | null;
+  colWidthMixed: boolean;
+  rowHeight: number | null;
+  rowHeightMixed: boolean;
+  rowHeightRule: "atLeast" | "exact" | null;
+  selectedCols: number;
+  selectedRows: number;
+  columnWidthRefusal: DocxTableFormatRefusal;
+  rowHeightRefusal: DocxTableFormatRefusal;
 }
 
 export interface DocxFont {
@@ -266,7 +275,9 @@ export type DocxOp =
   | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string }; rows?: number; columns?: number }
   | { op: "tableShading"; target: { anchorKey: string; caretKey: string }; color: string | null }
   | { op: "tableBorders"; target: { anchorKey: string; caretKey: string }; kind: DocxTableBorderKind; style?: string; width?: number; color?: string | null }
-  | { op: "tableAlignment"; target: { anchorKey: string; caretKey: string }; horizontal?: "left" | "center" | "right" | "justify"; vertical?: "top" | "middle" | "bottom" };
+  | { op: "tableAlignment"; target: { anchorKey: string; caretKey: string }; horizontal?: "left" | "center" | "right" | "justify"; vertical?: "top" | "middle" | "bottom" }
+  | { op: "tableColumnWidth"; target: { anchorKey: string; caretKey: string }; width?: number; distribute: boolean }
+  | { op: "tableRowHeight"; target: { anchorKey: string; caretKey: string }; height?: number; rule?: "atLeast" | "exact"; clear: boolean; distribute: boolean };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -470,24 +481,29 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     "hasInsideBorders", "cellShadingRefusal", "cellBordersRefusal",
     "cellShading", "cellShadingMixed", "hasCellShading", "cellBorders", "supportedBorderStyles",
     "cellAlignHorizontal", "cellAlignHorizontalMixed", "cellAlignVertical", "cellAlignVerticalMixed", "cellAlignmentRefusal",
+    "colWidth", "colWidthMixed", "rowHeight", "rowHeightMixed", "rowHeightRule",
+    "selectedCols", "selectedRows", "columnWidthRefusal", "rowHeightRefusal",
   ];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
-  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns"] as const) {
+  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns", "selectedCols", "selectedRows"] as const) {
     if (!isCount(value[k])) return undefined;
   }
   for (const k of TABLE_ACTION_KEYS) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
   }
-  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed"] as const) {
+  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed", "colWidthMixed", "rowHeightMixed"] as const) {
     if (typeof value[k] !== "boolean") return undefined;
   }
-  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal"] as const) {
+  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal", "columnWidthRefusal", "rowHeightRefusal"] as const) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_FORMAT_REFUSALS.has(v))) return undefined;
   }
   if (value.cellAlignHorizontal !== null && (typeof value.cellAlignHorizontal !== "string" || !["left", "center", "right", "justify"].includes(value.cellAlignHorizontal))) return undefined;
   if (value.cellAlignVertical !== null && (typeof value.cellAlignVertical !== "string" || !["top", "middle", "bottom"].includes(value.cellAlignVertical))) return undefined;
+  if (value.colWidth !== null && (typeof value.colWidth !== "number" || !Number.isFinite(value.colWidth))) return undefined;
+  if (value.rowHeight !== null && (typeof value.rowHeight !== "number" || !Number.isFinite(value.rowHeight))) return undefined;
+  if (value.rowHeightRule !== null && (typeof value.rowHeightRule !== "string" || !["atLeast", "exact"].includes(value.rowHeightRule))) return undefined;
   if (value.cellShading !== null && typeof value.cellShading !== "string") return undefined;
   if (parseCellBordersView(value.cellBorders) === undefined) return undefined;
   if (!Array.isArray(value.supportedBorderStyles) || !value.supportedBorderStyles.every((s) => typeof s === "string")) return undefined;

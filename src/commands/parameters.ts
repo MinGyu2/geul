@@ -18,12 +18,12 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
-  "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment",
+  "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
 
-export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment"] as const;
+export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight"] as const;
 const TABLE_BORDER_KINDS = new Set(["all", "outside", "inside", "none", "top", "bottom", "left", "right"]);
 const TABLE_H_ALIGN = new Set(["left", "center", "right", "justify"]);
 const TABLE_V_ALIGN = new Set(["top", "middle", "bottom"]);
@@ -355,6 +355,42 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
       if (!hasH && !hasV) return false;
       if (hasH && (typeof value.horizontal !== "string" || !TABLE_H_ALIGN.has(value.horizontal))) return false;
       if (hasV && (typeof value.vertical !== "string" || !TABLE_V_ALIGN.has(value.vertical))) return false;
+      return true;
+    }
+    case "table.columnWidth": {
+      const cw = context?.tableColumnWidth;
+      if (!cw) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "width", "distribute"].includes(k)) return false;
+      }
+      if (value.distribute === true) {
+        return value.width === undefined && cw.totalCols >= 2;
+      }
+      if (value.distribute !== undefined && value.distribute !== false) return false;
+      return typeof value.width === "number" && Number.isFinite(value.width)
+        && value.width >= cw.minPt && value.width <= cw.maxPt;
+    }
+    case "table.rowHeight": {
+      const rh = context?.tableRowHeight;
+      if (!rh) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "height", "rule", "distribute"].includes(k)) return false;
+      }
+      if (value.distribute === true) {
+        return value.height === undefined && value.rule === undefined && rh.totalRows >= 2;
+      }
+      if (value.distribute !== undefined && value.distribute !== false) return false;
+      if (value.height === null) {
+        return rh.supportsAuto && value.rule === undefined;
+      }
+      if (typeof value.height !== "number" || !Number.isFinite(value.height)
+        || value.height < rh.minPt || value.height > rh.maxPt) {
+        return false;
+      }
+      if (value.rule !== undefined && (typeof value.rule !== "string"
+        || !(rh.supportedRules as readonly string[]).includes(value.rule))) {
+        return false;
+      }
       return true;
     }
     case "hangul.charWidth":

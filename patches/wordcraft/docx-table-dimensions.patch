@@ -1,0 +1,168 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index b290b20..882c824 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -102,6 +102,10 @@ pub fn specs() -> Vec<CommandSpec> {
+         .params(r#"{"value": "topLeft|topCenter|…|bottomRight"}"#)),
+         t(CommandSpec::new("table.cellAlignment", "Cell Alignment", "Table Layout › Alignment", cell_alignment)
+             .params(r#"{"horizontal"?: "left|center|right|justify", "vertical"?: "top|middle|bottom"}"#)),
++        t(CommandSpec::new("table.setColumnWidth", "Set Column Width", "Table Layout › Cell Size", set_column_width_cmd)
++            .params(r#"{"width"?: pt, "distribute"?: bool}"#)),
++        t(CommandSpec::new("table.setRowHeight", "Set Row Height", "Table Layout › Cell Size", set_row_height_cmd)
++            .params(r#"{"height"?: pt|null, "rule"?: "atLeast|exact", "distribute"?: bool}"#)),
+         t(CommandSpec::new("table.textDirection", "Text Direction", "Table Layout › Alignment", text_direction)
+             .params(r#"{"value"?: "horizontal|down|up"} (default: the next direction after the caret cell's, like Word's button)"#)),
+         t(CommandSpec::new("table.autofit", "AutoFit", "Table Layout › Cell Size", autofit).params(r#"{"mode": "contents|window|fixed"}"#)),
+@@ -914,6 +918,107 @@ fn cell_alignment(s: &mut Session, v: &Value) -> CmdResult {
+     sel_result(s)
+ }
+ 
++fn set_column_width_cmd(s: &mut Session, v: &Value) -> CmdResult {
++    let distribute = v.get("distribute").and_then(|x| x.as_bool()).unwrap_or(false);
++    let width = match v.get("width") {
++        None | Some(Value::Null) => None,
++        Some(raw) => {
++            let w = raw.as_f64().ok_or_else(|| CmdError::Params("`width` must be a number".into()))? as f32;
++            if !w.is_finite() || !(6.0..=1584.0).contains(&w) {
++                return Err(CmdError::Params(format!("column width out of bounds: {w}")));
++            }
++            Some(wordcraft_doc::table::quantize_twips(w).max(6.0))
++        }
++    };
++    if distribute && width.is_some() {
++        return Err(CmdError::Params("cannot specify both `width` and `distribute`".into()));
++    }
++    if !distribute && width.is_none() {
++        return Err(CmdError::Params("setColumnWidth requires `width` or `distribute: true`".into()));
++    }
++    let (tp, _r0, _r1, g0, g1, _) = selected_cell_rect(s)?;
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    if distribute {
++        let total: f32 = t.grid.iter().sum();
++        let n = t.grid.len().max(1) as f32;
++        let each = wordcraft_doc::table::quantize_twips(total / n).max(6.0);
++        t.grid.iter_mut().for_each(|g| *g = each);
++        t.props.width = None;
++        t.props.width_pct = None;
++    } else if let Some(w) = width {
++        for g in g0..=g1 {
++            if let Some(col) = t.grid.get_mut(g) {
++                *col = w;
++            }
++        }
++        t.props.width = None;
++        t.props.width_pct = None;
++    }
++    sync_cell_widths(t);
++    touch_cells(s, &tp)?;
++    sel_result(s)
++}
++
++fn set_row_height_cmd(s: &mut Session, v: &Value) -> CmdResult {
++    let distribute = v.get("distribute").and_then(|x| x.as_bool()).unwrap_or(false);
++    let clear = matches!(v.get("height"), Some(Value::Null));
++    let height = match v.get("height") {
++        None | Some(Value::Null) => None,
++        Some(raw) => {
++            let h = raw.as_f64().ok_or_else(|| CmdError::Params("`height` must be a number or null".into()))? as f32;
++            if !h.is_finite() || !(1.0..=1584.0).contains(&h) {
++                return Err(CmdError::Params(format!("row height out of bounds: {h}")));
++            }
++            Some(wordcraft_doc::table::quantize_twips(h).max(1.0))
++        }
++    };
++    let rule = match p::str(v, "rule") {
++        None => None,
++        Some("atLeast") => Some(HeightRule::AtLeast),
++        Some("exact") => Some(HeightRule::Exact),
++        Some(x) => return Err(CmdError::Params(format!("unknown height rule `{x}`"))),
++    };
++    if distribute {
++        if height.is_some() || clear || rule.is_some() {
++            return Err(CmdError::Params("`distribute` cannot be combined with explicit height or rule".into()));
++        }
++    } else if !clear && height.is_none() {
++        return Err(CmdError::Params("setRowHeight requires `height` or `distribute: true`".into()));
++    }
++    let (tp, r0, r1, _g0, _g1, _) = selected_cell_rect(s)?;
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    if distribute {
++        let h = wordcraft_doc::table::quantize_twips(
++            t.rows.iter().filter_map(|r| r.props.height).fold(0.0f32, f32::max).max(18.0),
++        );
++        for row in &mut t.rows {
++            row.props.height = Some(h);
++            if row.props.height_rule == HeightRule::Auto {
++                row.props.height_rule = HeightRule::AtLeast;
++            }
++        }
++    } else if clear {
++        for r in r0..=r1 {
++            if let Some(row) = t.rows.get_mut(r) {
++                row.props.height = None;
++                row.props.height_rule = HeightRule::Auto;
++            }
++        }
++    } else if let Some(h) = height {
++        let chosen = rule.unwrap_or(HeightRule::AtLeast);
++        for r in r0..=r1 {
++            if let Some(row) = t.rows.get_mut(r) {
++                row.props.height = Some(h);
++                row.props.height_rule = chosen;
++            }
++        }
++    }
++    touch_cells(s, &tp)?;
++    sel_result(s)
++}
++
+ fn parse_cell_border_style(s: &str) -> Result<BorderStyle, CmdError> {
+     match s {
+         "none" => Ok(BorderStyle::None),
+@@ -1672,4 +1777,44 @@ mod tests {
+         let reopened = crate::io::open_bytes("table_align.docx", &bytes).unwrap();
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
++
++    #[test]
++    fn cell_dimensions_preserve_unrelated_and_roundtrip() {
++        use wordcraft_doc::props::HeightRule;
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 3, "cols": 3})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++
++        assert!(s.run("table.setColumnWidth", &json!({"width": 2.0})).is_err());
++        assert!(s.run("table.setColumnWidth", &json!({"width": 9999.0})).is_err());
++        assert!(s.run("table.setRowHeight", &json!({"height": 0.2})).is_err());
++        assert!(s.run("table.setRowHeight", &json!({"height": 24.0, "rule": "bogus"})).is_err());
++
++        // Single column width 120pt -> unrelated cols untouched, sync_cell_widths updated
++        let orig_c2 = s.doc.body[0].as_table().unwrap().grid[2];
++        s.run("table.setColumnWidth", &json!({"width": 120.0})).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert!((t.grid[0] - 120.0).abs() < 0.01);
++        assert!((t.grid[2] - orig_c2).abs() < 0.01);
++
++        // Multi-row height exact 36pt on rows 0..=1 -> row 2 untouched
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}, "extend": false})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 1, 1, 0], "off": 0}, "extend": true})).unwrap();
++        s.run("table.setRowHeight", &json!({"height": 36.0, "rule": "exact"})).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].props.height, Some(36.0));
++        assert_eq!(t.rows[1].props.height_rule, HeightRule::Exact);
++        assert_eq!(t.rows[2].props.height, None);
++
++        // Clear row height back to Auto, then distribute columns
++        s.run("table.setRowHeight", &json!({"height": null})).unwrap();
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].props.height_rule, HeightRule::Auto);
++        s.run("table.setColumnWidth", &json!({"distribute": true})).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert!((t.grid[0] - t.grid[1]).abs() < 0.01);
++
++        let bytes = crate::io::save_bytes("table_dims.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_dims.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++    }
+ }
