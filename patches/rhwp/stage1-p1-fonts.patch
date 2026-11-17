@@ -1,0 +1,230 @@
+--- a/src/document_core/commands/formatting.rs
++++ b/src/document_core/commands/formatting.rs
+@@ -3245,3 +3245,187 @@
+         super::super::helpers::color_ref_to_css(color)
+     }
+ }
++
++/// [geul Stage 1 F] Most bytes of one embedded font resource (the renderer's per-font load limit).
++const GEUL_MAX_EMBED_FONT_BYTES: usize = 32 * 1024 * 1024;
++
++/// [geul Stage 1 F] A TrueType-outline sfnt (single face, `glyf` + `loca`) whose OS/2 `fsType` permits
++/// editable embedding (installable 0x0000 or editable 0x0008; restricted, preview & print and
++/// bitmap-only are refused; more than one usage bit or reserved bits are refused as malformed).
++/// Returns the nameID 1/16 family names of the face. The application checks the same rules before
++/// sending bytes; this is defence in depth so the engine never stores a font it may not embed.
++pub(crate) fn geul_embeddable_truetype(bytes: &[u8]) -> Result<Vec<String>, String> {
++    let be16 = |o: usize| -> Option<u16> { Some(u16::from_be_bytes([*bytes.get(o)?, *bytes.get(o + 1)?])) };
++    let be32 = |o: usize| -> Option<u32> {
++        Some(u32::from_be_bytes([*bytes.get(o)?, *bytes.get(o + 1)?, *bytes.get(o + 2)?, *bytes.get(o + 3)?]))
++    };
++    if bytes.len() < 12 || bytes.len() > GEUL_MAX_EMBED_FONT_BYTES {
++        return Err("font size out of range".into());
++    }
++    let version = be32(0).ok_or("truncated")?;
++    if version != 0x0001_0000 && version != u32::from_be_bytes(*b"true") {
++        return Err("not a TrueType-outline font".into());
++    }
++    let count = be16(4).ok_or("truncated")? as usize;
++    if count == 0 || count > 512 {
++        return Err("bad table directory".into());
++    }
++    let mut tables = std::collections::HashMap::new();
++    for i in 0..count {
++        let rec = 12 + i * 16;
++        let tag = bytes.get(rec..rec + 4).ok_or("truncated directory")?;
++        let offset = be32(rec + 8).ok_or("truncated directory")? as usize;
++        let length = be32(rec + 12).ok_or("truncated directory")? as usize;
++        if offset.checked_add(length).map_or(true, |end| end > bytes.len()) {
++            return Err("table outside the file".into());
++        }
++        tables.insert(tag.to_vec(), (offset, length));
++    }
++    for tag in [&b"glyf"[..], b"loca", b"head", b"maxp", b"cmap", b"name", b"OS/2"] {
++        if !tables.contains_key(tag) {
++            return Err(format!("missing {} table", String::from_utf8_lossy(tag)));
++        }
++    }
++    let (os2, os2_len) = tables[&b"OS/2"[..]];
++    if os2_len < 10 {
++        return Err("short OS/2 table".into());
++    }
++    let fs_type = be16(os2 + 8).ok_or("truncated OS/2")?;
++    let usage = fs_type & 0x000E;
++    if fs_type & 0xFCF1 != 0 || usage.count_ones() > 1 {
++        return Err("malformed embedding permissions".into());
++    }
++    if usage == 0x0002 {
++        return Err("restricted license embedding".into());
++    }
++    if usage == 0x0004 {
++        return Err("preview & print embedding only".into());
++    }
++    if fs_type & 0x0200 != 0 {
++        return Err("bitmap embedding only".into());
++    }
++    let (name, name_len) = tables[&b"name"[..]];
++    let end = name + name_len;
++    let records = be16(name + 2).ok_or("truncated name")? as usize;
++    let storage = name + be16(name + 4).ok_or("truncated name")? as usize;
++    let mut families = Vec::new();
++    for i in 0..records.min(4096) {
++        let r = name + 6 + i * 12;
++        if r + 12 > end {
++            break;
++        }
++        let (platform, name_id) = (be16(r).unwrap_or(0), be16(r + 6).unwrap_or(0));
++        if name_id != 1 && name_id != 16 {
++            continue;
++        }
++        let (len, off) = (be16(r + 8).unwrap_or(0) as usize, be16(r + 10).unwrap_or(0) as usize);
++        let Some(raw) = bytes.get(storage + off..storage + off + len).filter(|_| storage + off + len <= end) else { continue };
++        let text = if platform == 0 || platform == 3 {
++            let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
++            String::from_utf16_lossy(&units)
++        } else if platform == 1 {
++            raw.iter().map(|&b| b as char).collect()
++        } else {
++            continue;
++        };
++        if !text.is_empty() && !families.contains(&text) {
++            families.push(text);
++        }
++    }
++    if families.is_empty() {
++        return Err("font has no family name".into());
++    }
++    Ok(families)
++}
++
++impl DocumentCore {
++    /// [geul Stage 1 F] Embed a permitted TrueType font for the document face named `face` (HWPX only:
++    /// OWPML `hh:font@isEmbedded` + `@binaryItemIDRef` → a manifest BinData item). Every font entry of
++    /// that exact name in the seven language groups is marked embedded and resolves to the same BinData.
++    /// The face must already be used by the document's font tables and must be one of the font's own
++    /// family names. Idempotent: an already embedded face, or identical bytes already stored as a font
++    /// resource, are reused (no duplicate resource). HWP 5.0 defines no font-embedding record, so an
++    /// HWP source is refused.
++    pub fn embed_font_native(&mut self, face: &str, bytes: &[u8]) -> Result<String, HwpError> {
++        let fail = |m: String| HwpError::RenderError(format!("embedFont: {m}"));
++        if self.source_format != crate::parser::FileFormat::Hwpx {
++            return Err(fail("only HWPX defines embedded fonts".into()));
++        }
++        let families = geul_embeddable_truetype(bytes).map_err(fail)?;
++        if face.is_empty() || !families.iter().any(|f| f == face) {
++            return Err(fail("face is not a family name of the font".into()));
++        }
++        let entries: Vec<(usize, usize)> = self
++            .document
++            .doc_info
++            .font_faces
++            .iter()
++            .enumerate()
++            .flat_map(|(lang, fonts)| fonts.iter().enumerate().filter(|(_, f)| f.name == face).map(move |(i, _)| (lang, i)))
++            .collect();
++        if entries.is_empty() {
++            return Err(fail("face is not used by the document".into()));
++        }
++        // One resource per face: an entry already embedded must point at existing bytes of this font.
++        let existing: Vec<u16> = entries
++            .iter()
++            .filter_map(|&(l, i)| {
++                let f = &self.document.doc_info.font_faces[l][i];
++                f.is_embedded.then_some(f.resolved_bin_data_id).flatten()
++            })
++            .collect();
++        let content_id = |doc: &crate::model::document::Document, id: u16| doc.bin_data_content.iter().any(|c| c.id == id);
++        let id = if let Some(&id) = existing.first() {
++            if !existing.iter().all(|&e| e == id) || !content_id(&self.document, id) {
++                return Err(fail("face has inconsistent embedded resources".into()));
++            }
++            id
++        } else if let Some(c) = self.document.bin_data_content.iter().find(|c| {
++            c.extension.eq_ignore_ascii_case("ttf") && c.data.load_limited(GEUL_MAX_EMBED_FONT_BYTES).as_deref() == Some(bytes)
++        }) {
++            c.id
++        } else {
++            let storage = self.document.next_bin_data_storage_id();
++            let sequence = self.document.doc_info.bin_data_list.len() + 1;
++            // The serializer resolves a font reference by BinData sequence before storage id; refuse a
++            // document whose ids are not contiguous instead of risking a reference to another item.
++            if usize::from(storage) != sequence || self.document.bin_data_content.len() + 1 != sequence {
++                return Err(fail("BinData ids are not contiguous".into()));
++            }
++            self.register_embedded_bin_data(bytes, "ttf");
++            storage
++        };
++        let created = existing.is_empty();
++        for &(l, i) in &entries {
++            let f = &mut self.document.doc_info.font_faces[l][i];
++            f.is_embedded = true;
++            f.resolved_bin_data_id = Some(id);
++            f.bin_item_id_ref = format!("image{id}");
++            f.raw_data = None;
++        }
++        self.document.doc_info.raw_stream = None;
++        self.document.doc_info.raw_stream_dirty = true;
++        Ok(format!("{{\"ok\":true,\"binDataId\":{id},\"entries\":{},\"created\":{created}}}", entries.len()))
++    }
++
++    /// [geul Stage 1 F] Embedded font faces of the document: language group, entry id, face, BinData id
++    /// and stored byte length (0 when the reference does not resolve to stored bytes).
++    pub fn get_embedded_fonts_native(&self) -> String {
++        let mut items = Vec::new();
++        for (lang, fonts) in self.document.doc_info.font_faces.iter().enumerate() {
++            for (i, f) in fonts.iter().enumerate().filter(|(_, f)| f.is_embedded) {
++                let len = f
++                    .resolved_bin_data_id
++                    .and_then(|id| self.document.bin_data_content.iter().find(|c| c.id == id))
++                    .and_then(|c| c.data.load_limited(GEUL_MAX_EMBED_FONT_BYTES))
++                    .map_or(0, |b| b.len());
++                items.push(format!(
++                    "{{\"lang\":{lang},\"id\":{i},\"face\":\"{}\",\"binDataId\":{},\"bytes\":{len}}}",
++                    super::super::helpers::json_escape(&f.name),
++                    f.resolved_bin_data_id.map_or("null".to_string(), |v| v.to_string())
++                ));
++            }
++        }
++        format!("[{}]", items.join(","))
++    }
++}
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7959,11 +7959,15 @@
+                 .iter()
+                 .map(|f| format!("\"{}\"", json_escape(f)))
+                 .collect();
++            // [geul Stage 1] numberFormats: the per-level number format codes (style identity: decimal,
++            // letters and roman numerals share level format strings and differ only here).
++            let codes: Vec<String> = n.heads.iter().map(|h| h.number_format.to_string()).collect();
+             items.push(format!(
+-                "{{\"id\":{},\"levelFormats\":[{}],\"startNumber\":{}}}",
++                "{{\"id\":{},\"levelFormats\":[{}],\"startNumber\":{},\"numberFormats\":[{}]}}",
+                 i + 1,
+                 formats.join(","),
+-                n.start_number
++                n.start_number,
++                codes.join(",")
+             ));
+         }
+         format!("[{}]", items.join(","))
+@@ -8490,6 +8494,19 @@
+             .map_err(|e| e.into())
+     }
+ 
++    /// [geul Stage 1 F] Embed a permitted TrueType font for an HWPX document face (see
++    /// `embed_font_native`). Returns `{ok, binDataId, entries, created}`.
++    #[wasm_bindgen(js_name = embedFont)]
++    pub fn embed_font_api(&mut self, face: &str, bytes: &[u8]) -> Result<String, JsValue> {
++        self.embed_font_native(face, bytes).map_err(|e| e.into())
++    }
++
++    /// [geul Stage 1 F] The document's embedded font faces (JSON array).
++    #[wasm_bindgen(js_name = getEmbeddedFonts)]
++    pub fn get_embedded_fonts_api(&self) -> String {
++        self.get_embedded_fonts_native()
++    }
++
+     #[wasm_bindgen(js_name = applyCharFormatInCellByPath)]
+     #[allow(clippy::too_many_arguments)]
+     pub fn apply_char_format_in_cell_by_path_api(
