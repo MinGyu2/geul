@@ -6,6 +6,8 @@ import { executeCommand, type CommandContext, type CommandInputRequest, type Fil
 import type { DocumentCommandArgs } from "./commands/target";
 import { CommandInputDialog } from "./components/Editor/CommandInputDialog";
 import { Stage1Dialog } from "./components/Editor/Stage1Dialog";
+import { TableFormattingDialog } from "./components/Editor/TableFormattingDialog";
+import { TABLE_FORMAT_COMMANDS } from "./commands/parameters";
 import { FindBar } from "./components/FindBar/FindBar";
 import { EmbedFontDialog } from "./components/EmbedFontDialog/EmbedFontDialog";
 import { STAGE1_PARAMETERS } from "./commands/stage1";
@@ -355,7 +357,10 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
         onDismissMessage={notice ? () => onDismissMessage(notice.id) : undefined} />
       {inputRequest && (STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command) && <Stage1Dialog key={`${inputRequest.sessionId}:${inputRequest.command}`}
         request={inputRequest} suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
-      {inputRequest && !(STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command) && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
+      {inputRequest && (TABLE_FORMAT_COMMANDS as readonly string[]).includes(inputRequest.command) && <TableFormattingDialog key={`${inputRequest.sessionId}:${inputRequest.command}`}
+        request={inputRequest} suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
+      {inputRequest && !(STAGE1_PARAMETERS as readonly string[]).includes(inputRequest.command)
+        && !(TABLE_FORMAT_COMMANDS as readonly string[]).includes(inputRequest.command) && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
         suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
       {embedFont && activeEditor && <EmbedFontDialog key={embedFont.sessionId} target={activeEditor}
         format={documents?.sessions.get(activeEditor.sessionId)?.format ?? (activeEditor.engine === "wordcraft" ? "docx" : "hwpx")}

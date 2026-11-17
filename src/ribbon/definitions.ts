@@ -44,6 +44,11 @@ export const TABLE_STRUCTURE_GROUP: RibbonGroupDefinition = group("tableStructur
   cmd("table.mergeRight", "table"), cmd("table.mergeBelow", "table"), cmd("table.mergeCells", "table"), cmd("table.splitCell", "table"),
 ]);
 
+export const TABLE_FORMATTING_GROUP: RibbonGroupDefinition = group("tableFormatting", [
+  cmd("table.shading", "palette"),
+  cmd("table.borders", "table"),
+]);
+
 export const RIBBON_TABS: RibbonTabDefinition[] = [
   {
     id: "file",
@@ -108,6 +113,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
       group("characterSpacing", [cmd("hangul.charWidth", "charWidth", "large"), cmd("hangul.charSpacing", "charSpacing", "large")]),
       group("tableTools", [cmd("hangul.tableFormula", "formula", "large"), cmd("hangul.insertTableFormula", "formula")]),
       TABLE_STRUCTURE_GROUP,
+      TABLE_FORMATTING_GROUP,
     ],
   },
   {

@@ -187,6 +187,48 @@ export function readTableGrid(doc: RhwpDocument, at: TableTarget): TableGrid | T
 const pathLevels = (at: TableTarget) => at.path ? JSON.parse(pathJson(at.path)) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[]
   : [{ controlIndex: at.control, cellIndex: 0, cellParaIndex: 0 }];
 
+export function tableTargetPathJson(target: TableTarget): string {
+  return target.path ? pathJson(target.path) : JSON.stringify(pathLevels(target));
+}
+
+export const RHWP_BORDER_STYLES = [
+  "single", "double", "dotted", "dashed", "dotDash", "dashDotDot", "longDash", "circle",
+  "thinThick", "thickThin", "triple", "wave", "doubleWave", "thick3d", "thick3dRev", "thin3d", "thin3dRev", "none",
+] as const;
+
+const RHWP_STYLE_CODE: Readonly<Record<string, number>> = {
+  none: 0, single: 1, dashed: 2, dotted: 3, dotDash: 4, dashDotDot: 5, longDash: 6, circle: 7,
+  double: 8, thinThick: 9, thickThin: 10, triple: 11, wave: 12, doubleWave: 13,
+  thick3d: 14, thick3dRev: 15, thin3d: 16, thin3dRev: 17,
+};
+const RHWP_CODE_STYLE: readonly string[] = [
+  "none", "single", "dashed", "dotted", "dotDash", "dashDotDot", "longDash", "circle",
+  "double", "thinThick", "thickThin", "triple", "wave", "doubleWave",
+  "thick3d", "thick3dRev", "thin3d", "thin3dRev",
+];
+
+export const RHWP_BORDER_WIDTHS_MM = [
+  0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
+] as const;
+
+export function rhwpBorderStyleToCode(style: string): number | null {
+  return Object.prototype.hasOwnProperty.call(RHWP_STYLE_CODE, style) ? RHWP_STYLE_CODE[style]! : null;
+}
+
+export function rhwpBorderCodeToStyle(code: number): string | null {
+  return Number.isSafeInteger(code) && code >= 0 && code < RHWP_CODE_STYLE.length ? RHWP_CODE_STYLE[code]! : null;
+}
+
+export function rhwpBorderWidthToIndex(mm: number): number | null {
+  const idx = RHWP_BORDER_WIDTHS_MM.findIndex((w) => Math.abs(w - mm) < 1e-6);
+  return idx >= 0 ? idx : null;
+}
+
+export function rhwpBorderIndexToWidth(index: number): number | null {
+  return Number.isSafeInteger(index) && index >= 0 && index < RHWP_BORDER_WIDTHS_MM.length
+    ? RHWP_BORDER_WIDTHS_MM[index]! : null;
+}
+
 interface Inventory {
   controls: Fields[];
   lists: Fields[];

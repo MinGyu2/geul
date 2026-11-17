@@ -167,6 +167,11 @@ export interface RhwpDocument {
   // Stage 2: the same ownership path is used for reads, mutations and layout queries.
   createTableInCellByPath?(section: number, paragraph: number, path: string, offset: number, rows: number, cols: number): string;
   editTableByPath?(section: number, paragraph: number, path: string, op: string, args: string): string;
+  // Stage 2 Phase 3 (P3-1): table cell shading & borders with bounded borderFill compaction.
+  getTableCellFormattingByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
+  formatTableCellsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
+  borderFillCount?(): number;
+  compactAppendedBorderFills?(baseline: number): string;
   getFormattingRunsByPath?(section: number, paragraph: number, path: string, start: number, end: number): string;
   getLineInfoByPath?(section: number, paragraph: number, path: string, offset: number): string;
   applyCharFormatInCellByPath?(section: number, paragraph: number, path: string, start: number, end: number, props: string): string;

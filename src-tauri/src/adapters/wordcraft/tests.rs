@@ -4449,3 +4449,185 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
     assert_eq!(body_table_texts(&reopened).len(), 3);
     assert!(body_table_texts(&reopened)[2][0][0].starts_with("R2C1"));
 }
+
+#[test]
+fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_negatives() {
+    use super::engine::table::TableBorderKind as K;
+    use super::engine::table::TableStructureAction as A;
+    use crate::services::save::package;
+
+    let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
+    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
+    let v_init = m.view();
+    let tp = v_init.table.as_ref().unwrap();
+    assert_eq!((tp.rows, tp.cols), (3, 3));
+    assert!(!tp.has_inside_borders);
+    assert!(tp.cell_shading_refusal.is_none());
+    assert!(tp.cell_borders_refusal.is_none());
+
+    // Populate unique cell text to verify zero silent content mutation.
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    for r in 0..3 {
+        for c in 0..3 {
+            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
+            let label = format!("R{r}C{c}");
+            assert!(m.apply(&[DocxOp::InsertText { text: label }]).rejected.is_empty());
+        }
+    }
+
+    // Export baseline DOCX for T009 compare_saved_docx later.
+    let orig_bytes = wordcraft_engine::io::save_bytes("p3-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
+
+    // Negative: `inside` border on single cell must be rejected before mutating.
+    let t_single = table_target(&mut m);
+    let rej_inside = m.apply(&[DocxOp::TableBorders {
+        target: t_single.clone(),
+        kind: K::Inside,
+        style: Some("single".into()),
+        width: Some(1.0),
+        color: Some("#000000".into()),
+    }]);
+    assert_eq!(rej_inside.rejected, vec![0]);
+
+    // Negative validation: bad hex color, unknown style, invalid width.
+    assert!(!validate(&[DocxOp::TableShading {
+        target: t_single.clone(),
+        color: Some("XYZ123".into()),
+    }]));
+    assert!(!validate(&[DocxOp::TableBorders {
+        target: t_single.clone(),
+        kind: K::All,
+        style: Some("circle".into()),
+        width: Some(1.0),
+        color: Some("#000000".into()),
+    }]));
+    assert!(!validate(&[DocxOp::TableBorders {
+        target: t_single.clone(),
+        kind: K::All,
+        style: Some("single".into()),
+        width: Some(99.0),
+        color: Some("#000000".into()),
+    }]));
+    // Stale target rejected.
+    assert_eq!(
+        m.apply(&[DocxOp::TableShading {
+            target: super::engine::SelectionIdentity {
+                anchor_key: "stale".into(),
+                caret_key: "stale".into(),
+            },
+            color: Some("#FEF08A".into()),
+        }])
+        .rejected,
+        vec![0]
+    );
+
+    // Format cell (0,0): shading #FEF08A, Undo restores None, Redo restores #FEF08A.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    let t00 = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableShading { target: t00.clone(), color: Some("#FEF08A".into()) }]).changed,
+        1
+    );
+    assert_eq!(m.view().table.as_ref().unwrap().cell_shading.as_deref(), Some("#FEF08A"));
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.view().table.as_ref().unwrap().cell_shading, None);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.view().table.as_ref().unwrap().cell_shading.as_deref(), Some("#FEF08A"));
+
+    // Clear shading on (0,0) then set it on rectangular range (0,0)..=(1,1) along with inside+outside borders.
+    let t00_clear = table_target(&mut m);
+    assert_eq!(m.apply(&[DocxOp::TableShading { target: t00_clear, color: None }]).changed, 1);
+    assert_eq!(m.view().table.as_ref().unwrap().cell_shading, None);
+
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    assert!(m.view().table.as_ref().unwrap().has_inside_borders);
+    let t_rect = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[
+            DocxOp::TableShading { target: t_rect.clone(), color: Some("#DBEAFE".into()) },
+            DocxOp::TableBorders {
+                target: t_rect.clone(),
+                kind: K::Outside,
+                style: Some("double".into()),
+                width: Some(1.5),
+                color: Some("#DC2626".into()),
+            },
+            DocxOp::TableBorders {
+                target: t_rect,
+                kind: K::Inside,
+                style: Some("dashed".into()),
+                width: Some(0.75),
+                color: Some("#1E40AF".into()),
+            },
+        ])
+        .changed,
+        3
+    );
+
+    // Vertically merge (0,2)..=(1,2), then format merged cell bottom border & shading.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+    })));
+    assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
+    let t_merged = table_target(&mut m);
+    assert!(!m.view().table.as_ref().unwrap().has_inside_borders);
+    assert_eq!(
+        m.apply(&[
+            DocxOp::TableShading { target: t_merged.clone(), color: Some("#DCFCE7".into()) },
+            DocxOp::TableBorders {
+                target: t_merged,
+                kind: K::Bottom,
+                style: Some("thick".into()),
+                width: Some(2.25),
+                color: Some("#15803D".into()),
+            },
+        ])
+        .changed,
+        2
+    );
+
+    // Partial overhang over merged cell (0,2)..=(1,2) by selecting (0,1)..=(0,2) must reject cell formatting.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+    })));
+    assert!(m.view().table.as_ref().unwrap().cell_shading_refusal.is_some());
+    let t_over = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableShading { target: t_over, color: Some("#FF0000".into()) }]).rejected,
+        vec![0]
+    );
+
+    // Nested table inside cell (2,0) formats safely.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
+    let nested_t = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableShading { target: nested_t, color: Some("#F3E8FF".into()) }]).changed,
+        1
+    );
+
+    // T009 save check + independent reopen verification.
+    let saved_bytes = wordcraft_engine::io::save_bytes("p3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
+    assert!(findings.is_empty(), "DOCX table cell formatting must pass T009: {findings:?}");
+
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert_eq!(tbl.rows[0].cells[0].props.shading, Some(wordcraft_engine::doc::props::Rgb(0xDB, 0xEA, 0xFE)));
+    assert!(tbl.rows[0].cells[0].props.borders.as_ref().unwrap().top.is_some());
+    assert!(tbl.rows[2].cells[1].props.shading.is_none()); // untouched cell preserved!
+    // Vertical merge continuation row holds the bottom border, and header holds green shading.
+    assert_eq!(tbl.rows[0].cells[2].props.shading, Some(wordcraft_engine::doc::props::Rgb(0xDC, 0xFC, 0xE7)));
+    assert_eq!(
+        tbl.rows[1].cells[2].props.borders.as_ref().and_then(|b| b.bottom).unwrap().color,
+        Some(wordcraft_engine::doc::props::Rgb(0x15, 0x80, 0x3D))
+    );
+}

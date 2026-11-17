@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use wordcraft_engine::doc::props::{Border, BorderStyle, VMerge};
 use wordcraft_engine::doc::table::{MAX_COLS, MAX_ROWS};
 use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, StoryRef, Table};
 
-use super::{position_key, DocxModel, Rejected, SelectionIdentity};
+use super::{position_key, DocxModel, FormatAccess, Rejected, SelectionIdentity};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,10 +43,75 @@ impl TableStructureAction {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableBorderKind {
+    All,
+    Outside,
+    Inside,
+    None,
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl TableBorderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TableBorderKind::All => "all",
+            TableBorderKind::Outside => "outside",
+            TableBorderKind::Inside => "inside",
+            TableBorderKind::None => "none",
+            TableBorderKind::Top => "top",
+            TableBorderKind::Bottom => "bottom",
+            TableBorderKind::Left => "left",
+            TableBorderKind::Right => "right",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocxCellBorderEdge {
+    pub style: &'static str,
+    pub width: f32,
+    pub color: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocxCellBordersView {
+    pub top: Option<DocxCellBorderEdge>,
+    pub bottom: Option<DocxCellBorderEdge>,
+    pub left: Option<DocxCellBorderEdge>,
+    pub right: Option<DocxCellBorderEdge>,
+}
+
+pub const DOCX_BORDER_STYLES: &[&str] = &[
+    "single", "double", "dotted", "dashed", "thick", "triple", "dotDash", "wave", "none",
+];
+
+pub fn normalize_hex_color(raw: &str) -> Option<String> {
+    let s = raw.trim().trim_start_matches('#');
+    if s.len() != 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(s.to_ascii_uppercase())
+}
+
+pub fn valid_docx_border_style(style: &str) -> bool {
+    DOCX_BORDER_STYLES.contains(&style)
+}
+
+pub fn valid_docx_border_width(width: f32) -> bool {
+    width.is_finite() && (0.25..=12.0).contains(&width)
+}
+
 /// Table structure state & per-command refusal reasons exposed in `DocxView`.
 /// `None` for an action field means the operation is allowed in the current context;
 /// `Some(reason)` holds the UI `UnavailableReason` key (`tableShape`, `tableContent`, `limit`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocxTableView {
     pub rows: usize,
@@ -67,6 +133,14 @@ pub struct DocxTableView {
     pub split_cell: Option<&'static str>,
     pub max_split_rows: usize,
     pub max_split_columns: usize,
+    pub has_inside_borders: bool,
+    pub cell_shading_refusal: Option<&'static str>,
+    pub cell_borders_refusal: Option<&'static str>,
+    pub cell_shading: Option<String>,
+    pub cell_shading_mixed: bool,
+    pub has_cell_shading: bool,
+    pub cell_borders: Option<DocxCellBordersView>,
+    pub supported_border_styles: &'static [&'static str],
 }
 
 enum MultiCellState {
@@ -369,6 +443,157 @@ fn refusal_for(
     }
 }
 
+fn border_style_name(style: BorderStyle) -> &'static str {
+    match style {
+        BorderStyle::None => "none",
+        BorderStyle::Single => "single",
+        BorderStyle::Double => "double",
+        BorderStyle::Dotted => "dotted",
+        BorderStyle::Dashed => "dashed",
+        BorderStyle::Thick => "thick",
+        BorderStyle::Triple => "triple",
+        BorderStyle::DotDash => "dotDash",
+        BorderStyle::Wave => "wave",
+    }
+}
+
+fn edge_from_border(b: Option<&Border>) -> Option<DocxCellBorderEdge> {
+    let b = b?;
+    Some(DocxCellBorderEdge {
+        style: border_style_name(b.style),
+        width: b.width,
+        color: b.color.map(|rgb| format!("#{}", rgb.hex())),
+    })
+}
+
+fn cell_format_refusal(model: &DocxModel, multi: &MultiCellState) -> Option<&'static str> {
+    if FormatAccess::of(&model.session) == FormatAccess::Protected {
+        return Some("protected");
+    }
+    match multi {
+        MultiCellState::CrossTable => Some("crossTable"),
+        MultiCellState::PartialOverhang => Some("partialOverhang"),
+        MultiCellState::Single | MultiCellState::Rect(..) => None,
+    }
+}
+
+fn selected_rect_bounds(
+    ext: (usize, usize, usize, usize),
+    multi: &MultiCellState,
+) -> (usize, usize, usize, usize) {
+    match multi {
+        MultiCellState::Rect(r0, r1, g0, g1, _) => (*r0, *r1, *g0, *g1),
+        _ => ext,
+    }
+}
+
+fn resolve_cell_borders(
+    t: &Table,
+    r0: usize,
+    r1: usize,
+    g0: usize,
+    g1: usize,
+) -> Option<DocxCellBordersView> {
+    let tbl_b = t.props.borders.as_ref();
+    let pick = |r: usize, g: usize| -> Option<&Cell> {
+        let ci = t.cell_at_grid(r, g)?;
+        t.rows.get(r)?.cells.get(ci)
+    };
+    let top_cell = pick(r0, g0)?;
+    let bottom_cell = pick(r1, g0)?;
+    let left_cell = pick(r0, g0)?;
+    let right_cell = pick(r0, g1)?;
+    let top = top_cell
+        .props
+        .borders
+        .as_ref()
+        .and_then(|b| b.top.as_ref())
+        .or_else(|| {
+            if r0 == 0 {
+                tbl_b.and_then(|b| b.top.as_ref())
+            } else {
+                tbl_b.and_then(|b| b.between.as_ref())
+            }
+        });
+    let bottom = bottom_cell
+        .props
+        .borders
+        .as_ref()
+        .and_then(|b| b.bottom.as_ref())
+        .or_else(|| {
+            if r1 + 1 == t.rows.len() {
+                tbl_b.and_then(|b| b.bottom.as_ref())
+            } else {
+                tbl_b.and_then(|b| b.between.as_ref())
+            }
+        });
+    let left = left_cell
+        .props
+        .borders
+        .as_ref()
+        .and_then(|b| b.left.as_ref())
+        .or_else(|| {
+            if g0 == 0 {
+                tbl_b.and_then(|b| b.left.as_ref())
+            } else {
+                tbl_b.and_then(|b| b.inside_v.as_ref())
+            }
+        });
+    let right = right_cell
+        .props
+        .borders
+        .as_ref()
+        .and_then(|b| b.right.as_ref())
+        .or_else(|| {
+            if g1 + 1 == t.grid.len() {
+                tbl_b.and_then(|b| b.right.as_ref())
+            } else {
+                tbl_b.and_then(|b| b.inside_v.as_ref())
+            }
+        });
+    Some(DocxCellBordersView {
+        top: edge_from_border(top),
+        bottom: edge_from_border(bottom),
+        left: edge_from_border(left),
+        right: edge_from_border(right),
+    })
+}
+
+fn inspect_cell_shading(
+    t: &Table,
+    r0: usize,
+    r1: usize,
+    g0: usize,
+    g1: usize,
+) -> (Option<String>, bool, bool) {
+    let mut seen = BTreeSet::new();
+    let mut any_shaded = false;
+    let mut first_hex: Option<String> = None;
+    let mut mixed = false;
+    for r in r0..=r1 {
+        for g in g0..=g1 {
+            let Some(ci) = t.cell_at_grid(r, g) else { continue };
+            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else { continue };
+            if cell.props.vmerge == VMerge::Continue {
+                continue;
+            }
+            if !seen.insert((r, ci)) {
+                continue;
+            }
+            let hex = cell.props.shading.map(|rgb| format!("#{}", rgb.hex()));
+            if hex.is_some() {
+                any_shaded = true;
+            }
+            if seen.len() == 1 {
+                first_hex = hex;
+            } else if first_hex != hex {
+                mixed = true;
+            }
+        }
+    }
+    (if mixed { None } else { first_hex }, mixed, any_shaded)
+}
+
 impl DocxModel {
     pub(super) fn table_view(&self) -> Option<DocxTableView> {
         let focus = &self.session.sel.focus;
@@ -398,12 +623,33 @@ impl DocxModel {
                 split_cell: Some("tableShape"),
                 max_split_rows: 0,
                 max_split_columns: 0,
+                has_inside_borders: false,
+                cell_shading_refusal: Some("tableShape"),
+                cell_borders_refusal: Some("tableShape"),
+                cell_shading: None,
+                cell_shading_mixed: false,
+                has_cell_shading: false,
+                cell_borders: None,
+                supported_border_styles: DOCX_BORDER_STYLES,
             });
         };
         let multi = inspect_selection(self, &tp, t);
         let selected_cells = match multi {
             MultiCellState::Rect(_, _, _, _, count) => count,
             _ => 1,
+        };
+        let has_inside_borders = matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count >= 2);
+        let format_refusal = cell_format_refusal(self, &multi);
+        let (r0, r1, g0, g1) = selected_rect_bounds(ext, &multi);
+        let (cell_shading, cell_shading_mixed, has_cell_shading) = if format_refusal.is_some() {
+            (None, false, false)
+        } else {
+            inspect_cell_shading(t, r0, r1, g0, g1)
+        };
+        let cell_borders = if format_refusal.is_some() {
+            None
+        } else {
+            resolve_cell_borders(t, r0, r1, g0, g1)
         };
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
@@ -437,6 +683,14 @@ impl DocxModel {
             split_cell: reason(TableStructureAction::SplitCell),
             max_split_rows,
             max_split_columns,
+            has_inside_borders,
+            cell_shading_refusal: format_refusal,
+            cell_borders_refusal: format_refusal,
+            cell_shading,
+            cell_shading_mixed,
+            has_cell_shading,
+            cell_borders,
+            supported_border_styles: DOCX_BORDER_STYLES,
         })
     }
 
@@ -508,6 +762,115 @@ impl DocxModel {
             Ok(true)
         })?;
         self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn table_shading(
+        &mut self,
+        target: &SelectionIdentity,
+        color: Option<&str>,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let normalized_color = match color {
+            Some(raw) => Some(normalize_hex_color(raw).ok_or(Rejected)?),
+            None => None,
+        };
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let params = json!({ "color": normalized_color });
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.shading", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn table_cell_borders(
+        &mut self,
+        target: &SelectionIdentity,
+        kind: TableBorderKind,
+        style: Option<&str>,
+        width: Option<f32>,
+        color: Option<&str>,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        if let Some(s) = style {
+            if !valid_docx_border_style(s) {
+                return Err(Rejected);
+            }
+        }
+        if let Some(w) = width {
+            if !valid_docx_border_width(w) {
+                return Err(Rejected);
+            }
+        }
+        let normalized_color = match color {
+            Some(raw) => Some(normalize_hex_color(raw).ok_or(Rejected)?),
+            None => None,
+        };
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        if matches!(kind, TableBorderKind::Inside)
+            && !matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count >= 2)
+        {
+            return Err(Rejected);
+        }
+        let params = json!({
+            "kind": kind.as_str(),
+            "style": style,
+            "width": width,
+            "color": normalized_color,
+        });
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.cellBorders", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
         self.marks.clear();
         self.last_insert = None;
         Ok(changed)

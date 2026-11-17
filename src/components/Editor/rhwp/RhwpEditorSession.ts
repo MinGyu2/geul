@@ -100,7 +100,8 @@ import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   applyTablePlan, cellCovering, hasOrdinarySplitApi, hasTableStructureApi, ordinarySplitLimits, ordinarySplitValid, planTableOp, readTableGrid,
-  tableCellWidth, tableContentRefusal, tableOpRefusal,
+  RHWP_BORDER_STYLES, RHWP_BORDER_WIDTHS_MM, rhwpBorderCodeToStyle, rhwpBorderIndexToWidth, rhwpBorderStyleToCode, rhwpBorderWidthToIndex,
+  tableCellWidth, tableContentRefusal, tableOpRefusal, tableTargetPathJson,
   rectangularRange, TABLE_STRUCTURE_OPS, type CellRange, type CellSplit, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
 } from "./tableStructure";
 import {
@@ -292,6 +293,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   lastRoundTrip: RoundTripReport | null = null;
   /** Load-time HWP reopen model of the original: structural inventory + whether its evidence was complete. */
   private hwpBaseline: { structure: string; complete: boolean } | null = null;
+  private borderFillBaseline: number | null = null;
   /**
    * Original-document T009 preflight for HWP structural eligibility, owned by `originalOwner()`
    * (epoch, load generation, publication count). null = unchecked for the current owner.
@@ -645,6 +647,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.doc = doc;
     this.hwpBaseline = null;
     this.hwpOriginal = null;
+    this.borderFillBaseline = typeof doc.borderFillCount === "function" ? doc.borderFillCount() : null;
     this.fontSourceSafe = doc.canFormatFonts?.() === true;
     this.formatSourceCache = { key: String(epoch), safe: false };
     try {
@@ -2967,6 +2970,130 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.history?.boundary();
     return applied;
   }
+
+  private cellFormattingState():
+    | { refusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.shading"] & string }
+    | {
+        target: TableTarget;
+        rect: { startRow: number; startCol: number; endRow: number; endCol: number };
+        tableShading: NonNullable<CommandParameterContext["tableShading"]>;
+        tableBorders: NonNullable<CommandParameterContext["tableBorders"]>;
+      } {
+    const doc = this.doc, text = this.text;
+    if (!this.editable || !doc || !text || this.imeUnsettled || this.uncertain) return { refusal: "engineUnsupported" };
+    if (!doc.getTableCellFormattingByPath || !doc.formatTableCellsByPath) return { refusal: "engineUnsupported" };
+    if (this.pending > 0 || this.committingEpoch === this.epoch) return { refusal: "pendingEdits" };
+    if (!this.caret.cell) return { refusal: "notInTable" };
+    if (this.hasSelection && (!this.anchor.cell || !sameTable(this.anchor, this.caret))) return { refusal: "tableShape" };
+    if (this.caret.cell.nested && !this.ownsPosition(this.caret)) return { refusal: "engineUnsupported" };
+    if (!this.history) return { refusal: this.historyOff === "limit" ? "limit" : "engineUnsupported" };
+    const block = this.structuralBlock();
+    if (block) return { refusal: block };
+    const table = this.caretTable();
+    if (!table) return { refusal: "notInTable" };
+    if (typeof table.grid === "string") return { refusal: table.grid === "tableContent" ? "tableContent" : table.grid === "limit" ? "limit" : table.grid === "engineUnsupported" ? "engineUnsupported" : "tableShape" };
+    const first = innermost(this.caret.cell).cell;
+    const last = this.hasSelection && this.anchor.cell ? innermost(this.anchor.cell).cell : first;
+    if (first >= table.grid.cells.length || last >= table.grid.cells.length) return { refusal: "tableShape" };
+    let rect: CellRange;
+    let hasInsideBorders = false;
+    if (first === last) {
+      const c = table.grid.cells[first]!;
+      rect = { startRow: c.row, startCol: c.col, endRow: c.row + c.rowSpan - 1, endCol: c.col + c.colSpan - 1 };
+    } else {
+      const range = rectangularRange(table.grid, first, last);
+      if (!range) return { refusal: "tableShape" };
+      rect = range;
+      const count = table.grid.cells.filter((c) => {
+        const cr1 = c.row + c.rowSpan - 1, cc1 = c.col + c.colSpan - 1;
+        return cr1 >= range.startRow && c.row <= range.endRow && cc1 >= range.startCol && c.col <= range.endCol;
+      }).length;
+      hasInsideBorders = count >= 2;
+    }
+    try {
+      const raw = doc.getTableCellFormattingByPath(
+        table.target.section, table.target.paragraph, tableTargetPathJson(table.target),
+        rect.startRow, rect.startCol, rect.endRow, rect.endCol,
+      );
+      const info = JSON.parse(raw) as {
+        hasZones?: boolean;
+        cellCount?: number;
+        shading?: { uniform?: boolean; color?: string | null };
+        border?: { uniform?: boolean; lineType?: number; width?: number; color?: string };
+      };
+      if (info.hasZones) return { refusal: "tableShape" };
+      const uniformShade = info.shading?.uniform === true;
+      const rawColor = uniformShade && typeof info.shading?.color === "string" ? `#${info.shading.color.toUpperCase()}` : null;
+      const edge = info.border?.uniform === true
+        && typeof info.border.lineType === "number" && typeof info.border.width === "number"
+        ? {
+            style: rhwpBorderCodeToStyle(info.border.lineType) ?? "single",
+            width: rhwpBorderIndexToWidth(info.border.width) ?? 0.12,
+            color: typeof info.border.color === "string" ? `#${info.border.color.toUpperCase()}` : null,
+          }
+        : null;
+      return {
+        target: table.target,
+        rect,
+        tableShading: {
+          color: rawColor,
+          mixed: !uniformShade,
+          hasShading: !uniformShade || rawColor !== null,
+          selectedCells: typeof info.cellCount === "number" ? info.cellCount : 1,
+          supportsClear: true,
+        },
+        tableBorders: {
+          hasInsideBorders,
+          supportedStyles: RHWP_BORDER_STYLES,
+          widthUnit: "mm",
+          supportedWidths: RHWP_BORDER_WIDTHS_MM,
+          defaultWidth: 0.12,
+          current: edge ? { top: edge, bottom: edge, left: edge, right: edge } : null,
+        },
+      };
+    } catch {
+      return { refusal: "tableShape" };
+    }
+  }
+
+  private applyCellFormatting(args: Extract<DocumentCommandArgs, { command: "table.shading" | "table.borders" }>): boolean {
+    const context = this.parameterState().parameters?.[args.command];
+    const fmt = this.cellFormattingState();
+    if (!context || "refusal" in fmt || !validateCommandArgs(args.command, args, context)) return false;
+    const doc = this.doc!;
+    let payload: Record<string, unknown>;
+    if (args.command === "table.shading") {
+      payload = {
+        rect: fmt.rect,
+        shading: { color: args.color ? args.color.trim().replace(/^#/, "").toUpperCase() : null },
+      };
+    } else {
+      const style = args.kind === "none" ? "none" : (args.style ?? "single");
+      const lineType = rhwpBorderStyleToCode(style);
+      const widthIdx = args.width !== undefined ? rhwpBorderWidthToIndex(args.width) : 1;
+      if (lineType === null || widthIdx === null) return false;
+      const color = args.color ? args.color.trim().replace(/^#/, "").toUpperCase() : "000000";
+      payload = {
+        rect: fmt.rect,
+        borders: { kind: args.kind, lineType, width: widthIdx, color },
+      };
+    }
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.formatTableCellsByPath!(
+        fmt.target.section, fmt.target.paragraph, tableTargetPathJson(fmt.target), JSON.stringify(payload),
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("cell formatting rejected");
+      if (this.borderFillBaseline !== null && typeof doc.compactAppendedBorderFills === "function") {
+        const comp = JSON.parse(doc.compactAppendedBorderFills(this.borderFillBaseline)) as { ok?: boolean };
+        if (comp.ok !== true) throw new Error("borderFill compaction failed");
+      }
+      return { caret, anchor };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
+  }
   /** Distinguish "checking the original" / "original not verified" for the HWP action commands. */
   private coreActionReasons(): Pick<DocumentCommandSnapshot, "actionReasons"> {
     const block = this.structuralBlock();
@@ -3161,6 +3288,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const split = this.ordinarySplitContext();
       if (split) parameters["table.splitCell"] = { tableSplit: split };
     }
+    const cellFmt = this.cellFormattingState();
+    if ("refusal" in cellFmt) {
+      parameterReasons["table.shading"] = parameterReasons["table.borders"] = cellFmt.refusal;
+    } else {
+      parameters["table.shading"] = { tableShading: cellFmt.tableShading };
+      parameters["table.borders"] = { tableBorders: cellFmt.tableBorders };
+    }
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };
     return value;
@@ -3347,6 +3481,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
+    if (command === "table.shading" || command === "table.borders") {
+      if (args?.command !== command) return { accepted: false };
+      return { accepted: this.applyCellFormatting(args) };
+    }
     if (command === "table.splitCell") {
       // Ordinary cells: explicit validated dimensions from the shared split dialog. Merged cells: restore without
       // arguments. Each form is refused in the other state, so a stale request never changes a different cell shape.
@@ -3627,7 +3765,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
-      try { this.text?.markPublishedCharShapes(exported.charShapeCount); }
+      try {
+        this.text?.markPublishedCharShapes(exported.charShapeCount);
+        if (typeof this.doc?.borderFillCount === "function") this.borderFillBaseline = this.doc.borderFillCount();
+      }
       catch (error) { this.notifyAfterSaveResult(() => this.saveCleanupFailed(error, epoch)); }
       if (!this.owns(epoch)) return result;
       if (!changedSince && published.durable) this.modified = false;

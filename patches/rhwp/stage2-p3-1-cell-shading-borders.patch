@@ -1,0 +1,1078 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -2,7 +2,7 @@
+ 
+ use super::super::helpers::{
+     border_line_type_to_u8_val, color_ref_to_css, fill_json_values, json_bool, json_u32,
+-    navigate_path_to_table,
++    navigate_path_to_table, u8_to_border_line_type,
+ };
+ use crate::document_core::{DocumentCore, TableTransposeClipboard};
+ use crate::error::HwpError;
+@@ -148,6 +148,827 @@
+         Ok("{\"ok\":true}".into())
+     }
+ 
++    /// [geul] Read-only cell shading and border summary for a rectangular selection in a path-owned table.
++    pub fn get_table_cell_formatting_by_path_native(
++        &self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        start_row: u16,
++        start_col: u16,
++        end_row: u16,
++        end_col: u16,
++    ) -> Result<String, HwpError> {
++        use crate::model::style::{BorderLine, FillType};
++        let table = self.resolve_table_by_path(section, paragraph, path)?;
++        if table.row_count == 0
++            || table.col_count == 0
++            || start_row > end_row
++            || end_row >= table.row_count
++            || start_col > end_col
++            || end_col >= table.col_count
++        {
++            return Err(HwpError::RenderError("invalid table cell range".into()));
++        }
++        let mut selected = Vec::new();
++        for (ci, cell) in table.cells.iter().enumerate() {
++            let cr0 = cell.row;
++            let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++            let cc0 = cell.col;
++            let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++            if cr0 <= end_row && cr1 >= start_row && cc0 <= end_col && cc1 >= start_col {
++                if cr0 < start_row || cr1 > end_row || cc0 < start_col || cc1 > end_col {
++                    return Err(HwpError::RenderError("selection overlaps merged cells partially".into()));
++                }
++                selected.push(ci);
++            }
++        }
++        if selected.is_empty() {
++            return Err(HwpError::RenderError("empty table cell selection".into()));
++        }
++        let has_zones = !table.zones.is_empty();
++        let bf_of = |id: u16| -> Option<&crate::model::style::BorderFill> {
++            id.checked_sub(1).and_then(|idx| self.document.doc_info.border_fills.get(idx as usize))
++        };
++        let mut shading_uniform = true;
++        let mut shading_color: Option<Option<String>> = None;
++        let mut uniform_border: Option<Option<BorderLine>> = None;
++        let mut border_uniform = true;
++        for &ci in &selected {
++            let cell = &table.cells[ci];
++            let Some(bf) = bf_of(cell.border_fill_id) else {
++                shading_uniform = false;
++                border_uniform = false;
++                continue;
++            };
++            let cell_shading: Option<String> = match bf.fill.fill_type {
++                FillType::None => None,
++                FillType::Solid => {
++                    if let Some(s) = &bf.fill.solid {
++                        if (s.pattern_type != 0 && s.pattern_type != -1) || bf.fill.alpha != 0 {
++                            shading_uniform = false;
++                            None
++                        } else if s.background_color == 0xFFFFFFFF {
++                            None
++                        } else {
++                            let css = color_ref_to_css(s.background_color);
++                            Some(css.trim_start_matches('#').to_ascii_uppercase())
++                        }
++                    } else {
++                        shading_uniform = false;
++                        None
++                    }
++                }
++                _ => {
++                    shading_uniform = false;
++                    None
++                }
++            };
++            if shading_uniform {
++                match &shading_color {
++                    None => shading_color = Some(cell_shading),
++                    Some(prev) if *prev != cell_shading => shading_uniform = false,
++                    _ => {}
++                }
++            }
++            if border_uniform {
++                let first = bf.borders[0];
++                if bf.borders.iter().all(|b| *b == first) {
++                    match uniform_border {
++                        None => uniform_border = Some(Some(first)),
++                        Some(Some(prev)) if prev == first => {}
++                        _ => border_uniform = false,
++                    }
++                } else {
++                    border_uniform = false;
++                }
++            }
++        }
++        let border_json = match (border_uniform, uniform_border) {
++            (true, Some(Some(b))) => serde_json::json!({
++                "uniform": true,
++                "lineType": border_line_type_to_u8_val(b.line_type),
++                "width": b.width,
++                "color": color_ref_to_css(b.color).trim_start_matches('#').to_ascii_uppercase(),
++            }),
++            _ => serde_json::json!({ "uniform": false }),
++        };
++        Ok(serde_json::json!({
++            "hasZones": has_zones,
++            "cellCount": selected.len(),
++            "shading": {
++                "uniform": shading_uniform,
++                "color": if shading_uniform { shading_color.flatten() } else { None },
++            },
++            "border": border_json,
++        })
++        .to_string())
++    }
++
++    /// [geul] Atomically format cell shading and/or borders for a rectangular cell range in a path-owned table.
++    pub fn format_table_cells_by_path_native(
++        &mut self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        spec_json: &str,
++    ) -> Result<String, HwpError> {
++        use crate::model::style::{
++            BorderFill, BorderLine, BorderLineType, DiagonalLine, Fill, FillType, SolidFill,
++        };
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct RectArg {
++            start_row: u16,
++            start_col: u16,
++            end_row: u16,
++            end_col: u16,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct ShadingArg {
++            color: Option<String>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct BordersArg {
++            kind: String,
++            line_type: u8,
++            width: u8,
++            color: String,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct FormatSpec {
++            rect: RectArg,
++            #[serde(default)]
++            shading: Option<ShadingArg>,
++            #[serde(default)]
++            borders: Option<BordersArg>,
++        }
++
++        fn parse_hex_colorref(hex: &str) -> Option<u32> {
++            let h = hex.trim().strip_prefix('#').unwrap_or(hex.trim());
++            if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
++                return None;
++            }
++            let r = u8::from_str_radix(&h[0..2], 16).ok()? as u32;
++            let g = u8::from_str_radix(&h[2..4], 16).ok()? as u32;
++            let b = u8::from_str_radix(&h[4..6], 16).ok()? as u32;
++            Some((b << 16) | (g << 8) | r)
++        }
++
++        fn border_fills_strictly_equal(a: &BorderFill, b: &BorderFill) -> bool {
++            a.attr == b.attr
++                && a.center_line == b.center_line
++                && a.diagonal == b.diagonal
++                && a.borders == b.borders
++                && a.three_d == b.three_d
++                && a.fill == b.fill
++        }
++
++        let spec: FormatSpec = serde_json::from_str(spec_json)
++            .map_err(|_| HwpError::RenderError("invalid cell formatting payload".into()))?;
++        if spec.shading.is_none() && spec.borders.is_none() {
++            return Err(HwpError::RenderError("empty cell formatting payload".into()));
++        }
++
++        let parsed_shading: Option<Option<u32>> = match &spec.shading {
++            None => None,
++            Some(s) => match &s.color {
++                None => Some(None),
++                Some(c) => Some(Some(
++                    parse_hex_colorref(c)
++                        .ok_or_else(|| HwpError::RenderError("invalid shading color".into()))?,
++                )),
++            },
++        };
++
++        let parsed_borders: Option<(&str, BorderLine)> = match &spec.borders {
++            None => None,
++            Some(b) => {
++                let kind = b.kind.as_str();
++                if !matches!(
++                    kind,
++                    "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right"
++                ) {
++                    return Err(HwpError::RenderError("invalid border kind".into()));
++                }
++                let line = if kind == "none" || b.line_type == 0 {
++                    BorderLine {
++                        line_type: BorderLineType::None,
++                        width: 0,
++                        color: 0,
++                    }
++                } else {
++                    if b.line_type > 17 || b.width > 15 {
++                        return Err(HwpError::RenderError("invalid border style or width".into()));
++                    }
++                    let color = parse_hex_colorref(&b.color)
++                        .ok_or_else(|| HwpError::RenderError("invalid border color".into()))?;
++                    BorderLine {
++                        line_type: u8_to_border_line_type(b.line_type),
++                        width: b.width,
++                        color,
++                    }
++                };
++                Some((kind, line))
++            }
++        };
++
++        // Read-only validation before any DocInfo or table mutation.
++        let mut selected_set = std::collections::BTreeSet::new();
++        let mut cell_plans: Vec<(usize, [bool; 4], bool)> = Vec::new();
++        {
++            let table = self.resolve_table_by_path(section, paragraph, path)?;
++            if !table.zones.is_empty() {
++                return Err(HwpError::RenderError(
++                    "tables with cellzone overlays are unsupported".into(),
++                ));
++            }
++            if table.row_count == 0
++                || table.col_count == 0
++                || spec.rect.start_row > spec.rect.end_row
++                || spec.rect.end_row >= table.row_count
++                || spec.rect.start_col > spec.rect.end_col
++                || spec.rect.end_col >= table.col_count
++            {
++                return Err(HwpError::RenderError("invalid table cell range".into()));
++            }
++            for (ci, cell) in table.cells.iter().enumerate() {
++                let cr0 = cell.row;
++                let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++                let cc0 = cell.col;
++                let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++                if cr0 <= spec.rect.end_row
++                    && cr1 >= spec.rect.start_row
++                    && cc0 <= spec.rect.end_col
++                    && cc1 >= spec.rect.start_col
++                {
++                    if cr0 < spec.rect.start_row
++                        || cr1 > spec.rect.end_row
++                        || cc0 < spec.rect.start_col
++                        || cc1 > spec.rect.end_col
++                    {
++                        return Err(HwpError::RenderError(
++                            "selection overlaps merged cells partially".into(),
++                        ));
++                    }
++                    selected_set.insert(ci);
++                }
++            }
++            if selected_set.is_empty() {
++                return Err(HwpError::RenderError("empty table cell selection".into()));
++            }
++            if let Some((kind, _)) = parsed_borders {
++                if kind == "inside" && selected_set.len() < 2 {
++                    return Err(HwpError::RenderError(
++                        "select two or more cells for inside borders".into(),
++                    ));
++                }
++            }
++
++            let apply_left = parsed_borders
++                .is_some_and(|(k, _)| matches!(k, "all" | "outside" | "none" | "left"));
++            let apply_right = parsed_borders
++                .is_some_and(|(k, _)| matches!(k, "all" | "outside" | "none" | "right"));
++            let apply_top = parsed_borders
++                .is_some_and(|(k, _)| matches!(k, "all" | "outside" | "none" | "top"));
++            let apply_bottom = parsed_borders
++                .is_some_and(|(k, _)| matches!(k, "all" | "outside" | "none" | "bottom"));
++            let apply_inside =
++                parsed_borders.is_some_and(|(k, _)| matches!(k, "all" | "inside" | "none"));
++
++            for (ci, cell) in table.cells.iter().enumerate() {
++                let cr0 = cell.row;
++                let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++                let cc0 = cell.col;
++                let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++                let mut edges = [false; 4]; // [Left, Right, Top, Bottom]
++                let is_sel = selected_set.contains(&ci);
++                if is_sel {
++                    if parsed_borders.is_some() {
++                        edges[0] = (apply_left && cc0 == spec.rect.start_col)
++                            || (apply_inside && cc0 > spec.rect.start_col);
++                        edges[1] = (apply_right && cc1 == spec.rect.end_col)
++                            || (apply_inside && cc1 < spec.rect.end_col);
++                        edges[2] = (apply_top && cr0 == spec.rect.start_row)
++                            || (apply_inside && cr0 > spec.rect.start_row);
++                        edges[3] = (apply_bottom && cr1 == spec.rect.end_row)
++                            || (apply_inside && cr1 < spec.rect.end_row);
++                    }
++                    if parsed_shading.is_some() || edges.iter().any(|&e| e) {
++                        cell_plans.push((ci, edges, true));
++                    }
++                } else if parsed_borders.is_some() {
++                    if apply_left
++                        && cc1 + 1 == spec.rect.start_col
++                        && cr0 <= spec.rect.end_row
++                        && cr1 >= spec.rect.start_row
++                    {
++                        edges[1] = true; // neighbor right touches selection left
++                    }
++                    if apply_right
++                        && cc0 == spec.rect.end_col + 1
++                        && cr0 <= spec.rect.end_row
++                        && cr1 >= spec.rect.start_row
++                    {
++                        edges[0] = true; // neighbor left touches selection right
++                    }
++                    if apply_top
++                        && cr1 + 1 == spec.rect.start_row
++                        && cc0 <= spec.rect.end_col
++                        && cc1 >= spec.rect.start_col
++                    {
++                        edges[3] = true; // neighbor bottom touches selection top
++                    }
++                    if apply_bottom
++                        && cr0 == spec.rect.end_row + 1
++                        && cc0 <= spec.rect.end_col
++                        && cc1 >= spec.rect.start_col
++                    {
++                        edges[2] = true; // neighbor top touches selection bottom
++                    }
++                    if edges.iter().any(|&e| e) {
++                        cell_plans.push((ci, edges, false));
++                    }
++                }
++            }
++        }
++
++        // Resolve/create BorderFill entries without leaving partial cell edits on error.
++        let mut updates: Vec<(usize, u16)> = Vec::with_capacity(cell_plans.len());
++        let mut staged_new_bfs: Vec<BorderFill> = Vec::new();
++        let existing_len = self.document.doc_info.border_fills.len();
++
++        for (ci, edges, is_sel) in cell_plans {
++            let old_bf_id = {
++                let table = self.resolve_table_by_path(section, paragraph, path)?;
++                table.cells[ci].border_fill_id
++            };
++            let mut bf = if old_bf_id == 0 {
++                BorderFill {
++                    raw_data: None,
++                    attr: 0,
++                    borders: [BorderLine::default(); 4],
++                    diagonal: DiagonalLine::default(),
++                    center_line: crate::model::style::CenterLine::None,
++                    fill: Fill::default(),
++                    three_d: false,
++                }
++            } else {
++                let idx = (old_bf_id - 1) as usize;
++                self.document
++                    .doc_info
++                    .border_fills
++                    .get(idx)
++                    .cloned()
++                    .ok_or_else(|| HwpError::RenderError("missing cell borderFill".into()))?
++            };
++            bf.raw_data = None;
++            if is_sel {
++                if let Some(shading_opt) = parsed_shading {
++                    bf.fill = match shading_opt {
++                        Some(color) => Fill {
++                            fill_type: FillType::Solid,
++                            solid: Some(SolidFill {
++                                background_color: color,
++                                pattern_color: 0xFFFFFFFF,
++                                pattern_type: -1,
++                            }),
++                            ..Default::default()
++                        },
++                        None => Fill::default(),
++                    };
++                }
++            }
++            if let Some((_, line)) = parsed_borders {
++                for (dir, &apply_dir) in edges.iter().enumerate() {
++                    if apply_dir {
++                        bf.borders[dir] = line;
++                    }
++                }
++            }
++
++            let found_existing = self
++                .document
++                .doc_info
++                .border_fills
++                .iter()
++                .enumerate()
++                .find(|(_, existing)| border_fills_strictly_equal(existing, &bf))
++                .map(|(idx, _)| (idx + 1) as u16);
++            let bf_id = if let Some(id) = found_existing {
++                id
++            } else if let Some(pos) = staged_new_bfs
++                .iter()
++                .position(|staged| border_fills_strictly_equal(staged, &bf))
++            {
++                let total = existing_len + pos + 1;
++                if total > u16::MAX as usize {
++                    return Err(HwpError::RenderError("borderFill limit exceeded".into()));
++                }
++                total as u16
++            } else {
++                let total = existing_len + staged_new_bfs.len() + 1;
++                if total > u16::MAX as usize {
++                    return Err(HwpError::RenderError("borderFill limit exceeded".into()));
++                }
++                staged_new_bfs.push(bf);
++                total as u16
++            };
++            updates.push((ci, bf_id));
++        }
++
++        if !staged_new_bfs.is_empty() {
++            self.document.doc_info.border_fills.extend(staged_new_bfs);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        {
++            let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
++            for (ci, bf_id) in updates {
++                table.cells[ci].border_fill_id = bf_id;
++            }
++        }
++        self.rebuild_resolved_styles();
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.document.sections[section].raw_stream = None;
++        self.recompose_section(section);
++        self.paginate_if_needed();
++        Ok("{\"ok\":true}".into())
++    }
++
++    /// [geul] Compact unreferenced appended BorderFill definitions above `baseline` so
++    /// repeated border/shading edits never leave orphan DocInfo/header.xml entries on publish.
++    pub fn compact_appended_border_fills_native(
++        &mut self,
++        baseline: usize,
++    ) -> Result<String, HwpError> {
++        use std::collections::BTreeSet;
++
++        let total = self.document.doc_info.border_fills.len();
++        if baseline >= total {
++            return Ok(serde_json::json!({"ok": true, "removed": 0, "count": total}).to_string());
++        }
++
++        fn visit_paras(
++            paras: &[crate::model::paragraph::Paragraph],
++            table_refs: &mut BTreeSet<u16>,
++        ) {
++            for p in paras {
++                visit_ctrls(&p.controls, table_refs);
++            }
++        }
++        fn visit_shape(
++            shape: &crate::model::shape::ShapeObject,
++            table_refs: &mut BTreeSet<u16>,
++        ) {
++            use crate::model::shape::ShapeObject;
++            match shape {
++                ShapeObject::Picture(pic) => {
++                    if let Some(c) = &pic.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Group(g) => {
++                    for ch in &g.children {
++                        visit_shape(ch, table_refs);
++                    }
++                    if let Some(c) = &g.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Chart(ch) => {
++                    if let Some(tb) = &ch.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &ch.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &ch.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Ole(o) => {
++                    if let Some(tb) = &o.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &o.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &o.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Rectangle(r) => {
++                    if let Some(tb) = &r.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &r.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Line(l) => {
++                    if let Some(tb) = &l.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &l.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Ellipse(e) => {
++                    if let Some(tb) = &e.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &e.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Polygon(p) => {
++                    if let Some(tb) = &p.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &p.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Arc(a) => {
++                    if let Some(tb) = &a.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(c) = &a.drawing.caption {
++                        visit_paras(&c.paragraphs, table_refs);
++                    }
++                }
++                ShapeObject::Curve(c) => {
++                    if let Some(tb) = &c.drawing.text_box {
++                        visit_paras(&tb.paragraphs, table_refs);
++                    }
++                    if let Some(cap) = &c.drawing.caption {
++                        visit_paras(&cap.paragraphs, table_refs);
++                    }
++                }
++            }
++        }
++        fn visit_ctrls(
++            controls: &[Control],
++            table_refs: &mut BTreeSet<u16>,
++        ) {
++            for ctrl in controls {
++                match ctrl {
++                    Control::Table(t) => {
++                        table_refs.insert(t.border_fill_id);
++                        for z in &t.zones {
++                            table_refs.insert(z.border_fill_id);
++                        }
++                        for cell in &t.cells {
++                            table_refs.insert(cell.border_fill_id);
++                            visit_paras(&cell.paragraphs, table_refs);
++                        }
++                        if let Some(c) = &t.caption {
++                            visit_paras(&c.paragraphs, table_refs);
++                        }
++                    }
++                    Control::Picture(p) => {
++                        if let Some(c) = &p.caption {
++                            visit_paras(&c.paragraphs, table_refs);
++                        }
++                    }
++                    Control::Shape(s) => visit_shape(s, table_refs),
++                    Control::Header(h) => visit_paras(&h.paragraphs, table_refs),
++                    Control::Footer(f) => visit_paras(&f.paragraphs, table_refs),
++                    Control::Footnote(n) => visit_paras(&n.paragraphs, table_refs),
++                    Control::Endnote(n) => visit_paras(&n.paragraphs, table_refs),
++                    Control::HiddenComment(c) => visit_paras(&c.paragraphs, table_refs),
++                    Control::Field(f) => visit_paras(&f.memo_paragraphs, table_refs),
++                    Control::SectionDef(sd) => {
++                        for mp in &sd.master_pages {
++                            visit_paras(&mp.paragraphs, table_refs);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++        }
++
++        // Fail closed if any non-table DocInfo/PageBorderFill references > baseline.
++        let b16 = baseline as u16;
++        if self.document.doc_info.para_shapes.iter().any(|p| p.border_fill_id > b16)
++            || self.document.doc_info.char_shapes.iter().any(|c| c.border_fill_id > b16)
++            || self.document.sections.iter().any(|s| {
++                s.section_def.page_border_fill.border_fill_id > b16
++                    || s.section_def
++                        .extra_page_border_fills
++                        .iter()
++                        .any(|pbf| pbf.border_fill_id > b16)
++            })
++        {
++            return Ok(serde_json::json!({"ok": true, "removed": 0, "count": total}).to_string());
++        }
++
++        let mut refs = BTreeSet::new();
++        for section in &self.document.sections {
++            visit_paras(&section.paragraphs, &mut refs);
++            for mp in &section.section_def.master_pages {
++                visit_paras(&mp.paragraphs, &mut refs);
++            }
++        }
++        if let Some(cb) = &self.clipboard {
++            visit_paras(&cb.paragraphs, &mut refs);
++        }
++        if let Some(tr) = &self.table_transpose_clipboard {
++            for row in &tr.data.cells {
++                for cell in row {
++                    visit_paras(cell, &mut refs);
++                }
++            }
++        }
++
++        let mut remap = std::collections::BTreeMap::<u16, u16>::new();
++        let mut kept = Vec::new();
++        for idx in baseline..total {
++            let old_id = (idx + 1) as u16;
++            if refs.contains(&old_id) {
++                let new_id = (baseline + kept.len() + 1) as u16;
++                remap.insert(old_id, new_id);
++                kept.push(self.document.doc_info.border_fills[idx].clone());
++            }
++        }
++        let removed = (total - baseline) - kept.len();
++        if removed == 0 {
++            return Ok(serde_json::json!({"ok": true, "removed": 0, "count": total}).to_string());
++        }
++        self.document.doc_info.border_fills.truncate(baseline);
++        self.document.doc_info.border_fills.extend(kept);
++        self.document.doc_info.raw_stream_dirty = true;
++
++        fn remap_paras(
++            paras: &mut [crate::model::paragraph::Paragraph],
++            remap: &std::collections::BTreeMap<u16, u16>,
++        ) {
++            for p in paras {
++                remap_ctrls(&mut p.controls, remap);
++            }
++        }
++        fn remap_shape(
++            shape: &mut crate::model::shape::ShapeObject,
++            remap: &std::collections::BTreeMap<u16, u16>,
++        ) {
++            use crate::model::shape::ShapeObject;
++            match shape {
++                ShapeObject::Picture(pic) => {
++                    if let Some(c) = &mut pic.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Group(g) => {
++                    for ch in &mut g.children {
++                        remap_shape(ch, remap);
++                    }
++                    if let Some(c) = &mut g.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Chart(ch) => {
++                    if let Some(tb) = &mut ch.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut ch.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut ch.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Ole(o) => {
++                    if let Some(tb) = &mut o.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut o.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut o.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Rectangle(r) => {
++                    if let Some(tb) = &mut r.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut r.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Line(l) => {
++                    if let Some(tb) = &mut l.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut l.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Ellipse(e) => {
++                    if let Some(tb) = &mut e.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut e.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Polygon(p) => {
++                    if let Some(tb) = &mut p.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut p.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Arc(a) => {
++                    if let Some(tb) = &mut a.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(c) = &mut a.drawing.caption {
++                        remap_paras(&mut c.paragraphs, remap);
++                    }
++                }
++                ShapeObject::Curve(c) => {
++                    if let Some(tb) = &mut c.drawing.text_box {
++                        remap_paras(&mut tb.paragraphs, remap);
++                    }
++                    if let Some(cap) = &mut c.drawing.caption {
++                        remap_paras(&mut cap.paragraphs, remap);
++                    }
++                }
++            }
++        }
++        fn remap_ctrls(
++            controls: &mut [Control],
++            remap: &std::collections::BTreeMap<u16, u16>,
++        ) {
++            for ctrl in controls {
++                match ctrl {
++                    Control::Table(t) => {
++                        if let Some(&new_id) = remap.get(&t.border_fill_id) {
++                            t.border_fill_id = new_id;
++                        }
++                        for z in &mut t.zones {
++                            if let Some(&new_id) = remap.get(&z.border_fill_id) {
++                                z.border_fill_id = new_id;
++                            }
++                        }
++                        for cell in &mut t.cells {
++                            if let Some(&new_id) = remap.get(&cell.border_fill_id) {
++                                cell.border_fill_id = new_id;
++                            }
++                            remap_paras(&mut cell.paragraphs, remap);
++                        }
++                        if let Some(c) = &mut t.caption {
++                            remap_paras(&mut c.paragraphs, remap);
++                        }
++                    }
++                    Control::Picture(p) => {
++                        if let Some(c) = &mut p.caption {
++                            remap_paras(&mut c.paragraphs, remap);
++                        }
++                    }
++                    Control::Shape(s) => remap_shape(s, remap),
++                    Control::Header(h) => remap_paras(&mut h.paragraphs, remap),
++                    Control::Footer(f) => remap_paras(&mut f.paragraphs, remap),
++                    Control::Footnote(n) => remap_paras(&mut n.paragraphs, remap),
++                    Control::Endnote(n) => remap_paras(&mut n.paragraphs, remap),
++                    Control::HiddenComment(c) => remap_paras(&mut c.paragraphs, remap),
++                    Control::Field(f) => remap_paras(&mut f.memo_paragraphs, remap),
++                    Control::SectionDef(sd) => {
++                        for mp in &mut sd.master_pages {
++                            remap_paras(&mut mp.paragraphs, remap);
++                        }
++                    }
++                    _ => {}
++                }
++            }
++        }
++
++        for section in &mut self.document.sections {
++            remap_paras(&mut section.paragraphs, &remap);
++            for mp in &mut section.section_def.master_pages {
++                remap_paras(&mut mp.paragraphs, &remap);
++            }
++        }
++        if let Some(cb) = &mut self.clipboard {
++            remap_paras(&mut cb.paragraphs, &remap);
++        }
++        if let Some(tr) = &mut self.table_transpose_clipboard {
++            for row in &mut tr.data.cells {
++                for cell in row {
++                    remap_paras(cell, &remap);
++                }
++            }
++        }
++        self.rebuild_resolved_styles();
++        let after = self.document.doc_info.border_fills.len();
++        Ok(serde_json::json!({"ok": true, "removed": removed, "count": after}).to_string())
++    }
++
+     /// 표에 행을 삽입한다 (네이티브).
+     pub fn insert_table_row_native(
+         &mut self,
+@@ -4836,3 +5655,176 @@
+         assert_eq!(shape(table(&core, para, ctrl)), merged);
+     }
+ }
++
++#[cfg(test)]
++mod geul_cell_formatting_tests {
++    //! [geul] Stage 2 Phase 3 P3-1: cell shading and borders across HWP and HWPX.
++    use crate::document_core::DocumentCore;
++    use crate::model::control::Control;
++    use crate::model::style::{BorderLineType, FillType};
++    use crate::model::table::Table;
++
++    fn core_with_table(rows: u16, cols: u16) -> (DocumentCore, usize, usize) {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        let value: serde_json::Value =
++            serde_json::from_str(&core.create_table_native(0, 0, 0, rows, cols).unwrap()).unwrap();
++        let (para, ctrl) = (
++            value["paraIdx"].as_u64().unwrap() as usize,
++            value["controlIdx"].as_u64().unwrap() as usize,
++        );
++        (core, para, ctrl)
++    }
++
++    fn table(core: &DocumentCore, para: usize, ctrl: usize) -> &Table {
++        match &core.document.sections[0].paragraphs[para].controls[ctrl] {
++            Control::Table(t) => t,
++            _ => panic!("table"),
++        }
++    }
++
++    #[test]
++    fn shading_borders_neighbors_compaction_and_roundtrip() {
++        let (mut core, para, ctrl) = core_with_table(3, 3);
++        let path = [(ctrl, 0, 0)];
++        let baseline = core.document.doc_info.border_fills.len();
++
++        // Single cell shading + removal
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"shading":{"color":"FFE0B2"}}"#,
++        )
++        .unwrap();
++        let info: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_cell_formatting_by_path_native(0, para, &path, 0, 0, 0, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(info["shading"]["uniform"], true);
++        assert_eq!(info["shading"]["color"], "FFE0B2");
++
++        // Change shading then remove -> compaction prunes superseded intermediate BorderFill
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"shading":{"color":"C8E6C9"}}"#,
++        )
++        .unwrap();
++        core.compact_appended_border_fills_native(baseline).unwrap();
++        assert_eq!(core.document.doc_info.border_fills.len(), baseline + 1);
++
++        // Outside borders on 2x2 rect (0..=1, 0..=1) syncs exterior neighbors (0,2), (1,2), (2,0), (2,1)
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":1,"endCol":1},"borders":{"kind":"outside","lineType":8,"width":6,"color":"C00000"}}"#,
++        )
++        .unwrap();
++        core.compact_appended_border_fills_native(baseline).unwrap();
++
++        let t = table(&core, para, ctrl);
++        let bf_of = |r: u16, c: u16| {
++            let cell = t.cells.iter().find(|x| x.row == r && x.col == c).unwrap();
++            &core.document.doc_info.border_fills[(cell.border_fill_id - 1) as usize]
++        };
++        // Cell (0,0) top/left changed, right/bottom unchanged
++        assert_eq!(bf_of(0, 0).borders[2].line_type, BorderLineType::Double);
++        assert_eq!(bf_of(0, 0).borders[0].line_type, BorderLineType::Double);
++        assert_eq!(bf_of(0, 0).borders[1].line_type, BorderLineType::Solid);
++        assert_eq!(bf_of(0, 0).borders[3].line_type, BorderLineType::Solid);
++        assert_eq!(bf_of(0, 0).fill.fill_type, FillType::Solid);
++        // Neighbor (0,2) left edge synced to Double
++        assert_eq!(bf_of(0, 2).borders[0].line_type, BorderLineType::Double);
++        // Unrelated corner (2,2) untouched
++        assert_eq!(bf_of(2, 2).borders[0].line_type, BorderLineType::Solid);
++        assert_eq!(bf_of(2, 2).fill.fill_type, FillType::None);
++
++        // Export HWP and HWPX and reopen independently
++        let hwp_bytes = core.export_hwp_native().unwrap();
++        let reopened_hwp = DocumentCore::from_hwp_bytes(&hwp_bytes).unwrap();
++        let rt_hwp = table(&reopened_hwp, para, ctrl);
++        let bf_hwp = &reopened_hwp.document.doc_info.border_fills
++            [(rt_hwp.cells[0].border_fill_id - 1) as usize];
++        assert_eq!(bf_hwp.borders[2].line_type, BorderLineType::Double);
++        assert_eq!(bf_hwp.fill.fill_type, FillType::Solid);
++
++        let hwpx_bytes = core.export_hwpx_native().unwrap();
++        let reopened_hwpx = DocumentCore::from_hwpx_bytes(&hwpx_bytes).unwrap();
++        let rt_hwpx = table(&reopened_hwpx, para, ctrl);
++        let bf_hwpx = &reopened_hwpx.document.doc_info.border_fills
++            [(rt_hwpx.cells[0].border_fill_id - 1) as usize];
++        assert_eq!(bf_hwpx.borders[2].line_type, BorderLineType::Double);
++        assert_eq!(bf_hwpx.fill.fill_type, FillType::Solid);
++    }
++
++    #[test]
++    fn nested_merged_and_negative_validation() {
++        let (mut core, para, ctrl) = core_with_table(2, 2);
++        let path = [(ctrl, 0, 0)];
++        // Inside border on single cell must fail
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"borders":{"kind":"inside","lineType":1,"width":1,"color":"000000"}}"#,
++            )
++            .is_err());
++        // Invalid color / lineType / width must fail
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"shading":{"color":"ZZZZZZ"}}"#,
++            )
++            .is_err());
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"borders":{"kind":"all","lineType":99,"width":1,"color":"000000"}}"#,
++            )
++            .is_err());
++        // Merge (0,0)-(0,1) -> partial selection (0,0)-(1,0) must fail
++        core.edit_table_by_cell_path_native(0, para, &path, "mergeRight", &[0, 0, 0, 1])
++            .unwrap();
++        assert!(core
++            .format_table_cells_by_path_native(
++                0,
++                para,
++                &path,
++                r#"{"rect":{"startRow":0,"startCol":0,"endRow":1,"endCol":0},"shading":{"color":"AABBCC"}}"#,
++            )
++            .is_err());
++        // Nested table formatting
++        let nested_res: serde_json::Value = serde_json::from_str(
++            &core
++                .create_table_with_path_native(0, para, 0, 2, 2, true, None, None, &[(ctrl, 1, 0)])
++                .unwrap(),
++        )
++        .unwrap();
++        let nested_ctrl = nested_res["controlIdx"].as_u64().unwrap() as usize;
++        let nested_path = [(ctrl, 1, 0), (nested_ctrl, 0, 0)];
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &nested_path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":0},"shading":{"color":"112233"}}"#,
++        )
++        .unwrap();
++        let nested_info: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_cell_formatting_by_path_native(0, para, &nested_path, 0, 0, 0, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(nested_info["shading"]["color"], "112233");
++    }
++}
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7274,6 +7274,57 @@
+         self.get_table_properties_by_path_native(section as usize, paragraph as usize, &path).map_err(Into::into)
+     }
+ 
++    /// [geul] Read-only cell shading and border summary for a rectangular selection in a path-owned table.
++    #[wasm_bindgen(js_name = getTableCellFormattingByPath)]
++    pub fn get_table_cell_formatting_by_path(
++        &self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        start_row: u32,
++        start_col: u32,
++        end_row: u32,
++        end_col: u32,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.get_table_cell_formatting_by_path_native(
++            section as usize,
++            paragraph as usize,
++            &path,
++            start_row as u16,
++            start_col as u16,
++            end_row as u16,
++            end_col as u16,
++        )
++        .map_err(Into::into)
++    }
++
++    /// [geul] Atomically format cell shading and/or borders for a rectangular selection in a path-owned table.
++    #[wasm_bindgen(js_name = formatTableCellsByPath)]
++    pub fn format_table_cells_by_path(
++        &mut self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        spec_json: &str,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.format_table_cells_by_path_native(section as usize, paragraph as usize, &path, spec_json)
++            .map_err(Into::into)
++    }
++
++    /// [geul] Number of BorderFill definitions currently in DocInfo.
++    #[wasm_bindgen(js_name = borderFillCount)]
++    pub fn border_fill_count(&self) -> u32 {
++        self.document.doc_info.border_fills.len() as u32
++    }
++
++    /// [geul] Compact unreferenced appended BorderFill definitions above `baseline`.
++    #[wasm_bindgen(js_name = compactAppendedBorderFills)]
++    pub fn compact_appended_border_fills(&mut self, baseline: u32) -> Result<String, JsValue> {
++        self.compact_appended_border_fills_native(baseline as usize).map_err(Into::into)
++    }
++
+     /// [geul] Caption paragraphs of an explicitly path-owned table (read-only):
+     /// `{"paragraphs":[...]}` or `{"paragraphs":null}` when the table has none.
+     #[wasm_bindgen(js_name = getTableCaptionByPath)]

@@ -1010,8 +1010,9 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             "DocInfo",
         )?;
     }
+    let orig_borders = entries(&ac, BORDER);
     for bf in entries(&added, BORDER) {
-        preserved(*bf == basic_border_fill(), "DocInfo")?;
+        valid_appended_border_fill(bf, &orig_borders)?;
     }
     for bullet in entries(&added, BULLET) {
         basic_bullet(bullet, &bc)?;
@@ -1157,7 +1158,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 .get(cursor)
                 .filter(|o| restructure_candidate(o, object, &bc, &ac))
             {
-                restructured_table(o, object, &bc, &ac, &mut used.paras)?;
+                restructured_table(o, object, &bc, &ac, &mut used)?;
                 cursor += 1;
                 continue;
             }
@@ -1225,7 +1226,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         }
     }
     reference(used.pictures.len() == resources.new_paths.len(), "DocInfo")?;
-    preserved(entries(&added, 20).is_empty() || table_total > 0, "DocInfo")?;
+    preserved(entries(&added, 20).is_empty() || !used.borders.is_empty(), "DocInfo")?;
     Ok(Proof {
         streams: resources.new_paths,
         removed: used.removed,
@@ -1254,6 +1255,48 @@ fn basic_border_fill() -> Vec<u8> {
     }
     b[26] = 1;
     b
+}
+
+/// Stage 2 P3-1: bounded proof of an appended DocInfo BORDER_FILL (`tag 20`) emitted for cell
+/// shading/borders. Allows only valid HWP5 line types (0..=17), width buckets (0..=15), default or
+/// original-matching attributes/diagonal, and None (`fill_type=0`, 40 B), Solid (`fill_type=1`,
+/// 53 B, pattern_type in -1..=6), or an exact original fill tail when preserving non-solid fill.
+fn valid_appended_border_fill(bf: &[u8], orig_borders: &[&[u8]]) -> Checked<()> {
+    if bf == basic_border_fill().as_slice() {
+        return Ok(());
+    }
+    valid(bf.len() >= 40, "DocInfo")?;
+    for at in [2, 8, 14, 20] {
+        preserved(bf[at] <= 17 && bf[at + 1] <= 15, "DocInfo")?;
+    }
+    let default_diag = [1u8, 1, 0, 0, 0, 0];
+    let no_diag = [0u8; 6];
+    let attr_diag_default =
+        bf[0..2] == [0, 0] && (bf[26..32] == default_diag || bf[26..32] == no_diag);
+    let matches_orig_header = |o: &&[u8]| o.len() >= 32 && o[0..2] == bf[0..2] && o[26..32] == bf[26..32];
+    preserved(
+        attr_diag_default || orig_borders.iter().any(matches_orig_header),
+        "DocInfo",
+    )?;
+    let fill_type = dword(bf, 32)?;
+    match fill_type {
+        0 => preserved(bf.len() == 40 && dword(bf, 36)? == 0, "DocInfo"),
+        1 => {
+            preserved(bf.len() == 53 && dword(bf, 48)? == 0, "DocInfo")?;
+            let pattern_type = dword(bf, 44)? as u32 as i32;
+            preserved((-1..=6).contains(&pattern_type), "DocInfo")
+        }
+        _ => preserved(
+            orig_borders
+                .iter()
+                .any(|o| matches_orig_header(o) && o[32..] == bf[32..]),
+            "DocInfo",
+        ),
+    }
+}
+
+fn cell_header_matches_ignoring_border_fill(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.len() >= 34 && a[2..32] == b[2..32] && a[34..] == b[34..]
 }
 /// Appended paragraph shapes must equal an original one except the bullet heading (T011) and the Stage 1
 /// paragraph values: alignment and line-spacing kind (attr1 bits 0-4), left/right margin, first-line indent,
@@ -2003,7 +2046,7 @@ fn restructured_table(
     new: &[Record<'_>],
     defs: &Defs<'_>,
     original_defs: &Defs<'_>,
-    para_ids: &mut BTreeSet<usize>,
+    used: &mut Used,
 ) -> Checked<()> {
     let (a, b) = (old[0].2, new[0].2);
     valid(b.len() >= 42, BODY)?;
@@ -2024,7 +2067,7 @@ fn restructured_table(
     let mut ignored = BTreeSet::new();
     let before = plain_cells(old, original_defs, original_defs, &mut ignored)
         .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
-    let after = plain_cells(new, defs, original_defs, para_ids)
+    let after = plain_cells(new, defs, original_defs, &mut used.paras)
         .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
     let (ta, tb) = (old[1].2, new[1].2);
     let (rows_a, rows_b) = (word(ta, 4)?, word(tb, 4)?);
@@ -2039,6 +2082,10 @@ fn restructured_table(
             && (zones_a.is_empty() || zones_a == [0, 0]),
         BODY,
     )?;
+    let tb_bf = word(tb, 18 + 2 * rows_b)?;
+    reference(tb_bf > 0 && tb_bf <= entries(defs, BORDER).len(), BODY)?;
+    used.borders.insert(tb_bf);
+    let orig_border_count = entries(original_defs, BORDER).len();
     let mut per_row = vec![0usize; rows_b];
     for cell in &after {
         let row = word(cell.header, 10)?;
@@ -2046,11 +2093,15 @@ fn restructured_table(
             .get_mut(row)
             .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
         valid(dword(cell.header, 16)? > 0, BODY)?;
-        let template = |h: &[u8]| (h[4..8].to_vec(), h[24..34].to_vec(), h[38..].to_vec());
+        let bf = word(cell.header, 32)?;
+        reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
+        used.borders.insert(bf);
+        let template = |h: &[u8]| (h[4..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
         preserved(
-            before
-                .iter()
-                .any(|o| template(o.header) == template(cell.header)),
+            before.iter().any(|o| {
+                template(o.header) == template(cell.header)
+                    && (word(o.header, 32) == Ok(bf) || bf > orig_border_count)
+            }),
             BODY,
         )?;
     }
@@ -2306,12 +2357,22 @@ fn evolved_table(
     };
     let (ta, tb) = (table_record(old)?, table_record(new)?);
     let (ta, tb) = (ta.as_slice(), tb.as_slice());
+    let rows_b_top = word(tb, 4)?;
+    valid(tb.len() >= 20 + 2 * rows_b_top, BODY)?;
+    let tb_bf = word(tb, 18 + 2 * rows_b_top)?;
+    reference(tb_bf > 0 && tb_bf <= entries(defs, BORDER).len(), BODY)?;
+    used.borders.insert(tb_bf);
+    for cell in &after {
+        let bf = word(cell.header, 32)?;
+        reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
+        used.borders.insert(bf);
+    }
     let same_grid = ta == tb
         && before.len() == after.len()
         && before
             .iter()
             .zip(&after)
-            .all(|(x, y)| x.header[2..] == y.header[2..]);
+            .all(|(x, y)| cell_header_matches_ignoring_border_fill(x.header, y.header));
     if !same_grid {
         let (rows_a, rows_b) = (word(ta, 4)?, word(tb, 4)?);
         valid(tb.len() >= 20 + 2 * rows_b, BODY)?;
@@ -2325,6 +2386,7 @@ fn evolved_table(
                 && (zones_a.is_empty() || zones_a == [0, 0]),
             BODY,
         )?;
+        let orig_border_count = entries(original_defs, BORDER).len();
         let mut per_row = vec![0usize; rows_b];
         for cell in &after {
             let row = word(cell.header, 10)?;
@@ -2332,11 +2394,13 @@ fn evolved_table(
                 .get_mut(row)
                 .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
             valid(dword(cell.header, 16)? > 0, BODY)?;
-            let template = |h: &[u8]| (h[4..8].to_vec(), h[24..34].to_vec(), h[38..].to_vec());
+            let bf = word(cell.header, 32)?;
+            let template = |h: &[u8]| (h[4..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
             preserved(
-                before
-                    .iter()
-                    .any(|o| template(o.header) == template(cell.header)),
+                before.iter().any(|o| {
+                    template(o.header) == template(cell.header)
+                        && (word(o.header, 32) == Ok(bf) || bf > orig_border_count)
+                }),
                 BODY,
             )?;
         }
@@ -3626,7 +3690,7 @@ fn validate_table_at(
         }
         index += 1;
         let bf = word(b, 32)?;
-        reference(bf == border, BODY)?;
+        reference(bf > 0 && bf <= entries(defs, 20).len(), BODY)?;
         used.borders.insert(bf);
         at += 1;
         let end = rs[at..]

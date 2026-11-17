@@ -32,6 +32,7 @@ export type DocumentCommandId =
   | "insert.table" | "insert.image" | "paragraph.bullets"
   | "table.insertRowAbove" | "table.insertRowBelow" | "table.insertColumnLeft" | "table.insertColumnRight"
   | "table.deleteRow" | "table.deleteColumn" | "table.mergeRight" | "table.mergeBelow" | "table.mergeCells" | "table.splitCell"
+  | "table.shading" | "table.borders"
   | "file.save"
   // Stage 1 common editing (src/commands/stage1.ts).
   | "paragraph.alignLeft" | "paragraph.alignCenter" | "paragraph.alignRight" | "paragraph.justify"
@@ -153,6 +154,8 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "table.mergeBelow": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.mergeCells": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
   "table.splitCell": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.shading": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  "table.borders": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
   // Stage 1 (docs/architecture/command-registry.md "Stage 1"). Runtime availability is the session's actual
   // selection/engine context; RHWP_STAGE1_* declare the HWP/HWPX support verified in this build.

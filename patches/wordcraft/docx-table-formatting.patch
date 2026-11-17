@@ -1,0 +1,295 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index 60d453ecc96c25766d7144e30741237f8c260d30..6bafb907cbe8e89814fec976b30ce63a1b4cc74b 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -70,13 +70,12 @@ pub fn specs() -> Vec<CommandSpec> {
+         .params(
+             r#"{"headerRow"?: bool, "totalRow"?: bool, "bandedRows"?: bool, "firstColumn"?: bool, "lastColumn"?: bool, "bandedColumns"?: bool}"#,
+         )),
+-        t(CommandSpec::new("table.shading", "Shading", "Table Design › Table Styles", |s, v| {
+-            let c = p::str(v, "color").and_then(Rgb::parse);
+-            with_cells(s, |cl| cl.props.shading = c)
+-        })
++        t(CommandSpec::new("table.shading", "Shading", "Table Design › Table Styles", shading)
+         .params(r#"{"color": "RRGGBB" | null}"#)),
+         t(CommandSpec::new("table.borders", "Borders", "Table Design › Borders", borders)
+             .params(r#"{"kind": "all|outside|inside|none|top|bottom|left|right", "width"?: pt, "color"?: "RRGGBB"}"#)),
++        t(CommandSpec::new("table.cellBorders", "Cell Borders", "Table Design › Borders", cell_borders)
++            .params(r#"{"kind": "all|outside|inside|none|top|bottom|left|right", "style"?: "single|double|dotted|dashed|thick|triple|dotDash|wave|none", "width"?: pt, "color"?: "RRGGBB"}"#)),
+         t(CommandSpec::new("table.cellAlign", "Alignment", "Table Layout › Alignment", |s, v| {
+             let (h, va) = match p::str(v, "value").unwrap_or("topLeft") {
+                 "topLeft" => (Align::Left, VAlign::Top),
+@@ -793,6 +792,206 @@ fn split_table(s: &mut Session, _: &Value) -> CmdResult {
+     sel_result(s)
+ }
+ 
++/// Resolve the selected rectangular cell region `(tp, r0, r1, g0, g1, logical_cell_count)`.
++/// Rejects cross-table selections and selections that partially overlap merged cells.
++fn selected_cell_rect(s: &Session) -> Result<(Path, usize, usize, usize, usize, usize), CmdError> {
++    let (tp, r, c) = cell(s)?;
++    let story = s.sel.focus.story;
++    let t = s.doc.table(story, &tp).ok_or_else(|| CmdError::Disabled("the cursor isn't in a table".into()))?;
++    if !t.is_grid_consistent() {
++        return Err(CmdError::Failed("inconsistent table grid".into()));
++    }
++    if let Some(range) = s.cell_range().filter(|cr| cr.story == story && cr.table == tp) {
++        let count = t
++            .logical_rect_valid(range.rows.0, range.rows.1, range.cols.0, range.cols.1)
++            .ok_or_else(|| CmdError::Failed("selection overlaps merged cells partially".into()))?;
++        return Ok((tp, range.rows.0, range.rows.1, range.cols.0, range.cols.1, count));
++    }
++    if s.sel.is_collapsed() {
++        let (r0, r1, g0, g1) = t.cell_extent(r, c).ok_or_else(|| CmdError::Failed("invalid cell extent".into()))?;
++        return Ok((tp, r0, r1, g0, g1, 1));
++    }
++    if s.sel.anchor.story != story {
++        return Err(CmdError::Failed("selection spans outside the table".into()));
++    }
++    let (Some((ta, ra, ca)), Some((tb, rb, cb))) = (s.sel.anchor.path.cell(), s.sel.focus.path.cell()) else {
++        return Err(CmdError::Failed("selection spans outside the table".into()));
++    };
++    if ta != tp || tb != tp {
++        return Err(CmdError::Failed("selection spans outside the table".into()));
++    }
++    if (ra, ca) == (rb, cb) {
++        let (r0, r1, g0, g1) = t.cell_extent(ra, ca).ok_or_else(|| CmdError::Failed("invalid cell extent".into()))?;
++        return Ok((tp, r0, r1, g0, g1, 1));
++    }
++    let (ga0, ga1) = grid_cols(t, ra, ca);
++    let (gb0, gb1) = grid_cols(t, rb, cb);
++    let (r0, r1, g0, g1) = (ra.min(rb), ra.max(rb), ga0.min(gb0), ga1.max(gb1));
++    let count = t
++        .logical_rect_valid(r0, r1, g0, g1)
++        .ok_or_else(|| CmdError::Failed("selection overlaps merged cells partially".into()))?;
++    Ok((tp, r0, r1, g0, g1, count))
++}
++
++fn shading(s: &mut Session, v: &Value) -> CmdResult {
++    let color = match v.get("color") {
++        None | Some(Value::Null) => None,
++        Some(Value::String(raw)) => Some(Rgb::parse(raw).ok_or_else(|| CmdError::Params(format!("invalid shading color `{raw}`")))?),
++        Some(_) => return Err(CmdError::Params("shading `color` must be `RRGGBB` or null".into())),
++    };
++    let (tp, r0, r1, g0, g1, _) = selected_cell_rect(s)?;
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    for r in r0..=r1 {
++        let mut g = 0usize;
++        for cl in &mut t.rows[r].cells {
++            let span = cl.span();
++            let cg0 = g;
++            let cg1 = g + span - 1;
++            g += span;
++            if cg0 <= g1 && cg1 >= g0 {
++                cl.props.shading = color;
++            }
++        }
++    }
++    touch_cells(s, &tp)?;
++    sel_result(s)
++}
++
++fn parse_cell_border_style(s: &str) -> Result<BorderStyle, CmdError> {
++    match s {
++        "none" => Ok(BorderStyle::None),
++        "single" => Ok(BorderStyle::Single),
++        "double" => Ok(BorderStyle::Double),
++        "dotted" => Ok(BorderStyle::Dotted),
++        "dashed" => Ok(BorderStyle::Dashed),
++        "thick" => Ok(BorderStyle::Thick),
++        "triple" => Ok(BorderStyle::Triple),
++        "dotDash" => Ok(BorderStyle::DotDash),
++        "wave" => Ok(BorderStyle::Wave),
++        _ => Err(CmdError::Params(format!("unknown border style `{s}`"))),
++    }
++}
++
++fn cell_borders(s: &mut Session, v: &Value) -> CmdResult {
++    let kind = p::str(v, "kind").ok_or_else(|| CmdError::Params("missing border `kind`".into()))?;
++    if !matches!(kind, "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right") {
++        return Err(CmdError::Params(format!("unknown border kind `{kind}`")));
++    }
++    let none = Border { style: BorderStyle::None, width: 0.0, color: None, space: 0.0 };
++    let border = if kind == "none" {
++        none
++    } else {
++        let style = match v.get("style") {
++            None => BorderStyle::Single,
++            Some(Value::String(st)) => parse_cell_border_style(st)?,
++            Some(_) => return Err(CmdError::Params("border `style` must be a string".into())),
++        };
++        if style == BorderStyle::None {
++            none
++        } else {
++            let width = match v.get("width") {
++                None => 0.5,
++                Some(x) => {
++                    let w = x.as_f64().map(|f| f as f32).ok_or_else(|| CmdError::Params("border `width` must be a number".into()))?;
++                    if !w.is_finite() || !(0.25..=12.0).contains(&w) {
++                        return Err(CmdError::Params("border `width` out of range (0.25..=12.0 pt)".into()));
++                    }
++                    (w * 8.0).round() / 8.0
++                }
++            };
++            let color = match v.get("color") {
++                None | Some(Value::Null) => None,
++                Some(Value::String(raw)) => Some(Rgb::parse(raw).ok_or_else(|| CmdError::Params(format!("invalid border color `{raw}`")))?),
++                Some(_) => return Err(CmdError::Params("border `color` must be `RRGGBB` or null".into())),
++            };
++            Border { style, width, color, space: 0.0 }
++        }
++    };
++    let (tp, r0, r1, g0, g1, count) = selected_cell_rect(s)?;
++    if kind == "inside" && count < 2 {
++        return Err(CmdError::Failed("select two or more cells for inside borders".into()));
++    }
++    let story = s.sel.focus.story;
++    let t = s.doc.table_mut(story, &tp)?;
++    let nrows = t.rows.len();
++    let ncols = t.grid.len();
++    let apply_top = matches!(kind, "all" | "outside" | "none" | "top");
++    let apply_bottom = matches!(kind, "all" | "outside" | "none" | "bottom");
++    let apply_left = matches!(kind, "all" | "outside" | "none" | "left");
++    let apply_right = matches!(kind, "all" | "outside" | "none" | "right");
++    let apply_inside = matches!(kind, "all" | "inside" | "none");
++
++    for g in g0..=g1 {
++        if apply_top {
++            if let Some(ci) = t.cell_at_grid(r0, g) {
++                t.rows[r0].cells[ci].props.borders.get_or_insert_with(Default::default).top = Some(border);
++            }
++            if r0 > 0
++                && let Some(ci) = t.cell_at_grid(r0 - 1, g)
++            {
++                t.rows[r0 - 1].cells[ci].props.borders.get_or_insert_with(Default::default).bottom = Some(border);
++            }
++        }
++        if apply_bottom {
++            if let Some(ci) = t.cell_at_grid(r1, g) {
++                t.rows[r1].cells[ci].props.borders.get_or_insert_with(Default::default).bottom = Some(border);
++            }
++            if r1 + 1 < nrows
++                && let Some(ci) = t.cell_at_grid(r1 + 1, g)
++            {
++                t.rows[r1 + 1].cells[ci].props.borders.get_or_insert_with(Default::default).top = Some(border);
++            }
++        }
++        if apply_inside {
++            for r in r0..r1 {
++                if let (Some(ca), Some(cb)) = (t.cell_at_grid(r, g), t.cell_at_grid(r + 1, g))
++                    && t.rows[r + 1].cells[cb].props.vmerge != wordcraft_doc::props::VMerge::Continue
++                {
++                    t.rows[r].cells[ca].props.borders.get_or_insert_with(Default::default).bottom = Some(border);
++                    t.rows[r + 1].cells[cb].props.borders.get_or_insert_with(Default::default).top = Some(border);
++                }
++            }
++        }
++    }
++
++    for r in r0..=r1 {
++        if apply_left {
++            if let Some(ci) = t.cell_at_grid(r, g0) {
++                t.rows[r].cells[ci].props.borders.get_or_insert_with(Default::default).left = Some(border);
++            }
++            if g0 > 0
++                && let Some(ci) = t.cell_at_grid(r, g0 - 1)
++            {
++                t.rows[r].cells[ci].props.borders.get_or_insert_with(Default::default).right = Some(border);
++            }
++        }
++        if apply_right {
++            if let Some(ci) = t.cell_at_grid(r, g1) {
++                t.rows[r].cells[ci].props.borders.get_or_insert_with(Default::default).right = Some(border);
++            }
++            if g1 + 1 < ncols
++                && let Some(ci) = t.cell_at_grid(r, g1 + 1)
++            {
++                t.rows[r].cells[ci].props.borders.get_or_insert_with(Default::default).left = Some(border);
++            }
++        }
++        if apply_inside {
++            for g in g0..g1 {
++                if let (Some(ca), Some(cb)) = (t.cell_at_grid(r, g), t.cell_at_grid(r, g + 1))
++                    && ca != cb
++                {
++                    t.rows[r].cells[ca].props.borders.get_or_insert_with(Default::default).right = Some(border);
++                    t.rows[r].cells[cb].props.borders.get_or_insert_with(Default::default).left = Some(border);
++                }
++            }
++        }
++    }
++
++    touch_cells(s, &tp)?;
++    sel_result(s)
++}
++
+ fn borders(s: &mut Session, v: &Value) -> CmdResult {
+     let kind = p::str(v, "kind").unwrap_or("all");
+     let w = p::f32(v, "width").unwrap_or(0.5).clamp(0.25, 6.0);
+@@ -1322,4 +1521,66 @@ mod tests {
+         let reopened = crate::io::open_bytes("table.docx", &bytes).unwrap();
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
++
++    #[test]
++    fn cell_shading_and_cell_borders_preserve_unrelated_and_roundtrip() {
++        use wordcraft_doc::props::{BorderStyle, Rgb};
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 3, "cols": 3})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++
++        // Invalid parameters rejected
++        assert!(s.run("table.shading", &json!({"color": "ZZZZZZ"})).is_err());
++        assert!(s.run("table.cellBorders", &json!({"kind": "inside", "style": "single"})).is_err());
++        assert!(s.run("table.cellBorders", &json!({"kind": "all", "style": "bogus"})).is_err());
++        assert!(s.run("table.cellBorders", &json!({"kind": "all", "style": "single", "width": 0.05})).is_err());
++
++        // Single cell shading + removal
++        s.run("table.shading", &json!({"color": "FFE0B2"})).unwrap();
++        assert_eq!(
++            s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.shading,
++            Some(Rgb(0xFF, 0xE0, 0xB2))
++        );
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[1].props.shading, None);
++        s.run("table.shading", &json!({"color": null})).unwrap();
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.shading, None);
++        assert!(s.undo());
++        assert_eq!(
++            s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.shading,
++            Some(Rgb(0xFF, 0xE0, 0xB2))
++        );
++
++        // Select 2x2 rect (0..=1, 0..=1) and set outside double red borders
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}, "extend": false})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 1, 1, 0], "off": 0}, "extend": true})).unwrap();
++        s.run(
++            "table.cellBorders",
++            &json!({"kind": "outside", "style": "double", "width": 1.5, "color": "C00000"}),
++        )
++        .unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        // (0,0) top/left changed, right/bottom untouched; neighbor (0,2).left synced
++        let b00 = t.rows[0].cells[0].props.borders.unwrap();
++        assert_eq!(b00.top.unwrap().style, BorderStyle::Double);
++        assert_eq!(b00.left.unwrap().style, BorderStyle::Double);
++        assert!(b00.right.is_none() && b00.bottom.is_none());
++        let b02 = t.rows[0].cells[2].props.borders.unwrap();
++        assert_eq!(b02.left.unwrap().style, BorderStyle::Double);
++        assert!(t.rows[2].cells[2].props.borders.is_none());
++
++        // Inside borders on 2x2 rect
++        s.run(
++            "table.cellBorders",
++            &json!({"kind": "inside", "style": "dashed", "width": 0.75, "color": "0070C0"}),
++        )
++        .unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].cells[0].props.borders.unwrap().right.unwrap().style, BorderStyle::Dashed);
++        assert_eq!(t.rows[0].cells[1].props.borders.unwrap().left.unwrap().style, BorderStyle::Dashed);
++
++        // Export & reopen roundtrip
++        let bytes = crate::io::save_bytes("table_fmt.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_fmt.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++    }
+ }

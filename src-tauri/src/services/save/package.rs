@@ -2281,35 +2281,10 @@ fn hwpx_table_border_appended(before: &[u8], after: &[u8], output: &Package) -> 
     }
     let (a, old, n) = split(before)?;
     let (b, new, total) = split(after)?;
-    if a != b || total != n.checked_add(1)? || new.get(..old.len())? != old {
+    if a != b || total <= n || new.get(..old.len())? != old {
         return None;
     }
-    if new.last()? != &default_table_border(total)? {
-        return None;
-    }
-    let mut used = false;
-    for (name, (_, bytes)) in &output.parts {
-        if !hwpx_body(name) {
-            continue;
-        }
-        for e in xml::canonical(bytes).ok()? {
-            let Some(value) = plain_attribute(&e, "borderFillIDRef") else {
-                continue;
-            };
-            let id = value.parse::<u32>().ok()?;
-            if id == 0 || id > total {
-                return None;
-            }
-            if id == total {
-                if !matches!(e, xml::Canonical::Start { namespace: Some(ref ns), ref name, .. } if ns == "http://www.hancom.co.kr/hwpml/2011/paragraph" && matches!(name.as_str(), "tbl" | "tc"))
-                {
-                    return None;
-                }
-                used = true;
-            }
-        }
-    }
-    Some(used)
+    verify_appended_border_fills(&old, &new[old.len()..], output)
 }
 
 fn hwpx_pictures_appended(original: &Package, output: &Package) -> Option<Vec<String>> {
@@ -2592,51 +2567,20 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     }
     // A new HWPX can omit the empty list entirely. Absence represents zero
     // definitions; the exact append shape, unchanged prefix and body-reference
-    // checks below still apply to the first table border.
+    // Stage 2: borderFill definitions can grow monotonically either by one default
+    // table border (tbl/tc) or by bounded cell-formatting borderFills (tc only).
     let empty = Vec::new();
     let old_borders = old.get("borderFills").unwrap_or(&empty);
     let borders = new.get("borderFills").unwrap_or(&empty);
     if borders.len() < old_borders.len()
-        || borders.len() > old_borders.len() + 1
         || borders.get(..old_borders.len())? != old_borders
     {
         return None;
     }
-    if let Some(extra) = borders.get(old_borders.len()) {
-        if extra != &default_table_border(borders.len() as u32)? {
-            return None;
-        }
-        let mut used = false;
-        for (name, (_, bytes)) in &output.parts {
-            if !hwpx_body(name) {
-                continue;
-            }
-            for e in xml::canonical(bytes).ok()? {
-                if let Some(value) = plain_attribute(&e, "borderFillIDRef") {
-                    let id = value.parse::<usize>().ok()?;
-                    // RHWP's blank page uses zero as the page-border "none"
-                    // sentinel. It does not refer to the newly appended table
-                    // border; zero on table/cell or foreign elements stays invalid.
-                    if id == 0
-                        && matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. }
-                            if ns == HWPML_PARAGRAPH && name == "pageBorderFill")
-                    {
-                        continue;
-                    }
-                    if id == 0 || id > borders.len() {
-                        return None;
-                    }
-                    if id == borders.len() {
-                        if !matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == "http://www.hancom.co.kr/hwpml/2011/paragraph" && matches!(name.as_str(), "tbl" | "tc"))
-                        {
-                            return None;
-                        }
-                        used = true;
-                    }
-                }
-            }
-        }
-        if !used {
+    if borders.len() > old_borders.len() {
+        if verify_appended_border_fills(old_borders, &borders[old_borders.len()..], output)
+            != Some(true)
+        {
             return None;
         }
     }
@@ -2853,6 +2797,355 @@ fn default_table_border(total: u32) -> Option<Vec<xml::Canonical>> {
     xml::canonical(expected.as_bytes()).ok()
 }
 
+fn hwpx_border_line_type_ok(v: &str) -> bool {
+    matches!(
+        v,
+        "NONE"
+            | "SOLID"
+            | "DOT"
+            | "DASH"
+            | "DASH_DOT"
+            | "DASH_DOT_DOT"
+            | "LONG_DASH"
+            | "CIRCLE"
+            | "DOUBLE_SLIM"
+            | "SLIM_THICK"
+            | "THICK_SLIM"
+            | "SLIM_THICK_SLIM"
+            | "WAVE"
+            | "DOUBLE_WAVE"
+            | "THICK3D"
+            | "THICKREV3D"
+            | "3D"
+            | "REV3D"
+    )
+}
+
+fn hwpx_border_width_ok(v: &str) -> bool {
+    let Some(mm) = v.strip_suffix(" mm") else {
+        return false;
+    };
+    matches!(
+        mm,
+        "0.1"
+            | "0.12"
+            | "0.15"
+            | "0.2"
+            | "0.25"
+            | "0.3"
+            | "0.4"
+            | "0.5"
+            | "0.6"
+            | "0.7"
+            | "1.0"
+            | "1.5"
+            | "2.0"
+            | "3.0"
+            | "4.0"
+            | "5.0"
+    )
+}
+
+fn hwpx_color_ok(v: &str) -> bool {
+    if v == "none" {
+        return true;
+    }
+    let Some(hex) = v.strip_prefix('#') else {
+        return false;
+    };
+    matches!(hex.len(), 6 | 8) && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn hwpx_valid_border_line(events: &[xml::Canonical], expected_name: &str) -> bool {
+    if events.len() != 2 || events[1] != xml::Canonical::End {
+        return false;
+    }
+    let xml::Canonical::Start {
+        namespace: Some(ns),
+        name,
+        attributes,
+    } = &events[0]
+    else {
+        return false;
+    };
+    if ns != HWPML_HEAD || name != expected_name || attributes.len() != 3 {
+        return false;
+    }
+    let attr = |k: &str| plain_attribute(&events[0], k);
+    attr("type").is_some_and(hwpx_border_line_type_ok)
+        && attr("width").is_some_and(hwpx_border_width_ok)
+        && attr("color").is_some_and(hwpx_color_ok)
+}
+
+fn hwpx_valid_win_brush(events: &[xml::Canonical]) -> bool {
+    if events.len() != 4 || events[2] != xml::Canonical::End || events[3] != xml::Canonical::End {
+        return false;
+    }
+    if !matches!(
+        &events[0],
+        xml::Canonical::Start {
+            namespace: Some(ns),
+            name,
+            attributes,
+        } if ns == HWPML_CORE && name == "fillBrush" && attributes.is_empty()
+    ) {
+        return false;
+    }
+    let xml::Canonical::Start {
+        namespace: Some(ns),
+        name,
+        attributes,
+    } = &events[1]
+    else {
+        return false;
+    };
+    if ns != HWPML_CORE || name != "winBrush" || !matches!(attributes.len(), 3 | 4) {
+        return false;
+    }
+    let attr = |k: &str| plain_attribute(&events[1], k);
+    let hatch_ok = match attr("hatchStyle") {
+        None => attributes.len() == 3,
+        Some(h) => {
+            attributes.len() == 4
+                && matches!(
+                    h,
+                    "HORIZONTAL"
+                        | "VERTICAL"
+                        | "BACK_SLASH"
+                        | "SLASH"
+                        | "CROSS"
+                        | "CROSS_DIAGONAL"
+                )
+        }
+    };
+    let alpha_ok = attr("alpha")
+        .is_some_and(|a| a.parse::<f64>().is_ok_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)));
+    attr("faceColor").is_some_and(hwpx_color_ok)
+        && attr("hatchColor").is_some_and(hwpx_color_ok)
+        && hatch_ok
+        && alpha_ok
+}
+
+struct BorderFillParts {
+    root_attrs_no_id: Vec<xml::Canonical>,
+    slash: Vec<xml::Canonical>,
+    back_slash: Vec<xml::Canonical>,
+    diagonal: Option<Vec<xml::Canonical>>,
+    fill_brush: Option<Vec<xml::Canonical>>,
+}
+
+fn parse_border_fill_parts(
+    events: &[xml::Canonical],
+    expected_id: u32,
+    validate_sides: bool,
+) -> Option<BorderFillParts> {
+    if events.last() != Some(&xml::Canonical::End) {
+        return None;
+    }
+    let xml::Canonical::Start {
+        namespace: Some(ns),
+        name,
+        attributes,
+    } = events.first()?
+    else {
+        return None;
+    };
+    if ns != HWPML_HEAD || name != "borderFill" {
+        return None;
+    }
+    if plain_attribute(&events[0], "id")? != expected_id.to_string() {
+        return None;
+    }
+    let root_attrs_no_id = vec![xml::Canonical::Start {
+        namespace: Some(ns.clone()),
+        name: name.clone(),
+        attributes: attributes
+            .iter()
+            .filter(|(ans, ak, _)| !(ans.is_none() && ak == "id"))
+            .cloned()
+            .collect(),
+    }];
+    // Split immediate children inside <hh:borderFill> ... </hh:borderFill>.
+    let mut children: Vec<(Option<&str>, &str, &[xml::Canonical])> = Vec::new();
+    let mut pos = 1usize;
+    let body_end = events.len() - 1;
+    while pos < body_end {
+        let xml::Canonical::Start {
+            namespace, name, ..
+        } = &events[pos]
+        else {
+            return None;
+        };
+        let start = pos;
+        let mut depth = 1usize;
+        pos += 1;
+        while depth > 0 {
+            if pos >= body_end {
+                return None;
+            }
+            match &events[pos] {
+                xml::Canonical::Start { .. } => depth += 1,
+                xml::Canonical::End => depth -= 1,
+                _ => {}
+            }
+            pos += 1;
+        }
+        children.push((namespace.as_deref(), name.as_str(), &events[start..pos]));
+    }
+    let mut idx = 0usize;
+    let take_head = |children: &[(Option<&str>, &str, &[xml::Canonical])], idx: &mut usize, expected: &str| -> Option<Vec<xml::Canonical>> {
+        let (cns, cname, slice) = children.get(*idx)?;
+        if *cns == Some(HWPML_HEAD) && *cname == expected {
+            *idx += 1;
+            Some(slice.to_vec())
+        } else {
+            None
+        }
+    };
+    let slash = take_head(&children, &mut idx, "slash")?;
+    let back_slash = take_head(&children, &mut idx, "backSlash")?;
+    let left = take_head(&children, &mut idx, "leftBorder")?;
+    let right = take_head(&children, &mut idx, "rightBorder")?;
+    let top = take_head(&children, &mut idx, "topBorder")?;
+    let bottom = take_head(&children, &mut idx, "bottomBorder")?;
+    if validate_sides
+        && (!hwpx_valid_border_line(&left, "leftBorder")
+            || !hwpx_valid_border_line(&right, "rightBorder")
+            || !hwpx_valid_border_line(&top, "topBorder")
+            || !hwpx_valid_border_line(&bottom, "bottomBorder"))
+    {
+        return None;
+    }
+    let diagonal = take_head(&children, &mut idx, "diagonal");
+    if validate_sides {
+        if let Some(ref diag) = diagonal {
+            if !hwpx_valid_border_line(diag, "diagonal") {
+                return None;
+            }
+        }
+    }
+    let fill_brush = if let Some((cns, cname, slice)) = children.get(idx) {
+        if *cns == Some(HWPML_CORE) && *cname == "fillBrush" {
+            idx += 1;
+            Some(slice.to_vec())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if idx != children.len() {
+        return None;
+    }
+    Some(BorderFillParts {
+        root_attrs_no_id,
+        slash,
+        back_slash,
+        diagonal,
+        fill_brush,
+    })
+}
+
+fn verify_appended_border_fills(
+    old_borders: &[Vec<xml::Canonical>],
+    appended: &[Vec<xml::Canonical>],
+    output: &Package,
+) -> Option<bool> {
+    if appended.is_empty() {
+        return Some(false);
+    }
+    let total = old_borders.len().checked_add(appended.len())?;
+    if total > 65535 || appended.len() > 512 {
+        return None;
+    }
+    let existing_parts: Vec<BorderFillParts> = old_borders
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, events)| parse_border_fill_parts(events, (idx + 1) as u32, false))
+        .collect();
+    let default_diag = default_table_border(1)?;
+    let default_parts = parse_border_fill_parts(&default_diag, 1, false)?;
+
+    let mut is_default_tbl_border = Vec::with_capacity(appended.len());
+    for (idx, events) in appended.iter().enumerate() {
+        let id = (old_borders.len() + idx + 1) as u32;
+        if Some(events) == default_table_border(id).as_ref() {
+            is_default_tbl_border.push(true);
+            continue;
+        }
+        let parts = parse_border_fill_parts(events, id, true)?;
+        let matches_base = |base: &BorderFillParts| {
+            base.root_attrs_no_id == parts.root_attrs_no_id
+                && base.slash == parts.slash
+                && base.back_slash == parts.back_slash
+                && base.diagonal == parts.diagonal
+        };
+        let diagonal_default_or_none = parts.diagonal.as_ref()
+            == default_parts.diagonal.as_ref()
+            || parts.diagonal.is_none();
+        let skeleton_ok = (parts.root_attrs_no_id == default_parts.root_attrs_no_id
+            && parts.slash == default_parts.slash
+            && parts.back_slash == default_parts.back_slash
+            && diagonal_default_or_none)
+            || existing_parts.iter().any(&matches_base);
+        if !skeleton_ok {
+            return None;
+        }
+        let fill_ok = match &parts.fill_brush {
+            None => true,
+            Some(fb) => {
+                hwpx_valid_win_brush(fb)
+                    || existing_parts.iter().any(|base| {
+                        matches_base(base) && base.fill_brush.as_ref() == Some(fb)
+                    })
+            }
+        };
+        if !fill_ok {
+            return None;
+        }
+        is_default_tbl_border.push(false);
+    }
+
+    let mut used = vec![false; appended.len()];
+    for (name, (_, bytes)) in &output.parts {
+        if !hwpx_body(name) {
+            continue;
+        }
+        for e in xml::canonical(bytes).ok()? {
+            let Some(value) = plain_attribute(&e, "borderFillIDRef") else {
+                continue;
+            };
+            let id = value.parse::<usize>().ok()?;
+            // RHWP's blank page uses zero as the page-border "none"
+            // sentinel. Zero on table/cell or foreign elements stays invalid.
+            if id == 0
+                && matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. }
+                    if ns == HWPML_PARAGRAPH && name == "pageBorderFill")
+            {
+                continue;
+            }
+            if id == 0 || id > total {
+                return None;
+            }
+            if id > old_borders.len() {
+                let app_idx = id - old_borders.len() - 1;
+                let allowed_elem = if is_default_tbl_border[app_idx] {
+                    matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. }
+                        if ns == HWPML_PARAGRAPH && matches!(name.as_str(), "tbl" | "tc"))
+                } else {
+                    matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. }
+                        if ns == HWPML_PARAGRAPH && name == "tc")
+                };
+                if !allowed_elem {
+                    return None;
+                }
+                used[app_idx] = true;
+            }
+        }
+    }
+    Some(used.into_iter().all(|u| u))
+}
+
 #[cfg(test)]
 mod omitted_hwpx_resource_lists {
     use super::*;
@@ -2927,6 +3220,54 @@ mod omitted_hwpx_resource_lists {
         );
         assert_ne!(
             hwpx_bullets_appended(&before, &header(border, "NONE"), &foreign),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn hwpx_appended_cell_border_fill_accepts_valid_tc_and_rejects_bad_mutations() {
+        let before = header(
+            r##"<hh:borderFills itemCnt="1"><hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill></hh:borderFills>"##,
+            "NONE",
+        );
+        let cell_bf_2 = r##"<hh:borderFill id="2" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="DASH" width="0.4 mm" color="#1E40AF"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="DOUBLE_SLIM" width="0.5 mm" color="#DC2626"/><hh:bottomBorder type="NONE" width="0.12 mm" color="none"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/><hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"><hc:winBrush faceColor="#FEF08A" hatchColor="#FF000000" alpha="0"/></hc:fillBrush></hh:borderFill>"##;
+        let bf1 = r##"<hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill>"##;
+        let after = header(&format!(r#"<hh:borderFills itemCnt="2">{bf1}{cell_bf_2}</hh:borderFills>"#), "NONE");
+        let tc_body = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="1"><hp:tr><hp:tc borderFillIDRef="2"/></hp:tr></hp:tbl></hp:p>"#,
+        );
+        assert_eq!(hwpx_bullets_appended(&before, &after, &tc_body), Some(true));
+        // Non-default borderFill referenced only by <hp:tbl> or unused must be rejected.
+        let tbl_only = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="2"><hp:tr><hp:tc borderFillIDRef="1"/></hp:tr></hp:tbl></hp:p>"#,
+        );
+        assert_ne!(hwpx_bullets_appended(&before, &after, &tbl_only), Some(true));
+        assert_ne!(
+            hwpx_bullets_appended(
+                &before,
+                &header(
+                    &format!(
+                        r#"<hh:borderFills itemCnt="2">{bf1}{}</hh:borderFills>"#,
+                        cell_bf_2.replace(r#"type="DASH""#, r#"type="BOGUS""#)
+                    ),
+                    "NONE"
+                ),
+                &tc_body
+            ),
+            Some(true)
+        );
+        assert_ne!(
+            hwpx_bullets_appended(
+                &before,
+                &header(
+                    &format!(
+                        r#"<hh:borderFills itemCnt="2">{bf1}{}</hh:borderFills>"#,
+                        cell_bf_2.replace(r#"width="0.4 mm""#, r#"width="9.9 mm""#)
+                    ),
+                    "NONE"
+                ),
+                &tc_body
+            ),
             Some(true)
         );
     }

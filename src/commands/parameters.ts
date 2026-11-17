@@ -18,10 +18,20 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
-  "insert.table", "table.splitCell",
+  "insert.table", "table.splitCell", "table.shading", "table.borders",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
+
+export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders"] as const;
+const TABLE_BORDER_KINDS = new Set(["all", "outside", "inside", "none", "top", "bottom", "left", "right"]);
+
+export function normalizeHexRgb(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().replace(/^#/, "");
+  if (!/^[0-9A-Fa-f]{6}$/.test(trimmed)) return null;
+  return `#${trimmed.toUpperCase()}`;
+}
 
 /** Font family length limit (bytes after trimming, the backend `valid_font_name` / WordCraft `format.font` limit). */
 export const MAX_FONT_FAMILY_BYTES = 128;
@@ -311,6 +321,28 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
         && integerIn(value.rows, { min: 1, max: Math.max(1, context.tableSplit.maxRows) })
         && integerIn(value.columns, { min: 1, max: Math.max(1, context.tableSplit.maxColumns) })
         && value.rows * value.columns >= 2 && value.rows * value.columns <= (context.tableSplit.maxCells ?? Infinity);
+    case "table.shading":
+      return keys === "color,command" && !!context?.tableShading
+        && (value.color === null ? context.tableShading.supportsClear : normalizeHexRgb(value.color) !== null);
+    case "table.borders": {
+      const tb = context?.tableBorders;
+      if (!tb || typeof value.kind !== "string" || !TABLE_BORDER_KINDS.has(value.kind)) return false;
+      if (value.kind === "inside" && !tb.hasInsideBorders) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "kind", "style", "width", "color"].includes(k)) return false;
+      }
+      if (value.style !== undefined && (typeof value.style !== "string" || !tb.supportedStyles.includes(value.style))) {
+        return false;
+      }
+      if (value.width !== undefined && (typeof value.width !== "number" || !Number.isFinite(value.width)
+        || !tb.supportedWidths.some((w) => Math.abs(w - (value.width as number)) < 1e-6))) {
+        return false;
+      }
+      if (value.color !== undefined && value.color !== null && normalizeHexRgb(value.color) === null) {
+        return false;
+      }
+      return true;
+    }
     case "hangul.charWidth":
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);
     case "hangul.charSpacing":

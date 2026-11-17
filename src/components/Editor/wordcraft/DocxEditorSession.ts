@@ -99,8 +99,9 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure",
+  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders",
 ]);
+const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
  * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
@@ -129,7 +130,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll", "tableStructure"]);
+  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1180,9 +1181,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // blocks formatting (same rule as fonts).
     if (view.formatAccess !== "protected") actions["format.embedFont"] = {};
     else actionReasons["format.embedFont"] = "engineUnsupported";
-    // Stage 2 Phase 1: table structure commands reflect live WordCraft table geometry and selection.
+    // Stage 2 Phase 1 + Phase 3: table structure & cell formatting commands reflect live WordCraft geometry and selection.
     if (!view.inTable || !view.table) {
       for (const id of TABLE_STRUCTURE_IDS) actionReasons[id] = "notInTable";
+      parameterReasons["table.shading"] = "notInTable";
+      parameterReasons["table.borders"] = "notInTable";
     } else {
       for (const id of TABLE_STRUCTURE_IDS) {
         const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
@@ -1193,6 +1196,35 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         && (view.table.maxSplitRows > 1 || view.table.maxSplitColumns > 1)) {
         parameters["table.splitCell"] = {
           tableSplit: { maxRows: view.table.maxSplitRows, maxColumns: view.table.maxSplitColumns },
+        };
+      }
+      const mapFormatRefusal = (r: NonNullable<typeof view.table>["cellShadingRefusal"]) =>
+        r === "protected" ? "protected" : "tableShape";
+      if (view.table.cellShadingRefusal !== null) {
+        parameterReasons["table.shading"] = mapFormatRefusal(view.table.cellShadingRefusal);
+      } else {
+        parameters["table.shading"] = {
+          tableShading: {
+            color: view.table.cellShading,
+            mixed: view.table.cellShadingMixed,
+            hasShading: view.table.hasCellShading,
+            selectedCells: view.table.selectedCells,
+            supportsClear: true,
+          },
+        };
+      }
+      if (view.table.cellBordersRefusal !== null) {
+        parameterReasons["table.borders"] = mapFormatRefusal(view.table.cellBordersRefusal);
+      } else {
+        parameters["table.borders"] = {
+          tableBorders: {
+            hasInsideBorders: view.table.hasInsideBorders,
+            supportedStyles: view.table.supportedBorderStyles,
+            widthUnit: "pt",
+            supportedWidths: DOCX_BORDER_WIDTHS_PT,
+            defaultWidth: 0.5,
+            current: view.table.cellBorders,
+          },
         };
       }
     }
@@ -1292,6 +1324,33 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       // Without args: only allowed for already-merged cells (`!splitCtx?.tableSplit`); unmerged 1x1 requires explicit dims.
       if (splitCtx?.tableSplit || !this.view) return { accepted: false };
       return { accepted: this.push({ op: "tableStructure", action: "splitCell", target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey } }) };
+    }
+    if (command === "table.shading") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableShading",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          color: args.color,
+        }),
+      };
+    }
+    if (command === "table.borders") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableBorders",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          kind: args.kind,
+          ...(args.style !== undefined ? { style: args.style } : {}),
+          ...(args.width !== undefined ? { width: args.width } : {}),
+          ...(args.color !== undefined ? { color: args.color } : {}),
+        }),
+      };
     }
     if (command === "format.font") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };

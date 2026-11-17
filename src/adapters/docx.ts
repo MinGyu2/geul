@@ -100,6 +100,21 @@ export type DocxTableAction =
   | "deleteRow" | "deleteColumn" | "mergeRight" | "mergeBelow" | "mergeCells" | "splitCell";
 
 export type DocxTableRefusal = "tableShape" | "tableContent" | "limit" | null;
+export type DocxTableFormatRefusal = "tableShape" | "protected" | "crossTable" | "partialOverhang" | null;
+export type DocxTableBorderKind = "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right";
+
+export interface DocxCellBorderEdge {
+  style: string;
+  width: number;
+  color: string | null;
+}
+
+export interface DocxCellBordersView {
+  top: DocxCellBorderEdge | null;
+  bottom: DocxCellBorderEdge | null;
+  left: DocxCellBorderEdge | null;
+  right: DocxCellBorderEdge | null;
+}
 
 export interface DocxTableView {
   rows: number;
@@ -121,6 +136,14 @@ export interface DocxTableView {
   splitCell: DocxTableRefusal;
   maxSplitRows: number;
   maxSplitColumns: number;
+  hasInsideBorders: boolean;
+  cellShadingRefusal: DocxTableFormatRefusal;
+  cellBordersRefusal: DocxTableFormatRefusal;
+  cellShading: string | null;
+  cellShadingMixed: boolean;
+  hasCellShading: boolean;
+  cellBorders: DocxCellBordersView | null;
+  supportedBorderStyles: string[];
 }
 
 export interface DocxFont {
@@ -235,7 +258,9 @@ export type DocxOp =
   | { op: "replace"; query: SearchOptions; with: string }
   | { op: "replaceAll"; query: SearchOptions; with: string }
   | { op: "clearSearch" }
-  | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string }; rows?: number; columns?: number };
+  | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string }; rows?: number; columns?: number }
+  | { op: "tableShading"; target: { anchorKey: string; caretKey: string }; color: string | null }
+  | { op: "tableBorders"; target: { anchorKey: string; caretKey: string }; kind: DocxTableBorderKind; style?: string; width?: number; color?: string | null };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -412,9 +437,33 @@ const TABLE_ACTION_KEYS: readonly DocxTableAction[] = [
   "deleteRow", "deleteColumn", "mergeRight", "mergeBelow", "mergeCells", "splitCell",
 ];
 const TABLE_REFUSALS = new Set(["tableShape", "tableContent", "limit"]);
+const TABLE_FORMAT_REFUSALS = new Set(["tableShape", "protected", "crossTable", "partialOverhang"]);
+
+function parseCellBorderEdge(value: unknown): DocxCellBorderEdge | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value) || !hasExactly(value, ["style", "width", "color"])) return undefined;
+  if (typeof value.style !== "string" || !isFinite(value.width)) return undefined;
+  if (value.color !== null && typeof value.color !== "string") return undefined;
+  return value as unknown as DocxCellBorderEdge;
+}
+
+function parseCellBordersView(value: unknown): DocxCellBordersView | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value) || !hasExactly(value, ["top", "bottom", "left", "right"])) return undefined;
+  for (const side of ["top", "bottom", "left", "right"] as const) {
+    if (parseCellBorderEdge(value[side]) === undefined) return undefined;
+  }
+  return value as unknown as DocxCellBordersView;
+}
 
 function parseTableView(value: unknown): DocxTableView | undefined {
-  const keys = ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", ...TABLE_ACTION_KEYS, "maxSplitRows", "maxSplitColumns"];
+  const keys = [
+    "rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells",
+    ...TABLE_ACTION_KEYS,
+    "maxSplitRows", "maxSplitColumns",
+    "hasInsideBorders", "cellShadingRefusal", "cellBordersRefusal",
+    "cellShading", "cellShadingMixed", "hasCellShading", "cellBorders", "supportedBorderStyles",
+  ];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
   for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns"] as const) {
     if (!isCount(value[k])) return undefined;
@@ -423,6 +472,16 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
   }
+  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading"] as const) {
+    if (typeof value[k] !== "boolean") return undefined;
+  }
+  for (const k of ["cellShadingRefusal", "cellBordersRefusal"] as const) {
+    const v = value[k];
+    if (v !== null && (typeof v !== "string" || !TABLE_FORMAT_REFUSALS.has(v))) return undefined;
+  }
+  if (value.cellShading !== null && typeof value.cellShading !== "string") return undefined;
+  if (parseCellBordersView(value.cellBorders) === undefined) return undefined;
+  if (!Array.isArray(value.supportedBorderStyles) || !value.supportedBorderStyles.every((s) => typeof s === "string")) return undefined;
   return value as unknown as DocxTableView;
 }
 

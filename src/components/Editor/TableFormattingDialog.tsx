@@ -1,0 +1,260 @@
+// Stage 2 Phase 3 (P3-1): table cell shading and borders dialogs.
+// Only format-supported border styles and widths offered in request.context.tableBorders are exposed.
+import { useLayoutEffect, useRef, useState } from "react";
+import type { CommandInputRequest } from "../../commands/commands";
+import { normalizeHexRgb, validateCommandArgs } from "../../commands/parameters";
+import type { DocumentCommandArgs } from "../../commands/target";
+import type { MessageKey } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
+
+type BorderKind = "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right";
+
+const SHADING_PRESETS = ["#FEF08A", "#DBEAFE", "#DCFCE7", "#FEE2E2", "#F3E8FF", "#F1F5F9", "#E2E8F0", "#FFFFFF"] as const;
+const BORDER_COLOR_PRESETS = ["#000000", "#475569", "#1E40AF", "#DC2626", "#15803D"] as const;
+const BORDER_KINDS: readonly { kind: BorderKind; labelKey: MessageKey }[] = [
+  { kind: "all", labelKey: "tableFormat.borders.all" },
+  { kind: "outside", labelKey: "tableFormat.borders.outside" },
+  { kind: "inside", labelKey: "tableFormat.borders.inside" },
+  { kind: "top", labelKey: "tableFormat.borders.top" },
+  { kind: "bottom", labelKey: "tableFormat.borders.bottom" },
+  { kind: "left", labelKey: "tableFormat.borders.left" },
+  { kind: "right", labelKey: "tableFormat.borders.right" },
+  { kind: "none", labelKey: "tableFormat.borders.none" },
+];
+
+export function TableFormattingDialog({ request, suspended, onCancel, onConfirm }: {
+  request: CommandInputRequest;
+  suspended?: boolean;
+  onCancel: () => void;
+  onConfirm: (args: DocumentCommandArgs) => void;
+}) {
+  const { t } = useTranslation();
+  const isShading = request.command === "table.shading";
+  const shadingCtx = request.context.tableShading;
+  const bordersCtx = request.context.tableBorders;
+  const sampleEdge = bordersCtx?.current?.top ?? bordersCtx?.current?.bottom ?? bordersCtx?.current?.left ?? bordersCtx?.current?.right;
+  const initialStyle = sampleEdge && bordersCtx?.supportedStyles.includes(sampleEdge.style) && sampleEdge.style !== "none"
+    ? sampleEdge.style
+    : bordersCtx?.supportedStyles.find((s) => s !== "none") ?? "single";
+  const initialWidth = sampleEdge && bordersCtx?.supportedWidths.some((w) => Math.abs(w - sampleEdge.width) < 1e-6)
+    ? sampleEdge.width
+    : bordersCtx?.defaultWidth ?? 0.5;
+  const initialBorderColor = sampleEdge?.color ?? "#000000";
+
+  const [shadeColor, setShadeColor] = useState(shadingCtx?.color ?? "#FEF08A");
+  const [borderKind, setBorderKind] = useState<BorderKind>("all");
+  const [borderStyle, setBorderStyle] = useState(initialStyle);
+  const [borderWidth, setBorderWidth] = useState(String(initialWidth));
+  const [borderColor, setBorderColor] = useState(initialBorderColor);
+  const [error, setError] = useState(false);
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const firstFocusRef = useRef<HTMLInputElement | HTMLButtonElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    previousFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!suspended) firstFocusRef.current?.focus();
+    return () => {
+      const target = previousFocus.current;
+      if (target && target.isConnected && !document.querySelector('[role="dialog"]')) target.focus();
+    };
+  }, [suspended]);
+
+  const submitShading = (color: string | null) => {
+    const args: DocumentCommandArgs = { command: "table.shading", color };
+    if (!validateCommandArgs("table.shading", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
+  const submitBorders = () => {
+    const args: DocumentCommandArgs = borderKind === "none"
+      ? { command: "table.borders", kind: "none" }
+      : {
+          command: "table.borders",
+          kind: borderKind,
+          style: borderStyle,
+          width: Number(borderWidth),
+          color: normalizeHexRgb(borderColor) ?? "",
+        };
+    if (!validateCommandArgs("table.borders", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
+  const submit = () => {
+    if (isShading) {
+      const normalized = normalizeHexRgb(shadeColor);
+      if (!normalized) {
+        setError(true);
+        return;
+      }
+      submitShading(normalized);
+    } else {
+      submitBorders();
+    }
+  };
+
+  const normalizedShade = normalizeHexRgb(shadeColor);
+  const normalizedBorder = normalizeHexRgb(borderColor);
+
+  return (
+    <div className="discard-dialog__backdrop" onMouseDown={(event) => {
+      if (event.target instanceof Element && event.target.closest("button, input, label, select")) return;
+      event.preventDefault();
+    }}>
+      <div
+        ref={dialogRef}
+        className="discard-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="table-format-dialog-title"
+        data-testid="table-format-dialog"
+        data-command={request.command}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Escape") { event.preventDefault(); onCancel(); }
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) { event.preventDefault(); submit(); }
+        }}
+      >
+        <h2 id="table-format-dialog-title" className="discard-dialog__title">{t(request.labelKey)}</h2>
+        {isShading ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {SHADING_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className="document-bar__button"
+                  data-testid={`shading-swatch-${preset.slice(1)}`}
+                  aria-label={preset}
+                  style={{ width: "26px", height: "26px", padding: 0, backgroundColor: preset, border: normalizedShade === preset ? "2px solid currentColor" : undefined }}
+                  onClick={() => { setShadeColor(preset); setError(false); }}
+                />
+              ))}
+            </div>
+            <div className="stage1-dialog__grid">
+              <label htmlFor="table-shading-color">{t("tableFormat.shading.color")}</label>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <input
+                  ref={firstFocusRef as React.RefObject<HTMLInputElement>}
+                  id="table-shading-color"
+                  data-testid="table-shading-color"
+                  value={shadeColor}
+                  onChange={(e) => { setShadeColor(e.target.value); setError(false); }}
+                />
+                <input
+                  type="color"
+                  aria-label={t("tableFormat.shading.color")}
+                  value={normalizedShade ?? "#FEF08A"}
+                  onChange={(e) => { setShadeColor(e.target.value.toUpperCase()); setError(false); }}
+                />
+              </div>
+            </div>
+            {shadingCtx?.supportsClear && (
+              <div>
+                <button
+                  type="button"
+                  className="document-bar__button"
+                  data-testid="table-shading-clear"
+                  onClick={() => submitShading(null)}
+                >
+                  {t("tableFormat.shading.clear")}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {BORDER_KINDS.map(({ kind, labelKey }, index) => {
+                const disabled = kind === "inside" && !bordersCtx?.hasInsideBorders;
+                return (
+                  <button
+                    key={kind}
+                    ref={index === 0 ? firstFocusRef as React.RefObject<HTMLButtonElement> : undefined}
+                    type="button"
+                    disabled={disabled}
+                    aria-pressed={borderKind === kind}
+                    className="document-bar__button"
+                    data-testid={`border-kind-${kind}`}
+                    style={{ fontWeight: borderKind === kind ? 700 : 400 }}
+                    onClick={() => { setBorderKind(kind); setError(false); }}
+                  >
+                    {t(labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+            {borderKind !== "none" && (
+              <div className="stage1-dialog__grid">
+                <label htmlFor="table-border-style">{t("tableFormat.borders.style")}</label>
+                <select
+                  id="table-border-style"
+                  data-testid="table-border-style"
+                  value={borderStyle}
+                  onChange={(e) => { setBorderStyle(e.target.value); setError(false); }}
+                >
+                  {(bordersCtx?.supportedStyles ?? ["single"]).map((style) => (
+                    <option key={style} value={style}>
+                      {t(`tableFormat.style.${style}` as MessageKey)}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="table-border-width">{t("tableFormat.borders.width")}</label>
+                <select
+                  id="table-border-width"
+                  data-testid="table-border-width"
+                  value={borderWidth}
+                  onChange={(e) => { setBorderWidth(e.target.value); setError(false); }}
+                >
+                  {(bordersCtx?.supportedWidths ?? [0.5]).map((w) => (
+                    <option key={w} value={String(w)}>
+                      {w} {bordersCtx?.widthUnit ?? "mm"}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="table-border-color">{t("tableFormat.borders.color")}</label>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                  {BORDER_COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="document-bar__button"
+                      aria-label={preset}
+                      style={{ width: "22px", height: "22px", padding: 0, backgroundColor: preset, border: normalizedBorder === preset ? "2px solid currentColor" : undefined }}
+                      onClick={() => { setBorderColor(preset); setError(false); }}
+                    />
+                  ))}
+                  <input
+                    id="table-border-color"
+                    data-testid="table-border-color"
+                    value={borderColor}
+                    onChange={(e) => { setBorderColor(e.target.value); setError(false); }}
+                    style={{ width: "84px" }}
+                  />
+                  <input
+                    type="color"
+                    aria-label={t("tableFormat.borders.color")}
+                    value={normalizedBorder ?? "#000000"}
+                    onChange={(e) => { setBorderColor(e.target.value.toUpperCase()); setError(false); }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {error && <p role="alert" data-testid="table-format-error">{t("stage1.invalid")}</p>}
+        <div className="discard-dialog__actions">
+          <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
+          <button type="button" className="document-bar__button" data-testid="table-format-confirm" onClick={submit}>{t("commandInput.apply")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}

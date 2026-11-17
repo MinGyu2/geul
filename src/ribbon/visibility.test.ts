@@ -5,7 +5,7 @@ import { commandState } from "../commands/commands";
 import { COMMANDS, commandDefinition } from "../commands/registry";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "../commands/target";
 import { initialLayout } from "../hooks/layoutState";
-import { RIBBON_TABS, TABLE_STRUCTURE_GROUP } from "./definitions";
+import { RIBBON_TABS, TABLE_FORMATTING_GROUP, TABLE_STRUCTURE_GROUP } from "./definitions";
 import { resolveActiveRibbonTab, ribbonFormatFor, visibleRibbonGroups, visibleRibbonTabs } from "./visibility";
 
 const ids = (format: DocumentFormat | null) => visibleRibbonTabs(format).map((tab) => tab.id);
@@ -53,11 +53,12 @@ describe("보이는 탭", () => {
 
   it("DOCX 레이아웃 탭은 공유 표 구조 그룹을 포함하고 한글 도구는 기존 탭에서 유지한다", () => {
     const layout = RIBBON_TABS.find((t) => t.id === "layout")!;
-    expect(visibleRibbonGroups(layout, "docx").map((g) => g.id)).toEqual(["pageSetup", TABLE_STRUCTURE_GROUP.id]);
+    expect(visibleRibbonGroups(layout, "docx").map((g) => g.id)).toEqual(["pageSetup", TABLE_STRUCTURE_GROUP.id, TABLE_FORMATTING_GROUP.id]);
     expect(visibleRibbonGroups(layout, "hwp").map((g) => g.id)).toEqual(["pageSetup"]);
     expect(visibleRibbonGroups(layout, null).map((g) => g.id)).toEqual(["pageSetup"]);
     const hangul = RIBBON_TABS.find((t) => t.id === "hangulTools")!;
     expect(visibleRibbonGroups(hangul, "hwp").map((g) => g.id)).toContain(TABLE_STRUCTURE_GROUP.id);
+    expect(visibleRibbonGroups(hangul, "hwp").map((g) => g.id)).toContain(TABLE_FORMATTING_GROUP.id);
   });
 });
 
@@ -76,7 +77,9 @@ describe("형식 전용 탭의 명령", () => {
 
   // T012에서 rhwp에 연결한 값 입력 명령. 세션이 문맥(parameters)을 내지 않으면 여전히 쓸 수 없다.
   const CONNECTED = new Set(["table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",
-    "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell", "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "references.footnote", "references.endnote",
+    "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell",
+    "table.shading", "table.borders",
+    "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "references.footnote", "references.endnote",
     "references.toc", "references.updateToc",
     "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"]);
 

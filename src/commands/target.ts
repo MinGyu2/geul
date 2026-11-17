@@ -65,7 +65,7 @@ export interface DocumentCommandSnapshot {
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
   parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits" | "limit"
-    | "originalChecking" | "originalUnverified" | "formulaParagraphRequired" | "nestedTable">>;
+    | "originalChecking" | "originalUnverified" | "formulaParagraphRequired" | "nestedTable" | "tableShape" | "tableContent" | "protected">>;
   /**
    * 값 없이 실행하는 문맥 명령(T013 목차 넣기·갱신 등)을 지금 할 수 있는지. 세션이 엔진 보기로 판정한다. 없으면 `actionReasons`의
    * 이유 또는 engineUnsupported.
@@ -123,6 +123,16 @@ export type DocumentCommandArgs =
   | { command: "format.font"; family: string }
   /** Stage 2 / Phase 1: subdivide an unmerged 1x1 cell into rows x columns. */
   | { command: "table.splitCell"; rows: number; columns: number }
+  /** Stage 2 / Phase 3 (P3-1): set or clear cell background shading (#RRGGBB or null). */
+  | { command: "table.shading"; color: string | null }
+  /** Stage 2 / Phase 3 (P3-1): set or clear selected-cell borders. */
+  | {
+      command: "table.borders";
+      kind: "all" | "outside" | "inside" | "none" | "top" | "bottom" | "left" | "right";
+      style?: string;
+      width?: number;
+      color?: string | null;
+    }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -142,6 +152,28 @@ export interface CommandParameterContext {
   /** Unmerged 1x1 DOCX cell split limits from live engine view. */
   /** Ordinary cell split bounds; `maxCells` (optional) additionally bounds rows × columns (HWP/HWPX table cell limit). */
   tableSplit?: { maxRows: number; maxColumns: number; maxCells?: number };
+  /** Stage 2 / Phase 3 (P3-1): cell background shading context. */
+  tableShading?: {
+    color: string | null;
+    mixed: boolean;
+    hasShading: boolean;
+    selectedCells: number;
+    supportsClear: boolean;
+  };
+  /** Stage 2 / Phase 3 (P3-1): selected-cell border context and format-supported styles/widths. */
+  tableBorders?: {
+    hasInsideBorders: boolean;
+    supportedStyles: readonly string[];
+    widthUnit: "pt" | "mm";
+    supportedWidths: readonly number[];
+    defaultWidth: number;
+    current: {
+      top: { style: string; width: number; color: string | null } | null;
+      bottom: { style: string; width: number; color: string | null } | null;
+      left: { style: string; width: number; color: string | null } | null;
+      right: { style: string; width: number; color: string | null } | null;
+    } | null;
+  };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };
   /** Stage 1: current paragraph / character / page values (initial dialog and picker values). */

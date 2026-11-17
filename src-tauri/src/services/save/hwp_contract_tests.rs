@@ -2273,14 +2273,22 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
         assert_eq!(bytes, original, "{name}");
         assert!(info.dirty, "{name}");
     };
-    // A cell whose border fill no original cell uses (an invented template).
+    // A cell whose margins/attributes no original cell uses (an invented template).
     let mut invented = existing_table_without_second_row();
     w(
         &mut invented.iter_mut().find(|r| r.0 == 72).unwrap().2,
-        32,
-        2,
+        24,
+        777,
     );
     refused("invented cell template", invented);
+    // A cell whose border fill references an out-of-range definition ID.
+    let mut bad_bf = existing_table_without_second_row();
+    w(
+        &mut bad_bf.iter_mut().find(|r| r.0 == 72).unwrap().2,
+        32,
+        99,
+    );
+    refused("invalid cell border fill reference", bad_bf);
     // A table attribute no structure operation owns (cell spacing).
     let mut spacing = existing_table_without_second_row();
     w(&mut spacing[1].2, 8, 77);

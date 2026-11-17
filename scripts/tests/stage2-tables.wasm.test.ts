@@ -1783,4 +1783,114 @@ describe("Stage 2 Phase 2: complex content matrix", () => {
     expect(unexpected).toEqual([]);
     expect(rows).toHaveLength(KINDS.length * OPS.length);
   }, 900_000);
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-1: cell shading, borders (rect/merged/nested), Undo/Redo, negatives, T009 save & reopen", async format => {
+    const { editor, doc, at, place, run, save, original } = await open(format, false, true, false);
+    try {
+      const bfBaseline = doc.borderFillCount!();
+      expect(bfBaseline).toBeGreaterThan(0);
+
+      // Single cell (0,0): notInTable / inside border rejected before mutation.
+      place(at);
+      expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
+      expect(documentCommandState("table.borders", editor.snapshot())).toEqual({ available: true });
+      expect(editor.snapshot().parameters?.["table.borders"]?.tableBorders?.hasInsideBorders).toBe(false);
+      expect(editor.execute("table.borders", {
+        command: "table.borders", kind: "inside", style: "single", width: 0.12, color: "#000000",
+      }).accepted).toBe(false);
+      expect(editor.execute("table.borders", {
+        command: "table.borders", kind: "all", style: "thick", width: 0.12, color: "#000000",
+      }).accepted).toBe(false);
+      expect(editor.execute("table.shading", { command: "table.shading", color: "invalid" }).accepted).toBe(false);
+
+      // Cell shading set + Undo + Redo + Clear.
+      await run("table.shading", { command: "table.shading", color: "#FEF08A" });
+      expect(editor.snapshot().parameters?.["table.shading"]?.tableShading?.color).toBe("#FEF08A");
+      const midBf = doc.borderFillCount!();
+      await run("edit.undo");
+      expect(doc.borderFillCount!()).toBe(bfBaseline);
+      expect(editor.snapshot().parameters?.["table.shading"]?.tableShading?.color).toBeNull();
+      await run("edit.redo");
+      expect(doc.borderFillCount!()).toBe(midBf);
+      expect(editor.snapshot().parameters?.["table.shading"]?.tableShading?.color).toBe("#FEF08A");
+      await run("table.shading", { command: "table.shading", color: null });
+      expect(editor.snapshot().parameters?.["table.shading"]?.tableShading?.color).toBeNull();
+      // Compaction returns unused appended borderFills back to baseline!
+      expect(doc.borderFillCount!()).toBe(bfBaseline);
+
+      // Rectangular multi-cell selection (0..1, 0..1) on 2x2 table -> shading + outside + inside borders.
+      place(at);
+      editor.caret = withCell(at, 3);
+      expect(editor.snapshot().parameters?.["table.borders"]?.tableBorders?.hasInsideBorders).toBe(true);
+      await run("table.shading", { command: "table.shading", color: "#DBEAFE" });
+      await run("table.borders", {
+        command: "table.borders", kind: "outside", style: "double", width: 0.5, color: "#DC2626",
+      });
+      await run("table.borders", {
+        command: "table.borders", kind: "inside", style: "dashed", width: 0.4, color: "#1E40AF",
+      });
+
+      // Individual edge (`bottom`) + `none` on cell (0,1).
+      place(withCell(at, 1));
+      await run("table.borders", {
+        command: "table.borders", kind: "bottom", style: "dotted", width: 0.7, color: "#15803D",
+      });
+
+      // Nested child table formatting inside cell 0 (nested fixture created 1 child table in cell 0).
+      const nested = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] } };
+      place(nested);
+      expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
+      await run("table.shading", { command: "table.shading", color: "#DCFCE7" });
+
+      // T009 save + independent reopen verification!
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
+        const fmt00 = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 0, 0,
+        ));
+        expect(fmt00.shading).toEqual({ uniform: true, color: "DBEAFE" });
+        const fmtNested = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([
+            { controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 },
+            { controlIndex: 0, cellIndex: 0, cellParaIndex: 0 },
+          ]),
+          0, 0, 0, 0,
+        ));
+        expect(fmtNested.shading).toEqual({ uniform: true, color: "DCFCE7" });
+      } finally { reopened.free(); }
+      void original;
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("%s P3-1 rich table: caption, formulas & ClickHere stay intact after cell shading & borders", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, false, true);
+    try {
+      const fieldsBefore = doc.getFieldList!();
+      place(withCell(at, 0));
+      await run("table.shading", { command: "table.shading", color: "#FEE2E2" });
+      await run("table.borders", {
+        command: "table.borders", kind: "outside", style: "double", width: 0.5, color: "#1E40AF",
+      });
+      expect(doc.getFieldList!()).toBe(fieldsBefore);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getFieldList!()).toBe(fieldsBefore);
+        const fmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          0, 0, 0, 0,
+        ));
+        expect(fmt.shading).toEqual({ uniform: true, color: "FEE2E2" });
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
 });

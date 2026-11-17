@@ -289,11 +289,22 @@ describe("DocxEditorSession", () => {
       expect(documentCommandState(id, editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
       expect(editor.execute(id).accepted).toBe(false);
     }
+    const BASE_FORMAT_FIELDS = {
+      hasInsideBorders: false,
+      cellShadingRefusal: null,
+      cellBordersRefusal: null,
+      cellShading: null,
+      cellShadingMixed: false,
+      hasCellShading: false,
+      cellBorders: null,
+      supportedBorderStyles: ["single", "double", "dotted", "dashed", "thick", "triple", "dotDash", "wave", "none"],
+    } as const;
     fake.tableView = {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
       insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
       deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
       mergeCells: "tableShape", splitCell: "tableShape", maxSplitRows: 1, maxSplitColumns: 1,
+      ...BASE_FORMAT_FIELDS, supportedBorderStyles: [...BASE_FORMAT_FIELDS.supportedBorderStyles],
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: true });
@@ -314,6 +325,7 @@ describe("DocxEditorSession", () => {
       insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
       deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
       mergeCells: "tableShape", splitCell: null, maxSplitRows: 16, maxSplitColumns: 4,
+      ...BASE_FORMAT_FIELDS, supportedBorderStyles: [...BASE_FORMAT_FIELDS.supportedBorderStyles],
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.splitCell", editor.snapshot())).toEqual({ available: true });
@@ -331,6 +343,7 @@ describe("DocxEditorSession", () => {
       insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
       deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: "tableShape",
       mergeCells: "tableShape", splitCell: null, maxSplitRows: 1, maxSplitColumns: 1,
+      ...BASE_FORMAT_FIELDS, supportedBorderStyles: [...BASE_FORMAT_FIELDS.supportedBorderStyles],
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.splitCell", editor.snapshot())).toEqual({ available: true });
@@ -344,5 +357,46 @@ describe("DocxEditorSession", () => {
     fake.formatAccess = "protected";
     await editor.load({ discard: true });
     expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: false, reason: "protected" });
+  });
+
+  it("DOCX 표 셀 배경색과 테두리 명령의 파라미터 검증·거절·실행을 확인한다", async () => {
+    const { documentCommandState } = await import("../../../commands/capability");
+    const { editor, fake } = await readyDocx(["본문"]);
+    expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
+    expect(documentCommandState("table.borders", editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
+      mergeCells: "tableShape", splitCell: null, maxSplitRows: 16, maxSplitColumns: 4,
+      hasInsideBorders: false, cellShadingRefusal: null, cellBordersRefusal: null,
+      cellShading: null, cellShadingMixed: false, hasCellShading: false, cellBorders: null,
+      supportedBorderStyles: ["single", "double", "dotted", "dashed", "thick", "triple", "dotDash", "wave", "none"],
+    };
+    await editor.load({ discard: true });
+    expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
+    expect(documentCommandState("table.borders", editor.snapshot())).toEqual({ available: true });
+    // Invalid hex or unsupported style/inside-on-single-cell must reject before queueing.
+    expect(editor.execute("table.shading", { command: "table.shading", color: "not-a-color" }).accepted).toBe(false);
+    expect(editor.execute("table.borders", { command: "table.borders", kind: "inside", style: "single", width: 0.5, color: "#000000" }).accepted).toBe(false);
+    expect(editor.execute("table.borders", { command: "table.borders", kind: "outside", style: "circle", width: 0.5, color: "#000000" }).accepted).toBe(false);
+    expect(editor.execute("table.shading", { command: "table.shading", color: "#FEF08A" }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableShading", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, color: "#FEF08A" },
+    ]);
+    await flush();
+    expect(editor.execute("table.shading", { command: "table.shading", color: null }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableShading", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, color: null },
+    ]);
+    await flush();
+    fake.tableView.hasInsideBorders = true;
+    await editor.load({ discard: true });
+    expect(editor.execute("table.borders", {
+      command: "table.borders", kind: "inside", style: "dashed", width: 1.5, color: "#1E40AF",
+    }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableBorders", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, kind: "inside", style: "dashed", width: 1.5, color: "#1E40AF" },
+    ]);
   });
 });

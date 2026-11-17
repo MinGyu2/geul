@@ -252,6 +252,23 @@ pub enum DocxOp {
         #[serde(default)]
         columns: Option<u32>,
     },
+    /// Stage 2 Phase 3 (P3-1): DOCX cell background shading with explicit target ownership.
+    TableShading {
+        target: SelectionIdentity,
+        #[serde(default)]
+        color: Option<String>,
+    },
+    /// Stage 2 Phase 3 (P3-1): DOCX selected-cell border formatting with explicit target ownership.
+    TableBorders {
+        target: SelectionIdentity,
+        kind: table::TableBorderKind,
+        #[serde(default)]
+        style: Option<String>,
+        #[serde(default)]
+        width: Option<f32>,
+        #[serde(default)]
+        color: Option<String>,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -420,6 +437,28 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 };
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dims_ok
             }
+            DocxOp::TableShading { target, color } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let color_ok = color
+                    .as_deref()
+                    .map_or(true, |c| table::normalize_hex_color(c).is_some());
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && color_ok
+            }
+            DocxOp::TableBorders { target, kind: _, style, width, color } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let style_ok = style
+                    .as_deref()
+                    .map_or(true, table::valid_docx_border_style);
+                let width_ok = width.map_or(true, table::valid_docx_border_width);
+                let color_ok = color
+                    .as_deref()
+                    .map_or(true, |c| table::normalize_hex_color(c).is_some());
+                ok_key(&target.anchor_key)
+                    && ok_key(&target.caret_key)
+                    && style_ok
+                    && width_ok
+                    && color_ok
+            }
             _ => true,
         })
 }
@@ -524,7 +563,7 @@ impl FormatAccess {
     /// WordCraft 공개 보호 상태(`cmd::protect::state`)에서 정한다. 엔진의 `check_before`(비공개)가 직접 서식 명령에 하는 판정과
     /// 같은 순서다: 서식 제한이면 거부, 읽기 전용·메모만은 편집 가능 영역이 있으면 영역 안만, 없으면 거부, 양식은 거부, 그 밖은 허용.
     /// 이 대응은 시험(`보호_상태의_서식_가용성은_엔진_판정과_같다`)이 실제 엔진 결과와 맞춘다.
-    fn of(session: &Session) -> FormatAccess {
+    pub(super) fn of(session: &Session) -> FormatAccess {
         if TRACKED_READ_ONLY && session.doc.settings.track_changes {
             return FormatAccess::Protected;
         }
@@ -963,6 +1002,18 @@ impl DocxModel {
             }
             DocxOp::TableStructure { action, target, rows, columns } => {
                 self.table_structure(*action, target, *rows, *columns)
+            }
+            DocxOp::TableShading { target, color } => {
+                self.table_shading(target, color.as_deref())
+            }
+            DocxOp::TableBorders { target, kind, style, width, color } => {
+                self.table_cell_borders(
+                    target,
+                    *kind,
+                    style.as_deref(),
+                    *width,
+                    color.as_deref(),
+                )
             }
         }
     }
