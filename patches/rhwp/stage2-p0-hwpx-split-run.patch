@@ -1,0 +1,1012 @@
+diff --git a/src/model/hwpx_topology.rs b/src/model/hwpx_topology.rs
+index c493ef7e..764541e8 100644
+--- a/src/model/hwpx_topology.rs
++++ b/src/model/hwpx_topology.rs
+@@ -129,6 +129,34 @@ fn shape_positions(p: &Paragraph) -> Vec<(u32, u32)> {
+         .collect()
+ }
+ 
++fn atom_char(atom: &str) -> Result<Option<char>, &'static str> {
++    if let Some(rest) = atom.strip_prefix("c:") {
++        let mut chars = rest.chars();
++        let ch = chars.next().ok_or(FORMAT_BOUNDARY)?;
++        if chars.next().is_some() {
++            return Err(FORMAT_BOUNDARY);
++        }
++        Ok(Some(ch))
++    } else if let Some(rest) = atom.strip_prefix("i:") {
++        let tag = rest.split(':').next().unwrap_or("");
++        match tag {
++            "tab" => Ok(Some('\t')),
++            "lineBreak" | "columnBreak" => Ok(Some('\n')),
++            "nbSpace" => Ok(Some('\u{00A0}')),
++            "fwSpace" => Ok(Some('\u{2007}')),
++            "hyphen" => Ok(Some('\u{00AD}')),
++            "titleMark" | "markpenBegin" | "markpenEnd" => Ok(None),
++            _ => Err(FORMAT_BOUNDARY),
++        }
++    } else {
++        Err(FORMAT_BOUNDARY)
++    }
++}
++
++fn control_is_auto_num(key: &str) -> bool {
++    key.starts_with("o:ctrl:") && key.contains("/autoNum/")
++}
++
+ impl HwpxTextTopology {
+     fn bound(runs: Vec<SourceRun>, p: &Paragraph) -> Self {
+         Self {
+@@ -429,49 +457,551 @@ impl HwpxTextTopology {
+         self
+     }
+ 
+-    /// A real character-formatting command changed only `char_shape_id`
+-    /// values. Supported iff every IR run occurrence keeps its index and start
+-    /// position (no split/merge/relocation) and nothing but character shapes
+-    /// changed during the operation. Source runs mapped to a changed
+-    /// occurrence take its new shape; references are resolved at export.
++    /// A real character-formatting command changed `char_shapes`.
++    /// Supported when nothing outside `char_shapes` changed and every source
++    /// text/control/empty-text occurrence maps uniquely and deterministically to
++    /// the updated IR character-shape intervals without losing ownership or
++    /// splitting controls or styled `hp:t@charStyleIDRef` text.
+     pub(crate) fn format_edit(mut self, p: &Paragraph, old: &[CharShapeRef]) -> Self {
+         if self.invalid.is_some() {
+             return self;
+         }
+-        let new = &p.char_shapes;
+-        if new.len() != old.len() || new.iter().zip(old).any(|(a, b)| a.start_pos != b.start_pos) {
+-            self.invalidate(FORMAT_BOUNDARY);
+-            return self;
+-        }
+         // before_edit proved the pre-edit seal; substituting the previous
+         // shape IDs must reproduce it exactly.
+         if seal_with(p, old) != self.seal {
+             self.invalidate(FORMAT_SCOPE);
+             return self;
+         }
+-        let mut styled = false;
+-        for (group, (a, b)) in new.iter().zip(old).enumerate() {
+-            if a.char_shape_id == b.char_shape_id {
+-                continue;
++        let new = &p.char_shapes;
++        if new.len() == old.len() && new.iter().zip(old).all(|(a, b)| a.start_pos == b.start_pos) {
++            let mut styled = false;
++            for (group, (a, b)) in new.iter().zip(old).enumerate() {
++                if a.char_shape_id == b.char_shape_id {
++                    continue;
++                }
++                for run in self.runs.iter_mut().filter(|r| r.group == group) {
++                    // A character style association has no defined lifetime
++                    // under direct formatting; never keep it implicitly.
++                    styled |= run
++                        .parts
++                        .iter()
++                        .any(|v| matches!(v, Part::Text(_, Some(_))));
++                    run.shape = a.char_shape_id;
++                }
+             }
+-            for run in self.runs.iter_mut().filter(|r| r.group == group) {
+-                // A character style association has no defined lifetime
+-                // under direct formatting; never keep it implicitly.
+-                styled |= run
+-                    .parts
+-                    .iter()
+-                    .any(|v| matches!(v, Part::Text(_, Some(_))));
+-                run.shape = a.char_shape_id;
++            if styled {
++                self.invalidate(FORMAT_STYLED);
++                return self;
+             }
++            self.seal = seal(p);
++            return self;
+         }
+-        if styled {
+-            self.invalidate(FORMAT_STYLED);
++        if let Err(why) = self.reconcile_format_edit(p, old) {
++            self.invalidate(why);
+             return self;
+         }
+         self.seal = seal(p);
+         self
+     }
+ 
++    fn reconcile_format_edit(&mut self, p: &Paragraph, old: &[CharShapeRef]) -> Result<(), &'static str> {
++        let new = &p.char_shapes;
++        if old.is_empty()
++            || new.is_empty()
++            || new.windows(2).any(|w| w[0].start_pos > w[1].start_pos)
++        {
++            return Err(FORMAT_BOUNDARY);
++        }
++        let mut prev_old_group = 0usize;
++        for run in &self.runs {
++            if run.group >= old.len()
++                || run.group < prev_old_group
++                || run.shape != old[run.group].char_shape_id
++            {
++                return Err(FORMAT_BOUNDARY);
++            }
++            prev_old_group = run.group;
++        }
++        let p_chars: Vec<char> = p.text.chars().collect();
++        if p.char_offsets.len() != p_chars.len() {
++            return Err(FORMAT_BOUNDARY);
++        }
++
++        #[derive(Clone, Copy)]
++        enum ItemKind {
++            Char { idx: usize, width: u32 },
++            Slot8 { is_secpr: bool, is_colpr: bool },
++            Markpen,
++        }
++        struct Item {
++            run_idx: usize,
++            part_idx: usize,
++            atom_idx: Option<usize>,
++            run_group: usize,
++            kind: ItemKind,
++            target_group: usize,
++            utf16_start: u32,
++            utf16_end: u32,
++        }
++
++        let mut items: Vec<Item> = Vec::new();
++        let mut run_item_ranges: Vec<Option<(usize, usize)>> = Vec::with_capacity(self.runs.len());
++        let mut char_idx = 0usize;
++        for (run_idx, run) in self.runs.iter().enumerate() {
++            let start_item = items.len();
++            for (part_idx, part) in run.parts.iter().enumerate() {
++                match part {
++                    Part::Text(atoms, _) => {
++                        for (atom_idx, atom) in atoms.iter().enumerate() {
++                            if let Some(ch) = atom_char(atom)? {
++                                if char_idx >= p_chars.len() || p_chars[char_idx] != ch {
++                                    return Err(FORMAT_BOUNDARY);
++                                }
++                                let width = Paragraph::char_stream_len(ch);
++                                items.push(Item {
++                                    run_idx,
++                                    part_idx,
++                                    atom_idx: Some(atom_idx),
++                                    run_group: run.group,
++                                    kind: ItemKind::Char { idx: char_idx, width },
++                                    target_group: 0,
++                                    utf16_start: p.char_offsets[char_idx],
++                                    utf16_end: p.char_offsets[char_idx].saturating_add(width),
++                                });
++                                char_idx += 1;
++                            } else {
++                                let kind = if atom.starts_with("i:titleMark:") {
++                                    ItemKind::Slot8 {
++                                        is_secpr: false,
++                                        is_colpr: false,
++                                    }
++                                } else {
++                                    ItemKind::Markpen
++                                };
++                                items.push(Item {
++                                    run_idx,
++                                    part_idx,
++                                    atom_idx: Some(atom_idx),
++                                    run_group: run.group,
++                                    kind,
++                                    target_group: 0,
++                                    utf16_start: 0,
++                                    utf16_end: 0,
++                                });
++                            }
++                        }
++                    }
++                    Part::Control(key, _) => {
++                        if control_is_auto_num(key) {
++                            if char_idx >= p_chars.len() || p_chars[char_idx] != ' ' {
++                                return Err(FORMAT_BOUNDARY);
++                            }
++                            items.push(Item {
++                                run_idx,
++                                part_idx,
++                                atom_idx: None,
++                                run_group: run.group,
++                                kind: ItemKind::Char {
++                                    idx: char_idx,
++                                    width: 8,
++                                },
++                                target_group: 0,
++                                utf16_start: p.char_offsets[char_idx],
++                                utf16_end: p.char_offsets[char_idx].saturating_add(8),
++                            });
++                            char_idx += 1;
++                        } else if key.starts_with("o:tab:")
++                            || key.starts_with("o:lineBreak:")
++                            || key.starts_with("o:columnBreak:")
++                            || key.starts_with("o:softHyphen:")
++                        {
++                            return Err(FORMAT_BOUNDARY);
++                        } else {
++                            items.push(Item {
++                                run_idx,
++                                part_idx,
++                                atom_idx: None,
++                                run_group: run.group,
++                                kind: ItemKind::Slot8 {
++                                    is_secpr: key.starts_with("o:secPr:"),
++                                    is_colpr: key.starts_with("o:ctrl:") && key.contains("/colPr/"),
++                                },
++                                target_group: 0,
++                                utf16_start: 0,
++                                utf16_end: 0,
++                            });
++                        }
++                    }
++                }
++            }
++            let end_item = items.len();
++            run_item_ranges.push((start_item < end_item).then_some((start_item, end_item)));
++        }
++        if char_idx != p_chars.len() {
++            return Err(FORMAT_BOUNDARY);
++        }
++
++        let new_span = |g: usize| -> (u32, u32) {
++            let start = if g == 0 { 0 } else { new[g].start_pos };
++            let end = new.get(g + 1).map_or(u32::MAX, |s| s.start_pos);
++            (start, end)
++        };
++        let group_of_pos = |pos: u32| -> usize {
++            new.iter().rposition(|r| r.start_pos <= pos).unwrap_or(0)
++        };
++
++        for item in &mut items {
++            if let ItemKind::Char { idx, .. } = item.kind {
++                item.target_group = group_of_pos(p.char_offsets[idx]);
++            }
++        }
++
++        // Resolve target groups and UTF-16 spans for every non-character gap.
++        let mut cursor = 0usize;
++        let mut prev_char: Option<(u32, usize)> = None; // (utf16_end, target_group)
++        while cursor < items.len() {
++            if let ItemKind::Char { .. } = items[cursor].kind {
++                prev_char = Some((items[cursor].utf16_end, items[cursor].target_group));
++                cursor += 1;
++                continue;
++            }
++            let gap_from = cursor;
++            while cursor < items.len() && !matches!(items[cursor].kind, ItemKind::Char { .. }) {
++                cursor += 1;
++            }
++            let gap_to = cursor;
++            let gap_start = prev_char.map_or(0, |(end, _)| end);
++            let next_char = items
++                .get(gap_to)
++                .map(|it| (it.utf16_start, it.target_group));
++            let gap_end = next_char.map_or_else(
++                || {
++                    if p.char_count > 0 {
++                        (p.char_count - 1).max(gap_start)
++                    } else {
++                        gap_start
++                    }
++                },
++                |(start, _)| start,
++            );
++            if gap_end < gap_start {
++                return Err(FORMAT_BOUNDARY);
++            }
++
++            // Section-0 template secPr/colPr prefix must stay intact in group 0.
++            let mut rem_from = gap_from;
++            let mut rem_start = gap_start;
++            if gap_start == 0
++                && items[gap_from..gap_to]
++                    .iter()
++                    .any(|it| matches!(it.kind, ItemKind::Slot8 { is_secpr: true, .. }) && it.run_group == 0)
++            {
++                let mut has_separate_colpr = false;
++                while rem_from < gap_to
++                    && items[rem_from].run_group == 0
++                    && matches!(
++                        items[rem_from].kind,
++                        ItemKind::Slot8 { is_secpr: true, .. }
++                            | ItemKind::Slot8 { is_colpr: true, .. }
++                    )
++                {
++                    if matches!(items[rem_from].kind, ItemKind::Slot8 { is_colpr: true, .. }) {
++                        has_separate_colpr = true;
++                    }
++                    rem_from += 1;
++                }
++                let has_any_colpr = has_separate_colpr
++                    || p.controls
++                        .iter()
++                        .any(|c| matches!(c, Control::ColumnDef(_)));
++                let template_width = if has_any_colpr { 16 } else { 8 };
++                if gap_end < template_width
++                    || new
++                        .iter()
++                        .any(|r| r.start_pos > 0 && r.start_pos < template_width)
++                {
++                    return Err(FORMAT_BOUNDARY);
++                }
++                for it in &mut items[gap_from..rem_from] {
++                    it.target_group = 0;
++                    it.utf16_start = 0;
++                    it.utf16_end = template_width;
++                }
++                rem_start = template_width;
++            }
++
++            if rem_from < gap_to {
++                let rem = &mut items[rem_from..gap_to];
++                if rem_start == gap_end {
++                    // Zero-width gap (markpen only).
++                    let g_left = prev_char.map_or(0, |(_, g)| g);
++                    let g_right = next_char.map(|(_, g)| g).unwrap_or(new.len() - 1);
++                    if g_left != g_right || rem.iter().any(|it| !matches!(it.kind, ItemKind::Markpen)) {
++                        return Err(FORMAT_BOUNDARY);
++                    }
++                    for it in rem {
++                        it.target_group = g_left;
++                        it.utf16_start = rem_start;
++                        it.utf16_end = rem_start;
++                    }
++                } else {
++                    let has_markpen = rem.iter().any(|it| matches!(it.kind, ItemKind::Markpen));
++                    let exact_slots =
++                        !has_markpen && gap_end - rem_start == 8 * (rem.len() as u32);
++                    let overlapping: Vec<usize> = (0..new.len())
++                        .filter(|&g| {
++                            let (s, e) = new_span(g);
++                            s < e && s < gap_end && e > rem_start
++                        })
++                        .collect();
++                    let split_inside =
++                        new.iter().any(|r| r.start_pos > rem_start && r.start_pos < gap_end);
++                    if overlapping.len() == 1 && !split_inside {
++                        let g = overlapping[0];
++                        for (j, it) in rem.iter_mut().enumerate() {
++                            it.target_group = g;
++                            if exact_slots {
++                                it.utf16_start = rem_start + 8 * (j as u32);
++                                it.utf16_end = it.utf16_start + 8;
++                            } else {
++                                it.utf16_start = rem_start;
++                                it.utf16_end = gap_end;
++                            }
++                        }
++                    } else if exact_slots {
++                        for (j, it) in rem.iter_mut().enumerate() {
++                            let slot_start = rem_start + 8 * (j as u32);
++                            let slot_end = slot_start + 8;
++                            if new
++                                .iter()
++                                .any(|r| r.start_pos > slot_start && r.start_pos < slot_end)
++                            {
++                                return Err(FORMAT_BOUNDARY);
++                            }
++                            it.target_group = group_of_pos(slot_start);
++                            it.utf16_start = slot_start;
++                            it.utf16_end = slot_end;
++                        }
++                    } else {
++                        return Err(FORMAT_BOUNDARY);
++                    }
++                }
++            }
++        }
++
++        for w in items.windows(2) {
++            if w[0].target_group > w[1].target_group {
++                return Err(FORMAT_BOUNDARY);
++            }
++        }
++
++        // Reconstruct runs deterministically in original order.
++        let mut out_runs: Vec<SourceRun> = Vec::with_capacity(self.runs.len());
++        let mut used_zero_width = vec![false; new.len()];
++        let mut min_group = 0usize;
++
++        for (run_idx, run) in self.runs.iter().enumerate() {
++            let Some((start_item, end_item)) = run_item_ranges[run_idx] else {
++                // Standalone zero-width SourceRun (empty hp:t or bare hp:run).
++                let old_start = if run.group == 0 {
++                    0
++                } else {
++                    old[run.group].start_pos
++                };
++                let old_end = old.get(run.group + 1).map_or(u32::MAX, |s| s.start_pos);
++                let prev_end = run_item_ranges[..run_idx]
++                    .iter()
++                    .rev()
++                    .flatten()
++                    .next()
++                    .map_or(0, |&(_, e)| items[e - 1].utf16_end);
++                let next_start = run_item_ranges[run_idx + 1..]
++                    .iter()
++                    .flatten()
++                    .next()
++                    .map_or(u32::MAX, |&(s, _)| items[s].utf16_start);
++                let max_group = run_item_ranges[run_idx + 1..]
++                    .iter()
++                    .flatten()
++                    .next()
++                    .map_or(new.len() - 1, |&(s, _)| items[s].target_group);
++                let (lo, hi) = if old_start == old_end {
++                    (old_start, old_start)
++                } else {
++                    (old_start.max(prev_end), old_end.min(next_start))
++                };
++                if lo > hi || min_group > max_group {
++                    return Err(FORMAT_BOUNDARY);
++                }
++
++                let chosen = (min_group..=max_group)
++                    .find(|&g| {
++                        let (s, e) = new_span(g);
++                        !used_zero_width[g]
++                            && s == e
++                            && lo == hi
++                            && s == lo
++                            && new[g].char_shape_id == run.shape
++                    })
++                    .map(|g| {
++                        used_zero_width[g] = true;
++                        g
++                    })
++                    .or_else(|| {
++                        (min_group..=max_group).find(|&g| {
++                            let (s, e) = new_span(g);
++                            new[g].char_shape_id == run.shape && s <= hi && e >= lo
++                        })
++                    })
++                    .or_else(|| {
++                        (min_group..=max_group).find(|&g| {
++                            let (s, e) = new_span(g);
++                            (s < lo && hi < e)
++                                || (p.text.is_empty() && lo < hi && s <= lo && hi <= e)
++                        })
++                    })
++                    .ok_or(FORMAT_BOUNDARY)?;
++
++                let new_shape = new[chosen].char_shape_id;
++                if new_shape != run.shape
++                    && run.parts.iter().any(|v| matches!(v, Part::Text(_, Some(_))))
++                {
++                    return Err(FORMAT_STYLED);
++                }
++                out_runs.push(SourceRun {
++                    group: chosen,
++                    shape: new_shape,
++                    parts: run.parts.clone(),
++                });
++                min_group = chosen;
++                continue;
++            };
++
++            let first_g = items[start_item].target_group;
++            let last_g = items[end_item - 1].target_group;
++            if first_g < min_group {
++                return Err(FORMAT_BOUNDARY);
++            }
++            if first_g == last_g {
++                let new_shape = new[first_g].char_shape_id;
++                if new_shape != run.shape
++                    && run.parts.iter().any(|v| matches!(v, Part::Text(_, Some(_))))
++                {
++                    return Err(FORMAT_STYLED);
++                }
++                out_runs.push(SourceRun {
++                    group: first_g,
++                    shape: new_shape,
++                    parts: run.parts.clone(),
++                });
++                min_group = last_g;
++                continue;
++            }
++
++            // Split this SourceRun across multiple target groups.
++            let mut part_ranges: Vec<Option<(usize, usize)>> = vec![None; run.parts.len()];
++            for (offset, it) in items[start_item..end_item].iter().enumerate() {
++                let idx = start_item + offset;
++                let entry = &mut part_ranges[it.part_idx];
++                match entry {
++                    Some((_, end)) => *end = idx + 1,
++                    None => *entry = Some((idx, idx + 1)),
++                }
++            }
++
++            let mut chunks: Vec<(usize, Vec<Part>)> = Vec::new();
++            let push_part = |chunks: &mut Vec<(usize, Vec<Part>)>, g: usize, part: Part| {
++                if let Some((last_g, parts)) = chunks.last_mut() {
++                    if *last_g == g {
++                        parts.push(part);
++                        return;
++                    }
++                }
++                chunks.push((g, vec![part]));
++            };
++
++            for (part_idx, part) in run.parts.iter().enumerate() {
++                match part {
++                    Part::Control(..) => {
++                        let (s, _) = part_ranges[part_idx].ok_or(FORMAT_BOUNDARY)?;
++                        let g = items[s].target_group;
++                        push_part(&mut chunks, g, part.clone());
++                    }
++                    Part::Text(atoms, style) => {
++                        if atoms.is_empty() {
++                            let prev_g = chunks.last().map(|(g, _)| *g);
++                            let next_g = part_ranges[part_idx + 1..]
++                                .iter()
++                                .flatten()
++                                .next()
++                                .map(|&(s, _)| items[s].target_group);
++                            let chosen_g = match (prev_g, next_g) {
++                                (Some(pg), None) => pg,
++                                (None, Some(ng)) => ng,
++                                (Some(pg), Some(ng)) if pg == ng => pg,
++                                (Some(pg), Some(ng)) => {
++                                    if new[ng].char_shape_id == run.shape
++                                        && new[pg].char_shape_id != run.shape
++                                    {
++                                        ng
++                                    } else {
++                                        pg
++                                    }
++                                }
++                                (None, None) => return Err(FORMAT_BOUNDARY),
++                            };
++                            if style.is_some() && new[chosen_g].char_shape_id != run.shape {
++                                return Err(FORMAT_STYLED);
++                            }
++                            push_part(&mut chunks, chosen_g, Part::Text(Vec::new(), *style));
++                        } else {
++                            let (s, e) = part_ranges[part_idx].ok_or(FORMAT_BOUNDARY)?;
++                            let slice = &items[s..e];
++                            let mut pos = 0usize;
++                            while pos < slice.len() {
++                                let g = slice[pos].target_group;
++                                let start_pos = pos;
++                                while pos < slice.len() && slice[pos].target_group == g {
++                                    pos += 1;
++                                }
++                                if style.is_some() && new[g].char_shape_id != run.shape {
++                                    return Err(FORMAT_STYLED);
++                                }
++                                let sub_atoms: Vec<String> = slice[start_pos..pos]
++                                    .iter()
++                                    .map(|it| atoms[it.atom_idx.unwrap()].clone())
++                                    .collect();
++                                push_part(&mut chunks, g, Part::Text(sub_atoms, *style));
++                            }
++                        }
++                    }
++                }
++            }
++
++            for (g, parts) in chunks {
++                out_runs.push(SourceRun {
++                    group: g,
++                    shape: new[g].char_shape_id,
++                    parts,
++                });
++            }
++            min_group = last_g;
++        }
++
++        let mut covered = vec![false; new.len()];
++        for run in &out_runs {
++            if run.group >= new.len() {
++                return Err(FORMAT_BOUNDARY);
++            }
++            covered[run.group] = true;
++        }
++        if covered.iter().any(|&ok| !ok) {
++            return Err(FORMAT_BOUNDARY);
++        }
++        self.runs = out_runs;
++        Ok(())
++    }
++
+     /// The loader alone may clear an initial ClickHere guide while retaining
+     /// a serializer-owned GuideResidue. Boundary occurrences and shape IDs
+     /// must survive in order. Actual emission must still match every source
+diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
+index dacd9296..ac696f30 100644
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -2644,7 +2644,7 @@ impl Paragraph {
+         // follow new shape IDs only while every run occurrence is unchanged.
+         let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
+         let old = topology.as_ref().map(|_| self.char_shapes.clone());
+-        let result = self.map_char_shape_range_ids(start, end, map_id);
++        let result = self.map_char_shape_range_ids(start, end, topology.is_some(), map_id);
+         self.hwpx_text_topology =
+             topology.map(|t| t.format_edit(self, old.as_deref().unwrap_or_default()));
+         result
+@@ -2654,6 +2654,7 @@ impl Paragraph {
+         &mut self,
+         start: usize,
+         end: usize,
++        preserve_zero_width: bool,
+         mut map_id: impl FnMut(u32) -> Result<u32, E>,
+     ) -> Result<(), E> {
+         let Some((utf16_start, utf16_end, text_utf16_end)) =
+@@ -2697,8 +2698,9 @@ impl Paragraph {
+                     .unwrap_or(false);
+                 if !already_inserted {
+                     // 이전 ref가 같은 start_pos인데 다른 ID이면 교체
++                    // (단, HWPX 원문 위상이 있는 문단의 zero-width run 앞에서는 교체하지 않고 유지한다)
+                     if let Some(last) = new_refs.last_mut() {
+-                        if last.start_pos == insert_start {
++                        if last.start_pos == insert_start && !preserve_zero_width {
+                             last.char_shape_id = new_char_shape_id;
+                         } else {
+                             new_refs.push(CharShapeRef {
+@@ -2779,20 +2781,35 @@ impl Paragraph {
+         // Formatting undo/redo restores IDs through the same occurrence check.
+         let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
+         let old = topology.as_ref().map(|_| self.char_shapes.clone());
+-        self.restore_char_shape_run_ids(start, end, runs);
++        self.restore_char_shape_run_ids(start, end, runs, topology.is_some());
+         self.hwpx_text_topology =
+             topology.map(|t| t.format_edit(self, old.as_deref().unwrap_or_default()));
+     }
+ 
+-    fn restore_char_shape_run_ids(&mut self, start: usize, end: usize, runs: &[CharShapeRun]) {
++    fn restore_char_shape_run_ids(
++        &mut self,
++        start: usize,
++        end: usize,
++        runs: &[CharShapeRun],
++        preserve_zero_width: bool,
++    ) {
+         let Some((from, to, text_end)) = self.char_shape_range_bounds(start, end) else {
+             return;
+         };
+         let mut refs: Vec<CharShapeRef> = self
+             .char_shapes
+             .iter()
+-            .take_while(|r| r.start_pos < from)
+-            .cloned()
++            .enumerate()
++            .take_while(|(i, r)| {
++                r.start_pos < from
++                    || (preserve_zero_width
++                        && r.start_pos == from
++                        && self
++                            .char_shapes
++                            .get(i + 1)
++                            .is_some_and(|next| next.start_pos == from))
++            })
++            .map(|(_, r)| r.clone())
+             .collect();
+         if refs.is_empty() && from > 0 {
+             refs.push(CharShapeRef {
+diff --git a/src/serializer/hwpx/empty_text_tests.rs b/src/serializer/hwpx/empty_text_tests.rs
+index bcde9bfd..46238508 100644
+--- a/src/serializer/hwpx/empty_text_tests.rs
++++ b/src/serializer/hwpx/empty_text_tests.rs
+@@ -185,8 +185,14 @@ fn empty_text_unsupported_edits_fail_closed_with_specific_cause() {
+     let mut p = imported(&source);
+     p.apply_char_shape_range(0, 1, 1);
+     assert_eq!(
+-        render(&p).unwrap_err(),
+-        "character formatting changed run occurrence boundaries"
++        render(&p).unwrap(),
++        r#"<hp:run charPrIDRef="1"><hp:t>A</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t></hp:t><hp:t>B</hp:t></hp:run>"#
++    );
++    let mut styled = imported(&r(r#"<hp:t charStyleIDRef="12">A</hp:t><hp:t/><hp:t>B</hp:t>"#));
++    styled.apply_char_shape_range(0, 1, 1);
++    assert_eq!(
++        render(&styled).unwrap_err(),
++        "character formatting of hp:t charStyleIDRef text is unsupported"
+     );
+     let mut p = imported(&source);
+     p.controls.push(Control::PageNumberPos(Default::default()));
+@@ -731,14 +737,30 @@ fn empty_text_whole_run_formatting_keeps_occurrences_and_new_reference() {
+         vec![(0, bold), (2, 0)]
+     );
+     assert_eq!(reopened.export_hwpx_native().unwrap(), first);
+-    // Giving the second occurrence the same new shape makes the engine merge
+-    // the two source occurrences: refused, never silently re-anchored.
++    // Giving the second occurrence the same new shape merges the IR intervals
++    // while keeping both source run occurrences and the empty hp:t intact.
+     core.apply_char_format_native(0, 1, 2, 4, BOLD).unwrap();
+     let p = &core.document.sections[0].paragraphs[1];
+     assert_eq!(p.char_shapes.len(), 1, "engine merged equal neighbours");
+-    assert!(export_error(&core).ends_with(
+-        "HWPX empty-text provenance: character formatting changed run occurrence boundaries"
+-    ));
++    let merged_bytes = core.export_hwpx_native().unwrap();
++    let merged_xml = section_xml(&merged_bytes);
++    assert!(
++        merged_xml.contains(&format!(
++            r#"<hp:run charPrIDRef="{bold}"><hp:t>AB</hp:t><hp:t></hp:t></hp:run><hp:run charPrIDRef="{bold}"><hp:t>CD</hp:t></hp:run>"#
++        )),
++        "{merged_xml}"
++    );
++    let reopened2 = crate::document_core::DocumentCore::from_bytes(&merged_bytes).unwrap();
++    let q2 = &reopened2.document.sections[0].paragraphs[1];
++    assert_eq!(q2.text, "ABCD");
++    assert_eq!(
++        q2.char_shapes
++            .iter()
++            .map(|s| (s.start_pos, s.char_shape_id))
++            .collect::<Vec<_>>(),
++        vec![(0, bold), (2, bold)]
++    );
++    assert_eq!(reopened2.export_hwpx_native().unwrap(), merged_bytes);
+ }
+ 
+ #[test]
+@@ -769,32 +791,66 @@ fn empty_text_formatting_undo_restores_mapped_shape() {
+         section_xml(&original).matches("<hp:t></hp:t>").count(),
+         restored.matches("<hp:t></hp:t>").count()
+     );
+-    // Restoring an ID equal to the neighbour makes the engine merge the two
+-    // source occurrences: refused rather than re-anchored.
++    // Restoring an ID equal to the neighbour merges the IR intervals while
++    // keeping both source run occurrences and the empty hp:t.
+     core.set_char_shape_id_native(0, 1, 2, 4, 0).unwrap();
+-    assert!(export_error(&core).ends_with("character formatting changed run occurrence boundaries"));
++    let aligned_bytes = core.export_hwpx_native().unwrap();
++    let aligned_xml = section_xml(&aligned_bytes);
++    assert!(
++        aligned_xml.contains(&format!("{}{}", r("<hp:t>AB</hp:t><hp:t></hp:t>"), r("<hp:t>CD</hp:t>"))),
++        "{aligned_xml}"
++    );
+ }
+ 
+ #[test]
+-fn empty_text_unsupported_formatting_fails_closed() {
++fn empty_text_split_and_negative_formatting_contracts() {
+     let runs = format!(
+         "{}{}{}",
+         r("<hp:t>AB</hp:t>"),
+         r("<hp:t/>"),
+         r("<hp:t>CD</hp:t>")
+     );
+-    // Partial range splits an occurrence.
++    // Partial range splits the first run while preserving the standalone empty run.
+     let mut core = core_of(&para(7, &runs));
+     core.apply_char_format_native(0, 1, 0, 1, BOLD).unwrap();
+-    assert!(export_error(&core).ends_with("character formatting changed run occurrence boundaries"));
+-    // The engine folds the zero-width empty-text occurrence into the edited
+-    // one, and its equal-neighbour merge collapses same-position occurrences
+-    // even when another range is formatted.
+-    for (from, to) in [(2, 4), (0, 2)] {
++    let bold = core.document.sections[0].paragraphs[1].char_shapes[0].char_shape_id;
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        xml.contains(&format!(
++            r#"<hp:run charPrIDRef="{bold}"><hp:t>A</hp:t></hp:run>{}{}{}"#,
++            r("<hp:t>B</hp:t>"),
++            r("<hp:t></hp:t>"),
++            r("<hp:t>CD</hp:t>")
++        )),
++        "{xml}"
++    );
++    // Formatting either side preserves the standalone empty hp:t run with its original shape 0.
++    {
+         let mut core = core_of(&para(7, &runs));
+-        core.apply_char_format_native(0, 1, from, to, BOLD).unwrap();
++        core.apply_char_format_native(0, 1, 2, 4, BOLD).unwrap();
++        let bold = core.document.sections[0].paragraphs[1].char_shapes.last().unwrap().char_shape_id;
++        let xml = section_xml(&core.export_hwpx_native().unwrap());
+         assert!(
+-            export_error(&core).ends_with("character formatting changed run occurrence boundaries")
++            xml.contains(&format!(
++                r#"{}{}<hp:run charPrIDRef="{bold}"><hp:t>CD</hp:t></hp:run>"#,
++                r("<hp:t>AB</hp:t>"),
++                r("<hp:t></hp:t>")
++            )),
++            "{xml}"
++        );
++    }
++    {
++        let mut core = core_of(&para(7, &runs));
++        core.apply_char_format_native(0, 1, 0, 2, BOLD).unwrap();
++        let bold = core.document.sections[0].paragraphs[1].char_shapes[0].char_shape_id;
++        let xml = section_xml(&core.export_hwpx_native().unwrap());
++        assert!(
++            xml.contains(&format!(
++                r#"<hp:run charPrIDRef="{bold}"><hp:t>AB</hp:t></hp:run>{}{}"#,
++                r("<hp:t></hp:t>"),
++                r("<hp:t>CD</hp:t>")
++            )),
++            "{xml}"
+         );
+     }
+     // Direct char_shapes mutation is not an authorized formatting operation.
+@@ -814,6 +870,188 @@ fn empty_text_unsupported_formatting_fails_closed() {
+     assert!(e.contains("charPrIDRef"), "{e}");
+ }
+ 
++#[test]
++fn empty_text_stage2_split_run_regressions_and_negatives() {
++    use crate::model::hwpx_topology::{FORMAT_BOUNDARY, FORMAT_SCOPE, FORMAT_STYLED};
++    use crate::model::paragraph::CharShapeRun;
++
++    // 1. Section-0 template handoff + split font run (exact native P1/F failure layout).
++    let handoff = format!(
++        r#"<hp:run charPrIDRef="0"><hp:t></hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>한글 Font editing ABC 0123</hp:t></hp:run>"#
++    );
++    let source = EMPTY_SECTION_XML.replacen(TEMPLATE_TEXT_RUN, &handoff, 1);
++    let mut core = {
++        let sec = parse_hwpx_section(&source).unwrap();
++        let mut core = crate::document_core::DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        let bytes = core.export_hwpx_native().unwrap();
++        let mut zip_out = Vec::new();
++        {
++            let mut reader = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
++            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_out));
++            let opts = zip::write::SimpleFileOptions::default();
++            for i in 0..reader.len() {
++                let mut f = reader.by_index(i).unwrap();
++                let name = f.name().to_string();
++                writer.start_file(&name, opts).unwrap();
++                if name == "Contents/section0.xml" {
++                    use std::io::Write;
++                    writer.write_all(source.as_bytes()).unwrap();
++                } else {
++                    std::io::copy(&mut f, &mut writer).unwrap();
++                }
++            }
++            writer.finish().unwrap();
++        }
++        let _ = sec;
++        crate::document_core::DocumentCore::from_bytes(&zip_out).unwrap()
++    };
++    core.apply_char_format_native(0, 0, 5, 10, r#"{"superscript":true}"#)
++        .unwrap();
++    let bytes = core.export_hwpx_native().unwrap();
++    let reopened = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    let rp = &reopened.document.sections[0].paragraphs[0];
++    assert_eq!(rp.text, "한글 Font editing ABC 0123");
++    assert_ne!(rp.char_shape_id_at(5), rp.char_shape_id_at(4));
++    assert_eq!(rp.char_shape_id_at(4), rp.char_shape_id_at(10));
++
++    // 2. Selection crossing run boundaries + repeated formatting + set_char_shape_runs undo/redo.
++    let runs = format!(
++        "{}{}",
++        r("<hp:t>AB</hp:t><hp:t/>"),
++        r("<hp:t>CD</hp:t>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#)
++    );
++    let mut core = core_of(&para(7, &runs));
++    core.apply_char_format_native(0, 1, 1, 3, BOLD).unwrap();
++    core.apply_char_format_native(0, 1, 0, 2, r#"{"italic":true}"#)
++        .unwrap();
++    let exported = core.export_hwpx_native().unwrap();
++    let exported_xml = section_xml(&exported);
++    assert!(exported_xml.contains("<hp:t>B</hp:t><hp:t></hp:t></hp:run>"), "{exported_xml}");
++    assert_eq!(exported_xml.matches("<hp:t></hp:t>").count(), 2);
++    let reopened = crate::document_core::DocumentCore::from_bytes(&exported).unwrap();
++    let rp = &reopened.document.sections[0].paragraphs[1];
++    assert_eq!(rp.text, "ABCD");
++    let s0 = rp.char_shape_id_at(0).unwrap() as usize;
++    let s1 = rp.char_shape_id_at(1).unwrap() as usize;
++    let s2 = rp.char_shape_id_at(2).unwrap() as usize;
++    let s3 = rp.char_shape_id_at(3).unwrap() as usize;
++    assert_eq!(s3, 1);
++    let shapes = &reopened.document.doc_info.char_shapes;
++    assert!(!shapes[s0].bold && shapes[s0].italic);
++    assert!(shapes[s1].bold && shapes[s1].italic);
++    assert!(shapes[s2].bold && !shapes[s2].italic);
++    assert!(!shapes[s3].bold && !shapes[s3].italic);
++    // Atomic run restoration (Undo across empty hp:t boundary).
++    let mut core = core_of(&para(7, &format!(
++        "{}{}{}",
++        r("<hp:t>AB</hp:t>"),
++        r("<hp:t/>"),
++        r("<hp:t>CD</hp:t>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#)
++    )));
++    core.apply_char_format_native(0, 1, 2, 4, BOLD).unwrap();
++    core.set_char_shape_runs_native(
++        0,
++        1,
++        2,
++        4,
++        &serde_json::to_string(&[CharShapeRun {
++            start_offset: 2,
++            end_offset: 4,
++            char_shape_id: 1,
++        }])
++        .unwrap(),
++    )
++    .unwrap();
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        xml.contains(&format!(
++            "{}{}{}",
++            r("<hp:t>AB</hp:t>"),
++            r("<hp:t></hp:t>"),
++            r("<hp:t>CD</hp:t>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#)
++        )),
++        "{xml}"
++    );
++
++    // 3. Mixed text and controls (bookmark / field) with split formatting.
++    let field_begin = r#"<hp:ctrl><hp:fieldBegin id="42" type="HYPERLINK" name="" editable="1" dirty="0" fieldid="627272811"><hp:parameters cnt="0" name=""/></hp:fieldBegin></hp:ctrl>"#;
++    let field_end = r#"<hp:ctrl><hp:fieldEnd beginIDRef="42" fieldid="627272811"/></hp:ctrl>"#;
++    let mixed = r(&format!("<hp:t>AB</hp:t>{field_begin}<hp:t>CD</hp:t>{field_end}<hp:t/>"));
++    let mut core = core_of(&para(7, &mixed));
++    core.apply_char_format_native(0, 1, 0, 1, BOLD).unwrap();
++    core.apply_char_format_native(0, 1, 2, 4, r#"{"italic":true}"#)
++        .unwrap();
++    let mixed_bytes = core.export_hwpx_native().unwrap();
++    let reopened = crate::document_core::DocumentCore::from_bytes(&mixed_bytes).unwrap();
++    assert_eq!(reopened.document.sections[0].paragraphs[1].text, "ABCD");
++    assert_eq!(reopened.document.sections[0].paragraphs[1].field_ranges.len(), 1);
++
++    // 4. Nested table cell split-run formatting leaves outer and neighbor cells intact.
++    let inner_runs = format!(
++        "{}{}",
++        r("<hp:t>IN</hp:t><hp:t/>"),
++        r("<hp:t>ER</hp:t>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#)
++    );
++    let inner_tbl = format!(
++        r#"<hp:tbl id="20" rowCnt="1" colCnt="2"><hp:tr><hp:tc><hp:subList>{}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="500" height="500"/></hp:tc><hp:tc><hp:subList>{}</hp:subList><hp:cellAddr colAddr="1" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="500" height="500"/></hp:tc></hp:tr></hp:tbl>"#,
++        para(9, &inner_runs),
++        para(10, &r("<hp:t>NB</hp:t><hp:t/>"))
++    );
++    let outer_tbl = format!(
++        r#"<hp:tbl id="10" rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>{}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="1000"/></hp:tc></hp:tr></hp:tbl>"#,
++        para(8, &r(&format!("{inner_tbl}<hp:t/>")))
++    );
++    let mut core = core_of(&para(7, &r(&format!("{outer_tbl}<hp:t/>"))));
++    core.apply_char_format_in_cell_by_path(0, 1, &[(0, 0, 0), (0, 0, 0)], 1, 3, BOLD)
++        .unwrap();
++    let nested_bytes = core.export_hwpx_native().unwrap();
++    let mut reopened = crate::document_core::DocumentCore::from_bytes(&nested_bytes).unwrap();
++    let shapes = reopened.document.doc_info.char_shapes.clone();
++    {
++        let p_edited = reopened
++            .get_cell_paragraph_mut_by_path(0, 1, &[(0, 0, 0), (0, 0, 0)])
++            .unwrap();
++        assert_eq!(p_edited.text, "INER");
++        assert_eq!(p_edited.char_shape_id_at(0), Some(0));
++        assert_eq!(p_edited.char_shape_id_at(3), Some(1));
++        assert!(shapes[p_edited.char_shape_id_at(1).unwrap() as usize].bold);
++        assert!(shapes[p_edited.char_shape_id_at(2).unwrap() as usize].bold);
++        assert_ne!(p_edited.char_shape_id_at(1), p_edited.char_shape_id_at(2));
++    }
++    {
++        let p_neighbor = reopened
++            .get_cell_paragraph_mut_by_path(0, 1, &[(0, 0, 0), (0, 1, 0)])
++            .unwrap();
++        assert_eq!(p_neighbor.text, "NB");
++        assert_eq!(p_neighbor.char_shape_id_at(0), Some(0));
++        assert_eq!(p_neighbor.char_shape_id_at(1), Some(0));
++    }
++
++    // 5. Negative preservation cases: mid-control-slot split & FORMAT_SCOPE & FORMAT_STYLED.
++    let bookmark = r#"<hp:ctrl><hp:bookmark name="bm"/></hp:ctrl>"#;
++    let mut p = imported(&r(&format!("{bookmark}<hp:t>AB</hp:t><hp:t/>")));
++    let old = p.char_shapes.clone();
++    let t = crate::model::hwpx_topology::HwpxTextTopology::before_edit(&mut p).unwrap();
++    p.char_shapes.push(crate::model::paragraph::CharShapeRef {
++        start_pos: 4, // splits inside the 8-unit bookmark slot 0..8
++        char_shape_id: 1,
++    });
++    p.hwpx_text_topology = Some(t.format_edit(&p, &old));
++    assert_eq!(render(&p).unwrap_err(), FORMAT_BOUNDARY);
++
++    let mut p = imported(&r("<hp:t>AB</hp:t><hp:t/>"));
++    let old = p.char_shapes.clone();
++    let t = crate::model::hwpx_topology::HwpxTextTopology::before_edit(&mut p).unwrap();
++    p.text.push('C');
++    p.hwpx_text_topology = Some(t.format_edit(&p, &old));
++    assert_eq!(render(&p).unwrap_err(), FORMAT_SCOPE);
++
++    let mut p = imported(&r(r#"<hp:t charStyleIDRef="12">AB</hp:t><hp:t/>"#));
++    p.apply_char_shape_range(1, 2, 1);
++    assert_eq!(render(&p).unwrap_err(), FORMAT_STYLED);
++}
++
+ #[test]
+ fn empty_text_unrelated_paragraph_formatting_keeps_topology() {
+     let topo = r("<hp:t>A</hp:t><hp:t/>");
