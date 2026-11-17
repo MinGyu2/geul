@@ -700,6 +700,11 @@ describe.skipIf(phase !== "generate")("F HWPX font embedding through the RHWP se
       expect(new Set(faces.map(e => e.binDataId)).size).toBe(2);
       // A face the document does not use is refused.
       expect(await editor.executeEmbedFont("Source Serif 4", "Regular")).not.toBe("embedded");
+      // The session's strict publication export (Save path) accepts the embedded fonts.
+      const publish = (editor as unknown as { exportAndCompare(f: string, m: string): { bytes: Uint8Array | null; report: unknown; releaseShapes?: () => void } })
+        .exportAndCompare("hwpx", "publish");
+      publish.releaseShapes?.();
+      expect(publish.bytes, JSON.stringify(publish.report)).not.toBeNull();
       record("hwpx-stage1-embed-font", "hwpx", original, doc);
       const e = exported(doc, "hwpx"), re = new engine.HwpDocument(e.bytes) as Doc;
       try {

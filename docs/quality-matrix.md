@@ -144,3 +144,12 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 글꼴 embedding | IM | IM | IM | NOT RUN | 같음 4절 | 생성 경로·저장 규칙 없음 |
 
 이 절은 이전 행과 판정을 바꾸지 않는다(행 4 "글자·문단 서식"의 역사 판정은 그대로).
+
+### Stage 1 P1·F (2026-11-17)
+
+| 항목 | DOCX | HWPX | HWP | 판정 | 근거 |
+|---|---|---|---|---|---|
+| 다음 입력 서식(>64자·IME·붙여넣기·이동·Undo) | — | IV | IV | CURRENT PASS | [Stage 1 5.4](architecture/stage1-common-editing.md) |
+| 번호 스타일·정의 수명 | — | IV | IV | CURRENT PASS | 같음 |
+| 글자+목록 결합 저장 | — | IV | IV | CURRENT PASS | 같음 |
+| 글꼴 embedding | IV | IV | 형식 제한 | CURRENT PASS(native는 5.5) | 같음 |

@@ -256,3 +256,11 @@ NOT RUN/DEFERRED: 외부 오피스(Hancom/Word/LibreOffice 등 이 환경에 없
 7. Natural binding 지연 중 편집된 중첩 표·글상자 문단은 다음 편집 때 다시 줄바꿈된다(본문·top-level 셀만 commit 시 re-wrap). 외부 오피스 재열기는 NOT RUN. native 중첩 셀·글꼴 제거/refresh 시나리오는 단위 시험만 있고 native acceptance는 NOT RUN.
 8. 한 문서의 family key는 binding당 128개까지만 해석한다. 초과분(`omitted`)·엔진 512개 초과 절단(`engineTruncated`)·64 face 한도(`faceLimited`)에 걸린 key와 Bold face가 natural로 측정되지 않은 style(`styleGaps`)은 legacy 측정이며 결과의 `complete=false`로 드러난다.
 9. 열린 문서들이 lease한 face와 현재 세대 cache는 face 256개·512 MiB 안에서 유지된다. 이를 넘는 binding은 새 face를 만들지 않고 그 key를 legacy 측정으로 둔다.
+
+## 8. 문서 글꼴 포함(embedding) — Stage 1 F (2026-11-17)
+
+글꼴 설치·선택과 별개로, 글꼴 프로그램을 문서 패키지에 넣는 기능이다. 같은 FontDb 얼굴(시스템·번들·사용자)을 쓰며 두 번째 글꼴 저장소를 만들지 않는다.
+- `src-tauri/src/fonts/embedding.rs`: OS/2 fsType 판정(설치 가능·편집 가능만 허용; 제한·미리 보기/인쇄·비트맵 전용·잘못된 권한 거부, 하위 집합 금지는
+  전체 embed로 준수), 단일 face TrueType 윤곽만(CFF·모음·가변 거부), `name` 13/14 라이선스, ECMA-376 난독화. IPC `font_embed_info`(바이트 없음),
+  `font_embed_data`(허용된 얼굴의 바이트만, HWPX용; DOCX는 바이트가 WebView로 가지 않음). WOFF/WOFF2 사용자 글꼴은 등록 때 풀린 sfnt를 쓴다.
+- 형식별 표현·저장 증명·검증과 HWP 형식 제한은 [Stage 1 공통 편집 5.3절](stage1-common-editing.md)을 따른다.

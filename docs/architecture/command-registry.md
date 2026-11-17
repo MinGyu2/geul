@@ -989,3 +989,10 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 엔진별 선언: WordCraft 전부 supported. RHWP는 글자 값·정렬/문단 서식·여백/방향/용지·찾기/바꾸기 supported(`RHWP_STAGE1_*`), 목록 명령과 `layout.columns`는 unsupported.
 가용성은 세션 문맥(선택·IME·대기·원본 증명)으로 정하며 찾기는 읽기 전용 문서에서도, 바꾸기는 편집 가능하고 서식 보호가 아닐 때만 가능하다.
 상세 범위·저장 증명·검증·남은 일: [Stage 1 공통 문서 편집](stage1-common-editing.md).
+
+### Stage 1 F·P1 갱신 (2026-11-17)
+
+- `format.embedFont`(문서 명령, 동작형 `ActionCommandId`): 홈/글꼴 리본, 인자 없이 대화상자(`EmbedFontDialog`)를 열고 대화상자가 세션의
+  `executeEmbedFont(family, style)`을 부른다. 지원: wordcraft SUPPORTED, rhwp SUPPORTED(실행 가용성은 HWPX만; HWP는 `engineUnsupported` — 형식 제한).
+- RHWP 목록 명령은 세션 캐시 없이 엔진 정의로 스타일을 판정하고(P1-B), 커서 서식 상태는 삽입점 하나로 추적한다(P1-A). 상세는
+  [Stage 1 공통 편집 5절](stage1-common-editing.md).

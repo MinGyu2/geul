@@ -76,3 +76,104 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 - RHWP 커서만 있는 글자 서식(다음 입력 서식): 기존 제한 유지. 엔진에 커서 서식 상태가 없어 지금 증명할 방법이 없다.
 - 글꼴 embedding(세 형식 모두 미구현): WordCraft는 기존 내장 글꼴을 왕복 보존만 하고 새로 만들지 않는다. DOCX는 OS/2 `fsType` 허가 검사, `.odttf` 난독화·`w:fontKey`, `fontTable.xml`·관계·내용 형식·`w:embedTrueTypeFonts` 변경과 그 T009 규칙이 모두 새로 필요하다. RHWP는 `BinDataType::Embedding` 모델만 있고 생성 API가 없으며 HWP/HWPX 내장 글꼴의 호환 근거가 없다. 로컬 설치·선택·대체와 문서 embedding은 다른 기능이며, 이 빌드는 어떤 문서에도 글꼴을 embed한다고 주장하지 않는다.
 - native GUI 수용, 외부 Office/한컴 호환: 미실행.
+
+---
+
+## 5. 2·3차 갱신 — P1 안정화와 글꼴 embedding (2026-11-17)
+
+기준: 2차 `a63addc`·`5bd84cf`(2026-11-16, 이 문서에 기록되지 않았던 RHWP 목록·셀 문단·다단·커서 서식), 3차 시작 HEAD `5bd84cf`, 3차 커밋
+`dc6bd68`·`9ed2e79`·`8cd1c06`(P1)·`79e208c`·`4f451ad`·`93de8af`(F). 엔진 pin 불변(RHWP `1a76570e`, WordCraft `6931bcc`). 관리 패치
+`patches/rhwp/stage1-p1-fonts.patch` 추가(22개), Release generation `a3e4cf731dd9abb9ecc777392bb0fd8876f73a6f33916ef79ecdc993b841ac87`
+(외부 소스 불변 `externalUnchanged: true`). 보존 한도 때문에 선택되지 않은 세대 `2745ff…`·`3622d8…`는 지우지 않고 `target/rhwp-retired-generations/`로 옮겼다.
+위 1–4절은 1차 당시 기록이며 아래 표가 현재 상태다.
+
+### 5.1 현재 형식별 지원
+
+| 기능군 | DOCX | HWPX | HWP |
+|---|---|---|---|
+| 번호·다단계·사용자 글머리·수준·새로 시작/이어 매기기·Enter | 지원 | 지원(본문·표 셀; 새로 시작은 geul 템플릿과 정확히 같은 정의만) | HWPX와 같음 + HWP 원본 증명 |
+| 셀 문단 서식(중첩 셀 경로 포함) | 지원 | 지원 | 지원 |
+| 다단 | 지원 | 지원(이미 ColumnDef가 있는 구역) | 지원(같음) |
+| 커서만 있는 글자 서식(다음 입력) | 지원(엔진) | 지원(세션 상태, 아래 P1-A) | 지원 |
+| 글자+목록 변경을 한 번에 저장 | 지원 | **지원(P1-C)** | **지원(P1-C 부수 수정)** |
+| 글꼴 embedding | **지원(P1/F)** | **지원** | **형식 제한(미지원)** |
+
+### 5.2 P1 수정
+
+- **P1-A 다음 입력 서식.** 원인: `pendingChars`가 입력한 자리 키를 64개까지 `Set`에 쌓았다. 실측 재현(변경 전 코드, 같은 시험): 80자 연속 입력은
+  엔진의 앞 글자 모양 상속 때문에 겉보기에는 이어졌지만, 커서를 앞 자리로 옮겼다 돌아오면 남아 있던 옛 키에서 서식이 다시 적용됐다
+  (`expected 3000 to be 1000`). 수정: 상태를 삽입점 하나(`at`)와 열린 IME의 시작점(`origin`)만으로 바꿨다. 입력·붙여넣기·IME 갱신/확정은 `at`을
+  삽입 끝으로 옮기고, 문단 나누기(Enter·여러 줄 붙여넣기)는 새 문단 시작으로 옮긴다. 커서 이동·선택·관계없는 변경·실패한 변경·Undo/Redo·
+  다시 열기·문서 전환은 상태를 지운다. 문서에 임시 글자를 만들지 않는다.
+- **P1-B 번호.** 원인: 세션의 `numberingStyles` 캐시(문서 모델과 동기화 안 됨)와 multilevel 여부만 비교한 재사용. 엔진 `getNumberingList`가 수준별
+  번호 형식 코드를 내지 않아 십진·영문·로마 숫자를 구별할 수 없었다. 수정: 패치가 `numberFormats`를 보고하고, 세션은 캐시 없이 지금 모델의
+  정의를 (수준 형식 문자열, 형식 코드, 시작 번호)가 템플릿과 정확히 같을 때만 그 스타일로 본다(epoch·generation·modelVersion마다 다시 읽음).
+  재사용·이어 매기기는 정확히 같은 스타일끼리만, 이어 매기기는 다른 스타일 목록을 건너뛰고 스타일을 모르면 거부한다. Undo로 사라진 정의 ID를
+  다시 쓰지 않는다. 새로 시작은 다시 연 문서에서도 템플릿과 같은 정의면 가능하다(그 밖의 기존 정의는 기존 제한 유지·거부).
+- **P1-C HWPX 결합 저장.** 원인: header 비교가 글자/글꼴 덧붙임 규칙(`header_equal_or_appended`)과 문단·목록 덧붙임 규칙(`hwpx_bullets_appended`)
+  중 하나만 받았다(각각 나머지 전부 같아야 함). 수정 `hwpx_combined_appended`: 출력 header에 원본의 `hh:fontfaces`·`hh:charProperties`만 끼운 중간
+  header로 두 기존 증명을 각각 적용한다(원본→중간: 문단·목록 덧붙임만, 중간→출력: 글자·글꼴 덧붙임만). header 비교를 끄거나 header 전체를
+  면제하지 않는다. 같은 원인이 HWP에도 있었다(글자 모양 증명이 덧붙인 NUMBERING 레코드를 빼지 않음) — 함께 고쳤다.
+- **P1-D 중첩 셀·HWP 번호 증명.** 중첩 셀 문단의 정확한 경로·정렬·여백·들여쓰기·줄/문단 간격·목록 상태를 경로 API로 읽어 편집 모델 = 재열기 내보내기 =
+  **서비스 게시 바이트 재열기**를 비교하고, 바깥 셀·이웃 셀이 그대로임을 확인한다. HWP 번호 덧붙임 계약을 "의미 구조 증명"(허용 형식 코드·자리표시
+  문자열·시작 1·수준 시작 1, 바이트 템플릿 일치 아님)으로 명시했고, 덧붙인 번호 문단 모양은 1..=정의 수를 가리켜야 한다. 이 규칙의 음성 시험
+  (번호 ID 0)은 변경 전에도 `ReferenceInvalid`로 거부됐다 — 실제 구멍은 없었고 규칙을 명시적으로 만든 것이다.
+
+### 5.3 글꼴 embedding (F)
+
+| | DOCX | HWPX | HWP |
+|---|---|---|---|
+| 형식 근거 | ECMA-376 Part 1 17.8.3 `w:embedRegular|Bold|Italic|BoldItalic`(`r:id`·`w:fontKey`), 17.8.1 난독화(.odttf) | OWPML(KS X 6101) `hh:font@isEmbedded`·`@binaryItemIDRef` → `content.hpf` BinData 항목 | 「한글문서파일형식 5.0 rev1.3」 표 17–20: FACE_NAME에 바이너리 참조·embed 속성이 없고 BIN_DATA EMBEDDING은 그림/OLE용. **형식에 표현이 없음** |
+| 엔진 | WordCraft는 보존만 → geul 어댑터가 모델(`passthrough` 글꼴 표 트리, 정규 manifest)에 추가, 쓰기/재열기 동등성 확인 후 교체 | RHWP는 파싱·렌더·직렬화 지원, 생성 API 없음 → 패치 `embedFont`/`getEmbeddedFonts` | 엔진 API가 HWP 원본을 거부 |
+| 자원 | `word/fonts/fontN.odttf`(obfuscatedFont), 글꼴 표 관계(font), 필요하면 새 `fontTable.xml` + 문서 관계 | `BinData/imageN.ttf`(manifest `isEmbeded="1"`), 그 이름의 7개 언어 `hh:font` 모두 참조 | — |
+| 중복·보존 | 내용 키(GUID)로 같은 글꼴 재embed는 무변경, 같은 슬롯의 다른 글꼴은 거부(기존 보존) | 이미 embed된 face·같은 바이트는 재사용 | — |
+| T009 | `docx_fonts`: 글꼴 표=원본+덧붙인 embed만, 관계·내용 형식·문서 관계 정확히, 프로그램을 복원해 권한·윤곽·가족 이름 확인 | `hwpx_fonts`: manifest=원본+글꼴 항목만, 참조 없는 바이너리 거부, 프로그램 권한·가족, 참조를 비-embed로 되돌린 header가 기존 header 규칙 통과 | — |
+
+- **권한(OS/2 fsType)**: 설치 가능(0)·편집 가능(0x8)만 embed. 제한(0x2), 미리 보기·인쇄(0x4: 편집기 문서에 넣으면 읽기 전용을 강제할 수 없음),
+  비트맵 전용(0x200), 사용 비트 둘 이상·예약 비트(잘못된 권한)는 거부. 하위 집합 금지(0x100)는 전체 글꼴을 넣으므로 지킨다. fsType은 기계가 읽는
+  권한일 뿐 실제 라이선스를 대신하지 않으므로 대화상자가 `name` 13(라이선스 설명)을 보여 주고 사용자가 고른다. 권한 메타데이터는 바꾸지 않는다.
+  같은 검사를 백엔드(바이트 제공 전)·RHWP 엔진(저장 전)·T009(게시 전)에서 각각 한다.
+- **원본 형식**: 출력은 단일 face TrueType 윤곽 sfnt. TTF는 그대로, WOFF/WOFF2 사용자 글꼴은 등록 때 WordCraft 디코더가 풀어 저장한 sfnt를 쓴다
+  (사용자 파일 불변). CFF/CFF2(OTTO), 모음(TTC/OTC), 가변 글꼴은 이유와 함께 거부. 새 의존성 없음(난독화 키는 `sha2`).
+- **제품**: 리본 홈/글꼴 "글꼴 포함" → 대화상자(카탈로그의 가족·스타일, 권한·라이선스·형식별 판정) → `executeEmbedFont`. 성공 알림은 모델 변경이 확인된
+  뒤에만(DOCX: 편집 응답의 엔진 보기, HWPX: 엔진 결과 + 다시 읽기). 모든 글꼴을 자동 embed하지 않는다. 일반 빌드 활성(시험 플래그 없음).
+- **남은 제한**: HWP 형식 제한. DOCX는 4개 스타일 슬롯만, `w:embedTrueTypeFonts` 설정은 바꾸지 않음(읽기에는 불필요), 하위 집합 없음. HWPX는 문서가
+  쓰는 face만, BinData ID가 연속인 문서만(아니면 거부). embed 해제·교체 없음(게시된 embed를 Undo로 지운 뒤의 저장은 T009가 거부). 같은 저장에서
+  그림 삽입과 결합하면 거부(조합 미증명). Word/한컴 실제 재열기 NOT RUN.
+
+### 5.4 검증 (3차)
+
+| 분류 | 명령(저장소 루트) | 결과 |
+|---|---|---|
+| CURRENT PASS | `GEUL_FORMAT_OUT=$PWD/src-tauri/target/stage1-p1f2 npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage1-format.wasm.test.ts` | 27/27(26 case; P1-A×2, P1-B×4, P1-C×2, 중첩 셀×2, F HWPX×2 포함), generation `a3e4cf73` |
+| CURRENT PASS | `GEUL_FORMAT_DIR=$PWD/src-tauri/target/stage1-p1f2 GEUL_FORMAT_EXPECTED_CASES=26 GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib -- stage1_ combined_hwpx_proof general_formatting_real_publication --include-ignored` | 16/16: 26 case 실제 게시(durable), HWPX/HWP 결합·HWPX embed 게시, 결합 음성 10, HWP 목록/번호 음성(새 4건 포함), DOCX embed 2 |
+| CURRENT PASS | `GEUL_FORMAT_PHASE=verify GEUL_FORMAT_EXPECTED_CASES=26 …stage1-format.wasm.test.ts` | 게시 바이트 재열기 = 편집 모델(중첩 셀 정확 비교·embed 글꼴 포함) |
+| CURRENT PASS | `… cargo-geul.py test --lib -- stage1_hwpx_font_embedding --include-ignored`, `-- stage1_docx_font fonts::embedding` | HWPX 음성 9, DOCX 양성(Undo/Redo·게시·독립 재열기·두 번째 저장의 기존 embed 바이트 동일)·음성 11, 권한/난독화 단위 4 |
+| CURRENT PASS | 전체 `npx vitest run` | 1561 PASS / 3 FAIL(기준과 같은 `hangulTools` 1, `hwpReopenModel` 2), `stage1.test.tsx` 포함, `EmbedFontDialog.test.tsx` 4 |
+| CURRENT PASS | `npx tsc --noEmit`, 변경 파일 eslint, `cargo-geul.py clippy --lib --bins -- -D warnings` | 새 경고 없음. clippy는 기준에도 있는 3건(`hwp.rs` 2, `special.rs` 1)만 |
+| 재현(변경 전 FAIL) | P1-A 시험을 변경 전 세션으로 | 옛 키 재적용 FAIL; 결합 header는 단일 규칙 둘 다 거부(시험 안에 단언) |
+| FAIL(기준부터) | `calc_cell_stale_previews…`, `calc_cell_two_durable_saves…` | `5bd84cf`에서도 같은 `OutputMalformed BodyText/Section0` — 이번 변경과 무관, 원인 미조사 |
+| 수정(시험 기대값) | `special_header_full_findings_match_frozen_oracle`, `special_header_hash_collision…` | `5bd84cf`부터 FAIL. 2차가 허용한 덧붙인 `height`를 음성 근거로 쓰던 낡은 기대값 — 2차가 다른 3건에 했던 것처럼 여전히 금지인 `useKerning`으로 바꿔 거부 의도 유지 |
+| REUSED PASS | 1차 DOCX Stage 1 8건, 2차 HWP/HWPX 음성 증명 | 같은 코드 경로가 이번 실행에 포함되었거나 변경 없음 |
+
+증거(무시 경로): `src-tauri/target/stage1-p1f/`(v1 generation, 25 case), `src-tauri/target/stage1-p1f2/`(최종, 26 case).
+
+### 5.5 Native GUI 수용 (3차, 2026-11-17)
+
+`python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --out "$PWD/target/stage1-p1f-native/run4-session" -- python3 scripts/tests/native-stage1-p1f.py --app "$PWD/src-tauri/target/release/geul" --driver "$PWD/src-tauri/target/debug/tauri-driver" --xdotool @XDOTOOL@ --ibus @IBUS@ --fixtures "$PWD/target/stage1-p1f-native/fixtures" --docx "$PWD/src-tauri/target/font-native/fixtures/basic-ko.docx" --out "$PWD/target/stage1-p1f-native/run4"` — **PASS**
+(일반 제품 빌드 `tauri-geul.py build --no-bundle`, 앱 SHA-256 `68512e9d8f0a17b7…`, Release generation `a3e4cf73`, HEAD `93de8af`; Xvfb·IBus·ibus-hangul·xdotool·tauri-driver).
+- HWPX: 커서 위 첨자(리본) → xdotool 70자 → ibus-hangul `한글` → Enter → 번호(리본) → Ctrl+Z/Ctrl+Y → `item` → "글꼴 포함" 대화상자(NanumGothic, fsType 0x0008 편집 가능 표시) → Ctrl+S
+  → 독립 oracle(새 엔진 재열기): 첫 문단의 새 72자 모두 위 첨자·기존 글자 불변, 둘째 문단 번호 목록, NanumGothic 7개 언어 embed(4,691,820 B); 닫고 다시 열어도 같음.
+- HWP: "글꼴 포함" 비활성("이 문서 형식에서 지원하지 않음"), 원본 바이트 불변. DOCX: Inter 포함 → 저장 → 독립 ZIP 검사: `word/fontTable.xml` `embedRegular`, `word/fonts/font1.odttf`
+  (obfuscatedFont), 키로 복원한 프로그램 = `Inter-Regular.ttf` 바이트 동일.
+- 실행 이력: run1–run3 FAIL. run1/run2는 저장이 `SaveFailure`(export)였다 — 원인은 **기존 엔진 제한**: 한 문단 안에서 이전 글꼴 변경으로 run이 나뉜 HWPX
+  (`hwpx-empty-text-boundaries.patch`의 빈 글자 provenance)에서는 그 문단에 글자 서식을 더하면(선택 서식도 같음, 다음 입력 서식·embedding과 무관) 내보내기가
+  `character formatting changed run occurrence boundaries`로 거부된다. Release-WASM에서 재현·분리했고(같은 문서·선택 서식만으로 실패, run 없는 문서는 같은 순서 PASS),
+  fixture를 그 조건이 없는 문단 배치로 바꿨다(`scripts/tests/stage1-p1f-native-fixture.mjs`). run3은 ibus-hangul 초기 Latin 모드(하네스 설정)로 FAIL.
+- 실행하지 않은 native 범위: 붙여넣기·HWP 목록 저장·Word/한컴 재열기(NOT RUN; 붙여넣기는 Release-WASM으로 검증).
+
+### 5.6 남은 일
+
+- HWP 글꼴 embedding: 형식 제한(5.3). 기존 run 분할 HWPX 문단의 글자 서식 저장 거부(위): 엔진 provenance 규칙 개선이 필요(이번 범위 밖, 기존 제한).
+- `calc_cell_*` 2건 기준부터 FAIL(원인 미조사). RHWP 모두 바꾸기 500개 상한, 기존(템플릿이 아닌) 번호 정의의 새로 시작, ColumnDef 없는 구역의 다단 생성은 그대로다.
+- Word·한컴 오피스 실제 재열기(DOCX embed 글꼴, HWPX embed 글꼴) NOT RUN.

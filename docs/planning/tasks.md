@@ -332,3 +332,5 @@ P1 삭제 거절을 트랜잭션 전 admission으로 옮기고 P2-A 서식/복�
 ## Stage 1 공통 문서 편집 — 2026-11-16 (PARTIALLY COMPLETED)
 
 DOCX는 정렬·글자 값·문단 서식·목록·찾기/바꾸기·쪽 설정(다단 포함)을, HWP/HWPX는 정렬·글자 값·문단 서식(본문)·찾기/바꾸기·여백/방향/용지를 제품 빌드에서 활성화하고 실제 저장/재열기로 검증했다. RHWP 목록·다단·셀 문단 서식과 세 형식의 글꼴 embedding은 미구현이며 native GUI·외부 호환은 NOT RUN이다. 상세: [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md). 기존 task 항목의 체크·ID·상태는 바꾸지 않았다.
+
+> Stage 1 P1·F (2026-11-17): P1 안정화와 DOCX/HWPX 글꼴 embedding 구현·focused 검증 — [stage1-common-editing.md 5절](../architecture/stage1-common-editing.md). HWP 글꼴 embedding은 형식 제한, Word/한컴 외부 재열기 NOT RUN.

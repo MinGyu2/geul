@@ -340,3 +340,7 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 ## Stage 1 공통 문서 편집 — 2026-11-16
 
 정렬·글자 크기/색/형광펜/첨자·문단 간격과 여백·찾기/바꾸기·쪽 설정은 각 형식의 원래 서식 의미(WordprocessingML 속성, HWP/HWPX 글자·문단 모양과 용지 정의)로 저장하며 화면 전용 상태를 두지 않는다. 섞인 선택은 균일 상태를 지어내지 않고, 낡은 찾기 결과는 문서를 바꾸지 않는다. 형식별 지원 경계와 미구현(RHWP 목록·다단, 글꼴 embedding)은 [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md)을 따른다.
+
+### Stage 1 P1·F 갱신 — 2026-11-17
+
+글꼴 embedding은 각 형식의 정의된 표현(OOXML 난독화 embed 글꼴, OWPML `hh:font` embed 참조)으로만 저장하며 라이선스 권한(OS/2 fsType)이 편집 가능 embed를 허용하는 TrueType 글꼴만 넣는다. HWP 5.0은 표현이 없어 지원하지 않는다. [Stage 1 공통 문서 편집 5절](../architecture/stage1-common-editing.md).

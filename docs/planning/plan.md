@@ -228,3 +228,7 @@ HWP/HWPX 네 가지 선택 서식의 production code path, 저장 보존, histor
 ## Stage 1 공통 문서 편집 — 2026-11-16
 
 공통 명령 의미(`src/commands/stage1.ts`)와 엔진별 실행(WordCraft 고정 명령, RHWP 기존 서식·문단·쪽·글자 편집 경로)을 나누고, 새 저장 결과는 T009 증명을 좁게 넓혀 받는다(DOCX 번호 정의, HWP/HWPX 글자·문단 모양 값). 형식별 지원·남은 일(RHWP 목록·다단, 글꼴 embedding)은 [Stage 1 공통 문서 편집](../architecture/stage1-common-editing.md)을 따른다. 제품 계획 전체 완료를 뜻하지 않는다.
+
+### Stage 1 P1·F 갱신 — 2026-11-17
+
+RHWP 다음 입력 서식·번호 정의 수명·HWPX 결합 저장·중첩 셀/HWP 번호 증명(P1)과 DOCX/HWPX 글꼴 embedding(F, HWP는 형식 제한)을 구현했다. 상세·검증·남은 일은 [Stage 1 공통 문서 편집 5절](../architecture/stage1-common-editing.md).
