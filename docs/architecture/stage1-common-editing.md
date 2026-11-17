@@ -251,3 +251,21 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 | Linux native GUI 수용 | `scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin ... scripts/tests/native-docx-table-stage2-p1.py` → `target/stage2-p1-native/run/result.json` | PASS (`status: "PASS"`, 10개 버튼 표 밖 disabled·표 안 enabled, 행/열 삽입·삭제·Undo/Redo·`mergeRight`/`mergeBelow`/`mergeCells`/`splitCell`, `ibus-hangul` 한글 입력, `Ctrl+S` 저장 `state: "saved"`, 닫기/앱 재열기 `rows: 3, cols: 2`, Python XML 독립 검사 PASS) |
 
 미검증/제외 범위: Microsoft Word 등 외부 오피스 프로그램 재열기(NOT RUN), Windows/macOS·Wayland(DEFERRED), `sudo-bwrap` 및 전체 `test_wordcraft_reproduction.py` 네트워크 clone(`REMOTE` fetch 환경 분리), RHWP 표 명령/실행 범위 변경 없음.
+
+### 7.3 최종 안정화 — 1×1 셀 분할 UI, `vMerge` 내용 보존, 표 이미지 삭제 T009 저장, 소스 빌드 재현성 (2026-11-17)
+
+- **WordCraft 엔진(`dd14a0ae29d90a05a54918db641d97f952260882`, 패치 체인 `system-font-source` → `docx-table-structure` → `docx-table-stabilization`)**:
+  - Group A(`1×1` 비병합 셀 분할): `Table::unmerged_split_limits`·`Table::split_cell_grid(r, c, rows, columns)`와 `split_merged_cmd` 확장을 추가해, 병합 셀 무인자 복원(`{}`)은 그대로 두고 비병합 `1×1` 셀은 `rows × columns >= 2`, `1..=16`, 최소 열 너비 `6.0pt`(120 twips) 및 `MAX_ROWS`/`MAX_COLS`/SDT 컨트롤 제약을 만족할 때 twip-정밀 열 분할 + 인접 행 `span`·인접 열 `vMerge` 승격으로 일관 격자 분할한다.
+  - Group B(비어 있지 않은 `vMerge::Continue` 보존): `para_is_truly_empty`, `cell_has_data`, `obj_relocatable`, `combine_cell_blocks`, `can_delete_row_safe`, `can_merge_rect`를 추가하고 unsafe `delete_row` fallback을 제거했다. `Restart` 또는 `Continue` 행 삭제·병합 시 비어 있지 않은 `Continue` 셀 내용을 문서 순서대로 보존하고(`Restart` 뒤, 또는 선행 비빈 `Continue` 뒤), 마커·`Opaque`·구역 분할·수정 기록·콘트롤·손상 `vMerge` 연쇄처럼 안전 재배치가 불가능한 경우는 무변이 fail-closed 거부한다.
+- **T009 저장·어댑터·UI·문서 재현성**:
+  - Group A UI: `src/adapters/docx.ts`, `src-tauri/src/adapters/wordcraft/{table.rs, engine.rs}`, `src/commands/{target.ts, parameters.ts, capability.ts, commands.ts}`, `src/components/Editor/CommandInputDialog.tsx`, `DocxEditorSession.ts`, `src/language/{ko,en}.json`을 연결해 비병합 `1×1` 셀에서 `table.splitCell`이 `selectionKey` 소유 다이얼로그(기본 `1×2` 또는 좁은 열 `2×1`)를 열고, 병합 셀은 다이얼로그 없이 즉시 복원한다.
+  - Group C(`src-tauri/src/services/save/package.rs`): `authorized_table_media_changes`로 `<w:tbl>` 안 `<a:blip r:embed="..."/>` 제거에 기인한 `word/media/*` 삭제·관계 정리만 좁게 허용하고, 본문/헤더/고아 미디어·비미디어·비이미지 관계 변조는 모두 거부한다.
+  - Group D(`README.md`, `external/README.md`, `scripts/prepare-wordcraft.py`, `scripts/tests/test_wordcraft_reproduction.py`): 3단계 패치 체인과 공개 HTTPS 베이스 재구성 절차를 문서화·검증했다.
+
+| 구분 | 실행 명령(요약) | 결과 |
+|---|---|---|
+| WordCraft 표 단위 | `cargo test --manifest-path external/wordcraft/Cargo.toml --offline --locked -p wordcraft-doc -- table` / `-p wordcraft-engine -- table` | `wordcraft-doc` 11 PASS / `wordcraft-engine` 51 PASS + `toc_roundtrip` 1 PASS (`dd14a0ae…`) |
+| geul Rust 어댑터·T009 저장 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib -- adapters::wordcraft::tests::stage2_p1_ adapters::wordcraft::tests::core_table adapters::wordcraft::tests::protected_ services::save::tests::docx` | 40 passed, 0 failed, 1 pre-existing ignored(신규 `stage2_p1_unmerged_cell_split_*`, `stage2_p1_vmerge_nonempty_*`, `stage2_p1_table_image_deletion_*`, `docx_table_media_deletion_proof_*` 포함) |
+| clippy·프런트엔드·재현성 | `cargo-geul.py clippy --lib`, `npx tsc --noEmit`, `npx eslint ...`, `npx vitest run ...` (4파일), `python3 scripts/tests/test_wordcraft_reproduction.py` | 수정 파일 clippy 경고 0(기존 `save/{hwp.rs,special.rs}` 3건 외), `tsc`/ESLint PASS, Vitest 4파일 65 passed, clean public clone 재구성 + `wordcraft-fonts` check PASS |
+| 일반 제품 Release 빌드 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `525b2efb…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`) |
+| Linux native GUI 수용 | `scripts/tests/native-ibus-session.py ... scripts/tests/native-docx-table-stage2-p1.py` → `target/stage2-p1-final-native/run/result.json` | PASS (`status: "PASS"`, `1×1` 셀 분할 UI `1×3`/`2×1`·오류 경고·Undo, 10명령·IME, 비빈 `vMerge` 행 삭제+Ctrl+S+재열기, 표 이미지 행 삭제+본문 이미지 보존+Ctrl+S+재열기) |

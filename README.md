@@ -34,8 +34,10 @@ HWP/HWPX와 DOCX를 함께 다루는 오픈소스 데스크톱 워드프로세�
 ```sh
 git clone https://github.com/MinGyu2/geul.git
 cd geul
-# 두 엔진을 고정된 커밋으로 받아 옵니다. rhwp 체크아웃은 수 GB이므로 얕은 복제를 권장합니다.
-git submodule update --init --depth 1
+# WordCraft는 공개 부모(dc25d8a) + 버전 관리 패치(patches/wordcraft/)로 고정 pin을 재구성합니다.
+python3 scripts/prepare-wordcraft.py
+# rhwp 체크아웃은 수 GB이므로 얕은 복제를 권장합니다(WordCraft 전용 Rust 작업에는 선택 사항).
+git submodule update --init --depth 1 external/rhwp
 git submodule status
 ```
 
@@ -45,8 +47,8 @@ git submodule status
 
 필요한 도구: Node.js 22 이상(npm), Rust 1.99.0, Linux의 bubblewrap 및 Tauri 2 플랫폼 의존성
 ([Tauri 사전 준비](https://v2.tauri.app/start/prerequisites/), Linux는 WebKitGTK 4.1 등).
-Rust 백엔드는 WordCraft(DOCX, T008)를 path 의존성으로 링크하므로 빌드에 `external/wordcraft` submodule이 필요합니다
-(`git submodule update --init --depth 1 external/wordcraft`). rhwp(HWP/HWPX)는 WebView에서 WASM으로 불러오며
+Rust 백엔드는 WordCraft(DOCX, T008)를 path 의존성으로 링크하므로 빌드에 `external/wordcraft`가 필요합니다
+(`python3 scripts/prepare-wordcraft.py`로 공개 부모 + `patches/wordcraft/` 패치 체인을 적용해 고정 pin을 재구성). rhwp(HWP/HWPX)는 WebView에서 WASM으로 불러오며
 (`scripts/build-rhwp-wasm.sh`, T007) 그 산출물이 없으면 HWP/HWPX 편집만 실패로 표시됩니다.
 시스템 글꼴은 fontconfig 설정으로 찾습니다(실행 시 `libfontconfig`를 적재, 없으면 기본 제공·사용자 글꼴만 사용). 사용자 글꼴(TTF·OTF·WOFF·WOFF2)은
 리본의 글꼴 선택기에서 추가하며 앱 전용 데이터 폴더에 저장됩니다. HWP/HWPX의 글꼴 변경은 아직 지원하지 않습니다

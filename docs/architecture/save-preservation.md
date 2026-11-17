@@ -1733,3 +1733,12 @@ T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저�
 ## RHWP 일반 글자 서식 저장 보존 — 2026-11-12
 
 지원 HWP/HWPX character-shape 변경의 original preflight, DocInfo append, 구조·내용 손실, 출력 재열기, preview 재생성, safe publication 및 fail-closed 조건은 [RHWP 일반 글자 서식](rhwp-general-formatting.md)에 기록했다. T009 검사를 낮추지 않았다. focused HWP/HWPX 저장 검증은 통과했으며 전체 Stage 5/6 또는 T014 native acceptance를 뜻하지 않는다.
+
+## Stage 2 / Phase 1 최종 안정화 — DOCX 표 이미지 삭제 T009 증명 (2026-11-17)
+
+`src-tauri/src/services/save/package.rs`의 `compare_saved_docx`에 좁은 허용 증명 `authorized_table_media_changes(original, output)`을 추가했다(추가 부분 없음·고아 미디어 생성 없음·관계 외 구조 불변일 때만 평가):
+
+- 제거된 부분은 `<= 256`개의 유효 확장자 `word/media/<file>`만 허용한다.
+- 원본의 `word/_rels/document.xml.rels` 외 모든 `.rels`(머리글·바닥글·메모·각주·미주 등)와 출력의 모든 살아 있는 `.rels`는 제거된 미디어를 참조하지 않아야 한다.
+- `[Content_Types].xml`은 제거된 미디어의 미사용 `Default`/`Override` 제거만 허용하고, `word/_rels/document.xml.rels`는 제거된 미디어를 가리키는 `IMAGE_REL` 제거(및 공유 미디어 생존 시 동일 ID-제외 멀티셋의 재번호)만 허용한다.
+- `word/document.xml`의 모든 비-`<w:tbl>` 바인딩·비-`<a:blip r:embed="..."/>` 바인딩은 순서와 대상이 완전히 동일해야 하며, 생략된 바인딩은 `<w:tbl>` 내부의 `<a:blip r:embed="..."/>`이면서 모든 제거 대상 `word/media/*`와 정확히 대응해야 한다. 본문 문단 이미지 삭제, 헤더 등 타 파트 참조 이미지 삭제, 미참조 고아 `word/media/*` 삭제, `word/styles.xml` 등 비미디어 파트 삭제, 비-이미지 관계 삭제는 모두 fail-closed로 거부한다(`services::save::tests::docx_table_media_deletion_proof_admits_only_table_bound_media`).

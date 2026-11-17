@@ -347,4 +347,4 @@ HWP/HWPX 일반 빌드에서 선택 텍스트 굵게·기울임·밑줄·취소�
 
 ### Stage 2 / Phase 1 DOCX 표 구조 편집 — 2026-11-17
 
-DOCX 표 구조 편집 10개 명령(`table.*`)은 WordCraft 문서 모델을 단일 출처로 삼아 `vMerge`/열 격자/twip 너비/중첩 표와 셀 내용을 보존하고, 마지막 행/열 삭제·불완전 병합 겹침·단일 셀 병합/분할·교차 표 선택·콘텐츠 컨트롤은 변경 전 명확한 사유로 거부하며 T009 `same_as()` 보존 검사를 거쳐 저장·재열기한다. [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).
+DOCX 표 구조 편집 10개 명령(`table.*`)은 WordCraft 문서 모델을 단일 출처로 삼아 `vMerge`(비어 있지 않은 continuation 내용 포함)·열 격자/twip 너비/중첩 표와 셀 내용을 보존하고, `table.splitCell`은 병합 셀 복원과 비병합 `1×1` 셀 `rows × columns` 분할을 함께 지원한다. 마지막 행/열 삭제·불완전 병합 겹침·안전 재배치가 불가능한 continuation 구조·교차 표 선택·콘텐츠 컨트롤·분할 한도 초과는 변경 전 명확한 사유로 거부하며 T009(`same_as()` 및 `authorized_table_media_changes`) 보존 검사를 거쳐 저장·재열기한다. [Stage 1 공통 문서 편집 7절](../architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17).

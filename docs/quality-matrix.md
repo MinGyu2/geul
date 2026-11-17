@@ -165,3 +165,4 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 항목 | DOCX | HWP/HWPX | 판정 | 근거 |
 |---|---|---|---|---|
 | 표 구조 10개 명령(행/열 삽입·삭제, 오른쪽/아래/선택 합치기, 합친 셀 나누기)·Undo/Redo·T009 저장/재열기 | IV | 불변(기존 HWP/HWPX) | CURRENT PASS (WordCraft `23c0dc5…`, Release `665ead58…`) | [Stage 1 7절](architecture/stage1-common-editing.md#7-stage-2--phase-1--docx-표-구조-편집-2026-11-17), `native-docx-table-stage2-p1.py` PASS |
+| Stage 2 / Phase 1 최종 안정화(`1×1` 셀 분할 UI, 비빈 `vMerge` 보존, 표 이미지 삭제 T009 저장, 소스 재구성) | IV | 불변(기존 HWP/HWPX) | CURRENT PASS (WordCraft `dd14a0ae…`, Release `525b2efb…`) | [Stage 1 7.3절](architecture/stage1-common-editing.md#73-최종-안정화--11-셀-분할-ui-vmerge-내용-보존-표-이미지-삭제-t009-저장-소스-빌드-재현성-2026-11-17), `native-docx-table-stage2-p1.py` + `test_wordcraft_reproduction.py` PASS |
