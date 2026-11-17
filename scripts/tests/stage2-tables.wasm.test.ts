@@ -15,7 +15,7 @@ import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSe
 import { HWP_TABLE_NORMALIZATION } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { RhwpText, pathJson, withCell, type DocPosition } from "../../src/components/Editor/rhwp/rhwpText";
 import { preserveSourceCaret, type RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
-import { planTableOp, rectangularRange } from "../../src/components/Editor/rhwp/tableStructure";
+import { ordinarySplitLimits, ordinarySplitValid, planTableOp, rectangularRange } from "../../src/components/Editor/rhwp/tableStructure";
 import { base, controlledBackend, fail, flush, info, loaded, ok } from "../../src/components/Editor/rhwp/testing";
 
 vi.mock("../../src/components/Editor/rhwp/previewRaster", async actual => {
@@ -143,7 +143,8 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     const saving = editor.save(); await flush();
     // A successful HWP save starts a background original probe. A subsequent save
     // may also request its own preflight; answer both bounded requests in this scenario.
-    for (let attempt = 0; attempt < (drainPreflight ? 4 : 1) && calls.some(c => c.method === "original"); attempt++) {
+    // HWPX sessions also run a background original probe (font ownership), so its save always has two bounded requests.
+    for (let attempt = 0; attempt < (drainPreflight || format === "hwpx" ? 4 : 1) && calls.some(c => c.method === "original"); attempt++) {
       take("original").reply(ok(original)); await flush();
       const pf = take("preflight");
       pf.reply(ok({ preservation: check(format, "preflight", original, pf.args[2] as Uint8Array, JSON.stringify(pf.args[3])), platformSupported: true }));
@@ -1442,5 +1443,229 @@ print(json.dumps([(r.attrib.get('charPrIDRef'),E.tostring(p,encoding='unicode'))
     ] };
     expect(rectangularRange(grid, 1, 3)).toBeNull();
     expect(rectangularRange(grid, 0, 4)).toEqual({ startRow: 0, startCol: 0, endRow: 1, endCol: 2 });
+  });
+});
+
+/** Every cell of a table in engine order: [row, col, rowSpan, colSpan, paragraph texts joined by "|"]. */
+function gridOf(d: Doc, paragraph: number, control: number, path?: string): [number, number, number, number, string][] {
+  const dims = JSON.parse(path ? d.getTableDimensionsByPath!(0, paragraph, path) : d.getTableDimensions(0, paragraph, control));
+  const out: [number, number, number, number, string][] = [];
+  for (let cell = 0; cell < dims.cellCount; cell++) {
+    const cellPath = path ? JSON.stringify((JSON.parse(path) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[])
+      .map((l, i, a) => i === a.length - 1 ? { ...l, cellIndex: cell, cellParaIndex: 0 } : l)) : null;
+    const info = JSON.parse(cellPath ? d.getCellInfoByPath!(0, paragraph, cellPath) : d.getCellInfo!(0, paragraph, control, cell));
+    const count = cellPath ? d.getCellParagraphCountByPath!(0, paragraph, cellPath) : d.getCellParagraphCount(0, paragraph, control, cell);
+    const texts: string[] = [];
+    for (let p = 0; p < count; p++) {
+      if (cellPath) {
+        const pp = JSON.stringify((JSON.parse(cellPath) as { cellParaIndex: number }[]).map((l, i, a) => i === a.length - 1 ? { ...l, cellParaIndex: p } : l));
+        texts.push(d.getTextInCellByPath!(0, paragraph, pp, 0, d.getCellParagraphLengthByPath!(0, paragraph, pp)));
+      } else texts.push(d.getTextInCell(0, paragraph, control, cell, p, 0, d.getCellParagraphLength(0, paragraph, control, cell, p)));
+    }
+    out.push([info.row, info.col, info.rowSpan, info.colSpan, texts.join("|")]);
+  }
+  return out;
+}
+
+describe("Stage 2 Phase 2: ordinary cell split", () => {
+  it.each(["hwp", "hwpx"] as const)("%s: 1x2, 2x1 and 2x2 product splits keep geometry, Undo/Redo, T009 save and reopen", async format => {
+    const { editor, doc, at, place, run, save, settle } = await open(format);
+    try {
+      const para = at.paragraph, control = at.cell!.control, grid = () => gridOf(doc, para, control);
+      const original = grid();
+      expect(original).toEqual([[0, 0, 1, 1, "outer0"], [0, 1, 1, 1, "outer1"], [1, 0, 1, 1, "outer2"], [1, 1, 1, 1, "outer3"]]);
+      place(at);
+      const context = editor.snapshot().parameters?.["table.splitCell"]?.tableSplit;
+      expect(context, "ordinary cell offers the dimension dialog").toBeDefined();
+      expect(context!.maxRows).toBeGreaterThanOrEqual(2); expect(context!.maxColumns).toBeGreaterThanOrEqual(2);
+      expect(context!.maxCells).toBe(4096 - 4 + 1);
+      // An ordinary cell is never split without explicit dimensions.
+      expect(editor.execute("table.splitCell").accepted).toBe(false);
+      expect(grid()).toEqual(original);
+      await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
+      const horizontal = [[0, 0, 1, 1, "outer0"], [0, 1, 1, 1, ""], [0, 2, 1, 1, "outer1"], [1, 0, 1, 2, "outer2"], [1, 2, 1, 1, "outer3"]];
+      expect(grid()).toEqual(horizontal);
+      expect(JSON.parse(doc.getTableDimensions(0, para, control))).toMatchObject({ rowCount: 2, colCount: 3, cellCount: 5 });
+      expect(editor.caret.cell!.cell).toBe(0);
+      const widths = [0, 1].map(i => JSON.parse(doc.getCellProperties!(0, para, control, i)).width as number);
+      expect(Math.abs(widths[0]! - widths[1]!)).toBeLessThanOrEqual(1);
+      await run("edit.undo"); expect(grid()).toEqual(original);
+      await run("edit.redo"); expect(grid()).toEqual(horizontal);
+      // Vertical split of outer3, then a rectangular 2x2 split of outer1.
+      place(withCell(at, 4)); await run("table.splitCell", { command: "table.splitCell", rows: 2, columns: 1 });
+      expect(grid()).toEqual([[0, 0, 1, 1, "outer0"], [0, 1, 1, 1, ""], [0, 2, 1, 1, "outer1"], [1, 0, 2, 2, "outer2"], [1, 2, 1, 1, "outer3"], [2, 2, 1, 1, ""]]);
+      place(withCell(at, 2)); await run("table.splitCell", { command: "table.splitCell", rows: 2, columns: 2 });
+      const rectangular = [[0, 0, 2, 1, "outer0"], [0, 1, 2, 1, ""], [0, 2, 1, 1, "outer1"], [0, 3, 1, 1, ""], [1, 2, 1, 1, ""], [1, 3, 1, 1, ""],
+        [2, 0, 2, 2, "outer2"], [2, 2, 1, 2, "outer3"], [3, 2, 1, 2, ""]];
+      expect(grid()).toEqual(rectangular);
+      expect(editor.caret.cell!.cell).toBe(2);
+      // Typing lands in a new sub-cell.
+      place(withCell(at, 5)); expect(editor.typeText("새칸")).toBe(true); await settle();
+      const saved = await save(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.publishable).toBe(true);
+      writeFileSync(join(out, `split-product.${format}`), saved.output);
+      const reopened = new engine.HwpDocument(new Uint8Array(readFileSync(join(out, `split-product.${format}`)))) as Doc;
+      try {
+        expect(gridOf(reopened, para, control)).toEqual(rectangular.map((c, i) => i === 5 ? [...c.slice(0, 4), "새칸"] : c));
+        expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  }, 120_000);
+
+  it.each(["hwp", "hwpx"] as const)("%s: multi-paragraph formatted cell beside a merged cell; merged restore regression; invalid and stale requests", async format => {
+    const { editor, doc, at, place, run, settle, save } = await open(format);
+    try {
+      const para = at.paragraph, control = at.cell!.control, grid = () => gridOf(doc, para, control);
+      place({ ...at, offset: 6 }); expect(editor.enter()).toBe(true); await settle();
+      expect(editor.typeText("둘째 줄")).toBe(true); await settle();
+      place({ ...at, offset: 0 }); editor.caret = { ...at, offset: 3 }; await run("format.bold");
+      place(withCell(at, 2)); await run("table.mergeRight");
+      expect(grid()).toEqual([[0, 0, 1, 1, "outer0|둘째 줄"], [0, 1, 1, 1, "outer1"], [1, 0, 1, 2, "outer2|outer3"]]);
+      // Merged cell: restore action only (no dimension dialog); dimensions are refused.
+      expect(editor.snapshot().parameters?.["table.splitCell"]).toBeUndefined();
+      expect(documentCommandState("table.splitCell", editor.snapshot()).available).toBe(true);
+      const mergedBefore = grid();
+      expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 }).accepted).toBe(false);
+      expect(grid()).toEqual(mergedBefore);
+      place(at);
+      const max = editor.snapshot().parameters!["table.splitCell"]!.tableSplit!;
+      for (const args of [{ rows: 0, columns: 2 }, { rows: 1, columns: 1 }, { rows: 1, columns: max.maxColumns + 1 }, { rows: max.maxRows + 1, columns: 1 }, { rows: 1.5, columns: 2 }]) {
+        expect(editor.execute("table.splitCell", { command: "table.splitCell", ...args }).accepted, JSON.stringify(args)).toBe(false);
+      }
+      expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2, extra: 1 } as unknown as DocumentCommandArgs).accepted).toBe(false);
+      expect(grid()).toEqual(mergedBefore);
+      await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 3 });
+      expect(grid()).toEqual([[0, 0, 1, 1, "outer0|둘째 줄"], [0, 1, 1, 1, ""], [0, 2, 1, 1, ""], [0, 3, 1, 1, "outer1"], [1, 0, 1, 4, "outer2|outer3"]]);
+      for (let i = 0; i < 6; i++) expect(JSON.parse(doc.getCellCharPropertiesAt!(0, para, control, 0, 0, i)).bold, `bold ${i}`).toBe(i < 3);
+      // The widened merged cell still restores into constituent cells.
+      place(withCell(at, 4)); await run("table.splitCell");
+      const restored = [[0, 0, 1, 1, "outer0|둘째 줄"], [0, 1, 1, 1, ""], [0, 2, 1, 1, ""], [0, 3, 1, 1, "outer1"],
+        [1, 0, 1, 1, "outer2|outer3"], [1, 1, 1, 1, ""], [1, 2, 1, 1, ""], [1, 3, 1, 1, ""]];
+      expect(grid()).toEqual(restored);
+      const saved = await save(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.publishable).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(gridOf(reopened, para, control)).toEqual(restored);
+        for (let i = 0; i < 6; i++) expect(JSON.parse(reopened.getCellCharPropertiesAt!(0, para, control, 0, 0, i)).bold).toBe(i < 3);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  }, 120_000);
+
+  it.each(["hwp", "hwpx"] as const)("%s: nested table cell split keeps the parent table and nested ownership; save and reopen", async format => {
+    const { editor, doc, at, place, run, save } = await open(format, false, true);
+    try {
+      const para = at.paragraph, control = at.cell!.control;
+      const child = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] } };
+      const childPath = pathJson(child.cell!);
+      const parentBefore = gridOf(doc, para, control);
+      expect(gridOf(doc, para, control, childPath)).toEqual([[0, 0, 1, 1, "guard"], [0, 1, 1, 1, ""], [1, 0, 1, 1, ""], [1, 1, 1, 1, ""]]);
+      place(child);
+      expect(editor.snapshot().parameters?.["table.splitCell"]?.tableSplit).toBeDefined();
+      await run("table.splitCell", { command: "table.splitCell", rows: 2, columns: 2 });
+      const nested = [[0, 0, 1, 1, "guard"], [0, 1, 1, 1, ""], [0, 2, 2, 1, ""], [1, 0, 1, 1, ""], [1, 1, 1, 1, ""], [2, 0, 1, 2, ""], [2, 2, 1, 1, ""]];
+      expect(gridOf(doc, para, control, childPath)).toEqual(nested);
+      expect(gridOf(doc, para, control)).toEqual(parentBefore);
+      expect(new RhwpText(doc).ownsNestedCell(editor.caret)).toBe(true);
+      await run("edit.undo"); expect(gridOf(doc, para, control, childPath)).toHaveLength(4);
+      await run("edit.redo"); expect(gridOf(doc, para, control, childPath)).toEqual(nested);
+      const saved = await save(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.publishable).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(gridOf(reopened, para, control, childPath)).toEqual(nested);
+        expect(gridOf(reopened, para, control)).toEqual(parentBefore);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  }, 120_000);
+
+  it("HWP field-rich captioned table: splitting cells keeps formula/ClickHere identity, caption and references; T009 save and reopen", async () => {
+    const { editor, doc, at, place, run, save } = await open("hwp", false, false, true);
+    try {
+      const para = at.paragraph, control = at.cell!.control;
+      const fields = () => (JSON.parse(doc.getFieldList!()) as { fieldId: number; fieldType: string; command: string; name: string }[])
+        .map(f => [f.fieldId, f.fieldType, f.command, f.name]).sort();
+      const caption = () => doc.getTableCaptionByPath!(0, para, JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]));
+      const fieldsBefore = fields(), captionBefore = caption();
+      expect(fieldsBefore.some(f => f[1] === "formula") && fieldsBefore.some(f => f[1] === "clickhere")).toBe(true);
+      // Split A1 (an operand of B3 = SUM(A1:A2)) horizontally: the formula moves B3 → C3 with an unchanged expression.
+      place(at); await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
+      expect(fields()).toEqual(fieldsBefore);
+      // The ClickHere cell itself splits horizontally; its field keeps id, command, name and paragraph ownership.
+      place(withCell(at, 2)); await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
+      expect(fields()).toEqual(fieldsBefore);
+      expect(caption()).toBe(captionBefore);
+      expect(gridOf(doc, para, control).map(c => c.slice(0, 4))).toEqual([[0, 0, 1, 1], [0, 1, 1, 1], [0, 2, 1, 1], [0, 3, 1, 1],
+        [1, 0, 1, 2], [1, 2, 1, 2], [2, 0, 1, 2], [2, 2, 1, 2]]);
+      const fieldCell = (type: string) => {
+        const f = (JSON.parse(doc.getFieldList!()) as { fieldType: string; location: { path: { cellIndex: number }[] } }[]).find(x => x.fieldType === type)!;
+        const info = JSON.parse(doc.getCellInfo!(0, para, control, f.location.path[0]!.cellIndex));
+        return [info.row, info.col];
+      };
+      expect(fieldCell("formula")).toEqual([2, 2]);
+      expect(fieldCell("clickhere")).toEqual([0, 2]);
+      const saved = await save(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(saved.publishable).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(gridOf(reopened, para, control)).toEqual(gridOf(doc, para, control));
+        expect((JSON.parse(reopened.getFieldList!()) as { fieldId: number; fieldType: string; command: string; name: string }[])
+          .map(f => [f.fieldId, f.fieldType, f.command, f.name]).sort()).toEqual(fieldsBefore);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  }, 120_000);
+
+  it("HWP field-rich table: a split whose formula range would read through a widened merge is refused atomically", async () => {
+    const { editor, doc, at, place, run } = await open("hwp", false, false, true);
+    try {
+      const para = at.paragraph, control = at.cell!.control;
+      place(at); await run("table.splitCell", { command: "table.splitCell", rows: 1, columns: 2 });
+      // A vertical split of the ClickHere cell (C1) shifts A2 below the widened A1 region, so the rewritten range
+      // A1:A3 would read through a covered cell: the engine's formula validation refuses it after the mutation and
+      // the session restores the exact before state (atomic rollback; the existing structure contract stops editing).
+      const before = [doc.getTextFileText(), doc.getFieldList!(), JSON.stringify(gridOf(doc, para, control))];
+      place(withCell(at, 2));
+      expect(documentCommandState("table.splitCell", editor.snapshot()).available).toBe(true);
+      expect(editor.execute("table.splitCell", { command: "table.splitCell", rows: 2, columns: 1 }).accepted).toBe(false);
+      expect([doc.getTextFileText(), doc.getFieldList!(), JSON.stringify(gridOf(doc, para, control))]).toEqual(before);
+      expect(editor.snapshot().editable).toBe(false);
+    } finally { editor.dispose(); }
+  }, 120_000);
+
+  it("limits: bounds from table size, cell budget and width; engine refuses out-of-contract requests without mutation", () => {
+    const one = (rows: number, cols: number, cells = rows * cols) => ({ rows, cols, cells: Array.from({ length: cells }, (_, i) =>
+      ({ row: Math.floor(i / cols), col: i % cols, rowSpan: 1, colSpan: 1 })) });
+    expect(ordinarySplitLimits(one(1, 1), 0, 30000)).toEqual({ maxRows: 99, maxColumns: 50, maxCells: 4096 });
+    expect(ordinarySplitLimits(one(1, 64), 0, 30000)).toMatchObject({ maxColumns: 1, maxRows: 99 });
+    expect(ordinarySplitLimits(one(512, 1), 0, 30000)).toMatchObject({ maxRows: 1, maxColumns: 50 });
+    expect(ordinarySplitLimits(one(512, 64, 4096), 0, 30000)).toBeNull();
+    expect(ordinarySplitLimits(one(1, 1), 0, 1199)).toMatchObject({ maxColumns: 1 });
+    expect(ordinarySplitLimits({ rows: 1, cols: 2, cells: [{ row: 0, col: 0, rowSpan: 1, colSpan: 2 }] }, 0, 30000)).toBeNull();
+    const limits = { maxRows: 10, maxColumns: 10, maxCells: 20 };
+    expect(ordinarySplitValid({ rows: 4, columns: 5 }, limits)).toBe(true);
+    expect(ordinarySplitValid({ rows: 5, columns: 5 }, limits)).toBe(false);
+    expect(ordinarySplitValid({ rows: 1, columns: 1 }, limits)).toBe(false);
+    const d = new engine.HwpDocument(fixture("hwpx")) as Doc;
+    try {
+      const t = JSON.parse(d.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      const path = JSON.stringify([{ controlIndex: t.controlIndex, cellIndex: 0, cellParaIndex: 0 }]);
+      const before = gridOf(d, t.para, t.controlIndex);
+      for (const args of [[0, 0, 1, 1], [0, 0, 0, 2], [0, 0, 1, 64], [0, 0, 513, 1], [0, 0, 1, 40], [9, 9, 1, 2], [0, 0, 2]]) {
+        expect(() => d.editTableByPath!(0, t.para, path, "splitCellInto", JSON.stringify(args)), JSON.stringify(args)).toThrow();
+        expect(gridOf(d, t.para, t.controlIndex)).toEqual(before);
+      }
+      expect(JSON.parse(d.editTableByPath!(0, t.para, path, "mergeRight", "[0,0,0,1]")).ok).toBe(true);
+      const merged = gridOf(d, t.para, t.controlIndex);
+      expect(() => d.editTableByPath!(0, t.para, path, "splitCellInto", "[0,0,1,2]")).toThrow();
+      expect(gridOf(d, t.para, t.controlIndex)).toEqual(merged);
+    } finally { d.free(); }
   });
 });

@@ -121,6 +121,29 @@ describe("table.splitCell input dialog & executeCommand routing", () => {
     expect(validateCommandArgs("table.splitCell", { command: "table.splitCell", rows: 1, columns: 1 }, { tableSplit: { maxRows: 16, maxColumns: 4 } })).toBe(false);
   });
 
+  it("HWP/HWPX context: maxCells bounds rows x columns in the dialog and the shared validator", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const context = { tableSplit: { maxRows: 99, maxColumns: 40, maxCells: 12 } };
+    render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <CommandInputDialog request={{ command: "table.splitCell", labelKey: "command.table.splitCell", sessionId: 1, loadGeneration: 1, revision: 0, context }}
+          onConfirm={(a) => confirmed.push(a)} onCancel={() => {}} />
+      </LanguageProvider>,
+    );
+    const rows = screen.getByTestId("command-input-rows") as HTMLInputElement;
+    const cols = screen.getByTestId("command-input-cols") as HTMLInputElement;
+    fireEvent.change(rows, { target: { value: "4" } });
+    fireEvent.change(cols, { target: { value: "4" } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(screen.getByTestId("command-input-error")).toHaveTextContent("최대 12칸");
+    expect(confirmed).toHaveLength(0);
+    fireEvent.change(rows, { target: { value: "3" } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(confirmed).toEqual([{ command: "table.splitCell", rows: 3, columns: 4 }]);
+    expect(validateCommandArgs("table.splitCell", { command: "table.splitCell", rows: 4, columns: 4 }, context)).toBe(false);
+    expect(validateCommandArgs("table.splitCell", { command: "table.splitCell", rows: 3, columns: 4 }, context)).toBe(true);
+  });
+
   it("defaults to 2x1 when column is too narrow for horizontal split (maxColumns=1)", () => {
     const splitReq: CommandInputRequest = {
       command: "table.splitCell",

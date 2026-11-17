@@ -99,8 +99,9 @@ import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
-  applyTablePlan, cellCovering, hasTableStructureApi, planTableOp, readTableGrid, tableContentRefusal, tableOpRefusal,
-  rectangularRange, TABLE_STRUCTURE_OPS, type CellRange, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
+  applyTablePlan, cellCovering, hasOrdinarySplitApi, hasTableStructureApi, ordinarySplitLimits, ordinarySplitValid, planTableOp, readTableGrid,
+  tableCellWidth, tableContentRefusal, tableOpRefusal,
+  rectangularRange, TABLE_STRUCTURE_OPS, type CellRange, type CellSplit, type TableGrid, type TableStructureOp, type TableStructureRefusal, type TableTarget,
 } from "./tableStructure";
 import {
   charCount,
@@ -2908,7 +2909,24 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const index = innermost(this.caret.cell).cell;
     if (index >= table.grid.cells.length) return "tableShape";
     if (op === "mergeCells") return this.selectedCellRange() ? null : "tableShape";
+    const at = table.grid.cells[index]!;
+    // An ordinary (unmerged) cell is split through the dimension dialog: it needs the explicit-path engine
+    // operation and at least one split of two cells within the table limits and the minimum cell width.
+    if (op === "splitCell" && at.rowSpan === 1 && at.colSpan === 1) {
+      if (!hasOrdinarySplitApi(doc, table.target)) return "engineUnsupported";
+      return tableOpRefusal(table.grid, index, op) ?? (this.ordinarySplitContext() ? null : "limit");
+    }
     return tableOpRefusal(table.grid, index, op);
+  }
+
+  /** Dimension bounds of the caret's ordinary cell split (dialog context), or null for merged cells/no valid split. */
+  private ordinarySplitContext(): { maxRows: number; maxColumns: number; maxCells: number } | null {
+    const doc = this.doc, table = this.caretTable(), cell = this.caret.cell;
+    if (!doc || !table || !cell || typeof table.grid === "string" || table.content) return null;
+    const index = innermost(cell).cell;
+    const at = table.grid.cells[index];
+    if (!at || at.rowSpan !== 1 || at.colSpan !== 1 || !hasOrdinarySplitApi(doc, table.target)) return null;
+    return ordinarySplitLimits(table.grid, index, tableCellWidth(doc, table.target, index));
   }
 
   private selectedCellRange(): CellRange | null {
@@ -2924,13 +2942,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * opens no history transaction. `applyTablePlan` proves the engine's result cell by cell and throws on any
    * difference — `mutate` then rolls the model back to the snapshot taken before the call and stops editing.
    */
-  private applyTableOp(op: TableStructureOp): boolean {
+  private applyTableOp(op: TableStructureOp, split?: CellSplit): boolean {
     if (this.tableOpState(op) !== null) return false;
     const doc = this.doc!, table = this.caretTable();
     if (!table || typeof table.grid === "string") return false;
     const { target } = table, original = this.caret, cell = this.caret.cell!;
+    // Ordinary split: the request must still fit the bounds read from the current table (stale dialogs refuse).
+    if (split) {
+      const limits = this.ordinarySplitContext();
+      if (!limits || !ordinarySplitValid(split, limits)) return false;
+    }
     let plan: ReturnType<typeof planTableOp>;
-    try { plan = planTableOp(doc, target, table.grid, innermost(cell).cell, op, this.selectedCellRange() ?? undefined, this.tableContentOptions()); }
+    try { plan = planTableOp(doc, target, table.grid, innermost(cell).cell, op, this.selectedCellRange() ?? undefined, this.tableContentOptions(), split); }
     catch { return false; } // a getter failed: nothing was changed
     if (typeof plan === "string") return false;
     this.history?.boundary();
@@ -3039,7 +3062,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const key = [
       this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
       this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending, this.saving, this.committingEpoch === this.epoch, this.pages.length,
-      this.structuralKey(), this.fontOwnerCurrent(),
+      this.structuralKey(), this.fontOwnerCurrent(), this.structureVersion, this.historyOff,
     ].join("|");
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
@@ -3131,6 +3154,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         }
       }
       else parameterReasons["hangul.tableFormula"] = parameterReasons["hangul.insertTableFormula"] = "notInTable";
+    }
+    // Ordinary cell split (Stage 2 Phase 2): the dialog context exists only when the command itself is available
+    // for an unmerged cell; merged cells run the restore action without a dialog.
+    if (this.tableOpState("splitCell") === null) {
+      const split = this.ordinarySplitContext();
+      if (split) parameters["table.splitCell"] = { tableSplit: split };
     }
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };
@@ -3318,6 +3347,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
+    if (command === "table.splitCell") {
+      // Ordinary cells: explicit validated dimensions from the shared split dialog. Merged cells: restore without
+      // arguments. Each form is refused in the other state, so a stale request never changes a different cell shape.
+      const context = this.snapshot().parameters?.["table.splitCell"];
+      if (args === undefined) return { accepted: !context?.tableSplit && this.applyTableOp("splitCell") };
+      if (args.command !== command || !validateCommandArgs(command, args, context)) return { accepted: false };
+      return { accepted: this.applyTableOp("splitCell", { rows: args.rows, columns: args.columns }) };
+    }
     if (command.startsWith("table.")) {
       const op = TABLE_STRUCTURE_OPS.find(candidate => `table.${candidate}` === command);
       return { accepted: !!op && args === undefined && this.applyTableOp(op) };

@@ -1,5 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-17 Stage 2 / Phase 2 Task 1 HWP/HWPX 일반 셀 나누기 · COMPLETED (명시한 지원 범위).** `table.splitCell`이 비병합 `1×1` 셀을 공용 분할 대화상자로 `행 × 열`(가로·세로·직사각형) 분할하고 병합 셀 복원은 유지한다. 엔진 `stage2-p2-cell-split.patch`(검증된 `splitCellInto`), HWP T009 격자 정제 대응, Release `5f3c8067…`에서 WASM 58/58·Rust 집중 PASS; push 없음, T012/T015/T016 전체 미완료 유지. [구현·검증·경계](../architecture/stage1-common-editing.md#81-task-1--병합하지-않은-일반-셀-나누기-hwphwpx).
+
 > **2026-11-16 Stage 5-A 글꼴 상태 · 글꼴 패키지 COMPLETED(지원 범위):** HWP/HWPX 글꼴 변경·좁은 T009 proof·Undo/Redo에 더해 RHWP natural font metrics(정확한 글꼴 원본 결합, 실제 advance 기반 줄바꿈·caret·selection·hit test·Canvas·raster PDF)와 HWP/HWPX table-cell native acceptance를 구현·검증했다. 합자·문맥형·RTL·kerning은 지원 범위 밖으로 문서화했다. 외부 오피스 재열기 NOT RUN, Windows/macOS DEFERRED. Stage 5-A 전체는 PARTIALLY COMPLETED(Release private-path cleanup 별도), Stage 5 INCOMPLETE, Release NO-GO. [구현·증거·제한](../architecture/font-system.md).
 
 > **2026-11-13 T012 Phase 2 · PARTIALLY COMPLETED.** HWP/HWPX 중첩 표 셀 직접 편집(명시적 셀 경로·cursor-list 소유 증명, 입력·선택·삭제·문단 나누기/합치기·IME·Undo/Redo)과 본문 수준 평범한 표의 구조 명령 9개(행/열 넣기·지우기, 오른쪽/아래 셀 합치기, 합친 셀 나누기)를 일반 Release 제품에 연결했다. HWP는 T009 검사기에 같은 표의 재구성 증명을 더했다. 실제 저장 서비스 HWP/HWPX 각 6 durable·거부 2건 원본 보존, 게시 파일 독립 재열기, native X11/IBus 50/50 PASS. 중첩 표 생성·중첩 표 구조 변경·필드/개체가 있는 표·범위 병합은 미지원(거부)이며 T012 전체는 미완료다. [구현·증거·잔여](../architecture/stage567-acceptance-2026-11-05.md#t012-phase2-20261113).

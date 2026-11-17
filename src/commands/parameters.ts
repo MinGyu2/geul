@@ -310,7 +310,7 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
       return keys === "columns,command,rows" && !!context?.tableSplit
         && integerIn(value.rows, { min: 1, max: Math.max(1, context.tableSplit.maxRows) })
         && integerIn(value.columns, { min: 1, max: Math.max(1, context.tableSplit.maxColumns) })
-        && value.rows * value.columns >= 2;
+        && value.rows * value.columns >= 2 && value.rows * value.columns <= (context.tableSplit.maxCells ?? Infinity);
     case "hangul.charWidth":
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);
     case "hangul.charSpacing":

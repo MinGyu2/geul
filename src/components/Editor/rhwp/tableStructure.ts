@@ -1,4 +1,5 @@
-// 표 구조 편집(T012 Phase 2, Stage 2): 행·열 넣기/지우기, 옆·아래 셀과 합치기, 범위 병합, 합친 셀 나누기.
+// 표 구조 편집(T012 Phase 2, Stage 2): 행·열 넣기/지우기, 옆·아래 셀과 합치기, 범위 병합, 합친 셀 나누기,
+// 병합하지 않은 일반 셀을 행 × 열 격자로 나누기(Stage 2 Phase 2).
 //
 // 본문 표와 명시적 경로의 중첩 표를 다룬다. 각 연산은
 //   1) 엔진에서 읽은 격자(셀 좌표·병합)와 셀마다 문단 digest(글, 그 문단이 소유한 컨트롤 — 필드·그림·개체·
@@ -30,6 +31,13 @@ export type TableStructureRefusal = "tableFormula" | "tableContent" | "tableShap
 export const TABLE_STRUCTURE_LIMITS = Object.freeze({ rows: 512, cols: 64, cells: 4096 });
 
 export interface TableTarget { section: number; paragraph: number; control: number; path?: CellRef }
+
+/** Dimensions of an ordinary (unmerged 1x1) cell split; merged cells keep the restore (unmerge) contract. */
+export interface CellSplit { rows: number; columns: number }
+/** Narrowest sub-cell an ordinary split may create: 6 pt in HWPUNIT (the engine enforces the same bound). */
+export const MIN_SPLIT_CELL_WIDTH = 600;
+/** Largest per-dimension value the shared split dialog accepts (two digits). */
+const MAX_SPLIT_DIMENSION = 99;
 
 function cellPath(at: TableTarget, index: number): string {
   const c = at.path!;
@@ -73,6 +81,8 @@ export interface TablePlan {
   op: TableStructureOp;
   /** Engine call arguments after (section, paragraph, control). */
   call: readonly (number | boolean)[];
+  /** Ordinary cell split: executed through the explicit-path `splitCellInto` engine operation. */
+  split?: CellSplit;
   /** Expected table after the operation. */
   rows: number;
   cols: number;
@@ -108,6 +118,44 @@ const API: Record<TableStructureOp, keyof RhwpDocument> = {
 
 export function hasTableStructureApi(doc: RhwpDocument, op: TableStructureOp): boolean {
   return typeof doc[API[op]] === "function" && !!doc.getCellInfo && !!doc.getControls && !!doc.getCursorModel && !!doc.getFieldList;
+}
+
+/** Engine support for splitting an ordinary cell: the explicit-path editor and the cell width reader. */
+export function hasOrdinarySplitApi(doc: RhwpDocument, at: TableTarget): boolean {
+  return !!doc.editTableByPath && (at.path ? !!doc.getCellPropertiesByPath : !!doc.getCellProperties);
+}
+
+/** Width (HWPUNIT) of one cell of the target table, or null when the engine cannot report it. Never throws. */
+export function tableCellWidth(doc: RhwpDocument, at: TableTarget, cell: number): number | null {
+  try {
+    const raw = at.path ? doc.getCellPropertiesByPath!(at.section, at.paragraph, JSON.stringify(pathLevels(at)), cell)
+      : doc.getCellProperties!(at.section, at.paragraph, at.control, cell);
+    const value: unknown = JSON.parse(raw);
+    return isRecord(value) && isIndex(value.width) ? value.width : null;
+  } catch { return null; }
+}
+
+/**
+ * Largest ordinary split of the 1x1 cell `cell`: per-dimension bounds from the table limits (rows, columns,
+ * logical cells), the minimum sub-cell width and the dialog's two digits, and the cell budget of the product.
+ * Null when the cell is merged or no split of at least two cells fits.
+ */
+export function ordinarySplitLimits(grid: TableGrid, cell: number, width: number | null): { maxRows: number; maxColumns: number; maxCells: number } | null {
+  const at = grid.cells[cell];
+  if (!at || at.rowSpan !== 1 || at.colSpan !== 1 || width === null) return null;
+  const L = TABLE_STRUCTURE_LIMITS;
+  const maxCells = L.cells - grid.cells.length + 1;
+  const maxRows = Math.max(0, Math.min(MAX_SPLIT_DIMENSION, L.rows - grid.rows + 1, maxCells));
+  const maxColumns = Math.max(0, Math.min(MAX_SPLIT_DIMENSION, L.cols - grid.cols + 1, maxCells, Math.floor(width / MIN_SPLIT_CELL_WIDTH)));
+  if (maxRows < 1 || maxColumns < 1 || maxCells < 2 || (maxRows < 2 && maxColumns < 2)) return null;
+  return { maxRows, maxColumns, maxCells };
+}
+
+/** Whether `split` is a valid ordinary split under `limits` (integers, at least two cells, every bound). */
+export function ordinarySplitValid(split: CellSplit, limits: { maxRows: number; maxColumns: number; maxCells: number }): boolean {
+  const { rows, columns } = split;
+  return Number.isSafeInteger(rows) && Number.isSafeInteger(columns) && rows >= 1 && columns >= 1 && rows * columns >= 2
+    && rows <= limits.maxRows && columns <= limits.maxColumns && rows * columns <= limits.maxCells;
 }
 
 /** Geometry of the explicitly owned table, or a refusal. Never throws. */
@@ -391,7 +439,9 @@ export function tableOpRefusal(grid: TableGrid, cell: number, op: TableStructure
     }
     case "mergeCells": return "tableShape"; // requires an explicit range, checked by planTableOp
     case "splitCell":
-      if (at.rowSpan === 1 && at.colSpan === 1) return "tableShape";
+      // An ordinary cell needs explicit dimensions (planTableOp); the smallest split must still fit.
+      if (at.rowSpan === 1 && at.colSpan === 1)
+        return grid.cells.length + 1 > L.cells || (grid.rows + 1 > L.rows && grid.cols + 1 > L.cols) ? "limit" : null;
       return grid.cells.length + at.rowSpan * at.colSpan - 1 > L.cells ? "limit" : null;
   }
 }
@@ -401,9 +451,21 @@ export function tableOpRefusal(grid: TableGrid, cell: number, op: TableStructure
  * preserve). Throws only if the engine getters fail; a shape the operation is not defined for returns a refusal.
  */
 export function planTableOp(doc: RhwpDocument, target: TableTarget, grid: TableGrid, cell: number, op: TableStructureOp, range?: CellRange,
-  options: TableContentOptions = { fields: true }): TablePlan | TableStructureRefusal {
+  options: TableContentOptions = { fields: true }, split?: CellSplit): TablePlan | TableStructureRefusal {
   const refusal = op === "mergeCells" && range ? null : tableOpRefusal(grid, cell, op);
   if (refusal) return refusal;
+  const ordinary = op === "splitCell" && grid.cells[cell]!.rowSpan === 1 && grid.cells[cell]!.colSpan === 1;
+  // Dimensions belong to an ordinary split only: a merged cell is restored to its constituent cells.
+  if (split && !ordinary) return "tableShape";
+  if (ordinary) {
+    if (!split || !hasOrdinarySplitApi(doc, target)) return split ? "engineUnsupported" : "tableShape";
+    const limits = ordinarySplitLimits(grid, cell, tableCellWidth(doc, target, cell));
+    if (!limits) return "limit";
+    if (!ordinarySplitValid(split, limits)) {
+      const shaped = Number.isSafeInteger(split.rows) && Number.isSafeInteger(split.columns) && split.rows >= 1 && split.columns >= 1 && split.rows * split.columns >= 2;
+      return shaped ? "limit" : "tableShape";
+    }
+  }
   const content = tableContent(doc, target, grid, options);
   if (typeof content === "string") return content;
   const at = grid.cells[cell]!;
@@ -500,6 +562,23 @@ export function planTableOp(doc: RhwpDocument, target: TableTarget, grid: TableG
       else put(c.row, c.col, c.rowSpan, c.colSpan, texts[i]!);
     });
     call = [at.row, at.col, endRow, endCol];
+  } else if (ordinary && split) {
+    // Engine contract (Table::split_cell_into for a 1x1 cell): the grid gains rows-1 rows below and columns-1
+    // columns right of the cell; every other cell crossing its row/column widens its span, later cells move.
+    // The original cell keeps all paragraphs as the top-left sub-cell; the other sub-cells are empty.
+    const extraRows = split.rows - 1, extraCols = split.columns - 1;
+    grid.cells.forEach((c, i) => {
+      if (i === cell) return put(c.row, c.col, 1, 1, texts[i]!);
+      const crossesRow = c.row <= at.row && at.row < c.row + c.rowSpan, crossesCol = c.col <= at.col && at.col < c.col + c.colSpan;
+      put(c.row > at.row ? c.row + extraRows : c.row, c.col > at.col ? c.col + extraCols : c.col,
+        c.rowSpan + (crossesRow ? extraRows : 0), c.colSpan + (crossesCol ? extraCols : 0), texts[i]!);
+    });
+    for (let y = 0; y < split.rows; y++) for (let x = 0; x < split.columns; x++) {
+      if (y || x) put(at.row + y, at.col + x, 1, 1, EMPTY);
+    }
+    rows += extraRows; cols += extraCols;
+    call = [at.row, at.col, split.rows, split.columns];
+    map = (row, col) => ({ row: row > at.row ? row + extraRows : row, col: col > at.col ? col + extraCols : col });
   } else {
     grid.cells.forEach((c, i) => put(c.row, c.col, i === cell ? 1 : c.rowSpan, i === cell ? 1 : c.colSpan, texts[i]!));
     for (let y = at.row; y < at.row + at.rowSpan; y++) for (let x = at.col; x < at.col + at.colSpan; x++) {
@@ -523,7 +602,7 @@ export function planTableOp(doc: RhwpDocument, target: TableTarget, grid: TableG
   }
   const ordered = formulaOrder(formulas, rows, cols);
   if (!ordered) return "tableFormula";
-  return { op, call, rows, cols, cells, caret, formulas: ordered, options, caption: content.caption };
+  return { op, call, rows, cols, cells, caret, formulas: ordered, options, caption: content.caption, ...(ordinary && split ? { split: { ...split } } : {}) };
 }
 
 /** Dependencies first (operands are recalculated before formulas reading them). Null on a cycle/unknown grammar. */
@@ -569,7 +648,12 @@ function formulaOrder<T extends { row: number; col: number; formula: string }>(f
 export function applyTablePlan(doc: RhwpDocument, target: TableTarget, plan: TablePlan): TableGrid {
   const method = doc[API[plan.op]] as ((...args: unknown[]) => string) | undefined;
   if (typeof method !== "function") throw new Error("table structure API unavailable");
-  const result: unknown = JSON.parse(target.path
+  if (plan.split && !doc.editTableByPath) throw new Error("table split API unavailable");
+  // An ordinary split always goes through the engine's validated explicit-path operation (body: one level).
+  const result: unknown = JSON.parse(plan.split
+    ? doc.editTableByPath!(target.section, target.paragraph, target.path ? pathJson(target.path) : JSON.stringify(pathLevels(target)),
+      "splitCellInto", JSON.stringify(plan.call))
+    : target.path
     ? doc.editTableByPath!(target.section, target.paragraph, pathJson(target.path), plan.op,
       JSON.stringify(plan.call.map(v => typeof v === "boolean" ? Number(v) : v)))
     : method.call(doc, target.section, target.paragraph, target.control, ...plan.call));

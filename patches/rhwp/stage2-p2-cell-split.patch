@@ -1,0 +1,145 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+index 7041a75..87f50be 100644
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -42,6 +42,49 @@ struct CellResizeUpdate {
+ const LOCAL_RESIZE_UNSUPPORTED: &str =
+     "행\u{b7}열별 독립 셀 경계는 HWP/HWPX에 편집 의도를 저장할 수 없어 지원하지 않습니다";
+ 
++/// [geul] Bounds of a table restructured through the explicit-path editor (same as the application).
++const GEUL_SPLIT_MAX_ROWS: u32 = 512;
++const GEUL_SPLIT_MAX_COLS: u32 = 64;
++const GEUL_SPLIT_MAX_CELLS: usize = 4096;
++/// [geul] Narrowest sub-cell an ordinary split may create (6 pt in HWPUNIT).
++const GEUL_SPLIT_MIN_WIDTH: u32 = 600;
++
++/// [geul] Split one ordinary (unmerged 1x1) cell into `rows` x `cols` cells through
++/// `Table::split_cell_into`: the grid gains `rows-1` rows and `cols-1` columns, every
++/// other cell crossing the target row/column widens its span, the original cell keeps
++/// its paragraphs as the top-left sub-cell and new sub-cells are empty template cells.
++/// Every precondition is checked before the table is touched, so a refusal never
++/// leaves a partial edit. Merged cells keep the separate `splitCell` (unmerge) contract.
++fn geul_split_ordinary_cell(
++    table: &mut crate::model::table::Table,
++    row: u16,
++    col: u16,
++    rows: u16,
++    cols: u16,
++) -> Result<(), String> {
++    let cell = table
++        .cells
++        .iter()
++        .find(|c| c.row == row && c.col == col)
++        .ok_or_else(|| "split target cell not found".to_string())?;
++    if cell.row_span != 1 || cell.col_span != 1 {
++        return Err("only an unmerged cell can be split into a grid".into());
++    }
++    if rows == 0 || cols == 0 || u32::from(rows) * u32::from(cols) < 2 {
++        return Err("split dimensions must produce at least two cells".into());
++    }
++    if u32::from(table.row_count) + u32::from(rows) - 1 > GEUL_SPLIT_MAX_ROWS
++        || u32::from(table.col_count) + u32::from(cols) - 1 > GEUL_SPLIT_MAX_COLS
++        || table.cells.len() + usize::from(rows) * usize::from(cols) - 1 > GEUL_SPLIT_MAX_CELLS
++    {
++        return Err("split exceeds table limits".into());
++    }
++    if cell.width / u32::from(cols) < GEUL_SPLIT_MIN_WIDTH {
++        return Err("split cells would be narrower than the minimum width".into());
++    }
++    table.split_cell_into(row, col, rows, cols, false, false)
++}
++
+ impl DocumentCore {
+     pub(crate) fn get_table_mut(
+         &mut self,
+@@ -84,6 +127,7 @@ impl DocumentCore {
+             ("deleteColumn", [col]) => table.delete_column(*col),
+             ("mergeRight" | "mergeBelow" | "mergeCells", [r, c, er, ec]) => table.merge_cells(*r, *c, *er, *ec),
+             ("splitCell", [row, col]) => table.split_cell(*row, *col),
++            ("splitCellInto", [row, col, rows, cols]) => geul_split_ordinary_cell(table, *row, *col, *rows, *cols),
+             _ => return Err(fail()),
+         }.map_err(HwpError::RenderError)?;
+         let counts: Vec<usize> = table.cells.iter().map(|c| c.paragraphs.len()).collect();
+@@ -4713,3 +4757,82 @@ mod neighbor_border_raw_data_tests {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod geul_ordinary_split_tests {
++    //! [geul] Ordinary (unmerged) cell split through the explicit-path table editor.
++    use crate::document_core::DocumentCore;
++    use crate::model::control::Control;
++    use crate::model::table::Table;
++
++    fn core_with_table(rows: u16, cols: u16) -> (DocumentCore, usize, usize) {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        let value: serde_json::Value =
++            serde_json::from_str(&core.create_table_native(0, 0, 0, rows, cols).unwrap()).unwrap();
++        let (para, ctrl) = (value["paraIdx"].as_u64().unwrap() as usize, value["controlIdx"].as_u64().unwrap() as usize);
++        (core, para, ctrl)
++    }
++    fn table(core: &DocumentCore, para: usize, ctrl: usize) -> &Table {
++        match &core.document.sections[0].paragraphs[para].controls[ctrl] {
++            Control::Table(t) => t,
++            _ => panic!("table"),
++        }
++    }
++    fn shape(t: &Table) -> Vec<(u16, u16, u16, u16, String)> {
++        t.cells.iter().map(|c| (c.row, c.col, c.row_span, c.col_span,
++            c.paragraphs.iter().map(|p| p.text.clone()).collect::<Vec<_>>().join("|"))).collect()
++    }
++    fn split(core: &mut DocumentCore, para: usize, ctrl: usize, args: &[u16]) -> Result<String, crate::error::HwpError> {
++        core.edit_table_by_cell_path_native(0, para, &[(ctrl, 0, 0)], "splitCellInto", args)
++    }
++
++    #[test]
++    fn horizontal_vertical_and_rectangular_split_keep_neighbors() {
++        let (mut core, para, ctrl) = core_with_table(2, 2);
++        for (i, s) in ["A", "B", "C", "D"].iter().enumerate() {
++            core.insert_text_in_cell_native(0, para, ctrl, i, 0, 0, s).unwrap();
++        }
++        let width = table(&core, para, ctrl).cells[0].width;
++        split(&mut core, para, ctrl, &[0, 0, 1, 2]).unwrap();
++        let t = table(&core, para, ctrl);
++        assert_eq!((t.row_count, t.col_count), (2, 3));
++        assert_eq!(shape(t), vec![
++            (0, 0, 1, 1, "A".into()), (0, 1, 1, 1, "".into()), (0, 2, 1, 1, "B".into()),
++            (1, 0, 1, 2, "C".into()), (1, 2, 1, 1, "D".into()),
++        ]);
++        assert_eq!(t.cells[0].width + t.cells[1].width, width);
++        // Vertical split of D (now at 1,2).
++        split(&mut core, para, ctrl, &[1, 2, 2, 1]).unwrap();
++        let t = table(&core, para, ctrl);
++        assert_eq!((t.row_count, t.col_count), (3, 3));
++        assert_eq!(shape(t), vec![
++            (0, 0, 1, 1, "A".into()), (0, 1, 1, 1, "".into()), (0, 2, 1, 1, "B".into()),
++            (1, 0, 2, 2, "C".into()), (1, 2, 1, 1, "D".into()), (2, 2, 1, 1, "".into()),
++        ]);
++        // Rectangular 2x2 split of B.
++        split(&mut core, para, ctrl, &[0, 2, 2, 2]).unwrap();
++        let t = table(&core, para, ctrl);
++        assert_eq!((t.row_count, t.col_count), (4, 4));
++        assert_eq!(t.cells.len(), 9);
++        assert!(t.cells.iter().any(|c| (c.row, c.col, c.row_span, c.col_span) == (0, 0, 2, 1)));
++        assert!(t.cells.iter().any(|c| (c.row, c.col, c.row_span, c.col_span) == (2, 0, 2, 2)));
++        assert_eq!(t.cells.iter().filter(|c| c.paragraphs.iter().any(|p| !p.text.is_empty())).count(), 4);
++    }
++
++    #[test]
++    fn refusals_leave_the_table_unchanged() {
++        let (mut core, para, ctrl) = core_with_table(1, 2);
++        core.insert_text_in_cell_native(0, para, ctrl, 0, 0, 0, "keep").unwrap();
++        let before = shape(table(&core, para, ctrl));
++        for args in [&[0u16, 0, 1, 1][..], &[0, 0, 0, 2], &[0, 0, 2, 0], &[0, 5, 1, 2], &[0, 0, 1, 64], &[0, 0, 513, 1], &[0, 0, 2][..]] {
++            assert!(split(&mut core, para, ctrl, args).is_err(), "{args:?}");
++            assert_eq!(shape(table(&core, para, ctrl)), before);
++        }
++        // A merged cell keeps the unmerge contract only.
++        core.edit_table_by_cell_path_native(0, para, &[(ctrl, 0, 0)], "mergeRight", &[0, 0, 0, 1]).unwrap();
++        let merged = shape(table(&core, para, ctrl));
++        assert!(split(&mut core, para, ctrl, &[0, 0, 1, 2]).is_err());
++        assert_eq!(shape(table(&core, para, ctrl)), merged);
++    }
++}

@@ -190,6 +190,7 @@
   "commandInput.splitCell.hint": "Split this cell into 1–{maxRows} rows and 1–{maxColumns} columns (at least 2 cells; minimum column width 6 pt).",
   "commandInput.splitCell.dimensions": "Rows must be 1–{maxRows} and columns 1–{maxColumns}.",
   "commandInput.splitCell.atLeastTwo": "Choose at least 2 cells (rows × columns ≥ 2).",
+  "commandInput.splitCell.tooManyCells": "This cell can be split into at most {maxCells} cells in this table.",
   "commandInput.percent.label": "Value",
   "commandInput.percent.notInteger": "Enter a whole number.",
   "commandInput.percent.range": "Enter a whole number from {min} to {max}.",

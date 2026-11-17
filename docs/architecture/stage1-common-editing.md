@@ -269,3 +269,33 @@ Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌�
 | clippy·프런트엔드·재현성 | `cargo-geul.py clippy --lib`, `npx tsc --noEmit`, `npx eslint ...`, `npx vitest run ...` (4파일), `python3 scripts/tests/test_wordcraft_reproduction.py` | 수정 파일 clippy 경고 0(기존 `save/{hwp.rs,special.rs}` 3건 외), `tsc`/ESLint PASS, Vitest 4파일 65 passed, clean public clone 재구성 + `wordcraft-fonts` check PASS |
 | 일반 제품 Release 빌드 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `525b2efb…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`, 이번 `package.rs`·테스트 수정 전 빌드·REUSED; T3 및 실저장 경로는 Rust `stage2_p1_table_image_deletion_safe_save_and_reopen`로 CURRENT PASS 재확인) |
 | Linux native GUI 수용 | `scripts/tests/native-ibus-session.py ... scripts/tests/native-docx-table-stage2-p1.py` → `target/stage2-p1-final-native/run/result.json` | REUSED PASS (`status: "PASS"`, `1×1` 셀 분할 UI `1×3`/`2×1`·오류 경고·Undo, 10명령·IME, 비빈 `vMerge` 행 삭제+Ctrl+S+재열기, 표 이미지 행 삭제+본문 이미지 보존+Ctrl+S+재열기; `package.rs` 좁은 보완은 UI 계약 불변) |
+
+## 8. Stage 2 / Phase 2 — HWP/HWPX 고급 표 편집 (2026-11-17)
+
+### 8.1 Task 1 — 병합하지 않은 일반 셀 나누기 (HWP/HWPX)
+
+**구현.** `table.splitCell`(명령 ID 불변)이 HWP/HWPX에서 병합하지 않은 `1×1` 셀도 `행 × 열` 격자로 나눈다. 병합된 셀은 기존처럼 대화상자 없이 구성 셀로 복원한다(두 형태는 서로의 인수를 거부: 병합 셀에 차원 인수, 일반 셀에 무인수 실행은 `accepted:false`).
+
+- **엔진**(`patches/rhwp/stage2-p2-cell-split.patch`, 시리즈 24번째): 고정 RHWP에 이미 있는 `Table::split_cell_into`(격자에 `n-1`행·`m-1`열 추가, 대상 행/열을 가로지르는 다른 셀의 span 확장, 뒤 셀 이동, 원래 셀 = 왼쪽 위 하위 셀, 새 셀 = 템플릿 빈 문단)를 재사용한다. 명시 경로 표 편집기 `editTableByPath`에 `splitCellInto [row,col,rows,cols]` 연산만 추가했고, `geul_split_ordinary_cell`이 변경 전에 대상이 비병합 `1×1`인지, 2칸 이상인지, 512행·64열·4096셀 한도, 하위 셀 최소 폭 600 HWPUNIT(6 pt)를 검사한다(거부 시 표 불변). 본문 표는 1단계 경로, 중첩 표는 소유 경로로 같은 연산을 쓴다. 별도 앱 표 엔진은 없다.
+- **계획·증명**(`tableStructure.ts`): `planTableOp(..., split)`가 엔진 계약대로 결과 표(좌표·span·셀별 문단 digest)를 미리 계산하고, 호출 뒤 `applyTablePlan`이 셀 하나하나를 비교한다. 원래 셀의 문단·컨트롤은 왼쪽 위 셀에만 남고(중복·분배 없음) 다른 하위 셀은 빈 문단이다. 계산식 필드는 같은 필드 ID로 새 좌표에 남고 참조를 다시 쓴 뒤 엔진 평가로 값 불변을 확인한다. `ordinarySplitLimits`는 표 한도·셀 예산·최소 폭·대화상자 두 자리 수로 행/열 최대값과 `maxCells`를 정한다.
+- **UI**(`RhwpEditorSession`): 일반 셀에서 명령이 가능하면 `parameters["table.splitCell"].tableSplit = {maxRows, maxColumns, maxCells}`를 내고, DOCX와 같은 `CommandInputDialog`(selectionKey 소유, 낡은 요청 거부)를 연다. `maxCells`는 선택 필드라 DOCX 문맥은 바뀌지 않는다. 실행은 세션 문맥으로 인수를 다시 검증하고 한 mutation·한 Undo 단계이며, 캐럿은 결과 격자의 원래 셀로 간다.
+- **HWP T009**(`src-tauri/src/services/save/hwp/insertions.rs`): 필드·캡션·자식 컨트롤이 있는 표는 셀 대응으로 증명한다. 기존 후보(동일·행/열 삽입·삭제·병합·병합 해제·복합)에는 일반 분할이 없어 저장이 `recordsChanged`로 거부됐다(실측). `ordinary_splits`가 **격자 정제(refinement)** 대응을 더한다: 원본 행/열 경계를 출력 경계로 보내는 단조 사상이 있어 모든 원본 셀 영역이 출력 셀로 정확히 타일링되고, 영역 왼쪽 위 출력 셀이 원본(내용 유지), 나머지는 새 셀이다. 여러 번의 분할을 한 번에 저장해도 설명된다. 후보는 교차 수가 적은 경계를 우선하고 동률은 256개 안에서 열거하며, 모든 후보를 완전 검증하므로 순위는 완전성에만 영향을 준다(한도 초과/미검증 = 거부). 자식 소유는 기존 `Mapping::consistent`·`match_children`이 판정한다. 평범한 표는 기존 `restructured_table` 불변식 증명으로 통과한다.
+
+**지원 범위.** HWP/HWPX 본문·중첩 표의 비병합 셀, `1×2`…, `2×1`…, `2×2` 등 직사각형 분할(행 ≤ min(99, 513−행 수), 열 ≤ min(99, 65−열 수, 셀 폭/600), 행×열 ≤ 4097−셀 수). 텍스트·여러 문단·글자 서식·계산식/누름틀 필드·캡션이 있는 표, 병합 셀 옆 분할, 분할 뒤 병합 복원.
+
+**남은 제한(안전 거부).** 병합 셀의 `N×M` 재분할은 지원하지 않는다(복원만). 분할이 계산식 범위를 넓어진 병합 영역을 지나게 만드는 경우(예: `SUM(A1:A2)`가 `A1:A3`로 바뀌며 가려진 셀을 읽음) 엔진 계산식 검증이 거부하고 세션이 변경 전 snapshot으로 정확히 되돌린다. 이때 기존 표 구조 계약대로 편집이 중지된다(Task 2에서 재검토). HWPX는 변경 전 거부가 아닌 사후 증명 거부다. 텍스트 상자 등 자체 목록을 가진 개체가 든 표는 기존대로 거부한다.
+
+**검증 (2026-11-17, Release `5f3c8067…`).**
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| RHWP 엔진 | 준비 소스 사본에서 `cargo test --locked --offline --lib geul_ordinary_split_tests` | CURRENT PASS 2/2 (가로·세로·직사각형, 거부 시 불변·병합 셀 거부) |
+| HWP T009 대응 | `python3 scripts/cargo-geul.py test --lib ordinary_split_correspondence_tests` | CURRENT PASS 2/2 (단일·반복 분할 대응, 비정제 거부) |
+| HWP 저장 회귀 | `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib -- ordinary_split_correspondence_tests services::save::hwp hwp_restructured hwp_safety_composite hwp_boundary` | CURRENT PASS 47; `--lib hwp_` 전체 41 PASS/2 FAIL — 2건(`rhwp_publication_is_linearized…` SharedDirectory, `hwp_편집한_저장은…` finding 개수)은 변경 전 HEAD 소스에서도 같은 FAIL(기존 결함) |
+| Release WASM 제품 | `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts` | CURRENT PASS 58/58 (새 9: HWP/HWPX `1×2`·`2×1`·`2×2`·Undo/Redo·저장·재열기, 여러 문단+굵게+병합 옆+병합 복원+잘못된/낡은 인수, 중첩 표 분할, HWP 계산식·누름틀·캡션 표, 계산식 모호 범위 원자 거부, 한도/엔진 거부) |
+| 프런트엔드 | `npx vitest run` 6파일 / `rhwpAssets.test.ts` / `tsc --noEmit` / ESLint | CURRENT PASS 97 / 12 / PASS / PASS |
+| 검사기 | `python3 scripts/cargo-geul.py build --example save_check`; `clippy --lib -- -D warnings` | build PASS; clippy FAIL 3건은 변경하지 않은 `hwp.rs`·`special.rs`(기존), `fmt --check`의 기존 차이도 변경 파일 외 기존 |
+
+저장 증거는 제품 세션이 보낸 실제 export·손실 보고·live/reopen 비교를 실제 `save_check`(T009)로 판정하고 엔진으로 독립 재열기한 것이다(HWP findings는 서비스가 재생성하는 `previewStale`만). 실제 저장 서비스 durable publication은 native 수용(8.3)에서 확인한다. 시험 harness 보정: HWPX 세션은 배경 원본 probe(글꼴 소유)로 저장 시 `original` 요청이 둘이라 `save()`가 HWPX에서 둘 다 답한다(기존 HWPX 저장 시험 4개가 이 때문에 멈추던 것을 같이 고침 — 기준 소스에서도 같은 멈춤 확인).
+
+**산출물.** RHWP 핀 `1a76570e…`, WordCraft 핀 `dd14a0ae…` 불변. 새 Release generation `5f3c8067f64facc7a7833b4eebe6341e8b8a2b7b342cd0b46cf148f882c4442f`(WASM `9f825543…`, JS `9a7109c1…`, 패치 24, source tree `054cc60c…`, `externalUnchanged: true`), 새로 준비한 소스의 `table_ops.rs`는 검토 사본과 바이트 동일. 보관 한도 6을 지키려고 선택되지 않은 `4723c0ce…`와 이전 준비 소스를 해시 확인 후 `target/rhwp-retired-generations/stage2-p2/`로 옮겼다(삭제 없음). 생성물은 커밋하지 않는다.

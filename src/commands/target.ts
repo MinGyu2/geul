@@ -140,7 +140,8 @@ export interface CommandParameterContext {
   /** 커서가 있는 표 셀(0부터)과 표 크기. */
   tableCell?: { row: number; col: number; rows: number; cols: number };
   /** Unmerged 1x1 DOCX cell split limits from live engine view. */
-  tableSplit?: { maxRows: number; maxColumns: number };
+  /** Ordinary cell split bounds; `maxCells` (optional) additionally bounds rows × columns (HWP/HWPX table cell limit). */
+  tableSplit?: { maxRows: number; maxColumns: number; maxCells?: number };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };
   /** Stage 1: current paragraph / character / page values (initial dialog and picker values). */

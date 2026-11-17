@@ -2640,6 +2640,174 @@ fn correspondences(
             }));
         }
     }
+    out.extend(ordinary_splits(before, (ra, ca), after, (rb, cb)));
+    out
+}
+
+/// Stage 2 Phase 2: ordinary cell splits (one or several, possibly nested) as a grid
+/// refinement. An unmerged or merged original cell may be subdivided; the grid gains
+/// rows/columns and cells crossing a new boundary widen their spans. There is a strictly
+/// increasing map of the original row (column) boundaries into the output boundaries such
+/// that every original cell's mapped region is tiled exactly by output cells: the output
+/// cell at the region's top-left is its source (it keeps the original contents), every other
+/// output cell in the region is fresh. Candidate boundary maps prefer boundaries crossed by
+/// the fewest output cells (a split's new boundary is crossed by the widened neighbours);
+/// ties are enumerated within a small bound. Every candidate is verified completely, so the
+/// ranking only affects completeness: no verified map, or an exhausted bound, yields no
+/// candidate (refusal). Child ownership is still decided by `Mapping::consistent`.
+fn ordinary_splits(
+    before: &[Geo],
+    (ra, ca): (usize, usize),
+    after: &[Geo],
+    (rb, cb): (usize, usize),
+) -> Vec<Mapping> {
+    if rb < ra
+        || cb < ca
+        || (rb, cb) == (ra, ca)
+        || ra == 0
+        || ca == 0
+        || after.len() <= before.len()
+    {
+        return Vec::new();
+    }
+    if rb.saturating_mul(cb) > 512 * 64 {
+        return Vec::new();
+    }
+    // Strictly increasing boundary maps with fixed ends, as sorted inner boundary sets.
+    let maps = |a: usize, b: usize, crossing: &dyn Fn(usize) -> usize| -> Vec<Vec<usize>> {
+        let need = a - 1;
+        let mut inner: Vec<(usize, usize)> = (1..b).map(|y| (crossing(y), y)).collect();
+        inner.sort();
+        if need == 0 {
+            return vec![vec![0, b]];
+        }
+        let threshold = inner[need - 1].0;
+        let must: Vec<usize> = inner
+            .iter()
+            .filter(|x| x.0 < threshold)
+            .map(|x| x.1)
+            .collect();
+        let tied: Vec<usize> = inner
+            .iter()
+            .filter(|x| x.0 == threshold)
+            .map(|x| x.1)
+            .collect();
+        let pick = need - must.len();
+        // Bounded enumeration of `pick`-subsets of the tied boundaries.
+        let mut count: u128 = 1;
+        for k in 0..pick {
+            count = count * (tied.len() - k) as u128 / (k + 1) as u128;
+        }
+        if count > 256 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let mut choice: Vec<usize> = (0..pick).collect();
+        loop {
+            let mut set: Vec<usize> = must
+                .iter()
+                .copied()
+                .chain(choice.iter().map(|&c| tied[c]))
+                .collect();
+            set.push(0);
+            set.push(b);
+            set.sort_unstable();
+            out.push(set);
+            // Next combination.
+            let mut k = pick;
+            loop {
+                if k == 0 {
+                    return out;
+                }
+                k -= 1;
+                if choice[k] < tied.len() - pick + k {
+                    choice[k] += 1;
+                    for l in k + 1..pick {
+                        choice[l] = choice[l - 1] + 1;
+                    }
+                    break;
+                }
+            }
+            if pick == 0 {
+                return out;
+            }
+        }
+    };
+    let row_maps = maps(ra, rb, &|y| {
+        after
+            .iter()
+            .filter(|o| o.row < y && y < o.row + o.rows)
+            .count()
+    });
+    let col_maps = maps(ca, cb, &|x| {
+        after
+            .iter()
+            .filter(|o| o.col < x && x < o.col + o.cols)
+            .count()
+    });
+    if row_maps.is_empty() || col_maps.is_empty() || row_maps.len() * col_maps.len() > 256 {
+        return Vec::new();
+    }
+    let anchors: BTreeMap<(usize, usize), usize> = after
+        .iter()
+        .enumerate()
+        .map(|(i, g)| ((g.row, g.col), i))
+        .collect();
+    let mut out = Vec::new();
+    for rho in &row_maps {
+        for kappa in &col_maps {
+            // Paint each original region; regions must tile the output grid.
+            let mut owner = vec![usize::MAX; rb * cb];
+            let mut sources = vec![Vec::new(); after.len()];
+            let mut ok = true;
+            'cells: for (i, g) in before.iter().enumerate() {
+                let (Some(&y0), Some(&y1), Some(&x0), Some(&x1)) = (
+                    rho.get(g.row),
+                    rho.get(g.row + g.rows),
+                    kappa.get(g.col),
+                    kappa.get(g.col + g.cols),
+                ) else {
+                    ok = false;
+                    break;
+                };
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        let slot = &mut owner[y * cb + x];
+                        if *slot != usize::MAX {
+                            ok = false;
+                            break 'cells;
+                        }
+                        *slot = i;
+                    }
+                }
+                match anchors.get(&(y0, x0)) {
+                    Some(&t) => sources[t].push(i),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            // Every output cell lies inside exactly one region (its whole area).
+            ok = ok
+                && owner.iter().all(|o| *o != usize::MAX)
+                && after.iter().all(|o| {
+                    let first = owner.get(o.row * cb + o.col).copied();
+                    o.row + o.rows <= rb
+                        && o.col + o.cols <= cb
+                        && (o.row..o.row + o.rows).all(|y| {
+                            (o.col..o.col + o.cols).all(|x| owner.get(y * cb + x).copied() == first)
+                        })
+                });
+            if ok && sources.iter().all(|s| s.len() <= 1) && sources.iter().any(|s| s.is_empty()) {
+                out.push(Mapping {
+                    sources,
+                    deleted: Vec::new(),
+                    ..Default::default()
+                });
+            }
+        }
+    }
     out
 }
 
@@ -3733,5 +3901,82 @@ mod tests {
             generic_references(&bad, &defs).err(),
             Some(Finding::at(FindingCode::ReferenceInvalid, BODY))
         );
+    }
+}
+
+#[cfg(test)]
+mod ordinary_split_correspondence_tests {
+    use super::{ordinary_splits, Geo};
+
+    fn g(row: usize, col: usize, rows: usize, cols: usize) -> Geo {
+        Geo {
+            col,
+            row,
+            cols,
+            rows,
+        }
+    }
+    fn grid(rows: usize, cols: usize) -> Vec<Geo> {
+        (0..rows)
+            .flat_map(|r| (0..cols).map(move |c| g(r, c, 1, 1)))
+            .collect()
+    }
+
+    #[test]
+    fn single_and_repeated_splits_map_every_original_to_its_top_left_cell() {
+        let before = grid(2, 2);
+        // A1 split 1x2: B1 moves right, A2 widens, B2 moves right.
+        let after = vec![
+            g(0, 0, 1, 1),
+            g(0, 1, 1, 1),
+            g(0, 2, 1, 1),
+            g(1, 0, 1, 2),
+            g(1, 2, 1, 1),
+        ];
+        let maps = ordinary_splits(&before, (2, 2), &after, (2, 3));
+        assert_eq!(maps.len(), 1);
+        assert_eq!(
+            maps[0].sources,
+            vec![vec![0], vec![], vec![1], vec![2], vec![3]]
+        );
+        // Then B2 (now 1,2) split 2x1 and B1 (0,2) split 2x2: one save explains all three splits.
+        let after = vec![
+            g(0, 0, 2, 1),
+            g(0, 1, 2, 1),
+            g(0, 2, 1, 1),
+            g(0, 3, 1, 1),
+            g(1, 2, 1, 1),
+            g(1, 3, 1, 1),
+            g(2, 0, 2, 2),
+            g(2, 2, 1, 2),
+            g(3, 2, 1, 2),
+        ];
+        let maps = ordinary_splits(&before, (2, 2), &after, (4, 4));
+        assert!(!maps.is_empty());
+        for m in &maps {
+            assert_eq!(m.sources[0], vec![0]);
+            assert_eq!(m.sources[2], vec![1]);
+            assert_eq!(m.sources[6], vec![2]);
+            assert_eq!(m.sources[7], vec![3]);
+            assert!(m.deleted.is_empty());
+        }
+    }
+
+    #[test]
+    fn non_refinements_are_not_explained() {
+        let before = grid(2, 2);
+        // A new cell spanning two original rows crosses two regions: no original region is tiled.
+        // (A plain column insertion is geometrically the split of every cell of one column, which
+        // keeps each original's contents in its top-left cell, so it is a valid refinement.)
+        let column = vec![g(0, 0, 1, 1), g(1, 0, 1, 1)];
+        let spanning = vec![g(0, 0, 1, 1), g(0, 1, 2, 1), g(1, 0, 1, 1)];
+        assert!(ordinary_splits(&column, (2, 1), &spanning, (2, 2)).is_empty());
+        // Same dimensions or fewer cells never qualify.
+        assert!(ordinary_splits(&before, (2, 2), &before, (2, 2)).is_empty());
+        let merged = vec![g(0, 0, 1, 2), g(1, 0, 1, 1), g(1, 1, 1, 1)];
+        assert!(ordinary_splits(&before, (2, 2), &merged, (2, 2)).is_empty());
+        // An output cell crossing two original regions (B1 and B2 merged while A1 splits).
+        let crossing = vec![g(0, 0, 1, 1), g(0, 1, 1, 1), g(0, 2, 2, 1), g(1, 0, 1, 2)];
+        assert!(ordinary_splits(&before, (2, 2), &crossing, (2, 3)).is_empty());
     }
 }

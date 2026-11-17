@@ -190,6 +190,7 @@
   "commandInput.splitCell.hint": "이 셀을 행 1–{maxRows}, 열 1–{maxColumns}로 나눕니다(최소 2칸, 열 너비 최소 6pt).",
   "commandInput.splitCell.dimensions": "행은 1–{maxRows}, 열은 1–{maxColumns} 사이의 정수여야 합니다.",
   "commandInput.splitCell.atLeastTwo": "전체 칸 수(행 × 열)는 2 이상이어야 합니다.",
+  "commandInput.splitCell.tooManyCells": "이 표에서는 한 셀을 최대 {maxCells}칸까지 나눌 수 있습니다.",
   "commandInput.percent.label": "값",
   "commandInput.percent.notInteger": "정수를 입력하세요.",
   "commandInput.percent.range": "{min}부터 {max} 사이의 정수를 입력하세요.",

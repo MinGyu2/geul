@@ -101,6 +101,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         return setError("commandInput.splitCell.dimensions");
       }
       if (rows * columns < 2) return setError("commandInput.splitCell.atLeastTwo");
+      if (splitLimit.maxCells !== undefined && rows * columns > splitLimit.maxCells) return setError("commandInput.splitCell.tooManyCells");
       args = { command: "table.splitCell", rows, columns };
     } else if (comment) {
       const problem = commentProblem(text);
@@ -188,7 +189,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
         </p>
-        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment || note ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH, maxRows: splitLimit.maxRows, maxColumns: splitLimit.maxColumns })}</p>}
+        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment || note ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH, maxRows: splitLimit.maxRows, maxColumns: splitLimit.maxColumns, maxCells: splitLimit.maxCells ?? 0 })}</p>}
         <div className="discard-dialog__actions">
           <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
           <button type="button" className="document-bar__button" data-testid="command-input-confirm" onClick={submit}>
