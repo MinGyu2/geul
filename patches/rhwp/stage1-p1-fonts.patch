@@ -1,3 +1,49 @@
+--- a/src/document_core/commands/font_table.rs
++++ b/src/document_core/commands/font_table.rs
+@@ -124,7 +124,9 @@
+         for lang in 0..7 {
+             let n = original_fonts[lang];
+             if n > current[lang].len() || n > fonts[lang].len() || fonts[lang].len() > 65_536 { return Err(fail()); }
+-            let keys = |faces: &[Font]| faces.iter().map(serde_json::to_vec).collect::<Result<Vec<_>, _>>().map_err(|_| fail());
++            // [geul Stage 1 F] Embedding (isEmbedded/binaryItemIDRef/resolved BinData) is a package resource of the
++            // face, not its identity: a restored snapshot keeps its own embedding state (below).
++            let keys = |faces: &[Font]| faces.iter().map(geul_font_identity).collect::<Result<Vec<_>, _>>().map_err(|_| fail());
+             let old = keys(&current[lang])?;
+             let mut new = keys(&fonts[lang])?;
+             if old[..n] != new[..n] { return Err(fail()); }
+@@ -136,6 +138,10 @@
+                         merged[lang].push(current[lang][id].clone()); new.push(key.clone()); next
+                     };
+                 maps[lang].push(u16::try_from(next).map_err(|_| fail())?);
++                let (from, to) = (&current[lang][id], &mut merged[lang][next]);
++                to.is_embedded = from.is_embedded;
++                to.bin_item_id_ref = from.bin_item_id_ref.clone();
++                to.resolved_bin_data_id = from.resolved_bin_data_id;
+             }
+         }
+         if merged.iter().map(Vec::len).sum::<usize>() > 100_000 { return Err(fail()); }
+@@ -181,7 +187,7 @@
+         for lang in 0..7 {
+             if fonts[lang].len() > current[lang].len() { return Err(fail()); }
+             for (id, font) in fonts[lang].iter().enumerate() {
+-                if serde_json::to_vec(font).map_err(|_| fail())? != serde_json::to_vec(&current[lang][id]).map_err(|_| fail())? { return Err(fail()); }
++                if geul_font_identity(font).map_err(|_| fail())? != geul_font_identity(&current[lang][id]).map_err(|_| fail())? { return Err(fail()); }
+                 keep[lang][id] = true;
+             }
+         }
+@@ -261,3 +267,12 @@
+         }
+     }
+ }
++
++/// [geul Stage 1 F] Serialized identity of a face without its embedding resource fields.
++fn geul_font_identity(font: &Font) -> Result<Vec<u8>, serde_json::Error> {
++    let mut f = font.clone();
++    f.is_embedded = false;
++    f.bin_item_id_ref.clear();
++    f.resolved_bin_data_id = None;
++    serde_json::to_vec(&f)
++}
 --- a/src/document_core/commands/formatting.rs
 +++ b/src/document_core/commands/formatting.rs
 @@ -3245,3 +3245,187 @@
