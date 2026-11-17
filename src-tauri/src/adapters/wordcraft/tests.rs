@@ -3551,3 +3551,471 @@ fn obsolete_docx_pdf_results_are_never_published() {
     assert!(!target.exists());
     let _ = std::fs::remove_dir_all(&out);
 }
+
+// ---- Stage 2 Phase 1: DOCX Table Structure Editing ----
+
+fn table_target(m: &mut DocxModel) -> super::engine::SelectionIdentity {
+    let v = m.view();
+    super::engine::SelectionIdentity {
+        anchor_key: v.anchor_key,
+        caret_key: v.caret_key,
+    }
+}
+
+fn table_op(
+    m: &mut DocxModel,
+    action: super::engine::table::TableStructureAction,
+) -> super::engine::EditOutcome {
+    let target = table_target(m);
+    m.apply(&[DocxOp::TableStructure { action, target }])
+}
+
+fn body_table_texts(m: &DocxModel) -> Vec<Vec<Vec<String>>> {
+    let t = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .rev()
+        .find_map(|b| b.as_table())
+        .expect("table");
+    t.rows
+        .iter()
+        .map(|r| {
+            r.cells
+                .iter()
+                .map(|c| {
+                    c.blocks
+                        .iter()
+                        .filter_map(|b| b.as_para().map(|p| p.plain_text()))
+                        .collect()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen() {
+    use super::engine::table::TableStructureAction as A;
+
+    let mut m = model();
+    assert!(m.view().table.is_none(), "body paragraph has no table state");
+    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false)]).changed, 0);
+    assert_eq!(m.apply(&[DocxOp::NewParagraph]).changed, 1);
+    assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
+
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(2, 2)
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    let img_b64 = wordcraft_engine::cmd::insert::base64_encode(encoded.get_ref());
+    // Fill cells: A1 (bold), B1 (with inline image), A2, B2
+    assert_eq!(m.apply(&[insert("A1")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("B1")]).changed,
+        1
+    );
+    assert!(m.run_engine("insert.picture", json!({ "data": img_b64 })));
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("A2")]).changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("B2")]).changed,
+        1
+    );
+
+    let tv = m.view().table.expect("in table");
+    assert_eq!((tv.rows, tv.cols, tv.row, tv.col), (2, 2, 1, 1));
+    assert_eq!(tv.insert_row_above, None);
+    assert_eq!(tv.insert_row_below, None);
+    assert_eq!(tv.insert_column_left, None);
+    assert_eq!(tv.insert_column_right, None);
+    assert_eq!(tv.delete_row, None);
+    assert_eq!(tv.delete_column, None);
+    assert_eq!(tv.merge_right, Some("tableShape"));
+    assert_eq!(tv.merge_below, Some("tableShape"));
+    assert_eq!(tv.merge_cells, Some("tableShape"));
+    assert_eq!(tv.split_cell, Some("tableShape"));
+
+    // 1-4: Insert Row Above/Below, Insert Column Left/Right + Undo/Redo
+    assert_eq!(table_op(&mut m, A::InsertRowAbove).changed, 1);
+    assert_eq!(body_table_texts(&m).len(), 3);
+    assert_eq!(table_op(&mut m, A::InsertRowBelow).changed, 1);
+    assert_eq!(body_table_texts(&m).len(), 4);
+    assert_eq!(table_op(&mut m, A::InsertColumnLeft).changed, 1);
+    assert_eq!(body_table_texts(&m)[0].len(), 3);
+    assert_eq!(table_op(&mut m, A::InsertColumnRight).changed, 1);
+    assert_eq!(body_table_texts(&m)[0].len(), 4);
+
+    // 5-6: Delete Row and Delete Column (first deleting col 2 at caret, then blank col 1 & blank rows 1-2)
+    let tp = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, b)| b.as_table().map(|_| i as u32))
+        .unwrap();
+    assert_eq!(table_op(&mut m, A::DeleteColumn).changed, 1);
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 2, 1, 0], "off": 0 } })
+    ));
+    assert_eq!(table_op(&mut m, A::DeleteColumn).changed, 1);
+    assert_eq!(table_op(&mut m, A::DeleteRow).changed, 1);
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 1, 1, 0], "off": 0 } })
+    ));
+    assert_eq!(table_op(&mut m, A::DeleteRow).changed, 1);
+    assert_eq!(
+        body_table_texts(&m),
+        vec![vec![vec!["A1"], vec!["B1"]], vec![vec!["A2"], vec!["B2"]]]
+    );
+    assert_eq!(
+        m.diagnostic_document()
+            .body[tp as usize]
+            .as_table()
+            .unwrap()
+            .rows[0]
+            .cells[1]
+            .blocks[0]
+            .as_para()
+            .unwrap()
+            .objects
+            .len(),
+        1
+    );
+
+    // 7: Merge Right from (0,0) preserves A1 + B1 (and its inline image!), Undo/Redo works
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })
+    ));
+    assert_eq!(m.view().table.as_ref().unwrap().merge_right, None);
+    assert_eq!(table_op(&mut m, A::MergeRight).changed, 1);
+    assert_eq!(body_table_texts(&m)[0], vec![vec!["A1", "B1"]]);
+    assert_eq!(
+        m.diagnostic_document()
+            .body[tp as usize]
+            .as_table()
+            .unwrap()
+            .rows[0]
+            .cells[0]
+            .blocks[1]
+            .as_para()
+            .unwrap()
+            .objects
+            .len(),
+        1
+    );
+    assert_eq!(m.view().table.as_ref().unwrap().split_cell, None);
+
+    // 10: Split merged cell preserves content in top-left and initializes empty right cell
+    assert_eq!(table_op(&mut m, A::SplitCell).changed, 1);
+    assert_eq!(body_table_texts(&m)[0].len(), 2);
+    assert_eq!(body_table_texts(&m)[0][0], vec!["A1", "B1"]);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(body_table_texts(&m)[0].len(), 1);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(body_table_texts(&m)[0].len(), 2);
+
+    // 8: Merge Below (0,0) + (1,0), then splitCell vertically
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })
+    ));
+    assert_eq!(m.view().table.as_ref().unwrap().merge_below, None);
+    assert_eq!(table_op(&mut m, A::MergeBelow).changed, 1);
+    assert_eq!(body_table_texts(&m)[0][0], vec!["A1", "B1", "A2"]);
+    // Right cell is shorter vertically -> merge_right refused, split_cell allowed
+    let tv = m.view().table.unwrap();
+    assert_eq!(tv.merge_right, Some("tableShape"));
+    assert_eq!(tv.split_cell, None);
+    assert_eq!(table_op(&mut m, A::SplitCell).changed, 1);
+
+    // 9: Rectangular Merge Cells (2x2) + Split Cell + render + save/reopen + continue editing
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 }, "extend": false })
+    ));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 1, 1, 0], "off": 2 }, "extend": true })
+    ));
+    let tv = m.view().table.unwrap();
+    assert_eq!(tv.selected_cells, 4);
+    assert_eq!(tv.merge_cells, None);
+    assert!(
+        !m.view().selection.is_empty(),
+        "cell range selection rectangles must be exposed"
+    );
+    assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
+    assert_eq!(
+        body_table_texts(&m)[0][0],
+        vec!["A1", "B1", "A2", "B2"]
+    );
+    assert_eq!(table_op(&mut m, A::SplitCell).changed, 1);
+    assert!(m.render_png(0, 1.0).is_some());
+    let exported = m.export().unwrap();
+    assert!(m.same_as(&exported));
+    let mut reopened = DocxModel::open(&exported).unwrap();
+    assert!(reopened.same_as(&exported));
+    assert!(reopened.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 } })
+    ));
+    assert_eq!(reopened.apply(&[insert("Continued")]).changed, 1);
+    assert!(reopened.round_trip().unwrap().passed);
+    // Deleting a column containing an inline image prunes unused media for safe roundtrip, and Undo restores it
+    assert!(reopened.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 } })
+    ));
+    let mut encoded2 = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(2, 2)
+        .write_to(&mut encoded2, image::ImageFormat::Png)
+        .unwrap();
+    let img_b64_2 = wordcraft_engine::cmd::insert::base64_encode(encoded2.get_ref());
+    assert!(reopened.run_engine("insert.picture", json!({ "data": img_b64_2 })));
+    assert_eq!(table_op(&mut reopened, A::DeleteColumn).changed, 1);
+    assert_eq!(reopened.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(reopened.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert!(reopened.round_trip().unwrap().passed);
+}
+
+#[test]
+fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
+    use super::engine::table::TableStructureAction as A;
+    use crate::services::save::package;
+
+    // Negative 1: stale target, malformed JSON, outside table, 1x1 split, single-cell selection mergeCells, overhang, delete last row/col, protected doc
+    let mut m = model();
+    let outside = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableStructure {
+            action: A::InsertRowAbove,
+            target: outside.clone()
+        }])
+        .rejected,
+        vec![0]
+    );
+    assert!(serde_json::from_str::<DocxOp>(r#"{"op":"tableStructure","action":"mergeRight","target":{"anchorKey":"a","caretKey":"b"},"extra":1}"#).is_err());
+    assert!(!validate(&[DocxOp::TableStructure {
+        action: A::MergeRight,
+        target: super::engine::SelectionIdentity {
+            anchor_key: String::new(),
+            caret_key: "body:0:0".into(),
+        },
+    }]));
+
+    // Build a document with a body table, an existing 2x1 vertical merge in col 0, and a nested table in (1,1)
+    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]).changed, 1);
+    assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
+    assert_eq!(m.apply(&[insert("Outer00")]).changed, 1);
+    let stale_target = table_target(&mut m);
+    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Outer01")]).changed, 1);
+    // Stale target rejected without changing model
+    let rev_before = m.adapter_state().2;
+    assert_eq!(
+        m.apply(&[DocxOp::TableStructure {
+            action: A::InsertRowBelow,
+            target: stale_target
+        }])
+        .rejected,
+        vec![0]
+    );
+    assert_eq!(m.adapter_state().2, rev_before);
+
+    // Ordinary text selection inside a single cell does NOT enable mergeCells
+    assert_eq!(m.apply(&[mv(MoveTarget::Left, true)]).changed, 0);
+    assert_eq!(m.view().table.as_ref().unwrap().merge_cells, Some("tableShape"));
+    assert_eq!(table_op(&mut m, A::MergeCells).rejected, vec![0]);
+
+    // Insert nested 2x2 table inside (1, 1), test nested table edit + reopen
+    let tp = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, b)| b.as_table().map(|_| i as u32))
+        .unwrap();
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 1, 1, 0], "off": 0 } })
+    ));
+    assert!(m.run_engine("insert.table", json!({ "rows": 2, "cols": 2 })));
+    assert_eq!(m.apply(&[insert("N00")]).changed, 1);
+    assert_eq!(table_op(&mut m, A::InsertRowBelow).changed, 1);
+    assert!(m.round_trip().unwrap().passed);
+
+    let nested_b = m
+        .diagnostic_document()
+        .body[tp as usize]
+        .as_table()
+        .unwrap()
+        .rows[1]
+        .cells[1]
+        .blocks
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap() as u32;
+    // Cross-table selection (outer cell (1,1) trailing paragraph -> nested cell) rejects table structure commands
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 1, 1, 1], "off": 0 }, "extend": false })
+    ));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 1, 1, nested_b, 0, 0, 0], "off": 0 }, "extend": true })
+    ));
+    assert_eq!(table_op(&mut m, A::MergeCells).rejected, vec![0]);
+
+    // Merging outer col 0 vertically creates overhang against (0,1) -> mergeCells across (0,0)-(0,1) rejected
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 }, "extend": false })
+    ));
+    assert_eq!(table_op(&mut m, A::MergeBelow).changed, 1);
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 }, "extend": false })
+    ));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 }, "extend": true })
+    ));
+    assert_eq!(m.view().table.as_ref().unwrap().merge_cells, Some("tableShape"));
+    assert_eq!(table_op(&mut m, A::MergeCells).rejected, vec![0]);
+
+    // Content controls (SDT around row) -> refused with tableContent and 0 mutation
+    {
+        let doc = m.diagnostic_document_mut();
+        if let Some(wordcraft_engine::doc::Block::Table(t)) =
+            doc.body.get_mut(tp as usize).map(std::sync::Arc::make_mut)
+        {
+            t.rows[0].controls.open.push(Default::default());
+        }
+    }
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 }, "extend": false })
+    ));
+    assert_eq!(m.view().table.as_ref().unwrap().delete_row, Some("tableContent"));
+    assert_eq!(table_op(&mut m, A::DeleteRow).rejected, vec![0]);
+
+    // Read-only protected document with table rejects structure ops cleanly
+    let mut ro = DocxModel::open(&basic::protected_ko("readOnly", false).unwrap()).unwrap();
+    ro.diagnostic_document_mut()
+        .body
+        .push(std::sync::Arc::new(wordcraft_engine::doc::Block::Table(
+            wordcraft_engine::doc::table::Table::new(2, 2, 200.0),
+        )));
+    let ro_tp = (ro.diagnostic_document().body.len() - 1) as u32;
+    assert!(ro.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [ro_tp, 0, 0, 0], "off": 0 } })
+    ));
+    assert_eq!(table_op(&mut ro, A::InsertRowBelow).rejected, vec![0]);
+
+    // Real T009 save publication & independent reopen for an edited DOCX table
+    let mut seed_model = model();
+    assert_eq!(
+        seed_model
+            .apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph, DocxOp::Table { rows: 2, cols: 2 }])
+            .changed,
+        2
+    );
+    assert_eq!(seed_model.apply(&[insert("Cell1")]).changed, 1);
+    let cell_caret = seed_model.view().caret.expect("cell caret");
+    let seed_bytes = seed_model.export().unwrap();
+    let dir = TempDir::new();
+    let doc_path = dir.write("table-save.docx", &seed_bytes);
+    let state = DocumentState::default();
+    let info = state
+        .registry()
+        .register(identify(doc_path.to_str().unwrap(), &Limits::default()).unwrap())
+        .unwrap();
+    block_on(commands::load(&state, info.session_id, None)).unwrap();
+    let clicked = block_on(commands::edit(
+        &state,
+        info.session_id,
+        1,
+        0,
+        vec![pointer(cell_caret.page as u32, cell_caret.x, cell_caret.y)],
+    ))
+    .unwrap();
+    assert!(clicked.rejected.is_empty());
+    let view_before = clicked.view;
+    assert!(view_before.table.is_some());
+    let edited = block_on(commands::edit(
+        &state,
+        info.session_id,
+        1,
+        clicked.session.revision,
+        vec![
+            DocxOp::TableStructure {
+                action: A::InsertRowBelow,
+                target: super::engine::SelectionIdentity {
+                    anchor_key: view_before.anchor_key,
+                    caret_key: view_before.caret_key,
+                },
+            },
+            DocxOp::InsertText {
+                text: "Row2".into(),
+            },
+        ],
+    ))
+    .unwrap();
+    assert_eq!(edited.rejected, Vec::<usize>::new());
+    let view_after = edited.view;
+    assert_eq!(view_after.table.as_ref().unwrap().rows, 3);
+    // Delete-all-rows / delete-all-cols refusal on 1x1-after-deletes check
+    let mut one_by_two = DocxModel::open(&seed_bytes).unwrap();
+    let otp = one_by_two
+        .diagnostic_document()
+        .body
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, b)| b.as_table().map(|_| i as u32))
+        .unwrap();
+    assert!(one_by_two.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [otp, 0, 0, 0], "off": 0 } })
+    ));
+    assert_eq!(table_op(&mut one_by_two, A::DeleteRow).changed, 1);
+    assert_eq!(one_by_two.view().table.as_ref().unwrap().delete_row, Some("tableShape"));
+    assert_eq!(table_op(&mut one_by_two, A::DeleteRow).rejected, vec![0]);
+
+    // Real T009 save publication
+    let check = block_on(commands::preflight(&state, info.session_id, 1)).unwrap();
+    assert!(check.preservation.is_safe());
+    let published = block_on(commands::save(
+        &state,
+        info.session_id,
+        1,
+        edited.session.revision,
+    ))
+    .unwrap();
+    assert!(published.durable);
+    let disk_bytes = std::fs::read(&doc_path).unwrap();
+    let orig_pkg = package::open(&seed_bytes, package::Side::Original).unwrap();
+    let saved_pkg = package::open(&disk_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
+    let reopened = DocxModel::open(&disk_bytes).unwrap();
+    assert!(reopened.same_as(&disk_bytes));
+    let rt = reopened
+        .diagnostic_document()
+        .body
+        .iter()
+        .rev()
+        .find_map(|b| b.as_table())
+        .unwrap();
+    assert_eq!(rt.rows.len(), 3);
+    assert_eq!(rt.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Cell1");
+    assert_eq!(rt.rows[1].cells[0].blocks[0].as_para().unwrap().plain_text(), "Row2");
+}

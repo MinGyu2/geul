@@ -142,17 +142,17 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "paragraph.bullets": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "insert.image": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "insert.table": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
-  // 표 구조(T012 Phase 2): rhwp 본문 수준 표. 가용성은 세션이 연산마다 표 모양·내용·원본 증명으로 따로 판정한다.
-  "table.insertRowAbove": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.insertRowBelow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.insertColumnLeft": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.insertColumnRight": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.deleteRow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.deleteColumn": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.mergeRight": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.mergeBelow": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.mergeCells": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
-  "table.splitCell": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  // 표 구조: WordCraft(DOCX, Stage 2 Phase 1) 및 RHWP(T012 Phase 2). 가용성은 세션이 연산마다 표 모양·내용·원본 증명으로 판정한다.
+  "table.insertRowAbove": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertRowBelow": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertColumnLeft": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.insertColumnRight": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.deleteRow": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.deleteColumn": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeRight": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeBelow": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.mergeCells": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
+  "table.splitCell": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_ADVANCED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
   // Stage 1 (docs/architecture/command-registry.md "Stage 1"). Runtime availability is the session's actual
   // selection/engine context; RHWP_STAGE1_* declare the HWP/HWPX support verified in this build.

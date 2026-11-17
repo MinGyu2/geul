@@ -63,7 +63,7 @@ import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../
 //   view.formatAccess)로 정한다. 저장 명령은 아래 save()를 그대로 부른다. T010 안정화: 앱이 먼저 확정한 조합이 입력기의 최종
 //   글자를 기다리는 동안(provisional)은 조합 중과 같이 명령을 받지 않는다(그 사이 연산이 provisional을 지워 최종 글자로 고치지
 //   못했다). 엔진이 명령 연산을 거부하면 inputNotice "commandRejected"로 알린다.
-import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
+import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxTableAction, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
 import type { DocumentError, PdfExported, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
@@ -99,7 +99,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "replace", "replaceAll",
+  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
@@ -107,6 +107,19 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
  */
 const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark", "find", "clearSearch"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
+const TABLE_STRUCTURE_ACTIONS: Readonly<Record<import("../../../commands/target").TableStructureCommandId, DocxTableAction>> = {
+  "table.insertRowAbove": "insertRowAbove",
+  "table.insertRowBelow": "insertRowBelow",
+  "table.insertColumnLeft": "insertColumnLeft",
+  "table.insertColumnRight": "insertColumnRight",
+  "table.deleteRow": "deleteRow",
+  "table.deleteColumn": "deleteColumn",
+  "table.mergeRight": "mergeRight",
+  "table.mergeBelow": "mergeBelow",
+  "table.mergeCells": "mergeCells",
+  "table.splitCell": "splitCell",
+};
+const TABLE_STRUCTURE_IDS = Object.keys(TABLE_STRUCTURE_ACTIONS) as import("../../../commands/target").TableStructureCommandId[];
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
 const ACTION_IDS = [
   "insert.image", "paragraph.bullets", "format.embedFont",
@@ -116,7 +129,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll"]);
+  "pageSetup", "replace", "replaceAll", "tableStructure"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1126,7 +1139,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       return {
         parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits", "format.font": "pendingEdits",
           ...Object.fromEntries(STAGE1_PARAMETERS.map((id) => [id, "pendingEdits"])) },
-        actionReasons: Object.fromEntries([...ACTION_IDS, ...STAGE1_ACTIONS].map((id) => [id, "pendingEdits"])),
+        actionReasons: Object.fromEntries([...ACTION_IDS, ...STAGE1_ACTIONS, ...TABLE_STRUCTURE_IDS].map((id) => [id, "pendingEdits"])),
       };
     }
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
@@ -1167,6 +1180,16 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // blocks formatting (same rule as fonts).
     if (view.formatAccess !== "protected") actions["format.embedFont"] = {};
     else actionReasons["format.embedFont"] = "engineUnsupported";
+    // Stage 2 Phase 1: table structure commands reflect live WordCraft table geometry and selection.
+    if (!view.inTable || !view.table) {
+      for (const id of TABLE_STRUCTURE_IDS) actionReasons[id] = "notInTable";
+    } else {
+      for (const id of TABLE_STRUCTURE_IDS) {
+        const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
+        if (refusal === null) actions[id] = {};
+        else actionReasons[id] = refusal;
+      }
+    }
     this.stage1State(view, parameters, parameterReasons, actions, actionReasons);
     return { parameters, parameterReasons, actions, actionReasons };
   }
@@ -1274,7 +1297,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       return { accepted: true };
     }
     const flag = FORMAT_FLAG[command];
+    const tableAction = command in TABLE_STRUCTURE_ACTIONS ? TABLE_STRUCTURE_ACTIONS[command as keyof typeof TABLE_STRUCTURE_ACTIONS] : undefined;
     const op: DocxOp | null = command === "edit.undo" ? { op: "undo" } : command === "edit.redo" ? { op: "redo" }
+      : tableAction && this.view ? { op: "tableStructure", action: tableAction, target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey } }
       : command === "paragraph.bullets" ? { op: "bullets" }
       : command === "references.toc" ? { op: "toc" } : command === "references.updateToc" ? { op: "updateToc" }
       : command === "review.trackChanges" && this.view ? { op: "trackChanges", value: !this.view.tracking }

@@ -6,7 +6,7 @@ import { commandDefinition, shortcutLabel } from "../../commands/registry";
 import { isMac } from "../../commands/shortcuts";
 import { useRovingFocus } from "../../hooks/useRovingFocus";
 import { useTranslation } from "../../language/LanguageContext";
-import { DEFAULT_RIBBON_TAB, resolveActiveRibbonTab, visibleRibbonTabs } from "../../ribbon/visibility";
+import { DEFAULT_RIBBON_TAB, resolveActiveRibbonTab, visibleRibbonGroups, visibleRibbonTabs } from "../../ribbon/visibility";
 import { CommandButton } from "../CommandButton/CommandButton";
 import { FontPicker } from "../FontPicker/FontPicker";
 import { VALUE_PICKERS, ValuePicker } from "./ValuePicker";
@@ -157,7 +157,7 @@ export function Ribbon({ context, format }: RibbonProps) {
             aria-label={t(active.labelKey)}
             onKeyDown={onToolbarKeyDown}
           >
-            {active.groups.map((group, groupIndex) => (
+            {visibleRibbonGroups(active, format).map((group, groupIndex) => (
               <div key={group.id} className="ribbon__group" role="group" aria-label={t(group.labelKey)}>
                 <div className="ribbon__group-commands">
                   {group.commands.map((command, commandIndex) => command.id === "format.font" ? (

@@ -5,8 +5,8 @@ import { commandState } from "../commands/commands";
 import { COMMANDS, commandDefinition } from "../commands/registry";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "../commands/target";
 import { initialLayout } from "../hooks/layoutState";
-import { RIBBON_TABS } from "./definitions";
-import { resolveActiveRibbonTab, ribbonFormatFor, visibleRibbonTabs } from "./visibility";
+import { RIBBON_TABS, TABLE_STRUCTURE_GROUP } from "./definitions";
+import { resolveActiveRibbonTab, ribbonFormatFor, visibleRibbonGroups, visibleRibbonTabs } from "./visibility";
 
 const ids = (format: DocumentFormat | null) => visibleRibbonTabs(format).map((tab) => tab.id);
 const COMMON = ["file", "home", "insert", "draw", "design", "layout", "review", "view", "help"];
@@ -49,6 +49,15 @@ describe("보이는 탭", () => {
     for (const format of [null, "hwp", "hwpx", "docx"] as const) {
       expect(ids(format).filter((id) => COMMON.includes(id))).toEqual(COMMON);
     }
+  });
+
+  it("DOCX 레이아웃 탭은 공유 표 구조 그룹을 포함하고 한글 도구는 기존 탭에서 유지한다", () => {
+    const layout = RIBBON_TABS.find((t) => t.id === "layout")!;
+    expect(visibleRibbonGroups(layout, "docx").map((g) => g.id)).toEqual(["pageSetup", TABLE_STRUCTURE_GROUP.id]);
+    expect(visibleRibbonGroups(layout, "hwp").map((g) => g.id)).toEqual(["pageSetup"]);
+    expect(visibleRibbonGroups(layout, null).map((g) => g.id)).toEqual(["pageSetup"]);
+    const hangul = RIBBON_TABS.find((t) => t.id === "hangulTools")!;
+    expect(visibleRibbonGroups(hangul, "hwp").map((g) => g.id)).toContain(TABLE_STRUCTURE_GROUP.id);
   });
 });
 

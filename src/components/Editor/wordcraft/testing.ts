@@ -35,6 +35,7 @@ const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "font", "comment",
   "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
+  "tableStructure",
 ]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 /** The fake document's base font family. */
@@ -136,6 +137,7 @@ export class FakeDocx implements DocxBackend {
   stage1: Pick<DocxView, "chars" | "paragraph" | "page"> | null = null;
   stage1Search: DocxView["search"] | null = null;
   stage1Ops: DocxOp[] = [];
+  tableView?: import("../../../adapters/docx").DocxTableView;
 
   constructor(text: string[] = ["가나다", "abc"]) {
     this.paragraphs = [...text];
@@ -172,7 +174,7 @@ export class FakeDocx implements DocxBackend {
       tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
-      selection, collapsed, inTable: false, clipboardTextAvailable: !collapsed,
+      selection, collapsed, inTable: !!this.tableView, clipboardTextAvailable: !collapsed,
       caretKey: at(this.caret), anchorKey: at(this.anchor),
       paragraphText: this.paragraphs[this.caret.p]!, caretOffset: this.caret.o,
       history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
@@ -181,6 +183,7 @@ export class FakeDocx implements DocxBackend {
       font: { family: cmp(this.caret, this.anchor) === 0 ? this.pendingFont ?? FAKE_FONT : this.fonts.get(this.rangeKey()) ?? FAKE_FONT, eastAsia: null },
       fontGeneration: this.fontGeneration,
       ...(this.stage1 ? { ...this.stage1, ...(this.stage1Search ? { search: this.stage1Search } : {}) } : {}),
+      ...(this.tableView ? { table: this.tableView } : {}),
     };
   }
 
@@ -353,6 +356,11 @@ export class FakeDocx implements DocxBackend {
     const len = (p: number) => chars(this.paragraphs[p]!).length;
     // Stage 1 operations are verified against the real engine (Rust tests); the fake only records them (accepted when
     // it reports Stage 1 state, refused otherwise). It never models their document effect.
+    if (op.op === "tableStructure") {
+      if (!this.tableView) return false;
+      this.stage1Ops.push(op);
+      return true;
+    }
     if (["align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
       "continueNumbering", "pageSetup", "find", "replace", "replaceAll", "clearSearch"].includes(op.op)) {
       if (!this.stage1) return false;

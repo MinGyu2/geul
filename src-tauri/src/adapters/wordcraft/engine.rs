@@ -29,6 +29,8 @@ use crate::document::EngineStage;
 
 #[path = "stage1.rs"]
 pub mod stage1;
+#[path = "table.rs"]
+pub mod table;
 #[path = "embed_font.rs"]
 pub mod embed_font;
 
@@ -241,6 +243,11 @@ pub enum DocxOp {
     },
     /// Stage 1: close the search (stop reporting search state).
     ClearSearch {},
+    /// Stage 2 Phase 1: DOCX table structure editing with explicit target cell/selection ownership.
+    TableStructure {
+        action: table::TableStructureAction,
+        target: SelectionIdentity,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -397,6 +404,10 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::Replace { query, with } | DocxOp::ReplaceAll { query, with } => {
                 query.valid() && stage1::valid_replacement(with)
             }
+            DocxOp::TableStructure { target, .. } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key)
+            }
             _ => true,
         })
 }
@@ -480,6 +491,9 @@ pub struct DocxView {
     pub search: Option<stage1::SearchView>,
     /// Stage 1 F: fonts embedded in the document (font table embed slots).
     pub embedded_fonts: Vec<embed_font::Embedded>,
+    /// Stage 2 Phase 1: current table geometry and per-command eligibility when inside a table.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<table::DocxTableView>,
 }
 
 /// 문서 보호(Restrict Editing)에서 직접 글자 서식(`format.bold` 등)을 할 수 있는지.
@@ -935,6 +949,7 @@ impl DocxModel {
                 self.stage1_clear_search();
                 Ok(false)
             }
+            DocxOp::TableStructure { action, target } => self.table_structure(*action, target),
         }
     }
 
@@ -1293,7 +1308,19 @@ impl DocxModel {
             height: c.height.max(c.width),
         });
         let collapsed = sel.is_collapsed();
-        let selection = if collapsed {
+        let selection = if let Some(range) = self.session.cell_range() {
+            wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &self.session.doc, range)
+                .into_iter()
+                .take(MAX_SELECTION_RECTS)
+                .map(|(page, r)| RectView {
+                    page,
+                    x: r.x,
+                    y: r.y,
+                    width: r.w,
+                    height: r.h,
+                })
+                .collect()
+        } else if collapsed {
             Vec::new()
         } else {
             layout
@@ -1390,6 +1417,7 @@ impl DocxModel {
             page: self.page_view(),
             search,
             embedded_fonts: embed_font::embedded(&self.session.doc),
+            table: self.table_view(),
         }
     }
 

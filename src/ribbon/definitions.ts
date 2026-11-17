@@ -37,6 +37,13 @@ const group = (id: string, commands: RibbonCommandDefinition[]): RibbonGroupDefi
   commands,
 });
 
+export const TABLE_STRUCTURE_GROUP: RibbonGroupDefinition = group("tableStructure", [
+  cmd("table.insertRowAbove", "table"), cmd("table.insertRowBelow", "table"),
+  cmd("table.insertColumnLeft", "table"), cmd("table.insertColumnRight", "table"),
+  cmd("table.deleteRow", "table"), cmd("table.deleteColumn", "table"),
+  cmd("table.mergeRight", "table"), cmd("table.mergeBelow", "table"), cmd("table.mergeCells", "table"), cmd("table.splitCell", "table"),
+]);
+
 export const RIBBON_TABS: RibbonTabDefinition[] = [
   {
     id: "file",
@@ -100,12 +107,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
     groups: [
       group("characterSpacing", [cmd("hangul.charWidth", "charWidth", "large"), cmd("hangul.charSpacing", "charSpacing", "large")]),
       group("tableTools", [cmd("hangul.tableFormula", "formula", "large"), cmd("hangul.insertTableFormula", "formula")]),
-      group("tableStructure", [
-        cmd("table.insertRowAbove", "table"), cmd("table.insertRowBelow", "table"),
-        cmd("table.insertColumnLeft", "table"), cmd("table.insertColumnRight", "table"),
-        cmd("table.deleteRow", "table"), cmd("table.deleteColumn", "table"),
-        cmd("table.mergeRight", "table"), cmd("table.mergeBelow", "table"), cmd("table.mergeCells", "table"), cmd("table.splitCell", "table"),
-      ]),
+      TABLE_STRUCTURE_GROUP,
     ],
   },
   {

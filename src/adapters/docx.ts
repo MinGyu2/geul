@@ -91,6 +91,34 @@ export interface DocxView {
   search?: SearchState;
   /** Stage 1 F: embedded fonts (font table embed slots). */
   embeddedFonts?: DocxEmbeddedFont[];
+  /** Stage 2 Phase 1: current table geometry and per-command eligibility when inside a table. */
+  table?: DocxTableView;
+}
+
+export type DocxTableAction =
+  | "insertRowAbove" | "insertRowBelow" | "insertColumnLeft" | "insertColumnRight"
+  | "deleteRow" | "deleteColumn" | "mergeRight" | "mergeBelow" | "mergeCells" | "splitCell";
+
+export type DocxTableRefusal = "tableShape" | "tableContent" | "limit" | null;
+
+export interface DocxTableView {
+  rows: number;
+  cols: number;
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+  selectedCells: number;
+  insertRowAbove: DocxTableRefusal;
+  insertRowBelow: DocxTableRefusal;
+  insertColumnLeft: DocxTableRefusal;
+  insertColumnRight: DocxTableRefusal;
+  deleteRow: DocxTableRefusal;
+  deleteColumn: DocxTableRefusal;
+  mergeRight: DocxTableRefusal;
+  mergeBelow: DocxTableRefusal;
+  mergeCells: DocxTableRefusal;
+  splitCell: DocxTableRefusal;
 }
 
 export interface DocxFont {
@@ -204,7 +232,8 @@ export type DocxOp =
   | { op: "find"; query: SearchOptions; backward: boolean }
   | { op: "replace"; query: SearchOptions; with: string }
   | { op: "replaceAll"; query: SearchOptions; with: string }
-  | { op: "clearSearch" };
+  | { op: "clearSearch" }
+  | { op: "tableStructure"; action: DocxTableAction; target: { anchorKey: string; caretKey: string } };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -376,7 +405,28 @@ function parseEmbeddedFonts(value: unknown): DocxEmbeddedFont[] | undefined {
   return out;
 }
 
-const STAGE1_VIEW: readonly [string, (value: unknown) => unknown][] = [["chars", parseChars], ["paragraph", parseParagraph], ["page", parsePageSetup], ["search", parseSearch], ["embeddedFonts", parseEmbeddedFonts]];
+const TABLE_ACTION_KEYS: readonly DocxTableAction[] = [
+  "insertRowAbove", "insertRowBelow", "insertColumnLeft", "insertColumnRight",
+  "deleteRow", "deleteColumn", "mergeRight", "mergeBelow", "mergeCells", "splitCell",
+];
+const TABLE_REFUSALS = new Set(["tableShape", "tableContent", "limit"]);
+
+function parseTableView(value: unknown): DocxTableView | undefined {
+  const keys = ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", ...TABLE_ACTION_KEYS];
+  if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
+  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells"] as const) {
+    if (!isCount(value[k])) return undefined;
+  }
+  for (const k of TABLE_ACTION_KEYS) {
+    const v = value[k];
+    if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
+  }
+  return value as unknown as DocxTableView;
+}
+
+const STAGE1_VIEW: readonly [string, (value: unknown) => unknown][] = [
+  ["chars", parseChars], ["paragraph", parseParagraph], ["page", parsePageSetup], ["search", parseSearch], ["embeddedFonts", parseEmbeddedFonts], ["table", parseTableView],
+];
 
 export function parseDocxView(value: unknown): DocxView | null {
   if (!isRecord(value)) return null;

@@ -277,4 +277,39 @@ describe("DocxEditorSession", () => {
     const result = await sessions.reconcile();
     expect(result.ok && result.value[0]?.state).toBe("ready");
   });
+
+  it("DOCX 표 구조 10개 명령의 가용성·거절 사유·실행 대상 검증을 반영한다", async () => {
+    const { documentCommandState } = await import("../../../commands/capability");
+    const { editor, fake } = await readyDocx(["본문"]);
+    const ALL_TABLE = [
+      "table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",
+      "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell",
+    ] as const;
+    for (const id of ALL_TABLE) {
+      expect(documentCommandState(id, editor.snapshot())).toEqual({ available: false, reason: "notInTable" });
+      expect(editor.execute(id).accepted).toBe(false);
+    }
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
+      mergeCells: "tableShape", splitCell: "tableShape",
+    };
+    await editor.load({ discard: true });
+    expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: true });
+    expect(documentCommandState("table.mergeRight", editor.snapshot())).toEqual({ available: true });
+    expect(documentCommandState("table.mergeCells", editor.snapshot())).toEqual({ available: false, reason: "tableShape" });
+    expect(documentCommandState("table.splitCell", editor.snapshot())).toEqual({ available: false, reason: "tableShape" });
+    expect(editor.execute("table.mergeCells").accepted).toBe(false);
+    expect(editor.execute("table.insertRowBelow").accepted).toBe(true);
+    const editCall = fake.calls.find((c) => c.method === "edit");
+    expect(editCall?.args[3]).toEqual([{ op: "tableStructure", action: "insertRowBelow", target: { anchorKey: "body:0:0", caretKey: "body:0:0" } }]);
+    // Pending edit blocks table commands until committed.
+    expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: false, reason: "pendingEdits" });
+    await flush();
+    // Protected document blocks structural commands.
+    fake.formatAccess = "protected";
+    await editor.load({ discard: true });
+    expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: false, reason: "protected" });
+  });
 });

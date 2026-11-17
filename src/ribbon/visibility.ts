@@ -6,7 +6,7 @@
 // - 선택 문맥(표·그림 선택)으로 여는 상황 탭은 아직 없다: 엔진 보기가 표·그림 개체 선택을 믿을 만하게 알려 주지 않고, 그런 탭에
 //   둘 검증된 명령도 없다(docs/architecture/command-registry.md "T011 리본"). 관측하지 못한 선택으로 탭을 열지 않는다.
 import type { DocumentFormat } from "../adapters/contract";
-import { RIBBON_TABS, type RibbonTabDefinition } from "./definitions";
+import { RIBBON_TABS, TABLE_STRUCTURE_GROUP, type RibbonGroupDefinition, type RibbonTabDefinition } from "./definitions";
 
 /** 형식 전용 탭이 가리키는 문서 묶음: "hwp"는 HWP·HWPX(한글 도구), "docx"는 DOCX. */
 export type RibbonFormat = NonNullable<RibbonTabDefinition["format"]>;
@@ -26,6 +26,17 @@ export function visibleRibbonTabs(
 ): RibbonTabDefinition[] {
   const target = ribbonFormatFor(format);
   return tabs.filter((tab) => tab.format === undefined || tab.format === target);
+}
+
+/** 활성 탭의 보이는 도구 그룹(DOCX에서는 레이아웃 탭에 공유 표 구조 그룹을 함께 표시, 한글은 한글 도구 유지). */
+export function visibleRibbonGroups(
+  tab: RibbonTabDefinition,
+  format: DocumentFormat | null | undefined,
+): readonly RibbonGroupDefinition[] {
+  if (tab.id === "layout" && ribbonFormatFor(format) === "docx") {
+    return [...tab.groups, TABLE_STRUCTURE_GROUP];
+  }
+  return tab.groups;
 }
 
 /** 기본으로 고를 탭. */
