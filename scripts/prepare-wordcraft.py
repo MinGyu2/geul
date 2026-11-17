@@ -12,11 +12,13 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5"
 FONT_PIN = "6931bcc12af12ff874a9ebb4c63cebe17b3f8b82"
-PIN = "23c0dc52d5cf7d197d06c0b539547b9cce364b49"
+TABLE_PIN = "23c0dc52d5cf7d197d06c0b539547b9cce364b49"
+PIN = "dd14a0ae29d90a05a54918db641d97f952260882"
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
-    (FONT_PIN, PIN, "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit"),
+    (FONT_PIN, TABLE_PIN, "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit"),
+    (TABLE_PIN, PIN, "patches/wordcraft/docx-table-stabilization.patch", "patches/wordcraft/docx-table-stabilization.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

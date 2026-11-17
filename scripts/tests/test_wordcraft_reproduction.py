@@ -20,7 +20,8 @@ class WordcraftReproduction(unittest.TestCase):
             subprocess.run(["git", "clone", "--quiet", "--no-local", "--no-recurse-submodules", str(ROOT), str(root)], check=True)
             for name in ["scripts/prepare-wordcraft.py", "scripts/cargo-geul.py",
                          "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit",
-                         "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit"]:
+                         "patches/wordcraft/docx-table-structure.patch", "patches/wordcraft/docx-table-structure.commit",
+                         "patches/wordcraft/docx-table-stabilization.patch", "patches/wordcraft/docx-table-stabilization.commit"]:
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
@@ -32,8 +33,9 @@ class WordcraftReproduction(unittest.TestCase):
             # prepare() fetches ONLY the public HTTPS base; no engine object is copied from ROOT.
             w.prepare()
             self.assertEqual(w.git(source, "rev-parse", "HEAD").decode().strip(), w.PIN)
-            self.assertEqual(w.git(source, "rev-parse", "HEAD^" ).decode().strip(), w.FONT_PIN)
-            self.assertEqual(w.git(source, "rev-parse", "HEAD^^").decode().strip(), w.BASE)
+            self.assertEqual(w.git(source, "rev-parse", "HEAD^" ).decode().strip(), w.TABLE_PIN)
+            self.assertEqual(w.git(source, "rev-parse", "HEAD~2").decode().strip(), w.FONT_PIN)
+            self.assertEqual(w.git(source, "rev-parse", "HEAD~3").decode().strip(), w.BASE)
             self.assertEqual(w.git(source, "status", "--porcelain", "--untracked-files=all"), b"")
             metadata = Path(w.git(source, "rev-parse", "--absolute-git-dir").decode().strip())
             self.assertFalse((metadata / "objects/info/alternates").exists())
@@ -42,9 +44,10 @@ class WordcraftReproduction(unittest.TestCase):
             for parent, target_rev, patch_rel, _ in w.STEPS:
                 self.assertEqual(w.git(source, "diff", "--binary", "--full-index", parent, target_rev, "--"),
                                  (root / patch_rel).read_bytes())
-            # Audited exact content, including FontDb::global and table structure commands.
+            # Audited exact content, including FontDb::global, table structure commands, and 1x1 cell split.
             self.assertIn(b"pub trait SystemFontSource", (source / "crates/fonts/src/fontdb.rs").read_bytes())
             self.assertIn(b"table.mergeCells", (source / "crates/engine/src/cmd/table.rs").read_bytes())
+            self.assertIn(b"split_cell_grid", (source / "crates/doc/src/table.rs").read_bytes())
             w.prepare()  # idempotent; no worktree patch or network needed
             subprocess.run(["python3", "scripts/external-integrity.py", "--require", "external/wordcraft",
                             "--writable", "target/wordcraft-reproduction", "--report", "target/wordcraft-reproduction/integrity.json",
