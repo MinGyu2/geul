@@ -52,6 +52,8 @@ export const TABLE_FORMATTING_GROUP: RibbonGroupDefinition = group("tableFormatt
   cmd("table.rowHeight", "paragraphSettings"),
   cmd("table.cellMargins", "margins"),
   cmd("table.positioning", "alignLeft"),
+  cmd("table.repeatHeader", "table"),
+  cmd("table.rowBreak", "pageSize"),
 ]);
 
 export const RIBBON_TABS: RibbonTabDefinition[] = [

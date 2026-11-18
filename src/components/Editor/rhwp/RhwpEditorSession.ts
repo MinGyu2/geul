@@ -3336,39 +3336,45 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     cellMarginsRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"];
     positioning?: NonNullable<CommandParameterContext["tablePositioning"]>;
     positioningRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.positioning"];
+    repeatHeader?: NonNullable<CommandParameterContext["tableRepeatHeader"]>;
+    repeatHeaderRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.repeatHeader"];
+    rowBreak?: NonNullable<CommandParameterContext["tableRowBreak"]>;
+    rowBreakRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.rowBreak"];
   } {
     const doc = this.doc, text = this.text;
-    const failBoth = (refusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"]) => ({
+    const failAll = (refusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"]) => ({
       cellMarginsRefusal: refusal,
       positioningRefusal: refusal,
+      repeatHeaderRefusal: refusal,
+      rowBreakRefusal: refusal,
     });
-    if (!this.editable || !doc || !text || this.imeUnsettled || this.uncertain) return failBoth("engineUnsupported");
-    if (this.pending > 0 || this.committingEpoch === this.epoch) return failBoth("pendingEdits");
-    if (!this.caret.cell) return failBoth("notInTable");
-    if (this.hasSelection && (!this.anchor.cell || !sameTable(this.anchor, this.caret))) return failBoth("tableShape");
-    if (this.caret.cell.nested && !this.ownsPosition(this.caret)) return failBoth("engineUnsupported");
-    if (!this.history) return failBoth(this.historyOff === "limit" ? "limit" : "engineUnsupported");
+    if (!this.editable || !doc || !text || this.imeUnsettled || this.uncertain) return failAll("engineUnsupported");
+    if (this.pending > 0 || this.committingEpoch === this.epoch) return failAll("pendingEdits");
+    if (!this.caret.cell) return failAll("notInTable");
+    if (this.hasSelection && (!this.anchor.cell || !sameTable(this.anchor, this.caret))) return failAll("tableShape");
+    if (this.caret.cell.nested && !this.ownsPosition(this.caret)) return failAll("engineUnsupported");
+    if (!this.history) return failAll(this.historyOff === "limit" ? "limit" : "engineUnsupported");
     const block = this.structuralBlock();
-    if (block) return failBoth(block);
+    if (block) return failAll(block);
     const table = this.caretTable();
-    if (!table) return failBoth("notInTable");
+    if (!table) return failAll("notInTable");
     if (typeof table.grid === "string") {
       const r = table.grid === "tableContent" ? "tableContent"
         : table.grid === "limit" ? "limit"
         : table.grid === "engineUnsupported" ? "engineUnsupported"
         : "tableShape";
-      return failBoth(r);
+      return failAll(r);
     }
     const first = innermost(this.caret.cell).cell;
     const last = this.hasSelection && this.anchor.cell ? innermost(this.anchor.cell).cell : first;
-    if (first >= table.grid.cells.length || last >= table.grid.cells.length) return failBoth("tableShape");
+    if (first >= table.grid.cells.length || last >= table.grid.cells.length) return failAll("tableShape");
     let rect: CellRange;
     if (first === last) {
       const c = table.grid.cells[first]!;
       rect = { startRow: c.row, startCol: c.col, endRow: c.row + c.rowSpan - 1, endCol: c.col + c.colSpan - 1 };
     } else {
       const range = rectangularRange(table.grid, first, last);
-      if (!range) return failBoth("tableShape");
+      if (!range) return failAll("tableShape");
       rect = range;
     }
 
@@ -3455,6 +3461,41 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         positioningRefusal = "tableShape";
       }
     }
+
+    let repeatHeader: NonNullable<CommandParameterContext["tableRepeatHeader"]> | undefined;
+    let repeatHeaderRefusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.repeatHeader"];
+    let rowBreak: NonNullable<CommandParameterContext["tableRowBreak"]> | undefined;
+    let rowBreakRefusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.rowBreak"];
+    if (!doc.getTablePaginationByPath || !doc.setTableHeaderRowsByPath || !doc.setTablePropertiesByPath) {
+      repeatHeaderRefusal = rowBreakRefusal = "engineUnsupported";
+    } else {
+      try {
+        const pg = JSON.parse(doc.getTablePaginationByPath(
+          table.target.section, table.target.paragraph, pathJson, rect.startRow, rect.endRow,
+        )) as {
+          pageBreak?: "none" | "cell" | "row";
+          leadingHeaderRows?: number;
+          rowHeader?: boolean | null;
+          rowHeaderMixed?: boolean;
+          canEnableHeader?: boolean;
+        };
+        repeatHeader = {
+          repeat: typeof pg.rowHeader === "boolean" ? pg.rowHeader : null,
+          mixed: pg.rowHeaderMixed === true,
+          leadingHeaderRows: typeof pg.leadingHeaderRows === "number" ? pg.leadingHeaderRows : 0,
+          canEnableHeader: pg.canEnableHeader === true,
+        };
+        const mode = pg.pageBreak === "cell" || pg.pageBreak === "row" || pg.pageBreak === "none" ? pg.pageBreak : "row";
+        rowBreak = {
+          mode,
+          mixed: false,
+          supportedModes: ["cell", "row", "none"],
+        };
+      } catch {
+        repeatHeaderRefusal = rowBreakRefusal = "tableShape";
+      }
+    }
+
     return {
       target: table.target,
       rect,
@@ -3462,7 +3503,56 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       ...(cellMarginsRefusal ? { cellMarginsRefusal } : {}),
       ...(positioning ? { positioning } : {}),
       ...(positioningRefusal ? { positioningRefusal } : {}),
+      ...(repeatHeader ? { repeatHeader } : {}),
+      ...(repeatHeaderRefusal ? { repeatHeaderRefusal } : {}),
+      ...(rowBreak ? { rowBreak } : {}),
+      ...(rowBreakRefusal ? { rowBreakRefusal } : {}),
     };
+  }
+
+  private applyRepeatHeader(args: Extract<DocumentCommandArgs, { command: "table.repeatHeader" }>): boolean {
+    const context = this.parameterState().parameters?.["table.repeatHeader"];
+    const state = this.tableMarginsAndPositioningState();
+    const doc = this.doc;
+    if (!context || !state.target || !state.rect || !state.repeatHeader || !doc?.setTableHeaderRowsByPath
+      || !validateCommandArgs("table.repeatHeader", args, context)) {
+      return false;
+    }
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.setTableHeaderRowsByPath!(
+        state.target!.section, state.target!.paragraph, tableTargetPathJson(state.target!),
+        state.rect!.startRow, state.rect!.endRow, args.repeat,
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("repeatHeader rejected");
+      return { caret, anchor };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
+  }
+
+  private applyRowBreak(args: Extract<DocumentCommandArgs, { command: "table.rowBreak" }>): boolean {
+    const context = this.parameterState().parameters?.["table.rowBreak"];
+    const state = this.tableMarginsAndPositioningState();
+    const doc = this.doc;
+    if (!context || !state.target || !state.rowBreak || !doc?.setTablePropertiesByPath
+      || !validateCommandArgs("table.rowBreak", args, context)) {
+      return false;
+    }
+    const pageBreakCode = args.mode === "cell" ? 1 : args.mode === "row" ? 2 : 0;
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.setTablePropertiesByPath!(
+        state.target!.section, state.target!.paragraph, tableTargetPathJson(state.target!),
+        JSON.stringify({ pageBreak: pageBreakCode }),
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("rowBreak rejected");
+      return { caret, anchor };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
   }
 
   private applyCellMargins(args: Extract<DocumentCommandArgs, { command: "table.cellMargins" }>): boolean {
@@ -3737,6 +3827,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     else if (layoutProps.cellMarginsRefusal) parameterReasons["table.cellMargins"] = layoutProps.cellMarginsRefusal;
     if (layoutProps.positioning) parameters["table.positioning"] = { tablePositioning: layoutProps.positioning };
     else if (layoutProps.positioningRefusal) parameterReasons["table.positioning"] = layoutProps.positioningRefusal;
+    if (layoutProps.repeatHeader) parameters["table.repeatHeader"] = { tableRepeatHeader: layoutProps.repeatHeader };
+    else if (layoutProps.repeatHeaderRefusal) parameterReasons["table.repeatHeader"] = layoutProps.repeatHeaderRefusal;
+    if (layoutProps.rowBreak) parameters["table.rowBreak"] = { tableRowBreak: layoutProps.rowBreak };
+    else if (layoutProps.rowBreakRefusal) parameterReasons["table.rowBreak"] = layoutProps.rowBreakRefusal;
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };
     return value;
@@ -3935,6 +4029,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (command === "table.positioning") {
       if (args?.command !== "table.positioning") return { accepted: false };
       return { accepted: this.applyTablePositioning(args) };
+    }
+    if (command === "table.repeatHeader") {
+      if (args?.command !== "table.repeatHeader") return { accepted: false };
+      return { accepted: this.applyRepeatHeader(args) };
+    }
+    if (command === "table.rowBreak") {
+      if (args?.command !== "table.rowBreak") return { accepted: false };
+      return { accepted: this.applyRowBreak(args) };
     }
     if (command === "table.splitCell") {
       // Ordinary cells: explicit validated dimensions from the shared split dialog. Merged cells: restore without

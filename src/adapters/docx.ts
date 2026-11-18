@@ -175,6 +175,14 @@ export interface DocxTableView {
   tableAlign: "left" | "center" | "right";
   tableIndentPt: number;
   tablePositioningRefusal: DocxTableFormatRefusal;
+  leadingHeaderRows: number;
+  rowHeader: boolean | null;
+  rowHeaderMixed: boolean;
+  canEnableHeader: boolean;
+  repeatHeaderRefusal: DocxTableFormatRefusal;
+  rowBreakMode: "cell" | "row" | null;
+  rowBreakMixed: boolean;
+  rowBreakRefusal: DocxTableFormatRefusal;
 }
 
 export interface DocxFont {
@@ -310,6 +318,16 @@ export type DocxOp =
       target: { anchorKey: string; caretKey: string };
       align?: "left" | "center" | "right";
       indentPt?: number;
+    }
+  | {
+      op: "tableRepeatHeader";
+      target: { anchorKey: string; caretKey: string };
+      repeat: boolean;
+    }
+  | {
+      op: "tableRowBreak";
+      target: { anchorKey: string; caretKey: string };
+      mode: "cell" | "row";
     }
   | { op: "cutTableCells"; target: { anchorKey: string; caretKey: string } }
   | {
@@ -537,22 +555,26 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     "selectedCols", "selectedRows", "columnWidthRefusal", "rowHeightRefusal",
     "tableCellMargins", "cellMargins", "cellMarginsMixed", "cellMarginsUsesDefault", "cellMarginsOverrideMixed", "cellMarginsRefusal",
     "tableAlign", "tableIndentPt", "tablePositioningRefusal",
+    "leadingHeaderRows", "rowHeader", "rowHeaderMixed", "canEnableHeader", "repeatHeaderRefusal",
+    "rowBreakMode", "rowBreakMixed", "rowBreakRefusal",
   ];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
-  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns", "selectedCols", "selectedRows"] as const) {
+  for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns", "selectedCols", "selectedRows", "leadingHeaderRows"] as const) {
     if (!isCount(value[k])) return undefined;
   }
   for (const k of TABLE_ACTION_KEYS) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
   }
-  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed", "colWidthMixed", "rowHeightMixed", "cellMarginsMixed", "cellMarginsUsesDefault", "cellMarginsOverrideMixed"] as const) {
+  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed", "colWidthMixed", "rowHeightMixed", "cellMarginsMixed", "cellMarginsUsesDefault", "cellMarginsOverrideMixed", "rowHeaderMixed", "canEnableHeader", "rowBreakMixed"] as const) {
     if (typeof value[k] !== "boolean") return undefined;
   }
-  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal", "columnWidthRefusal", "rowHeightRefusal", "cellMarginsRefusal", "tablePositioningRefusal"] as const) {
+  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal", "columnWidthRefusal", "rowHeightRefusal", "cellMarginsRefusal", "tablePositioningRefusal", "repeatHeaderRefusal", "rowBreakRefusal"] as const) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_FORMAT_REFUSALS.has(v))) return undefined;
   }
+  if (value.rowHeader !== null && typeof value.rowHeader !== "boolean") return undefined;
+  if (value.rowBreakMode !== null && value.rowBreakMode !== "cell" && value.rowBreakMode !== "row") return undefined;
   if (value.cellAlignHorizontal !== null && (typeof value.cellAlignHorizontal !== "string" || !["left", "center", "right", "justify"].includes(value.cellAlignHorizontal))) return undefined;
   if (value.cellAlignVertical !== null && (typeof value.cellAlignVertical !== "string" || !["top", "middle", "bottom"].includes(value.cellAlignVertical))) return undefined;
   if (value.colWidth !== null && (typeof value.colWidth !== "number" || !Number.isFinite(value.colWidth))) return undefined;

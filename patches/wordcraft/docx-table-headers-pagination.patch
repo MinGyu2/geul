@@ -1,0 +1,97 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index 9ac493a..f54466b 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -402,12 +402,6 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+             {
+                 row.props.height_rule = rule;
+             }
+-            if let Some(b) = allow_break {
+-                row.props.cant_split = !b;
+-            }
+-            if let Some(h) = header {
+-                row.props.header = h;
+-            }
+             if let Some(cl) = row.cells.get_mut(c) {
+                 if let Some(w) = cell_width {
+                     cl.props.width = w;
+@@ -417,6 +411,24 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+                 }
+             }
+         }
++        if allow_break.is_some() || header.is_some() {
++            let mut sel_rows: Vec<usize> = sel_cells.iter().map(|&(sr, _)| sr).collect();
++            sel_rows.sort_unstable();
++            sel_rows.dedup();
++            if sel_rows.is_empty() {
++                sel_rows.push(r);
++            }
++            for sr in sel_rows {
++                if let Some(row) = t.rows.get_mut(sr) {
++                    if let Some(b) = allow_break {
++                        row.props.cant_split = !b;
++                    }
++                    if let Some(h) = header {
++                        row.props.header = h;
++                    }
++                }
++            }
++        }
+         if let Some(opt_m) = cell_override_margins {
+             for &(sr, sc) in &sel_cells {
+                 if let Some(cl) = t.rows.get_mut(sr).and_then(|row| row.cells.get_mut(sc)) {
+@@ -2370,4 +2382,54 @@ mod tests {
+         // Out-of-range margin rejected
+         assert!(s.run("table.properties", &json!({ "margins": [-1.0, 0.0, 0.0, 0.0] })).is_err());
+     }
++
++    #[test]
++    fn repeating_headers_and_row_break_layout_and_roundtrip() {
++        let mut s = new_session();
++        s.run("insert.table", &json!({ "rows": 14, "cols": 2 })).unwrap();
++        // Put header text in rows 0..=1 and set explicit row heights so the table spans 2 pages.
++        for (idx, label) in [(0, "HDR_ZERO"), (1, "HDR_ONE")] {
++            s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, idx, 0, 0], "off": 0}})).unwrap();
++            s.run("text.insert", &json!({"text": label})).unwrap();
++            s.run("table.properties", &json!({ "rowHeight": 40.0, "rowHeightRule": "exact" })).unwrap();
++        }
++        for r in 2..14 {
++            s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, r, 0, 0], "off": 0}})).unwrap();
++            s.run("text.insert", &json!({"text": format!("BODY_{r}")})).unwrap();
++            s.run("table.properties", &json!({ "rowHeight": 80.0, "rowHeightRule": "atLeast" })).unwrap();
++        }
++        // Select rows 0..=1 and mark them repeating headers + disallow row break across pages.
++        s.run("select.range", &json!({
++            "anchor": {"story": "body", "path": [0, 0, 0, 0], "off": 0},
++            "focus": {"story": "body", "path": [0, 1, 1, 0], "off": 0},
++        })).unwrap();
++        s.run("table.properties", &json!({ "headerRow": true, "allowBreak": false })).unwrap();
++        let tbl = s.doc.body[0].as_table().unwrap();
++        assert!(tbl.rows[0].props.header && tbl.rows[1].props.header);
++        assert!(tbl.rows[0].props.cant_split && tbl.rows[1].props.cant_split);
++        assert!(!tbl.rows[2].props.header);
++
++        let layout = s.layout();
++        assert!(layout.pages.len() >= 2, "table should span multiple pages: {}", layout.pages.len());
++        let page2_paths: Vec<(&[u32], f32)> = layout.pages[1]
++            .items
++            .iter()
++            .filter_map(|it| match it {
++                wordcraft_layout::Placed::Lines { path, y, .. } => Some((path.0.as_slice(), *y)),
++                _ => None,
++            })
++            .collect();
++        let y_h0 = page2_paths.iter().find(|(p, _)| *p == &[0, 0, 0, 0]).map(|(_, y)| *y);
++        let y_h1 = page2_paths.iter().find(|(p, _)| *p == &[0, 1, 0, 0]).map(|(_, y)| *y);
++        assert!(y_h0.is_some(), "page 2 missing repeated header row 0: {page2_paths:?}");
++        assert!(y_h1.is_some(), "page 2 missing repeated header row 1: {page2_paths:?}");
++        assert!(y_h0.unwrap() < y_h1.unwrap());
++
++        let bytes = crate::io::save_bytes("table_headers.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_headers.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++        let rt = reopened.body[0].as_table().unwrap();
++        assert!(rt.rows[0].props.header && rt.rows[1].props.header);
++        assert!(rt.rows[0].props.cant_split && rt.rows[1].props.cant_split);
++    }
+ }

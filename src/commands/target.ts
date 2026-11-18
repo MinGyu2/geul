@@ -166,6 +166,16 @@ export type DocumentCommandArgs =
       treatAsChar?: boolean;
       outerMargins?: { top?: number; right?: number; bottom?: number; left?: number };
     }
+  /** Stage 2 / Phase 4 (P4-3): toggle contiguous repeating header rows from row 0. */
+  | {
+      command: "table.repeatHeader";
+      repeat: boolean;
+    }
+  /** Stage 2 / Phase 4 (P4-3): row/table pagination break behavior across pages. */
+  | {
+      command: "table.rowBreak";
+      mode: "cell" | "row" | "none";
+    }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -262,6 +272,19 @@ export interface CommandParameterContext {
     treatAsCharSupported: boolean;
     treatAsChar?: boolean;
     outerMargins?: { top: number; right: number; bottom: number; left: number };
+  };
+  /** Stage 2 / Phase 4 (P4-3): contiguous leading repeating header row state. */
+  tableRepeatHeader?: {
+    repeat: boolean | null;
+    mixed: boolean;
+    leadingHeaderRows: number;
+    canEnableHeader: boolean;
+  };
+  /** Stage 2 / Phase 4 (P4-3): pagination break behavior across pages (`cell` | `row` | `none`). */
+  tableRowBreak?: {
+    mode: "cell" | "row" | "none" | null;
+    mixed: boolean;
+    supportedModes: readonly ("cell" | "row" | "none")[];
   };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };

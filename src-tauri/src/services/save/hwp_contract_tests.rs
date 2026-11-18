@@ -3172,3 +3172,70 @@ fn stage2_p4_2_table_margins_and_positioning_proven_or_refused() {
     });
     assert!(!only_stale_preview(&raw_findings(&orig_basic, &new_bad_align, true)));
 }
+
+#[test]
+fn stage2_p4_3_repeating_headers_and_pagination_proven_or_refused() {
+    // 1. Evolved table: pageBreak = RowBreak (2), repeatHeader = true (bit 2 = 4), CELL_FLAG_HEADER (0x04)
+    let original = fixture_with(false, &[existing_nonbasic_table()], "Keep 한글");
+    let mut updated = existing_nonbasic_table();
+    {
+        let tbl = updated.iter_mut().find(|r| r.0 == 77).unwrap();
+        let orig_attr = u32::from_le_bytes(tbl.2[0..4].try_into().unwrap());
+        d(&mut tbl.2, 0, (orig_attr & !0x07) | 2 | 4);
+    }
+    {
+        let c0 = updated.iter_mut().find(|r| r.0 == 72).unwrap();
+        let wref = u16::from_le_bytes(c0.2[6..8].try_into().unwrap());
+        w(&mut c0.2, 6, wref | 0x0004);
+    }
+    let output_ok = fixture_with(true, &[updated.clone()], "Keep 한글");
+    let ok_findings = raw_findings(&original, &output_ok, true);
+    assert!(only_stale_preview(&ok_findings), "{ok_findings:?}");
+
+    // Negatives: pageBreak=3 unsupported, unknown attr bit 1<<3 refused, unknown width_ref bit 0x02 refused
+    let mut bad_pb = updated.clone();
+    d(&mut bad_pb.iter_mut().find(|r| r.0 == 77).unwrap().2, 0, 3 | 4);
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_pb], "Keep 한글"), true)));
+
+    let mut bad_tbl_bit = updated.clone();
+    let orig_attr = u32::from_le_bytes(bad_tbl_bit.iter().find(|r| r.0 == 77).unwrap().2[0..4].try_into().unwrap());
+    d(&mut bad_tbl_bit.iter_mut().find(|r| r.0 == 77).unwrap().2, 0, orig_attr ^ (1 << 3));
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_tbl_bit], "Keep 한글"), true)));
+
+    let mut bad_cell_flag = updated.clone();
+    let c0 = bad_cell_flag.iter_mut().find(|r| r.0 == 72).unwrap();
+    let wref = u16::from_le_bytes(c0.2[6..8].try_into().unwrap());
+    w(&mut c0.2, 6, wref | 0x0002);
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_cell_flag], "Keep 한글"), true)));
+
+    // 2. Newly inserted basic table with repeatHeader + RowBreak + CELL_FLAG_HEADER passes T009
+    let base = fixture_with(false, &[], "Keep 한글");
+    let orig_basic = edit_records(&base, "/DocInfo", |r| {
+        r.retain(|rec| rec.0 != 20);
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 0);
+    });
+    let mut new_tbl = table_control();
+    w(&mut new_tbl[1].2, 22, 1);
+    for cell in new_tbl.iter_mut().filter(|r| r.0 == 72) {
+        w(&mut cell.2, 32, 1);
+    }
+    d(&mut new_tbl[1].2, 0, 2 | 4);
+    w(&mut new_tbl[2].2, 6, 0x404);
+    let with_new = fixture_with(false, &[new_tbl], "Keep 한글");
+    let output_new_ok = edit_records(&with_new, "/DocInfo", |r| {
+        let mut basic = vec![0u8; 40];
+        for at in [2, 8, 14, 20] {
+            basic[at] = 1;
+            basic[at + 1] = 1;
+        }
+        basic[26] = 1;
+        r.retain(|rec| rec.0 != 20);
+        let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
+        r.insert(insert_at, (20, 1, basic));
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 1);
+    });
+    let new_ok_findings = raw_findings(&orig_basic, &output_new_ok, true);
+    assert!(only_stale_preview(&new_ok_findings), "{new_ok_findings:?}");
+}

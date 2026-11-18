@@ -1,0 +1,6 @@
+tree 4539872d47211ceaa48f9ccd0404f999c33c794c
+parent 34d85b9a42153e161d9327a6e0422dfe82c24cc8
+author geul <geul@users.noreply.github.com> 1794974642 +0900
+committer geul <geul@users.noreply.github.com> 1794974642 +0900
+
+feat(table): apply headerRow and allowBreak to all selected rows

@@ -164,6 +164,14 @@ pub struct DocxTableView {
     pub table_align: &'static str,
     pub table_indent_pt: f32,
     pub table_positioning_refusal: Option<&'static str>,
+    pub leading_header_rows: usize,
+    pub row_header: Option<bool>,
+    pub row_header_mixed: bool,
+    pub can_enable_header: bool,
+    pub repeat_header_refusal: Option<&'static str>,
+    pub row_break_mode: Option<&'static str>,
+    pub row_break_mixed: bool,
+    pub row_break_refusal: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -188,6 +196,13 @@ pub enum TableAlign {
     Left,
     Center,
     Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableBreakMode {
+    Cell,
+    Row,
 }
 
 impl TableAlign {
@@ -967,6 +982,14 @@ impl DocxModel {
                 table_align: "left",
                 table_indent_pt: 0.0,
                 table_positioning_refusal: Some("tableShape"),
+                leading_header_rows: 0,
+                row_header: None,
+                row_header_mixed: false,
+                can_enable_header: false,
+                repeat_header_refusal: Some("tableShape"),
+                row_break_mode: None,
+                row_break_mixed: false,
+                row_break_refusal: Some("tableShape"),
             });
         };
         let multi = inspect_selection(self, &tp, t);
@@ -1035,6 +1058,46 @@ impl DocxModel {
         } else {
             None
         };
+        let leading_header_rows = t.rows.iter().take_while(|row| row.props.header).count();
+        let (row_header, row_header_mixed) = if format_refusal.is_some() || t.rows.is_empty() {
+            (None, false)
+        } else {
+            let mut any_t = false;
+            let mut any_f = false;
+            for r in r0..=r1.min(t.rows.len().saturating_sub(1)) {
+                if t.rows[r].props.header {
+                    any_t = true;
+                } else {
+                    any_f = true;
+                }
+            }
+            if any_t && any_f {
+                (None, true)
+            } else {
+                (Some(any_t), false)
+            }
+        };
+        let can_enable_header = format_refusal.is_none() && r0 <= leading_header_rows;
+        let (row_break_mode, row_break_mixed) = if format_refusal.is_some() || t.rows.is_empty() {
+            (None, false)
+        } else {
+            let mut any_allow = false;
+            let mut any_cant = false;
+            for r in r0..=r1.min(t.rows.len().saturating_sub(1)) {
+                if t.rows[r].props.cant_split {
+                    any_cant = true;
+                } else {
+                    any_allow = true;
+                }
+            }
+            if any_allow && any_cant {
+                (None, true)
+            } else if any_cant {
+                (Some("row"), false)
+            } else {
+                (Some("cell"), false)
+            }
+        };
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
         let (max_split_rows, max_split_columns) = if is_merged
@@ -1098,6 +1161,14 @@ impl DocxModel {
             table_align,
             table_indent_pt,
             table_positioning_refusal,
+            leading_header_rows,
+            row_header,
+            row_header_mixed,
+            can_enable_header,
+            repeat_header_refusal: format_refusal,
+            row_break_mode,
+            row_break_mixed,
+            row_break_refusal: format_refusal,
         })
     }
 
@@ -1551,6 +1622,99 @@ impl DocxModel {
             obj.insert("indent".into(), json!(i));
         }
         let params = serde_json::Value::Object(obj);
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.properties", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    /// Stage 2 Phase 4 (P4-3): toggle repeating header rows contiguously from row 0 atomically
+    /// with T009 round-trip verification.
+    pub(super) fn table_repeat_header(
+        &mut self,
+        target: &SelectionIdentity,
+        repeat: bool,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, fr, fc) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let ext = t.cell_extent(fr, fc).ok_or(Rejected)?;
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let (r0, r1, _, _) = selected_rect_bounds(ext, &multi);
+        let leading = t.rows.iter().take_while(|row| row.props.header).count();
+        if repeat && r0 > leading {
+            return Err(Rejected);
+        }
+        let has_trailing = !repeat && ((r1 + 1)..t.rows.len()).any(|r| t.rows[r].props.header);
+        if has_trailing {
+            // Do not silently clear unrelated rows beyond selection; refuse or require selecting trailing headers.
+            return Err(Rejected);
+        }
+        let params = json!({ "headerRow": repeat });
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.properties", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    /// Stage 2 Phase 4 (P4-3): configure whether selected rows may split across page breaks (`allowBreak`).
+    pub(super) fn table_row_break(
+        &mut self,
+        target: &SelectionIdentity,
+        mode: TableBreakMode,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let allow_break = matches!(mode, TableBreakMode::Cell);
+        let params = json!({ "allowBreak": allow_break });
         let changed = self.atomic(|model| {
             let changed = model.run("table.properties", params.clone())?;
             if !changed {

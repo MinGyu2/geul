@@ -1320,7 +1320,7 @@ fn cell_header_matches_ignoring_border_fill(a: &[u8], b: &[u8]) -> bool {
         && (a[4] & !0x60) == (b[4] & !0x60)
         && ((b[4] >> 5) & 0x03) <= 2
         && a[5] == b[5]
-        && (a[6] & !0x01) == (b[6] & !0x01)
+        && (a[6] & !(0x01 | 0x04)) == (b[6] & !(0x01 | 0x04))
         && a[7..24] == b[7..24]
         && valid_hwp_margin_pair(b, 24) == Ok(true)
         && a[34..] == b[34..]
@@ -2076,20 +2076,8 @@ fn restructured_table(
     used: &mut Used,
 ) -> Checked<()> {
     let (a, b) = (old[0].2, new[0].2);
-    valid(b.len() >= 42, BODY)?;
-    preserved(a.len() >= 42 && old[0].1 == new[0].1, BODY)?;
-    // Pinned RHWP writes a table it created with a 42-byte header and, once the table's size is
-    // recomputed, the 46-byte form with a zero page-break field before the zero description length.
-    let tail = if a.len() == b.len() {
-        a[24..] == b[24..]
-    } else {
-        a.len() == 42
-            && b.len() == 46
-            && a[24..40] == b[24..40]
-            && a[40..].iter().chain(&b[40..]).all(|v| *v == 0)
-    };
-    preserved(a[..16] == b[..16] && tail, BODY)?;
-    valid(dword(b, 16)? > 0 && dword(b, 20)? > 0, BODY)?;
+    preserved(old[0].1 == new[0].1, BODY)?;
+    table_header_preserved(old[0].1, a, b)?;
     validate_existing_table(new)?;
     let mut ignored = BTreeSet::new();
     let before = plain_cells(old, original_defs, original_defs, &mut ignored)
@@ -2102,8 +2090,9 @@ fn restructured_table(
     preserved(ta.len() >= 20 + 2 * rows_a, BODY)?;
     let (zones_a, zones_b) = (&ta[20 + 2 * rows_a..], &tb[20 + 2 * rows_b..]);
     preserved(
-        ta[..4] == tb[..4]
-            && ta[8..18] == tb[8..18]
+        table_record_attr_compatible(ta, tb)?
+            && ta[8..10] == tb[8..10]
+            && valid_hwp_margin_pair(tb, 10)?
             && ta[18 + 2 * rows_a..20 + 2 * rows_a] == tb[18 + 2 * rows_b..20 + 2 * rows_b]
             && zones_a == zones_b
             && (zones_a.is_empty() || zones_a == [0, 0]),
@@ -2120,11 +2109,12 @@ fn restructured_table(
             .get_mut(row)
             .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
         valid(dword(cell.header, 16)? > 0, BODY)?;
+        valid(valid_hwp_margin_pair(cell.header, 24)?, BODY)?;
         let bf = word(cell.header, 32)?;
         reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
         used.borders.insert(bf);
         valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
-        let template = |h: &[u8]| (h[4] & !0x60, h[5..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
+        let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !(0x01 | 0x04), h[7], h[38..].to_vec());
         preserved(
             before.iter().any(|o| {
                 template(o.header) == template(cell.header)
@@ -2188,11 +2178,27 @@ fn table_header_preserved(level: u16, a: &[u8], b: &[u8]) -> Checked<()> {
     valid(dword(b, 16)? > 0 && dword(b, 20)? > 0, BODY)
 }
 
+fn table_record_attr_compatible(ta: &[u8], tb: &[u8]) -> Checked<bool> {
+    if ta.len() < 4 || tb.len() < 4 {
+        return Ok(false);
+    }
+    if ta[..4] == tb[..4] {
+        return Ok(true);
+    }
+    let attr_a = dword(ta, 0)? as u32;
+    let attr_b = dword(tb, 0)? as u32;
+    // Stage 2 P4-3: only pageBreak (bits 0..=1 in 0..=2) and repeatHeader (bit 2) may change.
+    Ok((attr_a & !0x07) == (attr_b & !0x07) && (attr_b & 0x03) <= 2)
+}
+
 fn table_record_matches_allowing_padding(ta: &[u8], tb: &[u8]) -> Checked<bool> {
     if ta.len() != tb.len() || ta.len() < 18 {
         return Ok(false);
     }
-    Ok(valid_hwp_margin_pair(tb, 10)? && ta[..10] == tb[..10] && ta[18..] == tb[18..])
+    Ok(table_record_attr_compatible(ta, tb)?
+        && valid_hwp_margin_pair(tb, 10)?
+        && ta[4..10] == tb[4..10]
+        && ta[18..] == tb[18..])
 }
 
 /// One cell of an original/evolved table: LIST_HEADER, paragraph count and the controls of its
@@ -2442,7 +2448,7 @@ fn evolved_table(
         preserved(ta.len() >= 20 + 2 * rows_a, BODY)?;
         let (zones_a, zones_b) = (&ta[20 + 2 * rows_a..], &tb[20 + 2 * rows_b..]);
         preserved(
-            ta[..4] == tb[..4]
+            table_record_attr_compatible(ta, tb)?
                 && ta[8..10] == tb[8..10]
                 && valid_hwp_margin_pair(tb, 10)?
                 && ta[18 + 2 * rows_a..20 + 2 * rows_a] == tb[18 + 2 * rows_b..20 + 2 * rows_b]
@@ -2461,7 +2467,7 @@ fn evolved_table(
             valid(valid_hwp_margin_pair(cell.header, 24)?, BODY)?;
             let bf = word(cell.header, 32)?;
             valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
-            let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !0x01, h[7], h[38..].to_vec());
+            let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !(0x01 | 0x04), h[7], h[38..].to_vec());
             preserved(
                 before.iter().any(|o| {
                     template(o.header) == template(cell.header)
@@ -3709,12 +3715,14 @@ fn validate_table_at(
     let table = rs[1].2;
     let rows = word(table, 4)?;
     let cols = word(table, 6)?;
+    let tbl_attr = dword(table, 0)? as u32;
     valid(
         (1..=32).contains(&rows)
             && (1..=16).contains(&cols)
             && rows * cols <= 256
             && table.len() == 22 + 2 * rows
-            && dword(table, 0)? == if nested { 0x0400_0002 } else { 0 }
+            && (tbl_attr & !0x07) == if nested { 0x0400_0000 } else { 0 }
+            && (tbl_attr & 0x03) <= 2
             && valid_hwp_margin_pair(table, 10)?
             && word(table, 20 + 2 * rows)? == 0,
         BODY,
@@ -3746,7 +3754,7 @@ fn validate_table_at(
             word(b, 0)? >= 1
                 && (dword(b, 2)? & !(0x03 << 21)) == 0
                 && ((dword(b, 2)? >> 21) & 0x03) <= 2
-                && (word(b, 6)? & !1) == 0x400
+                && (word(b, 6)? & !(0x01 | 0x04)) == 0x400
                 && valid_hwp_margin_pair(b, 24)?
                 && dword(b, 16)? > 0
                 && dword(b, 20)? > 0

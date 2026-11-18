@@ -135,7 +135,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "cutTableCells", "pasteTableCells"]);
+  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1255,6 +1255,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       parameterReasons["table.rowHeight"] = "notInTable";
       parameterReasons["table.cellMargins"] = "notInTable";
       parameterReasons["table.positioning"] = "notInTable";
+      parameterReasons["table.repeatHeader"] = "notInTable";
+      parameterReasons["table.rowBreak"] = "notInTable";
     } else {
       for (const id of TABLE_STRUCTURE_IDS) {
         const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
@@ -1372,6 +1374,29 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             maxIndentPt: 360,
             supportsIndent: true,
             treatAsCharSupported: false,
+          },
+        };
+      }
+      if (view.table.repeatHeaderRefusal !== null) {
+        parameterReasons["table.repeatHeader"] = mapFormatRefusal(view.table.repeatHeaderRefusal);
+      } else {
+        parameters["table.repeatHeader"] = {
+          tableRepeatHeader: {
+            repeat: view.table.rowHeader,
+            mixed: view.table.rowHeaderMixed,
+            leadingHeaderRows: view.table.leadingHeaderRows,
+            canEnableHeader: view.table.canEnableHeader,
+          },
+        };
+      }
+      if (view.table.rowBreakRefusal !== null) {
+        parameterReasons["table.rowBreak"] = mapFormatRefusal(view.table.rowBreakRefusal);
+      } else {
+        parameters["table.rowBreak"] = {
+          tableRowBreak: {
+            mode: view.table.rowBreakMode,
+            mixed: view.table.rowBreakMixed,
+            supportedModes: ["cell", "row"],
           },
         };
       }
@@ -1568,6 +1593,31 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
           target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
           ...(args.align !== undefined ? { align: args.align } : {}),
           ...(args.indentPt !== undefined ? { indentPt: args.indentPt } : {}),
+        }),
+      };
+    }
+    if (command === "table.repeatHeader") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableRepeatHeader",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          repeat: args.repeat,
+        }),
+      };
+    }
+    if (command === "table.rowBreak") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      if (args.mode !== "cell" && args.mode !== "row") return { accepted: false };
+      return {
+        accepted: this.push({
+          op: "tableRowBreak",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          mode: args.mode,
         }),
       };
     }

@@ -79,6 +79,7 @@ describe("형식 전용 탭의 명령", () => {
   const CONNECTED = new Set(["table.insertRowAbove", "table.insertRowBelow", "table.insertColumnLeft", "table.insertColumnRight",
     "table.deleteRow", "table.deleteColumn", "table.mergeRight", "table.mergeBelow", "table.mergeCells", "table.splitCell",
     "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight", "table.cellMargins", "table.positioning",
+    "table.repeatHeader", "table.rowBreak",
     "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "references.footnote", "references.endnote",
     "references.toc", "references.updateToc",
     "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"]);

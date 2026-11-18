@@ -1,0 +1,269 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+index 5c32075..754fe10 100644
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -2513,6 +2513,120 @@ impl DocumentCore {
+         Ok("{\"ok\":true}".into())
+     }
+ 
++    /// [geul] Stage 2 P4-3: read table pagination & header-row state for rows [start_row..=end_row].
++    pub fn get_table_pagination_by_path_native(
++        &self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        start_row: u16,
++        end_row: u16,
++    ) -> Result<String, HwpError> {
++        let table = self.resolve_table_by_path(section, paragraph, path)?;
++        if table.row_count == 0 || start_row > end_row || end_row >= table.row_count {
++            return Err(HwpError::RenderError("table pagination row range out of bounds".into()));
++        }
++        let leading = table.leading_header_rows().len();
++        let mut any_true = false;
++        let mut any_false = false;
++        for r in start_row..=end_row {
++            let mut has_cells = false;
++            let mut all_hdr = true;
++            for cell in &table.cells {
++                let cr1 = cell.row + cell.row_span.saturating_sub(1);
++                if cell.row <= r && r <= cr1 {
++                    has_cells = true;
++                    if !cell.is_header {
++                        all_hdr = false;
++                    }
++                }
++            }
++            if has_cells && all_hdr {
++                any_true = true;
++            } else {
++                any_false = true;
++            }
++        }
++        let page_break = match table.page_break {
++            crate::model::table::TablePageBreak::None => "none",
++            crate::model::table::TablePageBreak::CellBreak => "cell",
++            crate::model::table::TablePageBreak::RowBreak => "row",
++        };
++        let row_header = if any_true && !any_false {
++            serde_json::json!(true)
++        } else if !any_true && any_false {
++            serde_json::json!(false)
++        } else {
++            serde_json::Value::Null
++        };
++        Ok(serde_json::json!({
++            "pageBreak": page_break,
++            "repeatHeader": table.repeat_header,
++            "leadingHeaderRows": leading,
++            "rowCount": table.row_count,
++            "rowHeader": row_header,
++            "rowHeaderMixed": any_true && any_false,
++            "canEnableHeader": (start_row as usize) <= leading,
++        })
++        .to_string())
++    }
++
++    /// [geul] Stage 2 P4-3: set/clear repeating header rows contiguously from row 0 and sync repeat_header.
++    pub fn set_table_header_rows_by_path_native(
++        &mut self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        start_row: u16,
++        end_row: u16,
++        is_header: bool,
++    ) -> Result<String, HwpError> {
++        {
++            let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
++            if table.row_count == 0 || start_row > end_row || end_row >= table.row_count {
++                return Err(HwpError::RenderError("header row range out of bounds".into()));
++            }
++            let leading = table.leading_header_rows().len();
++            if is_header && (start_row as usize) > leading {
++                return Err(HwpError::RenderError(
++                    "repeating header rows must start contiguously from the first row".into(),
++                ));
++            }
++            for cell in &table.cells {
++                let cr1 = cell.row + cell.row_span.saturating_sub(1);
++                let touches = cr1 >= start_row && cell.row <= end_row;
++                if !is_header && touches && cell.row < start_row {
++                    return Err(HwpError::RenderError(
++                        "cannot clear header flag on partial vertically merged cell".into(),
++                    ));
++                }
++                if is_header && touches && cr1 > end_row {
++                    return Err(HwpError::RenderError(
++                        "cannot mark partial vertically merged cell as header".into(),
++                    ));
++                }
++            }
++            for cell in &mut table.cells {
++                let cr1 = cell.row + cell.row_span.saturating_sub(1);
++                if is_header {
++                    if cr1 >= start_row && cell.row <= end_row {
++                        cell.set_header(true);
++                    }
++                } else if cr1 >= start_row {
++                    cell.set_header(false);
++                }
++            }
++            table.repeat_header = !table.leading_header_rows().is_empty();
++        }
++        if path.len() > 1 {
++            self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        }
++        self.document.sections[section].raw_stream = None;
++        self.recompose_section(section);
++        self.paginate_if_needed();
++        Ok("{\"ok\":true}".into())
++    }
++
+     /// 표에 열을 삽입한다 (네이티브).
+     pub fn insert_table_column_native(
+         &mut self,
+@@ -7643,4 +7757,88 @@ mod geul_cell_formatting_tests {
+         assert_eq!(rt_hwp.common.margin.left, 600);
+         assert_eq!(rt_hwp.common.horz_align, crate::model::shape::HorzAlign::Center);
+     }
++
++    #[test]
++    fn stage2_p4_3_repeating_headers_and_pagination_hwpx_and_hwp() {
++        let (mut core, para, ctrl) = core_with_table(14, 2);
++        let path = vec![(ctrl, 0usize, 0usize)];
++        // Normalize HWP-like defaults & populate 2 header rows + 12 tall body rows spanning 2+ pages
++        core.set_table_properties_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"textWrap":"TopAndBottom","treatAsChar":false,"pageBreak":2}"#,
++        )
++        .unwrap();
++        core.insert_text_in_cell_by_path(0, para, &[(ctrl, 0, 0)], 0, "HDR_ZERO")
++            .unwrap();
++        core.insert_text_in_cell_by_path(0, para, &[(ctrl, 2, 0)], 0, "HDR_ONE")
++            .unwrap();
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":13,"endCol":1},"rowHeight":{"heightPt":70.0}}"#,
++        )
++        .unwrap();
++
++        // Reject non-leading header row (row 3 when row 0 is not header)
++        assert!(core
++            .set_table_header_rows_by_path_native(0, para, &path, 3, 3, true)
++            .is_err());
++
++        // Set rows 0..=1 as contiguous repeating header rows
++        core.set_table_header_rows_by_path_native(0, para, &path, 0, 1, true)
++            .unwrap();
++        let pg_info: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_pagination_by_path_native(0, para, &path, 0, 1)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(pg_info["repeatHeader"], true);
++        assert_eq!(pg_info["leadingHeaderRows"], 2);
++        assert_eq!(pg_info["pageBreak"], "row");
++        assert_eq!(pg_info["rowHeader"], true);
++
++        // Render page 2 (index 1) and confirm repeated headers appear on continuation page!
++        assert!(core.page_count() >= 2, "expected >=2 pages, got {}", core.page_count());
++        let p2_html = core.render_page_html_native(1).unwrap();
++        assert!(p2_html.contains("HDR_ZERO"), "page 2 missing HDR_ZERO: {}", p2_html);
++        assert!(p2_html.contains("HDR_ONE"), "page 2 missing HDR_ONE: {}", p2_html);
++
++        // Save/reopen HWPX & HWP and confirm preservation
++        let hwpx = core.export_hwpx_native().unwrap();
++        let reopened_hwpx = DocumentCore::from_bytes(&hwpx).unwrap();
++        let rt_hwpx = table(&reopened_hwpx, para, ctrl);
++        assert!(rt_hwpx.repeat_header);
++        assert_eq!(rt_hwpx.leading_header_rows(), vec![0, 1]);
++        assert_eq!(rt_hwpx.page_break, crate::model::table::TablePageBreak::RowBreak);
++        assert_eq!(reopened_hwpx.controls_json(), core.controls_json());
++
++        let hwp = core.export_hwp_native().unwrap();
++        let reopened_hwp = DocumentCore::from_bytes(&hwp).unwrap();
++        let rt_hwp = table(&reopened_hwp, para, ctrl);
++        assert!(rt_hwp.repeat_header);
++        assert_eq!(rt_hwp.leading_header_rows(), vec![0, 1]);
++        assert_eq!(rt_hwp.page_break, crate::model::table::TablePageBreak::RowBreak);
++        assert_eq!(reopened_hwp.controls_json(), core.controls_json());
++
++        // Clearing row 1 leaves row 0 as 1-row leading header; clearing row 0 turns repeat_header off
++        core.set_table_header_rows_by_path_native(0, para, &path, 1, 1, false)
++            .unwrap();
++        let info_one: serde_json::Value = serde_json::from_str(
++            &core
++                .get_table_pagination_by_path_native(0, para, &path, 0, 1)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(info_one["leadingHeaderRows"], 1);
++        assert_eq!(info_one["repeatHeader"], true);
++        assert_eq!(info_one["rowHeaderMixed"], true);
++
++        core.set_table_header_rows_by_path_native(0, para, &path, 0, 0, false)
++            .unwrap();
++        assert!(!table(&core, para, ctrl).repeat_header);
++    }
+ }
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index 002261a..476fbcf 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7442,6 +7442,50 @@ impl HwpDocument {
+             .map_err(Into::into)
+     }
+ 
++    /// [geul] Stage 2 P4-3: read table pagination & header-row state by path.
++    #[wasm_bindgen(js_name = getTablePaginationByPath)]
++    pub fn get_table_pagination_by_path(
++        &self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        start_row: u16,
++        end_row: u16,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.get_table_pagination_by_path_native(
++            section as usize,
++            paragraph as usize,
++            &path,
++            start_row,
++            end_row,
++        )
++        .map_err(Into::into)
++    }
++
++    /// [geul] Stage 2 P4-3: set/clear contiguous leading repeating header rows by path.
++    #[wasm_bindgen(js_name = setTableHeaderRowsByPath)]
++    pub fn set_table_header_rows_by_path(
++        &mut self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        start_row: u16,
++        end_row: u16,
++        is_header: bool,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.set_table_header_rows_by_path_native(
++            section as usize,
++            paragraph as usize,
++            &path,
++            start_row,
++            end_row,
++            is_header,
++        )
++        .map_err(Into::into)
++    }
++
+     /// [geul] Caption paragraphs of an explicitly path-owned table (read-only):
+     /// `{"paragraphs":[...]}` or `{"paragraphs":null}` when the table has none.
+     #[wasm_bindgen(js_name = getTableCaptionByPath)]

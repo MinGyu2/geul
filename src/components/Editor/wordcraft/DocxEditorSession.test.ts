@@ -321,6 +321,14 @@ describe("DocxEditorSession", () => {
       tableAlign: "left",
       tableIndentPt: 0,
       tablePositioningRefusal: null,
+      leadingHeaderRows: 0,
+      rowHeader: false,
+      rowHeaderMixed: false,
+      canEnableHeader: true,
+      repeatHeaderRefusal: null,
+      rowBreakMode: "cell",
+      rowBreakMixed: false,
+      rowBreakRefusal: null,
     } as const;
     fake.tableView = {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
@@ -406,6 +414,8 @@ describe("DocxEditorSession", () => {
       cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
       cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
       cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
+      leadingHeaderRows: 0, rowHeader: false, rowHeaderMixed: false, canEnableHeader: true, repeatHeaderRefusal: null,
+      rowBreakMode: "cell", rowBreakMixed: false, rowBreakRefusal: null,
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
@@ -468,5 +478,16 @@ describe("DocxEditorSession", () => {
       { op: "tablePositioning", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, align: "center", indentPt: 18 },
     ]);
     expect(editor.execute("table.positioning", { command: "table.positioning", align: "center", treatAsChar: false }).accepted).toBe(false);
+    await flush();
+    expect(editor.execute("table.repeatHeader", { command: "table.repeatHeader", repeat: true }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableRepeatHeader", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, repeat: true },
+    ]);
+    await flush();
+    expect(editor.execute("table.rowBreak", { command: "table.rowBreak", mode: "row" }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableRowBreak", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, mode: "row" },
+    ]);
+    expect(editor.execute("table.rowBreak", { command: "table.rowBreak", mode: "none" }).accepted).toBe(false);
   });
 });

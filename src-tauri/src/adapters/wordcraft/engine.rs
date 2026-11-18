@@ -329,6 +329,16 @@ pub enum DocxOp {
         #[serde(default)]
         indent_pt: Option<f32>,
     },
+    /// Stage 2 Phase 4 (P4-3): toggle contiguous repeating header rows.
+    TableRepeatHeader {
+        target: SelectionIdentity,
+        repeat: bool,
+    },
+    /// Stage 2 Phase 4 (P4-3): set row pagination break mode (`cell` = allow break, `row` = cantSplit).
+    TableRowBreak {
+        target: SelectionIdentity,
+        mode: table::TableBreakMode,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -569,6 +579,10 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     && ok_key(&target.caret_key)
                     && (align.is_some() || indent_pt.is_some())
                     && indent_pt.is_none_or(table::valid_docx_indent_pt)
+            }
+            DocxOp::TableRepeatHeader { target, .. } | DocxOp::TableRowBreak { target, .. } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key)
             }
             _ => true,
         })
@@ -1145,6 +1159,8 @@ impl DocxModel {
             DocxOp::TablePositioning { target, align, indent_pt } => {
                 self.table_positioning(target, *align, *indent_pt)
             }
+            DocxOp::TableRepeatHeader { target, repeat } => self.table_repeat_header(target, *repeat),
+            DocxOp::TableRowBreak { target, mode } => self.table_row_break(target, *mode),
         }
     }
 

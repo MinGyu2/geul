@@ -48,6 +48,8 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const isRowHeight = request.command === "table.rowHeight";
   const isCellMargins = request.command === "table.cellMargins";
   const isPositioning = request.command === "table.positioning";
+  const isRepeatHeader = request.command === "table.repeatHeader";
+  const isRowBreak = request.command === "table.rowBreak";
   const shadingCtx = request.context.tableShading;
   const bordersCtx = request.context.tableBorders;
   const alignCtx = request.context.tableAlignment;
@@ -55,6 +57,8 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const rowHeightCtx = request.context.tableRowHeight;
   const marginsCtx = request.context.tableCellMargins;
   const posCtx = request.context.tablePositioning;
+  const repeatHeaderCtx = request.context.tableRepeatHeader;
+  const rowBreakCtx = request.context.tableRowBreak;
   const sampleEdge = bordersCtx?.current?.top ?? bordersCtx?.current?.bottom ?? bordersCtx?.current?.left ?? bordersCtx?.current?.right;
   const initialStyle = sampleEdge && bordersCtx?.supportedStyles.includes(sampleEdge.style) && sampleEdge.style !== "none"
     ? sampleEdge.style
@@ -90,6 +94,10 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const [outerRight, setOuterRight] = useState(String(posCtx?.outerMargins?.right ?? 0));
   const [outerBottom, setOuterBottom] = useState(String(posCtx?.outerMargins?.bottom ?? 0));
   const [outerLeft, setOuterLeft] = useState(String(posCtx?.outerMargins?.left ?? 0));
+  const [repeatHeaderOn, setRepeatHeaderOn] = useState(repeatHeaderCtx?.repeat ?? false);
+  const [rowBreakMode, setRowBreakMode] = useState<"cell" | "row" | "none">(
+    rowBreakCtx?.mode ?? rowBreakCtx?.supportedModes[0] ?? "cell",
+  );
   const [error, setError] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -244,6 +252,24 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
     onConfirm(args);
   };
 
+  const submitRepeatHeader = () => {
+    const args: DocumentCommandArgs = { command: "table.repeatHeader", repeat: repeatHeaderOn };
+    if (!validateCommandArgs("table.repeatHeader", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
+  const submitRowBreak = () => {
+    const args: DocumentCommandArgs = { command: "table.rowBreak", mode: rowBreakMode };
+    if (!validateCommandArgs("table.rowBreak", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
   const submit = () => {
     if (isShading) {
       const normalized = normalizeHexRgb(shadeColor);
@@ -262,6 +288,10 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
       submitCellMargins(false);
     } else if (isPositioning) {
       submitPositioning();
+    } else if (isRepeatHeader) {
+      submitRepeatHeader();
+    } else if (isRowBreak) {
+      submitRowBreak();
     } else {
       submitBorders();
     }
@@ -585,6 +615,50 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
                 </div>
               </div>
             )}
+          </div>
+        ) : isRepeatHeader ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                ref={firstFocusRef as React.RefObject<HTMLInputElement>}
+                type="checkbox"
+                data-testid="table-repeat-header-toggle"
+                checked={repeatHeaderOn}
+                disabled={repeatHeaderCtx?.canEnableHeader === false && !repeatHeaderOn}
+                onChange={(e) => { setRepeatHeaderOn(e.target.checked); setError(false); }}
+              />
+              <span>
+                {t("tableFormat.repeatHeader.enabled")}
+                {repeatHeaderCtx?.mixed ? ` (${t("tableFormat.alignment.mixed")})` : ""}
+              </span>
+            </label>
+            <p style={{ margin: 0, fontSize: "0.9em" }}>
+              {t("tableFormat.repeatHeader.leadingCount")}: {repeatHeaderCtx?.leadingHeaderRows ?? 0}
+            </p>
+            {repeatHeaderCtx?.canEnableHeader === false && (
+              <p role="note" data-testid="table-repeat-header-notice" style={{ margin: 0, fontSize: "0.9em" }}>
+                {t("tableFormat.repeatHeader.nonLeadingNotice")}
+              </p>
+            )}
+          </div>
+        ) : isRowBreak ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div className="stage1-dialog__grid">
+              <label htmlFor="table-row-break-mode">{t("tableFormat.rowBreak.mode")}</label>
+              <select
+                ref={firstFocusRef as unknown as React.RefObject<HTMLSelectElement>}
+                id="table-row-break-mode"
+                data-testid="table-row-break-mode"
+                value={rowBreakMode}
+                onChange={(e) => { setRowBreakMode(e.target.value as "cell" | "row" | "none"); setError(false); }}
+              >
+                {(rowBreakCtx?.supportedModes ?? ["cell", "row"]).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {t(`tableFormat.rowBreak.${mode}` as MessageKey)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         ) : (
           <div style={{ display: "grid", gap: "10px" }}>

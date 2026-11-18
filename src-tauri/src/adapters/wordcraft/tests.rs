@@ -5119,3 +5119,102 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
     assert_eq!(tbl.rows[0].cells[0].props.margins, Some([12.0, 14.0, 12.0, 14.0]));
     assert_eq!(tbl.rows[0].cells[1].props.margins, None);
 }
+
+#[test]
+fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
+    use super::engine::SelectionIdentity;
+    use super::engine::table::{RowHeightRule, TableBreakMode};
+    use crate::services::save::package;
+    let doc = crate::services::files::blank_docx().unwrap();
+    let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
+    let mut m = DocxModel::open(&doc).unwrap();
+    assert!(m.apply(&[DocxOp::Table { rows: 14, cols: 2 }]).rejected.is_empty());
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+
+    // Populate 2 header rows + 12 tall body rows spanning 2+ pages
+    for (r, label) in [(0usize, "HDR_A"), (1usize, "HDR_B")] {
+        assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })));
+        assert!(m.run_engine("text.insert", json!({ "text": label })));
+        let t = table_target(&mut m);
+        assert_eq!(
+            m.apply(&[DocxOp::TableRowHeight { target: t, height: Some(40.0), rule: Some(RowHeightRule::Exact), clear: false, distribute: false }]).changed,
+            1
+        );
+    }
+    for r in 2..14 {
+        assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })));
+        let t = table_target(&mut m);
+        assert_eq!(
+            m.apply(&[DocxOp::TableRowHeight { target: t, height: Some(80.0), rule: Some(RowHeightRule::AtLeast), clear: false, distribute: false }]).changed,
+            1
+        );
+    }
+
+    // Non-leading row 3 rejected when row 0..2 are not headers
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 3, 0, 0], "off": 0 } })));
+    assert!(!m.view().table.as_ref().unwrap().can_enable_header);
+    let non_leading = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader { target: non_leading, repeat: true }]).rejected,
+        vec![0]
+    );
+
+    // Select rows 0..=1 and enable repeating header + row-level break prevention
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    let tv = m.view().table.unwrap();
+    assert!(tv.can_enable_header);
+    assert_eq!(tv.leading_header_rows, 0);
+    let hdr_target = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[
+            DocxOp::TableRepeatHeader { target: hdr_target.clone(), repeat: true },
+            DocxOp::TableRowBreak { target: hdr_target, mode: TableBreakMode::Row },
+        ]).changed,
+        2
+    );
+    let tv_after = m.view().table.unwrap();
+    assert_eq!(tv_after.leading_header_rows, 2);
+    assert_eq!(tv_after.row_header, Some(true));
+    assert_eq!(tv_after.row_break_mode, Some("row"));
+
+    // Rendered layout repeats BOTH header rows on page 2!
+    let mut check_sess = wordcraft_engine::Session::new(m.diagnostic_document().clone());
+    let layout = check_sess.layout();
+    assert!(layout.pages.len() >= 2, "expected >=2 pages, got {}", layout.pages.len());
+    let p2_paths: Vec<Vec<u32>> = layout.pages[1]
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            wordcraft_engine::layout::Placed::Lines { path, .. } => Some(path.0.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(p2_paths.contains(&vec![tp_idx as u32, 0, 0, 0]), "page 2 missing header row 0: {p2_paths:?}");
+    assert!(p2_paths.contains(&vec![tp_idx as u32, 1, 0, 0]), "page 2 missing header row 1: {p2_paths:?}");
+
+    // Undo / Redo check
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.view().table.unwrap().row_break_mode, Some("cell"));
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.view().table.unwrap().row_break_mode, Some("row"));
+
+    // Stale target rejected
+    let stale = SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() };
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader { target: stale, repeat: false }]).rejected,
+        vec![0]
+    );
+
+    // T009 save & independent reopen
+    let saved_bytes = wordcraft_engine::io::save_bytes("p4-3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert!(tbl.rows[0].props.header && tbl.rows[1].props.header);
+    assert!(tbl.rows[0].props.cant_split && tbl.rows[1].props.cant_split);
+}

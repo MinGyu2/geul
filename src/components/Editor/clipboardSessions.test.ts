@@ -119,6 +119,8 @@ describe("RHWP complete text and paragraph-aware paste", () => {
       cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
       cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
       cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
+      leadingHeaderRows: 0, rowHeader: false, rowHeaderMixed: false, canEnableHeader: true, repeatHeaderRefusal: null,
+      rowBreakMode: "cell", rowBreakMixed: false, rowBreakRefusal: null,
     };
     fake.tableCellsSelection = rawCells;
     editor.selectAll();
@@ -152,6 +154,8 @@ describe("RHWP complete text and paragraph-aware paste", () => {
       cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
       cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
       cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
+      leadingHeaderRows: 0, rowHeader: false, rowHeaderMixed: false, canEnableHeader: true, repeatHeaderRefusal: null,
+      rowBreakMode: "cell", rowBreakMixed: false, rowBreakRefusal: null,
     };
     fake.tableCellsSelection = rawCells;
     const denied = clipboard();

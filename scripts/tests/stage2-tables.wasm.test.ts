@@ -2444,3 +2444,88 @@ describe("RHWP Release WASM Stage 2 P4-2 — cell margins and table positioning"
     }
   });
 });
+
+describe("RHWP Release WASM Stage 2 P4-3 — repeating headers and pagination", () => {
+  it("enforces contiguous leading headers, repeats headers on continuation pages, toggles break modes, preserves Undo/Redo and T009 save/reopen across HWPX and HWP", async () => {
+    for (const format of ["hwpx", "hwp"] as const) {
+      const s = await open(format, false, false, false);
+      try {
+        // Grow table to 14 rows * 75pt so it spans at least 2 pages
+        s.place(withCell(s.at, 2));
+        for (let i = 0; i < 12; i++) {
+          await s.run("table.insertRowBelow");
+        }
+        s.place(withCell(s.at, 0));
+        s.editor.anchor = withCell(s.at, 0);
+        s.editor.caret = withCell(s.at, 27);
+        expect(s.editor.execute("table.rowHeight", {
+          command: "table.rowHeight",
+          height: 75,
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        // Non-leading row (row 2) cannot enable repeating header while row 0 is not a header
+        s.place(withCell(s.at, 4));
+        const nonLead = s.editor.snapshot().parameters?.["table.repeatHeader"]?.tableRepeatHeader;
+        expect(nonLead?.canEnableHeader).toBe(false);
+        expect(s.editor.execute("table.repeatHeader", {
+          command: "table.repeatHeader",
+          repeat: true,
+        })).toEqual({ accepted: false });
+
+        // Select leading rows 0..=1 and enable repeating headers + RowBreak
+        s.place(withCell(s.at, 0));
+        s.editor.anchor = withCell(s.at, 0);
+        s.editor.caret = withCell(s.at, 3);
+        expect(s.editor.snapshot().parameters?.["table.repeatHeader"]?.tableRepeatHeader?.canEnableHeader).toBe(true);
+        expect(s.editor.execute("table.repeatHeader", {
+          command: "table.repeatHeader",
+          repeat: true,
+        })).toEqual({ accepted: true });
+        await s.settle();
+        expect(s.editor.execute("table.rowBreak", {
+          command: "table.rowBreak",
+          mode: "row",
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        const snap = s.editor.snapshot();
+        expect(snap.parameters?.["table.repeatHeader"]?.tableRepeatHeader?.leadingHeaderRows).toBe(2);
+        expect(snap.parameters?.["table.repeatHeader"]?.tableRepeatHeader?.repeat).toBe(true);
+        expect(snap.parameters?.["table.rowBreak"]?.tableRowBreak?.mode).toBe("row");
+
+        // Pagination renders at least 2 pages and repeats row 0 ("outer0") & row 1 ("outer2") on page 2
+        expect(s.doc.pageCount()).toBeGreaterThanOrEqual(2);
+        const page2Html = (s.doc as unknown as { renderPageHtml?(p: number): string }).renderPageHtml?.(1);
+        if (typeof page2Html === "string") {
+          expect(page2Html).toContain("outer0");
+          expect(page2Html).toContain("outer2");
+        }
+
+        // Undo/Redo restores break mode cleanly
+        expect(s.editor.execute("edit.undo")).toEqual({ accepted: true });
+        await s.settle();
+        expect(s.editor.snapshot().parameters?.["table.rowBreak"]?.tableRowBreak?.mode).not.toBe("row");
+        expect(s.editor.execute("edit.redo")).toEqual({ accepted: true });
+        await s.settle();
+        expect(s.editor.snapshot().parameters?.["table.rowBreak"]?.tableRowBreak?.mode).toBe("row");
+
+        // T009 save & independent reopen
+        const saved = await s.save();
+        expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+        expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+        expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+        const reopened = new engine.HwpDocument(saved.output) as Doc;
+        try {
+          const pJson = JSON.stringify([{ controlIndex: s.at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]);
+          const rtPg = JSON.parse(reopened.getTablePaginationByPath!(0, s.at.paragraph, pJson, 0, 1));
+          expect(rtPg.repeatHeader).toBe(true);
+          expect(rtPg.leadingHeaderRows).toBe(2);
+          expect(rtPg.pageBreak).toBe("row");
+          expect(rtPg.rowHeader).toBe(true);
+        } finally { reopened.free(); }
+      } finally { s.editor.dispose(); }
+    }
+  });
+});

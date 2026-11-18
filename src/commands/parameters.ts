@@ -19,12 +19,12 @@ export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
   "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight",
-  "table.cellMargins", "table.positioning",
+  "table.cellMargins", "table.positioning", "table.repeatHeader", "table.rowBreak",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
 
-export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight", "table.cellMargins", "table.positioning"] as const;
+export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight", "table.cellMargins", "table.positioning", "table.repeatHeader", "table.rowBreak"] as const;
 const TABLE_BORDER_KINDS = new Set(["all", "outside", "inside", "none", "top", "bottom", "left", "right"]);
 const TABLE_H_ALIGN = new Set(["left", "center", "right", "justify"]);
 const TABLE_V_ALIGN = new Set(["top", "middle", "bottom"]);
@@ -452,6 +452,16 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
         anyProp = Object.keys(om).length > 0;
       }
       return anyProp;
+    }
+    case "table.repeatHeader": {
+      const rh = context?.tableRepeatHeader;
+      if (!rh || keys !== "command,repeat" || typeof value.repeat !== "boolean") return false;
+      return !value.repeat || rh.canEnableHeader;
+    }
+    case "table.rowBreak": {
+      const rb = context?.tableRowBreak;
+      return !!rb && keys === "command,mode" && typeof value.mode === "string"
+        && (rb.supportedModes as readonly string[]).includes(value.mode);
     }
     case "hangul.charWidth":
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);

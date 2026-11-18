@@ -178,6 +178,8 @@ export interface RhwpDocument {
   getTableCellMarginsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
   setTableCellMarginsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
   setTablePropertiesByPath?(section: number, paragraph: number, path: string, json: string): string;
+  getTablePaginationByPath?(section: number, paragraph: number, path: string, startRow: number, endRow: number): string;
+  setTableHeaderRowsByPath?(section: number, paragraph: number, path: string, startRow: number, endRow: number, isHeader: boolean): string;
   borderFillCount?(): number;
   compactAppendedBorderFills?(baseline: number): string;
   getFormattingRunsByPath?(section: number, paragraph: number, path: string, start: number, end: number): string;

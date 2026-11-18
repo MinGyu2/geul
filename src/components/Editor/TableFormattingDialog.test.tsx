@@ -215,4 +215,38 @@ describe("TableFormattingDialog", () => {
       outerMargins: { top: 2, right: 2, bottom: 2, left: 12 },
     });
   });
+
+  it("supports repeating header toggle and format-scoped row/table break options", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const rhReq: CommandInputRequest = {
+      command: "table.repeatHeader",
+      labelKey: "command.table.repeatHeader",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableRepeatHeader: { repeat: false, mixed: false, leadingHeaderRows: 0, canEnableHeader: true },
+      },
+    };
+    const { unmount } = renderFormattingDialog(rhReq, "en", (a) => confirmed.push(a));
+    fireEvent.click(screen.getByTestId("table-repeat-header-toggle"));
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[0]).toEqual({ command: "table.repeatHeader", repeat: true });
+    unmount();
+
+    const rbReq: CommandInputRequest = {
+      command: "table.rowBreak",
+      labelKey: "command.table.rowBreak",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableRowBreak: { mode: "row", mixed: false, supportedModes: ["cell", "row", "none"] },
+      },
+    };
+    renderFormattingDialog(rbReq, "en", (a) => confirmed.push(a));
+    fireEvent.change(screen.getByTestId("table-row-break-mode"), { target: { value: "none" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[1]).toEqual({ command: "table.rowBreak", mode: "none" });
+  });
 });
