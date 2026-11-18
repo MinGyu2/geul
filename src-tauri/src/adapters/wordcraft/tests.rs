@@ -5425,18 +5425,44 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
     reopen.run("select.objects", &json!({"index":0})).unwrap();
     reopen.run("chart.title", &json!({"text":"Changed"})).unwrap();
     let changed = io::save_bytes("fixture.docx", &reopen.doc).unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, true);
+    // Stage 3 P4: the bound chart part may be regenerated (package proof), but a raw engine edit
+    // leaves the model's kept part bytes stale, so the real reopen comparison still refuses it.
+    // Product edits go through `DocxOp::ObjectEdit`, which resynchronises those bytes.
     use crate::services::save::preserve::FindingCode;
-    assert!(gate.findings.iter().any(|f| f.code == FindingCode::PartChanged
-        && f.part.as_deref().is_some_and(|name| name.starts_with("word/charts/"))), "{gate:?}");
+    let reopened = io::open_bytes("fixture.docx", &changed).unwrap();
+    let same = matches!(
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&reopen.doc, &reopened),
+        Ok(true)
+    );
+    assert!(!same);
+    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, same);
+    assert_eq!(
+        gate.findings,
+        vec![crate::services::save::preserve::Finding {
+            code: FindingCode::ReopenMismatch,
+            part: None
+        }],
+        "{gate:?}"
+    );
 
     let mut diagram = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
     diagram.run("select.objects", &json!({"index":1})).unwrap();
     diagram.run("smartArt.items", &json!({"items":["Changed", "Original"]})).unwrap();
     let changed = io::save_bytes("fixture.docx", &diagram.doc).unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, true);
-    assert!(gate.findings.iter().any(|f| f.code == FindingCode::PartChanged
-        && f.part.as_deref().is_some_and(|name| name.starts_with("word/diagrams/"))), "{gate:?}");
+    let reopened = io::open_bytes("fixture.docx", &changed).unwrap();
+    let same = matches!(
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&diagram.doc, &reopened),
+        Ok(true)
+    );
+    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, same);
+    assert!(
+        !same
+            && gate
+                .findings
+                .iter()
+                .any(|f| f.code == FindingCode::ReopenMismatch),
+        "{gate:?}"
+    );
 
     if let Some(out) = std::env::var_os("GEUL_STAGE3_GRAPHIC_FIXTURE") {
         let dir = std::path::PathBuf::from(out);
@@ -6293,4 +6319,306 @@ fn stage3_docx_picture_in_table_cell_admits_only_in_place_edits() {
         .unwrap()
         .media
         .is_empty());
+}
+
+#[test]
+fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
+    use super::engine::{ChartSeriesEdit, ObjectEdit, SmartArtItemEdit};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::InlineObject;
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run("insert.chart", &json!({"type": "line", "title": "Revenue"}))
+        .unwrap();
+    source
+        .run("select.collapse", &json!({"end": true}))
+        .unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run("insert.smartArt", &json!({"layout": "process"}))
+        .unwrap();
+    let original = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut model = DocxModel::open(&original).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let layout = reader.layout();
+    let find = |chart: bool| {
+        let hit = layout
+            .find_object(0, |hit| {
+                let pos = hit.pos();
+                reader
+                    .doc
+                    .para_at(&pos)
+                    .and_then(|p| p.object_at(pos.off))
+                    .is_some_and(|o| {
+                        matches!(o,
+                InlineObject::Graphic { graphic, .. } if graphic.chart.is_some() == chart)
+                    })
+            })
+            .unwrap();
+        DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        }
+    };
+    let (chart, diagram) = (find(true), find(false));
+    let state = |model: &mut DocxModel| {
+        let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+            v,
+        )
+    };
+    let apply = |model: &mut DocxModel, edit: ObjectEdit| {
+        let (position, epoch, _) = state(model);
+        model.apply(&[DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit,
+        }])
+    };
+    let safe = |model: &DocxModel| {
+        let bytes = model.export().unwrap();
+        let gate = service::check_saved(
+            crate::document::Format::Docx,
+            &original,
+            &bytes,
+            None,
+            model.same_as(&bytes),
+        );
+        assert!(gate.is_safe(), "{gate:?}");
+        bytes
+    };
+
+    model.apply(&[chart.clone()]);
+    let (position, epoch, view) = state(&mut model);
+    assert_eq!(view["operations"], json!(["chart"]));
+    // Bounds and kind checks before the engine; SmartArt edits do not apply to a chart.
+    for bad in [
+        ObjectEdit::ChartType {
+            plot: "radar".into(),
+        },
+        ObjectEdit::ChartTitle {
+            text: Some(String::new()),
+        },
+        ObjectEdit::ChartData {
+            categories: vec!["A".into()],
+            series: vec![ChartSeriesEdit {
+                name: "S".into(),
+                values: vec![Some(1.0), Some(2.0)],
+            }],
+        },
+        ObjectEdit::ChartData {
+            categories: vec!["A".into()],
+            series: vec![ChartSeriesEdit {
+                name: "S".into(),
+                values: vec![Some(f64::NAN)],
+            }],
+        },
+    ] {
+        assert!(!validate(&[DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: bad
+        }]));
+    }
+    let baseline = model.export().unwrap();
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::SmartArtLayout {
+                layout: "cycle".into()
+            }
+        )
+        .rejected,
+        vec![0]
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Bounds {
+                x: None,
+                y: None,
+                width: Some(200.0),
+                height: Some(100.0)
+            }
+        )
+        .rejected,
+        vec![0]
+    );
+    assert_eq!(model.export().unwrap(), baseline);
+
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::ChartTitle {
+                text: Some("분기 매출".into())
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::ChartType {
+                plot: "column".into()
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::ChartData {
+                categories: vec!["1분기".into(), "2분기".into(), "3분기".into()],
+                series: vec![
+                    ChartSeriesEdit {
+                        name: "매출".into(),
+                        values: vec![Some(3.5), None, Some(7.25)]
+                    },
+                    ChartSeriesEdit {
+                        name: "비용".into(),
+                        values: vec![Some(1.0), Some(2.0), Some(3.0)]
+                    }
+                ]
+            }
+        )
+        .changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["graphic"]["title"], "분기 매출");
+    assert_eq!(view["graphic"]["plot"], "column");
+    assert_eq!(
+        view["graphic"]["labels"],
+        json!(["1분기", "2분기", "3분기"])
+    );
+    assert_eq!(
+        view["graphic"]["series"][0]["values"],
+        json!(["3.5", null, "7.25"])
+    );
+    let charted = safe(&model);
+
+    model.apply(&[DocxOp::DeselectObject {}, diagram]);
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["operations"], json!(["smartArt"]));
+    assert_eq!(
+        apply(&mut model, ObjectEdit::ChartTitle { text: None }).rejected,
+        vec![0]
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::SmartArtItems {
+                items: vec![
+                    SmartArtItemEdit {
+                        text: "계획".into(),
+                        level: 0
+                    },
+                    SmartArtItemEdit {
+                        text: "세부".into(),
+                        level: 1
+                    },
+                    SmartArtItemEdit {
+                        text: "실행".into(),
+                        level: 0
+                    }
+                ]
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::SmartArtLayout {
+                layout: "cycle".into()
+            }
+        )
+        .changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["graphic"]["layout"], "cycle");
+    assert_eq!(
+        view["graphic"]["items"][1],
+        json!({"text": "세부", "level": 1})
+    );
+    let edited = safe(&model);
+
+    // Independent reopen: the models carry the edits; the package changed only in owned parts.
+    let reopened = io::open_bytes("fixture.docx", &edited).unwrap();
+    let graphics: Vec<_> = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .filter_map(|o| match o {
+            InlineObject::Graphic { graphic, .. } => Some(graphic.clone()),
+            _ => None,
+        })
+        .collect();
+    let spec = graphics.iter().find_map(|g| g.chart.clone()).unwrap();
+    assert_eq!(spec.title.as_deref(), Some("분기 매출"));
+    assert_eq!(spec.categories, ["1분기", "2분기", "3분기"]);
+    assert_eq!(spec.series[0].values, [Some(3.5), None, Some(7.25)]);
+    let art = graphics.iter().find_map(|g| g.smart_art.clone()).unwrap();
+    assert_eq!(
+        art.items
+            .iter()
+            .map(|i| (i.text.as_str(), i.level))
+            .collect::<Vec<_>>(),
+        [("계획", 0), ("세부", 1), ("실행", 0)]
+    );
+    let (before, after) = (
+        crate::services::save::package::open(
+            &original,
+            crate::services::save::package::Side::Original,
+        )
+        .unwrap(),
+        crate::services::save::package::open(&edited, crate::services::save::package::Side::Output)
+            .unwrap(),
+    );
+    let changed: Vec<&String> = after
+        .parts
+        .keys()
+        .filter(|k| before.get(k) != after.get(k))
+        .collect();
+    assert!(
+        changed.iter().all(|k| [
+            "word/document.xml",
+            "docProps/app.xml",
+            "word/charts/chart1.xml",
+            "word/diagrams/data1.xml",
+            "word/diagrams/drawing1.xml",
+            "word/diagrams/layout1.xml"
+        ]
+        .contains(&k.as_str())),
+        "{changed:?}"
+    );
+    assert!(before.parts.keys().eq(after.parts.keys()));
+
+    // One history step per edit.
+    assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
+    assert_eq!(model.export().unwrap(), charted);
+    assert_eq!(
+        model
+            .apply(&[DocxOp::Undo {}, DocxOp::Undo {}, DocxOp::Undo {}])
+            .changed,
+        3
+    );
+    assert_eq!(model.export().unwrap(), baseline);
+    assert!(model.same_as(&baseline));
 }

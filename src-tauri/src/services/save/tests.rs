@@ -13831,6 +13831,159 @@ fn docx_body_picture_deletion_proof_admits_only_drawing_owned_media() {
 }
 
 #[test]
+fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts() {
+    const CHART_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
+    const DATA_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData";
+    const PACKAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package";
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let rels = |list: &[(&str, &str, &str)]| {
+        let body: String = list
+            .iter()
+            .map(|(id, ty, target)| {
+                format!(r#"<Relationship Id="{id}" Type="{ty}" Target="{target}"/>"#)
+            })
+            .collect();
+        format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>"#
+        )
+    };
+    let doc = format!(r#"<w:document xmlns:w="{W}"><w:body><w:p/></w:body></w:document>"#);
+    let chart = |title: &str| {
+        format!(
+            r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:title>{title}</c:title></c:chartSpace>"#
+        )
+    };
+    let build = |doc_rels: &str, parts: &[(&str, String)]| {
+        let mut entries = vec![
+            entry("[Content_Types].xml", ct.as_bytes()),
+            entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+            entry("word/document.xml", doc.as_bytes()),
+            entry("word/_rels/document.xml.rels", doc_rels.as_bytes()),
+        ];
+        for (name, data) in parts {
+            entries.push(entry(name, data.as_bytes()));
+        }
+        pkg(&entries)
+    };
+    let bound = rels(&[
+        ("rId1", CHART_REL, "charts/chart1.xml"),
+        ("rId2", DATA_REL, "diagrams/data1.xml"),
+    ]);
+    let original = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("A")),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    // Positive: the bound chart and diagram data parts change.
+    let edited = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("B")),
+            ("word/diagrams/data1.xml", "<d x=\"1\"/>".into()),
+        ],
+    );
+    assert_eq!(package::compare_saved_docx(&original, &edited), vec![]);
+    // Negative: a chart with its own relationships (embedded workbook) stays frozen.
+    let chart_rels = rels(&[("rId1", PACKAGE_REL, "../embeddings/Book1.xlsx")]);
+    let with_rels = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("A")),
+            ("word/charts/_rels/chart1.xml.rels", chart_rels.clone()),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    let with_rels_edited = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("B")),
+            ("word/charts/_rels/chart1.xml.rels", chart_rels),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    assert!(!package::compare_saved_docx(&with_rels, &with_rels_edited).is_empty());
+    // Negative: a chart part the main document does not bind (or binds with another type).
+    let unbound = rels(&[("rId2", DATA_REL, "diagrams/data1.xml")]);
+    let wrong = rels(&[
+        ("rId1", DATA_REL, "charts/chart1.xml"),
+        ("rId2", DATA_REL, "diagrams/data1.xml"),
+    ]);
+    for doc_rels in [unbound, wrong] {
+        let a = build(
+            &doc_rels,
+            &[
+                ("word/charts/chart1.xml", chart("A")),
+                ("word/diagrams/data1.xml", "<d/>".into()),
+            ],
+        );
+        let b = build(
+            &doc_rels,
+            &[
+                ("word/charts/chart1.xml", chart("B")),
+                ("word/diagrams/data1.xml", "<d/>".into()),
+            ],
+        );
+        assert!(!package::compare_saved_docx(&a, &b).is_empty());
+    }
+    // Negative: other chart-folder parts (style/colours) and changed document relationships.
+    let colors = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("A")),
+            ("word/charts/colors1.xml", "<cs/>".into()),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    let colors_edited = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("A")),
+            ("word/charts/colors1.xml", "<cs v=\"2\"/>".into()),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    assert!(!package::compare_saved_docx(&colors, &colors_edited).is_empty());
+    let more = rels(&[
+        ("rId1", CHART_REL, "charts/chart1.xml"),
+        ("rId2", DATA_REL, "diagrams/data1.xml"),
+        ("rId3", CHART_REL, "charts/chart2.xml"),
+    ]);
+    let rels_changed = build(
+        &more,
+        &[
+            ("word/charts/chart1.xml", chart("B")),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+        ],
+    );
+    assert!(!package::compare_saved_docx(&original, &rels_changed).is_empty());
+    // Negative: a removed or added graphic part is not a regeneration.
+    let removed = build(&bound, &[("word/charts/chart1.xml", chart("B"))]);
+    assert!(!package::compare_saved_docx(&original, &removed).is_empty());
+    let added = build(
+        &bound,
+        &[
+            ("word/charts/chart1.xml", chart("B")),
+            ("word/diagrams/data1.xml", "<d/>".into()),
+            ("word/charts/chart2.xml", chart("C")),
+        ],
+    );
+    assert!(!package::compare_saved_docx(&original, &added).is_empty());
+    assert!(package::regenerated_graphic_part(
+        "word/diagrams/quickStyle12.xml"
+    ));
+    assert!(!package::regenerated_graphic_part(
+        "word/charts/chart1.xml.rels"
+    ));
+    assert!(!package::regenerated_graphic_part("word/charts/chartX.xml"));
+    assert!(!package::regenerated_graphic_part("word/charts/style1.xml"));
+}
+
+#[test]
 fn docx_table_media_renumbering_rejects_unrelated_content_types() {
     const IMAGE_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";

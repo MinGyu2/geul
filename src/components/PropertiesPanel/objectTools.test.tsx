@@ -95,4 +95,40 @@ describe("object tools in the properties panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply line" }));
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "outline", color: "000000" }));
   });
+
+  it("edits chart title, type and data and SmartArt items and layout as model edits", () => {
+    const { picture: _p, ...base } = selection();
+    void _p;
+    const chart: ObjectSelection = { ...base, kind: "chart", operations: ["deselect", "chart"],
+      graphic: { kind: "chart", plot: "line", title: "Revenue", labels: ["Q1", "Q2"], series: [{ name: "S", values: ["1", "2"] }] } };
+    const onEdit = panel(chart);
+    fireEvent.change(screen.getByLabelText("Chart title"), { target: { value: "매출" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply title" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "chartTitle", text: "매출" }));
+    fireEvent.change(screen.getByLabelText("Chart type"), { target: { value: "bar" } });
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "chartType", plot: "bar" }));
+    fireEvent.change(screen.getByLabelText("Category 2"), { target: { value: "2분기" } });
+    fireEvent.change(screen.getByLabelText("Series 1 · category 1 value"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Series 1 · category 2 value"), { target: { value: "7.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply data" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "chartData", categories: ["Q1", "2분기"], series: [{ name: "S", values: [null, 7.5] }] }));
+    fireEvent.change(screen.getByLabelText("Series 1 · category 2 value"), { target: { value: "abc" } });
+    expect(screen.getByRole("button", { name: "Apply data" })).toBeDisabled();
+  });
+
+  it("parses SmartArt outline indentation and refuses a skipped level", () => {
+    const { picture: _p, ...base } = selection();
+    void _p;
+    const art: ObjectSelection = { ...base, kind: "smartArt", operations: ["deselect", "smartArt"],
+      graphic: { kind: "smartArt", layout: "process", items: [{ text: "Plan", level: 0 }] } };
+    const onEdit = panel(art);
+    const box = screen.getByLabelText("Items (one per line, two leading spaces = one level)");
+    fireEvent.change(box, { target: { value: "Plan\n  Detail\nDo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply items" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "smartArtItems", items: [{ text: "Plan", level: 0 }, { text: "Detail", level: 1 }, { text: "Do", level: 0 }] }));
+    fireEvent.change(box, { target: { value: "Plan\n      Deep" } });
+    expect(screen.getByRole("button", { name: "Apply items" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Layout"), { target: { value: "cycle" } });
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "smartArtLayout", layout: "cycle" }));
+  });
 });

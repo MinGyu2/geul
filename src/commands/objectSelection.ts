@@ -53,7 +53,10 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt"] as const;
+export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
+export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
+export const MAX_GRAPHIC_TEXT_CHARS = 256;
 export type MutatingObjectOperation = typeof MUTATING_OBJECT_OPERATIONS[number];
 export type ObjectOperation = "deselect" | "copy" | "cut" | MutatingObjectOperation;
 export const POSITION_PRESETS = ["topLeft", "topCenter", "topRight", "middleLeft", "middleCenter", "middleRight", "bottomLeft", "bottomCenter", "bottomRight"] as const;
@@ -73,7 +76,12 @@ export type ObjectEdit =
   | { kind: "fill"; color: string | null }
   | { kind: "outline"; color: string | null; width?: number }
   | { kind: "rotate"; degrees: number; flipH: boolean; flipV: boolean }
-  | { kind: "layer"; front: boolean };
+  | { kind: "layer"; front: boolean }
+  | { kind: "chartTitle"; text: string | null }
+  | { kind: "chartType"; plot: typeof CHART_PLOTS[number] }
+  | { kind: "chartData"; categories: string[]; series: { name: string; values: (number | null)[] }[] }
+  | { kind: "smartArtItems"; items: { text: string; level: number }[] }
+  | { kind: "smartArtLayout"; layout: typeof SMART_ART_LAYOUTS[number] };
 
 export const OBJECT_SIDE_LIMITS = { min: 2, max: 4000 } as const;
 export const MAX_NUDGE_PT = 288;
@@ -97,6 +105,8 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "outline": return "outline";
     case "rotate": return "rotate";
     case "layer": return "zOrder";
+    case "chartTitle": case "chartType": case "chartData": return "chart";
+    case "smartArtItems": case "smartArtLayout": return "smartArt";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -127,6 +137,26 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   if (value.kind === "rotate") return keys === "degrees,flipH,flipV,kind" && finite(value.degrees, 3600)
     && typeof value.flipH === "boolean" && typeof value.flipV === "boolean";
   if (value.kind === "layer") return keys === "front,kind" && typeof value.front === "boolean";
+  const graphicText = (t: unknown) => typeof t === "string" && t.length > 0 && Array.from(t).length <= MAX_GRAPHIC_TEXT_CHARS
+    && Array.from(t).every(c => { const code = c.codePointAt(0)!; return code >= 0x20 && !(code >= 0x7f && code <= 0x9f) && code !== 0xfffc; });
+  if (value.kind === "chartTitle") return keys === "kind,text" && (value.text === null || graphicText(value.text));
+  if (value.kind === "chartType") return keys === "kind,plot" && CHART_PLOTS.some(p => p === value.plot);
+  if (value.kind === "smartArtLayout") return keys === "kind,layout" && SMART_ART_LAYOUTS.some(l => l === value.layout);
+  if (value.kind === "chartData") {
+    const { categories, series } = value;
+    return keys === "categories,kind,series" && Array.isArray(categories) && categories.length >= 1 && categories.length <= 128
+      && categories.every(graphicText) && Array.isArray(series) && series.length >= 1 && series.length <= 16
+      && series.every(s => !!s && typeof s === "object" && Object.keys(s).sort().join(",") === "name,values" && graphicText(s.name)
+        && Array.isArray(s.values) && s.values.length === categories.length
+        && s.values.every((v: unknown) => v === null || (typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= 1e15)));
+  }
+  if (value.kind === "smartArtItems") {
+    const items = value.items;
+    return keys === "items,kind" && Array.isArray(items) && items.length >= 1 && items.length <= 64
+      && items.every((item, i) => !!item && typeof item === "object" && Object.keys(item).sort().join(",") === "level,text"
+        && graphicText(item.text) && Number.isSafeInteger(item.level) && item.level >= 0 && item.level <= 7
+        && (i === 0 ? item.level === 0 : item.level <= (items[i - 1] as { level: number }).level + 1));
+  }
   if (value.kind === "wrap") return keys === "kind,wrap" && PICTURE_WRAPS.some(wrap => wrap === value.wrap);
   if (value.kind === "position") return keys === "kind,preset" && POSITION_PRESETS.some(preset => preset === value.preset);
   if (value.kind === "altText") return keys === "kind,text" && typeof value.text === "string"

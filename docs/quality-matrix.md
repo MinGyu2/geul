@@ -200,7 +200,9 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 글상자 삽입·내부 텍스트 (P3 갱신) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
 | SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
-| 차트·SmartArt 편집 | BLOCKED | BLOCKED | BLOCKED | 차트·다이어그램 부분 및 OLE 변경 보존 관문 |
+| 차트 편집 (P4) | SUPPORTED_AND_VERIFIED | BLOCKED | BLOCKED | DOCX: WordCraft 모델이 있는 차트의 제목·종류·항목·계열 값(`chart.title`/`chart.type`/`chart.editData`), T009 재생성 부분 증명. HWPX: 차트 문서는 편집 없는 내보내기부터 RHWP가 `HWPX manifest preservation: original item omitted/unsupported: ole1`로 거부. HWP: `setChartData`가 `BinData/BIN0001.OLE`를 다시 써 T009 `partChanged`(OLE 안 증명 없음) |
+| SmartArt 편집 (P4) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX: 항목·단계·레이아웃(`smartArt.items`/`smartArt.layout`). RHWP에 SmartArt 모델 없음(형식 대응 여부 NOT VERIFIED) |
+| 외부 프로그램 차트·다이어그램 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | WordCraft 모델이 없으면 원본 markup·부분 그대로, 편집 연산 없음 |
 | 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
 | 그림·글상자·차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 해당 개체의 자원·스토리 보존 계약과 검증이 남아 있음 |
 | 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `picture.crop`(원본 미디어 불변, 1/100000 격자), HWPX crop 양(원본 크기 기준) 읽기 확인·재열기·`save_check` safe |
@@ -242,3 +244,9 @@ BinData 1비트 변조 unsafe. Vitest 1640 중 1637 PASS(같은 기존 실패 3)
 **2026-11-19 P3 도형 실행.** Rust `stage3_docx_shape_fill_outline_rotation_layer_roundtrip`, `stage3_docx_picture_in_table_cell_admits_only_in_place_edits`
 PASS(Stage 3 Rust 9, adapters 115). Release WASM `stage3-shapes` 2 PASS(HWPX 사각형·글상자 삽입, 채우기·선 색·회전·이동·크기·
 뒤로·삭제·Undo, 재열기 값 확인, HWP 삽입 거부), 출력 `save_check saved hwpx` safe. Vitest 1645 중 기존 실패 3 외 PASS. 네이티브 NOT RUN.
+
+**2026-11-19 P4 차트·SmartArt 실행.** Rust `stage3_docx_chart_and_smart_art_model_edits_save_and_reopen`(제목·종류·데이터·항목·
+레이아웃, 편집마다 `check_saved` safe, 독립 재열기 모델 값, 바뀐 부분이 본문·통계·chart1·data1·drawing1·layout1뿐, Undo 다섯 번 뒤
+원본 바이트), `docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts`(양성 1·음성 7) PASS; Stage 3 + adapters +
+services::save 396 PASS / 31 ignored. 기존 P4 조회 시험은 새 계약(패키지 부분은 받되 동기화 없는 원시 엔진 편집은 `ReopenMismatch`)으로
+갱신. RHWP 차트 탐침: HWP `setChartData` 출력 `partChanged BinData/BIN0001.OLE`, HWPX 편집 없는 내보내기 실패. Vitest 1647 중 기존 실패 3 외 PASS.

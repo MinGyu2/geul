@@ -1875,3 +1875,13 @@ BLOCKED.
 DOCX 도형 서식은 `word/document.xml`만 바꾸고 편집마다 `check_saved`·`same_as`를 통과한다(시험: 채우기·선·회전·대칭·뒤로·
 재열기 값, 네 번 Undo 뒤 삽입 직후 바이트와 동일). 표 셀 그림 삭제는 기존 표 미디어 증명으로 미디어까지 정리된다.
 HWPX 도형 삽입·서식·삭제 출력은 `Contents/section0.xml`만 바뀌어 `save_check` safe다. HWP 도형은 BodyText gso 증명 공백으로 BLOCKED.
+
+### Stage 3 P4 차트·SmartArt 재생성 부분 증명 (2026-11-19)
+
+`graphic_parts_regenerated`: 바뀐 부분이 `word/charts/chartN.xml` 또는 `word/diagrams/{data,layout,quickStyle,colors,drawing}N.xml`이고,
+양쪽에 있으며, 원본·출력 본문 관계가 바이트 같고 그 관계가 맞는 형식(chart, diagramData/Layout/QuickStyle/Colors/Drawing)으로 그
+부분을 가리키며, 그 부분에 자체 `.rels`가 어느 쪽에도 없을 때만 받는다(포함 통합 문서·차트 스타일/색 부분·외부 데이터가 있으면
+고정). 내용 보증은 재열기 비교다: WordCraft `roundtrip_equivalent`가 차트·다이어그램 모델과 이 부분들의 보관 바이트를 비교한다.
+WordCraft는 모델이 있는 차트·SmartArt를 모델에서만 쓰고, DOCX 사전 검사는 편집 없는 왕복이 부분마다 같아야 하므로 이런 부분은
+모델로 완전히 결정된다. 음성 시험: 자체 관계 있는 차트, 본문이 묶지 않은/다른 형식으로 묶은 부분, 차트 폴더의 색 부분, 본문 관계 변경,
+부분 삭제·추가. HWP 차트 편집은 OLE 스트림 재작성(`BinData/BIN0001.OLE` partChanged), HWPX 차트 문서는 RHWP 내보내기 거부로 BLOCKED.

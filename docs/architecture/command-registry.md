@@ -1142,3 +1142,17 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 - `insert.shape`·`insert.textBox`(RHWP 지원으로 변경): HWPX 본문 커서(셀·선택 없음)에서 `createShapeControl`(108×72pt, 도형은
   떠 있는 어울림, 글상자는 글자처럼). 생성 뒤 같은 문단의 새 컨트롤을 다시 읽어 확인한다. HWP는 세션이 제공하지 않는다.
 - 모드: 문서 텍스트·개체 선택·(DOCX만) 글상자 내부 편집. 개체 선택 중 입력은 거부되고, 프레임 끌기는 글자에 닿지 않는다.
+
+### P4 차트·SmartArt (2026-11-19)
+
+추가 `edit`: `chartTitle {text|null}`, `chartType {plot}`(column·columnStacked·bar·barStacked·line·area·pie·doughnut·scatter),
+`chartData {categories, series:[{name, values:(number|null)[]}]}`(항목 1–128, 계열 1–16, 값 개수 = 항목 수, 유한 |v|≤1e15),
+`smartArtItems {items:[{text, level}]}`(1–64, 첫 항목 0단계, 한 번에 한 단계까지만 깊어짐, 최대 7), `smartArtLayout {layout}`.
+연산 이름 `chart`·`smartArt`. 글자는 1–256자, 제어 문자 없음.
+
+- WordCraft 모델(`graphic.chart`/`graphic.smart_art`)이 있는 본문 개체만 이 연산 하나를 제공하고 크기·이동·삭제는 제공하지 않는다.
+  외부 프로그램이 만든 차트·다이어그램은 선택·조회만. 편집 뒤 내보낸 파일을 다시 읽어 바뀐 `passthrough` 항목이 정확히 재생성
+  부분(`regenerated_graphic_part`)뿐일 때만 그 바이트를 모델에 반영하고, 이어서 `check_saved`·`same_as`를 적용한다.
+- RHWP: 차트는 계속 조회 전용(`editable:false`). 원인은 형식별 표 참조.
+- 속성 창: 제목 적용/제거, 종류 선택, 항목·계열 이름·값 격자(빈 칸 = 값 없음, 숫자가 아니면 적용 비활성), SmartArt 항목 텍스트
+  (앞 공백 두 칸 = 한 단계)와 레이아웃.

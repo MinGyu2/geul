@@ -401,5 +401,8 @@ HWP 그림 편집은 P1과 같은 BodyText gso 증명 공백으로 BLOCKED. 네�
 **2026-11-19 P3 도형.** DOCX 도형·글상자의 채우기/없음·선 색·굵기·회전·대칭·앞뒤를 `object.edit`로, HWPX는 사각형·타원·선·글상자
 삽입과 기존 본문 도형의 이동·크기·삭제·채우기·선 색·회전·대칭·배치·앞뒤를 지원한다. HWPX/HWP 글상자 내부 텍스트 편집,
 HWP 도형, RHWP 중첩 개체 변경은 미구현/BLOCKED. DOCX 표 셀 그림은 제자리 편집과 삭제만.
+**2026-11-19 P4 차트·SmartArt.** DOCX 차트 제목·종류·항목·계열 값과 SmartArt 항목·단계·레이아웃 편집을 `object.edit`로
+연결했다. WordCraft가 모델에서 다시 쓰는 차트·다이어그램 부분만 받는 좁은 T009 증명을 더하고, 편집 뒤 엔진이 보관한 부분 바이트를
+동기화해 재열기 동등성을 맞춘다. HWPX 차트(RHWP 내보내기 거부)·HWP 차트(OLE 스트림 재작성)는 BLOCKED, HWP/HWPX SmartArt는 미지원.
 P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
 PARTIALLY COMPLETED 상태다.

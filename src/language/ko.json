@@ -826,5 +826,17 @@
   "properties.shape.flipV": "상하 대칭",
   "properties.shape.rotationApply": "회전 적용",
   "properties.shape.front": "맨 앞으로",
-  "properties.shape.back": "맨 뒤로"
+  "properties.shape.back": "맨 뒤로",
+  "properties.chart.title": "차트 제목",
+  "properties.chart.titleApply": "제목 적용",
+  "properties.chart.titleRemove": "제목 없음",
+  "properties.chart.plot": "차트 종류",
+  "properties.chart.data": "데이터 편집",
+  "properties.chart.category": "항목 {index}",
+  "properties.chart.seriesName": "계열 {index} 이름",
+  "properties.chart.value": "계열 {series} · 항목 {category} 값",
+  "properties.chart.dataApply": "데이터 적용",
+  "properties.smartArt.items": "항목 (한 줄에 하나, 앞 공백 두 칸 = 한 단계)",
+  "properties.smartArt.itemsApply": "항목 적용",
+  "properties.smartArt.layout": "레이아웃"
 }

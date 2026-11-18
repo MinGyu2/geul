@@ -826,5 +826,17 @@
   "properties.shape.flipV": "Flip vertical",
   "properties.shape.rotationApply": "Apply rotation",
   "properties.shape.front": "Bring to front",
-  "properties.shape.back": "Send to back"
+  "properties.shape.back": "Send to back",
+  "properties.chart.title": "Chart title",
+  "properties.chart.titleApply": "Apply title",
+  "properties.chart.titleRemove": "No title",
+  "properties.chart.plot": "Chart type",
+  "properties.chart.data": "Edit data",
+  "properties.chart.category": "Category {index}",
+  "properties.chart.seriesName": "Series {index} name",
+  "properties.chart.value": "Series {series} · category {category} value",
+  "properties.chart.dataApply": "Apply data",
+  "properties.smartArt.items": "Items (one per line, two leading spaces = one level)",
+  "properties.smartArt.itemsApply": "Apply items",
+  "properties.smartArt.layout": "Layout"
 }

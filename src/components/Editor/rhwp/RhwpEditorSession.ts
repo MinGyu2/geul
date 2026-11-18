@@ -4203,7 +4203,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (JSON.stringify(amounts) === JSON.stringify(before.cropAmounts)) return false;
       apply = set({ cropLeft, cropTop, cropRight, cropBottom }, after => same(after, ["size", "description", "wrap"])
         && JSON.stringify(after!.cropAmounts) === JSON.stringify(amounts));
-    } else if (edit.kind === "position" || edit.kind === "fill" || edit.kind === "outline" || edit.kind === "rotate" || edit.kind === "layer") {
+    } else if (edit.kind !== "bounds" && edit.kind !== "nudge") {
+      // Position presets, shape formatting and chart/SmartArt model edits do not apply to RHWP pictures.
       return false;
     } else {
       // Move: frame units → HWPUNIT through the same layout sample as the stored size.

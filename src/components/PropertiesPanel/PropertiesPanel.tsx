@@ -1,6 +1,6 @@
 import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
-import { MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
+import { CHART_PLOTS, MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, MAX_GRAPHIC_TEXT_CHARS, SMART_ART_LAYOUTS, validObjectEdit, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
@@ -127,10 +127,92 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
           </select>
         </label>
       )}
+      {selection.graphic?.kind === "chart" && can("chart") && <ChartFields chart={selection.graphic} disabled={disabled} onEdit={onEdit} />}
+      {selection.graphic?.kind === "smartArt" && can("smartArt") && <SmartArtFields art={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
         outlineWidth={selection.address.engine === "wordcraft"} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
         onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
+    </div>
+  );
+}
+
+type ChartGraphic = Extract<GraphicProperties, { kind: "chart" }>;
+type SmartArtGraphic = Extract<GraphicProperties, { kind: "smartArt" }>;
+
+function ChartFields({ chart, disabled, onEdit }: { chart: ChartGraphic; disabled: boolean; onEdit: (edit: ObjectEdit) => void }) {
+  const { t } = useTranslation();
+  const [title, setTitle] = useState(chart.title ?? "");
+  const [labels, setLabels] = useState(chart.labels);
+  const [names, setNames] = useState(chart.series.map(s => s.name ?? ""));
+  const [values, setValues] = useState(chart.series.map(s => s.values.map(v => v ?? "")));
+  const plot = CHART_PLOTS.find(p => p === chart.plot);
+  const numbers = values.map(row => row.map(v => v.trim() === "" ? null : Number(v)));
+  const data: ObjectEdit = { kind: "chartData", categories: labels, series: names.map((name, i) => ({ name, values: numbers[i]! })) };
+  const dataValid = validObjectEdit(data);
+  const titleEdit: ObjectEdit = { kind: "chartTitle", text: title };
+  return (
+    <div className="chart-tools">
+      <form onSubmit={event => { event.preventDefault(); if (!disabled && validObjectEdit(titleEdit) && title !== chart.title) onEdit(titleEdit); }}>
+        <label className="picture-size-field">{t("properties.chart.title")}
+          <input type="text" value={title} maxLength={MAX_GRAPHIC_TEXT_CHARS} disabled={disabled} onChange={event => setTitle(event.target.value)} />
+        </label>
+        <button type="submit" className="document-bar__button" disabled={disabled || !validObjectEdit(titleEdit) || title === chart.title}>{t("properties.chart.titleApply")}</button>
+        <button type="button" className="document-bar__button" disabled={disabled || chart.title === null}
+          onClick={() => onEdit({ kind: "chartTitle", text: null })}>{t("properties.chart.titleRemove")}</button>
+      </form>
+      {plot && <label className="picture-size-field">{t("properties.chart.plot")}
+        <select value={plot} disabled={disabled} onChange={event => onEdit({ kind: "chartType", plot: event.target.value as typeof CHART_PLOTS[number] })}>
+          {CHART_PLOTS.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>}
+      <form onSubmit={event => { event.preventDefault(); if (!disabled && dataValid) onEdit(data); }}>
+        <fieldset className="chart-data-fields">
+          <legend>{t("properties.chart.data")}</legend>
+          {labels.map((label, c) => (
+            <input key={`c${c}`} type="text" aria-label={t("properties.chart.category", { index: c + 1 })} value={label} disabled={disabled}
+              onChange={event => setLabels(current => current.map((v, i) => i === c ? event.target.value : v))} />
+          ))}
+          {names.map((name, r) => (
+            <div key={`s${r}`} className="chart-data-row">
+              <input type="text" aria-label={t("properties.chart.seriesName", { index: r + 1 })} value={name} disabled={disabled}
+                onChange={event => setNames(current => current.map((v, i) => i === r ? event.target.value : v))} />
+              {values[r]!.map((value, c) => (
+                <input key={c} type="text" inputMode="decimal" aria-label={t("properties.chart.value", { series: r + 1, category: c + 1 })}
+                  value={value} disabled={disabled}
+                  onChange={event => setValues(current => current.map((row, i) => i !== r ? row : row.map((v, j) => j === c ? event.target.value : v)))} />
+              ))}
+            </div>
+          ))}
+        </fieldset>
+        <button type="submit" className="document-bar__button" disabled={disabled || !dataValid}>{t("properties.chart.dataApply")}</button>
+      </form>
+    </div>
+  );
+}
+
+function SmartArtFields({ art, disabled, onEdit }: { art: SmartArtGraphic; disabled: boolean; onEdit: (edit: ObjectEdit) => void }) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(art.items.map(item => `${"  ".repeat(item.level)}${item.text}`).join("\n"));
+  const items = text.split("\n").filter(line => line.trim() !== "").map(line => {
+    const indent = line.length - line.trimStart().length;
+    return { text: line.trim(), level: Math.floor(indent / 2) };
+  });
+  const edit: ObjectEdit = { kind: "smartArtItems", items };
+  const layout = SMART_ART_LAYOUTS.find(l => l === art.layout);
+  return (
+    <div className="smart-art-tools">
+      <form onSubmit={event => { event.preventDefault(); if (!disabled && validObjectEdit(edit)) onEdit(edit); }}>
+        <label className="picture-size-field">{t("properties.smartArt.items")}
+          <textarea rows={Math.min(12, Math.max(3, items.length + 1))} value={text} disabled={disabled} onChange={event => setText(event.target.value)} />
+        </label>
+        <button type="submit" className="document-bar__button" disabled={disabled || !validObjectEdit(edit)}>{t("properties.smartArt.itemsApply")}</button>
+      </form>
+      {layout && <label className="picture-size-field">{t("properties.smartArt.layout")}
+        <select value={layout} disabled={disabled} onChange={event => onEdit({ kind: "smartArtLayout", layout: event.target.value as typeof SMART_ART_LAYOUTS[number] })}>
+          {SMART_ART_LAYOUTS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+      </label>}
     </div>
   );
 }

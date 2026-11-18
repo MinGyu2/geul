@@ -11,7 +11,7 @@
 //! 원본 XML을 끝까지 읽지 못하면(끊긴 본문 등) 비교하지 않고 판단 불가로 둔다(엔진이 끊긴 곳까지 읽어 여는 문서,
 //! T008 J). ZIP은 형식 판별과 같은 판독기로 읽는다(로컬 헤더 대조·CRC·크기 상한·암호화 항목 거부).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use crate::document::xml;
@@ -368,6 +368,8 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         notes.is_empty() || note_settings_added(original, output, &notes)
     });
     let pictures = pictures_appended(original, output);
+    // Stage 3 P4: chart/SmartArt parts WordCraft regenerates from an edited model.
+    let graphics = graphic_parts_regenerated(original, output);
     let media_removed = if added.is_none() && pictures.is_none() {
         authorized_table_media_changes(original, output)
     } else {
@@ -409,6 +411,7 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
+            || graphics.contains(name)
             || fonts.as_ref().is_some_and(|f| {
                 f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
             })
@@ -655,6 +658,97 @@ fn comment_reference_bindings_equal(
 ///
 /// 메모 부분 내용(메모 글·작성자·날짜·완료 표시)은 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 원본에 메모가 이미 있으면 이
 /// 규칙을 쓰지 않는다(기존 메모 부분이 바뀌면 지금처럼 partChanged).
+const CHART_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
+const DIAGRAM_RELS: [(&str, &str); 5] = [
+    (
+        "data",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData",
+    ),
+    (
+        "layout",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout",
+    ),
+    (
+        "quickStyle",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle",
+    ),
+    (
+        "colors",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors",
+    ),
+    (
+        "drawing",
+        "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing",
+    ),
+];
+
+/// Part names whose content WordCraft writes from a chart or SmartArt model (`word/charts/chartN.xml`,
+/// `word/diagrams/{data,layout,quickStyle,colors,drawing}N.xml`).
+pub fn regenerated_graphic_part(name: &str) -> bool {
+    let numbered = |rest: &str| {
+        rest.strip_suffix(".xml")
+            .is_some_and(|n| !n.is_empty() && n.len() <= 6 && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    name.strip_prefix("word/charts/chart").is_some_and(numbered)
+        || DIAGRAM_RELS.iter().any(|(kind, _)| {
+            name.strip_prefix(&format!("word/diagrams/{kind}"))
+                .is_some_and(numbered)
+        })
+}
+
+/// Stage 3 P4 T009 proof for chart/SmartArt model edits. A changed part is admitted only when it is a
+/// [`regenerated_graphic_part`] present in both packages, bound from the unchanged main document
+/// relationships by the matching chart/diagram relationship type, and has no relationships of its own
+/// in either package (so no embedded workbook, chart style/colour part or external data can go stale
+/// or be dropped). Its new content is the engine's model, which the reopen comparison checks
+/// (WordCraft compares the chart/diagram model and these parts' bytes). Everything else — content
+/// types, document relationships, other parts — is still compared byte for byte.
+fn graphic_parts_regenerated(original: &Package, output: &Package) -> BTreeSet<String> {
+    let mut admitted = BTreeSet::new();
+    if original.get(DOCUMENT_RELS) != output.get(DOCUMENT_RELS) {
+        return admitted;
+    }
+    let Some(rels) = original
+        .get(DOCUMENT_RELS)
+        .and_then(|data| xml::relationships(data).ok())
+    else {
+        return admitted;
+    };
+    for (name, (_, before)) in &original.parts {
+        if !regenerated_graphic_part(name)
+            || output
+                .get(name)
+                .is_none_or(|after| after == before.as_slice())
+        {
+            continue;
+        }
+        let rels_part = match name.rsplit_once('/') {
+            Some((dir, file)) => format!("{dir}/_rels/{file}.rels"),
+            None => continue,
+        };
+        if original.parts.contains_key(&rels_part) || output.parts.contains_key(&rels_part) {
+            continue;
+        }
+        let kind = if name.starts_with("word/charts/") {
+            Some(CHART_REL)
+        } else {
+            DIAGRAM_RELS
+                .iter()
+                .find(|(k, _)| name.starts_with(&format!("word/diagrams/{k}")))
+                .map(|(_, t)| *t)
+        };
+        let bound = rels.iter().any(|r| {
+            !r.external
+                && Some(r.kind.as_str()) == kind
+                && resolve(DOCUMENT_RELS, &r.target).as_deref() == Some(name.as_str())
+        });
+        if bound {
+            admitted.insert(name.clone());
+        }
+    }
+    admitted
+}
+
 pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
     parts_added(original, output).is_some_and(|added| {
         added
