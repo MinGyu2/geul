@@ -2,6 +2,7 @@
 // onConfirm으로 넘긴다(실행·낡은 요청 판정은 부르는 쪽). 창이 열린 동안은 명령 문맥이 모달이라 다른 명령은 실행되지 않는다.
 // 초점: 열 때 입력 칸, 닫을 때 연 쪽(리본 단추 등)으로 돌려준다(NewDocumentDialog와 같은 규칙).
 import { useLayoutEffect, useRef, useState } from "react";
+import { BASIC_SHAPES, type BasicShape } from "../../commands/objectSelection";
 import type { CommandInputRequest } from "../../commands/commands";
 import {
   CHAR_SPACING_RANGE, CHAR_WIDTH_RANGE, MAX_COMMENT_CHARS, MAX_FORMULA_LENGTH, commentProblem, formulaProblem, formulaReadsOwnCell, parsePercent,
@@ -55,6 +56,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   const { t } = useTranslation();
   const [text, setText] = useState(() => initialText(request));
   const [tableCols, setTableCols] = useState(() => initialTableCols(request));
+  const [shape, setShape] = useState<BasicShape>("rectangle");
   const [error, setError] = useState<MessageKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -62,7 +64,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
     if (suspended) return;
     if (!openerRef.current && document.activeElement instanceof HTMLElement) openerRef.current = document.activeElement;
     const dialog = ref.current;
-    dialog?.querySelector<HTMLInputElement>("input")?.focus();
+    dialog?.querySelector<HTMLElement>("input, select")?.focus();
     return () => {
       const opener = openerRef.current;
       if (opener instanceof HTMLElement && opener.isConnected
@@ -73,6 +75,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   }, [suspended]);
   if (suspended) return null;
 
+  const shapeDialog = request.command === "insert.shape";
   const table = request.command === "insert.table";
   const splitCell = request.command === "table.splitCell";
   const splitLimit = request.context.tableSplit ?? { maxRows: 1, maxColumns: 1 };
@@ -85,7 +88,9 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   const cell = request.context.tableCell;
   const submit = () => {
     let args: DocumentCommandArgs;
-    if (table) {
+    if (shapeDialog) {
+      args = { command: "insert.shape", kind: shape };
+    } else if (table) {
       const rows = /^\d{1,2}$/.test(text.trim()) ? Number(text.trim()) : NaN;
       const cols = /^\d{1,2}$/.test(tableCols.trim()) ? Number(tableCols.trim()) : NaN;
       if (!Number.isSafeInteger(rows) || rows < 1 || rows > 32 || !Number.isSafeInteger(cols) || cols < 1 || cols > 16) {
@@ -133,7 +138,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   const errorId = "command-input-error";
   return (
     <div className="discard-dialog__backdrop" onMouseDown={event => {
-      if (event.target instanceof Element && event.target.closest("button, input, label")) return;
+      if (event.target instanceof Element && event.target.closest("button, input, select, label")) return;
       event.preventDefault();
     }}>
       <div ref={ref} className="discard-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}
@@ -141,16 +146,24 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         onKeyDown={event => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Escape") { event.preventDefault(); onCancel(); }
-          if (event.key === "Enter" && event.target instanceof HTMLInputElement) { event.preventDefault(); submit(); }
+          if (event.key === "Enter" && (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); submit(); }
           if (event.key === "Tab") {
-            const controls = [...(ref.current?.querySelectorAll<HTMLElement>("input, button") ?? [])];
+            const controls = [...(ref.current?.querySelectorAll<HTMLElement>("input, select, button") ?? [])];
             const index = controls.indexOf(document.activeElement as HTMLElement);
             event.preventDefault();
             controls[(index + (event.shiftKey ? controls.length - 1 : 1)) % controls.length]?.focus();
           }
         }}>
         <h2 id={titleId} className="discard-dialog__title">{t(request.labelKey)}</h2>
-        {gridDialog ? <>
+        {shapeDialog ? <label>
+          {t("commandInput.shape.kind")}{" "}
+          <select value={shape} onChange={event => {
+            const kind = BASIC_SHAPES.find(kind => kind === event.target.value);
+            if (kind) setShape(kind);
+          }}>
+            {BASIC_SHAPES.map(kind => <option value={kind} key={kind}>{t(`commandInput.shape.${kind}`)}</option>)}
+          </select>
+        </label> : gridDialog ? <>
           <label style={{ display: "block" }}>
             {t("commandInput.table.rows.label")}{" "}
             <input type="text" inputMode="numeric" pattern="[0-9]*" data-testid="command-input-rows" value={text}
@@ -182,7 +195,8 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
           {!textual && <span aria-hidden="true"> %</span>}
         </label>}
         <p id={hintId} className="discard-dialog__hint">
-          {table ? t("commandInput.table.hint")
+          {shapeDialog ? t("commandInput.shape.hint")
+            : table ? t("commandInput.table.hint")
             : splitCell ? t("commandInput.splitCell.hint", { maxRows: splitLimit.maxRows, maxColumns: splitLimit.maxColumns })
             : comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
             ? t((request.command === "hangul.insertTableFormula" ? "commandInput.persistentFormula.hint" : "commandInput.formula.hint"), { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })

@@ -1,4 +1,11 @@
 {
+  "command.insert.textBox": "글상자",
+  "command.textBox.exit": "글상자에서 나가기",
+  "commandInput.shape.kind": "도형 종류",
+  "commandInput.shape.rectangle": "사각형",
+  "commandInput.shape.ellipse": "타원",
+  "commandInput.shape.line": "선",
+  "commandInput.shape.hint": "문서 끝에 도형을 추가합니다.",
   "command.picture.size": "그림 크기 적용",
   "properties.picture.widthInput": "너비 (pt)",
   "properties.picture.heightInput": "높이 (pt)",

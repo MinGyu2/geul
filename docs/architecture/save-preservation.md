@@ -1808,3 +1808,13 @@ Release WASM을 쓰는 제품 세션 시험에서 낡은 선택·잘못된 크�
 한도 초과와 HWP 수정 요청이 revision과 이력을 바꾸지 않는 것을 확인했다.
 정상 HWPX 변경과 Undo/Redo를 각각 확인하고 내보낸 HWPX를 새 엔진
 인스턴스에서 열었다. HWP 크기 조정은 P1의 레코드 보존 거부 상태다.
+
+### P3 DOCX 도형·글상자 저장 확인
+
+Rust 저장 서비스 시험에서 삽입 위치 거부, 사각형·타원·선·글상자
+삽입, 내부 텍스트 Undo/Redo, 외부 커서 복귀와 내보내기 후 본문·소유
+story를 확인했다. Linux X11 Release에서 같은 세 도형과 글상자를 넣고
+IBus 한글 모드로 입력한 뒤 Esc로 나왔다. 저장·닫기·네이티브 열기 후
+독립 ZIP/XML 검사에서 `한글`은 `w:txbxContent`에, `Host`는
+본문에 있었다. 변경된 부분은 `word/document.xml` 및
+`docProps/app.xml`뿐이었다. T009의 패키지 허용 규칙은 추가하지 않았다.

@@ -142,7 +142,8 @@ describe("명령 레지스트리", () => {
 describe("가용성 결정", () => {
   it("열린 문서가 없으면 noDocument, 연결하지 않은 리본 명령은 notImplemented", () => {
     for (const id of DOCUMENT_IDS) expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "noDocument" });
-    expect(commandState("insert.shape", { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
+    expect(commandState("insert.shape", { layout: initialLayout, document: null })).toEqual({ available: false, reason: "noDocument" });
+    expect(commandState("insert.link", { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     for (const id of ["no.such.command", "toString", "constructor"]) {
       expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     }
@@ -235,6 +236,23 @@ describe("명령 실행", () => {
     expect(notices).toHaveLength(1);
   });
 
+  it("opens the DOCX shape dialog with the current selection ownership", () => {
+    const { target, executed } = fakeTarget(snapshot({
+      parameters: { "insert.shape": {} },
+      actions: { "insert.textBox": {} },
+      clipboard: { key: "owned-body-end", selection: false, writable: true },
+    }));
+    const { value } = context(target);
+    const requestInput = vi.fn();
+    expect(executeCommand("insert.shape", undefined, { ...value, requestInput })).toBe(true);
+    expect(executed).toEqual([]);
+    expect(requestInput).toHaveBeenCalledWith(expect.objectContaining({
+      command: "insert.shape", selectionKey: "owned-body-end", loadGeneration: 1, revision: 0,
+    }));
+    expect(executeCommand("insert.textBox", undefined, value)).toBe(true);
+    expect(executed).toEqual(["insert.textBox"]);
+  });
+
   it("쓸 수 있는 문서 명령만 활성 세션에 보낸다", () => {
     const { target, executed } = fakeTarget(snapshot({ history: { undo: true, redo: false } }));
     const { value, notices } = context(target);
@@ -253,7 +271,7 @@ describe("명령 실행", () => {
     expect(notices).toEqual([
       { key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.format.bold" } } },
       { key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.edit.undo" } } },
-      { key: "command.unavailable.notImplemented", vars: { command: { key: "command.insert.shape" } } },
+      { key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.insert.shape" } } },
     ]);
   });
 

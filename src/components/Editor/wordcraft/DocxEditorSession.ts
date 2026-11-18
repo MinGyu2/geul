@@ -112,7 +112,7 @@ const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as cons
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
  * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
  */
-const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "deselectObject", "selectAll", "mark", "find", "clearSearch"]);
+const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "deselectObject", "leaveTextBox", "selectAll", "mark", "find", "clearSearch"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 const TABLE_STRUCTURE_ACTIONS: Readonly<Record<import("../../../commands/target").TableStructureCommandId, DocxTableAction>> = {
   "table.insertRowAbove": "insertRowAbove",
@@ -1225,6 +1225,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     }
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
     const actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]> = {};
+    if (view.drawingInsertionAllowed) actions["insert.textBox"] = {};
+    else actionReasons["insert.textBox"] = "caretRequired";
+    if (view.textBoxEditing) actions["textBox.exit"] = {};
     if (/^body:\d+:\d+$/.test(view.caretKey) && /^body:\d+:\d+$/.test(view.anchorKey))
       actions["paragraph.bullets"] = typeof view.bullets === "boolean" ? { pressed: view.bullets } : {};
     else actionReasons["paragraph.bullets"] = "caretRequired";
@@ -1245,6 +1248,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     }
     const body = (key: string) => key.startsWith("body:");
     const parameters: NonNullable<DocumentCommandSnapshot["parameters"]> = {};
+    if (view.drawingInsertionAllowed) parameters["insert.shape"] = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
     if (view.collapsed || !body(view.caretKey) || !body(view.anchorKey)) parameterReasons["review.comment"] = "selectionRequired";
     else parameters["review.comment"] = {};
@@ -1500,6 +1504,12 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "object.deselect") return { accepted: args === undefined && this.push({ op: "deselectObject" }) };
+    if (command === "insert.shape") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      return { accepted: this.push({ op: "shape", kind: args.kind }) };
+    }
+    if (command === "insert.textBox") return { accepted: args === undefined && this.push({ op: "textBox" }) };
+    if (command === "textBox.exit") return { accepted: args === undefined && this.push({ op: "leaveTextBox" }) };
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
       return { accepted: this.push({ op: "table", rows: args.rows, cols: args.cols }) };

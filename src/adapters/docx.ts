@@ -1,4 +1,4 @@
-import { OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties } from "../commands/objectSelection";
+import { OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -79,6 +79,8 @@ export interface DocxView {
   hasToc: boolean;
   bullets?: boolean | null;
   imageInsertionAllowed?: boolean;
+  drawingInsertionAllowed?: boolean;
+  textBoxEditing?: boolean;
   /** 변경 내용 추적이 켜져 있음(T013 Stage 3, 리본 단추 눌림). */
   tracking: boolean;
   /** 추적된 변경이 있음(수락·거절 가용성, 백엔드 `DocxModel::has_revisions`). */
@@ -257,6 +259,9 @@ export type DocxOp =
   | { op: "move"; to: MoveTarget; extend: boolean }
   | { op: "pointer"; page: number; x: number; y: number; extend: boolean; beforeInsert: boolean; drag?: boolean; selectObject?: boolean }
   | { op: "deselectObject" }
+  | { op: "leaveTextBox" }
+  | { op: "shape"; kind: BasicShape }
+  | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
   | { op: "insertAt"; mark: number; text: string }
@@ -621,8 +626,10 @@ function parsePictureView(raw: unknown): PictureProperties | null {
 }
 
 function parseDocxBaseView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["object", "selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["object", "selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "drawingInsertionAllowed", "textBoxEditing", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
+  if ("drawingInsertionAllowed" in value && typeof value.drawingInsertionAllowed !== "boolean") return null;
+  if ("textBoxEditing" in value && typeof value.textBoxEditing !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "bullets") && typeof value.bullets !== "boolean" && value.bullets !== null) return null;
   if (value.clipboardTextAvailable !== undefined && typeof value.clipboardTextAvailable !== "boolean") return null;
   if (value.clipboardTableCellsAvailable !== undefined && typeof value.clipboardTableCellsAvailable !== "boolean") return null;
@@ -667,6 +674,8 @@ function parseDocxBaseView(value: unknown): DocxView | null {
     ...(typeof value.clipboardTextAvailable === "boolean" ? { clipboardTextAvailable: value.clipboardTextAvailable } : {}),
     ...(typeof value.clipboardTableCellsAvailable === "boolean" ? { clipboardTableCellsAvailable: value.clipboardTableCellsAvailable } : {}),
     ...(typeof value.imageInsertionAllowed === "boolean" ? { imageInsertionAllowed: value.imageInsertionAllowed } : {}),
+    ...(typeof value.drawingInsertionAllowed === "boolean" ? { drawingInsertionAllowed: value.drawingInsertionAllowed } : {}),
+    ...(typeof value.textBoxEditing === "boolean" ? { textBoxEditing: value.textBoxEditing } : {}),
     ...(typeof value.bullets === "boolean" || value.bullets === null ? { bullets: value.bullets } : {}),
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,

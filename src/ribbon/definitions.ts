@@ -90,7 +90,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
     labelKey: "ribbon.tab.insert",
     groups: [
       group("tables", [cmd("insert.table", "table", "large")]),
-      group("illustrations", [cmd("insert.image", "image", "large"), cmd("insert.shape", "shape", "large"),
+      group("illustrations", [cmd("insert.image", "image", "large"), cmd("insert.shape", "shape", "large"), cmd("insert.textBox", "paragraphSettings", "large"),
         cmd("insert.link", "link", "large")]),
       group("headerFooter", [cmd("insert.header", "header"), cmd("insert.footer", "footer"),
         cmd("insert.pageNumber", "pageNumber")]),

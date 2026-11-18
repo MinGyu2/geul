@@ -22,7 +22,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs" | "file.exp
 
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
-  | "object.deselect" | "picture.size"
+  | "object.deselect" | "picture.size" | "insert.shape" | "insert.textBox" | "textBox.exit"
   | "edit.undo" | "edit.redo" | "edit.copy" | "edit.cut" | "edit.paste"
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough" | "format.font"
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula" | "hangul.insertTableFormula"
@@ -120,6 +120,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },
   "edit.cut": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+X"], scope: "document" },
   "edit.paste": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+V"], scope: "document" },
+  "insert.shape": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "insert.textBox": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "textBox.exit": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "picture.size": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
   "object.deselect": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },

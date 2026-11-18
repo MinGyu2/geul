@@ -195,11 +195,15 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
 | 그림 크기 조정 | UNSUPPORTED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
 | 개체 이동·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 이동 계약 미검증, HWP 삭제 후보 거부 |
-| 그 밖의 그림 서식·도형·글상자·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 편집·클립보드 수용 미완료 |
+| 사각형·타원·선 삽입 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
+| 글상자 삽입·내부 텍스트 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
+| 그 밖의 그림 서식·도형 서식·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
 Release WASM 2 PASS, 그림 속성 WordCraft 집중 1 PASS. HWPX 크기 조정은
-Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다.
+Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다. P3 DOCX
+저장 서비스 시험 및 Linux X11 Release의 도형 삽입·글상자 IME·독립
+저장 검사도 통과했다.
 [개체 선택 계약](architecture/command-registry.md#공통-개체-편집-stage-3-p1).
 

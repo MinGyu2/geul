@@ -1,4 +1,11 @@
 {
+  "command.insert.textBox": "Text box",
+  "command.textBox.exit": "Leave text box",
+  "commandInput.shape.kind": "Shape",
+  "commandInput.shape.rectangle": "Rectangle",
+  "commandInput.shape.ellipse": "Ellipse",
+  "commandInput.shape.line": "Line",
+  "commandInput.shape.hint": "Appends the shape at the end of the document.",
   "command.picture.size": "Resize picture",
   "properties.picture.widthInput": "Width (pt)",
   "properties.picture.heightInput": "Height (pt)",

@@ -180,7 +180,9 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
         return true;
       };
       switch (key) {
-        case "Escape": return session.execute("object.deselect").accepted;
+        case "Escape": return session.view?.textBoxEditing
+          ? session.execute("textBox.exit").accepted
+          : session.execute("object.deselect").accepted;
         case "ArrowLeft": return move("left");
         case "ArrowRight": return move("right");
         case "ArrowUp": return move("up");

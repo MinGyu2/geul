@@ -84,7 +84,7 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (id !== "edit.paste" && !snapshot.clipboard.selection) return unavailable("selectionRequired");
     return ENABLED;
   }
-  const structural = ["insert.table", "insert.image", "paragraph.bullets"].includes(id) || id.startsWith("table.");
+  const structural = ["insert.table", "insert.image", "insert.shape", "insert.textBox", "paragraph.bullets"].includes(id) || id.startsWith("table.");
   if (structural && snapshot.saving) return unavailable("saving");
   if (structural && snapshot.formatAccess === "protected") return unavailable("protected");
   if (!snapshot.editable) return unavailable("notReady");

@@ -48,3 +48,6 @@ export function pictureResizeMatches(request: PictureResizeRequest, selection: O
   return request.selectionEpoch === selection.epoch && request.sessionId === selection.sessionId
     && request.loadGeneration === selection.loadGeneration && request.revision === selection.revision;
 }
+
+export const BASIC_SHAPES = ["rectangle", "ellipse", "line"] as const;
+export type BasicShape = typeof BASIC_SHAPES[number];

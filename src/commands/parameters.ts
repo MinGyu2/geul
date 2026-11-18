@@ -1,3 +1,4 @@
+import { BASIC_SHAPES } from "./objectSelection";
 // 값 입력 문서 명령(T012·T013)의 값 검증. 입력 창(화면 경계)과 편집 세션(엔진 호출 직전)이 같은 함수를 쓴다.
 //
 // - 장평·자간: 고정 rhwp 글자 모양 계약(`model/style.rs` CharShape — `ratios` u8 7개 "50%~200%", `spacings` i8 7개
@@ -18,7 +19,7 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
-  "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight",
+  "insert.shape", "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight",
   "table.cellMargins", "table.positioning", "table.repeatHeader", "table.rowBreak",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
@@ -62,6 +63,7 @@ export function commentProblem(text: string): "empty" | "tooLong" | "characters"
 }
 
 const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
+  "insert.textBox", "textBox.exit",
   "insert.image", "paragraph.bullets", "format.embedFont",
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
@@ -316,6 +318,8 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
   const value = args as Record<string, unknown>;
   const keys = Object.keys(value).sort().join(",");
   switch (command) {
+    case "insert.shape":
+      return !!context && keys === "command,kind" && BASIC_SHAPES.some(kind => kind === value.kind);
     case "insert.table":
       return keys === "cols,command,rows" && integerIn(value.rows, { min: 1, max: 32 })
         && integerIn(value.cols, { min: 1, max: 16 }) && value.rows * value.cols <= 256;

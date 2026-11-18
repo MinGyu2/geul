@@ -107,6 +107,7 @@ pub enum DocxOp {
         select_object: bool,
     },
     DeselectObject {},
+    LeaveTextBox {},
     SelectAll,
     /// 지금 커서 자리를 `id`로 기억한다(IME가 클릭 뒤에 늦게 보내는 확정을 클릭 전 자리에 넣을 때).
     Mark {
@@ -160,6 +161,10 @@ pub enum DocxOp {
         cols: u16,
     },
     /// Validated encoded PNG/JPEG only. Never accepts filesystem paths.
+    Shape {
+        kind: BasicShape,
+    },
+    TextBox {},
     Image {
         data: String,
     },
@@ -408,6 +413,24 @@ impl MoveTarget {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BasicShape {
+    Rectangle,
+    Ellipse,
+    Line,
+}
+
+impl BasicShape {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Rectangle => "rectangle",
+            Self::Ellipse => "ellipse",
+            Self::Line => "line",
+        }
+    }
+}
+
 /// 비어 있지 않고 `MAX_TEXT_CHARS` 이하이며, `allowed` 밖의 제어 문자와 U+FFFC가 없다.
 fn valid_chars(text: &str, allowed: &[char]) -> bool {
     // U+FFFC는 WordCraft가 개체 자리로 쓰는 글자라 직접 넣지 않는다.
@@ -647,6 +670,8 @@ pub struct DocxView {
     pub has_toc: bool,
     pub bullets: Option<bool>,
     pub image_insertion_allowed: bool,
+    pub drawing_insertion_allowed: bool,
+    pub text_box_editing: bool,
     /// 변경 내용 추적이 켜져 있음(`settings.track_changes`, 리본 단추 눌림 상태).
     pub tracking: bool,
     /// 추적된 변경이 하나라도 있음(수락·거절 가용성, `DocxModel::has_revisions`).
@@ -1023,6 +1048,7 @@ impl DocxModel {
                 DocxOp::Move { .. }
                     | DocxOp::Pointer { .. }
                     | DocxOp::DeselectObject {}
+                    | DocxOp::LeaveTextBox {}
                     | DocxOp::SelectAll
                     | DocxOp::Mark { .. }
                     | DocxOp::Find { .. }
@@ -1078,6 +1104,11 @@ impl DocxModel {
             DocxOp::DeselectObject {} => {
                 self.selected_object = None;
                 Ok(false)
+            }
+            DocxOp::LeaveTextBox {} => {
+                let id = self.editing_text_box().ok_or(Rejected)?;
+                let anchor = self.session.doc.text_box_anchor(id).ok_or(Rejected)?;
+                self.run("caret.set", json!({"pos": anchor}))
             }
             DocxOp::SelectAll => self.run("select.all", json!({})),
             DocxOp::Pointer {
@@ -1150,6 +1181,8 @@ impl DocxModel {
                 }
                 self.run("para.bullets", json!({}))
             }
+            DocxOp::Shape { kind } => self.insert_drawing("insert.shape", json!({"kind": kind.name()}), true),
+            DocxOp::TextBox {} => self.insert_drawing("insert.textBox", json!({}), false),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -1564,6 +1597,43 @@ impl DocxModel {
         Ok(changed)
     }
 
+    fn drawing_insertion_allowed(&self) -> bool {
+        let caret = &self.session.sel.focus;
+        // Appending a body drawing avoids renumbering existing drawings after
+        // the insertion point. Other stories must pass the same conservative
+        // check as picture insertion.
+        self.session.sel.is_collapsed()
+            && self.session.doc.settings.protection.is_none()
+            && !self.session.doc.settings.track_changes
+            && caret.story == StoryRef::Body
+            && caret.path.0.len() == 1
+            && *caret == self.session.doc.end_of(StoryRef::Body)
+            && self.image_insertion_allowed()
+    }
+
+    fn editing_text_box(&self) -> Option<u32> {
+        let StoryRef::Part(id) = self.session.sel.focus.story else { return None };
+        self.session.doc.parts.get(&id)
+            .is_some_and(|part| part.kind == wordcraft_engine::doc::PartKind::TextBox)
+            .then_some(id)
+    }
+
+    fn insert_drawing(&mut self, command: &str, params: Value, collapse: bool) -> Result<bool, Rejected> {
+        if !self.drawing_insertion_allowed() {
+            return Err(Rejected);
+        }
+        self.atomic(|model| {
+            let changed = model.run(command, params)?;
+            if changed && collapse {
+                model.run("select.collapse", json!({"end": true}))?;
+            }
+            if changed && !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(changed)
+        })
+    }
+
     fn image_insertion_allowed(&self) -> bool {
         // The pinned writer renumbers drawings in later stories when a body
         // picture is added. T009 correctly rejects those unrelated part changes.
@@ -1700,6 +1770,8 @@ impl DocxModel {
             has_revisions: self.has_revisions(),
             has_toc: self.has_toc(),
             image_insertion_allowed: self.image_insertion_allowed(),
+            drawing_insertion_allowed: object.is_none() && self.drawing_insertion_allowed(),
+            text_box_editing: object.is_none() && self.editing_text_box().is_some(),
             bullets: sel.is_collapsed().then(|| {
                 self.session.doc.para_at(&sel.focus).is_some_and(|p| {
                     let props = self.session.doc.styles.resolve_para(&p.props);
