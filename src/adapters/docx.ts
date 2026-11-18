@@ -1,5 +1,5 @@
 import { parseGraphicProperties } from "../commands/graphicProperties";
-import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
+import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type MutatingObjectOperation, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -47,7 +47,7 @@ export interface DocxView {
   pages: DocxPage[];
   caret: DocxCaret | null;
   selection: DocxRect[];
-  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean }; operations: readonly ("move" | "resize" | "delete")[] };
+  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean }; operations: readonly MutatingObjectOperation[] };
   collapsed: boolean;
   inTable: boolean;
   /** 커서·기준점 자리 키(`story:path:off`). 비교·검사용. */
@@ -620,12 +620,13 @@ export function parseDocxView(value: unknown): DocxView | null {
 }
 
 function parsePictureView(raw: unknown): PictureProperties | null {
-  if (!isRecord(raw) || !hasExactly(raw, ["widthPt", "heightPt", "wrap", ...("description" in raw ? ["description"] : [])])) return null;
-  const { widthPt, heightPt, description } = raw;
+  if (!isRecord(raw) || !hasExactly(raw, ["widthPt", "heightPt", "wrap", "crop", ...("description" in raw ? ["description"] : [])])) return null;
+  const { widthPt, heightPt, description, crop } = raw;
   const wrap = PICTURE_WRAPS.find(wrap => wrap === raw.wrap);
   if (!isPositive(widthPt) || !isPositive(heightPt) || !wrap) return null;
   if ("description" in raw && (typeof description !== "string" || description.length > 4096)) return null;
-  return { widthPt, heightPt, wrap, ...(typeof description === "string" ? { description } : {}) };
+  if (!Array.isArray(crop) || crop.length !== 4 || !crop.every(side => typeof side === "number" && Number.isFinite(side) && side >= 0 && side <= 1)) return null;
+  return { widthPt, heightPt, wrap, crop: crop as [number, number, number, number], ...(typeof description === "string" ? { description } : {}) };
 }
 
 function parseDocxBaseView(value: unknown): DocxView | null {
@@ -662,9 +663,9 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       || typeof raw.position !== "string" || raw.position.length > 256
       || !/^(body|part\d+):\d+(\.\d+)*:\d+$/.test(raw.position)) return null;
     const operations = raw.operations;
-    if (!Array.isArray(operations) || operations.length > 3
+    if (!Array.isArray(operations) || operations.length > MUTATING_OBJECT_OPERATIONS.length
       || !operations.every((op, i) => MUTATING_OBJECT_OPERATIONS.some(known => known === op) && operations.indexOf(op) === i)) return null;
-    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as ("move" | "resize" | "delete")[] };
+    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as MutatingObjectOperation[] };
     if ("picture" in raw) {
       const picture = parsePictureView(raw.picture);
       if (kind !== "picture" || !picture) return null;

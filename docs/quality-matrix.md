@@ -193,7 +193,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 |---|---|---|---|---|
 | 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
-| 그림 크기 조정 | UNSUPPORTED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
+| 그림 크기 조정 (P2 갱신: DOCX 지원) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
 | 개체 이동·크기·삭제 (2026-11-19 P1) | SUPPORTED_AND_VERIFIED | PARTIAL (그림) | BLOCKED | DOCX: 본문 그림·도형·글상자·그룹의 `object.edit`(끌기·핸들·방향키·Delete), 편집 전 내보내기 대비 T009 사전 판정, 게시·독립 재열기. HWPX: 본문 떠 있는 그림 이동·인라인 그림 크기·그림 삭제, Release WASM·`save_check` safe. HWP: `insertions.rs:1154` 원본 gso 객체 바이트 동일 요구로 거부 |
 | 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | 해당 없음 | 8방향 핸들·이동 끌기·Esc/포인터 취소·끌기당 한 번 커밋; native X11 NOT RUN |
 | 사각형·타원·선 삽입 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
@@ -203,7 +203,11 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 차트·SmartArt 편집 | BLOCKED | BLOCKED | BLOCKED | 차트·다이어그램 부분 및 OLE 변경 보존 관문 |
 | 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
 | 그림·글상자·차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 해당 개체의 자원·스토리 보존 계약과 검증이 남아 있음 |
-| 그 밖의 그림 서식·도형 서식 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
+| 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `picture.crop`(원본 미디어 불변, 1/100000 격자), HWPX crop 양(원본 크기 기준) 읽기 확인·재열기·`save_check` safe |
+| 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `arrange.wrap`(인라인 복귀 시 위치 필드 정규화), HWPX `treatAsChar`/`textWrap` |
+| 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `object.altText`(제어 문자·줄바꿈 거부), HWPX `description`(`"`·`\\` 거부, 256자) |
+| 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | BLOCKED | DOCX `arrange.position` 여백 기준 9곳. HWPX는 끌기 이동만 |
+| 그 밖의 도형 서식 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | P3 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
@@ -226,3 +230,8 @@ Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다. P3 
 이동량·삭제·Undo/Redo·재열기, HWP 무변경 거부), 그 출력의 `save_check saved hwpx` safe, BinData 변조·
 header 변조·BinData 누락 음성 3건 unsafe. Vitest 전체 1634 PASS / 3 FAIL(`hangulTools` 1·`hwpReopenModel` 2,
 시작 HEAD에서도 재현). 네이티브 X11/IBus 끌기는 이 단계에서 NOT RUN.
+
+**2026-11-19 P2 그림 편집 실행.** Rust `stage3_docx_picture_crop_wrap_alt_text_position_roundtrip`(크롭·설명·배치·위치·
+초기화·인라인 복귀·Undo, 편집마다 T009 `check_saved` safe, 재열기 값과 원본 미디어 바이트 일치) PASS, Stage 3+adapters
+113 PASS. Release WASM `stage3-object-edit` 3 PASS + `stage3-picture-size` 2 PASS, HWPX 서식 출력 `save_check` safe,
+BinData 1비트 변조 unsafe. Vitest 1640 중 1637 PASS(같은 기존 실패 3). 속성 창 UI 시험 3 PASS. 네이티브 NOT RUN.

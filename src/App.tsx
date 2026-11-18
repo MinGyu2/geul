@@ -350,7 +350,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
           <>
             {splitter("properties")}
             <PropertiesPanel state={panel} onClose={() => closePanel("properties")}
-              onPictureResize={resize => { executeCommand("picture.size", undefined, context, { command: "picture.size", ...resize }); }} />
+              onObjectEdit={request => { executeCommand("object.edit", undefined, context, request); }} />
           </>
         )}
       </div>

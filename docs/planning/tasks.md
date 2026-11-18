@@ -395,5 +395,8 @@ Save/Save As·독립 재열기와 HWPX/HWP 교차 형식 거부를 확인했다.
 `arrange.bounds`/`arrange.nudge`/`text.delete`로 실행하고, 편집 전후 내보내기에 T009 저장 판정을 적용한다.
 HWPX는 떠 있는 본문 그림 이동, 인라인 그림 크기, 그림 삭제. 선택 프레임에 8방향 핸들·끌기·방향키·Delete.
 HWP 그림 변경은 BodyText 원본 gso 바이트 동일 요구로 BLOCKED, HWPX 도형은 P3로 남았다. 네이티브 끌기 NOT RUN.
+**2026-11-19 P2 그림 편집.** `object.edit`에 crop·wrap·altText·position을 더했다. DOCX는 크기·자르기·초기화·배치·
+설명·위치 프리셋·삭제, HWPX는 크기(인라인)·이동(떠 있는 그림)·자르기·배치·설명·삭제를 속성 창과 프레임에서 제공한다.
+HWP 그림 편집은 P1과 같은 BodyText gso 증명 공백으로 BLOCKED. 네이티브 NOT RUN.
 P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
 PARTIALLY COMPLETED 상태다.

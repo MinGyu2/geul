@@ -16,6 +16,12 @@ export interface RhwpPictureInspection {
   simpleInline: boolean;
   /** A floating picture whose position is a plain left/top offset (moved by changing the offsets). */
   movable?: { horzOffset: number; vertOffset: number };
+  /** No caption, external link or size protection: format edits change only the requested fields. */
+  plain: boolean;
+  /** Original picture size (HWPUNIT) that crop amounts are measured against. */
+  original?: { width: number; height: number };
+  /** RHWP crop amounts (HWPUNIT) [left, top, right, bottom]. */
+  cropAmounts?: readonly [number, number, number, number];
 }
 
 export function inspectRhwpPicture(
@@ -34,11 +40,23 @@ export function inspectRhwpPicture(
     const mode = Object.entries(wrapByEngineName).find(([name]) => name === textWrap)?.[1];
     const wrap = treatAsChar ? "inline" : mode;
     if (!wrap) return undefined;
+    const { originalWidth, originalHeight } = values;
+    const amounts = ["cropLeft", "cropTop", "cropRight", "cropBottom"].map(key => values[key]);
+    const cropAmounts = amounts.every(value => Number.isSafeInteger(value) && (value as number) >= 0) ? amounts as [number, number, number, number] : undefined;
+    const original = Number.isSafeInteger(originalWidth) && Number.isSafeInteger(originalHeight) && (originalWidth as number) > 0 && (originalHeight as number) > 0
+      ? { width: originalWidth as number, height: originalHeight as number } : undefined;
+    const fraction = (amount: number, side: number) => Math.min(1, amount / side);
+    const crop = original && cropAmounts ? [fraction(cropAmounts[0], original.width), fraction(cropAmounts[1], original.height),
+      fraction(cropAmounts[2], original.width), fraction(cropAmounts[3], original.height)] as [number, number, number, number] : undefined;
     return {
       properties: {
         widthPt: width / HWPUNIT_PER_POINT, heightPt: height / HWPUNIT_PER_POINT, wrap,
         ...(typeof description === "string" && description.length <= 4096 ? { description } : {}),
+        ...(crop ? { crop } : {}),
       },
+      plain: values.hasCaption === false && values.sizeProtect === false && !("externalPath" in values),
+      ...(original ? { original } : {}),
+      ...(cropAmounts ? { cropAmounts } : {}),
       ...(!treatAsChar && values.horzAlign === "Left" && values.vertAlign === "Top"
         && Number.isSafeInteger(values.horzOffset) && Number.isSafeInteger(values.vertOffset)
         && values.hasCaption === false && !("externalPath" in values) && values.rotationAngle === 0

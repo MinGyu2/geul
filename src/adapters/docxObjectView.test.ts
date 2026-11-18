@@ -49,7 +49,7 @@ describe("DOCX object view parsing", () => {
       object: {
         ...object,
         frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
-        picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명" },
+        picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명", crop: [0.1, 0, 0, 0.25] },
       },
     })?.object).toEqual({
       kind: "picture",
@@ -57,7 +57,7 @@ describe("DOCX object view parsing", () => {
       frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
       epoch: 1,
       operations: ["move", "resize", "delete"],
-      picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명" },
+      picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명", crop: [0.1, 0, 0, 0.25] },
     });
   });
 
@@ -71,12 +71,15 @@ describe("DOCX object view parsing", () => {
   });
 
   it.each([
-    ["zero width", { widthPt: 0, heightPt: 72, wrap: "square" }],
-    ["negative height", { widthPt: 72, heightPt: -1, wrap: "square" }],
-    ["non-finite width", { widthPt: Number.POSITIVE_INFINITY, heightPt: 72, wrap: "square" }],
-    ["unknown wrap", { widthPt: 72, heightPt: 72, wrap: "around" }],
-    ["unexpected field", { widthPt: 72, heightPt: 72, wrap: "square", source: "unknown" }],
-    ["malformed description", { widthPt: 72, heightPt: 72, wrap: "square", description: 123 }],
+    ["zero width", { widthPt: 0, heightPt: 72, wrap: "square", crop: [0, 0, 0, 0] }],
+    ["negative height", { widthPt: 72, heightPt: -1, wrap: "square", crop: [0, 0, 0, 0] }],
+    ["non-finite width", { widthPt: Number.POSITIVE_INFINITY, heightPt: 72, wrap: "square", crop: [0, 0, 0, 0] }],
+    ["unknown wrap", { widthPt: 72, heightPt: 72, wrap: "around", crop: [0, 0, 0, 0] }],
+    ["unexpected field", { widthPt: 72, heightPt: 72, wrap: "square", source: "unknown", crop: [0, 0, 0, 0] }],
+    ["malformed description", { widthPt: 72, heightPt: 72, wrap: "square", description: 123, crop: [0, 0, 0, 0] }],
+    ["missing crop", { widthPt: 72, heightPt: 72, wrap: "square" }],
+    ["out-of-range crop", { widthPt: 72, heightPt: 72, wrap: "square", crop: [0, 0, 0, 1.5] }],
+    ["short crop", { widthPt: 72, heightPt: 72, wrap: "square", crop: [0, 0, 0] }],
   ])("rejects malformed picture properties (%s)", (_name, picture) => {
     expect(parseDocxView({ ...view, object: { ...object, picture } })).toBeNull();
   });
@@ -84,7 +87,7 @@ describe("DOCX object view parsing", () => {
   it("rejects picture properties attached to a non-picture object", () => {
     expect(parseDocxView({
       ...view,
-      object: { ...object, kind: "shape", picture: { widthPt: 72, heightPt: 36, wrap: "inline" } },
+      object: { ...object, kind: "shape", picture: { widthPt: 72, heightPt: 36, wrap: "inline", crop: [0, 0, 0, 0] } },
     })).toBeNull();
   });
 

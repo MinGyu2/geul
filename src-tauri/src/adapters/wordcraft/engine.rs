@@ -461,7 +461,59 @@ pub enum ObjectEdit {
         dy: f32,
     },
     Delete {},
+    /// Picture crop as fractions of each side (0–0.45; all zero resets the crop). The media is unchanged.
+    Crop {
+        left: f32,
+        top: f32,
+        right: f32,
+        bottom: f32,
+    },
+    /// Text wrapping (`inline` puts a floating object back in line).
+    Wrap {
+        wrap: wordcraft_engine::doc::para::Wrap,
+    },
+    /// Alternative text (description), at most `MAX_ALT_TEXT_CHARS`; empty clears it.
+    AltText {
+        text: String,
+    },
+    /// Position preset relative to the margins (the object floats with Square wrapping).
+    Position {
+        preset: PositionPreset,
+    },
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PositionPreset {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    MiddleLeft,
+    MiddleCenter,
+    MiddleRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+
+impl PositionPreset {
+    fn name(self) -> &'static str {
+        match self {
+            Self::TopLeft => "topLeft",
+            Self::TopCenter => "topCenter",
+            Self::TopRight => "topRight",
+            Self::MiddleLeft => "middleLeft",
+            Self::MiddleCenter => "middleCenter",
+            Self::MiddleRight => "middleRight",
+            Self::BottomLeft => "bottomLeft",
+            Self::BottomCenter => "bottomCenter",
+            Self::BottomRight => "bottomRight",
+        }
+    }
+}
+
+pub const MAX_ALT_TEXT_CHARS: usize = 1024;
+pub const MAX_CROP_FRACTION: f32 = 0.45;
 
 pub const MAX_OBJECT_SIDE_PT: f32 = 4000.0;
 pub const MIN_OBJECT_SIDE_PT: f32 = 2.0;
@@ -494,14 +546,31 @@ impl ObjectEdit {
                     && (*dx != 0.0 || *dy != 0.0)
             }
             Self::Delete {} => true,
+            Self::Crop {
+                left,
+                top,
+                right,
+                bottom,
+            } => [left, top, right, bottom]
+                .iter()
+                .all(|v| v.is_finite() && (0.0..=MAX_CROP_FRACTION).contains(*v)),
+            Self::Wrap { .. } | Self::Position { .. } => true,
+            Self::AltText { text } => {
+                text.chars().count() <= MAX_ALT_TEXT_CHARS
+                    // XML attribute values normalise line breaks: a newline would not reopen as written.
+                    && !text.chars().any(|c| c.is_control() || c == '\u{FFFC}')
+            }
         }
     }
 
     pub fn operation(&self) -> &'static str {
         match self {
-            Self::Bounds { x: Some(_), .. } | Self::Nudge { .. } => "move",
+            Self::Bounds { x: Some(_), .. } | Self::Nudge { .. } | Self::Position { .. } => "move",
             Self::Bounds { .. } => "resize",
             Self::Delete {} => "delete",
+            Self::Crop { .. } => "crop",
+            Self::Wrap { .. } => "wrap",
+            Self::AltText { .. } => "altText",
         }
     }
 }
@@ -753,6 +822,8 @@ struct PictureView {
     width_pt: f32,
     height_pt: f32,
     wrap: wordcraft_engine::doc::para::Wrap,
+    /// Crop fractions `[left, top, right, bottom]`.
+    crop: [f32; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
 }
@@ -1868,14 +1939,25 @@ impl DocxModel {
         if !drawing {
             return Vec::new();
         }
+        let picture = matches!(self.object_kind(pos), Some("picture"));
         let mut ops = vec!["resize"];
         // Relocating or removing a drawing renumbers later drawings: only when no other story has one.
-        if self.image_insertion_allowed() {
+        let relocatable = self.image_insertion_allowed();
+        if relocatable {
             if pos.path.0.len() == 1 {
                 ops.insert(0, "move");
             }
             ops.push("delete");
         }
+        if picture {
+            ops.push("crop");
+        }
+        // Floating an inline object (or back) only changes its own drawing element; the move rules
+        // above still apply because the engine anchors floating objects at their paragraph.
+        if relocatable && pos.path.0.len() == 1 {
+            ops.push("wrap");
+        }
+        ops.push("altText");
         ops
     }
 
@@ -1900,6 +1982,34 @@ impl DocxModel {
         if let Some(float) = object.float_mut() {
             float.x = snap(float.x);
             float.y = snap(float.y);
+            // `wp:inline` carries no position or wrap distance: an object put back in line keeps
+            // only what the inline form stores (rotation, flip, alt text, effects).
+            if float.wrap == wordcraft_engine::doc::para::Wrap::Inline {
+                let inline = wordcraft_engine::doc::para::Float::default();
+                float.h_rel = inline.h_rel;
+                float.v_rel = inline.v_rel;
+                float.x = inline.x;
+                float.y = inline.y;
+                float.h_align = inline.h_align;
+                float.v_align = inline.v_align;
+                float.dist = inline.dist;
+                float.dist_top = inline.dist_top;
+                float.dist_bottom = inline.dist_bottom;
+                float.wrap_text = inline.wrap_text;
+                float.wrap_polygon = inline.wrap_polygon;
+            }
+            // DOCX has no vertical "column" anchor: `wp:positionV` reads back as the paragraph.
+            if float.wrap != wordcraft_engine::doc::para::Wrap::Inline
+                && float.v_rel == wordcraft_engine::doc::para::Anchor::Column
+            {
+                float.v_rel = wordcraft_engine::doc::para::Anchor::Paragraph;
+            }
+        }
+        // `a:srcRect` stores 1/100000 of each side.
+        if let InlineObject::Image { crop, .. } = object {
+            for side in crop.iter_mut() {
+                *side = ((side.clamp(0.0, 1.0) * 100_000.0).round() as i64) as f32 / 100_000.0;
+            }
         }
         para.touch();
         Ok(())
@@ -1971,6 +2081,28 @@ impl DocxModel {
                     }
                     (changed, Some(a))
                 }
+                ObjectEdit::Crop {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                } => {
+                    let params =
+                        json!({"left": left, "top": top, "right": right, "bottom": bottom});
+                    (model.run("picture.crop", params)?, Some(pos.clone()))
+                }
+                ObjectEdit::Wrap { wrap } => (
+                    model.run("arrange.wrap", json!({"wrap": wrap}))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::AltText { text } => (
+                    model.run("object.altText", json!({"text": text}))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::Position { preset } => (
+                    model.run("arrange.position", json!({"preset": preset.name()}))?,
+                    Some(pos.clone()),
+                ),
             };
             if !changed {
                 return Err(Rejected);
@@ -2044,13 +2176,20 @@ impl DocxModel {
             let kind = self.object_kind(pos)?;
             let bounds = hit.bounds();
             let picture = match self.object_at(pos)? {
-                InlineObject::Image { ole: None, w, h, alt, float, .. }
-                    if [*w, *h].iter().all(|side| side.is_finite() && *side > 0.0) =>
-                {
+                InlineObject::Image {
+                    ole: None,
+                    w,
+                    h,
+                    alt,
+                    float,
+                    crop,
+                    ..
+                } if [*w, *h].iter().all(|side| side.is_finite() && *side > 0.0) => {
                     Some(PictureView {
                         width_pt: *w,
                         height_pt: *h,
                         wrap: float.wrap,
+                        crop: *crop,
                         description: (alt.len() <= 4096).then(|| alt.clone()),
                     })
                 }

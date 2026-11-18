@@ -5551,7 +5551,10 @@ fn stage3_object_edit_moves_resizes_deletes_with_t009_and_history() {
     };
     model.apply(&[click(&first)]);
     let (pos, epoch, view) = key(&mut model);
-    assert_eq!(view["operations"], json!(["move", "resize", "delete"]));
+    assert_eq!(
+        view["operations"],
+        json!(["move", "resize", "delete", "crop", "wrap", "altText"])
+    );
 
     // Invalid sizes never reach the engine.
     assert!(!validate(&[edit(
@@ -5731,4 +5734,224 @@ fn stage3_object_edit_moves_resizes_deletes_with_t009_and_history() {
     assert_eq!(model.export().unwrap(), baseline);
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), resized);
+}
+
+#[test]
+fn stage3_docx_picture_crop_wrap_alt_text_position_roundtrip() {
+    use super::engine::{ObjectEdit, PositionPreset};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::para::Wrap;
+    use wordcraft_engine::doc::InlineObject;
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(4, 2, [1, 2, 3])}),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({"width": 120, "height": 60}))
+        .unwrap();
+    let original = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut model = DocxModel::open(&original).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let hit = reader
+        .layout()
+        .find_object(0, |o| o.rect.w == 120.0)
+        .unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 60.0,
+        y: hit.rect.y + 30.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let state = |model: &mut DocxModel| {
+        let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+            v,
+        )
+    };
+    let (_, _, view) = state(&mut model);
+    assert_eq!(
+        view["operations"],
+        json!(["move", "resize", "delete", "crop", "wrap", "altText"])
+    );
+    let apply = |model: &mut DocxModel, edit: ObjectEdit| {
+        let (position, epoch, _) = state(model);
+        model.apply(&[DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit,
+        }])
+    };
+    let gate = |model: &DocxModel| {
+        let bytes = model.export().unwrap();
+        assert!(service::check_saved(
+            crate::document::Format::Docx,
+            &original,
+            &bytes,
+            None,
+            model.same_as(&bytes)
+        )
+        .is_safe());
+        bytes
+    };
+    // Bounds checked before the engine.
+    let (position, epoch, _) = state(&mut model);
+    for bad in [
+        ObjectEdit::Crop {
+            left: 0.5,
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+        },
+        ObjectEdit::Crop {
+            left: f32::NAN,
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+        },
+        ObjectEdit::AltText {
+            text: "\u{0}".into(),
+        },
+        ObjectEdit::AltText {
+            text: "line\nbreak".into(),
+        },
+        ObjectEdit::AltText {
+            text: "가".repeat(1025),
+        },
+    ] {
+        assert!(!validate(&[DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: bad
+        }]));
+    }
+
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Crop {
+                left: 0.1,
+                top: 0.123456,
+                right: 0.05,
+                bottom: 0.0
+            }
+        )
+        .changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert!(
+        (view["picture"]["crop"][1].as_f64().unwrap() - 0.12346).abs() < 1e-6,
+        "{view}"
+    );
+    assert_eq!(view["picture"]["widthPt"], 120.0);
+    gate(&model);
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::AltText {
+                text: "빨간 사각형 그림 · \"따옴표\" & <꺾쇠>".into()
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Wrap {
+                wrap: Wrap::TopAndBottom
+            }
+        )
+        .changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["picture"]["wrap"], "topAndBottom");
+    assert_eq!(
+        view["picture"]["description"],
+        "빨간 사각형 그림 · \"따옴표\" & <꺾쇠>"
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Position {
+                preset: PositionPreset::TopRight
+            }
+        )
+        .changed,
+        1
+    );
+    let edited = gate(&model);
+    let reopened = io::open_bytes("fixture.docx", &edited).unwrap();
+    let image = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .find_map(|o| match o {
+            InlineObject::Image {
+                crop,
+                alt,
+                float,
+                w,
+                h,
+                media,
+                ..
+            } => Some((*crop, alt.clone(), float.wrap, *w, *h, media.clone())),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        (image.0[0] - 0.1).abs() < 1e-6 && (image.0[2] - 0.05).abs() < 1e-6 && image.0[3] == 0.0
+    );
+    assert_eq!(image.1, "빨간 사각형 그림 · \"따옴표\" & <꺾쇠>");
+    assert_eq!(image.2, Wrap::TopAndBottom);
+    assert_eq!((image.3, image.4), (120.0, 60.0));
+    // The media bytes are the original picture (crop does not re-encode).
+    assert_eq!(
+        reopened.media.get(&image.5),
+        source.doc.media.values().next()
+    );
+
+    // Crop reset, back inline; each edit is one history step.
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Crop {
+                left: 0.0,
+                top: 0.0,
+                right: 0.0,
+                bottom: 0.0
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(&mut model, ObjectEdit::Wrap { wrap: Wrap::Inline }).changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["picture"]["crop"], json!([0.0, 0.0, 0.0, 0.0]));
+    assert_eq!(view["picture"]["wrap"], "inline");
+    gate(&model);
+    // A no-op edit is refused (no empty history step).
+    assert_eq!(
+        apply(&mut model, ObjectEdit::Wrap { wrap: Wrap::Inline }).rejected,
+        vec![0]
+    );
+    assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
+    assert_eq!(model.export().unwrap(), edited);
 }

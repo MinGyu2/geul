@@ -87,9 +87,9 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const [inline, floating] = byWidth(images(doc));
       expect(offsets(doc, 3)).toMatchObject({ horzOffset: 20000, vertOffset: 3000 });
       const selected = pick(floating!);
-      expect(selected.operations).toEqual(["deselect", "move", "delete"]);
+      expect(selected.operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText"]);
       const inlineSelection = pick(inline!);
-      expect(inlineSelection.operations).toEqual(["deselect", "resize", "delete"]);
+      expect(inlineSelection.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
       // Moving an inline picture is not offered; a stale floating selection is refused.
       expect(edit({ kind: "nudge", dx: 5, dy: 0 })).toBe(false);
       expect(editor.execute("object.edit", objectEditRequest(selected, { kind: "nudge", dx: 5, dy: 0 })).accepted).toBe(false);
@@ -143,6 +143,69 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(editor.undo()).toBe(true);
       await confirm(6);
       expect(images(doc)).toHaveLength(2);
+    } finally { editor.dispose(); }
+  });
+
+  it("changes HWPX picture wrapping, description and crop with readback, undo and reopen", async () => {
+    const { editor, doc, bytes, pick, edit, confirm, calls } = await setup("hwpx");
+    try {
+      const byWidth = (frames: Frame[]) => [...frames].sort((a, b) => b.w - a.w);
+      const inline = () => byWidth(images(doc))[0]!;
+      const selected = pick(inline());
+      expect(selected.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
+      expect(selected.picture!.crop).toEqual([0, 0, 0, 0]);
+      // Characters the RHWP JSON reader cannot carry verbatim, and no-op edits, are refused up front.
+      expect(edit({ kind: "altText", text: 'quote " inside' })).toBe(false);
+      expect(edit({ kind: "wrap", wrap: "inline" })).toBe(false);
+      expect(edit({ kind: "position", preset: "topLeft" })).toBe(false);
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
+
+      expect(edit({ kind: "altText", text: "시험 그림 설명" })).toBe(true);
+      await confirm(1);
+      pick(inline());
+      expect(edit({ kind: "crop", left: 0.1, top: 0, right: 0.2, bottom: 0.05 })).toBe(true);
+      await confirm(2);
+      const cropped = pick(inline());
+      expect(cropped.picture!.description).toBe("시험 그림 설명");
+      expect(cropped.picture!.crop![0]).toBeCloseTo(0.1, 3);
+      expect(cropped.picture!.crop![2]).toBeCloseTo(0.2, 3);
+      expect(cropped.picture!.widthPt).toBe(40.5);
+      expect(edit({ kind: "wrap", wrap: "topAndBottom" })).toBe(true);
+      await confirm(3);
+      const props = JSON.parse(doc.getPictureProperties!(0, 0, 2));
+      expect(props).toMatchObject({ treatAsChar: false, textWrap: "TopAndBottom", description: "시험 그림 설명", width: 4050, height: 2025 });
+
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss();
+        const edited = exported.takeBytes();
+        const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({
+            treatAsChar: false, textWrap: "TopAndBottom", description: "시험 그림 설명",
+            cropLeft: props.cropLeft, cropRight: props.cropRight, cropBottom: props.cropBottom, width: 4050, height: 2025 });
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "format-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "format-edited.hwpx"), edited);
+          writeFileSync(resolve(out, "format-report.json"), report);
+        }
+      } finally { exported.free(); }
+
+      // Crop reset and back in line, then undo both.
+      pick(byWidth(images(doc))[0]!);
+      expect(edit({ kind: "crop", left: 0, top: 0, right: 0, bottom: 0 })).toBe(true);
+      await confirm(4);
+      pick(byWidth(images(doc))[0]!);
+      expect(edit({ kind: "wrap", wrap: "inline" })).toBe(true);
+      await confirm(5);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ treatAsChar: true, cropLeft: 0, cropRight: 0 });
+      expect(editor.undo()).toBe(true);
+      await confirm(6);
+      expect(editor.undo()).toBe(true);
+      await confirm(7);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ treatAsChar: false, cropLeft: props.cropLeft });
     } finally { editor.dispose(); }
   });
 

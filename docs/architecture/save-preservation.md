@@ -1862,3 +1862,10 @@ T009 저장 279 PASS / 0 FAIL / 29 ignored. Stage 3 전체 수용은 미완료�
 - **HWP (BLOCKED).** RHWP 크기·삭제·떠 있게 바꾸기 출력은 모두 `RecordsChanged BodyText/Section0`
   (`hwp/insertions.rs` 원본 표/gso 객체는 바이트 동일하게 다시 나타나야 함)과 `previewStale PrvImage`로 거부된다.
   CTRL_HEADER 공통 치수·SHAPE_COMPONENT·SHAPE_COMPONENT_PICTURE 필드별 진화 증명이 필요하다.
+
+### Stage 3 P2 그림 편집 보존 (2026-11-19)
+
+DOCX의 자르기·배치·설명·위치는 `word/document.xml`만 바꾸며 편집 시점 `check_saved`와 `same_as`가 통과해야 커밋한다.
+자르기는 `a:srcRect` 비율만 바꾸고 미디어 부분은 바이트 그대로(시험에서 재열기 미디어 = 원본). HWPX 서식 출력은
+`Contents/section0.xml`만 바뀌어 `save_check` safe이고 BinData 변조는 `partChanged`로 거부된다. HWP는 P1과 같은 이유로
+BLOCKED.

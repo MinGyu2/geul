@@ -13,11 +13,14 @@ export interface ObjectFrame {
 }
 
 export const PICTURE_WRAPS = ["inline", "square", "tight", "through", "topAndBottom", "behindText", "inFrontOfText"] as const;
+export type PictureWrap = typeof PICTURE_WRAPS[number];
 export interface PictureProperties {
   widthPt: number;
   heightPt: number;
-  wrap: typeof PICTURE_WRAPS[number];
+  wrap: PictureWrap;
   description?: string;
+  /** Crop fractions of the original picture, [left, top, right, bottom]. */
+  crop?: readonly [number, number, number, number];
 }
 
 export interface ObjectHit {
@@ -37,14 +40,23 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export type ObjectOperation = "deselect" | "delete" | "move" | "resize" | "copy" | "cut";
-export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText"] as const;
+export type MutatingObjectOperation = typeof MUTATING_OBJECT_OPERATIONS[number];
+export type ObjectOperation = "deselect" | "copy" | "cut" | MutatingObjectOperation;
+export const POSITION_PRESETS = ["topLeft", "topCenter", "topRight", "middleLeft", "middleCenter", "middleRight", "bottomLeft", "bottomCenter", "bottomRight"] as const;
+export type PositionPreset = typeof POSITION_PRESETS[number];
+export const MAX_CROP_FRACTION = 0.45;
+export const MAX_ALT_TEXT_CHARS = 1024;
 
 /** Stage 3 object mutation. Coordinates are page points (zoom 1) on the selected object's page. */
 export type ObjectEdit =
   | { kind: "bounds"; x?: number; y?: number; width?: number; height?: number }
   | { kind: "nudge"; dx: number; dy: number }
-  | { kind: "delete" };
+  | { kind: "delete" }
+  | { kind: "crop"; left: number; top: number; right: number; bottom: number }
+  | { kind: "wrap"; wrap: PictureWrap }
+  | { kind: "altText"; text: string }
+  | { kind: "position"; preset: PositionPreset };
 
 export const OBJECT_SIDE_LIMITS = { min: 2, max: 4000 } as const;
 export const MAX_NUDGE_PT = 288;
@@ -57,10 +69,24 @@ export interface ObjectEditRequest {
   edit: ObjectEdit;
 }
 
-export function objectEditOperation(edit: ObjectEdit): "move" | "resize" | "delete" {
-  if (edit.kind === "delete") return "delete";
-  if (edit.kind === "nudge" || edit.x !== undefined) return "move";
-  return "resize";
+export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
+  switch (edit.kind) {
+    case "delete": return "delete";
+    case "nudge": case "position": return "move";
+    case "crop": return "crop";
+    case "wrap": return "wrap";
+    case "altText": return "altText";
+    case "bounds": return edit.x !== undefined ? "move" : "resize";
+  }
+}
+
+/** Alt text the engines store verbatim: bounded, no control characters or object placeholders. */
+export function validAltText(text: string): boolean {
+  const chars = Array.from(text);
+  return chars.length <= MAX_ALT_TEXT_CHARS && chars.every(char => {
+    const code = char.codePointAt(0)!;
+    return code >= 0x20 && !(code >= 0x7f && code <= 0x9f) && code !== 0xfffc;
+  });
 }
 
 const finite = (value: unknown, limit: number): value is number => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= limit;
@@ -71,6 +97,12 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   const value = edit as Record<string, unknown>;
   const keys = Object.keys(value).sort().join(",");
   if (value.kind === "delete") return keys === "kind";
+  if (value.kind === "crop") return keys === "bottom,kind,left,right,top"
+    && (["left", "top", "right", "bottom"] as const).every(side => finite(value[side], MAX_CROP_FRACTION) && (value[side] as number) >= 0);
+  if (value.kind === "wrap") return keys === "kind,wrap" && PICTURE_WRAPS.some(wrap => wrap === value.wrap);
+  if (value.kind === "position") return keys === "kind,preset" && POSITION_PRESETS.some(preset => preset === value.preset);
+  if (value.kind === "altText") return keys === "kind,text" && typeof value.text === "string"
+    && validAltText(value.text);
   if (value.kind === "nudge") return keys === "dx,dy,kind" && finite(value.dx, MAX_NUDGE_PT) && finite(value.dy, MAX_NUDGE_PT) && (value.dx !== 0 || value.dy !== 0);
   if (value.kind !== "bounds") return false;
   const allowed = ["height", "kind", "width", "x", "y"];

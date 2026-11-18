@@ -1,6 +1,6 @@
 import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
-import type { ObjectSelection, PictureProperties, PictureResizeRequest } from "../../commands/objectSelection";
+import { MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
@@ -8,12 +8,12 @@ import { useTranslation } from "../../language/LanguageContext";
 interface PropertiesPanelProps {
   state: DocumentPanelState;
   onClose: () => void;
-  onPictureResize?: (request: PictureResizeRequest) => void;
+  onObjectEdit?: (request: { command: "object.edit" } & ObjectEditRequest) => void;
 }
 
 const FORMAT_FLAGS = ["bold", "italic", "underline", "strikethrough"] as const;
 
-export function PropertiesPanel({ state, onClose, onPictureResize }: PropertiesPanelProps) {
+export function PropertiesPanel({ state, onClose, onObjectEdit }: PropertiesPanelProps) {
   const { t } = useTranslation();
   const info = state.info;
   const object = state.objectSelection;
@@ -59,10 +59,10 @@ export function PropertiesPanel({ state, onClose, onPictureResize }: PropertiesP
                     {picture.description && <><dt>{t("properties.picture.description")}</dt><dd>{picture.description}</dd></>}
                   </dl>}
                   {object.graphic && <GraphicDetails graphic={object.graphic} />}
-                  {picture && onPictureResize && object.operations.includes("resize") && (
-                    <PictureSizeFields key={`${object.sessionId}:${object.loadGeneration}:${object.revision}:${object.epoch}`}
-                      selection={object} picture={picture} onApply={onPictureResize}
-                      disabled={state.pending || state.composing} />
+                  {onObjectEdit && (
+                    <ObjectTools key={`${object.sessionId}:${object.loadGeneration}:${object.revision}:${object.epoch}`}
+                      selection={object} picture={picture} disabled={state.pending || state.composing}
+                      onEdit={edit => onObjectEdit(objectEditRequest(object, edit))} />
                   )}
                 </>
               ) : <>
@@ -95,10 +95,91 @@ export function PropertiesPanel({ state, onClose, onPictureResize }: PropertiesP
   );
 }
 
-function PictureSizeFields({ selection, picture, onApply, disabled }: {
+/** Engine-owned object values with the edits the selected object admits; values refresh from the engine after each edit. */
+function ObjectTools({ selection, picture, disabled, onEdit }: {
   selection: ObjectSelection;
+  picture: PictureProperties | undefined;
+  disabled: boolean;
+  onEdit: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const can = (op: ObjectSelection["operations"][number]) => selection.operations.includes(op);
+  return (
+    <div className="object-tools">
+      {picture && can("resize") && <PictureSizeFields picture={picture} disabled={disabled}
+        onApply={(width, height) => onEdit({ kind: "bounds", width, height })} />}
+      {picture?.crop && can("crop") && <PictureCropFields crop={picture.crop} disabled={disabled} onApply={onEdit} />}
+      {picture && can("wrap") && (
+        <label className="picture-size-field">{t("properties.picture.wrapInput")}
+          <select value={picture.wrap} disabled={disabled}
+            onChange={event => onEdit({ kind: "wrap", wrap: event.target.value as PictureWrap })}>
+            {PICTURE_WRAPS.map(wrap => <option key={wrap} value={wrap}>{t(`properties.picture.wrap.${wrap}`)}</option>)}
+          </select>
+        </label>
+      )}
+      {can("altText") && <AltTextField value={picture?.description ?? ""} disabled={disabled} onApply={text => onEdit({ kind: "altText", text })} />}
+      {can("move") && selection.address.engine === "wordcraft" && (
+        <label className="picture-size-field">{t("properties.object.position")}
+          <select value="" disabled={disabled}
+            onChange={event => { if (event.target.value) onEdit({ kind: "position", preset: event.target.value as PositionPreset }); }}>
+            <option value="">{t("properties.object.position.none")}</option>
+            {POSITION_PRESETS.map(preset => <option key={preset} value={preset}>{t(`properties.object.position.${preset}`)}</option>)}
+          </select>
+        </label>
+      )}
+      {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
+        onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
+    </div>
+  );
+}
+
+function PictureCropFields({ crop, disabled, onApply }: {
+  crop: readonly [number, number, number, number];
+  disabled: boolean;
+  onApply: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const [values, setValues] = useState(() => crop.map(side => String(Math.round(side * 10000) / 100)));
+  const numbers = values.map(Number);
+  const max = MAX_CROP_FRACTION * 100;
+  const valid = numbers.every(value => values.every(v => v.trim() !== "") && Number.isFinite(value) && value >= 0 && value <= max);
+  const sides = ["left", "top", "right", "bottom"] as const;
+  const edit = (fractions: number[]): ObjectEdit => ({ kind: "crop", left: fractions[0]!, top: fractions[1]!, right: fractions[2]!, bottom: fractions[3]! });
+  return (
+    <form onSubmit={event => { event.preventDefault(); if (!disabled && valid) onApply(edit(numbers.map(value => value / 100))); }}>
+      <fieldset className="picture-crop-fields">
+        <legend>{t("properties.picture.crop")}</legend>
+        {sides.map((side, index) => (
+          <label key={side} className="picture-size-field">{t(`properties.picture.crop.${side}`)}
+            <input type="number" min={0} max={max} step={0.01} value={values[index]} disabled={disabled}
+              onChange={event => setValues(current => current.map((value, i) => i === index ? event.target.value : value))} />
+          </label>
+        ))}
+      </fieldset>
+      <button type="submit" className="document-bar__button" disabled={disabled || !valid}>{t("properties.picture.crop.apply")}</button>
+      <button type="button" className="document-bar__button" disabled={disabled || crop.every(side => side === 0) || crop.some(side => side > MAX_CROP_FRACTION)}
+        onClick={() => onApply(edit([0, 0, 0, 0]))}>{t("properties.picture.crop.reset")}</button>
+    </form>
+  );
+}
+
+function AltTextField({ value, disabled, onApply }: { value: string; disabled: boolean; onApply: (text: string) => void }) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(value);
+  const valid = validAltText(text);
+  return (
+    <form onSubmit={event => { event.preventDefault(); if (!disabled && valid && text !== value) onApply(text); }}>
+      <label className="picture-size-field">{t("properties.picture.descriptionInput")}
+        <input type="text" value={text} maxLength={MAX_ALT_TEXT_CHARS} disabled={disabled} onChange={event => setText(event.target.value)} />
+      </label>
+      <button type="submit" className="document-bar__button" disabled={disabled || !valid || text === value}>{t("properties.picture.descriptionApply")}</button>
+    </form>
+  );
+}
+
+function PictureSizeFields({ picture, onApply, disabled }: {
   picture: PictureProperties;
-  onApply: (request: PictureResizeRequest) => void;
+  onApply: (widthPt: number, heightPt: number) => void;
   disabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -111,10 +192,7 @@ function PictureSizeFields({ selection, picture, onApply, disabled }: {
     <form onSubmit={event => {
       event.preventDefault();
       if (disabled || !valid) return;
-      onApply({
-        selectionEpoch: selection.epoch, sessionId: selection.sessionId, loadGeneration: selection.loadGeneration,
-        revision: selection.revision, widthPt, heightPt,
-      });
+      onApply(widthPt, heightPt);
     }}>
       <label className="picture-size-field">{t("properties.picture.widthInput")}
         <input type="number" min={2} max={4000} step={0.01} value={width} disabled={disabled}

@@ -3068,7 +3068,7 @@ fn stage3_docx_existing_objects_move_resize_delete_publish_and_reopen() {
     assert_eq!(view["kind"], "shape");
     assert_eq!(
         view["operations"],
-        serde_json::json!(["move", "resize", "delete"])
+        serde_json::json!(["move", "resize", "delete", "wrap", "altText"])
     );
     let resized = edit(
         &mut doc,

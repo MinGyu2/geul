@@ -265,6 +265,7 @@ const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
   SIGNATURES[format].every((byte, index) => bytes[index] === byte);
 
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
+const HWPX_WRAPS = { square: "Square", tight: "Tight", through: "Through", topAndBottom: "TopAndBottom", behindText: "BehindText", inFrontOfText: "InFrontOfText" } as const;
 const MAX_SAMPLES = 1000;
 
 /** General typing history declaration (an "advanced" scope would restrict the session to the T012 timeline). */
@@ -1683,7 +1684,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canResize = hwpx && inspected!.simpleInline && !!this.doc.setPictureProperties;
           const canMove = hwpx && !!inspected!.movable && !!this.doc.setPictureProperties;
           const canDelete = hwpx && !!this.doc.deletePictureControl;
-          const operations = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : [])];
+          const canFormat = hwpx && !!this.doc.setPictureProperties && inspected!.plain;
+          const operations = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
+            ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
@@ -4122,6 +4125,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const before = inspectRhwpPicture(doc, address);
     const previous = selected.picture;
     if (!before || !previous || before.properties.widthPt !== previous.widthPt || before.properties.heightPt !== previous.heightPt) return false;
+    const same = (after: ReturnType<typeof inspectRhwpPicture>, keys: readonly ("size" | "description" | "wrap" | "crop")[]) =>
+      !!after && (!keys.includes("size") || (after.properties.widthPt === previous.widthPt && after.properties.heightPt === previous.heightPt))
+      && (!keys.includes("description") || after.properties.description === previous.description)
+      && (!keys.includes("wrap") || after.properties.wrap === previous.wrap)
+      && (!keys.includes("crop") || JSON.stringify(after.properties.crop) === JSON.stringify(previous.crop));
+    const set = (props: Record<string, unknown>, verify: (after: ReturnType<typeof inspectRhwpPicture>) => boolean) => () => {
+      const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
+      if (result.ok !== true || !verify(inspectRhwpPicture(doc, address))) throw new Error("picture property did not verify");
+    };
     let apply: () => void;
     if (edit.kind === "delete") {
       if (!doc.deletePictureControl) return false;
@@ -4129,11 +4141,32 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         const result = JSON.parse(doc.deletePictureControl!(...address)) as { ok?: boolean };
         if (result.ok !== true) throw new Error("picture deletion refused");
       };
+    } else if (!doc.setPictureProperties) {
+      return false;
+    } else if (edit.kind === "altText") {
+      // RHWP reads JSON strings without escape handling: refuse characters it cannot carry verbatim.
+      if (/["\\]/.test(edit.text) || edit.text.length > 256 || edit.text === (previous.description ?? "")) return false;
+      apply = set({ description: edit.text }, after => same(after, ["size", "wrap", "crop"]) && (after!.properties.description ?? "") === edit.text);
+    } else if (edit.kind === "wrap") {
+      if (edit.wrap === previous.wrap) return false;
+      const props = edit.wrap === "inline" ? { treatAsChar: true }
+        : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
+      apply = set(props, after => same(after, ["size", "description", "crop"]) && after!.properties.wrap === edit.wrap);
+    } else if (edit.kind === "crop") {
+      const original = before.original;
+      if (!original) return false;
+      const amounts = [edit.left * original.width, edit.top * original.height, edit.right * original.width, edit.bottom * original.height].map(Math.round);
+      const [cropLeft, cropTop, cropRight, cropBottom] = amounts as [number, number, number, number];
+      if (JSON.stringify(amounts) === JSON.stringify(before.cropAmounts)) return false;
+      apply = set({ cropLeft, cropTop, cropRight, cropBottom }, after => same(after, ["size", "description", "wrap"])
+        && JSON.stringify(after!.cropAmounts) === JSON.stringify(amounts));
+    } else if (edit.kind === "position") {
+      return false;
     } else {
       // Move: frame units → HWPUNIT through the same layout sample as the stored size.
       if (edit.kind === "bounds" && (edit.width !== undefined || edit.height !== undefined)) return false;
       const movable = before.movable;
-      if (!movable || !doc.setPictureProperties || selected.frame.width <= 0) return false;
+      if (!movable || selected.frame.width <= 0) return false;
       const perFrame = previous.widthPt * 100 / selected.frame.width;
       const dx = edit.kind === "nudge" ? edit.dx * 100 : (edit.x! - selected.frame.x) * perFrame;
       const dy = edit.kind === "nudge" ? edit.dy * 100 : (edit.y! - selected.frame.y) * perFrame;
@@ -4141,13 +4174,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const limit = 0x7fffffff;
       if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(horzOffset) > limit || Math.abs(vertOffset) > limit
         || (horzOffset === movable.horzOffset && vertOffset === movable.vertOffset)) return false;
-      apply = () => {
-        const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify({ horzOffset, vertOffset }))) as { ok?: boolean };
-        const after = inspectRhwpPicture(doc, address);
-        if (result.ok !== true || after?.movable?.horzOffset !== horzOffset || after.movable.vertOffset !== vertOffset
-          || after.properties.widthPt !== previous.widthPt || after.properties.heightPt !== previous.heightPt
-          || after.properties.description !== previous.description) throw new Error("picture position did not verify");
-      };
+      apply = set({ horzOffset, vertOffset }, after => same(after, ["size", "description", "wrap", "crop"])
+        && after!.movable?.horzOffset === horzOffset && after!.movable!.vertOffset === vertOffset);
     }
     const savedSelection = this.selectedObject;
     this.selectedObject = null;

@@ -1113,3 +1113,18 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   BinData는 삭제 뒤에도 원본 그대로 남는다(매니페스트 무변경). HWP는 선택만 제공한다.
 - UI: `ObjectSelectionFrame`의 이동 영역과 8방향 핸들(접근 이름 포함). 그림 모서리는 비율 유지(Shift로 해제),
   Esc·pointercancel·선택/문서/배율 변경은 끌기를 취소한다. 방향키 1pt(Shift 10pt), Delete/Backspace 삭제.
+
+### P2 그림 편집 (2026-11-19)
+
+`object.edit`의 추가 `edit`: `{kind:"crop", left, top, right, bottom}`(원본 대비 비율 0–0.45, 모두 0이면 초기화),
+`{kind:"wrap", wrap}`(`PICTURE_WRAPS`), `{kind:"altText", text}`(≤1024자, 제어 문자·U+FFFC 거부),
+`{kind:"position", preset}`(여백 기준 9곳). 연산 이름은 `crop`·`wrap`·`altText`(위치는 `move`).
+
+- WordCraft: `picture.crop`·`arrange.wrap`·`object.altText`·`arrange.position`. 그림만 crop, wrap은 이동 조건과 같음.
+  재열기 동일성을 위해 crop을 1/100000, 위치를 EMU로 맞추고, 인라인 복귀 시 `wp:inline`이 담지 않는 위치·거리 필드를
+  기본값으로, 떠 있는 개체의 세로 `Column` 기준을 `Paragraph`로 정규화한다. 변경 없는 편집은 거부(빈 이력 없음).
+- RHWP(HWPX): `setPictureProperties`의 `description`·`treatAsChar`/`textWrap`·`cropLeft..cropBottom`(원본 크기 HWPUNIT).
+  캡션·외부 링크·크기 보호가 없는 그림만. 적용 뒤 요청 필드와 나머지(크기·설명·배치·자르기)를 다시 읽어 확인한다.
+  RHWP JSON 읽기가 이스케이프를 해석하지 않아 설명의 `"`·`\`를 거부한다. 위치 프리셋은 미지원.
+- 속성 창: 엔진 값으로 채운 크기·자르기·배치·설명·위치·삭제 도구. 편집 대기·조합 중에는 비활성. 적용 뒤 새 선택 번호의
+  엔진 값으로 다시 그린다.
