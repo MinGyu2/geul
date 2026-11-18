@@ -101,7 +101,12 @@ pub enum DocxOp {
         extend: bool,
         #[serde(default)]
         before_insert: bool,
+        #[serde(default)]
+        drag: bool,
+        #[serde(default)]
+        select_object: bool,
     },
+    DeselectObject {},
     SelectAll,
     /// 지금 커서 자리를 `id`로 기억한다(IME가 클릭 뒤에 늦게 보내는 확정을 클릭 전 자리에 넣을 때).
     Mark {
@@ -612,6 +617,14 @@ pub struct RectView {
     pub height: f32,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ObjectView {
+    kind: &'static str,
+    position: String,
+    frame: RectView,
+    epoch: u64,
+}
+
 /// 편집 표면이 그리는 데 필요한 것. 문서 모델 자체는 보내지 않는다.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -630,6 +643,8 @@ pub struct DocxView {
     /// 커서 자리를 배치에서 찾지 못하면(숨은 글자 등) 없다.
     pub caret: Option<CaretView>,
     pub selection: Vec<RectView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object: Option<ObjectView>,
     /// 선택이 비어 있음(커서만).
     pub collapsed: bool,
     /// 커서가 표 셀 안에 있음(Tab을 셀 이동으로 쓸지).
@@ -770,6 +785,8 @@ struct LastInsert {
 
 pub struct DocxModel {
     session: Session,
+    selected_object: Option<(Pos, usize)>,
+    object_epoch: u64,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
     /// 쪽·배율마다 마지막으로 그린 래스터와 그 판(바뀐 띠만 보낼 때 비교 기준). 최근 것부터 MAX_RASTERS개.
@@ -835,6 +852,9 @@ impl DocxModel {
     /// Bound work before using the engine serializer; never run edit.copy, which
     /// changes the engine's internal clipboard history.
     pub fn clipboard_text(&self) -> Option<String> {
+        if self.selected_object.is_some() {
+            return None;
+        }
         let (a, b) = self.session.sel.ordered();
         if a == b
             || a.story != b.story
@@ -886,6 +906,8 @@ impl DocxModel {
         session.author = COMMENT_AUTHOR.to_owned();
         let mut model = DocxModel {
             session,
+            selected_object: None,
+            object_epoch: 0,
             marks: Vec::new(),
             last_insert: None,
             rasters: Vec::new(),
@@ -969,6 +991,9 @@ impl DocxModel {
             };
             match result {
                 Ok(changed) => {
+                    if changed {
+                        self.selected_object = None;
+                    }
                     outcome.applied += 1;
                     outcome.changed += u64::from(changed);
                 }
@@ -985,6 +1010,7 @@ impl DocxModel {
                 op,
                 DocxOp::Move { .. }
                     | DocxOp::Pointer { .. }
+                    | DocxOp::DeselectObject {}
                     | DocxOp::SelectAll
                     | DocxOp::Mark { .. }
                     | DocxOp::Find { .. }
@@ -992,6 +1018,19 @@ impl DocxModel {
             )
         {
             return Err(Rejected);
+        }
+        if self.selected_object.is_some() {
+            match op {
+                // A drag that started on an object must not extend the old text selection.
+                DocxOp::Pointer { drag: true, .. } => return Ok(false),
+                DocxOp::Move { .. } | DocxOp::SelectAll | DocxOp::Find { .. } => {
+                    self.selected_object = None;
+                }
+                DocxOp::Pointer { .. } | DocxOp::DeselectObject {} | DocxOp::Mark { .. }
+                | DocxOp::InsertAt { .. } | DocxOp::ReplaceInserted { .. }
+                | DocxOp::Undo {} | DocxOp::Redo {} | DocxOp::ClearSearch {} => {}
+                _ => return Err(Rejected),
+            }
         }
         match op {
             DocxOp::InsertText { text } => self.insert_text(text),
@@ -1024,6 +1063,10 @@ impl DocxModel {
                 self.run(if *back { "text.backTab" } else { "text.tab" }, json!({}))
             }
             DocxOp::Move { to, extend } => self.run(to.command(), json!({ "extend": extend })),
+            DocxOp::DeselectObject {} => {
+                self.selected_object = None;
+                Ok(false)
+            }
             DocxOp::SelectAll => self.run("select.all", json!({})),
             DocxOp::Pointer {
                 page,
@@ -1031,7 +1074,27 @@ impl DocxModel {
                 y,
                 extend,
                 before_insert,
+                select_object,
+                ..
             } => {
+                self.selected_object = None;
+                // IME can commit text just before this click. Its pre-insert text hit path
+                // maps the caret across the inserted bytes, so keep that path authoritative.
+                if *select_object && !extend && !before_insert {
+                    let story = self.session.sel.focus.story;
+                    let layout = self.session.layout();
+                    let hit = layout
+                        .object_at_in(*page as usize, *x, *y, 2.0, story)
+                        .or_else(|| layout.object_at(*page as usize, *x, *y, 2.0));
+                    if let Some(hit) = hit {
+                        let pos = hit.pos();
+                        if self.object_kind(&pos).is_some() {
+                            self.object_epoch += 1;
+                            self.selected_object = Some((pos, hit.page));
+                            return Ok(false);
+                        }
+                    }
+                }
                 let params = match self.hit_before_insert(*page, *x, *y, *before_insert) {
                     Some(pos) => json!({ "pos": pos, "extend": extend }),
                     None => json!({ "page": page, "x": x, "y": y, "extend": extend }),
@@ -1507,19 +1570,52 @@ impl DocxModel {
         })
     }
 
+    fn object_kind(&self, pos: &Pos) -> Option<&'static str> {
+        use wordcraft_engine::doc::graphic::GraphicKind;
+        match self.session.doc.para_at(pos)?.object_at(pos.off)? {
+            InlineObject::Image { ole: Some(_), .. } => Some("embedded"),
+            InlineObject::Image { .. } => Some("picture"),
+            InlineObject::Shape { story: Some(_), .. } => Some("textBox"),
+            InlineObject::Shape { .. } => Some("shape"),
+            InlineObject::Group { .. } => Some("group"),
+            InlineObject::Graphic { graphic, .. } => Some(match graphic.kind {
+                GraphicKind::Chart => "chart",
+                GraphicKind::Diagram => "smartArt",
+                GraphicKind::Ink => "embedded",
+            }),
+            _ => None,
+        }
+    }
+
     pub fn view(&mut self) -> DocxView {
         self.sync_fonts();
         let layout = self.session.layout();
         let hint = self.session.page_hint;
         let sel = self.session.sel.clone();
-        let caret = layout.caret_on(&sel.focus, hint).map(|c| CaretView {
+        let object = self.selected_object.as_ref().and_then(|(pos, page)| {
+            let hit = layout.object(pos, *page)?;
+            let kind = self.object_kind(pos)?;
+            let bounds = hit.bounds();
+            Some(ObjectView {
+                kind,
+                position: position_key(pos),
+                frame: RectView { page: hit.page, x: bounds.x, y: bounds.y, width: bounds.w, height: bounds.h },
+                epoch: self.object_epoch,
+            })
+        });
+        if object.is_none() {
+            self.selected_object = None;
+        }
+        let caret = layout.caret_on(&sel.focus, hint).filter(|_| object.is_none()).map(|c| CaretView {
             page: c.page,
             x: c.x,
             y: c.top,
             height: c.height.max(c.width),
         });
         let collapsed = sel.is_collapsed();
-        let selection = if let Some(range) = self.session.cell_range() {
+        let selection = if object.is_some() {
+            Vec::new()
+        } else if let Some(range) = self.session.cell_range() {
             wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &self.session.doc, range)
                 .into_iter()
                 .take(MAX_SELECTION_RECTS)
@@ -1591,14 +1687,15 @@ impl DocxModel {
                 .collect(),
             caret,
             selection,
+            clipboard_text_available: object.is_none() && self.clipboard_text().is_some(),
+            clipboard_table_cells_available: object.is_none() && self.has_clipboard_table_cells(),
             collapsed,
-            in_table: sel.focus.path.cell().is_some(),
+            in_table: object.is_none() && sel.focus.path.cell().is_some(),
             caret_key: position_key(&sel.focus),
             anchor_key: position_key(&sel.anchor),
             paragraph_text: paragraph.map(|para| para.plain_text()).unwrap_or_default(),
-            clipboard_text_available: self.clipboard_text().is_some(),
-            clipboard_table_cells_available: self.has_clipboard_table_cells(),
-            selection_text: if sel.anchor.story == sel.focus.story
+            selection_text: if object.is_none()
+                && sel.anchor.story == sel.focus.story
                 && sel.anchor.path == sel.focus.path
                 && sel.anchor != sel.focus
             {
@@ -1629,7 +1726,8 @@ impl DocxModel {
             page: self.page_view(),
             search,
             embedded_fonts: embed_font::embedded(&self.session.doc),
-            table: self.table_view(),
+            table: if object.is_none() { self.table_view() } else { None },
+            object,
         }
     }
 

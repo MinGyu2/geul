@@ -46,6 +46,8 @@ fn pointer(page: u32, x: f32, y: f32) -> DocxOp {
         y,
         extend: false,
         before_insert: false,
+        drag: false,
+        select_object: false,
     }
 }
 
@@ -249,6 +251,8 @@ fn 클릭한_글자_경계_사이_30과_70퍼센트에서_가까운_경계에_�
             y: end.y + end.height / 2.0,
             extend: true,
             before_insert: false,
+            drag: false,
+            select_object: false,
         },
     ]);
     let view = m.view();
@@ -275,6 +279,8 @@ fn 조합_중_클릭은_넣기_전_화면의_좌표로_자리를_찾는다() {
             y: target.y + target.height / 2.0,
             extend: false,
             before_insert: true,
+            drag: false,
+            select_object: false,
         },
     ]);
     assert_eq!((outcome.applied, outcome.changed), (2, 1));
@@ -294,6 +300,8 @@ fn 조합_중_클릭은_넣기_전_화면의_좌표로_자리를_찾는다() {
         y: target.y + target.height / 2.0,
         extend: false,
         before_insert: true,
+        drag: false,
+        select_object: false,
     }]);
     assert_eq!(other.view().caret_offset, 5);
 }
@@ -363,6 +371,8 @@ fn 앱이_먼저_확정한_조합은_입력기의_최종_글자로_고친다() {
             y: target.y + target.height / 2.0,
             extend: false,
             before_insert: true,
+            drag: false,
+            select_object: false,
         },
     ]);
     assert_eq!(m.view().caret_offset, 6);
@@ -465,7 +475,7 @@ fn 계약_밖의_요청은_실행_전에_거부한다() {
         vec![
             insert("가"),
             mv(MoveTarget::LineEnd, true),
-            DocxOp::Pointer { page: 0, x: 1.5, y: 2.0, extend: false, before_insert: true },
+            DocxOp::Pointer { page: 0, x: 1.5, y: 2.0, extend: false, before_insert: true, drag: false, select_object: false },
             DocxOp::Tab { back: false },
         ]
     );
@@ -1344,6 +1354,8 @@ fn 거부한_기억한_자리_넣기는_앞_넣기의_고치기와_넣기_전_�
         y: target.y + target.height / 2.0,
         extend: false,
         before_insert: true,
+        drag: false,
+        select_object: false,
     };
     m.apply(std::slice::from_ref(&click));
     control.apply(std::slice::from_ref(&click));
@@ -5300,4 +5312,58 @@ fn stage2_p4_stab_docx_paste_rejects_overflowing_geometry_without_mutation() {
     assert!(ok.valid());
     let target = table_target(&mut m);
     assert_eq!(m.apply(&[DocxOp::PasteTableCells { target, payload: ok }]).changed, 1);
+}
+
+#[test]
+fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document() {
+    use wordcraft_engine::{io, Session};
+
+    let png = tiny_png_b64(2, 2, [200, 10, 10]);
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    let _ = source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    for n in [1, 2] {
+        source.run("insert.picture", &json!({"data": png})).unwrap();
+        source.run("picture.size", &json!({"width": 30*n, "height": 20*n})).unwrap();
+        source.run("select.collapse", &json!({"end": true})).unwrap();
+    }
+    let bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
+    let layout = reader.layout();
+    let first = layout.find_object(0, |object| object.rect.w == 30.0).unwrap();
+    let second = layout.find_object(first.page, |object| object.rect.w == 60.0).unwrap();
+    let click = |hit: &wordcraft_engine::layout::hit::ObjectHit| DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let mut model = DocxModel::open(&bytes).unwrap();
+    let baseline = model.export().unwrap();
+    let text_caret = model.view().caret.unwrap();
+    let out = model.apply(&[click(&first), insert("blocked"), DocxOp::DeleteForward]);
+    assert_eq!(out.changed, 0);
+    assert_eq!(out.rejected, vec![1, 2]);
+    let selected = model.view();
+    assert!(selected.caret.is_none() && selected.selection.is_empty());
+    let view = serde_json::to_value(selected).unwrap();
+    assert_eq!(view["object"]["kind"], "picture");
+    let id = view["object"]["position"].clone();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+
+    assert_eq!(model.apply(&[click(&second)]).changed, 0);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_ne!(view["object"]["position"], id);
+    assert!(view["object"]["epoch"].as_u64().unwrap() > epoch);
+    assert_eq!(model.apply(&[DocxOp::DeselectObject {}]).changed, 0);
+    assert!(model.view().object.is_none());
+
+    assert_eq!(model.apply(&[click(&first), pointer(text_caret.page as u32, text_caret.x, text_caret.y + 2.0)]).changed, 0);
+    assert!(model.view().object.is_none());
+    assert!(model.view().caret.is_some());
+    assert_eq!(model.export().unwrap(), baseline);
+    assert!(model.same_as(&baseline));
 }

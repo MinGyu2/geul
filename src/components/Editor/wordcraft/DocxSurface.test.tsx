@@ -81,6 +81,16 @@ describe("DocxSurface", () => {
     expect(t.editor.firstPaintMs).not.toBeNull();
   });
 
+  it("keeps object hit-testing enabled when pointer-down queues an IME caret mark", async () => {
+    const t = await mounted();
+    await t.click(MARGIN + CHAR, MARGIN + 8);
+    const ops = t.fake.calls.filter(call => call.method === "edit").flatMap(call => call.args[3]);
+    expect(ops).toEqual([
+      { op: "mark", id: expect.any(Number) },
+      expect.objectContaining({ op: "pointer", selectObject: true, beforeInsert: false }),
+    ]);
+  });
+
   it("'한글 ': 조합 중 글자는 겹침으로 보이고 모델은 그대로, 음절·공백마다 연산·revision 하나", async () => {
     const t = await mounted();
     await t.play([...startWith("ㅎ"), ...update("하"), ...update("한")]);

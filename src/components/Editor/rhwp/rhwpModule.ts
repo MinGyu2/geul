@@ -57,6 +57,7 @@ export interface RhwpDocument {
     page: number, canvas: HTMLCanvasElement, scale: number, layerKind: string, profile: string,
     x: number, y: number, width: number, height: number,
   ): void;
+  getPageControlLayout?(page: number): string;
   hitTest(page: number, x: number, y: number): string;
   getCursorRect(section: number, paragraph: number, offset: number): string;
   getCursorRectInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;

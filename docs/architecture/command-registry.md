@@ -1020,3 +1020,21 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
 - **다중 셀 구조 클립보드**: `src/commands/clipboard.ts`와 `src/commands/tableClipboard.ts`(`TABLE_CLIPBOARD_MIME = "application/x-geul-table-cells+json"`, `parseTableClipboardPayload`)가 기존 `edit.copy`·`edit.cut`·`edit.paste` 경로에서 선택 범위가 동일 표의 유효한 다중 셀 사각형일 때 구조 payload를 생성/검증한다. 잘라내기/붙여넣기는 `DocxOp::{CutTableCells, PasteTableCells}` 또는 RHWP `clearTableCellsByPath`/`applyTableCellsByPath`를 단일 Undo 단계로 실행하며, 표 밖이거나 부분 병합/크기 불일치/임베드 개체·필드 손실 위험/낡은 리비전·세션/클립보드 쓰기 거부 시 변경 전 거절한다. `notTable` 뒤 평문 대체 넣기는 `insertStructured` 대기 뒤 소유·세션·세대·리비전·클립보드 키와 기억 payload 동일성(`structuredClipboardVersion`)을 다시 확인한 다음에만 실행한다(P4 안정화). `table.repeatHeader` 끄기는 세 형식 모두 선택 행만 바꾸고 선택 아래 머리행이 있으면 거절하며, DOCX `tableRepeatHeader`·`tableRowBreak`는 `MUTATING_OPS`로 대기 중 실행 취소/다시 실행 예상에 들어간다.
 - **신규 공용 표 명령 4종**: `src/commands/registry.ts`에 `table.cellMargins`, `table.positioning`, `table.repeatHeader`, `table.rowBreak` 4개 명령(`wordcraft: SUPPORTED`, `rhwp: SUPPORTED`)을 `TABLE_FORMATTING_GROUP`에 추가했다(`src/ribbon/definitions.ts`). `TableFormattingDialog`는 각 세션 `parameterState()`의 `tableCellMargins`·`tablePositioning`·`tableRepeatHeader`·`tableRowBreak` 문맥(`src/commands/parameters.ts`, `validateCommandArgs`)에 따라 형식별 가능 옵션(`positioning.treatAsCharSupported`·`outerMargins`, `repeatHeader.canEnableHeader`, `rowBreak.supportedModes`: DOCX `["cell", "row"]` vs RHWP `["cell", "row", "none"]`)만 활성화하고 `selectionKey`로 낡은 대화상자 확정을 차단한다. 상세: [Stage 1/2 문서 10절](stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18).
 
+## 공통 개체 편집 Stage 3 P1
+
+DOCX·HWPX·HWP 표면의 일반 클릭은 현재 그려진 쪽의 엔진 배치에서 개체를
+찾는다. WordCraft는 story·문단 경로·바이트 오프셋, RHWP는 렌더 컨트롤의
+문서 경로를 사용한다. 선택 맥락에는 세션·불러오기 세대·revision·선택 번호와
+쪽 좌표가 있다. WordCraft는 글꼴 재배치 뒤 주소를 다시 해석하고, RHWP는
+모델 또는 배치가 바뀌면 선택을 무효화한다.
+
+선택한 개체 위에 경계와 종류를 표시한다. `object.deselect`는 Escape로
+실행한다. 텍스트 클릭과 방향키로 텍스트 편집에 돌아갈 수 있다. 일반 입력과
+삭제는 개체 선택 중에 거부한다. DOCX 클릭 전 IME 커서 표지는 배치가
+바뀌지 않은 동안 개체 탐색을 허용한다. Shift 클릭과 드래그는 기존 텍스트
+포인터 경로를 사용하며, 개체에서 시작한 드래그는 이전 텍스트 선택을 넓히지 않는다.
+
+이 변경은 P1 읽기 전용 부분집합이다. 주소가 없거나 모호한 RHWP 개체,
+텍스트 뒤 RHWP 개체와 해석할 수 없는 그림은 이 부분집합에서 선택을 제공하지
+않는다. 이동·크기 조정·삭제에는 형식별 저장 증명과 실행 경로가 남아 있다.
+

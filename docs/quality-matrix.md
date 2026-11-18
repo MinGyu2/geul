@@ -187,3 +187,16 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 다중 셀 구조 클립보드(Copy/Cut/Paste, 서식·병합 보존, 거부 안전·단일 Undo/Redo) | IV(`application/x-geul-table-cells+json` + fallback) | IV(`application/x-geul-table-cells+json` + fallback) | IV(호환 병합 범위·무손실 검증 범위) | CURRENT PASS (P4 안정화 뒤: `clipboard.test.ts` 41·`clipboardSessions.test.ts` 10·WASM 87/87(대상 서식 비상속·글꼴 명시 적용/거부·엔진 실패 원자성)·Rust·`stage2-p4-native-acceptance.py`) | [Stage 1/2 10절](architecture/stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18), [명령 레지스트리](architecture/command-registry.md#stage-2--phase-4--고급-표-기능-2026-11-18) (크로스 앱 구조 MIME·외부 오피스: NOT RUN) |
 | 셀 여백(`table.cellMargins`)·표 위치(`table.positioning`)·반복 머리행(`table.repeatHeader`)·페이지 나눔(`table.rowBreak`), T009 저장 및 독립 재열기 | IV(`cell`/`row`, `treatAsCharSupported:false`) | IV(`cell`/`row`/`none`, `treatAsChar`·바깥 여백) | IV(`cell`/`row`/`none`, `treatAsChar`·바깥 여백, `0x0400` 유지) | CURRENT PASS (P4 안정화 뒤: Vitest 7파일 123/123·WASM 87/87·`stage2_p4_` 7/7·Release `82eae910…`/WASM `b5f0b768…` Linux native `stage2-p4-native-acceptance.py`·`stage2-p4-native-multipage.py`(실제 2쪽 머리행 반복 적중) DOCX/HWPX/HWP PASS; 머리행 끄기는 선택 행만·아래 머리행 있으면 거부); 새 HWP 표 셀 안 Enter 저장(후속 보수, Native `hwp-new-table-enter-native.py` Release `e9df51c8…` PASS) | [Stage 1/2 10절](architecture/stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18), [T009 경계](architecture/save-preservation.md#stage-2--phase-4--고급-표-기능-t009-저장-보존-경계-2026-11-18) (외부 Word/한컴 재열기 및 Windows/macOS: NOT RUN) |
 
+## 공통 개체 편집 Stage 3 (2026-11-18)
+
+| 기능 | DOCX | HWPX | HWP | 근거 |
+|---|---|---|---|---|
+| 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
+| 이동·크기 조정·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 제품 변경 명령 미연결. HWP 크기·삭제 후보의 본문 레코드 보존 검사 거부 |
+| 그림 서식·도형·글상자·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 편집·클립보드 수용 미완료 |
+
+현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
+T009 저장 278 PASS / 0 FAIL / 29 ignored. 개체 편집·편집 후 독립
+재열기 및 개체 편집 Undo/Redo는 수용 근거가 없다.
+[개체 선택 계약](architecture/command-registry.md#공통-개체-편집-stage-3-p1).
+

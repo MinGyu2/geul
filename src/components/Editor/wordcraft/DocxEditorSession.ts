@@ -1,3 +1,4 @@
+import type { ObjectSelection } from "../../../commands/objectSelection";
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   buildTableClipboardPlainText,
@@ -111,7 +112,7 @@ const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as cons
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
  * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
  */
-const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark", "find", "clearSearch"]);
+const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "deselectObject", "selectAll", "mark", "find", "clearSearch"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 const TABLE_STRUCTURE_ACTIONS: Readonly<Record<import("../../../commands/target").TableStructureCommandId, DocxTableAction>> = {
   "table.insertRowAbove": "insertRowAbove",
@@ -529,7 +530,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       if (op.op !== "insertText") this.pointerAfterInsert = false;
       const last = this.queue[this.queue.length - 1];
       // 끌기의 연속 위치는 마지막 것만 보내면 된다(같은 결과).
-      if (op.op === "pointer" && op.extend && last?.op === "pointer" && last.extend) this.queue[this.queue.length - 1] = op;
+      if (op.op === "pointer" && op.drag && last?.op === "pointer" && last.drag) this.queue[this.queue.length - 1] = op;
       else this.queue.push(op);
     }
     void this.flush();
@@ -620,9 +621,23 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   /** 쪽 좌표(pt)를 눌렀다·끌었다. */
-  pointAt(page: number, x: number, y: number, extend: boolean): boolean {
+  pointAt(page: number, x: number, y: number, extend: boolean, drag = false, selectObject = false): boolean {
     const beforeInsert = this.pointerAfterInsert;
-    return this.push({ op: "pointer", page, x, y, extend, beforeInsert }, false);
+    return this.push({
+      op: "pointer", page, x, y, extend, beforeInsert,
+      ...(drag ? { drag: true } : {}),
+      // Pointer-down may have queued an IME caret mark. Marks keep the
+      // painted layout current; queued document changes invalidate it.
+      ...(selectObject && !this.pendingMutation ? { selectObject: true } : {}),
+    }, false);
+  }
+
+  get objectSelection(): ObjectSelection | null {
+    if (!this.view?.object || this.status.kind !== "ready") return null;
+    return {
+      ...this.view.object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
+      editable: false, operations: ["deselect"],
+    };
   }
 
   // ---- IME(ImeSession) ----
@@ -1062,10 +1077,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
       composing: this.imeUnsettled, pending: this.busy,
+      objectSelection: this.objectSelection,
       clipboard: {
         selection: (!!this.view?.clipboardTextAvailable && !!this.backend.selectionText)
           || (!!this.view?.clipboardTableCellsAvailable && !!this.backend.selectionTableCells),
-        writable: this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly
+        writable: !this.objectSelection && this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly
           && (this.view.collapsed || !!this.view.clipboardTextAvailable || !!this.view.clipboardTableCellsAvailable),
         key: JSON.stringify([this.epoch, this.generation, this.revision, this.clipboardVersion, this.imeSerial,
           this.view?.anchorKey, this.view?.caretKey]),
@@ -1483,6 +1499,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "object.deselect") return { accepted: args === undefined && this.push({ op: "deselectObject" }) };
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
       return { accepted: this.push({ op: "table", rows: args.rows, cols: args.cols }) };

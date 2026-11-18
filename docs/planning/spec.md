@@ -373,3 +373,9 @@ DOCX 표 구조 편집 10개 명령(`table.*`)은 WordCraft 문서 모델을 단
 - **P4-2 셀 여백과 표 위치 (`table.cellMargins`, `table.positioning`)**: `table.cellMargins`는 표 기본 안 여백(`scope: "table"`)과 선택 셀 개별 여백(`scope: "cell"` 및 `reset`)·혼합/기본값 사용 상태를 제공한다. `table.positioning`은 가로 정렬(`left`/`center`/`right`)과 `left`일 때의 들여쓰기(`indentPt`)를 공통 지원하며, HWP/HWPX에서는 `treatAsChar` 및 표 바깥 여백(`outerMargins`)까지 함께 제공한다(DOCX에서는 `treatAsCharSupported: false`, `outerMargins: null`).
 - **P4-3 반복 머리행과 페이지 나눔 (`table.repeatHeader`, `table.rowBreak`)**: `table.repeatHeader`는 첫 행(row 0)부터 끊김 없이 이어지는 선행 머리행(`canEnableHeader`)만 반복 머리행으로 켜거나 끌 수 있게 제한하고 부분 수직 병합 경계나 비연속 중간 행 지정을 거절한다. 끄기는 세 형식 모두 선택한 행만 바꾸며 선택 아래에 머리행이 남으면 거절한다(P4 안정화). 구조 붙여넣기는 payload가 생략한 글자 플래그를 `false`, 색을 기본, 강조를 없음으로 해석해 대상 서식을 상속하지 않고, 표현할 수 없는 `fontFamily`는 무시하지 않고 거절한다. `table.rowBreak`는 DOCX에서 `["cell", "row"]`(`w:cantSplit` 유무)를, HWP/HWPX에서 `["cell", "row", "none"]`(`TablePageBreak`)을 노출해 형식별 직렬화·레이아웃 반복·T009 저장 및 독립 재열기를 유지한다. [Stage 1/2 문서 10절](../architecture/stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18).
 
+## 공통 개체 편집 Stage 3 진행
+
+P1의 읽기 전용 그림 선택·전환·해제는 DOCX·HWPX·HWP에서 Linux X11
+Release로 확인했다. 개체 변경, 편집 후 저장·독립 재열기 및 P2–P5는
+수용 전이다. [지원 범위와 검증](../quality-matrix.md#공통-개체-편집-stage-3-2026-11-18).
+

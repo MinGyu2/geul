@@ -1739,6 +1739,9 @@ impl DocxModel {
     /// Stage 2 Phase 4 (P4-1): extract the validated structural table-cell payload (JSON)
     /// for the current multi-cell rectangular selection.
     pub fn clipboard_table_cells(&self) -> Option<String> {
+        if self.selected_object.is_some() {
+            return None;
+        }
         let (t, r0, r1, g0, g1) = self.selected_plain_multi_cell_rect()?;
         let mut cells = Vec::new();
         for r in r0..=r1 {

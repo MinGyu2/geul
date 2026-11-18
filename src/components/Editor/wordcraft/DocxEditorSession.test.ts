@@ -50,14 +50,14 @@ describe("DocxEditorSession", () => {
     const { editor, fake } = await readyDocx();
     fake.hold = true;
     editor.typeText("x");
-    editor.pointAt(0, 80, 80, true);
-    editor.pointAt(0, 90, 80, true);
-    editor.pointAt(0, 100, 80, true);
+    editor.pointAt(0, 80, 80, true, true);
+    editor.pointAt(0, 90, 80, true, true);
+    editor.pointAt(0, 100, 80, true, true);
     fake.release();
     await flush();
     fake.release();
     await flush();
-    expect(edits(fake)[1]!.args[3]).toEqual([{ op: "pointer", page: 0, x: 100, y: 80, extend: true, beforeInsert: false }]);
+    expect(edits(fake)[1]!.args[3]).toEqual([{ op: "pointer", page: 0, x: 100, y: 80, extend: true, beforeInsert: false, drag: true }]);
   });
 
   it("IME: 조합 중에는 모델을 바꾸지 않고, 끝에 확정 글자 하나를 연산 하나로 보낸다. 취소는 연산 없음", async () => {

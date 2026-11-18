@@ -2400,6 +2400,8 @@ fn mixed_toc_hyperlink_comments_notes_tracking_publish_reopen_edit_publish() {
                     y: caret.y + caret.height / 2.0,
                     extend: false,
                     before_insert: false,
+                    drag: false,
+                    select_object: false,
                 },
                 DocxOp::DeleteForward,
                 mixed_insert("가"),
@@ -2441,6 +2443,8 @@ fn mixed_toc_hyperlink_comments_notes_tracking_publish_reopen_edit_publish() {
                     y: caret.y + caret.height / 2.0,
                     extend: false,
                     before_insert: false,
+                    drag: false,
+                    select_object: false,
                 },
                 DocxOp::DeleteForward,
                 mixed_insert("변경 "),
@@ -2496,6 +2500,8 @@ fn mixed_toc_hyperlink_comments_notes_tracking_publish_reopen_edit_publish() {
                         y: c.y + c.height / 2.0,
                         extend: false,
                         before_insert: false,
+                        drag: false,
+                        select_object: false,
                     },
                     if resolution == "accept" {
                         DocxOp::AcceptChange {}

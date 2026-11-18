@@ -1,3 +1,4 @@
+import { OBJECT_KINDS, type ObjectHit } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -45,6 +46,7 @@ export interface DocxView {
   pages: DocxPage[];
   caret: DocxCaret | null;
   selection: DocxRect[];
+  object?: ObjectHit;
   collapsed: boolean;
   inTable: boolean;
   /** 커서·기준점 자리 키(`story:path:off`). 비교·검사용. */
@@ -253,7 +255,8 @@ export type DocxOp =
   | { op: "newParagraph" }
   | { op: "tab"; back: boolean }
   | { op: "move"; to: MoveTarget; extend: boolean }
-  | { op: "pointer"; page: number; x: number; y: number; extend: boolean; beforeInsert: boolean }
+  | { op: "pointer"; page: number; x: number; y: number; extend: boolean; beforeInsert: boolean; drag?: boolean; selectObject?: boolean }
+  | { op: "deselectObject" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
   | { op: "insertAt"; mark: number; text: string }
@@ -609,7 +612,7 @@ export function parseDocxView(value: unknown): DocxView | null {
 }
 
 function parseDocxBaseView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["object", "selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "bullets") && typeof value.bullets !== "boolean" && value.bullets !== null) return null;
   if (value.clipboardTextAvailable !== undefined && typeof value.clipboardTextAvailable !== "boolean") return null;
@@ -630,6 +633,18 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   if (parsedPages.some((page) => page === null) || parsedSelection.some((rect) => rect === null)) return null;
   if (caret !== null && parsedCaret === null) return null;
   const pageCount = parsedPages.length;
+  let object: ObjectHit | undefined;
+  if (Object.prototype.hasOwnProperty.call(value, "object")) {
+    const raw = value.object;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch"])) return null;
+    const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
+    const frame = parseRect(raw.frame);
+    if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
+      || typeof raw.position !== "string" || raw.position.length > 256
+      || !/^(body|part\d+):\d+(\.\d+)*:\d+$/.test(raw.position)) return null;
+    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position } };
+    if (parsedCaret || parsedSelection.length > 0) return null;
+  }
   // 커서·선택은 있는 쪽만 가리킨다.
   if ((parsedCaret && parsedCaret.page >= pageCount) || parsedSelection.some((rect) => rect!.page >= pageCount)) return null;
   if (typeof collapsed !== "boolean" || typeof inTable !== "boolean") return null;
@@ -641,6 +656,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
     ...(typeof value.bullets === "boolean" || value.bullets === null ? { bullets: value.bullets } : {}),
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
+    ...(object ? { object } : {}),
     selection: parsedSelection as DocxRect[],
     collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess, trackedReadOnly: trackedReadOnly as boolean, hasToc: hasToc as boolean,
     tracking: tracking as boolean, hasRevisions: hasRevisions as boolean, font, fontGeneration: value.fontGeneration as number,

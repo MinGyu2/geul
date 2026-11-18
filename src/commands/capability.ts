@@ -52,6 +52,14 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     // 보여 단축키·리본이 실패할 저장을 시작하지 않는다(T010 IME 경계 후속). 대기 편집·불확실 모델은 그대로 저장 절차가 판정한다.
     return snapshot.composing ? unavailable("composing") : ENABLED;
   }
+  if (id === "object.deselect") {
+    if (!snapshot.loaded) return unavailable("notReady");
+    if (snapshot.pending && snapshot.engine === "wordcraft") return unavailable("pendingEdits");
+    return snapshot.objectSelection ? ENABLED : unavailable("selectionRequired");
+  }
+  if (snapshot.objectSelection && id !== "edit.undo" && id !== "edit.redo" && id !== "edit.find") {
+    return unavailable("protected");
+  }
   if (id === "edit.find" || id === "edit.replace") {
     // Stage 1: searching reads the model (allowed in read-only documents); replacing edits it.
     if (!snapshot.loaded) return unavailable("notReady");

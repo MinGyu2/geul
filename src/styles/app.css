@@ -1132,3 +1132,20 @@ button {
   right: 0;
   box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
 }
+
+.object-selection-frame {
+  position: absolute;
+  outline: 2px solid #2f5bd3;
+  pointer-events: none;
+}
+
+.object-selection-frame__label {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  padding: 2px 6px;
+  background: #2f5bd3;
+  color: white;
+  font-size: 12px;
+  white-space: nowrap;
+}

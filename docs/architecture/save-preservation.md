@@ -1777,3 +1777,19 @@ T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저�
 - 원본 표의 행 삭제 시험은 P4가 허용하는 셀 안 여백 777을 금지된 템플릿 변조로 간주했다. 행 삭제와 이 여백의 게시를 확인하고, 소유되지 않은 셀 헤더 바이트와 범위 밖 여백의 거부·원본 바이트 보존을 확인한다. 잘린 본문 시험은 레코드 판독과 필드 검사에서 나온 동일 오류를 저장 서비스의 실제 응답으로 관찰해 `Unsafe`와 `OutputMalformed` 한 건을 확인한다.
 - 변경 범위는 시험 코드와 문서다. `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib --no-run`으로 보호 빌드하고, 호스트의 전용 0700 `TMPDIR`에서 그 바이너리를 실행했다. 네 건 단독 및 묶음 4/4, 인접 회귀 11/11, 전체 `services::save` 278 PASS / 0 FAIL / 기존 29 ignored. GUI와 Release WASM은 이번 시험에서 실행하지 않았다.
 
+## 공통 개체 편집 Stage 3 P1 보존 확인
+
+개체 선택·전환·해제는 문서 모델을 변경하지 않는다. DOCX의 WordCraft
+시험은 선택 중 글자 입력·삭제 거부와 내보낸 바이트 일치, 다시 읽은 모델의
+동등성을 확인했다. Linux X11 Release에서 DOCX·HWPX·HWP 그림 두 개를
+선택하고 전환한 뒤 탭을 닫고 다시 열어 두 번째 그림을 다시 선택했다.
+형식별 원본 파일 SHA-256과 revision은 유지됐다.
+
+현재 실행한 `scripts/cargo-geul.py test --lib services::save`는 278 PASS,
+0 FAIL, 29 ignored였다. 현재 Release RHWP에서 별도로 만든 HWP 그림
+크기 변경 후보는 `BodyText/Section0 recordsChanged`, 삭제 후보는
+`BodyText/Section0 outputMalformed`로 검출됐고, 둘 다 `PrvImage
+previewStale`도 검출됐다. 같은 HWPX 시험 후보는 원시 검사에서 통과했고
+새 엔진 인스턴스에서 열린 것을 확인했다. 실제 게시·이력 통합과 기존 개체의
+보존 수용은 후속 관문이다. 이 변경에서 T009 허용 규칙에 변경 사항은 없다.
+

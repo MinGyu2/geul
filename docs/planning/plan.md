@@ -258,3 +258,10 @@ WordCraft 엔진(`dd14a0ae…`, 패치 체인 `system-font-source` → `docx-tab
 - **반복 머리행과 페이지 나눔 (`P4-3`)**: `patches/wordcraft/docx-table-headers-pagination.{patch,commit}`·`DocxOp::{TableRepeatHeader, TableRowBreak}`과 `patches/rhwp/stage2-p4-3-headers-pagination.patch`(`getTablePaginationByPath`, `setTableHeaderRowsByPath`)로 첫 행부터 연속된 선행 머리행만 허용하고 형식별 `rowBreak` 모드를 노출한다. WordCraft 최종 핀은 `f42cd16c06d59c1e951c2475ec824f593887650b`, RHWP는 `patches/rhwp/stage2-p4-4-cell-flags.patch`(신규 HWP5 셀에 `HAS_MARGIN`/`HEADER` 등 하위 플래그만 먼저 설정될 때 `0x0400` 기본 계약 비트를 유지하도록 `serialize_cell` 보정)를 포함해 Release WASM `015a899de475b215cd23e13883b700ce5dffbad6c7547e63cd3c183e28ca832c`로 검증했다. P4 안정화(`patches/rhwp/stage2-p4-5-stabilization.patch`: 붙여넣기 서식 비상속·글꼴 명시 처리·실패 원자성·머리행 끄기 계약)는 Release WASM `b5f0b768075d62f908fc36639e42c635d91e75f83feab2a506098014c02318aa`로 검증했다([10.4절](../architecture/stage1-common-editing.md#104-p4-안정화정합성-보수-2026-11-18)).
 - **HWP T009 경계**: `src-tauri/src/services/save/hwp/insertions.rs`에서 다중 셀 서식 편집(`cell_formatted_edit`), 표/셀 여백(`table[10..18]`, `CELL_FLAG_HAS_MARGIN`), 표 위치(`table_header_preserved` 및 `validate_table_at` `horzAlign`/`horzOffset`/`outerMargin`), 반복 머리행·페이지 나눔(`table[0..4]` 비트 `0..=2`, `CELL_FLAG_HEADER`)만 좁게 허용한다.
 
+## 공통 개체 편집 Stage 3 P1 부분 구현
+
+WordCraft 배치 주소와 RHWP 렌더 컨트롤 경로를 세션 소유 선택 맥락에
+연결했다. 원본 개체 변경은 각 형식의 보존 증명과 Undo/Redo·게시 검증이
+확보된 연산에 한해 연결한다.
+[명령과 소유권](../architecture/command-registry.md#공통-개체-편집-stage-3-p1).
+

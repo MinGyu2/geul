@@ -1,3 +1,5 @@
+import type { ObjectSelection } from "../../../commands/objectSelection";
+import { hitRhwpObject } from "./objectHit";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -323,6 +325,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number } | null = null;
+  private objectEpoch = 0;
+
+  get objectSelection(): ObjectSelection | null {
+    const selected = this.selectedObject;
+    if (this.status.kind !== "ready" || !selected || selected.owner !== this.epoch
+      || selected.model !== this.modelVersion || selected.layout !== this.layoutVersion
+      || selected.selection.revision !== this.committed + this.pending) return null;
+    return selected.selection;
+  }
   private readonly renderCanvases = new Set<HTMLCanvasElement>();
   private text: RhwpText | null = null;
   /** 쪽 좌표는 zoom/DPR와 무관하다. 모델·문서 소유자·전체 위치가 같을 때만 마지막 성공 질의를 재사용한다. */
@@ -392,7 +404,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 성공한 전체 그리기만 기억한다. 입력·쪽 크기·bitmap·배율이 모두 같을 때만 생략한다. */
   private drawnAt = new WeakMap<HTMLCanvasElement, {
     page: number; scale: number; width: number; height: number;
-    bitmapWidth: number; bitmapHeight: number; painted: string | null;
+    bitmapWidth: number; bitmapHeight: number; painted: string | null; model: number; layout: number;
   }>();
   private readonly samples: number[] = [];
   private readonly listeners = new Set<() => void>();
@@ -944,7 +956,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       trace("rhwp:paint-draw", () => ({ page, ms: performance.now() - drawStarted }));
       const size = this.pages[page]!;
       this.drawnAt.set(canvas, { page, scale, width: size.width, height: size.height,
-        bitmapWidth: canvas.width, bitmapHeight: canvas.height, painted });
+        bitmapWidth: canvas.width, bitmapHeight: canvas.height, painted, model: this.modelVersion, layout: this.layoutVersion });
       this.renderCanvases.add(canvas);
       if (page === 0 && this.firstPaintMs === null) {
         this.firstPaintMs = performance.now() - this.loadStartedAt;
@@ -973,6 +985,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
   }
 
+  isObjectHitPageCurrent(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
+    const drawn = this.drawnAt.get(canvas);
+    return !!drawn && drawn.page === page && drawn.scale === scale &&
+      drawn.model === this.modelVersion && drawn.layout === this.layoutVersion &&
+      drawn.bitmapWidth === canvas.width && drawn.bitmapHeight === canvas.height &&
+      canvas.width > 0 && canvas.height > 0;
+  }
+
   /** 같은 Canvas의 성공한 전체 출력과 입력이 완전히 같을 때만 다시 그리기를 생략한다. */
   private isPageUnchanged(page: number, canvas: HTMLCanvasElement, scale: number, painted: string | null): boolean {
     const size = this.pages[page];
@@ -986,7 +1006,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   caretRect(): CaretRect | null {
     const text = this.text;
-    if (!text) return null;
+    if (!text || this.objectSelection) return null;
     // positionKey의 표시 문자열은 parentParagraph를 생략한다. 캐시에는 셀 경로 전체를 포함한다.
     const at = this.caret;
     const position = `${contextKey(at)}:${at.offset}`;
@@ -999,7 +1019,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   selectionRects(): PageRect[] {
-    if (!this.text || !this.hasSelection) return [];
+    if (this.objectSelection || !this.text || !this.hasSelection) return [];
     if (!sameContext(this.anchor, this.caret)) {
       const table = this.caretTable(), range = this.selectedCellRange();
       if (!table || !range || !this.doc?.getTableCellBboxesByPath || !this.caret.cell) return [];
@@ -1057,7 +1077,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 있으므로 세지 않고(확정하지 않음) 모델을 uncertain으로 표시한 뒤 편집을 멈춘다.
    */
   private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false, recoverable = false): boolean {
-    if (!this.editable || !this.doc) return false;
+    if (this.objectSelection || !this.editable || !this.doc) return false;
     // A cell rectangle is a structural selection, never a cross-owner text deletion.
     if (this.hasSelection && !sameContext(this.anchor, this.caret) && !requireHistory) return false;
     // T012 Phase 2: a nested-cell target must be owned by the current model, level by level, before any engine
@@ -1420,7 +1440,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 지운 뒤 화면 갱신이 실패하면 markFailed가 이 조합(지운 것)을 변경 1개로 세고 끝낸다.
    */
   beginComposition(): void {
-    if (!this.editable || this.composition || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return;
+    if (this.objectSelection || !this.editable || this.composition || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return;
     this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
@@ -1548,6 +1568,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   insertCommittedAt(at: DocPosition, text: string): boolean {
     if (!text || this.composition) return false;
+    this.selectedObject = null; // A late IME commit changes engine addresses.
     const length = charCount(text);
     const shift = (position: DocPosition): DocPosition =>
       sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset
@@ -1564,6 +1585,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** Apply a caret move. false = refused (an extension outside the anchor's text context or table); state unchanged. */
   private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false): boolean {
     if (extend && !sameContext(this.anchor, position) && !sameTable(this.anchor, position)) return false; // 텍스트 문맥 또는 같은 표의 셀 범위만 확장한다.
+    this.selectedObject = null;
     this.clipboardVersion += 1;
     this.history?.boundary(); // 이동·클릭·선택은 타자 그룹을 끊는다
     this.caret = position;
@@ -1629,8 +1651,27 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** 페이지 좌표(배율 1)를 클릭했다. extend면 선택을 넓힌다. */
-  pointAt(page: number, x: number, y: number, extend: boolean): boolean {
-    if (!this.doc || !this.editable) return false;
+  pointAt(page: number, x: number, y: number, extend: boolean, drag = false, selectObject = false): boolean {
+    if (!this.doc || !this.editable || (drag && this.objectSelection)) return false;
+    if (selectObject && !extend && !this.imeUnsettled && this.doc.getPageControlLayout) {
+      try {
+        const hit = hitRhwpObject(JSON.parse(this.doc.getPageControlLayout(page)), page, x, y);
+        if (hit) {
+          this.clipboardVersion += 1;
+          this.history?.boundary();
+          this.selectedObject = {
+            model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
+            selection: {
+              kind: hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
+              epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
+              revision: this.committed + this.pending, editable: false, operations: ["deselect"],
+            },
+          };
+          this.emit();
+          return true;
+        }
+      } catch { /* Preserve the text hit path if the layout query is unavailable. */ }
+    }
     let position: DocPosition | null;
     try {
       position = parsePosition(JSON.parse(this.doc.hitTest(page, x, y)));
@@ -1882,6 +1923,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving,
       clipboard: this.clipboardState(),
+      objectSelection: this.objectSelection,
       // 기록은 지역·동기(queuedHistory 없음). 제품 고급 기록은 pending 확정도 명령 capability에서 거부한다.
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       ...(this.advancedHistoryOnly ? { historyScope: "advanced" as const } : {}),
@@ -2891,6 +2933,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private clipboardState(): NonNullable<DocumentCommandSnapshot["clipboard"]> {
     const key = JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
       this.imeSerial, this.anchor, this.caret, this.structuralKey()]);
+    if (this.objectSelection) return { key, selection: false, writable: false };
     const text = this.text;
     let supported = false;
     let writable = !this.uncertain && !this.hasSelection;
@@ -4041,6 +4084,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "object.deselect") {
+      if (args !== undefined) return { accepted: false };
+      this.selectedObject = null;
+      this.clipboardVersion += 1;
+      this.emit();
+      return { accepted: true };
+    }
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
     if (command === "table.shading" || command === "table.borders" || command === "table.alignment"
       || command === "table.columnWidth" || command === "table.rowHeight") {

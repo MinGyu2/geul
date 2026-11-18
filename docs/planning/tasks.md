@@ -368,3 +368,9 @@ DOCX는 정렬·글자 값·문단 서식·목록·찾기/바꾸기·쪽 설정(
   - **지원 한계 및 미완료 항목 유지**: 외부 Word/한컴오피스 재열기·크로스 앱 구조 MIME·Windows/macOS/Wayland는 NOT RUN이며, 기존 미완료 과제 T012/T013/T014/T015/T016 상태와 미완 체크박스는 그대로 유지한다.
 - **P4 안정화 (2026-11-18) — COMPLETED** (`40677e6`, `b555ef8`, `a81bfe2`, `481acf9`): RHWP 구조 붙여넣기가 대상 글자 모양(굵게·기울임·밑줄·취소선·색·강조)을 상속하던 결함과 `fontFamily` 무시를 수정(기존 글꼴만 적용, 없는 글꼴은 `format.font` 소유 증명으로 등록 또는 거부), 거부된 붙여넣기가 `char_shapes`를 덧붙이던 엔진 원자성 결함 수정, DOCX `MUTATING_OPS`에 `tableRepeatHeader`·`tableRowBreak` 추가, 구조 붙여넣기 평문 대체 전 소유·세대·리비전·기억 payload 재확인, 머리행 끄기를 "선택 행만·아래 머리행 있으면 거부"로 DOCX/HWP/HWPX 통일, 다쪽 Native GUI 수용 추가. RHWP 관리 패치 `stage2-p4-5-stabilization.patch`, Release WASM `b5f0b768…`, Release 앱 `82eae910…`. 검증: tsc PASS·ESLint 오류 0·Vitest 7파일 123/123·WASM `stage2-tables` 87/87·`stage2_p4_` 7/7·Native `stage2-p4-native-acceptance.py`/`stage2-p4-native-multipage.py` DOCX/HWPX/HWP PASS. 후속 보수(2026-11-18): 새 HWP 표 셀 Enter 저장 거부 해결(원인: T009 새 표 증명의 셀 문단 수 1 고정, 직렬화기는 정상; Native `hwp-new-table-enter-native.py` Release `e9df51c8…` PASS). `services::save` 전체 실행에서 관련 없는 기존 실패 4건(`calc_cell_*` 2, `hwp_restructured_original_table_is_proven_or_refused`, `hwp_편집한_저장은_…`)은 수정 전 코드에서도 같게 실패한다. [상세](../architecture/stage1-common-editing.md#104-p4-안정화정합성-보수-2026-11-18)
 
+## 공통 개체 편집 Stage 3 P1 진행
+
+DOCX·HWPX·HWP에서 읽기 전용 그림 선택·해제·텍스트 복귀와 닫기·독립
+재열기를 확인했다. 개체 이동·크기 조정·삭제 및 P2–P5 수용이 남아 있다.
+[품질 행렬](../quality-matrix.md#공통-개체-편집-stage-3-2026-11-18).
+

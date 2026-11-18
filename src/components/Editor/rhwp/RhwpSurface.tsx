@@ -1,3 +1,5 @@
+import { ObjectSelectionFrame } from "../ObjectSelectionFrame";
+import type { ObjectSelection } from "../../../commands/objectSelection";
 import { claimSurfaceFocus, hasSurfaceFocusLease } from "../surfaceFocus";
 // rhwp 편집 표면(T007). 페이지마다 canvas에 rhwp가 그리고, 커서·선택·조합 밑줄은 그 위의 DOM 겹침으로 그린다.
 //
@@ -53,6 +55,7 @@ const EMPTY_RECTS: PageRect[] = [];
 interface LatencySample { started: number; version: number; drawn: boolean }
 interface PageFrameProps {
   page: number; width: number; height: number; scale: number;
+  object: ObjectSelection | null;
   selection: PageRect[]; composition: PageRect[]; caret: CaretRect | null; editable: boolean;
   caretElement: RefObject<HTMLDivElement | null>;
   registerCanvas: (page: number, canvas: HTMLCanvasElement | null) => void;
@@ -63,7 +66,7 @@ interface PageFrameProps {
 
 // 모델 판이 바뀌어도 쪽 상자·Canvas·겹침이 같으면 그 DOM 부분은 그대로 둔다.
 // 실제 Canvas의 최신 판 그리기는 부모의 기존 layout effect가 계속 담당한다.
-const PageFrame = memo(function PageFrame({ page, width, height, scale, selection, composition, caret, editable,
+const PageFrame = memo(function PageFrame({ page, width, height, scale, object, selection, composition, caret, editable,
   caretElement, registerCanvas, registerBox, onMouseDown, onMouseMove }: PageFrameProps) {
   const canvasRef = useCallback((element: HTMLCanvasElement | null) => { registerCanvas(page, element); }, [page, registerCanvas]);
   const boxRef = useCallback((element: HTMLDivElement | null) => { registerBox(page, element); }, [page, registerBox]);
@@ -84,6 +87,7 @@ const PageFrame = memo(function PageFrame({ page, width, height, scale, selectio
         ref={canvasRef}
         aria-hidden="true"
       />
+      {object && <ObjectSelectionFrame selection={object} scale={scale} />}
       {selection.map((rect, index) => (
         <div key={`s${index}`} className="rhwp-selection" style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }} />
       ))}
@@ -164,6 +168,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   }, []);
 
   const caret = session.caretRect();
+  const object = session.objectSelection;
   const selection = session.selectionRects();
   const composition = session.compositionRects();
 
@@ -368,6 +373,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       // WebKitGTK는 Shift+Tab(GDK ISO_Left_Tab)을 key "Unidentified", code "Tab"으로 보낸다(실측).
       const key = event.key === "Unidentified" && event.code === "Tab" ? "Tab" : event.key;
       switch (key) {
+        case "Escape": return session.execute("object.deselect").accepted;
         case "ArrowLeft": return session.moveHorizontal(-1, extend) || true;
         case "ArrowRight": return session.moveHorizontal(1, extend) || true;
         case "ArrowUp": return session.moveVertical(-1, extend) || true;
@@ -401,12 +407,20 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   }, [session, context]);
 
   // ---- 마우스 ----
-  const pointer = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean) => {
+  const pointer = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean, drag = false) => {
     const canvas = canvases.current.get(page);
     if (!canvas) return;
     const box = canvas.getBoundingClientRect();
-    session.pointAt(page, (event.clientX - box.left) / scale, (event.clientY - box.top) / scale, extend);
-  }, [session, scale]);
+    const x = (event.clientX - box.left) / scale;
+    const y = (event.clientY - box.top) / scale;
+    if (!extend && session.isObjectHitPageCurrent(page, canvas, scale * ratio)) {
+      session.pointAt(page, x, y, false, false, true);
+    } else if (drag) {
+      session.pointAt(page, x, y, true, true);
+    } else {
+      session.pointAt(page, x, y, extend);
+    }
+  }, [session, scale, ratio]);
   const onMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (event.button !== 0 || !session.editable) return;
     event.preventDefault(); // 초점은 textarea에 둔다
@@ -423,7 +437,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     focusInput();
   }, [session, pointer, focusInput]);
   const onMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
-    if (dragging.current && event.buttons & 1) pointer(event, page, true);
+    if (dragging.current && event.buttons & 1) pointer(event, page, true, true);
   }, [pointer]);
 
   const selectionByPage = pageRects(selection), compositionByPage = pageRects(composition);
@@ -441,6 +455,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
         )}
         {!limited && session.pages.map((size, page) => (
           <PageFrame key={page} page={page} width={size.width} height={size.height} scale={scale}
+            object={object?.frame.page === page ? object : null}
             selection={selectionByPage.get(page) ?? EMPTY_RECTS} composition={compositionByPage.get(page) ?? EMPTY_RECTS}
             caret={caret?.page === page ? caret : null} editable={session.editable} caretElement={caretElement}
             registerCanvas={registerCanvas} registerBox={registerBox} onMouseDown={onMouseDown} onMouseMove={onMouseMove} />

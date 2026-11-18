@@ -1,3 +1,4 @@
+import { ObjectSelectionFrame } from "../ObjectSelectionFrame";
 import { claimSurfaceFocus, hasSurfaceFocusLease } from "../surfaceFocus";
 // WordCraft(DOCX) 편집 표면(T008, W-A). 쪽은 백엔드가 그린 PNG를 canvas에 옮겨 그리고, 커서·선택·IME 조합 글자는 그 위의
 // DOM 겹침으로 그린다.
@@ -55,6 +56,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
   const context = imeContext ?? ownContext;
   const dragging = useRef(false);
   const view = session.view;
+  const object = session.objectSelection;
   const pages = view?.pages ?? [];
   const caret = view?.caret ?? null;
   const composition = session.compositionText;
@@ -178,6 +180,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
         return true;
       };
       switch (key) {
+        case "Escape": return session.execute("object.deselect").accepted;
         case "ArrowLeft": return move("left");
         case "ArrowRight": return move("right");
         case "ArrowUp": return move("up");
@@ -212,11 +215,11 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
   }, [session, context]);
 
   // ---- 마우스 ----
-  const pointer = (event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean) => {
+  const pointer = (event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean, drag = false) => {
     const box = pageBoxes.current.get(page);
     if (!box) return;
     const rect = box.getBoundingClientRect();
-    session.pointAt(page, (event.clientX - rect.left) / k, (event.clientY - rect.top) / k, extend);
+    session.pointAt(page, (event.clientX - rect.left) / k, (event.clientY - rect.top) / k, extend, drag, !extend && session.isShown(page, scale));
   };
   const onMouseDown = (event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (event.button !== 0 || !session.editable) return;
@@ -234,7 +237,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
     focusInput();
   };
   const onMouseMove = (event: React.MouseEvent<HTMLDivElement>, page: number) => {
-    if (dragging.current && event.buttons & 1) pointer(event, page, true);
+    if (dragging.current && event.buttons & 1) pointer(event, page, true, true);
   };
 
   const rectStyle = (rect: DocxRect): CSSProperties => ({
@@ -298,6 +301,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
                 }}
                 aria-hidden="true"
               />
+              {object?.frame.page === page && <ObjectSelectionFrame selection={object} scale={k} />}
               {(view?.selection ?? []).filter((rect) => rect.page === page).map((rect, index) => (
                 <div key={`s${index}`} className="rhwp-selection" style={rectStyle(rect)} />
               ))}

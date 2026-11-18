@@ -1,3 +1,4 @@
+import type { ObjectSelection } from "./objectSelection";
 import type { ClipboardCommand, PlainClipboard } from "./clipboard";
 // 열린 문서에 대한 명령의 대상(T010). 편집 세션(RhwpEditorSession·DocxEditorSession)이 구현한다: 명령은 그 세션의 편집
 // 경로(T007·T008 대기열, T009 저장 절차)로만 실행되고, 레지스트리는 엔진 함수를 직접 부르지 않는다.
@@ -21,6 +22,7 @@ export type QueuedStep = "available" | "none" | "unknown";
 /** 명령 가용성을 정하는 편집 세션의 지금 상태. */
 export interface DocumentCommandSnapshot {
   sessionId: SessionId;
+  objectSelection?: ObjectSelection | null;
   engine: EngineId;
   /** 그 세션의 불러오기 시도 번호·백엔드가 확인한 revision(늦은 응답·낡은 요청 판단은 세션·백엔드가 한다). */
   loadGeneration: number;
