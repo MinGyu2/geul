@@ -1,5 +1,5 @@
 import { parseGraphicProperties } from "../commands/graphicProperties";
-import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type MutatingObjectOperation, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
+import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type MutatingObjectOperation, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape, type ShapeProperties } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -619,6 +619,16 @@ export function parseDocxView(value: unknown): DocxView | null {
   return base && { ...base, ...stage1 };
 }
 
+function parseShapeView(raw: unknown): ShapeProperties | null {
+  if (!isRecord(raw) || !hasExactly(raw, ["fill", "outline", "outlineWidth", "rotation", "flipH", "flipV", "widthPt", "heightPt"])) return null;
+  const color = (c: unknown): c is string | null => c === null || (typeof c === "string" && /^[0-9A-F]{6}$/.test(c));
+  const { fill, outline, outlineWidth, rotation, flipH, flipV, widthPt, heightPt } = raw;
+  if (!color(fill) || !color(outline) || typeof outlineWidth !== "number" || !Number.isFinite(outlineWidth) || outlineWidth < 0
+    || typeof rotation !== "number" || !Number.isFinite(rotation) || typeof flipH !== "boolean" || typeof flipV !== "boolean"
+    || !isPositive(widthPt) || !isPositive(heightPt)) return null;
+  return { fill, outline, outlineWidth, rotation, flipH, flipV, widthPt, heightPt };
+}
+
 function parsePictureView(raw: unknown): PictureProperties | null {
   if (!isRecord(raw) || !hasExactly(raw, ["widthPt", "heightPt", "wrap", "crop", ...("description" in raw ? ["description"] : [])])) return null;
   const { widthPt, heightPt, description, crop } = raw;
@@ -656,7 +666,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -675,6 +685,11 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       const graphic = parseGraphicProperties(raw.graphic);
       if (!graphic || graphic.kind !== kind) return null;
       object.graphic = graphic;
+    }
+    if ("shape" in raw) {
+      const shape = parseShapeView(raw.shape);
+      if (!shape || (kind !== "shape" && kind !== "textBox")) return null;
+      object.shape = shape;
     }
     if ("clipboardShape" in raw) {
       const shapeView = raw.clipboardShape;

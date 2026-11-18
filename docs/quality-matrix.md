@@ -196,8 +196,8 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 크기 조정 (P2 갱신: DOCX 지원) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
 | 개체 이동·크기·삭제 (2026-11-19 P1) | SUPPORTED_AND_VERIFIED | PARTIAL (그림) | BLOCKED | DOCX: 본문 그림·도형·글상자·그룹의 `object.edit`(끌기·핸들·방향키·Delete), 편집 전 내보내기 대비 T009 사전 판정, 게시·독립 재열기. HWPX: 본문 떠 있는 그림 이동·인라인 그림 크기·그림 삭제, Release WASM·`save_check` safe. HWP: `insertions.rs:1154` 원본 gso 객체 바이트 동일 요구로 거부 |
 | 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | 해당 없음 | 8방향 핸들·이동 끌기·Esc/포인터 취소·끌기당 한 번 커밋; native X11 NOT RUN |
-| 사각형·타원·선 삽입 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
-| 글상자 삽입·내부 텍스트 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
+| 사각형·타원·선 삽입 (P3 갱신) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
+| 글상자 삽입·내부 텍스트 (P3 갱신) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
 | SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
 | 차트·SmartArt 편집 | BLOCKED | BLOCKED | BLOCKED | 차트·다이어그램 부분 및 OLE 변경 보존 관문 |
@@ -207,7 +207,10 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `arrange.wrap`(인라인 복귀 시 위치 필드 정규화), HWPX `treatAsChar`/`textWrap` |
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `object.altText`(제어 문자·줄바꿈 거부), HWPX `description`(`"`·`\\` 거부, 256자) |
 | 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | BLOCKED | DOCX `arrange.position` 여백 기준 9곳. HWPX는 끌기 이동만 |
-| 그 밖의 도형 서식 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | P3 |
+| 도형 채우기·선·회전·대칭·앞뒤 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기 제외) | BLOCKED | DOCX `shape.fill`/`shape.outline`/`arrange.rotation`/`bringForward`·`sendBackward`(EMU·60000분의 1도 격자). HWPX `setShapeProperties` 채우기(단색·없음)·선 색·회전·대칭·크기·이동·배치, `changeShapeZOrder`, `deleteShapeControl`; 모든 비편집 필드 다시 읽기 확인 |
+| 기존 도형·글상자 외곽 이동·크기·삭제 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX P1 경로, HWPX 본문 도형 |
+| 중첩 개체 (P3) | PARTIAL | UNSUPPORTED | UNSUPPORTED | DOCX 표 셀 그림: 크기·자르기·설명·삭제만(이동 거부), 머리글/바닥글·글상자 안 개체는 변경 없음. RHWP 셀·머리글 개체는 선택만 |
+| HWPX/HWP 글상자 내부 편집 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | RHWP 글상자 story 커서·IME 경로 미연결 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
@@ -235,3 +238,7 @@ header 변조·BinData 누락 음성 3건 unsafe. Vitest 전체 1634 PASS / 3 FA
 초기화·인라인 복귀·Undo, 편집마다 T009 `check_saved` safe, 재열기 값과 원본 미디어 바이트 일치) PASS, Stage 3+adapters
 113 PASS. Release WASM `stage3-object-edit` 3 PASS + `stage3-picture-size` 2 PASS, HWPX 서식 출력 `save_check` safe,
 BinData 1비트 변조 unsafe. Vitest 1640 중 1637 PASS(같은 기존 실패 3). 속성 창 UI 시험 3 PASS. 네이티브 NOT RUN.
+
+**2026-11-19 P3 도형 실행.** Rust `stage3_docx_shape_fill_outline_rotation_layer_roundtrip`, `stage3_docx_picture_in_table_cell_admits_only_in_place_edits`
+PASS(Stage 3 Rust 9, adapters 115). Release WASM `stage3-shapes` 2 PASS(HWPX 사각형·글상자 삽입, 채우기·선 색·회전·이동·크기·
+뒤로·삭제·Undo, 재열기 값 확인, HWP 삽입 거부), 출력 `save_check saved hwpx` safe. Vitest 1645 중 기존 실패 3 외 PASS. 네이티브 NOT RUN.

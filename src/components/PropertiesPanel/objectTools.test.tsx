@@ -15,6 +15,11 @@ const selection = (patch: Partial<ObjectSelection> = {}): ObjectSelection => ({
   operations: ["deselect", "move", "resize", "delete", "crop", "wrap", "altText"],
   picture: { widthPt: 120, heightPt: 60, wrap: "inline", crop: [0.1, 0, 0, 0], description: "old" }, ...patch,
 });
+const shapeSelection = (patch: Partial<ObjectSelection>): ObjectSelection => {
+  const { picture: _picture, ...rest } = selection(patch);
+  void _picture;
+  return { ...rest, kind: "shape" };
+};
 const panel = (object: ObjectSelection, extra: Partial<DocumentPanelState> = {}) => {
   const onObjectEdit = vi.fn();
   const state: DocumentPanelState = { info, status: "ready", pageCount: 1, page: 0, caret: null, objectSelection: object,
@@ -63,5 +68,31 @@ describe("object tools in the properties panel", () => {
     panel(selection(), { pending: true });
     expect(screen.getByRole("button", { name: "Delete object" })).toBeDisabled();
     expect(screen.getByLabelText("Text wrapping")).toBeDisabled();
+  });
+
+  it("sends shape fill, line, rotation and layer edits; RHWP lines carry the color only", () => {
+    const shape = { fill: "156082", outline: "0E405A", outlineWidth: 1, rotation: 0, flipH: false, flipV: false, widthPt: 108, heightPt: 72 };
+    const onEdit = panel(shapeSelection({ shape,
+      operations: ["deselect", "fill", "outline", "rotate", "zOrder"] }));
+    fireEvent.click(screen.getByRole("button", { name: "No fill" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "fill", color: null }));
+    fireEvent.change(screen.getByLabelText("Line width (pt)"), { target: { value: "2.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply line" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "outline", color: "0E405A", width: 2.5 }));
+    fireEvent.change(screen.getByLabelText("Rotation (degrees)"), { target: { value: "45" } });
+    fireEvent.click(screen.getByLabelText("Flip vertical"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply rotation" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "rotate", degrees: 45, flipH: false, flipV: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Send to back" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "layer", front: false }));
+  });
+
+  it("omits the line width for RHWP shapes", () => {
+    const shape = { fill: null, outline: "000000", outlineWidth: 0.12, rotation: 0, flipH: false, flipV: false, widthPt: 108, heightPt: 72 };
+    const onEdit = panel(shapeSelection({ shape, address: { engine: "rhwp", path: [0, 0, 1] },
+      operations: ["deselect", "outline"] }));
+    expect(screen.queryByLabelText("Line width (pt)")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Apply line" }));
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "outline", color: "000000" }));
   });
 });

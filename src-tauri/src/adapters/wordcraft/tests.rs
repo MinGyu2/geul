@@ -5553,7 +5553,7 @@ fn stage3_object_edit_moves_resizes_deletes_with_t009_and_history() {
     let (pos, epoch, view) = key(&mut model);
     assert_eq!(
         view["operations"],
-        json!(["move", "resize", "delete", "crop", "wrap", "altText"])
+        json!(["move", "resize", "delete", "crop", "wrap", "altText", "rotate", "zOrder"])
     );
 
     // Invalid sizes never reach the engine.
@@ -5783,7 +5783,7 @@ fn stage3_docx_picture_crop_wrap_alt_text_position_roundtrip() {
     let (_, _, view) = state(&mut model);
     assert_eq!(
         view["operations"],
-        json!(["move", "resize", "delete", "crop", "wrap", "altText"])
+        json!(["move", "resize", "delete", "crop", "wrap", "altText", "rotate", "zOrder"])
     );
     let apply = |model: &mut DocxModel, edit: ObjectEdit| {
         let (position, epoch, _) = state(model);
@@ -5954,4 +5954,343 @@ fn stage3_docx_picture_crop_wrap_alt_text_position_roundtrip() {
     );
     assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
     assert_eq!(model.export().unwrap(), edited);
+}
+
+#[test]
+fn stage3_docx_shape_fill_outline_rotation_layer_roundtrip() {
+    use super::engine::{BasicShape, ObjectEdit};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::para::Wrap;
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{InlineObject, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let original = fixture();
+    let mut model = DocxModel::open(&original).unwrap();
+    assert_eq!(
+        model
+            .apply(&[
+                mv(MoveTarget::DocEnd, false),
+                DocxOp::Shape {
+                    kind: BasicShape::Ellipse
+                }
+            ])
+            .changed,
+        1
+    );
+    let inserted = model.export().unwrap();
+    let mut session = Session::new(io::open_bytes("fixture.docx", &inserted).unwrap());
+    let layout = session.layout();
+    let pos = session
+        .doc
+        .para_paths(StoryRef::Body)
+        .into_iter()
+        .find_map(|path| {
+            let para = session.doc.para(StoryRef::Body, &path)?;
+            para.object_offsets()
+                .first()
+                .map(|&off| wordcraft_engine::doc::Pos {
+                    story: StoryRef::Body,
+                    path: path.clone(),
+                    off,
+                })
+        })
+        .unwrap();
+    let hit = layout.object(&pos, 0).unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let state = |model: &mut DocxModel| {
+        let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+            v,
+        )
+    };
+    let (_, _, view) = state(&mut model);
+    assert_eq!(
+        view["operations"],
+        json!([
+            "move", "resize", "delete", "wrap", "altText", "fill", "outline", "rotate", "zOrder"
+        ])
+    );
+    assert_eq!(view["shape"]["fill"], "156082");
+    let apply = |model: &mut DocxModel, edit: ObjectEdit| {
+        let (position, epoch, _) = state(model);
+        model.apply(&[DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit,
+        }])
+    };
+    let (position, epoch, _) = state(&mut model);
+    for bad in [
+        ObjectEdit::Fill {
+            color: Some("12345".into()),
+        },
+        ObjectEdit::Fill {
+            color: Some("GG0000".into()),
+        },
+        ObjectEdit::Outline {
+            color: None,
+            width: Some(73.0),
+        },
+        ObjectEdit::Rotate {
+            degrees: f32::INFINITY,
+            flip_h: false,
+            flip_v: false,
+        },
+    ] {
+        assert!(!validate(&[DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: bad
+        }]));
+    }
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Fill {
+                color: Some("FF8800".into())
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Outline {
+                color: Some("003366".into()),
+                width: Some(2.33)
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(
+            &mut model,
+            ObjectEdit::Rotate {
+                degrees: 33.3333,
+                flip_h: true,
+                flip_v: false
+            }
+        )
+        .changed,
+        1
+    );
+    assert_eq!(
+        apply(&mut model, ObjectEdit::Layer { front: false }).changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert_eq!(view["shape"]["fill"], "FF8800");
+    assert_eq!(view["shape"]["outline"], "003366");
+    assert_eq!(view["shape"]["flipH"], true);
+    let edited = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &edited,
+        None,
+        model.same_as(&edited)
+    )
+    .is_safe());
+    let reopened = io::open_bytes("fixture.docx", &edited).unwrap();
+    let shape = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .find_map(|o| match o {
+            InlineObject::Shape {
+                fill,
+                stroke,
+                stroke_width,
+                float,
+                ..
+            } => Some((*fill, *stroke, *stroke_width, float.clone())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(shape.0, Some(Rgb(0xFF, 0x88, 0x00)));
+    assert_eq!(shape.1, Some(Rgb(0x00, 0x33, 0x66)));
+    assert!((shape.2 - 2.33).abs() < 0.001);
+    assert!((shape.3.rot - 33.3333).abs() < 0.001 && shape.3.flip_h && !shape.3.flip_v);
+    assert_eq!(shape.3.wrap, Wrap::BehindText);
+    // Fill removal and front layer, then four undos back to the inserted shape.
+    assert_eq!(
+        apply(&mut model, ObjectEdit::Fill { color: None }).changed,
+        1
+    );
+    let (_, _, view) = state(&mut model);
+    assert!(view["shape"]["fill"].is_null());
+    assert_eq!(
+        apply(&mut model, ObjectEdit::Layer { front: true }).changed,
+        1
+    );
+    let bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &bytes,
+        None,
+        model.same_as(&bytes)
+    )
+    .is_safe());
+    assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
+    assert_eq!(model.export().unwrap(), edited);
+    assert_eq!(
+        model
+            .apply(&[
+                DocxOp::Undo {},
+                DocxOp::Undo {},
+                DocxOp::Undo {},
+                DocxOp::Undo {}
+            ])
+            .changed,
+        4
+    );
+    assert_eq!(model.export().unwrap(), inserted);
+}
+
+#[test]
+fn stage3_docx_picture_in_table_cell_admits_only_in_place_edits() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::InlineObject;
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run("insert.table", &json!({"rows": 1, "cols": 2}))
+        .unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(2, 2, [9, 9, 9])}),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({"width": 50, "height": 25}))
+        .unwrap();
+    let original = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut model = DocxModel::open(&original).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let hit = reader
+        .layout()
+        .find_object(0, |o| o.rect.w == 50.0)
+        .unwrap();
+    assert!(
+        hit.pos().path.0.len() > 1,
+        "picture is inside the table cell"
+    );
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 25.0,
+        y: hit.rect.y + 12.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+    assert_eq!(
+        v["operations"],
+        json!(["resize", "delete", "crop", "altText"])
+    );
+    let (position, epoch) = (
+        v["position"].as_str().unwrap().to_owned(),
+        v["epoch"].as_u64().unwrap(),
+    );
+    let baseline = model.export().unwrap();
+    for edit in [
+        ObjectEdit::Nudge { dx: 1.0, dy: 0.0 },
+        ObjectEdit::Bounds {
+            x: Some(10.0),
+            y: Some(10.0),
+            width: None,
+            height: None,
+        },
+    ] {
+        assert_eq!(
+            model
+                .apply(&[DocxOp::ObjectEdit {
+                    position: position.clone(),
+                    epoch,
+                    edit
+                }])
+                .rejected,
+            vec![0]
+        );
+    }
+    assert_eq!(model.export().unwrap(), baseline);
+    let resized = model.apply(&[DocxOp::ObjectEdit {
+        position,
+        epoch,
+        edit: ObjectEdit::Bounds {
+            x: None,
+            y: None,
+            width: Some(80.0),
+            height: Some(40.0),
+        },
+    }]);
+    assert_eq!(resized.changed, 1);
+    let bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &bytes,
+        None,
+        model.same_as(&bytes)
+    )
+    .is_safe());
+    let reopened = io::open_bytes("fixture.docx", &bytes).unwrap();
+    let mut found = Vec::new();
+    for path in reopened.para_paths(wordcraft_engine::doc::StoryRef::Body) {
+        let para = reopened
+            .para(wordcraft_engine::doc::StoryRef::Body, &path)
+            .unwrap();
+        for o in &para.objects {
+            if let InlineObject::Image { w, h, .. } = o {
+                found.push((path.0.len(), *w, *h));
+            }
+        }
+    }
+    assert_eq!(found.len(), 1);
+    assert!(
+        found[0].0 > 1 && found[0].1 == 80.0 && found[0].2 == 40.0,
+        "{found:?}"
+    );
+    // Deleting it removes the picture and its now-unused media (table media proof).
+    let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+    let deleted = model.apply(&[DocxOp::ObjectEdit {
+        position: v["position"].as_str().unwrap().to_owned(),
+        epoch: v["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Delete {},
+    }]);
+    assert_eq!(deleted.changed, 1);
+    let bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &bytes,
+        None,
+        model.same_as(&bytes)
+    )
+    .is_safe());
+    assert!(io::open_bytes("fixture.docx", &bytes)
+        .unwrap()
+        .media
+        .is_empty());
 }

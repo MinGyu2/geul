@@ -480,6 +480,31 @@ pub enum ObjectEdit {
     Position {
         preset: PositionPreset,
     },
+    /// Shape fill `RRGGBB`, or `None` for no fill.
+    Fill {
+        color: Option<String>,
+    },
+    /// Shape outline `RRGGBB` (`None`: no line) and width in points.
+    Outline {
+        color: Option<String>,
+        width: Option<f32>,
+    },
+    /// Exact clockwise rotation in degrees (normalised to 0–360) and flips.
+    Rotate {
+        degrees: f32,
+        flip_h: bool,
+        flip_v: bool,
+    },
+    /// Layer: in front of the text or behind it.
+    Layer {
+        front: bool,
+    },
+}
+
+fn valid_rgb(color: &Option<String>) -> bool {
+    color
+        .as_ref()
+        .is_none_or(|c| c.len() == 6 && c.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -555,6 +580,12 @@ impl ObjectEdit {
                 .iter()
                 .all(|v| v.is_finite() && (0.0..=MAX_CROP_FRACTION).contains(*v)),
             Self::Wrap { .. } | Self::Position { .. } => true,
+            Self::Fill { color } => valid_rgb(color),
+            Self::Outline { color, width } => {
+                valid_rgb(color) && width.is_none_or(|w| w.is_finite() && (0.0..=72.0).contains(&w))
+            }
+            Self::Rotate { degrees, .. } => degrees.is_finite() && degrees.abs() <= 3600.0,
+            Self::Layer { .. } => true,
             Self::AltText { text } => {
                 text.chars().count() <= MAX_ALT_TEXT_CHARS
                     // XML attribute values normalise line breaks: a newline would not reopen as written.
@@ -571,6 +602,10 @@ impl ObjectEdit {
             Self::Crop { .. } => "crop",
             Self::Wrap { .. } => "wrap",
             Self::AltText { .. } => "altText",
+            Self::Fill { .. } => "fill",
+            Self::Outline { .. } => "outline",
+            Self::Rotate { .. } => "rotate",
+            Self::Layer { .. } => "zOrder",
         }
     }
 }
@@ -807,6 +842,21 @@ pub struct ObjectView {
     /// Mutations this object admits now (Stage 3): `move`, `resize`, `delete`. Each is still
     /// re-validated and T009-checked when applied.
     operations: Vec<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shape: Option<ShapeView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShapeView {
+    fill: Option<String>,
+    outline: Option<String>,
+    outline_width: f32,
+    rotation: f32,
+    flip_h: bool,
+    flip_v: bool,
+    width_pt: f32,
+    height_pt: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -1958,6 +2008,13 @@ impl DocxModel {
             ops.push("wrap");
         }
         ops.push("altText");
+        if matches!(self.object_kind(pos), Some("shape" | "textBox")) {
+            ops.extend(["fill", "outline"]);
+        }
+        // Rotation and layer change the frame/wrap: the same placement rules as moving.
+        if relocatable && pos.path.0.len() == 1 && !matches!(self.object_kind(pos), Some("group")) {
+            ops.extend(["rotate", "zOrder"]);
+        }
         ops
     }
 
@@ -2004,6 +2061,15 @@ impl DocxModel {
             {
                 float.v_rel = wordcraft_engine::doc::para::Anchor::Paragraph;
             }
+        }
+        if let Some(float) = object.float_mut() {
+            // `a:xfrm/@rot` stores 60000ths of a degree.
+            let rot = ((f64::from(float.rot.rem_euclid(360.0)) * 60_000.0).round() as i64)
+                .rem_euclid(21_600_000);
+            float.rot = rot as f32 / 60_000.0;
+        }
+        if let InlineObject::Shape { stroke_width, .. } = object {
+            *stroke_width = snap(stroke_width.clamp(0.0, 100.0));
         }
         // `a:srcRect` stores 1/100000 of each side.
         if let InlineObject::Image { crop, .. } = object {
@@ -2101,6 +2167,39 @@ impl DocxModel {
                 ),
                 ObjectEdit::Position { preset } => (
                     model.run("arrange.position", json!({"preset": preset.name()}))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::Fill { color } => (
+                    model.run("shape.fill", json!({ "color": color }))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::Outline { color, width } => {
+                    let mut params = json!({ "color": color });
+                    if let Some(width) = width {
+                        params["width"] = json!(width);
+                    }
+                    (model.run("shape.outline", params)?, Some(pos.clone()))
+                }
+                ObjectEdit::Rotate {
+                    degrees,
+                    flip_h,
+                    flip_v,
+                } => (
+                    model.run(
+                        "arrange.rotation",
+                        json!({"degrees": degrees, "flipH": flip_h, "flipV": flip_v}),
+                    )?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::Layer { front } => (
+                    model.run(
+                        if *front {
+                            "arrange.bringForward"
+                        } else {
+                            "arrange.sendBackward"
+                        },
+                        json!({}),
+                    )?,
                     Some(pos.clone()),
                 ),
             };
@@ -2204,6 +2303,27 @@ impl DocxModel {
                 graphic: self.graphic_properties(pos),
                 clipboard_shape: self.clipboard_shape(pos),
                 operations: self.object_operations(pos),
+                shape: match self.object_at(pos)? {
+                    InlineObject::Shape {
+                        fill,
+                        stroke,
+                        stroke_width,
+                        float,
+                        w,
+                        h,
+                        ..
+                    } => Some(ShapeView {
+                        fill: fill.map(|c| c.hex()),
+                        outline: stroke.map(|c| c.hex()),
+                        outline_width: *stroke_width,
+                        rotation: float.rot,
+                        flip_h: float.flip_h,
+                        flip_v: float.flip_v,
+                        width_pt: *w,
+                        height_pt: *h,
+                    }),
+                    _ => None,
+                },
             })
         });
         if object.is_none() {

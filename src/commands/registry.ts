@@ -120,8 +120,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },
   "edit.cut": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+X"], scope: "document" },
   "edit.paste": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+V"], scope: "document" },
-  "insert.shape": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
-  "insert.textBox": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  // Stage 3 P3: RHWP inserts HWPX body drawings; HWP stays unavailable through the session (BodyText proof).
+  "insert.shape": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  "insert.textBox": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "textBox.exit": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "picture.size": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
   "object.deselect": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },

@@ -815,5 +815,16 @@
   "properties.object.position.middleRight": "Middle right",
   "properties.object.position.bottomLeft": "Bottom left",
   "properties.object.position.bottomCenter": "Bottom center",
-  "properties.object.position.bottomRight": "Bottom right"
+  "properties.object.position.bottomRight": "Bottom right",
+  "properties.shape.fill": "Fill color",
+  "properties.shape.noFill": "No fill",
+  "properties.shape.outline": "Line color",
+  "properties.shape.outlineWidth": "Line width (pt)",
+  "properties.shape.outlineApply": "Apply line",
+  "properties.shape.rotation": "Rotation (degrees)",
+  "properties.shape.flipH": "Flip horizontal",
+  "properties.shape.flipV": "Flip vertical",
+  "properties.shape.rotationApply": "Apply rotation",
+  "properties.shape.front": "Bring to front",
+  "properties.shape.back": "Send to back"
 }

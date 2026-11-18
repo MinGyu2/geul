@@ -1128,3 +1128,17 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   RHWP JSON 읽기가 이스케이프를 해석하지 않아 설명의 `"`·`\`를 거부한다. 위치 프리셋은 미지원.
 - 속성 창: 엔진 값으로 채운 크기·자르기·배치·설명·위치·삭제 도구. 편집 대기·조합 중에는 비활성. 적용 뒤 새 선택 번호의
   엔진 값으로 다시 그린다.
+
+### P3 도형·글상자 (2026-11-19)
+
+추가 `edit`: `{kind:"fill", color|null}`, `{kind:"outline", color|null, width?}`(pt ≤72), `{kind:"rotate", degrees, flipH, flipV}`,
+`{kind:"layer", front}`. 연산 이름 `fill`·`outline`·`rotate`·`zOrder`. `ObjectSelection.shape`가 엔진 값(채우기·선·굵기·회전·대칭·크기)을 싣는다.
+
+- WordCraft: 본문 도형·글상자에 `shape.fill`·`shape.outline`, 이동 가능 개체에 `arrange.rotation`·`arrange.bringForward/sendBackward`
+  (Word처럼 글 앞/뒤 배치). 회전은 1/60000도, 선 굵기는 EMU로 맞춘다. 그룹은 회전·앞뒤 미제공.
+- RHWP(HWPX): `objectHit`의 `bodyShape` 주소로 `getShapeProperties`를 읽어 선택한다(글상자는 `textBox`). 이동(왼쪽/위 기준 떠 있는
+  도형)·크기·삭제·배치·채우기(단색/없음, 그라데이션·그림 채우기는 편집 안 함)·선 색·회전(정수 도)·대칭·`changeShapeZOrder`.
+  각 편집 뒤 편집하지 않은 필드 14개가 그대로인지 다시 읽는다. 선 굵기 단위와 "선 없음"은 증명하지 않아 거부한다.
+- `insert.shape`·`insert.textBox`(RHWP 지원으로 변경): HWPX 본문 커서(셀·선택 없음)에서 `createShapeControl`(108×72pt, 도형은
+  떠 있는 어울림, 글상자는 글자처럼). 생성 뒤 같은 문단의 새 컨트롤을 다시 읽어 확인한다. HWP는 세션이 제공하지 않는다.
+- 모드: 문서 텍스트·개체 선택·(DOCX만) 글상자 내부 편집. 개체 선택 중 입력은 거부되고, 프레임 끌기는 글자에 닿지 않는다.

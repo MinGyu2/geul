@@ -1,6 +1,6 @@
 import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
-import { MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset } from "../../commands/objectSelection";
+import { MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
@@ -127,8 +127,70 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
           </select>
         </label>
       )}
+      {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
+        outlineWidth={selection.address.engine === "wordcraft"} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
         onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
+    </div>
+  );
+}
+
+function ShapeFields({ shape, disabled, can, outlineWidth, onEdit }: {
+  shape: ShapeProperties;
+  disabled: boolean;
+  can: (op: ObjectSelection["operations"][number]) => boolean;
+  /** Whether this engine's line width mapping is proven (RHWP edits the color only). */
+  outlineWidth: boolean;
+  onEdit: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const [outline, setOutline] = useState(`#${shape.outline ?? "000000"}`);
+  const [width, setWidth] = useState(String(shape.outlineWidth));
+  const [rotation, setRotation] = useState(String(shape.rotation));
+  const [flipH, setFlipH] = useState(shape.flipH);
+  const [flipV, setFlipV] = useState(shape.flipV);
+  const hex = (value: string) => value.replace(/^#/, "").toUpperCase();
+  const widthValue = Number(width), rotationValue = Number(rotation);
+  const widthValid = !outlineWidth || (width.trim() !== "" && Number.isFinite(widthValue) && widthValue >= 0 && widthValue <= 72);
+  const rotationValid = rotation.trim() !== "" && Number.isFinite(rotationValue) && Math.abs(rotationValue) <= 3600;
+  return (
+    <div className="shape-tools">
+      {can("fill") && <>
+        <label className="picture-size-field">{t("properties.shape.fill")}
+          <input type="color" value={`#${shape.fill ?? "FFFFFF"}`} disabled={disabled}
+            onChange={event => onEdit({ kind: "fill", color: hex(event.target.value) })} />
+        </label>
+        <button type="button" className="document-bar__button" disabled={disabled || shape.fill === null}
+          onClick={() => onEdit({ kind: "fill", color: null })}>{t("properties.shape.noFill")}</button>
+      </>}
+      {can("outline") && <form onSubmit={event => {
+        event.preventDefault();
+        if (disabled || !widthValid) return;
+        onEdit(outlineWidth ? { kind: "outline", color: hex(outline), width: widthValue } : { kind: "outline", color: hex(outline) });
+      }}>
+        <label className="picture-size-field">{t("properties.shape.outline")}
+          <input type="color" value={outline} disabled={disabled} onChange={event => setOutline(event.target.value)} />
+        </label>
+        {outlineWidth && <label className="picture-size-field">{t("properties.shape.outlineWidth")}
+          <input type="number" min={0} max={72} step={0.25} value={width} disabled={disabled} onChange={event => setWidth(event.target.value)} />
+        </label>}
+        <button type="submit" className="document-bar__button" disabled={disabled || !widthValid}>{t("properties.shape.outlineApply")}</button>
+      </form>}
+      {can("rotate") && <form onSubmit={event => {
+        event.preventDefault();
+        if (!disabled && rotationValid) onEdit({ kind: "rotate", degrees: rotationValue, flipH, flipV });
+      }}>
+        <label className="picture-size-field">{t("properties.shape.rotation")}
+          <input type="number" min={-3600} max={3600} step={1} value={rotation} disabled={disabled} onChange={event => setRotation(event.target.value)} />
+        </label>
+        <label className="picture-size-field"><input type="checkbox" checked={flipH} disabled={disabled} onChange={event => setFlipH(event.target.checked)} />{t("properties.shape.flipH")}</label>
+        <label className="picture-size-field"><input type="checkbox" checked={flipV} disabled={disabled} onChange={event => setFlipV(event.target.checked)} />{t("properties.shape.flipV")}</label>
+        <button type="submit" className="document-bar__button" disabled={disabled || !rotationValid}>{t("properties.shape.rotationApply")}</button>
+      </form>}
+      {can("zOrder") && <>
+        <button type="button" className="document-bar__button" disabled={disabled} onClick={() => onEdit({ kind: "layer", front: true })}>{t("properties.shape.front")}</button>
+        <button type="button" className="document-bar__button" disabled={disabled} onClick={() => onEdit({ kind: "layer", front: false })}>{t("properties.shape.back")}</button>
+      </>}
     </div>
   );
 }

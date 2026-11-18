@@ -398,5 +398,8 @@ HWP 그림 변경은 BodyText 원본 gso 바이트 동일 요구로 BLOCKED, HWP
 **2026-11-19 P2 그림 편집.** `object.edit`에 crop·wrap·altText·position을 더했다. DOCX는 크기·자르기·초기화·배치·
 설명·위치 프리셋·삭제, HWPX는 크기(인라인)·이동(떠 있는 그림)·자르기·배치·설명·삭제를 속성 창과 프레임에서 제공한다.
 HWP 그림 편집은 P1과 같은 BodyText gso 증명 공백으로 BLOCKED. 네이티브 NOT RUN.
+**2026-11-19 P3 도형.** DOCX 도형·글상자의 채우기/없음·선 색·굵기·회전·대칭·앞뒤를 `object.edit`로, HWPX는 사각형·타원·선·글상자
+삽입과 기존 본문 도형의 이동·크기·삭제·채우기·선 색·회전·대칭·배치·앞뒤를 지원한다. HWPX/HWP 글상자 내부 텍스트 편집,
+HWP 도형, RHWP 중첩 개체 변경은 미구현/BLOCKED. DOCX 표 셀 그림은 제자리 편집과 삭제만.
 P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
 PARTIALLY COMPLETED 상태다.

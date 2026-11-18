@@ -8,6 +8,7 @@ interface ControlHit {
   zOrder: number;
   bodyPicture?: readonly [number, number, number];
   bodyEmbedded?: readonly [number, number, number];
+  bodyShape?: readonly [number, number, number];
 }
 
 const kinds = new Map<string, ObjectKind>([
@@ -71,6 +72,7 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
     if (body && path.length === 3 && address.every((index, i) => path[i] === index)) {
       if (kind === "picture") candidate.bodyPicture = address;
       if (kind === "embedded") candidate.bodyEmbedded = address;
+      if (kind === "shape") candidate.bodyShape = address;
     }
     if (!top || above(candidate, top)) {
       top = candidate;

@@ -1,7 +1,8 @@
-import { objectEditMatches, pictureResizeMatches, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
+import { objectEditMatches, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
 import { hitRhwpObject } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
+import { hexToBgr, inspectRhwpShape } from "./shapeProperties";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -328,7 +329,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number] } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; shapeAddress?: readonly [number, number, number] } | null = null;
   private objectEpoch = 0;
 
   get objectSelection(): ObjectSelection | null {
@@ -1685,18 +1686,29 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canMove = hwpx && !!inspected!.movable && !!this.doc.setPictureProperties;
           const canDelete = hwpx && !!this.doc.deletePictureControl;
           const canFormat = hwpx && !!this.doc.setPictureProperties && inspected!.plain;
-          const operations = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
+          const operations: MutatingObjectOperation[] = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
             ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
+          // Stage 3 P3: HWPX body shapes and text boxes (outer object).
+          const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
+          const shape = shapeAddress && this.history && this.sessions.get(this.sessionId)?.format === "hwpx" && this.doc.setShapeProperties
+            ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
+          if (shape) {
+            operations.push(...(shape.movable ? ["move" as const] : []), "resize",
+              ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
+              ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate", ...(this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
+          }
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
+            ...(shape && shapeAddress ? { shapeAddress } : {}),
             selection: {
-              kind: graphic?.kind ?? hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
+              kind: graphic?.kind ?? (shape?.textBox ? "textBox" : hit.kind), frame: hit.frame, address: { engine: "rhwp", path: hit.path },
               epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
               revision: this.committed + this.pending, editable: operations.length > 0,
               operations: ["deselect", ...operations],
               ...(inspected ? { picture: inspected.properties } : {}),
               ...(graphic ? { graphic } : {}),
+              ...(shape ? { shape: shape.properties } : {}),
             },
           };
           this.emit();
@@ -3126,6 +3138,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       } catch { /* unavailable if the engine cannot report paragraph state */ }
     }
     for (const op of TABLE_STRUCTURE_OPS) if (this.tableOpState(op) === null) actions[`table.${op}`] = {};
+    if (this.canInsertShape()) actions["insert.textBox"] = {};
     this.coreActionCache = { key, value: actions };
     return actions;
   }
@@ -3802,6 +3815,33 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     finally { this.imageSelecting = false; if (this.owns(epoch)) this.emit(); }
   }
 
+  /** Stage 3 P3: HWPX drawing insertion at a collapsed body caret (not in a cell, header or note). */
+  private canInsertShape(): boolean {
+    return this.sessions.get(this.sessionId)?.format === "hwpx" && !!this.doc?.createShapeControl && !!this.doc.getShapeProperties
+      && !!this.history && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && !this.caret.cell
+      && this.caret.paragraph < this.doc.getParagraphCount(this.caret.section)
+      && this.pending === 0 && this.committingEpoch !== this.epoch && !this.objectSelection;
+  }
+
+  private insertShape(shapeType: "rectangle" | "ellipse" | "line" | "textbox"): boolean {
+    const doc = this.doc;
+    if (!this.canInsertShape() || !doc) return false;
+    const at = this.caret;
+    const before = doc.getParagraphCount(at.section);
+    return this.mutate(() => {
+      const textBox = shapeType === "textbox";
+      const result = JSON.parse(doc.createShapeControl!(JSON.stringify({
+        sectionIdx: at.section, paraIdx: at.paragraph, charOffset: at.offset, shapeType,
+        width: 10800, height: shapeType === "line" ? 100 : 7200, treatAsChar: textBox, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      }))) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown };
+      if (result.ok !== true || result.paraIdx !== at.paragraph || !Number.isSafeInteger(result.controlIdx)
+        || doc.getParagraphCount(at.section) !== before) throw new Error("shape creation not verified");
+      const created = inspectRhwpShape(doc, [at.section, at.paragraph, result.controlIdx as number]);
+      if (!created || created.raw.width !== 10800 || created.textBox !== textBox) throw new Error("created shape not verified");
+      return { caret: at, anchor: at };
+    }, true, "other", null, true, true);
+  }
+
   private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
     const format = this.sessions.get(this.sessionId)?.format;
     const key = [
@@ -3818,6 +3858,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
     else parameterReasons["insert.table"] = format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties) ? "engineUnsupported"
       : !structural ? this.structuralBlock()! : this.pending > 0 ? "pendingEdits" : "caretRequired";
+    if (this.canInsertShape()) parameters["insert.shape"] = {};
+    else parameterReasons["insert.shape"] = format !== "hwpx" || !this.doc?.createShapeControl ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
@@ -4114,6 +4156,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /** Stage 3 `object.edit` on the selected HWPX body picture: one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
+    if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
       || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
@@ -4160,7 +4203,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (JSON.stringify(amounts) === JSON.stringify(before.cropAmounts)) return false;
       apply = set({ cropLeft, cropTop, cropRight, cropBottom }, after => same(after, ["size", "description", "wrap"])
         && JSON.stringify(after!.cropAmounts) === JSON.stringify(amounts));
-    } else if (edit.kind === "position") {
+    } else if (edit.kind === "position" || edit.kind === "fill" || edit.kind === "outline" || edit.kind === "rotate" || edit.kind === "layer") {
       return false;
     } else {
       // Move: frame units → HWPUNIT through the same layout sample as the stored size.
@@ -4183,6 +4226,112 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // A caret in the edited paragraph may sit after the removed control: return it to the paragraph start.
     const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
       ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const accepted = this.mutate(() => {
+      apply();
+      return { caret: owned(caret), anchor: owned(anchor) };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  /** Stage 3 P3 `object.edit` on the selected HWPX body shape/text box (outer object). */
+  private editShape(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
+    const doc = this.doc, selected = this.objectSelection;
+    if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history
+      || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+    const before = inspectRhwpShape(doc, address);
+    if (!before || !selected.shape || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
+    const { edit } = request;
+    type Raw = typeof before.raw;
+    // Fields that must stay exactly as they were for each edit (the edited ones are checked separately).
+    const unchanged = (after: Raw, keep: readonly (keyof Raw)[]) => keep.every(key => after[key] === before.raw[key]);
+    const all: (keyof Raw)[] = ["width", "height", "horzOffset", "vertOffset", "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "fillType", "fillBgColor", "treatAsChar", "textWrap", "description"];
+    const except = (...keys: (keyof Raw)[]) => all.filter(key => !keys.includes(key));
+    let props: Record<string, unknown>, expect: Partial<Raw>, keep: (keyof Raw)[];
+    let operation: (() => void) | null = null;
+    switch (edit.kind) {
+      case "delete":
+        if (!doc.deleteShapeControl) return false;
+        operation = () => {
+          const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
+          if (result.ok !== true) throw new Error("shape deletion refused");
+        };
+        props = {}; expect = {}; keep = [];
+        break;
+      case "bounds": {
+        if (edit.x !== undefined) {
+          if (!before.movable || edit.width !== undefined || edit.height !== undefined || selected.frame.width <= 0) return false;
+          const perFrame = before.raw.width / selected.frame.width;
+          const horzOffset = before.raw.horzOffset + Math.round((edit.x - selected.frame.x) * perFrame);
+          const vertOffset = before.raw.vertOffset + Math.round((edit.y! - selected.frame.y) * perFrame);
+          props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
+        } else {
+          if (edit.width === undefined || edit.height === undefined) return false;
+          const width = Math.round(edit.width * 100), height = Math.round(edit.height * 100);
+          props = { width, height }; expect = { width, height }; keep = except("width", "height");
+        }
+        break;
+      }
+      case "nudge": {
+        if (!before.movable) return false;
+        const horzOffset = before.raw.horzOffset + Math.round(edit.dx * 100), vertOffset = before.raw.vertOffset + Math.round(edit.dy * 100);
+        props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
+        break;
+      }
+      case "fill":
+        if (!before.fillEditable) return false;
+        props = edit.color === null ? { fillType: "none" } : { fillType: "solid", fillBgColor: hexToBgr(edit.color) };
+        expect = edit.color === null ? { fillType: "none" } : { fillType: "solid", fillBgColor: hexToBgr(edit.color) };
+        keep = except("fillType", "fillBgColor");
+        break;
+      case "outline":
+        // Line width units and "no line" are not part of this proven mapping: color only.
+        if (edit.color === null || edit.width !== undefined) return false;
+        props = { borderColor: hexToBgr(edit.color) }; expect = { borderColor: hexToBgr(edit.color) }; keep = except("borderColor");
+        break;
+      case "rotate": {
+        const degrees = Math.round(((edit.degrees % 360) + 360) % 360);
+        props = { rotationAngle: degrees, horzFlip: edit.flipH, vertFlip: edit.flipV };
+        expect = { rotationAngle: degrees, horzFlip: edit.flipH, vertFlip: edit.flipV };
+        keep = except("rotationAngle", "horzFlip", "vertFlip", "width", "height", "horzOffset", "vertOffset");
+        break;
+      }
+      case "wrap":
+        props = edit.wrap === "inline" ? { treatAsChar: true } : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
+        expect = edit.wrap === "inline" ? { treatAsChar: true } : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
+        keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
+        break;
+      case "layer":
+        if (!doc.changeShapeZOrder) return false;
+        operation = () => {
+          const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean };
+          if (result.ok !== true) throw new Error("z-order refused");
+          const after = inspectRhwpShape(doc, address);
+          if (!after || !unchanged(after.raw, all)) throw new Error("z-order changed other fields");
+        };
+        props = {}; expect = {}; keep = [];
+        break;
+      default:
+        return false;
+    }
+    if (!operation) {
+      if (Object.entries(expect).every(([key, value]) => before.raw[key as keyof Raw] === value)) return false;
+      operation = () => {
+        const result = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
+        const after = inspectRhwpShape(doc, address);
+        if (result.ok !== true || !after || !unchanged(after.raw, keep)
+          || !Object.entries(expect).every(([key, value]) => after.raw[key as keyof Raw] === value)) throw new Error("shape property did not verify");
+      };
+    }
+    const savedSelection = this.selectedObject;
+    this.selectedObject = null;
+    const caret = this.caret, anchor = this.anchor;
+    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
+      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const apply = operation;
     const accepted = this.mutate(() => {
       apply();
       return { caret: owned(caret), anchor: owned(anchor) };
@@ -4233,6 +4382,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "picture.size") return { accepted: args?.command === command && this.resizePicture(args) };
     if (command === "object.edit") return { accepted: args?.command === command && this.editObject(args) };
+    if (command === "insert.shape") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      return { accepted: this.insertShape(args.kind) };
+    }
+    if (command === "insert.textBox") return { accepted: args === undefined && this.insertShape("textbox") };
     if (command === "object.deselect") {
       if (args !== undefined) return { accepted: false };
       this.selectedObject = null;

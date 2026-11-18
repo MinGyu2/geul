@@ -42,6 +42,11 @@ export interface RhwpDocument {
   insertPicture?(section: number, paragraph: number, offset: number, cellPath: string, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
   setPictureProperties?(section: number, paragraph: number, control: number, properties: string): string;
   deletePictureControl?(section: number, paragraph: number, control: number): string;
+  getShapeProperties?(section: number, paragraph: number, control: number): string;
+  setShapeProperties?(section: number, paragraph: number, control: number, properties: string): string;
+  deleteShapeControl?(section: number, paragraph: number, control: number): string;
+  changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;
+  createShapeControl?(json: string): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;
   createTable?(section: number, paragraph: number, offset: number, rows: number, cols: number): string;
   free(): void;

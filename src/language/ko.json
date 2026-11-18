@@ -815,5 +815,16 @@
   "properties.object.position.middleRight": "오른쪽 가운데",
   "properties.object.position.bottomLeft": "왼쪽 아래",
   "properties.object.position.bottomCenter": "가운데 아래",
-  "properties.object.position.bottomRight": "오른쪽 아래"
+  "properties.object.position.bottomRight": "오른쪽 아래",
+  "properties.shape.fill": "채우기 색",
+  "properties.shape.noFill": "채우기 없음",
+  "properties.shape.outline": "선 색",
+  "properties.shape.outlineWidth": "선 굵기 (pt)",
+  "properties.shape.outlineApply": "선 적용",
+  "properties.shape.rotation": "회전 (도)",
+  "properties.shape.flipH": "좌우 대칭",
+  "properties.shape.flipV": "상하 대칭",
+  "properties.shape.rotationApply": "회전 적용",
+  "properties.shape.front": "맨 앞으로",
+  "properties.shape.back": "맨 뒤로"
 }

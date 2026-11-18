@@ -23,6 +23,18 @@ export interface PictureProperties {
   crop?: readonly [number, number, number, number];
 }
 
+/** Engine-owned outer shape formatting (colors are `RRGGBB`, `null` = none). */
+export interface ShapeProperties {
+  fill: string | null;
+  outline: string | null;
+  outlineWidth: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  widthPt: number;
+  heightPt: number;
+}
+
 export interface ObjectHit {
   kind: ObjectKind;
   address: { engine: "wordcraft"; position: string } | { engine: "rhwp"; path: readonly number[] };
@@ -30,6 +42,7 @@ export interface ObjectHit {
   epoch: number;
   picture?: PictureProperties;
   graphic?: GraphicProperties;
+  shape?: ShapeProperties;
 }
 
 export interface ObjectSelection extends ObjectHit {
@@ -40,7 +53,7 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder"] as const;
 export type MutatingObjectOperation = typeof MUTATING_OBJECT_OPERATIONS[number];
 export type ObjectOperation = "deselect" | "copy" | "cut" | MutatingObjectOperation;
 export const POSITION_PRESETS = ["topLeft", "topCenter", "topRight", "middleLeft", "middleCenter", "middleRight", "bottomLeft", "bottomCenter", "bottomRight"] as const;
@@ -56,7 +69,11 @@ export type ObjectEdit =
   | { kind: "crop"; left: number; top: number; right: number; bottom: number }
   | { kind: "wrap"; wrap: PictureWrap }
   | { kind: "altText"; text: string }
-  | { kind: "position"; preset: PositionPreset };
+  | { kind: "position"; preset: PositionPreset }
+  | { kind: "fill"; color: string | null }
+  | { kind: "outline"; color: string | null; width?: number }
+  | { kind: "rotate"; degrees: number; flipH: boolean; flipV: boolean }
+  | { kind: "layer"; front: boolean };
 
 export const OBJECT_SIDE_LIMITS = { min: 2, max: 4000 } as const;
 export const MAX_NUDGE_PT = 288;
@@ -76,6 +93,10 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "crop": return "crop";
     case "wrap": return "wrap";
     case "altText": return "altText";
+    case "fill": return "fill";
+    case "outline": return "outline";
+    case "rotate": return "rotate";
+    case "layer": return "zOrder";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -99,6 +120,13 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   if (value.kind === "delete") return keys === "kind";
   if (value.kind === "crop") return keys === "bottom,kind,left,right,top"
     && (["left", "top", "right", "bottom"] as const).every(side => finite(value[side], MAX_CROP_FRACTION) && (value[side] as number) >= 0);
+  const color = (c: unknown) => c === null || (typeof c === "string" && /^[0-9A-Fa-f]{6}$/.test(c));
+  if (value.kind === "fill") return keys === "color,kind" && color(value.color);
+  if (value.kind === "outline") return (keys === "color,kind" || keys === "color,kind,width") && color(value.color)
+    && (!("width" in value) || (finite(value.width, 72) && (value.width as number) >= 0));
+  if (value.kind === "rotate") return keys === "degrees,flipH,flipV,kind" && finite(value.degrees, 3600)
+    && typeof value.flipH === "boolean" && typeof value.flipV === "boolean";
+  if (value.kind === "layer") return keys === "front,kind" && typeof value.front === "boolean";
   if (value.kind === "wrap") return keys === "kind,wrap" && PICTURE_WRAPS.some(wrap => wrap === value.wrap);
   if (value.kind === "position") return keys === "kind,preset" && POSITION_PRESETS.some(preset => preset === value.preset);
   if (value.kind === "altText") return keys === "kind,text" && typeof value.text === "string"

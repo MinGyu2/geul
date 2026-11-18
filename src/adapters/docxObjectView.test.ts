@@ -64,7 +64,7 @@ describe("DOCX object view parsing", () => {
   it("rejects missing, unknown or duplicated object operations", () => {
     const withoutOperations = Object.fromEntries(Object.entries(object).filter(([key]) => key !== "operations"));
     expect(parseDocxView({ ...view, object: withoutOperations })).toBeNull();
-    expect(parseDocxView({ ...view, object: { ...object, operations: ["rotate"] } })).toBeNull();
+    expect(parseDocxView({ ...view, object: { ...object, operations: ["spin"] } })).toBeNull();
     expect(parseDocxView({ ...view, object: { ...object, operations: ["move", "move"] } })).toBeNull();
     expect(parseDocxView({ ...view, object: { ...object, operations: "move" } })).toBeNull();
     expect(parseDocxView({ ...view, object: { ...object, operations: [] } })?.object?.operations).toEqual([]);

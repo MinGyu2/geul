@@ -1869,3 +1869,9 @@ DOCX의 자르기·배치·설명·위치는 `word/document.xml`만 바꾸며 �
 자르기는 `a:srcRect` 비율만 바꾸고 미디어 부분은 바이트 그대로(시험에서 재열기 미디어 = 원본). HWPX 서식 출력은
 `Contents/section0.xml`만 바뀌어 `save_check` safe이고 BinData 변조는 `partChanged`로 거부된다. HWP는 P1과 같은 이유로
 BLOCKED.
+
+### Stage 3 P3 도형 보존 (2026-11-19)
+
+DOCX 도형 서식은 `word/document.xml`만 바꾸고 편집마다 `check_saved`·`same_as`를 통과한다(시험: 채우기·선·회전·대칭·뒤로·
+재열기 값, 네 번 Undo 뒤 삽입 직후 바이트와 동일). 표 셀 그림 삭제는 기존 표 미디어 증명으로 미디어까지 정리된다.
+HWPX 도형 삽입·서식·삭제 출력은 `Contents/section0.xml`만 바뀌어 `save_check` safe다. HWP 도형은 BodyText gso 증명 공백으로 BLOCKED.
