@@ -623,6 +623,18 @@ pub struct ObjectView {
     position: String,
     frame: RectView,
     epoch: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    picture: Option<PictureView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PictureView {
+    width_pt: f32,
+    height_pt: f32,
+    wrap: wordcraft_engine::doc::para::Wrap,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 }
 
 /// 편집 표면이 그리는 데 필요한 것. 문서 모델 자체는 보내지 않는다.
@@ -1570,9 +1582,13 @@ impl DocxModel {
         })
     }
 
+    fn object_at(&self, pos: &Pos) -> Option<&InlineObject> {
+        self.session.doc.para_at(pos)?.object_at(pos.off)
+    }
+
     fn object_kind(&self, pos: &Pos) -> Option<&'static str> {
         use wordcraft_engine::doc::graphic::GraphicKind;
-        match self.session.doc.para_at(pos)?.object_at(pos.off)? {
+        match self.object_at(pos)? {
             InlineObject::Image { ole: Some(_), .. } => Some("embedded"),
             InlineObject::Image { .. } => Some("picture"),
             InlineObject::Shape { story: Some(_), .. } => Some("textBox"),
@@ -1596,11 +1612,25 @@ impl DocxModel {
             let hit = layout.object(pos, *page)?;
             let kind = self.object_kind(pos)?;
             let bounds = hit.bounds();
+            let picture = match self.object_at(pos)? {
+                InlineObject::Image { ole: None, w, h, alt, float, .. }
+                    if [*w, *h].iter().all(|side| side.is_finite() && *side > 0.0) =>
+                {
+                    Some(PictureView {
+                        width_pt: *w,
+                        height_pt: *h,
+                        wrap: float.wrap,
+                        description: (alt.len() <= 4096).then(|| alt.clone()),
+                    })
+                }
+                _ => None,
+            };
             Some(ObjectView {
                 kind,
                 position: position_key(pos),
                 frame: RectView { page: hit.page, x: bounds.x, y: bounds.y, width: bounds.w, height: bounds.h },
                 epoch: self.object_epoch,
+                picture,
             })
         });
         if object.is_none() {

@@ -31,6 +31,27 @@ describe("RHWP object hit testing", () => {
     expect(hitRhwpObject(layout(control({ type: "group" })), 0, 25, 40)?.kind).toBe("group");
   });
 
+  it("exposes a body-picture address only when the engine path proves body ownership", () => {
+    const body = control({ stableIndex: [0, 2, 3] });
+    expect(hitRhwpObject(layout(body), 4, 25, 40)?.bodyPicture).toEqual([0, 2, 3]);
+
+    // A two-entry hit path is still a usable selection identity, but cannot be
+    // promoted to the body-only getter address.
+    expect(hitRhwpObject(layout(control()), 4, 25, 40)?.bodyPicture).toBeUndefined();
+    for (const ownership of [
+      { headerFooter: true },
+      { noteRef: 1 },
+      { cellPath: [0, 1] },
+      { cellIdx: 0 },
+      { outerTableControlIdx: 8 },
+    ]) {
+      const hit = hitRhwpObject(layout(control({ stableIndex: [0, 2, 3], ...ownership })), 4, 25, 40);
+      expect(hit?.kind).toBe("picture");
+      expect(hit?.path).toEqual([0, 2, 3]);
+      expect(hit?.bodyPicture).toBeUndefined();
+    }
+  });
+
   it("selects the visually topmost control by plane, z-order, then engine path", () => {
     const back = control({ stableIndex: [0], plane: 0, zOrder: 9 });
     const front = control({ type: "shape", stableIndex: [1], plane: 1, zOrder: 0 });

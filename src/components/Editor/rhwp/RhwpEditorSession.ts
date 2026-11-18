@@ -1,5 +1,6 @@
-import type { ObjectSelection } from "../../../commands/objectSelection";
+import { pictureResizeMatches, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
 import { hitRhwpObject } from "./objectHit";
+import { inspectRhwpPicture } from "./pictureProperties";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -325,7 +326,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number] } | null = null;
   private objectEpoch = 0;
 
   get objectSelection(): ObjectSelection | null {
@@ -1659,12 +1660,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (hit) {
           this.clipboardVersion += 1;
           this.history?.boundary();
+          const address = hit.bodyPicture;
+          const body = address && address[1] < this.doc.getParagraphCount(address[0]);
+          const inspected = body ? inspectRhwpPicture(this.doc, address) : undefined;
+          const canResize = inspected?.simpleInline && this.doc.setPictureProperties && this.history
+            && this.sessions.get(this.sessionId)?.format === "hwpx";
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
+            ...(canResize && address ? { pictureAddress: address } : {}),
             selection: {
               kind: hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
               epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
-              revision: this.committed + this.pending, editable: false, operations: ["deselect"],
+              revision: this.committed + this.pending, editable: Boolean(canResize),
+              operations: canResize ? ["deselect", "resize"] : ["deselect"],
+              ...(inspected ? { picture: inspected.properties } : {}),
             },
           };
           this.emit();
@@ -4080,10 +4089,44 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch { return false; }
   }
 
+  private resizePicture(request: PictureResizeRequest): boolean {
+    const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
+    if (!selected || !pictureResizeMatches(request, selected) || !address || !doc?.setPictureProperties
+      || !this.history || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+    const page = this.pages[selected.frame.page], previous = selected.picture;
+    if (!page || !previous || ![request.widthPt, request.heightPt].every(side =>
+      typeof side === "number" && Number.isFinite(side) && side >= 2 && side <= 4000)) return false;
+    const width = Math.round(request.widthPt * 100), height = Math.round(request.heightPt * 100);
+    // The frame and the stored dimensions belong to the same engine layout
+    // sample. Using their ratio avoids treating CSS pixels as HWPUNIT.
+    if (width * selected.frame.width / (previous.widthPt * 100) > page.width
+      || height * selected.frame.height / (previous.heightPt * 100) > page.height
+      || (width === Math.round(previous.widthPt * 100) && height === Math.round(previous.heightPt * 100))) return false;
+    const before = inspectRhwpPicture(doc, address);
+    if (!before?.simpleInline || before.properties.widthPt !== previous.widthPt || before.properties.heightPt !== previous.heightPt) return false;
+    const savedSelection = this.selectedObject;
+    this.selectedObject = null;
+    const accepted = this.mutate(() => {
+      const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify({ width, height }))) as { ok?: boolean };
+      const after = inspectRhwpPicture(doc, address);
+      if (result.ok !== true || !after?.simpleInline || after.properties.widthPt !== width / 100
+        || after.properties.heightPt !== height / 100 || after.properties.description !== previous.description) {
+        throw new Error("picture dimensions did not verify");
+      }
+      return { caret: this.caret, anchor: this.anchor };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
   /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "picture.size") return { accepted: args?.command === command && this.resizePicture(args) };
     if (command === "object.deselect") {
       if (args !== undefined) return { accepted: false };
       this.selectedObject = null;

@@ -192,11 +192,14 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 기능 | DOCX | HWPX | HWP | 근거 |
 |---|---|---|---|---|
 | 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
-| 이동·크기 조정·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 제품 변경 명령 미연결. HWP 크기·삭제 후보의 본문 레코드 보존 검사 거부 |
-| 그림 서식·도형·글상자·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 편집·클립보드 수용 미완료 |
+| 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
+| 그림 크기 조정 | UNSUPPORTED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
+| 개체 이동·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 이동 계약 미검증, HWP 삭제 후보 거부 |
+| 그 밖의 그림 서식·도형·글상자·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 편집·클립보드 수용 미완료 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
-T009 저장 278 PASS / 0 FAIL / 29 ignored. 개체 편집·편집 후 독립
-재열기 및 개체 편집 Undo/Redo는 수용 근거가 없다.
+T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
+Release WASM 2 PASS, 그림 속성 WordCraft 집중 1 PASS. HWPX 크기 조정은
+Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다.
 [개체 선택 계약](architecture/command-registry.md#공통-개체-편집-stage-3-p1).
 

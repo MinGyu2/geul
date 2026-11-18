@@ -1,4 +1,4 @@
-import { OBJECT_KINDS, type ObjectHit } from "../commands/objectSelection";
+import { OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -611,6 +611,15 @@ export function parseDocxView(value: unknown): DocxView | null {
   return base && { ...base, ...stage1 };
 }
 
+function parsePictureView(raw: unknown): PictureProperties | null {
+  if (!isRecord(raw) || !hasExactly(raw, ["widthPt", "heightPt", "wrap", ...("description" in raw ? ["description"] : [])])) return null;
+  const { widthPt, heightPt, description } = raw;
+  const wrap = PICTURE_WRAPS.find(wrap => wrap === raw.wrap);
+  if (!isPositive(widthPt) || !isPositive(heightPt) || !wrap) return null;
+  if ("description" in raw && (typeof description !== "string" || description.length > 4096)) return null;
+  return { widthPt, heightPt, wrap, ...(typeof description === "string" ? { description } : {}) };
+}
+
 function parseDocxBaseView(value: unknown): DocxView | null {
   if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["object", "selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
@@ -636,13 +645,18 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: ObjectHit | undefined;
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch"])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
       || typeof raw.position !== "string" || raw.position.length > 256
       || !/^(body|part\d+):\d+(\.\d+)*:\d+$/.test(raw.position)) return null;
     object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position } };
+    if ("picture" in raw) {
+      const picture = parsePictureView(raw.picture);
+      if (kind !== "picture" || !picture) return null;
+      object.picture = picture;
+    }
     if (parsedCaret || parsedSelection.length > 0) return null;
   }
   // 커서·선택은 있는 쪽만 가리킨다.

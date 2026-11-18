@@ -8,7 +8,7 @@ export function ObjectSelectionFrame({ selection, scale }: { selection: ObjectSe
     <div className="object-selection-frame" data-object-kind={selection.kind}
       style={{ left: x * scale, top: y * scale, width: width * scale, height: height * scale }}>
       <span role="status" className="object-selection-frame__label">
-        {t("editor.object.readOnly", { kind: t(`editor.object.kind.${selection.kind}`) })}
+        {t(selection.editable ? "editor.object.selected" : "editor.object.readOnly", { kind: t(`editor.object.kind.${selection.kind}`) })}
       </span>
     </div>
   );

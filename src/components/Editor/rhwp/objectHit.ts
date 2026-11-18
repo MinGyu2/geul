@@ -6,6 +6,7 @@ interface ControlHit {
   frame: ObjectFrame;
   plane: number;
   zOrder: number;
+  bodyPicture?: readonly [number, number, number];
 }
 
 const kinds = new Map<string, ObjectKind>([
@@ -59,7 +60,11 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
     const contains = type === "line" ? lineContains(control, x, y)
       : x >= left && x < left + width && y >= topEdge && y < topEdge + height;
     if (!contains) continue;
-    const candidate = { kind, path: [...path], plane, zOrder, frame: { page, x: left, y: topEdge, width, height } };
+    const candidate: ControlHit = { kind, path: [...path], plane, zOrder, frame: { page, x: left, y: topEdge, width, height } };
+    if (kind === "picture" && path.length === 3 && path[0] === control.secIdx && path[1] === control.paraIdx
+      && path[2] === control.controlIdx && !["headerFooter", "noteRef", "cellPath", "cellIdx", "outerTableControlIdx"].some(key => key in control)) {
+      candidate.bodyPicture = [control.secIdx, control.paraIdx, control.controlIdx];
+    }
     if (!top || above(candidate, top)) {
       top = candidate;
       ambiguous = false;

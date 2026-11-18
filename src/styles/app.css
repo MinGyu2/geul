@@ -1149,3 +1149,16 @@ button {
   font-size: 12px;
   white-space: nowrap;
 }
+
+
+.picture-size-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.35rem;
+}
+
+.picture-size-field input[type="number"] {
+  width: 5.5rem;
+}

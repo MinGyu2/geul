@@ -42,6 +42,41 @@ describe("DOCX object view parsing", () => {
     });
   });
 
+  it("keeps engine picture properties separate from the displayed frame", () => {
+    expect(parseDocxView({
+      ...view,
+      object: {
+        ...object,
+        frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
+        picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명" },
+      },
+    })?.object).toEqual({
+      kind: "picture",
+      address: { engine: "wordcraft", position: "body:2.1:128" },
+      frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
+      epoch: 1,
+      picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명" },
+    });
+  });
+
+  it.each([
+    ["zero width", { widthPt: 0, heightPt: 72, wrap: "square" }],
+    ["negative height", { widthPt: 72, heightPt: -1, wrap: "square" }],
+    ["non-finite width", { widthPt: Number.POSITIVE_INFINITY, heightPt: 72, wrap: "square" }],
+    ["unknown wrap", { widthPt: 72, heightPt: 72, wrap: "around" }],
+    ["unexpected field", { widthPt: 72, heightPt: 72, wrap: "square", source: "unknown" }],
+    ["malformed description", { widthPt: 72, heightPt: 72, wrap: "square", description: 123 }],
+  ])("rejects malformed picture properties (%s)", (_name, picture) => {
+    expect(parseDocxView({ ...view, object: { ...object, picture } })).toBeNull();
+  });
+
+  it("rejects picture properties attached to a non-picture object", () => {
+    expect(parseDocxView({
+      ...view,
+      object: { ...object, kind: "shape", picture: { widthPt: 72, heightPt: 36, wrap: "inline" } },
+    })).toBeNull();
+  });
+
   it("rejects invalid engine addresses, an out-of-range page, and text selection mixed with object selection", () => {
     expect(parseDocxView({ ...view, object: { ...object, position: "body:not-a-path:1" } })).toBeNull();
     expect(parseDocxView({ ...view, object: { ...object, position: "body:0:-1" } })).toBeNull();

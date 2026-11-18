@@ -5351,12 +5351,16 @@ fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document()
     assert!(selected.caret.is_none() && selected.selection.is_empty());
     let view = serde_json::to_value(selected).unwrap();
     assert_eq!(view["object"]["kind"], "picture");
+    assert_eq!(view["object"]["picture"]["widthPt"], 30.0);
+    assert_eq!(view["object"]["picture"]["heightPt"], 20.0);
+    assert_eq!(view["object"]["picture"]["wrap"], "inline");
     let id = view["object"]["position"].clone();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
 
     assert_eq!(model.apply(&[click(&second)]).changed, 0);
     let view = serde_json::to_value(model.view()).unwrap();
     assert_ne!(view["object"]["position"], id);
+    assert_eq!(view["object"]["picture"]["widthPt"], 60.0);
     assert!(view["object"]["epoch"].as_u64().unwrap() > epoch);
     assert_eq!(model.apply(&[DocxOp::DeselectObject {}]).changed, 0);
     assert!(model.view().object.is_none());

@@ -1,3 +1,4 @@
+import type { ObjectSelection } from "../../commands/objectSelection";
 import type { SessionInfo } from "../../adapters/contract";
 import type { CharFormatFlag } from "../../commands/target";
 import type { EngineEditor } from "./documentWorkspace";
@@ -10,6 +11,7 @@ export interface DocumentPanelState {
   pageCount: number | null;
   page: number | null; // zero based
   caret: string | null;
+  objectSelection?: ObjectSelection;
   selection: "none" | "selected" | "unavailable";
   paragraphStyle: string | null;
   selectedText: string | null; // preview, at most 500 characters
@@ -42,13 +44,15 @@ export function documentPanelState(editor: EngineEditor | null, info: SessionInf
   const pages = rhwp ? editor.pages : editor.view?.pages;
   const count = pages?.length ?? 0;
   const caret = rhwp ? editor.caretRect() : editor.view?.caret;
-  const selected = rhwp ? editor.hasSelection : editor.view ? !editor.view.collapsed : null;
+  const object = snapshot.objectSelection;
+  const selected = object ? false : rhwp ? editor.hasSelection : editor.view ? !editor.view.collapsed : null;
   const format = !rhwp ? editor.view?.format : null;
   return {
     ...empty,
+    ...(object ? { objectSelection: object } : {}),
     pageCount: count > 0 ? count : null,
-    page: caret && caret.page >= 0 && caret.page < count ? caret.page : null,
-    caret: rhwp ? `${editor.caret.section}:${editor.caret.paragraph}:${editor.caret.offset}${editor.caret.cell ? ":cell" : ""}` : editor.view?.caretKey ?? null,
+    page: object ? object.frame.page : caret && caret.page >= 0 && caret.page < count ? caret.page : null,
+    caret: object ? null : rhwp ? `${editor.caret.section}:${editor.caret.paragraph}:${editor.caret.offset}${editor.caret.cell ? ":cell" : ""}` : editor.view?.caretKey ?? null,
     selection: selected === null ? "unavailable" : selected ? "selected" : "none",
     selectedText: selected && !snapshot.composing && !snapshot.pending
       ? rhwp ? editor.selectionPreview() : editor.view?.selectionText ?? null : null,
