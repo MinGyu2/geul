@@ -1,0 +1,6 @@
+tree a5fd89a7dbd668f1219ab0754c688eeae84ea58d
+parent f42cd16c06d59c1e951c2475ec824f593887650b
+author geul <geul@users.noreply.github.com> 1794990155 +0900
+committer geul <geul@users.noreply.github.com> 1794990155 +0900
+
+fix(table): bound pasteCells geometry with checked arithmetic

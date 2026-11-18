@@ -5265,3 +5265,39 @@ fn stage2_p4_stab_docx_header_clear_is_limited_to_selected_trailing_rows() {
     assert_eq!(headers(&m), vec![false; 4]);
     assert_eq!(m.view().table.unwrap().leading_header_rows, 0);
 }
+
+#[test]
+fn stage2_p4_stab_docx_paste_rejects_overflowing_geometry_without_mutation() {
+    use super::engine::table::PasteTableCellsPayload;
+    let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
+    assert!(m.run_engine("insert.table", json!({ "rows": 3, "cols": 3 })));
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })));
+    let big = usize::MAX as u64;
+    let cell = |row: u64, col: u64, rs: u64, cs: u64| json!({ "row": row, "col": col, "rowSpan": rs, "colSpan": cs, "paragraphs": [{ "runs": [{ "text": "x" }] }] });
+    let payload = |rows: u64, cols: u64, cells: serde_json::Value| json!({ "rows": rows, "cols": cols, "cells": cells });
+    let malformed = [
+        payload(2, 1, json!([cell(0, 0, 1, 1), cell(1, 0, big, 1)])), // rowSpan wraps near the end row
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, big)])), // colSpan wraps near the end column
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 0)])),   // zero span
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 2)])),   // span past the remaining extent
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(1, 0, 1, 1)])),   // row outside the payload
+        payload(big, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 1)])), // oversized grid
+    ];
+    let before = m.diagnostic_document().clone();
+    let history = m.view().history;
+    for (i, raw) in malformed.iter().enumerate() {
+        let parsed: PasteTableCellsPayload = serde_json::from_value(raw.clone()).unwrap();
+        assert!(!parsed.valid(), "case {i} validated");
+        let target = table_target(&mut m);
+        let r = m.apply(&[DocxOp::PasteTableCells { target, payload: parsed }]);
+        assert_eq!(r.rejected, vec![0], "case {i} applied");
+        assert!(*m.diagnostic_document() == before, "case {i} mutated the document");
+        assert_eq!(m.view().history, history, "case {i} recorded history");
+    }
+    // Boundary-valid: a vertical merge reaching the last target row, and single cells at the last column.
+    let ok: PasteTableCellsPayload = serde_json::from_value(payload(2, 2, json!([cell(0, 0, 2, 1), cell(0, 1, 1, 1), cell(1, 1, 1, 1)]))).unwrap();
+    assert!(ok.valid());
+    let target = table_target(&mut m);
+    assert_eq!(m.apply(&[DocxOp::PasteTableCells { target, payload: ok }]).changed, 1);
+}

@@ -55,7 +55,7 @@ index cdf5693..d2571d6 100644
      /// Explicit family intent applies to all seven language slots. Renderer
      /// fallback never enters this table. Resolve every ordinal before mutation.
 diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
-index 754fe10..c7deca0 100644
+index 754fe10..35ccf7d 100644
 --- a/src/document_core/commands/table_ops.rs
 +++ b/src/document_core/commands/table_ops.rs
 @@ -1344,6 +1344,8 @@ impl DocumentCore {
@@ -137,7 +137,20 @@ index 754fe10..c7deca0 100644
  
          if spec_json.len() > 2 * 1024 * 1024 {
              return Err(HwpError::RenderError("paste payload too large".into()));
-@@ -1934,6 +1981,9 @@ impl DocumentCore {
+@@ -1799,8 +1846,10 @@ impl DocumentCore {
+                 || c.col >= spec.cols
+                 || c.row_span == 0
+                 || c.col_span == 0
+-                || c.row + c.row_span > spec.rows
+-                || c.col + c.col_span > spec.cols
++                // [geul] Subtraction form: `row + row_span` overflows u16 (e.g. rowSpan 65535)
++                // and would wrap past this check into out-of-bounds coverage indexing.
++                || c.row_span > spec.rows - c.row
++                || c.col_span > spec.cols - c.col
+                 || c.paragraphs.is_empty()
+                 || c.paragraphs.len() > 256
+             {
+@@ -1934,6 +1983,9 @@ impl DocumentCore {
          // Resolve/stage ParaShape and BorderFill updates on the dry-run table first.
          let mut staged_pss: Vec<crate::model::style::ParaShape> = Vec::new();
          let mut staged_bfs: Vec<BorderFill> = Vec::new();
@@ -147,7 +160,7 @@ index 754fe10..c7deca0 100644
          let existing_ps_len = self.document.doc_info.para_shapes.len();
          let existing_bf_len = self.document.doc_info.border_fills.len();
  
-@@ -2008,72 +2058,83 @@ impl DocumentCore {
+@@ -2008,72 +2060,83 @@ impl DocumentCore {
                      para.para_shape_id = ps_id;
                  }
  
@@ -274,7 +287,7 @@ index 754fe10..c7deca0 100644
                          para.try_map_char_shape_range(start_c, end_c, |id| {
                              map.get(&id).copied().ok_or_else(|| {
                                  HwpError::RenderError("missing mapped charShape".into())
-@@ -2178,14 +2239,6 @@ impl DocumentCore {
+@@ -2178,14 +2241,6 @@ impl DocumentCore {
              built_cells.push((ci, new_paras, va, bf_id));
          }
  
@@ -289,7 +302,7 @@ index 754fe10..c7deca0 100644
          let mut reflow_targets: Vec<(usize, usize)> = Vec::with_capacity(built_cells.len());
          for (ci, new_paras, va, bf_id) in built_cells {
              let para_count = new_paras.len();
-@@ -2194,10 +2247,25 @@ impl DocumentCore {
+@@ -2194,10 +2249,25 @@ impl DocumentCore {
              template_table.cells[ci].border_fill_id = bf_id;
              reflow_targets.push((ci, para_count));
          }
@@ -315,7 +328,7 @@ index 754fe10..c7deca0 100644
          let depth = path.len() - 1;
          let last_ctrl = path[depth].0;
          let mut inner_path = path.to_vec();
-@@ -2592,9 +2660,22 @@ impl DocumentCore {
+@@ -2592,9 +2662,22 @@ impl DocumentCore {
                      "repeating header rows must start contiguously from the first row".into(),
                  ));
              }
@@ -338,7 +351,7 @@ index 754fe10..c7deca0 100644
                  if !is_header && touches && cell.row < start_row {
                      return Err(HwpError::RenderError(
                          "cannot clear header flag on partial vertically merged cell".into(),
-@@ -2612,7 +2693,7 @@ impl DocumentCore {
+@@ -2612,7 +2695,7 @@ impl DocumentCore {
                      if cr1 >= start_row && cell.row <= end_row {
                          cell.set_header(true);
                      }

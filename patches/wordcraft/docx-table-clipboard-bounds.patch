@@ -1,0 +1,68 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index f54466b..73c727c 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -1406,7 +1406,10 @@ fn apply_pasted_cell_props(
+ fn paste_cells_cmd(s: &mut Session, v: &Value) -> CmdResult {
+     let args: PasteCellsArgs = serde_json::from_value(v.clone())
+         .map_err(|e| CmdError::Params(format!("invalid pasteCells payload: {e}")))?;
+-    if args.rows == 0 || args.cols == 0 || args.rows * args.cols < 2 || args.cells.len() < 2 || args.rows * args.cols > 4096 {
++    // Hostile params: checked product (an unchecked one can wrap into 2..=4096 and then
++    // allocate a giant coverage grid) and subtraction-form span bounds below.
++    let area = args.rows.checked_mul(args.cols).unwrap_or(usize::MAX);
++    if args.rows == 0 || args.cols == 0 || area < 2 || args.cells.len() < 2 || area > 4096 || args.cells.len() > area {
+         return Err(CmdError::Params("invalid pasteCells dimensions".into()));
+     }
+     let mut covered = vec![vec![false; args.cols]; args.rows];
+@@ -1415,8 +1418,8 @@ fn paste_cells_cmd(s: &mut Session, v: &Value) -> CmdResult {
+             || cell.col >= args.cols
+             || cell.row_span == 0
+             || cell.col_span == 0
+-            || cell.row + cell.row_span > args.rows
+-            || cell.col + cell.col_span > args.cols
++            || cell.row_span > args.rows - cell.row
++            || cell.col_span > args.cols - cell.col
+             || cell.paragraphs.is_empty()
+             || cell.paragraphs.len() > 256
+         {
+@@ -2337,6 +2340,40 @@ mod tests {
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
+ 
++    #[test]
++    fn paste_cells_rejects_overflowing_geometry_without_mutation() {
++        use crate::CmdError;
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 3, "cols": 3})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++        let para = |t: &str| json!([{ "runs": [{ "text": t }] }]);
++        let cell = |row: u64, col: u64, rs: u64, cs: u64| json!({ "row": row, "col": col, "rowSpan": rs, "colSpan": cs, "paragraphs": para("x") });
++        let big = usize::MAX as u64;
++        let payload = |sr: u64, sc: u64, rows: u64, cols: u64, cells: serde_json::Value| json!({ "startRow": sr, "startCol": sc, "rows": rows, "cols": cols, "cells": cells });
++        let malformed = [
++            payload(0, 0, 2, 1, json!([cell(0, 0, 1, 1), cell(1, 0, big, 1)])),         // rowSpan wraps near the end row
++            payload(0, 0, 1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, big)])),         // colSpan wraps near the end column
++            payload(0, 0, 1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 0)])),           // zero span
++            payload(0, 0, 1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 2)])),           // span past the remaining extent
++            payload(0, 0, 1, 2, json!([cell(0, 0, 1, 1), cell(0, 2, 1, 1)])),           // column outside the payload
++            payload(big, 0, 1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 1)])),         // target rectangle overflows
++            payload(0, 0, (1u64 << 63) + 1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 1)])), // rows*cols wraps to 2
++        ];
++        let before = s.doc.clone();
++        let undo_before = s.can_undo();
++        for (i, p) in malformed.iter().enumerate() {
++            // Rejected explicitly, never by the panic safety net (Failed "... panicked").
++            let err = s.run("table.pasteCells", p).expect_err("malformed geometry accepted");
++            assert!(!matches!(&err, CmdError::Failed(m) if m.contains("panicked")), "case {i}: {err:?}");
++            assert!(s.doc == before, "case {i} mutated the document");
++            assert_eq!(s.can_undo(), undo_before, "case {i} recorded history");
++        }
++        // Exact upper boundaries stay valid: a span reaching the last row/column of the target.
++        assert!(s.run("table.pasteCells", &payload(1, 1, 2, 2, json!([cell(0, 0, 2, 1), cell(0, 1, 1, 1), cell(1, 1, 1, 1)]))).is_ok());
++        let t = s.doc.body[0].as_table().unwrap();
++        assert!(t.is_grid_consistent());
++    }
++
+     #[test]
+     fn cell_margins_and_table_positioning_preserve_unrelated_and_roundtrip() {
+         use wordcraft_doc::props::Align;

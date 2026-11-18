@@ -19,7 +19,8 @@ ALIGNMENT_PIN = "5351d9b48fe073ee7eb5a5204f2ce06a5c78858a"
 DIMENSIONS_PIN = "cae8c33058e620c02704a2414600b9cb7ecf0867"
 CLIPBOARD_PIN = "76132b73fbe7b774f2fc3742634ee95e7dbb65ed"
 MARGINS_PIN = "34d85b9a42153e161d9327a6e0422dfe82c24cc8"
-PIN = "f42cd16c06d59c1e951c2475ec824f593887650b"
+HEADERS_PIN = "f42cd16c06d59c1e951c2475ec824f593887650b"
+PIN = "b2c974369dd02d322a5498db484bcf96906dad15"
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -30,7 +31,8 @@ STEPS = [
     (ALIGNMENT_PIN, DIMENSIONS_PIN, "patches/wordcraft/docx-table-dimensions.patch", "patches/wordcraft/docx-table-dimensions.commit"),
     (DIMENSIONS_PIN, CLIPBOARD_PIN, "patches/wordcraft/docx-table-clipboard.patch", "patches/wordcraft/docx-table-clipboard.commit"),
     (CLIPBOARD_PIN, MARGINS_PIN, "patches/wordcraft/docx-table-margins-positioning.patch", "patches/wordcraft/docx-table-margins-positioning.commit"),
-    (MARGINS_PIN, PIN, "patches/wordcraft/docx-table-headers-pagination.patch", "patches/wordcraft/docx-table-headers-pagination.commit"),
+    (MARGINS_PIN, HEADERS_PIN, "patches/wordcraft/docx-table-headers-pagination.patch", "patches/wordcraft/docx-table-headers-pagination.commit"),
+    (HEADERS_PIN, PIN, "patches/wordcraft/docx-table-clipboard-bounds.patch", "patches/wordcraft/docx-table-clipboard-bounds.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

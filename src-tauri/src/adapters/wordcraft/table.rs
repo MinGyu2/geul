@@ -2112,7 +2112,7 @@ impl PasteTableCellsPayload {
             || self.rows.saturating_mul(self.cols) < 2
             || self.rows.saturating_mul(self.cols) > 4096
             || self.cells.len() < 2
-            || self.cells.len() > self.rows * self.cols
+            || self.cells.len() > self.rows.saturating_mul(self.cols)
         {
             return false;
         }
@@ -2122,8 +2122,9 @@ impl PasteTableCellsPayload {
                 || cell.col >= self.cols
                 || cell.row_span == 0
                 || cell.col_span == 0
-                || cell.row + cell.row_span > self.rows
-                || cell.col + cell.col_span > self.cols
+                // Subtraction form: `row + row_span` can overflow usize for an untrusted span.
+                || cell.row_span > self.rows - cell.row
+                || cell.col_span > self.cols - cell.col
                 || cell.paragraphs.is_empty()
                 || cell.paragraphs.len() > 256
             {

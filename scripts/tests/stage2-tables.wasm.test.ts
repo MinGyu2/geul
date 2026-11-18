@@ -2479,6 +2479,37 @@ describe("RHWP Release WASM Stage 2 P4 stabilization — structural paste format
     } finally { d.free(); }
   });
 
+  it("engine: malformed u16 geometry (overflowing spans, zero spans, bad starts) is rejected without trap or mutation", () => {
+    const { d, para, ctrl } = engineTable();
+    try {
+      d.insertTextInCellByPath!(0, para, cellPath(ctrl, 3), 0, "keep");
+      const g = (row: number, col: number, rowSpan: number, colSpan: number) => ({ row, col, rowSpan, colSpan, paragraphs: [{ runs: [{ text: "x" }] }] });
+      const apply = (o: Record<string, unknown>) => d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0),
+        JSON.stringify({ startRow: 0, startCol: 0, allowMergeRewrite: true, ...o }));
+      const malformed: Record<string, unknown>[] = [
+        { rows: 2, cols: 1, cells: [g(0, 0, 1, 1), g(1, 0, 65535, 1)] }, // 1 + 65535 wraps u16 to 0
+        { rows: 1, cols: 2, cells: [g(0, 0, 1, 1), g(0, 1, 1, 65535)] },
+        { rows: 1, cols: 2, cells: [g(0, 0, 1, 1), g(0, 1, 1, 0)] },
+        { rows: 1, cols: 2, cells: [g(0, 0, 1, 1), g(0, 1, 1, 2)] },
+        { rows: 1, cols: 2, cells: [g(0, 0, 1, 1), g(0, 2, 1, 1)] },
+        { rows: 1, cols: 2, startRow: 65535, cells: [g(0, 0, 1, 1), g(0, 1, 1, 1)] }, // target rectangle overflows
+        { rows: 1, cols: 2, startCol: 1, cells: [g(0, 0, 1, 1), g(0, 1, 1, 1)] },     // past the table edge
+        { rows: 65535, cols: 65535, cells: [g(0, 0, 1, 1), g(0, 1, 1, 1)] },          // oversized grid
+      ];
+      const before = modelState(d);
+      for (const [i, m] of malformed.entries()) {
+        let error: unknown = null;
+        try { apply(m); } catch (e) { error = e; }
+        expect(error, `case ${i}`).not.toBeNull();
+        expect(error instanceof WebAssembly.RuntimeError, `case ${i} trapped`).toBe(false);
+        expect(modelState(d), `case ${i}`).toBe(before);
+      }
+      // Boundary-valid geometry: a merged column reaching the last row and single cells in the last column.
+      expect(JSON.parse(apply({ rows: 2, cols: 2, cells: [g(0, 0, 2, 1), g(0, 1, 1, 1), g(1, 1, 1, 1)] })).ok).toBe(true);
+      expect(JSON.parse(d.getTableDimensions(0, para, ctrl)).cellCount).toBe(3);
+    } finally { d.free(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("%s session: paste into a bold destination is one exact Undo/Redo step and survives T009 save/reopen", async format => {
     clearStructuredClipboard();
     const { editor, doc, at, place, settle, run, save } = await open(format, false, true, false);
