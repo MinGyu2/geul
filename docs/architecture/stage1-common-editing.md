@@ -381,4 +381,35 @@ DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP) 세 문서 형식에서 표 셀 배경색
 
 주의 사항(기준선 기존 결함·제외 범위): 기존 커밋 `de7079b`에서부터 남아 있는 무관한 단위 테스트 실패(`src/commands/hangulTools.test.tsx:426`, `src-tauri/src/services/save/tests.rs` `calc_cell_*` 등 3건)는 건드리지 않았으며, 외부 Microsoft Word/한컴오피스 프로그램 직접 열기와 Windows/macOS·Wayland 수용은 NOT RUN이다.
 
+## 10. Stage 2 / Phase 4 — 고급 표 기능 (2026-11-18)
+
+DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 다중 셀 구조 클립보드(`P4-1`), 셀 여백·표 위치(`P4-2`), 반복 머리행·페이지 나눔(`P4-3`), 프로덕션 Linux native GUI 통합 수용과 문서 정합성 정리(`P4-4`)를 구현·검증했다.
+
+### 10.1 다중 셀 구조 클립보드 (`P4-1`)
+
+- **스키마·직렬화·Fallback** (`src/commands/tableClipboard.ts`, `src/commands/clipboard.ts`):
+  - 구조 MIME `application/x-geul-table-cells+json`(`TABLE_CLIPBOARD_MIME`)과 상한(`512`행, `64`열, `4096`셀, `2 MiB`, 셀당 문단 `256`, 문단당 run `1024`)을 두고 외부 클립보드 입력을 신뢰하지 않고 직사각형 격자·좌표·병합·서식·텍스트 유효성을 엄격히 검증(`parseTableClipboardPayload`)한다.
+  - 런타임이 구조 MIME 읽기를 제공하지 못하는 경로에서도 평문 탭/줄바꿈 직렬화(`buildTableClipboardPlainText`) 및 앱 내 구조 payload 기억(`rememberStructuredClipboard`/`recallStructuredClipboard`)으로 동일 앱 내 구조 복사/잘라내기/붙여넣기를 유지하며, 크로스 앱 구조 MIME 상호운용은 주장하지 않는다.
+- **세션·엔진 실행 및 안전 경계**:
+  - `DocxEditorSession`(`DocxOp::{CutTableCells, PasteTableCells}`, `patches/wordcraft/docx-table-clipboard.{patch,commit}`)과 `RhwpEditorSession`(`extractTableCellsByPath`/`clearTableCellsByPath`/`applyTableCellsByPath`, `patches/rhwp/stage2-p4-1-table-clipboard.patch`)이 복사 시 무변이·잘라내기 시 클립보드 쓰기 선성공 후 원자적 삭제·붙여넣기 시 대상 표/크기/병합 호환/임베드 개체·필드 보호/세션·리비전 소유 검증·단일 Undo/Redo 단계를 보장한다.
+
+### 10.2 셀 여백·표 위치 (`P4-2`) 및 반복 머리행·페이지 나눔 (`P4-3`)
+
+- **`table.cellMargins`·`table.positioning`**: 표 기본 안 여백(`scope: "table"`)과 선택 셀 개별 여백(`scope: "cell"` 및 `reset`), 가로 정렬(`left`/`center`/`right`), `left` 기준 들여쓰기(`indentPt`)를 공통 지원하고, HWP/HWPX에서는 `treatAsChar`와 `outerMargins`를 추가 제공한다(DOCX는 `treatAsCharSupported: false`, `outerMargins: null`). RHWP `stage2-p4-2-margins-positioning.patch`는 `set_table_properties_native`에서 `table.outer_margin_*`와 `table.common.margin`을 함께 갱신하고 `table.common.attr`를 비트 단위로만 반영해 HWPX `TextWrap` 유실 결함을 함께 해결했다.
+- **`table.repeatHeader`·`table.rowBreak`**: `table.repeatHeader`는 첫 행부터 끊김 없는 선행 머리행(`canEnableHeader`)만 허용하고 중간/비연속 행 또는 부분 수직 병합 경계를 거절한다. `table.rowBreak`는 DOCX `["cell", "row"]`(`w:cantSplit`)와 RHWP `["cell", "row", "none"]`(`TablePageBreak`)만 노출한다. WordCraft 핀 `f42cd16c06d59c1e951c2475ec824f593887650b`와 RHWP `stage2-p4-3-headers-pagination.patch`로 다쪽 렌더링(`render_page_html_native`) 머리행 반복과 T009/재열기를 검증했다.
+- **HWP5 신규 셀 플래그 직렬화 수정 (`P4-4`)**: 실제 프로덕션 HWP GUI 수용에서 신규 생성 셀(`raw_list_extra.is_empty()`)에 `HAS_MARGIN`/`HEADER` 등 하위 플래그만 먼저 켜질 때 `serialize_cell`이 한컴 47바이트 `LIST_HEADER` 기본 계약 비트 `0x0400`을 빠뜨려 T009(`OutputMalformed:BodyText/Section0`)로 거부되는 결함을 발견해 `patches/rhwp/stage2-p4-4-cell-flags.patch`로 보정하고 Release WASM(`015a899de475…`)으로 재빌드·통과시켰다.
+
+### 10.3 최종 검증 및 Native GUI 수용 (`P4-4`)
+
+| 검사 | 명령(요약) | 결과 |
+|---|---|---|
+| TypeScript / ESLint / 프런트엔드 | `npx tsc --noEmit && npm run lint && npx vitest run TableFormattingDialog DocxEditorSession clipboardSessions clipboard clipboardAccess commands visibility` | `tsc` PASS, ESLint 오류 0(기존 경고 1 `FontPicker.tsx`), Vitest 7파일 113/113 PASS |
+| WordCraft 무결성 및 엔진 | `python3 scripts/prepare-wordcraft.py` · `cargo test -p wordcraft-engine --locked --offline -- cmd::table::tests` | `f42cd16c06d59c1e951c2475ec824f593887650b` exact match, 7/7 PASS |
+| `src-tauri` P4 계약·T009 | `cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --offline -- stage2_p4_` | 6/6 PASS (DOCX/HWP P4-1/P4-2/P4-3 계약 및 T009) |
+| RHWP Release WASM 표 회귀 | `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts` | 78/78 PASS (Release WASM `015a899de475…`, `externalUnchanged: true`) |
+| 일반 제품 Release 빌드 | `npm run tauri -- build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `28e6575a…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`) |
+| Linux Native GUI 수용 | `scripts/tests/native-ibus-session.py -- scripts/tests/stage2-p4-native-acceptance.py` | PASS (`docx`, `hwpx`, `hwp` 모두 다중 셀 Copy/Paste/Undo/Redo/Cut/Undo·굵게 보존, `table.cellMargins`·`table.positioning`·`table.repeatHeader`·`table.rowBreak`, `Ctrl+S` `saved`/`findings:""`/`synced:true`, `Ctrl+O` 재열기 복원, ZIP XML & HWP Release WASM 디스크 오라클 확인) |
+
+주의 사항(제외 범위): 외부 Microsoft Word/한컴오피스 직접 재열기, 크로스 앱 구조 MIME 상호운용 및 Windows/macOS·Wayland 수용은 NOT RUN이다.
+
 

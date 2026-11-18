@@ -1,0 +1,55 @@
+diff --git a/src/serializer/control.rs b/src/serializer/control.rs
+index 4bef1ca2..706a807f 100644
+--- a/src/serializer/control.rs
++++ b/src/serializer/control.rs
+@@ -738,13 +738,14 @@ fn serialize_cell(cell: &Cell, level: u16, records: &mut Vec<Record>) {
+     w.write_u32(list_attr).unwrap();
+     // 파싱한 HWP5 셀은 raw_list_extra에 LIST_HEADER 확장 바이트를 보존한다.
+     // 이 경우 width_ref=0도 유효한 원본값이므로 그대로 기록한다. 반대로 새로
+-    // 만든 셀은 한컴 호환 47바이트 LIST_HEADER 계약을 위해 기본값 0x0400을 쓴다.
+-    let list_header_width_ref = if cell.list_header_width_ref == 0 && cell.raw_list_extra.is_empty()
+-    {
+-        0x0400
+-    } else {
+-        cell.list_header_width_ref
+-    };
++    // 만든 셀은 한컴 호환 47바이트 LIST_HEADER 계약을 위해 기본값 0x0400을 유지한다
++    // (`set_apply_inner_margin`/`set_header` 등이 하위 플래그 비트만 먼저 켠 경우 포함).
++    let list_header_width_ref =
++        if cell.raw_list_extra.is_empty() && (cell.list_header_width_ref & !0x010F) == 0 {
++            cell.list_header_width_ref | 0x0400
++        } else {
++            cell.list_header_width_ref
++        };
+     w.write_u16(list_header_width_ref).unwrap();
+ 
+     // 셀 속성
+diff --git a/src/serializer/control/tests.rs b/src/serializer/control/tests.rs
+index 83359fa3..e6a47059 100644
+--- a/src/serializer/control/tests.rs
++++ b/src/serializer/control/tests.rs
+@@ -1371,3 +1371,24 @@ fn field_serialization_no_longer_writes_unverified_ctrl_data_extension() {
+         "이름 아이템 item_id 가 바뀜(기존 계약 위반)"
+     );
+ }
++
++#[test]
++fn newly_created_cell_with_flags_retains_hancom_width_ref_contract() {
++    use crate::model::table::{Cell, CELL_FLAG_HAS_MARGIN, CELL_FLAG_HEADER};
++
++    let mut cell = Cell::new_empty(0, 0, 5000, 500, 1);
++    assert_eq!(cell.list_header_width_ref, 0);
++    cell.set_apply_inner_margin(true);
++    cell.set_header(true);
++    let mut records = Vec::new();
++    serialize_cell(&cell, 2, &mut records);
++    let hdr = records
++        .iter()
++        .find(|r| r.tag_id == tags::HWPTAG_LIST_HEADER)
++        .expect("HWPTAG_LIST_HEADER emitted");
++    let serialized_flags = u16::from_le_bytes([hdr.data[6], hdr.data[7]]);
++    assert_eq!(
++        serialized_flags,
++        0x0400 | CELL_FLAG_HAS_MARGIN | CELL_FLAG_HEADER
++    );
++}

@@ -1761,3 +1761,12 @@ T014는 정전/실제 파일시스템 고장 수용과 Windows/macOS 안전 저�
   - `DocInfo` `BORDER_FILL`(태그 20): `valid_appended_border_fill`이 유효한 선 종류(`<= 17`)·두께 버킷(`<= 15`)·기본 대각선(`[1, 0, 0, 0, 0, 0]` 또는 `[0; 6]`) 또는 원본 일치 속성 및 `fill_type` `0`(없음, 40B)/`1`(단색, 53B, `pattern_type in -1..=6`)/원본 일치 비단색 tail만 좁게 허용한다(빈 새 문서처럼 `orig_borders`가 비어 있을 때도 `basic_border_fill`과 같은 `[1, 0, 0, 0, 0, 0]` 대각선이 거부되지 않도록 보정).
   - `PARA_SHAPE`(태그 25): 수평 맞춤은 기존 Stage 1 `ParaShape` 증명(`attr1` 비트 `2..=4`)과 원본 `ParaShape` 유래(`para_signature`)로 검증하고, 수직 맞춤은 `cell_header_matches_ignoring_border_fill`과 신규 표 검증 `validate_table_at`에서 셀 `list_attr` 비트 `21..=22`(바이트 4 마스크 `0x60`, 값 `0..=2`)만 좁게 허용하며 값 `3`이나 다른 비트는 계속 거부한다(`hwp_restructured_original_table_is_proven_or_refused`, `stage2_p3_new_table_border_fill_and_vertical_align_proven_or_refused`).
 
+## Stage 2 / Phase 4 — 고급 표 기능 T009 저장 보존 경계 (2026-11-18)
+
+- **DOCX(`word/document.xml`)**: 다중 셀 구조 붙여넣기/잘라내기·표/셀 안 여백(`<w:tblCellMar>`, `<w:tcMar>`)·표 정렬/들여쓰기(`<w:jc>`, `<w:tblInd>`)·반복 머리행(`<w:tblHeader/>`)·행 분할 금지(`<w:cantSplit/>`)는 `word/document.xml` 내부 구조와 셀 서식만 갱신하며 `table.rs`가 `atomic()` 안에서 `export()` 및 `same_as()`(WordCraft `roundtrip_equivalent`)를 검증한다.
+- **HWPX**: 다중 셀 붙여넣기 시 추가되는 `CharShape`/`BorderFill`/`ParaShape`는 기존 HWPX 헤더 추가 규칙 및 `verify_appended_border_fills()`를 그대로 따르며, 표 위치 설정 시 `set_table_properties_native`가 `table.common.attr`를 비트 단위로만 갱신해 기존 `TextWrap` 등 무관 속성을 보존하고 `table.outer_margin_*`와 `table.common.margin`을 함께 동기화한다.
+- **HWP(`insertions.rs` 및 `stage2-p4-4-cell-flags.patch`)**:
+  - **다중 셀 서식 붙여넣기**: `evolved_table`·`restructured_table`이 `cell_formatted_edit` 경계 안에서 셀 문단 텍스트/서식과 셀 `padding`/`borderFill`/`vertAlign` 변경을 허용하되 임의 객체·미증명 필드 삭제를 거부한다.
+  - **표 위치·안/바깥 여백**: `table_header_preserved`와 `validate_table_at`이 최상위 표(`level == 1`)의 `treatAsChar`(bit 0)·`horzAlign` `Left`/`Center`/`Right`(`(attr >> 10) & 0x07 <= 2`)·`horzRelTo`(`(attr >> 8) & 0x03 >= 2`)·`horzOffset`(`-7200..=36_000`)·`outerMargin`(`0..=14_400`) 및 `TABLE` 바이트 `[10..18]`·`CELL_FLAG_HAS_MARGIN`(`0x0001`)·셀 안 여백(`[24..32]`)만 좁게 허용한다.
+  - **반복 머리행·페이지 나눔 및 신규 셀 플래그 계약**: `evolved_table`·`restructured_table`·`validate_table_at`이 `TABLE` 바이트 `[0..4]`의 `pageBreak`/`repeatHeader` 비트(`0x07`, `pageBreak <= 2`)와 셀 `CELL_FLAG_HEADER`(`0x0004`)만 허용한다. `patches/rhwp/stage2-p4-4-cell-flags.patch`는 신규 생성 셀(`raw_list_extra.is_empty()`)에 `HAS_MARGIN`/`HEADER` 등 하위 플래그가 먼저 설정되어도 `serialize_cell`이 한컴 47바이트 `LIST_HEADER` 기본 계약 비트 `0x0400`을 잃지 않도록(`0x0401`/`0x0404`) 보정한다.
+

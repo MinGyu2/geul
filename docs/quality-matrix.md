@@ -180,3 +180,10 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 |---|---|---|---|---|---|
 | 셀 배경색(`table.shading`)·테두리(`table.borders`)·가로/세로 맞춤(`table.alignment`)·열 너비(`table.columnWidth`)·행 높이(`table.rowHeight`), Undo/Redo, T009 안전 저장 및 독립 재열기 | IV(`pt`, `atLeast`/`exact`/`auto`) | IV(`mm`, `atLeast`만) | IV(`mm`, `atLeast`만) | CURRENT PASS (HWP 테두리 재열기 및 디스크 `BORDER_FILL` 오라클 `stage2-p3-native-acceptance.py --formats hwp`) / REUSED PASS (P3-1·P3-2·P3-3 단위/WASM 73/73·Rust 11/11 및 DOCX/HWPX/HWP 통합 native `target/p3-native-out/acceptance.json`) | [Stage 1/2 9절](architecture/stage1-common-editing.md#9-stage-2--phase-3--형식-공통-표셀-서식-2026-11-18), [T009 경계](architecture/save-preservation.md#stage-2--phase-3--표셀-서식-t009-저장-보존-경계-2026-11-18) (외부 Word/한컴 재열기 및 Windows/macOS: NOT RUN) |
 
+### Stage 2 / Phase 4 — 고급 표 기능 (2026-11-18)
+
+| 항목 | DOCX | HWPX | HWP | 판정 | 근거 |
+|---|---|---|---|---|---|
+| 다중 셀 구조 클립보드(Copy/Cut/Paste, 서식·병합 보존, 거부 안전·단일 Undo/Redo) | IV(`application/x-geul-table-cells+json` + fallback) | IV(`application/x-geul-table-cells+json` + fallback) | IV(호환 병합 범위·무손실 검증 범위) | CURRENT PASS (`clipboard.test.ts` 32·`clipboardSessions.test.ts` 10·WASM 78/78·WordCraft/Rust·`stage2-p4-native-acceptance.py`) | [Stage 1/2 10절](architecture/stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18), [명령 레지스트리](architecture/command-registry.md#stage-2--phase-4--고급-표-기능-2026-11-18) (크로스 앱 구조 MIME·외부 오피스: NOT RUN) |
+| 셀 여백(`table.cellMargins`)·표 위치(`table.positioning`)·반복 머리행(`table.repeatHeader`)·페이지 나눔(`table.rowBreak`), T009 저장 및 독립 재열기 | IV(`cell`/`row`, `treatAsCharSupported:false`) | IV(`cell`/`row`/`none`, `treatAsChar`·바깥 여백) | IV(`cell`/`row`/`none`, `treatAsChar`·바깥 여백, `0x0400` 유지) | CURRENT PASS (Vitest 7파일 113/113·WASM 78/78·WordCraft 7/7·`stage2_p4_` 6/6·Release `28e6575a…` Linux native `stage2-p4-native-acceptance.py` DOCX/HWPX/HWP PASS) | [Stage 1/2 10절](architecture/stage1-common-editing.md#10-stage-2--phase-4--고급-표-기능-2026-11-18), [T009 경계](architecture/save-preservation.md#stage-2--phase-4--고급-표-기능-t009-저장-보존-경계-2026-11-18) (외부 Word/한컴 재열기 및 Windows/macOS: NOT RUN) |
+
