@@ -55,7 +55,7 @@ index cdf5693..d2571d6 100644
      /// Explicit family intent applies to all seven language slots. Renderer
      /// fallback never enters this table. Resolve every ordinal before mutation.
 diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
-index 754fe10..af0223a 100644
+index 754fe10..c7deca0 100644
 --- a/src/document_core/commands/table_ops.rs
 +++ b/src/document_core/commands/table_ops.rs
 @@ -1344,6 +1344,8 @@ impl DocumentCore {
@@ -315,3 +315,35 @@ index 754fe10..af0223a 100644
          let depth = path.len() - 1;
          let last_ctrl = path[depth].0;
          let mut inner_path = path.to_vec();
+@@ -2592,9 +2660,22 @@ impl DocumentCore {
+                     "repeating header rows must start contiguously from the first row".into(),
+                 ));
+             }
++            // [geul] P4 stabilization: clearing is limited to the selected rows,
++            // the same contract as DOCX. A header row below the selection would
++            // have to be cleared silently (or left non-contiguous), so refuse.
++            if !is_header && table.cells.iter().any(|c| c.is_header && c.row > end_row) {
++                return Err(HwpError::RenderError(
++                    "header rows below the selection must be selected to clear".into(),
++                ));
++            }
+             for cell in &table.cells {
+                 let cr1 = cell.row + cell.row_span.saturating_sub(1);
+                 let touches = cr1 >= start_row && cell.row <= end_row;
++                if !is_header && touches && cell.is_header && cr1 > end_row {
++                    return Err(HwpError::RenderError(
++                        "cannot clear header flag on partial vertically merged cell".into(),
++                    ));
++                }
+                 if !is_header && touches && cell.row < start_row {
+                     return Err(HwpError::RenderError(
+                         "cannot clear header flag on partial vertically merged cell".into(),
+@@ -2612,7 +2693,7 @@ impl DocumentCore {
+                     if cr1 >= start_row && cell.row <= end_row {
+                         cell.set_header(true);
+                     }
+-                } else if cr1 >= start_row {
++                } else if cr1 >= start_row && cell.row <= end_row {
+                     cell.set_header(false);
+                 }
+             }

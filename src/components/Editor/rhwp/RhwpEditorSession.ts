@@ -3545,7 +3545,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       )) as { ok?: boolean };
       if (res.ok !== true) throw new Error("repeatHeader rejected");
       return { caret, anchor };
-    }, true, "other", null, true);
+      // The engine validates the whole row range before changing any flag, so a
+      // refused range (e.g. a header row below the selection) is a recoverable no-op.
+    }, true, "other", null, true, true);
     this.history?.boundary();
     return applied;
   }

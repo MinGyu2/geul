@@ -295,6 +295,9 @@ export function parseTableClipboardPayload(input: unknown): TableCellClipboardPa
  * entry is invalidated and ignored.
  */
 let storedStructuredClipboard: { mime: string; data: string; plainText: string } | null = null;
+/** Changes whenever the stored entry is replaced, invalidated or cleared (identity for async callers). */
+let storedStructuredVersion = 0;
+export const structuredClipboardVersion = (): number => storedStructuredVersion;
 
 export function rememberStructuredClipboard(mime: string, data: string, plainText: string): boolean {
   if (mime !== TABLE_CLIPBOARD_MIME || data.length > MAX_TABLE_CLIPBOARD_BYTES || !plainText || !validClipboardText(plainText)) {
@@ -302,6 +305,7 @@ export function rememberStructuredClipboard(mime: string, data: string, plainTex
   }
   if (!parseTableClipboardPayload(data)) return false;
   storedStructuredClipboard = { mime, data, plainText: plainText.replace(/\r\n/g, "\n") };
+  storedStructuredVersion += 1;
   return true;
 }
 
@@ -309,6 +313,7 @@ export function recallStructuredClipboard(mime: string, observedPlainText: strin
   if (!storedStructuredClipboard || mime !== storedStructuredClipboard.mime) return null;
   if (observedPlainText.replace(/\r\n/g, "\n") !== storedStructuredClipboard.plainText) {
     storedStructuredClipboard = null;
+    storedStructuredVersion += 1;
     return null;
   }
   return storedStructuredClipboard.data;
@@ -316,6 +321,7 @@ export function recallStructuredClipboard(mime: string, observedPlainText: strin
 
 export function clearStructuredClipboard(): void {
   storedStructuredClipboard = null;
+  storedStructuredVersion += 1;
 }
 
 /** Nearest RHWP border width (mm) for a point value. */

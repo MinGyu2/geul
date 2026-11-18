@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runClipboard, validClipboardText, MAX_CLIPBOARD_CHARS, type ClipboardCommand, type PlainClipboard } from "./clipboard";
-import { clearStructuredClipboard, parseTableClipboardPayload, TABLE_CLIPBOARD_MIME } from "./tableClipboard";
+import { clearStructuredClipboard, parseTableClipboardPayload, rememberStructuredClipboard, TABLE_CLIPBOARD_MIME } from "./tableClipboard";
 import { documentCommandState } from "./capability";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "./target";
 import { commandDefinition, commandForShortcut, SHORTCUT_PROBLEMS } from "./registry";
@@ -243,5 +243,81 @@ describe("structured multi-cell table clipboard", () => {
     events.length = 0;
     expect(await runClipboard(target, "edit.cut", editing, () => true, clip)).toBe(true);
     expect(events).toEqual(["write", "remove"]);
+  });
+});
+
+describe("structured paste fallback ownership (P4 stabilization)", () => {
+  const payload = JSON.stringify({
+    kind: "geul.tableCells", version: 1, sourceFormat: "hwpx", rows: 1, cols: 2, plainText: "X\tY",
+    cells: [
+      { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "X" }] }] },
+      { row: 0, col: 1, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "Y" }] }] },
+    ],
+  });
+  function setup(source: "os" | "recalled") {
+    clearStructuredClipboard();
+    let state: DocumentCommandSnapshot = {
+      sessionId: 1, engine: "rhwp", loadGeneration: 1, revision: 2, loaded: true, editable: true,
+      composing: false, pending: false, saving: false, queuedHistory: null, history: { undo: false, redo: false },
+      format: null, formatAccess: null, clipboard: { key: "caret-1", selection: false, writable: true },
+    };
+    const target: DocumentCommandTarget = { sessionId: 1, engine: "rhwp", snapshot: () => state, execute: () => ({ accepted: false }) };
+    const gate = deferred();
+    let outcome: "ok" | "notTable" | "rejected" = "notTable";
+    const editing = {
+      read: vi.fn(async () => null), remove: vi.fn(() => false), insert: vi.fn(() => true),
+      insertStructured: vi.fn(async () => { await gate.promise; return outcome; }),
+    };
+    const clip: PlainClipboard = source === "os"
+      ? { readText: vi.fn(async () => "X\tY"), writeText: vi.fn(async () => {}), readStructured: vi.fn(async () => payload) }
+      : { readText: vi.fn(async () => "X\tY"), writeText: vi.fn(async () => {}) };
+    if (source === "recalled") expect(rememberStructuredClipboard(TABLE_CLIPBOARD_MIME, payload, "X\tY")).toBe(true);
+    let owner = true;
+    const paste = () => runClipboard(target, "edit.paste", editing, () => owner, clip);
+    return { editing, gate, paste, patch: (p: Partial<DocumentCommandSnapshot>) => { state = { ...state, ...p }; },
+      disown: () => { owner = false; }, setOutcome: (o: typeof outcome) => { outcome = o; } };
+  }
+  const settle = async (h: ReturnType<typeof setup>, change: () => void) => {
+    const result = h.paste();
+    await vi.waitFor(() => expect(h.editing.insertStructured).toHaveBeenCalled());
+    change();
+    h.gate.finish();
+    return result;
+  };
+
+  it.each(["os", "recalled"] as const)("%s: a valid notTable fallback inserts the payload's plain text", async source => {
+    const h = setup(source);
+    expect(await settle(h, () => {})).toBe(true);
+    expect(h.editing.insert).toHaveBeenCalledWith("X\tY");
+  });
+  it.each([
+    ["session switch", (h: ReturnType<typeof setup>) => h.patch({ sessionId: 2 })],
+    ["ownership loss", (h: ReturnType<typeof setup>) => h.disown()],
+    ["load generation change", (h: ReturnType<typeof setup>) => h.patch({ loadGeneration: 2 })],
+    ["revision change", (h: ReturnType<typeof setup>) => h.patch({ revision: 3 })],
+    ["clipboard key change", (h: ReturnType<typeof setup>) => h.patch({ clipboard: { key: "caret-2", selection: false, writable: true } })],
+  ] as const)("%s while awaiting insertStructured never falls back to plain text", async (_name, change) => {
+    for (const source of ["os", "recalled"] as const) {
+      const h = setup(source);
+      expect(await settle(h, () => change(h))).toBe(false);
+      expect(h.editing.insert).not.toHaveBeenCalled();
+    }
+  });
+  it("a replaced remembered payload (external clipboard identity change) refuses the recalled fallback", async () => {
+    const h = setup("recalled");
+    const other = payload.replace('"text":"X"', '"text":"Z"').replace('"plainText":"X\\tY"', '"plainText":"Z\\tY"');
+    expect(await settle(h, () => { expect(rememberStructuredClipboard(TABLE_CLIPBOARD_MIME, other, "Z\tY")).toBe(true); })).toBe(false);
+    expect(h.editing.insert).not.toHaveBeenCalled();
+    const cleared = setup("recalled");
+    expect(await settle(cleared, () => clearStructuredClipboard())).toBe(false);
+    expect(cleared.editing.insert).not.toHaveBeenCalled();
+  });
+  it("a rejected structural paste never degrades into a plain-text insertion; ok inserts nothing extra", async () => {
+    for (const o of ["rejected", "ok"] as const) {
+      const h = setup("os");
+      h.setOutcome(o);
+      expect(await settle(h, () => {})).toBe(o === "ok");
+      expect(h.editing.insert).not.toHaveBeenCalled();
+    }
   });
 });

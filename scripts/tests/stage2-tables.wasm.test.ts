@@ -2548,6 +2548,55 @@ describe("RHWP Release WASM Stage 2 P4 stabilization — structural paste format
   });
 });
 
+describe("RHWP Release WASM Stage 2 P4 stabilization — header-row clearing contract", () => {
+  it.each(["hwp", "hwpx"] as const)("%s: clearing is limited to selected trailing header rows, refused otherwise without mutation, Undo/Redo and T009 save/reopen", async format => {
+    const s = await open(format, false, false, false);
+    const pJson = () => JSON.stringify([{ controlIndex: s.at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]);
+    const pg = () => JSON.parse(s.doc.getTablePaginationByPath!(0, s.at.paragraph, pJson(), 0, 0)) as { leadingHeaderRows: number; repeatHeader: boolean };
+    const selectRows = (r0: number, r1: number) => { s.editor.anchor = withCell(s.at, r0 * 2); s.editor.caret = withCell(s.at, r1 * 2 + 1); };
+    const header = (repeat: boolean) => s.editor.execute("table.repeatHeader", { command: "table.repeatHeader", repeat });
+    try {
+      s.place(withCell(s.at, 2));
+      await s.run("table.insertRowBelow");
+      await s.run("table.insertRowBelow"); // 4 rows x 2 cols
+      selectRows(0, 1);
+      expect(header(true)).toEqual({ accepted: true }); await s.settle();
+      expect(pg()).toMatchObject({ leadingHeaderRows: 2, repeatHeader: true });
+      const historyBefore = s.editor.snapshot().history;
+      // Row 0 alone: row 1 would be cleared silently or orphaned -> refused, nothing changes, editing stays available.
+      selectRows(0, 0);
+      expect(header(false)).toEqual({ accepted: false }); await s.settle();
+      expect(pg()).toMatchObject({ leadingHeaderRows: 2, repeatHeader: true });
+      expect(s.editor.snapshot().editable).toBe(true);
+      expect(s.editor.snapshot().history).toEqual(historyBefore);
+      // Engine contract independently of the session: refused atomically.
+      expect(() => s.doc.setTableHeaderRowsByPath!(0, s.at.paragraph, pJson(), 0, 0, false)).toThrow();
+      expect(pg().leadingHeaderRows).toBe(2);
+      // Trailing header row: cleared alone.
+      selectRows(1, 1);
+      expect(header(false)).toEqual({ accepted: true }); await s.settle();
+      expect(pg()).toMatchObject({ leadingHeaderRows: 1, repeatHeader: true });
+      expect(s.editor.execute("edit.undo")).toEqual({ accepted: true }); await s.settle();
+      expect(pg().leadingHeaderRows).toBe(2);
+      expect(s.editor.execute("edit.redo")).toEqual({ accepted: true }); await s.settle();
+      expect(pg().leadingHeaderRows).toBe(1);
+      const saved = await s.save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(JSON.parse(reopened.getTablePaginationByPath!(0, s.at.paragraph, pJson(), 0, 0))).toMatchObject({ leadingHeaderRows: 1, repeatHeader: true });
+      } finally { reopened.free(); }
+      // A successful save starts a fresh original probe (HWP structural gate); answer it like the service.
+      await s.prove();
+      // Selecting through every header row clears them all and turns repetition off.
+      selectRows(0, 1);
+      expect(documentCommandState("table.repeatHeader", s.editor.snapshot()).available).toBe(true);
+      expect(header(false)).toEqual({ accepted: true }); await s.settle();
+      expect(pg()).toMatchObject({ leadingHeaderRows: 0, repeatHeader: false });
+    } finally { s.editor.dispose(); }
+  });
+});
+
 describe("RHWP Release WASM Stage 2 P4-2 — cell margins and table positioning", () => {
   it("applies P4-2 table/cell inner margins, reset, mixed state, nested table margins, and positioning across HWPX and HWP with T009 save/reopen", async () => {
     for (const format of ["hwpx", "hwp"] as const) {

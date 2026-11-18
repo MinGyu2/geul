@@ -5218,3 +5218,50 @@ fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
     assert!(tbl.rows[0].props.header && tbl.rows[1].props.header);
     assert!(tbl.rows[0].props.cant_split && tbl.rows[1].props.cant_split);
 }
+
+#[test]
+fn stage2_p4_stab_docx_header_clear_is_limited_to_selected_trailing_rows() {
+    use crate::services::save::package;
+    let doc = crate::services::files::blank_docx().unwrap();
+    let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
+    let mut m = DocxModel::open(&doc).unwrap();
+    assert!(m.apply(&[DocxOp::Table { rows: 4, cols: 2 }]).rejected.is_empty());
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    let select_rows = |m: &mut DocxModel, r0: usize, r1: usize| {
+        assert!(m.run_engine("select.range", json!({
+            "anchor": { "story": "body", "path": [tp_idx, r0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, r1, 1, 0], "off": 0 },
+        })));
+        table_target(m)
+    };
+    let headers = |m: &DocxModel| -> Vec<bool> {
+        m.diagnostic_document().body[tp_idx].as_table().unwrap().rows.iter().map(|r| r.props.header).collect()
+    };
+    let t = select_rows(&mut m, 0, 1);
+    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: true }]).changed, 1);
+    assert_eq!(headers(&m), vec![true, true, false, false]);
+    // Clearing only the first header row would silently clear (or orphan) row 1: refused, unchanged.
+    let t = select_rows(&mut m, 0, 0);
+    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).rejected, vec![0]);
+    assert_eq!(headers(&m), vec![true, true, false, false]);
+    // Clearing the trailing header row keeps the leading block contiguous.
+    let t = select_rows(&mut m, 1, 1);
+    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).changed, 1);
+    assert_eq!(headers(&m), vec![true, false, false, false]);
+    assert_eq!(m.view().table.unwrap().leading_header_rows, 1);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(headers(&m), vec![true, true, false, false]);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(headers(&m), vec![true, false, false, false]);
+    let saved = wordcraft_engine::io::save_bytes("p4-stab-headers.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
+    let reopened = DocxModel::open(&saved).unwrap();
+    assert_eq!(headers(&reopened), vec![true, false, false, false]);
+    // Clearing the last remaining header row turns repetition off.
+    let t = select_rows(&mut m, 0, 0);
+    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).changed, 1);
+    assert_eq!(headers(&m), vec![false; 4]);
+    assert_eq!(m.view().table.unwrap().leading_header_rows, 0);
+}

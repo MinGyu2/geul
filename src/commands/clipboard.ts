@@ -6,6 +6,7 @@ import {
   parseTableClipboardPayload,
   recallStructuredClipboard,
   rememberStructuredClipboard,
+  structuredClipboardVersion,
   TABLE_CLIPBOARD_MIME,
 } from "./tableClipboard";
 import type { DocumentCommandTarget } from "./target";
@@ -107,23 +108,28 @@ export async function runClipboard(
   running.add(target);
   try {
     if (command === "edit.paste") {
-      const pasteStructured = async (raw: string): Promise<boolean> => {
+      const pasteStructured = async (raw: string, recalled: boolean): Promise<boolean> => {
         const parsed = parseTableClipboardPayload(raw);
         if (!parsed || !editing.insertStructured) return false;
+        const version = structuredClipboardVersion();
         const outcome = await editing.insertStructured(TABLE_CLIPBOARD_MIME, raw);
         if (outcome === "ok") return true;
         if (outcome === "rejected") return false;
+        // notTable: the plain-text fallback is a new mutation after an async boundary.
+        // Revalidate the document/session/revision and the recalled payload identity
+        // synchronously (no extra clipboard read, so no new permission prompt).
+        if (!current() || (recalled && structuredClipboardVersion() !== version)) return false;
         const hasMerges = parsed.cells.some(c => c.rowSpan > 1 || c.colSpan > 1);
         return !hasMerges && parsed.plainText !== "" && validClipboardText(parsed.plainText) && editing.insert(parsed.plainText);
       };
       // Start the permission-sensitive read in the original user gesture.
       const rawStructured = clipboard.readStructured ? await clipboard.readStructured(TABLE_CLIPBOARD_MIME) : null;
       if (!current()) return false;
-      if (rawStructured !== null) return await pasteStructured(rawStructured);
+      if (rawStructured !== null) return await pasteStructured(rawStructured, false);
       const text = await clipboard.readText();
       if (!current()) return false;
       const recalled = recallStructuredClipboard(TABLE_CLIPBOARD_MIME, text);
-      if (recalled !== null && editing.insertStructured) return await pasteStructured(recalled);
+      if (recalled !== null && editing.insertStructured) return await pasteStructured(recalled, true);
       return text !== "" && validClipboardText(text) && editing.insert(text);
     }
     if (editing.readStructured) {
