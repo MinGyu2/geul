@@ -410,6 +410,27 @@ DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 다중 셀 구조 클립보드(`P4-
 | 일반 제품 Release 빌드 | `npm run tauri -- build --no-bundle` | PASS (`src-tauri/target/release/geul` SHA-256 `28e6575a…`, `privacyStatus: PASS`, `runtimePathStatus: PASS`) |
 | Linux Native GUI 수용 | `scripts/tests/native-ibus-session.py -- scripts/tests/stage2-p4-native-acceptance.py` | PASS (`docx`, `hwpx`, `hwp` 모두 다중 셀 Copy/Paste/Undo/Redo/Cut/Undo·굵게 보존, `table.cellMargins`·`table.positioning`·`table.repeatHeader`·`table.rowBreak`, `Ctrl+S` `saved`/`findings:""`/`synced:true`, `Ctrl+O` 재열기 복원, ZIP XML & HWP Release WASM 디스크 오라클 확인) |
 
+### 10.4 P4 안정화·정합성 보수 (2026-11-18)
+
+- **RHWP 구조 붙여넣기 서식 (P1)**: `apply_table_cells_by_path_native`가 run마다 스키마 속성을 모두 확정한다. 스키마가 생략한 `bold`/`italic`/`underline`/`strikethrough`는 `false`, 생략한 `color`는 기본 글자색(검정), 생략·`null` `highlight`는 "강조 없음"이다(WordCraft의 새 `CharProps` 기준과 같음). 그래서 대상 문단의 글자 모양(굵게·기울임·밑줄·취소선·색·강조)이 붙여 넣은 글자로 새지 않는다. 스키마에 없는 속성과 생략한 `fontSizePt`/`fontFamily`만 대상 모양을 따른다. `fontFamily`는 7개 언어 슬롯마다 기존 글꼴이 정확히 하나일 때만 적용하고, 그렇지 않으면 원자적으로 거부한다. 추출은 한 글꼴이 7개 슬롯을 모두 덮을 때만 `fontFamily`를 내보낸다(언어별 혼합 글꼴은 생략 → 대상 글꼴 유지). 문서에 없는 글꼴은 `RhwpEditorSession`이 `format.font`와 같은 소유 증명(`fontCreationOwned`: 활성 세션·세대·리비전, `canFormatFonts`, 원본 SAFE, 글꼴 소유 API)이 있을 때만 같은 기록 단계 안에서 `resolveDocumentFontFamily`로 먼저 등록하고, 증명이 없으면 붙여넣기를 거부한다.
+- **RHWP 붙여넣기 실패 원자성 (P2)**: 새 글자 모양을 `doc_info.char_shapes`에 바로 덧붙이던 `modified_char_shape_ids` 호출을 단계 목록(`stage_char_shape`)으로 바꿨다. 문단·테두리 모양과 함께 모두 검증·구성한 뒤 표 교체(유일한 실패 가능 단계)를 먼저 하고, 그다음 정의를 게시한다. 바뀌지 않는 모양은 기존 ID를 재사용한다. 엔진 API 단독으로(UI 기록 되돌리기 없이) 둘째 셀의 잘못된 크기·색·강조·정렬·테두리·세로 정렬·글꼴·개체 문자와 병합 불일치에서 DocInfo·글꼴·셀·HWP/HWPX 직렬화가 그대로임을 검증했다.
+- **DOCX 대기 기록 예상 (P3)**: `MUTATING_OPS`에 `tableRepeatHeader`·`tableRowBreak`를 추가해 `queuedHistory()`가 대기 중 변경의 다시 실행 단계를 버린 것으로 예상한다(`mutates()`는 이미 변경으로 분류).
+- **클립보드 비동기 소유 (P4-A)**: `pasteStructured()`는 `insertStructured`가 `notTable`을 돌려준 뒤 평문 대체 넣기 전에 소유·세션·세대·리비전·클립보드 키(`current()`)와, 앱 내 기억 payload이면 그 동일성(`structuredClipboardVersion`)을 동기적으로 다시 확인한다. 추가 클립보드 읽기는 없다(WebKitGTK 권한 경로 불변).
+- **반복 머리행 끄기 계약 (P4-B)**: DOCX·HWP·HWPX 모두 선택한 행만 끈다. 선택 아래에 머리행이 남으면 거부한다(조용히 지우거나 비연속으로 남기지 않음). RHWP는 이전에 선택 행부터 끝까지 지웠고, RHWP 세션은 이 엔진 거부를 복구 가능한 무변경으로 처리한다.
+- **관리 패치**: RHWP 변경은 `patches/rhwp/stage2-p4-5-stabilization.patch` 하나에 담았다(산출물 신원 계약 `rhwp-artifacts.py`·`rhwpArtifactIdentity.ts`의 패치 32개 상한). Release WASM `b5f0b768075d62f908fc36639e42c635d91e75f83feab2a506098014c02318aa`(`externalUnchanged: true`). WordCraft는 바꾸지 않았다(`f42cd16c…`).
+- **기존 결함(이번 범위 밖, 거부 유지)**: 앱의 새 HWP 빈 문서에 `insert.table`로 만든 표의 셀 안에서 Enter로 문단을 나누면 T009가 `outputMalformed:BodyText/Section0`·`recordsChanged:DocInfo`로 저장을 거부한다(P4 기준 WASM `015a899d…`에서도 같음, 쪽 수·머리행과 무관). 안전하게 거부되며 T009 허용 범위는 넓히지 않았다.
+
+| 검사 | 명령(요약) | 결과 |
+|---|---|---|
+| TypeScript / ESLint / 프런트엔드 | `npx tsc --noEmit && npm run lint && npx vitest run clipboard clipboardSessions DocxEditorSession commands TableFormattingDialog clipboardAccess visibility` | PASS, ESLint 오류 0(기존 경고 1), 7파일 123/123 |
+| RHWP Release WASM 표 회귀 | `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage2-tables.wasm.test.ts` | 87/87 PASS(신규 9: 엔진 서식·글꼴·원자성 3, 세션 Undo/Redo·T009 2, 글꼴 소유 2, 머리행 끄기 2) |
+| `src-tauri` P4 계약·T009 | `cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --offline -- stage2_p4_` | 7/7 PASS(신규 DOCX 머리행 끄기 1) |
+| 일반 제품 Release 빌드 | `npm run tauri -- build --no-bundle` | PASS(`geul` SHA-256 `82eae910b7d1feda…`, privacy/runtimePath PASS) |
+| Linux Native GUI 기존 수용 | `native-ibus-session.py -- stage2-p4-native-acceptance.py` | PASS(DOCX/HWPX/HWP) |
+| Linux Native GUI 다쪽 수용 | `native-ibus-session.py -- stage2-p4-native-multipage.py` | PASS(DOCX/HWPX/HWP: 2쪽, 머리행 전 대조군 7행, 머리행 뒤 2쪽 적중 0/1행·본문 7행, 저장·닫기·재열기 뒤 동일, 대화상자 유지, 디스크/HWP WASM 2쪽 렌더 트리 확인) |
+
+RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모듈 35개 오류로 컴파일되지 않아 엔진 시험은 Release WASM API 수준으로 수행했다.
+
 주의 사항(제외 범위): 외부 Microsoft Word/한컴오피스 직접 재열기, 크로스 앱 구조 MIME 상호운용 및 Windows/macOS·Wayland 수용은 NOT RUN이다.
 
 
