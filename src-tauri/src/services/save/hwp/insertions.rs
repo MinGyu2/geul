@@ -3769,9 +3769,11 @@ fn validate_table_at(
             .get_mut(word(b, 10)?)
             .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
         if pristine {
+            // A pristine grid fixes cell geometry only. The paragraph count (`word(b, 0)`, at least
+            // one above) is proven below: every cell paragraph passes `paragraph()` and the count
+            // must equal the records actually present, so Enter inside a new cell stays provable.
             valid(
-                word(b, 0)? == 1
-                    && word(b, 8)? == index % cols
+                word(b, 8)? == index % cols
                     && word(b, 10)? == index / cols
                     && word(b, 12)? == 1
                     && word(b, 14)? == 1,

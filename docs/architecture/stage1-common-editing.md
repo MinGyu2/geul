@@ -418,7 +418,7 @@ DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 다중 셀 구조 클립보드(`P4-
 - **클립보드 비동기 소유 (P4-A)**: `pasteStructured()`는 `insertStructured`가 `notTable`을 돌려준 뒤 평문 대체 넣기 전에 소유·세션·세대·리비전·클립보드 키(`current()`)와, 앱 내 기억 payload이면 그 동일성(`structuredClipboardVersion`)을 동기적으로 다시 확인한다. 추가 클립보드 읽기는 없다(WebKitGTK 권한 경로 불변).
 - **반복 머리행 끄기 계약 (P4-B)**: DOCX·HWP·HWPX 모두 선택한 행만 끈다. 선택 아래에 머리행이 남으면 거부한다(조용히 지우거나 비연속으로 남기지 않음). RHWP는 이전에 선택 행부터 끝까지 지웠고, RHWP 세션은 이 엔진 거부를 복구 가능한 무변경으로 처리한다.
 - **관리 패치**: RHWP 변경은 `patches/rhwp/stage2-p4-5-stabilization.patch` 하나에 담았다(산출물 신원 계약 `rhwp-artifacts.py`·`rhwpArtifactIdentity.ts`의 패치 32개 상한). Release WASM `b5f0b768075d62f908fc36639e42c635d91e75f83feab2a506098014c02318aa`(`externalUnchanged: true`). WordCraft는 바꾸지 않았다(`f42cd16c…`).
-- **기존 결함(이번 범위 밖, 거부 유지)**: 앱의 새 HWP 빈 문서에 `insert.table`로 만든 표의 셀 안에서 Enter로 문단을 나누면 T009가 `outputMalformed:BodyText/Section0`·`recordsChanged:DocInfo`로 저장을 거부한다(P4 기준 WASM `015a899d…`에서도 같음, 쪽 수·머리행과 무관). 안전하게 거부되며 T009 허용 범위는 넓히지 않았다.
+- **해결된 기존 결함 (후속 보수, 2026-11-18)**: 새 HWP 표 셀 Enter 저장 거부는 후속 보수에서 해결했다: 직렬화기 출력(셀 `LIST_HEADER` 문단 수 2, 문단별 `PARA_HEADER`/텍스트/글자 모양/줄 레코드, 마지막 문단에만 목록 끝 비트)은 정상이었고, 원인은 T009 새 표 증명(`validate_table_at`)이 손대지 않은 42바이트 새 표의 셀마다 문단 수를 1로 고정한 과잉 제약이었다. `recordsChanged:DocInfo`는 그 증명 실패로 표 삽입의 덧붙인 정의(테두리 등)가 일반 비교로 떨어진 결과다(Enter는 DocInfo를 바꾸지 않음). 격자 기하 제약은 그대로 두고 문단 수 고정만 없앴다: 셀 문단마다 일반 `paragraph()` 증명을 통과해야 하고 머리 문단 수는 실제 레코드 수와 같아야 한다. 계약 시험 `stage2_new_table_multi_paragraph_cell_proven_or_refused`(문단 수 불일치·문단 모양 참조 오류·격자 변조·무관한 DocInfo 변경 거부), WASM 세션 시험(가운데/처음/끝/빈 문단/연속 Enter·한글·캐럿·Undo/Redo·T009 저장·독립 재열기), Native `hwp-new-table-enter-native.py`(Release `e9df51c8…`, 수정 전 `82eae910…`에서는 같은 거부 재현) PASS.
 
 | 검사 | 명령(요약) | 결과 |
 |---|---|---|

@@ -3239,3 +3239,70 @@ fn stage2_p4_3_repeating_headers_and_pagination_proven_or_refused() {
     let new_ok_findings = raw_findings(&orig_basic, &output_new_ok, true);
     assert!(only_stale_preview(&new_ok_findings), "{new_ok_findings:?}");
 }
+
+/// Enter inside a cell of a newly inserted (pristine) table: the cell's LIST_HEADER paragraph count
+/// becomes 2 and two complete paragraphs follow. Every paragraph is still proven individually; the
+/// count must match the records, and the grid/DocInfo proof is unchanged.
+#[test]
+fn stage2_new_table_multi_paragraph_cell_proven_or_refused() {
+    let base = fixture_with(false, &[], "Keep 한글");
+    let orig = edit_records(&base, "/DocInfo", |r| {
+        r.retain(|rec| rec.0 != 20);
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 0);
+    });
+    let table = |split: bool| {
+        let mut tbl = table_control();
+        w(&mut tbl[1].2, 22, 1);
+        for cell in tbl.iter_mut().filter(|r| r.0 == 72) {
+            w(&mut cell.2, 32, 1);
+        }
+        if split {
+            // Cell 0: "cell 0" -> "cell" + " 0", two paragraphs, LIST_HEADER count 2.
+            let at = tbl.iter().position(|r| r.0 == 72).unwrap();
+            w(&mut tbl[at].2, 0, 2);
+            let mut two = paragraph_records(2, 0, "cell", &[]);
+            two.extend(paragraph_records(2, 0, " 0", &[]));
+            tbl.splice(at + 1..at + 5, two);
+        }
+        tbl
+    };
+    let document = |tbl: Records| {
+        edit_records(&fixture_with(false, &[tbl], "Keep 한글"), "/DocInfo", |r| {
+            let mut basic = vec![0u8; 40];
+            for at in [2, 8, 14, 20] {
+                basic[at] = 1;
+                basic[at + 1] = 1;
+            }
+            basic[26] = 1;
+            r.retain(|rec| rec.0 != 20);
+            let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
+            r.insert(insert_at, (20, 1, basic));
+            let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+            d(id_map, 32, 1);
+        })
+    };
+    let single = document(table(false));
+    let f = raw_findings(&orig, &single, true);
+    assert!(only_stale_preview(&f), "single-paragraph control: {f:?}");
+    let good = document(table(true));
+    let f = raw_findings(&orig, &good, true);
+    assert!(only_stale_preview(&f), "two-paragraph cell: {f:?}");
+
+    let first_cell = |r: &mut Records| r.iter().position(|rec| rec.0 == 72).unwrap();
+    for (name, change) in [
+        ("count says 3", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 0, 3); }) as Box<dyn Fn(&mut Records)>),
+        ("count says 1", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 0, 1); })),
+        ("paragraph shape out of range", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at + 5].2, 8, 99); })),
+        ("pristine geometry: span 2", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 12, 2); })),
+    ] {
+        let bad = edit_records(&good, "/BodyText/Section0", |r| change(r));
+        let f = raw_findings(&orig, &bad, true);
+        assert!(!only_stale_preview(&f), "{name} published: {f:?}");
+    }
+    let unrelated = edit_records(&good, "/DocInfo", |r| {
+        let cs = &mut r.iter_mut().find(|rec| rec.0 == 21).unwrap().2;
+        cs[42] ^= 0x01; // flip an existing char shape's attribute bit
+    });
+    assert!(!only_stale_preview(&raw_findings(&orig, &unrelated, true)), "unrelated DocInfo change published");
+}

@@ -126,7 +126,8 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     expect(proof.outcome, JSON.stringify(proof)).toBe("safe");
     call.reply(ok({ preservation: proof, platformSupported: true })); await flush();
   }
-  const t = JSON.parse(doc.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+  // A table-free original (new-table scenarios) has no table yet; callers then locate it after insert.table.
+  const t = JSON.parse(doc.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0) ?? { para: 0, controlIndex: 0 };
   const at: DocPosition = { section: 0, paragraph: t.para, offset: 0,
     cell: { parentParagraph: t.para, control: t.controlIndex, cell: 0, cellParagraph: 0 } };
   const place = (p: DocPosition) => { editor.anchor = editor.caret = p; };
@@ -2625,6 +2626,90 @@ describe("RHWP Release WASM Stage 2 P4 stabilization — header-row clearing con
       expect(header(false)).toEqual({ accepted: true }); await s.settle();
       expect(pg()).toMatchObject({ leadingHeaderRows: 0, repeatHeader: false });
     } finally { s.editor.dispose(); }
+  });
+});
+
+describe("RHWP Release WASM — Enter inside a newly inserted HWP table cell (T009 new-table proof)", () => {
+  /** A table-free HWP original from the engine's HWP template (one paragraph with its line segment). */
+  const tableFree = () => {
+    const d = engine.HwpDocument.createEmpty() as Doc;
+    try { d.createBlankDocument(); return exported(d, "hwp").bytes; } finally { d.free(); }
+  };
+  const texts = (doc: RhwpDocument, para: number, ctrl: number, cell: number) =>
+    Array.from({ length: doc.getCellParagraphCount(0, para, ctrl, cell) }, (_, p) =>
+      doc.getTextInCell(0, para, ctrl, cell, p, 0, doc.getCellParagraphLength(0, para, ctrl, cell, p)));
+
+  it("splits cell paragraphs (middle/start/end/empty/repeated, Korean), keeps neighbours, one-step Undo/Redo, T009 save and independent reopen", async () => {
+    const original = tableFree();
+    const s = await open("hwp", false, false, false, false, 0, DEEP_WORDS, { original });
+    try {
+      await s.prove();
+      s.place({ section: 0, paragraph: 0, offset: 0 });
+      await s.run("insert.table", { command: "insert.table", rows: 2, cols: 2 });
+      const t = JSON.parse(s.doc.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      const cell = (i: number, p = 0, offset = 0): DocPosition =>
+        ({ section: 0, paragraph: t.para, offset, cell: { parentParagraph: t.para, control: t.controlIndex, cell: i, cellParagraph: p } });
+      const all = () => [0, 1, 2, 3].map(i => texts(s.doc, t.para, t.controlIndex, i));
+      const type = async (at: DocPosition, text: string) => { s.place(at); expect(s.editor.typeText(text)).toBe(true); await s.settle(); };
+      const enter = async (at: DocPosition) => { s.place(at); expect(s.editor.enter()).toBe(true); await s.settle(); };
+      await type(cell(1), "옆칸");
+      await type(cell(3), "끝칸");
+      await type(cell(0), "AB한글");
+      const beforeSplit = all();
+      await enter(cell(0, 0, 1)); // between A and B
+      expect(all()[0]).toEqual(["A", "B한글"]);
+      expect(s.editor.caret).toMatchObject({ offset: 0, cell: { cell: 0, cellParagraph: 1 } });
+      await s.run("edit.undo");
+      expect(all()).toEqual(beforeSplit);
+      await s.run("edit.redo");
+      expect(all()[0]).toEqual(["A", "B한글"]);
+      await enter(cell(0, 1, 3));  // at the end of "B한글" -> empty paragraph
+      await type(cell(0, 2), "끝");
+      await enter(cell(0, 0, 0));  // at the start of "A" -> empty paragraph before it
+      await type(cell(2), "X");
+      await enter(cell(2, 0, 1));
+      await enter(cell(2, 1, 0));  // consecutive Enter on an empty paragraph
+      const expected = [["", "A", "B한글", "끝"], ["옆칸"], ["X", "", ""], ["끝칸"]];
+      expect(all()).toEqual(expected);
+      const shapes = (doc: RhwpDocument) => [0, 1, 2, 3].map(p =>
+        JSON.parse(doc.getCellCharPropertiesAt!(0, t.para, t.controlIndex, 0, p, 0)).charShapeId);
+      const liveShapes = shapes(s.doc);
+
+      const saved = await s.save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getTextFileText()).toBe(s.doc.getTextFileText());
+        const rt = JSON.parse(reopened.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+        expect(JSON.parse(reopened.getTableDimensions(0, rt.para, rt.controlIndex))).toMatchObject({ rowCount: 2, colCount: 2, cellCount: 4 });
+        expect([0, 1, 2, 3].map(i => texts(reopened, rt.para, rt.controlIndex, i))).toEqual(expected);
+        expect(shapes(reopened)).toEqual(liveShapes);
+      } finally { reopened.free(); }
+    } finally { s.editor.dispose(); }
+  });
+
+  it("control: the same new table without Enter, and HWPX/existing-HWP-table splits, still save", async () => {
+    const s = await open("hwp", false, false, false, false, 0, DEEP_WORDS, { original: tableFree() });
+    try {
+      await s.prove();
+      s.place({ section: 0, paragraph: 0, offset: 0 });
+      await s.run("insert.table", { command: "insert.table", rows: 2, cols: 2 });
+      const t = JSON.parse(s.doc.getControls!()).find((c: { ctrlId: string; list: number }) => c.ctrlId === "tbl" && c.list === 0);
+      s.place({ section: 0, paragraph: t.para, offset: 0, cell: { parentParagraph: t.para, control: t.controlIndex, cell: 0, cellParagraph: 0 } });
+      expect(s.editor.typeText("AB")).toBe(true); await s.settle();
+      expect((await s.save()).publishable).toBe(true);
+    } finally { s.editor.dispose(); }
+    for (const format of ["hwpx", "hwp"] as const) {
+      const e = await open(format); // the fixture's original already contains the table
+      try {
+        e.place({ ...withCell(e.at, 2), offset: 3 });
+        expect(e.editor.enter()).toBe(true); await e.settle();
+        expect(texts(e.doc, e.at.paragraph, e.at.cell!.control, 2)).toEqual(["out", "er2"]);
+        const saved = await e.save();
+        expect(saved.publishable, `${format}: ${JSON.stringify(saved.raw)}`).toBe(true);
+      } finally { e.editor.dispose(); }
+    }
   });
 });
 

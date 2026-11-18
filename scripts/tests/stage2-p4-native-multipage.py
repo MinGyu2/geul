@@ -8,7 +8,7 @@ table actually spans pages. Run under scripts/tests/native-ibus-session.py:
 
 In the actual Release desktop app, per format:
 1. New document, 10x2 table; body rows get table.rowHeight 120pt so the table spans >= 2 pages
-   (Enter inside HWP cells of a newly inserted table is a separate pre-existing T009 refusal).
+   (row height keeps this case about pagination; Enter in new HWP cells has its own native acceptance).
 2. Negative control: before headers exist, hit-testing the top of page 2 lands in a body row.
 3. Rows 0..1 become repeating header rows; row break mode "row".
 4. The rendered continuation page is hit-tested: the header-band points on page 2 land the caret in
