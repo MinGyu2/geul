@@ -1,3 +1,4 @@
+import { MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
 /**
  * Validated common structural clipboard representation for multi-cell table copy, cut, and paste
  * across DOCX (WordCraft) and HWP/HWPX (RHWP).
@@ -300,10 +301,14 @@ let storedStructuredVersion = 0;
 export const structuredClipboardVersion = (): number => storedStructuredVersion;
 
 export function rememberStructuredClipboard(mime: string, data: string, plainText: string): boolean {
-  if (mime !== TABLE_CLIPBOARD_MIME || data.length > MAX_TABLE_CLIPBOARD_BYTES || !plainText || !validClipboardText(plainText)) {
-    return false;
-  }
-  if (!parseTableClipboardPayload(data)) return false;
+  if (!plainText || !validClipboardText(plainText)) return false;
+  if (mime === TABLE_CLIPBOARD_MIME) {
+    if (data.length > MAX_TABLE_CLIPBOARD_BYTES || !parseTableClipboardPayload(data)) return false;
+  } else if (mime === OBJECT_CLIPBOARD_MIME) {
+    if (data.length > MAX_OBJECT_CLIPBOARD_BYTES) return false;
+    const shape = parseObjectClipboardPayload(data);
+    if (!shape || objectClipboardPlainText(shape) !== plainText) return false;
+  } else return false;
   storedStructuredClipboard = { mime, data, plainText: plainText.replace(/\r\n/g, "\n") };
   storedStructuredVersion += 1;
   return true;

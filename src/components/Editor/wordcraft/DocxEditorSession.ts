@@ -1,3 +1,4 @@
+import { OBJECT_CLIPBOARD_MIME, createObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload } from "../../../commands/objectClipboard";
 import type { ObjectSelection } from "../../../commands/objectSelection";
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -634,9 +635,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   get objectSelection(): ObjectSelection | null {
     if (!this.view?.object || this.status.kind !== "ready") return null;
+    const { clipboardShape, ...object } = this.view.object;
     return {
-      ...this.view.object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
-      editable: false, operations: ["deselect"],
+      ...object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
+      editable: Boolean(clipboardShape?.cutAllowed),
+      operations: clipboardShape?.cutAllowed ? ["deselect", "copy", "cut"] : clipboardShape ? ["deselect", "copy"] : ["deselect"],
     };
   }
 
@@ -1073,16 +1076,18 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   /** 명령 가용성을 정하는 지금 상태. 기록·서식은 마지막 응답의 엔진 보기다(보낼 편집 뒤에는 엔진이 다시 정한다). */
   snapshot(): DocumentCommandSnapshot {
+    const shape = this.view?.object?.clipboardShape;
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
       composing: this.imeUnsettled, pending: this.busy,
       objectSelection: this.objectSelection,
       clipboard: {
-        selection: (!!this.view?.clipboardTextAvailable && !!this.backend.selectionText)
+        selection: !!shape || (!!this.view?.clipboardTextAvailable && !!this.backend.selectionText)
           || (!!this.view?.clipboardTableCellsAvailable && !!this.backend.selectionTableCells),
-        writable: !this.objectSelection && this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly
-          && (this.view.collapsed || !!this.view.clipboardTextAvailable || !!this.view.clipboardTableCellsAvailable),
+        ...(shape ? { shape: { cutAllowed: shape.cutAllowed } } : {}),
+        writable: shape?.cutAllowed === true || (!this.objectSelection && this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly
+          && (this.view.collapsed || !!this.view.clipboardTextAvailable || !!this.view.clipboardTableCellsAvailable)),
         key: JSON.stringify([this.epoch, this.generation, this.revision, this.clipboardVersion, this.imeSerial,
           this.view?.anchorKey, this.view?.caretKey]),
       },
@@ -1106,6 +1111,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       },
       readStructured: async () => {
         const view = this.view;
+        const shape = view?.object?.clipboardShape?.shape;
+        if (shape) {
+          const payload = createObjectClipboardPayload(shape);
+          return { status: "ok", mime: OBJECT_CLIPBOARD_MIME, data: JSON.stringify(payload), plainText: objectClipboardPlainText(payload) };
+        }
         if (!view?.clipboardTableCellsAvailable || !this.backend.selectionTableCells) return { status: "none" };
         const result = await this.backend.selectionTableCells(this.sessionId, this.generation, this.revision, view.anchorKey, view.caretKey);
         if (!result.ok) return { status: "rejected" };
@@ -1138,14 +1148,25 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       remove: () => !!this.view && this.push({ op: "deleteSelection", selection: {
         anchorKey: this.view.anchorKey, caretKey: this.view.caretKey,
       } }),
-      removeStructured: () => !!this.view && !!this.view.clipboardTableCellsAvailable && this.push({
-        op: "cutTableCells",
-        target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
-      }),
+      removeStructured: () => {
+        const view = this.view, object = view?.object;
+        if (object?.clipboardShape?.cutAllowed && object.address.engine === "wordcraft") {
+          return this.push({ op: "cutShape", position: object.address.position, epoch: object.epoch });
+        }
+        return !!view?.clipboardTableCellsAvailable && this.push({
+          op: "cutTableCells", target: { anchorKey: view.anchorKey, caretKey: view.caretKey },
+        });
+      },
       insert: text => this.typeText(text),
-      insertStructured: async (_mime, data) => {
+      insertStructured: async (mime, data) => {
         const view = this.view;
         if (!view) return "rejected";
+        if (mime === OBJECT_CLIPBOARD_MIME) {
+          const object = parseObjectClipboardPayload(data);
+          if (!object || !view.drawingInsertionAllowed) return "rejected";
+          return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
+        }
+        if (mime !== TABLE_CLIPBOARD_MIME) return "rejected";
         if (!view.inTable) return "notTable";
         const payload = parseTableClipboardPayload(data);
         if (!payload) return "rejected";

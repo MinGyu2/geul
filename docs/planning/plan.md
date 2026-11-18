@@ -277,3 +277,9 @@ P3 부분 구현은 문서 끝 DOCX 본문에 사각형·타원·선·글상자�
 P4 부분 구현은 DOCX 차트·SmartArt와 HWP/HWPX 본문 차트의 읽기 전용
 조회다. Linux X11 Release에서 조회·독립 재열기와 원본 바이트 보존을
 확인했다. 형식별 편집 후보는 패키지·OLE·매니페스트 보존 관문에 남아 있다.
+
+P5 부분 구현은 현재 세션 DOCX 기본 인라인 도형의 구조 클립보드다.
+Linux X11 Release에서 DOCX 사각형 복사·잘라내기·붙여넣기·Undo/Redo·
+Save/Save As·독립 재열기와 HWPX/HWP 교차 형식 거부를 확인했다.
+P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
+PARTIALLY COMPLETED 상태다.

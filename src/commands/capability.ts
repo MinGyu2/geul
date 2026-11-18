@@ -64,7 +64,8 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (snapshot.saving) return unavailable("saving");
     return snapshot.objectSelection?.operations.includes("resize") ? ENABLED : unavailable("selectionRequired");
   }
-  if (snapshot.objectSelection && id !== "edit.undo" && id !== "edit.redo" && id !== "edit.find") {
+  const shapeClipboard = snapshot.clipboard?.shape && (id === "edit.copy" || id === "edit.cut");
+  if (snapshot.objectSelection && !shapeClipboard && id !== "edit.undo" && id !== "edit.redo" && id !== "edit.find") {
     return unavailable("protected");
   }
   if (id === "edit.find" || id === "edit.replace") {

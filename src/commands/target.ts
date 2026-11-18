@@ -46,7 +46,7 @@ export interface DocumentCommandSnapshot {
   /** 저장 사전 검사·저장 중. */
   saving: boolean;
   /** Complete supported selection, and monotonically invalidated ownership identity. */
-  clipboard?: { selection: boolean; key: string; writable: boolean };
+  clipboard?: { selection: boolean; key: string; writable: boolean; shape?: { cutAllowed: boolean } };
   /** 엔진의 실행 취소 기록. 엔진에 기록이 없으면 null. */
   history: { undo: boolean; redo: boolean } | null;
   /** Production RHWP history contains advanced operations only; ordinary edits invalidate it. */

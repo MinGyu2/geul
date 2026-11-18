@@ -34,7 +34,7 @@ export interface ObjectSelection extends ObjectHit {
   loadGeneration: number;
   revision: number;
   editable: boolean;
-  operations: readonly ("deselect" | "delete" | "move" | "resize")[];
+  operations: readonly ("deselect" | "delete" | "move" | "resize" | "copy" | "cut")[];
 }
 
 export interface PictureResizeRequest {

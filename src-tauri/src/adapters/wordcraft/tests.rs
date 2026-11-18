@@ -5443,3 +5443,57 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
         std::fs::write(dir.join("graphics-frames.json"), serde_json::to_vec(&frames).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn stage3_shape_clipboard_cut_refuses_stale_or_unowned_objects_and_roundtrips() {
+    use wordcraft_engine::doc::{InlineObject, StoryRef};
+    use wordcraft_engine::{io, Session};
+    use crate::services::save::service;
+    use super::engine::BasicShape;
+
+    let source = fixture();
+    let mut model = DocxModel::open(&source).unwrap();
+    let append = DocxOp::Shape { kind: BasicShape::Rectangle };
+    assert_eq!(model.apply(&[mv(MoveTarget::DocEnd, false), append.clone(), append]).changed, 2);
+    let after_paste = model.export().unwrap();
+    let mut independent = Session::new(io::open_bytes("fixture.docx", &after_paste).unwrap());
+    let layout = independent.layout();
+    let mut offsets = Vec::new();
+    for path in independent.doc.para_paths(StoryRef::Body) {
+        let para = independent.doc.para(StoryRef::Body, &path).unwrap();
+        for off in para.object_offsets().into_iter().filter(|&off| matches!(para.object_at(off), Some(InlineObject::Shape { .. }))) {
+            offsets.push(wordcraft_engine::doc::Pos { story: StoryRef::Body, path: path.clone(), off });
+        }
+    }
+    assert_eq!(offsets.len(), 2);
+    let select = |i: usize| {
+        let frame = layout.object(&offsets[i], 0).unwrap();
+        DocxOp::Pointer {
+            page: frame.page as u32, x: frame.rect.x + frame.rect.w / 2.0, y: frame.rect.y + frame.rect.h / 2.0,
+            extend: false, before_insert: false, drag: false, select_object: true,
+        }
+    };
+    model.apply(&[select(0)]);
+    let first = serde_json::to_value(model.view()).unwrap()["object"].clone();
+    assert_eq!(first["clipboardShape"]["shape"], "rectangle");
+    assert_eq!(first["clipboardShape"]["cutAllowed"], false);
+    model.apply(&[select(1)]);
+    let last = serde_json::to_value(model.view()).unwrap()["object"].clone();
+    assert_eq!(last["clipboardShape"]["cutAllowed"], true);
+    let cut = |key: &serde_json::Value| DocxOp::CutShape {
+        position: key["position"].as_str().unwrap().into(), epoch: key["epoch"].as_u64().unwrap(),
+    };
+    assert_eq!(model.apply(&[cut(&first)]).rejected, vec![0]);
+    assert_eq!(model.export().unwrap(), after_paste);
+    assert_eq!(model.apply(&[cut(&last)]).changed, 1);
+    let after_cut = model.export().unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &source, &after_cut, None, model.same_as(&after_cut));
+    assert!(gate.is_safe(), "{gate:?}");
+    let read = io::open_bytes("fixture.docx", &after_cut).unwrap();
+    assert_eq!(read.body.iter().filter_map(|b| b.as_para()).flat_map(|p| &p.objects)
+        .filter(|o| matches!(o, InlineObject::Shape { .. })).count(), 1);
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), after_paste);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), after_cut);
+}

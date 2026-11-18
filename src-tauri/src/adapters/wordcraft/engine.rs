@@ -165,6 +165,7 @@ pub enum DocxOp {
         kind: BasicShape,
     },
     TextBox {},
+    CutShape { position: String, epoch: u64 },
     Image {
         data: String,
     },
@@ -413,7 +414,7 @@ impl MoveTarget {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BasicShape {
     Rectangle,
@@ -478,6 +479,7 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
             DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
             DocxOp::Font { name } => valid_font_name(name),
+            DocxOp::CutShape { position, epoch } => !position.is_empty() && position.len() <= 256 && *epoch > 0,
             DocxOp::DeleteSelection { selection: Some(s) } => {
                 s.anchor_key.len() <= 256 && s.caret_key.len() <= 256
             }
@@ -650,6 +652,15 @@ pub struct ObjectView {
     picture: Option<PictureView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     graphic: Option<Value>,
+    #[serde(rename = "clipboardShape", skip_serializing_if = "Option::is_none")]
+    clipboard_shape: Option<ClipboardShapeView>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardShapeView {
+    shape: BasicShape,
+    cut_allowed: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -826,6 +837,7 @@ pub struct DocxModel {
     session: Session,
     selected_object: Option<(Pos, usize)>,
     object_epoch: u64,
+    created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
     /// 쪽·배율마다 마지막으로 그린 래스터와 그 판(바뀐 띠만 보낼 때 비교 기준). 최근 것부터 MAX_RASTERS개.
@@ -947,6 +959,7 @@ impl DocxModel {
             session,
             selected_object: None,
             object_epoch: 0,
+            created_shapes: Vec::new(),
             marks: Vec::new(),
             last_insert: None,
             rasters: Vec::new(),
@@ -1032,6 +1045,20 @@ impl DocxModel {
                 Ok(changed) => {
                     if changed {
                         self.selected_object = None;
+                        match op {
+                            DocxOp::Shape { .. } => {
+                                let mut pos = self.session.sel.focus.clone();
+                                pos.off -= wordcraft_engine::doc::para::OBJ.len_utf8();
+                                self.created_shapes.push(pos);
+                            }
+                            DocxOp::CutShape { position, .. } => {
+                                self.created_shapes.retain(|pos| position_key(pos) != *position);
+                            }
+                            // Existing shape XML may contain attributes the model does
+                            // not project. Discard this transient provenance whenever
+                            // an edit or history traversal can reuse an address.
+                            _ => self.created_shapes.clear(),
+                        }
                     }
                     outcome.applied += 1;
                     outcome.changed += u64::from(changed);
@@ -1068,7 +1095,7 @@ impl DocxModel {
                 }
                 DocxOp::Pointer { .. } | DocxOp::DeselectObject {} | DocxOp::Mark { .. }
                 | DocxOp::InsertAt { .. } | DocxOp::ReplaceInserted { .. }
-                | DocxOp::Undo {} | DocxOp::Redo {} | DocxOp::ClearSearch {} => {}
+                | DocxOp::Undo {} | DocxOp::Redo {} | DocxOp::ClearSearch {} | DocxOp::CutShape { .. } => {}
                 _ => return Err(Rejected),
             }
         }
@@ -1185,6 +1212,7 @@ impl DocxModel {
             }
             DocxOp::Shape { kind } => self.insert_drawing("insert.shape", json!({"kind": kind.name()}), true),
             DocxOp::TextBox {} => self.insert_drawing("insert.textBox", json!({}), false),
+            DocxOp::CutShape { position, epoch } => self.cut_clipboard_shape(position, *epoch),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -1675,6 +1703,53 @@ impl DocxModel {
         }
     }
 
+    /// The clipboard can faithfully recreate precisely the basic inline
+    /// objects the ordinary insert command produces. Reject all extensions.
+    fn clipboard_shape(&self, pos: &Pos) -> Option<ClipboardShapeView> {
+        use wordcraft_engine::doc::{para::{Float, ShapeKind, OBJ}, props::Rgb};
+        if !self.created_shapes.contains(pos) {
+            return None;
+        }
+        let InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform, effects, extra }
+            = self.object_at(pos)? else { return None };
+        let shape = match kind {
+            ShapeKind::Rectangle => BasicShape::Rectangle,
+            ShapeKind::Ellipse => BasicShape::Ellipse,
+            ShapeKind::Line => BasicShape::Line,
+            _ => return None,
+        };
+        let expected_fill = if shape == BasicShape::Line { None } else { Some(Rgb(0x15, 0x60, 0x82)) };
+        let expected_height = if shape == BasicShape::Line { 1.0 } else { 72.0 };
+        if pos.story != StoryRef::Body || pos.path.0.len() != 1 || *w != 108.0 || *h != expected_height
+            || *fill != expected_fill || *stroke != Some(Rgb(0x0e, 0x40, 0x5a)) || *stroke_width != 1.0
+            || *float != Float::default() || story.is_some() || freeform.is_some() || !effects.is_empty() || !extra.is_empty()
+        {
+            return None;
+        }
+        let end = self.session.doc.end_of(StoryRef::Body);
+        let cut_allowed = end.path == pos.path && end.off == pos.off + OBJ.len_utf8()
+            && self.session.doc.settings.protection.is_none()
+            && !self.session.doc.settings.track_changes && self.image_insertion_allowed();
+        Some(ClipboardShapeView { shape, cut_allowed })
+    }
+
+    fn cut_clipboard_shape(&mut self, position: &str, epoch: u64) -> Result<bool, Rejected> {
+        let (pos, _) = self.selected_object.clone().ok_or(Rejected)?;
+        if epoch != self.object_epoch || position_key(&pos) != position
+            || !self.clipboard_shape(&pos).is_some_and(|shape| shape.cut_allowed) {
+            return Err(Rejected);
+        }
+        let end = Pos { off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(), ..pos.clone() };
+        self.atomic(|model| {
+            model.select(&pos, &end)?;
+            let changed = model.run("text.delete", json!({}))?;
+            if changed && !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(changed)
+        })
+    }
+
     fn graphic_properties(&self, pos: &Pos) -> Option<Value> {
         let InlineObject::Graphic { graphic, .. } = self.object_at(pos)? else { return None };
         if let Some(chart) = &graphic.chart {
@@ -1730,6 +1805,7 @@ impl DocxModel {
                 epoch: self.object_epoch,
                 picture,
                 graphic: self.graphic_properties(pos),
+                clipboard_shape: self.clipboard_shape(pos),
             })
         });
         if object.is_none() {

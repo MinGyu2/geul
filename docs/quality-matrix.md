@@ -200,7 +200,9 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
 | SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
 | 차트·SmartArt 편집 | BLOCKED | BLOCKED | BLOCKED | 차트·다이어그램 부분 및 OLE 변경 보존 관문 |
-| 그 밖의 그림 서식·도형 서식·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
+| 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
+| 그림·글상자·차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 해당 개체의 자원·스토리 보존 계약과 검증이 남아 있음 |
+| 그 밖의 그림 서식·도형 서식 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
@@ -210,3 +212,8 @@ Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다. P3 
 저장 검사도 통과했다.
 [개체 선택 계약](architecture/command-registry.md#공통-개체-편집-stage-3-p1).
 
+
+최종 Release 통합 결과는 P1–P5의 위 지원 범위에서 PASS다. Vitest
+184 PASS, Stage 3 Rust 4 PASS, 표 구조 클립보드 WASM 3 PASS(87 필터
+제외), T009 279 PASS / 0 FAIL / 29 ignored다. Microsoft Word·한컴오피스,
+크로스 앱 객체 MIME, Windows/macOS 및 Wayland는 NOT RUN이다.

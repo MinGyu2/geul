@@ -1,5 +1,5 @@
 import { parseGraphicProperties } from "../commands/graphicProperties";
-import { OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
+import { BASIC_SHAPES, OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -47,7 +47,7 @@ export interface DocxView {
   pages: DocxPage[];
   caret: DocxCaret | null;
   selection: DocxRect[];
-  object?: ObjectHit;
+  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean } };
   collapsed: boolean;
   inTable: boolean;
   /** 커서·기준점 자리 키(`story:path:off`). 비교·검사용. */
@@ -262,6 +262,7 @@ export type DocxOp =
   | { op: "deselectObject" }
   | { op: "leaveTextBox" }
   | { op: "shape"; kind: BasicShape }
+  | { op: "cutShape"; position: string; epoch: number }
   | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
@@ -650,10 +651,10 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   if (parsedPages.some((page) => page === null) || parsedSelection.some((rect) => rect === null)) return null;
   if (caret !== null && parsedCaret === null) return null;
   const pageCount = parsedPages.length;
-  let object: ObjectHit | undefined;
+  let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -669,6 +670,14 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       const graphic = parseGraphicProperties(raw.graphic);
       if (!graphic || graphic.kind !== kind) return null;
       object.graphic = graphic;
+    }
+    if ("clipboardShape" in raw) {
+      const shapeView = raw.clipboardShape;
+      if (kind !== "shape" || !isRecord(shapeView) || !hasExactly(shapeView, ["shape", "cutAllowed"])
+        || typeof shapeView.cutAllowed !== "boolean") return null;
+      const shape = BASIC_SHAPES.find(shape => shape === shapeView.shape);
+      if (!shape) return null;
+      object.clipboardShape = { shape, cutAllowed: shapeView.cutAllowed };
     }
     if (parsedCaret || parsedSelection.length > 0) return null;
   }

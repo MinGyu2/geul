@@ -1830,3 +1830,20 @@ T009가 거부했다. RHWP Release의 HWP 차트값 변경 후보는
 편집 후보 내보내기에서 기존 매니페스트 항목 `ole1`을 보존하지 못해 엔진이
 거부했다. 편집·게시·Undo/Redo는 수용하지 않았고 허용 규칙도 추가하지
 않았다.
+
+### P5 DOCX 기본 도형 클립보드와 최종 통합
+
+최종 Linux X11 Release에서 현재 세션이 삽입한 DOCX 사각형의 복사,
+붙여넣기, 잘라내기, Undo/Redo, Save, Save As와 독립 재열기를 확인했다.
+저장과 다른 이름으로 저장의 패키지 부분이 일치했고, 기존 본문과
+`word/document.xml`·`docProps/app.xml` 바깥 부분이 보존됐다. 잘못된
+붙여넣기 위치와 HWPX/HWP 교차 형식 붙여넣기는 거부됐고 revision과
+디스크 바이트가 유지됐다. Rust에서 낡은 도형 선택을 거부하고 잘라내기
+후 독립 재열기 및 Undo/Redo의 내보내기 바이트를 확인했다. 객체 페이로드에
+리소스 참조를 허용하지 않는다.
+
+최종 Release에서 P1 선택, P2 HWPX 크기, P3 DOCX 도형·IBus 글상자,
+P4 조회를 다시 확인했다. P2 첫 실행의 WebDriver 연결 끊김은 별도 세션
+한 번으로 재시도해 세 형식을 확인했다. 현재 실행한 집중 Vitest 184 PASS,
+Stage 3 Rust 4 PASS, 표 구조 클립보드 Release WASM 3 PASS(87 필터 제외),
+T009 저장 279 PASS / 0 FAIL / 29 ignored. Stage 3 전체 수용은 미완료다.

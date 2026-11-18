@@ -1,3 +1,4 @@
+import { MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { documentCommandState } from "./capability";
 import {
@@ -122,12 +123,20 @@ export async function runClipboard(
         const hasMerges = parsed.cells.some(c => c.rowSpan > 1 || c.colSpan > 1);
         return !hasMerges && parsed.plainText !== "" && validClipboardText(parsed.plainText) && editing.insert(parsed.plainText);
       };
+      const pasteObject = async (raw: string): Promise<boolean> =>
+        !!parseObjectClipboardPayload(raw) && !!editing.insertStructured
+        && await editing.insertStructured(OBJECT_CLIPBOARD_MIME, raw) === "ok";
       // Start the permission-sensitive read in the original user gesture.
       const rawStructured = clipboard.readStructured ? await clipboard.readStructured(TABLE_CLIPBOARD_MIME) : null;
       if (!current()) return false;
       if (rawStructured !== null) return await pasteStructured(rawStructured, false);
+      const object = clipboard.readStructured ? await clipboard.readStructured(OBJECT_CLIPBOARD_MIME) : null;
+      if (!current()) return false;
+      if (object !== null) return await pasteObject(object);
       const text = await clipboard.readText();
       if (!current()) return false;
+      const shape = recallStructuredClipboard(OBJECT_CLIPBOARD_MIME, text);
+      if (shape !== null) return await pasteObject(shape);
       const recalled = recallStructuredClipboard(TABLE_CLIPBOARD_MIME, text);
       if (recalled !== null && editing.insertStructured) return await pasteStructured(recalled, true);
       return text !== "" && validClipboardText(text) && editing.insert(text);
@@ -138,7 +147,11 @@ export async function runClipboard(
       if (structured.status === "rejected") return false;
       if (structured.status === "ok") {
         const { mime, data, plainText } = structured;
-        if (!plainText || !validClipboardText(plainText) || data.length > MAX_TABLE_CLIPBOARD_BYTES) return false;
+        if (!plainText || !validClipboardText(plainText)) return false;
+        if (mime === OBJECT_CLIPBOARD_MIME) {
+          const object = data.length <= MAX_OBJECT_CLIPBOARD_BYTES ? parseObjectClipboardPayload(data) : null;
+          if (!object || objectClipboardPlainText(object) !== plainText) return false;
+        } else if (mime !== TABLE_CLIPBOARD_MIME || data.length > MAX_TABLE_CLIPBOARD_BYTES) return false;
         if (clipboard.writeStructured) await clipboard.writeStructured(mime, data, plainText);
         else await clipboard.writeText(plainText);
         if (!current()) return false;
