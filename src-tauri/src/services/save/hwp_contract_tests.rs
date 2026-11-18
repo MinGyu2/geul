@@ -3043,3 +3043,38 @@ fn stage2_p3_new_table_border_fill_and_vertical_align_proven_or_refused() {
     });
     assert!(!only_stale_preview(&raw_findings(&orig, &bad_diag, true)));
 }
+
+#[test]
+fn stage2_p4_1_evolved_table_cell_formatted_edit_proven_or_refused() {
+    let original = fixture_with(false, &[existing_nonbasic_table()], "Keep 한글");
+    // Multi-cell paste updating both cell text and cell verticalAlign on the same grid (with a valid
+    // non-table DocInfo/body insertion outside so `evolved_table` runs) passes T009.
+    let mut pasted = existing_nonbasic_table();
+    {
+        let c0 = pasted.iter_mut().find(|r| r.0 == 72).unwrap();
+        d(&mut c0.2, 2, 0x0040_0000); // vertical_align = bottom
+    }
+    if let Some(txt) = pasted.iter_mut().find(|r| r.0 == 67) {
+        txt.2 = "cell B\r".encode_utf16().flat_map(u16::to_le_bytes).collect();
+    }
+    let output_ok = fixture_with(true, &[pasted.clone()], "Keep 한글");
+    let ok_findings = raw_findings(&original, &output_ok, true);
+    assert!(only_stale_preview(&ok_findings), "{ok_findings:?}");
+
+    // Negative: unformatted PARA_TEXT mutation without header/para_shape/char_shape change stays refused.
+    let mut unformatted = existing_nonbasic_table();
+    if let Some(txt) = unformatted.iter_mut().find(|r| r.0 == 67) {
+        txt.2[0] ^= 1;
+    }
+    let output_bad_text = fixture_with(true, &[unformatted], "Keep 한글");
+    assert!(!only_stale_preview(&raw_findings(&original, &output_bad_text, true)));
+
+    // Negative: cell header changed with corrupted list_attr non-valign bits stays refused.
+    let mut bad_attr = existing_nonbasic_table();
+    {
+        let c0 = bad_attr.iter_mut().find(|r| r.0 == 72).unwrap();
+        d(&mut c0.2, 2, 0x0001_0000);
+    }
+    let output_bad_attr = fixture_with(true, &[bad_attr], "Keep 한글");
+    assert!(!only_stale_preview(&raw_findings(&original, &output_bad_attr, true)));
+}

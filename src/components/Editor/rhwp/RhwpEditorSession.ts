@@ -1,4 +1,7 @@
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
+import {
+  TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
+} from "../../../commands/tableClipboard";
 // rhwp 편집 세션 하나(T007, R-A). WebView의 WASM 문서 모델·커서·선택·IME 조합 상태를 가지고, 문서를 바꾼 결과를
 // 백엔드에 revision으로 확정한다.
 //
@@ -2720,21 +2723,178 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * also covers load generation, committed revision, selection/clipboard and IME epochs and both ends of the
    * selection. One full extraction proves availability per key; only that boolean is retained. Copy/Cut
    * still extract and validate the complete text afresh when they execute. */
-  private clipboardProbe: { key: string; text: RhwpText; supported: boolean } | null = null;
-  private clipboardState(): NonNullable<DocumentCommandSnapshot["clipboard"]> {
-    const key = JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
-      this.imeSerial, this.anchor, this.caret]);
-    const text = this.text;
-    let supported = false;
-    if (text && !this.uncertain) {
-      const cached = this.clipboardProbe;
-      if (cached && cached.key === key && cached.text === text) supported = cached.supported;
-      else {
-        supported = !!text.selectedText(this.anchor, this.caret);
-        this.clipboardProbe = { key, text, supported };
+  private clipboardProbe: { key: string; text: RhwpText; supported: boolean; writable: boolean } | null = null;
+  private structuredSelectionTarget(): { target: TableTarget; range: CellRange; format: "hwp" | "hwpx" } | null {
+    const format = this.sessions.get(this.sessionId)?.format;
+    if ((format !== "hwp" && format !== "hwpx") || !this.doc || !this.text || this.uncertain
+      || !this.hasSelection || sameContext(this.anchor, this.caret)) return null;
+    if (!sameTable(this.anchor, this.caret) || !this.ownsPosition(this.anchor) || !this.ownsPosition(this.caret)) return null;
+    const table = this.caretTable(), range = this.selectedCellRange();
+    if (!table || typeof table.grid === "string" || !range) return null;
+    return { target: table.target, range, format };
+  }
+
+  private readStructuredCells(): { mime: string; data: string; plainText: string } | null {
+    const sel = this.structuredSelectionTarget();
+    if (!sel || !this.doc?.extractTableCellsByPath) return null;
+    try {
+      const raw = this.doc.extractTableCellsByPath(
+        sel.target.section, sel.target.paragraph, tableTargetPathJson(sel.target),
+        sel.range.startRow, sel.range.startCol, sel.range.endRow, sel.range.endCol,
+      );
+      const extracted = JSON.parse(raw) as { rows?: number; cols?: number; cells?: unknown[] };
+      if (!Number.isSafeInteger(extracted.rows) || !Number.isSafeInteger(extracted.cols) || !Array.isArray(extracted.cells)) {
+        return null;
+      }
+      const plainText = buildTableClipboardPlainText(extracted.rows!, extracted.cols!, extracted.cells as never);
+      const payload = parseTableClipboardPayload({
+        kind: "geul.tableCells",
+        version: 1,
+        sourceFormat: sel.format,
+        rows: extracted.rows,
+        cols: extracted.cols,
+        cells: extracted.cells,
+        plainText,
+      });
+      if (!payload) return null;
+      return { mime: TABLE_CLIPBOARD_MIME, data: JSON.stringify(payload), plainText: payload.plainText };
+    } catch {
+      return null;
+    }
+  }
+
+  private removeStructuredCells(): boolean {
+    const sel = this.structuredSelectionTarget();
+    const doc = this.doc;
+    if (!sel || !doc?.clearTableCellsByPath || !this.editable || !this.history || this.imeUnsettled
+      || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return false;
+    if (sel.format === "hwp" && !this.structuralFormat()) return false;
+    const path = tableTargetPathJson(sel.target);
+    this.history.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.clearTableCellsByPath!(
+        sel.target.section, sel.target.paragraph, path,
+        sel.range.startRow, sel.range.startCol, sel.range.endRow, sel.range.endCol,
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("clearTableCellsByPath failed");
+      this.text?.compactAfterCellMutation();
+      const nextGrid = readTableGrid(doc, sel.target);
+      const anchorIndex = typeof nextGrid === "string" ? 0 : cellCovering(nextGrid, sel.range.startRow, sel.range.startCol);
+      const pos = this.caret.cell ? withCell(this.caret, anchorIndex) : this.caret;
+      return { caret: pos, anchor: pos };
+    }, true, "other", null, true, true);
+    this.history.boundary();
+    return applied;
+  }
+
+  private insertStructuredCells(mime: string, data: string): "ok" | "notTable" | "rejected" {
+    if (mime !== TABLE_CLIPBOARD_MIME) return "rejected";
+    const payload = parseTableClipboardPayload(data);
+    const doc = this.doc;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (!payload || !doc || !this.text || !this.editable || !this.history
+      || this.imeUnsettled || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) {
+      return "rejected";
+    }
+    if (format !== "hwp" && format !== "hwpx") return "rejected";
+    if (!this.caret.cell) return "notTable";
+    if (!doc.applyTableCellsByPath) return "rejected";
+    if (format === "hwp" && !this.structuralFormat()) return "rejected";
+    if (!this.ownsPosition(this.caret)) return "rejected";
+
+    let startRow: number;
+    let startCol: number;
+    const table = this.caretTable();
+    if (!table || typeof table.grid === "string") return "rejected";
+
+    if (this.hasSelection && !sameContext(this.anchor, this.caret)) {
+      if (!sameTable(this.anchor, this.caret) || !this.ownsPosition(this.anchor)) return "rejected";
+      const range = this.selectedCellRange();
+      if (!range) return "rejected";
+      startRow = range.startRow;
+      startCol = range.startCol;
+    } else {
+      const cell = table.grid.cells[innermost(this.caret.cell).cell];
+      if (!cell) return "rejected";
+      startRow = cell.row;
+      startCol = cell.col;
+    }
+
+    const endRow = startRow + payload.rows - 1;
+    const endCol = startCol + payload.cols - 1;
+    if (endRow >= table.grid.rows || endCol >= table.grid.cols) return "rejected";
+
+    // Pre-validate merge boundary & HWP grid compatibility before opening a transaction.
+    const intersecting = table.grid.cells.filter(c =>
+      c.row + c.rowSpan - 1 >= startRow && c.row <= endRow
+      && c.col + c.colSpan - 1 >= startCol && c.col <= endCol,
+    );
+    if (intersecting.some(c =>
+      c.row < startRow || c.col < startCol || c.row + c.rowSpan - 1 > endRow || c.col + c.colSpan - 1 > endCol,
+    )) {
+      return "rejected";
+    }
+    const allowMergeRewrite = format === "hwpx";
+    if (!allowMergeRewrite) {
+      if (intersecting.length !== payload.cells.length) return "rejected";
+      const expected = new Map(payload.cells.map(c => [`${c.row},${c.col}`, `${c.rowSpan},${c.colSpan}`]));
+      if (intersecting.some(c => expected.get(`${c.row - startRow},${c.col - startCol}`) !== `${c.rowSpan},${c.colSpan}`)) {
+        return "rejected";
       }
     }
-    return { selection: supported, writable: !this.uncertain && (!this.hasSelection || supported), key };
+
+    const path = tableTargetPathJson(table.target);
+    const applySpec = JSON.stringify({
+      startRow,
+      startCol,
+      rows: payload.rows,
+      cols: payload.cols,
+      allowMergeRewrite,
+      cells: payload.cells,
+    });
+    this.history.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.applyTableCellsByPath!(table.target.section, table.target.paragraph, path, applySpec)) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("applyTableCellsByPath failed");
+      if (this.borderFillBaseline !== null && typeof doc.compactAppendedBorderFills === "function") {
+        const comp = JSON.parse(doc.compactAppendedBorderFills(this.borderFillBaseline)) as { ok?: boolean };
+        if (comp.ok !== true) throw new Error("borderFill compaction failed");
+      }
+      this.text?.compactAfterCellMutation();
+      const nextGrid = readTableGrid(doc, table.target);
+      const anchorIndex = typeof nextGrid === "string" ? 0 : cellCovering(nextGrid, startRow, startCol);
+      const pos = withCell(this.caret, anchorIndex);
+      return { caret: pos, anchor: pos };
+    }, true, "other", null, true, true);
+    this.history.boundary();
+    return applied ? "ok" : "rejected";
+  }
+
+  private clipboardState(): NonNullable<DocumentCommandSnapshot["clipboard"]> {
+    const key = JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
+      this.imeSerial, this.anchor, this.caret, this.structuralKey()]);
+    const text = this.text;
+    let supported = false;
+    let writable = !this.uncertain && !this.hasSelection;
+    if (text && !this.uncertain) {
+      const cached = this.clipboardProbe;
+      if (cached && cached.key === key && cached.text === text) {
+        supported = cached.supported;
+        writable = cached.writable;
+      } else if (sameContext(this.anchor, this.caret)) {
+        supported = !!text.selectedText(this.anchor, this.caret);
+        writable = !this.hasSelection || supported;
+        this.clipboardProbe = { key, text, supported, writable };
+      } else {
+        const sel = this.structuredSelectionTarget();
+        const structured = sel ? this.readStructuredCells() : null;
+        supported = structured !== null;
+        writable = supported && !!this.doc?.clearTableCellsByPath && !!this.history
+          && (sel!.format !== "hwp" || this.structuralFormat());
+        this.clipboardProbe = { key, text, supported, writable };
+      }
+    }
+    return { selection: supported, writable, key };
   }
 
   executeClipboard(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean> {
@@ -2742,6 +2902,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       read: async () => this.text?.selectedText(this.anchor, this.caret) ?? null,
       remove: () => this.hasSelection && this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw()),
       insert: text => this.typeText(text),
+      readStructured: async () => {
+        if (!this.hasSelection || sameContext(this.anchor, this.caret)) return { status: "none" };
+        const structured = this.readStructuredCells();
+        return structured ? { status: "ok", ...structured } : { status: "rejected" };
+      },
+      removeStructured: () => this.removeStructuredCells(),
+      insertStructured: async (mime, data) => this.insertStructuredCells(mime, data),
     }, () => owns() && this.sessions.snapshot().activeId === this.sessionId && !this.uncertain, clipboard);
   }
 

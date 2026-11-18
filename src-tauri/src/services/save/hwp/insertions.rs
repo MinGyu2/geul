@@ -2154,6 +2154,8 @@ fn table_header_preserved(a: &[u8], b: &[u8]) -> Checked<()> {
 /// paragraphs in order (each a complete control subtree).
 struct EvolvedCell<'a> {
     header: &'a [u8],
+    para_shapes: Vec<usize>,
+    char_shapes: Vec<&'a [u8]>,
     objects: Vec<Vec<Record<'a>>>,
     object_paragraphs: Vec<usize>,
     /// PARA_TEXT payloads of the cell's own paragraphs (correspondence evidence for deletions).
@@ -2187,12 +2189,14 @@ fn evolved_cells<'a, 'r>(
             .position(|r| r.0 == 72 && r.1 == level)
             .map_or(rs.len(), |p| at + p);
         let mut paragraphs = 0;
+        let mut para_shapes = Vec::new();
         let mut objects = Vec::new();
         let mut object_paragraphs = Vec::new();
         let mut evidence = Vec::new();
         let mut start = at;
         while start < end {
             valid(rs[start].0 == 66 && rs[start].1 == level, BODY)?;
+            para_shapes.push(word(rs[start].2, 8)?);
             let stop = rs[start + 1..end]
                 .iter()
                 .position(|r| r.1 <= level)
@@ -2236,8 +2240,15 @@ fn evolved_cells<'a, 'r>(
             .filter(|t| t.0 == 67 && t.1 == level + 1)
             .map(|t| t.2)
             .collect();
+        let char_shapes = rs[at..end]
+            .iter()
+            .filter(|t| t.0 == 68 && t.1 == level + 1)
+            .map(|t| t.2)
+            .collect();
         cells.push(EvolvedCell {
             header: r.2,
+            para_shapes,
+            char_shapes,
             objects,
             object_paragraphs,
             texts,
@@ -2516,7 +2527,21 @@ fn evolved_table(
                 && x.objects.len() == y.objects.len()
                 && x.objects.iter().zip(&y.objects).all(|(a, b)| same_child(a, b))
         });
-    preserved(structural || formatting_only, BODY)?;
+    // Stage 2 P4-1: cell clipboard paste/clear on an unchanged table grid (same cell geometries and
+    // paragraph counts; no child object loss/reorder) that also updates cell header, paragraph shape, or
+    // character shape run records alongside text edits. Pure unformatted PARA_TEXT tampering stays refused.
+    let cell_formatted_edit = same_grid
+        && before.len() == after.len()
+        && before.iter().zip(&after).all(|(x, y)| {
+            x.para_shapes.len() == y.para_shapes.len()
+                && x.object_paragraphs == y.object_paragraphs
+                && x.objects.len() == y.objects.len()
+                && x.objects.iter().zip(&y.objects).all(|(a, b)| same_child(a, b))
+        })
+        && before.iter().zip(&after).any(|(x, y)| {
+            x.header != y.header || x.para_shapes != y.para_shapes || x.char_shapes != y.char_shapes
+        });
+    preserved(structural || formatting_only || cell_formatted_edit, BODY)?;
     Ok(())
 }
 

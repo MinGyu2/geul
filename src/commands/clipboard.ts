@@ -1,5 +1,13 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { documentCommandState } from "./capability";
+import {
+  clearStructuredClipboard,
+  MAX_TABLE_CLIPBOARD_BYTES,
+  parseTableClipboardPayload,
+  recallStructuredClipboard,
+  rememberStructuredClipboard,
+  TABLE_CLIPBOARD_MIME,
+} from "./tableClipboard";
 import type { DocumentCommandTarget } from "./target";
 
 export type ClipboardCommand = "edit.copy" | "edit.cut" | "edit.paste";
@@ -43,6 +51,8 @@ export function resetClipboardCapabilityForTests(): void {
 export interface PlainClipboard {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
+  readStructured?(mime: string): Promise<string | null>;
+  writeStructured?(mime: string, data: string, plainText: string): Promise<void>;
 }
 export const systemClipboard: PlainClipboard = {
   readText: async () => {
@@ -62,10 +72,18 @@ export const systemClipboard: PlainClipboard = {
   writeText: text => navigator.clipboard.writeText(text),
 };
 
+export type StructuredReadResult =
+  | { status: "none" }
+  | { status: "rejected" }
+  | { status: "ok"; mime: string; data: string; plainText: string };
+
 export interface ClipboardEditing {
   read(): Promise<string | null>;
+  readStructured?(): Promise<StructuredReadResult>;
   remove(): boolean;
+  removeStructured?(): boolean | Promise<boolean>;
   insert(text: string): boolean;
+  insertStructured?(mime: string, data: string): Promise<"ok" | "notTable" | "rejected">;
 }
 
 const running = new WeakSet<DocumentCommandTarget>();
@@ -89,14 +107,45 @@ export async function runClipboard(
   running.add(target);
   try {
     if (command === "edit.paste") {
+      const pasteStructured = async (raw: string): Promise<boolean> => {
+        const parsed = parseTableClipboardPayload(raw);
+        if (!parsed || !editing.insertStructured) return false;
+        const outcome = await editing.insertStructured(TABLE_CLIPBOARD_MIME, raw);
+        if (outcome === "ok") return true;
+        if (outcome === "rejected") return false;
+        const hasMerges = parsed.cells.some(c => c.rowSpan > 1 || c.colSpan > 1);
+        return !hasMerges && parsed.plainText !== "" && validClipboardText(parsed.plainText) && editing.insert(parsed.plainText);
+      };
       // Start the permission-sensitive read in the original user gesture.
+      const rawStructured = clipboard.readStructured ? await clipboard.readStructured(TABLE_CLIPBOARD_MIME) : null;
+      if (!current()) return false;
+      if (rawStructured !== null) return await pasteStructured(rawStructured);
       const text = await clipboard.readText();
-      return current() && text !== "" && validClipboardText(text) && editing.insert(text);
+      if (!current()) return false;
+      const recalled = recallStructuredClipboard(TABLE_CLIPBOARD_MIME, text);
+      if (recalled !== null && editing.insertStructured) return await pasteStructured(recalled);
+      return text !== "" && validClipboardText(text) && editing.insert(text);
+    }
+    if (editing.readStructured) {
+      const structured = await editing.readStructured();
+      if (!current()) return false;
+      if (structured.status === "rejected") return false;
+      if (structured.status === "ok") {
+        const { mime, data, plainText } = structured;
+        if (!plainText || !validClipboardText(plainText) || data.length > MAX_TABLE_CLIPBOARD_BYTES) return false;
+        if (clipboard.writeStructured) await clipboard.writeStructured(mime, data, plainText);
+        else await clipboard.writeText(plainText);
+        if (!current()) return false;
+        rememberStructuredClipboard(mime, data, plainText);
+        if (command === "edit.copy") return true;
+        return editing.removeStructured ? await editing.removeStructured() : editing.remove();
+      }
     }
     const text = await editing.read();
     if (!current() || !text || !validClipboardText(text)) return false;
     await clipboard.writeText(text);
     if (!current()) return false;
+    clearStructuredClipboard();
     return command === "edit.copy" || editing.remove();
   } catch {
     return false;

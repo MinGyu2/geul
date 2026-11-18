@@ -170,6 +170,10 @@ export interface RhwpDocument {
   // Stage 2 Phase 3 (P3-1): table cell shading & borders with bounded borderFill compaction.
   getTableCellFormattingByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
   formatTableCellsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
+  // Stage 2 Phase 4 (P4-1): structural table cell clipboard extract/clear/apply.
+  extractTableCellsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
+  clearTableCellsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
+  applyTableCellsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
   borderFillCount?(): number;
   compactAppendedBorderFills?(baseline: number): string;
   getFormattingRunsByPath?(section: number, paragraph: number, path: string, start: number, end: number): string;

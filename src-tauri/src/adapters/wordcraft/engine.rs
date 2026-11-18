@@ -297,6 +297,15 @@ pub enum DocxOp {
         #[serde(default)]
         distribute: bool,
     },
+    /// Stage 2 Phase 4 (P4-1): clear contents of a validated multi-cell selection (cut).
+    CutTableCells {
+        target: SelectionIdentity,
+    },
+    /// Stage 2 Phase 4 (P4-1): paste validated structured table cells atomically.
+    PasteTableCells {
+        target: SelectionIdentity,
+        payload: table::PasteTableCellsPayload,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -513,6 +522,14 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 };
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dim_ok
             }
+            DocxOp::CutTableCells { target } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key)
+            }
+            DocxOp::PasteTableCells { target, payload } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && payload.valid()
+            }
             _ => true,
         })
 }
@@ -572,6 +589,8 @@ pub struct DocxView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_text: Option<String>,
     pub clipboard_text_available: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub clipboard_table_cells_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paragraph_style: Option<String>,
     /// 커서의 문단 안 위치(문자 단위).
@@ -1078,6 +1097,8 @@ impl DocxModel {
             DocxOp::TableRowHeight { target, height, rule, clear, distribute } => {
                 self.table_row_height(target, *height, *rule, *clear, *distribute)
             }
+            DocxOp::CutTableCells { target } => self.cut_table_cells(target),
+            DocxOp::PasteTableCells { target, payload } => self.paste_table_cells(target, payload),
         }
     }
 
@@ -1514,6 +1535,7 @@ impl DocxModel {
             anchor_key: position_key(&sel.anchor),
             paragraph_text: paragraph.map(|para| para.plain_text()).unwrap_or_default(),
             clipboard_text_available: self.clipboard_text().is_some(),
+            clipboard_table_cells_available: self.has_clipboard_table_cells(),
             selection_text: if sel.anchor.story == sel.focus.story
                 && sel.anchor.path == sel.focus.path
                 && sel.anchor != sel.focus

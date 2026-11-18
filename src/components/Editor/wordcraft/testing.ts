@@ -35,7 +35,7 @@ const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "font", "comment",
   "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
-  "tableStructure",
+  "tableStructure", "cutTableCells", "pasteTableCells",
 ]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 /** The fake document's base font family. */
@@ -174,7 +174,9 @@ export class FakeDocx implements DocxBackend {
       tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
-      selection, collapsed, inTable: !!this.tableView, clipboardTextAvailable: !collapsed,
+      selection, collapsed, inTable: !!this.tableView || !!this.tableCellsSelection,
+      clipboardTextAvailable: !collapsed,
+      ...(this.tableCellsSelection ? { clipboardTableCellsAvailable: true } : {}),
       caretKey: at(this.caret), anchorKey: at(this.anchor),
       paragraphText: this.paragraphs[this.caret.p]!, caretOffset: this.caret.o,
       history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
@@ -198,7 +200,7 @@ export class FakeDocx implements DocxBackend {
 
   /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
   private content(): string {
-    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions, [...this.fonts].sort()]);
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions, [...this.fonts].sort(), this.tableCellsSelection, this.pastedTableCells.length]);
   }
 
   private capture(): FakeState {
@@ -269,6 +271,18 @@ export class FakeDocx implements DocxBackend {
     if (this.info.state !== "ready") return { ok: false, error: { code: "InvalidState", sessionId, state: this.info.state } };
     return { ok: true, value: this.state() };
   }
+
+  async selectionTableCells(sessionId: number, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>> {
+    const checked = this.check(sessionId, generation);
+    if (!checked.ok) return checked;
+    if (revision !== this.info.revision || anchorKey !== checked.value.view.anchorKey || caretKey !== checked.value.view.caretKey)
+      return { ok: false, error: { code: "InvalidRequest" } };
+    return { ok: true, value: this.tableCellsSelection ?? "" };
+  }
+
+  /** Test hook for structured table cell clipboard selection. */
+  tableCellsSelection: string | null = null;
+  pastedTableCells: unknown[] = [];
 
   async selectionText(sessionId: number, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>> {
     const checked = this.check(sessionId, generation);
@@ -530,6 +544,13 @@ export class FakeDocx implements DocxBackend {
       case "selectAll":
         this.anchor = { p: 0, o: 0 };
         this.caret = { p: this.paragraphs.length - 1, o: len(this.paragraphs.length - 1) };
+        return true;
+      case "cutTableCells":
+        if (!this.tableCellsSelection) return false;
+        this.tableCellsSelection = null;
+        return true;
+      case "pasteTableCells":
+        this.pastedTableCells.push(op.payload);
         return true;
       case "mark":
         this.marks.set(op.id, { ...this.caret });

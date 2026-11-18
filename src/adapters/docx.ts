@@ -55,6 +55,7 @@ export interface DocxView {
   /** Optional bounded actual text; absence means unsupported selection shape. */
   selectionText?: string;
   clipboardTextAvailable?: boolean;
+  clipboardTableCellsAvailable?: boolean;
   paragraphStyle?: string;
   /** 커서의 문단 안 위치(문자 단위). */
   caretOffset: number;
@@ -277,7 +278,17 @@ export type DocxOp =
   | { op: "tableBorders"; target: { anchorKey: string; caretKey: string }; kind: DocxTableBorderKind; style?: string; width?: number; color?: string | null }
   | { op: "tableAlignment"; target: { anchorKey: string; caretKey: string }; horizontal?: "left" | "center" | "right" | "justify"; vertical?: "top" | "middle" | "bottom" }
   | { op: "tableColumnWidth"; target: { anchorKey: string; caretKey: string }; width?: number; distribute: boolean }
-  | { op: "tableRowHeight"; target: { anchorKey: string; caretKey: string }; height?: number; rule?: "atLeast" | "exact"; clear: boolean; distribute: boolean };
+  | { op: "tableRowHeight"; target: { anchorKey: string; caretKey: string }; height?: number; rule?: "atLeast" | "exact"; clear: boolean; distribute: boolean }
+  | { op: "cutTableCells"; target: { anchorKey: string; caretKey: string } }
+  | {
+      op: "pasteTableCells";
+      target: { anchorKey: string; caretKey: string };
+      payload: {
+        rows: number;
+        cols: number;
+        cells: import("../commands/tableClipboard").TableClipboardCell[];
+      };
+    };
 
 /** Backend `ParagraphFormat` (camelCase fields, line spacing tagged by `rule`). */
 export interface DocxParagraphFormat {
@@ -309,6 +320,7 @@ export interface DocxBackend {
   /** 엔진에 불러온다(identified·failed → ready). reloadGeneration이 있으면 그 시도의 ready 모델을 버리고 다시 불러온다. */
   load(sessionId: SessionId, reloadGeneration?: number): Promise<Result<DocxState>>;
   selectionText?(sessionId: SessionId, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>>;
+  selectionTableCells?(sessionId: SessionId, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>>;
   view(sessionId: SessionId, generation: number): Promise<Result<DocxState>>;
   edit(sessionId: SessionId, generation: number, baseRevision: number, ops: DocxOp[]): Promise<Result<DocxEdited>>;
   /** 쪽 그림. scale은 pt당 픽셀, base는 이미 가진 같은 배율 그림의 판(있으면 바뀐 띠만 받는다). */
@@ -529,10 +541,11 @@ export function parseDocxView(value: unknown): DocxView | null {
 }
 
 function parseDocxBaseView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "bullets") && typeof value.bullets !== "boolean" && value.bullets !== null) return null;
   if (value.clipboardTextAvailable !== undefined && typeof value.clipboardTextAvailable !== "boolean") return null;
+  if (value.clipboardTableCellsAvailable !== undefined && typeof value.clipboardTableCellsAvailable !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
   if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, trackedReadOnly, hasToc, tracking, hasRevisions } = value;
@@ -555,6 +568,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   if (typeof caretKey !== "string" || typeof anchorKey !== "string" || typeof paragraphText !== "string" || !isCount(caretOffset)) return null;
   return {
     ...(typeof value.clipboardTextAvailable === "boolean" ? { clipboardTextAvailable: value.clipboardTextAvailable } : {}),
+    ...(typeof value.clipboardTableCellsAvailable === "boolean" ? { clipboardTableCellsAvailable: value.clipboardTableCellsAvailable } : {}),
     ...(typeof value.imageInsertionAllowed === "boolean" ? { imageInsertionAllowed: value.imageInsertionAllowed } : {}),
     ...(typeof value.bullets === "boolean" || value.bullets === null ? { bullets: value.bullets } : {}),
     pages: parsedPages as DocxPage[],
@@ -635,6 +649,9 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
     selectionText: (sessionId, loadGeneration, revision, anchorKey, caretKey) =>
       call(invoke, "docx_selection_text", { sessionId, loadGeneration, revision, anchorKey, caretKey }, value =>
         typeof value === "string" && value.length <= 2 * 1024 * 1024 && [...value].length <= 1024 * 1024 ? value : null),
+    selectionTableCells: (sessionId, loadGeneration, revision, anchorKey, caretKey) =>
+      call(invoke, "docx_selection_table_cells", { sessionId, loadGeneration, revision, anchorKey, caretKey }, value =>
+        typeof value === "string" && value.length <= 2 * 1024 * 1024 ? value : null),
     view: (sessionId, loadGeneration) =>
       call(invoke, "docx_view", { sessionId, loadGeneration }, (value) => parseDocxState(value, sessionId)),
     edit: (sessionId, loadGeneration, baseRevision, ops) =>

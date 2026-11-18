@@ -4,6 +4,7 @@ import { readySession, flush } from "./rhwp/testing";
 import { RhwpText, type DocPosition } from "./rhwp/rhwpText";
 import type { RhwpDocument } from "./rhwp/rhwpModule";
 import type { PlainClipboard } from "../../commands/clipboard";
+import { clearStructuredClipboard, TABLE_CLIPBOARD_MIME } from "../../commands/tableClipboard";
 
 const clipboard = (text = ""): PlainClipboard => ({ readText: vi.fn(async () => text), writeText: vi.fn(async () => {}) });
 const owner = () => true;
@@ -90,5 +91,72 @@ describe("RHWP complete text and paragraph-aware paste", () => {
     const text = new RhwpText(doc);
     expect(text.selectedText(a, b)).toBe("😀\n글"); expect(text.selectedText(b, a)).toBe("😀\n글");
     expect(text.selectedText(a, { ...b, cell: { ...cell, cell: 2 } })).toBeNull();
+  });
+
+  it("DOCX session structured multi-cell copy/cut/paste respects revision ownership and write failure boundaries", async () => {
+    clearStructuredClipboard();
+    const { editor, fake } = await readyDocx(["inTable"]);
+    const rawCells = JSON.stringify({
+      rows: 1,
+      cols: 2,
+      cells: [
+        { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "C1", bold: true }] }] },
+        { row: 0, col: 1, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "C2" }] }] },
+      ],
+    });
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 2,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null, mergeCells: null,
+      splitCell: null, maxSplitRows: 4, maxSplitColumns: 4, hasInsideBorders: true,
+      cellShadingRefusal: null, cellBordersRefusal: null, cellShading: null, cellShadingMixed: false,
+      hasCellShading: false, cellBorders: null, supportedBorderStyles: ["single"],
+      cellAlignHorizontal: null, cellAlignHorizontalMixed: false, cellAlignVertical: null,
+      cellAlignVerticalMixed: false, cellAlignmentRefusal: null, colWidth: 100, colWidthMixed: false,
+      rowHeight: null, rowHeightMixed: false, rowHeightRule: null, selectedCols: 2, selectedRows: 1,
+      columnWidthRefusal: null, rowHeightRefusal: null,
+    };
+    fake.tableCellsSelection = rawCells;
+    editor.selectAll();
+    await docxFlush();
+    const clip = clipboard();
+    const revBefore = editor.revision;
+
+    expect(await editor.executeClipboard("edit.copy", owner, clip)).toBe(true);
+    expect(clip.writeText).toHaveBeenCalledWith("C1\tC2");
+    expect(editor.revision).toBe(revBefore);
+
+    const clipWithRead = clipboard("C1\tC2");
+    expect(await editor.executeClipboard("edit.paste", owner, clipWithRead)).toBe(true);
+    await docxFlush();
+    expect(fake.pastedTableCells).toHaveLength(1);
+    expect(editor.revision).toBe(revBefore + 1);
+
+    // Failed clipboard write during structured cut never clears source cells
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 2,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null, mergeCells: null,
+      splitCell: null, maxSplitRows: 4, maxSplitColumns: 4, hasInsideBorders: true,
+      cellShadingRefusal: null, cellBordersRefusal: null, cellShading: null, cellShadingMixed: false,
+      hasCellShading: false, cellBorders: null, supportedBorderStyles: ["single"],
+      cellAlignHorizontal: null, cellAlignHorizontalMixed: false, cellAlignVertical: null,
+      cellAlignVerticalMixed: false, cellAlignmentRefusal: null, colWidth: 100, colWidthMixed: false,
+      rowHeight: null, rowHeightMixed: false, rowHeightRule: null, selectedCols: 2, selectedRows: 1,
+      columnWidthRefusal: null, rowHeightRefusal: null,
+    };
+    fake.tableCellsSelection = rawCells;
+    const denied = clipboard();
+    denied.writeText = vi.fn(async () => { throw new Error("denied"); });
+    expect(await editor.executeClipboard("edit.cut", owner, denied)).toBe(false);
+    expect(fake.tableCellsSelection).toBe(rawCells);
+
+    // Invalid structured MIME payload rejected safely
+    const badMime: PlainClipboard = {
+      readText: vi.fn(async () => "ignored"),
+      writeText: vi.fn(async () => {}),
+      readStructured: vi.fn(async (mime) => mime === TABLE_CLIPBOARD_MIME ? "{\"kind\":\"wrong\"}" : null),
+    };
+    expect(await editor.executeClipboard("edit.paste", owner, badMime)).toBe(false);
   });
 });

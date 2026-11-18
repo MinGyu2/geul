@@ -1,0 +1,503 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index 882c824..ddeab86 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -1,9 +1,12 @@
+ //! Table Design and Table Layout tabs.
+ 
++use serde::Deserialize;
+ use serde_json::{Value, json};
+ use wordcraft_doc::collate::{SortKey, sort_key};
+ use wordcraft_doc::locale_number::{format_number, parse_number};
+-use wordcraft_doc::props::{Align, Border, BorderStyle, Borders, HeightRule, Rgb, TextDirection, VAlign};
++use wordcraft_doc::props::{
++    Align, Border, BorderStyle, Borders, CharProps, HeightRule, Highlight, Rgb, TextColor, TextDirection, Underline, VAlign,
++};
+ use wordcraft_doc::{Block, Document, Paragraph, Path, Pos, StoryRef, Table, para_block};
+ 
+ use super::sel_result;
+@@ -106,6 +109,9 @@ pub fn specs() -> Vec<CommandSpec> {
+             .params(r#"{"width"?: pt, "distribute"?: bool}"#)),
+         t(CommandSpec::new("table.setRowHeight", "Set Row Height", "Table Layout › Cell Size", set_row_height_cmd)
+             .params(r#"{"height"?: pt|null, "rule"?: "atLeast|exact", "distribute"?: bool}"#)),
++        t(CommandSpec::new("table.clearCells", "Clear Cells", "Table Layout › Clipboard", clear_cells_cmd)),
++        t(CommandSpec::new("table.pasteCells", "Paste Cells", "Table Layout › Clipboard", paste_cells_cmd)
++            .params(r#"{"startRow": n, "startCol": n, "rows": n, "cols": n, "cells": [...]}"#)),
+         t(CommandSpec::new("table.textDirection", "Text Direction", "Table Layout › Alignment", text_direction)
+             .params(r#"{"value"?: "horizontal|down|up"} (default: the next direction after the caret cell's, like Word's button)"#)),
+         t(CommandSpec::new("table.autofit", "AutoFit", "Table Layout › Cell Size", autofit).params(r#"{"mode": "contents|window|fixed"}"#)),
+@@ -1153,6 +1159,396 @@ fn cell_borders(s: &mut Session, v: &Value) -> CmdResult {
+     sel_result(s)
+ }
+ 
++fn para_plain_editable(p: &Paragraph) -> bool {
++    p.objects.is_empty()
++        && p.section.is_none()
++        && !p.text.contains(wordcraft_doc::para::OBJ)
++        && p.props.num_change.is_none()
++        && p.props.fmt_change.is_none()
++        && p.mark.ins.is_none()
++        && p.mark.del.is_none()
++        && p.mark.fmt_change.is_none()
++        && p.runs.iter().all(|r| r.props.ins.is_none() && r.props.del.is_none() && r.props.fmt_change.is_none())
++}
++
++fn cell_plain_editable(c: &wordcraft_doc::Cell) -> bool {
++    c.controls.is_empty()
++        && c.props.fmt_change.is_none()
++        && c.blocks.iter().all(|b| b.as_para().is_some_and(para_plain_editable))
++}
++
++fn rect_plain_editable(t: &Table, r0: usize, r1: usize, g0: usize, g1: usize) -> bool {
++    if t.rect_has_controls(r0, r1, g0, g1) {
++        return false;
++    }
++    for r in r0..=r1 {
++        if !t.rows[r].controls.is_empty() || t.rows[r].props.fmt_change.is_some() {
++            return false;
++        }
++        let (Some(a), Some(b)) = (t.cell_at_grid(r, g0), t.cell_at_grid(r, g1)) else {
++            return false;
++        };
++        for ci in a..=b {
++            if !cell_plain_editable(&t.rows[r].cells[ci]) {
++                return false;
++            }
++        }
++    }
++    true
++}
++
++fn clear_cells_cmd(s: &mut Session, _: &Value) -> CmdResult {
++    let (tp, r0, r1, g0, g1, count) = selected_cell_rect(s)?;
++    if count < 2 {
++        return Err(CmdError::Failed("clearCells requires a multi-cell selection".into()));
++    }
++    let story = s.sel.focus.story;
++    {
++        let t = s.doc.table(story, &tp).ok_or_else(|| CmdError::Failed("there's no table there".into()))?;
++        if !rect_plain_editable(t, r0, r1, g0, g1) {
++            return Err(CmdError::Failed("cannot cut cells with unsupported objects or revisions".into()));
++        }
++    }
++    let t = s.doc.table_mut(story, &tp)?;
++    for r in r0..=r1 {
++        let (Some(a), Some(b)) = (t.cell_at_grid(r, g0), t.cell_at_grid(r, g1)) else {
++            return Err(CmdError::Failed("invalid cell grid".into()));
++        };
++        for ci in a..=b {
++            t.rows[r].cells[ci].blocks = vec![para_block(Paragraph::new())];
++        }
++    }
++    touch_cells(s, &tp)?;
++    let c0 = s.doc.table(story, &tp).and_then(|t| t.cell_at_grid(r0, g0)).unwrap_or(0);
++    fix_caret(s, &tp, r0, c0)
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteBorderEdgeArg {
++    style: String,
++    width_pt: f32,
++    #[serde(default)]
++    color: Option<String>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteBordersArg {
++    #[serde(default)]
++    top: Option<PasteBorderEdgeArg>,
++    #[serde(default)]
++    bottom: Option<PasteBorderEdgeArg>,
++    #[serde(default)]
++    left: Option<PasteBorderEdgeArg>,
++    #[serde(default)]
++    right: Option<PasteBorderEdgeArg>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteCellFormattingArg {
++    #[serde(default)]
++    shading_color: Option<Option<String>>,
++    #[serde(default)]
++    vertical_align: Option<Option<String>>,
++    #[serde(default)]
++    borders: Option<PasteBordersArg>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteRunArg {
++    text: String,
++    #[serde(default)]
++    bold: Option<bool>,
++    #[serde(default)]
++    italic: Option<bool>,
++    #[serde(default)]
++    underline: Option<bool>,
++    #[serde(default)]
++    strikethrough: Option<bool>,
++    #[serde(default)]
++    font_family: Option<String>,
++    #[serde(default)]
++    font_size_pt: Option<f32>,
++    #[serde(default)]
++    color: Option<String>,
++    #[serde(default)]
++    highlight: Option<Option<String>>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteParaArg {
++    #[serde(default)]
++    align: Option<Option<String>>,
++    runs: Vec<PasteRunArg>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteCellArg {
++    row: usize,
++    col: usize,
++    row_span: usize,
++    col_span: usize,
++    paragraphs: Vec<PasteParaArg>,
++    #[serde(default)]
++    formatting: Option<PasteCellFormattingArg>,
++}
++
++#[derive(Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct PasteCellsArgs {
++    start_row: usize,
++    start_col: usize,
++    rows: usize,
++    cols: usize,
++    cells: Vec<PasteCellArg>,
++}
++
++fn parse_paste_border(arg: &PasteBorderEdgeArg) -> Result<Border, CmdError> {
++    if !arg.width_pt.is_finite() || !(0.0..=48.0).contains(&arg.width_pt) {
++        return Err(CmdError::Params("invalid border width".into()));
++    }
++    let style = match arg.style.as_str() {
++        "none" => BorderStyle::None,
++        "single" => BorderStyle::Single,
++        "double" => BorderStyle::Double,
++        "dotted" => BorderStyle::Dotted,
++        "dashed" | "longDash" | "circle" => BorderStyle::Dashed,
++        "thick" => BorderStyle::Thick,
++        "triple" => BorderStyle::Triple,
++        "dotDash" | "dashDotDot" => BorderStyle::DotDash,
++        "wave" | "doubleWave" => BorderStyle::Wave,
++        _ => BorderStyle::Single,
++    };
++    let color = match &arg.color {
++        None => None,
++        Some(raw) => Some(Rgb::parse(raw).ok_or_else(|| CmdError::Params(format!("invalid border color `{raw}`")))?),
++    };
++    let width = if style == BorderStyle::None { 0.0 } else { (arg.width_pt * 8.0).round().clamp(1.0, 96.0) / 8.0 };
++    Ok(Border { style, width, color, space: 0.0 })
++}
++
++fn apply_pasted_cell_props(
++    cell: &mut wordcraft_doc::Cell,
++    shading: Option<Option<Rgb>>,
++    valign: Option<VAlign>,
++    borders: Option<&Borders>,
++) {
++    if let Some(sh) = shading {
++        cell.props.shading = sh;
++    }
++    if let Some(va) = valign {
++        cell.props.valign = va;
++    }
++    if let Some(bs) = borders {
++        let cur = cell.props.borders.get_or_insert_with(Default::default);
++        if bs.top.is_some() { cur.top = bs.top; }
++        if bs.bottom.is_some() { cur.bottom = bs.bottom; }
++        if bs.left.is_some() { cur.left = bs.left; }
++        if bs.right.is_some() { cur.right = bs.right; }
++    }
++}
++
++fn paste_cells_cmd(s: &mut Session, v: &Value) -> CmdResult {
++    let args: PasteCellsArgs = serde_json::from_value(v.clone())
++        .map_err(|e| CmdError::Params(format!("invalid pasteCells payload: {e}")))?;
++    if args.rows == 0 || args.cols == 0 || args.rows * args.cols < 2 || args.cells.len() < 2 || args.rows * args.cols > 4096 {
++        return Err(CmdError::Params("invalid pasteCells dimensions".into()));
++    }
++    let mut covered = vec![vec![false; args.cols]; args.rows];
++    for cell in &args.cells {
++        if cell.row >= args.rows
++            || cell.col >= args.cols
++            || cell.row_span == 0
++            || cell.col_span == 0
++            || cell.row + cell.row_span > args.rows
++            || cell.col + cell.col_span > args.cols
++            || cell.paragraphs.is_empty()
++            || cell.paragraphs.len() > 256
++        {
++            return Err(CmdError::Params("invalid pasteCells cell geometry".into()));
++        }
++        for dr in 0..cell.row_span {
++            for dc in 0..cell.col_span {
++                if covered[cell.row + dr][cell.col + dc] {
++                    return Err(CmdError::Params("overlapping cells in pasteCells payload".into()));
++                }
++                covered[cell.row + dr][cell.col + dc] = true;
++            }
++        }
++    }
++    if covered.iter().flatten().any(|&c| !c) {
++        return Err(CmdError::Params("incomplete cell coverage in pasteCells payload".into()));
++    }
++
++    let (tp, _, _) = cell(s)?;
++    let story = s.sel.focus.story;
++    let end_row = args.start_row.checked_add(args.rows - 1).ok_or_else(|| CmdError::Params("row overflow".into()))?;
++    let end_col = args.start_col.checked_add(args.cols - 1).ok_or_else(|| CmdError::Params("col overflow".into()))?;
++
++    let mut built_cells: Vec<(usize, usize, usize, usize, Vec<std::sync::Arc<Block>>, Option<Option<Rgb>>, Option<VAlign>, Option<Borders>)> =
++        Vec::with_capacity(args.cells.len());
++    for cell in &args.cells {
++        let mut blocks = Vec::with_capacity(cell.paragraphs.len());
++        for p_arg in &cell.paragraphs {
++            let mut para = Paragraph::new();
++            if let Some(Some(al)) = &p_arg.align {
++                para.props.align = Some(match al.as_str() {
++                    "left" => Align::Left,
++                    "center" => Align::Center,
++                    "right" => Align::Right,
++                    "justify" => Align::Justify,
++                    other => return Err(CmdError::Params(format!("unknown alignment `{other}`"))),
++                });
++            }
++            for run in &p_arg.runs {
++                if run.text.contains('\r') || run.text.contains('\n') || run.text.contains(wordcraft_doc::para::OBJ) {
++                    return Err(CmdError::Params("invalid run text".into()));
++                }
++                let mut cp = CharProps::default();
++                if run.bold == Some(true) { cp.bold = Some(true); }
++                if run.italic == Some(true) { cp.italic = Some(true); }
++                if run.underline == Some(true) { cp.underline = Some(Underline::Single); }
++                if run.strikethrough == Some(true) { cp.strike = Some(true); }
++                if let Some(fam) = &run.font_family {
++                    let trimmed = fam.trim();
++                    if !trimmed.is_empty() && trimmed.len() <= 128 {
++                        cp.font = Some(trimmed.to_string());
++                    }
++                }
++                if let Some(sz) = run.font_size_pt {
++                    if !sz.is_finite() || !(1.0..=1638.0).contains(&sz) {
++                        return Err(CmdError::Params("invalid font size".into()));
++                    }
++                    cp.size = Some((sz * 2.0).round() / 2.0);
++                }
++                if let Some(col) = &run.color {
++                    let rgb = Rgb::parse(col).ok_or_else(|| CmdError::Params("invalid run color".into()))?;
++                    cp.color = Some(TextColor::Rgb(rgb));
++                }
++                if let Some(Some(hl)) = &run.highlight {
++                    let rgb = Rgb::parse(hl).ok_or_else(|| CmdError::Params("invalid highlight color".into()))?;
++                    if let Some(found) = Highlight::ALL.iter().copied().find(|h| h.rgb() == Some(rgb)) {
++                        cp.highlight = Some(found);
++                    } else {
++                        cp.shading = Some(rgb);
++                    }
++                }
++                para.insert_text(para.len(), &run.text, &cp)
++                    .map_err(|_| CmdError::Failed("failed to insert run text".into()))?;
++            }
++            blocks.push(para_block(para));
++        }
++        let mut shading_opt = None;
++        let mut valign_opt = None;
++        let mut borders_opt = None;
++        if let Some(fmt) = &cell.formatting {
++            if let Some(sh) = &fmt.shading_color {
++                shading_opt = Some(match sh {
++                    None => None,
++                    Some(raw) => Some(Rgb::parse(raw).ok_or_else(|| CmdError::Params("invalid shading color".into()))?),
++                });
++            }
++            if let Some(Some(va)) = &fmt.vertical_align {
++                valign_opt = Some(match va.as_str() {
++                    "top" => VAlign::Top,
++                    "middle" => VAlign::Center,
++                    "bottom" => VAlign::Bottom,
++                    other => return Err(CmdError::Params(format!("unknown verticalAlign `{other}`"))),
++                });
++            }
++            if let Some(bs) = &fmt.borders {
++                let mut b = Borders::default();
++                if let Some(e) = &bs.top { b.top = Some(parse_paste_border(e)?); }
++                if let Some(e) = &bs.bottom { b.bottom = Some(parse_paste_border(e)?); }
++                if let Some(e) = &bs.left { b.left = Some(parse_paste_border(e)?); }
++                if let Some(e) = &bs.right { b.right = Some(parse_paste_border(e)?); }
++                borders_opt = Some(b);
++            }
++        }
++        built_cells.push((
++            args.start_row + cell.row,
++            args.start_col + cell.col,
++            cell.row_span,
++            cell.col_span,
++            blocks,
++            shading_opt,
++            valign_opt,
++            borders_opt,
++        ));
++    }
++
++    {
++        let t = s.doc.table(story, &tp).ok_or_else(|| CmdError::Failed("there's no table there".into()))?;
++        if !t.is_grid_consistent()
++            || end_row >= t.rows.len()
++            || end_col >= t.cols()
++            || t.logical_rect_valid(args.start_row, end_row, args.start_col, end_col).is_none()
++            || !rect_plain_editable(t, args.start_row, end_row, args.start_col, end_col)
++        {
++            return Err(CmdError::Failed("target table range is incompatible or protected".into()));
++        }
++    }
++
++    let t = s.doc.table_mut(story, &tp)?;
++    let mut matches_existing = true;
++    for &(r, g, rs, cs, ..) in &built_cells {
++        let Some(ci) = t.cell_at_grid(r, g) else { matches_existing = false; break; };
++        let Some((er0, er1, eg0, eg1)) = t.cell_extent(r, ci) else { matches_existing = false; break; };
++        if (er0, er1 - er0 + 1, eg0, eg1 - eg0 + 1) != (r, rs, g, cs) {
++            matches_existing = false;
++            break;
++        }
++    }
++    if !matches_existing {
++        for r in args.start_row..=end_row {
++            let mut g = args.start_col;
++            while g <= end_col {
++                let Some(ci) = t.cell_at_grid(r, g) else {
++                    return Err(CmdError::Failed("target grid became inconsistent".into()));
++                };
++                if let Some((er0, er1, eg0, eg1)) = t.cell_extent(r, ci)
++                    && (er1 > er0 || eg1 > eg0)
++                {
++                    if t.split_merged_cell(er0, t.cell_at_grid(er0, eg0).unwrap_or(ci)).is_none() {
++                        return Err(CmdError::Failed("cannot normalize merged cells in target range".into()));
++                    }
++                    g = eg1 + 1;
++                } else {
++                    g += 1;
++                }
++            }
++        }
++        for &(r, g, rs, cs, ..) in &built_cells {
++            if (rs > 1 || cs > 1) && !t.merge_rect(r, r + rs - 1, g, g + cs - 1) {
++                return Err(CmdError::Failed("cannot apply merged cell geometry in target range".into()));
++            }
++        }
++    }
++    for (r, g, rs, _cs, blocks, shading_opt, valign_opt, borders_opt) in built_cells {
++        let Some(ci) = t.cell_at_grid(r, g) else {
++            return Err(CmdError::Failed("target cell missing after merge alignment".into()));
++        };
++        let cell = &mut t.rows[r].cells[ci];
++        cell.blocks = blocks;
++        apply_pasted_cell_props(cell, shading_opt, valign_opt, borders_opt.as_ref());
++        for dr in 1..rs {
++            if let Some(cci) = t.cell_at_grid(r + dr, g) {
++                apply_pasted_cell_props(&mut t.rows[r + dr].cells[cci], shading_opt, valign_opt, borders_opt.as_ref());
++            }
++        }
++    }
++    if !t.is_grid_consistent() {
++        return Err(CmdError::Failed("target table grid invalid after paste".into()));
++    }
++    touch_cells(s, &tp)?;
++    select_range(s, story, &tp, (args.start_row, end_row), (args.start_col, end_col))
++}
++
+ fn borders(s: &mut Session, v: &Value) -> CmdResult {
+     let kind = p::str(v, "kind").unwrap_or("all");
+     let w = p::f32(v, "width").unwrap_or(0.5).clamp(0.25, 6.0);
+@@ -1817,4 +2213,77 @@ mod tests {
+         let reopened = crate::io::open_bytes("table_dims.docx", &bytes).unwrap();
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
++
++    #[test]
++    fn clear_and_paste_cells_preserve_formatting_merges_undo_and_roundtrip() {
++        use wordcraft_doc::props::{Align, Rgb};
++        let mut s = new_session();
++        s.run("insert.table", &json!({"rows": 3, "cols": 3})).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++
++        let paste_payload = json!({
++            "startRow": 0,
++            "startCol": 0,
++            "rows": 2,
++            "cols": 2,
++            "cells": [
++                {
++                    "row": 0, "col": 0, "rowSpan": 1, "colSpan": 2,
++                    "paragraphs": [{ "align": "center", "runs": [{ "text": "Hdr", "bold": true, "color": "#DC2626" }] }],
++                    "formatting": { "shadingColor": "#FEF08A", "verticalAlign": "middle" }
++                },
++                {
++                    "row": 1, "col": 0, "rowSpan": 1, "colSpan": 1,
++                    "paragraphs": [{ "runs": [{ "text": "L1", "italic": true }] }],
++                    "formatting": { "shadingColor": null, "verticalAlign": "top" }
++                },
++                {
++                    "row": 1, "col": 1, "rowSpan": 1, "colSpan": 1,
++                    "paragraphs": [{ "runs": [{ "text": "R1" }] }],
++                    "formatting": { "borders": { "bottom": { "style": "double", "widthPt": 0.75, "color": "#1E40AF" } } }
++                }
++            ]
++        });
++        assert!(s.run("table.pasteCells", &paste_payload).is_ok());
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].cells.len(), 2);
++        assert_eq!(t.rows[0].cells[0].span(), 2);
++        assert_eq!(t.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Hdr");
++        assert_eq!(t.rows[0].cells[0].blocks[0].as_para().unwrap().props.align, Some(Align::Center));
++        assert_eq!(t.rows[0].cells[0].props.shading, Some(Rgb(0xFE, 0xF0, 0x8A)));
++        assert_eq!(t.rows[1].cells[0].blocks[0].as_para().unwrap().plain_text(), "L1");
++        assert_eq!(t.rows[1].cells[1].blocks[0].as_para().unwrap().plain_text(), "R1");
++        assert!(t.is_grid_consistent());
++
++        // Single undo restores unmerged empty 3x3 table
++        assert!(s.undo());
++        let t_undone = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t_undone.rows[0].cells.len(), 3);
++        assert_eq!(t_undone.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "");
++        assert!(s.redo());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Hdr");
++
++        // Cut cells (range already selected by pasteCells): clears contents in one undo step
++        assert!(s.run("table.clearCells", &json!({})).is_ok());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "");
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[1].cells[0].blocks[0].as_para().unwrap().plain_text(), "");
++        assert!(s.undo());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Hdr");
++
++        // Invalid partial-merge target rejected without mutation
++        assert!(s.run("table.pasteCells", &json!({
++            "startRow": 0, "startCol": 1, "rows": 2, "cols": 2,
++            "cells": [
++                { "row": 0, "col": 0, "rowSpan": 1, "colSpan": 1, "paragraphs": [{ "runs": [{ "text": "X" }] }] },
++                { "row": 0, "col": 1, "rowSpan": 1, "colSpan": 1, "paragraphs": [{ "runs": [{ "text": "Y" }] }] },
++                { "row": 1, "col": 0, "rowSpan": 1, "colSpan": 1, "paragraphs": [{ "runs": [{ "text": "Z" }] }] },
++                { "row": 1, "col": 1, "rowSpan": 1, "colSpan": 1, "paragraphs": [{ "runs": [{ "text": "W" }] }] }
++            ]
++        })).is_err());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Hdr");
++
++        let bytes = crate::io::save_bytes("table_clip.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_clip.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++    }
+ }

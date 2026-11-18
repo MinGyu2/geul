@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runClipboard, validClipboardText, MAX_CLIPBOARD_CHARS, type ClipboardCommand, type PlainClipboard } from "./clipboard";
+import { clearStructuredClipboard, parseTableClipboardPayload, TABLE_CLIPBOARD_MIME } from "./tableClipboard";
 import { documentCommandState } from "./capability";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "./target";
 import { commandDefinition, commandForShortcut, SHORTCUT_PROBLEMS } from "./registry";
@@ -144,4 +145,103 @@ describe("plain clipboard transaction", () => {
     expect(h.target.executeClipboard).not.toHaveBeenCalled();
   });
 
+});
+
+describe("structured multi-cell table clipboard", () => {
+  afterEach(() => {
+    clearStructuredClipboard();
+  });
+
+  it("validates untrusted payloads strictly and rejects malformed/gapped/oversized specs", () => {
+    const valid = {
+      kind: "geul.tableCells",
+      version: 1,
+      sourceFormat: "hwpx",
+      rows: 1,
+      cols: 2,
+      cells: [
+        { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "A", bold: true }] }] },
+        { row: 0, col: 1, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "B" }] }] },
+      ],
+      plainText: "A\tB",
+    };
+    expect(parseTableClipboardPayload(valid)?.plainText).toBe("A\tB");
+    // Overlapping/gapped grid rejected
+    expect(parseTableClipboardPayload({ ...valid, cols: 3 })).toBeNull();
+    // Single-cell payload rejected
+    expect(parseTableClipboardPayload({
+      ...valid, rows: 1, cols: 1, cells: [valid.cells[0]], plainText: "A",
+    })).toBeNull();
+    // Control char / object replacement rejected
+    expect(parseTableClipboardPayload({
+      ...valid,
+      cells: [
+        { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "A\uFFFC" }] }] },
+        valid.cells[1],
+      ],
+    })).toBeNull();
+    // Mismatched plainText rejected
+    expect(parseTableClipboardPayload({ ...valid, plainText: "TAMPERED" })).toBeNull();
+  });
+
+  it("copies & cuts structured payload, writes OS plainText, recalls only while OS plainText matches, and never clears on write failure", async () => {
+    const state: DocumentCommandSnapshot = {
+      sessionId: 1, engine: "rhwp", loadGeneration: 1, revision: 1, loaded: true, editable: true,
+      composing: false, pending: false, saving: false, queuedHistory: null, history: { undo: false, redo: false },
+      format: null, formatAccess: null, clipboard: { key: "cells-1", selection: true, writable: true },
+    };
+    const target: DocumentCommandTarget = { sessionId: 1, engine: "rhwp", snapshot: () => state, execute: () => ({ accepted: false }) };
+    const payload = {
+      kind: "geul.tableCells" as const,
+      version: 1 as const,
+      sourceFormat: "hwpx" as const,
+      rows: 1,
+      cols: 2,
+      cells: [
+        { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "X" }] }] },
+        { row: 0, col: 1, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "Y" }] }] },
+      ],
+      plainText: "X\tY",
+    };
+    const serialized = JSON.stringify(payload);
+    let osText = "";
+    const events: string[] = [];
+    const clip: PlainClipboard = {
+      readText: vi.fn(async () => osText),
+      writeText: vi.fn(async (t) => { osText = t; events.push("write"); }),
+    };
+    const editing = {
+      read: vi.fn(async () => null),
+      remove: vi.fn(() => false),
+      insert: vi.fn(() => true),
+      readStructured: vi.fn(async () => ({ status: "ok" as const, mime: TABLE_CLIPBOARD_MIME, data: serialized, plainText: "X\tY" })),
+      removeStructured: vi.fn(() => { events.push("remove"); return true; }),
+      insertStructured: vi.fn(async () => "ok" as const),
+    };
+
+    expect(await runClipboard(target, "edit.copy", editing, () => true, clip)).toBe(true);
+    expect(osText).toBe("X\tY");
+    expect(editing.removeStructured).not.toHaveBeenCalled();
+
+    // Matching OS plainText recalls structured paste
+    expect(await runClipboard(target, "edit.paste", editing, () => true, clip)).toBe(true);
+    expect(editing.insertStructured).toHaveBeenCalledWith(TABLE_CLIPBOARD_MIME, serialized);
+    expect(editing.insert).not.toHaveBeenCalled();
+
+    // External OS clipboard overwrite invalidates recalled structured payload
+    osText = "external plain text";
+    expect(await runClipboard(target, "edit.paste", editing, () => true, clip)).toBe(true);
+    expect(editing.insert).toHaveBeenCalledWith("external plain text");
+
+    // Failed write during cut never removes source cells
+    clip.writeText = vi.fn(async () => { throw Error("denied"); });
+    expect(await runClipboard(target, "edit.cut", editing, () => true, clip)).toBe(false);
+    expect(editing.removeStructured).not.toHaveBeenCalled();
+
+    // Successful cut writes before removing
+    clip.writeText = vi.fn(async (t) => { osText = t; events.push("write"); });
+    events.length = 0;
+    expect(await runClipboard(target, "edit.cut", editing, () => true, clip)).toBe(true);
+    expect(events).toEqual(["write", "remove"]);
+  });
 });

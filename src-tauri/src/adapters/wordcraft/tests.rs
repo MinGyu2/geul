@@ -4903,3 +4903,122 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     assert_eq!(tbl.rows[0].props.height_rule, HeightRule::Exact);
     assert_eq!(tbl.rows[2].props.height, None);
 }
+
+#[test]
+fn stage2_p4_1_docx_multi_cell_clipboard_and_t009() {
+    use super::engine::table::{CellHAlign, CellVAlign, PasteTableCellsPayload, TableStructureAction};
+    use super::engine::SelectionIdentity;
+    use crate::services::save::package;
+    let base = crate::services::files::blank_docx().unwrap();
+    let orig_pkg = package::open(&base, package::Side::Original).unwrap();
+    let mut m = DocxModel::open(&base).unwrap();
+    assert!(m.run_engine("insert.table", json!({ "rows": 4, "cols": 3 })));
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+
+    // Populate (0,0)..=(1,1) with text, formatting, and a 1x2 merge in row 0.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine("text.insert", json!({ "text": "MergedHead" })));
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 0, 0], "off": 0 } })));
+    assert!(m.run_engine("text.insert", json!({ "text": "Left" })));
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })));
+    assert!(m.run_engine("text.insert", json!({ "text": "Right" })));
+
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+    })));
+    assert_eq!(table_op(&mut m, TableStructureAction::MergeCells).changed, 1);
+
+    // Format the 2x2 region (0,0)..=(1,1) with shading and alignment.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    let t_fmt = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[
+            DocxOp::TableShading { target: t_fmt.clone(), color: Some("#FEF08A".into()) },
+            DocxOp::TableAlignment {
+                target: t_fmt,
+                horizontal: Some(CellHAlign::Center),
+                vertical: Some(CellVAlign::Middle),
+            },
+        ]).changed,
+        2
+    );
+
+    // Select 2x2 region (0,0)..=(1,1) -> clipboard_table_cells_available + extract.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    assert!(m.view().clipboard_table_cells_available);
+    let extracted_raw = m.clipboard_table_cells().expect("multi-cell payload");
+    let extracted: PasteTableCellsPayload = serde_json::from_str(&extracted_raw).unwrap();
+    assert_eq!((extracted.rows, extracted.cols, extracted.cells.len()), (2, 2, 3));
+    assert_eq!(extracted.cells[0].col_span, 2);
+
+    // Partial merge overhang (0,1)..=(0,2) must reject clipboard extraction.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+    })));
+    assert!(!m.view().clipboard_table_cells_available);
+    assert!(m.clipboard_table_cells().is_none());
+
+    // Paste into unmerged 2x2 target anchored at (2, 1): creates merge + copies text & formatting.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 1, 0], "off": 0 } })));
+    let paste_target = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::PasteTableCells { target: paste_target, payload: extracted.clone() }]).changed,
+        1
+    );
+    {
+        let tbl = m.diagnostic_document().body[tp_idx].as_table().unwrap();
+        assert_eq!(tbl.rows[2].cells.len(), 2); // col 0 + merged (1..=2)
+        assert_eq!(tbl.rows[2].cells[1].span(), 2);
+        assert_eq!(tbl.rows[2].cells[1].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
+        assert_eq!(tbl.rows[3].cells[1].blocks[0].as_para().unwrap().plain_text(), "Left");
+        assert_eq!(tbl.rows[3].cells[2].blocks[0].as_para().unwrap().plain_text(), "Right");
+    }
+
+    // Undo / Redo structural paste in one step.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[2].cells.len(), 3);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[2].cells[1].span(), 2);
+
+    // Out-of-bounds paste target at (3, 2) must reject without partial mutation.
+    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 3, 2, 0], "off": 0 } })));
+    let bad_target = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::PasteTableCells { target: bad_target, payload: extracted.clone() }]).rejected,
+        vec![0]
+    );
+
+    // Cut (0,0)..=(1,1) with stale selection rejected, valid selection clears in one Undo step.
+    assert!(m.run_engine("select.range", json!({
+        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+    })));
+    assert_eq!(
+        m.apply(&[DocxOp::CutTableCells { target: SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() } }]).rejected,
+        vec![0]
+    );
+    let cut_target = table_target(&mut m);
+    assert_eq!(m.apply(&[DocxOp::CutTableCells { target: cut_target }]).changed, 1);
+    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "");
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
+
+    // T009 save + independent reopen.
+    let saved_bytes = wordcraft_engine::io::save_bytes("p4-1-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert_eq!(tbl.rows[2].cells[1].span(), 2);
+    assert_eq!(tbl.rows[2].cells[1].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
+    assert_eq!(tbl.rows[3].cells[2].blocks[0].as_para().unwrap().plain_text(), "Right");
+}

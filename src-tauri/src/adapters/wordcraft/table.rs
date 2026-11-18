@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wordcraft_engine::doc::props::{Align, Border, BorderStyle, HeightRule, VAlign, VMerge};
+use wordcraft_engine::doc::props::{Align, Border, BorderStyle, HeightRule, TextColor, Underline, VAlign, VMerge};
 use wordcraft_engine::doc::table::{MAX_COLS, MAX_ROWS};
-use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, StoryRef, Table};
+use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, Paragraph, StoryRef, Table};
 
 use super::{position_key, DocxModel, FormatAccess, Rejected, SelectionIdentity};
 
@@ -1269,5 +1269,430 @@ impl DocxModel {
         self.marks.clear();
         self.last_insert = None;
         Ok(changed)
+    }
+
+    /// Stage 2 Phase 4 (P4-1): true only when the selection covers >= 2 whole cells in one
+    /// rectangular region with no partial merge overhang and no unsupported cell content.
+    pub(super) fn has_clipboard_table_cells(&self) -> bool {
+        self.selected_plain_multi_cell_rect().is_some()
+    }
+
+    /// Stage 2 Phase 4 (P4-1): extract the validated structural table-cell payload (JSON)
+    /// for the current multi-cell rectangular selection.
+    pub fn clipboard_table_cells(&self) -> Option<String> {
+        let (t, r0, r1, g0, g1) = self.selected_plain_multi_cell_rect()?;
+        let mut cells = Vec::new();
+        for r in r0..=r1 {
+            let mut g = g0;
+            while g <= g1 {
+                let ci = t.cell_at_grid(r, g)?;
+                let cell = t.rows.get(r)?.cells.get(ci)?;
+                let (er0, er1, eg0, eg1) = t.cell_extent(r, ci)?;
+                let span = cell.span();
+                if er0 == r && eg0 == g {
+                    let mut paragraphs = Vec::with_capacity(cell.blocks.len());
+                    for b in &cell.blocks {
+                        let p = b.as_para()?;
+                        let align = p.props.align.map(|a| match a {
+                            Align::Left => "left",
+                            Align::Center => "center",
+                            Align::Right => "right",
+                            Align::Justify | Align::Distribute => "justify",
+                        });
+                        let mut runs = Vec::new();
+                        for (range, props) in p.run_ranges() {
+                            let text = p.text.get(range)?;
+                            if text.is_empty() {
+                                continue;
+                            }
+                            let mut run = serde_json::Map::new();
+                            run.insert("text".into(), json!(text));
+                            if props.bold == Some(true) {
+                                run.insert("bold".into(), json!(true));
+                            }
+                            if props.italic == Some(true) {
+                                run.insert("italic".into(), json!(true));
+                            }
+                            if props.underline.is_some_and(|u| u != Underline::None) {
+                                run.insert("underline".into(), json!(true));
+                            }
+                            if props.strike == Some(true) {
+                                run.insert("strikethrough".into(), json!(true));
+                            }
+                            if let Some(font) = &props.font {
+                                let trimmed = font.trim();
+                                if !trimmed.is_empty() && trimmed.len() <= 128 {
+                                    run.insert("fontFamily".into(), json!(trimmed));
+                                }
+                            }
+                            if let Some(sz) = props.size.filter(|s| s.is_finite() && (1.0..=1638.0).contains(s)) {
+                                run.insert("fontSizePt".into(), json!((sz * 100.0).round() / 100.0));
+                            }
+                            if let Some(TextColor::Rgb(rgb)) = props.color {
+                                run.insert("color".into(), json!(format!("#{}", rgb.hex())));
+                            }
+                            if let Some(hl) = props.highlight.and_then(|h| h.rgb()) {
+                                run.insert("highlight".into(), json!(format!("#{}", hl.hex())));
+                            } else if let Some(sh) = props.shading {
+                                run.insert("highlight".into(), json!(format!("#{}", sh.hex())));
+                            }
+                            runs.push(serde_json::Value::Object(run));
+                        }
+                        paragraphs.push(json!({
+                            "align": align,
+                            "runs": runs,
+                        }));
+                    }
+                    let mut fmt = serde_json::Map::new();
+                    fmt.insert(
+                        "shadingColor".into(),
+                        match cell.props.shading {
+                            Some(rgb) => json!(format!("#{}", rgb.hex())),
+                            None => serde_json::Value::Null,
+                        },
+                    );
+                    fmt.insert(
+                        "verticalAlign".into(),
+                        json!(match cell.props.valign {
+                            VAlign::Top => "top",
+                            VAlign::Center => "middle",
+                            VAlign::Bottom => "bottom",
+                        }),
+                    );
+                    if let Some(bs) = &cell.props.borders {
+                        let edge = |b: Option<Border>| -> Option<serde_json::Value> {
+                            let b = b?;
+                            let style = border_style_name(b.style);
+                            let width_pt = if b.style == BorderStyle::None {
+                                0.0
+                            } else {
+                                (b.width * 100.0).round() / 100.0
+                            };
+                            Some(json!({
+                                "style": style,
+                                "widthPt": width_pt,
+                                "color": b.color.map(|rgb| format!("#{}", rgb.hex())),
+                            }))
+                        };
+                        let mut bmap = serde_json::Map::new();
+                        if let Some(v) = edge(bs.top) { bmap.insert("top".into(), v); }
+                        if let Some(v) = edge(bs.bottom) { bmap.insert("bottom".into(), v); }
+                        if let Some(v) = edge(bs.left) { bmap.insert("left".into(), v); }
+                        if let Some(v) = edge(bs.right) { bmap.insert("right".into(), v); }
+                        if !bmap.is_empty() {
+                            fmt.insert("borders".into(), serde_json::Value::Object(bmap));
+                        }
+                    }
+                    cells.push(json!({
+                        "row": er0 - r0,
+                        "col": eg0 - g0,
+                        "rowSpan": er1 - er0 + 1,
+                        "colSpan": eg1 - eg0 + 1,
+                        "paragraphs": paragraphs,
+                        "formatting": serde_json::Value::Object(fmt),
+                    }));
+                }
+                g += span;
+            }
+        }
+        if cells.len() < 2 {
+            return None;
+        }
+        let encoded = serde_json::to_string(&json!({
+            "rows": r1 - r0 + 1,
+            "cols": g1 - g0 + 1,
+            "cells": cells,
+        }))
+        .ok()?;
+        (encoded.len() <= 2 * 1024 * 1024).then_some(encoded)
+    }
+
+    fn selected_plain_multi_cell_rect(&self) -> Option<(&Table, usize, usize, usize, usize)> {
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return None;
+        }
+        let (tp, _, _) = focus.path.cell()?;
+        let t = self.session.doc.table(StoryRef::Body, &tp)?;
+        if !t.is_grid_consistent() {
+            return None;
+        }
+        let MultiCellState::Rect(r0, r1, g0, g1, count) = inspect_selection(self, &tp, t) else {
+            return None;
+        };
+        if count < 2 || !rect_plain_editable(t, r0, r1, g0, g1) {
+            return None;
+        }
+        Some((t, r0, r1, g0, g1))
+    }
+
+    pub(super) fn cut_table_cells(&mut self, target: &SelectionIdentity) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+            || FormatAccess::of(&self.session) != FormatAccess::Allowed
+        {
+            return Err(Rejected);
+        }
+        if self.selected_plain_multi_cell_rect().is_none() {
+            return Err(Rejected);
+        }
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.clearCells", json!({}))?;
+            if !changed {
+                return Err(Rejected);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    pub(super) fn paste_table_cells(
+        &mut self,
+        target: &SelectionIdentity,
+        payload: &PasteTableCellsPayload,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+            || FormatAccess::of(&self.session) != FormatAccess::Allowed
+            || !payload.valid()
+        {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, r, c) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        let (start_row, start_col) = match multi {
+            MultiCellState::Single => {
+                let (r0, _, g0, _) = t.cell_extent(r, c).ok_or(Rejected)?;
+                (r0, g0)
+            }
+            MultiCellState::Rect(r0, r1, g0, g1, count) => {
+                if count < 2 || (r1 - r0 + 1) != payload.rows || (g1 - g0 + 1) != payload.cols {
+                    return Err(Rejected);
+                }
+                (r0, g0)
+            }
+            MultiCellState::CrossTable | MultiCellState::PartialOverhang => return Err(Rejected),
+        };
+        let end_row = start_row.checked_add(payload.rows - 1).ok_or(Rejected)?;
+        let end_col = start_col.checked_add(payload.cols - 1).ok_or(Rejected)?;
+        if end_row >= t.rows.len()
+            || end_col >= t.cols()
+            || t.logical_rect_valid(start_row, end_row, start_col, end_col).is_none()
+            || !rect_plain_editable(t, start_row, end_row, start_col, end_col)
+        {
+            return Err(Rejected);
+        }
+        let params = json!({
+            "startRow": start_row,
+            "startCol": start_col,
+            "rows": payload.rows,
+            "cols": payload.cols,
+            "cells": payload.cells,
+        });
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.pasteCells", params.clone())?;
+            if !changed {
+                return Err(Rejected);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+}
+
+fn para_plain_editable(p: &Paragraph) -> bool {
+    p.objects.is_empty()
+        && p.section.is_none()
+        && !p.text.contains('\u{fffc}')
+        && !p.text.contains('\r')
+        && !p.text.contains('\n')
+        && !p.text.chars().any(|ch| ch.is_control() && ch != '\t')
+        && p.props.num_change.is_none()
+        && p.props.fmt_change.is_none()
+        && p.mark.ins.is_none()
+        && p.mark.del.is_none()
+        && p.mark.fmt_change.is_none()
+        && p.runs
+            .iter()
+            .all(|r| r.props.ins.is_none() && r.props.del.is_none() && r.props.fmt_change.is_none())
+}
+
+fn rect_plain_editable(t: &Table, r0: usize, r1: usize, g0: usize, g1: usize) -> bool {
+    if t.rect_has_controls(r0, r1, g0, g1) {
+        return false;
+    }
+    for r in r0..=r1 {
+        if !t.rows[r].controls.is_empty() || t.rows[r].props.fmt_change.is_some() {
+            return false;
+        }
+        let (Some(a), Some(b)) = (t.cell_at_grid(r, g0), t.cell_at_grid(r, g1)) else {
+            return false;
+        };
+        for ci in a..=b {
+            let cell = &t.rows[r].cells[ci];
+            if !cell.controls.is_empty()
+                || cell.props.fmt_change.is_some()
+                || !cell.blocks.iter().all(|blk| blk.as_para().is_some_and(para_plain_editable))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteBorderEdge {
+    pub style: String,
+    pub width_pt: f32,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteBorders {
+    #[serde(default)]
+    pub top: Option<PasteBorderEdge>,
+    #[serde(default)]
+    pub bottom: Option<PasteBorderEdge>,
+    #[serde(default)]
+    pub left: Option<PasteBorderEdge>,
+    #[serde(default)]
+    pub right: Option<PasteBorderEdge>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteCellFormatting {
+    #[serde(default)]
+    pub shading_color: Option<Option<String>>,
+    #[serde(default)]
+    pub vertical_align: Option<Option<String>>,
+    #[serde(default)]
+    pub borders: Option<PasteBorders>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteRun {
+    pub text: String,
+    #[serde(default)]
+    pub bold: Option<bool>,
+    #[serde(default)]
+    pub italic: Option<bool>,
+    #[serde(default)]
+    pub underline: Option<bool>,
+    #[serde(default)]
+    pub strikethrough: Option<bool>,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_size_pt: Option<f32>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub highlight: Option<Option<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteParagraph {
+    #[serde(default)]
+    pub align: Option<Option<String>>,
+    pub runs: Vec<PasteRun>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteCell {
+    pub row: usize,
+    pub col: usize,
+    pub row_span: usize,
+    pub col_span: usize,
+    pub paragraphs: Vec<PasteParagraph>,
+    #[serde(default)]
+    pub formatting: Option<PasteCellFormatting>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteTableCellsPayload {
+    pub rows: usize,
+    pub cols: usize,
+    pub cells: Vec<PasteCell>,
+}
+
+impl PasteTableCellsPayload {
+    pub fn valid(&self) -> bool {
+        if self.rows == 0
+            || self.cols == 0
+            || self.rows > 512
+            || self.cols > 64
+            || self.rows.saturating_mul(self.cols) < 2
+            || self.rows.saturating_mul(self.cols) > 4096
+            || self.cells.len() < 2
+            || self.cells.len() > self.rows * self.cols
+        {
+            return false;
+        }
+        let mut covered = vec![vec![false; self.cols]; self.rows];
+        for cell in &self.cells {
+            if cell.row >= self.rows
+                || cell.col >= self.cols
+                || cell.row_span == 0
+                || cell.col_span == 0
+                || cell.row + cell.row_span > self.rows
+                || cell.col + cell.col_span > self.cols
+                || cell.paragraphs.is_empty()
+                || cell.paragraphs.len() > 256
+            {
+                return false;
+            }
+            for dr in 0..cell.row_span {
+                for dc in 0..cell.col_span {
+                    if covered[cell.row + dr][cell.col + dc] {
+                        return false;
+                    }
+                    covered[cell.row + dr][cell.col + dc] = true;
+                }
+            }
+            for p in &cell.paragraphs {
+                if p.runs.len() > 1024 {
+                    return false;
+                }
+                for r in &p.runs {
+                    if r.text.contains('\u{fffc}')
+                        || r.text.contains('\r')
+                        || r.text.contains('\n')
+                        || r.text.chars().any(|ch| ch.is_control() && ch != '\t')
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        covered.iter().flatten().all(|&c| c)
     }
 }

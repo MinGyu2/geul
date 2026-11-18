@@ -9,6 +9,8 @@ import { describe, expect, it, vi } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { documentCommandState } from "../../src/commands/capability";
+import { clearStructuredClipboard, TABLE_CLIPBOARD_MIME } from "../../src/commands/tableClipboard";
+import type { PlainClipboard } from "../../src/commands/clipboard";
 import type { DocumentCommandArgs } from "../../src/commands/target";
 import type { DocumentCommandId } from "../../src/commands/registry";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -2084,5 +2086,243 @@ describe("Stage 2 Phase 2: complex content matrix", () => {
         expect(fmt.dimensions.rowHeightPt).toBe(34);
       } finally { reopened.free(); }
     } finally { editor.dispose(); }
+  });
+});
+
+describe("RHWP Release WASM Stage 2 P4-1 — multi-cell structural clipboard", () => {
+  const makeClipboard = () => {
+    let osText = "";
+    const clip: PlainClipboard = {
+      readText: async () => osText,
+      writeText: async (t: string) => { osText = t; },
+    };
+    return {
+      clip,
+      getText: () => osText,
+      setExternalText: (t: string) => { osText = t; },
+    };
+  };
+
+  it.each(["hwp", "hwpx"] as const)("%s P4-1 multi-cell copy/cut/paste preserves formatting, nested tables, Undo/Redo, T009 save & reopen", async format => {
+    clearStructuredClipboard();
+    const { clip, getText } = makeClipboard();
+    const { editor, doc, at, place, settle, run, save } = await open(format, false, true, false);
+    const clipExec = async (cmd: "edit.copy" | "edit.cut" | "edit.paste", c = clip) => {
+      const ok = await editor.executeClipboard(cmd, () => true, c);
+      await settle();
+      return ok;
+    };
+    try {
+      // Wait for HWP structural proof or insert rows: row 0 cell 0 holds nested table, so format & copy row 1 (cells 2, 3) onto row 2 (cells 4, 5).
+      place(withCell(at, 2));
+      await run("table.insertRowBelow");
+      // Format row 1 cells (2 and 3): shading FEF08A, center align, bold text.
+      place(withCell(at, 2));
+      editor.anchor = withCell(at, 2);
+      editor.caret = withCell(at, 3);
+      await run("table.shading", { command: "table.shading", color: "FEF08A" });
+      await run("table.alignment", { command: "table.alignment", horizontal: "center", vertical: "middle" });
+      place(withCell(at, 2));
+      editor.anchor = withCell(at, 2);
+      editor.caret = { ...withCell(at, 2), offset: 6 };
+      await run("format.bold");
+
+      // Multi-cell copy (cells 2 and 3 -> 1x2)
+      editor.anchor = withCell(at, 2);
+      editor.caret = withCell(at, 3);
+      expect(editor.snapshot().clipboard?.selection).toBe(true);
+      expect(await clipExec("edit.copy")).toBe(true);
+      expect(getText()).toBe("outer2\touter3");
+      // Copy never mutates source
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 2, 0, 0, 20)).toBe("outer2");
+
+      // Paste onto row 2 (cell 4 = row 2 col 0)
+      place(withCell(at, 4));
+      expect(await clipExec("edit.paste")).toBe(true);
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 4, 0, 0, 20)).toBe("outer2");
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 5, 0, 0, 20)).toBe("outer3");
+      const pastedFmt = JSON.parse(doc.getTableCellFormattingByPath!(
+        0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+        2, 0, 2, 1,
+      ));
+      expect(pastedFmt.shading).toEqual({ uniform: true, color: "FEF08A" });
+      expect(pastedFmt.alignment).toMatchObject({ horizontal: "center", vertical: "middle" });
+
+      // Undo restores pre-paste state cleanly, Redo re-applies
+      await run("edit.undo");
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 4, 0, 0, 20)).toBe("");
+      await run("edit.redo");
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 4, 0, 0, 20)).toBe("outer2");
+
+      // Multi-cell Cut on row 1 (cells 2 and 3 = outer2, outer3)
+      editor.anchor = withCell(at, 2);
+      editor.caret = withCell(at, 3);
+      const deniedClip: PlainClipboard = {
+        readText: async () => "",
+        writeText: async () => { throw new Error("permission denied"); },
+      };
+      // Write failure must not mutate source
+      expect(await clipExec("edit.cut", deniedClip)).toBe(false);
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 2, 0, 0, 20)).toBe("outer2");
+
+      // Valid cut clears source as one undoable step
+      expect(await clipExec("edit.cut")).toBe(true);
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 2, 0, 0, 20)).toBe("");
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 3, 0, 0, 20)).toBe("");
+      await run("edit.undo");
+      expect(doc.getTextInCell(0, at.paragraph, at.cell!.control, 2, 0, 0, 20)).toBe("outer2");
+
+      // Copy formatted nested 1x2 and paste within nested 2x2 table inside cell 0
+      const nested0 = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] } };
+      const nested1 = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 1, cellParagraph: 0 }] } };
+      const nested2 = { ...at, cell: { ...at.cell!, nested: [{ control: 0, cell: 2, cellParagraph: 0 }] } };
+      place(nested0);
+      await run("table.shading", { command: "table.shading", color: "DBEAFE" });
+      editor.anchor = nested0;
+      editor.caret = nested1;
+      expect(await clipExec("edit.copy")).toBe(true);
+      place(nested2);
+      expect(await clipExec("edit.paste")).toBe(true);
+
+      // Copy nested cell (contains nested table in outer cell 0) rejects complex multi-cell copy without mutating
+      editor.anchor = withCell(at, 0);
+      editor.caret = withCell(at, 1);
+      expect(await clipExec("edit.copy")).toBe(false);
+
+      // Paste at right edge (col 1) of a 2-col table refuses out-of-bounds 1x2 paste without mutating
+      place(withCell(at, 5));
+      expect(await clipExec("edit.paste")).toBe(false);
+
+      // T009 save & independent reopen
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+      expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        expect(reopened.getTextFileText()).toBe(doc.getTextFileText());
+        const reopenedFmt = JSON.parse(reopened.getTableCellFormattingByPath!(
+          0, at.paragraph, JSON.stringify([{ controlIndex: at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]),
+          2, 0, 2, 1,
+        ));
+        expect(reopenedFmt.shading).toEqual({ uniform: true, color: "FEF08A" });
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("HWPX P4-1 preserves & rewrites merged cells, HWP rejects mismatched merges, and cross-format DOCX payload pastes cleanly", async () => {
+    clearStructuredClipboard();
+    const { clip, setExternalText } = makeClipboard();
+
+    // HWPX: 3x3 table, merge row 0 cols 0..1, copy row 0 (1x3), paste onto row 2 -> merges rewritten & saved
+    const hwpx = await open("hwpx");
+    try {
+      hwpx.place(withCell(hwpx.at, 0));
+      await hwpx.run("table.insertColumnRight");
+      await hwpx.run("table.insertRowBelow");
+      hwpx.editor.anchor = withCell(hwpx.at, 0);
+      hwpx.editor.caret = withCell(hwpx.at, 1);
+      await hwpx.run("table.mergeCells");
+      hwpx.place(withCell(hwpx.at, 0));
+      hwpx.editor.anchor = withCell(hwpx.at, 0);
+      hwpx.editor.caret = withCell(hwpx.at, 1); // logical row 0 spans (0,0..1) + (0,2) -> 2 cells
+      expect(hwpx.editor.snapshot().clipboard?.selection).toBe(true);
+      expect(await hwpx.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
+      await hwpx.settle();
+
+      // Paste onto row 2 (cell 5 = row 2 col 0 after row 0 merge left 2 cells and row 1 has 3 cells)
+      hwpx.place(withCell(hwpx.at, 5));
+      expect(await hwpx.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
+      await hwpx.settle();
+      const dims = JSON.parse(hwpx.doc.getTableDimensions(0, hwpx.at.paragraph, hwpx.at.cell!.control));
+      expect(dims.cellCount).toBe(7); // row0 merged (2) + row1 (3) + row2 merged (2)
+
+      // External OS clipboard text change invalidates stored structured payload and falls back cleanly
+      setExternalText("ExternalPlain");
+      hwpx.place(withCell(hwpx.at, 2));
+      expect(await hwpx.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
+      await hwpx.settle();
+      expect(hwpx.doc.getTextInCell(0, hwpx.at.paragraph, hwpx.at.cell!.control, 2, 0, 0, 30)).toContain("ExternalPlain");
+
+      // Cross-format paste: simulate valid DOCX structured clipboard payload (1x2) into HWPX
+      const docxPayload = {
+        kind: "geul.tableCells",
+        version: 1,
+        sourceFormat: "docx",
+        rows: 1,
+        cols: 2,
+        cells: [
+          {
+            row: 0, col: 0, rowSpan: 1, colSpan: 1,
+            paragraphs: [{ align: "center", runs: [{ text: "FromDocx1", bold: true }] }],
+            formatting: { shadingColor: "#DBEAFE", verticalAlign: "middle" },
+          },
+          {
+            row: 0, col: 1, rowSpan: 1, colSpan: 1,
+            paragraphs: [{ align: "right", runs: [{ text: "FromDocx2" }] }],
+          },
+        ],
+        plainText: "FromDocx1\tFromDocx2",
+      };
+      const docxClip: PlainClipboard = {
+        readText: async () => "FromDocx1\tFromDocx2",
+        writeText: async () => {},
+        readStructured: async mime => (mime === TABLE_CLIPBOARD_MIME ? JSON.stringify(docxPayload) : null),
+      };
+      hwpx.place(withCell(hwpx.at, 2)); // row 1 col 0
+      expect(await hwpx.editor.executeClipboard("edit.paste", () => true, docxClip)).toBe(true);
+      await hwpx.settle();
+      expect(hwpx.doc.getTextInCell(0, hwpx.at.paragraph, hwpx.at.cell!.control, 2, 0, 0, 20)).toBe("FromDocx1");
+      expect(hwpx.doc.getTextInCell(0, hwpx.at.paragraph, hwpx.at.cell!.control, 3, 0, 0, 20)).toBe("FromDocx2");
+
+      const saved = await hwpx.save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+    } finally { hwpx.editor.dispose(); }
+
+    // HWP: pasting a merged 1x2+1 payload onto an unmerged row is rejected without mutating
+    const hwp = await open("hwp");
+    try {
+      const mergedFromHwpx: PlainClipboard = {
+        readText: async () => "M1\tM2",
+        writeText: async () => {},
+        readStructured: async mime => mime === TABLE_CLIPBOARD_MIME ? JSON.stringify({
+          kind: "geul.tableCells",
+          version: 1,
+          sourceFormat: "hwpx",
+          rows: 1,
+          cols: 2,
+          cells: [
+            { row: 0, col: 0, rowSpan: 1, colSpan: 2, paragraphs: [{ runs: [{ text: "M1" }] }] },
+            { row: 0, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "" }] }] },
+          ].slice(0, 1), // invalid single-cell also rejected!
+          plainText: "M1\tM2",
+        }) : null,
+      };
+      hwp.place(withCell(hwp.at, 0));
+      expect(await hwp.editor.executeClipboard("edit.paste", () => true, mergedFromHwpx)).toBe(false);
+
+      // Valid merged 1x3 payload rejected on 1x3 unmerged HWP row
+      await hwp.run("table.insertColumnRight");
+      const validMerged3: PlainClipboard = {
+        readText: async () => "M1\tM2",
+        writeText: async () => {},
+        readStructured: async mime => mime === TABLE_CLIPBOARD_MIME ? JSON.stringify({
+          kind: "geul.tableCells",
+          version: 1,
+          sourceFormat: "hwpx",
+          rows: 1,
+          cols: 3,
+          cells: [
+            { row: 0, col: 0, rowSpan: 1, colSpan: 2, paragraphs: [{ runs: [{ text: "M1" }] }] },
+            { row: 0, col: 2, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "M2" }] }] },
+          ],
+          plainText: "M1\tM2",
+        }) : null,
+      };
+      hwp.place(withCell(hwp.at, 0));
+      expect(await hwp.editor.executeClipboard("edit.paste", () => true, validMerged3)).toBe(false);
+      expect(hwp.doc.getTextInCell(0, hwp.at.paragraph, hwp.at.cell!.control, 0, 0, 0, 20)).toBe("outer0");
+    } finally { hwp.editor.dispose(); }
   });
 });

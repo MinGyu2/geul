@@ -690,6 +690,11 @@ export class RhwpText {
     }
   }
 
+  /** Compact appended charShapes/fonts after an external cell paste/clear mutation inside a history step. */
+  compactAfterCellMutation(): void {
+    this.compactCharShapes();
+  }
+
   /** Formatting has a separate contract from clipboard extraction: native proof
    * excludes selected control slots, without refusing objects outside the range.
    * Keep the existing scalar budget; additionally bound query/response complexity. */

@@ -1,0 +1,1143 @@
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+index 0826133..51b0418 100644
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -1286,6 +1286,935 @@ impl DocumentCore {
+         Ok(serde_json::json!({"ok": true, "removed": removed, "count": after}).to_string())
+     }
+ 
++    /// [geul] Stage 2 P4-1: extract structured multi-cell content and formatting for a rectangular selection.
++    pub fn extract_table_cells_by_path_native(
++        &self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        start_row: u16,
++        start_col: u16,
++        end_row: u16,
++        end_col: u16,
++    ) -> Result<String, HwpError> {
++        use crate::model::style::{Alignment, FillType, UnderlineType};
++        const WIDTHS_MM: [f64; 16] = [
++            0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
++        ];
++        let mm_to_pt = |idx: u8| -> f64 {
++            let mm = WIDTHS_MM.get(idx as usize).copied().unwrap_or(0.12);
++            (mm * 72.0 / 25.4 * 100.0).round() / 100.0
++        };
++        let table = self.resolve_table_by_path(section, paragraph, path)?;
++        if !table.zones.is_empty() {
++            return Err(HwpError::RenderError(
++                "tables with cellzone overlays are unsupported".into(),
++            ));
++        }
++        if table.row_count == 0
++            || table.col_count == 0
++            || start_row > end_row
++            || end_row >= table.row_count
++            || start_col > end_col
++            || end_col >= table.col_count
++        {
++            return Err(HwpError::RenderError("invalid table cell range".into()));
++        }
++        let mut selected = Vec::new();
++        for (ci, cell) in table.cells.iter().enumerate() {
++            let cr0 = cell.row;
++            let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++            let cc0 = cell.col;
++            let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++            if cr0 <= end_row && cr1 >= start_row && cc0 <= end_col && cc1 >= start_col {
++                if cr0 < start_row || cr1 > end_row || cc0 < start_col || cc1 > end_col {
++                    return Err(HwpError::RenderError(
++                        "selection overlaps merged cells partially".into(),
++                    ));
++                }
++                selected.push(ci);
++            }
++        }
++        if selected.len() < 2 {
++            return Err(HwpError::RenderError(
++                "multi-cell clipboard requires at least two cells".into(),
++            ));
++        }
++        let bf_of = |id: u16| -> Option<&crate::model::style::BorderFill> {
++            id.checked_sub(1)
++                .and_then(|idx| self.document.doc_info.border_fills.get(idx as usize))
++        };
++        let mut cells_json = Vec::with_capacity(selected.len());
++        for &ci in &selected {
++            let cell = &table.cells[ci];
++            if cell.paragraphs.is_empty() {
++                return Err(HwpError::RenderError("empty paragraph list in cell".into()));
++            }
++            let mut paras_json = Vec::with_capacity(cell.paragraphs.len());
++            for p in &cell.paragraphs {
++                if !p.controls.is_empty()
++                    || !p.field_ranges.is_empty()
++                    || !p.orphan_field_ends.is_empty()
++                    || p.text
++                        .chars()
++                        .any(|c| c == '\u{FFFC}' || (c.is_control() && c != '\t'))
++                {
++                    return Err(HwpError::RenderError(
++                        "cell contains unsupported control or field".into(),
++                    ));
++                }
++                let align = self
++                    .document
++                    .doc_info
++                    .para_shapes
++                    .get(p.para_shape_id as usize)
++                    .and_then(|ps| match ps.alignment {
++                        Alignment::Left => Some("left"),
++                        Alignment::Center => Some("center"),
++                        Alignment::Right => Some("right"),
++                        Alignment::Justify | Alignment::Distribute | Alignment::Split => {
++                            Some("justify")
++                        }
++                    });
++                let chars: Vec<char> = p.text.chars().collect();
++                let mut runs_json = Vec::new();
++                if !chars.is_empty() {
++                    for run in p.char_shape_runs(0, chars.len()) {
++                        let slice: String = chars[run.start_offset..run.end_offset].iter().collect();
++                        if slice.is_empty() {
++                            continue;
++                        }
++                        let mut run_obj = serde_json::Map::new();
++                        run_obj.insert("text".into(), serde_json::json!(slice));
++                        if let Some(cs) = self
++                            .document
++                            .doc_info
++                            .char_shapes
++                            .get(run.char_shape_id as usize)
++                        {
++                            if cs.bold {
++                                run_obj.insert("bold".into(), serde_json::json!(true));
++                            }
++                            if cs.italic {
++                                run_obj.insert("italic".into(), serde_json::json!(true));
++                            }
++                            if !matches!(cs.underline_type, UnderlineType::None) {
++                                run_obj.insert("underline".into(), serde_json::json!(true));
++                            }
++                            if cs.strikethrough {
++                                run_obj.insert("strikethrough".into(), serde_json::json!(true));
++                            }
++                            if cs.base_size >= 100 && cs.base_size <= 163_800 {
++                                let pt = ((cs.base_size as f64) / 100.0 * 100.0).round() / 100.0;
++                                run_obj.insert("fontSizePt".into(), serde_json::json!(pt));
++                            }
++                            if cs.text_color != 0 {
++                                run_obj.insert(
++                                    "color".into(),
++                                    serde_json::json!(color_ref_to_css(cs.text_color).to_ascii_uppercase()),
++                                );
++                            }
++                            if cs.shade_color != 0xFFFFFFFF && cs.shade_color != 0x00FFFFFF {
++                                run_obj.insert(
++                                    "highlight".into(),
++                                    serde_json::json!(color_ref_to_css(cs.shade_color).to_ascii_uppercase()),
++                                );
++                            }
++                        }
++                        runs_json.push(serde_json::Value::Object(run_obj));
++                    }
++                }
++                paras_json.push(serde_json::json!({
++                    "align": align,
++                    "runs": runs_json,
++                }));
++            }
++            let v_align = match cell.vertical_align {
++                crate::model::table::VerticalAlign::Top => "top",
++                crate::model::table::VerticalAlign::Center => "middle",
++                crate::model::table::VerticalAlign::Bottom => "bottom",
++            };
++            let mut fmt_obj = serde_json::Map::new();
++            fmt_obj.insert("verticalAlign".into(), serde_json::json!(v_align));
++            if let Some(bf) = bf_of(cell.border_fill_id) {
++                let shading_color: Option<String> = match bf.fill.fill_type {
++                    FillType::None => None,
++                    FillType::Solid => {
++                        let s = bf.fill.solid.as_ref().ok_or_else(|| {
++                            HwpError::RenderError("missing solid fill".into())
++                        })?;
++                        if (s.pattern_type != 0 && s.pattern_type != -1) || bf.fill.alpha != 0 {
++                            return Err(HwpError::RenderError(
++                                "unsupported patterned or translucent cell fill".into(),
++                            ));
++                        }
++                        if s.background_color == 0xFFFFFFFF {
++                            None
++                        } else {
++                            Some(color_ref_to_css(s.background_color).to_ascii_uppercase())
++                        }
++                    }
++                    _ => {
++                        return Err(HwpError::RenderError(
++                            "unsupported non-solid cell fill".into(),
++                        ));
++                    }
++                };
++                fmt_obj.insert("shadingColor".into(), serde_json::json!(shading_color));
++                let edge_json = |b: &crate::model::style::BorderLine| {
++                    let style = match border_line_type_to_u8_val(b.line_type) {
++                        0 => "none",
++                        1 => "single",
++                        2 => "dashed",
++                        3 => "dotted",
++                        4 => "dotDash",
++                        5 => "dashDotDot",
++                        6 => "longDash",
++                        7 => "circle",
++                        8 => "double",
++                        9 => "thinThick",
++                        10 => "thickThin",
++                        11 => "triple",
++                        12 => "wave",
++                        13 => "doubleWave",
++                        14 => "thick3d",
++                        15 => "thick3dRev",
++                        16 => "thin3d",
++                        17 => "thin3dRev",
++                        _ => "single",
++                    };
++                    let width_pt = if style == "none" { 0.0 } else { mm_to_pt(b.width) };
++                    let color = if style == "none" {
++                        None
++                    } else {
++                        Some(color_ref_to_css(b.color).to_ascii_uppercase())
++                    };
++                    serde_json::json!({
++                        "style": style,
++                        "widthPt": width_pt,
++                        "color": color,
++                    })
++                };
++                fmt_obj.insert(
++                    "borders".into(),
++                    serde_json::json!({
++                        "left": edge_json(&bf.borders[0]),
++                        "right": edge_json(&bf.borders[1]),
++                        "top": edge_json(&bf.borders[2]),
++                        "bottom": edge_json(&bf.borders[3]),
++                    }),
++                );
++            } else {
++                fmt_obj.insert("shadingColor".into(), serde_json::Value::Null);
++            }
++            cells_json.push(serde_json::json!({
++                "row": cell.row - start_row,
++                "col": cell.col - start_col,
++                "rowSpan": cell.row_span,
++                "colSpan": cell.col_span,
++                "paragraphs": paras_json,
++                "formatting": serde_json::Value::Object(fmt_obj),
++            }));
++        }
++        let out = serde_json::json!({
++            "rows": end_row - start_row + 1,
++            "cols": end_col - start_col + 1,
++            "cells": cells_json,
++        })
++        .to_string();
++        if out.len() > 2 * 1024 * 1024 {
++            return Err(HwpError::RenderError("clipboard payload too large".into()));
++        }
++        Ok(out)
++    }
++
++    /// [geul] Stage 2 P4-1: atomically clear cell contents of a validated multi-cell range (cut).
++    pub fn clear_table_cells_by_path_native(
++        &mut self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        start_row: u16,
++        start_col: u16,
++        end_row: u16,
++        end_col: u16,
++    ) -> Result<String, HwpError> {
++        let mut selected = Vec::new();
++        {
++            let table = self.resolve_table_by_path(section, paragraph, path)?;
++            if table.row_count == 0
++                || table.col_count == 0
++                || start_row > end_row
++                || end_row >= table.row_count
++                || start_col > end_col
++                || end_col >= table.col_count
++            {
++                return Err(HwpError::RenderError("invalid table cell range".into()));
++            }
++            for (ci, cell) in table.cells.iter().enumerate() {
++                let cr0 = cell.row;
++                let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++                let cc0 = cell.col;
++                let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++                if cr0 <= end_row && cr1 >= start_row && cc0 <= end_col && cc1 >= start_col {
++                    if cr0 < start_row || cr1 > end_row || cc0 < start_col || cc1 > end_col {
++                        return Err(HwpError::RenderError(
++                            "selection overlaps merged cells partially".into(),
++                        ));
++                    }
++                    for p in &cell.paragraphs {
++                        if !p.controls.is_empty()
++                            || !p.field_ranges.is_empty()
++                            || !p.orphan_field_ends.is_empty()
++                            || p.text
++                                .chars()
++                                .any(|c| c == '\u{FFFC}' || (c.is_control() && c != '\t'))
++                        {
++                            return Err(HwpError::RenderError(
++                                "cannot cut cell containing control or field".into(),
++                            ));
++                        }
++                    }
++                    selected.push(ci);
++                }
++            }
++            if selected.len() < 2 {
++                return Err(HwpError::RenderError(
++                    "clearTableCells requires at least two cells".into(),
++                ));
++            }
++        }
++        {
++            let table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
++            for &ci in &selected {
++                let empty = table.cells[ci]
++                    .paragraphs
++                    .first()
++                    .map(crate::model::paragraph::Paragraph::new_empty_like)
++                    .unwrap_or_else(crate::model::paragraph::Paragraph::new_empty);
++                table.cells[ci].paragraphs = vec![empty];
++            }
++        }
++        let depth = path.len() - 1;
++        let last_ctrl = path[depth].0;
++        let mut inner_path = path.to_vec();
++        for &ci in &selected {
++            inner_path[depth] = (last_ctrl, ci, 0);
++            self.reflow_cell_paragraph_by_path(section, paragraph, &inner_path, 0);
++        }
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.document.sections[section].raw_stream = None;
++        self.recompose_section(section);
++        self.paginate_if_needed();
++        Ok("{\"ok\":true}".into())
++    }
++
++    /// [geul] Stage 2 P4-1: atomically apply structured multi-cell payload to a path-owned table.
++    pub fn apply_table_cells_by_path_native(
++        &mut self,
++        section: usize,
++        paragraph: usize,
++        path: &[(usize, usize, usize)],
++        spec_json: &str,
++    ) -> Result<String, HwpError> {
++        use crate::model::paragraph::Paragraph;
++        use crate::model::style::{
++            Alignment, BorderFill, BorderLine, BorderLineType, CharShapeMods, DiagonalLine, Fill,
++            FillType, SolidFill, UnderlineType,
++        };
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct BorderEdgeArg {
++            style: String,
++            width_pt: f64,
++            #[serde(default)]
++            color: Option<String>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct BordersArg {
++            #[serde(default)]
++            top: Option<BorderEdgeArg>,
++            #[serde(default)]
++            bottom: Option<BorderEdgeArg>,
++            #[serde(default)]
++            left: Option<BorderEdgeArg>,
++            #[serde(default)]
++            right: Option<BorderEdgeArg>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct FmtArg {
++            #[serde(default)]
++            shading_color: Option<Option<String>>,
++            #[serde(default)]
++            vertical_align: Option<Option<String>>,
++            #[serde(default)]
++            borders: Option<BordersArg>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct RunArg {
++            text: String,
++            #[serde(default)]
++            bold: Option<bool>,
++            #[serde(default)]
++            italic: Option<bool>,
++            #[serde(default)]
++            underline: Option<bool>,
++            #[serde(default)]
++            strikethrough: Option<bool>,
++            #[serde(default)]
++            font_family: Option<String>,
++            #[serde(default)]
++            font_size_pt: Option<f64>,
++            #[serde(default)]
++            color: Option<String>,
++            #[serde(default)]
++            highlight: Option<Option<String>>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct ParaArg {
++            #[serde(default)]
++            align: Option<Option<String>>,
++            runs: Vec<RunArg>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct CellArg {
++            row: u16,
++            col: u16,
++            row_span: u16,
++            col_span: u16,
++            paragraphs: Vec<ParaArg>,
++            #[serde(default)]
++            formatting: Option<FmtArg>,
++        }
++        #[derive(serde::Deserialize)]
++        #[serde(rename_all = "camelCase", deny_unknown_fields)]
++        struct ApplySpec {
++            start_row: u16,
++            start_col: u16,
++            rows: u16,
++            cols: u16,
++            allow_merge_rewrite: bool,
++            cells: Vec<CellArg>,
++        }
++
++        const WIDTHS_MM: [f64; 16] = [
++            0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
++        ];
++        fn pt_to_rhwp_width_idx(pt: f64) -> u8 {
++            let mm = pt * 25.4 / 72.0;
++            let mut best_idx = 1usize;
++            let mut best_diff = (WIDTHS_MM[1] - mm).abs();
++            for (i, &w) in WIDTHS_MM.iter().enumerate() {
++                let d = (w - mm).abs();
++                if d < best_diff {
++                    best_diff = d;
++                    best_idx = i;
++                }
++            }
++            best_idx as u8
++        }
++        fn parse_hex_colorref(hex: &str) -> Option<u32> {
++            let h = hex.trim().strip_prefix('#').unwrap_or(hex.trim());
++            if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
++                return None;
++            }
++            let r = u8::from_str_radix(&h[0..2], 16).ok()? as u32;
++            let g = u8::from_str_radix(&h[2..4], 16).ok()? as u32;
++            let b = u8::from_str_radix(&h[4..6], 16).ok()? as u32;
++            Some((b << 16) | (g << 8) | r)
++        }
++        fn parse_border_line(edge: &BorderEdgeArg) -> Result<BorderLine, HwpError> {
++            if !edge.width_pt.is_finite() || !(0.0..=48.0).contains(&edge.width_pt) {
++                return Err(HwpError::RenderError("invalid border width".into()));
++            }
++            let code = match edge.style.as_str() {
++                "none" => 0,
++                "single" | "thick" => 1,
++                "dashed" => 2,
++                "dotted" => 3,
++                "dotDash" => 4,
++                "dashDotDot" => 5,
++                "longDash" => 6,
++                "circle" => 7,
++                "double" => 8,
++                "thinThick" => 9,
++                "thickThin" => 10,
++                "triple" => 11,
++                "wave" => 12,
++                "doubleWave" => 13,
++                "thick3d" => 14,
++                "thick3dRev" => 15,
++                "thin3d" => 16,
++                "thin3dRev" => 17,
++                _ => 1,
++            };
++            if code == 0 {
++                return Ok(BorderLine {
++                    line_type: BorderLineType::None,
++                    width: 0,
++                    color: 0,
++                });
++            }
++            let color = match &edge.color {
++                Some(c) => parse_hex_colorref(c)
++                    .ok_or_else(|| HwpError::RenderError("invalid border color".into()))?,
++                None => 0,
++            };
++            Ok(BorderLine {
++                line_type: u8_to_border_line_type(code),
++                width: pt_to_rhwp_width_idx(edge.width_pt),
++                color,
++            })
++        }
++        fn border_fills_strictly_equal(a: &BorderFill, b: &BorderFill) -> bool {
++            a.attr == b.attr
++                && a.center_line == b.center_line
++                && a.diagonal == b.diagonal
++                && a.borders == b.borders
++                && a.three_d == b.three_d
++                && a.fill == b.fill
++        }
++
++        if spec_json.len() > 2 * 1024 * 1024 {
++            return Err(HwpError::RenderError("paste payload too large".into()));
++        }
++        let spec: ApplySpec = serde_json::from_str(spec_json)
++            .map_err(|_| HwpError::RenderError("invalid applyTableCells payload".into()))?;
++        if spec.rows == 0
++            || spec.cols == 0
++            || (spec.rows as usize) * (spec.cols as usize) < 2
++            || (spec.rows as usize) * (spec.cols as usize) > 4096
++            || spec.cells.len() < 2
++        {
++            return Err(HwpError::RenderError("invalid paste cell dimensions".into()));
++        }
++        let mut covered = vec![vec![false; spec.cols as usize]; spec.rows as usize];
++        for c in &spec.cells {
++            if c.row >= spec.rows
++                || c.col >= spec.cols
++                || c.row_span == 0
++                || c.col_span == 0
++                || c.row + c.row_span > spec.rows
++                || c.col + c.col_span > spec.cols
++                || c.paragraphs.is_empty()
++                || c.paragraphs.len() > 256
++            {
++                return Err(HwpError::RenderError("invalid paste cell geometry".into()));
++            }
++            for dr in 0..c.row_span {
++                for dc in 0..c.col_span {
++                    let slot = &mut covered[(c.row + dr) as usize][(c.col + dc) as usize];
++                    if *slot {
++                        return Err(HwpError::RenderError("overlapping paste cells".into()));
++                    }
++                    *slot = true;
++                }
++            }
++            for p in &c.paragraphs {
++                if p.runs.len() > 1024 {
++                    return Err(HwpError::RenderError("too many runs in paragraph".into()));
++                }
++                for r in &p.runs {
++                    if r.text
++                        .chars()
++                        .any(|ch| ch == '\u{FFFC}' || (ch.is_control() && ch != '\t'))
++                    {
++                        return Err(HwpError::RenderError("invalid control character in run".into()));
++                    }
++                }
++            }
++        }
++        if covered.iter().flatten().any(|&v| !v) {
++            return Err(HwpError::RenderError("incomplete cell grid coverage".into()));
++        }
++
++        let end_row = spec
++            .start_row
++            .checked_add(spec.rows - 1)
++            .ok_or_else(|| HwpError::RenderError("target row overflow".into()))?;
++        let end_col = spec
++            .start_col
++            .checked_add(spec.cols - 1)
++            .ok_or_else(|| HwpError::RenderError("target col overflow".into()))?;
++
++        // Validate target table and test merge rewrite on a dry-run clone before any DocInfo/live mutation.
++        let mut template_table = {
++            let table = self.resolve_table_by_path(section, paragraph, path)?;
++            if !table.zones.is_empty() {
++                return Err(HwpError::RenderError(
++                    "tables with cellzone overlays are unsupported".into(),
++                ));
++            }
++            if end_row >= table.row_count || end_col >= table.col_count {
++                return Err(HwpError::RenderError("target table too small for paste".into()));
++            }
++            let mut target_geos = Vec::new();
++            for cell in &table.cells {
++                let cr0 = cell.row;
++                let cr1 = cell.row.saturating_add(cell.row_span).saturating_sub(1);
++                let cc0 = cell.col;
++                let cc1 = cell.col.saturating_add(cell.col_span).saturating_sub(1);
++                if cr0 <= end_row && cr1 >= spec.start_row && cc0 <= end_col && cc1 >= spec.start_col {
++                    if cr0 < spec.start_row || cr1 > end_row || cc0 < spec.start_col || cc1 > end_col {
++                        return Err(HwpError::RenderError(
++                            "target range overlaps merged cells partially".into(),
++                        ));
++                    }
++                    for p in &cell.paragraphs {
++                        if !p.controls.is_empty()
++                            || !p.field_ranges.is_empty()
++                            || !p.orphan_field_ends.is_empty()
++                            || p.text
++                                .chars()
++                                .any(|c| c == '\u{FFFC}' || (c.is_control() && c != '\t'))
++                        {
++                            return Err(HwpError::RenderError(
++                                "target cell contains unsupported control or field".into(),
++                            ));
++                        }
++                    }
++                    target_geos.push((
++                        cell.row - spec.start_row,
++                        cell.col - spec.start_col,
++                        cell.row_span,
++                        cell.col_span,
++                    ));
++                }
++            }
++            let mut expected_geos: Vec<(u16, u16, u16, u16)> = spec
++                .cells
++                .iter()
++                .map(|c| (c.row, c.col, c.row_span, c.col_span))
++                .collect();
++            target_geos.sort_unstable();
++            expected_geos.sort_unstable();
++            let merges_match = target_geos == expected_geos;
++            let mut cloned = table.clone();
++            if !merges_match {
++                if !spec.allow_merge_rewrite {
++                    return Err(HwpError::RenderError(
++                        "target merge geometry differs in HWP".into(),
++                    ));
++                }
++                loop {
++                    let merged_pos = cloned
++                        .cells
++                        .iter()
++                        .find(|c| {
++                            c.row >= spec.start_row
++                                && c.row <= end_row
++                                && c.col >= spec.start_col
++                                && c.col <= end_col
++                                && (c.row_span > 1 || c.col_span > 1)
++                        })
++                        .map(|c| (c.row, c.col));
++                    match merged_pos {
++                        Some((r, c)) => cloned.split_cell(r, c).map_err(HwpError::RenderError)?,
++                        None => break,
++                    }
++                }
++                for c in &spec.cells {
++                    if c.row_span > 1 || c.col_span > 1 {
++                        let r0 = spec.start_row + c.row;
++                        let c0 = spec.start_col + c.col;
++                        cloned
++                            .merge_cells(r0, c0, r0 + c.row_span - 1, c0 + c.col_span - 1)
++                            .map_err(HwpError::RenderError)?;
++                    }
++                }
++            }
++            cloned
++        };
++
++        // Resolve/stage ParaShape and BorderFill updates on the dry-run table first.
++        let mut staged_pss: Vec<crate::model::style::ParaShape> = Vec::new();
++        let mut staged_bfs: Vec<BorderFill> = Vec::new();
++        let existing_ps_len = self.document.doc_info.para_shapes.len();
++        let existing_bf_len = self.document.doc_info.border_fills.len();
++
++        let mut built_cells: Vec<(usize, Vec<Paragraph>, crate::model::table::VerticalAlign, u16)> =
++            Vec::with_capacity(spec.cells.len());
++
++        for cell_arg in &spec.cells {
++            let tr = spec.start_row + cell_arg.row;
++            let tc = spec.start_col + cell_arg.col;
++            let ci = template_table
++                .cells
++                .iter()
++                .position(|c| c.row == tr && c.col == tc)
++                .ok_or_else(|| HwpError::RenderError("target cell coordinate missing".into()))?;
++            let template_cell = &template_table.cells[ci];
++            let template_para = template_cell
++                .paragraphs
++                .first()
++                .cloned()
++                .unwrap_or_else(Paragraph::new_empty);
++
++            let mut new_paras = Vec::with_capacity(cell_arg.paragraphs.len());
++            for p_arg in &cell_arg.paragraphs {
++                let mut para = Paragraph::new_empty_like(&template_para);
++                if let Some(Some(al)) = &p_arg.align {
++                    let align = match al.as_str() {
++                        "left" => Alignment::Left,
++                        "center" => Alignment::Center,
++                        "right" => Alignment::Right,
++                        "justify" => Alignment::Justify,
++                        _ => {
++                            return Err(HwpError::RenderError(
++                                "invalid paragraph alignment".into(),
++                            ));
++                        }
++                    };
++                    let align_code: u32 = match align {
++                        Alignment::Justify => 0,
++                        Alignment::Left => 1,
++                        Alignment::Right => 2,
++                        Alignment::Center => 3,
++                        Alignment::Distribute => 4,
++                        Alignment::Split => 5,
++                    };
++                    let mut modified = self
++                        .document
++                        .doc_info
++                        .para_shapes
++                        .get(para.para_shape_id as usize)
++                        .cloned()
++                        .ok_or_else(|| HwpError::RenderError("missing paraShape".into()))?;
++                    modified.raw_data = None;
++                    modified.alignment = align;
++                    modified.attr1 = (modified.attr1 & !(0x07 << 2)) | (align_code << 2);
++                    let ps_id = if let Some(idx) = self
++                        .document
++                        .doc_info
++                        .para_shapes
++                        .iter()
++                        .position(|e| *e == modified)
++                    {
++                        idx as u16
++                    } else if let Some(pos) = staged_pss.iter().position(|s| *s == modified) {
++                        u16::try_from(existing_ps_len + pos)
++                            .map_err(|_| HwpError::RenderError("paraShape limit exceeded".into()))?
++                    } else {
++                        let id = u16::try_from(existing_ps_len + staged_pss.len())
++                            .map_err(|_| HwpError::RenderError("paraShape limit exceeded".into()))?;
++                        staged_pss.push(modified);
++                        id
++                    };
++                    para.para_shape_id = ps_id;
++                }
++
++                let mut full_text = String::new();
++                let mut run_spans: Vec<(usize, usize, CharShapeMods)> = Vec::new();
++                let mut char_cursor = 0usize;
++                for run in &p_arg.runs {
++                    let run_chars = run.text.chars().count();
++                    if run_chars == 0 {
++                        continue;
++                    }
++                    let mut mods = CharShapeMods::default();
++                    let mut has_mods = false;
++                    if let Some(b) = run.bold {
++                        mods.bold = Some(b);
++                        has_mods = true;
++                    }
++                    if let Some(i) = run.italic {
++                        mods.italic = Some(i);
++                        has_mods = true;
++                    }
++                    if let Some(u) = run.underline {
++                        mods.underline = Some(u);
++                        mods.underline_type = Some(if u {
++                            UnderlineType::Bottom
++                        } else {
++                            UnderlineType::None
++                        });
++                        has_mods = true;
++                    }
++                    if let Some(st) = run.strikethrough {
++                        mods.strikethrough = Some(st);
++                        has_mods = true;
++                    }
++                    if let Some(sz) = run.font_size_pt {
++                        if !sz.is_finite() || !(1.0..=1638.0).contains(&sz) {
++                            return Err(HwpError::RenderError("invalid font size".into()));
++                        }
++                        mods.base_size = Some((sz * 100.0).round() as i32);
++                        has_mods = true;
++                    }
++                    if let Some(col) = &run.color {
++                        mods.text_color = Some(
++                            parse_hex_colorref(col)
++                                .ok_or_else(|| HwpError::RenderError("invalid run color".into()))?,
++                        );
++                        has_mods = true;
++                    }
++                    if let Some(hl) = &run.highlight {
++                        mods.shade_color = Some(match hl {
++                            None => 0xFFFFFFFF,
++                            Some(raw) => parse_hex_colorref(raw).ok_or_else(|| {
++                                HwpError::RenderError("invalid highlight color".into())
++                            })?,
++                        });
++                        has_mods = true;
++                    }
++                    let _ = &run.font_family;
++                    full_text.push_str(&run.text);
++                    if has_mods {
++                        run_spans.push((char_cursor, char_cursor + run_chars, mods));
++                    }
++                    char_cursor += run_chars;
++                }
++                if !full_text.is_empty() {
++                    para.insert_text_at(0, &full_text);
++                    for (start_c, end_c, mods) in run_spans {
++                        let base_ids = para.char_shape_ids_in_range(start_c, end_c);
++                        let map = self.document.modified_char_shape_ids(base_ids, &mods);
++                        para.try_map_char_shape_range(start_c, end_c, |id| {
++                            map.get(&id).copied().ok_or_else(|| {
++                                HwpError::RenderError("missing mapped charShape".into())
++                            })
++                        })?;
++                    }
++                }
++                new_paras.push(para);
++            }
++
++            let mut va = template_cell.vertical_align;
++            let mut bf = if template_cell.border_fill_id == 0 {
++                BorderFill {
++                    raw_data: None,
++                    attr: 0,
++                    borders: [BorderLine::default(); 4],
++                    diagonal: DiagonalLine::default(),
++                    center_line: crate::model::style::CenterLine::None,
++                    fill: Fill::default(),
++                    three_d: false,
++                }
++            } else {
++                self.document
++                    .doc_info
++                    .border_fills
++                    .get((template_cell.border_fill_id - 1) as usize)
++                    .cloned()
++                    .ok_or_else(|| HwpError::RenderError("missing cell borderFill".into()))?
++            };
++            let mut bf_modified = false;
++            if let Some(fmt) = &cell_arg.formatting {
++                if let Some(Some(v_str)) = &fmt.vertical_align {
++                    va = match v_str.as_str() {
++                        "top" => crate::model::table::VerticalAlign::Top,
++                        "middle" => crate::model::table::VerticalAlign::Center,
++                        "bottom" => crate::model::table::VerticalAlign::Bottom,
++                        _ => {
++                            return Err(HwpError::RenderError("invalid verticalAlign".into()));
++                        }
++                    };
++                }
++                if let Some(sh) = &fmt.shading_color {
++                    bf_modified = true;
++                    bf.raw_data = None;
++                    bf.fill = match sh {
++                        None => Fill::default(),
++                        Some(raw) => {
++                            let color = parse_hex_colorref(raw).ok_or_else(|| {
++                                HwpError::RenderError("invalid shading color".into())
++                            })?;
++                            Fill {
++                                fill_type: FillType::Solid,
++                                solid: Some(SolidFill {
++                                    background_color: color,
++                                    pattern_color: 0xFFFFFFFF,
++                                    pattern_type: -1,
++                                }),
++                                ..Default::default()
++                            }
++                        }
++                    };
++                }
++                if let Some(bs) = &fmt.borders {
++                    bf_modified = true;
++                    bf.raw_data = None;
++                    if let Some(e) = &bs.left {
++                        bf.borders[0] = parse_border_line(e)?;
++                    }
++                    if let Some(e) = &bs.right {
++                        bf.borders[1] = parse_border_line(e)?;
++                    }
++                    if let Some(e) = &bs.top {
++                        bf.borders[2] = parse_border_line(e)?;
++                    }
++                    if let Some(e) = &bs.bottom {
++                        bf.borders[3] = parse_border_line(e)?;
++                    }
++                }
++            }
++            let bf_id = if !bf_modified && template_cell.border_fill_id != 0 {
++                template_cell.border_fill_id
++            } else if let Some(idx) = self
++                .document
++                .doc_info
++                .border_fills
++                .iter()
++                .position(|e| border_fills_strictly_equal(e, &bf))
++            {
++                (idx + 1) as u16
++            } else if let Some(pos) = staged_bfs
++                .iter()
++                .position(|s| border_fills_strictly_equal(s, &bf))
++            {
++                u16::try_from(existing_bf_len + pos + 1)
++                    .map_err(|_| HwpError::RenderError("borderFill limit exceeded".into()))?
++            } else {
++                let id = u16::try_from(existing_bf_len + staged_bfs.len() + 1)
++                    .map_err(|_| HwpError::RenderError("borderFill limit exceeded".into()))?;
++                staged_bfs.push(bf);
++                id
++            };
++            built_cells.push((ci, new_paras, va, bf_id));
++        }
++
++        if !staged_pss.is_empty() {
++            self.document.doc_info.para_shapes.extend(staged_pss);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        if !staged_bfs.is_empty() {
++            self.document.doc_info.border_fills.extend(staged_bfs);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        let mut reflow_targets: Vec<(usize, usize)> = Vec::with_capacity(built_cells.len());
++        for (ci, new_paras, va, bf_id) in built_cells {
++            let para_count = new_paras.len();
++            template_table.cells[ci].paragraphs = new_paras;
++            template_table.cells[ci].vertical_align = va;
++            template_table.cells[ci].border_fill_id = bf_id;
++            reflow_targets.push((ci, para_count));
++        }
++        {
++            let live_table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
++            *live_table = template_table;
++        }
++        let depth = path.len() - 1;
++        let last_ctrl = path[depth].0;
++        let mut inner_path = path.to_vec();
++        for (ci, para_count) in reflow_targets {
++            for pi in 0..para_count {
++                inner_path[depth] = (last_ctrl, ci, pi);
++                self.reflow_cell_paragraph_by_path(section, paragraph, &inner_path, pi);
++            }
++        }
++        self.rebuild_resolved_styles();
++        self.mark_cell_control_dirty(section, paragraph, path[0].0);
++        self.document.sections[section].raw_stream = None;
++        self.recompose_section(section);
++        self.paginate_if_needed();
++        Ok("{\"ok\":true}".into())
++    }
++
+     /// 표에 행을 삽입한다 (네이티브).
+     pub fn insert_table_row_native(
+         &mut self,
+@@ -6196,4 +7125,127 @@ mod geul_cell_formatting_tests {
+             )
+             .is_err());
+     }
++
++    #[test]
++    fn stage2_p4_1_table_clipboard_extract_apply_and_clear() {
++        let (mut core, para, ctrl) = core_with_table(3, 3);
++        let path = vec![(ctrl, 0usize, 0usize)];
++
++        core.insert_text_in_cell_by_path(0, para, &[(ctrl, 0, 0)], 0, "A1")
++            .unwrap();
++        core.insert_text_in_cell_by_path(0, para, &[(ctrl, 1, 0)], 0, "B1")
++            .unwrap();
++        core.format_table_cells_by_path_native(
++            0,
++            para,
++            &path,
++            r#"{"rect":{"startRow":0,"startCol":0,"endRow":0,"endCol":1},"shading":{"color":"FEF08A"},"alignment":{"horizontal":"center","vertical":"middle"}}"#,
++        )
++        .unwrap();
++
++        let extracted_raw = core
++            .extract_table_cells_by_path_native(0, para, &path, 0, 0, 1, 1)
++            .unwrap();
++        let extracted: serde_json::Value = serde_json::from_str(&extracted_raw).unwrap();
++        assert_eq!(extracted["rows"], 2);
++        assert_eq!(extracted["cols"], 2);
++        assert_eq!(extracted["cells"].as_array().unwrap().len(), 4);
++        assert_eq!(extracted["cells"][0]["paragraphs"][0]["runs"][0]["text"], "A1");
++        assert_eq!(extracted["cells"][0]["formatting"]["shadingColor"], "#FEF08A");
++        assert_eq!(extracted["cells"][0]["formatting"]["verticalAlign"], "middle");
++
++        let apply_spec = serde_json::json!({
++            "startRow": 1,
++            "startCol": 1,
++            "rows": 2,
++            "cols": 2,
++            "allowMergeRewrite": true,
++            "cells": extracted["cells"],
++        })
++        .to_string();
++        core.apply_table_cells_by_path_native(0, para, &path, &apply_spec)
++            .unwrap();
++        assert_eq!(
++            core.get_text_in_cell_by_path(0, para, &[(ctrl, 4, 0)], 0, 10)
++                .unwrap(),
++            "A1"
++        );
++        assert_eq!(
++            core.get_text_in_cell_by_path(0, para, &[(ctrl, 5, 0)], 0, 10)
++                .unwrap(),
++            "B1"
++        );
++
++        // Clear source 2x2
++        core.clear_table_cells_by_path_native(0, para, &path, 0, 0, 1, 1)
++            .unwrap();
++        assert_eq!(
++            core.get_text_in_cell_by_path(0, para, &[(ctrl, 0, 0)], 0, 10)
++                .unwrap(),
++            ""
++        );
++
++        // Out-of-bounds apply fails without mutating
++        let bad_spec = serde_json::json!({
++            "startRow": 2,
++            "startCol": 2,
++            "rows": 2,
++            "cols": 2,
++            "allowMergeRewrite": false,
++            "cells": extracted["cells"],
++        })
++        .to_string();
++        assert!(core
++            .apply_table_cells_by_path_native(0, para, &path, &bad_spec)
++            .is_err());
++
++        // Merged cell extract + apply with allowMergeRewrite=true vs false
++        let (mut mcore, mpara, mctrl) = core_with_table(3, 3);
++        let mpath = vec![(mctrl, 0usize, 0usize)];
++        mcore
++            .edit_table_by_cell_path_native(0, mpara, &[(mctrl, 0, 0)], "mergeRight", &[0, 0, 0, 1])
++            .unwrap();
++        mcore
++            .insert_text_in_cell_by_path(0, mpara, &[(mctrl, 0, 0)], 0, "M00")
++            .unwrap();
++        let m_extracted_raw = mcore
++            .extract_table_cells_by_path_native(0, mpara, &mpath, 0, 0, 0, 2)
++            .unwrap();
++        let m_extracted: serde_json::Value = serde_json::from_str(&m_extracted_raw).unwrap();
++        assert_eq!(m_extracted["cells"].as_array().unwrap().len(), 2);
++        assert_eq!(m_extracted["cells"][0]["colSpan"], 2);
++
++        // allowMergeRewrite=false rejects merged topology onto unmerged row 2
++        let m_bad = serde_json::json!({
++            "startRow": 2,
++            "startCol": 0,
++            "rows": 1,
++            "cols": 3,
++            "allowMergeRewrite": false,
++            "cells": m_extracted["cells"],
++        })
++        .to_string();
++        assert!(mcore
++            .apply_table_cells_by_path_native(0, mpara, &mpath, &m_bad)
++            .is_err());
++
++        // allowMergeRewrite=true applies merge topology onto row 2
++        let m_ok = serde_json::json!({
++            "startRow": 2,
++            "startCol": 0,
++            "rows": 1,
++            "cols": 3,
++            "allowMergeRewrite": true,
++            "cells": m_extracted["cells"],
++        })
++        .to_string();
++        mcore
++            .apply_table_cells_by_path_native(0, mpara, &mpath, &m_ok)
++            .unwrap();
++        let t_after = table(&mcore, mpara, mctrl);
++        assert!(t_after
++            .cells
++            .iter()
++            .any(|c| c.row == 2 && c.col == 0 && c.col_span == 2));
++    }
+ }
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index b78d8d6..dc7f8c2 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7325,6 +7325,70 @@ impl HwpDocument {
+         self.compact_appended_border_fills_native(baseline as usize).map_err(Into::into)
+     }
+ 
++    /// [geul] Stage 2 P4-1: extract structured multi-cell content & formatting for a path-owned table.
++    #[wasm_bindgen(js_name = extractTableCellsByPath)]
++    pub fn extract_table_cells_by_path(
++        &self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        start_row: u32,
++        start_col: u32,
++        end_row: u32,
++        end_col: u32,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.extract_table_cells_by_path_native(
++            section as usize,
++            paragraph as usize,
++            &path,
++            start_row as u16,
++            start_col as u16,
++            end_row as u16,
++            end_col as u16,
++        )
++        .map_err(Into::into)
++    }
++
++    /// [geul] Stage 2 P4-1: clear cell contents of a multi-cell selection in a path-owned table.
++    #[wasm_bindgen(js_name = clearTableCellsByPath)]
++    pub fn clear_table_cells_by_path(
++        &mut self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        start_row: u32,
++        start_col: u32,
++        end_row: u32,
++        end_col: u32,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.clear_table_cells_by_path_native(
++            section as usize,
++            paragraph as usize,
++            &path,
++            start_row as u16,
++            start_col as u16,
++            end_row as u16,
++            end_col as u16,
++        )
++        .map_err(Into::into)
++    }
++
++    /// [geul] Stage 2 P4-1: apply structured multi-cell content & formatting to a path-owned table.
++    #[wasm_bindgen(js_name = applyTableCellsByPath)]
++    pub fn apply_table_cells_by_path(
++        &mut self,
++        section: u32,
++        paragraph: u32,
++        path_json: &str,
++        spec_json: &str,
++    ) -> Result<String, JsValue> {
++        let path = DocumentCore::parse_cell_path(path_json)?;
++        self.apply_table_cells_by_path_native(section as usize, paragraph as usize, &path, spec_json)
++            .map_err(Into::into)
++    }
++
+     /// [geul] Caption paragraphs of an explicitly path-owned table (read-only):
+     /// `{"paragraphs":[...]}` or `{"paragraphs":null}` when the table has none.
+     #[wasm_bindgen(js_name = getTableCaptionByPath)]

@@ -30,7 +30,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/stage2-p2-cell-split.patch",
           "patches/rhwp/stage2-p3-1-cell-shading-borders.patch",
           "patches/rhwp/stage2-p3-2-cell-alignment.patch",
-          "patches/rhwp/stage2-p3-3-table-dimensions.patch")
+          "patches/rhwp/stage2-p3-3-table-dimensions.patch",
+          "patches/rhwp/stage2-p4-1-table-clipboard.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"

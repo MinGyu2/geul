@@ -1,4 +1,9 @@
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
+import {
+  buildTableClipboardPlainText,
+  parseTableClipboardPayload,
+  TABLE_CLIPBOARD_MIME,
+} from "../../../commands/tableClipboard";
 // WordCraft(DOCX) 편집 세션 하나(T008, W-A). 문서 모델은 백엔드(Rust)에 있고, 이 객체는 그 세션의 하나뿐인 편집 표면
 // 상태(보기·대기 연산·IME 조합·쪽 그림)를 가진다.
 //
@@ -99,7 +104,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight",
+  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "cutTableCells", "pasteTableCells",
 ]);
 const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
@@ -130,7 +135,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight"]);
+  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1058,8 +1063,10 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
       composing: this.imeUnsettled, pending: this.busy,
       clipboard: {
-        selection: !!this.view?.clipboardTextAvailable && !!this.backend.selectionText,
-        writable: this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly,
+        selection: (!!this.view?.clipboardTextAvailable && !!this.backend.selectionText)
+          || (!!this.view?.clipboardTableCellsAvailable && !!this.backend.selectionTableCells),
+        writable: this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly
+          && (this.view.collapsed || !!this.view.clipboardTextAvailable || !!this.view.clipboardTableCellsAvailable),
         key: JSON.stringify([this.epoch, this.generation, this.revision, this.clipboardVersion, this.imeSerial,
           this.view?.anchorKey, this.view?.caretKey]),
       },
@@ -1081,10 +1088,67 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         const result = await this.backend.selectionText(this.sessionId, this.generation, this.revision, view.anchorKey, view.caretKey);
         return result.ok ? result.value : null;
       },
+      readStructured: async () => {
+        const view = this.view;
+        if (!view?.clipboardTableCellsAvailable || !this.backend.selectionTableCells) return { status: "none" };
+        const result = await this.backend.selectionTableCells(this.sessionId, this.generation, this.revision, view.anchorKey, view.caretKey);
+        if (!result.ok) return { status: "rejected" };
+        try {
+          const raw = JSON.parse(result.value) as { rows?: unknown; cols?: unknown; cells?: unknown };
+          if (typeof raw !== "object" || raw === null || !Array.isArray(raw.cells)) return { status: "rejected" };
+          const plainText = typeof raw.rows === "number" && typeof raw.cols === "number"
+            ? buildTableClipboardPlainText(raw.rows, raw.cols, raw.cells as never)
+            : "";
+          const payload = parseTableClipboardPayload({
+            kind: "geul.tableCells",
+            version: 1,
+            sourceFormat: "docx",
+            rows: raw.rows,
+            cols: raw.cols,
+            cells: raw.cells,
+            plainText,
+          });
+          if (!payload) return { status: "rejected" };
+          return {
+            status: "ok",
+            mime: TABLE_CLIPBOARD_MIME,
+            data: JSON.stringify(payload),
+            plainText: payload.plainText,
+          };
+        } catch {
+          return { status: "rejected" };
+        }
+      },
       remove: () => !!this.view && this.push({ op: "deleteSelection", selection: {
         anchorKey: this.view.anchorKey, caretKey: this.view.caretKey,
       } }),
+      removeStructured: () => !!this.view && !!this.view.clipboardTableCellsAvailable && this.push({
+        op: "cutTableCells",
+        target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+      }),
       insert: text => this.typeText(text),
+      insertStructured: async (_mime, data) => {
+        const view = this.view;
+        if (!view) return "rejected";
+        if (!view.inTable) return "notTable";
+        const payload = parseTableClipboardPayload(data);
+        if (!payload) return "rejected";
+        const tv = view.table;
+        if (!tv || tv.cellAlignmentRefusal === "crossTable" || tv.cellAlignmentRefusal === "partialOverhang" || tv.cellAlignmentRefusal === "protected") {
+          return "rejected";
+        }
+        if (tv.selectedCells > 1) {
+          if (tv.selectedRows !== payload.rows || tv.selectedCols !== payload.cols) return "rejected";
+        } else if (tv.row + payload.rows > tv.rows || tv.col + payload.cols > tv.cols) {
+          return "rejected";
+        }
+        const queued = this.push({
+          op: "pasteTableCells",
+          target: { anchorKey: view.anchorKey, caretKey: view.caretKey },
+          payload: { rows: payload.rows, cols: payload.cols, cells: payload.cells },
+        });
+        return queued ? "ok" : "rejected";
+      },
     }, () => owns() && this.sessions.snapshot().activeId === this.sessionId, clipboard);
   }
 

@@ -1,0 +1,6 @@
+tree 9f05afc8aadecaf2044e5ae30e8b42d08683d385
+parent cae8c33058e620c02704a2414600b9cb7ecf0867
+author MinGyu2 <geul@users.noreply.github.com> 1794971249 +0900
+committer MinGyu2 <geul@users.noreply.github.com> 1794971249 +0900
+
+feat(table): add clearCells and pasteCells commands
