@@ -1,0 +1,317 @@
+diff --git a/src/document_core/commands/font_table.rs b/src/document_core/commands/font_table.rs
+index cdf5693..d2571d6 100644
+--- a/src/document_core/commands/font_table.rs
++++ b/src/document_core/commands/font_table.rs
+@@ -62,6 +62,51 @@ impl DocumentCore {
+     }
+ }
+ 
++impl DocumentCore {
++    /// [geul] P4 stabilization: read-only family resolution for structural paste.
++    /// The family must name exactly one existing face in every language slot
++    /// (the same rule as `resolve_document_font_family_native`, without ever
++    /// appending a face). Anything else is refused instead of being ignored.
++    pub(crate) fn existing_font_ids_for_family(&self, name: &str) -> Result<[u16; 7], HwpError> {
++        let fail = || HwpError::RenderError("unsupported font family in pasted cells".into());
++        self.document_font_table_native().map_err(|_| fail())?;
++        self.unique_face_ids(name).ok_or_else(fail)
++    }
++
++    fn unique_face_ids(&self, name: &str) -> Option<[u16; 7]> {
++        if name.is_empty() || name.trim() != name || name.len() > 128
++            || name.chars().any(|c| c.is_control() || matches!(c, '\"' | ',' | ';' | '\\' | '{' | '}' | '\u{fffc}')) {
++            return None;
++        }
++        let faces = &self.document.doc_info.font_faces;
++        if faces.len() != 7 {
++            return None;
++        }
++        let mut ids = [0u16; 7];
++        for (lang, slot) in faces.iter().enumerate() {
++            let mut matches = slot.iter().enumerate().filter(|(_, f)| f.name == name);
++            ids[lang] = match (matches.next(), matches.next()) {
++                (Some((id, _)), None) => u16::try_from(id).ok()?,
++                _ => return None,
++            };
++        }
++        Some(ids)
++    }
++
++    /// [geul] P4 stabilization: the single family a shape uses in all seven
++    /// language slots, when that family also resolves uniquely by name.
++    pub(crate) fn uniform_font_family(&self, shape: &crate::model::style::CharShape) -> Option<String> {
++        let faces = &self.document.doc_info.font_faces;
++        let name = &faces.first()?.get(usize::from(shape.font_ids[0]))?.name;
++        for lang in 1..7 {
++            if faces.get(lang)?.get(usize::from(shape.font_ids[lang]))?.name != *name {
++                return None;
++            }
++        }
++        (self.unique_face_ids(name)? == shape.font_ids).then(|| name.clone())
++    }
++}
++
+ impl DocumentCore {
+     /// Explicit family intent applies to all seven language slots. Renderer
+     /// fallback never enters this table. Resolve every ordinal before mutation.
+diff --git a/src/document_core/commands/table_ops.rs b/src/document_core/commands/table_ops.rs
+index 754fe10..af0223a 100644
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -1344,6 +1344,8 @@ impl DocumentCore {
+             id.checked_sub(1)
+                 .and_then(|idx| self.document.doc_info.border_fills.get(idx as usize))
+         };
++        let mut family_cache: std::collections::HashMap<u32, Option<String>> =
++            std::collections::HashMap::new();
+         let mut cells_json = Vec::with_capacity(selected.len());
+         for &ci in &selected {
+             let cell = &table.cells[ci];
+@@ -1404,6 +1406,15 @@ impl DocumentCore {
+                             if cs.strikethrough {
+                                 run_obj.insert("strikethrough".into(), serde_json::json!(true));
+                             }
++                            // [geul] P4 stabilization: export the face only when one
++                            // family covers all seven language slots and resolves
++                            // uniquely; mixed per-language faces stay unexported.
++                            let family = family_cache
++                                .entry(run.char_shape_id)
++                                .or_insert_with(|| self.uniform_font_family(cs));
++                            if let Some(family) = family {
++                                run_obj.insert("fontFamily".into(), serde_json::json!(family));
++                            }
+                             if cs.base_size >= 100 && cs.base_size <= 163_800 {
+                                 let pt = ((cs.base_size as f64) / 100.0 * 100.0).round() / 100.0;
+                                 run_obj.insert("fontSizePt".into(), serde_json::json!(pt));
+@@ -1619,8 +1630,8 @@ impl DocumentCore {
+     ) -> Result<String, HwpError> {
+         use crate::model::paragraph::Paragraph;
+         use crate::model::style::{
+-            Alignment, BorderFill, BorderLine, BorderLineType, CharShapeMods, DiagonalLine, Fill,
+-            FillType, SolidFill, UnderlineType,
++            Alignment, BorderFill, BorderLine, BorderLineType, CharShape, CharShapeMods, DiagonalLine,
++            Fill, FillType, SolidFill, UnderlineType,
+         };
+         #[derive(serde::Deserialize)]
+         #[serde(rename_all = "camelCase", deny_unknown_fields)]
+@@ -1779,6 +1790,42 @@ impl DocumentCore {
+                 && a.three_d == b.three_d
+                 && a.fill == b.fill
+         }
++        /// Resolve a pasted run's shape without touching live DocInfo: reuse the
++        /// base when nothing changes, then an equal existing definition, then an
++        /// equal shape staged by this paste; otherwise stage a new definition.
++        fn stage_char_shape(
++            existing: &[CharShape],
++            staged: &mut Vec<CharShape>,
++            base_id: u32,
++            mods: &CharShapeMods,
++            no_highlight: bool,
++        ) -> Result<u32, HwpError> {
++            let base = existing
++                .get(base_id as usize)
++                .ok_or_else(|| HwpError::RenderError("missing base charShape".into()))?;
++            let mut modified = mods.apply_to(base);
++            let none_shade = |c: u32| c == 0xFFFF_FFFF || c == 0x00FF_FFFF;
++            if no_highlight {
++                // Keep the base's own spelling of "no highlight" (both are none).
++                modified.shade_color = if none_shade(base.shade_color) { base.shade_color } else { 0xFFFF_FFFF };
++            }
++            // CharShape equality ignores source-only spelling (raw bytes etc.).
++            if *base == modified {
++                return Ok(base_id);
++            }
++            if let Some(i) = existing.iter().position(|cs| *cs == modified) {
++                return Ok(i as u32);
++            }
++            let next = existing.len() + staged.iter().position(|cs| *cs == modified).unwrap_or(staged.len());
++            let id = u32::try_from(next)
++                .ok()
++                .filter(|id| *id < 65_536)
++                .ok_or_else(|| HwpError::RenderError("charShape limit exceeded".into()))?;
++            if next == existing.len() + staged.len() {
++                staged.push(modified);
++            }
++            Ok(id)
++        }
+ 
+         if spec_json.len() > 2 * 1024 * 1024 {
+             return Err(HwpError::RenderError("paste payload too large".into()));
+@@ -1934,6 +1981,9 @@ impl DocumentCore {
+         // Resolve/stage ParaShape and BorderFill updates on the dry-run table first.
+         let mut staged_pss: Vec<crate::model::style::ParaShape> = Vec::new();
+         let mut staged_bfs: Vec<BorderFill> = Vec::new();
++        let mut staged_css: Vec<CharShape> = Vec::new();
++        let mut font_ids_by_name: std::collections::HashMap<String, [u16; 7]> =
++            std::collections::HashMap::new();
+         let existing_ps_len = self.document.doc_info.para_shapes.len();
+         let existing_bf_len = self.document.doc_info.border_fills.len();
+ 
+@@ -2008,72 +2058,83 @@ impl DocumentCore {
+                     para.para_shape_id = ps_id;
+                 }
+ 
++                // [geul] P4 stabilization: the payload states every supported
++                // character property of a run. Flags omitted by the schema are
++                // false, an omitted color is the default (black) text color and an
++                // omitted/null highlight is "no highlight", so the destination
++                // paragraph's shape cannot leak bold/italic/underline/strike/color/
++                // highlight into pasted text. Only properties the schema does not
++                // carry (and an omitted size/family) keep the destination shape.
+                 let mut full_text = String::new();
+-                let mut run_spans: Vec<(usize, usize, CharShapeMods)> = Vec::new();
++                let mut run_spans: Vec<(usize, usize, CharShapeMods, bool)> = Vec::new();
+                 let mut char_cursor = 0usize;
+                 for run in &p_arg.runs {
+                     let run_chars = run.text.chars().count();
+                     if run_chars == 0 {
+                         continue;
+                     }
+-                    let mut mods = CharShapeMods::default();
+-                    let mut has_mods = false;
+-                    if let Some(b) = run.bold {
+-                        mods.bold = Some(b);
+-                        has_mods = true;
+-                    }
+-                    if let Some(i) = run.italic {
+-                        mods.italic = Some(i);
+-                        has_mods = true;
+-                    }
+-                    if let Some(u) = run.underline {
+-                        mods.underline = Some(u);
+-                        mods.underline_type = Some(if u {
++                    let underline = run.underline.unwrap_or(false);
++                    let mut mods = CharShapeMods {
++                        bold: Some(run.bold.unwrap_or(false)),
++                        italic: Some(run.italic.unwrap_or(false)),
++                        underline: Some(underline),
++                        underline_type: Some(if underline {
+                             UnderlineType::Bottom
+                         } else {
+                             UnderlineType::None
+-                        });
+-                        has_mods = true;
+-                    }
+-                    if let Some(st) = run.strikethrough {
+-                        mods.strikethrough = Some(st);
+-                        has_mods = true;
+-                    }
++                        }),
++                        strikethrough: Some(run.strikethrough.unwrap_or(false)),
++                        ..CharShapeMods::default()
++                    };
+                     if let Some(sz) = run.font_size_pt {
+                         if !sz.is_finite() || !(1.0..=1638.0).contains(&sz) {
+                             return Err(HwpError::RenderError("invalid font size".into()));
+                         }
+                         mods.base_size = Some((sz * 100.0).round() as i32);
+-                        has_mods = true;
+                     }
+-                    if let Some(col) = &run.color {
+-                        mods.text_color = Some(
+-                            parse_hex_colorref(col)
+-                                .ok_or_else(|| HwpError::RenderError("invalid run color".into()))?,
+-                        );
+-                        has_mods = true;
++                    mods.text_color = Some(match &run.color {
++                        Some(col) => parse_hex_colorref(col)
++                            .ok_or_else(|| HwpError::RenderError("invalid run color".into()))?,
++                        None => 0,
++                    });
++                    let no_highlight = !matches!(run.highlight, Some(Some(_)));
++                    if let Some(Some(raw)) = &run.highlight {
++                        mods.shade_color = Some(parse_hex_colorref(raw).ok_or_else(|| {
++                            HwpError::RenderError("invalid highlight color".into())
++                        })?);
+                     }
+-                    if let Some(hl) = &run.highlight {
+-                        mods.shade_color = Some(match hl {
+-                            None => 0xFFFFFFFF,
+-                            Some(raw) => parse_hex_colorref(raw).ok_or_else(|| {
+-                                HwpError::RenderError("invalid highlight color".into())
+-                            })?,
+-                        });
+-                        has_mods = true;
++                    if let Some(family) = &run.font_family {
++                        let ids = match font_ids_by_name.get(family) {
++                            Some(ids) => *ids,
++                            None => {
++                                let ids = self.existing_font_ids_for_family(family)?;
++                                font_ids_by_name.insert(family.clone(), ids);
++                                ids
++                            }
++                        };
++                        mods.font_ids = Some(ids);
+                     }
+-                    let _ = &run.font_family;
+                     full_text.push_str(&run.text);
+-                    if has_mods {
+-                        run_spans.push((char_cursor, char_cursor + run_chars, mods));
+-                    }
++                    run_spans.push((char_cursor, char_cursor + run_chars, mods, no_highlight));
+                     char_cursor += run_chars;
+                 }
+                 if !full_text.is_empty() {
+                     para.insert_text_at(0, &full_text);
+-                    for (start_c, end_c, mods) in run_spans {
+-                        let base_ids = para.char_shape_ids_in_range(start_c, end_c);
+-                        let map = self.document.modified_char_shape_ids(base_ids, &mods);
++                    for (start_c, end_c, mods, no_highlight) in run_spans {
++                        let mut map = std::collections::HashMap::new();
++                        for base_id in para.char_shape_ids_in_range(start_c, end_c) {
++                            if map.contains_key(&base_id) {
++                                continue;
++                            }
++                            let id = stage_char_shape(
++                                &self.document.doc_info.char_shapes,
++                                &mut staged_css,
++                                base_id,
++                                &mods,
++                                no_highlight,
++                            )?;
++                            map.insert(base_id, id);
++                        }
+                         para.try_map_char_shape_range(start_c, end_c, |id| {
+                             map.get(&id).copied().ok_or_else(|| {
+                                 HwpError::RenderError("missing mapped charShape".into())
+@@ -2178,14 +2239,6 @@ impl DocumentCore {
+             built_cells.push((ci, new_paras, va, bf_id));
+         }
+ 
+-        if !staged_pss.is_empty() {
+-            self.document.doc_info.para_shapes.extend(staged_pss);
+-            self.document.doc_info.raw_stream_dirty = true;
+-        }
+-        if !staged_bfs.is_empty() {
+-            self.document.doc_info.border_fills.extend(staged_bfs);
+-            self.document.doc_info.raw_stream_dirty = true;
+-        }
+         let mut reflow_targets: Vec<(usize, usize)> = Vec::with_capacity(built_cells.len());
+         for (ci, new_paras, va, bf_id) in built_cells {
+             let para_count = new_paras.len();
+@@ -2194,10 +2247,25 @@ impl DocumentCore {
+             template_table.cells[ci].border_fill_id = bf_id;
+             reflow_targets.push((ci, para_count));
+         }
++        // [geul] Commit point: every validation/construction step above worked on
++        // staged copies. Swap the table first (the only fallible live step), then
++        // publish the staged definitions, so a rejected paste mutates nothing.
+         {
+             let live_table = self.resolve_table_mut_by_cell_path(section, paragraph, path)?;
+             *live_table = template_table;
+         }
++        if !staged_pss.is_empty() {
++            self.document.doc_info.para_shapes.extend(staged_pss);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        if !staged_bfs.is_empty() {
++            self.document.doc_info.border_fills.extend(staged_bfs);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
++        if !staged_css.is_empty() {
++            self.document.doc_info.char_shapes.extend(staged_css);
++            self.document.doc_info.raw_stream_dirty = true;
++        }
+         let depth = path.len() - 1;
+         let last_ctrl = path[depth].0;
+         let mut inner_path = path.to_vec();

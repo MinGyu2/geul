@@ -60,7 +60,8 @@ import type {
   CharFormatFlag, CommandDispatch, CommandParameterContext, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget,
   EmbedFontResult, EmbeddedFont, ParameterCommandId,
 } from "../../../commands/target";
-import { documentFontTable, existingFontFamilies } from "./rhwpFonts";
+import { documentFontTable, existingFontFamilies, resolveExistingFontIds } from "./rhwpFonts";
+import { fontFamilyProblem } from "../../../commands/parameters";
 import { validateCommandArgs } from "../../../commands/parameters";
 import { ALIGN_COMMANDS, HIGHLIGHT_COLORS, validSearchRequest, type AlignCommandId, type ParagraphAlign, type ListState, type ListStyle, type PageState, type PaperName, type ParagraphState, type SearchOptions, type SearchRequest } from "../../../commands/stage1";
 
@@ -2843,6 +2844,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }
     }
 
+    // Run fonts: the engine applies only faces that already exist (and refuses any
+    // other family atomically). A missing face is registered first through the same
+    // owned font path as format.font, inside this paste's history step; without that
+    // ownership the paste is refused instead of silently dropping the family.
+    const families = [...new Set(payload.cells.flatMap(c => c.paragraphs.flatMap(p =>
+      p.runs.flatMap(r => r.fontFamily === undefined ? [] : [r.fontFamily]))))];
+    const fontTable = families.length ? documentFontTable(doc) : null;
+    if (families.length && (!fontTable || families.some(f => fontFamilyProblem(f) !== null))) return "rejected";
+    const missingFonts = fontTable ? families.filter(f => !resolveExistingFontIds(fontTable, f)) : [];
+    if (missingFonts.length && !this.fontCreationOwned()) return "rejected";
+
     const path = tableTargetPathJson(table.target);
     const applySpec = JSON.stringify({
       startRow,
@@ -2854,6 +2866,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     });
     this.history.boundary();
     const applied = this.mutate(() => {
+      for (const family of missingFonts) {
+        const raw = JSON.parse(doc.resolveDocumentFontFamily!(family)) as unknown;
+        const current = documentFontTable(doc), ids = current && resolveExistingFontIds(current, family);
+        if (!ids || !Array.isArray(raw) || raw.length !== 7 || raw.some((id, lang) => id !== ids[lang]))
+          throw new Error("document font resolution refused");
+      }
       const res = JSON.parse(doc.applyTableCellsByPath!(table.target.section, table.target.paragraph, path, applySpec)) as { ok?: boolean };
       if (res.ok !== true) throw new Error("applyTableCellsByPath failed");
       if (this.borderFillBaseline !== null && typeof doc.compactAppendedBorderFills === "function") {
@@ -3755,8 +3773,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // Font mutation uses the same complete selected-text proof, history, original
     // preflight and save/IME ownership as general formatting. Collapsed edits are
     // deliberately unavailable; caret state is display-only.
-    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
-    if (this.fontOwnerCurrent() && this.fontSourceSafe && original?.state === "safe" && this.text?.hasFontOwnership && this.formatState()) {
+    if (this.fontCreationOwned() && this.formatState()) {
       const font = this.fontState();
       if (font) parameters["format.font"] = { font };
     } else parameterReasons["format.font"] = this.hasSelection ? "engineUnsupported" : "selectionRequired";
@@ -3916,6 +3933,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.fontCache = { key, value: value && { ...value, documentFamilies: table ? existingFontFamilies(table) : [] } };
     }
     return this.fontCache.value;
+  }
+
+  /** Font faces may be added to this document only under the format.font ownership proof. */
+  private fontCreationOwned(): boolean {
+    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
+    return this.fontOwnerCurrent() && this.fontSourceSafe && original?.state === "safe" && !!this.text?.hasFontOwnership;
   }
 
   private fontOwnerCurrent(): boolean {

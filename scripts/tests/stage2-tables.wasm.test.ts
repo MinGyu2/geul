@@ -113,8 +113,8 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     memoryBytes: () => wasm.memory.buffer.byteLength,
   }), sessionOptions);
   const loading = editor.load(); take("load").reply(loaded(original)); await flush();
-  take("session").reply(ok(info({ format, state: "loading", sequence: 1 })));
-  take("setState").reply(ok(info({ format, state: "ready", sequence: 2 }))); await loading;
+  take("session").reply(ok(info({ format, loadGeneration: 1, state: "loading", sequence: 1 })));
+  take("setState").reply(ok(info({ format, loadGeneration: 1, state: "ready", sequence: 2 }))); await loading;
   if (format === "hwp" && calls.some(c => c.method === "original")) {
     take("original").reply(ok(original)); await flush();
     const call = take("preflight");
@@ -132,7 +132,7 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
   const place = (p: DocPosition) => { editor.anchor = editor.caret = p; };
   let sequence = 2;
   const settle = async () => { await flush(); while (calls.some(c => c.method === "commit")) {
-    const c = take("commit"); c.reply(ok(info({ format, state: "ready", dirty: true,
+    const c = take("commit"); c.reply(ok(info({ format, loadGeneration: 1, state: "ready", dirty: true,
       revision: Number(c.args[2]) + Number(c.args[3]), sequence: ++sequence }))); await flush();
   } };
   const run = async (command: DocumentCommandId, args?: DocumentCommandArgs) => {
@@ -165,12 +165,21 @@ async function open(format: "hwp" | "hwpx" = "hwpx", emptyWrapper = false, neste
     const raw = check(format, "saved", original, output, JSON.stringify(contentLoss), reopenEqual);
     // The service regenerates stale HWP previews; anything else is a real refusal.
     const publishable = reopenEqual && raw.findings.every(f => f.code === "previewStale") && (format === "hwp" || raw.outcome === "safe");
-    if (publishable) call.reply(ok({ session: info({ format, state: "ready", revision, dirty: false, sequence: ++sequence }), durable: true }));
+    if (publishable) call.reply(ok({ session: info({ format, loadGeneration: 1, state: "ready", revision, dirty: false, sequence: ++sequence }), durable: true }));
     else call.reply(fail({ code: "UnsafeSave", preservation: raw as never }));
     await saving;
     return { output, reopen, raw, publishable, contentLoss, refusedBeforeBackend: false };
   };
-  return { original, editor, doc, at, place, settle, run, save };
+  /** Answer the bounded background original probe (font ownership) the way the service would. */
+  const prove = async () => {
+    for (let attempt = 0; attempt < 4 && calls.some(c => c.method === "original"); attempt++) {
+      take("original").reply(ok(original)); await flush();
+      const pf = take("preflight");
+      pf.reply(ok({ preservation: check(format, "preflight", original, pf.args[2] as Uint8Array, JSON.stringify(pf.args[3])), platformSupported: true }));
+      await flush();
+    }
+  };
+  return { original, editor, doc, at, place, settle, run, save, prove };
 }
 function check(format: "hwp" | "hwpx", mode: "preflight" | "saved", original: Uint8Array, output: Uint8Array, loss: string, reopen = true) {
   writeFileSync(join(out, `a.${format}`), original); writeFileSync(join(out, `b.${format}`), output); writeFileSync(join(out, "check-loss.json"), loss);
@@ -2324,6 +2333,218 @@ describe("RHWP Release WASM Stage 2 P4-1 — multi-cell structural clipboard", (
       expect(await hwp.editor.executeClipboard("edit.paste", () => true, validMerged3)).toBe(false);
       expect(hwp.doc.getTextInCell(0, hwp.at.paragraph, hwp.at.cell!.control, 0, 0, 0, 20)).toBe("outer0");
     } finally { hwp.editor.dispose(); }
+  });
+});
+
+describe("RHWP Release WASM Stage 2 P4 stabilization — structural paste formatting and failure atomicity", () => {
+  type Props = { bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean; textColor: string; shadeColor: string;
+    fontSize: number; fontFamilies: string[]; charShapeId: number };
+  const cellPath = (ctrl: number, cell: number, p = 0) => JSON.stringify([{ controlIndex: ctrl, cellIndex: cell, cellParaIndex: p }]);
+  const engineTable = () => {
+    const d = engine.HwpDocument.createEmpty() as Doc;
+    d.createBlankDocument();
+    const t = JSON.parse(d.createTable!(0, 0, 0, 2, 2));
+    return { d, para: t.paraIdx as number, ctrl: t.controlIdx as number };
+  };
+  const props = (d: Doc, para: number, ctrl: number, cell: number, p: number, offset: number) =>
+    JSON.parse(d.getCellCharPropertiesAtByPath!(0, para, cellPath(ctrl, cell, p), offset)) as Props;
+  const LOUD = JSON.stringify({ bold: true, italic: true, underline: true, strikethrough: true, textColor: "#FF0000", shadeColor: "#FFFF00" });
+  const noShade = (c: string) => ["#ffffff", "none"].includes(c.toLowerCase());
+  /** Everything a refused paste must leave untouched: definitions, fonts, text and the full HWP/HWPX serializations. */
+  const modelState = (d: Doc) => {
+    const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
+    return JSON.stringify({ cs: d.charShapeCount!(), bf: d.borderFillCount!(), fonts: d.getDocumentFontTable!(), text: d.getTextFileText(),
+      hwp: sha(exported(d, "hwp").bytes), hwpx: sha(exported(d, "hwpx").bytes) });
+  };
+  const spec = (startRow: number, cells: unknown[], rows = 1) =>
+    JSON.stringify({ startRow, startCol: 0, rows, cols: 2, allowMergeRewrite: false, cells });
+  const cell = (col: number, paragraphs: unknown[], extra: Record<string, unknown> = {}) =>
+    ({ row: 0, col, rowSpan: 1, colSpan: 1, paragraphs, ...extra });
+
+  it("engine: pasted runs reproduce payload formatting instead of the destination shape, reuse definitions and persist", () => {
+    const { d, para, ctrl } = engineTable();
+    try {
+      for (const c of [2, 3]) {
+        d.insertTextInCellByPath!(0, para, cellPath(ctrl, c), 0, "dest");
+        d.applyCharFormatInCellByPath!(0, para, cellPath(ctrl, c), 0, 4, LOUD);
+      }
+      expect(props(d, para, ctrl, 2, 0, 0)).toMatchObject({ bold: true, italic: true, underline: true, strikethrough: true });
+      const payload = [
+        cell(0, [
+          { runs: [{ text: "plain" }, { text: "BOLD", bold: true }, { text: "tail" }] },
+          { align: "center", runs: [{ text: "u", underline: true }, { text: "i", italic: true }, { text: "s", strikethrough: true }] },
+        ]),
+        cell(1, [{ runs: [{ text: "hl", highlight: "#00FF00", color: "#2563EB" }, { text: "clear", highlight: null }] }]),
+      ];
+      expect(JSON.parse(d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(1, payload))).ok).toBe(true);
+      const plain = props(d, para, ctrl, 2, 0, 0);
+      expect(plain).toMatchObject({ bold: false, italic: false, underline: false, strikethrough: false, textColor: "#000000" });
+      expect(noShade(plain.shadeColor), plain.shadeColor).toBe(true);
+      expect(props(d, para, ctrl, 2, 0, 5).bold).toBe(true);
+      expect(props(d, para, ctrl, 2, 0, 9).bold).toBe(false);
+      expect(props(d, para, ctrl, 2, 1, 0)).toMatchObject({ underline: true, italic: false, bold: false });
+      expect(props(d, para, ctrl, 2, 1, 1)).toMatchObject({ underline: false, italic: true });
+      expect(props(d, para, ctrl, 2, 1, 2)).toMatchObject({ strikethrough: true, italic: false });
+      expect(props(d, para, ctrl, 3, 0, 0)).toMatchObject({ shadeColor: "#00ff00", textColor: "#2563eb" });
+      const cleared = props(d, para, ctrl, 3, 0, 2);
+      expect(noShade(cleared.shadeColor), cleared.shadeColor).toBe(true);
+      expect(cleared.textColor).toBe("#000000");
+
+      // Bold into a normal destination stays bold; repeating the paste reuses every definition.
+      const again = [cell(0, [{ runs: [{ text: "B", bold: true }] }]), cell(1, [{ runs: [{ text: "N" }] }])];
+      d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(0, again));
+      expect(props(d, para, ctrl, 0, 0, 0).bold).toBe(true);
+      expect(props(d, para, ctrl, 1, 0, 0).bold).toBe(false);
+      const count = d.charShapeCount!();
+      d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(0, again));
+      expect(d.charShapeCount!()).toBe(count);
+
+      // Copy -> paste reproduces the copied shapes on top of a differently formatted destination.
+      const extracted = JSON.parse(d.extractTableCellsByPath!(0, para, cellPath(ctrl, 0), 1, 0, 1, 1));
+      d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(0, extracted.cells));
+      const keys = ["bold", "italic", "underline", "strikethrough", "textColor", "shadeColor", "fontSize", "fontFamilies"] as const;
+      const pick = (x: Props) => keys.map(k => x[k]);
+      for (const [c, p, o] of [[0, 0, 0], [0, 0, 5], [0, 0, 9], [0, 1, 0], [0, 1, 1], [0, 1, 2], [1, 0, 0], [1, 0, 2]]) {
+        expect(pick(props(d, para, ctrl, c, p, o))).toEqual(pick(props(d, para, ctrl, c + 2, p, o)));
+      }
+      for (const bytes of [exported(d, "hwpx").bytes, exported(d, "hwp").bytes]) {
+        const r = new engine.HwpDocument(bytes) as Doc;
+        try {
+          expect(props(r, para, ctrl, 2, 0, 0).bold).toBe(false);
+          expect(props(r, para, ctrl, 2, 0, 5).bold).toBe(true);
+          expect(props(r, para, ctrl, 3, 0, 0).shadeColor).toBe("#00ff00");
+          expect(props(r, para, ctrl, 0, 0, 0).italic).toBe(false);
+        } finally { r.free(); }
+      }
+    } finally { d.free(); }
+  });
+
+  it("engine: fontFamily is exported for a uniform face, applied when it exists, and refused atomically otherwise", () => {
+    const { d, para, ctrl } = engineTable();
+    try {
+      d.insertTextInCellByPath!(0, para, cellPath(ctrl, 0), 0, "src");
+      const table = JSON.parse(d.getDocumentFontTable!()) as { languages: { fonts: { definition: { name: string } }[] }[] };
+      const names = [...new Set(table.languages[0]!.fonts.map(f => f.definition.name))];
+      const family = names.find(n => table.languages.every(l => l.fonts.filter(f => f.definition.name === n).length === 1))!;
+      expect(family).toBeTruthy();
+      const extracted = JSON.parse(d.extractTableCellsByPath!(0, para, cellPath(ctrl, 0), 0, 0, 0, 1));
+      const sourceFamilies = props(d, para, ctrl, 0, 0, 0).fontFamilies;
+      if (new Set(sourceFamilies).size === 1) expect(extracted.cells[0].paragraphs[0].runs[0].fontFamily).toBe(sourceFamilies[0]);
+      d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(1, [cell(0, [{ runs: [{ text: "F", fontFamily: family }] }]),
+        cell(1, [{ runs: [{ text: "G" }] }])]));
+      expect(props(d, para, ctrl, 2, 0, 0).fontFamilies).toEqual(Array(7).fill(family));
+      const before = modelState(d);
+      expect(() => d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(1, [
+        cell(0, [{ runs: [{ text: "x", bold: true, fontSizePt: 31.5 }] }]),
+        cell(1, [{ runs: [{ text: "y", fontFamily: "Geul Missing Face" }] }]),
+      ]))).toThrow();
+      expect(modelState(d)).toBe(before);
+    } finally { d.free(); }
+  });
+
+  it("engine: a paste refused after an earlier cell staged new definitions leaves DocInfo, fonts and cells unchanged", () => {
+    const { d, para, ctrl } = engineTable();
+    try {
+      d.insertTextInCellByPath!(0, para, cellPath(ctrl, 2), 0, "keep");
+      // The first cell always needs a new charShape, paraShape and borderFill.
+      const first = cell(0, [{ align: "right", runs: [{ text: "new", bold: true, italic: true, fontSizePt: 37.5, color: "#123456" }] }],
+        { formatting: { shadingColor: "#ABCDEF", borders: { top: { style: "double", widthPt: 1.5, color: "#654321" } } } });
+      const seconds = [
+        cell(1, [{ runs: [{ text: "z", fontSizePt: 9999 }] }]),
+        cell(1, [{ runs: [{ text: "z", color: "#GGGGGG" }] }]),
+        cell(1, [{ runs: [{ text: "z", highlight: "nope" }] }]),
+        cell(1, [{ align: "sideways", runs: [{ text: "z" }] }]),
+        cell(1, [{ runs: [{ text: "z" }] }], { formatting: { borders: { top: { style: "single", widthPt: 1, color: "#XYZ" } } } }),
+        cell(1, [{ runs: [{ text: "z" }] }], { formatting: { shadingColor: "#12" } }),
+        cell(1, [{ runs: [{ text: "z" }] }], { formatting: { verticalAlign: "diagonal" } }),
+        cell(1, [{ runs: [{ text: "z", fontFamily: "Geul Missing Face" }] }]),
+        cell(1, [{ runs: [{ text: "a￼b" }] }]),
+      ];
+      const before = modelState(d);
+      expect(modelState(d)).toBe(before); // the state probe itself is side-effect free
+      for (const [i, second] of seconds.entries()) {
+        expect(() => d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(1, [first, second])), `case ${i}`).toThrow();
+        expect(modelState(d), `case ${i}`).toBe(before);
+      }
+      // Geometry mismatch (no merge rewrite) is refused without mutation as well.
+      const merged = [{ row: 0, col: 0, rowSpan: 1, colSpan: 2, paragraphs: [{ runs: [{ text: "m", bold: true, fontSizePt: 41 }] }] },
+        { row: 1, col: 0, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "a" }] }] },
+        { row: 1, col: 1, rowSpan: 1, colSpan: 1, paragraphs: [{ runs: [{ text: "b" }] }] }];
+      expect(() => d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(0, merged, 2))).toThrow();
+      expect(modelState(d)).toBe(before);
+      // The same first cell with a valid neighbour succeeds.
+      d.applyTableCellsByPath!(0, para, cellPath(ctrl, 0), spec(1, [first, cell(1, [{ runs: [{ text: "ok" }] }])]));
+      expect(props(d, para, ctrl, 2, 0, 0)).toMatchObject({ bold: true, italic: true, fontSize: 3750 });
+      expect(d.getTextInCell(0, para, ctrl, 2, 0, 0, 10)).toBe("new");
+    } finally { d.free(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("%s session: paste into a bold destination is one exact Undo/Redo step and survives T009 save/reopen", async format => {
+    clearStructuredClipboard();
+    const { editor, doc, at, place, settle, run, save } = await open(format, false, true, false);
+    const payload = { kind: "geul.tableCells", version: 1, sourceFormat: "docx", rows: 1, cols: 2, plainText: "plainBOLD\tnorm",
+      cells: [cell(0, [{ runs: [{ text: "plain" }, { text: "BOLD", bold: true }] }]), cell(1, [{ runs: [{ text: "norm" }] }])] };
+    const clip: PlainClipboard = { readText: async () => payload.plainText, writeText: async () => {},
+      readStructured: async mime => (mime === TABLE_CLIPBOARD_MIME ? JSON.stringify(payload) : null) };
+    const p = (c: number, o: number) => JSON.parse(doc.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(withCell(at, c).cell!), o)) as Props;
+    try {
+      for (const c of [2, 3]) {
+        editor.anchor = withCell(at, c);
+        editor.caret = { ...withCell(at, c), offset: 6 };
+        await run("format.bold");
+      }
+      expect(p(2, 0).bold).toBe(true);
+      const before = { text: doc.getTextFileText(), a: p(2, 0), b: p(3, 0), cs: doc.charShapeCount!() };
+      place(withCell(at, 2));
+      expect(await editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
+      await settle();
+      const after = { text: doc.getTextFileText(), plain: p(2, 0), bold: p(2, 5), norm: p(3, 0) };
+      expect([after.plain.bold, after.bold.bold, after.norm.bold]).toEqual([false, true, false]);
+      await run("edit.undo");
+      expect({ text: doc.getTextFileText(), a: p(2, 0), b: p(3, 0), cs: doc.charShapeCount!() }).toEqual(before);
+      await run("edit.redo");
+      expect({ text: doc.getTextFileText(), plain: p(2, 0), bold: p(2, 5), norm: p(3, 0) }).toEqual(after);
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+      const reopened = new engine.HwpDocument(saved.output) as Doc;
+      try {
+        const rp = (c: number, o: number) => JSON.parse(reopened.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(withCell(at, c).cell!), o)) as Props;
+        expect([rp(2, 0).bold, rp(2, 5).bold, rp(3, 0).bold]).toEqual([false, true, false]);
+      } finally { reopened.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("%s session: a DOCX run font is refused without the font ownership proof and applied through the owned font path with it", async format => {
+    clearStructuredClipboard();
+    const { editor, doc, at, place, settle, run, save, prove } = await open(format, false, true, false);
+    const payload = { kind: "geul.tableCells", version: 1, sourceFormat: "docx", rows: 1, cols: 2, plainText: "Mono\tx",
+      cells: [cell(0, [{ runs: [{ text: "Mono", fontFamily: "Geul Pasted Mono" }] }]), cell(1, [{ runs: [{ text: "x" }] }])] };
+    const clip: PlainClipboard = { readText: async () => payload.plainText, writeText: async () => {},
+      readStructured: async mime => (mime === TABLE_CLIPBOARD_MIME ? JSON.stringify(payload) : null) };
+    try {
+      const before = doc.getTextFileText(), fonts = doc.getDocumentFontTable!();
+      // Without the original proof the face cannot be created: refused, nothing changes.
+      place(withCell(at, 2));
+      if (format === "hwpx") {
+        expect(await editor.executeClipboard("edit.paste", () => true, clip)).toBe(false);
+        await settle();
+        expect([doc.getTextFileText(), doc.getDocumentFontTable!()]).toEqual([before, fonts]);
+      }
+      await prove();
+      const owned = documentCommandState("format.font", (editor.anchor = withCell(at, 2), editor.caret = { ...withCell(at, 2), offset: 6 }, editor.snapshot())).available;
+      expect(owned, "font ownership proof").toBe(true);
+      place(withCell(at, 2));
+      expect(await editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
+      await settle();
+      const families = () => JSON.parse(doc.getCellCharPropertiesAtByPath!(0, at.paragraph, pathJson(withCell(at, 2).cell!), 0)).fontFamilies;
+      expect(families()).toEqual(Array(7).fill("Geul Pasted Mono"));
+      await run("edit.undo");
+      expect(doc.getTextFileText()).toBe(before);
+      await run("edit.redo");
+      expect(families()).toEqual(Array(7).fill("Geul Pasted Mono"));
+      const saved = await save();
+      expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+    } finally { editor.dispose(); }
   });
 });
 
