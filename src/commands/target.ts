@@ -1,4 +1,4 @@
-import type { BasicShape, ObjectSelection, PictureResizeRequest } from "./objectSelection";
+import type { BasicShape, ObjectEditRequest, ObjectSelection, PictureResizeRequest } from "./objectSelection";
 import type { ClipboardCommand, PlainClipboard } from "./clipboard";
 // 열린 문서에 대한 명령의 대상(T010). 편집 세션(RhwpEditorSession·DocxEditorSession)이 구현한다: 명령은 그 세션의 편집
 // 경로(T007·T008 대기열, T009 저장 절차)로만 실행되고, 레지스트리는 엔진 함수를 직접 부르지 않는다.
@@ -108,6 +108,7 @@ export type TableStructureCommandId =
  */
 export type DocumentCommandArgs =
   | ({ command: "picture.size" } & PictureResizeRequest)
+  | ({ command: "object.edit" } & ObjectEditRequest)
   | { command: "insert.shape"; kind: BasicShape }
   | { command: "insert.table"; rows: number; cols: number }
   /** 장평(%) — rhwp 글자 모양 `ratios`(7개 언어 모두 같은 값). */

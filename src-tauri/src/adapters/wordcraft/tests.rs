@@ -954,6 +954,7 @@ fn 응답_json은_계약의_모양이다() {
             "chars",
             "clipboardTextAvailable",
             "collapsed",
+            "drawingInsertionAllowed",
             "embeddedFonts",
             "fontGeneration",
             "format",
@@ -969,6 +970,7 @@ fn 응답_json은_계약의_모양이다() {
             "paragraphStyle",
             "paragraphText",
             "selection",
+            "textBoxEditing",
             "trackedReadOnly",
             "tracking"
         ]
@@ -5496,4 +5498,237 @@ fn stage3_shape_clipboard_cut_refuses_stale_or_unowned_objects_and_roundtrips() 
     assert_eq!(model.export().unwrap(), after_paste);
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), after_cut);
+}
+
+#[test]
+fn stage3_object_edit_moves_resizes_deletes_with_t009_and_history() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::{InlineObject, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    for n in [1, 2] {
+        let png = tiny_png_b64(2, 2, [10, 60 * n as u8, 10]);
+        source.run("insert.picture", &json!({"data": png})).unwrap();
+        source
+            .run("picture.size", &json!({"width": 40*n, "height": 30*n}))
+            .unwrap();
+        source
+            .run("select.collapse", &json!({"end": true}))
+            .unwrap();
+        source.run("text.newParagraph", &json!({})).unwrap();
+    }
+    let original = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut model = DocxModel::open(&original).unwrap();
+    let baseline = model.export().unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let layout = reader.layout();
+    let first = layout.find_object(0, |o| o.rect.w == 40.0).unwrap();
+    let click = |hit: &wordcraft_engine::layout::hit::ObjectHit| DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let key = |model: &mut DocxModel| {
+        let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+            v,
+        )
+    };
+    let edit = |(position, epoch): (String, u64), edit: ObjectEdit| DocxOp::ObjectEdit {
+        position,
+        epoch,
+        edit,
+    };
+    model.apply(&[click(&first)]);
+    let (pos, epoch, view) = key(&mut model);
+    assert_eq!(view["operations"], json!(["move", "resize", "delete"]));
+
+    // Invalid sizes never reach the engine.
+    assert!(!validate(&[edit(
+        (pos.clone(), epoch),
+        ObjectEdit::Bounds {
+            x: None,
+            y: None,
+            width: Some(0.5),
+            height: None
+        }
+    )]));
+    assert!(!validate(&[edit(
+        (pos.clone(), epoch),
+        ObjectEdit::Bounds {
+            x: Some(1.0),
+            y: None,
+            width: None,
+            height: None
+        }
+    )]));
+    assert!(!validate(&[edit(
+        (pos.clone(), epoch),
+        ObjectEdit::Nudge {
+            dx: f32::NAN,
+            dy: 0.0
+        }
+    )]));
+
+    // Stale epoch / wrong position are refused without mutation.
+    let resize = ObjectEdit::Bounds {
+        x: None,
+        y: None,
+        width: Some(80.0),
+        height: Some(50.0),
+    };
+    assert_eq!(
+        model
+            .apply(&[edit((pos.clone(), epoch + 1), resize.clone())])
+            .rejected,
+        vec![0]
+    );
+    assert_eq!(
+        model
+            .apply(&[edit(("body:0:0".into(), epoch), resize.clone())])
+            .rejected,
+        vec![0]
+    );
+    assert_eq!(model.export().unwrap(), baseline);
+
+    // Resize keeps the object selected under a new epoch.
+    assert_eq!(
+        model
+            .apply(&[edit((pos.clone(), epoch), resize.clone())])
+            .changed,
+        1
+    );
+    let (pos2, epoch2, view) = key(&mut model);
+    assert_eq!(pos2, pos);
+    assert!(epoch2 > epoch);
+    assert_eq!(view["picture"]["widthPt"], 80.0);
+    assert_eq!(view["picture"]["heightPt"], 50.0);
+    // The old epoch is now stale.
+    assert_eq!(
+        model
+            .apply(&[edit((pos.clone(), epoch), ObjectEdit::Delete {})])
+            .rejected,
+        vec![0]
+    );
+    let resized = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &resized,
+        None,
+        model.same_as(&resized)
+    )
+    .is_safe());
+
+    // Move: the picture floats at the requested page position.
+    let page = view["frame"]["page"].as_u64().unwrap();
+    assert_eq!(
+        model
+            .apply(&[edit(
+                (pos2.clone(), epoch2),
+                ObjectEdit::Bounds {
+                    x: Some(200.0),
+                    y: Some(300.0),
+                    width: None,
+                    height: None
+                }
+            )])
+            .changed,
+        1
+    );
+    let (pos3, epoch3, view) = key(&mut model);
+    assert_eq!(view["frame"]["page"].as_u64().unwrap(), page);
+    assert!(
+        (view["frame"]["x"].as_f64().unwrap() - 200.0).abs() < 1.0,
+        "{view}"
+    );
+    assert!(
+        (view["frame"]["y"].as_f64().unwrap() - 300.0).abs() < 1.0,
+        "{view}"
+    );
+    assert_eq!(view["picture"]["wrap"], "square");
+    assert_eq!(
+        model
+            .apply(&[edit(
+                (pos3.clone(), epoch3),
+                ObjectEdit::Nudge { dx: 6.0, dy: -4.0 }
+            )])
+            .changed,
+        1
+    );
+    let (pos4, epoch4, view) = key(&mut model);
+    assert!(
+        (view["frame"]["x"].as_f64().unwrap() - 206.0).abs() < 1.0,
+        "{view}"
+    );
+    let moved = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &moved,
+        None,
+        model.same_as(&moved)
+    )
+    .is_safe());
+    let reopened = io::open_bytes("fixture.docx", &moved).unwrap();
+    let floats: Vec<_> = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .filter_map(|o| match o {
+            InlineObject::Image { w, h, float, .. } => Some((*w, *h, float.wrap)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(floats.len(), 2);
+    assert!(floats.contains(&(80.0, 50.0, wordcraft_engine::doc::para::Wrap::Square)));
+    assert!(floats.contains(&(80.0, 60.0, wordcraft_engine::doc::para::Wrap::Inline)));
+
+    // Delete: the picture and only its media leave the package.
+    assert_eq!(
+        model
+            .apply(&[edit((pos4, epoch4), ObjectEdit::Delete {})])
+            .changed,
+        1
+    );
+    assert!(model.view().object.is_none());
+    let deleted = model.export().unwrap();
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &deleted,
+        None,
+        model.same_as(&deleted),
+    );
+    assert!(gate.is_safe(), "{gate:?}");
+    let reopened = io::open_bytes("fixture.docx", &deleted).unwrap();
+    let count = reopened
+        .para_paths(StoryRef::Body)
+        .iter()
+        .filter_map(|p| reopened.para(StoryRef::Body, p))
+        .flat_map(|p| p.objects.clone())
+        .filter(|o| matches!(o, InlineObject::Image { .. }))
+        .count();
+    assert_eq!(count, 1);
+
+    // One history step per edit.
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), moved);
+    assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
+    assert_eq!(model.export().unwrap(), resized);
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), baseline);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), resized);
 }

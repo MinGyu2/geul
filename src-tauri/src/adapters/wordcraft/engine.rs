@@ -166,6 +166,13 @@ pub enum DocxOp {
     },
     TextBox {},
     CutShape { position: String, epoch: u64 },
+    /// Stage 3: an edit of the selected drawing. `position`/`epoch` must name the current object selection
+    /// (stale selections are rejected); the change must pass the DOCX T009 check against the pre-edit export.
+    ObjectEdit {
+        position: String,
+        epoch: u64,
+        edit: ObjectEdit,
+    },
     Image {
         data: String,
     },
@@ -432,6 +439,73 @@ impl BasicShape {
     }
 }
 
+/// Stage 3 object edits (WordCraft `arrange.*`, `picture.*`, `text.delete` on the object range).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ObjectEdit {
+    /// Move (x, y: top-left on the object's page, pt) and/or resize (width, height, pt).
+    Bounds {
+        x: Option<f32>,
+        y: Option<f32>,
+        width: Option<f32>,
+        height: Option<f32>,
+    },
+    /// Move a floating object by an offset (pt).
+    Nudge {
+        dx: f32,
+        dy: f32,
+    },
+    Delete {},
+}
+
+pub const MAX_OBJECT_SIDE_PT: f32 = 4000.0;
+pub const MIN_OBJECT_SIDE_PT: f32 = 2.0;
+
+impl ObjectEdit {
+    fn valid(&self) -> bool {
+        let coord =
+            |v: &Option<f32>| v.is_none_or(|v| v.is_finite() && v.abs() <= MAX_PAGE_SIDE_PT);
+        let side = |v: &Option<f32>| {
+            v.is_none_or(|v| {
+                v.is_finite() && (MIN_OBJECT_SIDE_PT..=MAX_OBJECT_SIDE_PT).contains(&v)
+            })
+        };
+        match self {
+            Self::Bounds {
+                x,
+                y,
+                width,
+                height,
+            } => {
+                x.is_some() == y.is_some()
+                    && coord(x)
+                    && coord(y)
+                    && side(width)
+                    && side(height)
+                    && (x.is_some() || width.is_some() || height.is_some())
+            }
+            Self::Nudge { dx, dy } => {
+                [dx, dy].iter().all(|d| d.is_finite() && d.abs() <= 288.0)
+                    && (*dx != 0.0 || *dy != 0.0)
+            }
+            Self::Delete {} => true,
+        }
+    }
+
+    pub fn operation(&self) -> &'static str {
+        match self {
+            Self::Bounds { x: Some(_), .. } | Self::Nudge { .. } => "move",
+            Self::Bounds { .. } => "resize",
+            Self::Delete {} => "delete",
+        }
+    }
+}
+
 /// 비어 있지 않고 `MAX_TEXT_CHARS` 이하이며, `allowed` 밖의 제어 문자와 U+FFFC가 없다.
 fn valid_chars(text: &str, allowed: &[char]) -> bool {
     // U+FFFC는 WordCraft가 개체 자리로 쓰는 글자라 직접 넣지 않는다.
@@ -479,7 +553,14 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
             DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
             DocxOp::Font { name } => valid_font_name(name),
-            DocxOp::CutShape { position, epoch } => !position.is_empty() && position.len() <= 256 && *epoch > 0,
+            DocxOp::CutShape { position, epoch } => {
+                !position.is_empty() && position.len() <= 256 && *epoch > 0
+            }
+            DocxOp::ObjectEdit {
+                position,
+                epoch,
+                edit,
+            } => !position.is_empty() && position.len() <= 256 && *epoch > 0 && edit.valid(),
             DocxOp::DeleteSelection { selection: Some(s) } => {
                 s.anchor_key.len() <= 256 && s.caret_key.len() <= 256
             }
@@ -654,6 +735,9 @@ pub struct ObjectView {
     graphic: Option<Value>,
     #[serde(rename = "clipboardShape", skip_serializing_if = "Option::is_none")]
     clipboard_shape: Option<ClipboardShapeView>,
+    /// Mutations this object admits now (Stage 3): `move`, `resize`, `delete`. Each is still
+    /// re-validated and T009-checked when applied.
+    operations: Vec<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -836,6 +920,8 @@ struct LastInsert {
 pub struct DocxModel {
     session: Session,
     selected_object: Option<(Pos, usize)>,
+    /// Object to keep selected after a successful `ObjectEdit` (set by it, taken by `apply`).
+    reselect: Option<(Pos, usize)>,
     object_epoch: u64,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
@@ -958,6 +1044,7 @@ impl DocxModel {
         let mut model = DocxModel {
             session,
             selected_object: None,
+            reselect: None,
             object_epoch: 0,
             created_shapes: Vec::new(),
             marks: Vec::new(),
@@ -1044,7 +1131,8 @@ impl DocxModel {
             match result {
                 Ok(changed) => {
                     if changed {
-                        self.selected_object = None;
+                        let reselect = self.reselect.take();
+                        self.selected_object = reselect;
                         match op {
                             DocxOp::Shape { .. } => {
                                 let mut pos = self.session.sel.focus.clone();
@@ -1093,9 +1181,16 @@ impl DocxModel {
                 DocxOp::Move { .. } | DocxOp::SelectAll | DocxOp::Find { .. } => {
                     self.selected_object = None;
                 }
-                DocxOp::Pointer { .. } | DocxOp::DeselectObject {} | DocxOp::Mark { .. }
-                | DocxOp::InsertAt { .. } | DocxOp::ReplaceInserted { .. }
-                | DocxOp::Undo {} | DocxOp::Redo {} | DocxOp::ClearSearch {} | DocxOp::CutShape { .. } => {}
+                DocxOp::Pointer { .. }
+                | DocxOp::DeselectObject {}
+                | DocxOp::Mark { .. }
+                | DocxOp::InsertAt { .. }
+                | DocxOp::ReplaceInserted { .. }
+                | DocxOp::Undo {}
+                | DocxOp::Redo {}
+                | DocxOp::ClearSearch {}
+                | DocxOp::CutShape { .. }
+                | DocxOp::ObjectEdit { .. } => {}
                 _ => return Err(Rejected),
             }
         }
@@ -1213,6 +1308,11 @@ impl DocxModel {
             DocxOp::Shape { kind } => self.insert_drawing("insert.shape", json!({"kind": kind.name()}), true),
             DocxOp::TextBox {} => self.insert_drawing("insert.textBox", json!({}), false),
             DocxOp::CutShape { position, epoch } => self.cut_clipboard_shape(position, *epoch),
+            DocxOp::ObjectEdit {
+                position,
+                epoch,
+                edit,
+            } => self.object_edit(position, *epoch, edit),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -1750,6 +1850,164 @@ impl DocxModel {
         })
     }
 
+    /// Which Stage 3 mutations the object at `pos` admits. Body story only: objects in headers,
+    /// footers, notes and text boxes live in other package parts whose changes T009 does not
+    /// admit. Charts and SmartArt are written to their own parts, so their geometry stays frozen.
+    fn object_operations(&self, pos: &Pos) -> Vec<&'static str> {
+        let doc = &self.session.doc;
+        if pos.story != StoryRef::Body
+            || doc.settings.protection.is_some()
+            || doc.settings.track_changes
+        {
+            return Vec::new();
+        }
+        let drawing = matches!(
+            self.object_kind(pos),
+            Some("picture" | "shape" | "textBox" | "group")
+        );
+        if !drawing {
+            return Vec::new();
+        }
+        let mut ops = vec!["resize"];
+        // Relocating or removing a drawing renumbers later drawings: only when no other story has one.
+        if self.image_insertion_allowed() {
+            if pos.path.0.len() == 1 {
+                ops.insert(0, "move");
+            }
+            ops.push("delete");
+        }
+        ops
+    }
+
+    /// The engine computes drag offsets in f32 points; DOCX stores whole EMUs. Snap the edited
+    /// object's frame to that grid so the saved file reopens to exactly this model.
+    fn snap_to_emu(&mut self, pos: &Pos) -> Result<(), Rejected> {
+        fn snap(pt: f32) -> f32 {
+            ((f64::from(pt) * 12_700.0).round() as i64) as f32 / 12_700.0
+        }
+        let para = self
+            .session
+            .doc
+            .para_mut(pos.story, &pos.path)
+            .map_err(|_| Rejected)?;
+        let object = para.object_at_mut(pos.off).ok_or(Rejected)?;
+        let Some((w, h, _)) = object.frame() else {
+            return Err(Rejected);
+        };
+        if (snap(w), snap(h)) != (w, h) {
+            object.set_size(snap(w), snap(h));
+        }
+        if let Some(float) = object.float_mut() {
+            float.x = snap(float.x);
+            float.y = snap(float.y);
+        }
+        para.touch();
+        Ok(())
+    }
+
+    fn object_edit(
+        &mut self,
+        position: &str,
+        epoch: u64,
+        edit: &ObjectEdit,
+    ) -> Result<bool, Rejected> {
+        let (pos, page) = self.selected_object.clone().ok_or(Rejected)?;
+        if epoch != self.object_epoch
+            || position_key(&pos) != position
+            || !self.object_operations(&pos).contains(&edit.operation())
+        {
+            return Err(Rejected);
+        }
+        let before = self.export().ok_or(Rejected)?;
+        let end = Pos {
+            off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+            ..pos.clone()
+        };
+        let selection = (
+            self.session.sel.anchor.clone(),
+            self.session.sel.focus.clone(),
+        );
+        let result = self.atomic(|model| {
+            model.select(&pos, &end)?;
+            let (changed, at) = match edit {
+                ObjectEdit::Delete {} => {
+                    let changed = model.run("text.delete", json!({}))?;
+                    // Media only the deleted picture used leaves the package (T009 drawing-owned media proof).
+                    table::retain_used_media(&mut model.session.doc);
+                    (changed, None)
+                }
+                ObjectEdit::Nudge { dx, dy } => {
+                    let changed = model.run("arrange.nudge", json!({"dx": dx, "dy": dy}))?;
+                    (changed, Some(pos.clone()))
+                }
+                ObjectEdit::Bounds {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
+                    let mut params = serde_json::Map::new();
+                    if let (Some(x), Some(y)) = (x, y) {
+                        params.insert("x".into(), json!(x));
+                        params.insert("y".into(), json!(y));
+                        params.insert("page".into(), json!(page));
+                    }
+                    if let Some(w) = width {
+                        params.insert("width".into(), json!(w));
+                    }
+                    if let Some(h) = height {
+                        params.insert("height".into(), json!(h));
+                    }
+                    let params = Value::Object(params);
+                    let changed = model.run("arrange.bounds", params)?;
+                    // The engine leaves the object selected at its (possibly new) anchor.
+                    let (a, b) = model.session.sel.ordered();
+                    if a.story != b.story
+                        || a.path != b.path
+                        || b.off != a.off + wordcraft_engine::doc::para::OBJ.len_utf8()
+                        || model.object_kind(&a).is_none()
+                    {
+                        return Err(Rejected);
+                    }
+                    (changed, Some(a))
+                }
+            };
+            if !changed {
+                return Err(Rejected);
+            }
+            if let Some(at) = &at {
+                model.snap_to_emu(at)?;
+            }
+            let after = model.export().ok_or(Rejected)?;
+            let same = model.same_as(&after);
+            let gate = crate::services::save::service::check_saved(
+                crate::document::Format::Docx,
+                &before,
+                &after,
+                None,
+                same,
+            );
+            if !same || !gate.is_safe() {
+                return Err(Rejected);
+            }
+            // Text caret goes back where it was (object selection hides it); an anchor that
+            // moved paragraphs only shifts offsets inside those paragraphs.
+            let caret = model.session.doc.clamp(&selection.1);
+            model.session.sel = wordcraft_engine::Selection {
+                anchor: caret.clone(),
+                focus: caret,
+            };
+            Ok(at)
+        })?;
+        if let Some(at) = result {
+            let layout = self.session.layout();
+            let page = layout.object(&at, page).map_or(page, |hit| hit.page);
+            self.object_epoch += 1;
+            self.reselect = Some((at, page));
+        }
+        Ok(true)
+    }
+
     fn graphic_properties(&self, pos: &Pos) -> Option<Value> {
         let InlineObject::Graphic { graphic, .. } = self.object_at(pos)? else { return None };
         if let Some(chart) = &graphic.chart {
@@ -1806,6 +2064,7 @@ impl DocxModel {
                 picture,
                 graphic: self.graphic_properties(pos),
                 clipboard_shape: self.clipboard_shape(pos),
+                operations: self.object_operations(pos),
             })
         });
         if object.is_none() {

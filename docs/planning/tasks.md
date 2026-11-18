@@ -390,5 +390,10 @@ P4 부분 구현은 DOCX 차트·SmartArt와 HWP/HWPX 본문 차트의 읽기 �
 P5 부분 구현은 현재 세션 DOCX 기본 인라인 도형의 구조 클립보드다.
 Linux X11 Release에서 DOCX 사각형 복사·잘라내기·붙여넣기·Undo/Redo·
 Save/Save As·독립 재열기와 HWPX/HWP 교차 형식 거부를 확인했다.
+**2026-11-19 P1 일반 개체 연산.** 공통 `object.edit`(bounds·nudge·delete)를 DOCX와 HWPX에
+연결했다. DOCX는 기존 개체를 포함한 본문 그림·도형·글상자·그룹의 이동·크기·삭제를 WordCraft
+`arrange.bounds`/`arrange.nudge`/`text.delete`로 실행하고, 편집 전후 내보내기에 T009 저장 판정을 적용한다.
+HWPX는 떠 있는 본문 그림 이동, 인라인 그림 크기, 그림 삭제. 선택 프레임에 8방향 핸들·끌기·방향키·Delete.
+HWP 그림 변경은 BodyText 원본 gso 바이트 동일 요구로 BLOCKED, HWPX 도형은 P3로 남았다. 네이티브 끌기 NOT RUN.
 P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
 PARTIALLY COMPLETED 상태다.

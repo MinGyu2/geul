@@ -1094,3 +1094,22 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 데이터를 읽는다. HWP/HWPX에 객체 구조 붙여넣기를 요청하면 거부한다.
 표 셀 MIME과 일반 텍스트 경로는 기존 명령과 검증기를 계속 사용한다.
 크로스 앱 객체 MIME 상호운용은 NOT RUN이다.
+
+### P1 일반 개체 연산 `object.edit` (2026-11-19)
+
+인자: `{command:"object.edit", selectionEpoch, sessionId, loadGeneration, revision, edit}`.
+`edit`은 `{kind:"bounds", x?, y?, width?, height?}`(쪽 pt, x·y는 함께, 변 2–4000pt), `{kind:"nudge", dx, dy}`
+(|d|≤288pt), `{kind:"delete"}`. `objectEditMatches`가 선택 정체성과 `operations`(move·resize·delete)를 함께
+확인한다. 가용성은 편집 가능·대기 편집 없음·조합 중 아님·저장 중 아님·선택의 변경 연산 존재.
+
+- WordCraft: `DocxOp::ObjectEdit {position, epoch, edit}`. 본문 story의 그림·도형·글상자·그룹만. 이동은
+  최상위 문단에서만, 이동·삭제는 다른 story에 그림이 없을 때만(그림 ID 재번호 방지). 엔진 명령 뒤
+  위치·크기를 EMU 격자에 맞추고(재열기 동일성), 편집 전 내보내기 대비 `check_saved` + `same_as`가
+  안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
+  같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
+- RHWP: HWPX 본문 그림만. 크기는 기존 `picture.size` 경로(단순 인라인), 이동은 `horzAlign=Left`·
+  `vertAlign=Top`·캡션·회전 없는 떠 있는 그림의 `horzOffset`/`vertOffset`(배치 표본 비율로 HWPUNIT 환산),
+  삭제는 `deletePictureControl`. 호출 뒤 같은 주소의 값을 다시 확인하고 RHWP 이력 한 트랜잭션으로 적용한다.
+  BinData는 삭제 뒤에도 원본 그대로 남는다(매니페스트 무변경). HWP는 선택만 제공한다.
+- UI: `ObjectSelectionFrame`의 이동 영역과 8방향 핸들(접근 이름 포함). 그림 모서리는 비율 유지(Shift로 해제),
+  Esc·pointercancel·선택/문서/배율 변경은 끌기를 취소한다. 방향키 1pt(Shift 10pt), Delete/Backspace 삭제.

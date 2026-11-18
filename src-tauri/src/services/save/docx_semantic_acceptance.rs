@@ -2979,3 +2979,179 @@ fn stage3_docx_shapes_and_owned_text_box_publish_and_reopen() {
     let after = package::open(&written, package::Side::Output).unwrap();
     assert!(package::compare(&before, &after, &|name| name == "word/document.xml" || name == "docProps/app.xml").is_empty());
 }
+
+/// Stage 3 P1: objects that already exist in a published file are moved, resized and deleted
+/// through `DocxOp::ObjectEdit`, published by the real save service, and reopened independently.
+#[test]
+fn stage3_docx_existing_objects_move_resize_delete_publish_and_reopen() {
+    use crate::adapters::wordcraft::engine::{BasicShape, ObjectEdit};
+    use wordcraft_engine::doc::para::{ShapeKind, Wrap};
+
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    let shape = |kind| DocxOp::Shape { kind };
+    doc.edit(vec![
+        DocxOp::Move {
+            to: MoveTarget::DocEnd,
+            extend: false,
+        },
+        shape(BasicShape::Rectangle),
+        shape(BasicShape::Ellipse),
+    ]);
+    assert_eq!(doc.info.revision, 2);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let saved = doc.save();
+    assert!(saved.is_ok(), "{saved:?}");
+    let first = doc.bytes();
+
+    // A new session on the published file: the shapes are existing objects now.
+    let mut doc = open_docx(&first);
+    let mut session = Session::new(io::open_bytes("a.docx", &first).unwrap());
+    let layout = session.layout();
+    let mut frames = Vec::new();
+    for path in session.doc.para_paths(StoryRef::Body) {
+        let para = session.doc.para(StoryRef::Body, &path).unwrap();
+        for off in para.object_offsets() {
+            let pos = wordcraft_engine::doc::Pos {
+                story: StoryRef::Body,
+                path: path.clone(),
+                off,
+            };
+            frames.push(layout.object(&pos, 0).unwrap());
+        }
+    }
+    assert_eq!(frames.len(), 2);
+    let select = |hit: &wordcraft_engine::layout::hit::ObjectHit| DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let edit = |doc: &mut Docx, ops: Vec<DocxOp>| {
+        let edited = block_on(docx::edit(
+            &doc.state,
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+            ops,
+        ))
+        .unwrap();
+        doc.info = edited.session.clone();
+        edited
+    };
+    let key = |view: &crate::adapters::wordcraft::engine::DocxView| {
+        let v = serde_json::to_value(view).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+            v,
+        )
+    };
+    // Delete the later ellipse first: the rectangle before it keeps its layout position.
+    let ellipse = edit(&mut doc, vec![select(&frames[1])]);
+    let (position, epoch, view) = key(&ellipse.view);
+    assert_eq!(view["kind"], "shape");
+    let deleted = edit(
+        &mut doc,
+        vec![DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Delete {},
+        }],
+    );
+    assert!(deleted.rejected.is_empty() && deleted.view.object.is_none());
+    let selected = edit(&mut doc, vec![select(&frames[0])]);
+    let (position, epoch, view) = key(&selected.view);
+    assert_eq!(view["kind"], "shape");
+    assert_eq!(
+        view["operations"],
+        serde_json::json!(["move", "resize", "delete"])
+    );
+    let resized = edit(
+        &mut doc,
+        vec![DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: None,
+                y: None,
+                width: Some(144.25),
+                height: Some(36.5),
+            },
+        }],
+    );
+    assert!(resized.rejected.is_empty());
+    let (position, epoch, _) = key(&resized.view);
+    let moved = edit(
+        &mut doc,
+        vec![DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(150.3),
+                y: Some(420.7),
+                width: None,
+                height: None,
+            },
+        }],
+    );
+    assert!(moved.rejected.is_empty());
+    let (position, epoch, view) = key(&moved.view);
+    assert!(
+        (view["frame"]["x"].as_f64().unwrap() - 150.3).abs() < 0.5,
+        "{view}"
+    );
+    // The stale epoch from before the move cannot delete it.
+    let stale = edit(
+        &mut doc,
+        vec![DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch: epoch - 1,
+            edit: ObjectEdit::Delete {},
+        }],
+    );
+    assert_eq!(stale.rejected, vec![0]);
+
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    assert!(doc.save().is_ok());
+    let written = doc.bytes();
+    let reopened = reopen(&written);
+    let shapes: Vec<_> = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .filter_map(|o| {
+            if let InlineObject::Shape {
+                kind, w, h, float, ..
+            } = o
+            {
+                Some((*kind, *w, *h, float.wrap))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(shapes.len(), 1);
+    let (kind, w, h, wrap) = shapes[0];
+    assert_eq!(kind, ShapeKind::Rectangle);
+    assert!(
+        (w - 144.25).abs() < 0.01 && (h - 36.5).abs() < 0.01,
+        "{w} {h}"
+    );
+    assert_eq!(wrap, Wrap::Square);
+    assert_eq!(
+        reopened.plain_text(StoryRef::Body).replace('\u{fffc}', ""),
+        reopen(&original).plain_text(StoryRef::Body)
+    );
+    let before = package::open(&first, package::Side::Original).unwrap();
+    let after = package::open(&written, package::Side::Output).unwrap();
+    assert!(
+        package::compare(&before, &after, &|name| name == "word/document.xml"
+            || name == "docProps/app.xml")
+        .is_empty()
+    );
+}

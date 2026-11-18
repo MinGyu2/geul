@@ -1,4 +1,4 @@
-import { pictureResizeMatches, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
+import { objectEditMatches, pictureResizeMatches, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
 import { hitRhwpObject } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
@@ -1678,16 +1678,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const body = address && address[1] < this.doc.getParagraphCount(address[0]);
           const inspected = body ? inspectRhwpPicture(this.doc, address) : undefined;
           const graphic = this.readChart(hit.bodyEmbedded);
-          const canResize = inspected?.simpleInline && this.doc.setPictureProperties && this.history
-            && this.sessions.get(this.sessionId)?.format === "hwpx";
+          // Stage 3: HWPX body pictures only. HWP BodyText record changes for pictures have no T009 proof yet.
+          const hwpx = Boolean(inspected && this.history && this.sessions.get(this.sessionId)?.format === "hwpx");
+          const canResize = hwpx && inspected!.simpleInline && !!this.doc.setPictureProperties;
+          const canMove = hwpx && !!inspected!.movable && !!this.doc.setPictureProperties;
+          const canDelete = hwpx && !!this.doc.deletePictureControl;
+          const operations = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : [])];
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
-            ...(canResize && address ? { pictureAddress: address } : {}),
+            ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
             selection: {
               kind: graphic?.kind ?? hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
               epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
-              revision: this.committed + this.pending, editable: Boolean(canResize),
-              operations: canResize ? ["deselect", "resize"] : ["deselect"],
+              revision: this.committed + this.pending, editable: operations.length > 0,
+              operations: ["deselect", ...operations],
               ...(inspected ? { picture: inspected.properties } : {}),
               ...(graphic ? { graphic } : {}),
             },
@@ -4105,6 +4109,63 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch { return false; }
   }
 
+  /** Stage 3 `object.edit` on the selected HWPX body picture: one verified engine call, one history step. */
+  private editObject(request: ObjectEditRequest): boolean {
+    const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
+    if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
+      || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+    const { edit } = request;
+    if (edit.kind === "bounds" && edit.x === undefined) {
+      if (edit.width === undefined || edit.height === undefined) return false;
+      return this.resizePicture({ ...request, widthPt: edit.width, heightPt: edit.height });
+    }
+    const before = inspectRhwpPicture(doc, address);
+    const previous = selected.picture;
+    if (!before || !previous || before.properties.widthPt !== previous.widthPt || before.properties.heightPt !== previous.heightPt) return false;
+    let apply: () => void;
+    if (edit.kind === "delete") {
+      if (!doc.deletePictureControl) return false;
+      apply = () => {
+        const result = JSON.parse(doc.deletePictureControl!(...address)) as { ok?: boolean };
+        if (result.ok !== true) throw new Error("picture deletion refused");
+      };
+    } else {
+      // Move: frame units → HWPUNIT through the same layout sample as the stored size.
+      if (edit.kind === "bounds" && (edit.width !== undefined || edit.height !== undefined)) return false;
+      const movable = before.movable;
+      if (!movable || !doc.setPictureProperties || selected.frame.width <= 0) return false;
+      const perFrame = previous.widthPt * 100 / selected.frame.width;
+      const dx = edit.kind === "nudge" ? edit.dx * 100 : (edit.x! - selected.frame.x) * perFrame;
+      const dy = edit.kind === "nudge" ? edit.dy * 100 : (edit.y! - selected.frame.y) * perFrame;
+      const horzOffset = movable.horzOffset + Math.round(dx), vertOffset = movable.vertOffset + Math.round(dy);
+      const limit = 0x7fffffff;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.abs(horzOffset) > limit || Math.abs(vertOffset) > limit
+        || (horzOffset === movable.horzOffset && vertOffset === movable.vertOffset)) return false;
+      apply = () => {
+        const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify({ horzOffset, vertOffset }))) as { ok?: boolean };
+        const after = inspectRhwpPicture(doc, address);
+        if (result.ok !== true || after?.movable?.horzOffset !== horzOffset || after.movable.vertOffset !== vertOffset
+          || after.properties.widthPt !== previous.widthPt || after.properties.heightPt !== previous.heightPt
+          || after.properties.description !== previous.description) throw new Error("picture position did not verify");
+      };
+    }
+    const savedSelection = this.selectedObject;
+    this.selectedObject = null;
+    const caret = this.caret, anchor = this.anchor;
+    // A caret in the edited paragraph may sit after the removed control: return it to the paragraph start.
+    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
+      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const accepted = this.mutate(() => {
+      apply();
+      return { caret: owned(caret), anchor: owned(anchor) };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
   private resizePicture(request: PictureResizeRequest): boolean {
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !pictureResizeMatches(request, selected) || !address || !doc?.setPictureProperties
@@ -4143,6 +4204,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "picture.size") return { accepted: args?.command === command && this.resizePicture(args) };
+    if (command === "object.edit") return { accepted: args?.command === command && this.editObject(args) };
     if (command === "object.deselect") {
       if (args !== undefined) return { accepted: false };
       this.selectedObject = null;

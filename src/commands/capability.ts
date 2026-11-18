@@ -57,6 +57,14 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (snapshot.pending && snapshot.engine === "wordcraft") return unavailable("pendingEdits");
     return snapshot.objectSelection ? ENABLED : unavailable("selectionRequired");
   }
+  if (id === "object.edit") {
+    if (!snapshot.editable || !snapshot.loaded) return unavailable("notReady");
+    if (snapshot.pending) return unavailable("pendingEdits");
+    if (snapshot.composing) return unavailable("composing");
+    if (snapshot.saving) return unavailable("saving");
+    return snapshot.objectSelection?.operations.some(op => op === "move" || op === "resize" || op === "delete")
+      ? ENABLED : unavailable("selectionRequired");
+  }
   if (id === "picture.size") {
     if (!snapshot.editable || !snapshot.loaded) return unavailable("notReady");
     if (snapshot.pending) return unavailable("pendingEdits");

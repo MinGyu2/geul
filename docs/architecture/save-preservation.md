@@ -1847,3 +1847,18 @@ P4 조회를 다시 확인했다. P2 첫 실행의 WebDriver 연결 끊김은 �
 한 번으로 재시도해 세 형식을 확인했다. 현재 실행한 집중 Vitest 184 PASS,
 Stage 3 Rust 4 PASS, 표 구조 클립보드 Release WASM 3 PASS(87 필터 제외),
 T009 저장 279 PASS / 0 FAIL / 29 ignored. Stage 3 전체 수용은 미완료다.
+
+### Stage 3 P1 개체 연산 보존 증명 (2026-11-19)
+
+- **DOCX 그림 삭제 미디어.** `authorized_table_media_changes`가 `<w:tbl>` 안의 `a:blip`에 더해 `<w:drawing>` 안의
+  `a:blip`이 사라진 경우도 받는다. 나머지 조건은 그대로다: 제거되는 `word/media/*`는 원본 본문만 이미지 관계로
+  참조하고, 다른 `.rels`가 참조하지 않으며, 비이미지 바인딩(예: 그림의 `a:hlinkClick`)이 함께 사라지거나 바뀌지
+  않아야 한다. 맨 `a:blip`(그림·표 밖) 삭제는 계속 거부한다. 시험: 양성 1, 음성 4(다른 부분 참조, 하이퍼링크 동반,
+  남은 그림이 같은 미디어 참조, 맨 blip).
+- **DOCX 이동·크기.** `word/document.xml`만 바뀐다(기존 규칙). 엔진의 f32 오프셋을 EMU 격자로 맞춰
+  `ReopenMismatch`를 막았다. 편집 시점에 같은 `check_saved`를 적용해 저장에서 거부될 편집을 미리 되돌린다.
+- **HWPX.** 그림 이동·삭제 출력은 `Contents/section0.xml`만 바뀌고 `save_check saved hwpx` safe. BinData·header 변조와
+  BinData 누락은 unsafe.
+- **HWP (BLOCKED).** RHWP 크기·삭제·떠 있게 바꾸기 출력은 모두 `RecordsChanged BodyText/Section0`
+  (`hwp/insertions.rs` 원본 표/gso 객체는 바이트 동일하게 다시 나타나야 함)과 `previewStale PrvImage`로 거부된다.
+  CTRL_HEADER 공통 치수·SHAPE_COMPONENT·SHAPE_COMPONENT_PICTURE 필드별 진화 증명이 필요하다.

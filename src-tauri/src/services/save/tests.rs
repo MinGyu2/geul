@@ -13688,6 +13688,149 @@ fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
 }
 
 #[test]
+fn docx_body_picture_deletion_proof_admits_only_drawing_owned_media() {
+    const IMAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    const HYPERLINK_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+    const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    const PNG_SIG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+    let ct = |png: bool| {
+        format!(
+            r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>{}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            if png {
+                r#"<Default Extension="png" ContentType="image/png"/>"#
+            } else {
+                ""
+            }
+        )
+    };
+    let rels = |ids: &[(&str, &str, &str)]| {
+        let body: String = ids
+            .iter()
+            .map(|(id, ty, target)| {
+                format!(r#"<Relationship Id="{id}" Type="{ty}" Target="{target}"/>"#)
+            })
+            .collect();
+        format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>"#
+        )
+    };
+    let doc = |body: &str| {
+        format!(
+            r#"<w:document xmlns:w="{W}" xmlns:r="{R_NS}" xmlns:a="{A_NS}"><w:body>{body}<w:p><w:r><w:t>Keep</w:t></w:r></w:p></w:body></w:document>"#
+        )
+    };
+    let drawing = |id: &str| {
+        format!(
+            r#"<w:p><w:r><w:drawing><a:graphic><a:blip r:embed="{id}"/></a:graphic></w:drawing></w:r></w:p>"#
+        )
+    };
+    let build = |ct: &str, doc: &str, rels: &str, media: &[&str], extra: &[(&str, &[u8])]| {
+        let mut entries = vec![
+            entry("[Content_Types].xml", ct.as_bytes()),
+            entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+            entry("word/document.xml", doc.as_bytes()),
+            entry("word/_rels/document.xml.rels", rels.as_bytes()),
+        ];
+        for m in media {
+            entries.push(stored(m, PNG_SIG));
+        }
+        for (p, b) in extra {
+            entries.push(entry(p, b));
+        }
+        pkg(&entries)
+    };
+    let both = rels(&[
+        ("rId1", IMAGE_REL, "media/image1.png"),
+        ("rId2", IMAGE_REL, "media/image2.png"),
+    ]);
+    let only2 = rels(&[("rId2", IMAGE_REL, "media/image2.png")]);
+    let original = build(
+        &ct(true),
+        &doc(&format!("{}{}", drawing("rId1"), drawing("rId2"))),
+        &both,
+        &["word/media/image1.png", "word/media/image2.png"],
+        &[],
+    );
+    // Positive: the first drawing and exactly its media/relationship leave.
+    let deleted = build(
+        &ct(true),
+        &doc(&drawing("rId2")),
+        &only2,
+        &["word/media/image2.png"],
+        &[],
+    );
+    assert_eq!(package::compare_saved_docx(&original, &deleted), vec![]);
+    // Negative: the drawing leaves but its media remains referenced by another part.
+    let header = rels(&[("rId1", IMAGE_REL, "media/image1.png")]);
+    let with_header = build(
+        &ct(true),
+        &doc(&format!("{}{}", drawing("rId1"), drawing("rId2"))),
+        &both,
+        &["word/media/image1.png", "word/media/image2.png"],
+        &[("word/_rels/header1.xml.rels", header.as_bytes())],
+    );
+    let deleted_with_header = build(
+        &ct(true),
+        &doc(&drawing("rId2")),
+        &only2,
+        &["word/media/image2.png"],
+        &[("word/_rels/header1.xml.rels", header.as_bytes())],
+    );
+    assert!(!package::compare_saved_docx(&with_header, &deleted_with_header).is_empty());
+    // Negative: a drawing that also carried a hyperlink binding cannot silently drop it.
+    let linked = format!(
+        r#"<w:p><w:r><w:drawing><a:graphic><a:hlinkClick r:id="rId3"/><a:blip r:embed="rId1"/></a:graphic></w:drawing></w:r></w:p>{}"#,
+        drawing("rId2")
+    );
+    let with_link = rels(&[
+        ("rId1", IMAGE_REL, "media/image1.png"),
+        ("rId2", IMAGE_REL, "media/image2.png"),
+        ("rId3", HYPERLINK_REL, "https://example.org"),
+    ]);
+    let original_link = build(
+        &ct(true),
+        &doc(&linked),
+        &with_link,
+        &["word/media/image1.png", "word/media/image2.png"],
+        &[],
+    );
+    assert!(!package::compare_saved_docx(&original_link, &deleted).is_empty());
+    // Negative: a removed media part still bound by a surviving drawing.
+    let shared = rels(&[
+        ("rId1", IMAGE_REL, "media/image1.png"),
+        ("rId2", IMAGE_REL, "media/image1.png"),
+    ]);
+    let original_shared = build(
+        &ct(true),
+        &doc(&format!("{}{}", drawing("rId1"), drawing("rId2"))),
+        &shared,
+        &["word/media/image1.png"],
+        &[],
+    );
+    let dangling = build(
+        &ct(false),
+        &doc(&drawing("rId2")),
+        &rels(&[("rId2", IMAGE_REL, "media/image1.png")]),
+        &[],
+        &[],
+    );
+    assert!(!package::compare_saved_docx(&original_shared, &dangling).is_empty());
+    // Negative: a bare blip outside any drawing or table (existing table-proof negative) stays refused.
+    let bare = build(
+        &ct(true),
+        &doc(r#"<w:p><w:r><a:blip r:embed="rId1"/></w:r></w:p>"#),
+        &both,
+        &["word/media/image1.png", "word/media/image2.png"],
+        &[],
+    );
+    let bare_deleted = build(&ct(true), &doc(""), &only2, &["word/media/image2.png"], &[]);
+    assert!(!package::compare_saved_docx(&bare, &bare_deleted).is_empty());
+}
+
+#[test]
 fn docx_table_media_renumbering_rejects_unrelated_content_types() {
     const IMAGE_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";

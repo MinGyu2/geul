@@ -1764,11 +1764,12 @@ struct TableMediaChanges {
     content_types_changed: bool,
 }
 
-/// Narrow T009 proof for authorized media removal caused by deleting table rows/columns:
-/// permits removing `word/media/*` parts (and matching `word/_rels/document.xml.rels` /
-/// `[Content_Types].xml` entries, or pure `IMAGE_REL` ID renumbering when shared/unchanged media remain)
-/// only when every removed resource was bound exclusively by `<a:blip r:embed="..."/>` inside
-/// `<w:tbl>` of `original`'s `word/document.xml`, no other `.rels` part references it, no
+/// Narrow T009 proof for authorized media removal caused by deleting table rows/columns or (Stage 3)
+/// deleting a body picture: permits removing `word/media/*` parts (and matching
+/// `word/_rels/document.xml.rels` / `[Content_Types].xml` entries, or pure `IMAGE_REL` ID renumbering
+/// when shared/unchanged media remain) only when every removed resource was bound exclusively by
+/// `<a:blip r:embed="..."/>` inside `<w:tbl>` or inside a `<w:drawing>` of `original`'s
+/// `word/document.xml`, no other `.rels` part references it, no
 /// non-table/non-image bindings changed or were omitted, and no surviving `.rels` references it.
 /// Validates removed-media ownership at the package XML/rels level (not independent UI command history);
 /// when no media parts are removed, `[Content_Types].xml` is never exempted and non-image relationships
@@ -1940,8 +1941,10 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
     type Binding = (String, String, String, Attrs);
     let doc_bindings = |pkg: &Package, rels: &[Attrs]| -> Option<Vec<(bool, Option<String>, Binding)>> {
         let mut out = Vec::new();
-        let mut tbl_stack: Vec<bool> = Vec::new();
+        // (is `w:tbl`, is `w:drawing`) per open element.
+        let mut tbl_stack: Vec<(bool, bool)> = Vec::new();
         let mut tbl_depth = 0usize;
+        let mut drawing_depth = 0usize;
         for event in xml::canonical(pkg.get("word/document.xml")?).ok()? {
             match event {
                 xml::Canonical::Start {
@@ -1950,11 +1953,17 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
                     attributes,
                 } => {
                     let is_tbl = namespace.as_deref() == Some(WORD_NS) && name.as_str() == "tbl";
+                    let is_drawing =
+                        namespace.as_deref() == Some(WORD_NS) && name.as_str() == "drawing";
                     if is_tbl {
                         tbl_depth += 1;
                     }
-                    tbl_stack.push(is_tbl);
-                    let in_tbl = tbl_depth > 0;
+                    if is_drawing {
+                        drawing_depth += 1;
+                    }
+                    tbl_stack.push((is_tbl, is_drawing));
+                    // A removable binding: in a table (row/column deletion) or in a drawing (picture deletion).
+                    let in_tbl = tbl_depth > 0 || drawing_depth > 0;
                     for (ns, key, id) in attributes {
                         if ns.as_deref() != Some(REL_NS) {
                             continue;
@@ -1978,8 +1987,12 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
                     }
                 }
                 xml::Canonical::End => {
-                    if tbl_stack.pop() == Some(true) {
+                    let (was_tbl, was_drawing) = tbl_stack.pop().unwrap_or((false, false));
+                    if was_tbl {
                         tbl_depth -= 1;
+                    }
+                    if was_drawing {
+                        drawing_depth -= 1;
                     }
                 }
                 xml::Canonical::Text(_)
@@ -1997,7 +2010,7 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
         if after.get(after_idx).is_some_and(|(_, _, ab)| ab == binding) {
             after_idx += 1;
         } else {
-            // Only `<a:blip r:embed="..."/>` inside `<w:tbl>` targeting `word/media/*` may be omitted.
+            // Only `<a:blip r:embed="..."/>` inside `<w:tbl>` or `<w:drawing>` targeting `word/media/*` may be omitted.
             let target = resolved_img.as_deref()?;
             if !*in_tbl
                 || binding.0 != DRAWING_NS

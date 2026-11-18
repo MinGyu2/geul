@@ -22,7 +22,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs" | "file.exp
 
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
-  | "object.deselect" | "picture.size" | "insert.shape" | "insert.textBox" | "textBox.exit"
+  | "object.deselect" | "object.edit" | "picture.size" | "insert.shape" | "insert.textBox" | "textBox.exit"
   | "edit.undo" | "edit.redo" | "edit.copy" | "edit.cut" | "edit.paste"
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough" | "format.font"
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula" | "hangul.insertTableFormula"
@@ -125,6 +125,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "textBox.exit": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "picture.size": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
   "object.deselect": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  // Stage 3 P1: move/resize/delete of the selected object. Per-object eligibility comes from the
+  // session (`ObjectSelection.operations`) and every edit is ownership- and T009-checked.
+  "object.edit": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
   "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
   "format.bold": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+B"], scope: "document" },

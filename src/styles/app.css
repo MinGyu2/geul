@@ -1139,6 +1139,40 @@ button {
   pointer-events: none;
 }
 
+.object-selection-frame__body {
+  position: absolute;
+  inset: 0;
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.object-selection-frame[data-dragging="true"] {
+  outline-style: dashed;
+  background: rgba(47, 91, 211, 0.08);
+}
+
+.object-selection-frame__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: white;
+  border: 1.5px solid #2f5bd3;
+  box-sizing: border-box;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.object-selection-frame__handle--nw { left: 0; top: 0; cursor: nwse-resize; }
+.object-selection-frame__handle--n { left: 50%; top: 0; cursor: ns-resize; }
+.object-selection-frame__handle--ne { left: 100%; top: 0; cursor: nesw-resize; }
+.object-selection-frame__handle--e { left: 100%; top: 50%; cursor: ew-resize; }
+.object-selection-frame__handle--se { left: 100%; top: 100%; cursor: nwse-resize; }
+.object-selection-frame__handle--s { left: 50%; top: 100%; cursor: ns-resize; }
+.object-selection-frame__handle--sw { left: 0; top: 100%; cursor: nesw-resize; }
+.object-selection-frame__handle--w { left: 0; top: 50%; cursor: ew-resize; }
+
 .object-selection-frame__label {
   position: absolute;
   bottom: 100%;

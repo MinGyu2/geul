@@ -194,7 +194,8 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
 | 그림 크기 조정 | UNSUPPORTED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
-| 개체 이동·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 이동 계약 미검증, HWP 삭제 후보 거부 |
+| 개체 이동·크기·삭제 (2026-11-19 P1) | SUPPORTED_AND_VERIFIED | PARTIAL (그림) | BLOCKED | DOCX: 본문 그림·도형·글상자·그룹의 `object.edit`(끌기·핸들·방향키·Delete), 편집 전 내보내기 대비 T009 사전 판정, 게시·독립 재열기. HWPX: 본문 떠 있는 그림 이동·인라인 그림 크기·그림 삭제, Release WASM·`save_check` safe. HWP: `insertions.rs:1154` 원본 gso 객체 바이트 동일 요구로 거부 |
+| 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | 해당 없음 | 8방향 핸들·이동 끌기·Esc/포인터 취소·끌기당 한 번 커밋; native X11 NOT RUN |
 | 사각형·타원·선 삽입 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
 | 글상자 삽입·내부 텍스트 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
@@ -217,3 +218,11 @@ Linux X11 Release에서 Undo/Redo·게시·독립 재열기를 확인했다. P3 
 184 PASS, Stage 3 Rust 4 PASS, 표 구조 클립보드 WASM 3 PASS(87 필터
 제외), T009 279 PASS / 0 FAIL / 29 ignored다. Microsoft Word·한컴오피스,
 크로스 앱 객체 MIME, Windows/macOS 및 Wayland는 NOT RUN이다.
+
+**2026-11-19 P1 완료 실행.** Rust: `stage3_object_edit_moves_resizes_deletes_with_t009_and_history`,
+`stage3_docx_existing_objects_move_resize_delete_publish_and_reopen`(실제 저장 서비스 두 번 게시),
+`docx_body_picture_deletion_proof_admits_only_drawing_owned_media`(양성 1·음성 4) PASS, `services::save`
+281 PASS / 0 FAIL / 29 ignored, `adapters` 110 PASS. Release WASM `stage3-object-edit` 2 PASS(HWPX 이동·
+이동량·삭제·Undo/Redo·재열기, HWP 무변경 거부), 그 출력의 `save_check saved hwpx` safe, BinData 변조·
+header 변조·BinData 누락 음성 3건 unsafe. Vitest 전체 1634 PASS / 3 FAIL(`hangulTools` 1·`hwpReopenModel` 2,
+시작 HEAD에서도 재현). 네이티브 X11/IBus 끌기는 이 단계에서 NOT RUN.

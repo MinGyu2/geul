@@ -1,5 +1,5 @@
 import { OBJECT_CLIPBOARD_MIME, createObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload } from "../../../commands/objectClipboard";
-import type { ObjectSelection } from "../../../commands/objectSelection";
+import { objectEditMatches, type ObjectSelection } from "../../../commands/objectSelection";
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   buildTableClipboardPlainText,
@@ -106,7 +106,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
+  "continueNumbering", "pageSetup", "objectEdit", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
 ]);
 const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
@@ -137,7 +137,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
+  "pageSetup", "objectEdit", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -635,11 +635,13 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   get objectSelection(): ObjectSelection | null {
     if (!this.view?.object || this.status.kind !== "ready") return null;
-    const { clipboardShape, ...object } = this.view.object;
+    const { clipboardShape, operations: edits, ...object } = this.view.object;
+    const writable = this.editable && !this.view.trackedReadOnly;
+    const mutations = writable ? edits : [];
     return {
       ...object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
-      editable: Boolean(clipboardShape?.cutAllowed),
-      operations: clipboardShape?.cutAllowed ? ["deselect", "copy", "cut"] : clipboardShape ? ["deselect", "copy"] : ["deselect"],
+      editable: Boolean(clipboardShape?.cutAllowed) || mutations.length > 0,
+      operations: ["deselect", ...mutations, ...(clipboardShape ? ["copy" as const] : []), ...(clipboardShape?.cutAllowed ? ["cut" as const] : [])],
     };
   }
 
@@ -1525,6 +1527,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "object.deselect") return { accepted: args === undefined && this.push({ op: "deselectObject" }) };
+    if (command === "object.edit") {
+      const object = this.objectSelection;
+      if (args?.command !== command || !object || object.address.engine !== "wordcraft" || !objectEditMatches(args, object)) return { accepted: false };
+      return { accepted: this.push({ op: "objectEdit", position: object.address.position, epoch: object.epoch, edit: args.edit }) };
+    }
     if (command === "insert.shape") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
       return { accepted: this.push({ op: "shape", kind: args.kind }) };

@@ -1,3 +1,4 @@
+import { objectEditRequest, objectKeyEdit } from "../../../commands/objectSelection";
 import { ObjectSelectionFrame } from "../ObjectSelectionFrame";
 import { claimSurfaceFocus, hasSurfaceFocusLease } from "../surfaceFocus";
 // WordCraft(DOCX) 편집 표면(T008, W-A). 쪽은 백엔드가 그린 PNG를 canvas에 옮겨 그리고, 커서·선택·IME 조합 글자는 그 위의
@@ -179,6 +180,12 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
         session.move(to, extend);
         return true;
       };
+      const objectEdit = objectKeyEdit(key, extend, session.objectSelection);
+      if (objectEdit && session.objectSelection) {
+        mark(event);
+        session.execute("object.edit", objectEditRequest(session.objectSelection, objectEdit));
+        return true;
+      }
       switch (key) {
         case "Escape": return session.view?.textBoxEditing
           ? session.execute("textBox.exit").accepted
@@ -303,7 +310,8 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
                 }}
                 aria-hidden="true"
               />
-              {object?.frame.page === page && <ObjectSelectionFrame selection={object} scale={k} />}
+              {object?.frame.page === page && <ObjectSelectionFrame selection={object} scale={k}
+                onEdit={(edit, epoch) => { session.execute("object.edit", objectEditRequest(object, edit, epoch)); focusInput(); }} />}
               {(view?.selection ?? []).filter((rect) => rect.page === page).map((rect, index) => (
                 <div key={`s${index}`} className="rhwp-selection" style={rectStyle(rect)} />
               ))}

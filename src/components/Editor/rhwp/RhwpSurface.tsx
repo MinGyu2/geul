@@ -1,5 +1,5 @@
 import { ObjectSelectionFrame } from "../ObjectSelectionFrame";
-import type { ObjectSelection } from "../../../commands/objectSelection";
+import { objectEditRequest, objectKeyEdit, type ObjectEdit, type ObjectSelection } from "../../../commands/objectSelection";
 import { claimSurfaceFocus, hasSurfaceFocusLease } from "../surfaceFocus";
 // rhwp 편집 표면(T007). 페이지마다 canvas에 rhwp가 그리고, 커서·선택·조합 밑줄은 그 위의 DOM 겹침으로 그린다.
 //
@@ -62,12 +62,13 @@ interface PageFrameProps {
   registerBox: (page: number, box: HTMLDivElement | null) => void;
   onMouseDown: (event: React.MouseEvent<HTMLDivElement>, page: number) => void;
   onMouseMove: (event: React.MouseEvent<HTMLDivElement>, page: number) => void;
+  onObjectEdit: (selection: ObjectSelection, edit: ObjectEdit, epoch: number) => void;
 }
 
 // 모델 판이 바뀌어도 쪽 상자·Canvas·겹침이 같으면 그 DOM 부분은 그대로 둔다.
 // 실제 Canvas의 최신 판 그리기는 부모의 기존 layout effect가 계속 담당한다.
 const PageFrame = memo(function PageFrame({ page, width, height, scale, object, selection, composition, caret, editable,
-  caretElement, registerCanvas, registerBox, onMouseDown, onMouseMove }: PageFrameProps) {
+  caretElement, registerCanvas, registerBox, onMouseDown, onMouseMove, onObjectEdit }: PageFrameProps) {
   const canvasRef = useCallback((element: HTMLCanvasElement | null) => { registerCanvas(page, element); }, [page, registerCanvas]);
   const boxRef = useCallback((element: HTMLDivElement | null) => { registerBox(page, element); }, [page, registerBox]);
   return (
@@ -87,7 +88,7 @@ const PageFrame = memo(function PageFrame({ page, width, height, scale, object, 
         ref={canvasRef}
         aria-hidden="true"
       />
-      {object && <ObjectSelectionFrame selection={object} scale={scale} />}
+      {object && <ObjectSelectionFrame selection={object} scale={scale} onEdit={(edit, epoch) => onObjectEdit(object, edit, epoch)} />}
       {selection.map((rect, index) => (
         <div key={`s${index}`} className="rhwp-selection" style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }} />
       ))}
@@ -372,6 +373,12 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       const extend = event.shiftKey;
       // WebKitGTK는 Shift+Tab(GDK ISO_Left_Tab)을 key "Unidentified", code "Tab"으로 보낸다(실측).
       const key = event.key === "Unidentified" && event.code === "Tab" ? "Tab" : event.key;
+      const objectEdit = objectKeyEdit(key, extend, session.objectSelection);
+      if (objectEdit && session.objectSelection) {
+        mark(event);
+        session.execute("object.edit", objectEditRequest(session.objectSelection, objectEdit));
+        return true;
+      }
       switch (key) {
         case "Escape": return session.execute("object.deselect").accepted;
         case "ArrowLeft": return session.moveHorizontal(-1, extend) || true;
@@ -436,6 +443,10 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     window.addEventListener("mouseup", stop);
     focusInput();
   }, [session, pointer, focusInput]);
+  const onObjectEdit = useCallback((selection: ObjectSelection, edit: ObjectEdit, epoch: number) => {
+    session.execute("object.edit", objectEditRequest(selection, edit, epoch));
+    focusInput();
+  }, [session, focusInput]);
   const onMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (dragging.current && event.buttons & 1) pointer(event, page, true, true);
   }, [pointer]);
@@ -458,7 +469,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
             object={object?.frame.page === page ? object : null}
             selection={selectionByPage.get(page) ?? EMPTY_RECTS} composition={compositionByPage.get(page) ?? EMPTY_RECTS}
             caret={caret?.page === page ? caret : null} editable={session.editable} caretElement={caretElement}
-            registerCanvas={registerCanvas} registerBox={registerBox} onMouseDown={onMouseDown} onMouseMove={onMouseMove} />
+            registerCanvas={registerCanvas} registerBox={registerBox} onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+            onObjectEdit={onObjectEdit} />
         ))}
         <textarea
           ref={inputRef}

@@ -283,3 +283,10 @@ Linux X11 Release에서 DOCX 사각형 복사·잘라내기·붙여넣기·Undo/
 Save/Save As·독립 재열기와 HWPX/HWP 교차 형식 거부를 확인했다.
 P1–P5의 검증된 부분은 로컬 커밋으로 관리하며 Stage 3 전체는
 PARTIALLY COMPLETED 상태다.
+
+### Stage 3 P1 일반 개체 연산 (2026-11-19)
+
+`object.edit` 단일 명령에 선택 정체성(세션·세대·revision·선택 번호·엔진 주소)과 개체별 허용 연산
+(`ObjectSelection.operations`)을 묶었다. 끌기 한 번은 한 번의 커밋·한 이력 단계다. DOCX는 엔진 왕복과
+T009 판정을 편집 시점에 미리 수행하고 실패하면 원자적으로 되돌린다. HWP 개체 변경은 레코드 수준 증명
+(원본 gso 객체 진화 규칙)이 선행 과제다.

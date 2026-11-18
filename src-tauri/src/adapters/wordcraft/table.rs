@@ -380,7 +380,7 @@ fn collect_block_media(blocks: &[std::sync::Arc<Block>], used: &mut BTreeSet<Str
 /// Prune unreferenced `Document::media` entries after deleting rows/columns so
 /// `roundtrip_equivalent` and DOCX serialization do not retain orphaned image parts
 /// (Undo snapshots preserve the prior `Document::media` intact).
-fn retain_used_media(doc: &mut Document) {
+pub(super) fn retain_used_media(doc: &mut Document) {
     if doc.media.is_empty() {
         return;
     }

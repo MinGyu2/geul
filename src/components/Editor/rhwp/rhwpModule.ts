@@ -41,6 +41,7 @@ export interface RhwpDocument {
   getCellPictureByPath?(section: number, paragraph: number, path: string, control: number): string;
   insertPicture?(section: number, paragraph: number, offset: number, cellPath: string, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
   setPictureProperties?(section: number, paragraph: number, control: number, properties: string): string;
+  deletePictureControl?(section: number, paragraph: number, control: number): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;
   createTable?(section: number, paragraph: number, offset: number, rows: number, cols: number): string;
   free(): void;

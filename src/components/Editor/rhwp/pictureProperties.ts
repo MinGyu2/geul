@@ -14,6 +14,8 @@ const wrapByEngineName = {
 export interface RhwpPictureInspection {
   properties: PictureProperties;
   simpleInline: boolean;
+  /** A floating picture whose position is a plain left/top offset (moved by changing the offsets). */
+  movable?: { horzOffset: number; vertOffset: number };
 }
 
 export function inspectRhwpPicture(
@@ -37,6 +39,10 @@ export function inspectRhwpPicture(
         widthPt: width / HWPUNIT_PER_POINT, heightPt: height / HWPUNIT_PER_POINT, wrap,
         ...(typeof description === "string" && description.length <= 4096 ? { description } : {}),
       },
+      ...(!treatAsChar && values.horzAlign === "Left" && values.vertAlign === "Top"
+        && Number.isSafeInteger(values.horzOffset) && Number.isSafeInteger(values.vertOffset)
+        && values.hasCaption === false && !("externalPath" in values) && values.rotationAngle === 0
+        ? { movable: { horzOffset: values.horzOffset as number, vertOffset: values.vertOffset as number } } : {}),
       simpleInline: treatAsChar && values.sizeProtect === false && values.hasCaption === false
         && values.horzFlip === false && values.vertFlip === false && !("externalPath" in values)
         && ["rotationAngle", "horzOffset", "vertOffset", "cropLeft", "cropTop", "cropRight", "cropBottom"].every(key => values[key] === 0),

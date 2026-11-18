@@ -1,5 +1,5 @@
 import { parseGraphicProperties } from "../commands/graphicProperties";
-import { BASIC_SHAPES, OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
+import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -47,7 +47,7 @@ export interface DocxView {
   pages: DocxPage[];
   caret: DocxCaret | null;
   selection: DocxRect[];
-  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean } };
+  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean }; operations: readonly ("move" | "resize" | "delete")[] };
   collapsed: boolean;
   inTable: boolean;
   /** 커서·기준점 자리 키(`story:path:off`). 비교·검사용. */
@@ -263,6 +263,7 @@ export type DocxOp =
   | { op: "leaveTextBox" }
   | { op: "shape"; kind: BasicShape }
   | { op: "cutShape"; position: string; epoch: number }
+  | { op: "objectEdit"; position: string; epoch: number; edit: ObjectEdit }
   | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
@@ -654,13 +655,16 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
       || typeof raw.position !== "string" || raw.position.length > 256
       || !/^(body|part\d+):\d+(\.\d+)*:\d+$/.test(raw.position)) return null;
-    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position } };
+    const operations = raw.operations;
+    if (!Array.isArray(operations) || operations.length > 3
+      || !operations.every((op, i) => MUTATING_OBJECT_OPERATIONS.some(known => known === op) && operations.indexOf(op) === i)) return null;
+    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as ("move" | "resize" | "delete")[] };
     if ("picture" in raw) {
       const picture = parsePictureView(raw.picture);
       if (kind !== "picture" || !picture) return null;

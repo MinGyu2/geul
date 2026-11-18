@@ -26,6 +26,7 @@ const object = {
   position: "body:2.1:128",
   frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
   epoch: 1,
+  operations: ["move", "resize", "delete"],
 };
 
 describe("DOCX object view parsing", () => {
@@ -55,8 +56,18 @@ describe("DOCX object view parsing", () => {
       address: { engine: "wordcraft", position: "body:2.1:128" },
       frame: { page: 0, x: 72, y: 80, width: 160, height: 90 },
       epoch: 1,
+      operations: ["move", "resize", "delete"],
       picture: { widthPt: 144, heightPt: 72, wrap: "square", description: "그림 설명" },
     });
+  });
+
+  it("rejects missing, unknown or duplicated object operations", () => {
+    const withoutOperations = Object.fromEntries(Object.entries(object).filter(([key]) => key !== "operations"));
+    expect(parseDocxView({ ...view, object: withoutOperations })).toBeNull();
+    expect(parseDocxView({ ...view, object: { ...object, operations: ["rotate"] } })).toBeNull();
+    expect(parseDocxView({ ...view, object: { ...object, operations: ["move", "move"] } })).toBeNull();
+    expect(parseDocxView({ ...view, object: { ...object, operations: "move" } })).toBeNull();
+    expect(parseDocxView({ ...view, object: { ...object, operations: [] } })?.object?.operations).toEqual([]);
   });
 
   it.each([

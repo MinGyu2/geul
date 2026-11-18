@@ -782,5 +782,16 @@
   "tableFormat.style.thick3d": "3D(오목)",
   "tableFormat.style.thick3dRev": "3D(볼록)",
   "tableFormat.style.thin3d": "가는 3D(오목)",
-  "tableFormat.style.thin3dRev": "가는 3D(볼록)"
+  "tableFormat.style.thin3dRev": "가는 3D(볼록)",
+  "command.object.edit": "개체 이동·크기·삭제",
+  "editor.object.move": "{kind} 이동 (끌기 또는 화살표 키)",
+  "editor.object.handle.nw": "왼쪽 위 크기 조절",
+  "editor.object.handle.n": "위쪽 크기 조절",
+  "editor.object.handle.ne": "오른쪽 위 크기 조절",
+  "editor.object.handle.e": "오른쪽 크기 조절",
+  "editor.object.handle.se": "오른쪽 아래 크기 조절",
+  "editor.object.handle.s": "아래쪽 크기 조절",
+  "editor.object.handle.sw": "왼쪽 아래 크기 조절",
+  "editor.object.handle.w": "왼쪽 크기 조절",
+  "editor.object.editable": "{kind} · 끌어 이동·크기 조절, Delete로 삭제, Esc로 해제"
 }
