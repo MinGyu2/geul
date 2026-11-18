@@ -3328,6 +3328,205 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.history?.boundary();
     return applied;
   }
+
+  private tableMarginsAndPositioningState(): {
+    target?: TableTarget;
+    rect?: CellRange;
+    cellMargins?: NonNullable<CommandParameterContext["tableCellMargins"]>;
+    cellMarginsRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"];
+    positioning?: NonNullable<CommandParameterContext["tablePositioning"]>;
+    positioningRefusal?: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.positioning"];
+  } {
+    const doc = this.doc, text = this.text;
+    const failBoth = (refusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"]) => ({
+      cellMarginsRefusal: refusal,
+      positioningRefusal: refusal,
+    });
+    if (!this.editable || !doc || !text || this.imeUnsettled || this.uncertain) return failBoth("engineUnsupported");
+    if (this.pending > 0 || this.committingEpoch === this.epoch) return failBoth("pendingEdits");
+    if (!this.caret.cell) return failBoth("notInTable");
+    if (this.hasSelection && (!this.anchor.cell || !sameTable(this.anchor, this.caret))) return failBoth("tableShape");
+    if (this.caret.cell.nested && !this.ownsPosition(this.caret)) return failBoth("engineUnsupported");
+    if (!this.history) return failBoth(this.historyOff === "limit" ? "limit" : "engineUnsupported");
+    const block = this.structuralBlock();
+    if (block) return failBoth(block);
+    const table = this.caretTable();
+    if (!table) return failBoth("notInTable");
+    if (typeof table.grid === "string") {
+      const r = table.grid === "tableContent" ? "tableContent"
+        : table.grid === "limit" ? "limit"
+        : table.grid === "engineUnsupported" ? "engineUnsupported"
+        : "tableShape";
+      return failBoth(r);
+    }
+    const first = innermost(this.caret.cell).cell;
+    const last = this.hasSelection && this.anchor.cell ? innermost(this.anchor.cell).cell : first;
+    if (first >= table.grid.cells.length || last >= table.grid.cells.length) return failBoth("tableShape");
+    let rect: CellRange;
+    if (first === last) {
+      const c = table.grid.cells[first]!;
+      rect = { startRow: c.row, startCol: c.col, endRow: c.row + c.rowSpan - 1, endCol: c.col + c.colSpan - 1 };
+    } else {
+      const range = rectangularRange(table.grid, first, last);
+      if (!range) return failBoth("tableShape");
+      rect = range;
+    }
+
+    const pathJson = tableTargetPathJson(table.target);
+    const huToPt = (raw: unknown): number =>
+      typeof raw === "number" && Number.isFinite(raw) ? Math.round(raw) / 100 : 0;
+
+    let cellMargins: NonNullable<CommandParameterContext["tableCellMargins"]> | undefined;
+    let cellMarginsRefusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.cellMargins"];
+    if (!doc.getTableCellMarginsByPath || !doc.setTableCellMarginsByPath) {
+      cellMarginsRefusal = "engineUnsupported";
+    } else {
+      try {
+        const parsed = JSON.parse(doc.getTableCellMarginsByPath(
+          table.target.section, table.target.paragraph, pathJson,
+          rect.startRow, rect.startCol, rect.endRow, rect.endCol,
+        )) as {
+          table?: { top?: number; right?: number; bottom?: number; left?: number };
+          cell?: {
+            top?: number | null; right?: number | null; bottom?: number | null; left?: number | null;
+            mixed?: boolean; usesTableDefault?: boolean; mixedOverride?: boolean;
+          };
+        };
+        if (parsed.table && parsed.cell) {
+          cellMargins = {
+            scopeDefaultSupported: true,
+            table: {
+              top: huToPt(Number(parsed.table.top ?? 0) * 100),
+              right: huToPt(Number(parsed.table.right ?? 0) * 100),
+              bottom: huToPt(Number(parsed.table.bottom ?? 0) * 100),
+              left: huToPt(Number(parsed.table.left ?? 0) * 100),
+            },
+            cell: {
+              top: typeof parsed.cell.top === "number" ? parsed.cell.top : null,
+              right: typeof parsed.cell.right === "number" ? parsed.cell.right : null,
+              bottom: typeof parsed.cell.bottom === "number" ? parsed.cell.bottom : null,
+              left: typeof parsed.cell.left === "number" ? parsed.cell.left : null,
+              mixed: parsed.cell.mixed === true,
+              usesTableDefault: parsed.cell.usesTableDefault === true,
+              mixedOverride: parsed.cell.mixedOverride === true,
+            },
+            minPt: 0,
+            maxPt: 144,
+          };
+        } else {
+          cellMarginsRefusal = "tableShape";
+        }
+      } catch {
+        cellMarginsRefusal = "tableShape";
+      }
+    }
+
+    let positioning: NonNullable<CommandParameterContext["tablePositioning"]> | undefined;
+    let positioningRefusal: NonNullable<DocumentCommandSnapshot["parameterReasons"]>["table.positioning"];
+    if (this.caret.cell.nested) {
+      positioningRefusal = "tableShape";
+    } else if (!doc.getTablePropertiesByPath || !doc.setTablePropertiesByPath) {
+      positioningRefusal = "engineUnsupported";
+    } else {
+      try {
+        const props = JSON.parse(doc.getTablePropertiesByPath(
+          table.target.section, table.target.paragraph, pathJson,
+        )) as {
+          horzAlign?: string; horzOffset?: number; treatAsChar?: boolean;
+          outerTop?: number; outerRight?: number; outerBottom?: number; outerLeft?: number;
+        };
+        const rawAlign = String(props.horzAlign ?? "Left").toLowerCase();
+        positioning = {
+          align: rawAlign === "center" ? "center" : rawAlign === "right" ? "right" : "left",
+          indentPt: huToPt(props.horzOffset),
+          minIndentPt: -72,
+          maxIndentPt: 360,
+          supportsIndent: true,
+          treatAsCharSupported: true,
+          treatAsChar: props.treatAsChar === true,
+          outerMargins: {
+            top: huToPt(props.outerTop),
+            right: huToPt(props.outerRight),
+            bottom: huToPt(props.outerBottom),
+            left: huToPt(props.outerLeft),
+          },
+        };
+      } catch {
+        positioningRefusal = "tableShape";
+      }
+    }
+    return {
+      target: table.target,
+      rect,
+      ...(cellMargins ? { cellMargins } : {}),
+      ...(cellMarginsRefusal ? { cellMarginsRefusal } : {}),
+      ...(positioning ? { positioning } : {}),
+      ...(positioningRefusal ? { positioningRefusal } : {}),
+    };
+  }
+
+  private applyCellMargins(args: Extract<DocumentCommandArgs, { command: "table.cellMargins" }>): boolean {
+    const context = this.parameterState().parameters?.["table.cellMargins"];
+    const state = this.tableMarginsAndPositioningState();
+    const doc = this.doc;
+    if (!context || !state.target || !state.rect || !state.cellMargins || !doc?.setTableCellMarginsByPath
+      || !validateCommandArgs("table.cellMargins", args, context)) {
+      return false;
+    }
+    const payload = {
+      scope: args.scope,
+      ...(args.scope === "cell" ? { rect: state.rect } : {}),
+      ...(args.top !== undefined ? { top: args.top } : {}),
+      ...(args.right !== undefined ? { right: args.right } : {}),
+      ...(args.bottom !== undefined ? { bottom: args.bottom } : {}),
+      ...(args.left !== undefined ? { left: args.left } : {}),
+      ...(args.reset ? { reset: true } : {}),
+    };
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.setTableCellMarginsByPath!(
+        state.target!.section, state.target!.paragraph, tableTargetPathJson(state.target!), JSON.stringify(payload),
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("cell margins rejected");
+      return { caret, anchor };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
+  }
+
+  private applyTablePositioning(args: Extract<DocumentCommandArgs, { command: "table.positioning" }>): boolean {
+    const context = this.parameterState().parameters?.["table.positioning"];
+    const state = this.tableMarginsAndPositioningState();
+    const doc = this.doc;
+    if (!context || !state.target || !state.positioning || !doc?.setTablePropertiesByPath
+      || this.caret.cell?.nested || !validateCommandArgs("table.positioning", args, context)) {
+      return false;
+    }
+    const payload: Record<string, unknown> = {};
+    if (args.treatAsChar !== undefined) payload.treatAsChar = args.treatAsChar;
+    if (args.align !== undefined) {
+      payload.horzAlign = args.align === "center" ? "Center" : args.align === "right" ? "Right" : "Left";
+    }
+    if (args.indentPt !== undefined) payload.horzOffset = Math.round(args.indentPt * 100);
+    if (args.outerMargins) {
+      if (args.outerMargins.top !== undefined) payload.outerTop = Math.round(args.outerMargins.top * 100);
+      if (args.outerMargins.right !== undefined) payload.outerRight = Math.round(args.outerMargins.right * 100);
+      if (args.outerMargins.bottom !== undefined) payload.outerBottom = Math.round(args.outerMargins.bottom * 100);
+      if (args.outerMargins.left !== undefined) payload.outerLeft = Math.round(args.outerMargins.left * 100);
+    }
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      const res = JSON.parse(doc.setTablePropertiesByPath!(
+        state.target!.section, state.target!.paragraph, tableTargetPathJson(state.target!), JSON.stringify(payload),
+      )) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("table positioning rejected");
+      return { caret, anchor };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return applied;
+  }
   /** Distinguish "checking the original" / "original not verified" for the HWP action commands. */
   private coreActionReasons(): Pick<DocumentCommandSnapshot, "actionReasons"> {
     const block = this.structuralBlock();
@@ -3533,6 +3732,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       parameters["table.columnWidth"] = { tableColumnWidth: cellFmt.tableColumnWidth };
       parameters["table.rowHeight"] = { tableRowHeight: cellFmt.tableRowHeight };
     }
+    const layoutProps = this.tableMarginsAndPositioningState();
+    if (layoutProps.cellMargins) parameters["table.cellMargins"] = { tableCellMargins: layoutProps.cellMargins };
+    else if (layoutProps.cellMarginsRefusal) parameterReasons["table.cellMargins"] = layoutProps.cellMarginsRefusal;
+    if (layoutProps.positioning) parameters["table.positioning"] = { tablePositioning: layoutProps.positioning };
+    else if (layoutProps.positioningRefusal) parameterReasons["table.positioning"] = layoutProps.positioningRefusal;
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };
     return value;
@@ -3723,6 +3927,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || command === "table.columnWidth" || command === "table.rowHeight") {
       if (args?.command !== command) return { accepted: false };
       return { accepted: this.applyCellFormatting(args) };
+    }
+    if (command === "table.cellMargins") {
+      if (args?.command !== "table.cellMargins") return { accepted: false };
+      return { accepted: this.applyCellMargins(args) };
+    }
+    if (command === "table.positioning") {
+      if (args?.command !== "table.positioning") return { accepted: false };
+      return { accepted: this.applyTablePositioning(args) };
     }
     if (command === "table.splitCell") {
       // Ordinary cells: explicit validated dimensions from the shared split dialog. Merged cells: restore without

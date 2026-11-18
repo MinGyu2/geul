@@ -174,6 +174,10 @@ export interface RhwpDocument {
   extractTableCellsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
   clearTableCellsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
   applyTableCellsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
+  // Stage 2 Phase 4 (P4-2): table/cell inner margins & path-owned table properties.
+  getTableCellMarginsByPath?(section: number, paragraph: number, path: string, startRow: number, startCol: number, endRow: number, endCol: number): string;
+  setTableCellMarginsByPath?(section: number, paragraph: number, path: string, specJson: string): string;
+  setTablePropertiesByPath?(section: number, paragraph: number, path: string, json: string): string;
   borderFillCount?(): number;
   compactAppendedBorderFills?(baseline: number): string;
   getFormattingRunsByPath?(section: number, paragraph: number, path: string, start: number, end: number): string;

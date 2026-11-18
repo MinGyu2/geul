@@ -19,11 +19,12 @@ export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
   "insert.table", "table.splitCell", "table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight",
+  "table.cellMargins", "table.positioning",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote", "format.font", ...STAGE1_PARAMETERS,
 ]);
 
-export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight"] as const;
+export const TABLE_FORMAT_COMMANDS = ["table.shading", "table.borders", "table.alignment", "table.columnWidth", "table.rowHeight", "table.cellMargins", "table.positioning"] as const;
 const TABLE_BORDER_KINDS = new Set(["all", "outside", "inside", "none", "top", "bottom", "left", "right"]);
 const TABLE_H_ALIGN = new Set(["left", "center", "right", "justify"]);
 const TABLE_V_ALIGN = new Set(["top", "middle", "bottom"]);
@@ -392,6 +393,65 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
         return false;
       }
       return true;
+    }
+    case "table.cellMargins": {
+      const cm = context?.tableCellMargins;
+      if (!cm) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "scope", "top", "right", "bottom", "left", "reset"].includes(k)) return false;
+      }
+      if (value.scope !== "cell" && value.scope !== "table") return false;
+      if (value.scope === "table" && !cm.scopeDefaultSupported) return false;
+      if (value.reset === true) {
+        return value.scope === "cell"
+          && value.top === undefined && value.right === undefined && value.bottom === undefined && value.left === undefined;
+      }
+      if (value.reset !== undefined && value.reset !== false) return false;
+      let anySide = false;
+      for (const side of ["top", "right", "bottom", "left"] as const) {
+        const v = value[side];
+        if (v !== undefined) {
+          if (typeof v !== "number" || !Number.isFinite(v) || v < cm.minPt || v > cm.maxPt) return false;
+          anySide = true;
+        }
+      }
+      return anySide;
+    }
+    case "table.positioning": {
+      const tp = context?.tablePositioning;
+      if (!tp) return false;
+      for (const k of Object.keys(value)) {
+        if (!["command", "align", "indentPt", "treatAsChar", "outerMargins"].includes(k)) return false;
+      }
+      let anyProp = false;
+      if (value.align !== undefined) {
+        if (typeof value.align !== "string" || !["left", "center", "right"].includes(value.align)) return false;
+        anyProp = true;
+      }
+      if (value.indentPt !== undefined) {
+        if (!tp.supportsIndent || typeof value.indentPt !== "number" || !Number.isFinite(value.indentPt)
+          || value.indentPt < tp.minIndentPt || value.indentPt > tp.maxIndentPt) {
+          return false;
+        }
+        anyProp = true;
+      }
+      if (value.treatAsChar !== undefined) {
+        if (!tp.treatAsCharSupported || typeof value.treatAsChar !== "boolean") return false;
+        anyProp = true;
+      }
+      if (value.outerMargins !== undefined) {
+        if (!tp.outerMargins || typeof value.outerMargins !== "object" || value.outerMargins === null || Array.isArray(value.outerMargins)) {
+          return false;
+        }
+        const om = value.outerMargins as Record<string, unknown>;
+        for (const k of Object.keys(om)) {
+          if (!["top", "right", "bottom", "left"].includes(k)) return false;
+          const n = om[k];
+          if (typeof n !== "number" || !Number.isFinite(n) || n < 0 || n > 144) return false;
+        }
+        anyProp = Object.keys(om).length > 0;
+      }
+      return anyProp;
     }
     case "hangul.charWidth":
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);

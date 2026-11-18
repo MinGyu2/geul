@@ -46,11 +46,15 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
   const isAlignment = request.command === "table.alignment";
   const isColWidth = request.command === "table.columnWidth";
   const isRowHeight = request.command === "table.rowHeight";
+  const isCellMargins = request.command === "table.cellMargins";
+  const isPositioning = request.command === "table.positioning";
   const shadingCtx = request.context.tableShading;
   const bordersCtx = request.context.tableBorders;
   const alignCtx = request.context.tableAlignment;
   const colWidthCtx = request.context.tableColumnWidth;
   const rowHeightCtx = request.context.tableRowHeight;
+  const marginsCtx = request.context.tableCellMargins;
+  const posCtx = request.context.tablePositioning;
   const sampleEdge = bordersCtx?.current?.top ?? bordersCtx?.current?.bottom ?? bordersCtx?.current?.left ?? bordersCtx?.current?.right;
   const initialStyle = sampleEdge && bordersCtx?.supportedStyles.includes(sampleEdge.style) && sampleEdge.style !== "none"
     ? sampleEdge.style
@@ -74,6 +78,18 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
       ? rowHeightCtx.rule
       : rowHeightCtx?.supportedRules[0] ?? "atLeast",
   );
+  const [marginScope, setMarginScope] = useState<"cell" | "table">("cell");
+  const [marginTop, setMarginTop] = useState(marginsCtx?.cell.top != null ? String(marginsCtx.cell.top) : "");
+  const [marginRight, setMarginRight] = useState(marginsCtx?.cell.right != null ? String(marginsCtx.cell.right) : "");
+  const [marginBottom, setMarginBottom] = useState(marginsCtx?.cell.bottom != null ? String(marginsCtx.cell.bottom) : "");
+  const [marginLeft, setMarginLeft] = useState(marginsCtx?.cell.left != null ? String(marginsCtx.cell.left) : "");
+  const [posAlign, setPosAlign] = useState<"left" | "center" | "right">(posCtx?.align ?? "left");
+  const [posIndentText, setPosIndentText] = useState(String(posCtx?.indentPt ?? 0));
+  const [posTreatAsChar, setPosTreatAsChar] = useState(posCtx?.treatAsChar ?? false);
+  const [outerTop, setOuterTop] = useState(String(posCtx?.outerMargins?.top ?? 0));
+  const [outerRight, setOuterRight] = useState(String(posCtx?.outerMargins?.right ?? 0));
+  const [outerBottom, setOuterBottom] = useState(String(posCtx?.outerMargins?.bottom ?? 0));
+  const [outerLeft, setOuterLeft] = useState(String(posCtx?.outerMargins?.left ?? 0));
   const [error, setError] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -158,6 +174,76 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
     onConfirm(args);
   };
 
+  const switchMarginScope = (nextScope: "cell" | "table") => {
+    setMarginScope(nextScope);
+    setError(false);
+    if (nextScope === "table" && marginsCtx) {
+      setMarginTop(String(marginsCtx.table.top));
+      setMarginRight(String(marginsCtx.table.right));
+      setMarginBottom(String(marginsCtx.table.bottom));
+      setMarginLeft(String(marginsCtx.table.left));
+    } else if (marginsCtx) {
+      setMarginTop(marginsCtx.cell.top != null ? String(marginsCtx.cell.top) : "");
+      setMarginRight(marginsCtx.cell.right != null ? String(marginsCtx.cell.right) : "");
+      setMarginBottom(marginsCtx.cell.bottom != null ? String(marginsCtx.cell.bottom) : "");
+      setMarginLeft(marginsCtx.cell.left != null ? String(marginsCtx.cell.left) : "");
+    }
+  };
+
+  const submitCellMargins = (reset = false) => {
+    let args: DocumentCommandArgs;
+    if (reset) {
+      args = { command: "table.cellMargins", scope: "cell", reset: true };
+    } else {
+      const parseSide = (raw: string): number | undefined => {
+        const s = raw.trim();
+        return s === "" ? undefined : Number(s);
+      };
+      const top = parseSide(marginTop);
+      const right = parseSide(marginRight);
+      const bottom = parseSide(marginBottom);
+      const left = parseSide(marginLeft);
+      args = {
+        command: "table.cellMargins",
+        scope: marginScope,
+        ...(top !== undefined ? { top } : {}),
+        ...(right !== undefined ? { right } : {}),
+        ...(bottom !== undefined ? { bottom } : {}),
+        ...(left !== undefined ? { left } : {}),
+      };
+    }
+    if (!validateCommandArgs("table.cellMargins", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
+  const submitPositioning = () => {
+    const indentNum = Number(posIndentText.trim() === "" ? "NaN" : posIndentText.trim());
+    const args: DocumentCommandArgs = {
+      command: "table.positioning",
+      align: posAlign,
+      ...(posCtx?.supportsIndent ? { indentPt: indentNum } : {}),
+      ...(posCtx?.treatAsCharSupported ? { treatAsChar: posTreatAsChar } : {}),
+      ...(posCtx?.outerMargins
+        ? {
+            outerMargins: {
+              top: outerTop.trim() === "" ? NaN : Number(outerTop.trim()),
+              right: outerRight.trim() === "" ? NaN : Number(outerRight.trim()),
+              bottom: outerBottom.trim() === "" ? NaN : Number(outerBottom.trim()),
+              left: outerLeft.trim() === "" ? NaN : Number(outerLeft.trim()),
+            },
+          }
+        : {}),
+    };
+    if (!validateCommandArgs("table.positioning", args, request.context)) {
+      setError(true);
+      return;
+    }
+    onConfirm(args);
+  };
+
   const submit = () => {
     if (isShading) {
       const normalized = normalizeHexRgb(shadeColor);
@@ -172,6 +258,10 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
       submitColWidth(false);
     } else if (isRowHeight) {
       submitRowHeight("set");
+    } else if (isCellMargins) {
+      submitCellMargins(false);
+    } else if (isPositioning) {
+      submitPositioning();
     } else {
       submitBorders();
     }
@@ -382,6 +472,119 @@ export function TableFormattingDialog({ request, suspended, onCancel, onConfirm 
                 </button>
               )}
             </div>
+          </div>
+        ) : isCellMargins ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              <button
+                ref={firstFocusRef as React.RefObject<HTMLButtonElement>}
+                type="button"
+                aria-pressed={marginScope === "cell"}
+                className="document-bar__button"
+                data-testid="margin-scope-cell"
+                style={{ fontWeight: marginScope === "cell" ? 700 : 400 }}
+                onClick={() => switchMarginScope("cell")}
+              >
+                {t("tableFormat.margins.scopeCell")}
+              </button>
+              {marginsCtx?.scopeDefaultSupported && (
+                <button
+                  type="button"
+                  aria-pressed={marginScope === "table"}
+                  className="document-bar__button"
+                  data-testid="margin-scope-table"
+                  style={{ fontWeight: marginScope === "table" ? 700 : 400 }}
+                  onClick={() => switchMarginScope("table")}
+                >
+                  {t("tableFormat.margins.scopeTable")}
+                </button>
+              )}
+            </div>
+            <div className="stage1-dialog__grid">
+              <label htmlFor="table-margin-top">{t("tableFormat.margins.top")}</label>
+              <input id="table-margin-top" data-testid="table-margin-top" type="number" step="0.5" min={marginsCtx?.minPt ?? 0} max={marginsCtx?.maxPt ?? 144} value={marginTop} onChange={(e) => { setMarginTop(e.target.value); setError(false); }} />
+              <label htmlFor="table-margin-right">{t("tableFormat.margins.right")}</label>
+              <input id="table-margin-right" data-testid="table-margin-right" type="number" step="0.5" min={marginsCtx?.minPt ?? 0} max={marginsCtx?.maxPt ?? 144} value={marginRight} onChange={(e) => { setMarginRight(e.target.value); setError(false); }} />
+              <label htmlFor="table-margin-bottom">{t("tableFormat.margins.bottom")}</label>
+              <input id="table-margin-bottom" data-testid="table-margin-bottom" type="number" step="0.5" min={marginsCtx?.minPt ?? 0} max={marginsCtx?.maxPt ?? 144} value={marginBottom} onChange={(e) => { setMarginBottom(e.target.value); setError(false); }} />
+              <label htmlFor="table-margin-left">{t("tableFormat.margins.left")}</label>
+              <input id="table-margin-left" data-testid="table-margin-left" type="number" step="0.5" min={marginsCtx?.minPt ?? 0} max={marginsCtx?.maxPt ?? 144} value={marginLeft} onChange={(e) => { setMarginLeft(e.target.value); setError(false); }} />
+            </div>
+            {marginScope === "cell" && !marginsCtx?.cell.usesTableDefault && (
+              <div>
+                <button
+                  type="button"
+                  className="document-bar__button"
+                  data-testid="table-margin-reset"
+                  onClick={() => submitCellMargins(true)}
+                >
+                  {t("tableFormat.margins.reset")}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : isPositioning ? (
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div style={{ display: "grid", gap: "6px" }}>
+              <span>{t("tableFormat.positioning.align")}</span>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {(["left", "center", "right"] as const).map((value, index) => (
+                  <button
+                    key={value}
+                    ref={index === 0 ? firstFocusRef as React.RefObject<HTMLButtonElement> : undefined}
+                    type="button"
+                    aria-pressed={posAlign === value}
+                    className="document-bar__button"
+                    data-testid={`table-pos-align-${value}`}
+                    style={{ fontWeight: posAlign === value ? 700 : 400 }}
+                    onClick={() => { setPosAlign(value); setError(false); }}
+                  >
+                    {t(`tableFormat.alignment.${value}` as MessageKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {posCtx?.supportsIndent && (
+              <div className="stage1-dialog__grid">
+                <label htmlFor="table-pos-indent">{t("tableFormat.positioning.indentPt")}</label>
+                <input
+                  id="table-pos-indent"
+                  data-testid="table-pos-indent"
+                  type="number"
+                  step="1"
+                  min={posCtx.minIndentPt}
+                  max={posCtx.maxIndentPt}
+                  value={posIndentText}
+                  onChange={(e) => { setPosIndentText(e.target.value); setError(false); }}
+                />
+              </div>
+            )}
+            {posCtx?.treatAsCharSupported && (
+              <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="checkbox"
+                  data-testid="table-pos-treat-as-char"
+                  checked={posTreatAsChar}
+                  onChange={(e) => { setPosTreatAsChar(e.target.checked); setError(false); }}
+                />
+                <span>{t("tableFormat.positioning.treatAsChar")}</span>
+              </label>
+            )}
+            {posCtx?.outerMargins && (
+              <div style={{ display: "grid", gap: "6px" }}>
+                <span>{t("tableFormat.positioning.outerMargins")}</span>
+                <div className="stage1-dialog__grid">
+                  <label htmlFor="table-outer-margin-top">{t("tableFormat.margins.top")}</label>
+                  <input id="table-outer-margin-top" data-testid="table-outer-margin-top" type="number" step="0.5" min={0} max={144} value={outerTop} onChange={(e) => { setOuterTop(e.target.value); setError(false); }} />
+                  <label htmlFor="table-outer-margin-right">{t("tableFormat.margins.right")}</label>
+                  <input id="table-outer-margin-right" data-testid="table-outer-margin-right" type="number" step="0.5" min={0} max={144} value={outerRight} onChange={(e) => { setOuterRight(e.target.value); setError(false); }} />
+                  <label htmlFor="table-outer-margin-bottom">{t("tableFormat.margins.bottom")}</label>
+                  <input id="table-outer-margin-bottom" data-testid="table-outer-margin-bottom" type="number" step="0.5" min={0} max={144} value={outerBottom} onChange={(e) => { setOuterBottom(e.target.value); setError(false); }} />
+                  <label htmlFor="table-outer-margin-left">{t("tableFormat.margins.left")}</label>
+                  <input id="table-outer-margin-left" data-testid="table-outer-margin-left" type="number" step="0.5" min={0} max={144} value={outerLeft} onChange={(e) => { setOuterLeft(e.target.value); setError(false); }} />
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: "grid", gap: "10px" }}>

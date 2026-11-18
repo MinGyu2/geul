@@ -151,4 +151,68 @@ describe("TableFormattingDialog", () => {
     fireEvent.click(screen.getByTestId("table-auto-row-height"));
     expect(confirmed[3]).toEqual({ command: "table.rowHeight", height: null });
   });
+
+  it("supports cell/table margin scopes, reset, validation and table positioning", () => {
+    const confirmed: DocumentCommandArgs[] = [];
+    const marginReq: CommandInputRequest = {
+      command: "table.cellMargins",
+      labelKey: "command.table.cellMargins",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tableCellMargins: {
+          scopeDefaultSupported: true,
+          cell: { top: 4, right: 8, bottom: 4, left: 8, mixed: false, usesTableDefault: false, mixedOverride: false },
+          table: { top: 2, right: 6, bottom: 2, left: 6 },
+          minPt: 0,
+          maxPt: 144,
+        },
+      },
+    };
+    const { unmount } = renderFormattingDialog(marginReq, "en", (a) => confirmed.push(a));
+    fireEvent.change(screen.getByTestId("table-margin-left"), { target: { value: "14" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[0]).toEqual({ command: "table.cellMargins", scope: "cell", top: 4, right: 8, bottom: 4, left: 14 });
+    fireEvent.click(screen.getByTestId("table-margin-reset"));
+    expect(confirmed[1]).toEqual({ command: "table.cellMargins", scope: "cell", reset: true });
+    fireEvent.click(screen.getByTestId("margin-scope-table"));
+    fireEvent.change(screen.getByTestId("table-margin-top"), { target: { value: "10" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[2]).toEqual({ command: "table.cellMargins", scope: "table", top: 10, right: 6, bottom: 2, left: 6 });
+    unmount();
+
+    const posReq: CommandInputRequest = {
+      command: "table.positioning",
+      labelKey: "command.table.positioning",
+      sessionId: 1,
+      loadGeneration: 1,
+      revision: 0,
+      context: {
+        tablePositioning: {
+          align: "left",
+          indentPt: 0,
+          minIndentPt: -72,
+          maxIndentPt: 360,
+          supportsIndent: true,
+          treatAsCharSupported: true,
+          treatAsChar: true,
+          outerMargins: { top: 2, right: 2, bottom: 2, left: 2 },
+        },
+      },
+    };
+    renderFormattingDialog(posReq, "en", (a) => confirmed.push(a));
+    fireEvent.click(screen.getByTestId("table-pos-align-center"));
+    fireEvent.change(screen.getByTestId("table-pos-indent"), { target: { value: "18" } });
+    fireEvent.click(screen.getByTestId("table-pos-treat-as-char"));
+    fireEvent.change(screen.getByTestId("table-outer-margin-left"), { target: { value: "12" } });
+    fireEvent.click(screen.getByTestId("table-format-confirm"));
+    expect(confirmed[3]).toEqual({
+      command: "table.positioning",
+      align: "center",
+      indentPt: 18,
+      treatAsChar: false,
+      outerMargins: { top: 2, right: 2, bottom: 2, left: 12 },
+    });
+  });
 });

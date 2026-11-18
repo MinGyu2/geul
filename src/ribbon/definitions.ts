@@ -50,6 +50,8 @@ export const TABLE_FORMATTING_GROUP: RibbonGroupDefinition = group("tableFormatt
   cmd("table.alignment", "alignCenter"),
   cmd("table.columnWidth", "indent"),
   cmd("table.rowHeight", "paragraphSettings"),
+  cmd("table.cellMargins", "margins"),
+  cmd("table.positioning", "alignLeft"),
 ]);
 
 export const RIBBON_TABS: RibbonTabDefinition[] = [

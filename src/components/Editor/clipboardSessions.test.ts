@@ -115,6 +115,10 @@ describe("RHWP complete text and paragraph-aware paste", () => {
       cellAlignVerticalMixed: false, cellAlignmentRefusal: null, colWidth: 100, colWidthMixed: false,
       rowHeight: null, rowHeightMixed: false, rowHeightRule: null, selectedCols: 2, selectedRows: 1,
       columnWidthRefusal: null, rowHeightRefusal: null,
+      tableCellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
+      cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
     };
     fake.tableCellsSelection = rawCells;
     editor.selectAll();
@@ -144,6 +148,10 @@ describe("RHWP complete text and paragraph-aware paste", () => {
       cellAlignVerticalMixed: false, cellAlignmentRefusal: null, colWidth: 100, colWidthMixed: false,
       rowHeight: null, rowHeightMixed: false, rowHeightRule: null, selectedCols: 2, selectedRows: 1,
       columnWidthRefusal: null, rowHeightRefusal: null,
+      tableCellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
+      cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
     };
     fake.tableCellsSelection = rawCells;
     const denied = clipboard();

@@ -155,6 +155,57 @@ pub struct DocxTableView {
     pub selected_rows: usize,
     pub column_width_refusal: Option<&'static str>,
     pub row_height_refusal: Option<&'static str>,
+    pub table_cell_margins: DocxMargins,
+    pub cell_margins: Option<DocxMargins>,
+    pub cell_margins_mixed: bool,
+    pub cell_margins_uses_default: bool,
+    pub cell_margins_override_mixed: bool,
+    pub cell_margins_refusal: Option<&'static str>,
+    pub table_align: &'static str,
+    pub table_indent_pt: f32,
+    pub table_positioning_refusal: Option<&'static str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocxMargins {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableMarginScope {
+    Cell,
+    Table,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl TableAlign {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TableAlign::Left => "left",
+            TableAlign::Center => "center",
+            TableAlign::Right => "right",
+        }
+    }
+}
+
+pub(super) fn valid_docx_margin_pt(v: f32) -> bool {
+    v.is_finite() && (0.0..=144.0).contains(&v)
+}
+
+pub(super) fn valid_docx_indent_pt(v: f32) -> bool {
+    v.is_finite() && (-72.0..=360.0).contains(&v)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -793,6 +844,69 @@ fn inspect_dimensions(
     )
 }
 
+fn margins_to_view(m: [f32; 4]) -> DocxMargins {
+    // WordCraft stores [top, left, bottom, right].
+    DocxMargins {
+        top: round_pt(m[0]),
+        right: round_pt(m[3]),
+        bottom: round_pt(m[2]),
+        left: round_pt(m[1]),
+    }
+}
+
+fn inspect_cell_margins(
+    doc: &Document,
+    t: &Table,
+    r0: usize,
+    r1: usize,
+    g0: usize,
+    g1: usize,
+) -> (DocxMargins, Option<DocxMargins>, bool, bool, bool) {
+    let table_default = margins_to_view(wordcraft_engine::layout::cell_margins(doc, t, usize::MAX, 0));
+    let mut seen = BTreeSet::new();
+    let mut first: Option<DocxMargins> = None;
+    let mut mixed = false;
+    let mut any_default = false;
+    let mut any_override = false;
+    for r in r0..=r1 {
+        for g in g0..=g1 {
+            let Some(c) = t.cell_at_grid(r, g) else {
+                continue;
+            };
+            if !seen.insert((r, c)) {
+                continue;
+            }
+            if let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(c)) {
+                if cell.props.margins.is_some() {
+                    any_override = true;
+                } else {
+                    any_default = true;
+                }
+                let eff = margins_to_view(wordcraft_engine::layout::cell_margins(doc, t, r, c));
+                match first {
+                    None => first = Some(eff),
+                    Some(prev) => {
+                        if (prev.top - eff.top).abs() > 0.05
+                            || (prev.right - eff.right).abs() > 0.05
+                            || (prev.bottom - eff.bottom).abs() > 0.05
+                            || (prev.left - eff.left).abs() > 0.05
+                        {
+                            mixed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (
+        table_default,
+        if mixed { None } else { first },
+        mixed,
+        !any_override,
+        any_default && any_override,
+    )
+}
+
 impl DocxModel {
     pub(super) fn table_view(&self) -> Option<DocxTableView> {
         let focus = &self.session.sel.focus;
@@ -844,6 +958,15 @@ impl DocxModel {
                 selected_rows: 1,
                 column_width_refusal: Some("tableShape"),
                 row_height_refusal: Some("tableShape"),
+                table_cell_margins: DocxMargins { top: 0.0, right: 5.4, bottom: 0.0, left: 5.4 },
+                cell_margins: None,
+                cell_margins_mixed: false,
+                cell_margins_uses_default: true,
+                cell_margins_override_mixed: false,
+                cell_margins_refusal: Some("tableShape"),
+                table_align: "left",
+                table_indent_pt: 0.0,
+                table_positioning_refusal: Some("tableShape"),
             });
         };
         let multi = inspect_selection(self, &tp, t);
@@ -880,6 +1003,38 @@ impl DocxModel {
             } else {
                 inspect_dimensions(t, r0, r1, g0, g1)
             };
+        let (
+            table_cell_margins,
+            cell_margins,
+            cell_margins_mixed,
+            cell_margins_uses_default,
+            cell_margins_override_mixed,
+        ) = if format_refusal.is_some() {
+            (
+                margins_to_view(wordcraft_engine::layout::cell_margins(&self.session.doc, t, usize::MAX, 0)),
+                None,
+                false,
+                true,
+                false,
+            )
+        } else {
+            inspect_cell_margins(&self.session.doc, t, r0, r1, g0, g1)
+        };
+        let table_align = match t.props.align {
+            Some(Align::Center) => "center",
+            Some(Align::Right) => "right",
+            _ => "left",
+        };
+        let table_indent_pt = round_pt(t.props.indent.unwrap_or(0.0));
+        let table_positioning_refusal = if FormatAccess::of(&self.session) == FormatAccess::Protected || super::TRACKED_READ_ONLY {
+            Some("protected")
+        } else if t.props.float.is_some() {
+            Some("tableContent")
+        } else if matches!(multi, MultiCellState::CrossTable) {
+            Some("tableShape")
+        } else {
+            None
+        };
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
         let (max_split_rows, max_split_columns) = if is_merged
@@ -934,6 +1089,15 @@ impl DocxModel {
             selected_rows: r1 - r0 + 1,
             column_width_refusal: format_refusal,
             row_height_refusal: format_refusal,
+            table_cell_margins,
+            cell_margins,
+            cell_margins_mixed,
+            cell_margins_uses_default,
+            cell_margins_override_mixed,
+            cell_margins_refusal: format_refusal,
+            table_align,
+            table_indent_pt,
+            table_positioning_refusal,
         })
     }
 
@@ -1258,6 +1422,137 @@ impl DocxModel {
         }
         let changed = self.atomic(|model| {
             let changed = model.run("table.setRowHeight", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    /// Stage 2 Phase 4 (P4-2): set selected-cell or table-default cell margins (pt), or reset
+    /// cell overrides back to table defaults, atomically with T009 round-trip verification.
+    pub(super) fn table_cell_margins(
+        &mut self,
+        target: &SelectionIdentity,
+        scope: TableMarginScope,
+        top: Option<f32>,
+        right: Option<f32>,
+        bottom: Option<f32>,
+        left: Option<f32>,
+        reset: bool,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        let (tp, fr, fc) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() {
+            return Err(Rejected);
+        }
+        let multi = inspect_selection(self, &tp, t);
+        if cell_format_refusal(self, &multi).is_some() {
+            return Err(Rejected);
+        }
+        let params = if reset {
+            if scope != TableMarginScope::Cell
+                || [top, right, bottom, left].into_iter().any(|s| s.is_some())
+            {
+                return Err(Rejected);
+            }
+            json!({ "margins": null })
+        } else {
+            if ![top, right, bottom, left].into_iter().any(|s| s.is_some())
+                || ![top, right, bottom, left]
+                    .into_iter()
+                    .all(|s| s.is_none_or(valid_docx_margin_pt))
+            {
+                return Err(Rejected);
+            }
+            let base = if scope == TableMarginScope::Table {
+                wordcraft_engine::layout::cell_margins(&self.session.doc, t, usize::MAX, 0)
+            } else {
+                wordcraft_engine::layout::cell_margins(&self.session.doc, t, fr, fc)
+            };
+            // WordCraft expects [top, left, bottom, right].
+            let merged = [
+                top.unwrap_or(base[0]),
+                left.unwrap_or(base[1]),
+                bottom.unwrap_or(base[2]),
+                right.unwrap_or(base[3]),
+            ];
+            match scope {
+                TableMarginScope::Cell => json!({ "margins": merged }),
+                TableMarginScope::Table => json!({ "cellMargins": merged }),
+            }
+        };
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.properties", params.clone())?;
+            if !changed {
+                return Ok(false);
+            }
+            if !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(true)
+        })?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
+    }
+
+    /// Stage 2 Phase 4 (P4-2): set table horizontal alignment and/or left indent (pt) atomically
+    /// with T009 round-trip verification.
+    pub(super) fn table_positioning(
+        &mut self,
+        target: &SelectionIdentity,
+        align: Option<TableAlign>,
+        indent_pt: Option<f32>,
+    ) -> Result<bool, Rejected> {
+        if position_key(&self.session.sel.anchor) != target.anchor_key
+            || position_key(&self.session.sel.focus) != target.caret_key
+        {
+            return Err(Rejected);
+        }
+        if (align.is_none() && indent_pt.is_none()) || !indent_pt.is_none_or(valid_docx_indent_pt) {
+            return Err(Rejected);
+        }
+        let focus = &self.session.sel.focus;
+        if focus.story != StoryRef::Body || self.session.sel.anchor.story != StoryRef::Body {
+            return Err(Rejected);
+        }
+        if FormatAccess::of(&self.session) == FormatAccess::Protected || super::TRACKED_READ_ONLY {
+            return Err(Rejected);
+        }
+        let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
+        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        if !t.is_grid_consistent() || t.props.float.is_some() {
+            return Err(Rejected);
+        }
+        if matches!(inspect_selection(self, &tp, t), MultiCellState::CrossTable) {
+            return Err(Rejected);
+        }
+        let mut obj = serde_json::Map::new();
+        if let Some(a) = align {
+            obj.insert("align".into(), json!(a.as_str()));
+        }
+        if let Some(i) = indent_pt {
+            obj.insert("indent".into(), json!(i));
+        }
+        let params = serde_json::Value::Object(obj);
+        let changed = self.atomic(|model| {
+            let changed = model.run("table.properties", params.clone())?;
             if !changed {
                 return Ok(false);
             }

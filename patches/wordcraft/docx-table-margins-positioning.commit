@@ -1,0 +1,6 @@
+tree 5abb1c1b216b819f50371e3ac422075f5c490d0b
+parent 76132b73fbe7b774f2fc3742634ee95e7dbb65ed
+author geul <geul@users.noreply.github.com> 1794972745 +0900
+committer geul <geul@users.noreply.github.com> 1794972745 +0900
+
+feat(table): extend table.properties for cell margins and alignment/indent positioning

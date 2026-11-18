@@ -117,6 +117,13 @@ export interface DocxCellBordersView {
   right: DocxCellBorderEdge | null;
 }
 
+export interface DocxMargins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export interface DocxTableView {
   rows: number;
   cols: number;
@@ -159,6 +166,15 @@ export interface DocxTableView {
   selectedRows: number;
   columnWidthRefusal: DocxTableFormatRefusal;
   rowHeightRefusal: DocxTableFormatRefusal;
+  tableCellMargins: DocxMargins;
+  cellMargins: DocxMargins | null;
+  cellMarginsMixed: boolean;
+  cellMarginsUsesDefault: boolean;
+  cellMarginsOverrideMixed: boolean;
+  cellMarginsRefusal: DocxTableFormatRefusal;
+  tableAlign: "left" | "center" | "right";
+  tableIndentPt: number;
+  tablePositioningRefusal: DocxTableFormatRefusal;
 }
 
 export interface DocxFont {
@@ -279,6 +295,22 @@ export type DocxOp =
   | { op: "tableAlignment"; target: { anchorKey: string; caretKey: string }; horizontal?: "left" | "center" | "right" | "justify"; vertical?: "top" | "middle" | "bottom" }
   | { op: "tableColumnWidth"; target: { anchorKey: string; caretKey: string }; width?: number; distribute: boolean }
   | { op: "tableRowHeight"; target: { anchorKey: string; caretKey: string }; height?: number; rule?: "atLeast" | "exact"; clear: boolean; distribute: boolean }
+  | {
+      op: "tableCellMargins";
+      target: { anchorKey: string; caretKey: string };
+      scope: "cell" | "table";
+      top?: number;
+      right?: number;
+      bottom?: number;
+      left?: number;
+      reset: boolean;
+    }
+  | {
+      op: "tablePositioning";
+      target: { anchorKey: string; caretKey: string };
+      align?: "left" | "center" | "right";
+      indentPt?: number;
+    }
   | { op: "cutTableCells"; target: { anchorKey: string; caretKey: string } }
   | {
       op: "pasteTableCells";
@@ -485,6 +517,14 @@ function parseCellBordersView(value: unknown): DocxCellBordersView | null | unde
   return value as unknown as DocxCellBordersView;
 }
 
+function parseDocxMargins(value: unknown): DocxMargins | undefined {
+  if (!isRecord(value) || !hasExactly(value, ["top", "right", "bottom", "left"])) return undefined;
+  for (const side of ["top", "right", "bottom", "left"] as const) {
+    if (typeof value[side] !== "number" || !Number.isFinite(value[side])) return undefined;
+  }
+  return value as unknown as DocxMargins;
+}
+
 function parseTableView(value: unknown): DocxTableView | undefined {
   const keys = [
     "rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells",
@@ -495,6 +535,8 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     "cellAlignHorizontal", "cellAlignHorizontalMixed", "cellAlignVertical", "cellAlignVerticalMixed", "cellAlignmentRefusal",
     "colWidth", "colWidthMixed", "rowHeight", "rowHeightMixed", "rowHeightRule",
     "selectedCols", "selectedRows", "columnWidthRefusal", "rowHeightRefusal",
+    "tableCellMargins", "cellMargins", "cellMarginsMixed", "cellMarginsUsesDefault", "cellMarginsOverrideMixed", "cellMarginsRefusal",
+    "tableAlign", "tableIndentPt", "tablePositioningRefusal",
   ];
   if (!isRecord(value) || !hasExactly(value, keys)) return undefined;
   for (const k of ["rows", "cols", "row", "col", "rowSpan", "colSpan", "selectedCells", "maxSplitRows", "maxSplitColumns", "selectedCols", "selectedRows"] as const) {
@@ -504,10 +546,10 @@ function parseTableView(value: unknown): DocxTableView | undefined {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_REFUSALS.has(v))) return undefined;
   }
-  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed", "colWidthMixed", "rowHeightMixed"] as const) {
+  for (const k of ["hasInsideBorders", "cellShadingMixed", "hasCellShading", "cellAlignHorizontalMixed", "cellAlignVerticalMixed", "colWidthMixed", "rowHeightMixed", "cellMarginsMixed", "cellMarginsUsesDefault", "cellMarginsOverrideMixed"] as const) {
     if (typeof value[k] !== "boolean") return undefined;
   }
-  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal", "columnWidthRefusal", "rowHeightRefusal"] as const) {
+  for (const k of ["cellShadingRefusal", "cellBordersRefusal", "cellAlignmentRefusal", "columnWidthRefusal", "rowHeightRefusal", "cellMarginsRefusal", "tablePositioningRefusal"] as const) {
     const v = value[k];
     if (v !== null && (typeof v !== "string" || !TABLE_FORMAT_REFUSALS.has(v))) return undefined;
   }
@@ -519,6 +561,10 @@ function parseTableView(value: unknown): DocxTableView | undefined {
   if (value.cellShading !== null && typeof value.cellShading !== "string") return undefined;
   if (parseCellBordersView(value.cellBorders) === undefined) return undefined;
   if (!Array.isArray(value.supportedBorderStyles) || !value.supportedBorderStyles.every((s) => typeof s === "string")) return undefined;
+  if (parseDocxMargins(value.tableCellMargins) === undefined) return undefined;
+  if (value.cellMargins !== null && parseDocxMargins(value.cellMargins) === undefined) return undefined;
+  if (typeof value.tableAlign !== "string" || !["left", "center", "right"].includes(value.tableAlign)) return undefined;
+  if (typeof value.tableIndentPt !== "number" || !Number.isFinite(value.tableIndentPt)) return undefined;
   return value as unknown as DocxTableView;
 }
 

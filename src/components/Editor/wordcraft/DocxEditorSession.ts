@@ -104,7 +104,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "cutTableCells", "pasteTableCells",
+  "continueNumbering", "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "cutTableCells", "pasteTableCells",
 ]);
 const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
@@ -135,7 +135,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "cutTableCells", "pasteTableCells"]);
+  "pageSetup", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1253,6 +1253,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       parameterReasons["table.alignment"] = "notInTable";
       parameterReasons["table.columnWidth"] = "notInTable";
       parameterReasons["table.rowHeight"] = "notInTable";
+      parameterReasons["table.cellMargins"] = "notInTable";
+      parameterReasons["table.positioning"] = "notInTable";
     } else {
       for (const id of TABLE_STRUCTURE_IDS) {
         const refusal = view.table[TABLE_STRUCTURE_ACTIONS[id]];
@@ -1335,6 +1337,41 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             maxPt: 1584,
             selectedRows: view.table.selectedRows,
             totalRows: view.table.rows,
+          },
+        };
+      }
+      if (view.table.cellMarginsRefusal !== null) {
+        parameterReasons["table.cellMargins"] = mapFormatRefusal(view.table.cellMarginsRefusal);
+      } else {
+        parameters["table.cellMargins"] = {
+          tableCellMargins: {
+            scopeDefaultSupported: true,
+            cell: {
+              top: view.table.cellMargins?.top ?? null,
+              right: view.table.cellMargins?.right ?? null,
+              bottom: view.table.cellMargins?.bottom ?? null,
+              left: view.table.cellMargins?.left ?? null,
+              mixed: view.table.cellMarginsMixed,
+              usesTableDefault: view.table.cellMarginsUsesDefault,
+              mixedOverride: view.table.cellMarginsOverrideMixed,
+            },
+            table: view.table.tableCellMargins,
+            minPt: 0,
+            maxPt: 144,
+          },
+        };
+      }
+      if (view.table.tablePositioningRefusal !== null) {
+        parameterReasons["table.positioning"] = mapFormatRefusal(view.table.tablePositioningRefusal);
+      } else {
+        parameters["table.positioning"] = {
+          tablePositioning: {
+            align: view.table.tableAlign,
+            indentPt: view.table.tableIndentPt,
+            minIndentPt: -72,
+            maxIndentPt: 360,
+            supportsIndent: true,
+            treatAsCharSupported: false,
           },
         };
       }
@@ -1501,6 +1538,36 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
           ...(args.rule !== undefined ? { rule: args.rule } : {}),
           clear: args.height === null,
           distribute: args.distribute === true,
+        }),
+      };
+    }
+    if (command === "table.cellMargins") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tableCellMargins",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          scope: args.scope,
+          ...(args.top !== undefined ? { top: args.top } : {}),
+          ...(args.right !== undefined ? { right: args.right } : {}),
+          ...(args.bottom !== undefined ? { bottom: args.bottom } : {}),
+          ...(args.left !== undefined ? { left: args.left } : {}),
+          reset: args.reset === true,
+        }),
+      };
+    }
+    if (command === "table.positioning") {
+      if (args?.command !== command || !this.view || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) {
+        return { accepted: false };
+      }
+      return {
+        accepted: this.push({
+          op: "tablePositioning",
+          target: { anchorKey: this.view.anchorKey, caretKey: this.view.caretKey },
+          ...(args.align !== undefined ? { align: args.align } : {}),
+          ...(args.indentPt !== undefined ? { indentPt: args.indentPt } : {}),
         }),
       };
     }

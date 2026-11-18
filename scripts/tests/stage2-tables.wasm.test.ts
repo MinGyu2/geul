@@ -2326,3 +2326,121 @@ describe("RHWP Release WASM Stage 2 P4-1 — multi-cell structural clipboard", (
     } finally { hwp.editor.dispose(); }
   });
 });
+
+describe("RHWP Release WASM Stage 2 P4-2 — cell margins and table positioning", () => {
+  it("applies P4-2 table/cell inner margins, reset, mixed state, nested table margins, and positioning across HWPX and HWP with T009 save/reopen", async () => {
+    for (const format of ["hwpx", "hwp"] as const) {
+      const s = await open(format, false, true, false);
+      try {
+        // 1. Table-wide padding + top-level positioning (center + indent + treatAsChar=false + outer margins)
+        s.place(withCell(s.at, 0));
+        expect(s.editor.execute("table.cellMargins", {
+          command: "table.cellMargins",
+          scope: "table",
+          top: 5,
+          right: 10,
+          bottom: 5,
+          left: 10,
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        expect(s.editor.execute("table.positioning", {
+          command: "table.positioning",
+          align: "center",
+          indentPt: 18,
+          treatAsChar: false,
+          outerMargins: { top: 4, right: 6, bottom: 4, left: 6 },
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        // 2. Per-cell inner margin override on cell 0 (leaving cell 1 inheriting table default -> mixed state)
+        expect(s.editor.execute("table.cellMargins", {
+          command: "table.cellMargins",
+          scope: "cell",
+          left: 20,
+          right: 20,
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        const snapOverride = s.editor.snapshot();
+        const cm0 = snapOverride.parameters?.["table.cellMargins"]?.tableCellMargins;
+        expect(cm0?.table.left).toBe(10);
+        expect(cm0?.cell.left).toBe(20);
+        expect(cm0?.cell.top).toBe(5);
+        expect(cm0?.cell.usesTableDefault).toBe(false);
+
+        const pos = snapOverride.parameters?.["table.positioning"]?.tablePositioning;
+        expect(pos?.align).toBe("center");
+        expect(pos?.indentPt).toBe(18);
+        expect(pos?.treatAsChar).toBe(false);
+        expect(pos?.outerMargins?.left).toBe(6);
+
+        // Select cell 0..1 -> mixed margin & mixedOverride
+        s.editor.anchor = withCell(s.at, 0);
+        s.editor.caret = withCell(s.at, 1);
+        const cmMixed = s.editor.snapshot().parameters?.["table.cellMargins"]?.tableCellMargins;
+        expect(cmMixed?.cell.mixed).toBe(true);
+        expect(cmMixed?.cell.mixedOverride).toBe(true);
+
+        // Reset cell 0 back to table default, Undo & Redo
+        s.place(withCell(s.at, 0));
+        expect(s.editor.execute("table.cellMargins", {
+          command: "table.cellMargins",
+          scope: "cell",
+          reset: true,
+        })).toEqual({ accepted: true });
+        await s.settle();
+        expect(s.editor.snapshot().parameters?.["table.cellMargins"]?.tableCellMargins?.cell.usesTableDefault).toBe(true);
+        expect(s.editor.snapshot().parameters?.["table.cellMargins"]?.tableCellMargins?.cell.left).toBe(10);
+
+        expect(s.editor.execute("edit.undo")).toEqual({ accepted: true });
+        await s.settle();
+        expect(s.editor.snapshot().parameters?.["table.cellMargins"]?.tableCellMargins?.cell.usesTableDefault).toBe(false);
+        expect(s.editor.snapshot().parameters?.["table.cellMargins"]?.tableCellMargins?.cell.left).toBe(20);
+
+        // 3. Invalid negative margin rejected without mutation
+        expect(s.editor.execute("table.cellMargins", {
+          command: "table.cellMargins",
+          scope: "cell",
+          left: -2,
+        })).toEqual({ accepted: false });
+
+        // 4. Nested table allows cellMargins while rejecting table.positioning
+        const nestedAt = {
+          ...s.at,
+          cell: { ...s.at.cell!, nested: [{ control: 0, cell: 0, cellParagraph: 0 }] },
+        };
+        s.place(nestedAt);
+        expect(s.editor.snapshot().parameterReasons?.["table.positioning"]).toBe("tableShape");
+        expect(s.editor.execute("table.cellMargins", {
+          command: "table.cellMargins",
+          scope: "table",
+          left: 14,
+          right: 14,
+        })).toEqual({ accepted: true });
+        await s.settle();
+
+        // 5. Save, T009 proof, and independent reopen verification
+        s.place(withCell(s.at, 0));
+        const saved = await s.save();
+        expect(saved.publishable, JSON.stringify({ raw: saved.raw, reopen: saved.reopen })).toBe(true);
+        expect(saved.raw.findings.every(f => f.code === "previewStale"), JSON.stringify(saved.raw)).toBe(true);
+        expect(Object.values(saved.reopen).every(Boolean), JSON.stringify(saved.reopen)).toBe(true);
+
+        const reopened = new engine.HwpDocument(saved.output) as Doc;
+        try {
+          const pJson = JSON.stringify([{ controlIndex: s.at.cell!.control, cellIndex: 0, cellParaIndex: 0 }]);
+          const rtCm = JSON.parse(reopened.getTableCellMarginsByPath!(0, s.at.paragraph, pJson, 0, 0, 0, 0));
+          expect(rtCm.table.left).toBe(10);
+          expect(rtCm.cell.left).toBe(20);
+          expect(rtCm.cell.usesTableDefault).toBe(false);
+          const rtPos = JSON.parse(reopened.getTablePropertiesByPath!(0, s.at.paragraph, pJson));
+          expect(rtPos.horzAlign).toBe("Center");
+          expect(rtPos.horzOffset).toBe(1800);
+          expect(rtPos.treatAsChar).toBe(false);
+          expect(rtPos.outerLeft).toBe(600);
+        } finally { reopened.free(); }
+      } finally { s.editor.dispose(); }
+    }
+  });
+});

@@ -17,7 +17,8 @@ STABILIZATION_PIN = "dd14a0ae29d90a05a54918db641d97f952260882"
 FORMATTING_PIN = "1864d4fd0b5c0afadfe4197563336a08aebd776a"
 ALIGNMENT_PIN = "5351d9b48fe073ee7eb5a5204f2ce06a5c78858a"
 DIMENSIONS_PIN = "cae8c33058e620c02704a2414600b9cb7ecf0867"
-PIN = "76132b73fbe7b774f2fc3742634ee95e7dbb65ed"
+CLIPBOARD_PIN = "76132b73fbe7b774f2fc3742634ee95e7dbb65ed"
+PIN = "34d85b9a42153e161d9327a6e0422dfe82c24cc8"
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -26,7 +27,8 @@ STEPS = [
     (STABILIZATION_PIN, FORMATTING_PIN, "patches/wordcraft/docx-table-formatting.patch", "patches/wordcraft/docx-table-formatting.commit"),
     (FORMATTING_PIN, ALIGNMENT_PIN, "patches/wordcraft/docx-table-alignment.patch", "patches/wordcraft/docx-table-alignment.commit"),
     (ALIGNMENT_PIN, DIMENSIONS_PIN, "patches/wordcraft/docx-table-dimensions.patch", "patches/wordcraft/docx-table-dimensions.commit"),
-    (DIMENSIONS_PIN, PIN, "patches/wordcraft/docx-table-clipboard.patch", "patches/wordcraft/docx-table-clipboard.commit"),
+    (DIMENSIONS_PIN, CLIPBOARD_PIN, "patches/wordcraft/docx-table-clipboard.patch", "patches/wordcraft/docx-table-clipboard.commit"),
+    (CLIPBOARD_PIN, PIN, "patches/wordcraft/docx-table-margins-positioning.patch", "patches/wordcraft/docx-table-margins-positioning.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

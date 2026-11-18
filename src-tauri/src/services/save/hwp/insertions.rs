@@ -69,6 +69,24 @@ fn dword(b: &[u8], at: usize) -> Checked<usize> {
         .map(|p| u32::from_le_bytes([p[0], p[1], p[2], p[3]]) as usize)
         .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
 }
+fn signed_word(b: &[u8], at: usize) -> Checked<i16> {
+    b.get(at..at + 2)
+        .map(|p| i16::from_le_bytes([p[0], p[1]]))
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
+}
+fn signed_dword(b: &[u8], at: usize) -> Checked<i32> {
+    b.get(at..at + 4)
+        .map(|p| i32::from_le_bytes([p[0], p[1], p[2], p[3]]))
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
+}
+fn valid_hwp_margin_pair(b: &[u8], at: usize) -> Checked<bool> {
+    for i in 0..4 {
+        if !(0..=14_400).contains(&signed_word(b, at + i * 2)?) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 fn definitions<'a>(rs: &[Record<'a>]) -> Defs<'a> {
     let mut out = BTreeMap::<_, Vec<_>>::new();
     for &(tag, _, b) in rs {
@@ -1301,7 +1319,10 @@ fn cell_header_matches_ignoring_border_fill(a: &[u8], b: &[u8]) -> bool {
         && a[2..4] == b[2..4]
         && (a[4] & !0x60) == (b[4] & !0x60)
         && ((b[4] >> 5) & 0x03) <= 2
-        && a[5..32] == b[5..32]
+        && a[5] == b[5]
+        && (a[6] & !0x01) == (b[6] & !0x01)
+        && a[7..24] == b[7..24]
+        && valid_hwp_margin_pair(b, 24) == Ok(true)
         && a[34..] == b[34..]
 }
 /// Appended paragraph shapes must equal an original one except the bullet heading (T011) and the Stage 1
@@ -2133,21 +2154,45 @@ fn evolved_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
         && validate_existing_table(new).is_ok()
 }
 
-/// The control header of a table that a supported operation may resize but not otherwise change
-/// (shared rule of `restructured_table`).
-fn table_header_preserved(a: &[u8], b: &[u8]) -> Checked<()> {
+/// The control header of a table that a supported operation may resize or update bounded
+/// Stage 2 P4-2 positioning (treatAsChar, horzAlign Left/Center/Right, bounded horzOffset,
+/// bounded outerMargin) on top-level tables, but not otherwise change.
+fn table_header_preserved(level: u16, a: &[u8], b: &[u8]) -> Checked<()> {
     valid(b.len() >= 42, BODY)?;
     preserved(a.len() >= 42, BODY)?;
+    preserved(a[..4] == b[..4], BODY)?;
+    preserved(a[8..12] == b[8..12] && a[24..28] == b[24..28], BODY)?;
+    let positioning_changed = a[4..8] != b[4..8] || a[12..16] != b[12..16] || a[28..36] != b[28..36];
+    if positioning_changed {
+        preserved(level == 1, BODY)?;
+        let attr_a = dword(a, 4)? as u32;
+        let attr_b = dword(b, 4)? as u32;
+        const POS_ATTR_MASK: u32 = 0x01 | (0x01 << 8) | (0x07 << 10);
+        preserved((attr_a & !POS_ATTR_MASK) == (attr_b & !POS_ATTR_MASK), BODY)?;
+        let rel_a = (attr_a >> 8) & 0x03;
+        let rel_b = (attr_b >> 8) & 0x03;
+        preserved(rel_a == rel_b || (rel_a >= 2 && rel_b >= 2), BODY)?;
+        valid(((attr_b >> 10) & 0x07) <= 2, BODY)?;
+        valid((-7200..=36_000).contains(&signed_dword(b, 12)?), BODY)?;
+        valid(valid_hwp_margin_pair(b, 28)?, BODY)?;
+    }
     let tail = if a.len() == b.len() {
-        a[24..] == b[24..]
+        a[36..] == b[36..]
     } else {
         a.len() == 42
             && b.len() == 46
-            && a[24..40] == b[24..40]
+            && a[36..40] == b[36..40]
             && a[40..].iter().chain(&b[40..]).all(|v| *v == 0)
     };
-    preserved(a[..16] == b[..16] && tail, BODY)?;
+    preserved(tail, BODY)?;
     valid(dword(b, 16)? > 0 && dword(b, 20)? > 0, BODY)
+}
+
+fn table_record_matches_allowing_padding(ta: &[u8], tb: &[u8]) -> Checked<bool> {
+    if ta.len() != tb.len() || ta.len() < 18 {
+        return Ok(false);
+    }
+    Ok(valid_hwp_margin_pair(tb, 10)? && ta[..10] == tb[..10] && ta[18..] == tb[18..])
 }
 
 /// One cell of an original/evolved table: LIST_HEADER, paragraph count and the controls of its
@@ -2359,7 +2404,7 @@ fn evolved_table(
 ) -> Checked<()> {
     let level = old[0].1;
     preserved(new[0].1 == level && level <= MAX_TABLE_LEVEL, BODY)?;
-    table_header_preserved(old[0].2, new[0].2)?;
+    table_header_preserved(level, old[0].2, new[0].2)?;
     validate_existing_table(old)?;
     validate_existing_table(new)?;
     let mut ignored = BTreeSet::new();
@@ -2385,7 +2430,7 @@ fn evolved_table(
         reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
         used.borders.insert(bf);
     }
-    let same_grid = ta == tb
+    let same_grid = table_record_matches_allowing_padding(ta, tb)?
         && before.len() == after.len()
         && before
             .iter()
@@ -2398,7 +2443,8 @@ fn evolved_table(
         let (zones_a, zones_b) = (&ta[20 + 2 * rows_a..], &tb[20 + 2 * rows_b..]);
         preserved(
             ta[..4] == tb[..4]
-                && ta[8..18] == tb[8..18]
+                && ta[8..10] == tb[8..10]
+                && valid_hwp_margin_pair(tb, 10)?
                 && ta[18 + 2 * rows_a..20 + 2 * rows_a] == tb[18 + 2 * rows_b..20 + 2 * rows_b]
                 && zones_a == zones_b
                 && (zones_a.is_empty() || zones_a == [0, 0]),
@@ -2412,9 +2458,10 @@ fn evolved_table(
                 .get_mut(row)
                 .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))? += 1;
             valid(dword(cell.header, 16)? > 0, BODY)?;
+            valid(valid_hwp_margin_pair(cell.header, 24)?, BODY)?;
             let bf = word(cell.header, 32)?;
             valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
-            let template = |h: &[u8]| (h[4] & !0x60, h[5..8].to_vec(), h[24..32].to_vec(), h[38..].to_vec());
+            let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !0x01, h[7], h[38..].to_vec());
             preserved(
                 before.iter().any(|o| {
                     template(o.header) == template(cell.header)
@@ -3631,12 +3678,22 @@ fn validate_table_at(
         if nested {
             dword(h, 4)? == 0x002a0301
         } else {
-            (dword(h, 4)? & !1) == 0x082a2210
+            let attr = dword(h, 4)? as u32;
+            (attr & !((0x07 << 10) | (0x01 << 8) | 1)) == 0x082a2210
+                && ((attr >> 10) & 0x07) <= 2
+                && ((attr >> 8) & 0x03) >= 2
         },
         BODY,
     )?;
     valid(
-        dword(h, 8)? == 0 && dword(h, 12)? == 0 && word(h, 40)? == 0,
+        dword(h, 8)? == 0
+            && if nested {
+                dword(h, 12)? == 0
+            } else {
+                (-7200..=36_000).contains(&signed_dword(h, 12)?)
+            }
+            && valid_hwp_margin_pair(h, 28)?
+            && word(h, 40)? == 0,
         BODY,
     )?;
     let id = dword(h, 36)?;
@@ -3658,6 +3715,7 @@ fn validate_table_at(
             && rows * cols <= 256
             && table.len() == 22 + 2 * rows
             && dword(table, 0)? == if nested { 0x0400_0002 } else { 0 }
+            && valid_hwp_margin_pair(table, 10)?
             && word(table, 20 + 2 * rows)? == 0,
         BODY,
     )?;
@@ -3688,7 +3746,8 @@ fn validate_table_at(
             word(b, 0)? >= 1
                 && (dword(b, 2)? & !(0x03 << 21)) == 0
                 && ((dword(b, 2)? >> 21) & 0x03) <= 2
-                && word(b, 6)? == 0x400
+                && (word(b, 6)? & !1) == 0x400
+                && valid_hwp_margin_pair(b, 24)?
                 && dword(b, 16)? > 0
                 && dword(b, 20)? > 0
                 && dword(b, 20)? <= dword(h, 20)?,

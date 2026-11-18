@@ -5022,3 +5022,100 @@ fn stage2_p4_1_docx_multi_cell_clipboard_and_t009() {
     assert_eq!(tbl.rows[2].cells[1].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
     assert_eq!(tbl.rows[3].cells[2].blocks[0].as_para().unwrap().plain_text(), "Right");
 }
+
+#[test]
+fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
+    use super::engine::SelectionIdentity;
+    use super::engine::table::{TableAlign, TableMarginScope};
+    use crate::services::save::package;
+    let doc = crate::services::files::blank_docx().unwrap();
+    let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
+    let mut m = DocxModel::open(&doc).unwrap();
+    assert!(m.run_engine("text.insert", json!({ "text": "Unrelated body paragraph." })));
+    assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
+    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    let target = table_target(&mut m);
+
+    // Table-wide default cell margins + center align + indent (18pt).
+    assert_eq!(
+        m.apply(&[DocxOp::TableCellMargins {
+            target: target.clone(),
+            scope: TableMarginScope::Table,
+            top: Some(4.0),
+            right: Some(8.0),
+            bottom: Some(4.0),
+            left: Some(8.0),
+            reset: false,
+        }]).changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::TablePositioning {
+            target: target.clone(),
+            align: Some(TableAlign::Center),
+            indent_pt: Some(18.0),
+        }]).changed,
+        1
+    );
+
+    // Per-cell margin override on cell (0,0) leaving (0,1) inheriting table default.
+    let c0_target = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableCellMargins {
+            target: c0_target,
+            scope: TableMarginScope::Cell,
+            top: Some(12.0),
+            right: Some(14.0),
+            bottom: Some(12.0),
+            left: Some(14.0),
+            reset: false,
+        }]).changed,
+        1
+    );
+    let v = m.view().table.unwrap();
+    assert_eq!(v.table_align, "center");
+    assert_eq!(v.table_indent_pt, 18.0);
+    assert_eq!(v.table_cell_margins.left, 8.0);
+    assert_eq!(v.cell_margins.unwrap().left, 14.0);
+    assert!(!v.cell_margins_uses_default);
+
+    // Undo restores cell (0,0) back to table default; Redo re-applies override.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    let v_undone = m.view().table.unwrap();
+    assert!(v_undone.cell_margins_uses_default);
+    assert_eq!(v_undone.cell_margins.unwrap().left, 8.0);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+
+    // Stale target and invalid margin rejected before mutation.
+    let stale = SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() };
+    assert_eq!(
+        m.apply(&[DocxOp::TablePositioning { target: stale, align: Some(TableAlign::Right), indent_pt: None }]).rejected,
+        vec![0]
+    );
+    let cur = table_target(&mut m);
+    assert_eq!(
+        m.apply(&[DocxOp::TableCellMargins {
+            target: cur,
+            scope: TableMarginScope::Cell,
+            top: Some(-2.0),
+            right: None,
+            bottom: None,
+            left: None,
+            reset: false,
+        }]).rejected,
+        vec![0]
+    );
+
+    // T009 save & independent reopen
+    let saved_bytes = wordcraft_engine::io::save_bytes("p4-2-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
+    assert!(package::validate_docx(&saved_pkg).is_empty());
+    assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
+    let reopened = DocxModel::open(&saved_bytes).unwrap();
+    assert_eq!(reopened.diagnostic_document().body[0].as_para().unwrap().plain_text(), "Unrelated body paragraph.");
+    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert_eq!(tbl.props.cell_margins, Some([4.0, 8.0, 4.0, 8.0]));
+    assert_eq!(tbl.props.indent, Some(18.0));
+    assert_eq!(tbl.rows[0].cells[0].props.margins, Some([12.0, 14.0, 12.0, 14.0]));
+    assert_eq!(tbl.rows[0].cells[1].props.margins, None);
+}

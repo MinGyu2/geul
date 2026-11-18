@@ -148,6 +148,24 @@ export type DocumentCommandArgs =
       rule?: "atLeast" | "exact";
       distribute?: boolean;
     }
+  /** Stage 2 / Phase 4 (P4-2): cell margins (pt) for selected cells or table default, or reset to default. */
+  | {
+      command: "table.cellMargins";
+      scope: "cell" | "table";
+      top?: number;
+      right?: number;
+      bottom?: number;
+      left?: number;
+      reset?: boolean;
+    }
+  /** Stage 2 / Phase 4 (P4-2): table horizontal positioning / indent / wrap mode / outer margins (pt). */
+  | {
+      command: "table.positioning";
+      align?: "left" | "center" | "right";
+      indentPt?: number;
+      treatAsChar?: boolean;
+      outerMargins?: { top?: number; right?: number; bottom?: number; left?: number };
+    }
   /** Stage 1 value commands (src/commands/stage1.ts). */
   | Stage1Args;
 
@@ -217,6 +235,33 @@ export interface CommandParameterContext {
     maxPt: number;
     selectedRows: number;
     totalRows: number;
+  };
+  /** Stage 2 / Phase 4 (P4-2): cell margins context (pt). */
+  tableCellMargins?: {
+    scopeDefaultSupported: boolean;
+    cell: {
+      top: number | null;
+      right: number | null;
+      bottom: number | null;
+      left: number | null;
+      mixed: boolean;
+      usesTableDefault: boolean;
+      mixedOverride: boolean;
+    };
+    table: { top: number; right: number; bottom: number; left: number };
+    minPt: number;
+    maxPt: number;
+  };
+  /** Stage 2 / Phase 4 (P4-2): table positioning context (pt). */
+  tablePositioning?: {
+    align: "left" | "center" | "right";
+    indentPt: number;
+    minIndentPt: number;
+    maxIndentPt: number;
+    supportsIndent: boolean;
+    treatAsCharSupported: boolean;
+    treatAsChar?: boolean;
+    outerMargins?: { top: number; right: number; bottom: number; left: number };
   };
   /** Stage 5-A: the selection's stored font family (null: mixed). */
   font?: { family: string | null };

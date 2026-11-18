@@ -312,6 +312,15 @@ describe("DocxEditorSession", () => {
       selectedRows: 1,
       columnWidthRefusal: null,
       rowHeightRefusal: null,
+      tableCellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMarginsMixed: false,
+      cellMarginsUsesDefault: true,
+      cellMarginsOverrideMixed: false,
+      cellMarginsRefusal: null,
+      tableAlign: "left",
+      tableIndentPt: 0,
+      tablePositioningRefusal: null,
     } as const;
     fake.tableView = {
       rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
@@ -393,6 +402,10 @@ describe("DocxEditorSession", () => {
       cellAlignVertical: "top", cellAlignVerticalMixed: false, cellAlignmentRefusal: null,
       colWidth: 100, colWidthMixed: false, rowHeight: 24, rowHeightMixed: false, rowHeightRule: "atLeast",
       selectedCols: 1, selectedRows: 1, columnWidthRefusal: null, rowHeightRefusal: null,
+      tableCellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
+      cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
     };
     await editor.load({ discard: true });
     expect(documentCommandState("table.shading", editor.snapshot())).toEqual({ available: true });
@@ -439,5 +452,21 @@ describe("DocxEditorSession", () => {
     expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
       { op: "tableRowHeight", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, height: 36, rule: "exact", clear: false, distribute: false },
     ]);
+    await flush();
+    expect(editor.execute("table.cellMargins", { command: "table.cellMargins", scope: "cell", top: 6, left: 12 }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableCellMargins", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, scope: "cell", top: 6, left: 12, reset: false },
+    ]);
+    await flush();
+    expect(editor.execute("table.cellMargins", { command: "table.cellMargins", scope: "cell", reset: true }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tableCellMargins", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, scope: "cell", reset: true },
+    ]);
+    await flush();
+    expect(editor.execute("table.positioning", { command: "table.positioning", align: "center", indentPt: 18 }).accepted).toBe(true);
+    expect(fake.calls.filter((c) => c.method === "edit").pop()?.args[3]).toEqual([
+      { op: "tablePositioning", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, align: "center", indentPt: 18 },
+    ]);
+    expect(editor.execute("table.positioning", { command: "table.positioning", align: "center", treatAsChar: false }).accepted).toBe(false);
   });
 });

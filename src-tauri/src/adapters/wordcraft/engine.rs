@@ -306,6 +306,29 @@ pub enum DocxOp {
         target: SelectionIdentity,
         payload: table::PasteTableCellsPayload,
     },
+    /// Stage 2 Phase 4 (P4-2): set selected-cell or table-default cell margins (pt) or reset override.
+    TableCellMargins {
+        target: SelectionIdentity,
+        scope: table::TableMarginScope,
+        #[serde(default)]
+        top: Option<f32>,
+        #[serde(default)]
+        right: Option<f32>,
+        #[serde(default)]
+        bottom: Option<f32>,
+        #[serde(default)]
+        left: Option<f32>,
+        #[serde(default)]
+        reset: bool,
+    },
+    /// Stage 2 Phase 4 (P4-2): set table alignment and/or left indent (pt).
+    TablePositioning {
+        target: SelectionIdentity,
+        #[serde(default)]
+        align: Option<table::TableAlign>,
+        #[serde(default)]
+        indent_pt: Option<f32>,
+    },
 }
 
 /// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
@@ -529,6 +552,23 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::PasteTableCells { target, payload } => {
                 let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && payload.valid()
+            }
+            DocxOp::TableCellMargins { target, scope, top, right, bottom, left, reset } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let sides_ok = [top, right, bottom, left].into_iter().all(|s| s.is_none_or(table::valid_docx_margin_pt));
+                let mode_ok = if *reset {
+                    *scope == table::TableMarginScope::Cell && [top, right, bottom, left].into_iter().all(|s| s.is_none())
+                } else {
+                    [top, right, bottom, left].into_iter().any(|s| s.is_some())
+                };
+                ok_key(&target.anchor_key) && ok_key(&target.caret_key) && sides_ok && mode_ok
+            }
+            DocxOp::TablePositioning { target, align, indent_pt } => {
+                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                ok_key(&target.anchor_key)
+                    && ok_key(&target.caret_key)
+                    && (align.is_some() || indent_pt.is_some())
+                    && indent_pt.is_none_or(table::valid_docx_indent_pt)
             }
             _ => true,
         })
@@ -1099,6 +1139,12 @@ impl DocxModel {
             }
             DocxOp::CutTableCells { target } => self.cut_table_cells(target),
             DocxOp::PasteTableCells { target, payload } => self.paste_table_cells(target, payload),
+            DocxOp::TableCellMargins { target, scope, top, right, bottom, left, reset } => {
+                self.table_cell_margins(target, *scope, *top, *right, *bottom, *left, *reset)
+            }
+            DocxOp::TablePositioning { target, align, indent_pt } => {
+                self.table_positioning(target, *align, *indent_pt)
+            }
         }
     }
 

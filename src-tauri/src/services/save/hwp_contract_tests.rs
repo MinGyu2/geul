@@ -3078,3 +3078,97 @@ fn stage2_p4_1_evolved_table_cell_formatted_edit_proven_or_refused() {
     let output_bad_attr = fixture_with(true, &[bad_attr], "Keep 한글");
     assert!(!only_stale_preview(&raw_findings(&original, &output_bad_attr, true)));
 }
+
+#[test]
+fn stage2_p4_2_table_margins_and_positioning_proven_or_refused() {
+    // 1. Evolved existing table: bounded positioning + table padding + cell inner margin pass T009.
+    let original = fixture_with(false, &[existing_nonbasic_table()], "Keep 한글");
+    let mut updated = existing_nonbasic_table();
+    {
+        let hdr = &mut updated[0].2;
+        let orig_attr = u32::from_le_bytes(hdr[4..8].try_into().unwrap());
+        d(hdr, 4, (orig_attr & !(0x07 << 10)) | (1 << 10)); // horz_align = Center
+        d(hdr, 12, 1800); // horz_offset = 18pt
+        for off in [28, 30, 32, 34] {
+            w(hdr, off, 600); // outer margin = 6pt
+        }
+    }
+    {
+        let tbl = updated.iter_mut().find(|r| r.0 == 77).unwrap();
+        for off in [10, 12, 14, 16] {
+            w(&mut tbl.2, off, 800); // table padding = 8pt
+        }
+    }
+    {
+        let c0 = updated.iter_mut().find(|r| r.0 == 72).unwrap();
+        let wref = u16::from_le_bytes(c0.2[6..8].try_into().unwrap());
+        w(&mut c0.2, 6, wref | 0x0001); // CELL_FLAG_HAS_MARGIN
+        for off in [24, 26, 28, 30] {
+            w(&mut c0.2, off, 1200); // cell inner padding = 12pt
+        }
+    }
+    let output_ok = fixture_with(true, &[updated.clone()], "Keep 한글");
+    let ok_findings = raw_findings(&original, &output_ok, true);
+    assert!(only_stale_preview(&ok_findings), "{ok_findings:?}");
+
+    // Negatives on evolved table: unsupported attr bit, out-of-range horzOffset, negative table/cell margin.
+    let mut bad_attr = updated.clone();
+    let orig_attr = u32::from_le_bytes(bad_attr[0].2[4..8].try_into().unwrap());
+    d(&mut bad_attr[0].2, 4, orig_attr ^ (1 << 21));
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_attr], "Keep 한글"), true)));
+
+    let mut bad_offset = updated.clone();
+    d(&mut bad_offset[0].2, 12, 40_000);
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_offset], "Keep 한글"), true)));
+
+    let mut bad_tbl_pad = updated.clone();
+    w(&mut bad_tbl_pad.iter_mut().find(|r| r.0 == 77).unwrap().2, 10, (-100i16) as u16);
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_tbl_pad], "Keep 한글"), true)));
+
+    let mut bad_cell_pad = updated.clone();
+    w(&mut bad_cell_pad.iter_mut().find(|r| r.0 == 72).unwrap().2, 24, (-50i16) as u16);
+    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_cell_pad], "Keep 한글"), true)));
+
+    // 2. Newly inserted basic table with bounded positioning & padding passes T009, out-of-range align fails.
+    let base = fixture_with(false, &[], "Keep 한글");
+    let orig_basic = edit_records(&base, "/DocInfo", |r| {
+        r.retain(|rec| rec.0 != 20);
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 0);
+    });
+    let mut new_tbl = table_control();
+    w(&mut new_tbl[1].2, 22, 1);
+    for cell in new_tbl.iter_mut().filter(|r| r.0 == 72) {
+        w(&mut cell.2, 32, 1);
+    }
+    d(&mut new_tbl[0].2, 4, 0x082a2210 | (1 << 10));
+    d(&mut new_tbl[0].2, 12, 1200);
+    w(&mut new_tbl[0].2, 28, 300);
+    for off in [10, 12, 14, 16] {
+        w(&mut new_tbl[1].2, off, 500);
+    }
+    w(&mut new_tbl[2].2, 6, 0x401);
+    w(&mut new_tbl[2].2, 24, 900);
+    let with_new = fixture_with(false, &[new_tbl], "Keep 한글");
+    let output_new_ok = edit_records(&with_new, "/DocInfo", |r| {
+        let mut basic = vec![0u8; 40];
+        for at in [2, 8, 14, 20] {
+            basic[at] = 1;
+            basic[at + 1] = 1;
+        }
+        basic[26] = 1;
+        r.retain(|rec| rec.0 != 20);
+        let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
+        r.insert(insert_at, (20, 1, basic));
+        let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+        d(id_map, 32, 1);
+    });
+    let new_ok_findings = raw_findings(&orig_basic, &output_new_ok, true);
+    assert!(only_stale_preview(&new_ok_findings), "{new_ok_findings:?}");
+
+    let new_bad_align = edit_records(&output_new_ok, "/BodyText/Section0", |r| {
+        let hdr = r.iter_mut().find(|rec| rec.0 == 71).unwrap();
+        d(&mut hdr.2, 4, 0x082a2210 | (4 << 10));
+    });
+    assert!(!only_stale_preview(&raw_findings(&orig_basic, &new_bad_align, true)));
+}

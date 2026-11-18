@@ -1,0 +1,137 @@
+diff --git a/crates/engine/src/cmd/table.rs b/crates/engine/src/cmd/table.rs
+index ddeab86..9ac493a 100644
+--- a/crates/engine/src/cmd/table.rs
++++ b/crates/engine/src/cmd/table.rs
+@@ -209,7 +209,7 @@ pub fn specs() -> Vec<CommandSpec> {
+         })
+         .params(r#"{"value"?: bool} (true: the first column stands at the right; without a value it toggles)"#)),
+         t(CommandSpec::new("table.properties", "Properties", "Table Layout › Table", properties).params(
+-            r#"{"align"?: "left|center|right", "rtl"?: bool, "width"?: pt|null, "widthPct"?: percent, "indent"?: pt, "rowHeight"?: pt|null, "rowHeightRule"?: "atLeast|exact", "allowBreak"?: bool, "headerRow"?: bool, "columnWidth"?: pt, "cellWidth"?: pt|null, "valign"?: "top|center|bottom"} (row, column and cell settings apply to the caret's; without settings it returns the current ones)"#,
++            r#"{"align"?: "left|center|right", "rtl"?: bool, "width"?: pt|null, "widthPct"?: percent, "indent"?: pt, "cellMargins"?: [top, left, bottom, right], "margins"?: [top, left, bottom, right]|null, "rowHeight"?: pt|null, "rowHeightRule"?: "atLeast|exact", "allowBreak"?: bool, "headerRow"?: bool, "columnWidth"?: pt, "cellWidth"?: pt|null, "valign"?: "top|center|bottom"} (row, column and cell settings apply to the caret/selection; without settings it returns the current ones)"#,
+         )),
+         CommandSpec::new("table.fromText", "Convert Text to Table", "Insert › Tables", from_text).params(r#"{"separator"?: "tab|comma"}"#),
+         CommandSpec::new("table.quick", "Quick Tables", "Insert › Tables", quick_table).params(r#"{"kind"?: "calendar|tabular|matrix"}"#),
+@@ -286,6 +286,8 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+         "width",
+         "widthPct",
+         "indent",
++        "cellMargins",
++        "margins",
+         "rowHeight",
+         "rowHeightRule",
+         "allowBreak",
+@@ -306,6 +308,26 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+         }
+         return Ok(out);
+     }
++    let parse_margins_4 = |raw: &Value, name: &str| -> Result<[f32; 4], CmdError> {
++        let arr = raw.as_array().filter(|a| a.len() == 4)
++            .ok_or_else(|| CmdError::Params(format!("`{name}` must be a 4-element [top, left, bottom, right] array")))?;
++        let mut out = [0.0f32; 4];
++        for (i, item) in arr.iter().enumerate() {
++            let val = item.as_f64().map(|x| x as f32).filter(|x| x.is_finite() && (0.0..=144.0).contains(x))
++                .ok_or_else(|| CmdError::Params(format!("`{name}` sides must be finite numbers in 0..=144 pt")))?;
++            out[i] = val;
++        }
++        Ok(out)
++    };
++    let table_cell_margins = match v.get("cellMargins") {
++        None => None,
++        Some(raw) => Some(parse_margins_4(raw, "cellMargins")?),
++    };
++    let cell_override_margins = match v.get("margins") {
++        None => None,
++        Some(Value::Null) => Some(None),
++        Some(raw) => Some(Some(parse_margins_4(raw, "margins")?)),
++    };
+     let align = match p::str(v, "align") {
+         None => None,
+         Some("left") => Some(Align::Left),
+@@ -342,6 +364,12 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+     let column_width = p::f32(v, "columnWidth").map(|x| x.clamp(6.0, 1584.0));
+     let cell_width = size("cellWidth", 6.0, 1584.0);
+     let rtl = p::bool(v, "rtl");
++    let sel_cells = selected_cells(s);
++    if (align.is_some() || indent.is_some())
++        && s.doc.table(s.sel.focus.story, &tp).is_some_and(|t| t.props.float.is_some())
++    {
++        return Err(CmdError::Disabled("floating table positioning uses tblpPr".into()));
++    }
+     with_table(s, |t| {
+         if let Some(a) = align {
+             t.props.align = Some(a);
+@@ -352,6 +380,9 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+         if let Some(i) = indent {
+             t.props.indent = Some(i);
+         }
++        if let Some(cm) = table_cell_margins {
++            t.props.cell_margins = Some(cm);
++        }
+         if let Some(cw) = column_width {
+             set_column_width(t, r, c, cw);
+         }
+@@ -386,6 +417,13 @@ fn properties(s: &mut Session, v: &Value) -> CmdResult {
+                 }
+             }
+         }
++        if let Some(opt_m) = cell_override_margins {
++            for &(sr, sc) in &sel_cells {
++                if let Some(cl) = t.rows.get_mut(sr).and_then(|row| row.cells.get_mut(sc)) {
++                    cl.props.margins = opt_m;
++                }
++            }
++        }
+     })
+ }
+ 
+@@ -2286,4 +2324,50 @@ mod tests {
+         let reopened = crate::io::open_bytes("table_clip.docx", &bytes).unwrap();
+         assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
+     }
++
++    #[test]
++    fn cell_margins_and_table_positioning_preserve_unrelated_and_roundtrip() {
++        use wordcraft_doc::props::Align;
++        let mut s = new_session();
++        s.run("insert.table", &json!({ "rows": 2, "cols": 2 })).unwrap();
++        s.run("caret.set", &json!({"pos": {"story": "body", "path": [0, 0, 0, 0], "off": 0}})).unwrap();
++        // Table-wide cellMargins + align + indent
++        s.run("table.properties", &json!({
++            "cellMargins": [4.0, 8.0, 4.0, 8.0],
++            "align": "center",
++            "indent": 18.0
++        })).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.props.cell_margins, Some([4.0, 8.0, 4.0, 8.0]));
++        assert_eq!(t.props.align, Some(Align::Center));
++        assert_eq!(t.props.indent, Some(18.0));
++
++        // Per-cell margin override on cell (0,0), leaving (0,1) inheriting table default
++        s.run("table.properties", &json!({ "margins": [10.0, 12.0, 10.0, 12.0] })).unwrap();
++        let t = s.doc.body[0].as_table().unwrap();
++        assert_eq!(t.rows[0].cells[0].props.margins, Some([10.0, 12.0, 10.0, 12.0]));
++        assert_eq!(t.rows[0].cells[1].props.margins, None);
++
++        // Undo restores pre-override state cleanly; Redo restores override; reset clears override
++        assert!(s.undo());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.margins, None);
++        assert!(s.redo());
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.margins, Some([10.0, 12.0, 10.0, 12.0]));
++
++        let bytes = crate::io::save_bytes("table_margins.docx", &s.doc).unwrap();
++        let reopened = crate::io::open_bytes("table_margins.docx", &bytes).unwrap();
++        assert_eq!(roundtrip_equivalent(&s.doc, &reopened), Ok(true));
++        let rt = reopened.body[0].as_table().unwrap();
++        assert_eq!(rt.props.cell_margins, Some([4.0, 8.0, 4.0, 8.0]));
++        assert_eq!(rt.props.align, Some(Align::Center));
++        assert_eq!(rt.props.indent, Some(18.0));
++        assert_eq!(rt.rows[0].cells[0].props.margins, Some([10.0, 12.0, 10.0, 12.0]));
++        assert_eq!(rt.rows[0].cells[1].props.margins, None);
++
++        // Reset cell override to None -> inherits table default
++        s.run("table.properties", &json!({ "margins": null })).unwrap();
++        assert_eq!(s.doc.body[0].as_table().unwrap().rows[0].cells[0].props.margins, None);
++        // Out-of-range margin rejected
++        assert!(s.run("table.properties", &json!({ "margins": [-1.0, 0.0, 0.0, 0.0] })).is_err());
++    }
+ }
