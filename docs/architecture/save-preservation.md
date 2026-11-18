@@ -1818,3 +1818,15 @@ IBus 한글 모드로 입력한 뒤 Esc로 나왔다. 저장·닫기·네이티�
 독립 ZIP/XML 검사에서 `한글`은 `w:txbxContent`에, `Host`는
 본문에 있었다. 변경된 부분은 `word/document.xml` 및
 `docProps/app.xml`뿐이었다. T009의 패키지 허용 규칙은 추가하지 않았다.
+
+### P4 차트와 SmartArt 보존 확인
+
+Linux X11 Release에서 DOCX 차트·SmartArt와 HWPX/HWP 본문 차트를
+선택·조회하고 닫기·네이티브 열기로 다시 확인했다. 원본 파일 바이트는 세
+형식 모두 일치했다. Rust에서는 DOCX 차트 제목 변경과 SmartArt 항목
+변경 후보를 각각 `word/charts/` 및 `word/diagrams/` 부분 변경으로
+T009가 거부했다. RHWP Release의 HWP 차트값 변경 후보는
+`BinData/BIN0001.OLE` 변경으로 T009가 거부했다. HWPX 시험 원본은
+편집 후보 내보내기에서 기존 매니페스트 항목 `ole1`을 보존하지 못해 엔진이
+거부했다. 편집·게시·Undo/Redo는 수용하지 않았고 허용 규칙도 추가하지
+않았다.

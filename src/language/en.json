@@ -1,4 +1,9 @@
 {
+  "properties.graphic.plot": "Chart type",
+  "properties.graphic.layout": "Layout",
+  "properties.graphic.title": "Title",
+  "properties.graphic.data": "Chart data",
+  "properties.graphic.series": "Series {number}",
   "command.insert.textBox": "Text box",
   "command.textBox.exit": "Leave text box",
   "commandInput.shape.kind": "Shape",

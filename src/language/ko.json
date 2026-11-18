@@ -1,4 +1,9 @@
 {
+  "properties.graphic.plot": "차트 종류",
+  "properties.graphic.layout": "레이아웃",
+  "properties.graphic.title": "제목",
+  "properties.graphic.data": "차트 데이터",
+  "properties.graphic.series": "계열 {number}",
   "command.insert.textBox": "글상자",
   "command.textBox.exit": "글상자에서 나가기",
   "commandInput.shape.kind": "도형 종류",

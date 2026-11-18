@@ -5371,3 +5371,75 @@ fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document()
     assert_eq!(model.export().unwrap(), baseline);
     assert!(model.same_as(&baseline));
 }
+
+#[test]
+fn stage3_docx_graphic_inspection_preserves_models_and_package() {
+    use wordcraft_engine::doc::{InlineObject, PartKind};
+    use wordcraft_engine::{io, Session};
+    use crate::services::save::service;
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("insert.chart", &json!({"type":"line", "title":"Revenue"})).unwrap();
+    source.run("select.collapse", &json!({"end":true})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("insert.smartArt", &json!({"layout":"process"})).unwrap();
+    let bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut reopen = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
+    let mut model = DocxModel::open(&bytes).unwrap();
+    let original = model.export().unwrap();
+    let layout = reopen.layout();
+    let mut frames = Vec::new();
+    for kind in ["chart", "smartArt"] {
+        let object = layout.find_object(0, |hit| {
+            let pos = hit.pos();
+            reopen.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).is_some_and(|o|
+                matches!(o, InlineObject::Graphic { graphic, .. } if (kind == "chart" && graphic.chart.is_some()) || (kind == "smartArt" && graphic.smart_art.is_some())))
+        }).unwrap();
+        let x = object.rect.x + object.rect.w / 2.0;
+        let y = object.rect.y + object.rect.h / 2.0;
+        let result = model.apply(&[DocxOp::Pointer {
+            page: object.page as u32, x, y, extend: false, before_insert: false, drag: false, select_object: true,
+        }]);
+        assert_eq!(result.changed, 0);
+        let view = serde_json::to_value(model.view()).unwrap();
+        assert_eq!(view["object"]["kind"], kind);
+        let details = &view["object"]["graphic"];
+        if kind == "chart" {
+            assert_eq!(details["plot"], "line");
+            assert_eq!(details["title"], "Revenue");
+            assert_eq!(details["series"][0]["values"][0], "3.2");
+        } else {
+            assert_eq!(details["layout"], "process");
+            assert_eq!(details["items"][0]["text"], "Plan");
+        }
+        frames.push(json!({"kind": kind, "page": object.page, "x": x, "y": y}));
+    }
+    assert_eq!(model.export().unwrap(), original);
+    assert!(model.same_as(&original));
+    assert!(reopen.doc.parts.values().all(|p| p.kind != PartKind::TextBox));
+
+    reopen.run("select.objects", &json!({"index":0})).unwrap();
+    reopen.run("chart.title", &json!({"text":"Changed"})).unwrap();
+    let changed = io::save_bytes("fixture.docx", &reopen.doc).unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, true);
+    use crate::services::save::preserve::FindingCode;
+    assert!(gate.findings.iter().any(|f| f.code == FindingCode::PartChanged
+        && f.part.as_deref().is_some_and(|name| name.starts_with("word/charts/"))), "{gate:?}");
+
+    let mut diagram = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
+    diagram.run("select.objects", &json!({"index":1})).unwrap();
+    diagram.run("smartArt.items", &json!({"items":["Changed", "Original"]})).unwrap();
+    let changed = io::save_bytes("fixture.docx", &diagram.doc).unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &bytes, &changed, None, true);
+    assert!(gate.findings.iter().any(|f| f.code == FindingCode::PartChanged
+        && f.part.as_deref().is_some_and(|name| name.starts_with("word/diagrams/"))), "{gate:?}");
+
+    if let Some(out) = std::env::var_os("GEUL_STAGE3_GRAPHIC_FIXTURE") {
+        let dir = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("graphics.docx"), bytes).unwrap();
+        std::fs::write(dir.join("graphics-frames.json"), serde_json::to_vec(&frames).unwrap()).unwrap();
+    }
+}

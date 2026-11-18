@@ -1,3 +1,4 @@
+import type { GraphicProperties } from "./graphicProperties";
 import type { SessionId } from "../adapters/contract";
 
 export const OBJECT_KINDS = ["picture", "shape", "textBox", "chart", "smartArt", "group", "embedded", "equation"] as const;
@@ -25,6 +26,7 @@ export interface ObjectHit {
   frame: ObjectFrame;
   epoch: number;
   picture?: PictureProperties;
+  graphic?: GraphicProperties;
 }
 
 export interface ObjectSelection extends ObjectHit {

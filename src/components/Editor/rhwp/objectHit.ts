@@ -7,6 +7,7 @@ interface ControlHit {
   plane: number;
   zOrder: number;
   bodyPicture?: readonly [number, number, number];
+  bodyEmbedded?: readonly [number, number, number];
 }
 
 const kinds = new Map<string, ObjectKind>([
@@ -46,10 +47,16 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
   const duplicates = new Set<string>();
   for (const control of layout.controls as unknown[]) {
     if (!record(control)) continue;
-    const { type, stableIndex: path, plane, zOrder, x: left, y: topEdge, w: width, h: height } = control;
+    const { type, stableIndex, plane, zOrder, x: left, y: topEdge, w: width, h: height } = control;
     const kind = typeof type === "string" ? kinds.get(type) : undefined;
-    if (!kind || !Array.isArray(path) || path.length === 0 || path.length > 64 || !path.every(index)
-      || !index(control.secIdx) || !index(control.paraIdx) || !index(control.controlIdx)) continue;
+    if (!kind || !index(control.secIdx) || !index(control.paraIdx) || !index(control.controlIdx)) continue;
+    const body = !["headerFooter", "noteRef", "cellPath", "cellIdx", "outerTableControlIdx"].some(key => key in control);
+    const address = [control.secIdx, control.paraIdx, control.controlIdx] as const;
+    // RHWP's raw OLE preview nodes can carry the actual control address
+    // without a renderer sort path. Only the direct body form is unambiguous.
+    const path = Array.isArray(stableIndex) && stableIndex.length === 0 && kind === "embedded" && body
+      ? address : stableIndex;
+    if (!Array.isArray(path) || path.length === 0 || path.length > 64 || !path.every(index)) continue;
     const key = path.join(".");
     if (addresses.has(key)) duplicates.add(key);
     addresses.add(key);
@@ -61,9 +68,9 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
       : x >= left && x < left + width && y >= topEdge && y < topEdge + height;
     if (!contains) continue;
     const candidate: ControlHit = { kind, path: [...path], plane, zOrder, frame: { page, x: left, y: topEdge, width, height } };
-    if (kind === "picture" && path.length === 3 && path[0] === control.secIdx && path[1] === control.paraIdx
-      && path[2] === control.controlIdx && !["headerFooter", "noteRef", "cellPath", "cellIdx", "outerTableControlIdx"].some(key => key in control)) {
-      candidate.bodyPicture = [control.secIdx, control.paraIdx, control.controlIdx];
+    if (body && path.length === 3 && address.every((index, i) => path[i] === index)) {
+      if (kind === "picture") candidate.bodyPicture = address;
+      if (kind === "embedded") candidate.bodyEmbedded = address;
     }
     if (!top || above(candidate, top)) {
       top = candidate;

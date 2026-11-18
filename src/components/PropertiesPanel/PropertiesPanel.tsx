@@ -1,3 +1,4 @@
+import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
 import type { ObjectSelection, PictureProperties, PictureResizeRequest } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
@@ -57,6 +58,7 @@ export function PropertiesPanel({ state, onClose, onPictureResize }: PropertiesP
                     <dt>{t("properties.picture.wrap")}</dt><dd>{t(`properties.picture.wrap.${picture.wrap}`)}</dd>
                     {picture.description && <><dt>{t("properties.picture.description")}</dt><dd>{picture.description}</dd></>}
                   </dl>}
+                  {object.graphic && <GraphicDetails graphic={object.graphic} />}
                   {picture && onPictureResize && object.operations.includes("resize") && (
                     <PictureSizeFields key={`${object.sessionId}:${object.loadGeneration}:${object.revision}:${object.epoch}`}
                       selection={object} picture={picture} onApply={onPictureResize}
@@ -134,5 +136,35 @@ function PictureSizeFields({ selection, picture, onApply, disabled }: {
       <button type="submit" className="document-bar__button" disabled={disabled || !valid
         || (widthPt === picture.widthPt && heightPt === picture.heightPt)}>{t("command.picture.size")}</button>
     </form>
+  );
+}
+
+function GraphicDetails({ graphic }: { graphic: GraphicProperties }) {
+  const { t } = useTranslation();
+  if (graphic.kind === "smartArt") return (
+    <>
+      <dl><dt>{t("properties.graphic.layout")}</dt><dd>{graphic.layout}</dd></dl>
+      <ul>{graphic.items.map((item, index) => (
+        <li key={index} style={{ marginInlineStart: item.level * 10 }}>{item.text}</li>
+      ))}</ul>
+    </>
+  );
+  return (
+    <>
+      <dl>
+        <dt>{t("properties.graphic.plot")}</dt><dd>{graphic.plot}</dd>
+        {graphic.title && <><dt>{t("properties.graphic.title")}</dt><dd>{graphic.title}</dd></>}
+      </dl>
+      <details>
+        <summary>{t("properties.graphic.data")}</summary>
+        {graphic.labels.length > 0 && <p>{graphic.labels.join(" · ")}</p>}
+        <dl>{graphic.series.map((series, index) => (
+          <div key={index}>
+            <dt>{series.name || t("properties.graphic.series", { number: index + 1 })}</dt>
+            <dd>{series.values.map(value => value ?? "—").join(" · ")}</dd>
+          </div>
+        ))}</dl>
+      </details>
+    </>
   );
 }

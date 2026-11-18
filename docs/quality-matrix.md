@@ -197,7 +197,10 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 개체 이동·삭제 | UNSUPPORTED | UNSUPPORTED | BLOCKED | 이동 계약 미검증, HWP 삭제 후보 거부 |
 | 사각형·타원·선 삽입 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
 | 글상자 삽입·내부 텍스트 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
-| 그 밖의 그림 서식·도형 서식·차트·SmartArt·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
+| 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
+| SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
+| 차트·SmartArt 편집 | BLOCKED | BLOCKED | BLOCKED | 차트·다이어그램 부분 및 OLE 변경 보존 관문 |
+| 그 밖의 그림 서식·도형 서식·구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | Stage 3 해당 기능 수용 미완료 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,

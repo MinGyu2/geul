@@ -1,5 +1,6 @@
 import { pictureResizeMatches, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
 import { hitRhwpObject } from "./objectHit";
+import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -1651,6 +1652,19 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.moveTo(next, false);
   }
 
+  private readChart(address: readonly [number, number, number] | undefined) {
+    const doc = this.doc;
+    if (!doc?.getChartData || !address) return undefined;
+    try {
+      if (address[1] >= doc.getParagraphCount(address[0])) return undefined;
+      const raw = JSON.parse(doc.getChartData(...address)) as { ok?: boolean; plot?: unknown; labels?: unknown; series?: unknown };
+      if (raw?.ok !== true) return undefined;
+      return parseGraphicProperties({ kind: "chart", plot: raw.plot, title: null, labels: raw.labels, series: raw.series });
+    } catch {
+      return undefined;
+    }
+  }
+
   /** 페이지 좌표(배율 1)를 클릭했다. extend면 선택을 넓힌다. */
   pointAt(page: number, x: number, y: number, extend: boolean, drag = false, selectObject = false): boolean {
     if (!this.doc || !this.editable || (drag && this.objectSelection)) return false;
@@ -1663,17 +1677,19 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const address = hit.bodyPicture;
           const body = address && address[1] < this.doc.getParagraphCount(address[0]);
           const inspected = body ? inspectRhwpPicture(this.doc, address) : undefined;
+          const graphic = this.readChart(hit.bodyEmbedded);
           const canResize = inspected?.simpleInline && this.doc.setPictureProperties && this.history
             && this.sessions.get(this.sessionId)?.format === "hwpx";
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(canResize && address ? { pictureAddress: address } : {}),
             selection: {
-              kind: hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
+              kind: graphic?.kind ?? hit.kind, frame: hit.frame, address: { engine: "rhwp", path: hit.path },
               epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
               revision: this.committed + this.pending, editable: Boolean(canResize),
               operations: canResize ? ["deselect", "resize"] : ["deselect"],
               ...(inspected ? { picture: inspected.properties } : {}),
+              ...(graphic ? { graphic } : {}),
             },
           };
           this.emit();

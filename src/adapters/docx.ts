@@ -1,3 +1,4 @@
+import { parseGraphicProperties } from "../commands/graphicProperties";
 import { OBJECT_KINDS, PICTURE_WRAPS, type ObjectHit, type PictureProperties, type BasicShape } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
@@ -652,7 +653,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: ObjectHit | undefined;
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -663,6 +664,11 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       const picture = parsePictureView(raw.picture);
       if (kind !== "picture" || !picture) return null;
       object.picture = picture;
+    }
+    if ("graphic" in raw) {
+      const graphic = parseGraphicProperties(raw.graphic);
+      if (!graphic || graphic.kind !== kind) return null;
+      object.graphic = graphic;
     }
     if (parsedCaret || parsedSelection.length > 0) return null;
   }

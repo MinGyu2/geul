@@ -648,6 +648,8 @@ pub struct ObjectView {
     epoch: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     picture: Option<PictureView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    graphic: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1673,6 +1675,32 @@ impl DocxModel {
         }
     }
 
+    fn graphic_properties(&self, pos: &Pos) -> Option<Value> {
+        let InlineObject::Graphic { graphic, .. } = self.object_at(pos)? else { return None };
+        if let Some(chart) = &graphic.chart {
+            let bounded = |s: &str| s.len() <= 1024;
+            if chart.categories.len() > 128
+                || !chart.categories.iter().all(|s| bounded(s))
+                || chart.title.as_deref().is_some_and(|s| !bounded(s))
+                || chart.series.len() > 16
+                || chart.series.iter().any(|s| !bounded(&s.name) || s.values.len() > 128)
+            {
+                return None;
+            }
+            let series: Vec<Value> = chart.series.iter().map(|s| {
+                let values: Vec<Option<String>> = s.values.iter().map(|v| v.map(|n| n.to_string())).collect();
+                json!({"name": s.name, "values": values})
+            }).collect();
+            return Some(json!({"kind": "chart", "plot": chart.kind.id(), "title": chart.title,
+                "labels": chart.categories, "series": series}));
+        }
+        let art = graphic.smart_art.as_ref()?;
+        if art.items.len() > 128 || art.items.iter().any(|i| i.text.len() > 1024 || i.level > 7) {
+            return None;
+        }
+        Some(json!({"kind": "smartArt", "layout": art.layout.id(), "items": art.items}))
+    }
+
     pub fn view(&mut self) -> DocxView {
         self.sync_fonts();
         let layout = self.session.layout();
@@ -1701,6 +1729,7 @@ impl DocxModel {
                 frame: RectView { page: hit.page, x: bounds.x, y: bounds.y, width: bounds.w, height: bounds.h },
                 epoch: self.object_epoch,
                 picture,
+                graphic: self.graphic_properties(pos),
             })
         });
         if object.is_none() {
