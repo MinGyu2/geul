@@ -280,6 +280,17 @@ export class FakeDocx implements DocxBackend {
     return { ok: true, value: this.tableCellsSelection ?? "" };
   }
 
+  /** Stage 3 P5: the engine payload this fake returns for the selected object (null: refused). */
+  objectSelectionPayload: string | null = null;
+  async selectionObject(sessionId: number, generation: number, revision: number, position: string, epoch: number): Promise<Result<string>> {
+    const checked = this.check(sessionId, generation);
+    if (!checked.ok) return checked;
+    const object = checked.value.view.object;
+    if (revision !== this.info.revision || !object || object.address.engine !== "wordcraft" || object.address.position !== position
+      || object.epoch !== epoch || this.objectSelectionPayload === null) return { ok: false, error: { code: "InvalidRequest" } };
+    return { ok: true, value: this.objectSelectionPayload };
+  }
+
   /** Test hook for structured table cell clipboard selection. */
   tableCellsSelection: string | null = null;
   pastedTableCells: unknown[] = [];

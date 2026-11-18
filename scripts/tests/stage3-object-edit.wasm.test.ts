@@ -22,6 +22,17 @@ type Frame = { x: number; y: number; w: number; h: number };
 const images = (doc: RhwpDocument) => JSON.parse(doc.getPageControlLayout!(0)).controls
   .filter((control: { type: string }) => control.type === "image") as Frame[];
 const out = process.env.GEUL_STAGE3_OUT;
+/** The save path's reopen evidence (RhwpEditorSession export check): pages, text and controls equal, no loss. */
+function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string) {
+  const reopened = new engine.HwpDocument(bytes) as RhwpDocument & { getControls(): string; getTextFileText(): string };
+  const live = doc as RhwpDocument & { getControls(): string; getTextFileText(): string };
+  try {
+    expect(JSON.parse(report)).toMatchObject({ count: 0 });
+    expect(reopened.pageCount()).toBe(live.pageCount());
+    expect(reopened.getTextFileText()).toBe(live.getTextFileText());
+    expect(reopened.getControls()).toBe(live.getControls());
+  } finally { reopened.free(); }
+}
 
 /** One inline picture (control 2) and one floating picture (control 3) in the first paragraph. */
 function source(format: "hwp" | "hwpx"): Uint8Array {
@@ -127,6 +138,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       try {
         const report = exported.contentLoss();
         const edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
         const reopened = new engine.HwpDocument(edited) as RhwpDocument;
         try {
           expect(images(reopened)).toHaveLength(1);
@@ -179,6 +191,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       try {
         const report = exported.contentLoss();
         const edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
         const reopened = new engine.HwpDocument(edited) as RhwpDocument;
         try {
           expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({

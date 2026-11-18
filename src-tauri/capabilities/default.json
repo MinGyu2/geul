@@ -19,6 +19,7 @@
     "allow-docx-view",
     "allow-docx-selection-text",
     "allow-docx-selection-table-cells",
+    "allow-docx-selection-object",
     "allow-clipboard-read-text",
     "allow-picture-import",
     "allow-docx-edit",

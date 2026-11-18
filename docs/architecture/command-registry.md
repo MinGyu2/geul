@@ -1156,3 +1156,23 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 - RHWP: 차트는 계속 조회 전용(`editable:false`). 원인은 형식별 표 참조.
 - 속성 창: 제목 적용/제거, 종류 선택, 항목·계열 이름·값 격자(빈 칸 = 값 없음, 숫자가 아니면 적용 비활성), SmartArt 항목 텍스트
   (앞 공백 두 칸 = 한 단계)와 레이아웃.
+
+### P5 구조 개체 클립보드 v2 (2026-11-19)
+
+봉투: `{kind:"geul.object", version:2, sourceFormat:"docx", object:"picture"|"shape"|"textBox"|"group", engine:{fragment, media}, token}`
+(직렬화 12 MiB 이하, 미디어 16개·해독 8 MiB 이하). 평문 표지 `Geul <object> [token]`. v1(기본 도형)은 호환으로 계속 받는다.
+
+- 복사: 선택이 본문 DOCX 그림·도형·글상자·그룹이면 `docx_selection_object(session, generation, revision, position, epoch)`가 선택 정체성을
+  확인하고 `copy_range` 조각(그 개체 한 글자 문단 + 글상자 story)과 쓰는 미디어(PNG/JPEG만, SHA-256)를 낸다. OLE·차트·SmartArt는 거부.
+- 붙여넣기: `DocxOp::PasteObject`. 요청 검증(문단 1개·개체 1개·유한 크기·글상자 story 정확히 1개·미디어 키 일대일) → 해독·해시·형식 확인 →
+  `atomic` 안에서 대상 문서에 미디어 추가(같은 바이트면 공유) 후 조각의 키를 대상 키로 바꾸고 WordCraft `edit.paste`로 한 단계 삽입 →
+  편집 전 내보내기 대비 `check_saved`·`same_as`. 그리기 삽입 위치 규칙(본문 끝 커서, 다른 story 그림 없음)을 따른다. 사용자의 WordCraft 내부
+  클립보드는 복원한다. Undo/Redo 뒤 붙여넣기가 더한 미디어 중 참조가 없는 것은 모델에서 지운다(저장 시 고아 부분 방지).
+- 잘라내기: 복사 뒤 `object.edit` 삭제 경로. RHWP에는 개체 복사가 없고, DOCX 페이로드는 RHWP `insertStructured`가 거부한다.
+- 시스템 클립보드: 구조 MIME 쓰기 경로가 없어 평문 표지 + 앱 내 기억으로 전달한다. 표지가 다른 앱의 글로 바뀌면 기억을 버린다.
+
+### Stage 3 결합 네이티브 수정 (2026-11-19)
+
+- HWPX `insert.shape`: 생성 직후 같은 이력 트랜잭션에서 `setShapeProperties({textWrap:"Square"})`로 배치 비트를 동기화하고 다시 읽어
+  확인한다(이 없이 저장하면 재열기 컨트롤 비교가 실패).
+- HWPX 도형 `zOrder`는 제공하지 않는다(`changeShapeZOrder` 결과가 HWPX 재열기에서 유지되지 않음).

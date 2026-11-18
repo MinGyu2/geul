@@ -166,6 +166,10 @@ pub enum DocxOp {
     },
     TextBox {},
     CutShape { position: String, epoch: u64 },
+    /// Stage 3 P5: paste a structured object payload (validated before any mutation).
+    PasteObject {
+        payload: Box<ObjectPayload>,
+    },
     /// Stage 3: an edit of the selected drawing. `position`/`epoch` must name the current object selection
     /// (stale selections are rejected); the change must pass the DOCX T009 check against the pre-edit export.
     ObjectEdit {
@@ -436,6 +440,120 @@ impl BasicShape {
             Self::Ellipse => "ellipse",
             Self::Line => "line",
         }
+    }
+}
+
+/// Stage 3 P5 structured object clipboard payload (untrusted on paste).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectPayload {
+    /// One paragraph holding exactly the copied drawing (WordCraft fragment), plus its text box story.
+    pub fragment: wordcraft_engine::doc::edit::Fragment,
+    /// Media the drawing uses, by its key in the fragment.
+    pub media: Vec<PayloadMedia>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PayloadMedia {
+    pub name: String,
+    pub sha256: String,
+    pub data: String,
+}
+
+pub const MAX_PAYLOAD_MEDIA: usize = 16;
+pub const MAX_PAYLOAD_MEDIA_BYTES: usize = 8 * 1024 * 1024;
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// The image keys a drawing uses (pictures, also inside groups).
+fn drawing_media(object: &InlineObject, out: &mut Vec<String>, depth: usize) -> bool {
+    if depth > 8 {
+        return false;
+    }
+    match object {
+        InlineObject::Image {
+            media, ole: None, ..
+        } => {
+            out.push(media.clone());
+            true
+        }
+        InlineObject::Image { ole: Some(_), .. } => false,
+        InlineObject::Group { children, .. } => children
+            .iter()
+            .all(|c| drawing_media(&c.obj, out, depth + 1)),
+        InlineObject::Shape { .. } => true,
+        // Charts/SmartArt would add chart/diagram parts; there is no T009 proof for that yet.
+        _ => false,
+    }
+}
+
+impl ObjectPayload {
+    /// Structural validation of an untrusted payload. Returns the drawing on success.
+    fn drawing(&self) -> Option<&InlineObject> {
+        use wordcraft_engine::doc::para::OBJ;
+        let [block] = self.fragment.blocks.as_slice() else {
+            return None;
+        };
+        let para = block.as_para()?;
+        if para.text != OBJ.to_string() || para.objects.len() != 1 || para.object_offsets() != [0] {
+            return None;
+        }
+        let object = para.object_at(0)?;
+        let (w, h, float) = object.frame()?;
+        let bounded = |v: f32, lo: f32, hi: f32| v.is_finite() && (lo..=hi).contains(&v);
+        if !bounded(w, 0.5, MAX_OBJECT_SIDE_PT)
+            || !bounded(h, 0.5, MAX_OBJECT_SIDE_PT)
+            || !bounded(float.x, -MAX_PAGE_SIDE_PT, MAX_PAGE_SIDE_PT)
+            || !bounded(float.y, -MAX_PAGE_SIDE_PT, MAX_PAGE_SIDE_PT)
+            || !float.rot.is_finite()
+        {
+            return None;
+        }
+        let mut media = Vec::new();
+        if !drawing_media(object, &mut media, 0) {
+            return None;
+        }
+        // A text box brings exactly its own story: plain paragraphs, no objects, bounded text.
+        let story = object.text_box();
+        match (story, self.fragment.parts.len()) {
+            (None, 0) => {}
+            (Some(id), 1) => {
+                let part = self.fragment.parts.get(&id)?;
+                if part.kind != wordcraft_engine::doc::PartKind::TextBox || part.blocks.len() > 256
+                {
+                    return None;
+                }
+                let mut chars = 0usize;
+                for b in &part.blocks {
+                    let p = b.as_para()?;
+                    chars += p.text.len();
+                    if !p.objects.is_empty() || chars > 64 * 1024 || p.text.contains(OBJ) {
+                        return None;
+                    }
+                }
+            }
+            _ => return None,
+        }
+        // Every media key is carried exactly once, and nothing else is.
+        media.sort();
+        media.dedup();
+        let mut names: Vec<&str> = self.media.iter().map(|m| m.name.as_str()).collect();
+        names.sort_unstable();
+        if names.len() != self.media.len()
+            || names.windows(2).any(|w| w[0] == w[1])
+            || media != names
+            || self.media.len() > MAX_PAYLOAD_MEDIA
+        {
+            return None;
+        }
+        Some(object)
     }
 }
 
@@ -753,6 +871,11 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::Font { name } => valid_font_name(name),
             DocxOp::CutShape { position, epoch } => {
                 !position.is_empty() && position.len() <= 256 && *epoch > 0
+            }
+            DocxOp::PasteObject { payload } => {
+                payload.media.iter().map(|m| m.data.len()).sum::<usize>()
+                    <= MAX_PAYLOAD_MEDIA_BYTES.div_ceil(3) * 4
+                    && payload.drawing().is_some()
             }
             DocxOp::ObjectEdit {
                 position,
@@ -1137,6 +1260,9 @@ pub struct DocxModel {
     selected_object: Option<(Pos, usize)>,
     /// Object to keep selected after a successful `ObjectEdit` (set by it, taken by `apply`).
     reselect: Option<(Pos, usize)>,
+    /// Media keys added by structured pastes: removed again when history leaves them unreferenced
+    /// (they are added just before the paste command, outside its undo snapshot).
+    pasted_media: Vec<String>,
     object_epoch: u64,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
@@ -1260,6 +1386,7 @@ impl DocxModel {
             session,
             selected_object: None,
             reselect: None,
+            pasted_media: Vec::new(),
             object_epoch: 0,
             created_shapes: Vec::new(),
             marks: Vec::new(),
@@ -1528,6 +1655,7 @@ impl DocxModel {
                 epoch,
                 edit,
             } => self.object_edit(position, *epoch, edit),
+            DocxOp::PasteObject { payload } => self.paste_object(payload),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -1785,6 +1913,7 @@ impl DocxModel {
         }
         let before = self.session.doc.clone();
         self.run(if redo { "edit.redo" } else { "edit.undo" }, json!({}))?;
+        self.prune_pasted_media();
         self.marks.clear();
         self.last_insert = None;
         Ok(before != self.session.doc)
@@ -2182,6 +2311,167 @@ impl DocxModel {
         }
         para.touch();
         Ok(())
+    }
+
+    /// Drop pasted media that no picture references any more (after undo).
+    fn prune_pasted_media(&mut self) {
+        if self.pasted_media.is_empty() {
+            return;
+        }
+        let mut used = Vec::new();
+        let doc = &self.session.doc;
+        let mut stories = vec![StoryRef::Body];
+        stories.extend(doc.parts.keys().map(|id| StoryRef::Part(*id)));
+        for story in stories {
+            for path in doc.para_paths(story) {
+                if let Some(para) = doc.para(story, &path) {
+                    for object in &para.objects {
+                        drawing_media(object, &mut used, 0);
+                    }
+                }
+            }
+        }
+        let pasted = std::mem::take(&mut self.pasted_media);
+        for key in pasted {
+            if used.contains(&key) {
+                self.pasted_media.push(key);
+            } else {
+                self.session.doc.media.remove(&key);
+            }
+        }
+    }
+
+    /// The structured clipboard payload for the selected drawing (`position`/`epoch` must match).
+    pub fn clipboard_object(&self, position: &str, epoch: u64) -> Option<String> {
+        let (pos, _) = self.selected_object.clone()?;
+        if epoch != self.object_epoch
+            || position_key(&pos) != position
+            || pos.story != StoryRef::Body
+        {
+            return None;
+        }
+        let end = Pos {
+            off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+            ..pos.clone()
+        };
+        let fragment = self.session.doc.copy_range(&pos, &end);
+        let object = fragment.blocks.first()?.as_para()?.object_at(0)?.clone();
+        let mut keys = Vec::new();
+        if !drawing_media(&object, &mut keys, 0) {
+            return None;
+        }
+        keys.sort();
+        keys.dedup();
+        let mut media = Vec::new();
+        let mut total = 0usize;
+        for key in keys {
+            let bytes = self.session.doc.media.get(&key)?;
+            total += bytes.len();
+            if total > MAX_PAYLOAD_MEDIA_BYTES || !crate::picture::valid(bytes) {
+                return None;
+            }
+            media.push(PayloadMedia {
+                name: key,
+                sha256: sha256_hex(bytes),
+                data: wordcraft_engine::cmd::insert::base64_encode(bytes),
+            });
+        }
+        let payload = ObjectPayload { fragment, media };
+        payload.drawing()?;
+        serde_json::to_string(&payload).ok()
+    }
+
+    /// Paste a validated payload at the caret as one history step. Media get destination-owned
+    /// keys; the text box story a new destination part. Rejected without any change unless the
+    /// result passes the T009 gate against the pre-paste export.
+    fn paste_object(&mut self, payload: &ObjectPayload) -> Result<bool, Rejected> {
+        if !self.drawing_insertion_allowed() || payload.drawing().is_none() {
+            return Err(Rejected);
+        }
+        let mut decoded = Vec::new();
+        for m in &payload.media {
+            let bytes = wordcraft_engine::cmd::insert::base64_decode(&m.data).ok_or(Rejected)?;
+            if bytes.len() > MAX_PAYLOAD_MEDIA_BYTES
+                || sha256_hex(&bytes) != m.sha256
+                || !crate::picture::valid(&bytes)
+            {
+                return Err(Rejected);
+            }
+            let ext = if bytes.starts_with(b"\x89PNG") {
+                "png"
+            } else {
+                "jpeg"
+            };
+            decoded.push((m.name.clone(), bytes, ext));
+        }
+        let before = self.export().ok_or(Rejected)?;
+        let saved_clipboard = (
+            self.session.clipboard.take(),
+            std::mem::take(&mut self.session.clipboard_text),
+        );
+        let mut added = Vec::new();
+        let result = self.atomic(|model| {
+            let mut fragment = payload.fragment.clone();
+            let mut renamed = std::collections::BTreeMap::new();
+            for (name, bytes, ext) in &decoded {
+                let existed = model.session.doc.media.len();
+                let key = model.session.doc.add_media(bytes.clone(), ext);
+                if model.session.doc.media.len() > existed {
+                    added.push(key.clone());
+                }
+                renamed.insert(name.clone(), key);
+            }
+            fn rename(
+                object: &mut InlineObject,
+                map: &std::collections::BTreeMap<String, String>,
+            ) -> bool {
+                match object {
+                    InlineObject::Image { media, .. } => match map.get(media) {
+                        Some(key) => {
+                            *media = key.clone();
+                            true
+                        }
+                        None => false,
+                    },
+                    InlineObject::Group { children, .. } => {
+                        children.iter_mut().all(|c| rename(&mut c.obj, map))
+                    }
+                    _ => true,
+                }
+            }
+            let block = fragment.blocks.first_mut().ok_or(Rejected)?;
+            let wordcraft_engine::doc::Block::Para(para) = block else {
+                return Err(Rejected);
+            };
+            let object = para.object_at_mut(0).ok_or(Rejected)?;
+            if !rename(object, &renamed) {
+                return Err(Rejected);
+            }
+            model.session.clipboard_text = fragment.clipboard_text();
+            model.session.clipboard = Some(fragment);
+            let changed = model.run("edit.paste", json!({}))?;
+            if !changed {
+                return Err(Rejected);
+            }
+            let after = model.export().ok_or(Rejected)?;
+            let same = model.same_as(&after);
+            let gate = crate::services::save::service::check_saved(
+                crate::document::Format::Docx,
+                &before,
+                &after,
+                None,
+                same,
+            );
+            if !same || !gate.is_safe() {
+                return Err(Rejected);
+            }
+            Ok(true)
+        });
+        (self.session.clipboard, self.session.clipboard_text) = saved_clipboard;
+        if result.is_ok() {
+            self.pasted_media.extend(added);
+        }
+        result
     }
 
     /// A chart or SmartArt with a WordCraft model is written from that model; the reader also keeps

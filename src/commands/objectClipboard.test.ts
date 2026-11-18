@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clipboard";
-import { createObjectClipboardPayload, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
+import { createObjectClipboardPayload, createRichObjectClipboardPayload, MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
 import { clearStructuredClipboard, TABLE_CLIPBOARD_MIME } from "./tableClipboard";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "./target";
 
@@ -74,3 +74,50 @@ describe("versioned object clipboard", () => {
     expect(editing.insert).not.toHaveBeenCalled();
   });
 });
+
+describe("rich object clipboard (v2)", () => {
+  const engine = JSON.stringify({ fragment: { blocks: [] }, media: [{ name: "image1.png", sha256: "00".repeat(32), data: "AAAA" }] });
+
+  it("wraps the engine payload in a bounded versioned envelope and rejects malformed envelopes", () => {
+    const payload = createRichObjectClipboardPayload("picture", engine)!;
+    expect(payload).toMatchObject({ kind: "geul.object", version: 2, sourceFormat: "docx", object: "picture" });
+    expect(parseObjectClipboardPayload(JSON.stringify(payload))).toEqual(payload);
+    expect(objectClipboardPlainText(payload)).toBe(`Geul picture [${payload.token}]`);
+    for (const raw of [
+      { ...payload, object: "chart" }, { ...payload, sourceFormat: "hwpx" }, { ...payload, extra: 1 },
+      { ...payload, engine: { fragment: {}, media: [], path: "/etc/passwd" } }, { ...payload, engine: { fragment: [], media: [] } },
+      { ...payload, engine: { fragment: {}, media: Array.from({ length: 17 }, () => ({})) } }, { ...payload, token: "x" },
+    ]) expect(parseObjectClipboardPayload(JSON.stringify(raw))).toBeNull();
+    expect(createRichObjectClipboardPayload("shape", "not json")).toBeNull();
+    expect(createRichObjectClipboardPayload("shape", "[1]")).toBeNull();
+    expect(parseObjectClipboardPayload("x".repeat(MAX_OBJECT_CLIPBOARD_BYTES + 1))).toBeNull();
+  });
+
+  it("recalls the in-app payload only while the system clipboard still holds its marker text", async () => {
+    const payload = createRichObjectClipboardPayload("textBox", engine)!;
+    const data = JSON.stringify(payload), plainText = objectClipboardPlainText(payload);
+    const insertStructured = vi.fn<NonNullable<ClipboardEditing["insertStructured"]>>(async () => "ok");
+    const insert = vi.fn(() => true);
+    const editing = {
+      read: vi.fn(async () => null), remove: vi.fn(() => false), insert, insertStructured, removeStructured: vi.fn(() => true),
+      readStructured: async () => ({ status: "ok" as const, mime: OBJECT_CLIPBOARD_MIME, data, plainText }),
+    };
+    let system = "";
+    const clipboard: PlainClipboard = { writeText: vi.fn(async (text: string) => { system = text; }), readText: vi.fn(async () => system) };
+    const docx = target();
+    expect(await runClipboard(docx, "edit.copy", editing, () => true, clipboard)).toBe(true);
+    expect(system).toBe(plainText);
+    expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
+    expect(insertStructured).toHaveBeenLastCalledWith(OBJECT_CLIPBOARD_MIME, data);
+    // Another application replaced the clipboard: the stale object is not pasted, the text is.
+    system = "copied elsewhere";
+    expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
+    expect(insertStructured).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledWith("copied elsewhere");
+    // Even restoring the marker text later does not resurrect the forgotten payload.
+    system = plainText;
+    expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
+    expect(insertStructured).toHaveBeenCalledOnce();
+  });
+});
+

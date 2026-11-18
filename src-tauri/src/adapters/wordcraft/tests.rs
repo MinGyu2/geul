@@ -6622,3 +6622,283 @@ fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
     assert_eq!(model.export().unwrap(), baseline);
     assert!(model.same_as(&baseline));
 }
+
+#[test]
+fn stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes() {
+    use super::engine::{BasicShape, ObjectEdit, ObjectPayload};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::{InlineObject, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    // Source: a cropped, described picture, a formatted ellipse and a text box with Korean text.
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(3, 2, [200, 100, 50])}),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({"width": 90, "height": 60}))
+        .unwrap();
+    source.run("picture.crop", &json!({"left": 0.1})).unwrap();
+    source
+        .run("object.altText", &json!({"text": "원본 그림"}))
+        .unwrap();
+    let source_bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut model = DocxModel::open(&source_bytes).unwrap();
+    model.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::Shape {
+            kind: BasicShape::Ellipse,
+        },
+    ]);
+    let mut reader =
+        Session::new(io::open_bytes("fixture.docx", &model.export().unwrap()).unwrap());
+    let layout = reader.layout();
+    let click = |hit: &wordcraft_engine::layout::hit::ObjectHit| DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let picture = layout.find_object(0, |o| o.rect.w == 90.0).unwrap();
+    let ellipse = layout.find_object(0, |o| o.rect.w == 108.0).unwrap();
+    let key = |model: &mut DocxModel| {
+        let v = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (
+            v["position"].as_str().unwrap().to_owned(),
+            v["epoch"].as_u64().unwrap(),
+        )
+    };
+    model.apply(&[click(&picture)]);
+    let (position, epoch) = key(&mut model);
+    assert!(
+        model.clipboard_object(&position, epoch + 1).is_none(),
+        "stale selection"
+    );
+    let picture_payload = model.clipboard_object(&position, epoch).unwrap();
+    model.apply(&[DocxOp::DeselectObject {}, click(&ellipse)]);
+    let (position, epoch) = key(&mut model);
+    model.apply(&[DocxOp::ObjectEdit {
+        position: position.clone(),
+        epoch,
+        edit: ObjectEdit::Fill {
+            color: Some("AA3300".into()),
+        },
+    }]);
+    let (position, epoch) = key(&mut model);
+    let shape_payload = model.clipboard_object(&position, epoch).unwrap();
+    model.apply(&[
+        DocxOp::DeselectObject {},
+        DocxOp::TextBox {},
+        insert("글상자 내용"),
+    ]);
+    model.apply(&[DocxOp::LeaveTextBox {}]);
+    let source_after = model.export().unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &source_after).unwrap());
+    let layout = reader.layout();
+    let boxes: Vec<_> = reader
+        .doc
+        .para_paths(StoryRef::Body)
+        .into_iter()
+        .flat_map(|path| {
+            let para = reader.doc.para(StoryRef::Body, &path).unwrap().clone();
+            para.object_offsets()
+                .into_iter()
+                .filter(move |&off| {
+                    matches!(
+                        para.object_at(off),
+                        Some(InlineObject::Shape { story: Some(_), .. })
+                    )
+                })
+                .map(move |off| wordcraft_engine::doc::Pos {
+                    story: StoryRef::Body,
+                    path: path.clone(),
+                    off,
+                })
+        })
+        .collect();
+    let text_box = layout.object(&boxes[0], 0).unwrap();
+    // The outer frame of a text box (its interior is the text box's own text).
+    model.apply(&[DocxOp::Pointer {
+        page: text_box.page as u32,
+        x: text_box.rect.x + 0.5,
+        y: text_box.rect.y + 0.5,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let (position, epoch) = key(&mut model);
+    let box_payload = model.clipboard_object(&position, epoch).unwrap();
+    assert!(picture_payload.contains("\"sha256\""));
+
+    // Destination: a different document (cross-document paste).
+    let target = fixture();
+    let mut dest = DocxModel::open(&target).unwrap();
+    let parse = |s: &str| serde_json::from_str::<ObjectPayload>(s).unwrap();
+    let baseline = dest.export().unwrap();
+    // Not at an eligible caret: refused without change.
+    assert_eq!(
+        dest.apply(&[DocxOp::PasteObject {
+            payload: Box::new(parse(&picture_payload))
+        }])
+        .rejected,
+        vec![0]
+    );
+    assert_eq!(dest.export().unwrap(), baseline);
+    dest.apply(&[mv(MoveTarget::DocEnd, false)]);
+    for payload in [&picture_payload, &shape_payload, &box_payload] {
+        let r = dest.apply(&[DocxOp::PasteObject {
+            payload: Box::new(parse(payload)),
+        }]);
+        assert_eq!(r.changed, 1, "{:?}", r.rejected);
+    }
+    let pasted = dest.export().unwrap();
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &target,
+        &pasted,
+        None,
+        dest.same_as(&pasted),
+    );
+    assert!(gate.is_safe(), "{gate:?}");
+    let reopened = io::open_bytes("fixture.docx", &pasted).unwrap();
+    let objects: Vec<_> = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| p.objects.clone())
+        .collect();
+    let image = objects
+        .iter()
+        .find_map(|o| match o {
+            InlineObject::Image {
+                media,
+                w,
+                crop,
+                alt,
+                ..
+            } => Some((media.clone(), *w, *crop, alt.clone())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!((image.1, image.3.as_str()), (90.0, "원본 그림"));
+    assert!((image.2[0] - 0.1).abs() < 1e-6);
+    assert_eq!(
+        reopened.media.get(&image.0).map(|b| b.as_slice()),
+        source.doc.media.values().next().map(|b| b.as_slice())
+    );
+    assert!(objects.iter().any(|o| matches!(o, InlineObject::Shape { fill: Some(c), story: None, .. } if c.hex() == "AA3300")));
+    let (&id, _) = reopened
+        .parts
+        .iter()
+        .find(|(_, p)| p.kind == PartKind::TextBox)
+        .unwrap();
+    assert_eq!(reopened.plain_text(StoryRef::Part(id)), "글상자 내용");
+
+    // One history step per paste; undo removes the pasted media again (no orphan part on save).
+    assert_eq!(
+        dest.apply(&[DocxOp::Undo {}, DocxOp::Undo {}, DocxOp::Undo {}])
+            .changed,
+        3
+    );
+    assert!(dest.diagnostic_document().media.is_empty());
+    let undone = dest.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &target,
+        &undone,
+        None,
+        dest.same_as(&undone)
+    )
+    .is_safe());
+    assert_eq!(dest.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(dest.diagnostic_document().media.len(), 1);
+
+    // Same-document paste: the picture media is shared, not duplicated.
+    let mut same = DocxModel::open(&source_bytes).unwrap();
+    same.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    assert_eq!(
+        same.apply(&[DocxOp::PasteObject {
+            payload: Box::new(parse(&picture_payload))
+        }])
+        .changed,
+        1
+    );
+    assert_eq!(same.diagnostic_document().media.len(), 1);
+    let bytes = same.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &source_bytes,
+        &bytes,
+        None,
+        same.same_as(&bytes)
+    )
+    .is_safe());
+
+    // Malformed payloads never reach the document.
+    let mut fresh = DocxModel::open(&target).unwrap();
+    fresh.apply(&[mv(MoveTarget::DocEnd, false)]);
+    let before = fresh.export().unwrap();
+    let mut bad = Vec::new();
+    let mut p = parse(&picture_payload);
+    p.media[0].sha256 = "00".repeat(32);
+    bad.push(p);
+    let mut p = parse(&picture_payload);
+    p.media.clear();
+    bad.push(p);
+    let mut p = parse(&picture_payload);
+    let extra = p.media[0].clone();
+    p.media.push(super::engine::PayloadMedia {
+        name: "other.png".into(),
+        ..extra
+    });
+    bad.push(p);
+    let mut p = parse(&picture_payload);
+    p.media[0].data = wordcraft_engine::cmd::insert::base64_encode(b"GIF89a not allowed");
+    p.media[0].sha256 = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(b"GIF89a not allowed")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    };
+    bad.push(p);
+    let mut p = parse(&shape_payload);
+    let block = p.fragment.blocks[0].clone();
+    p.fragment.blocks.push(block);
+    bad.push(p);
+    let mut p = parse(&shape_payload);
+    if let wordcraft_engine::doc::Block::Para(para) = &mut p.fragment.blocks[0] {
+        if let Some(InlineObject::Shape { w, .. }) = para.object_at_mut(0) {
+            *w = f32::NAN;
+        }
+    }
+    bad.push(p);
+    let mut p = parse(&box_payload);
+    p.fragment.parts.clear();
+    bad.push(p);
+    for (i, payload) in bad.into_iter().enumerate() {
+        let r = fresh.apply(&[DocxOp::PasteObject {
+            payload: Box::new(payload),
+        }]);
+        assert_eq!(r.rejected, vec![0], "case {i}");
+        assert_eq!(fresh.export().unwrap(), before, "case {i}");
+    }
+    assert!(!fresh.view().history.undo);
+    // Oversized or structurally invalid payloads fail request validation too.
+    assert!(!validate(&[DocxOp::PasteObject {
+        payload: Box::new({
+            let mut p = parse(&shape_payload);
+            p.fragment.blocks.clear();
+            p
+        })
+    }]));
+}

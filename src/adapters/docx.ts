@@ -264,6 +264,8 @@ export type DocxOp =
   | { op: "shape"; kind: BasicShape }
   | { op: "cutShape"; position: string; epoch: number }
   | { op: "objectEdit"; position: string; epoch: number; edit: ObjectEdit }
+  /** Stage 3 P5: the engine part of a v2 object clipboard payload (validated by the engine). */
+  | { op: "pasteObject"; payload: unknown }
   | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
@@ -382,6 +384,8 @@ export interface DocxBackend {
   load(sessionId: SessionId, reloadGeneration?: number): Promise<Result<DocxState>>;
   selectionText?(sessionId: SessionId, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>>;
   selectionTableCells?(sessionId: SessionId, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>>;
+  /** Stage 3 P5: structured clipboard payload of the selected drawing (`docx_selection_object`). */
+  selectionObject?(sessionId: SessionId, generation: number, revision: number, position: string, epoch: number): Promise<Result<string>>;
   view(sessionId: SessionId, generation: number): Promise<Result<DocxState>>;
   edit(sessionId: SessionId, generation: number, baseRevision: number, ops: DocxOp[]): Promise<Result<DocxEdited>>;
   /** 쪽 그림. scale은 pt당 픽셀, base는 이미 가진 같은 배율 그림의 판(있으면 바뀐 띠만 받는다). */
@@ -794,6 +798,9 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
     selectionTableCells: (sessionId, loadGeneration, revision, anchorKey, caretKey) =>
       call(invoke, "docx_selection_table_cells", { sessionId, loadGeneration, revision, anchorKey, caretKey }, value =>
         typeof value === "string" && value.length <= 2 * 1024 * 1024 ? value : null),
+    selectionObject: (sessionId, loadGeneration, revision, position, epoch) =>
+      call(invoke, "docx_selection_object", { sessionId, loadGeneration, revision, position, epoch }, value =>
+        typeof value === "string" && value.length <= 12 * 1024 * 1024 ? value : null),
     view: (sessionId, loadGeneration) =>
       call(invoke, "docx_view", { sessionId, loadGeneration }, (value) => parseDocxState(value, sessionId)),
     edit: (sessionId, loadGeneration, baseRevision, ops) =>

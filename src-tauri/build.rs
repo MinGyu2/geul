@@ -43,6 +43,7 @@ fn main() {
         "docx_view",
         "docx_selection_text",
         "docx_selection_table_cells",
+        "docx_selection_object",
         "clipboard_read_text",
         "picture_import",
         "docx_edit",

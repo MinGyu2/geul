@@ -1695,7 +1695,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []), "resize",
               ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
-              ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate", ...(this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
+              ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate");
+            // Z-order: the RHWP HWPX export does not reopen with the changed order (save reopen comparison fails).
           }
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
@@ -3836,8 +3837,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }))) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown };
       if (result.ok !== true || result.paraIdx !== at.paragraph || !Number.isSafeInteger(result.controlIdx)
         || doc.getParagraphCount(at.section) !== before) throw new Error("shape creation not verified");
-      const created = inspectRhwpShape(doc, [at.section, at.paragraph, result.controlIdx as number]);
-      if (!created || created.raw.width !== 10800 || created.textBox !== textBox) throw new Error("created shape not verified");
+      const address = [at.section, at.paragraph, result.controlIdx as number] as const;
+      // RHWP's creation path leaves the packed wrap bits of a floating shape unsynchronised, so the
+      // HWPX export would reopen with another wrap. Setting the same wrap through the property path
+      // synchronises them (verified by the save path's reopen comparison).
+      if (!textBox) {
+        const synced = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify({ textWrap: "Square" }))) as { ok?: boolean };
+        if (synced.ok !== true) throw new Error("shape wrap not synchronised");
+      }
+      const created = inspectRhwpShape(doc, address);
+      if (!created || created.raw.width !== 10800 || created.textBox !== textBox
+        || (!textBox && (created.raw.textWrap !== "Square" || created.raw.treatAsChar))) throw new Error("created shape not verified");
       return { caret: at, anchor: at };
     }, true, "other", null, true, true);
   }
@@ -4306,7 +4316,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
         break;
       case "layer":
-        if (!doc.changeShapeZOrder) return false;
+        // Not offered: the HWPX export does not preserve the changed z-order on reopen.
+        if (!doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
         operation = () => {
           const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean };
           if (result.ok !== true) throw new Error("z-order refused");

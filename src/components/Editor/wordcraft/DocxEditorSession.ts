@@ -1,4 +1,4 @@
-import { OBJECT_CLIPBOARD_MIME, createObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload } from "../../../commands/objectClipboard";
+import { OBJECT_CLIPBOARD_MIME, RICH_OBJECT_KINDS, createRichObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload, type RichObjectKind } from "../../../commands/objectClipboard";
 import { objectEditMatches, type ObjectSelection } from "../../../commands/objectSelection";
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -106,7 +106,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "objectEdit", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
+  "continueNumbering", "pageSetup", "objectEdit", "pasteObject", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
 ]);
 const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
@@ -137,7 +137,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "objectEdit", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
+  "pageSetup", "objectEdit", "pasteObject", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -635,14 +635,25 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   get objectSelection(): ObjectSelection | null {
     if (!this.view?.object || this.status.kind !== "ready") return null;
-    const { clipboardShape, operations: edits, ...object } = this.view.object;
+    const { clipboardShape: _legacy, operations: edits, ...object } = this.view.object;
+    void _legacy;
     const writable = this.editable && !this.view.trackedReadOnly;
     const mutations = writable ? edits : [];
+    const rich = this.richClipboard();
     return {
       ...object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
-      editable: Boolean(clipboardShape?.cutAllowed) || mutations.length > 0,
-      operations: ["deselect", ...mutations, ...(clipboardShape ? ["copy" as const] : []), ...(clipboardShape?.cutAllowed ? ["cut" as const] : [])],
+      editable: mutations.length > 0,
+      operations: ["deselect", ...mutations, ...(rich ? ["copy" as const] : []), ...(rich?.cutAllowed ? ["cut" as const] : [])],
     };
+  }
+
+  /** Stage 3 P5: the selected body drawing the engine can copy structurally (pictures, shapes, text boxes, groups). */
+  private richClipboard(): { kind: RichObjectKind; position: string; epoch: number; cutAllowed: boolean } | null {
+    const object = this.view?.object;
+    const kind = RICH_OBJECT_KINDS.find(k => k === object?.kind);
+    if (!object || !kind || object.address.engine !== "wordcraft" || !object.address.position.startsWith("body:") || !this.backend.selectionObject) return null;
+    const cutAllowed = this.editable && !this.view?.trackedReadOnly && object.operations.includes("delete");
+    return { kind, position: object.address.position, epoch: object.epoch, cutAllowed };
   }
 
   // ---- IME(ImeSession) ----
@@ -1078,7 +1089,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   /** 명령 가용성을 정하는 지금 상태. 기록·서식은 마지막 응답의 엔진 보기다(보낼 편집 뒤에는 엔진이 다시 정한다). */
   snapshot(): DocumentCommandSnapshot {
-    const shape = this.view?.object?.clipboardShape;
+    const shape = this.richClipboard();
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
@@ -1113,9 +1124,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       },
       readStructured: async () => {
         const view = this.view;
-        const shape = view?.object?.clipboardShape?.shape;
-        if (shape) {
-          const payload = createObjectClipboardPayload(shape);
+        const rich = this.richClipboard();
+        if (rich && this.backend.selectionObject) {
+          const result = await this.backend.selectionObject(this.sessionId, this.generation, this.revision, rich.position, rich.epoch);
+          const payload = result.ok ? createRichObjectClipboardPayload(rich.kind, result.value) : null;
+          if (!payload) return { status: "rejected" };
           return { status: "ok", mime: OBJECT_CLIPBOARD_MIME, data: JSON.stringify(payload), plainText: objectClipboardPlainText(payload) };
         }
         if (!view?.clipboardTableCellsAvailable || !this.backend.selectionTableCells) return { status: "none" };
@@ -1151,9 +1164,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         anchorKey: this.view.anchorKey, caretKey: this.view.caretKey,
       } }),
       removeStructured: () => {
-        const view = this.view, object = view?.object;
-        if (object?.clipboardShape?.cutAllowed && object.address.engine === "wordcraft") {
-          return this.push({ op: "cutShape", position: object.address.position, epoch: object.epoch });
+        const view = this.view, rich = this.richClipboard();
+        if (rich?.cutAllowed) {
+          return this.push({ op: "objectEdit", position: rich.position, epoch: rich.epoch, edit: { kind: "delete" } });
         }
         return !!view?.clipboardTableCellsAvailable && this.push({
           op: "cutTableCells", target: { anchorKey: view.anchorKey, caretKey: view.caretKey },
@@ -1166,7 +1179,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         if (mime === OBJECT_CLIPBOARD_MIME) {
           const object = parseObjectClipboardPayload(data);
           if (!object || !view.drawingInsertionAllowed) return "rejected";
-          return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
+          if (object.version === 1) return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
+          return this.push({ op: "pasteObject", payload: object.engine }) ? "ok" : "rejected";
         }
         if (mime !== TABLE_CLIPBOARD_MIME) return "rejected";
         if (!view.inTable) return "notTable";

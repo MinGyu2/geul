@@ -18,6 +18,17 @@ const folder = resolve(artifacts, "generations", identity.generation);
 const engine = createRequire(import.meta.url)(resolve(folder, "rhwp.js"));
 engine.initSync({ module: readFileSync(resolve(folder, "rhwp_bg.wasm")) });
 const out = process.env.GEUL_STAGE3_OUT;
+/** The save path's reopen evidence (RhwpEditorSession export check): pages, text and controls equal, no loss. */
+function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string) {
+  const reopened = new engine.HwpDocument(bytes) as RhwpDocument & { getControls(): string; getTextFileText(): string };
+  const live = doc as RhwpDocument & { getControls(): string; getTextFileText(): string };
+  try {
+    expect(JSON.parse(report)).toMatchObject({ count: 0 });
+    expect(reopened.pageCount()).toBe(live.pageCount());
+    expect(reopened.getTextFileText()).toBe(live.getTextFileText());
+    expect(reopened.getControls()).toBe(live.getControls());
+  } finally { reopened.free(); }
+}
 type Frame = { type: string; x: number; y: number; w: number; h: number; controlIdx: number };
 const shapes = (doc: RhwpDocument) => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "shape");
 
@@ -78,7 +89,7 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
       const rect = drawn.find(s => s.w > 100 && Math.abs(s.h - drawn[0]!.h) < 1 && props(doc, s.controlIdx).tbVerticalAlign === undefined)!;
       const selected = pick(rect);
       expect(selected.kind).toBe("shape");
-      expect(selected.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"]);
+      expect(selected.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
       const control = rect.controlIdx;
       expect(edit({ kind: "outline", color: null })).toBe(false);
       expect(edit({ kind: "outline", color: "112233", width: 2 })).toBe(false);
@@ -105,13 +116,12 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
       await confirm();
       expect(props(doc, control)).toMatchObject({ width: 12000, height: 4000, horzOffset: 1000 });
       pick(shapes(doc).find(s => s.controlIdx === control)!);
-      expect(edit({ kind: "layer", front: false })).toBe(true);
-      await confirm();
-      pick(shapes(doc).find(s => s.controlIdx === control) ?? shapes(doc)[0]!);
+      expect(edit({ kind: "layer", front: false })).toBe(false);
       const exported = doc.exportHwpxWithReport();
       try {
         const report = exported.contentLoss();
         const edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
         const reopened = new engine.HwpDocument(edited) as RhwpDocument;
         try {
           const all = shapes(reopened).map(s => props(reopened, s.controlIdx));

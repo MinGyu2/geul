@@ -83,6 +83,7 @@ pub fn run() {
             adapters::wordcraft::commands::docx_view,
             adapters::wordcraft::commands::docx_selection_text,
             adapters::wordcraft::commands::docx_selection_table_cells,
+            adapters::wordcraft::commands::docx_selection_object,
             clipboard::clipboard_read_text,
             picture::picture_import,
             adapters::wordcraft::commands::docx_edit,

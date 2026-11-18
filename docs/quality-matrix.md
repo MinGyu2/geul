@@ -204,12 +204,14 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | SmartArt 편집 (P4) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX: 항목·단계·레이아웃(`smartArt.items`/`smartArt.layout`). RHWP에 SmartArt 모델 없음(형식 대응 여부 NOT VERIFIED) |
 | 외부 프로그램 차트·다이어그램 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | WordCraft 모델이 없으면 원본 markup·부분 그대로, 편집 연산 없음 |
 | 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
-| 그림·글상자·차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 해당 개체의 자원·스토리 보존 계약과 검증이 남아 있음 |
+| 그림·도형·글상자·그룹 구조 클립보드 (P5) | SUPPORTED_AND_VERIFIED (앱 내) | UNSUPPORTED | UNSUPPORTED | DOCX v2 페이로드: WordCraft 조각 + 미디어 바이트·SHA-256, 붙여넣기 전 전체 검증, 대상 소유 미디어 키·글상자 story, 한 번의 Undo, T009 사전 판정. 같은/다른 DOCX 문서 Rust 검증. HWPX/HWP 원본 복사·교차 형식 붙여넣기는 거부 |
+| 차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 붙여넣기가 새 차트/다이어그램 부분을 더하는데 그 T009 증명이 없어 거부 |
+| 시스템 클립보드 구조 MIME | NOT RUN | NOT RUN | NOT RUN | `systemClipboard`에 구조 MIME 쓰기 경로가 없음: 평문 표지 + 앱 내 기억(표지가 바뀌면 폐기). 다른 앱 상호 운용 NOT RUN |
 | 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `picture.crop`(원본 미디어 불변, 1/100000 격자), HWPX crop 양(원본 크기 기준) 읽기 확인·재열기·`save_check` safe |
 | 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `arrange.wrap`(인라인 복귀 시 위치 필드 정규화), HWPX `treatAsChar`/`textWrap` |
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `object.altText`(제어 문자·줄바꿈 거부), HWPX `description`(`"`·`\\` 거부, 256자) |
 | 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | BLOCKED | DOCX `arrange.position` 여백 기준 9곳. HWPX는 끌기 이동만 |
-| 도형 채우기·선·회전·대칭·앞뒤 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기 제외) | BLOCKED | DOCX `shape.fill`/`shape.outline`/`arrange.rotation`/`bringForward`·`sendBackward`(EMU·60000분의 1도 격자). HWPX `setShapeProperties` 채우기(단색·없음)·선 색·회전·대칭·크기·이동·배치, `changeShapeZOrder`, `deleteShapeControl`; 모든 비편집 필드 다시 읽기 확인 |
+| 도형 채우기·선·회전·대칭·앞뒤 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기·앞뒤 순서 제외) | BLOCKED | DOCX `shape.fill`/`shape.outline`/`arrange.rotation`/`bringForward`·`sendBackward`(EMU·60000분의 1도 격자). HWPX `setShapeProperties` 채우기(단색·없음)·선 색·회전·대칭·크기·이동·배치, `changeShapeZOrder`, `deleteShapeControl`; 모든 비편집 필드 다시 읽기 확인 |
 | 기존 도형·글상자 외곽 이동·크기·삭제 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX P1 경로, HWPX 본문 도형 |
 | 중첩 개체 (P3) | PARTIAL | UNSUPPORTED | UNSUPPORTED | DOCX 표 셀 그림: 크기·자르기·설명·삭제만(이동 거부), 머리글/바닥글·글상자 안 개체는 변경 없음. RHWP 셀·머리글 개체는 선택만 |
 | HWPX/HWP 글상자 내부 편집 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | RHWP 글상자 story 커서·IME 경로 미연결 |
@@ -250,3 +252,21 @@ PASS(Stage 3 Rust 9, adapters 115). Release WASM `stage3-shapes` 2 PASS(HWPX 사
 원본 바이트), `docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts`(양성 1·음성 7) PASS; Stage 3 + adapters +
 services::save 396 PASS / 31 ignored. 기존 P4 조회 시험은 새 계약(패키지 부분은 받되 동기화 없는 원시 엔진 편집은 `ReopenMismatch`)으로
 갱신. RHWP 차트 탐침: HWP `setChartData` 출력 `partChanged BinData/BIN0001.OLE`, HWPX 편집 없는 내보내기 실패. Vitest 1647 중 기존 실패 3 외 PASS.
+
+**2026-11-19 P5 구조 클립보드 실행.** Rust `stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes`(자르기·설명 있는 그림,
+채우기 바꾼 타원, 한글 글상자를 다른 DOCX에 붙여넣기 → T009 safe·독립 재열기 값·미디어 바이트 동일, 세 번 Undo 뒤 붙인 미디어 제거·저장 safe,
+Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 해시 불일치·미디어 누락/추가·GIF·블록 둘·NaN 크기·글상자 story 누락 7건 무변경
+거부) PASS. 전체 `cargo test --lib` 532 PASS / 0 FAIL / 40 ignored, clippy 새 경고 없음(기존 10). Vitest 객체 클립보드 5 PASS
+(v2 봉투 검증, 표지 텍스트가 바뀐 뒤 낡은 페이로드 비사용).
+
+**2026-11-19 Stage 3 완료 실행 — 결합 네이티브 수용(Linux X11/IBus, Release).** `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle`
+앱 SHA-256 `a625a851909c6400f5f940dc6c99e301f7d0a3ad980e157b73c176af8e1e0699`, 시나리오 `target/stage3-completion/run11/accept.py`(무시되는 target).
+- DOCX PASS: 리본 사각형 삽입 → 클릭 선택(8 핸들) → 포인터 끌기 이동(Δ+90,−176px, 한 판) → SE 핸들 끌기 크기(144×96→194×126px) →
+  Shift+→ 이동 → Ctrl+C 구조 복사 → 문서 끝 Ctrl+V(같은 오프셋에 겹친 떠 있는 사본) → 사본 선택·Shift+→ 16번 분리 → Delete → Ctrl+Z/Ctrl+Y/Ctrl+Z →
+  실제 저장(T009) → 탭 닫기 → GTK 열기 대화 상자로 독립 재열기: `word/document.xml`에 떠 있는 `rect` 2개, 크기 1847850×1200150 EMU, 본문 글 "Host".
+- HWPX PASS: 리본 사각형·글상자 삽입 → Ctrl+Z/Ctrl+Y → 실제 저장 → 독립 재열기: `hp:rect` 2, `hp:drawText` 1.
+- 첫 네이티브 실행이 찾은 결함(수정): HWPX 새 떠 있는 도형 저장이 `reopenMismatch`로 거부(RHWP `createShapeControl`이 배치 비트를
+  동기화하지 않음 → 생성 직후 `setShapeProperties({textWrap:"Square"})`로 동기화). HWPX 앞/뒤 순서 변경도 재열기 컨트롤이 달라 제공하지 않는다.
+  Release WASM 시험은 이제 제품 저장 경로와 같은 재열기 증거(쪽 수·글·컨트롤 JSON·손실 0)를 단언한다.
+- NOT RUN: 이번 Release로 한글 IBus 입력·글상자 IME 재실행, HWP 시나리오, 그림 자르기/설명 UI 조작, 차트·SmartArt UI 조작, Word/한컴 상호 운용,
+  다른 앱과의 구조 클립보드, Windows/macOS/Wayland.

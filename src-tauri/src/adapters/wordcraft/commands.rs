@@ -782,6 +782,53 @@ pub async fn docx_selection_text(
     .await
 }
 
+/// Stage 3 P5: the structured clipboard payload of the selected drawing (selection identity checked).
+pub(crate) async fn selection_object(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+    position: String,
+    epoch: u64,
+) -> Result<String, DocumentError> {
+    if position.is_empty() || position.len() > 256 || epoch == 0 {
+        return Err(DocumentError::InvalidRequest);
+    }
+    with_model(
+        state,
+        session_id,
+        generation,
+        EngineStage::Edit,
+        move |model, _, info| {
+            check_revision(&info, revision)?;
+            model
+                .clipboard_object(&position, epoch)
+                .ok_or(DocumentError::InvalidRequest)
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn docx_selection_object(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+    position: String,
+    epoch: u64,
+) -> Result<String, DocumentError> {
+    selection_object(
+        &state,
+        session_id,
+        load_generation,
+        revision,
+        position,
+        epoch,
+    )
+    .await
+}
+
 pub(crate) async fn selection_table_cells(
     state: &DocumentState,
     session_id: SessionId,
