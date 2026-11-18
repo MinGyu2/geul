@@ -390,6 +390,57 @@ describe("DocxEditorSession", () => {
     expect(documentCommandState("table.insertRowBelow", editor.snapshot())).toEqual({ available: false, reason: "protected" });
   });
 
+  it("P4 안정화: 대기 중인 tableRepeatHeader·tableRowBreak는 바꾸는 연산으로 예상 기록에 들어가고, 응답 뒤에는 엔진 기록으로 맞춘다", async () => {
+    const { documentCommandState } = await import("../../../commands/capability");
+    const { editor, fake } = await readyDocx(["본문"]);
+    fake.tableView = {
+      rows: 2, cols: 2, row: 0, col: 0, rowSpan: 1, colSpan: 1, selectedCells: 1,
+      insertRowAbove: null, insertRowBelow: null, insertColumnLeft: null, insertColumnRight: null,
+      deleteRow: null, deleteColumn: null, mergeRight: null, mergeBelow: null,
+      mergeCells: "tableShape", splitCell: null, maxSplitRows: 16, maxSplitColumns: 4,
+      hasInsideBorders: false, cellShadingRefusal: null, cellBordersRefusal: null,
+      cellShading: null, cellShadingMixed: false, hasCellShading: false, cellBorders: null,
+      supportedBorderStyles: ["single"], cellAlignHorizontal: "left", cellAlignHorizontalMixed: false,
+      cellAlignVertical: "top", cellAlignVerticalMixed: false, cellAlignmentRefusal: null,
+      colWidth: 100, colWidthMixed: false, rowHeight: 24, rowHeightMixed: false, rowHeightRule: "atLeast",
+      selectedCols: 1, selectedRows: 1, columnWidthRefusal: null, rowHeightRefusal: null,
+      tableCellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 }, cellMargins: { top: 0, right: 5.4, bottom: 0, left: 5.4 },
+      cellMarginsMixed: false, cellMarginsUsesDefault: true, cellMarginsOverrideMixed: false,
+      cellMarginsRefusal: null, tableAlign: "left", tableIndentPt: 0, tablePositioningRefusal: null,
+      leadingHeaderRows: 0, rowHeader: false, rowHeaderMixed: false, canEnableHeader: true, repeatHeaderRefusal: null,
+      rowBreakMode: "cell", rowBreakMixed: false, rowBreakRefusal: null,
+    };
+    await editor.load({ discard: true });
+    editor.typeText("x");
+    await flush();
+    expect(editor.execute("edit.undo").accepted).toBe(true);
+    await flush();
+    expect(editor.snapshot().history).toEqual({ undo: false, redo: true });
+    const queued: [import("../../../commands/registry").DocumentCommandId, import("../../../commands/target").DocumentCommandArgs][] = [
+      ["table.repeatHeader", { command: "table.repeatHeader", repeat: true }],
+      ["table.rowBreak", { command: "table.rowBreak", mode: "row" }],
+    ];
+    for (const [command, args] of queued) {
+      fake.hold = true;
+      expect(editor.execute(command, args).accepted, command).toBe(true);
+      // Pending mutation: Undo becomes available, the Redo branch is projected as discarded.
+      expect(editor.snapshot().queuedHistory, command).toEqual({ undo: "available", redo: "none" });
+      expect(documentCommandState("edit.redo", editor.snapshot()).available, command).toBe(false);
+      fake.release();
+      await flush();
+      // The fake engine refuses these table ops: no completed step, authoritative history restored.
+      expect(editor.snapshot().queuedHistory, command).toBeNull();
+      expect(editor.snapshot().history, command).toEqual({ undo: false, redo: true });
+      fake.hold = false;
+    }
+    // Navigation stays non-mutating while pending.
+    fake.hold = true;
+    editor.move("docStart", false);
+    expect(editor.snapshot().queuedHistory).toEqual({ undo: "none", redo: "available" });
+    fake.release();
+    await flush();
+  });
+
   it("DOCX 표 셀 배경색과 테두리 명령의 파라미터 검증·거절·실행을 확인한다", async () => {
     const { documentCommandState } = await import("../../../commands/capability");
     const { editor, fake } = await readyDocx(["본문"]);
