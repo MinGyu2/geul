@@ -2273,14 +2273,22 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
         assert_eq!(bytes, original, "{name}");
         assert!(info.dirty, "{name}");
     };
-    // A cell whose margins/attributes no original cell uses (an invented template).
+    // P4 owns bounded cell margins even when the row is deleted in the same save.
+    let mut padded = existing_table_without_second_row();
+    w(&mut nth(&mut padded, 72, 0).2, 24, 777);
+    let padded = fixture_with(true, &[padded], "Keep 한글");
+    let findings = raw_findings(&original, &padded, true);
+    assert!(only_stale_preview(&findings), "{findings:?}");
+    let (saved, _, info) = publish(&original, &padded, Some(&raster()));
+    assert!(saved.unwrap().durable && !info.dirty);
+
+    // An invented cell template with an attribute no supported operation owns.
     let mut invented = existing_table_without_second_row();
-    w(
-        &mut invented.iter_mut().find(|r| r.0 == 72).unwrap().2,
-        24,
-        777,
-    );
+    nth(&mut invented, 72, 0).2[38] ^= 1;
     refused("invented cell template", invented);
+    let mut bad_margin = existing_table_without_second_row();
+    w(&mut nth(&mut bad_margin, 72, 0).2, 24, 14_401);
+    refused("out-of-range cell margin", bad_margin);
     // A cell whose border fill references an out-of-range definition ID.
     let mut bad_bf = existing_table_without_second_row();
     w(

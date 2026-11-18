@@ -71,8 +71,11 @@ python3 scripts/check-release-paths.py src-tauri/target/release/geul --report ta
 
 상세 원본 경로/환경과 로그는 무시되는 `target/release-path-cleanup/`에만 보관: `baseline-*`, `release-build.log`, `unit-tests.log`, `final-gate.json`, `runtime-smoke.log`, `smoke/result.json`, `smoke-session/session.json`, `smoke-session/cleanup.json`. 자동 gate 보고는 `src-tauri/target/release-paths.json`, 보호 빌드 증거는 `target/rhwp-wasm/tauri-integrity.json`. 전체 Vitest/Rust/RHWP/WordCraft suite, native run12, PDF·T009/T014 acceptance, natural-font 시험 재실행, D4, 패키징·.deb 재생성, 외부 Office·타 OS/배포판 수용은 NOT RUN; 바꾸지 않은 문서 기능의 이전 근거를 재사용한다.
 
+HWP 저장 회귀 네 건은 테스트 픽스처와 판정 관찰 지점을 수정해 해결했다. 보호 빌드 후 호스트의 전용 임시 디렉터리에서 `services::save` 활성 시험 278건이 모두 통과했다. 기존 ignored 29건과 원인·검증 범위를 기록했다. [HWP 저장 회귀 시험 정정](architecture/save-preservation.md#hwp-저장-회귀-시험-정정-2026-11-18)
+
+Stage 5-A에서는 공유 `publish.rs`에 PDF 전용 교환 연산을, `session.rs`에 PDF 게시 지점을 추가했다. 당시 `services::save`는 249 PASS / 3 FAIL / 25 ignored였고, 실패 세 건은 이번에 해결한 HWP 저장 시험에 포함된다.
+
 ## 알려진 기존 시험 실패 (출시 전 해결 필요)
 
-- `services::save` 3개(`calc_cell_stale_previews_are_regenerated_only_from_a_valid_render`, `calc_cell_two_durable_saves_with_regenerated_previews`, `hwp_편집한_저장은_본문과_캐럿만_달라도_되고_그_밖은_원본과_같아야_한다`): 보호 sandbox 밖에서도 실패(추가 `OutputMalformed` 근거 — 거부 쪽으로 엄격). Stage 4 보고 이전부터 있던 실패다. 정정: Stage 5-A는 일반 문서 저장 경로를 바꾸지 않았지만 공유 `publish.rs`에 PDF 전용 교환 연산을, `session.rs`에 PDF 게시 지점을 더했다. 그 뒤에도 `--lib services::save`는 249/3/25로 같은 3개만 실패한다. 원인 수정은 이번 범위 밖으로 기록만 한다.
 - 프런트엔드 4개(`hangulTools` 1, `sessions` rhwp 1, `hwpReopenModel` 2): 시작 HEAD에서 같은 실패.
 - 보호 실행기(`scripts/cargo-geul.py`)의 sandbox `/tmp`는 1777 tmpfs이고 uid 매핑 때문에 게시 계층이 모든 상위 디렉터리를 공유 디렉터리로 본다. 실제 게시를 하는 시험(예: `services::files::tests::a_replaced_published_inode…`, 새 `services::pdf` 게시 시험)은 이 sandbox에서 `SaveUnsupported{shared-directory}`로 실패하고 일반 파일 시스템에서는 통과한다. 시험 환경 문제로 기록한다(제품 정책은 바꾸지 않음).

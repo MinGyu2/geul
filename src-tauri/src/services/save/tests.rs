@@ -301,8 +301,18 @@ fn hwp_편집한_저장은_본문과_캐럿만_달라도_되고_그_밖은_원�
     let mut body = section("x");
     body.truncate(body.len() - 1);
     let broken = hwp_doc(0, &docinfo(42, b"font"), &body, &extra);
+    // Record framing and field inventory can report the same error. The save
+    // service publishes a single finding for a given code and part.
+    let preservation = service::check_saved(
+        Format::Hwp,
+        &original,
+        &broken,
+        Some(&report("hwp", json!([]))),
+        true,
+    );
+    assert_eq!(preservation.outcome, Outcome::Unsafe);
     assert_eq!(
-        hwp::compare_saved(&original, &broken),
+        preservation.findings,
         vec![Finding::at(
             FindingCode::OutputMalformed,
             "BodyText/Section0"
@@ -11318,21 +11328,57 @@ fn cfb_stream(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
     Some(data)
 }
 
-/// The genuine calc-cell.hwp with one real body edit: the first table cell's text `old` → `new`.
-/// DocInfo and every non-body stream stay byte-identical, so its Hancom GIF preview is stale.
-fn calc_cell_edited(from: &[u8], old: u8, new: u8) -> Vec<u8> {
-    use std::io::{Read, Write};
-    let section = cfb_stream(from, "/BodyText/Section0").unwrap();
-    let mut raw = Vec::new();
-    flate2::read::DeflateDecoder::new(&section[..])
-        .read_to_end(&mut raw)
-        .unwrap();
-    let needle = [old, 0, b'\r', 0];
-    let at = raw.windows(4).position(|w| w == needle).expect("cell text");
-    raw[at] = new;
-    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
-    encoder.write_all(&raw).unwrap();
-    cfb_replace(from, &[("/BodyText/Section0", &encoder.finish().unwrap())])
+/// Edit A1 and its dependent A3 cache in both the displayed value and field
+/// command. Match RHWP's exported field-end markers, preserving non-body streams.
+fn calc_cell_edited(from: &[u8], old: u8, new: u8, cache: &str) -> Vec<u8> {
+    edit_compressed_section0(from, |mut records| {
+        let cell_text = records
+            .iter_mut()
+            .find(|(tag, level, _)| (*tag, *level) == (67, 3))
+            .expect("A1 cell text");
+        assert_eq!(cell_text.2, [old, 0, b'\r', 0]);
+        cell_text.2[0] = new;
+
+        let command_prefix = utf16("=AVG(ABOVE)??");
+        let command = utf16(&format!("=AVG(ABOVE)??%g,;;{cache}"));
+        let cache = utf16(cache);
+        let mut formula_paragraphs = 0;
+        for index in 0..records.len() {
+            let (tag, level, field) = &mut records[index];
+            if (*tag, *level) != (71, 3) || !field.starts_with(b"umf%") {
+                continue;
+            }
+            formula_paragraphs += 1;
+            let dependent = field[11..].starts_with(&command_prefix);
+            if dependent {
+                let end = 11 + 2 * usize::from(u16::from_le_bytes([field[9], field[10]]));
+                assert_eq!(field.len() - end, 8);
+                field[9..11].copy_from_slice(&u16::try_from(command.len() / 2).unwrap().to_le_bytes());
+                field.splice(11..end, command.iter().copied());
+            }
+
+            let text_index = records[..index]
+                .iter()
+                .rposition(|(tag, level, _)| (*tag, *level) == (67, 3))
+                .expect("formula cell text");
+            let text = &mut records[text_index].2;
+            assert!(text.starts_with(b"\x03\0umf%") && text.ends_with(b"\x04\0\r\0"));
+            let end = text.len() - 18;
+            assert_eq!(&text[end..end + 2], b"\x04\0");
+            assert!(matches!(&text[end + 2..end + 6], b"umf\x08" | b"umf%"));
+            text[end + 2..end + 6].copy_from_slice(b"umf%");
+            if dependent {
+                text.splice(16..end, cache.iter().copied());
+                let units = u32::try_from(text.len() / 2).unwrap();
+                let (tag, level, header) = &mut records[text_index - 1];
+                assert_eq!((*tag, *level), (66, 2));
+                let flags = u32::from_le_bytes(header[..4].try_into().unwrap()) & 0x8000_0000;
+                header[..4].copy_from_slice(&(flags | units).to_le_bytes());
+            }
+        }
+        assert_eq!(formula_paragraphs, 4);
+        records
+    })
 }
 
 /// A deterministic non-uniform "render": white page, dark band whose position depends on `seed`.
@@ -11443,7 +11489,7 @@ fn fit_raster_resamples_only_canvas_rounding_slack() {
 
 #[test]
 fn calc_cell_stale_previews_are_regenerated_only_from_a_valid_render() {
-    let edited = calc_cell_edited(CALC_CELL, b'1', b'9');
+    let edited = calc_cell_edited(CALC_CELL, b'1', b'9', "6");
     let gif = cfb_stream(CALC_CELL, "/PrvImage").unwrap();
     assert_eq!(&gif[..6], b"GIF89a");
     assert_eq!(
@@ -11471,6 +11517,17 @@ fn calc_cell_stale_previews_are_regenerated_only_from_a_valid_render() {
         assert!(refused.output.is_none() && refused.image.is_none());
     }
     let render = raster(725, 1025, 7);
+    // A valid render cannot authorize an operand edit with a stale formula
+    // result, even if the display and the stored command agree with each other.
+    let stale_cache = calc_cell_edited(CALC_CELL, b'1', b'9', "2");
+    assert!(hwp::compare_saved(CALC_CELL, &stale_cache).contains(&Finding::at(
+        FindingCode::OutputMalformed,
+        "BodyText/Section0"
+    )));
+    assert!(hwp::refresh_previews(CALC_CELL, &stale_cache, Some(&render))
+        .unwrap()
+        .output
+        .is_none());
     let fixed = hwp::refresh_previews(CALC_CELL, &edited, Some(&render)).unwrap();
     let (output, png) = (fixed.output.unwrap(), fixed.image.unwrap());
     assert!(hwp::compare_saved_with_preview(CALC_CELL, &output, Some(&png)).is_empty());
@@ -11583,7 +11640,7 @@ fn calc_cell_two_durable_saves_with_regenerated_previews() {
         let session = registry.get(id).unwrap();
         (result, session.dirty, session.revision)
     };
-    let first_out = calc_cell_edited(CALC_CELL, b'1', b'9');
+    let first_out = calc_cell_edited(CALC_CELL, b'1', b'9', "6");
     let render = raster(724, 1024, 5);
     let (saved, _, _) = save(Some(CALC_CELL), &first_out, Some(&render));
     let saved = saved.unwrap();
@@ -11597,7 +11654,7 @@ fn calc_cell_two_durable_saves_with_regenerated_previews() {
     assert!(hwp::compare_saved_with_preview(CALC_CELL, &first, Some(&png)).is_empty());
     // Disk reopen; follow-up edit 9 → 8 with the identical render: the regenerated bytes equal
     // the (now original) preview and are still accepted as this save's evidence.
-    let second_out = calc_cell_edited(&first, b'9', b'8');
+    let second_out = calc_cell_edited(&first, b'9', b'8', "5.5");
     assert_ne!(
         cfb_stream(&second_out, "/BodyText/Section0"),
         cfb_stream(&first, "/BodyText/Section0")
@@ -11609,7 +11666,7 @@ fn calc_cell_two_durable_saves_with_regenerated_previews() {
     assert_eq!(cfb_stream(&second, "/PrvImage").unwrap(), png);
     assert!(hwp::compare_saved_with_preview(&first, &second, Some(&png)).is_empty());
     // Refused: render for the wrong orientation, and no render at all. File, dirty, revision stay.
-    let third_out = calc_cell_edited(&second, b'8', b'6');
+    let third_out = calc_cell_edited(&second, b'8', b'6', "4.5");
     for render in [Some(raster(1024, 724, 5)), None] {
         let (result, dirty, revision) = save(None, &third_out, render.as_ref());
         let error = result.unwrap_err();
@@ -11667,10 +11724,8 @@ fn hwp_records(data: &[u8]) -> Vec<(u16, u16, Vec<u8>)> {
     out
 }
 
-/// The genuine one-paragraph Hancom fixture with Section0 rewritten by `edit` (records in, out),
-/// exactly like the engine's export of the same edit (validated against the session export in
-/// target/blank-preview-wc-ci-20261108/a: header char count, two control units + CR, one LINE_SEG).
-fn align_left_with(
+/// Rewrite only the compressed Section0 of a genuine Hancom fixture.
+fn edit_compressed_section0(
     from: &[u8],
     edit: impl FnOnce(Vec<(u16, u16, Vec<u8>)>) -> Vec<(u16, u16, Vec<u8>)>,
 ) -> Vec<u8> {
@@ -11690,7 +11745,8 @@ fn align_left_with(
     cfb_replace(from, &[("/BodyText/Section0", &encoder.finish().unwrap())])
 }
 
-/// Paragraph 0 keeps its two section/column control units and `text` (UTF-16) before the CR.
+/// Like RHWP's one-paragraph export, keep the two section/column control units
+/// and one LINE_SEG, update the header count, and put `text` before the CR.
 fn set_first_paragraph(records: Vec<(u16, u16, Vec<u8>)>, text: &str) -> Vec<(u16, u16, Vec<u8>)> {
     let units: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let mut out = Vec::new();
@@ -11768,7 +11824,7 @@ fn uniform(width: u32, height: u32, value: u8) -> super::preview::PreviewRaster 
 
 #[test]
 fn blank_first_page_accepts_a_proven_uniform_render_and_refuses_unproven_ones() {
-    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let blank = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
     // The serialized preview text is the content-free CRLF even though the page is blank: it is
     // not the evidence (this was the defect: every uniform render was refused).
     assert_eq!(
@@ -11817,20 +11873,27 @@ fn blank_first_page_accepts_a_proven_uniform_render_and_refuses_unproven_ones() 
 fn nonblank_first_pages_refuse_a_uniform_render_even_when_marked_blank() {
     let white = uniform(724, 1024, 255).with_blank_page(true);
     // Visible text in the first paragraph (whitespace is not visible; one real character is).
-    let text = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "   가"));
+    let text = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, "   가"));
     assert!(hwp::refresh_previews(ALIGN_LEFT, &text, Some(&white))
         .unwrap()
         .output
         .is_none());
     // A table in the first paragraph (genuine calc-cell, cell edit).
-    let table = calc_cell_edited(CALC_CELL, b'1', b'9');
+    let table = calc_cell_edited(CALC_CELL, b'1', b'9', "6");
+    assert_eq!(
+        hwp::compare_saved(CALC_CELL, &table),
+        vec![
+            Finding::at(FindingCode::PreviewStale, "PrvText"),
+            Finding::at(FindingCode::PreviewStale, "PrvImage"),
+        ]
+    );
     assert!(hwp::refresh_previews(CALC_CELL, &table, Some(&white))
         .unwrap()
         .output
         .is_none());
     // Whitespace-only first paragraph: the backend sees nothing visible there; acceptance still
     // depends on the frontend evidence (which classifies whitespace runs as content).
-    let spaces = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "  \u{3000} "));
+    let spaces = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, "  \u{3000} "));
     assert!(
         hwp::refresh_previews(ALIGN_LEFT, &spaces, Some(&uniform(724, 1024, 255)))
             .unwrap()
@@ -11842,7 +11905,7 @@ fn nonblank_first_pages_refuse_a_uniform_render_even_when_marked_blank() {
         .output
         .is_some());
     // Undecodable first-paragraph text (a lone control unit) fails closed.
-    let broken = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "\u{1}"));
+    let broken = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, "\u{1}"));
     assert!(hwp::refresh_previews(ALIGN_LEFT, &broken, Some(&white))
         .unwrap()
         .output
@@ -11851,7 +11914,7 @@ fn nonblank_first_pages_refuse_a_uniform_render_even_when_marked_blank() {
 
 #[test]
 fn blank_first_page_followed_by_later_text_needs_the_page_one_evidence() {
-    let later = align_left_with(ALIGN_LEFT, |r| {
+    let later = edit_compressed_section0(ALIGN_LEFT, |r| {
         append_text_paragraph(set_first_paragraph(r, ""), "둘째 쪽 본문")
     });
     // PrvText now summarizes the later text; it says nothing about page 1.
@@ -11889,7 +11952,7 @@ fn blank_first_page_followed_by_later_text_needs_the_page_one_evidence() {
 /// (scripts/tests/verify-hwp-preview.py, verify-hwp-blank-preview.py), never by the backend.
 #[test]
 fn preview_structure_is_checked_but_pixel_semantics_are_frontend_evidence() {
-    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let blank = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
     let white = uniform(724, 1024, 255).with_blank_page(true);
     for wrong in [
         uniform(1024, 724, 255).with_blank_page(true),
@@ -12036,9 +12099,9 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
     }
     // The engine may omit an unknown original record before classifying its
     // blank export. Refuse this laundering path and retain recovery ownership.
-    let blank_out = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let blank_out = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
     for level in [1, 2] {
-        let original = align_left_with(ALIGN_LEFT, |mut records| {
+        let original = edit_compressed_section0(ALIGN_LEFT, |mut records| {
             records.push((1023, level, vec![1, 2, 3, 4]));
             records
         });
@@ -12088,7 +12151,7 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
         .all(|v| *v == 255));
     assert_eq!(cfb_stream(&first, "/PrvText").unwrap(), utf16("\r\n"));
     // Disk reopen; follow-up edit puts text back; the render now paints text.
-    let second_out = align_left_with(&first, |r| set_first_paragraph(r, "다시 쓴 글"));
+    let second_out = edit_compressed_section0(&first, |r| set_first_paragraph(r, "다시 쓴 글"));
     let render = raster(724, 1024, 4);
     let (result, _, _) = save(None, &second_out, Some(&render));
     let saved = result.unwrap();
@@ -12105,7 +12168,7 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
         utf16("다시 쓴 글\r\n")
     );
     // Text page with a (failed) uniform render marked blank: refused, file kept.
-    let third_out = align_left_with(&second, |r| set_first_paragraph(r, "또 다른 글"));
+    let third_out = edit_compressed_section0(&second, |r| set_first_paragraph(r, "또 다른 글"));
     let (result, dirty, revision) = save(
         None,
         &third_out,
@@ -12122,7 +12185,7 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
 
 #[test]
 fn blank_first_paragraph_unknown_record_is_refused() {
-    let output = align_left_with(ALIGN_LEFT, |r| {
+    let output = edit_compressed_section0(ALIGN_LEFT, |r| {
         let mut r = set_first_paragraph(r, "");
         r.push((1023, 1, vec![1, 2, 3, 4]));
         r
@@ -12162,7 +12225,7 @@ fn unproven_blank_paragraphs() -> Vec<(&'static str, Vec<u8>)> {
     ] {
         cases.push((
             name,
-            align_left_with(ALIGN_LEFT, |r| {
+            edit_compressed_section0(ALIGN_LEFT, |r| {
                 let mut r = set_first_paragraph(r, "");
                 r.push((tag, level, body));
                 r
@@ -12184,7 +12247,7 @@ fn unproven_blank_paragraphs() -> Vec<(&'static str, Vec<u8>)> {
     ] {
         cases.push((
             name,
-            align_left_with(ALIGN_LEFT, |r| {
+            edit_compressed_section0(ALIGN_LEFT, |r| {
                 let mut r = set_first_paragraph(r, "");
                 r.iter_mut().find(|(t, _, _)| *t == 67).unwrap().2 = body;
                 r
@@ -12193,7 +12256,7 @@ fn unproven_blank_paragraphs() -> Vec<(&'static str, Vec<u8>)> {
     }
     cases.push((
         "unknown prefix",
-        align_left_with(ALIGN_LEFT, |r| {
+        edit_compressed_section0(ALIGN_LEFT, |r| {
             let mut r = set_first_paragraph(r, "");
             r.insert(0, (1023, 0, vec![]));
             r
@@ -12215,11 +12278,11 @@ fn blank_first_paragraph_record_contract() {
     for (name, output) in [
         (
             "genuine metadata",
-            align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "")),
+            edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, "")),
         ),
         (
             "empty range list",
-            align_left_with(ALIGN_LEFT, |r| {
+            edit_compressed_section0(ALIGN_LEFT, |r| {
                 let mut r = set_first_paragraph(r, "");
                 r.push((70, 1, vec![]));
                 r
@@ -12227,7 +12290,7 @@ fn blank_first_paragraph_record_contract() {
         ),
         (
             "complete inline tab",
-            align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "\t\0\0\0\0\0\0\t")),
+            edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, "\t\0\0\0\0\0\0\t")),
         ),
     ] {
         let result = hwp::refresh_previews(ALIGN_LEFT, &output, Some(&white)).unwrap();
@@ -12237,10 +12300,10 @@ fn blank_first_paragraph_record_contract() {
 
 #[test]
 fn blank_preview_refuses_unknown_original_structure_lost_by_export() {
-    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let blank = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
     let white = uniform(724, 1024, 255).with_blank_page(true);
     for level in [1, 2] {
-        let original = align_left_with(ALIGN_LEFT, |mut records| {
+        let original = edit_compressed_section0(ALIGN_LEFT, |mut records| {
             records.push((1023, level, vec![1, 2, 3, 4]));
             records
         });
@@ -12253,12 +12316,12 @@ fn blank_preview_refuses_unknown_original_structure_lost_by_export() {
     // Understood visible original text, including a valid surrogate pair, can
     // still be deleted to create a genuine blank page.
     for text in ["가나", "😀"] {
-        let original = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, text));
+        let original = edit_compressed_section0(ALIGN_LEFT, |r| set_first_paragraph(r, text));
         let result = hwp::refresh_previews(&original, &blank, Some(&white)).unwrap();
         assert!(result.output.is_some() && result.image.is_some(), "{text}");
     }
     for text in [vec![0, 0xd8, 13, 0], vec![0, 0xdc, 13, 0]] {
-        let original = align_left_with(ALIGN_LEFT, |r| {
+        let original = edit_compressed_section0(ALIGN_LEFT, |r| {
             let mut records = set_first_paragraph(r, "");
             records.iter_mut().find(|(tag, _, _)| *tag == 67).unwrap().2 = text;
             records
