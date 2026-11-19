@@ -1740,8 +1740,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
               ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
           }
-          const chartAddress = graphic?.kind === "chart" && format === "hwpx" && this.history && this.doc.setChartData
-            ? hit.bodyEmbedded : undefined;
+          const canEditChart = graphic?.kind === "chart" && this.history && this.doc.setChartData
+            && (format === "hwpx" || (canEditHwp && this.isEditableHwpChart(hit.bodyEmbedded)));
+          const chartAddress = canEditChart ? hit.bodyEmbedded : undefined;
           if (chartAddress) operations.push("chart");
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
@@ -1961,7 +1962,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
-      if (format === "hwpx" && typeof doc.getChartData === "function" && typeof reopened.getChartData === "function") {
+      if ((format === "hwpx" || format === "hwp") && typeof doc.getChartData === "function" && typeof reopened.getChartData === "function") {
         report.controlsEqual &&= this.chartsEqualOnReopen(doc, reopened, controls(doc));
       }
       if (format === "hwp") {
@@ -4213,6 +4214,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch { return false; }
   }
 
+  private isEditableHwpChart(address: readonly [number, number, number] | undefined): boolean {
+    const doc = this.doc;
+    if (!address || !doc?.getControls) return false;
+    try {
+      const [section, para, control] = address;
+      let globalPara = para;
+      for (let s = 0; s < section; s++) globalPara += doc.getParagraphCount(s);
+      const controls = JSON.parse(doc.getControls()) as { ctrlId?: string; userDesc?: string; list?: number; para?: number; controlIndex?: number; props?: { Lock?: number } }[];
+      const match = controls.find(c => c.ctrlId === "gso" && c.list === 0 && c.para === globalPara && c.controlIndex === control);
+      return !!match && match.props?.Lock !== 1 && match.userDesc === "OLE";
+    } catch {
+      return false;
+    }
+  }
+
   private isEditableHwpGso(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
     const doc = this.doc;
     if (!address || !doc?.getControls) return false;
@@ -4322,12 +4338,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return accepted;
   }
 
-  /** Stage 3 B6 `object.edit` (`chartData`) on the selected HWPX body OOXML chart: one verified engine call, one history step. */
+  /** Stage 3 B6/B7 `object.edit` (`chartData`) on the selected HWPX/HWP body OOXML chart: one verified engine call, one history step. */
   private editChart(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
     const doc = this.doc, selected = this.objectSelection;
     if (!selected || !doc?.setChartData || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (format !== "hwpx") return false;
+    if (format !== "hwpx" && !(format === "hwp" && this.structuralFormat() && this.isEditableHwpChart(address))) return false;
     const { edit } = request;
     if (edit.kind !== "chartData") return false;
     const before = this.readChart(address);

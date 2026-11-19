@@ -2,6 +2,7 @@ import { paragraphFieldMap } from "./fieldOwnership";
 import type { RhwpDocument } from "./rhwpModule";
 import { canonical } from "./rhwpArtifactIdentity";
 import { cachedFormula } from "./formulaDependencies";
+import { parseGraphicProperties } from "../../../commands/graphicProperties";
 
 type JsonObject = Record<string, unknown>;
 export interface HwpReopenModel { model: string; structure: string; complete: boolean }
@@ -428,6 +429,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const tables: unknown[] = [];
   const pictures: unknown[] = [];
   const shapes: unknown[] = [];
+  const charts: unknown[] = [];
   const inventory: unknown[] = [];
   const fields: unknown[] = [];
   let paragraphBase = 0;
@@ -534,6 +536,21 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
           || (props.TreatAsChar === 1) !== shape.treatAsChar) complete = false;
       }
       shapes.push(shape);
+    } else if (c.ctrlId === "gso" && c.userDesc === "OLE") {
+      const props = object(c.props); checkControlProps(props);
+      let chart: unknown = null;
+      if (doc.getChartData) {
+        try {
+          const raw = object(json(doc.getChartData(section, p, control)));
+          if (raw.ok === true) {
+            chart = parseGraphicProperties({ kind: "chart", plot: raw.plot, title: null, labels: raw.labels, series: raw.series }) ?? null;
+          }
+        } catch {
+          chart = null;
+        }
+      }
+      if (!chart) complete = false;
+      charts.push(chart ? { props, chart } : null);
     } else complete = false;
   }
   // T012 Phase 2 — nested table cells. The body-level table model above reads one level only, so text typed
@@ -583,7 +600,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       nested.push({ section, host, levels, coordinates, paragraphs });
     }
   }
-  return { model: canonical({ sections, tables, pictures, shapes, fields, nested }), structure: canonical({ inventory, headings }), complete };
+  return { model: canonical({ sections, tables, pictures, shapes, charts, fields, nested }), structure: canonical({ inventory, headings }), complete };
 }
 
 function cursorListMap(cursor: JsonObject): Map<number, JsonObject> {

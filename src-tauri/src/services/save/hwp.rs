@@ -646,36 +646,148 @@ fn bin_data_storage(
     Ok(out)
 }
 
-/// 비레코드 스트림 비교. `storage`는 양쪽 BIN_DATA 선언으로 정한 저장 형태(선언이 없는 스트림은 None: 엔진이 그대로 옮기는
+const ATTR_LOCKED: u32 = 1 << 30;
+const TAG_OLE: u16 = 84;
+
+fn bin_data_ole_keys_by_id(container: &Container) -> BTreeMap<u32, String> {
+    let mut out = BTreeMap::new();
+    let Some(data) = container
+        .streams
+        .get("DocInfo")
+        .and_then(|raw| unpack(container, raw).ok())
+    else {
+        return out;
+    };
+    for (tag, _, body) in records(&data).unwrap_or_default() {
+        if tag != TAG_BIN_DATA || body.len() < 4 {
+            continue;
+        }
+        let attr = u16::from_le_bytes([body[0], body[1]]);
+        let kind = attr & 0x000F;
+        if !matches!(kind, 1 | 2) {
+            continue;
+        }
+        let id = u16::from_le_bytes([body[2], body[3]]);
+        let ext = match body.get(4..6) {
+            None if kind == 2 && body.len() == 4 => "OLE".to_owned(),
+            Some(len) => {
+                let len = usize::from(u16::from_le_bytes([len[0], len[1]]));
+                let Some(raw_ext) = body.get(6..6 + len * 2) else {
+                    continue;
+                };
+                let units: Vec<u16> = raw_ext
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| u16::from_le_bytes(*pair))
+                    .collect();
+                let Ok(ext) = String::from_utf16(&units) else {
+                    continue;
+                };
+                ext
+            }
+            None => continue,
+        };
+        if ext.eq_ignore_ascii_case("OLE") && ext.is_ascii() {
+            out.insert(
+                u32::from(id),
+                format!("BinData/BIN{id:04X}.{ext}").to_ascii_uppercase(),
+            );
+        }
+    }
+    out
+}
+
+fn unlocked_ole_chart_keys(container: &Container) -> std::collections::BTreeSet<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    let by_id = bin_data_ole_keys_by_id(container);
+    if by_id.is_empty() {
+        return keys;
+    }
+    for (name, raw) in &container.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let Ok(data) = unpack(container, raw) else {
+            continue;
+        };
+        let Some(rs) = records(&data) else {
+            continue;
+        };
+        let mut i = 0usize;
+        while i < rs.len() {
+            let (tag, level, body) = rs[i];
+            if tag == 71 && level == 1 && body.starts_with(b" osg") && body.len() >= 46 {
+                let end = i
+                    + 1
+                    + rs[i + 1..]
+                        .iter()
+                        .position(|r| r.1 <= level)
+                        .unwrap_or(rs.len() - (i + 1));
+                let attr = u32::from_le_bytes(body[4..8].try_into().unwrap_or([0; 4]));
+                if (attr & ATTR_LOCKED) == 0 {
+                    let sub = &rs[i..end];
+                    let has_elo = sub
+                        .iter()
+                        .any(|r| r.0 == 76 && r.1 == 2 && r.2.starts_with(b"elo$"));
+                    if has_elo {
+                        for r in sub {
+                            if r.0 == TAG_OLE && r.1 == 3 && r.2.len() >= 16 {
+                                let bin_id =
+                                    u32::from_le_bytes(r.2[12..16].try_into().unwrap());
+                                if let Some(key) = by_id.get(&bin_id) {
+                                    keys.insert(key.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                i = end;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    keys
+}
+
+/// 비레코드 스트림 비교 및 언팩. `storage`는 양쪽 BIN_DATA 선언으로 정한 저장 형태(선언이 없는 스트림은 None: 엔진이 그대로 옮기는
 /// 불투명 바이트라 바이트가 같아야 한다).
-fn compare_stream(
+/// Returns `Ok(Some((unpacked_before, unpacked_after)))` only when unpacked bytes legitimately
+/// differ under matching verified `Storage`; `Ok(None)` when equal.
+fn compare_stream_or_unpack(
     name: &str,
     before: &[u8],
     after: &[u8],
     storage: (Option<Storage>, Option<Storage>),
-) -> Option<Finding> {
-    let changed = || Some(Finding::at(FindingCode::PartChanged, name));
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, Finding> {
+    let changed = || Finding::at(FindingCode::PartChanged, name);
     match storage {
-        (a, b) if a != b => changed(),
-        (Some(Storage::Undetermined), _) => Some(Finding::at(FindingCode::Unsupported, name)),
+        (a, b) if a != b => Err(changed()),
+        (Some(Storage::Undetermined), _) => Err(Finding::at(FindingCode::Unsupported, name)),
         (Some(Storage::Compressed), _) => {
             // 압축으로 정해진 스트림은 바이트가 같아도 원본이 끝까지 풀려야 한다(같은 바이트의 깨진 스트림은 보존의 근거가
             // 아니다, T009 4차 안정화 B). 같은 바이트면 출력도 방금 확인한 그 스트림이라 다시 풀지 않는다.
-            let a = match inflate(before) {
-                Ok(data) => data,
-                Err(problem) => return Some(Side::Original.unpack_finding(problem, name)),
-            };
+            let a = inflate(before).map_err(|p| Side::Original.unpack_finding(p, name))?;
             if before == after {
-                return None;
+                return Ok(None);
             }
-            let b = match inflate(after) {
-                Ok(data) => data,
-                Err(problem) => return Some(Side::Output.unpack_finding(problem, name)),
-            };
-            (a != b).then(|| Finding::at(FindingCode::PartChanged, name))
+            let b = inflate(after).map_err(|p| Side::Output.unpack_finding(p, name))?;
+            if a == b {
+                Ok(None)
+            } else {
+                Ok(Some((a, b)))
+            }
         }
-        _ if before != after => changed(),
-        _ => None,
+        (Some(Storage::Stored), _) => {
+            if before == after {
+                Ok(None)
+            } else {
+                Ok(Some((before.to_vec(), after.to_vec())))
+            }
+        }
+        (None, None) if before == after => Ok(None),
+        _ => Err(changed()),
     }
 }
 
@@ -1168,7 +1280,14 @@ fn compare_with(
             (BTreeMap::new(), BTreeMap::new())
         }
     };
+    let orig_ole_charts = (mode == Mode::Edited)
+        .then(|| unlocked_ole_chart_keys(&original))
+        .unwrap_or_default();
+    let out_ole_charts = (mode == Mode::Edited)
+        .then(|| unlocked_ole_chart_keys(&output))
+        .unwrap_or_default();
     let mut body_changed = false;
+    let mut chart_changed = false;
     for (name, before) in &original.streams {
         let Some(after) = output.streams.get(name) else {
             findings.push(Finding::at(FindingCode::PartMissing, name));
@@ -1192,7 +1311,28 @@ fn compare_with(
                 continue;
             }
             let storage = (bin_before.get(&key).copied(), bin_after.get(&key).copied());
-            findings.extend(compare_stream(name, before, after, storage));
+            match compare_stream_or_unpack(name, before, after, storage) {
+                Ok(None) => {}
+                Ok(Some((unpacked_before, unpacked_after))) => {
+                    let admitted = mode == Mode::Edited
+                        && key.starts_with(BIN_DATA_PREFIX)
+                        && key.ends_with(".OLE")
+                        && orig_ole_charts.contains(&key)
+                        && out_ole_charts.contains(&key)
+                        && super::hwpx_charts::prove_nested_ole_chart_cfb(
+                            &unpacked_before,
+                            &unpacked_after,
+                            true,
+                        )
+                        .is_some();
+                    if admitted {
+                        chart_changed = true;
+                    } else {
+                        findings.push(Finding::at(FindingCode::PartChanged, name));
+                    }
+                }
+                Err(finding) => findings.push(finding),
+            }
             continue;
         }
         // 레코드 스트림: 바이트가 같아도 양쪽을 끝까지 읽는다(원본이 깨졌으면 unknown, 출력이 깨졌으면 unsafe).
@@ -1271,18 +1411,20 @@ fn compare_with(
         }
     }
     // 본문을 바꾼 저장: 원본 그대로 남는 미리보기는 문서 내용과 무관함을 증명해야 한다(지운 내용이 남지 않게).
-    if body_changed {
-        let stale = |name: &str, empty: fn(&[u8]) -> bool| {
-            output
-                .streams
-                .get(name)
-                .is_some_and(|data| original.streams.get(name) == Some(data) && !empty(data))
-        };
-        if stale("PrvText", preview::blank_utf16)
-            && text_preview(&output).as_ref() != output.streams.get("PrvText")
-        {
-            findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
-        }
+    let visual_changed = body_changed || chart_changed;
+    let stale = |name: &str, empty: fn(&[u8]) -> bool| {
+        output
+            .streams
+            .get(name)
+            .is_some_and(|data| original.streams.get(name) == Some(data) && !empty(data))
+    };
+    if body_changed
+        && stale("PrvText", preview::blank_utf16)
+        && text_preview(&output).as_ref() != output.streams.get("PrvText")
+    {
+        findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
+    }
+    if visual_changed {
         // New structural content needs a fresh page render even when the old preview
         // is a known document-independent blank. A blank is not an image of a new table.
         let structural_blank = insertion.is_some()
@@ -1293,11 +1435,11 @@ fn compare_with(
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
         }
     }
-    // Regenerated PrvImage: only with a changed body, only the exact bytes encoded for this
+    // Regenerated PrvImage: only with a changed body/chart, only the exact bytes encoded for this
     // save, and only if they independently decode as the canonical preview at the size the
     // output's own first PAGE_DEF requires. Anything else stays a changed part (unsafe).
     if let Some(expected) = expected_image {
-        let accepted = body_changed
+        let accepted = visual_changed
             && original.streams.contains_key("PrvImage")
             && output.streams.get("PrvImage").map(Vec::as_slice) == Some(expected)
             && regenerated_image_valid(&output, expected);
@@ -2138,5 +2280,199 @@ mod font_preservation_tests {
             .2[..2]
             .fill(0);
         assert!(!prove(&old, &unreferenced));
+    }
+}
+
+#[cfg(test)]
+mod chart_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn pack_rec(tag: u16, level: u16, payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let size = if payload.len() >= 0xfff { 0xfff } else { payload.len() };
+        let hdr = (u32::from(tag) & 0x3ff)
+            | ((u32::from(level) & 0x3ff) << 10)
+            | ((size as u32 & 0xfff) << 20);
+        out.extend_from_slice(&hdr.to_le_bytes());
+        if size == 0xfff {
+            out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        }
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn chart_xml(val0: &str, title: &str) -> Vec<u8> {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <c:chart>
+    <c:title><c:tx><c:rich><a:p><a:r><a:t>{title}</a:t></a:r></a:p></c:rich></c:tx></c:title>
+    <c:plotArea><c:barChart><c:ser>
+      <c:idx val="0"/><c:order val="0"/>
+      <c:tx><c:strRef><c:f>S1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>S1</c:v></c:pt></c:strCache></c:strRef></c:tx>
+      <c:cat><c:strRef><c:f>A2</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>Q1</c:v></c:pt></c:strCache></c:strRef></c:cat>
+      <c:val><c:numRef><c:f>B2</c:f><c:numCache><c:ptCount val="1"/><c:pt idx="0"><c:v>{val0}</c:v></c:pt></c:numCache></c:numRef></c:val>
+    </c:ser></c:barChart></c:plotArea>
+  </c:chart>
+</c:chartSpace>"#
+        )
+        .into_bytes()
+    }
+
+    fn make_ole_stream(chart_bytes: &[u8], extra_contents: &[u8], zero_clsid: bool, with_prefix: bool) -> Vec<u8> {
+        let mut cur = Cursor::new(Vec::new());
+        {
+            let mut cf = cfb::CompoundFile::create(&mut cur).unwrap();
+            if !zero_clsid {
+                cf.set_storage_clsid("/", "12345678-1234-5678-1234-567812345678".parse().unwrap())
+                    .unwrap();
+            }
+            cf.create_stream("/OOXMLChartContents").unwrap().write_all(chart_bytes).unwrap();
+            cf.create_stream("/Contents").unwrap().write_all(extra_contents).unwrap();
+        }
+        let raw = cur.into_inner();
+        let prefixed = if with_prefix {
+            let mut v = Vec::with_capacity(4 + raw.len());
+            v.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+            v.extend_from_slice(&raw);
+            v
+        } else {
+            raw
+        };
+        let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&prefixed).unwrap();
+        enc.finish().unwrap()
+    }
+
+    fn build_hwp_with_ole(ole_compressed: &[u8], locked: bool) -> Vec<u8> {
+        let mut cur = Cursor::new(Vec::new());
+        {
+            let mut cf = cfb::CompoundFile::create(&mut cur).unwrap();
+            let mut fh = vec![0u8; 256];
+            fh[..17].copy_from_slice(b"HWP Document File");
+            fh[35] = 5;
+            cf.create_stream("/FileHeader").unwrap().write_all(&fh).unwrap();
+
+            // DocInfo: ID_MAPPINGS(17) + BIN_DATA(18) id=1 Storage Compressed ext="OLE" + PARA_SHAPE(25)
+            let mut docinfo = pack_rec(17, 0, &[0u8; 72]);
+            let mut bin_rec = vec![0x12, 0x00, 0x01, 0x00, 0x03, 0x00];
+            for ch in "OLE".encode_utf16() {
+                bin_rec.extend_from_slice(&ch.to_le_bytes());
+            }
+            docinfo.extend_from_slice(&pack_rec(TAG_BIN_DATA, 1, &bin_rec));
+            docinfo.extend_from_slice(&pack_rec(TAG_PARA_SHAPE, 1, &[0u8; 54]));
+            cf.create_stream("/DocInfo").unwrap().write_all(&docinfo).unwrap();
+
+            let mut hdr = vec![0u8; 46];
+            hdr[..4].copy_from_slice(b" osg");
+            if locked {
+                hdr[4..8].copy_from_slice(&(1u32 << 30).to_le_bytes());
+            }
+            let mut sc = vec![0u8; 64];
+            sc[..8].copy_from_slice(b"elo$elo$");
+            let mut ole = vec![0u8; 30];
+            ole[0..4].copy_from_slice(&1u32.to_le_bytes());
+            ole[12..16].copy_from_slice(&1u32.to_le_bytes());
+
+            let mut sec = pack_rec(TAG_PARA_HEADER, 0, &[0u8; 22]);
+            sec.extend_from_slice(&pack_rec(71, 1, &hdr));
+            sec.extend_from_slice(&pack_rec(76, 2, &sc));
+            sec.extend_from_slice(&pack_rec(TAG_OLE, 3, &ole));
+            cf.create_storage("/BodyText").unwrap();
+            cf.create_stream("/BodyText/Section0").unwrap().write_all(&sec).unwrap();
+
+            cf.create_storage("/BinData").unwrap();
+            cf.create_stream("/BinData/BIN0001.OLE").unwrap().write_all(ole_compressed).unwrap();
+            cf.create_stream("/PrvText").unwrap().write_all(&[0x0d, 0x00, 0x0a, 0x00]).unwrap();
+        }
+        cur.into_inner()
+    }
+
+    #[test]
+    fn hwp_chart_proof_admits_only_consistent_ole_edits() {
+        let orig_ole = make_ole_stream(&chart_xml("4.3", "Title"), b"OLE-ORIG", false, true);
+        let orig = build_hwp_with_ole(&orig_ole, false);
+
+        let edited_ole = make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, true);
+        let edited = build_hwp_with_ole(&edited_ole, false);
+        assert_eq!(compare_saved(&orig, &edited), vec![]);
+
+        let locked_orig = build_hwp_with_ole(&orig_ole, true);
+        let locked_edit = build_hwp_with_ole(&edited_ole, true);
+        assert!(!compare_saved(&locked_orig, &locked_edit).is_empty());
+
+        for bad_ole in [
+            make_ole_stream(&chart_xml("nan", "Title"), b"OLE-ORIG", false, true),
+            make_ole_stream(&chart_xml("12.75", "Other Title"), b"OLE-ORIG", false, true),
+            make_ole_stream(&chart_xml("12.75", "Title"), b"TAMPERED", false, true),
+            make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", true, true),
+            make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, false),
+        ] {
+            let bad = build_hwp_with_ole(&bad_ole, false);
+            assert!(
+                compare_saved(&orig, &bad)
+                    .iter()
+                    .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: set GEUL_STAGE3_OUT and run stage3-chart-inspection.wasm.test.ts first"]
+    fn release_hwp_chart_bytes_pass_only_for_proven_edits() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let orig = std::fs::read(dir.join("hwp-chart-7406-orig.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("hwp-chart-7406-edited.hwp")).unwrap();
+
+        // Raw export keeps original non-blank PrvImage, so PreviewStale(PrvImage) is the sole finding.
+        assert_eq!(
+            compare_saved(&orig, &edited),
+            vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+        );
+
+        let edited_c = open(&edited, Side::Output).unwrap();
+        let (w, h) = preview_size(&edited_c).unwrap();
+        let mut rgb = vec![0xffu8; (w as usize) * (h as usize) * 3];
+        rgb[..3].copy_from_slice(&[0x12, 0x34, 0x56]);
+        let raster = preview::PreviewRaster {
+            width: w,
+            height: h,
+            rgb,
+            blank_page: false,
+        };
+        let refreshed = refresh_previews(&orig, &edited, Some(&raster)).unwrap();
+        let final_out = refreshed.output.unwrap();
+        let png = refreshed.image.unwrap();
+        assert_eq!(
+            compare_saved_with_preview(&orig, &final_out, Some(&png)),
+            vec![]
+        );
+
+        // Mutating an extraneous stream inside BIN0001.OLE must still be rejected.
+        let mut cfb = cfb::CompoundFile::open(Cursor::new(edited)).unwrap();
+        let mut stream = Vec::new();
+        cfb.open_stream("/BinData/BIN0001.OLE").unwrap().read_to_end(&mut stream).unwrap();
+        let inflated = inflate(&stream).map_err(|_| ()).unwrap();
+        let mut nested = cfb::CompoundFile::open(Cursor::new(&inflated[4..])).unwrap();
+        let xml_bytes = {
+            let mut b = Vec::new();
+            nested.open_stream("/OOXMLChartContents").unwrap().read_to_end(&mut b).unwrap();
+            b
+        };
+        let tampered_ole = make_ole_stream(&xml_bytes, b"TAMPERED-CONTENTS", false, true);
+        let mut tampered_cfb = Vec::new();
+        {
+            let mut cf = cfb::CompoundFile::open(Cursor::new(std::fs::read(dir.join("hwp-chart-7406-edited.hwp")).unwrap())).unwrap();
+            let mut s = cf.create_stream("/BinData/BIN0001.OLE").unwrap();
+            s.write_all(&tampered_ole).unwrap();
+            drop(s);
+            cf.into_inner().into_inner().into_iter().for_each(|b| tampered_cfb.push(b));
+        }
+        assert!(
+            compare_saved(&orig, &tampered_cfb)
+                .iter()
+                .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
+        );
     }
 }
