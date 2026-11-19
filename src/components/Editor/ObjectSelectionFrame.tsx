@@ -12,22 +12,37 @@ type Box = Pick<ObjectFrame, "x" | "y" | "width" | "height">;
 
 /**
  * The frame after dragging `handle` by (dx, dy) page points. Corner handles keep the aspect ratio
- * when `keepAspect`; sides are clamped to the object limits and the opposite edge stays put.
+ * when `keepAspect` using a single bounded scale factor; sides stay within the object limits and
+ * the opposite edge stays put. Non-finite inputs or unsatisfiable aspect limits return `start`.
  */
 export function resizeBox(start: Box, handle: ResizeHandle, dx: number, dy: number, keepAspect: boolean): Box {
   const { min, max } = OBJECT_SIDE_LIMITS;
   const clamp = (side: number) => Math.min(max, Math.max(min, side));
+  if (![start.x, start.y, start.width, start.height, dx, dy].every(Number.isFinite)
+    || start.width <= 0 || start.height <= 0) {
+    return { ...start };
+  }
   const west = handle.includes("w"), east = handle.includes("e");
   const north = handle.startsWith("n"), south = handle.startsWith("s");
-  let width = start.width + (east ? dx : west ? -dx : 0);
-  let height = start.height + (south ? dy : north ? -dy : 0);
-  width = clamp(width);
-  height = clamp(height);
-  if (keepAspect && (west || east) && (north || south) && start.width > 0 && start.height > 0) {
-    const ratio = start.width / start.height;
-    // Follow the axis the pointer moved further along (relative to the size).
-    if (Math.abs(width / start.width - 1) >= Math.abs(height / start.height - 1)) height = clamp(width / ratio);
-    else width = clamp(height * ratio);
+  const rawWidth = start.width + (east ? dx : west ? -dx : 0);
+  const rawHeight = start.height + (south ? dy : north ? -dy : 0);
+  let width: number;
+  let height: number;
+  if (keepAspect && (west || east) && (north || south)) {
+    const sMin = Math.max(min / start.width, min / start.height);
+    const sMax = Math.min(max / start.width, max / start.height);
+    if (!Number.isFinite(sMin) || !Number.isFinite(sMax) || sMin > sMax) {
+      return { ...start };
+    }
+    const sx = rawWidth / start.width;
+    const sy = rawHeight / start.height;
+    const intended = Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy;
+    const scale = Math.min(sMax, Math.max(sMin, intended));
+    width = clamp(scale * start.width);
+    height = clamp(scale * start.height);
+  } else {
+    width = clamp(rawWidth);
+    height = clamp(rawHeight);
   }
   return {
     width, height,

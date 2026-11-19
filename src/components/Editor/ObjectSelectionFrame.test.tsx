@@ -41,6 +41,44 @@ describe("resizeBox", () => {
     expect(resizeBox(start, "se", 100, 0, true)).toEqual({ x: 10, y: 20, width: 200, height: 100 });
     expect(resizeBox(start, "e", 100, 0, true)).toEqual({ x: 10, y: 20, width: 200, height: 50 });
   });
+  it("preserves aspect ratio at min and max limits for wide and tall pictures across all corners", () => {
+    // Prompt counterexample: tall 1:10 picture dragged to max width 4000 must clamp to 400x4000, not 4000x4000.
+    const tall = { x: 50, y: 60, width: 100, height: 1000 };
+    const tallMax = resizeBox(tall, "se", 3900, 0, true);
+    expect(tallMax).toEqual({ x: 50, y: 60, width: 400, height: 4000 });
+    expect(tallMax.width / tallMax.height).toBeCloseTo(tall.width / tall.height, 6);
+
+    // Tall picture shrunk past min width (min=2): clamps to 2x20 keeping 1:10 ratio and fixed bottom-right corner.
+    const tallMin = resizeBox(tall, "nw", 500, 0, true);
+    expect(tallMin).toEqual({ x: 50 + 100 - 2, y: 60 + 1000 - 20, width: 2, height: 20 });
+    expect(tallMin.x + tallMin.width).toBe(tall.x + tall.width);
+    expect(tallMin.y + tallMin.height).toBe(tall.y + tall.height);
+
+    // Wide 10:1 picture constrained by max width (4000x400) and min height (20x2).
+    const wide = { x: 100, y: 200, width: 1000, height: 100 };
+    const wideMax = resizeBox(wide, "ne", 0, -5000, true);
+    expect(wideMax).toEqual({ x: 100, y: 200 + 100 - 400, width: 4000, height: 400 });
+    expect(wideMax.width / wideMax.height).toBeCloseTo(wide.width / wide.height, 6);
+    expect(wideMax.x).toBe(wide.x);
+    expect(wideMax.y + wideMax.height).toBe(wide.y + wide.height);
+
+    const wideMin = resizeBox(wide, "sw", 0, -500, true);
+    expect(wideMin).toEqual({ x: 100 + 1000 - 20, y: 200, width: 20, height: 2 });
+    expect(wideMin.x + wideMin.width).toBe(wide.x + wide.width);
+    expect(wideMin.y).toBe(wide.y);
+  });
+  it("handles degenerate, unsatisfiable, and non-finite inputs safely without NaN or distortion", () => {
+    const valid = { x: 10, y: 20, width: 100, height: 50 };
+    expect(resizeBox(valid, "se", Number.NaN, 10, true)).toEqual(valid);
+    expect(resizeBox(valid, "nw", 10, Number.POSITIVE_INFINITY, true)).toEqual(valid);
+    expect(resizeBox({ x: 0, y: 0, width: 0, height: 50 }, "se", 10, 10, true)).toEqual({ x: 0, y: 0, width: 0, height: 50 });
+    // Aspect ratio 1:3000 cannot fit both dimensions inside [2, 4000].
+    const impossible = { x: 10, y: 20, width: 1, height: 3000 };
+    expect(resizeBox(impossible, "se", 100, 100, true)).toEqual(impossible);
+    // Out-of-bounds initial box whose aspect ratio IS satisfiable scales cleanly into [2, 4000].
+    const tiny = { x: 10, y: 20, width: 1, height: 2 };
+    expect(resizeBox(tiny, "se", 0, 0, true)).toEqual({ x: 10, y: 20, width: 2, height: 4 });
+  });
 });
 
 describe("object edit requests", () => {
@@ -120,5 +158,19 @@ describe("ObjectSelectionFrame", () => {
     expect(screen.queryByTestId("object-move")).toBeNull();
     drag(screen.getByTestId("object-handle-nw"), [0, 0], [40, 20], { shiftKey: true });
     expect(onEdit).toHaveBeenLastCalledWith({ kind: "bounds", width: 60, height: 30 }, 7);
+  });
+
+  it("commits one ratio-preserving edit per corner drag at limits and keeps the opposite corner fixed", () => {
+    const tallSelection = selection({
+      frame: { page: 0, x: 100, y: 200, width: 100, height: 1000 },
+    });
+    const { onEdit } = frame({ selection: tallSelection });
+    // scale=2: clientX delta 8000 => dx = 4000 pt, hitting max height 4000 -> width 400, height 4000.
+    drag(screen.getByTestId("object-handle-nw"), [0, 0], [-8000, 0]);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenLastCalledWith(
+      { kind: "bounds", width: 400, height: 4000, x: -200, y: -2800 },
+      7,
+    );
   });
 });
