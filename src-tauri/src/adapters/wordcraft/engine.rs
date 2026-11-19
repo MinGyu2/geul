@@ -472,7 +472,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// The image keys a drawing uses (pictures, also inside groups).
+/// The image keys a drawing uses (pictures, and flat group children of pictures/shapes).
 fn drawing_media(object: &InlineObject, out: &mut Vec<String>, depth: usize) -> bool {
     if depth > 8 {
         return false;
@@ -485,9 +485,15 @@ fn drawing_media(object: &InlineObject, out: &mut Vec<String>, depth: usize) -> 
             true
         }
         InlineObject::Image { ole: Some(_), .. } => false,
-        InlineObject::Group { children, .. } => children
-            .iter()
-            .all(|c| drawing_media(&c.obj, out, depth + 1)),
+        InlineObject::Group { children, .. } => {
+            if depth > 0 {
+                // WordCraft flattens nested groups on open and drops nested Group children on save.
+                return false;
+            }
+            children
+                .iter()
+                .all(|c| drawing_media(&c.obj, out, depth + 1))
+        }
         InlineObject::Shape { .. } => true,
         // Charts/SmartArt would add chart/diagram parts; there is no T009 proof for that yet.
         _ => false,
@@ -497,7 +503,8 @@ fn drawing_media(object: &InlineObject, out: &mut Vec<String>, depth: usize) -> 
 impl ObjectPayload {
     /// Structural validation of an untrusted payload. Returns the drawing on success.
     fn drawing(&self) -> Option<&InlineObject> {
-        use wordcraft_engine::doc::para::OBJ;
+        use std::collections::BTreeSet;
+        use wordcraft_engine::doc::para::{MAX_GROUP_CHILDREN, OBJ};
         let [block] = self.fragment.blocks.as_slice() else {
             return None;
         };
@@ -516,30 +523,60 @@ impl ObjectPayload {
         {
             return None;
         }
+        if let InlineObject::Group {
+            ch_w,
+            ch_h,
+            children,
+            canvas,
+            ..
+        } = object
+        {
+            if children.len() > MAX_GROUP_CHILDREN
+                || (children.is_empty() && canvas.is_none())
+                || !bounded(*ch_w, 0.5, MAX_OBJECT_SIDE_PT)
+                || !bounded(*ch_h, 0.5, MAX_OBJECT_SIDE_PT)
+            {
+                return None;
+            }
+            for child in children {
+                if !bounded(child.x, -MAX_PAGE_SIDE_PT, MAX_PAGE_SIDE_PT)
+                    || !bounded(child.y, -MAX_PAGE_SIDE_PT, MAX_PAGE_SIDE_PT)
+                {
+                    return None;
+                }
+                let (cw, ch, cfloat) = child.obj.frame()?;
+                if !bounded(cw, 0.0, MAX_OBJECT_SIDE_PT)
+                    || !bounded(ch, 0.0, MAX_OBJECT_SIDE_PT)
+                    || !cfloat.rot.is_finite()
+                {
+                    return None;
+                }
+            }
+        }
         let mut media = Vec::new();
         if !drawing_media(object, &mut media, 0) {
             return None;
         }
-        // A text box brings exactly its own story: plain paragraphs, no objects, bounded text.
-        let story = object.text_box();
-        match (story, self.fragment.parts.len()) {
-            (None, 0) => {}
-            (Some(id), 1) => {
-                let part = self.fragment.parts.get(&id)?;
-                if part.kind != wordcraft_engine::doc::PartKind::TextBox || part.blocks.len() > 256
-                {
+        // Every text box (standalone or inside a flat group) brings its own plain-paragraph story.
+        let stories = object.text_boxes();
+        let unique_stories: BTreeSet<u32> = stories.iter().copied().collect();
+        if stories.len() != unique_stories.len() || self.fragment.parts.len() != unique_stories.len()
+        {
+            return None;
+        }
+        let mut chars = 0usize;
+        for id in unique_stories {
+            let part = self.fragment.parts.get(&id)?;
+            if part.kind != wordcraft_engine::doc::PartKind::TextBox || part.blocks.len() > 256 {
+                return None;
+            }
+            for b in &part.blocks {
+                let p = b.as_para()?;
+                chars += p.text.len();
+                if !p.objects.is_empty() || chars > 64 * 1024 || p.text.contains(OBJ) {
                     return None;
                 }
-                let mut chars = 0usize;
-                for b in &part.blocks {
-                    let p = b.as_para()?;
-                    chars += p.text.len();
-                    if !p.objects.is_empty() || chars > 64 * 1024 || p.text.contains(OBJ) {
-                        return None;
-                    }
-                }
             }
-            _ => return None,
         }
         // Every media key is carried exactly once, and nothing else is.
         media.sort();
@@ -2389,9 +2426,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let mut decoded = Vec::new();
+        let mut total = 0usize;
         for m in &payload.media {
             let bytes = wordcraft_engine::cmd::insert::base64_decode(&m.data).ok_or(Rejected)?;
-            if bytes.len() > MAX_PAYLOAD_MEDIA_BYTES
+            total = total.saturating_add(bytes.len());
+            if total > MAX_PAYLOAD_MEDIA_BYTES
                 || sha256_hex(&bytes) != m.sha256
                 || !crate::picture::valid(&bytes)
             {

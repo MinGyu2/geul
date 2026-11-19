@@ -204,7 +204,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | SmartArt 편집 (P4) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX: 항목·단계·레이아웃(`smartArt.items`/`smartArt.layout`). RHWP에 SmartArt 모델 없음(형식 대응 여부 NOT VERIFIED) |
 | 외부 프로그램 차트·다이어그램 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | WordCraft 모델이 없으면 원본 markup·부분 그대로, 편집 연산 없음 |
 | 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
-| 그림·도형·글상자·그룹 구조 클립보드 (P5) | SUPPORTED_AND_VERIFIED (앱 내) | UNSUPPORTED | UNSUPPORTED | DOCX v2 페이로드: WordCraft 조각 + 미디어 바이트·SHA-256, 붙여넣기 전 전체 검증, 대상 소유 미디어 키·글상자 story, 한 번의 Undo, T009 사전 판정. 같은/다른 DOCX 문서 Rust 검증. HWPX/HWP 원본 복사·교차 형식 붙여넣기는 거부 |
+| 그림·도형·글상자·그룹 구조 클립보드 (P5) | SUPPORTED_AND_VERIFIED (앱 내: 그림·도형·글상자·단일 평탄 그룹+자식 도형/그림/글상자; 중첩 그룹·차트/OLE 자식은 명시 거부) | UNSUPPORTED | UNSUPPORTED | DOCX v2 페이로드: WordCraft 조각 + 미디어 바이트·SHA-256 + `text_boxes()` story 전수 검증/재매핑, 대상 소유 미디어 키·글상자 story, 한 번의 Undo/Redo, T009 사전 판정. Rust `stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes` 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance`(같은/다른 DOCX, 자식 도형/그림/글상자, Undo/Redo, 독립 재열기, 11건 음성 거부 무변경) PASS. HWPX/HWP 원본 복사·교차 형식 붙여넣기는 거부 |
 | 차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 붙여넣기가 새 차트/다이어그램 부분을 더하는데 그 T009 증명이 없어 거부 |
 | 시스템 클립보드 구조 MIME | NOT RUN | NOT RUN | NOT RUN | `systemClipboard`에 구조 MIME 쓰기 경로가 없음: 평문 표지 + 앱 내 기억(표지가 바뀌면 폐기). 다른 앱 상호 운용 NOT RUN |
 | 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `picture.crop`(원본 미디어 불변, 1/100000 격자), HWPX crop 양(원본 크기 기준) 읽기 확인·재열기·`save_check` safe |

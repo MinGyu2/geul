@@ -6902,3 +6902,382 @@ fn stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes
         })
     }]));
 }
+
+#[test]
+fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
+    use super::engine::{ObjectPayload, PayloadMedia, MAX_PAYLOAD_MEDIA, MAX_PAYLOAD_MEDIA_BYTES};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{
+        Block, CharProps, InlineObject, Paragraph, PartKind, StoryRef,
+    };
+    use wordcraft_engine::{io, Session};
+
+    let group_media_b64 = tiny_png_b64(4, 3, [30, 140, 210]);
+    let unrelated_media_b64 = tiny_png_b64(2, 2, [220, 40, 40]);
+
+    // Build a source DOCX containing a flat Group with:
+    // - a formatted child shape (fill, outline, rotation)
+    // - a child picture (with media bytes)
+    // - a child text box (with its own TextBox story containing Korean text)
+    let mut src_sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    src_sess.run("caret.docEnd", &json!({})).unwrap();
+    src_sess.run("text.newParagraph", &json!({})).unwrap();
+    let child_img_bytes = wordcraft_engine::cmd::insert::base64_decode(&group_media_b64).unwrap();
+    let child_media_key = src_sess.doc.add_media(child_img_bytes.clone(), "png");
+    let tb_story = src_sess.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text(
+            "그룹 글상자",
+            CharProps::default(),
+        ))
+        .into()],
+    );
+    let mut shape_float = Float::default();
+    let mut spin = shape_float.spin();
+    spin.deg = 15.0;
+    shape_float.set_spin(spin);
+    let group_obj = InlineObject::Group {
+        w: 240.0,
+        h: 160.0,
+        float: Float::default(),
+        ch_w: 240.0,
+        ch_h: 160.0,
+        canvas: None,
+        children: vec![
+            GroupChild {
+                x: 10.0,
+                y: 12.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::Ellipse,
+                    w: 80.0,
+                    h: 50.0,
+                    fill: Some(Rgb(0x11, 0x22, 0x33)),
+                    stroke: Some(Rgb(0xAA, 0x55, 0x00)),
+                    stroke_width: 2.0,
+                    float: shape_float,
+                    story: None,
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: Default::default(),
+                },
+            },
+            GroupChild {
+                x: 100.0,
+                y: 20.0,
+                obj: InlineObject::Image {
+                    media: child_media_key.clone(),
+                    w: 60.0,
+                    h: 40.0,
+                    alt: "그룹 그림".into(),
+                    float: Float::default(),
+                    crop: [0.0; 4],
+                    ole: None,
+                },
+            },
+            GroupChild {
+                x: 20.0,
+                y: 80.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::TextBox,
+                    w: 140.0,
+                    h: 50.0,
+                    fill: Some(Rgb(0xFF, 0xEE, 0xDD)),
+                    stroke: Some(Rgb(0x22, 0x22, 0x22)),
+                    stroke_width: 1.0,
+                    float: Float::default(),
+                    story: Some(tb_story),
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: Default::default(),
+                },
+            },
+        ],
+    };
+    let end_pos = src_sess.sel.focus.clone();
+    src_sess
+        .doc
+        .insert_object(&end_pos, group_obj, &CharProps::default())
+        .unwrap();
+    let source_bytes = io::save_bytes("fixture.docx", &src_sess.doc).unwrap();
+    let mut source_model = DocxModel::open(&source_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &source_bytes).unwrap());
+    let layout = reader.layout();
+    let group_hit = layout
+        .find_object(0, |o| (o.rect.w - 240.0).abs() < 0.5)
+        .unwrap();
+    source_model.apply(&[DocxOp::Pointer {
+        page: group_hit.page as u32,
+        x: group_hit.rect.x + 1.0,
+        y: group_hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let view = serde_json::to_value(source_model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "group");
+    let pos = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+    // Negative: stale selection copy must fail.
+    assert!(source_model.clipboard_object(&pos, epoch + 1).is_none());
+    let group_json = source_model.clipboard_object(&pos, epoch).unwrap();
+    let group_payload: ObjectPayload = serde_json::from_str(&group_json).unwrap();
+    assert_eq!(group_payload.media.len(), 1);
+    assert_eq!(group_payload.fragment.parts.len(), 1);
+
+    // 1) Paste into the SAME DOCX: media is shared (deduplicated), text box gets a distinct story part.
+    let mut same_doc = DocxModel::open(&source_bytes).unwrap();
+    same_doc.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::NewParagraph,
+        DocxOp::PasteObject {
+            payload: Box::new(group_payload.clone()),
+        },
+    ]);
+    assert_eq!(same_doc.diagnostic_document().media.len(), 1);
+    let same_tb_ids: Vec<_> = same_doc
+        .diagnostic_document()
+        .parts
+        .iter()
+        .filter(|(_, p)| p.kind == PartKind::TextBox)
+        .map(|(id, _)| *id)
+        .collect();
+    assert_eq!(same_tb_ids.len(), 2);
+    let same_bytes = same_doc.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &source_bytes,
+        &same_bytes,
+        None,
+        same_doc.same_as(&same_bytes)
+    )
+    .is_safe());
+
+    // 2) Paste into a DIFFERENT DOCX that already owns an unrelated picture & story.
+    let mut dst_sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    dst_sess.run("caret.docEnd", &json!({})).unwrap();
+    dst_sess.run("text.newParagraph", &json!({})).unwrap();
+    dst_sess
+        .run("insert.picture", &json!({"data": unrelated_media_b64}))
+        .unwrap();
+    let dst_baseline_bytes = io::save_bytes("fixture.docx", &dst_sess.doc).unwrap();
+    let dst_unrelated_bytes = wordcraft_engine::cmd::insert::base64_decode(&unrelated_media_b64).unwrap();
+    let mut dest = DocxModel::open(&dst_baseline_bytes).unwrap();
+    let orig_media_keys: Vec<String> = dest.diagnostic_document().media.keys().cloned().collect();
+    assert_eq!(orig_media_keys.len(), 1);
+
+    dest.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    let pre_paste_bytes = dest.export().unwrap();
+    let r = dest.apply(&[DocxOp::PasteObject {
+        payload: Box::new(group_payload.clone()),
+    }]);
+    assert_eq!(r.changed, 1, "{:?}", r.rejected);
+    assert_eq!(dest.diagnostic_document().media.len(), 2);
+    let pasted_media_key = dest
+        .diagnostic_document()
+        .media
+        .keys()
+        .find(|k| !orig_media_keys.contains(k))
+        .unwrap()
+        .clone();
+    assert_ne!(pasted_media_key, orig_media_keys[0]);
+
+    let pasted_bytes = dest.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &dst_baseline_bytes,
+        &pasted_bytes,
+        None,
+        dest.same_as(&pasted_bytes)
+    )
+    .is_safe());
+
+    // Independent reopen: verify group geometry, child positions, child shape formatting,
+    // child picture media bytes, destination-owned key, nested text-box content, and unrelated media.
+    let reopened = io::open_bytes("fixture.docx", &pasted_bytes).unwrap();
+    assert_eq!(
+        reopened.media.get(&orig_media_keys[0]).map(|b| b.as_slice()),
+        Some(dst_unrelated_bytes.as_slice())
+    );
+    assert_eq!(
+        reopened.media.get(&pasted_media_key).map(|b| b.as_slice()),
+        Some(child_img_bytes.as_slice())
+    );
+    let pasted_group = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .find_map(|o| match o {
+            InlineObject::Group {
+                w,
+                h,
+                ch_w,
+                ch_h,
+                children,
+                ..
+            } => Some((*w, *h, *ch_w, *ch_h, children.clone())),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!((pasted_group.0, pasted_group.1, pasted_group.2, pasted_group.3), (240.0, 160.0, 240.0, 160.0));
+    assert_eq!(pasted_group.4.len(), 3);
+    assert!((pasted_group.4[0].x - 10.0).abs() < 0.05 && (pasted_group.4[0].y - 12.0).abs() < 0.05);
+    assert!(matches!(
+        &pasted_group.4[0].obj,
+        InlineObject::Shape {
+            kind: ShapeKind::Ellipse,
+            fill: Some(c),
+            stroke: Some(s),
+            stroke_width,
+            float,
+            ..
+        } if c.hex() == "112233" && s.hex() == "AA5500" && (*stroke_width - 2.0).abs() < 0.05 && (float.spin().deg - 15.0).abs() < 0.05
+    ));
+    assert!(matches!(
+        &pasted_group.4[1].obj,
+        InlineObject::Image { media, alt, .. } if media == &pasted_media_key && alt == "그룹 그림"
+    ));
+    let pasted_story = match &pasted_group.4[2].obj {
+        InlineObject::Shape { story: Some(id), .. } => *id,
+        other => panic!("expected grouped text box, got {other:?}"),
+    };
+    assert_eq!(reopened.plain_text(StoryRef::Part(pasted_story)), "그룹 글상자");
+
+    // Undo restores object & resource state (removes pasted group/media/story while keeping unrelated media); Redo restores it.
+    assert_eq!(dest.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(dest.diagnostic_document().media.len(), 1);
+    assert!(dest.diagnostic_document().parts.is_empty());
+    assert_eq!(dest.export().unwrap(), pre_paste_bytes);
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &dst_baseline_bytes,
+        &dest.export().unwrap(),
+        None,
+        dest.same_as(&dest.export().unwrap())
+    )
+    .is_safe());
+
+    assert_eq!(dest.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(dest.diagnostic_document().media.len(), 2);
+    assert_eq!(dest.diagnostic_document().parts.len(), 1);
+    assert_eq!(dest.export().unwrap(), pasted_bytes);
+
+    // Negative acceptance: every failed paste leaves document, media, parts, revision, and Undo history untouched.
+    let mut bad_cases: Vec<(&str, ObjectPayload)> = Vec::new();
+    // 1. Missing child media
+    let mut p = group_payload.clone();
+    p.media.clear();
+    bad_cases.push(("missing child media", p));
+    // 2. Corrupted media SHA-256
+    let mut p = group_payload.clone();
+    p.media[0].sha256 = "ff".repeat(32);
+    bad_cases.push(("corrupted media sha256", p));
+    // 3. Duplicate / conflicting media entries
+    let mut p = group_payload.clone();
+    let dup = p.media[0].clone();
+    p.media.push(dup);
+    bad_cases.push(("duplicate media entry", p));
+    let mut p = group_payload.clone();
+    let extra = p.media[0].clone();
+    p.media.push(PayloadMedia {
+        name: "extra.png".into(),
+        ..extra
+    });
+    bad_cases.push(("unreferenced extra media entry", p));
+    // 4. Missing text-box story
+    let mut p = group_payload.clone();
+    p.fragment.parts.clear();
+    bad_cases.push(("missing text-box story", p));
+    // 5. Invalid nested reference (object placeholder inside text-box story)
+    let mut p = group_payload.clone();
+    let sid = *p.fragment.parts.keys().next().unwrap();
+    let bad_text = format!("bad {}", wordcraft_engine::doc::para::OBJ);
+    p.fragment.parts.get_mut(&sid).unwrap().blocks = vec![Block::Para(Paragraph::with_text(
+        &bad_text,
+        CharProps::default(),
+    ))
+    .into()];
+    bad_cases.push(("invalid nested object reference in story", p));
+    // 6. Unsupported grouped child type (Graphic inside Group)
+    let mut p = group_payload.clone();
+    if let Block::Para(para) = &mut p.fragment.blocks[0] {
+        if let Some(InlineObject::Group { children, .. }) = para.object_at_mut(0) {
+            children.push(GroupChild {
+                x: 0.0,
+                y: 0.0,
+                obj: InlineObject::Graphic {
+                    w: 40.0,
+                    h: 40.0,
+                    alt: String::new(),
+                    float: Float::default(),
+                    graphic: std::sync::Arc::new(Default::default()),
+                },
+            });
+        }
+    }
+    bad_cases.push(("unsupported grouped child type", p));
+    // 7. Nested Group inside Group (excessive / unrepresentable group nesting)
+    let mut p = group_payload.clone();
+    if let Block::Para(para) = &mut p.fragment.blocks[0] {
+        if let Some(InlineObject::Group { children, .. }) = para.object_at_mut(0) {
+            children.push(GroupChild {
+                x: 0.0,
+                y: 0.0,
+                obj: InlineObject::Group {
+                    w: 20.0,
+                    h: 20.0,
+                    float: Float::default(),
+                    ch_w: 20.0,
+                    ch_h: 20.0,
+                    children: Vec::new(),
+                    canvas: None,
+                },
+            });
+        }
+    }
+    bad_cases.push(("nested group inside group", p));
+    // 8. Oversized payload (too many media entries or over media byte limit)
+    let mut p = group_payload.clone();
+    for i in 0..MAX_PAYLOAD_MEDIA {
+        p.media.push(PayloadMedia {
+            name: format!("m{i}.png"),
+            sha256: group_payload.media[0].sha256.clone(),
+            data: group_payload.media[0].data.clone(),
+        });
+    }
+    bad_cases.push(("oversized media count", p));
+    let mut p = group_payload.clone();
+    p.media[0].data = "A".repeat(MAX_PAYLOAD_MEDIA_BYTES * 2);
+    bad_cases.push(("oversized media bytes", p));
+
+    for (label, bad_payload) in bad_cases {
+        let mut clean = DocxModel::open(&dst_baseline_bytes).unwrap();
+        let baseline_export = clean.export().unwrap();
+        let baseline_media = clean.diagnostic_document().media.clone();
+        let baseline_parts = clean.diagnostic_document().parts.len();
+        let res = clean.apply(&[DocxOp::PasteObject {
+            payload: Box::new(bad_payload),
+        }]);
+        assert_eq!(res.changed, 0, "{label} changed");
+        assert_eq!(res.rejected, vec![0], "{label}");
+        assert!(!clean.view().history.undo, "{label} undo history");
+        assert_eq!(clean.diagnostic_document().media, baseline_media, "{label} media");
+        assert_eq!(clean.diagnostic_document().parts.len(), baseline_parts, "{label} parts");
+        assert_eq!(clean.export().unwrap(), baseline_export, "{label} export bytes");
+    }
+
+    // 9. Unsupported paste destination (non-collapsed selection)
+    let mut prot = DocxModel::open(&dst_baseline_bytes).unwrap();
+    prot.apply(&[mv(MoveTarget::DocStart, false), mv(MoveTarget::Right, true)]);
+    let prot_before = prot.export().unwrap();
+    let res = prot.apply(&[DocxOp::PasteObject {
+        payload: Box::new(group_payload),
+    }]);
+    assert_eq!(res.changed, 0);
+    assert_eq!(res.rejected, vec![0]);
+    assert!(!prot.view().history.undo);
+    assert_eq!(prot.export().unwrap(), prot_before);
+}

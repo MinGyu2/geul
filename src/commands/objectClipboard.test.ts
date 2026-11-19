@@ -119,5 +119,29 @@ describe("rich object clipboard (v2)", () => {
     expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
     expect(insertStructured).toHaveBeenCalledOnce();
   });
+
+  it("carries grouped v2 objects in the envelope and refuses unsupported RHWP destination without mutation", async () => {
+    const groupPayload = createRichObjectClipboardPayload("group", engine)!;
+    expect(groupPayload.object).toBe("group");
+    expect(parseObjectClipboardPayload(JSON.stringify(groupPayload))).toEqual(groupPayload);
+    expect(objectClipboardPlainText(groupPayload)).toBe(`Geul group [${groupPayload.token}]`);
+
+    const data = JSON.stringify(groupPayload), plainText = objectClipboardPlainText(groupPayload);
+    const insertStructured = vi.fn<NonNullable<ClipboardEditing["insertStructured"]>>(async (mime) =>
+      mime === OBJECT_CLIPBOARD_MIME ? "rejected" : "ok",
+    );
+    const insert = vi.fn(() => true);
+    const editing = {
+      read: vi.fn(async () => null), remove: vi.fn(() => false), insert, insertStructured,
+      readStructured: async () => ({ status: "ok" as const, mime: OBJECT_CLIPBOARD_MIME, data, plainText }),
+    };
+    const clipboard: PlainClipboard = {
+      writeText: vi.fn(async () => undefined),
+      readText: vi.fn(async () => plainText),
+      readStructured: vi.fn(async mime => mime === OBJECT_CLIPBOARD_MIME ? data : null),
+    };
+    expect(await runClipboard(target("rhwp"), "edit.paste", editing, () => true, clipboard)).toBe(false);
+    expect(insert).not.toHaveBeenCalled();
+  });
 });
 
