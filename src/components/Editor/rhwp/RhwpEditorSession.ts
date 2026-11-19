@@ -1083,8 +1083,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   private ownsHwpPictureCaption(at: DocPosition): boolean {
-    return this.sessions.get(this.sessionId)?.format === "hwp" && this.structuralFormat()
-      && !!this.history && this.text?.ownsPictureCaption(at) === true;
+    const format = this.sessions.get(this.sessionId)?.format;
+    const allowed = format === "hwpx" || (format === "hwp" && at.section === 0 && this.structuralFormat());
+    return allowed && !!this.history && this.text?.ownsPictureCaption(at) === true;
   }
 
   private ordered(): [DocPosition, DocPosition] {
@@ -1362,7 +1363,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   typeText(text: string): boolean {
     if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     text = text.replace(/\r\n?|\u2029/g, "\n");
-    if (text.includes("\n") && (this.caret.cell?.textBox || this.caret.cell?.caption)) return false;
+    if (text.includes("\n") && this.caret.cell?.textBox) return false;
+    if (text.includes("\n") && this.caret.cell?.caption) {
+      const added = text.split("\n").length - 1;
+      if (!this.text || this.text.paragraphCount(this.caret) + added > 64) return false;
+    }
     if (this.caret.cell?.caption && text.includes("\t")) return false;
     if (text.includes("\n")) return this.mutate(() => {
       let at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
@@ -1434,7 +1439,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (this.caret.cell?.textBox || this.caret.cell?.caption) return false;
+    if (this.caret.cell?.textBox) return false;
+    if (this.caret.cell?.caption && (!this.text || this.text.paragraphCount(this.caret) >= 64)) return false;
     if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:

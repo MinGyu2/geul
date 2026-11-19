@@ -1832,32 +1832,59 @@ pub(super) fn same_textbox_para_style(before: &[u8], after: &[u8]) -> Checked<()
     preserved(para_signature(before)? == para_signature(after)?, BODY)
 }
 
-pub(super) fn prove_picture_caption_paragraph(
-    old: &[Record<'_>],
-    new: &[Record<'_>],
+pub(super) fn prove_caption_paragraphs(
+    old_records: &[Record<'_>],
+    new_records: &[Record<'_>],
+    old_count: usize,
+    new_count: usize,
     original_defs: &Defs<'_>,
     defs: &Defs<'_>,
 ) -> Checked<()> {
-    fn number_slot<'a>(rs: &[Record<'a>]) -> Checked<Option<&'a [u8]>> {
-        let text = rs.iter().find(|r| r.0 == 67).map_or(b"\r\0".as_slice(), |r| r.2);
-        let text = text.strip_suffix(b"\r\0")
+    fn number_slots<'a>(rs: &[Record<'a>]) -> Checked<Vec<&'a [u8]>> {
+        let text = rs
+            .iter()
+            .find(|r| r.0 == 67)
+            .map_or(b"\r\0".as_slice(), |r| r.2);
+        let text = text
+            .strip_suffix(b"\r\0")
             .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-        let mut slot = None;
+        let mut slots = Vec::new();
         let mut at = 0;
         while at < text.len() {
             let ch = word(text, at)?;
-            if ch == 18 && slot.is_none() {
-                let bytes = text.get(at..at + 16)
+            if ch == 18 {
+                let bytes = text
+                    .get(at..at + 16)
                     .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
                 preserved(bytes[2..6] == *b"onta" && word(bytes, 14)? == 18, BODY)?;
-                slot = Some(bytes);
+                slots.push(bytes);
                 at += 16;
             } else {
                 preserved(ch >= 32, BODY)?;
                 at += 2;
             }
         }
-        Ok(slot)
+        Ok(slots)
+    }
+
+    fn split_paras<'a, 'b>(rs: &'b [Record<'a>], count: usize) -> Checked<Vec<&'b [Record<'a>]>> {
+        let starts: Vec<_> = rs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| (r.0 == 66 && r.1 == 2).then_some(i))
+            .collect();
+        preserved(starts.first() == Some(&0) && starts.len() == count, BODY)?;
+        let mut out = Vec::with_capacity(count);
+        for w in starts
+            .iter()
+            .copied()
+            .chain(std::iter::once(rs.len()))
+            .collect::<Vec<_>>()
+            .windows(2)
+        {
+            out.push(&rs[w[0]..w[1]]);
+        }
+        Ok(out)
     }
 
     let scratch = || Section {
@@ -1868,22 +1895,56 @@ pub(super) fn prove_picture_caption_paragraph(
         breaks: Vec::new(),
     };
     preserved(
-        old.iter().chain(new).all(|r| matches!((r.0, r.1), (66, 2) | (67..=69 | 71, 3)))
-            && number_slot(old)? == number_slot(new)?,
+        old_records
+            .iter()
+            .chain(new_records)
+            .all(|r| matches!((r.0, r.1), (66, 2) | (67..=69 | 71, 3))),
         BODY,
     )?;
-    let a = paragraph_with_caption_number(old, 2, original_defs, original_defs, &mut scratch(), true)?;
-    let b = paragraph_with_caption_number(new, 2, defs, original_defs, &mut scratch(), true)?;
-    preserved(
-        a == b
-            && (a.is_empty() || matches!(a.as_slice(), [object] if matches!(object.as_slice(), [(71, 3, raw)] if raw.len() == 16 && raw.starts_with(b"onta"))))
-            && old[0].2.get(10..12) == new[0].2.get(10..12)
-            && old[0].2.get(18..) == new[0].2.get(18..),
-        BODY,
-    )?;
-    let a_style = entries(original_defs, 25)[word(old[0].2, 8)?];
-    let b_style = entries(defs, 25)[word(new[0].2, 8)?];
-    same_textbox_para_style(a_style, b_style)
+
+    let old_paras = split_paras(old_records, old_count)?;
+    let new_paras = split_paras(new_records, new_count)?;
+
+    let mut old_slots: Vec<&[u8]> = Vec::new();
+    let mut old_objs: Vec<Vec<Vec<Record<'_>>>> = Vec::new();
+    for &p in &old_paras {
+        old_slots.extend(number_slots(p)?);
+        let objs = paragraph_with_caption_number(p, 2, original_defs, original_defs, &mut scratch(), true)?;
+        preserved(
+            objs.is_empty()
+                || objs.iter().all(|o| matches!(o.as_slice(), [(71, 3, raw)] if raw.len() == 16 && raw.starts_with(b"onta"))),
+            BODY,
+        )?;
+        old_objs.extend(objs.into_iter().map(|o| vec![o]));
+    }
+    preserved(old_slots.len() <= 1, BODY)?;
+
+    let mut new_slots: Vec<&[u8]> = Vec::new();
+    let mut new_objs: Vec<Vec<Vec<Record<'_>>>> = Vec::new();
+    for &p in &new_paras {
+        new_slots.extend(number_slots(p)?);
+        let objs = paragraph_with_caption_number(p, 2, defs, original_defs, &mut scratch(), true)?;
+        preserved(
+            objs.is_empty()
+                || objs.iter().all(|o| matches!(o.as_slice(), [(71, 3, raw)] if raw.len() == 16 && raw.starts_with(b"onta"))),
+            BODY,
+        )?;
+        new_objs.extend(objs.into_iter().map(|o| vec![o]));
+        let new_ps = entries(defs, 25)[word(p[0].2, 8)?];
+        let matches_original = old_paras.iter().try_fold(false, |found, &op| -> Checked<bool> {
+            if found {
+                return Ok(true);
+            }
+            if op[0].2.get(10..12) != p[0].2.get(10..12) || op[0].2.get(18..) != p[0].2.get(18..) {
+                return Ok(false);
+            }
+            let old_ps = entries(original_defs, 25)[word(op[0].2, 8)?];
+            Ok(same_textbox_para_style(old_ps, new_ps).is_ok())
+        })?;
+        preserved(matches_original, BODY)?;
+    }
+
+    preserved(old_slots == new_slots && old_objs == new_objs, BODY)
 }
 
 fn paragraph<'a>(

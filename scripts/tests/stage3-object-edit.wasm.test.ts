@@ -504,7 +504,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, [...caption].length));
       expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
       expect(editor.caret.cell?.caption).toBe(true);
-      expect(editor.enter()).toBe(false);
+      expect(editor.typeText("\t")).toBe(false);
       expect(editor.typeText("한글")).toBe(true);
       await confirm(1);
       expect(text(doc)).toBe(caption + "한글");
@@ -726,5 +726,167 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       await confirm(++seq);
       expect(JSON.parse(doc.getShapeProperties!(0, 0, 4))).toMatchObject({ hasCaption: true, rotationAngle: 25, width: 8400 });
     } finally { editor.dispose(); }
+  });
+
+  it("edits owned HWP and HWPX shape captions while preserving outer shape, autonumber slot, and alignment", async () => {
+    for (const format of ["hwp", "hwpx"] as const) {
+      const fixture = new engine.HwpDocument(source(format, true));
+      let original: Uint8Array;
+      try {
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, 4, '{"hasCaption":true,"fillType":"solid","fillBgColor":10053171}'))).toMatchObject({ ok: true });
+        original = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
+      } finally { fixture.free(); }
+
+      const { editor, doc, confirm } = await setup(format, true, false, original);
+      const capText = (d: RhwpDocument) =>
+        d.getTextInCell(0, 0, 4, 65534, 0, 0, d.getCellParagraphLength(0, 0, 4, 65534, 0));
+      const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string; pos?: number }[])
+        .filter(c => c.ctrlId === "atno");
+      try {
+        const baseline = hwpReopenModel(doc);
+        expect(baseline.complete).toBe(true);
+        const beforeText = capText(doc);
+        const slot = atnos(doc)[0]?.pos;
+        const endOffset = doc.getCellParagraphLength(0, 0, 4, 65534, 0);
+        const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 4, 65534, 0, endOffset));
+        expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
+        expect(editor.caret.cell).toMatchObject({ parentParagraph: 0, control: 4, cell: 65534, cellParagraph: 0, caption: true });
+
+        if (slot !== undefined) {
+          // Verify autonumber slot cannot be backspaced inside shape caption.
+          expect(editor.moveLineEdge("start", false)).toBe(true);
+          for (let i = 0; i <= slot; i++) expect(editor.moveHorizontal(1, false)).toBe(true);
+          expect(editor.backspace()).toBe(false);
+          expect(editor.moveLineEdge("end", false)).toBe(true);
+        }
+
+        expect(editor.typeText("도형설명")).toBe(true);
+        await confirm(1);
+        expect(capText(doc)).toBe(beforeText + "도형설명");
+        expect(editor.execute("paragraph.alignCenter").accepted).toBe(true);
+        await confirm(2);
+        expect(JSON.parse(doc.getCellParaPropertiesAt!(0, 0, 4, 65534, 0)).alignment).toBe("center");
+
+        expect(editor.undo()).toBe(true);
+        await confirm(3);
+        expect(JSON.parse(doc.getCellParaPropertiesAt!(0, 0, 4, 65534, 0)).alignment).not.toBe("center");
+        expect(editor.redo()).toBe(true);
+        await confirm(4);
+        expect(JSON.parse(doc.getCellParaPropertiesAt!(0, 0, 4, 65534, 0)).alignment).toBe("center");
+
+        const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+        try {
+          const report = exported.contentLoss();
+          const edited = exported.takeBytes();
+          expectReopenEvidence(doc, edited, report);
+          const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+          try {
+            expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+            expect(capText(reopened)).toBe(beforeText + "도형설명");
+            expect(JSON.parse(reopened.getShapeProperties!(0, 0, 4))).toMatchObject({ hasCaption: true, fillType: "solid", fillBgColor: 10053171 });
+          } finally { reopened.free(); }
+          if (out) {
+            mkdirSync(out, { recursive: true });
+            writeFileSync(resolve(out, `p5-shape-caption-original.${format}`), original);
+            writeFileSync(resolve(out, `p5-shape-caption-edited.${format}`), edited);
+            if (format === "hwpx") writeFileSync(resolve(out, "p5-shape-caption-report.hwpx.json"), report);
+          }
+        } finally { exported.free(); }
+
+        const controls = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+        expect(JSON.parse(controls.setControlLock(0, 4, true))).toMatchObject({ ok: true });
+        expect(editor.typeText("잠금")).toBe(false);
+      } finally { editor.dispose(); }
+    }
+  });
+
+  it("splits, merges, selects across, aligns, and edits multi-paragraph captions in HWP and HWPX while preserving atno", async () => {
+    for (const format of ["hwp", "hwpx"] as const) {
+      const fixture = new engine.HwpDocument(source(format));
+      let original: Uint8Array;
+      try {
+        expect(JSON.parse(fixture.setPictureProperties(0, 0, 2, '{"hasCaption":true}'))).toMatchObject({ ok: true });
+        original = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
+      } finally { fixture.free(); }
+
+      const { editor, doc, confirm } = await setup(format, true, false, original);
+      const paraText = (d: RhwpDocument, p: number) =>
+        d.getTextInCell(0, 0, 2, 0, p, 0, d.getCellParagraphLength(0, 0, 2, 0, p));
+      const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string; para?: number; pos?: number }[])
+        .filter(c => c.ctrlId === "atno");
+      try {
+        const baseline = hwpReopenModel(doc);
+        expect(baseline.complete).toBe(true);
+        const before0 = paraText(doc, 0);
+        const atnoBefore = atnos(doc);
+        const end0 = doc.getCellParagraphLength(0, 0, 2, 0, 0);
+        const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, end0));
+        expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
+        expect(editor.caret.cell).toMatchObject({ parentParagraph: 0, control: 2, cell: 0, cellParagraph: 0, caption: true });
+
+        // Split caption paragraph with Enter and edit paragraph 1 + align right.
+        expect(editor.enter()).toBe(true);
+        await confirm(1);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(2);
+        expect(editor.caret).toMatchObject({ cell: { cellParagraph: 1, caption: true }, offset: 0 });
+        expect(editor.typeText("둘째 줄")).toBe(true);
+        await confirm(2);
+        expect(paraText(doc, 1)).toBe("둘째 줄");
+        expect(editor.execute("paragraph.alignRight").accepted).toBe(true);
+        await confirm(3);
+        expect(JSON.parse(doc.getCellParaPropertiesAt!(0, 0, 2, 0, 1)).alignment).toBe("right");
+
+        // Multi-line paste/typeText & cross-paragraph range selection (strictly after atno slot).
+        expect(editor.typeText("\n셋째 줄")).toBe(true);
+        await confirm(4);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(3);
+        expect(paraText(doc, 2)).toBe("셋째 줄");
+
+        // Backspace at offset 0 of paragraph 2 merges paragraph 2 back into paragraph 1.
+        expect(editor.moveLineEdge("start", false)).toBe(true);
+        expect(editor.backspace()).toBe(true);
+        await confirm(5);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(2);
+        expect(paraText(doc, 1)).toBe("둘째 줄셋째 줄");
+
+        // Deleting a selection strictly after `atno` from para 0 into para 1 succeeds and preserves `atno`.
+        while (editor.caret.cell?.cellParagraph !== 0) expect(editor.moveHorizontal(-1, false)).toBe(true);
+        expect(editor.caret).toMatchObject({ cell: { cellParagraph: 0, caption: true }, offset: before0.length });
+        expect(editor.moveHorizontal(1, true)).toBe(true); // crosses paragraph 0 -> paragraph 1 offset 0
+        expect(editor.moveHorizontal(1, true)).toBe(true); // selects "둘"
+        expect(editor.moveHorizontal(1, true)).toBe(true); // selects "째"
+        expect(editor.backspace()).toBe(true);
+        await confirm(6);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(1);
+        expect(paraText(doc, 0)).toBe(before0 + " 줄셋째 줄");
+        expect(atnos(doc)).toEqual(atnoBefore);
+
+        // Undo brings back 2 paragraphs, Redo returns 1 merged paragraph; leave clean 2-para caption for export oracle.
+        expect(editor.undo()).toBe(true);
+        await confirm(7);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(2);
+
+        const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+        try {
+          const report = exported.contentLoss();
+          const edited = exported.takeBytes();
+          expectReopenEvidence(doc, edited, report);
+          const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+          try {
+            expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+            expect(reopened.getCellParagraphCount(0, 0, 2, 0)).toBe(2);
+            expect(paraText(reopened, 0)).toBe(before0);
+            expect(paraText(reopened, 1)).toBe("둘째 줄셋째 줄");
+            expect(atnos(reopened)).toEqual(atnoBefore);
+          } finally { reopened.free(); }
+          if (out) {
+            mkdirSync(out, { recursive: true });
+            writeFileSync(resolve(out, `p5-multipara-caption-original.${format}`), original);
+            writeFileSync(resolve(out, `p5-multipara-caption-edited.${format}`), edited);
+            if (format === "hwpx") writeFileSync(resolve(out, "p5-multipara-caption-report.hwpx.json"), report);
+          }
+        } finally { exported.free(); }
+      } finally { editor.dispose(); }
+    }
   });
 });

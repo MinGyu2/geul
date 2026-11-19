@@ -399,62 +399,91 @@ export class RhwpText {
     } catch { return false; }
   }
 
-  /** Pictures expose their caption through the legacy cell-0 APIs. Verify
-   * the root picture independently before treating a cursor hit as its caption. */
+  /** Pictures (`cell === 0`) and shapes (`cell === 65534`) expose their captions through cell APIs.
+   * Verify root GSO ownership, lock state, and caption structure before treating a hit as editable. */
   ownsPictureCaption(at: DocPosition): boolean {
     const c = at.cell, doc = this.doc;
-    if (at.section !== 0 || !c || c.nested || c.textBox || c.cell !== 0 || c.cellParagraph !== 0
-      || !isIndex(at.offset) || !doc.getControls || !doc.getPictureProperties) return false;
+    if (!c || c.nested || c.textBox || !isIndex(at.section) || !isIndex(at.offset) || !doc.getControls) return false;
+    if (doc.getSectionCount ? at.section >= doc.getSectionCount() : at.section !== 0) return false;
     try {
+      let globalPara = c.parentParagraph;
+      for (let section = 0; section < at.section; section++) globalPara += doc.getParagraphCount(section);
       const controls = json(doc.getControls());
       if (!Array.isArray(controls) || !controls.every(isRecord)) return false;
-      const owners = controls.filter(owner => owner.list === 0 && owner.para === c.parentParagraph && owner.controlIndex === c.control);
+      const owners = controls.filter(owner => owner.list === 0 && owner.para === globalPara && owner.controlIndex === c.control);
       const owner = owners[0];
-      if (owners.length !== 1 || owner?.ctrlId !== "gso" || owner.userDesc !== "그림"
-        || !isRecord(owner.props) || owner.props.Lock !== 0) return false;
+      if (owners.length !== 1 || owner?.ctrlId !== "gso" || !isRecord(owner.props) || owner.props.Lock !== 0) return false;
       const address = [at.section, c.parentParagraph, c.control] as const;
-      const props = json(doc.getPictureProperties(...address));
-      return isRecord(props) && props.hasCaption === true && !("externalPath" in props)
-        && doc.getCellParagraphCount(...address, 0) === 1
-        && at.offset <= doc.getCellParagraphLength(...address, 0, 0)
+      if (owner.userDesc === "그림") {
+        if (c.cell !== 0 || !doc.getPictureProperties) return false;
+        const props = json(doc.getPictureProperties(...address));
+        if (!isRecord(props) || props.hasCaption !== true || "externalPath" in props) return false;
+      } else if (["사각형", "타원", "직선", "다각형", "곡선"].includes(String(owner.userDesc ?? ""))) {
+        if (c.cell !== 65534 || !doc.getShapeProperties) return false;
+        const props = json(doc.getShapeProperties(...address));
+        if (!isRecord(props) || props.hasCaption !== true || props.tbVerticalAlign !== undefined) return false;
+      } else {
+        return false;
+      }
+      const paraCount = doc.getCellParagraphCount(...address, c.cell);
+      return Number.isSafeInteger(paraCount) && paraCount >= 1 && paraCount <= 64
+        && isIndex(c.cellParagraph) && c.cellParagraph < paraCount
+        && at.offset <= doc.getCellParagraphLength(...address, c.cell, c.cellParagraph)
         && this.captionControlSlots(at) !== null;
     } catch { return false; }
   }
 
-  /** Owned single-paragraph picture-caption automatic-number placeholder indices, or null when unprovable/unsupported. */
+  /** Owned picture/shape-caption automatic-number placeholder indices for `at.cell.cellParagraph`, or null when unprovable/unsupported. */
   private captionControlSlots(at: DocPosition): number[] | null {
     const c = at.cell, doc = this.doc;
-    if (at.section !== 0 || !c || c.nested || c.textBox || c.cell !== 0 || c.cellParagraph !== 0
+    if (!c || c.nested || c.textBox || (c.cell !== 0 && c.cell !== 65534)
       || !doc.getControls || !doc.getCursorModel) return null;
     try {
+      const expectedListCell = c.cell === 65534 ? 1 : 0;
       const rawControls = doc.getControls(), rawLists = doc.getCursorModel();
       if (rawControls.length + rawLists.length > 8 * 1024 * 1024) return null;
       const controls = json(rawControls), model = json(rawLists);
       if (!Array.isArray(controls) || !controls.every(isRecord) || !isRecord(model) || !Array.isArray(model.lists)) return null;
       const owners = model.lists.filter(list => isRecord(list) && list.isCell === false && list.hostListId === 0
-        && list.sectionIndex === at.section && list.hostPara === c.parentParagraph && list.controlIndex === c.control);
+        && list.sectionIndex === at.section && list.hostPara === c.parentParagraph && list.controlIndex === c.control
+        && list.cellIndex === expectedListCell);
       if (owners.length !== 1) return null;
       const list = owners[0]!;
-      if (!isIndex(list.listId) || list.listId < 2 || list.paraCount !== 1
+      if (!isIndex(list.listId) || list.listId < 2 || !Number.isSafeInteger(list.paraCount)
+        || (list.paraCount as number) < 1 || (list.paraCount as number) > 64
+        || !isIndex(c.cellParagraph) || c.cellParagraph >= (list.paraCount as number)
         || model.lists.some(child => isRecord(child) && child.hostListId === list.listId)) return null;
-      const paraLen = doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, 0, 0);
-      if (!isIndex(paraLen)) return null;
-      const captionText = doc.getTextInCell(at.section, c.parentParagraph, c.control, 0, 0, 0, paraLen);
-      if (typeof captionText !== "string") return null;
-      const chars = Array.from(captionText);
-      const inPara = controls.filter(ctrl => ctrl.list === list.listId)
-        .sort((a, b) => Number(a.controlIndex) - Number(b.controlIndex));
-      const slots: number[] = [];
-      let atnoCount = 0;
-      for (const ctrl of inPara) {
-        if (ctrl.para !== 0 || ctrl.ctrlId !== "atno" || ctrl.ctrlCh !== 18
+      const paraCount = list.paraCount as number;
+      if (doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, c.cell) !== paraCount) return null;
+      const inList = controls.filter(ctrl => ctrl.list === list.listId)
+        .sort((a, b) => Number(a.para) - Number(b.para) || Number(a.controlIndex) - Number(b.controlIndex));
+      if (inList.length > 1) return null;
+      const perPara = new Map<number, number[]>();
+      const charsCache = new Map<number, string[]>();
+      const atnoCountPerPara = new Map<number, number>();
+      for (const ctrl of inList) {
+        if (!isIndex(ctrl.para) || (ctrl.para as number) >= paraCount
+          || ctrl.ctrlId !== "atno" || ctrl.ctrlCh !== 18
           || !isIndex(ctrl.controlIndex) || !isIndex(ctrl.pos)) return null;
-        const slot = (ctrl.pos as number) - (ctrl.controlIndex as number) * 8 + atnoCount;
+        const p = ctrl.para as number;
+        let chars = charsCache.get(p);
+        if (!chars) {
+          const paraLen = doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, c.cell, p);
+          if (!isIndex(paraLen)) return null;
+          const captionText = doc.getTextInCell(at.section, c.parentParagraph, c.control, c.cell, p, 0, paraLen);
+          if (typeof captionText !== "string") return null;
+          chars = Array.from(captionText);
+          charsCache.set(p, chars);
+        }
+        const seen = atnoCountPerPara.get(p) ?? 0;
+        const slot = (ctrl.pos as number) - (ctrl.controlIndex as number) * 8 + seen;
         if (slot < 0 || slot >= chars.length || chars[slot] !== " ") return null;
+        const slots = perPara.get(p) ?? [];
         slots.push(slot);
-        atnoCount += 1;
+        perPara.set(p, slots);
+        atnoCountPerPara.set(p, seen + 1);
       }
-      return slots.length <= 1 ? slots : null;
+      return perPara.get(c.cellParagraph) ?? [];
     } catch { return null; }
   }
 
@@ -491,10 +520,16 @@ export class RhwpText {
   /** Admission only: unsupported inline slots must never open a mutation/history transaction. */
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
     if (!sameContext(from, to) || compare(from, to) > 0
-      || ((from.cell?.textBox || from.cell?.caption) && paragraphOf(from) !== paragraphOf(to))) return false;
+      || (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to))) return false;
     if (from.cell?.caption) {
-      const slots = this.captionControlSlots(from);
-      if (!slots || slots.some(slot => from.offset < slot + 1 && to.offset > slot)) return false;
+      if (!this.ownsPictureCaption(from) || !this.ownsPictureCaption(to)) return false;
+      for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
+        const pAt = withParagraph(from, p, 0);
+        const slots = this.captionControlSlots(pAt);
+        const pStart = p === paragraphOf(from) ? from.offset : 0;
+        const pEnd = p === paragraphOf(to) ? to.offset : this.paragraphLength(pAt);
+        if (!slots || slots.some(slot => pStart < slot + 1 && pEnd > slot)) return false;
+      }
     }
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
@@ -640,8 +675,10 @@ export class RhwpText {
         const c = from.cell;
         let hostParagraph = c.parentParagraph;
         for (const level of [c, ...(c.nested ?? [])]) {
+          const expectedCell = c.caption && level.cell === 65534 ? 1 : level.cell;
           const matches = model.lists.filter(l => isRecord(l) && l.sectionIndex === from.section && l.hostListId === list
-            && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell && l.isCell === !c.textBox);
+            && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === expectedCell
+            && l.isCell === !(c.textBox || c.caption));
           if (matches.length !== 1 || !isRecord(matches[0]) || !isIndex(matches[0].listId) || matches[0].listId < 2) return null;
           list = matches[0].listId; hostParagraph = level.cellParagraph;
         }
@@ -658,23 +695,28 @@ export class RhwpText {
         if (!Number.isSafeInteger(length) || length < 0 || until > length || at.offset > until || at.offset < 0) return null;
         const objects = controls.filter(c => c.list === list && c.para === base + p && c.ctrlId !== "secd" && c.ctrlId !== "cold");
         if (objects.length) {
-          if (!at.cell || !this.inlineCell(at, until - at.offset) || !this.doc.getCellPictureByPath) return null;
-          // Only paragraph-owned inline pictures may be outside a plain-text clipboard range.
-          for (const object of objects) {
-            if (object.ctrlId !== "gso" || !isIndex(object.controlIndex)) return null;
-            const levels = [at.cell, ...(at.cell.nested ?? [])];
-            const path = pathJson(at.cell), picture = json(this.doc.getCellPictureByPath(at.section, at.cell.parentParagraph, path, object.controlIndex));
-            if (!isRecord(picture) || picture.ok !== true || picture.treatAsChar !== true
-              || picture.section !== at.section || picture.paraIdx !== at.cell.parentParagraph
-              || picture.controlIdx !== object.controlIndex || !Array.isArray(picture.path) || picture.path.length !== levels.length
-              || !picture.path.every((level: unknown, i: number) => isRecord(level)
-                && Object.keys(level).sort().join(",") === "cellIndex,cellParaIndex,controlIndex"
-                && level.controlIndex === levels[i]!.control && level.cellIndex === levels[i]!.cell
-                && level.cellParaIndex === levels[i]!.cellParagraph)) return null;
+          if (at.cell?.caption && this.ownsPictureCaption(at) && objects.every(object => object.ctrlId === "atno")) {
+            const slots = this.captionControlSlots(at);
+            if (!slots || slots.some(slot => at.offset < slot + 1 && until > slot)) return null;
+          } else {
+            if (!at.cell || !this.inlineCell(at, until - at.offset) || !this.doc.getCellPictureByPath) return null;
+            // Only paragraph-owned inline pictures may be outside a plain-text clipboard range.
+            for (const object of objects) {
+              if (object.ctrlId !== "gso" || !isIndex(object.controlIndex)) return null;
+              const levels = [at.cell, ...(at.cell.nested ?? [])];
+              const path = pathJson(at.cell), picture = json(this.doc.getCellPictureByPath(at.section, at.cell.parentParagraph, path, object.controlIndex));
+              if (!isRecord(picture) || picture.ok !== true || picture.treatAsChar !== true
+                || picture.section !== at.section || picture.paraIdx !== at.cell.parentParagraph
+                || picture.controlIdx !== object.controlIndex || !Array.isArray(picture.path) || picture.path.length !== levels.length
+                || !picture.path.every((level: unknown, i: number) => isRecord(level)
+                  && Object.keys(level).sort().join(",") === "cellIndex,cellParaIndex,controlIndex"
+                  && level.controlIndex === levels[i]!.control && level.cellIndex === levels[i]!.cell
+                  && level.cellParaIndex === levels[i]!.cellParagraph)) return null;
+            }
+            this.textRange(at, until - at.offset);
+            // Native range validation also excludes fields, unknown controls and ambiguous streams.
+            if (until > at.offset && !this.formatSelection(at, { ...at, offset: until })) return null;
           }
-          this.textRange(at, until - at.offset);
-          // Native range validation also excludes fields, unknown controls and ambiguous streams.
-          if (until > at.offset && !this.formatSelection(at, { ...at, offset: until })) return null;
         }
         count += until - at.offset + (p > start ? 1 : 0);
         if (count > MAX_CLIPBOARD_CHARS) return null;
@@ -732,7 +774,7 @@ export class RhwpText {
     if (c) for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
       if (this.inlineCell(withParagraph(from, p, 0))) throw new Error("cross-paragraph inline object selection unsupported");
     }
-    if (c?.textBox || c?.caption) { this.delete(from, to.offset - from.offset); return; }
+    if (c?.textBox || (c?.caption && paragraphOf(from) === paragraphOf(to))) { this.delete(from, to.offset - from.offset); return; }
     if (c?.nested) this.nestedResult(this.doc.deleteRangeInCellByPath!(from.section, c.parentParagraph, pathJson(c),
       paragraphOf(from), from.offset, paragraphOf(to), to.offset));
     else if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);

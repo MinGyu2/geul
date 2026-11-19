@@ -942,7 +942,7 @@ index 6bc6861..a0c8f4e 100644
          if caption_changed {
              crate::parser::assign_auto_numbers(&mut self.document);
 diff --git a/src/document_core/commands/text_editing.rs b/src/document_core/commands/text_editing.rs
-index 9f6f809..769dc69 100644
+index 9f6f809..ce5426d 100644
 --- a/src/document_core/commands/text_editing.rs
 +++ b/src/document_core/commands/text_editing.rs
 @@ -673,6 +673,7 @@ impl DocumentCore {
@@ -1089,45 +1089,162 @@ index 9f6f809..769dc69 100644
          let old_text_len = cell_para.text.chars().count();
          let flow_advance_before = relative_paragraph_flow_advance(cell_para);
          let local_contribution_before =
-@@ -3308,6 +3390,37 @@ impl DocumentCore {
+@@ -2547,6 +2629,19 @@ impl DocumentCore {
+                 Ok(&mut cell.paragraphs[cell_para_idx])
+             }
+             Control::Shape(shape) => {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    let cap = super::super::helpers::get_caption_from_shape_mut(shape).ok_or_else(|| {
++                        HwpError::RenderError("지정된 Shape 컨트롤에 캡션이 없습니다".to_string())
++                    })?;
++                    if cell_para_idx >= cap.paragraphs.len() {
++                        return Err(HwpError::RenderError(format!(
++                            "캡션 문단 인덱스 {} 범위 초과 (총 {}개)",
++                            cell_para_idx,
++                            cap.paragraphs.len()
++                        )));
++                    }
++                    return Ok(&mut cap.paragraphs[cell_para_idx]);
++                }
+                 if cell_idx != 0 {
+                     return Err(HwpError::RenderError(format!(
+                         "글상자 셀 인덱스는 0이어야 합니다 (요청: {})",
+@@ -2935,8 +3030,15 @@ impl DocumentCore {
+                 }
+             }
+             Some(Control::Shape(shape)) => {
+-                if let Some(tb) = super::super::helpers::get_textbox_from_shape_mut(shape) {
+-                    if let Some(cell_para) = tb.paragraphs.get_mut(cell_para_idx) {
++                let paras = if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    super::super::helpers::get_caption_from_shape_mut(shape)
++                        .map(|c| &mut c.paragraphs)
++                } else {
++                    super::super::helpers::get_textbox_from_shape_mut(shape)
++                        .map(|tb| &mut tb.paragraphs)
++                };
++                if let Some(paras) = paras {
++                    if let Some(cell_para) = paras.get_mut(cell_para_idx) {
+                         reflow_line_segs(
+                             cell_para,
+                             ParagraphBox::content_width_px(final_width, self.dpi),
+@@ -2993,6 +3095,12 @@ impl DocumentCore {
+                 };
+                 &mut cell.paragraphs
+             }
++            Control::Shape(shape) if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL => {
++                let Some(caption) = super::super::helpers::get_caption_from_shape_mut(shape) else {
++                    return;
++                };
++                &mut caption.paragraphs
++            }
+             Control::Shape(shape) => {
+                 let Some(textbox) = super::super::helpers::get_textbox_from_shape_mut(shape) else {
+                     return;
+@@ -3151,9 +3259,19 @@ impl DocumentCore {
+                 }
+             }
+             Control::Shape(shape) => {
+-                let tb = super::super::helpers::get_textbox_from_shape(shape)?;
+-                let common = shape.common();
+-                Some((common.width as i32, tb.margin_left, tb.margin_right))
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    let cap = super::super::helpers::get_caption_from_shape(shape)?;
++                    use crate::model::shape::CaptionDirection;
++                    let w = match cap.direction {
++                        CaptionDirection::Left | CaptionDirection::Right => cap.width,
++                        _ => shape.common().width,
++                    };
++                    Some((w as i32, 0, 0))
++                } else {
++                    let tb = super::super::helpers::get_textbox_from_shape(shape)?;
++                    let common = shape.common();
++                    Some((common.width as i32, tb.margin_left, tb.margin_right))
++                }
+             }
+             Control::Picture(pic) => Some((pic.common.width as i32, 0, 0)),
+             _ => None,
+@@ -3182,9 +3300,17 @@ impl DocumentCore {
+             }
+             para = match control {
+                 Control::Table(t) => t.cells.get(cell_idx)?.paragraphs.get(cell_para_idx)?,
+-                Control::Shape(s) => super::super::helpers::get_textbox_from_shape(s)?
+-                    .paragraphs
+-                    .get(cell_para_idx)?,
++                Control::Shape(s) => {
++                    if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                        super::super::helpers::get_caption_from_shape(s)?
++                            .paragraphs
++                            .get(cell_para_idx)?
++                    } else {
++                        super::super::helpers::get_textbox_from_shape(s)?
++                            .paragraphs
++                            .get(cell_para_idx)?
++                    }
++                }
+                 Control::Picture(p) => p.caption.as_ref()?.paragraphs.get(cell_para_idx)?,
+                 _ => return None,
+             };
+@@ -3308,6 +3434,18 @@ impl DocumentCore {
              }
          }
  
 +        if let Some((ppi, ci, cei)) = cell_ctx {
-+            if start_para == end_para {
-+                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, start_para) {
-+                    Self::ensure_range_preserves_autonumber(p, start_offset, end_offset)?;
-+                }
-+            } else {
-+                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, end_para) {
-+                    Self::ensure_range_preserves_autonumber(p, 0, end_offset)?;
-+                }
-+                if let Ok(cell) = self.get_cell_mut(section_idx, ppi, ci, cei) {
-+                    for mid in start_para + 1..end_para {
-+                        if let Some(p) = cell.paragraphs.get(mid) {
-+                            if p.controls
-+                                .iter()
-+                                .any(|c| matches!(c, crate::model::control::Control::AutoNumber(_)))
-+                            {
-+                                return Err(HwpError::RenderError(
-+                                    "자동 번호 컨트롤이 포함된 문단은 삭제할 수 없습니다"
-+                                        .to_string(),
-+                                ));
-+                            }
-+                        }
-+                    }
-+                }
-+                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, start_para) {
-+                    let len = p.text.chars().count();
-+                    Self::ensure_range_preserves_autonumber(p, start_offset, len)?;
-+                }
++            if let Ok(paras) = self.get_cell_paragraphs_mut(section_idx, ppi, ci, cei) {
++                Self::ensure_paragraphs_preserve_autonumber(
++                    paras,
++                    start_para,
++                    start_offset,
++                    end_para,
++                    end_offset,
++                )?;
 +            }
 +        }
 +
          // Section raw 스트림 무효화 (재직렬화 유도)
          self.document.sections[section_idx].raw_stream = None;
          // DocInfo raw_stream은 유지 (전체 재직렬화 시 FIX-4 문제 발생)
-@@ -3463,9 +3576,11 @@ impl DocumentCore {
+@@ -3324,18 +3462,18 @@ impl DocumentCore {
+                     self.reflow_cell_paragraph(section_idx, ppi, ci, cei, start_para);
+                 }
+             } else {
+-                // 다중 문단 셀 내 삭제
++                // 다중 문단 셀/캡션/글상자 내 삭제
+                 // 1) 마지막 문단 앞부분 삭제
+                 if end_offset > 0 {
+                     let cell_para =
+                         self.get_cell_paragraph_mut(section_idx, ppi, ci, cei, end_para)?;
+                     cell_para.delete_text_at(0, end_offset);
+                 }
+-                // 2) 중간 문단 역순 제거 — 셀 내 문단은 cell.paragraphs에서 직접 제거
++                // 2) 중간 문단 역순 제거
+                 for mid_para in (start_para + 1..end_para).rev() {
+-                    let cell = self.get_cell_mut(section_idx, ppi, ci, cei)?;
+-                    if mid_para < cell.paragraphs.len() {
+-                        cell.paragraphs.remove(mid_para);
++                    let paras = self.get_cell_paragraphs_mut(section_idx, ppi, ci, cei)?;
++                    if mid_para < paras.len() {
++                        paras.remove(mid_para);
+                     }
+                 }
+                 // 3) 첫 문단 뒷부분 삭제
+@@ -3348,10 +3486,12 @@ impl DocumentCore {
+                     }
+                 }
+                 // 4) 첫-마지막 문단 병합 (마지막 문단이 이제 start_para+1에 위치)
+-                let cell = self.get_cell_mut(section_idx, ppi, ci, cei)?;
+-                if start_para + 1 < cell.paragraphs.len() {
+-                    let next_para = cell.paragraphs.remove(start_para + 1);
+-                    cell.paragraphs[start_para].merge_from(&next_para);
++                {
++                    let paras = self.get_cell_paragraphs_mut(section_idx, ppi, ci, cei)?;
++                    if start_para + 1 < paras.len() {
++                        let next_para = paras.remove(start_para + 1);
++                        paras[start_para].merge_from(&next_para);
++                    }
+                 }
+                 self.reflow_cell_paragraph(section_idx, ppi, ci, cei, start_para);
+             }
+@@ -3463,9 +3603,11 @@ impl DocumentCore {
              // 재페이지네이션
              self.paginate_if_needed();
  
@@ -1142,7 +1259,187 @@ index 9f6f809..769dc69 100644
  
              self.event_log.push(DocumentEvent::TextDeleted {
                  section: section_idx,
-@@ -5908,6 +6023,11 @@ impl DocumentCore {
+@@ -3480,6 +3622,75 @@ impl DocumentCore {
+         }
+     }
+ 
++    /// 셀/글상자/캡션 문단 목록에 대한 가변 참조를 얻는다.
++    pub(crate) fn get_cell_paragraphs_mut(
++        &mut self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        control_idx: usize,
++        cell_idx: usize,
++    ) -> Result<&mut Vec<crate::model::paragraph::Paragraph>, HwpError> {
++        let section = self
++            .document
++            .sections
++            .get_mut(section_idx)
++            .ok_or_else(|| HwpError::RenderError(format!("구역 인덱스 {} 범위 초과", section_idx)))?;
++        let para = section.paragraphs.get_mut(parent_para_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("부모 문단 인덱스 {} 범위 초과", parent_para_idx))
++        })?;
++        let ctrl = para.controls.get_mut(control_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("컨트롤 인덱스 {} 범위 초과", control_idx))
++        })?;
++        match ctrl {
++            Control::Table(ref mut table) => {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    return Ok(&mut table
++                        .caption
++                        .as_mut()
++                        .ok_or_else(|| HwpError::RenderError("지정된 표 컨트롤에 캡션이 없습니다".to_string()))?
++                        .paragraphs);
++                }
++                Ok(&mut table
++                    .cells
++                    .get_mut(cell_idx)
++                    .ok_or_else(|| HwpError::RenderError(format!("셀 인덱스 {} 범위 초과", cell_idx)))?
++                    .paragraphs)
++            }
++            Control::Shape(ref mut shape) => {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    return Ok(&mut super::super::helpers::get_caption_from_shape_mut(shape)
++                        .ok_or_else(|| HwpError::RenderError("지정된 Shape 컨트롤에 캡션이 없습니다".to_string()))?
++                        .paragraphs);
++                }
++                if cell_idx != 0 {
++                    return Err(HwpError::RenderError(format!(
++                        "글상자 셀 인덱스는 0이어야 합니다 (요청: {})",
++                        cell_idx
++                    )));
++                }
++                Ok(&mut super::super::helpers::get_textbox_from_shape_mut(shape)
++                    .ok_or_else(|| HwpError::RenderError("지정된 Shape 컨트롤에 텍스트 박스가 없습니다".to_string()))?
++                    .paragraphs)
++            }
++            Control::Picture(ref mut pic) => {
++                if cell_idx != 0 && cell_idx != super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    return Err(HwpError::RenderError(format!(
++                        "그림 캡션 셀 인덱스가 올바르지 않습니다 (요청: {})",
++                        cell_idx
++                    )));
++                }
++                Ok(&mut pic
++                    .caption
++                    .as_mut()
++                    .ok_or_else(|| HwpError::RenderError("지정된 그림 컨트롤에 캡션이 없습니다".to_string()))?
++                    .paragraphs)
++            }
++            _ => Err(HwpError::RenderError(
++                "표/글상자/캡션 컨트롤이 아닙니다".to_string(),
++            )),
++        }
++    }
++
+     /// 표 셀에 대한 가변 참조를 얻는다.
+     pub(crate) fn get_cell_mut(
+         &mut self,
+@@ -3533,6 +3744,11 @@ impl DocumentCore {
+                 table.cells.get(cell_idx)?.paragraphs.get(cell_para_idx)
+             }
+             Control::Shape(shape) => {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    return super::super::helpers::get_caption_from_shape(shape)?
++                        .paragraphs
++                        .get(cell_para_idx);
++                }
+                 if cell_idx != 0 {
+                     return None;
+                 }
+@@ -4586,7 +4802,11 @@ impl DocumentCore {
+                 }
+             }
+             Some(Control::Shape(shape)) => {
+-                if let Some(tb) = super::super::helpers::get_textbox_from_shape_mut(shape) {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    if let Some(cap) = super::super::helpers::get_caption_from_shape_mut(shape) {
++                        cap.paragraphs.insert(new_cell_para_idx, new_para);
++                    }
++                } else if let Some(tb) = super::super::helpers::get_textbox_from_shape_mut(shape) {
+                     tb.paragraphs.insert(new_cell_para_idx, new_para);
+                 }
+             }
+@@ -4717,7 +4937,17 @@ impl DocumentCore {
+                 }
+             }
+             Some(Control::Shape(shape)) => {
+-                if let Some(tb) = super::super::helpers::get_textbox_from_shape_mut(shape) {
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    if let Some(cap) = super::super::helpers::get_caption_from_shape_mut(shape) {
++                        let removed = cap.paragraphs.remove(cell_para_idx);
++                        removed_meta = removed.capture_meta();
++                        merge_point = cap.paragraphs[prev_idx].merge_from(&removed);
++                    } else {
++                        return Err(HwpError::RenderError(
++                            "지정된 Shape 컨트롤에 캡션이 없습니다".to_string(),
++                        ));
++                    }
++                } else if let Some(tb) = super::super::helpers::get_textbox_from_shape_mut(shape) {
+                     let removed = tb.paragraphs.remove(cell_para_idx);
+                     removed_meta = removed.capture_meta();
+                     merge_point = tb.paragraphs[prev_idx].merge_from(&removed);
+@@ -5280,9 +5510,15 @@ impl DocumentCore {
+                 Ok(cell.paragraphs.len())
+             }
+             Some(Control::Shape(shape)) => {
+-                let text_box = get_textbox_from_shape(shape)
+-                    .ok_or_else(|| HwpError::RenderError("도형에 글상자가 없습니다".to_string()))?;
+-                Ok(text_box.paragraphs.len())
++                if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    let cap = super::super::helpers::get_caption_from_shape(shape)
++                        .ok_or_else(|| HwpError::RenderError("도형에 캡션이 없습니다".to_string()))?;
++                    Ok(cap.paragraphs.len())
++                } else {
++                    let text_box = get_textbox_from_shape(shape)
++                        .ok_or_else(|| HwpError::RenderError("도형에 글상자가 없습니다".to_string()))?;
++                    Ok(text_box.paragraphs.len())
++                }
+             }
+             Some(Control::Picture(pic)) => {
+                 let caption = pic
+@@ -5727,20 +5963,30 @@ impl DocumentCore {
+                     &mut cell.paragraphs
+                 }
+                 Some(Control::Shape(shape)) => {
+-                    if cell_idx != 0 {
++                    if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                        let caption = super::super::helpers::get_caption_from_shape_mut(shape)
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!(
++                                    "경로[{}]: controls[{}] 도형에 캡션이 없습니다",
++                                    i, ctrl_idx
++                                ))
++                            })?;
++                        &mut caption.paragraphs
++                    } else if cell_idx == 0 {
++                        let text_box = super::super::helpers::get_textbox_from_shape_mut(shape)
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!(
++                                    "경로[{}]: controls[{}]가 텍스트 글상자가 아닙니다",
++                                    i, ctrl_idx
++                                ))
++                            })?;
++                        &mut text_box.paragraphs
++                    } else {
+                         return Err(HwpError::RenderError(format!(
+-                            "경로[{}]: 글상자의 cell_index는 0이어야 합니다 ({})",
++                            "경로[{}]: 도형의 cell_index가 올바르지 않습니다 ({})",
+                             i, cell_idx
+                         )));
+                     }
+-                    let text_box = super::super::helpers::get_textbox_from_shape_mut(shape)
+-                        .ok_or_else(|| {
+-                            HwpError::RenderError(format!(
+-                                "경로[{}]: controls[{}]가 텍스트 글상자가 아닙니다",
+-                                i, ctrl_idx
+-                            ))
+-                        })?;
+-                    &mut text_box.paragraphs
+                 }
+                 Some(Control::Picture(pic)) => {
+                     if cell_idx != 0 {
+@@ -5908,6 +6154,11 @@ impl DocumentCore {
          }
  
          let cell_para = self.get_cell_paragraph_mut_by_path(section_idx, parent_para_idx, path)?;
@@ -1154,7 +1451,7 @@ index 9f6f809..769dc69 100644
          cell_para.delete_text_at(char_offset, count);
  
          // [#2755] 깊이 ≥ 2 중첩 셀도 flat `delete_text_in_cell_native` 처럼 최내곽 셀 폭으로
-@@ -5958,6 +6078,13 @@ impl DocumentCore {
+@@ -5958,6 +6209,13 @@ impl DocumentCore {
      ) -> Result<String, HwpError> {
          {
              let paras = self.get_cell_paragraphs_mut_by_path(section_idx, parent_para_idx, path)?;
@@ -1190,6 +1487,106 @@ index c7f2d2c..4d57daf 100644
              overflow_links_cache: RefCell::new(HashMap::new()),
              snapshot_store: Vec::new(),
              next_snapshot_id: 0,
+diff --git a/src/document_core/queries/cursor_nav.rs b/src/document_core/queries/cursor_nav.rs
+index 930af00..f59396b 100644
+--- a/src/document_core/queries/cursor_nav.rs
++++ b/src/document_core/queries/cursor_nav.rs
+@@ -830,24 +830,36 @@ impl DocumentCore {
+                     })?
+                 }
+                 Some(Control::Shape(shape)) => {
+-                    if cell_idx != 0 {
++                    let paras = if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                        super::super::helpers::get_caption_from_shape(shape)
++                            .map(|c| c.paragraphs.as_slice())
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!(
++                                    "경로[{}]: controls[{}] 도형에 캡션이 없습니다",
++                                    i, ctrl_idx
++                                ))
++                            })?
++                    } else if cell_idx == 0 {
++                        get_textbox_from_shape(shape)
++                            .map(|tb| tb.paragraphs.as_slice())
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!(
++                                    "경로[{}]: controls[{}]가 텍스트 글상자가 아닙니다",
++                                    i, ctrl_idx
++                                ))
++                            })?
++                    } else {
+                         return Err(HwpError::RenderError(format!(
+-                            "경로[{}]: 글상자의 cell_index는 0이어야 합니다 ({})",
++                            "경로[{}]: 도형의 cell_index가 올바르지 않습니다 ({})",
+                             i, cell_idx
+                         )));
+-                    }
+-                    let text_box = get_textbox_from_shape(shape).ok_or_else(|| {
+-                        HwpError::RenderError(format!(
+-                            "경로[{}]: controls[{}]가 텍스트 글상자가 아닙니다",
+-                            i, ctrl_idx
+-                        ))
+-                    })?;
+-                    text_box.paragraphs.get(cell_para_idx).ok_or_else(|| {
++                    };
++                    paras.get(cell_para_idx).ok_or_else(|| {
+                         HwpError::RenderError(format!(
+-                            "경로[{}]: 글상자문단 {} 범위 초과 (총 {}개)",
++                            "경로[{}]: 도형 문단 {} 범위 초과 (총 {}개)",
+                             i,
+                             cell_para_idx,
+-                            text_box.paragraphs.len()
++                            paras.len()
+                         ))
+                     })?
+                 }
+@@ -947,12 +959,22 @@ impl DocumentCore {
+                     })?
+                 }
+                 Some(Control::Shape(shape)) => {
+-                    let text_box = get_textbox_from_shape(shape).ok_or_else(|| {
+-                        HwpError::RenderError(format!("경로[{}]: 글상자가 아닙니다", i))
+-                    })?;
+-                    text_box.paragraphs.get(cell_para_idx).ok_or_else(|| {
++                    let paras = if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                        super::super::helpers::get_caption_from_shape(shape)
++                            .map(|c| c.paragraphs.as_slice())
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!("경로[{}]: 도형에 캡션이 없습니다", i))
++                            })?
++                    } else {
++                        get_textbox_from_shape(shape)
++                            .map(|tb| tb.paragraphs.as_slice())
++                            .ok_or_else(|| {
++                                HwpError::RenderError(format!("경로[{}]: 글상자가 아닙니다", i))
++                            })?
++                    };
++                    paras.get(cell_para_idx).ok_or_else(|| {
+                         HwpError::RenderError(format!(
+-                            "경로[{}]: 글상자문단 {} 범위 초과",
++                            "경로[{}]: 도형 문단 {} 범위 초과",
+                             i, cell_para_idx
+                         ))
+                     })?
+@@ -998,9 +1020,15 @@ impl DocumentCore {
+                 Ok(cell.paragraphs.len())
+             }
+             Some(Control::Shape(shape)) => {
+-                let text_box = get_textbox_from_shape(shape)
+-                    .ok_or_else(|| HwpError::RenderError("글상자가 아닙니다".to_string()))?;
+-                Ok(text_box.paragraphs.len())
++                if last.1 == super::super::TABLE_CAPTION_CELL_SENTINEL {
++                    let caption = super::super::helpers::get_caption_from_shape(shape)
++                        .ok_or_else(|| HwpError::RenderError("도형에 캡션이 없습니다".to_string()))?;
++                    Ok(caption.paragraphs.len())
++                } else {
++                    let text_box = get_textbox_from_shape(shape)
++                        .ok_or_else(|| HwpError::RenderError("글상자가 아닙니다".to_string()))?;
++                    Ok(text_box.paragraphs.len())
++                }
+             }
+             Some(Control::Picture(pic)) => {
+                 if last.1 != 0 {
 diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
 index 64ae8c3..7af9c24 100644
 --- a/src/document_core/queries/field_query.rs
@@ -1255,6 +1652,30 @@ index ce65f57..a3b01a1 100644
              _ => {}
          }
      }
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+index c435fd5..08f508f 100644
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -5997,6 +5997,19 @@ impl DocumentCore {
+                     paragraph_index: cell_para_idx,
+                 }
+             }
++            Control::Shape(shape) if cell_idx == super::super::TABLE_CAPTION_CELL_SENTINEL => {
++                let valid = super::super::helpers::get_caption_from_shape(shape)
++                    .is_some_and(|caption| cell_para_idx < caption.paragraphs.len());
++                if !valid {
++                    return Err(HwpError::RenderError(format!(
++                        "render normalization shape-caption path mismatch: control={control_idx} para={cell_para_idx}"
++                    )));
++                }
++                RenderPathEntry::PictureCaption {
++                    control_index: control_idx,
++                    paragraph_index: cell_para_idx,
++                }
++            }
+             Control::Shape(shape) => {
+                 let valid = super::super::helpers::get_textbox_from_shape(shape)
+                     .is_some_and(|textbox| cell_para_idx < textbox.paragraphs.len());
 diff --git a/src/model/document.rs b/src/model/document.rs
 index 4f586b4..de75021 100644
 --- a/src/model/document.rs
@@ -1300,10 +1721,46 @@ index 7ea89f0..e40d3b9 100644
  
  impl Picture {
 diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
-index 8553bc3..1224a3e 100644
+index 8553bc3..61733b4 100644
 --- a/src/model/paragraph.rs
 +++ b/src/model/paragraph.rs
-@@ -1081,6 +1081,123 @@ impl Paragraph {
+@@ -715,12 +715,14 @@ impl Paragraph {
+     }
+ 
+     fn split_logical_control_positions(&self) -> Vec<usize> {
++        let occupies_logical_only =
++            |ctrl: &Control| Self::is_split_movable_control(ctrl) && !matches!(ctrl, Control::AutoNumber(_));
+         if self.text.is_empty() && self.char_offsets.is_empty() {
+             let mut inline_seen = 0usize;
+             let mut positions = Vec::with_capacity(self.controls.len());
+             for ctrl in &self.controls {
+                 positions.push(inline_seen);
+-                if Self::is_split_movable_control(ctrl) {
++                if occupies_logical_only(ctrl) {
+                     inline_seen += 1;
+                 }
+             }
+@@ -735,7 +737,7 @@ impl Paragraph {
+         for (ci, ctrl) in self.controls.iter().enumerate() {
+             let text_pos = text_positions.get(ci).copied().unwrap_or(text_len);
+             positions.push(text_pos + inline_seen);
+-            if Self::is_split_movable_control(ctrl) {
++            if occupies_logical_only(ctrl) {
+                 inline_seen += 1;
+             }
+         }
+@@ -752,7 +754,9 @@ impl Paragraph {
+             .controls
+             .iter()
+             .enumerate()
+-            .filter(|(_, ctrl)| Self::is_split_movable_control(ctrl))
++            .filter(|(_, ctrl)| {
++                Self::is_split_movable_control(ctrl) && !matches!(ctrl, Control::AutoNumber(_))
++            })
+             .filter(|(ci, _)| {
+                 control_positions.get(*ci).copied().unwrap_or(usize::MAX) < logical_offset
+             })
+@@ -1081,6 +1085,123 @@ impl Paragraph {
          }
      }
  
@@ -1427,7 +1884,7 @@ index 8553bc3..1224a3e 100644
      ///
      /// char_offset은 Rust 문자(char) 인덱스이다 (바이트 인덱스가 아님).
      /// 삽입 후 char_offsets, char_shapes, line_segs, char_count가 자동 갱신된다.
-@@ -1153,7 +1270,17 @@ impl Paragraph {
+@@ -1153,7 +1274,17 @@ impl Paragraph {
              last_char_end + trailing_ctrl_count * 8
          } else if inserts_before_inline_control {
              if effective_char_offset == 0 {
@@ -1590,6 +2047,36 @@ index 1c2b7cd..cc89069 100755
          } else if para_modified || prev_modified {
              // 변조 인접 경계 — 이동 후 흐름에 스타일 여백 gap 으로 다시 잇는다.
              let gap = prev_idx
+diff --git a/src/renderer/layout/shape_layout.rs b/src/renderer/layout/shape_layout.rs
+index 06ac2fa..bcad8a9 100644
+--- a/src/renderer/layout/shape_layout.rs
++++ b/src/renderer/layout/shape_layout.rs
+@@ -1041,6 +1041,16 @@ impl LayoutEngine {
+                     (cx, cw, cy)
+                 }
+             };
++            let caption_cell_ctx = Some(super::CellContext {
++                in_textbox: false,
++                parent_para_index: para_index,
++                path: vec![super::CellPathEntry {
++                    control_index,
++                    cell_index: crate::document_core::TABLE_CAPTION_CELL_SENTINEL,
++                    cell_para_index: 0,
++                    text_direction: 0,
++                }],
++            });
+             self.layout_caption(
+                 tree,
+                 parent,
+@@ -1052,7 +1062,7 @@ impl LayoutEngine {
+                 cap_y,
+                 &mut self.auto_counter.borrow_mut(),
+                 bin_data_content,
+-                None,
++                caption_cell_ctx,
+                 CaptionOwner::new(
+                     Some(section_index),
+                     Some(para_index),
 diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
 index 4b6fde7..f9d5c03 100644
 --- a/src/renderer/web_canvas.rs

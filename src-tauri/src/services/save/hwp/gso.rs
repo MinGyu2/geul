@@ -239,14 +239,27 @@ pub(super) fn prove_textbox_edit(
 }
 
 pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
-    let (Some((SC_PICTURE, _, a)), Some((SC_PICTURE, _, b))) =
-        (shape_ctrl_id(old), shape_ctrl_id(new))
+    let (Some((kind, _, a)), Some((kind2, _, b))) = (shape_ctrl_id(old), shape_ctrl_id(new))
     else {
         return false;
     };
-    old != new && a >= 3 && b >= 3
-        && old[0].1 == 1 && old[0] == new[0]
-        && old[1] == new[1]
+    let Some(leaf_tag) = expected_leaf_tag(kind) else {
+        return false;
+    };
+    kind == kind2
+        && old != new
+        && a >= 3
+        && b >= 3
+        && old.len() == a + 2
+        && new.len() == b + 2
+        && old[0].1 == 1
+        && old[0] == new[0]
+        && old[1].0 == TAG_LIST_HEADER
+        && old[1].1 == 2
+        && new[1].0 == TAG_LIST_HEADER
+        && new[1].1 == 2
+        && old[a + 1].0 == leaf_tag
+        && old[a + 1].1 == 3
         && old[a..] == new[b..]
 }
 
@@ -257,18 +270,32 @@ pub(super) fn prove_picture_caption(
     defs: &Defs<'_>,
 ) -> Checked<()> {
     preserved(picture_caption_candidate(old, new), BODY)?;
-    let a = shape_component_pos(old).unwrap();
-    let b = shape_component_pos(new).unwrap();
-    let list = old[1].2;
+    let (kind, _, a) = shape_ctrl_id(old).unwrap();
+    let (_, _, b) = shape_ctrl_id(new).unwrap();
+    let old_list = old[1].2;
+    let new_list = new[1].2;
+    let old_count = word(old_list, 0)?;
+    let new_count = word(new_list, 0)?;
     preserved(
-        picture_bin_id(old).is_some_and(|id| (1..=entries(original_defs, 18).len()).contains(&id))
+        (kind != SC_PICTURE
+            || picture_bin_id(old)
+                .is_some_and(|id| (1..=entries(original_defs, 18).len()).contains(&id)))
             && dword(old[0].2, 4)? as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION
-            && old.len() == a + 2 && new.len() == b + 2
-            && old[a + 1].0 == TAG_PICTURE && old[a + 1].1 == 3
-            && list.len() == 30 && dword(list, 0)? == 1,
+            && old_list.len() == 30
+            && new_list.len() == 30
+            && old_list[2..] == new_list[2..]
+            && (1..=64).contains(&old_count)
+            && (1..=64).contains(&new_count),
         BODY,
     )?;
-    super::insertions::prove_picture_caption_paragraph(&old[2..a], &new[2..b], original_defs, defs)
+    super::insertions::prove_caption_paragraphs(
+        &old[2..a],
+        &new[2..b],
+        old_count,
+        new_count,
+        original_defs,
+        defs,
+    )
 }
 
 /// The pinned RHWP body insertion command emits these resource-free defaults.
@@ -3236,5 +3263,137 @@ mod tests {
         });
         assert!(check_with_preview_refresh(&original, &tampered)
             .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+    }
+
+    #[test]
+    fn hwp_shape_and_multiparagraph_caption_preserve_autonumber() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+
+        let cap_para = |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
+            let mut raw_text = Vec::new();
+            for cu in text.encode_utf16() {
+                raw_text.extend_from_slice(&cu.to_le_bytes());
+            }
+            if with_atno {
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+                raw_text.extend_from_slice(b"onta");
+                raw_text.extend_from_slice(&[0u8; 8]);
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+            }
+            raw_text.extend_from_slice(b"\r\0");
+            let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
+            let mask: u32 = if with_atno { 1 << 18 } else { 0 };
+            let mut hdr = vec![0u8; 22];
+            hdr[0..4].copy_from_slice(&cc.to_le_bytes());
+            hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+            hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+            hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+            let mut cs = vec![0u8; 8];
+            cs[0..4].copy_from_slice(&0u32.to_le_bytes());
+            let mut ls = vec![0u8; 36];
+            ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
+            ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
+            ls[12..16].copy_from_slice(&850i32.to_le_bytes());
+            let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
+            if with_atno {
+                let mut atno = vec![0u8; 16];
+                atno[0..4].copy_from_slice(b"onta");
+                out.push((71, 3, atno));
+            }
+            out
+        };
+
+        let cap_list = |para_count: u16, extra_flags: u8| -> Vec<u8> {
+            let mut list = vec![0u8; 30];
+            list[0..2].copy_from_slice(&para_count.to_le_bytes());
+            list[8] = extra_flags;
+            list
+        };
+
+        let shape_sc = shape_component_drawing(super::SC_RECT, 201, 6000, 4000, 100, 0, Some(0x00ff_ffff), 1);
+        let shape_leaf = rect_leaf(0, 6000, 4000);
+        let build_shape_cap = |paras: Vec<Vec<(u16, u16, Vec<u8>)>>, list_hdr: Vec<u8>, attr: u32| {
+            let mut obj = vec![
+                (71, 1, ctrl_header(201, attr, 500, 500, 6000, 4000, "", &[])),
+                (72, 2, list_hdr),
+            ];
+            for p in paras {
+                obj.extend(p);
+            }
+            obj.push((76, 2, shape_sc.clone()));
+            obj.push((super::TAG_RECTANGLE, 3, shape_leaf.clone()));
+            let sec = wrap_section(vec![obj]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        // Positive 1: 1-para shape caption split into 2 paragraphs while preserving AutoNumber (`atno`).
+        let orig_shape = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 0),
+            super::ATTR_CAPTION,
+        );
+        let split_shape = build_shape_cap(
+            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION,
+        );
+        assert_eq!(check_with_preview_refresh(&orig_shape, &split_shape), vec![]);
+
+        // Positive 2: 2-para caption merged back into 1 paragraph preserving `atno`.
+        assert_eq!(check_with_preview_refresh(&split_shape, &orig_shape), vec![]);
+
+        // Negative 1: deleting `atno` during multi-para caption edit must fail closed.
+        let lost_atno = build_shape_cap(
+            vec![cap_para("도형 ", false, false), cap_para("둘째 줄", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION,
+        );
+        assert!(!check_with_preview_refresh(&orig_shape, &lost_atno).is_empty());
+
+        // Negative 2: tampering caption LIST_HEADER bytes beyond para_count (`[2..]`) must fail closed.
+        let bad_list = build_shape_cap(
+            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            cap_list(2, 1),
+            super::ATTR_CAPTION,
+        );
+        assert!(!check_with_preview_refresh(&orig_shape, &bad_list).is_empty());
+
+        // Negative 3: locked shape caption edit must fail closed.
+        let locked_orig = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 0),
+            super::ATTR_CAPTION | super::ATTR_LOCKED,
+        );
+        let locked_edit = build_shape_cap(
+            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION | super::ATTR_LOCKED,
+        );
+        assert!(!check_with_preview_refresh(&locked_orig, &locked_edit).is_empty());
+
+        // Negative 4: duplicating `atno` across paragraphs must fail closed.
+        let dup_atno = build_shape_cap(
+            vec![cap_para("도형 ", true, false), cap_para("둘째 ", true, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION,
+        );
+        assert!(!check_with_preview_refresh(&orig_shape, &dup_atno).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP shape and multi-paragraph caption scenarios first"]
+    fn release_hwp_shape_and_multiparagraph_captions() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        for (orig_name, edit_name) in [
+            ("p5-shape-caption-original.hwp", "p5-shape-caption-edited.hwp"),
+            ("p5-multipara-caption-original.hwp", "p5-multipara-caption-edited.hwp"),
+        ] {
+            let orig = read(orig_name);
+            let edited = read(edit_name);
+            assert_eq!(check_with_preview_refresh(&orig, &edited), vec![], "{edit_name}");
+        }
     }
 }
