@@ -1987,3 +1987,7 @@ HWP5 `SHAPE_COMPONENT_RECTANGLE`(79)은 `round_rate` 1바이트와 부호 있는
 ### Stage 3 P2 HWP 단일 평문 글상자 보존
 
 `textbox_edit_candidate`는 기존 글상자의 CTRL_HEADER·SHAPE_COMPONENT·LIST_HEADER·도형 leaf 레코드를 그대로 대조한다. `prove_textbox_paragraph`는 단일 평문 문단의 레코드 깊이, 제어 문자 부재, 문자 모양과 문단 정의 참조를 검증하고 기존 문단 서식 증명 범위 안에서 정렬 변경을 수용한다. 새 글상자에서 같은 저장에 들어간 텍스트는 P1 기본 개체 증명과 동일 문단 검증을 모두 통과해야 한다. 잠금·캡션·미분류 구조에는 이 편집 증명을 적용하지 않는다.
+
+### Stage 3 P3 HWP 기본 도형 실선 굵기 보존
+
+`prove_evolved_gso`는 기존 비잠금 사각형·타원·직선의 캡션과 하위 글상자가 없는 구조에서 실선 굵기 필드를 검증한다. 원본·출력 굵기는 1–7200 HWPUNIT이어야 하며 선 종류, 끝 모양, 화살표 및 외곽선 스타일 바이트를 보존한다. 기존 기하, 리소스, 회전 및 소유권 증명도 적용한다.

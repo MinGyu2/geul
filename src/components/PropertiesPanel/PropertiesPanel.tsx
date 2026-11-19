@@ -130,7 +130,7 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
       {selection.graphic?.kind === "chart" && can("chart") && <ChartFields chart={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.graphic?.kind === "smartArt" && can("smartArt") && <SmartArtFields art={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
-        outlineWidth={selection.address.engine === "wordcraft"} onEdit={onEdit} />}
+        outlineWidth={selection.address.engine === "wordcraft" ? 0 : selection.shape.outlineWidthEditable ? 0.01 : null} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
         onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
     </div>
@@ -221,8 +221,8 @@ function ShapeFields({ shape, disabled, can, outlineWidth, onEdit }: {
   shape: ShapeProperties;
   disabled: boolean;
   can: (op: ObjectSelection["operations"][number]) => boolean;
-  /** Whether this engine's line width mapping is proven (RHWP edits the color only). */
-  outlineWidth: boolean;
+  /** Minimum supported width in points, or null when only color is editable. */
+  outlineWidth: number | null;
   onEdit: (edit: ObjectEdit) => void;
 }) {
   const { t } = useTranslation();
@@ -233,7 +233,7 @@ function ShapeFields({ shape, disabled, can, outlineWidth, onEdit }: {
   const [flipV, setFlipV] = useState(shape.flipV);
   const hex = (value: string) => value.replace(/^#/, "").toUpperCase();
   const widthValue = Number(width), rotationValue = Number(rotation);
-  const widthValid = !outlineWidth || (width.trim() !== "" && Number.isFinite(widthValue) && widthValue >= 0 && widthValue <= 72);
+  const widthValid = outlineWidth === null || (width.trim() !== "" && Number.isFinite(widthValue) && widthValue >= outlineWidth && widthValue <= 72);
   const rotationValid = rotation.trim() !== "" && Number.isFinite(rotationValue) && Math.abs(rotationValue) <= 3600;
   return (
     <div className="shape-tools">
@@ -248,13 +248,13 @@ function ShapeFields({ shape, disabled, can, outlineWidth, onEdit }: {
       {can("outline") && <form onSubmit={event => {
         event.preventDefault();
         if (disabled || !widthValid) return;
-        onEdit(outlineWidth ? { kind: "outline", color: hex(outline), width: widthValue } : { kind: "outline", color: hex(outline) });
+        onEdit(outlineWidth !== null ? { kind: "outline", color: hex(outline), width: widthValue } : { kind: "outline", color: hex(outline) });
       }}>
         <label className="picture-size-field">{t("properties.shape.outline")}
           <input type="color" value={outline} disabled={disabled} onChange={event => setOutline(event.target.value)} />
         </label>
-        {outlineWidth && <label className="picture-size-field">{t("properties.shape.outlineWidth")}
-          <input type="number" min={0} max={72} step={0.25} value={width} disabled={disabled} onChange={event => setWidth(event.target.value)} />
+        {outlineWidth !== null && <label className="picture-size-field">{t("properties.shape.outlineWidth")}
+          <input type="number" min={outlineWidth} max={72} step={outlineWidth === 0 ? 0.25 : 0.01} value={width} disabled={disabled} onChange={event => setWidth(event.target.value)} />
         </label>}
         <button type="submit" className="document-bar__button" disabled={disabled || !widthValid}>{t("properties.shape.outlineApply")}</button>
       </form>}

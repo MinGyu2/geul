@@ -73,7 +73,7 @@ describe("object tools in the properties panel", () => {
     expect(screen.getByLabelText("Text wrapping")).toBeDisabled();
   });
 
-  it("sends shape fill, line, rotation and layer edits; RHWP lines carry the color only", () => {
+  it("sends shape fill, line, rotation and layer edits", () => {
     const shape = { fill: "156082", outline: "0E405A", outlineWidth: 1, rotation: 0, flipH: false, flipV: false, widthPt: 108, heightPt: 72 };
     const onEdit = panel(shapeSelection({ shape,
       operations: ["deselect", "fill", "outline", "rotate", "zOrder"] }));
@@ -90,13 +90,27 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "layer", front: false }));
   });
 
-  it("omits the line width for RHWP shapes", () => {
+  it("omits the line width for RHWP shapes without width support", () => {
     const shape = { fill: null, outline: "000000", outlineWidth: 0.12, rotation: 0, flipH: false, flipV: false, widthPt: 108, heightPt: 72 };
     const onEdit = panel(shapeSelection({ shape, address: { engine: "rhwp", path: [0, 0, 1] },
       operations: ["deselect", "outline"] }));
     expect(screen.queryByLabelText("Line width (pt)")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Apply line" }));
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "outline", color: "000000" }));
+  });
+
+  it("sends a positive RHWP line width when the shape exposes the capability", () => {
+    const shape = { fill: null, outline: "000000", outlineWidth: 0.33, outlineWidthEditable: true as const,
+      rotation: 0, flipH: false, flipV: false, widthPt: 108, heightPt: 72 };
+    const onEdit = panel(shapeSelection({ shape, address: { engine: "rhwp", path: [0, 0, 1] },
+      operations: ["deselect", "outline"] }));
+    const field = screen.getByLabelText("Line width (pt)");
+    const button = screen.getByRole("button", { name: "Apply line" });
+    fireEvent.change(field, { target: { value: "0" } });
+    expect(button).toBeDisabled();
+    fireEvent.change(field, { target: { value: "2.45" } });
+    fireEvent.click(button);
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "outline", color: "000000", width: 2.45 }));
   });
 
   it("edits chart title, type and data and SmartArt items and layout as model edits", () => {

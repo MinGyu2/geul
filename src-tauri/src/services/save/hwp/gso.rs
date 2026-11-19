@@ -938,7 +938,14 @@ pub(super) fn prove_evolved_gso(
         &old_sc[old_r_end..old_r_end + 13],
         &new_sc[new_r_end..new_r_end + 13],
     );
-    preserved(old_border[4..13] == new_border[4..13], BODY)?;
+    preserved(old_border[8..13] == new_border[8..13], BODY)?;
+    if old_border[4..8] != new_border[4..8] {
+        preserved(!has_caption && old.len() == 3 && new.len() == 3 && dword(old_border, 8)? & 0x3f == 1, BODY)?;
+        valid(
+            (1..=7200).contains(&dword(old_border, 4)?) && (1..=7200).contains(&dword(new_border, 4)?),
+            BODY,
+        )?;
+    }
     if old_border[..4] != new_border[..4] {
         valid(new_border[3] == 0, BODY)?;
     }
@@ -1619,6 +1626,25 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the P3 solid outline width scenario first"]
+    fn release_hwp_p3_solid_outline_width_is_bounded() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(dir.join("p3-width-original.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("p3-width-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let pick = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cer$cer$");
+        for (at, bytes) in [(200, 7201u32.to_le_bytes()), (204, 0xd100_0042u32.to_le_bytes())] {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                changed[at..at + 4].copy_from_slice(&bytes);
+                changed
+            });
+            assert!(check_with_preview_refresh(&original, &tampered).iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
     }
 
     #[test]

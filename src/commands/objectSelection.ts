@@ -28,6 +28,7 @@ export interface ShapeProperties {
   fill: string | null;
   outline: string | null;
   outlineWidth: number;
+  outlineWidthEditable?: true;
   rotation: number;
   flipH: boolean;
   flipV: boolean;

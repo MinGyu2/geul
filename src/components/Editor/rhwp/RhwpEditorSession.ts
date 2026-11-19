@@ -1766,7 +1766,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               operations: ["deselect", ...operations],
               ...(inspected ? { picture: inspected.properties } : {}),
               ...(graphic ? { graphic } : {}),
-              ...(shape ? { shape: shape.properties } : {}),
+              ...(shape ? { shape: {
+                ...shape.properties,
+                ...(shape.solidOutline && this.isEditableHwpGso(shapeAddress, true) ? { outlineWidthEditable: true } : {}),
+              } } : {}),
             },
           };
           this.emit();
@@ -4503,11 +4506,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         expect = edit.color === null ? { fillType: "none" } : { fillType: "solid", fillBgColor: hexToBgr(edit.color) };
         keep = except("fillType", "fillBgColor");
         break;
-      case "outline":
-        // Line width units and "no line" are not part of this proven mapping: color only.
-        if (edit.color === null || edit.width !== undefined) return false;
-        props = { borderColor: hexToBgr(edit.color) }; expect = { borderColor: hexToBgr(edit.color) }; keep = except("borderColor");
+      case "outline": {
+        if (edit.color === null) return false;
+        const borderColor = hexToBgr(edit.color);
+        if (edit.width === undefined) {
+          props = expect = { borderColor };
+          keep = except("borderColor");
+        } else {
+          const borderWidth = Math.round(edit.width * 100);
+          if (!selected.shape.outlineWidthEditable || !before.solidOutline || !this.isEditableHwpGso(address, true)
+            || edit.width < 0.01 || edit.width > 72 || !Number.isSafeInteger(borderWidth)) return false;
+          props = expect = { borderColor, borderWidth };
+          keep = except("borderColor", "borderWidth");
+        }
         break;
+      }
       case "rotate": {
         const degrees = Math.round(((edit.degrees % 360) + 360) % 360);
         props = { rotationAngle: degrees, horzFlip: edit.flipH, vertFlip: edit.flipV };

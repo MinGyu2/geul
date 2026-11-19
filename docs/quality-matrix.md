@@ -213,7 +213,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 인라인→위/아래 배치 Release WASM 및 T009. 네이티브 배치 NOT RUN |
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 실제 속성 창에서 입력한 설명이 게시본에 남고 재열기 UI에서 일치 |
 | 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX `arrange.position` 여백 기준 9곳 |
-| 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기 제외) | PARTIAL | HWPX z-order는 B4 검증 범위에서 지원된다. HWP z-order와 HWPX/HWP 선 굵기는 미지원이다. HWP 사각형 회전·좌우 반전은 검증됐으며, 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009 검증 범위다. 네이티브 확인은 실행하지 않았다. |
+| 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (검증 범위) | PARTIAL | HWPX z-order는 B4 검증 범위에서 지원된다. HWP z-order는 미지원이다. HWP/HWPX에서 캡션·글상자 하위 구조가 없는 기존 비잠금 기본 도형의 실선 굵기 0.01–72pt를 지원한다. HWP 사각형 회전·좌우 반전은 검증됐으며, 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009 검증 범위다. 네이티브 확인은 실행하지 않았다. |
 | 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동은 검증됐다. 정규 사각형·타원·선의 크기 변경은 엔진·T009 검증을 통과했다. B2의 비정규 사각형 크기 변경은 원본 기하를 기준으로 변경 축 좌표를 비례 변환하고 미변경 축을 보존한다. 지원 범위에서 직렬화·T009 검증을 통과했으며 퇴화 또는 범위 초과 결과는 거부한다. |
 | 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 내용 변조·bit 29 전환·캡션 객체 삭제는 거부 유지 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
@@ -304,3 +304,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P2 HWP 단일 문단 글상자 CURRENT PASS.** 동일 Release WASM에서 `stage3-shapes.wasm.test.ts -t 'edits a plain HWP text box'` 1 PASS. SAFE 사전 검사 뒤 글상자에 텍스트와 문단 정렬을 적용했고 원본 본문과 바깥 개체가 재열기 후 같았다. `release_hwp_p -- --ignored` 2 PASS. 새 HWP 실파일에서 삽입과 내부 편집 동시 저장, 기존 소유 글상자 편집, 잠금 글상자 내부 변경 거부를 확인했다. 글상자 신규 레코드 분기를 확장했으므로 P1은 기존 fixture로 T009만 재검증했다.
 
 **P2 HWPX 표 셀 인라인 그림 CURRENT PASS.** 동일 Release WASM에서 `stage3-shapes.wasm.test.ts -t 'resizes an HWPX table-cell picture'` 1 PASS. 레이아웃과 모델 주소의 일치, 크기 변경·Undo/Redo, 독립 재열기와 자원 해시·형제 셀 텍스트 보존을 확인했다. `p2-cell-picture-*.hwpx` 실파일과 손실 보고서의 T009 `save_check saved hwpx` 결과는 `safe`, `npm run typecheck`는 PASS다.
+
+**P3 HWP/HWPX 기본 도형 실선 굵기 CURRENT PASS.** 동일 Release WASM에서 `stage3-shapes.wasm.test.ts -t 'solid outline width'` 2 PASS. 속성 창의 `objectTools.test.tsx -t 'sends a positive RHWP line width'` 1 PASS. HWP T009 `release_hwp_p3_solid_outline_width_is_bounded`와 기존 GSO 변조 거부 시험이 통과했고, HWPX 실파일 T009 결과는 `safe`였다. 0.01–72pt를 1–7200 HWPUNIT으로 저장하며 선 종류와 다른 도형 기하·서식은 보존한다. 범위 밖 굵기, 선 없음, 캡션·글상자 하위 구조가 있는 도형은 이 연산의 범위 밖이다.

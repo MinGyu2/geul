@@ -18,6 +18,7 @@ export interface RhwpShapeInspection {
   movable: boolean;
   /** Solid or no fill (gradient/picture fills are not edited). */
   fillEditable: boolean;
+  solidOutline: boolean;
   textBox: boolean;
   hasCaption: boolean;
   sizeProtected: boolean;
@@ -49,6 +50,8 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
         ...(fillBgColor !== undefined ? { fillBgColor } : {}), treatAsChar, textWrap, description },
       movable: !treatAsChar && v.horzAlign === "Left" && v.vertAlign === "Top",
       fillEditable: fillType === "none" || (fillType === "solid" && fillBgColor !== undefined),
+      solidOutline: v.lineType === 1 && borderWidth >= 1 && borderWidth <= 7200
+        && v.hasCaption === false && !("tbVerticalAlign" in v),
       textBox: "tbVerticalAlign" in v,
       hasCaption: v.hasCaption === true,
       sizeProtected: v.sizeProtect !== false,

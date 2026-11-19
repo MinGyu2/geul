@@ -117,7 +117,7 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(selected.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"]);
       const control = rect.controlIdx;
       expect(edit({ kind: "outline", color: null })).toBe(false);
-      expect(edit({ kind: "outline", color: "112233", width: 2 })).toBe(false);
+      expect(edit({ kind: "outline", color: "112233", width: 0 })).toBe(false);
       expect(edit({ kind: "fill", color: "FF8800" })).toBe(true);
       await confirm();
       expect(props(doc, control)).toMatchObject({ fillType: "solid", fillBgColor: 0x0088ff });
@@ -252,6 +252,49 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(props(doc, second.controlIdx).zOrder).toBeLessThan(props(doc, first.controlIdx).zOrder);
       expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
       expect(editor.objectSelection?.address.path).toEqual([0, 0, first.controlIdx]);
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("persists an existing %s solid outline width", async format => {
+    const originalDoc = new engine.HwpDocument(source(format)) as RhwpDocument;
+    let original: Uint8Array;
+    try {
+      const created = JSON.parse(originalDoc.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "rectangle", width: 10800, height: 7200,
+        treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      })));
+      expect(JSON.parse(originalDoc.setShapeProperties!(0, 0, created.controlIdx, '{"textWrap":"Square"}'))).toMatchObject({ ok: true });
+      original = format === "hwp" ? originalDoc.exportHwp() : originalDoc.exportHwpx();
+    } finally { originalDoc.free(); }
+
+    const { editor, doc, pick, edit, confirm, take } = await setup(format, original);
+    try {
+      if (format === "hwp") {
+        take("original").reply(ok(original));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
+      const frame = shapes(doc)[0]!, before = props(doc, frame.controlIdx);
+      expect(pick(frame).shape?.outlineWidthEditable).toBe(true);
+      expect(edit({ kind: "outline", color: "000000", width: 0 })).toBe(false);
+      expect(edit({ kind: "outline", color: "000000", width: 2.45 })).toBe(true);
+      await confirm();
+      expect(props(doc, frame.controlIdx)).toEqual({ ...before, borderWidth: 245 });
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(props(reopened, frame.controlIdx)).toEqual({ ...before, borderWidth: 245 }); }
+        finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p3-width-original.${format}`), original);
+          writeFileSync(resolve(out, `p3-width-edited.${format}`), output);
+          writeFileSync(resolve(out, `p3-width-${format}-report.json`), report);
+        }
+      } finally { exported.free(); }
     } finally { editor.dispose(); }
   });
 
