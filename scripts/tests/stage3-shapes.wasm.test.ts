@@ -1305,7 +1305,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
-  it("copies, cuts, and pastes HWPX body pictures, shapes, text boxes, and groups with unique IDs, cross-doc portability, and HWP5/DOCX refusal", async () => {
+  it("copies, cuts, and pastes HWPX body pictures, shapes, text boxes, and groups with unique IDs, cross-doc, HWP5, and DOCX refusal", async () => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAADYAAAAbCAIAAAC4FetiAAAAN0lEQVR4nO3OUQkAIBBAsethFvv3MIklBN/HYAE2Z+24+T5QVFRUbFFUrFBUrFBUrFBUrFB84QIyEvyvRSPr3QAAAABJRU5ErkJggg==",
       "base64",
@@ -1435,19 +1435,13 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(new Set(rectCtrls.map(c => shapePropsAt(src.doc, c.para, c.controlIndex).scInstId)).size).toBe(rectCtrls.length);
       expect(rectCtrls.some(c => !beforeCutIds.has(shapePropsAt(src.doc, c.para, c.controlIndex).scInstId))).toBe(true);
 
-      // 3. TextBox copy (captures portable 2-para snapshot) -> paste in same doc.
+      // 3. TextBox copy -> paste in same doc.
       const boxFrame = shapeFrames().find(f => src.pick(f).kind === "textBox")!;
       expect(boxFrame).toBeDefined();
       expect(await src.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
       copiedTextBoxMime = mimes().get(OBJECT_CLIPBOARD_MIME)!;
       const parsedBox = parseObjectClipboardPayload(copiedTextBoxMime);
-      expect(parsedBox && parsedBox.version === 3 ? parsedBox.portable : undefined).toMatchObject({
-        shapeType: "textbox",
-        paragraphs: [
-          { text: "첫 문단", align: "center" },
-          { text: "둘째 문단", align: "right" },
-        ],
-      });
+      expect(parsedBox && parsedBox.version === 3 ? parsedBox.portable : undefined).toBeUndefined();
       const boxCountBefore = shapeFrames().filter(f => src.pick(f).kind === "textBox").length;
       expect(src.editor.execute("object.deselect").accepted).toBe(true);
       expect(await src.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
@@ -1500,18 +1494,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         writeText: async () => undefined,
         readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? copiedTextBoxMime : null,
       };
-      expect(await dst.editor.executeClipboard("edit.paste", () => true, boxClipboard)).toBe(true);
-      await dst.confirm();
-      const dstBoxes = listControls(dst.doc).filter(c => c.list === 0 && (c.userDesc === "사각형" || c.userDesc === "글상자")
-        && shapePropsAt(dst.doc, c.para, c.controlIndex).tbVerticalAlign === "Center");
-      expect(dstBoxes).toHaveLength(1);
-      const { para: bp, controlIndex: ci } = dstBoxes[0]!;
-      expect(dst.doc.getCellParagraphCount(0, bp, ci, 0)).toBe(2);
-      expect(dst.doc.getTextInCell(0, bp, ci, 0, 0, 0, 4)).toBe("첫 문단");
-      expect(dst.doc.getTextInCell(0, bp, ci, 0, 1, 0, 5)).toBe("둘째 문단");
-      expect(JSON.parse(dst.doc.getCellParaPropertiesAt!(0, bp, ci, 0, 0)).alignment).toBe("center");
-      expect(JSON.parse(dst.doc.getCellParaPropertiesAt!(0, bp, ci, 0, 1)).alignment).toBe("right");
-
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, boxClipboard)).toBe(false);
       // Cross-doc picture, cross-doc group, and DOCX v2 payload must all fail closed without mutating dst.
       for (const rejectedPayload of [
         copiedPicMime,
@@ -1526,7 +1509,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         expect(await dst.editor.executeClipboard("edit.paste", () => true, badClip)).toBe(false);
       }
       expect(dst.calls.filter(c => c.method === "commit")).toHaveLength(0);
-      expect(dst.editor.snapshot().revision).toBe(1);
+      expect(dst.editor.snapshot().revision).toBe(0);
     } finally { dst.editor.dispose(); }
 
     // HWP5 documents must never offer copy/cut on selected objects or accept HWPX v3 object paste.

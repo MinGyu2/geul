@@ -6,7 +6,7 @@ import { hexToBgr, inspectRhwpGroup, inspectRhwpShape } from "./shapeProperties"
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   OBJECT_CLIPBOARD_MIME, createHwpxObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload,
-  type HwpxPortableParagraph, type HwpxPortableShape, type HwpxPortableShapeType, type RichObjectKind,
+  type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -3108,82 +3108,6 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return applied ? "ok" : "rejected";
   }
 
-  private buildPortableShape(kind: "shape" | "textBox", address: readonly [number, number, number]): HwpxPortableShape | undefined {
-    const doc = this.doc;
-    if (!doc?.getControls || !doc.getShapeProperties || !doc.getParagraphCount) return undefined;
-    try {
-      const [section, para, control] = address;
-      let globalPara = para;
-      for (let s = 0; s < section; s++) globalPara += doc.getParagraphCount(s);
-      const controls = JSON.parse(doc.getControls()) as { list?: number; para?: number; controlIndex?: number; ctrlId?: string; userDesc?: string }[];
-      const matches = controls.filter(c => c.list === 0 && c.para === globalPara && c.controlIndex === control);
-      if (matches.length !== 1 || matches[0]!.ctrlId !== "gso") return undefined;
-      const shapeType: HwpxPortableShapeType | undefined = kind === "textBox"
-        ? "textbox"
-        : ({ "사각형": "rectangle", "타원": "ellipse", "직선": "line" } as Record<string, HwpxPortableShapeType | undefined>)[String(matches[0]!.userDesc ?? "")];
-      if (!shapeType) return undefined;
-      const raw = JSON.parse(doc.getShapeProperties(section, para, control)) as Record<string, unknown>;
-      if (raw.fillType !== "none" && raw.fillType !== "solid") return undefined;
-      const wrap = typeof raw.textWrap === "string" && ["Square", "Tight", "Through", "TopAndBottom", "BehindText", "InFrontOfText"].includes(raw.textWrap)
-        ? raw.textWrap as HwpxPortableShape["textWrap"] : "Square";
-      const rotationAngle = Math.round(((Number(raw.rotationAngle ?? 0) % 360) + 360) % 360);
-      const borderWidth = Number.isSafeInteger(raw.borderWidth) ? Math.max(0, Math.min(7200, raw.borderWidth as number)) : 0;
-      const borderColor = Number.isSafeInteger(raw.borderColor) && (raw.borderColor as number) >= 0 ? raw.borderColor as number : 0;
-      let paragraphs: HwpxPortableParagraph[] | undefined;
-      if (shapeType === "textbox") {
-        if (!doc.getCellParagraphCount || !doc.getCellParagraphLength || !doc.getTextInCell) return undefined;
-        const count = doc.getCellParagraphCount(section, para, control, 0);
-        if (!Number.isSafeInteger(count) || count < 1 || count > 1024) return undefined;
-        paragraphs = [];
-        for (let p = 0; p < count; p++) {
-          const len = doc.getCellParagraphLength(section, para, control, 0, p);
-          const text = len > 0 ? doc.getTextInCell(section, para, control, 0, p, 0, len) : "";
-          let align: HwpxPortableParagraph["align"];
-          if (doc.getCellParaPropertiesAt) {
-            const pProps = JSON.parse(doc.getCellParaPropertiesAt(section, para, control, 0, p)) as { alignment?: unknown };
-            if (pProps.alignment === "left" || pProps.alignment === "center" || pProps.alignment === "right" || pProps.alignment === "justify") {
-              align = pProps.alignment;
-            }
-          }
-          paragraphs.push({ text, ...(align ? { align } : {}) });
-        }
-      }
-      const tbAlign = raw.tbVerticalAlign === "Top" || raw.tbVerticalAlign === "Center" || raw.tbVerticalAlign === "Bottom"
-        ? raw.tbVerticalAlign : undefined;
-      const tbMargins = Number.isSafeInteger(raw.tbMarginLeft) && Number.isSafeInteger(raw.tbMarginRight)
-        && Number.isSafeInteger(raw.tbMarginTop) && Number.isSafeInteger(raw.tbMarginBottom)
-        ? {
-            left: Math.max(0, raw.tbMarginLeft as number),
-            right: Math.max(0, raw.tbMarginRight as number),
-            top: Math.max(0, raw.tbMarginTop as number),
-            bottom: Math.max(0, raw.tbMarginBottom as number),
-          } : undefined;
-      const candidate: HwpxPortableShape = {
-        shapeType,
-        width: raw.width as number,
-        height: raw.height as number,
-        horzOffset: raw.horzOffset as number,
-        vertOffset: raw.vertOffset as number,
-        treatAsChar: raw.treatAsChar === true,
-        textWrap: wrap,
-        rotationAngle,
-        horzFlip: raw.horzFlip === true,
-        vertFlip: raw.vertFlip === true,
-        borderColor,
-        borderWidth,
-        fillType: raw.fillType,
-        ...(raw.fillType === "solid" ? { fillBgColor: raw.fillBgColor as number } : {}),
-        ...(typeof raw.description === "string" && raw.description.length > 0 ? { description: raw.description } : {}),
-        ...(tbAlign ? { tbVerticalAlign: tbAlign } : {}),
-        ...(tbMargins ? { tbMargins } : {}),
-        ...(paragraphs ? { paragraphs } : {}),
-      };
-      return createHwpxObjectClipboardPayload(kind, this.sessionId, this.generation, candidate) ? candidate : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   private readStructuredObject(): { mime: string; data: string; plainText: string } | null {
     const selected = this.selectedObject;
     const copyControl = selected?.copyControl;
@@ -3195,10 +3119,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const [section, para, control] = copyControl.address;
       const res = JSON.parse(doc.copyControl(section, para, "[]", control)) as { ok?: boolean };
       if (res.ok !== true || !doc.clipboardHasControl()) return null;
-      const portable = copyControl.kind === "shape" || copyControl.kind === "textBox"
-        ? this.buildPortableShape(copyControl.kind, copyControl.address)
-        : undefined;
-      const payload = createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, portable);
+      const payload = createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation);
       if (!payload) return null;
       this.lastCopiedObjectToken = payload.token;
       return {
@@ -3232,6 +3153,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const sameDoc = payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
 
+    // Portable snapshots do not prove source fidelity; never reconstruct an object from them.
+    // Refuse before a history boundary, including payloads from older clients.
+    if (!sameDoc) return "rejected";
     this.history.boundary();
     let applied = false;
     if (sameDoc) {
@@ -3245,70 +3169,6 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         const targetOffset = Math.min(at.offset, doc.getParagraphLength(at.section, targetPara));
         const nextPos = { section: at.section, paragraph: targetPara, offset: targetOffset };
         return { caret: nextPos, anchor: nextPos };
-      }, true, "other", null, true, true);
-    } else if (payload.portable && doc.createShapeControl && doc.setShapeProperties) {
-      const p = payload.portable;
-      applied = this.mutate(() => {
-        const res = JSON.parse(doc.createShapeControl!(JSON.stringify({
-          sectionIdx: at.section,
-          paraIdx: at.paragraph,
-          charOffset: at.offset,
-          shapeType: p.shapeType,
-          width: p.width,
-          height: p.height,
-          treatAsChar: p.treatAsChar,
-          textWrap: p.textWrap,
-          horzOffset: p.horzOffset,
-          vertOffset: p.vertOffset,
-        }))) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown };
-        if (res.ok !== true || !Number.isSafeInteger(res.paraIdx) || !Number.isSafeInteger(res.controlIdx)) {
-          throw new Error("createShapeControl failed");
-        }
-        const targetPara = res.paraIdx as number;
-        const targetCtrl = res.controlIdx as number;
-        const props: Record<string, unknown> = {
-          treatAsChar: p.treatAsChar,
-          ...(!p.treatAsChar ? { textWrap: p.textWrap } : {}),
-          rotationAngle: p.rotationAngle,
-          horzFlip: p.horzFlip,
-          vertFlip: p.vertFlip,
-          borderColor: p.borderColor,
-          borderWidth: p.borderWidth,
-          fillType: p.fillType,
-          ...(p.fillType === "solid" ? { fillBgColor: p.fillBgColor } : {}),
-          ...(p.description !== undefined ? { description: p.description } : {}),
-          ...(p.tbVerticalAlign ? { tbVerticalAlign: p.tbVerticalAlign } : {}),
-          ...(p.tbMargins ? {
-            tbMarginLeft: p.tbMargins.left,
-            tbMarginRight: p.tbMargins.right,
-            tbMarginTop: p.tbMargins.top,
-            tbMarginBottom: p.tbMargins.bottom,
-          } : {}),
-        };
-        const styled = JSON.parse(doc.setShapeProperties!(at.section, targetPara, targetCtrl, JSON.stringify(props))) as { ok?: boolean };
-        if (styled.ok !== true) throw new Error("setShapeProperties failed");
-        if (p.shapeType === "textbox" && p.paragraphs) {
-          for (let i = 0; i < p.paragraphs.length; i++) {
-            const paraSpec = p.paragraphs[i]!;
-            if (i > 0) {
-              if (!doc.splitParagraphInCell) throw new Error("splitParagraphInCell unavailable");
-              const prevLen = doc.getCellParagraphLength(at.section, targetPara, targetCtrl, 0, i - 1);
-              const split = JSON.parse(doc.splitParagraphInCell(at.section, targetPara, targetCtrl, 0, i - 1, prevLen)) as { ok?: boolean };
-              if (split.ok !== true) throw new Error("splitParagraphInCell failed");
-            }
-            if (paraSpec.text.length > 0) {
-              const inserted = JSON.parse(doc.insertTextInCell(at.section, targetPara, targetCtrl, 0, i, 0, paraSpec.text)) as { ok?: boolean };
-              if (inserted.ok !== true) throw new Error("insertTextInCell failed");
-            }
-            if (paraSpec.align && doc.applyParaFormatInCell) {
-              const aligned = JSON.parse(doc.applyParaFormatInCell(
-                at.section, targetPara, targetCtrl, 0, i, JSON.stringify({ alignment: paraSpec.align }),
-              )) as { ok?: boolean };
-              if (aligned.ok !== true) throw new Error("applyParaFormatInCell failed");
-            }
-          }
-        }
-        return { caret: at, anchor: at };
       }, true, "other", null, true, true);
     }
     this.history.boundary();
