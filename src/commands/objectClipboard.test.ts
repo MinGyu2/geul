@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { documentCommandState } from "./capability";
 import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clipboard";
-import { createObjectClipboardPayload, createRichObjectClipboardPayload, MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
+import {
+  createHwpxObjectClipboardPayload,
+  createObjectClipboardPayload,
+  createRichObjectClipboardPayload,
+  MAX_OBJECT_CLIPBOARD_BYTES,
+  OBJECT_CLIPBOARD_MIME,
+  objectClipboardPlainText,
+  parseObjectClipboardPayload,
+} from "./objectClipboard";
 import { clearStructuredClipboard, TABLE_CLIPBOARD_MIME } from "./tableClipboard";
 import type { DocumentCommandSnapshot, DocumentCommandTarget } from "./target";
 
@@ -173,6 +182,57 @@ describe("rich object clipboard (v2)", () => {
     };
     expect(await runClipboard(target("rhwp"), "edit.paste", editing, () => true, clipboard)).toBe(false);
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("validates HWPX v3 envelopes and keeps cross-engine and v2 hwpx envelopes rejected", () => {
+    const portable = createHwpxObjectClipboardPayload("textBox", 1, 2, {
+      shapeType: "textbox",
+      width: 10800,
+      height: 7200,
+      horzOffset: 0,
+      vertOffset: 0,
+      treatAsChar: false,
+      textWrap: "Square",
+      rotationAngle: 0,
+      horzFlip: false,
+      vertFlip: false,
+      borderColor: 0x005a400e,
+      borderWidth: 100,
+      fillType: "solid",
+      fillBgColor: 0x00826015,
+      tbVerticalAlign: "Center",
+      tbMargins: { left: 283, right: 283, top: 141, bottom: 141 },
+      paragraphs: [{ text: "첫 줄", align: "center" }, { text: "둘째 줄", align: "right" }],
+    })!;
+    expect(portable.version).toBe(3);
+    expect(portable.sourceFormat).toBe("hwpx");
+    expect(parseObjectClipboardPayload(JSON.stringify(portable))).toEqual(portable);
+    expect(objectClipboardPlainText(portable)).toBe(`Geul textBox [${portable.token}]`);
+
+    // Wrong sourceFormat, mismatched portable shapeType/kind, or v3 tagged as docx must fail.
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...portable, sourceFormat: "docx" }))).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...portable, object: "shape" }))).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...portable, portable: { ...portable.portable, rotationAngle: 360 } }))).toBeNull();
+
+    // RHWP capability gating: shape selection allows copy/cut only when clipboard.shape is exposed.
+    const rhwpTarget = {
+      ...target("rhwp").snapshot(),
+      objectSelection: {
+        kind: "textBox" as const,
+        frame: { page: 0, x: 10, y: 10, width: 100, height: 60 },
+        address: { engine: "rhwp" as const, path: [0, 0, 0] },
+        epoch: 1,
+        sessionId: 1,
+        loadGeneration: 1,
+        revision: 3,
+        editable: true,
+        operations: ["deselect" as const, "move" as const, "delete" as const, "copy" as const, "cut" as const],
+      },
+      clipboard: { selection: true, writable: true, shape: { cutAllowed: true }, key: "hwpx-obj" },
+    };
+    expect(documentCommandState("edit.copy", rhwpTarget)).toEqual({ available: true });
+    expect(documentCommandState("edit.cut", rhwpTarget)).toEqual({ available: true });
+    expect(documentCommandState("edit.paste", rhwpTarget)).toEqual({ available: false, reason: "protected" });
   });
 });
 

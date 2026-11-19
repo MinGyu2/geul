@@ -1180,7 +1180,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         if (!view) return "rejected";
         if (mime === OBJECT_CLIPBOARD_MIME) {
           const object = parseObjectClipboardPayload(data);
-          if (!object || !view.drawingInsertionAllowed) return "rejected";
+          if (!object || object.sourceFormat !== "docx" || !view.drawingInsertionAllowed) return "rejected";
           if (object.version === 1) return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
           return this.push({ op: "pasteObject", payload: object.engine }) ? "ok" : "rejected";
         }

@@ -1180,19 +1180,15 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
   `deselect`/`copy`/`cut`·읽기 전용 선택·`formatAccess === "protected"`·미준비/조합/대기/저장 중 상태는 계속 거부한다.
   개별 요청은 기존과 같이 `objectEditMatches()`와 세션/버전/epoch 검증을 통과해야 한다.
 
-### P5 구조 개체 클립보드 v2 (2026-11-19)
+### P4/P5 구조 개체 클립보드 v2(DOCX)·v3(HWPX)
 
-봉투: `{kind:"geul.object", version:2, sourceFormat:"docx", object:"picture"|"shape"|"textBox"|"group", engine:{fragment, media}, token}`
-(직렬화 12 MiB 이하, 미디어 16개·해독 8 MiB 이하). 평문 표지 `Geul <object> [token]`. v1(기본 도형)은 호환으로 계속 받는다.
-
-- 복사: 선택이 본문 DOCX 그림·도형·글상자·그룹이면 `docx_selection_object(session, generation, revision, position, epoch)`가 선택 정체성을
-  확인하고 `copy_range` 조각(그 개체 한 글자 문단 + 글상자 story)과 쓰는 미디어(PNG/JPEG만, SHA-256)를 낸다. OLE·차트·SmartArt는 거부.
-- 붙여넣기: `DocxOp::PasteObject`. 요청 검증(문단 1개·개체 1개·유한 크기·글상자 story 정확히 1개·미디어 키 일대일) → 해독·해시·형식 확인 →
-  `atomic` 안에서 대상 문서에 미디어 추가(같은 바이트면 공유) 후 조각의 키를 대상 키로 바꾸고 WordCraft `edit.paste`로 한 단계 삽입 →
-  편집 전 내보내기 대비 `check_saved`·`same_as`. 그리기 삽입 위치 규칙(본문 끝 커서, 다른 story 그림 없음)을 따른다. 사용자의 WordCraft 내부
-  클립보드는 복원한다. Undo/Redo 뒤 붙여넣기가 더한 미디어 중 참조가 없는 것은 모델에서 지운다(저장 시 고아 부분 방지).
-- 잘라내기: 복사 뒤 `object.edit` 삭제 경로. RHWP에는 개체 복사가 없고, DOCX 페이로드는 RHWP `insertStructured`가 거부한다.
-- 시스템 클립보드: Linux Tauri는 GTK 브리지로 `application/x-geul-object+json`과 `application/x-geul-table-cells+json` 및 같은 복사의 UTF-8 평문을 제공한다. 다른 플랫폼은 브라우저 평문 + 앱 내 기억을 사용한다. 읽은 구조 데이터는 기존 소유·내용 검증을 통과해야 하며, MIME 전송은 형식 간 구조 변환을 활성화하지 않는다.
+- **DOCX v2:** 봉투 `{kind:"geul.object", version:2, sourceFormat:"docx", object:"picture"|"shape"|"textBox"|"group", engine:{fragment, media}, token}`(직렬화 12 MiB 이하, 미디어 16개·해독 8 MiB 이하). 평문 표지 `Geul <object> [token]`. v1(기본 도형)은 호환으로 계속 받는다.
+  - 복사: `docx_selection_object`가 `body_hosted_story`(`StoryRef::Body` 및 본문 소속 `PartKind::TextBox`; `DocxEditorSession.richClipboard`는 `/^(?:body|part\d+):/` 허용)의 그림·도형·글상자·그룹에서 조각과 미디어(PNG/JPEG, SHA-256)를 낸다. 글상자 안 그림·OLE·차트·SmartArt는 거부.
+  - 붙여넣기: `DocxOp::PasteObject`가 `atomic` 안에서 미디어 공유/재키잉과 함께 `remap_object`로 내부 glued 도형/연결선(`ConnEnd`) ID를 대상 문서에 충돌 없이 재매핑하고 외부 `ConnEnd`·비참조 `extra.id`를 정리한 뒤 `check_saved`·`same_as`를 통과해야 커밋한다. Undo/Redo 뒤 미참조 미디어를 정리한다.
+- **HWPX v3:** 봉투 `{kind:"geul.object", version:3, sourceFormat:"hwpx", object:"picture"|"shape"|"textBox"|"group", sourceSessionId, sourceGeneration, portable?, token}`.
+  - 복사/잘라내기: `RhwpEditorSession`은 HWPX 본문 편집 가능 개체(`picture`·`shape`·`textBox`·`group`, 표 셀/차트/HWP5 제외)에 `"copy"` 및 삭제 가능 시 `"cut"`을 노출하고 `clipboardState()`가 `clipboard.shape`를 제공한다. `copyControl`로 엔진 내부 클립보드에 구조 복제본을 두고, 기본 도형(`사각형`·`타원`·`직선`)·다중 문단 글상자에는 `HwpxPortableShape` 스냅샷을 함께 싣는다.
+  - 붙여넣기: HWPX 본문 접힌 커서(`!caret.cell && !hasSelection`)에서만 받는다. 동일 세션·세대·토큰이고 `clipboardHasControl()`이 참이면 `pasteControl`(`reidentify_clipboard`)으로 그림/다각형/곡선/그룹/글상자를 무손실 복제한다. 다른 HWPX 문서는 `portable`이 있는 기본 도형·다중 문단 글상자만 생성·서식·문단 이식으로 붙여넣고, 타 문서 그림·그룹·DOCX v2/HWPX v3 교차 엔진 붙여넣기·HWP5 붙여넣기는 모두 거부한다.
+- **시스템 클립보드:** Linux Tauri는 GTK 브리지로 `application/x-geul-object+json`과 `application/x-geul-table-cells+json` 및 같은 복사의 UTF-8 평문을 제공한다. 다른 플랫폼은 브라우저 평문 + 앱 내 기억을 사용한다. MIME 전송은 형식 간 구조 변환을 활성화하지 않는다.
 
 ### Stage 3 결합 네이티브 수정 (2026-11-19)
 

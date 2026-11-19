@@ -211,9 +211,9 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const [inline, floating] = byWidth(images(doc));
       expect(offsets(doc, 3)).toMatchObject({ horzOffset: 20000, vertOffset: 3000 });
       const selected = pick(floating!);
-      expect(selected.operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position"]);
+      expect(selected.operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position", "copy", "cut"]);
       const inlineSelection = pick(inline!);
-      expect(inlineSelection.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
+      expect(inlineSelection.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "copy", "cut"]);
       // Moving an inline picture is not offered; a stale floating selection is refused.
       expect(edit({ kind: "nudge", dx: 5, dy: 0 })).toBe(false);
       expect(editor.execute("object.edit", objectEditRequest(selected, { kind: "nudge", dx: 5, dy: 0 })).accepted).toBe(false);
@@ -277,7 +277,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const byWidth = (frames: Frame[]) => [...frames].sort((a, b) => b.w - a.w);
       const inline = () => byWidth(images(doc))[0]!;
       const selected = pick(inline());
-      expect(selected.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
+      expect(selected.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "copy", "cut"]);
       expect(selected.picture!.crop).toEqual([0, 0, 0, 0]);
       // Characters the RHWP JSON reader cannot carry verbatim, and no-op edits, are refused up front.
       expect(edit({ kind: "altText", text: 'quote " inside' })).toBe(false);

@@ -2018,9 +2018,12 @@ HWP5 그룹 컨테이너(`SC_CONTAINER = b"noc$"`)는 `evolved_candidate`와 `pr
 
 DOCX `DocxModel::snap_to_emu`는 `ShapeKind::Freeform` 크기 조정 시 `freeform.w`/`h` 및 경로 꼭짓점을 새 EMU 격자에 맞게 비례 동기화하고, 인라인 회전 시 `spin_pad`로 늘어나는 `wp:effectExtent`를 EMU 단위로 맞춰 `roundtrip_equivalent`와 `check_saved` 안전 판정을 유지한다.
 
-### Stage 3 P4 Linux 구조 클립보드 전송
+### Stage 3 P4 Linux 구조 클립보드 전송 및 개체 자원/식별자 재매핑
 
-GTK 브리지는 두 geul MIME에만 접근한다. 수신한 개체는 12 MiB, 표 셀은 2 MiB 이내의 UTF-8 데이터만 앱에 넘긴다. 외부 소유자 요청은 UI 스레드를 차단하지 않으며, GTK가 수신 과정에서 일시적으로 할당하는 메모리는 이 상한의 대상이 아니다. 기존 DOCX·표 클립보드 엔진 검증, 이력, T009 판정은 그대로 적용한다.
+GTK 브리지는 두 geul MIME에만 접근한다. 수신한 개체는 12 MiB, 표 셀은 2 MiB 이내의 UTF-8 데이터만 앱에 넘긴다. 외부 소유자 요청은 UI 스레드를 차단하지 않으며, GTK가 수신 과정에서 일시적으로 할당하는 메모리는 이 상한의 대상이 아니다.
+
+- WordCraft(DOCX): `clipboard_object`는 `body_hosted_story`를 사용해 `StoryRef::Body`뿐 아니라 본문 소속 `PartKind::TextBox` 안의 도형/글상자 복사를 허용하며(`docx/read/story.rs:948` 경계에 따라 글상자 안 그림은 제외), `paste_object`의 `remap_object`는 glued 연결선(`ConnEnd`)이 참조하는 내부 도형 `extra.id`를 대상 문서 최대 ID+1로 충돌 없이 재발급하고 외부/미해결 `ConnEnd` 참조는 제거하며 비참조 `extra.id`는 `0`으로 정규화해(`keep_glued_ids`) `roundtrip_equivalent`와 `check_saved` 안전 판정을 유지한다.
+- RHWP(HWPX/HWP5): `ObjectClipboardPayloadV3`(`version: 3, sourceFormat: "hwpx"`)는 HWPX 본문 그림·도형·다각형·곡선·글상자·그룹에 대해 세션·세대·토큰이 일치하는 동일 문서에서 `copyControl`/`pasteControl`(`clone_identity::reidentify_clipboard`)으로 고유 ID/인스턴스 ID를 재발급하고 공유 `BinData` 참조를 보존한다. 다른 HWPX 문서로 붙여넣을 때는 무손실 재구성이 가능한 기본 도형(`rectangle`/`ellipse`/`line`)·다중 문단 글상자만 `createShapeControl`/`setShapeProperties`/`insertTextInCell`/`splitParagraphInCell`/`applyParaFormatInCell`로 이식하고 타 문서 그림·그룹·다각형·곡선·DOCX v2 페이로드는 거부한다. HWP5는 `paste_control_native`의 문단 분할 및 자원 재사용이 HWP5 T009 삽입 증명 경계 밖이므로 개체 복사·잘라내기·붙여넣기를 모두 비활성/거부로 유지한다.
 
 ### Stage 3 P5 HWP 그림 캡션
 

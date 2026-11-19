@@ -51,6 +51,9 @@ export interface RhwpDocument {
   deleteShapeControl?(section: number, paragraph: number, control: number): string;
   changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;
   createShapeControl?(json: string): string;
+  copyControl?(section: number, paragraph: number, cellPathJson: string, control: number): string;
+  clipboardHasControl?(): boolean;
+  pasteControl?(section: number, paragraph: number, offset: number): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;
   createTable?(section: number, paragraph: number, offset: number, rows: number, cols: number): string;
   free(): void;
