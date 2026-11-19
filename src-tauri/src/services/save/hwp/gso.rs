@@ -122,7 +122,7 @@ fn shape_component_pos(rs: &[Record<'_>]) -> Option<usize> {
     Some(sc_idx)
 }
 
-fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize, usize)> {
+pub(super) fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize, usize)> {
     let sc_idx = shape_component_pos(rs)?;
     let sc = rs.get(sc_idx)?;
     if sc.2.len() < 8 {

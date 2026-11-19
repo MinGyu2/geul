@@ -30,6 +30,7 @@ use super::preview;
 
 mod gso;
 mod insertions;
+mod ole;
 
 const SIGNATURE: &[u8] = b"HWP Document File";
 const FILE_HEADER_LEN: usize = 256;
@@ -646,111 +647,6 @@ fn bin_data_storage(
     Ok(out)
 }
 
-const ATTR_LOCKED: u32 = 1 << 30;
-const TAG_OLE: u16 = 84;
-
-fn bin_data_ole_keys_by_id(container: &Container) -> BTreeMap<u32, String> {
-    let mut out = BTreeMap::new();
-    let Some(data) = container
-        .streams
-        .get("DocInfo")
-        .and_then(|raw| unpack(container, raw).ok())
-    else {
-        return out;
-    };
-    for (tag, _, body) in records(&data).unwrap_or_default() {
-        if tag != TAG_BIN_DATA || body.len() < 4 {
-            continue;
-        }
-        let attr = u16::from_le_bytes([body[0], body[1]]);
-        let kind = attr & 0x000F;
-        if !matches!(kind, 1 | 2) {
-            continue;
-        }
-        let id = u16::from_le_bytes([body[2], body[3]]);
-        let ext = match body.get(4..6) {
-            None if kind == 2 && body.len() == 4 => "OLE".to_owned(),
-            Some(len) => {
-                let len = usize::from(u16::from_le_bytes([len[0], len[1]]));
-                let Some(raw_ext) = body.get(6..6 + len * 2) else {
-                    continue;
-                };
-                let units: Vec<u16> = raw_ext
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|pair| u16::from_le_bytes(*pair))
-                    .collect();
-                let Ok(ext) = String::from_utf16(&units) else {
-                    continue;
-                };
-                ext
-            }
-            None => continue,
-        };
-        if ext.eq_ignore_ascii_case("OLE") && ext.is_ascii() {
-            out.insert(
-                u32::from(id),
-                format!("BinData/BIN{id:04X}.{ext}").to_ascii_uppercase(),
-            );
-        }
-    }
-    out
-}
-
-fn unlocked_ole_chart_keys(container: &Container) -> std::collections::BTreeSet<String> {
-    let mut keys = std::collections::BTreeSet::new();
-    let by_id = bin_data_ole_keys_by_id(container);
-    if by_id.is_empty() {
-        return keys;
-    }
-    for (name, raw) in &container.streams {
-        if !section_stream(name) {
-            continue;
-        }
-        let Ok(data) = unpack(container, raw) else {
-            continue;
-        };
-        let Some(rs) = records(&data) else {
-            continue;
-        };
-        let mut i = 0usize;
-        while i < rs.len() {
-            let (tag, level, body) = rs[i];
-            if tag == 71 && level == 1 && body.starts_with(b" osg") && body.len() >= 46 {
-                let end = i
-                    + 1
-                    + rs[i + 1..]
-                        .iter()
-                        .position(|r| r.1 <= level)
-                        .unwrap_or(rs.len() - (i + 1));
-                let attr = u32::from_le_bytes(body[4..8].try_into().unwrap_or([0; 4]));
-                if (attr & ATTR_LOCKED) == 0 {
-                    let sub = &rs[i..end];
-                    let has_elo = sub
-                        .iter()
-                        .any(|r| r.0 == 76 && r.1 == 2 && r.2.starts_with(b"elo$"));
-                    if has_elo {
-                        for r in sub {
-                            if r.0 == TAG_OLE && r.1 == 3 && r.2.len() >= 16 {
-                                let bin_id =
-                                    u32::from_le_bytes(r.2[12..16].try_into().unwrap());
-                                if let Some(key) = by_id.get(&bin_id) {
-                                    keys.insert(key.clone());
-                                }
-                            }
-                        }
-                    }
-                }
-                i = end;
-            } else {
-                i += 1;
-            }
-        }
-    }
-    keys
-}
-
 /// 비레코드 스트림 비교 및 언팩. `storage`는 양쪽 BIN_DATA 선언으로 정한 저장 형태(선언이 없는 스트림은 None: 엔진이 그대로 옮기는
 /// 불투명 바이트라 바이트가 같아야 한다).
 /// Returns `Ok(Some((unpacked_before, unpacked_after)))` only when unpacked bytes legitimately
@@ -1280,12 +1176,7 @@ fn compare_with(
             (BTreeMap::new(), BTreeMap::new())
         }
     };
-    let orig_ole_charts = (mode == Mode::Edited)
-        .then(|| unlocked_ole_chart_keys(&original))
-        .unwrap_or_default();
-    let out_ole_charts = (mode == Mode::Edited)
-        .then(|| unlocked_ole_chart_keys(&output))
-        .unwrap_or_default();
+    let mut ole_owners = None;
     let mut body_changed = false;
     let mut chart_changed = false;
     for (name, before) in &original.streams {
@@ -1317,8 +1208,16 @@ fn compare_with(
                     let admitted = mode == Mode::Edited
                         && key.starts_with(BIN_DATA_PREFIX)
                         && key.ends_with(".OLE")
-                        && orig_ole_charts.contains(&key)
-                        && out_ole_charts.contains(&key)
+                        && {
+                            let (original_owners, output_owners) = ole_owners.get_or_insert_with(|| {
+                                (
+                                    ole::exclusive_chart_owners(&original).unwrap_or_default(),
+                                    ole::exclusive_chart_owners(&output).unwrap_or_default(),
+                                )
+                            });
+                            original_owners.get(&key).zip(output_owners.get(&key))
+                                .is_some_and(|(before, after)| before == after)
+                        }
                         && super::hwpx_charts::prove_nested_ole_chart_cfb(
                             &unpacked_before,
                             &unpacked_after,
@@ -2286,6 +2185,7 @@ mod font_preservation_tests {
 #[cfg(test)]
 mod chart_tests {
     use super::*;
+    use super::ole::TAG_OLE;
     use std::io::Write;
 
     fn pack_rec(tag: u16, level: u16, payload: &[u8]) -> Vec<u8> {
@@ -2345,6 +2245,42 @@ mod chart_tests {
         enc.finish().unwrap()
     }
 
+    fn ole_declaration(id: u8) -> Vec<u8> {
+        pack_rec(
+            TAG_BIN_DATA,
+            1,
+            &[0x12, 0, id, 0, 3, 0, b'O', 0, b'L', 0, b'E', 0],
+        )
+    }
+
+    fn append_doc_info(cf: &mut cfb::CompoundFile<Cursor<Vec<u8>>>, record: &[u8]) {
+        let mut doc_info = Vec::new();
+        cf.open_stream("DocInfo").unwrap().read_to_end(&mut doc_info).unwrap();
+        doc_info.extend_from_slice(record);
+        cf.create_stream("DocInfo").unwrap().write_all(&doc_info).unwrap();
+    }
+
+    fn ole_records(locked: bool) -> [(u16, u16, Vec<u8>); 3] {
+        let mut header = vec![0u8; 46];
+        header[..4].copy_from_slice(b" osg");
+        if locked {
+            header[4..8].copy_from_slice(&(1u32 << 30).to_le_bytes());
+        }
+        let mut component = vec![0u8; 196];
+        component[..8].copy_from_slice(b"elo$elo$");
+        component[50..52].copy_from_slice(&1u16.to_le_bytes());
+        let mut leaf = vec![0u8; 30];
+        leaf[0..4].copy_from_slice(&1u32.to_le_bytes());
+        leaf[12..16].copy_from_slice(&1u32.to_le_bytes());
+        [(71, 1, header), (76, 2, component), (TAG_OLE, 3, leaf)]
+    }
+
+    fn write_ole_records(section: &mut Vec<u8>, rs: &[(u16, u16, Vec<u8>)]) {
+        for (tag, level, body) in rs {
+            section.extend_from_slice(&pack_rec(*tag, *level, body));
+        }
+    }
+
     fn build_hwp_with_ole(ole_compressed: &[u8], locked: bool) -> Vec<u8> {
         let mut cur = Cursor::new(Vec::new());
         {
@@ -2356,29 +2292,12 @@ mod chart_tests {
 
             // DocInfo: ID_MAPPINGS(17) + BIN_DATA(18) id=1 Storage Compressed ext="OLE" + PARA_SHAPE(25)
             let mut docinfo = pack_rec(17, 0, &[0u8; 72]);
-            let mut bin_rec = vec![0x12, 0x00, 0x01, 0x00, 0x03, 0x00];
-            for ch in "OLE".encode_utf16() {
-                bin_rec.extend_from_slice(&ch.to_le_bytes());
-            }
-            docinfo.extend_from_slice(&pack_rec(TAG_BIN_DATA, 1, &bin_rec));
+            docinfo.extend_from_slice(&ole_declaration(1));
             docinfo.extend_from_slice(&pack_rec(TAG_PARA_SHAPE, 1, &[0u8; 54]));
             cf.create_stream("/DocInfo").unwrap().write_all(&docinfo).unwrap();
 
-            let mut hdr = vec![0u8; 46];
-            hdr[..4].copy_from_slice(b" osg");
-            if locked {
-                hdr[4..8].copy_from_slice(&(1u32 << 30).to_le_bytes());
-            }
-            let mut sc = vec![0u8; 64];
-            sc[..8].copy_from_slice(b"elo$elo$");
-            let mut ole = vec![0u8; 30];
-            ole[0..4].copy_from_slice(&1u32.to_le_bytes());
-            ole[12..16].copy_from_slice(&1u32.to_le_bytes());
-
             let mut sec = pack_rec(TAG_PARA_HEADER, 0, &[0u8; 22]);
-            sec.extend_from_slice(&pack_rec(71, 1, &hdr));
-            sec.extend_from_slice(&pack_rec(76, 2, &sc));
-            sec.extend_from_slice(&pack_rec(TAG_OLE, 3, &ole));
+            write_ole_records(&mut sec, &ole_records(locked));
             cf.create_storage("/BodyText").unwrap();
             cf.create_stream("/BodyText/Section0").unwrap().write_all(&sec).unwrap();
 
@@ -2415,6 +2334,100 @@ mod chart_tests {
                     .iter()
                     .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
             );
+        }
+    }
+
+    #[test]
+    fn hwp_chart_ole_proof_counts_docinfo_owners_and_rejects_unbound_changes() {
+        let orig_ole = make_ole_stream(&chart_xml("4.3", "Title"), b"OLE-ORIG", false, true);
+        let edit_ole = make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, true);
+        let build = |chart_ole: &[u8], unbound_ole: &[u8], fill: Option<u16>| {
+            let file = build_hwp_with_ole(chart_ole, false);
+            let mut cf = cfb::CompoundFile::open(Cursor::new(file)).unwrap();
+            append_doc_info(&mut cf, &ole_declaration(2));
+            if let Some(id) = fill {
+                let mut border_fill = [0; 46];
+                border_fill[32..36].copy_from_slice(&2u32.to_le_bytes()); // image fill
+                border_fill[40..42].copy_from_slice(&id.to_le_bytes());
+                append_doc_info(&mut cf, &pack_rec(20, 1, &border_fill));
+            }
+            cf.create_stream("BinData/BIN0002.OLE").unwrap().write_all(unbound_ole).unwrap();
+            cf.into_inner().into_inner()
+        };
+
+        let orig = build(&orig_ole, &orig_ole, None);
+        let edit = build(&edit_ole, &orig_ole, None);
+        assert_eq!(compare_saved(&orig, &edit), vec![]);
+        let unbound_edit = build(&orig_ole, &edit_ole, None);
+        assert!(compare_saved(&orig, &unbound_edit)
+            .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0002.OLE")));
+
+        let fill_orig = build(&orig_ole, &orig_ole, Some(1));
+        let fill_edit = build(&edit_ole, &orig_ole, Some(1));
+        assert_eq!(compare_saved(&fill_orig, &fill_orig), vec![]);
+        assert!(compare_saved(&fill_orig, &fill_edit)
+            .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.OLE")));
+    }
+
+    #[test]
+    fn hwp_chart_ole_edit_requires_exclusive_ownership_on_both_sides() {
+        let original_ole = make_ole_stream(&chart_xml("4.3", "Title"), b"OLE-ORIG", false, true);
+        let edited_ole = make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, true);
+        let exclusive_before = build_hwp_with_ole(&original_ole, false);
+        let exclusive_after = build_hwp_with_ole(&edited_ole, false);
+        let add_section = |file: &[u8], records: &[(u16, u16, Vec<u8>)]| {
+            let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
+            let mut section = pack_rec(TAG_PARA_HEADER, 0, &[0u8; 22]);
+            write_ole_records(&mut section, records);
+            cf.create_stream("/BodyText/Section1").unwrap().write_all(&section).unwrap();
+            cf.into_inner().into_inner()
+        };
+
+        // A properly nested group uses a level-2 group component, then a
+        // level-3 child component and its level-4 OLE leaf.
+        let [(header_tag, header_level, header), (_, _, _), (leaf_tag, _, leaf)] = ole_records(false);
+        let mut group = vec![0; 206];
+        group[..8].copy_from_slice(b"noc$noc$");
+        group[50..52].copy_from_slice(&1u16.to_le_bytes());
+        group[196..198].copy_from_slice(&1u16.to_le_bytes());
+        group[198..202].copy_from_slice(b"elo$");
+        let mut child = vec![0; 288];
+        child[..4].copy_from_slice(b"elo$");
+        child[12..14].copy_from_slice(&1u16.to_le_bytes()); // group level
+        child[46..48].copy_from_slice(&2u16.to_le_bytes()); // matrix pairs
+        let grouped = vec![(header_tag, header_level, header), (76, 2, group), (76, 3, child), (leaf_tag, 4, leaf)];
+
+        let mut picture = ole_records(false);
+        picture[1].2[..8].copy_from_slice(b"cip$cip$");
+        picture[2] = (85, 3, vec![0; 73]);
+        picture[2].2[71..73].copy_from_slice(&1u16.to_le_bytes());
+
+        let mut truncated = ole_records(false);
+        truncated[2].2.truncate(15);
+        let mut alias = ole_records(false);
+        alias[2].2[12..16].copy_from_slice(&65537u32.to_le_bytes());
+        let unknown = vec![(71, 1, b"????".to_vec()), (511, 2, 1u16.to_le_bytes().to_vec())];
+
+        let rejected = |before: &[u8], after: &[u8], label| {
+            let findings = compare_saved(before, after);
+            assert!(findings.contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.OLE")),
+                "{label}: {findings:?}");
+        };
+        for (label, records) in [
+            ("locked owner in second section", Vec::from(ole_records(true))),
+            ("second editable chart", Vec::from(ole_records(false))),
+            ("unsupported nested OLE", grouped),
+            ("picture reference", Vec::from(picture)),
+            ("truncated OLE reference", Vec::from(truncated)),
+            ("wide OLE alias", Vec::from(alias)),
+            ("unknown control", unknown),
+        ] {
+            let shared_before = add_section(&exclusive_before, &records);
+            let shared_after = add_section(&exclusive_after, &records);
+            assert_eq!(compare_saved(&shared_before, &shared_before), vec![], "{label}");
+            rejected(&shared_before, &shared_after, label);
+            rejected(&shared_before, &exclusive_after, label);
+            rejected(&exclusive_before, &shared_after, label);
         }
     }
 

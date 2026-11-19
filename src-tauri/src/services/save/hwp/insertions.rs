@@ -87,7 +87,7 @@ fn valid_hwp_margin_pair(b: &[u8], at: usize) -> Checked<bool> {
     }
     Ok(true)
 }
-fn definitions<'a>(rs: &[Record<'a>]) -> Defs<'a> {
+pub(super) fn definitions<'a>(rs: &[Record<'a>]) -> Defs<'a> {
     let mut out = BTreeMap::<_, Vec<_>>::new();
     for &(tag, _, b) in rs {
         out.entry(tag).or_default().push(b);
@@ -1443,7 +1443,7 @@ struct Resources {
 /// Existing declarations use the T009 storage model, not the insertion schema.
 /// Resolve each definition independently of its ordinal: picture IDs refer to
 /// definition ordinals; storage IDs are allowed to be sparse. Never guess a path.
-fn resource_paths(c: &Container, defs: &Defs<'_>) -> Checked<BTreeMap<usize, String>> {
+pub(super) fn resource_paths(c: &Container, defs: &Defs<'_>) -> Checked<BTreeMap<usize, String>> {
     let mut paths = BTreeMap::new();
     for name in c.streams.keys() {
         if name.to_ascii_uppercase().starts_with("BINDATA/") {
