@@ -7537,7 +7537,8 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
     use wordcraft_engine::{io, Session};
 
     let mut sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
-    sess.run("caret.docEnd", &json!({})).unwrap();
+    let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    sess.run("caret.set", &json!({"pos": body_end})).unwrap();
     sess.run("text.newParagraph", &json!({})).unwrap();
     let free = Freeform {
         w: 120.0,
@@ -7648,7 +7649,8 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
     use wordcraft_engine::{io, Session};
 
     let mut sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
-    sess.run("caret.docEnd", &json!({})).unwrap();
+    let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    sess.run("caret.set", &json!({"pos": body_end})).unwrap();
     sess.run("text.newParagraph", &json!({})).unwrap();
     let group_obj = InlineObject::Group {
         w: 200.0,
@@ -7791,4 +7793,192 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         }
         other => panic!("unexpected group {other:?}"),
     }
+}
+
+#[test]
+fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() {
+    use super::engine::ObjectPayload;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::connector::{ConnEnd, ShapeExtra};
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{CharProps, InlineObject, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    // 1. Source document with a Body-hosted TextBox containing an inner shape, AND a Group
+    //    holding a shape with non-zero docPr `extra.id = 42` and dangling `ConnEnd` connector glue.
+    let mut sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    sess.run("caret.set", &json!({"pos": body_end})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    sess.run("insert.textBox", &json!({"width": 200, "height": 120})).unwrap();
+    sess.run("text.insert", &json!({"text": "상자안:"})).unwrap();
+    sess.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    sess.run("picture.size", &json!({"width": 60, "height": 40})).unwrap();
+
+    let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    sess.run("caret.set", &json!({"pos": body_end})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    let group_with_ids = InlineObject::Group {
+        w: 180.0,
+        h: 80.0,
+        float: Float::default(),
+        ch_w: 180.0,
+        ch_h: 80.0,
+        canvas: None,
+        children: vec![
+            GroupChild {
+                x: 10.0,
+                y: 10.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::Rectangle,
+                    w: 50.0,
+                    h: 40.0,
+                    fill: Some(Rgb(0x33, 0x66, 0x99)),
+                    stroke: None,
+                    stroke_width: 1.0,
+                    float: Float::default(),
+                    story: None,
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: ShapeExtra { id: 42, ..Default::default() },
+                },
+            },
+            GroupChild {
+                x: 60.0,
+                y: 10.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::StraightConnector,
+                    w: 80.0,
+                    h: 20.0,
+                    fill: None,
+                    stroke: Some(Rgb(0x44, 0x44, 0x44)),
+                    stroke_width: 1.5,
+                    float: Float::default(),
+                    story: None,
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: ShapeExtra {
+                        start: Some(ConnEnd { id: 42, site: 1 }),
+                        end: Some(ConnEnd { id: 998, site: 3 }),
+                        ..Default::default()
+                    },
+                },
+            },
+        ],
+    };
+    let at2 = sess.sel.focus.clone();
+    sess.doc.insert_object(&at2, group_with_ids, &CharProps::default()).unwrap();
+    let src_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+
+    // Copying a Header object must remain refused.
+    let mut hdr_sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    hdr_sess.run("insert.editHeader", &json!({})).unwrap();
+    hdr_sess.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    hdr_sess.run("insert.closeHeader", &json!({})).unwrap();
+    let hdr_bytes = io::save_bytes("fixture.docx", &hdr_sess.doc).unwrap();
+    let mut hdr_model = DocxModel::open(&hdr_bytes).unwrap();
+    let mut hdr_reader = Session::new(io::open_bytes("fixture.docx", &hdr_bytes).unwrap());
+    let hdr_lay = hdr_reader.layout();
+    if let Some(h) = hdr_lay.find_object(0, |o| matches!(o.story, StoryRef::Part(id) if hdr_reader.doc.parts.get(&id).is_some_and(|p| p.kind == PartKind::Header))) {
+        hdr_model.apply(&[DocxOp::Pointer {
+            page: h.page as u32,
+            x: h.rect.x + h.rect.w / 2.0,
+            y: h.rect.y + h.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        }]);
+        assert!(serde_json::to_value(hdr_model.view()).unwrap()["object"].is_null());
+    }
+
+    let mut model = DocxModel::open(&src_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &src_bytes).unwrap());
+    let layout = reader.layout();
+
+    // 2. Copy the shape INSIDE the Body TextBox story (`PartKind::TextBox`) and paste at Body end.
+    let inner_hit = layout
+        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 60.0).abs() < 0.5)
+        .unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: inner_hit.page as u32,
+        x: inner_hit.rect.x + inner_hit.rect.w / 2.0,
+        y: inner_hit.rect.y + inner_hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let tb_view = serde_json::to_value(model.view()).unwrap();
+    let tb_pos_str = tb_view["object"]["position"].as_str().unwrap().to_owned();
+    assert!(tb_pos_str.starts_with("part"), "{tb_pos_str}");
+    let tb_epoch = tb_view["object"]["epoch"].as_u64().unwrap();
+    let tb_payload: ObjectPayload =
+        serde_json::from_str(&model.clipboard_object(&tb_pos_str, tb_epoch).unwrap()).unwrap();
+    model.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    let p_res = model.apply(&[DocxOp::PasteObject { payload: Box::new(tb_payload) }]);
+    assert_eq!(p_res.changed, 1, "{:?}", p_res.rejected);
+
+    // 3. Copy the Group with colliding `extra.id = 42` & connector glue and paste into the SAME doc.
+    let grp_hit = layout.find_object(0, |o| (o.rect.w - 180.0).abs() < 0.5).unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: grp_hit.page as u32,
+        x: grp_hit.rect.x + 20.0,
+        y: grp_hit.rect.y + 20.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let grp_view = serde_json::to_value(model.view()).unwrap();
+    let grp_pos = grp_view["object"]["position"].as_str().unwrap().to_owned();
+    let grp_epoch = grp_view["object"]["epoch"].as_u64().unwrap();
+    let grp_payload: ObjectPayload =
+        serde_json::from_str(&model.clipboard_object(&grp_pos, grp_epoch).unwrap()).unwrap();
+    model.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    let g_res = model.apply(&[DocxOp::PasteObject { payload: Box::new(grp_payload) }]);
+    assert_eq!(g_res.changed, 1, "{:?}", g_res.rejected);
+
+    let out_bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &src_bytes,
+        &out_bytes,
+        None,
+        model.same_as(&out_bytes),
+    )
+    .is_safe());
+
+    // Verify reopened pasted group got a fresh non-colliding `extra.id != 42` preserved for its internal connector
+    // while dangling external glue (`end: 998`) was cleared.
+    let reopened = io::open_bytes("fixture.docx", &out_bytes).unwrap();
+    let group_ids: Vec<(u32, Option<u32>, bool)> = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .filter_map(|o| match o {
+            InlineObject::Group { children, .. } if children.len() == 2 => {
+                let target_id = match &children[0].obj {
+                    InlineObject::Shape { extra, .. } => extra.id,
+                    _ => 0,
+                };
+                match &children[1].obj {
+                    InlineObject::Shape { extra, .. } => {
+                        Some((target_id, extra.start.map(|s| s.id), extra.end.is_none()))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(group_ids.len(), 2);
+    assert_eq!(group_ids[0].0, 42);
+    assert_eq!(group_ids[0].1, Some(42));
+    assert_ne!(group_ids[1].0, 0);
+    assert_ne!(group_ids[1].0, 42);
+    assert_eq!(group_ids[1].1, Some(group_ids[1].0));
+    assert!(group_ids[1].2, "external connector glue must be cleared on paste");
 }

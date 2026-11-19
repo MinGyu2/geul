@@ -2459,7 +2459,7 @@ impl DocxModel {
         let (pos, _) = self.selected_object.clone()?;
         if epoch != self.object_epoch
             || position_key(&pos) != position
-            || pos.story != StoryRef::Body
+            || !self.body_hosted_story(pos.story)
         {
             return None;
         }
@@ -2471,6 +2471,9 @@ impl DocxModel {
         let object = fragment.blocks.first()?.as_para()?.object_at(0)?.clone();
         let mut keys = Vec::new();
         if !drawing_media(&object, &mut keys, 0) {
+            return None;
+        }
+        if pos.story != StoryRef::Body && !keys.is_empty() {
             return None;
         }
         keys.sort();
@@ -2536,9 +2539,108 @@ impl DocxModel {
                 }
                 renamed.insert(name.clone(), key);
             }
-            fn rename(
+            fn collect_obj_ids(
+                object: &InlineObject,
+                used: &mut std::collections::BTreeSet<u32>,
+            ) {
+                match object {
+                    InlineObject::Shape { extra, .. } if extra.id != 0 => {
+                        used.insert(extra.id);
+                    }
+                    InlineObject::Group { children, .. } => {
+                        for c in children {
+                            collect_obj_ids(&c.obj, used);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            fn collect_block_ids(
+                blocks: &[std::sync::Arc<wordcraft_engine::doc::Block>],
+                used: &mut std::collections::BTreeSet<u32>,
+                depth: usize,
+            ) {
+                if depth > 32 {
+                    return;
+                }
+                for block in blocks {
+                    match block.as_ref() {
+                        wordcraft_engine::doc::Block::Para(p) => {
+                            for o in &p.objects {
+                                collect_obj_ids(o, used);
+                            }
+                        }
+                        wordcraft_engine::doc::Block::Table(t) => {
+                            for r in &t.rows {
+                                for c in &r.cells {
+                                    collect_block_ids(&c.blocks, used, depth + 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let mut used_shape_ids = std::collections::BTreeSet::new();
+            collect_block_ids(&model.session.doc.body, &mut used_shape_ids, 0);
+            for part in model.session.doc.parts.values() {
+                collect_block_ids(&part.blocks, &mut used_shape_ids, 0);
+            }
+            let mut next_shape_id = used_shape_ids
+                .iter()
+                .next_back()
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1)
+                .max(1);
+            fn collect_glued_targets(object: &InlineObject, out: &mut std::collections::BTreeSet<u32>) {
+                match object {
+                    InlineObject::Shape { extra, .. } => {
+                        if let Some(s) = extra.start {
+                            out.insert(s.id);
+                        }
+                        if let Some(e) = extra.end {
+                            out.insert(e.id);
+                        }
+                    }
+                    InlineObject::Group { children, .. } => {
+                        for c in children {
+                            collect_glued_targets(&c.obj, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut src_shape_ids = std::collections::BTreeSet::new();
+            let mut glued_targets = std::collections::BTreeSet::new();
+            {
+                let ro_obj = fragment
+                    .blocks
+                    .first()
+                    .and_then(|b| b.as_para())
+                    .and_then(|p| p.object_at(0))
+                    .ok_or(Rejected)?;
+                collect_obj_ids(ro_obj, &mut src_shape_ids);
+                collect_glued_targets(ro_obj, &mut glued_targets);
+            }
+            let mut id_map = std::collections::BTreeMap::new();
+            for old_id in src_shape_ids {
+                if glued_targets.contains(&old_id) {
+                    let assigned = if used_shape_ids.insert(old_id) {
+                        old_id
+                    } else {
+                        while used_shape_ids.contains(&next_shape_id) {
+                            next_shape_id = next_shape_id.saturating_add(1);
+                        }
+                        used_shape_ids.insert(next_shape_id);
+                        next_shape_id
+                    };
+                    id_map.insert(old_id, assigned);
+                }
+            }
+            fn remap_object(
                 object: &mut InlineObject,
                 map: &std::collections::BTreeMap<String, String>,
+                id_map: &std::collections::BTreeMap<u32, u32>,
             ) -> bool {
                 match object {
                     InlineObject::Image { media, .. } => match map.get(media) {
@@ -2548,9 +2650,25 @@ impl DocxModel {
                         }
                         None => false,
                     },
-                    InlineObject::Group { children, .. } => {
-                        children.iter_mut().all(|c| rename(&mut c.obj, map))
+                    InlineObject::Shape { extra, .. } => {
+                        extra.start = extra.start.and_then(|mut cxn| {
+                            id_map.get(&cxn.id).map(|&id| {
+                                cxn.id = id;
+                                cxn
+                            })
+                        });
+                        extra.end = extra.end.and_then(|mut cxn| {
+                            id_map.get(&cxn.id).map(|&id| {
+                                cxn.id = id;
+                                cxn
+                            })
+                        });
+                        extra.id = id_map.get(&extra.id).copied().unwrap_or(0);
+                        true
                     }
+                    InlineObject::Group { children, .. } => children
+                        .iter_mut()
+                        .all(|c| remap_object(&mut c.obj, map, id_map)),
                     _ => true,
                 }
             }
@@ -2559,7 +2677,7 @@ impl DocxModel {
                 return Err(Rejected);
             };
             let object = para.object_at_mut(0).ok_or(Rejected)?;
-            if !rename(object, &renamed) {
+            if !remap_object(object, &renamed, &id_map) {
                 return Err(Rejected);
             }
             model.session.clipboard_text = fragment.clipboard_text();

@@ -651,7 +651,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private richClipboard(): { kind: RichObjectKind; position: string; epoch: number; cutAllowed: boolean } | null {
     const object = this.view?.object;
     const kind = RICH_OBJECT_KINDS.find(k => k === object?.kind);
-    if (!object || !kind || object.address.engine !== "wordcraft" || !object.address.position.startsWith("body:") || !this.backend.selectionObject) return null;
+    if (!object || !kind || object.address.engine !== "wordcraft"
+      || !/^(?:body|part\d+):/.test(object.address.position)
+      || !this.backend.selectionObject) return null;
     const cutAllowed = this.editable && !this.view?.trackedReadOnly && object.operations.includes("delete");
     return { kind, position: object.address.position, epoch: object.epoch, cutAllowed };
   }
