@@ -1,10 +1,11 @@
 //! Bounded field-level evolution and deletion proof for existing HWP5 GSO (`b" osg"`) objects.
 //!
 //! Only top-level Pictures (`b"cip$"`) and basic Shapes (`b"nil$"`, `b"cer$"`,
-//! `b"lle$"`, optionally with a plain TextBox) whose identity matches unambiguously
-//! may evolve within the exact fields owned by supported editor commands or be deleted
-//! when unlocked, uncaptioned, non-grouped, and free of opaque/nested controls.
-//! Groups, charts, OLE, captions, unknown extensions, and BinData substitutions fail closed.
+//! `b"lle$"`, optionally with a plain TextBox or an unchanged caption subtree)
+//! whose identity matches unambiguously may evolve within the exact fields owned
+//! by supported editor commands, or be deleted when unlocked, uncaptioned,
+//! non-grouped, and free of opaque/nested controls.
+//! Caption rewrites/deletions, groups, charts, OLE, unknown extensions, and BinData substitutions fail closed.
 
 use super::FindingCode;
 use super::Record;
@@ -51,8 +52,7 @@ fn gso_header_id(rs: &[Record<'_>]) -> Option<u32> {
 }
 
 /// An original caption subtree can be carried through an unrelated edit by
-/// exact object equality. The evolution matcher below still requires the
-/// SHAPE_COMPONENT to follow the CTRL_HEADER immediately.
+/// exact object equality, or preserved verbatim across proven outer-object edits.
 pub(super) fn preserved_structure(rs: &[Record<'_>]) -> bool {
     let level = rs[0].1 + 1;
     let Some(first) = rs.get(1).filter(|r| r.1 == level) else {
@@ -93,9 +93,39 @@ pub(super) fn caption_subtrees<'a, 'b>(
         })
 }
 
-fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize)> {
-    let sc = rs.get(1)?;
-    if sc.0 != TAG_SHAPE_COMPONENT || sc.1 != rs[0].1 + 1 || sc.2.len() < 8 {
+fn shape_component_pos(rs: &[Record<'_>]) -> Option<usize> {
+    let first = rs.first()?;
+    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 46 {
+        return None;
+    }
+    let level = first.1 + 1;
+    let r1 = rs.get(1)?;
+    if r1.0 == TAG_SHAPE_COMPONENT && r1.1 == level {
+        return Some(1);
+    }
+    let attr = dword(first.2, 4).ok()? as u32;
+    if (attr & ATTR_CAPTION) == 0 || r1.0 != TAG_LIST_HEADER || r1.1 != level {
+        return None;
+    }
+    // HWP5 caption LIST_HEADER (level 2) + caption paragraph(s) (PARA_HEADER at level 2,
+    // children at >=3) precede SHAPE_COMPONENT at `level`.
+    let rel = rs[2..]
+        .iter()
+        .position(|r| r.0 == TAG_SHAPE_COMPONENT && r.1 == level)?;
+    let sc_idx = 2 + rel;
+    if rs[2..sc_idx]
+        .iter()
+        .any(|r| r.1 < level || (r.1 == level && r.0 != 66))
+    {
+        return None;
+    }
+    Some(sc_idx)
+}
+
+fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize, usize)> {
+    let sc_idx = shape_component_pos(rs)?;
+    let sc = rs.get(sc_idx)?;
+    if sc.2.len() < 8 {
         return None;
     }
     let two = sc.2[..4] == sc.2[4..8];
@@ -104,7 +134,7 @@ fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize)> {
         return None;
     }
     let ctrl_id: &[u8; 4] = sc.2[..4].try_into().ok()?;
-    Some((ctrl_id, id_offset))
+    Some((ctrl_id, id_offset, sc_idx))
 }
 
 fn expected_leaf_tag(ctrl_id: &[u8; 4]) -> Option<u16> {
@@ -138,7 +168,7 @@ pub(super) fn evolved_candidate(
     let (Some(old_id), Some(new_id)) = (gso_header_id(old), gso_header_id(new)) else {
         return false;
     };
-    let (Some((old_ctrl, old_off)), Some((new_ctrl, new_off))) =
+    let (Some((old_ctrl, old_off, old_sc_idx)), Some((new_ctrl, new_off, new_sc_idx))) =
         (shape_ctrl_id(old), shape_ctrl_id(new))
     else {
         return false;
@@ -155,7 +185,9 @@ pub(super) fn evolved_candidate(
     if old_ctrl != SC_PICTURE || new_id != 0 {
         return false;
     }
-    if old[1].2[old_off + 10..old_off + 20] != new[1].2[new_off + 10..new_off + 20] {
+    if old[old_sc_idx].2[old_off + 10..old_off + 20]
+        != new[new_sc_idx].2[new_off + 10..new_off + 20]
+    {
         return false;
     }
     let orig_bins = entries(orig_defs, 18).len();
@@ -185,13 +217,13 @@ pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
     if (attr & (ATTR_LOCKED | ATTR_CAPTION)) != 0 {
         return false;
     }
-    let Some((ctrl_id, id_off)) = shape_ctrl_id(old) else {
+    let Some((ctrl_id, id_off, sc_idx)) = shape_ctrl_id(old) else {
         return false;
     };
     let Some(leaf_tag) = expected_leaf_tag(ctrl_id) else {
         return false;
     };
-    if word(old[1].2, id_off + 8) != Ok(0) {
+    if sc_idx != 1 || word(old[sc_idx].2, id_off + 8) != Ok(0) {
         return false;
     }
     if old
@@ -357,7 +389,7 @@ fn check_ctrl_header(
     old_h: &[u8],
     new_h: &[u8],
     is_picture: bool,
-) -> Checked<(usize, usize, usize, usize, bool)> {
+) -> Checked<(usize, usize, usize, usize, bool, bool)> {
     valid(old_h.len() >= 46 && new_h.len() >= 46, BODY)?;
     preserved(old_h[..4] == *CTRL_GSO && new_h[..4] == *CTRL_GSO, BODY)?;
     preserved(old_h[36..40] == new_h[36..40], BODY)?; // instance_id
@@ -367,11 +399,11 @@ fn check_ctrl_header(
     let old_attr = dword(old_h, 4)? as u32;
     let new_attr = dword(new_h, 4)? as u32;
     preserved((old_attr & ATTR_LOCKED) == 0, BODY)?;
-    preserved(((old_attr | new_attr) & ATTR_CAPTION) == 0, BODY)?;
     preserved(
         (old_attr & !MUTABLE_ATTR_MASK) == (new_attr & !MUTABLE_ATTR_MASK),
         BODY,
     )?;
+    let has_caption = (old_attr & ATTR_CAPTION) != 0;
     if new_attr != old_attr {
         let vert_rel_to = (new_attr >> 3) & 0x03;
         let text_wrap = (new_attr >> 21) & 0x07;
@@ -433,6 +465,7 @@ fn check_ctrl_header(
         new_w,
         new_h_dim,
         new_w != old_w || new_h_dim != old_h_dim,
+        has_caption,
     ))
 }
 
@@ -540,17 +573,31 @@ pub(super) fn prove_evolved_gso(
     orig_defs: &Defs<'_>,
 ) -> Checked<()> {
     preserved(evolved_candidate(old, new, orig_defs), BODY)?;
-    let (ctrl_id, id_off) = shape_ctrl_id(old).unwrap();
+    let (ctrl_id, id_off, old_sc_idx) = shape_ctrl_id(old).unwrap();
+    let (_, _, new_sc_idx) = shape_ctrl_id(new).unwrap();
     let is_picture = ctrl_id == SC_PICTURE;
     let leaf_tag = expected_leaf_tag(ctrl_id).unwrap();
 
-    // A caption LIST_HEADER precedes SHAPE_COMPONENT in HWP5. The candidate
-    // requires SHAPE_COMPONENT immediately after CTRL_HEADER, even if bit 29 is absent.
-    let (old_w, old_h_dim, new_w, new_h_dim, size_changed) =
+    let (old_w, old_h_dim, new_w, new_h_dim, size_changed, has_caption) =
         check_ctrl_header(old[0].2, new[0].2, is_picture)?;
+    if has_caption {
+        // B5: Caption list/paragraphs before SHAPE_COMPONENT stay byte-identical.
+        preserved(
+            old_sc_idx >= 3
+                && old_sc_idx == new_sc_idx
+                && old[1].0 == TAG_LIST_HEADER
+                && old[1].1 == 2
+                && old[2].0 == 66
+                && old[2].1 == 2
+                && old[1..old_sc_idx] == new[1..new_sc_idx],
+            BODY,
+        )?;
+    } else {
+        preserved(old_sc_idx == 1 && new_sc_idx == 1, BODY)?;
+    }
 
-    let old_sc = old[1].2;
-    let new_sc = new[1].2;
+    let old_sc = old[old_sc_idx].2;
+    let new_sc = new[new_sc_idx].2;
     let attr_at = id_off;
     preserved(old_sc[..attr_at] == new_sc[..attr_at], BODY)?;
     // offset_x(4) + offset_y(4) immutable; group_level(2)==0; local_file_version(2) immutable;
@@ -653,8 +700,11 @@ pub(super) fn prove_evolved_gso(
 
     if is_picture {
         valid(old_sc.len() == old_r_end && new_sc.len() == new_r_end, BODY)?;
-        valid(old.len() == 3 && new.len() == 3, BODY)?;
-        let (old_pic, new_pic) = (old[2], new[2]);
+        valid(
+            old.len() == old_sc_idx + 2 && new.len() == new_sc_idx + 2,
+            BODY,
+        )?;
+        let (old_pic, new_pic) = (old[old_sc_idx + 1], new[new_sc_idx + 1]);
         valid(
             old_pic.0 == TAG_PICTURE
                 && old_pic.1 == 3
@@ -721,8 +771,8 @@ pub(super) fn prove_evolved_gso(
         old_last.0 == leaf_tag && old_last.1 == 3 && new_last.0 == leaf_tag && new_last.1 == 3,
         BODY,
     )?;
-    let old_mid = &old[2..old.len() - 1];
-    let new_mid = &new[2..new.len() - 1];
+    let old_mid = &old[old_sc_idx + 1..old.len() - 1];
+    let new_mid = &new[new_sc_idx + 1..new.len() - 1];
     if old_mid.is_empty() && new_mid.is_empty() {
         // Plain shape with no TextBox.
     } else {
@@ -1440,11 +1490,26 @@ mod tests {
             vec![]
         );
         for name in ["gso-caption-moved", "gso-caption-resized"] {
-            assert!(
-                !check_with_preview_refresh(&caption, &read(name)).is_empty(),
+            assert_eq!(
+                check_with_preview_refresh(&caption, &read(name)),
+                vec![],
                 "{name}"
             );
         }
+        // Toggling ATTR_CAPTION off or mutating caption LIST_HEADER / PARA_TEXT must still fail.
+        let toggle_caption_attr = mutate_body_record(
+            &read("gso-caption-moved"),
+            |tag, level, data| tag == 71 && level == 1 && data.starts_with(b" osg"),
+            |payload| {
+                let mut changed = payload.to_vec();
+                changed[7] &= !0x20;
+                changed
+            },
+        );
+        assert!(
+            !check_with_preview_refresh(&caption, &toggle_caption_attr).is_empty(),
+            "ATTR_CAPTION toggle must be rejected"
+        );
         for tag in [72, 67] {
             let pick: fn(u16, u16, &[u8]) -> bool = if tag == 72 {
                 |tag, level, _| tag == 72 && level == 2
@@ -1455,6 +1520,31 @@ mod tests {
             assert!(
                 !check_with_preview_refresh(&caption, &tampered).is_empty(),
                 "caption record {tag}"
+            );
+            let moved_tampered = mutate(&read("gso-caption-moved"), pick, 4, &[0x7f]);
+            assert!(
+                !check_with_preview_refresh(&caption, &moved_tampered).is_empty(),
+                "moved + caption record {tag}"
+            );
+        }
+
+        let caption_shape = read("gso-caption-shape");
+        let caption_shape_edited = read("gso-caption-shape-edited");
+        assert_eq!(
+            check_with_preview_refresh(&caption_shape, &caption_shape_edited),
+            vec![]
+        );
+        for (tag, level) in [(72, 2), (67, 3)] {
+            let pick = if tag == 72 {
+                (|t, l, _| t == 72 && l == 2) as fn(u16, u16, &[u8]) -> bool
+            } else {
+                (|t, l, _| t == 67 && l == 3) as fn(u16, u16, &[u8]) -> bool
+            };
+            let _ = level;
+            let tampered = mutate(&caption_shape_edited, pick, 4, &[0x7f]);
+            assert!(
+                !check_with_preview_refresh(&caption_shape, &tampered).is_empty(),
+                "captioned shape record {tag}"
             );
         }
     }

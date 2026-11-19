@@ -1699,13 +1699,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
           const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
-          const rawShape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
+          const shape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
             ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
-          const shape = rawShape && (format === "hwpx" || !rawShape.hasCaption) ? rawShape : undefined;
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
-              ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
+              ...(this.doc.deleteShapeControl && !(format === "hwp" && shape.hasCaption) ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
               ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
           }
@@ -4290,7 +4289,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || !this.gsoFormatEditable(address, true)) return false;
     const format = this.sessions.get(this.sessionId)?.format;
     const before = inspectRhwpShape(doc, address);
-    if (!before || !selected.shape || (format === "hwp" && before.hasCaption)
+    if (!before || !selected.shape
       || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
     const { edit } = request;
     type Raw = typeof before.raw;
@@ -4302,7 +4301,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (!doc.deleteShapeControl) return false;
+        if (!doc.deleteShapeControl || (format === "hwp" && before.hasCaption)) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("shape deletion refused");

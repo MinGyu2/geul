@@ -434,9 +434,13 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const sectionEnds = Array.from({ length: sectionCount }, (_, s) => {
     paragraphBase += count(doc.getParagraphCount(s)); return paragraphBase;
   });
-  // Stage 2: tables inside cells, addressed by their explicit cell-list ownership chain.
-  const cursorLists = controls.some(c => isObject(c) && c.list !== 0 && (c.ctrlId === "tbl" || c.ctrlId === "gso")) && doc.getCursorModel
+  // Stage 2/3: tables/pictures inside cells and auto-number controls inside body GSO captions.
+  const cursorLists = controls.some(c => isObject(c) && c.list !== 0
+    && (c.ctrlId === "tbl" || c.ctrlId === "gso" || c.ctrlId === "atno")) && doc.getCursorModel
     ? cursorListMap(object(json(doc.getCursorModel()))) : null;
+  const bodyGsos = new Set(controls.filter((v): v is JsonObject =>
+    isObject(v) && v.list === 0 && v.ctrlId === "gso" && isInt(v.para, 0) && isInt(v.controlIndex, 0))
+    .map(v => `${v.para}/${v.controlIndex}`));
   for (const value of controls) {
     node(); const c = object(value);
     if (c.ctrlId === "secd" || c.ctrlId === "cold") continue;
@@ -450,6 +454,22 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     if (c.list !== 0 && c.ctrlId === "gso" && c.userDesc === "그림" && cursorLists) {
       const picture = nestedPictureModel(doc, c, cursorLists);
       if (picture) { pictures.push(picture); continue; }
+    }
+    if (c.list !== 0 && c.ctrlId === "atno" && c.ctrlCh === 18 && c.userDesc === "번호 넣기"
+      && isObject(c.props) && Object.keys(c.props).length === 0
+      && isInt(c.para, 0) && isInt(c.controlIndex, 0) && cursorLists) {
+      const list = cursorLists.get(c.list as number);
+      if (list && list.isCell === false && list.hostListId === 0
+        && isInt(list.sectionIndex, 0, sectionCount - 1) && isInt(list.hostPara, 0)
+        && isInt(list.controlIndex, 0) && isInt(list.paraCount, 1)
+        && (c.para as number) < (list.paraCount as number)) {
+        const hostSection = list.sectionIndex as number;
+        const hostGlobal = (hostSection === 0 ? 0 : sectionEnds[hostSection - 1]!) + (list.hostPara as number);
+        if (bodyGsos.has(`${hostGlobal}/${list.controlIndex}`)) {
+          fields.push({ captionAtno: true, list: c.list, para: c.para, controlIndex: c.controlIndex, pos: c.pos });
+          continue;
+        }
+      }
     }
     if (c.list !== 0) { complete = false; continue; } // other nested controls retain raw comparison
     const global = count(c.para);
@@ -510,7 +530,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       if (shape) {
         const { width, height } = shape as { width: number; height: number };
         if ((width === 0 && height === 0) || width > HWPUNIT_MAX || height > HWPUNIT_MAX
-          || shape.hasCaption === true || props.Width !== width || props.Height !== height
+          || props.Width !== width || props.Height !== height
           || (props.TreatAsChar === 1) !== shape.treatAsChar) complete = false;
       }
       shapes.push(shape);

@@ -1950,3 +1950,9 @@ HWP5 `SHAPE_COMPONENT_RECTANGLE`(79)은 `round_rate` 1바이트와 부호 있는
 
 - **엔진·세션:** HWPX 직렬화(`write_rect` 등)·파서(`parse_object_element_attrs` `parse_i32`)·레이아웃(`paper_node_sort_key`)은 양·음 `zOrder`와 겹침 순서를 보존하며, `RhwpEditorSession.ts`는 `format === "hwpx"`에서만 `zOrder`를 복원하고 HWP(`gso.rs`의 `z_order` 불변 계약)와 무변화 이동(`moves` 비어 있음)은 계속 거부한다.
 - **검증:** `stage3-{object-edit,picture-size,shapes}.wasm.test.ts` 11/11 PASS(겹침 도형 앞/뒤 전환·히트테스트·재열기·Undo/Redo 포함), `save_check saved hwpx` `{"outcome":"safe","findings":[]}`, `npm run typecheck`·`npx eslint` PASS.
+
+### Stage 3 B5 — 캡션 있는 HWP GSO 바깥 개체 편집 증명 (2026-11-19)
+
+- **T009 (`hwp/gso.rs`):** HWP5 캡션 GSO(`ATTR_CAPTION` bit 29)는 level 2 `LIST_HEADER(72)`와 문단(`PARA_HEADER(66)` at level 2, 하위 레코드 at >=3) 뒤에 `SHAPE_COMPONENT(76)`가 온다. `shape_component_pos`가 이 구조를 정확히 탐색하도록 일반화하고 `check_ctrl_header`·`prove_evolved_gso`가 캡션 비트 불변(bit 29 전환 거부), 캡션 `CTRL_HEADER` tail 보존(`raw_extra`), 및 `&old[1..old_sc_idx] == &new[1..new_sc_idx]` 바이트 동일을 강제해 바깥 그림/도형 편집만 수용한다. `deletable_gso`는 `ATTR_CAPTION != 0` 거부를 그대로 유지한다.
+- **프런트엔드 (`pictureProperties.ts`, `RhwpEditorSession.ts`, `hwpReopenModel.ts`):** 캡션 그림/기본 도형에 대해 바깥 편집 연산(`resize`·`move`·`crop`·`wrap`·`altText`·`fill`·`outline`·`rotate`)을 허용하고, `delete`는 HWP 캡션 객체에서 계속 제외·거부한다. `hwpReopenModel`은 본문 GSO가 호스팅하는 캡션 목록 안의 `atno` 번호 넣기 컨트롤(`isCell === false`, `hostListId === 0`)을 인식해 캡션 GSO 문서의 `complete` 판정을 유지한다.
+- **검증:** `stage3-{object-edit,picture-size,shapes}.wasm.test.ts` 12/12 PASS(실제 캡션 그림·도형 외곽 편집, 삭제 거부, Undo/Redo, 재열기 포함), `pictureProperties.test.ts` 13/13 PASS, `release_hwp_gso_bytes_pass_only_for_proven_edits`(Release WASM 캡션 그림/도형 + `ATTR_CAPTION`/레코드 72·67 변조 거부) PASS, `services::save` 289 PASS / 0 FAIL / 32 ignored, `npm run typecheck`·`npx eslint` PASS.

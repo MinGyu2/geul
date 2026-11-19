@@ -45,6 +45,23 @@ function captionEvidence(bytes: Uint8Array, directory: string) {
   mutate("gso-caption-unrelated", false, { borderColor: 0x112233 });
   mutate("gso-caption-moved", true, { horzOffset: 1000 });
   mutate("gso-caption-resized", true, { width: 5000 });
+
+  const shapeCaptionDoc = new engine.HwpDocument(bytes);
+  let shapeCaptioned: Uint8Array;
+  try {
+    expect(JSON.parse(shapeCaptionDoc.setShapeProperties(0, 0, 4, '{"hasCaption":true}')).ok).toBe(true);
+    shapeCaptioned = shapeCaptionDoc.exportHwp();
+    writeFileSync(resolve(directory, "gso-caption-shape.hwp"), shapeCaptioned);
+  } finally { shapeCaptionDoc.free(); }
+  const openedShapeCap = new engine.HwpDocument(shapeCaptioned);
+  try {
+    expect(JSON.parse(openedShapeCap.getShapeProperties(0, 0, 4)).hasCaption).toBe(true);
+    expect(JSON.parse(openedShapeCap.setShapeProperties(0, 0, 4, JSON.stringify({
+      fillType: "solid", fillBgColor: 0x996633, borderColor: 0x442277,
+      horzOffset: 4300, vertOffset: 7800, width: 8600, height: 4400, rotationAngle: 20,
+    }))).ok).toBe(true);
+    writeFileSync(resolve(directory, "gso-caption-shape-edited.hwp"), openedShapeCap.exportHwp());
+  } finally { openedShapeCap.free(); }
 }
 /** The save path's reopen evidence (RhwpEditorSession export check): pages, text and controls equal, no loss. */
 function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string) {
@@ -90,14 +107,14 @@ function source(format: "hwp" | "hwpx", withShape = false): Uint8Array {
   } finally { doc.free(); }
 }
 
-async function setup(format: "hwp" | "hwpx", approveHwp = false, withShape = false) {
+async function setup(format: "hwp" | "hwpx", approveHwp = false, withShape = false, customBytes?: Uint8Array) {
   const control = controlledBackend();
   const sessions = new DocumentSessions(control.backend);
   const open = sessions.open(`/object.${format}`);
   const sessionInfo = (patch: Parameters<typeof info>[0]) => info({ ...patch, format });
   control.take("open").reply(ok(sessionInfo({ displayName: `object.${format}` })));
   await open;
-  const bytes = source(format, withShape);
+  const bytes = customBytes ?? source(format, withShape);
   let doc: RhwpDocument | undefined;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
     async () => ({ openDocument: (b: Uint8Array) => { const d = new engine.HwpDocument(b) as RhwpDocument; doc ??= d; return d; }, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
@@ -407,6 +424,77 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(editor.redo()).toBe(true);
       await confirm(19);
       expect(shapes()).toHaveLength(0);
+    } finally { editor.dispose(); }
+  });
+
+  it("edits outer properties of caption-bearing HWP pictures and shapes while preserving captions and blocking deletion", async () => {
+    const seed = new engine.HwpDocument(source("hwp", true)) as RhwpDocument;
+    let captionedBytes: Uint8Array;
+    try {
+      expect(JSON.parse(seed.setPictureProperties!(0, 0, 2, '{"hasCaption":true}')).ok).toBe(true);
+      expect(JSON.parse(seed.setShapeProperties!(0, 0, 4, '{"hasCaption":true}')).ok).toBe(true);
+      captionedBytes = seed.exportHwp!();
+    } finally { seed.free(); }
+
+    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, true, captionedBytes);
+    let seq = 0;
+    try {
+      const baseline = hwpReopenModel(doc).structure;
+      const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
+        .filter((control: { type: string }) => control.type === "shape") as Frame[];
+      const pic = () => [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
+
+      // Captioned inline picture: outer ops permitted, delete excluded & refused.
+      expect(pick(pic()).operations).toEqual(["deselect", "resize", "crop", "wrap", "altText"]);
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(edit({ kind: "altText", text: "캡션 그림 outer" })).toBe(true);
+      await confirm(++seq);
+      pick(pic());
+      expect(edit({ kind: "bounds", width: 52, height: 26 })).toBe(true);
+      await confirm(++seq);
+
+      // Captioned shape: outer ops permitted, delete excluded & refused.
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "wrap", "fill", "outline", "rotate"]);
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(edit({ kind: "fill", color: "336699" })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "bounds", width: 84, height: 42 })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "rotate", degrees: 25, flipH: false, flipV: false })).toBe(true);
+      await confirm(++seq);
+
+      const exported = doc.exportHwpWithReport!();
+      let edited: Uint8Array;
+      try {
+        const report = exported.contentLoss();
+        edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
+      } finally { exported.free(); }
+
+      const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+      try {
+        expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+        expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({
+          hasCaption: true, width: 5200, height: 2600, description: "캡션 그림 outer",
+        });
+        expect(JSON.parse(reopened.getShapeProperties!(0, 0, 4))).toMatchObject({
+          hasCaption: true, width: 8400, height: 4200,
+          horzOffset: 4400, vertOffset: 7800, fillType: "solid", fillBgColor: 0x996633, rotationAngle: 25,
+        });
+      } finally { reopened.free(); }
+
+      // Undo/Redo restores rotation & size while keeping caption attached.
+      expect(editor.undo()).toBe(true);
+      await confirm(++seq);
+      expect(JSON.parse(doc.getShapeProperties!(0, 0, 4))).toMatchObject({ hasCaption: true, rotationAngle: 0, width: 8400 });
+      expect(editor.redo()).toBe(true);
+      await confirm(++seq);
+      expect(JSON.parse(doc.getShapeProperties!(0, 0, 4))).toMatchObject({ hasCaption: true, rotationAngle: 25, width: 8400 });
     } finally { editor.dispose(); }
   });
 });

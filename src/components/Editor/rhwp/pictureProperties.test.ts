@@ -50,7 +50,24 @@ describe("RHWP picture property inspection", () => {
     expect(read({ ...raw, sizeProtect: true })).toBe(false);
     expect(read({ ...raw, cropRight: 1 })).toBe(false);
     expect(read({ ...raw, externalPath: "picture.png" })).toBe(false);
-    expect(read({ ...raw, hasCaption: true })).toBe(false);
+    // B5: Captioned pictures permit safe outer-object edits, while deletion stays blocked.
+    expect(read({ ...raw, hasCaption: true })).toBe(true);
+    const inspectedCaption = inspectRhwpPicture(
+      { getPictureProperties: () => JSON.stringify({ ...raw, hasCaption: true }) },
+      [0, 0, 2],
+    );
+    expect(inspectedCaption?.plain).toBe(true);
+    expect(inspectedCaption?.deletable).toBe(false);
+    const floatingCaption = inspectRhwpPicture(
+      {
+        getPictureProperties: () => JSON.stringify({
+          ...raw, treatAsChar: false, textWrap: "Square", hasCaption: true,
+          horzAlign: "Left", vertAlign: "Top", horzOffset: 100, vertOffset: 200,
+        }),
+      },
+      [0, 0, 2],
+    );
+    expect(floatingCaption?.movable).toEqual({ horzOffset: 100, vertOffset: 200 });
     const deletable = (values: Record<string, unknown>) =>
       inspectRhwpPicture({ getPictureProperties: () => JSON.stringify(values) }, [0, 0, 2])?.deletable;
     expect(deletable(raw)).toBe(true);

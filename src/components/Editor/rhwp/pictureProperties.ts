@@ -56,15 +56,15 @@ export function inspectRhwpPicture(
         ...(typeof description === "string" && description.length <= 4096 ? { description } : {}),
         ...(crop ? { crop } : {}),
       },
-      plain: values.hasCaption === false && values.sizeProtect === false && !("externalPath" in values),
+      plain: values.sizeProtect === false && !("externalPath" in values),
       deletable: values.hasCaption === false && !("externalPath" in values),
       ...(original ? { original } : {}),
       ...(cropAmounts ? { cropAmounts } : {}),
       ...(!treatAsChar && values.horzAlign === "Left" && values.vertAlign === "Top"
         && Number.isSafeInteger(values.horzOffset) && Number.isSafeInteger(values.vertOffset)
-        && values.hasCaption === false && !("externalPath" in values) && values.rotationAngle === 0
+        && !("externalPath" in values) && values.rotationAngle === 0
         ? { movable: { horzOffset: values.horzOffset as number, vertOffset: values.vertOffset as number } } : {}),
-      simpleInline: treatAsChar && values.sizeProtect === false && values.hasCaption === false
+      simpleInline: treatAsChar && values.sizeProtect === false
         && values.horzFlip === false && values.vertFlip === false && !("externalPath" in values)
         && Number.isSafeInteger(values.rotationAngle)
         && (values.rotationAngle as number) >= -360 && (values.rotationAngle as number) <= 360
