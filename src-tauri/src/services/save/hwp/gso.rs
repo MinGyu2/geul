@@ -379,15 +379,62 @@ fn check_fill(old_fill: &[u8], new_fill: &[u8]) -> Checked<()> {
     }
 }
 
-fn rectangle_vertices_match_size(vertices: &[u8], width: usize, height: usize) -> bool {
-    let (Ok(w), Ok(h)) = (i32::try_from(width), i32::try_from(height)) else {
-        return false;
+fn parse_rectangle_vertices(vertices: &[u8]) -> Option<([i32; 4], [i32; 4])> {
+    if vertices.len() != 32 {
+        return None;
+    }
+    let mut xs = [0i32; 4];
+    let mut ys = [0i32; 4];
+    for i in 0..4 {
+        let at = i * 8;
+        xs[i] = i32::from_le_bytes(vertices[at..at + 4].try_into().ok()?);
+        ys[i] = i32::from_le_bytes(vertices[at + 4..at + 8].try_into().ok()?);
+    }
+    Some((xs, ys))
+}
+
+fn scale_rectangle_axis(coords: [i32; 4], old_dim: usize, new_dim: usize) -> Option<[i32; 4]> {
+    if old_dim == 0 || new_dim == 0 || old_dim > MAX_DIM_HU || new_dim > MAX_DIM_HU {
+        return None;
+    }
+    if coords
+        .iter()
+        .any(|&c| !(-MAX_CROP_HU..=MAX_CROP_HU).contains(&c))
+    {
+        return None;
+    }
+    let (Some(&min_c), Some(&max_c)) = (coords.iter().min(), coords.iter().max()) else {
+        return None;
     };
-    // Four interleaved signed HWPUNIT pairs, without round_rate.
-    vertices
-        .chunks_exact(4)
-        .zip([0, 0, w, 0, w, h, 0, h])
-        .all(|(actual, expected)| actual == expected.to_le_bytes())
+    if min_c >= max_c {
+        return None;
+    }
+    if old_dim == new_dim {
+        return Some(coords);
+    }
+    let den = i128::try_from(old_dim).ok()?;
+    let num_scale = i128::try_from(new_dim).ok()?;
+    let mut out = [0i32; 4];
+    for (i, &c) in coords.iter().enumerate() {
+        let num = i128::from(c) * num_scale;
+        let rounded = if num >= 0 {
+            (num + den / 2) / den
+        } else {
+            (num - den / 2) / den
+        };
+        let scaled = i32::try_from(rounded).ok()?;
+        if !(-MAX_CROP_HU..=MAX_CROP_HU).contains(&scaled) {
+            return None;
+        }
+        out[i] = scaled;
+    }
+    let (Some(&new_min), Some(&new_max)) = (out.iter().min(), out.iter().max()) else {
+        return None;
+    };
+    if new_min >= new_max {
+        return None;
+    }
+    Some(out)
 }
 
 /// Validates a candidate evolved GSO object pair (`old`, `new`) against strict HWP5 rules.
@@ -592,14 +639,17 @@ pub(super) fn prove_evolved_gso(
         let old_vertices = &old_last.2[1..];
         let new_vertices = &new_last.2[1..];
         if size_changed {
-            preserved(
-                rectangle_vertices_match_size(old_vertices, old_w, old_h_dim),
-                BODY,
-            )?;
-            valid(
-                rectangle_vertices_match_size(new_vertices, new_w, new_h_dim),
-                BODY,
-            )?;
+            let Some((old_x, old_y)) = parse_rectangle_vertices(old_vertices) else {
+                return Err(finding(FindingCode::OutputMalformed, BODY));
+            };
+            let Some((new_x, new_y)) = parse_rectangle_vertices(new_vertices) else {
+                return Err(finding(FindingCode::OutputMalformed, BODY));
+            };
+            let expected_x = scale_rectangle_axis(old_x, old_w, new_w)
+                .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+            let expected_y = scale_rectangle_axis(old_y, old_h_dim, new_h_dim)
+                .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+            valid(new_x == expected_x && new_y == expected_y, BODY)?;
         } else {
             preserved(old_vertices == new_vertices, BODY)?;
         }
@@ -1378,7 +1428,53 @@ mod tests {
             check_with_preview_refresh(&canonical_file, &file(resized.clone())),
             vec![]
         );
+        // Unauthorized canonicalization during noncanonical resize must still fail.
         assert!(!check_with_preview_refresh(&noncanonical_file, &file(resized.clone())).is_empty());
+        // Proportional scaling preserving unchanged Y axis must pass.
+        let mut noncanon_resized_w = noncanonical.clone();
+        noncanon_resized_w[0].2[16..20].copy_from_slice(&8200u32.to_le_bytes());
+        noncanon_resized_w[1].2[28..32].copy_from_slice(&8200u32.to_le_bytes());
+        noncanon_resized_w[2].2 = {
+            let mut leaf = vec![7u8];
+            for v in [114i32, 200, 7744, 200, 7744, 3200, 114, 3200] {
+                leaf.extend_from_slice(&v.to_le_bytes());
+            }
+            leaf
+        };
+        assert_eq!(
+            check_with_preview_refresh(&noncanonical_file, &file(noncanon_resized_w.clone())),
+            vec![]
+        );
+        // 1-HWPUNIT drift or unchanged-axis mutation must fail.
+        let mut drifted = noncanon_resized_w.clone();
+        drifted[2].2[1..5].copy_from_slice(&115i32.to_le_bytes());
+        assert!(!check_with_preview_refresh(&noncanonical_file, &file(drifted)).is_empty());
+        let mut y_mutated = noncanon_resized_w.clone();
+        y_mutated[2].2[5..9].copy_from_slice(&201i32.to_le_bytes());
+        assert!(!check_with_preview_refresh(&noncanonical_file, &file(y_mutated)).is_empty());
+        // Malformed collapsed or out-of-bounds source vertices cannot be resized.
+        let mut collapsed_src = noncanonical.clone();
+        collapsed_src[2].2 = {
+            let mut leaf = vec![7u8];
+            for v in [100i32, 200, 100, 200, 100, 3200, 100, 3200] {
+                leaf.extend_from_slice(&v.to_le_bytes());
+            }
+            leaf
+        };
+        assert!(
+            !check_with_preview_refresh(&file(collapsed_src), &file(noncanon_resized_w.clone()))
+                .is_empty()
+        );
+        let mut oob_src = noncanonical.clone();
+        oob_src[2].2 = {
+            let mut leaf = vec![7u8];
+            for v in [0i32, 200, 20_000_000, 200, 20_000_000, 3200, 0, 3200] {
+                leaf.extend_from_slice(&v.to_le_bytes());
+            }
+            leaf
+        };
+        assert!(!check_with_preview_refresh(&file(oob_src), &file(noncanon_resized_w)).is_empty());
+
         let mut stale = resized.clone();
         stale[2].2.clone_from(&canonical[2].2);
         assert!(!check_with_preview_refresh(&canonical_file, &file(stale)).is_empty());
@@ -1398,18 +1494,11 @@ mod tests {
             ] {
                 let edited = read(&format!("{kind}-{case}"));
                 let findings = check_with_preview_refresh(&original, &edited);
-                if kind == "noncanonical" && matches!(case, "width" | "height" | "both") {
-                    assert!(
-                        findings.contains(&Finding::at(FindingCode::RecordsChanged, super::BODY)),
-                        "{kind}-{case}: {findings:?}"
-                    );
-                } else {
-                    assert!(findings.is_empty(), "{kind}-{case}: {findings:?}");
-                }
+                assert!(findings.is_empty(), "{kind}-{case}: {findings:?}");
             }
         }
-        // Reconstruct the exact unauthorized normalization against a real HWP
-        // after the producer no longer generates it.
+        // Reconstruct unauthorized canonicalization against a real HWP (both on
+        // an unrelated edit and on a resize).
         let source = read("noncanonical");
         let edited = read("noncanonical-border");
         let normalized = mutate_body_record(&edited, rectangle_record, |leaf| {
@@ -1419,6 +1508,13 @@ mod tests {
             check_with_preview_refresh(&source, &normalized)
                 .contains(&Finding::at(FindingCode::RecordsChanged, super::BODY))
         );
+        let resized = read("noncanonical-width");
+        let multistep = read("noncanonical-multistep");
+        assert_eq!(check_with_preview_refresh(&source, &multistep), vec![]);
+        let normalized_resize = mutate_body_record(&resized, rectangle_record, |leaf| {
+            rect_leaf(leaf[0], 8200, 3600)
+        });
+        assert!(!check_with_preview_refresh(&source, &normalized_resize).is_empty());
     }
 
     #[test]

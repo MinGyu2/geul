@@ -47,7 +47,52 @@ for (const kind of ["canonical", "noncanonical"]) {
         } finally { reopened.free(); }
       } finally { exported.free(); }
       if (name === "noop") writeFileSync(resolve(directory, `${kind}-layout.json`), doc.getPageControlLayout(0));
-      console.log(`${kind}-${name}: independent RHWP reopen PASS`);
+    console.log(`${kind}-${name}: independent RHWP reopen PASS`);
     } finally { doc.free(); }
   }
+}
+
+// B2 extra: multi-step resize avoids double-rounding drift against the source file,
+// Undo/Redo via engine snapshot preserves original and resized geometry + reopen,
+// and out-of-bounds resize fails without mutating the document.
+{
+  const source = readFileSync(resolve(directory, "noncanonical.hwp"));
+  const origPropsDoc = new HwpDocument(source);
+  let origProps;
+  try {
+    origProps = JSON.parse(origPropsDoc.getShapeProperties(...address));
+  } finally { origPropsDoc.free(); }
+  const doc = new HwpDocument(source);
+  try {
+    const snapBefore = doc.saveSnapshot();
+    assert.equal(JSON.parse(doc.setShapeProperties(...address, JSON.stringify({ width: 7240 }))).ok, true);
+    assert.equal(JSON.parse(doc.setShapeProperties(...address, JSON.stringify({ width: 8200 }))).ok, true);
+    const snapAfter = doc.saveSnapshot();
+    const live = JSON.parse(doc.getShapeProperties(...address));
+    const singleDoc = new HwpDocument(readFileSync(resolve(directory, "noncanonical-width.hwp")));
+    let singleStep;
+    try {
+      singleStep = JSON.parse(singleDoc.getShapeProperties(...address));
+    } finally { singleDoc.free(); }
+    assert.deepEqual(live, singleStep);
+    const exported = doc.exportHwpWithReport();
+    try {
+      const bytes = exported.takeBytes();
+      assert.equal(JSON.parse(exported.contentLoss()).count, 0);
+      writeFileSync(resolve(directory, "noncanonical-multistep.hwp"), bytes);
+    } finally { exported.free(); }
+    doc.restoreSnapshot(snapBefore);
+    assert.deepEqual(JSON.parse(doc.getShapeProperties(...address)), origProps);
+    const undoneExp = doc.exportHwpWithReport();
+    try {
+      const undoneBytes = undoneExp.takeBytes();
+      const undoneReopen = new HwpDocument(undoneBytes);
+      try { assert.deepEqual(JSON.parse(undoneReopen.getShapeProperties(...address)), origProps); } finally { undoneReopen.free(); }
+    } finally { undoneExp.free(); }
+    doc.restoreSnapshot(snapAfter);
+    assert.deepEqual(JSON.parse(doc.getShapeProperties(...address)), live);
+    assert.throws(() => doc.setShapeProperties(...address, JSON.stringify({ width: 2500000 })));
+    assert.deepEqual(JSON.parse(doc.getShapeProperties(...address)), live);
+    console.log("noncanonical-multistep & undo/redo & bounds-reject: PASS");
+  } finally { doc.free(); }
 }
