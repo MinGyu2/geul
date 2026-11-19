@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Stage 3 P1: HWPX picture move/nudge/delete through `object.edit` on the Release engine.
-// With GEUL_STAGE3_OUT=<dir>, writes original/edited HWPX bytes and the loss report for `save_check`.
+// With GEUL_STAGE3_OUT=<dir>, writes original/edited documents and loss reports for `save_check` and native acceptance.
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -23,6 +23,29 @@ type Frame = { x: number; y: number; w: number; h: number };
 const images = (doc: RhwpDocument) => JSON.parse(doc.getPageControlLayout!(0)).controls
   .filter((control: { type: string }) => control.type === "image") as Frame[];
 const out = process.env.GEUL_STAGE3_OUT;
+
+function captionEvidence(bytes: Uint8Array, directory: string) {
+  const caption = new engine.HwpDocument(bytes);
+  let captioned: Uint8Array;
+  try {
+    expect(JSON.parse(caption.setPictureProperties(0, 0, 2, '{"hasCaption":true}')).ok).toBe(true);
+    captioned = caption.exportHwp();
+    writeFileSync(resolve(directory, "gso-caption.hwp"), captioned);
+  } finally { caption.free(); }
+  const mutate = (name: string, picture: boolean, properties: object) => {
+    const opened = new engine.HwpDocument(captioned);
+    try {
+      expect(JSON.parse(opened.getPictureProperties(0, 0, 2)).hasCaption).toBe(true);
+      const result = picture ? opened.setPictureProperties(0, 0, 2, JSON.stringify(properties))
+        : opened.setShapeProperties(0, 0, 4, JSON.stringify(properties));
+      expect(JSON.parse(result).ok).toBe(true);
+      writeFileSync(resolve(directory, name + ".hwp"), opened.exportHwp());
+    } finally { opened.free(); }
+  };
+  mutate("gso-caption-unrelated", false, { borderColor: 0x112233 });
+  mutate("gso-caption-moved", true, { horzOffset: 1000 });
+  mutate("gso-caption-resized", true, { width: 5000 });
+}
 /** The save path's reopen evidence (RhwpEditorSession export check): pages, text and controls equal, no loss. */
 function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string) {
   const reopened = new engine.HwpDocument(bytes) as RhwpDocument & { getControls(): string; getTextFileText(): string };
@@ -57,6 +80,11 @@ function source(format: "hwp" | "hwpx", withShape = false): Uint8Array {
       })));
       expect(rect.ok).toBe(true);
       expect(JSON.parse(doc.setShapeProperties(0, rect.paraIdx, rect.controlIdx, JSON.stringify({ textWrap: "Square" }))).ok).toBe(true);
+      doc.splitParagraph(0, 0, doc.getParagraphLength(0, 0));
+      const table = JSON.parse(doc.createTable(0, 1, 0, 1, 2));
+      expect(table.ok).toBe(true);
+      doc.setTableProperties(0, table.paraIdx, table.controlIdx, '{"textWrap":"TopAndBottom"}');
+      doc.insertTextInCell(0, table.paraIdx, table.controlIdx, 0, 0, 0, "Preserved cell");
     }
     return format === "hwpx" ? doc.exportHwpx() : doc.exportHwp();
   } finally { doc.free(); }
@@ -251,9 +279,20 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
   });
 
   it("edits HWP pictures and shapes after SAFE preflight with reopen equality and delete refusal", async () => {
-    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, true);
+    const { editor, doc, bytes, pick, edit, confirm } = await setup("hwp", true, true);
     try {
       const baseline = hwpReopenModel(doc).structure;
+      if (out) {
+        mkdirSync(out, { recursive: true });
+        writeFileSync(resolve(out, "gso-original.hwp"), bytes);
+        captionEvidence(bytes, out);
+        const noop = doc.exportHwpWithReport();
+        try {
+          writeFileSync(resolve(out, "gso-noop.hwp"), noop.takeBytes());
+          writeFileSync(resolve(out, "gso-noop-report.json"), noop.contentLoss());
+          writeFileSync(resolve(out, "gso-layout.json"), doc.getPageControlLayout!(0));
+        } finally { noop.free(); }
+      }
       const byWidth = (frames: Frame[]) => [...frames].sort((a, b) => b.w - a.w);
       const [inlinePic, floatingPic] = byWidth(images(doc));
       const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
@@ -276,8 +315,26 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(4);
       pick(shapes()[0]!);
-      expect(edit({ kind: "rotate", degrees: 20, flipH: true, flipV: false })).toBe(true);
+      expect(edit({ kind: "rotate", degrees: 20, flipH: true, flipV: true })).toBe(true);
       await confirm(5);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "bounds", width: 86, height: 44 })).toBe(true);
+      await confirm(6);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "nudge", dx: 3, dy: -2 })).toBe(true);
+      await confirm(7);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "outline", color: "772244" })).toBe(true);
+      await confirm(8);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "wrap", wrap: "topAndBottom" })).toBe(true);
+      await confirm(9);
+      pick(byWidth(images(doc))[0]!);
+      expect(edit({ kind: "crop", left: 0.1, top: 0, right: 0.2, bottom: 0 })).toBe(true);
+      await confirm(10);
+      pick(byWidth(images(doc))[0]!);
+      expect(edit({ kind: "wrap", wrap: "topAndBottom" })).toBe(true);
+      await confirm(11);
 
       const exported = doc.exportHwpWithReport();
       try {
@@ -289,16 +346,26 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
           expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
           expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({
             width: 5000, height: 2500, description: "HWP 그림 설명",
+            cropLeft: 405, cropRight: 810, textWrap: "TopAndBottom", treatAsChar: false,
           });
           expect(JSON.parse(reopened.getShapeProperties!(0, 0, 4))).toMatchObject({
-            fillType: "solid", fillBgColor: 0x996633, rotationAngle: 20, horzFlip: true,
+            width: 8600, height: 4400, horzOffset: 4300, vertOffset: 7800,
+            fillType: "solid", fillBgColor: 0x996633, borderColor: 0x442277,
+            rotationAngle: 20, horzFlip: true, vertFlip: true, textWrap: "TopAndBottom",
           });
         } finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "gso-edited.hwp"), edited);
+          writeFileSync(resolve(out, "gso-edited-report.json"), report);
+        }
       } finally { exported.free(); }
 
       expect(editor.undo()).toBe(true);
-      await confirm(6);
-      expect(JSON.parse(doc.getShapeProperties!(0, 0, 4))).toMatchObject({ rotationAngle: 0, horzFlip: false });
+      await confirm(12);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ treatAsChar: true });
+      expect(editor.redo()).toBe(true);
+      await confirm(13);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ treatAsChar: false, textWrap: "TopAndBottom" });
     } finally { editor.dispose(); }
   });
 });

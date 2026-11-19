@@ -20,6 +20,7 @@ export interface RhwpShapeInspection {
   fillEditable: boolean;
   textBox: boolean;
   hasCaption: boolean;
+  sizeProtected: boolean;
 }
 
 /** Read an HWPX/HWP body shape through RHWP `getShapeProperties`; undefined if not a modeled drawing. */
@@ -50,6 +51,7 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
       fillEditable: fillType === "none" || (fillType === "solid" && fillBgColor !== undefined),
       textBox: "tbVerticalAlign" in v,
       hasCaption: v.hasCaption === true,
+      sizeProtected: v.sizeProtect !== false,
     };
   } catch {
     return undefined;

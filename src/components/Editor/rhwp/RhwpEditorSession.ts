@@ -1364,6 +1364,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   backspace(): boolean {
+    if (this.objectSelection && this.sessions.get(this.sessionId)?.format === "hwp") return false;
     if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
     const at = this.caret;
     const text = this.text;
@@ -1389,6 +1390,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   deleteForward(): boolean {
+    // An HWP GSO selection owns the key even when object deletion is unavailable.
+    // Never apply Delete to the text caret left behind the selected object.
+    if (this.objectSelection && this.sessions.get(this.sessionId)?.format === "hwp") return false;
     if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
     const at = this.caret;
     const text = this.text;
@@ -1699,7 +1703,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
           const shape = rawShape && (format === "hwpx" || !rawShape.hasCaption) ? rawShape : undefined;
           if (shape) {
-            operations.push(...(shape.movable ? ["move" as const] : []), "resize",
+            operations.push(...(shape.movable ? ["move" as const] : []),
+              ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
               ...(format === "hwpx" && this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate");
             // Z-order: the RHWP HWPX export does not reopen with the changed order (save reopen comparison fails).
@@ -4312,7 +4317,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const vertOffset = before.raw.vertOffset + Math.round((edit.y! - selected.frame.y) * perFrame);
           props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
         } else {
-          if (edit.width === undefined || edit.height === undefined) return false;
+          if (edit.width === undefined || edit.height === undefined || (format === "hwp" && before.sizeProtected)) return false;
           const width = Math.round(edit.width * 100), height = Math.round(edit.height * 100);
           props = { width, height }; expect = { width, height }; keep = except("width", "height");
         }

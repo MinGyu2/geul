@@ -155,7 +155,11 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
             .iter()
             .filter(object_record)
             .eq(yr.iter().filter(object_record));
-        structural |= xt != yt || xp != yp || (has_bullet && xs != ys) || opaque_changed;
+        structural |= xt != yt
+            || xp != yp
+            || (has_bullet && xs != ys)
+            || opaque_changed
+            || !super::gso::caption_subtrees(&xr).eq(super::gso::caption_subtrees(&yr));
     }
     if !definition_delta && !structural {
         return None;
@@ -1118,12 +1122,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 validate_existing_table(object)?;
             }
             if kind == b" osg" {
-                valid(
-                    object
-                        .get(1)
-                        .is_some_and(|r| r.0 == 76 && r.1 == object[0].1 + 1),
-                    name,
-                )?;
+                valid(super::gso::preserved_structure(object), name)?;
             }
         }
         unique_ids(&yr, &mut output_ids, name)?;

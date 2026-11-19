@@ -5,11 +5,11 @@
 //! may evolve within the exact fields owned by supported editor commands. Groups, charts, OLE,
 //! captions, unknown extensions, BinData substitutions, and GSO deletions fail closed.
 
-use super::insertions::{
-    dword, entries, finding, preserved, reference, valid, word, Checked, Defs,
-};
 use super::FindingCode;
 use super::Record;
+use super::insertions::{
+    Checked, Defs, dword, entries, finding, preserved, reference, valid, word,
+};
 
 const BODY: &str = "BodyText/Section0";
 const CTRL_GSO: &[u8; 4] = b" osg";
@@ -38,6 +38,7 @@ const MAX_DESC_UNITS: usize = 256;
 /// - bits 21..=23: `text_wrap` (`0..=3`)
 const MUTABLE_ATTR_MASK: u32 = 0x01 | (0x03 << 3) | (0x03 << 8) | (0x07 << 21);
 const ATTR_SIZE_PROTECT: u32 = 1 << 20;
+const ATTR_CAPTION: u32 = 1 << 29;
 const ATTR_LOCKED: u32 = 1 << 30;
 
 fn gso_header_id(rs: &[Record<'_>]) -> Option<u32> {
@@ -46,6 +47,49 @@ fn gso_header_id(rs: &[Record<'_>]) -> Option<u32> {
         return None;
     }
     Some(u32::from_le_bytes(first.2.get(36..40)?.try_into().ok()?))
+}
+
+/// An original caption subtree can be carried through an unrelated edit by
+/// exact object equality. The evolution matcher below still requires the
+/// SHAPE_COMPONENT to follow the CTRL_HEADER immediately.
+pub(super) fn preserved_structure(rs: &[Record<'_>]) -> bool {
+    let level = rs[0].1 + 1;
+    let Some(first) = rs.get(1).filter(|r| r.1 == level) else {
+        return false;
+    };
+    first.0 == TAG_SHAPE_COMPONENT
+        || (first.0 == TAG_LIST_HEADER
+            && dword(rs[0].2, 4).is_ok_and(|attr| attr as u32 & ATTR_CAPTION != 0)
+            && rs[2..]
+                .iter()
+                .any(|r| r.0 == TAG_SHAPE_COMPONENT && r.1 == level))
+}
+
+/// Caption paragraphs do not appear in the structural record filter. Include
+/// their complete GSO so a text-only caption edit cannot use the ordinary
+/// paragraph path. RHWP locates a caption list before the shape component.
+pub(super) fn caption_subtrees<'a, 'b>(
+    rs: &'a [Record<'b>],
+) -> impl Iterator<Item = &'a [Record<'b>]> {
+    rs.iter()
+        .enumerate()
+        .filter_map(|(i, &(tag, level, data))| {
+            if tag != TAG_CTRL_HEADER || !data.starts_with(CTRL_GSO) {
+                return None;
+            }
+            let bit = dword(data, 4).is_ok_and(|attr| attr as u32 & ATTR_CAPTION != 0);
+            let list = rs
+                .get(i + 1)
+                .is_some_and(|r| r.0 == TAG_LIST_HEADER && r.1 == level + 1);
+            if !bit && !list {
+                return None;
+            }
+            let end = rs[i + 1..]
+                .iter()
+                .position(|r| r.1 <= level)
+                .map_or(rs.len(), |offset| i + 1 + offset);
+            Some(&rs[i..end])
+        })
 }
 
 fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize)> {
@@ -117,20 +161,38 @@ pub(super) fn evolved_candidate(
     )
 }
 
-fn validate_rendering_info(old_r: &[u8], new_r: &[u8], transform_changed: bool) -> Checked<()> {
-    if !transform_changed {
+fn validate_rendering_info(
+    old_r: &[u8],
+    new_r: &[u8],
+    picture_transform_changed: bool,
+    component_offset: [i32; 2],
+) -> Checked<()> {
+    if !picture_transform_changed || old_r == new_r {
         return preserved(old_r == new_r, BODY);
     }
-    if old_r == new_r {
-        return Ok(());
-    }
-    // When RHWP clears `raw_rendering` after a transform edit at group_level == 0, it emits
-    // cnt=1 + 3 affine f64[6] matrices (2 + 144 = 146 bytes), all finite.
+    // For supported nonrotating picture edits, RHWP clears raw_rendering and resets
+    // render_tx/ty to the component offsets and render_sx/sy to 1. Its HWP5 writer
+    // emits translation, scale, rotation (in that order). Size lives in the component
+    // dimensions, so a second scale would duplicate the resize.
     valid(new_r.len() == 146 && word(new_r, 0)? == 1, BODY)?;
-    for chunk in new_r[2..].as_chunks::<8>().0 {
-        valid(f64::from_le_bytes(*chunk).is_finite(), BODY)?;
-    }
-    Ok(())
+    let [x, y] = component_offset.map(f64::from);
+    let identity = [1., 0., 0., 0., 1., 0.];
+    let translation = [1., 0., x, 0., 1., y];
+    let matches = |bytes: &[u8], first: [f64; 6]| {
+        bytes.starts_with(&1u16.to_le_bytes())
+            && bytes.len() == 146
+            && bytes[2..]
+                .chunks_exact(8)
+                .zip([first, identity, identity].into_iter().flatten())
+                .all(|(actual, expected)| actual == expected.to_le_bytes())
+    };
+    // The writer also has an identity fallback. Admit replacement only where
+    // the source is one of these two known representations.
+    preserved(
+        matches(old_r, identity) || matches(old_r, translation),
+        BODY,
+    )?;
+    preserved(matches(new_r, translation), BODY)
 }
 
 fn check_ctrl_header(
@@ -147,6 +209,7 @@ fn check_ctrl_header(
     let old_attr = dword(old_h, 4)? as u32;
     let new_attr = dword(new_h, 4)? as u32;
     preserved((old_attr & ATTR_LOCKED) == 0, BODY)?;
+    preserved(((old_attr | new_attr) & ATTR_CAPTION) == 0, BODY)?;
     preserved(
         (old_attr & !MUTABLE_ATTR_MASK) == (new_attr & !MUTABLE_ATTR_MASK),
         BODY,
@@ -265,18 +328,8 @@ pub(super) fn prove_evolved_gso(
     let is_picture = ctrl_id == SC_PICTURE;
     let leaf_tag = expected_leaf_tag(ctrl_id).unwrap();
 
-    // Refuse captions, containers, unknown/opaque records, or nested SHAPE_COMPONENTs.
-    let no_extra_markers = |rs: &[Record<'_>]| {
-        rs[2..].iter().all(|r| {
-            r.0 != TAG_SHAPE_COMPONENT
-                && r.0 != 86 // SHAPE_COMPONENT_CONTAINER
-                && r.0 != 87 // CTRL_DATA
-                && matches!(r.0, 66..=85)
-                && !(r.0 == 70 && !r.2.is_empty())
-        })
-    };
-    preserved(no_extra_markers(old) && no_extra_markers(new), BODY)?;
-
+    // A caption LIST_HEADER precedes SHAPE_COMPONENT in HWP5. The candidate
+    // requires SHAPE_COMPONENT immediately after CTRL_HEADER, even if bit 29 is absent.
     let (old_w, old_h_dim, new_w, new_h_dim, size_changed) =
         check_ctrl_header(old[0].2, new[0].2, is_picture)?;
 
@@ -303,36 +356,37 @@ pub(super) fn prove_evolved_gso(
     let old_ch = dword(old_sc, attr_at + 24)?;
     let new_cw = dword(new_sc, attr_at + 20)?;
     let new_ch = dword(new_sc, attr_at + 24)?;
-    if new_w == old_w {
-        preserved(new_cw == old_cw, BODY)?;
-    } else {
-        valid((1..=MAX_DIM_HU).contains(&new_cw), BODY)?;
-    }
-    if new_h_dim == old_h_dim {
-        preserved(new_ch == old_ch, BODY)?;
-    } else {
-        valid((1..=MAX_DIM_HU).contains(&new_ch), BODY)?;
-    }
-
     let old_flip = dword(old_sc, attr_at + 28)? as u32;
     let new_flip = dword(new_sc, attr_at + 28)? as u32;
     let old_rot = i16::from_le_bytes(old_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
     let new_rot = i16::from_le_bytes(new_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
     if is_picture {
         preserved(old_flip == new_flip && old_rot == new_rot, BODY)?;
+        // RHWP uses a different proportional mapping for pre-rotated pictures.
+        // The product only offers picture resize on nonrotated inline pictures.
+        preserved(!size_changed || new_rot.rem_euclid(360) == 0, BODY)?;
     } else {
         preserved((old_flip & !0x03) == (new_flip & !0x03), BODY)?;
         preserved(new_rot == old_rot || (0..360).contains(&new_rot), BODY)?;
     }
 
+    // RHWP updates current_* only on a changed axis. Basic shapes, including
+    // rotated/flipped shapes, use the header size on that axis. The original
+    // dimensions stay fixed as the coordinate basis for the shape leaf.
+    for (old_dim, new_dim, old_current, new_current) in [
+        (old_w, new_w, old_cw, new_cw),
+        (old_h_dim, new_h_dim, old_ch, new_ch),
+    ] {
+        if old_dim == new_dim {
+            preserved(new_current == old_current, BODY)?;
+        } else {
+            valid(new_current == new_dim, BODY)?;
+        }
+    }
+
     let old_rc = &old_sc[attr_at + 34..attr_at + 42];
     let new_rc = &new_sc[attr_at + 34..attr_at + 42];
-    let new_rc_x = i32::from_le_bytes(new_rc[..4].try_into().unwrap());
-    let new_rc_y = i32::from_le_bytes(new_rc[4..8].try_into().unwrap());
-    preserved(
-        new_rc == old_rc || (new_rc_x == (new_w as i32) / 2 && new_rc_y == (new_h_dim as i32) / 2),
-        BODY,
-    )?;
+    preserved(new_rc == old_rc, BODY)?;
 
     let r_at = attr_at + 42;
     let old_cnt = word(old_sc, r_at)?;
@@ -357,15 +411,18 @@ pub(super) fn prove_evolved_gso(
     let new_r_end = r_at + new_r_len;
     valid(old_sc.len() >= old_r_end && new_sc.len() >= new_r_end, BODY)?;
 
-    let transform_changed = size_changed
-        || new_cw != old_cw
-        || new_ch != old_ch
-        || new_flip != old_flip
-        || new_rot != old_rot;
+    let picture_transform_changed = is_picture
+        && new_rot.rem_euclid(360) == 0
+        && (size_changed || old[0].2[8..16] != new[0].2[8..16]);
+    let component_offset = [
+        dword(new_sc, attr_at)? as i32,
+        dword(new_sc, attr_at + 4)? as i32,
+    ];
     validate_rendering_info(
         &old_sc[r_at..old_r_end],
         &new_sc[r_at..new_r_end],
-        transform_changed,
+        picture_transform_changed,
+        component_offset,
     )?;
 
     if is_picture {
@@ -447,7 +504,11 @@ pub(super) fn prove_evolved_gso(
             !old_mid.is_empty()
                 && old_mid == new_mid
                 && old_mid[0].0 == TAG_LIST_HEADER
-                && old_mid[0].1 == 3,
+                && old_mid[0].1 == 3
+                && old_mid.get(1).is_some_and(|r| r.0 == 66 && r.1 == 4)
+                && old_mid[1..].iter().all(|r| {
+                    matches!((r.0, r.1), (66, 4) | (67..=70, 5)) && (r.0 != 70 || r.2.is_empty())
+                }),
             BODY,
         )?;
     }
@@ -455,8 +516,12 @@ pub(super) fn prove_evolved_gso(
     if leaf_tag == TAG_RECTANGLE {
         valid(old_last.2.len() == 33 && new_last.2.len() == 33, BODY)?;
         preserved(old_last.2[0] == new_last.2[0], BODY)?; // round_rate
-        if old_last.2[1..] != new_last.2[1..] {
-            let (w, h) = (new_w as i32, new_h_dim as i32);
+        if size_changed || old_last.2[1..] != new_last.2[1..] {
+            let (w, h) = (
+                i32::try_from(new_w).map_err(|_| finding(FindingCode::OutputMalformed, BODY))?,
+                i32::try_from(new_h_dim)
+                    .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?,
+            );
             let mut expected = [0u8; 32];
             // HWP5 SHAPE_COMPONENT_RECTANGLE stores interleaved (x[i], y[i]) pairs for i=0..4.
             for (i, val) in [0i32, 0, w, 0, w, h, 0, h].into_iter().enumerate() {
@@ -473,7 +538,7 @@ pub(super) fn prove_evolved_gso(
 #[cfg(test)]
 mod tests {
     use super::super::super::preview::PreviewRaster;
-    use super::super::{compare_with, refresh_previews, Finding, FindingCode, Mode};
+    use super::super::{Finding, FindingCode, Mode, compare_with, refresh_previews};
     use std::io::{Cursor, Write};
 
     fn pack_records(rs: &[(u16, u16, &[u8])]) -> Vec<u8> {
@@ -615,8 +680,8 @@ mod tests {
         b.extend_from_slice(&cur_h.to_le_bytes());
         b.extend_from_slice(&flip.to_le_bytes());
         b.extend_from_slice(&rot.to_le_bytes());
-        b.extend_from_slice(&(cur_w as i32 / 2).to_le_bytes());
-        b.extend_from_slice(&(cur_h as i32 / 2).to_le_bytes());
+        b.extend_from_slice(&(orig_w as i32 / 2).to_le_bytes());
+        b.extend_from_slice(&(orig_h as i32 / 2).to_le_bytes());
         b.extend_from_slice(&1u16.to_le_bytes()); // cnt = 1
         for _ in 0..3 {
             for v in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
@@ -940,6 +1005,200 @@ mod tests {
         let s2_ref: Vec<_> = s2.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
         let o2 = build_hwp(&di_ref, &s2_ref, b"\x89PNG\r\n\x1a\n123");
         assert_eq!(check_with_preview_refresh(&o1, &o2), vec![]);
+    }
+
+    #[test]
+    fn picture_geometry_and_rendering_are_bound_in_t009() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let file = |records| {
+            let sec = wrap_section(vec![records]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+        let mut base = vec![
+            (
+                71,
+                1,
+                ctrl_header(101, 0x000a_0311, 0, 0, 4000, 3000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 4000, 3000], &[])),
+        ];
+        base[1].2[8..12].copy_from_slice(&125i32.to_le_bytes());
+        let original = file(base.clone());
+        let mut resized = base.clone();
+        resized[0].2[16..20].copy_from_slice(&5000u32.to_le_bytes());
+        resized[0].2[20..24].copy_from_slice(&4500u32.to_le_bytes());
+        resized[1].2[28..32].copy_from_slice(&5000u32.to_le_bytes());
+        resized[1].2[32..36].copy_from_slice(&4500u32.to_le_bytes());
+        resized[1].2[68..76].copy_from_slice(&125f64.to_le_bytes());
+        assert_eq!(
+            check_with_preview_refresh(&original, &file(resized.clone())),
+            vec![]
+        );
+
+        for (label, record, offset, bytes) in [
+            ("header width only", 0, 16, 6000u32.to_le_bytes().to_vec()),
+            (
+                "unrelated current width",
+                1,
+                28,
+                6000u32.to_le_bytes().to_vec(),
+            ),
+            (
+                "unrelated current height",
+                1,
+                32,
+                1u32.to_le_bytes().to_vec(),
+            ),
+            ("original width", 1, 20, 4001u32.to_le_bytes().to_vec()),
+            (
+                "overflowed header dimension",
+                0,
+                16,
+                u32::MAX.to_le_bytes().to_vec(),
+            ),
+            ("zero current dimension", 1, 28, 0u32.to_le_bytes().to_vec()),
+            ("rotation center", 1, 42, 2500i32.to_le_bytes().to_vec()),
+            ("translation", 1, 68, 126f64.to_le_bytes().to_vec()),
+            ("scale", 1, 100, 1.1f64.to_le_bytes().to_vec()),
+            (
+                "finite rotation entry",
+                1,
+                156,
+                0.5f64.to_le_bytes().to_vec(),
+            ),
+            ("matrix count", 1, 50, 2u16.to_le_bytes().to_vec()),
+            ("NaN", 1, 52, f64::NAN.to_le_bytes().to_vec()),
+            ("infinity", 1, 52, f64::INFINITY.to_le_bytes().to_vec()),
+        ] {
+            let mut edited = resized.clone();
+            edited[record].2[offset..offset + bytes.len()].copy_from_slice(&bytes);
+            assert!(
+                !check_with_preview_refresh(&original, &file(edited)).is_empty(),
+                "{label}"
+            );
+        }
+        let mut reordered = resized.clone();
+        reordered[1].2[52..148].rotate_left(48);
+        assert!(!check_with_preview_refresh(&original, &file(reordered)).is_empty());
+        let mut truncated = resized.clone();
+        truncated[1].2.pop();
+        assert!(!check_with_preview_refresh(&original, &file(truncated)).is_empty());
+        let mut appended = resized.clone();
+        appended[1].2.push(0);
+        assert!(!check_with_preview_refresh(&original, &file(appended)).is_empty());
+
+        // A bit-only caption marker must fail even without a LIST_HEADER subtree.
+        base[0].2[7] |= 0x20;
+        let captioned = file(base.clone());
+        assert_eq!(check(&captioned, &captioned), vec![]);
+        let mut introduced = resized.clone();
+        introduced[0].2[7] |= 0x20;
+        assert!(!check_with_preview_refresh(&original, &file(introduced)).is_empty());
+        assert!(!check_with_preview_refresh(&captioned, &file(resized.clone())).is_empty());
+        resized[0].2[7] |= 0x20;
+        assert!(!check_with_preview_refresh(&captioned, &file(resized)).is_empty());
+        base[0].2[12..16].copy_from_slice(&50i32.to_le_bytes());
+        assert!(!check_with_preview_refresh(&captioned, &file(base)).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: set GEUL_STAGE3_OUT and run stage3-object-edit.wasm.test.ts first"]
+    fn release_hwp_gso_bytes_pass_only_for_proven_edits() {
+        use std::io::Read;
+
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name: &str| std::fs::read(dir.join(format!("{name}.hwp"))).unwrap();
+        let original = read("gso-original");
+        let edited = read("gso-edited");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+
+        // Mutate exactly one field of the engine output, retaining its valid CFB,
+        // all other records, and the same source document and intended edit.
+        let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at, bytes: &[u8]| {
+            let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
+            let mut header = Vec::new();
+            cf.open_stream("FileHeader")
+                .unwrap()
+                .read_to_end(&mut header)
+                .unwrap();
+            let compressed = header[36] & 1 != 0;
+            let path = "BodyText/Section0";
+            let mut raw = Vec::new();
+            let stream = cf.open_stream(path).unwrap();
+            if compressed {
+                flate2::read::DeflateDecoder::new(stream)
+                    .read_to_end(&mut raw)
+                    .unwrap();
+            } else {
+                let mut stream = stream;
+                stream.read_to_end(&mut raw).unwrap();
+            }
+            let mut rows = super::super::records(&raw).unwrap();
+            let (_, _, payload) = rows
+                .iter_mut()
+                .find(|(tag, level, data)| pick(*tag, *level, data))
+                .unwrap();
+            let mut changed = payload.to_vec();
+            changed[at..at + bytes.len()].copy_from_slice(bytes);
+            *payload = &changed;
+            let raw = pack_records(&rows);
+            let raw = if compressed {
+                let mut encoder =
+                    flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+                encoder.write_all(&raw).unwrap();
+                encoder.finish().unwrap()
+            } else {
+                raw
+            };
+            cf.create_stream(path).unwrap().write_all(&raw).unwrap();
+            cf.into_inner().into_inner()
+        };
+        let picture =
+            |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cip$cip$");
+        for (at, bytes) in [
+            (28, 4999u32.to_le_bytes().to_vec()),
+            (68, 37f64.to_le_bytes().to_vec()),
+        ] {
+            let tampered = mutate(&edited, picture, at, &bytes);
+            let findings = check_with_preview_refresh(&original, &tampered);
+            assert!(
+                findings
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "{findings:?}"
+            );
+        }
+
+        let caption = read("gso-caption");
+        assert_eq!(
+            check_with_preview_refresh(&caption, &read("gso-caption-unrelated")),
+            vec![]
+        );
+        for name in ["gso-caption-moved", "gso-caption-resized"] {
+            assert!(
+                !check_with_preview_refresh(&caption, &read(name)).is_empty(),
+                "{name}"
+            );
+        }
+        for tag in [72, 67] {
+            let pick: fn(u16, u16, &[u8]) -> bool = if tag == 72 {
+                |tag, level, _| tag == 72 && level == 2
+            } else {
+                |tag, level, _| tag == 67 && level == 3
+            };
+            let tampered = mutate(&caption, pick, 4, &[0x7f]);
+            assert!(
+                !check_with_preview_refresh(&caption, &tampered).is_empty(),
+                "caption record {tag}"
+            );
+        }
     }
 
     #[test]
