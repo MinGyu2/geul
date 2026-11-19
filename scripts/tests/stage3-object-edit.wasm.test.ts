@@ -141,7 +141,7 @@ async function setup(format: "hwp" | "hwpx", approveHwp = false, withShape = fal
     pending.reply(ok(sessionInfo({ state: "ready", revision, dirty: true, loadGeneration: 1, sequence: 2 + revision })));
     await flush();
   };
-  return { editor, doc: doc!, bytes, pick, edit, confirm, ...control };
+  return { editor, doc: doc!, bytes, pick, edit, confirm, sessions, ...control };
 }
 
 const offsets = (doc: RhwpDocument, control: number) => {
@@ -544,6 +544,116 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(JSON.parse(controls.setControlLock(0, 2, true))).toMatchObject({ ok: true });
       expect(editor.typeText("잠금")).toBe(false);
       expect(text(doc)).toBe(caption + "한글");
+    } finally { editor.dispose(); }
+  });
+
+  it("refuses deleting, overwriting, or crossing the HWP caption automatic-number slot", async () => {
+    const fixture = new engine.HwpDocument(source("hwp"));
+    let original: Uint8Array;
+    try {
+      expect(JSON.parse(fixture.setPictureProperties(0, 0, 2, '{"hasCaption":true}'))).toMatchObject({ ok: true });
+      original = fixture.exportHwp();
+    } finally { fixture.free(); }
+    const { sessions, calls, editor, doc, confirm } = await setup("hwp", true, false, original);
+    const text = (d: RhwpDocument) =>
+      d.getTextInCell(0, 0, 2, 0, 0, 0, d.getCellParagraphLength(0, 0, 2, 0, 0));
+    const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string; list?: number; pos?: number }[])
+      .filter(c => c.ctrlId === "atno");
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      expect(text(doc)).toBe("그림  ");
+      expect(atnos(doc)).toHaveLength(1);
+      const slot = atnos(doc)[0]!.pos!;
+      expect(slot).toBe(2);
+
+      // Direct engine boundary: deleting/replacing across the AutoNumber placeholder throws without mutating.
+      expect(() => doc.deleteTextInCell(0, 0, 2, 0, 0, slot, 1)).toThrow();
+      expect(() => doc.deleteRangeInCell(0, 0, 2, 0, 0, 0, 0, 4)).toThrow();
+      expect(text(doc)).toBe("그림  ");
+
+      const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, 4));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell?.caption).toBe(true);
+      expect(editor.typeText("설명")).toBe(true);
+      await confirm(1);
+      expect(text(doc)).toBe("그림  설명");
+
+      // Normal caption text after and before the numbering slot remains editable.
+      expect(editor.backspace()).toBe(true);
+      await confirm(2);
+      expect(text(doc)).toBe("그림  설");
+      expect(editor.moveLineEdge("start", false)).toBe(true);
+      expect(editor.typeText("앞")).toBe(true);
+      await confirm(3);
+      expect(text(doc)).toBe("앞그림  설");
+      const curSlot = atnos(doc)[0]!.pos!;
+      expect(curSlot).toBe(3);
+
+      const snapshot = () => ({
+        text: text(doc),
+        controls: doc.getControls!(),
+        rev: sessions.get(1)?.revision,
+        pendingCommits: calls.filter(c => c.method === "commit").length,
+        undo: editor.canUndo,
+        redo: editor.canRedo,
+      });
+      const frozen = snapshot();
+
+      // Caret right after numbering slot (offset = curSlot + 1): Backspace refuses.
+      expect(editor.moveLineEdge("start", false)).toBe(true);
+      for (let i = 0; i <= curSlot; i++) expect(editor.moveHorizontal(1, false)).toBe(true);
+      expect(editor.caret.offset).toBe(curSlot + 1);
+      expect(editor.backspace()).toBe(false);
+      expect(snapshot()).toEqual(frozen);
+
+      // Caret right before numbering slot (offset = curSlot): Delete refuses.
+      expect(editor.moveHorizontal(-1, false)).toBe(true);
+      expect(editor.caret.offset).toBe(curSlot);
+      expect(editor.deleteForward()).toBe(false);
+      expect(snapshot()).toEqual(frozen);
+
+      // Selection strictly on [curSlot, curSlot + 1) and selections crossing the boundary refuse all edits & IME.
+      const checkSelectionRefused = () => {
+        expect(editor.backspace()).toBe(false);
+        expect(editor.deleteForward()).toBe(false);
+        expect(editor.typeText("덮기")).toBe(false);
+        editor.beginComposition();
+        expect(editor.endComposition("조합")).toBe("");
+        expect(snapshot()).toEqual(frozen);
+      };
+      expect(editor.moveHorizontal(1, true)).toBe(true);
+      checkSelectionRefused();
+
+      expect(editor.moveHorizontal(-1, false)).toBe(true);
+      expect(editor.moveHorizontal(-1, false)).toBe(true);
+      expect(editor.moveHorizontal(1, true)).toBe(true);
+      expect(editor.moveHorizontal(1, true)).toBe(true);
+      checkSelectionRefused();
+
+      expect(editor.moveLineEdge("start", false)).toBe(true);
+      expect(editor.moveLineEdge("end", true)).toBe(true);
+      checkSelectionRefused();
+
+      // Valid edits still support Undo/Redo and safe save/reopen with numbering control intact.
+      expect(editor.undo()).toBe(true);
+      await confirm(4);
+      expect(text(doc)).toBe("그림  설");
+      expect(editor.redo()).toBe(true);
+      await confirm(5);
+      expect(text(doc)).toBe("앞그림  설");
+
+      const exported = doc.exportHwpWithReport!();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(text(reopened)).toBe("앞그림  설");
+          expect(atnos(reopened)).toEqual(atnos(doc));
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
     } finally { editor.dispose(); }
   });
 

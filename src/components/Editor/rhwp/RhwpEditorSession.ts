@@ -1602,7 +1602,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // A control index may name a different box after any model edit.
       // A caret move alone leaves the captured owner and offset valid.
       if (version !== this.modelVersion || this.provisional || !this.ownsPosition(at)
-        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text) || (at.cell.caption && text.includes("\t"))) return false;
+        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text) || (at.cell.caption && (text.includes("\t") || !this.text?.canInsertText(at)))) return false;
       try {
         if (!this.text || !Number.isSafeInteger(at.offset) || at.offset < 0
           || !(at.offset <= this.text.paragraphLength(at))) return false;

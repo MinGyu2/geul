@@ -43,7 +43,7 @@ index 9d15d48..ced10da 100644
              // 텍스트가 있으면 reflow_line_segs로 재계산.
              //
 diff --git a/src/document_core/commands/object_ops/picture.rs b/src/document_core/commands/object_ops/picture.rs
-index 6f2cf59..61b3bd0 100644
+index 6f2cf59..641fe19 100644
 --- a/src/document_core/commands/object_ops/picture.rs
 +++ b/src/document_core/commands/object_ops/picture.rs
 @@ -293,6 +293,164 @@ impl DocumentCore {
@@ -942,7 +942,7 @@ index 6bc6861..a0c8f4e 100644
          if caption_changed {
              crate::parser::assign_auto_numbers(&mut self.document);
 diff --git a/src/document_core/commands/text_editing.rs b/src/document_core/commands/text_editing.rs
-index 9f6f809..1ca940a 100644
+index 9f6f809..769dc69 100644
 --- a/src/document_core/commands/text_editing.rs
 +++ b/src/document_core/commands/text_editing.rs
 @@ -673,6 +673,7 @@ impl DocumentCore {
@@ -997,7 +997,137 @@ index 9f6f809..1ca940a 100644
  
          self.event_log.push(DocumentEvent::TextDeleted {
              section: section_idx,
-@@ -3463,9 +3474,11 @@ impl DocumentCore {
+@@ -1839,6 +1850,65 @@ impl DocumentCore {
+         )
+     }
+ 
++    fn ensure_range_preserves_autonumber(
++        para: &crate::model::paragraph::Paragraph,
++        start: usize,
++        end: usize,
++    ) -> Result<(), HwpError> {
++        if start >= end {
++            return Ok(());
++        }
++        let positions = para.control_text_positions();
++        let chars: Vec<char> = para.text.chars().collect();
++        let overlaps = para.controls.iter().enumerate().any(|(ci, ctrl)| {
++            matches!(ctrl, crate::model::control::Control::AutoNumber(_))
++                && positions.get(ci).copied().is_some_and(|pos| {
++                    pos >= start && pos < end && chars.get(pos).copied() == Some(' ')
++                })
++        });
++        if overlaps {
++            return Err(HwpError::RenderError(
++                "자동 번호 컨트롤 슬롯은 삭제하거나 덮어쓸 수 없습니다".to_string(),
++            ));
++        }
++        Ok(())
++    }
++
++    fn ensure_paragraphs_preserve_autonumber(
++        paras: &[crate::model::paragraph::Paragraph],
++        start_para: usize,
++        start_offset: usize,
++        end_para: usize,
++        end_offset: usize,
++    ) -> Result<(), HwpError> {
++        if start_para == end_para {
++            if let Some(p) = paras.get(start_para) {
++                Self::ensure_range_preserves_autonumber(p, start_offset, end_offset)?;
++            }
++            return Ok(());
++        }
++        if let Some(p) = paras.get(end_para) {
++            Self::ensure_range_preserves_autonumber(p, 0, end_offset)?;
++        }
++        for mid in start_para + 1..end_para {
++            if let Some(p) = paras.get(mid) {
++                if p.controls
++                    .iter()
++                    .any(|c| matches!(c, crate::model::control::Control::AutoNumber(_)))
++                {
++                    return Err(HwpError::RenderError(
++                        "자동 번호 컨트롤이 포함된 문단은 삭제할 수 없습니다".to_string(),
++                    ));
++                }
++            }
++        }
++        if let Some(p) = paras.get(start_para) {
++            let len = p.text.chars().count();
++            Self::ensure_range_preserves_autonumber(p, start_offset, len)?;
++        }
++        Ok(())
++    }
++
+     pub(crate) fn replace_text_in_cell_native_impl(
+         &mut self,
+         section_idx: usize,
+@@ -1889,6 +1959,13 @@ impl DocumentCore {
+             cell_idx,
+             cell_para_idx,
+         )?;
++        if delete_count > 0 {
++            Self::ensure_range_preserves_autonumber(
++                cell_para,
++                char_offset,
++                char_offset.saturating_add(delete_count),
++            )?;
++        }
+         let old_text_len = cell_para.text.chars().count();
+         let flow_advance_before = relative_paragraph_flow_advance(cell_para);
+         let local_contribution_before =
+@@ -2250,6 +2327,11 @@ impl DocumentCore {
+             cell_idx,
+             cell_para_idx,
+         )?;
++        Self::ensure_range_preserves_autonumber(
++            cell_para,
++            char_offset,
++            char_offset.saturating_add(count),
++        )?;
+         let old_text_len = cell_para.text.chars().count();
+         let flow_advance_before = relative_paragraph_flow_advance(cell_para);
+         let local_contribution_before =
+@@ -3308,6 +3390,37 @@ impl DocumentCore {
+             }
+         }
+ 
++        if let Some((ppi, ci, cei)) = cell_ctx {
++            if start_para == end_para {
++                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, start_para) {
++                    Self::ensure_range_preserves_autonumber(p, start_offset, end_offset)?;
++                }
++            } else {
++                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, end_para) {
++                    Self::ensure_range_preserves_autonumber(p, 0, end_offset)?;
++                }
++                if let Ok(cell) = self.get_cell_mut(section_idx, ppi, ci, cei) {
++                    for mid in start_para + 1..end_para {
++                        if let Some(p) = cell.paragraphs.get(mid) {
++                            if p.controls
++                                .iter()
++                                .any(|c| matches!(c, crate::model::control::Control::AutoNumber(_)))
++                            {
++                                return Err(HwpError::RenderError(
++                                    "자동 번호 컨트롤이 포함된 문단은 삭제할 수 없습니다"
++                                        .to_string(),
++                                ));
++                            }
++                        }
++                    }
++                }
++                if let Some(p) = self.get_cell_paragraph_ref(section_idx, ppi, ci, cei, start_para) {
++                    let len = p.text.chars().count();
++                    Self::ensure_range_preserves_autonumber(p, start_offset, len)?;
++                }
++            }
++        }
++
+         // Section raw 스트림 무효화 (재직렬화 유도)
+         self.document.sections[section_idx].raw_stream = None;
+         // DocInfo raw_stream은 유지 (전체 재직렬화 시 FIX-4 문제 발생)
+@@ -3463,9 +3576,11 @@ impl DocumentCore {
              // 재페이지네이션
              self.paginate_if_needed();
  
@@ -1012,6 +1142,32 @@ index 9f6f809..1ca940a 100644
  
              self.event_log.push(DocumentEvent::TextDeleted {
                  section: section_idx,
+@@ -5908,6 +6023,11 @@ impl DocumentCore {
+         }
+ 
+         let cell_para = self.get_cell_paragraph_mut_by_path(section_idx, parent_para_idx, path)?;
++        Self::ensure_range_preserves_autonumber(
++            cell_para,
++            char_offset,
++            char_offset.saturating_add(count),
++        )?;
+         cell_para.delete_text_at(char_offset, count);
+ 
+         // [#2755] 깊이 ≥ 2 중첩 셀도 flat `delete_text_in_cell_native` 처럼 최내곽 셀 폭으로
+@@ -5958,6 +6078,13 @@ impl DocumentCore {
+     ) -> Result<String, HwpError> {
+         {
+             let paras = self.get_cell_paragraphs_mut_by_path(section_idx, parent_para_idx, path)?;
++            Self::ensure_paragraphs_preserve_autonumber(
++                paras,
++                start_para,
++                start_offset,
++                end_para,
++                end_offset,
++            )?;
+             if start_para == end_para {
+                 let count = end_offset.saturating_sub(start_offset);
+                 if count > 0 {
 diff --git a/src/document_core/mod.rs b/src/document_core/mod.rs
 index c7f2d2c..4d57daf 100644
 --- a/src/document_core/mod.rs
@@ -1034,6 +1190,71 @@ index c7f2d2c..4d57daf 100644
              overflow_links_cache: RefCell::new(HashMap::new()),
              snapshot_store: Vec::new(),
              next_snapshot_id: 0,
+diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
+index 64ae8c3..7af9c24 100644
+--- a/src/document_core/queries/field_query.rs
++++ b/src/document_core/queries/field_query.rs
+@@ -792,6 +792,9 @@ impl DocumentCore {
+                     .into_iter()
+                     .find(|(node, _)| node == cell_index)
+                     .and_then(|(_, paragraphs)| paragraphs.get(*para_index))?,
++                Control::Picture(pic) if *cell_index == 0 => {
++                    pic.caption.as_ref()?.paragraphs.get(*para_index)?
++                }
+                 _ => return None,
+             };
+         }
+@@ -1752,6 +1755,30 @@ fn collect_fields_from_paragraph(
+                     }
+                 }
+             }
++            Control::Picture(pic) => {
++                if let Some(caption) = &pic.caption {
++                    let cap_list_id = walk.alloc();
++                    walk.lists.push(ListEntry {
++                        list_id: cap_list_id,
++                        is_cell: false,
++                        host_list_id: list_id,
++                        section_index: base_location.section_index,
++                        host_para_index: para_in_list,
++                        control_index: ci,
++                        cell_index: 0,
++                        para_count: caption.paragraphs.len(),
++                        grid: None,
++                    });
++                    for (pi, cap_para) in caption.paragraphs.iter().enumerate() {
++                        let mut loc = base_location.clone();
++                        loc.nested_path.push(NestedEntry::TextBox {
++                            control_index: ci,
++                            para_index: pi,
++                        });
++                        collect_fields_from_paragraph(cap_para, &loc, cap_list_id, walk, result);
++                    }
++                }
++            }
+             _ => {}
+         }
+     }
+diff --git a/src/document_core/queries/hwpctrl_sets.rs b/src/document_core/queries/hwpctrl_sets.rs
+index ce65f57..a3b01a1 100644
+--- a/src/document_core/queries/hwpctrl_sets.rs
++++ b/src/document_core/queries/hwpctrl_sets.rs
+@@ -248,6 +248,15 @@ fn collect_controls(
+                     }
+                 }
+             }
++            Control::Picture(pic) => {
++                if let Some(caption) = &pic.caption {
++                    if let Some(child) = child_of(0) {
++                        for (pi, cap_para) in caption.paragraphs.iter().enumerate() {
++                            collect_controls(cap_para, (child, pi), lists, items);
++                        }
++                    }
++                }
++            }
+             _ => {}
+         }
+     }
 diff --git a/src/model/document.rs b/src/model/document.rs
 index 4f586b4..de75021 100644
 --- a/src/model/document.rs

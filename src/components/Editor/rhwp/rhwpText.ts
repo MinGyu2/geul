@@ -416,8 +416,46 @@ export class RhwpText {
       const props = json(doc.getPictureProperties(...address));
       return isRecord(props) && props.hasCaption === true && !("externalPath" in props)
         && doc.getCellParagraphCount(...address, 0) === 1
-        && at.offset <= doc.getCellParagraphLength(...address, 0, 0);
+        && at.offset <= doc.getCellParagraphLength(...address, 0, 0)
+        && this.captionControlSlots(at) !== null;
     } catch { return false; }
+  }
+
+  /** Owned single-paragraph picture-caption automatic-number placeholder indices, or null when unprovable/unsupported. */
+  private captionControlSlots(at: DocPosition): number[] | null {
+    const c = at.cell, doc = this.doc;
+    if (at.section !== 0 || !c || c.nested || c.textBox || c.cell !== 0 || c.cellParagraph !== 0
+      || !doc.getControls || !doc.getCursorModel) return null;
+    try {
+      const rawControls = doc.getControls(), rawLists = doc.getCursorModel();
+      if (rawControls.length + rawLists.length > 8 * 1024 * 1024) return null;
+      const controls = json(rawControls), model = json(rawLists);
+      if (!Array.isArray(controls) || !controls.every(isRecord) || !isRecord(model) || !Array.isArray(model.lists)) return null;
+      const owners = model.lists.filter(list => isRecord(list) && list.isCell === false && list.hostListId === 0
+        && list.sectionIndex === at.section && list.hostPara === c.parentParagraph && list.controlIndex === c.control);
+      if (owners.length !== 1) return null;
+      const list = owners[0]!;
+      if (!isIndex(list.listId) || list.listId < 2 || list.paraCount !== 1
+        || model.lists.some(child => isRecord(child) && child.hostListId === list.listId)) return null;
+      const paraLen = doc.getCellParagraphLength(at.section, c.parentParagraph, c.control, 0, 0);
+      if (!isIndex(paraLen)) return null;
+      const captionText = doc.getTextInCell(at.section, c.parentParagraph, c.control, 0, 0, 0, paraLen);
+      if (typeof captionText !== "string") return null;
+      const chars = Array.from(captionText);
+      const inPara = controls.filter(ctrl => ctrl.list === list.listId)
+        .sort((a, b) => Number(a.controlIndex) - Number(b.controlIndex));
+      const slots: number[] = [];
+      let atnoCount = 0;
+      for (const ctrl of inPara) {
+        if (ctrl.para !== 0 || ctrl.ctrlId !== "atno" || ctrl.ctrlCh !== 18
+          || !isIndex(ctrl.controlIndex) || !isIndex(ctrl.pos)) return null;
+        const slot = (ctrl.pos as number) - (ctrl.controlIndex as number) * 8 + atnoCount;
+        if (slot < 0 || slot >= chars.length || chars[slot] !== " ") return null;
+        slots.push(slot);
+        atnoCount += 1;
+      }
+      return slots.length <= 1 ? slots : null;
+    } catch { return null; }
   }
 
   paragraphCount(at: DocPosition): number {
@@ -454,6 +492,10 @@ export class RhwpText {
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
     if (!sameContext(from, to) || compare(from, to) > 0
       || ((from.cell?.textBox || from.cell?.caption) && paragraphOf(from) !== paragraphOf(to))) return false;
+    if (from.cell?.caption) {
+      const slots = this.captionControlSlots(from);
+      if (!slots || slots.some(slot => from.offset < slot + 1 && to.offset > slot)) return false;
+    }
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
         const at = withParagraph(from, p, p === paragraphOf(from) ? from.offset : 0);
@@ -647,6 +689,7 @@ export class RhwpText {
 
   canInsertText(at: DocPosition): boolean {
     if (!at.cell) return true;
+    if (at.cell.caption && !this.captionControlSlots(at)) return false;
     try { return !this.formulaInventory(at).some(f => f.fieldType === "formula" && isIndex(f.startCharIdx)
       && isIndex(f.endCharIdx) && f.startCharIdx < at.offset && at.offset < f.endCharIdx); }
     catch { return false; }
