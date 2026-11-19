@@ -35,13 +35,18 @@ describe("RHWP picture property inspection", () => {
 
   it("admits only plain unprotected inline pictures for size editing", () => {
     const raw = {
-      width: 4050, height: 2025, treatAsChar: true, sizeProtect: false, hasCaption: false,
+      width: 4050, height: 2025, originalWidth: 4050, originalHeight: 2025,
+      treatAsChar: true, sizeProtect: false, hasCaption: false,
       horzFlip: false, vertFlip: false, rotationAngle: 0, horzOffset: 0, vertOffset: 0,
       cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0,
     };
     const read = (values: Record<string, unknown>) =>
       inspectRhwpPicture({ getPictureProperties: () => JSON.stringify(values) }, [0, 0, 2])?.simpleInline;
     expect(read(raw)).toBe(true);
+    expect(read({ ...raw, rotationAngle: 30 })).toBe(true);
+    expect(read({ ...raw, rotationAngle: 30, originalWidth: 0 })).toBe(false);
+    expect(read({ ...raw, rotationAngle: 400 })).toBe(false);
+    expect(read({ ...raw, horzFlip: true, rotationAngle: 30 })).toBe(false);
     expect(read({ ...raw, sizeProtect: true })).toBe(false);
     expect(read({ ...raw, cropRight: 1 })).toBe(false);
     expect(read({ ...raw, externalPath: "picture.png" })).toBe(false);

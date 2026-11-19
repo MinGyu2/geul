@@ -1505,3 +1505,315 @@ index 6547c86..dcb7472 100644
          };
          if caption_changed {
              crate::parser::assign_auto_numbers(&mut self.document);
+diff --git a/src/model/image.rs b/src/model/image.rs
+index 7ea89f0..e40d3b9 100644
+--- a/src/model/image.rs
++++ b/src/model/image.rs
+@@ -10,6 +10,15 @@ pub(crate) fn external_picture_basename(path: &str) -> &str {
+     path.rsplit(['/', '\\']).next().unwrap_or("")
+ }
+ 
++/// 최초 HWP5 리사이즈 이전 기준 크기 스냅샷 (세션 내 회전 그림 다단계 리사이즈 오차 방지용).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct SourceHwpPictureSize {
++    pub common_width: u32,
++    pub common_height: u32,
++    pub current_width: u32,
++    pub current_height: u32,
++}
++
+ /// 그림 개체 (HWPTAG_SHAPE_COMPONENT_PICTURE)
+ #[derive(Debug, Default, Clone, serde::Serialize)]
+ pub struct Picture {
+@@ -60,6 +69,9 @@ pub struct Picture {
+     /// HWPX `<hp:pic lock="...">` 값 — 개체 잠금(보호) 여부. 파서가 읽지 않고
+     /// 직렬화기가 항상 "0"을 방출해 lock="1"로 저장된 그림이 왕복 시 잠금 해제됐다.
+     pub lock: bool,
++    /// 세션 내 최초 HWP5 회전 리사이즈 기준 크기 (직렬화 제외).
++    #[serde(skip_serializing)]
++    pub source_hwp_size: Option<SourceHwpPictureSize>,
+ }
+ 
+ impl Picture {
+diff --git a/src/document_core/commands/object_ops/picture.rs b/src/document_core/commands/object_ops/picture.rs
+index 08aa2d3..82b0fda 100644
+--- a/src/document_core/commands/object_ops/picture.rs
++++ b/src/document_core/commands/object_ops/picture.rs
+@@ -293,6 +293,150 @@ impl DocumentCore {
+         // 세우는 것도 지우는 것도 근거가 없으므로 파싱된 값을 보존한다. HWP5 저장에는
+         // `flip` 만 나가고 `rotate_image` 는 HWPX `rotateimage` 의 원천이다.
+     }
++    const MAX_HWP_PIC_DIM_HU: u32 = 2_000_000;
++
++    fn parse_rendering_matrix(bytes: &[u8]) -> Option<[f64; 6]> {
++        if bytes.len() != 48 {
++            return None;
++        }
++        let mut m = [0.0f64; 6];
++        for (i, slot) in m.iter_mut().enumerate() {
++            let v = f64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().ok()?);
++            if !v.is_finite() {
++                return None;
++            }
++            *slot = v;
++        }
++        Some(m)
++    }
++
++    fn validate_source_rotated_rendering(raw: &[u8], rotation_angle: i16) -> bool {
++        if raw.len() != 146 || u16::from_le_bytes([raw[0], raw[1]]) != 1 {
++            return false;
++        }
++        let Some(m1) = Self::parse_rendering_matrix(&raw[2..50]) else {
++            return false;
++        };
++        let Some(m2) = Self::parse_rendering_matrix(&raw[50..98]) else {
++            return false;
++        };
++        let Some(m3) = Self::parse_rendering_matrix(&raw[98..146]) else {
++            return false;
++        };
++        if m1[0] != 1.0 || m1[1] != 0.0 || m1[3] != 0.0 || m1[4] != 1.0 {
++            return false;
++        }
++        if m2[0] <= 0.0 || m2[4] <= 0.0 || m2[1] != 0.0 || m2[2] != 0.0 || m2[3] != 0.0 || m2[5] != 0.0 {
++            return false;
++        }
++        let theta = (rotation_angle as f64).to_radians();
++        let cos = theta.cos();
++        let sin = theta.sin();
++        (m3[0] - cos).abs() <= 1e-6
++            && (m3[1] + sin).abs() <= 1e-6
++            && (m3[3] - sin).abs() <= 1e-6
++            && (m3[4] - cos).abs() <= 1e-6
++    }
++
++    fn scale_rotated_picture_axis(source_common: u32, source_current: u32, target: u32) -> Option<u32> {
++        if source_common == 0 || source_current == 0 || target == 0 || target > Self::MAX_HWP_PIC_DIM_HU {
++            return None;
++        }
++        if target == source_common {
++            return Some(source_current);
++        }
++        let scaled = ((source_current as f64 * target as f64 / source_common as f64).round()).max(1.0);
++        if !scaled.is_finite() || scaled > Self::MAX_HWP_PIC_DIM_HU as f64 {
++            return None;
++        }
++        Some(scaled as u32)
++    }
++
++    fn plan_rotated_picture_resize(
++        pic: &crate::model::image::Picture,
++        req_w: Option<u32>,
++        req_h: Option<u32>,
++        preserve_hwp_geometry: bool,
++    ) -> Result<Option<(u32, u32, u32, u32, Option<crate::model::image::SourceHwpPictureSize>)>, HwpError> {
++        let target_w = req_w.unwrap_or(pic.common.width);
++        let target_h = req_h.unwrap_or(pic.common.height);
++        if pic.shape_attr.rotation_angle.rem_euclid(360) == 0
++            || (target_w == pic.common.width && target_h == pic.common.height)
++        {
++            return Ok(None);
++        }
++        if target_w == 0
++            || target_h == 0
++            || target_w > Self::MAX_HWP_PIC_DIM_HU
++            || target_h > Self::MAX_HWP_PIC_DIM_HU
++        {
++            return Err(HwpError::RenderError(
++                "회전 그림의 목표 크기가 허용 범위를 벗어났습니다".into(),
++            ));
++        }
++        let sa = &pic.shape_attr;
++        if sa.original_width == 0
++            || sa.original_height == 0
++            || sa.current_width == 0
++            || sa.current_height == 0
++            || pic.common.width == 0
++            || pic.common.height == 0
++        {
++            return Err(HwpError::RenderError(
++                "회전 그림의 원본 또는 현재 크기가 비어 있어 크기를 변경할 수 없습니다".into(),
++            ));
++        }
++        if preserve_hwp_geometry && sa.group_level != 0 {
++            return Err(HwpError::RenderError(
++                "그룹에 속한 회전 그림의 행렬 재생성은 지원하지 않습니다".into(),
++            ));
++        }
++        if ![sa.render_tx, sa.render_ty, sa.render_sx, sa.render_sy, sa.render_b, sa.render_c]
++            .iter()
++            .all(|v| v.is_finite())
++        {
++            return Err(HwpError::RenderError(
++                "회전 그림의 변환 행렬에 유한하지 않은 값이 있습니다".into(),
++            ));
++        }
++        if preserve_hwp_geometry
++            && !sa.raw_rendering.is_empty()
++            && !Self::validate_source_rotated_rendering(&sa.raw_rendering, sa.rotation_angle)
++        {
++            return Err(HwpError::RenderError(
++                "원본 회전 그림의 렌더링 행렬 형식을 안전하게 검증할 수 없습니다".into(),
++            ));
++        }
++        let source = pic.source_hwp_size.unwrap_or(crate::model::image::SourceHwpPictureSize {
++            common_width: pic.common.width,
++            common_height: pic.common.height,
++            current_width: sa.current_width,
++            current_height: sa.current_height,
++        });
++        let new_cw = Self::scale_rotated_picture_axis(source.common_width, source.current_width, target_w)
++            .ok_or_else(|| HwpError::RenderError("회전 그림 가로 행렬 스케일 계산에 실패했습니다".into()))?;
++        let new_ch = Self::scale_rotated_picture_axis(source.common_height, source.current_height, target_h)
++            .ok_or_else(|| HwpError::RenderError("회전 그림 세로 행렬 스케일 계산에 실패했습니다".into()))?;
++        if !(new_cw as f64 / sa.original_width as f64).is_finite()
++            || !(new_ch as f64 / sa.original_height as f64).is_finite()
++        {
++            return Err(HwpError::RenderError(
++                "회전 그림 스케일 행렬이 유한하지 않습니다".into(),
++            ));
++        }
++        Ok(Some((
++            target_w,
++            target_h,
++            new_cw,
++            new_ch,
++            if pic.source_hwp_size.is_none() {
++                Some(source)
++            } else {
++                None
++            },
++        )))
++    }
++
+     fn apply_picture_display_width(pic: &mut crate::model::image::Picture, width: u32) {
+         let old_common_width = pic.common.width;
+         let old_current_width = pic.shape_attr.current_width;
+@@ -514,6 +658,7 @@ impl DocumentCore {
+         // [Issue #6204] 개체의 **배제 밴드 기하**를 변경 전에 찍어 둔다. 위치·크기가
+         // 바뀌면 그 개체가 만드는 어울림 배제 밴드도 바뀌므로, 그 밴드에 되감긴 본문
+         // 문단의 저장 `LINE_SEG` 는 더는 유효하지 않다.
++        let preserve_hwp_geometry = matches!(self.source_format, crate::parser::FileFormat::Hwp);
+         let band_geometry_before = self
+             .resolve_picture_control_ref(section_idx, parent_para_idx, control_idx)
+             .ok()
+@@ -530,7 +675,8 @@ impl DocumentCore {
+             // [Task #1151 v2] tac false→true migration 검출용 snapshot.
+             let was_tac = pic.common.treat_as_char;
+             let had_caption = pic.caption.is_some();
+-            let caption_created = Self::apply_picture_props_inner(pic, props_json);
++            let caption_created =
++                Self::apply_picture_props_inner(pic, props_json, preserve_hwp_geometry)?;
+             let now_tac = pic.common.treat_as_char;
+             // tac 토글이 enum 에만 반영되고 packed attr 이 낡으면 직렬화가 옛 앵커를
+             // 되살린다 — 여기서 즉시 동기화 (migrate 경로는 rel_to 갱신 후 재동기화).
+@@ -700,6 +846,7 @@ impl DocumentCore {
+         inner_control_idx: usize,
+         props_json: &str,
+     ) -> Result<String, HwpError> {
++        let preserve_hwp_geometry = matches!(self.source_format, crate::parser::FileFormat::Hwp);
+         let caption_created;
+         {
+             let section = self.document.sections.get_mut(section_idx).ok_or_else(|| {
+@@ -751,7 +898,8 @@ impl DocumentCore {
+             // 한다. 머리말/꼬리말 경로는 이 마이그레이션이 누락되어 있었음 — tac on 시
+             // 그림 높이가 줄 높이에 반영되지 않아 렌더 시 그림이 겹치거나 잘림.
+             let was_tac = pic.common.treat_as_char;
+-            caption_created = Self::apply_picture_props_inner(pic, props_json);
++            caption_created =
++                Self::apply_picture_props_inner(pic, props_json, preserve_hwp_geometry)?;
+             let now_tac = pic.common.treat_as_char;
+             // 본문 setter 와 같은 이유로 여기서도 packed attr 을 동기화한다 —
+             // 머리말/꼬리말 경로도 같은 tac 토글 마이그레이션을 수행한다 (Issue #3781).
+@@ -981,23 +1129,43 @@ impl DocumentCore {
+     pub(crate) fn apply_picture_props_inner(
+         pic: &mut crate::model::image::Picture,
+         props_json: &str,
+-    ) -> bool {
++        preserve_hwp_geometry: bool,
++    ) -> Result<bool, HwpError> {
+         use crate::document_core::helpers::{json_bool, json_i16, json_i32, json_str, json_u32};
+ 
++        let req_w = json_u32(props_json, "width");
++        let req_h = json_u32(props_json, "height");
++        let req_rot = json_i16(props_json, "rotationAngle");
++        let rotated_resize_plan = if req_rot.is_none_or(|r| r == pic.shape_attr.rotation_angle) {
++            Self::plan_rotated_picture_resize(pic, req_w, req_h, preserve_hwp_geometry)?
++        } else {
++            None
++        };
++
+         let transform_before = Self::picture_transform_fingerprint(pic);
+         let mut rotation_changed = false;
+ 
+         // 크기 변경 — [#6806] 키가 있어도 값이 같으면 건드리지 않는다. 종전에는 게터가 낸
+         // 봉지를 그대로 되먹여도 `current_*` 가 `common.*` 로 덮여(파싱값이 1 어긋난 문서가
+         // corpus 에 69건) 지문이 흔들리고 한컴 원본 렌더링 행렬이 지워졌다.
+-        if let Some(w) = json_u32(props_json, "width") {
+-            if w != pic.common.width {
+-                Self::apply_picture_display_width(pic, w);
++        if let Some((target_w, target_h, new_cw, new_ch, captured_source)) = rotated_resize_plan {
++            pic.common.width = target_w;
++            pic.common.height = target_h;
++            pic.shape_attr.current_width = new_cw;
++            pic.shape_attr.current_height = new_ch;
++            if let Some(src) = captured_source {
++                pic.source_hwp_size = Some(src);
+             }
+-        }
+-        if let Some(h) = json_u32(props_json, "height") {
+-            if h != pic.common.height {
+-                Self::apply_picture_display_height(pic, h);
++        } else {
++            if let Some(w) = req_w {
++                if w != pic.common.width {
++                    Self::apply_picture_display_width(pic, w);
++                }
++            }
++            if let Some(h) = req_h {
++                if h != pic.common.height {
++                    Self::apply_picture_display_height(pic, h);
++                }
+             }
+         }
+ 
+@@ -1141,6 +1309,7 @@ impl DocumentCore {
+             }
+         }
+         if rotation_changed {
++            pic.source_hwp_size = None;
+             Self::refresh_picture_rotation_layout_for_save(pic);
+         }
+ 
+@@ -1284,7 +1453,7 @@ impl DocumentCore {
+             }
+         }
+ 
+-        caption_created
++        Ok(caption_created)
+     }
+     /// 그림 컨트롤을 문단에서 삭제한다 (네이티브).
+     pub fn delete_picture_control_native(
+diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/commands/object_ops/table.rs
+index dcb7472..990c7e2 100644
+--- a/src/document_core/commands/object_ops/table.rs
++++ b/src/document_core/commands/object_ops/table.rs
+@@ -1484,6 +1484,7 @@ impl DocumentCore {
+             restrict_enabled_by_this_call || json_i32(props_json, "horzOffset").is_some();
+         let clamp_vert =
+             restrict_enabled_by_this_call || json_i32(props_json, "vertOffset").is_some();
++        let preserve_hwp_geometry = matches!(self.source_format, crate::parser::FileFormat::Hwp);
+         let caption_changed = {
+             let section = self.document.sections.get_mut(section_idx).ok_or_else(|| {
+                 HwpError::RenderError(format!("구역 인덱스 {} 범위 초과", section_idx))
+@@ -1504,7 +1505,8 @@ impl DocumentCore {
+                 }
+             };
+             let had_caption = pic.caption.is_some();
+-            let caption_created = Self::apply_picture_props_inner(pic, props_json);
++            let caption_created =
++                Self::apply_picture_props_inner(pic, props_json, preserve_hwp_geometry)?;
+             caption_created || (had_caption && pic.caption.is_none())
+         };
+         if caption_changed {

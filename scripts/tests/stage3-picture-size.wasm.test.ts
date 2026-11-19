@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
@@ -139,6 +139,82 @@ describe("Stage 3 HWPX picture size on the Release engine", () => {
           expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6100, height: 3050 });
         } finally { reopened.free(); }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("resizes a rotated HWP picture with matrix regeneration, undo/redo and reopen equality", async () => {
+    const srcDoc = engine.HwpDocument.createEmpty();
+    let rotatedBytes: Uint8Array;
+    try {
+      srcDoc.createBlankDocument();
+      srcDoc.insertText(0, 0, 0, "seed ");
+      const ins = JSON.parse(srcDoc.insertPicture(0, 0, 5, "[]", png, 4050, 2025, 54, 27, "png", ""));
+      expect(ins.ok).toBe(true);
+      expect(JSON.parse(srcDoc.setPictureProperties(0, ins.paraIdx, ins.controlIdx, JSON.stringify({ treatAsChar: true, rotationAngle: 30 }))).ok).toBe(true);
+      rotatedBytes = srcDoc.exportHwp();
+    } finally { srcDoc.free(); }
+
+    const control = controlledBackend();
+    const sessions = new DocumentSessions(control.backend);
+    const open = sessions.open("/rotated.hwp");
+    const sessionInfo = (patch: Parameters<typeof info>[0]) => info({ ...patch, format: "hwp" });
+    control.take("open").reply(ok(sessionInfo({ displayName: "rotated.hwp" })));
+    await open;
+    let doc: RhwpDocument | undefined;
+    const editor = new RhwpEditorSession(1, control.backend, sessions,
+      async () => ({ openDocument: (b: Uint8Array) => { const d = new engine.HwpDocument(b) as RhwpDocument; doc ??= d; return d; }, memoryBytes: () => FIXED_MEMORY_BYTES }),
+      { natural: null });
+    try {
+      const loading = editor.load();
+      control.take("load").reply(loaded(rotatedBytes));
+      await flush();
+      control.take("session").reply(ok(sessionInfo({ state: "loading", sequence: 1, loadGeneration: 1 })));
+      control.take("setState").reply(ok(sessionInfo({ state: "ready", sequence: 2, loadGeneration: 1 })));
+      await loading;
+      control.take("original").reply(ok(rotatedBytes));
+      await flush();
+      control.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+
+      const confirm = async (revision: number) => {
+        const pending = control.take("commit");
+        expect(pending.args).toEqual([1, 1, revision - 1, 1]);
+        pending.reply(ok(sessionInfo({ state: "ready", revision, dirty: true, loadGeneration: 1, sequence: 2 + revision })));
+        await flush();
+      };
+      const initial = layout(doc!);
+      const frame = initial[0]!;
+      expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+      const sel = editor.objectSelection!;
+      expect(sel.operations).toContain("resize");
+      expect(editor.execute("picture.size", {
+        command: "picture.size", selectionEpoch: sel.epoch, sessionId: sel.sessionId,
+        loadGeneration: sel.loadGeneration, revision: sel.revision, widthPt: 67.8, heightPt: 55.8,
+      }).accepted).toBe(true);
+      await confirm(1);
+      expect(JSON.parse(doc!.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6780, height: 5580, rotationAngle: 30 });
+
+      const exported = doc!.exportHwpWithReport();
+      try {
+        const editedBytes = exported.takeBytes();
+        expect(JSON.parse(exported.contentLoss())).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(editedBytes) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6780, height: 5580, rotationAngle: 30 });
+        } finally { reopened.free(); }
+        if (process.env.GEUL_STAGE3_OUT) {
+          mkdirSync(process.env.GEUL_STAGE3_OUT, { recursive: true });
+          writeFileSync(resolve(process.env.GEUL_STAGE3_OUT, "rotated-pic-orig.hwp"), rotatedBytes);
+          writeFileSync(resolve(process.env.GEUL_STAGE3_OUT, "rotated-pic-edited.hwp"), editedBytes);
+        }
+      } finally { exported.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm(2);
+      expect(JSON.parse(doc!.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 4520, height: 3779, rotationAngle: 30 });
+      expect(editor.redo()).toBe(true);
+      await confirm(3);
+      expect(JSON.parse(doc!.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6780, height: 5580, rotationAngle: 30 });
     } finally { editor.dispose(); }
   });
 });

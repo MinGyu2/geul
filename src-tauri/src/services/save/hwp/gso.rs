@@ -223,21 +223,117 @@ pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
         })
 }
 
+fn parse_rendering_matrices(bytes: &[u8]) -> Option<[[f64; 6]; 3]> {
+    if bytes.len() != 146 || u16::from_le_bytes(bytes[..2].try_into().ok()?) != 1 {
+        return None;
+    }
+    let mut matrices = [[0.0f64; 6]; 3];
+    for (m_idx, matrix) in matrices.iter_mut().enumerate() {
+        for (k, slot) in matrix.iter_mut().enumerate() {
+            let at = 2 + (m_idx * 6 + k) * 8;
+            let val = f64::from_le_bytes(bytes[at..at + 8].try_into().ok()?);
+            if !val.is_finite() {
+                return None;
+            }
+            *slot = val;
+        }
+    }
+    Some(matrices)
+}
+
+fn approx_eq_matrix(actual: [f64; 6], expected: [f64; 6], tol: f64) -> bool {
+    actual
+        .iter()
+        .zip(expected.iter())
+        .all(|(a, e)| a.is_finite() && e.is_finite() && (a - e).abs() <= tol)
+}
+
 fn validate_rendering_info(
     old_r: &[u8],
     new_r: &[u8],
     picture_transform_changed: bool,
     component_offset: [i32; 2],
+    rotated_pic: Option<(i16, [usize; 2], [usize; 2])>,
 ) -> Checked<()> {
     if !picture_transform_changed || old_r == new_r {
         return preserved(old_r == new_r, BODY);
     }
+    let [x, y] = component_offset.map(f64::from);
+    if let Some((angle, orig_dims, new_cur_dims)) = rotated_pic {
+        let Some([om1, om2, om3]) = parse_rendering_matrices(old_r) else {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        };
+        let theta = (angle as f64).to_radians();
+        let (cos, sin) = (theta.cos(), theta.sin());
+        preserved(
+            om1[0] == 1.0 && om1[1] == 0.0 && om1[3] == 0.0 && om1[4] == 1.0,
+            BODY,
+        )?;
+        preserved(
+            om2[0] > 0.0
+                && om2[4] > 0.0
+                && om2[1] == 0.0
+                && om2[2] == 0.0
+                && om2[3] == 0.0
+                && om2[5] == 0.0,
+            BODY,
+        )?;
+        preserved(
+            (om3[0] - cos).abs() <= 1e-6
+                && (om3[1] + sin).abs() <= 1e-6
+                && (om3[3] - sin).abs() <= 1e-6
+                && (om3[4] - cos).abs() <= 1e-6,
+            BODY,
+        )?;
+
+        valid(
+            orig_dims[0] > 0
+                && orig_dims[1] > 0
+                && new_cur_dims[0] > 0
+                && new_cur_dims[1] > 0,
+            BODY,
+        )?;
+        let Some([nm1, nm2, nm3]) = parse_rendering_matrices(new_r) else {
+            return Err(finding(FindingCode::OutputMalformed, BODY));
+        };
+        let expected_m1 = [1.0, 0.0, x, 0.0, 1.0, y];
+        let expected_m2 = [
+            new_cur_dims[0] as f64 / orig_dims[0] as f64,
+            0.0,
+            0.0,
+            0.0,
+            new_cur_dims[1] as f64 / orig_dims[1] as f64,
+            0.0,
+        ];
+        let w = new_cur_dims[0] as f64;
+        let h = new_cur_dims[1] as f64;
+        let corners = [
+            (0.0, 0.0),
+            (w * cos, w * sin),
+            (-h * sin, h * cos),
+            (w * cos - h * sin, w * sin + h * cos),
+        ];
+        let tx = -corners.iter().map(|(cx, _)| *cx).fold(f64::INFINITY, f64::min);
+        let ty = -corners.iter().map(|(_, cy)| *cy).fold(f64::INFINITY, f64::min);
+        let expected_m3 = [cos, -sin, tx - x, sin, cos, ty - y];
+        valid(
+            approx_eq_matrix(nm1, expected_m1, 1e-12)
+                && nm2[1] == 0.0
+                && nm2[2] == 0.0
+                && nm2[3] == 0.0
+                && nm2[5] == 0.0
+                && approx_eq_matrix(nm2, expected_m2, 1e-12)
+                && approx_eq_matrix(nm3, expected_m3, 1e-10),
+            BODY,
+        )?;
+        return Ok(());
+    }
+
     // For supported nonrotating picture edits, RHWP clears raw_rendering and resets
     // render_tx/ty to the component offsets and render_sx/sy to 1. Its HWP5 writer
     // emits translation, scale, rotation (in that order). Size lives in the component
     // dimensions, so a second scale would duplicate the resize.
     valid(new_r.len() == 146 && word(new_r, 0)? == 1, BODY)?;
-    let [x, y] = component_offset.map(f64::from);
     let identity = [1., 0., 0., 0., 1., 0.];
     let translation = [1., 0., x, 0., 1., y];
     let matches = |bytes: &[u8], first: [f64; 6]| {
@@ -472,6 +568,8 @@ pub(super) fn prove_evolved_gso(
         BODY,
     )?;
 
+    let orig_w = dword(old_sc, attr_at + 12)?;
+    let orig_h = dword(old_sc, attr_at + 16)?;
     let old_cw = dword(old_sc, attr_at + 20)?;
     let old_ch = dword(old_sc, attr_at + 24)?;
     let new_cw = dword(new_sc, attr_at + 20)?;
@@ -480,25 +578,29 @@ pub(super) fn prove_evolved_gso(
     let new_flip = dword(new_sc, attr_at + 28)? as u32;
     let old_rot = i16::from_le_bytes(old_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
     let new_rot = i16::from_le_bytes(new_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
+    let rotated_picture = is_picture && new_rot.rem_euclid(360) != 0;
     if is_picture {
         preserved(old_flip == new_flip && old_rot == new_rot, BODY)?;
-        // RHWP uses a different proportional mapping for pre-rotated pictures.
-        // The product only offers picture resize on nonrotated inline pictures.
-        preserved(!size_changed || new_rot.rem_euclid(360) == 0, BODY)?;
     } else {
         preserved((old_flip & !0x03) == (new_flip & !0x03), BODY)?;
         preserved(new_rot == old_rot || (0..360).contains(&new_rot), BODY)?;
     }
 
-    // RHWP updates current_* only on a changed axis. Basic shapes, including
-    // rotated/flipped shapes, use the header size on that axis. The original
-    // dimensions stay fixed as the coordinate basis for the shape leaf.
+    // RHWP updates current_* only on a changed axis. Nonrotated pictures and
+    // basic shapes use the header size on a changed axis; rotated HWP pictures
+    // scale current_* proportionally from old header/current dims while keeping
+    // original_* fixed as the scale denominator.
     for (old_dim, new_dim, old_current, new_current) in [
         (old_w, new_w, old_cw, new_cw),
         (old_h_dim, new_h_dim, old_ch, new_ch),
     ] {
         if old_dim == new_dim {
             preserved(new_current == old_current, BODY)?;
+        } else if rotated_picture {
+            preserved(old_dim > 0 && old_current > 0, BODY)?;
+            let expected = ((old_current as f64 * new_dim as f64 / old_dim as f64).round())
+                .max(1.0) as usize;
+            valid((1..=MAX_DIM_HU).contains(&expected) && new_current == expected, BODY)?;
         } else {
             valid(new_current == new_dim, BODY)?;
         }
@@ -532,8 +634,11 @@ pub(super) fn prove_evolved_gso(
     valid(old_sc.len() >= old_r_end && new_sc.len() >= new_r_end, BODY)?;
 
     let picture_transform_changed = is_picture
-        && new_rot.rem_euclid(360) == 0
-        && (size_changed || old[0].2[8..16] != new[0].2[8..16]);
+        && if rotated_picture {
+            size_changed
+        } else {
+            size_changed || old[0].2[8..16] != new[0].2[8..16]
+        };
     let component_offset = [
         dword(new_sc, attr_at)? as i32,
         dword(new_sc, attr_at + 4)? as i32,
@@ -543,6 +648,7 @@ pub(super) fn prove_evolved_gso(
         &new_sc[r_at..new_r_end],
         picture_transform_changed,
         component_offset,
+        rotated_picture.then_some((new_rot, [orig_w, orig_h], [new_cw, new_ch])),
     )?;
 
     if is_picture {
@@ -1291,6 +1397,19 @@ mod tests {
             check_with_preview_refresh(&original, &read("gso-deleted")),
             vec![]
         );
+        if dir.join("rotated-pic-orig.hwp").is_file() {
+            let rot_orig = read("rotated-pic-orig");
+            let rot_edit = read("rotated-pic-edited");
+            assert_eq!(check_with_preview_refresh(&rot_orig, &rot_edit), vec![]);
+            let rot_pic =
+                |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cip$cip$");
+            let rot_bad = mutate_body_record(&rot_edit, rot_pic, |payload| {
+                let mut changed = payload.to_vec();
+                changed[100..108].copy_from_slice(&2.5f64.to_le_bytes());
+                changed
+            });
+            assert!(!check_with_preview_refresh(&rot_orig, &rot_bad).is_empty());
+        }
 
         let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at: usize, bytes: &[u8]| {
             mutate_body_record(file, pick, |payload| {
@@ -1832,5 +1951,123 @@ mod tests {
             .collect();
         let only_pic1_cfb = build_hwp(&di_ref, &only_pic1_ref, b"\x89PNG\r\n\x1a\n123");
         assert!(!check_with_preview_refresh(&nested_orig, &only_pic1_cfb).is_empty());
+    }
+
+    fn rotated_rendering_info(
+        offset_x: i32,
+        offset_y: i32,
+        orig_w: usize,
+        orig_h: usize,
+        cur_w: usize,
+        cur_h: usize,
+        angle: i16,
+    ) -> Vec<u8> {
+        let mut out = Vec::with_capacity(146);
+        out.extend_from_slice(&1u16.to_le_bytes());
+        let [ox, oy] = [f64::from(offset_x), f64::from(offset_y)];
+        let m1 = [1.0, 0.0, ox, 0.0, 1.0, oy];
+        let m2 = [
+            cur_w as f64 / orig_w as f64,
+            0.0,
+            0.0,
+            0.0,
+            cur_h as f64 / orig_h as f64,
+            0.0,
+        ];
+        let theta = (angle as f64).to_radians();
+        let (cos, sin) = (theta.cos(), theta.sin());
+        let (w, h) = (cur_w as f64, cur_h as f64);
+        let corners = [
+            (0.0, 0.0),
+            (w * cos, w * sin),
+            (-h * sin, h * cos),
+            (w * cos - h * sin, w * sin + h * cos),
+        ];
+        let tx = -corners.iter().map(|(x, _)| *x).fold(f64::INFINITY, f64::min);
+        let ty = -corners.iter().map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
+        let m3 = [cos, -sin, tx - ox, sin, cos, ty - oy];
+        for m in [m1, m2, m3] {
+            for v in m {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    fn rotated_shape_component(
+        offset_x: i32,
+        offset_y: i32,
+        orig_w: usize,
+        orig_h: usize,
+        cur_w: usize,
+        cur_h: usize,
+        angle: i16,
+        rendering: &[u8],
+    ) -> Vec<u8> {
+        let mut sc = Vec::new();
+        sc.extend_from_slice(b"cip$cip$");
+        sc.extend_from_slice(&offset_x.to_le_bytes());
+        sc.extend_from_slice(&offset_y.to_le_bytes());
+        sc.extend_from_slice(&0u16.to_le_bytes()); // group_level
+        sc.extend_from_slice(&0u16.to_le_bytes()); // local_file_version
+        sc.extend_from_slice(&(orig_w as u32).to_le_bytes());
+        sc.extend_from_slice(&(orig_h as u32).to_le_bytes());
+        sc.extend_from_slice(&(cur_w as u32).to_le_bytes());
+        sc.extend_from_slice(&(cur_h as u32).to_le_bytes());
+        sc.extend_from_slice(&0u32.to_le_bytes()); // flip
+        sc.extend_from_slice(&angle.to_le_bytes());
+        sc.extend_from_slice(&0i32.to_le_bytes()); // rot center x
+        sc.extend_from_slice(&0i32.to_le_bytes()); // rot center y
+        sc.extend_from_slice(rendering);
+        sc
+    }
+
+    #[test]
+    fn rotated_hwp_picture_resize_proof_admits_only_consistent_matrices() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let file = |cw, ch, cur_w, cur_h, angle, rendering: Vec<u8>| {
+            let pic = vec![
+                (
+                    71,
+                    1,
+                    ctrl_header(101, 0x000a_0311, 0, 0, cw, ch, "rot", b"\xaa"),
+                ),
+                (
+                    76,
+                    2,
+                    rotated_shape_component(10, 20, 4050, 2025, cur_w, cur_h, angle, &rendering),
+                ),
+                (85, 3, picture_leaf(1, [0, 0, 4050, 2025], b"\x01")),
+            ];
+            let sec = wrap_section(vec![pic]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        let old_r = rotated_rendering_info(10, 20, 4050, 2025, 4050, 2025, 30);
+        let orig = file(4520, 3779, 4050, 2025, 30, old_r);
+        let new_cw = 6075usize; // (4050 * 6780 / 4520).round()
+        let new_ch = 2990usize; // (2025 * 5580 / 3779).round()
+        let new_r = rotated_rendering_info(10, 20, 4050, 2025, new_cw, new_ch, 30);
+        let good = file(6780, 5580, new_cw, new_ch, 30, new_r.clone());
+        assert_eq!(check_with_preview_refresh(&orig, &good), vec![]);
+
+        // Tamper scale sx, rotation cos, translation, or inject NaN.
+        for at in [50usize, 82, 98, 114] {
+            let mut bad_r = new_r.clone();
+            let tampered = if at == 98 { f64::NAN } else { 99.0 };
+            bad_r[at..at + 8].copy_from_slice(&tampered.to_le_bytes());
+            let bad = file(6780, 5580, new_cw, new_ch, 30, bad_r);
+            assert!(!check_with_preview_refresh(&orig, &bad).is_empty(), "at {at}");
+        }
+
+        // Inconsistent current_width or nonfinite/sheared source matrix must be rejected.
+        let bad_cur = file(6780, 5580, 6780, 5580, 30, new_r.clone());
+        assert!(!check_with_preview_refresh(&orig, &bad_cur).is_empty());
+        let mut sheared_old = rotated_rendering_info(10, 20, 4050, 2025, 4050, 2025, 30);
+        sheared_old[58..66].copy_from_slice(&0.5f64.to_le_bytes());
+        let sheared_src = file(4520, 3779, 4050, 2025, 30, sheared_old);
+        assert!(!check_with_preview_refresh(&sheared_src, &good).is_empty());
     }
 }

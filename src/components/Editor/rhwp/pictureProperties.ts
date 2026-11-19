@@ -66,7 +66,10 @@ export function inspectRhwpPicture(
         ? { movable: { horzOffset: values.horzOffset as number, vertOffset: values.vertOffset as number } } : {}),
       simpleInline: treatAsChar && values.sizeProtect === false && values.hasCaption === false
         && values.horzFlip === false && values.vertFlip === false && !("externalPath" in values)
-        && ["rotationAngle", "horzOffset", "vertOffset", "cropLeft", "cropTop", "cropRight", "cropBottom"].every(key => values[key] === 0),
+        && Number.isSafeInteger(values.rotationAngle)
+        && (values.rotationAngle as number) >= -360 && (values.rotationAngle as number) <= 360
+        && ((values.rotationAngle as number) % 360 === 0 || !!original)
+        && ["horzOffset", "vertOffset", "cropLeft", "cropTop", "cropRight", "cropBottom"].every(key => values[key] === 0),
     };
   } catch {
     return undefined;
