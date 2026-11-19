@@ -256,7 +256,7 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("edits only the solid outline of an existing HWP polygon", async () => {
+  it("edits an existing HWP polygon outline and geometry cleanly while keeping T009 outline fixtures", async () => {
     const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
     let bytes: Uint8Array, control: number;
     try {
@@ -277,11 +277,15 @@ describe("Stage 3 shapes on the Release engine", () => {
       await flush();
       take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
       await flush();
-      expect(pick(shapes(doc)[0]!).operations).toEqual(["deselect", "outline"]);
+      const ops = pick(shapes(doc)[0]!).operations;
+      expect(ops).toContain("outline");
+      expect(ops).toContain("resize");
+      expect(ops).toContain("rotate");
+      expect(ops).toContain("fill");
+      expect(ops).toContain("wrap");
+      expect(ops).toContain("delete");
       const before = props(doc, control);
       expect(before.rotationAngle).toBe(30);
-      expect(edit({ kind: "bounds", width: 100, height: 60 })).toBe(false);
-      expect(edit({ kind: "delete" })).toBe(false);
       expect(edit({ kind: "outline", color: "334455", width: 2.45 })).toBe(true);
       await confirm();
       const expected = { ...before, borderColor: 0x554433, borderWidth: 245 };
@@ -308,6 +312,176 @@ describe("Stage 3 shapes on the Release engine", () => {
         }
       } finally { exported.free(); }
     } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("edits %s polygon and curve outer geometry, transforms, and deletion cleanly", async format => {
+    const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
+    let baseHwpx: Uint8Array;
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
+        width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      })));
+      expect(JSON.parse(fixture.setShapeProperties!(0, 0, created.controlIdx, '{"textWrap":"Square"}')))
+        .toMatchObject({ ok: true });
+      baseHwpx = fixture.exportHwpx();
+    } finally { fixture.free(); }
+
+    // Turn the polygon copy into a document holding BOTH an unlocked polygon and an unlocked curve.
+    const tmpDir = mkdirSync(resolve("/tmp", `geul-p3-curve-${format}-${Date.now()}`), { recursive: true })!;
+    const inZip = resolve(tmpDir, "in.hwpx");
+    const outZip = resolve(tmpDir, "out.hwpx");
+    writeFileSync(inZip, baseHwpx);
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("python3", ["-c", `import sys, zipfile, re
+with zipfile.ZipFile(sys.argv[1]) as zin:
+    items = [(i.filename, zin.read(i.filename)) for i in zin.infolist()]
+with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
+    for name, data in items:
+        if name == 'Contents/section0.xml':
+            xml = data.decode('utf-8')
+            m = re.search(r'<hp:polygon\\b.*?</hp:polygon>', xml, re.S)
+            assert m, 'missing polygon'
+            poly = re.sub(r'zOrder="[^"]*"', 'zOrder="1"', m.group(0), count=1)
+            curve = re.sub(r'^<hp:polygon\\b', '<hp:curve', poly, count=1)
+            curve = re.sub(r'</hp:polygon>$', '</hp:curve>', curve, count=1)
+            curve = re.sub(r'id="\\d+"', 'id="999001"', curve, count=1)
+            curve = re.sub(r'zOrder="[^"]*"', 'zOrder="2"', curve, count=1)
+            curve = re.sub(r'<hp:offset\\b[^>]*/>', '<hp:offset x="15000" y="0"/>', curve, count=1)
+            segs = '<hp:seg type="CURVE" x1="0" y1="0" x2="10800" y2="7200"/><hp:seg type="CURVE" x1="10800" y1="7200" x2="0" y2="7200"/>'
+            curve = re.sub(r'(?:<hc:pt\\b[^>]*/>)+', segs, curve, count=1)
+            assert '<hp:seg ' in curve, 'failed to inject curve segs'
+            xml = xml.replace(m.group(0), poly + curve, 1)
+            data = xml.encode('utf-8')
+        zout.writestr(name, data)
+`, inZip, outZip]);
+    const hwpxWithBoth = new Uint8Array(readFileSync(outZip));
+    let bytes: Uint8Array;
+    const converter = new engine.HwpDocument(hwpxWithBoth) as RhwpDocument;
+    try {
+      const gsoIndices = (JSON.parse(converter.getControls!()) as { list: number; para: number; ctrlId: string; controlIndex: number }[])
+        .filter(c => c.list === 0 && c.para === 0 && c.ctrlId === "gso")
+        .map(c => c.controlIndex);
+      expect(gsoIndices).toHaveLength(2);
+      expect(JSON.parse(converter.setShapeProperties!(0, 0, gsoIndices[1]!, '{"textWrap":"Square"}'))).toMatchObject({ ok: true });
+      if (format === "hwp") {
+        // Canonical HWP5 curve serialization writes `cnt - 1` segment_types when section raw_stream is rebuilt.
+        const hwpOnce = converter.exportHwp();
+        const canonical = new engine.HwpDocument(hwpOnce) as RhwpDocument;
+        try {
+          expect(JSON.parse(canonical.setShapeProperties!(0, 0, gsoIndices[1]!, '{"horzOffset":20000,"vertOffset":12000}'))).toMatchObject({ ok: true });
+          bytes = canonical.exportHwp();
+        } finally { canonical.free(); }
+      } else {
+        expect(JSON.parse(converter.setShapeProperties!(0, 0, gsoIndices[1]!, '{"horzOffset":20000,"vertOffset":12000}'))).toMatchObject({ ok: true });
+        bytes = converter.exportHwpx();
+      }
+    } finally { converter.free(); }
+
+    const { editor, doc, pick, edit, confirm, take } = await setup(format, bytes);
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      if (format === "hwp") {
+        take("original").reply(ok(bytes));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
+      const frames = shapes(doc);
+      expect(frames).toHaveLength(2);
+      const polyIdx = frames[0]!.controlIdx;
+      const curveIdx = frames[1]!.controlIdx;
+      const frameOf = (index: number) => shapes(doc).find(f => f.controlIdx === index)!;
+      for (const index of [polyIdx, curveIdx]) {
+        const sel = pick(frameOf(index));
+        expect(sel.operations).toEqual(expect.arrayContaining(["move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"]));
+      }
+
+      // Edit curve geometry, rotation/flip, fill, and outline; verify exact preservation + Undo/Redo.
+      pick(frameOf(curveIdx));
+      const beforeCurve = props(doc, curveIdx);
+      expect(edit({ kind: "bounds", width: 150, height: 90 })).toBe(true);
+      await confirm();
+      pick(frameOf(curveIdx));
+      expect(edit({ kind: "nudge", dx: 12, dy: 8 })).toBe(true);
+      await confirm();
+      pick(frameOf(curveIdx));
+      expect(edit({ kind: "rotate", degrees: 45, flipH: true, flipV: false })).toBe(true);
+      await confirm();
+      pick(frameOf(curveIdx));
+      expect(edit({ kind: "fill", color: "2288CC" })).toBe(true);
+      await confirm();
+      pick(frameOf(curveIdx));
+      expect(edit({ kind: "outline", color: "AA3311", width: 1.5 })).toBe(true);
+      await confirm();
+
+      const expectedCurve = {
+        ...beforeCurve,
+        width: 15000,
+        height: 9000,
+        horzOffset: beforeCurve.horzOffset + 1200,
+        vertOffset: beforeCurve.vertOffset + 800,
+        rotationAngle: 45,
+        horzFlip: true,
+        vertFlip: false,
+        fillType: "solid",
+        fillBgColor: 0xCC8822,
+        borderColor: 0x1133AA,
+        borderWidth: 150,
+      };
+      expect(props(doc, curveIdx)).toEqual(expectedCurve);
+
+      // Edit polygon wrap cleanly, and verify geometry+transform+style+wrap save & reopen BEFORE layer reordering.
+      pick(frameOf(polyIdx));
+      expect(edit({ kind: "wrap", wrap: "topAndBottom" })).toBe(true);
+      await confirm();
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+      const liveCurve = props(doc, curveIdx);
+      expect(liveCurve).toMatchObject(expectedCurve);
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(props(reopened, curveIdx)).toEqual(liveCurve);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p3-poly-curve-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p3-poly-curve-edited.${format}`), output);
+          writeFileSync(resolve(out, `p3-poly-curve-report.${format}.json`), report);
+        }
+      } finally { exported.free(); }
+
+      // Restore Square wrap plane so both shapes share one HWP drawing plane, then test zOrder front/undo.
+      pick(frameOf(polyIdx));
+      expect(edit({ kind: "wrap", wrap: "square" })).toBe(true);
+      await confirm();
+      pick(frameOf(polyIdx));
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      expect(editor.undo()).toBe(true);
+      await confirm();
+
+      // Delete the curve and verify Undo restores both shapes.
+      pick(frameOf(curveIdx));
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm();
+      expect(shapes(doc)).toHaveLength(1);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(shapes(doc)).toHaveLength(2);
+    } finally {
+      editor.dispose();
+    }
   });
 
   it("reorders existing HWP basic shapes without moving their anchors", async () => {

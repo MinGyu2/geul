@@ -21,6 +21,7 @@ const SC_LINE: &[u8; 4] = b"nil$";
 const SC_RECT: &[u8; 4] = b"cer$";
 const SC_ELLIPSE: &[u8; 4] = b"lle$";
 const SC_POLYGON: &[u8; 4] = b"lop$";
+const SC_CURVE: &[u8; 4] = b"ruc$";
 
 const TAG_CTRL_HEADER: u16 = 71;
 const TAG_LIST_HEADER: u16 = 72;
@@ -29,6 +30,7 @@ const TAG_LINE: u16 = 78;
 const TAG_RECTANGLE: u16 = 79;
 const TAG_ELLIPSE: u16 = 80;
 const TAG_POLYGON: u16 = 82;
+const TAG_CURVE: u16 = 83;
 const TAG_PICTURE: u16 = 85;
 
 const MAX_DIM_HU: usize = 2_000_000;
@@ -148,6 +150,8 @@ fn expected_leaf_tag(ctrl_id: &[u8; 4]) -> Option<u16> {
         SC_LINE => Some(TAG_LINE),
         SC_RECT => Some(TAG_RECTANGLE),
         SC_ELLIPSE => Some(TAG_ELLIPSE),
+        SC_POLYGON => Some(TAG_POLYGON),
+        SC_CURVE => Some(TAG_CURVE),
         _ => None,
     }
 }
@@ -468,49 +472,14 @@ pub(super) fn evolved_candidate(
     )
 }
 
-pub(super) fn polygon_outline_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
-    old != new
-        && shape_ctrl_id(old).is_some_and(|(kind, _, _)| kind == SC_POLYGON)
-        && gso_header_id(old).is_some_and(|id| id != 0 && Some(id) == gso_header_id(new))
-}
-
-/// Existing polygon style changes leave its vertices and all transforms in
-/// the original coordinate system. Polygon insertion/deletion is separate.
-pub(super) fn prove_polygon_outline(old: &[Record<'_>], new: &[Record<'_>]) -> Checked<()> {
-    let Some((SC_POLYGON, offset, 1)) = shape_ctrl_id(old) else {
-        return Err(finding(FindingCode::RecordsChanged, BODY));
-    };
-    let [(71, 1, header), (76, 2, a), (TAG_POLYGON, 3, _)] = *old else {
-        return Err(finding(FindingCode::RecordsChanged, BODY));
-    };
-    let [(71, 1, _), (76, 2, b), (TAG_POLYGON, 3, _)] = *new else {
-        return Err(finding(FindingCode::RecordsChanged, BODY));
-    };
-    preserved(
-        old[0] == new[0] && old[2] == new[2] && a.len() == b.len()
-            && dword(header, 4)? as u32 & (ATTR_LOCKED | ATTR_CAPTION) == 0
-            && word(a, offset + 8)? == 0,
-        BODY,
-    )?;
-    let matrix_count = word(a, offset + 42)?;
-    let border = offset + 44 + (1 + 2 * matrix_count) * 48;
-    valid(a.len() >= border + 13 + 8 + 22, BODY)?;
-    let (a_width, b_width) = (dword(a, border + 4)?, dword(b, border + 4)?);
-    preserved(
-        a[..border] == b[..border] && a[border + 8..] == b[border + 8..]
-            && dword(a, border + 8)? & 0x3f == 1 && b[border + 3] == 0
-            && (1..=7200).contains(&a_width) && (1..=7200).contains(&b_width),
-        BODY,
-    )
-}
-
 /// Rank and wrapping plane for a bare floating body shape. Reordering is
 /// never routed through the broader field evolution or deletion proofs.
 pub(super) fn shape_layer(rs: &[Record<'_>]) -> Option<(i32, u32)> {
     let (kind, offset, 1) = shape_ctrl_id(rs)? else { return None };
     let [header, component, leaf] = rs else { return None };
     let attr = dword(header.2, 4).ok()? as u32;
-    if !is_basic_shape(rs) || gso_header_id(rs)? == 0
+    if !matches!(kind, SC_RECT | SC_ELLIPSE | SC_LINE | SC_POLYGON | SC_CURVE)
+        || gso_header_id(rs)? == 0
         || (header.1, component.1, leaf.1) != (1, 2, 3)
         || expected_leaf_tag(kind)? != leaf.0
         || word(component.2, offset + 8).ok()? != 0
@@ -1894,7 +1863,7 @@ mod tests {
         let component = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(super::SC_POLYGON);
         let vertices = |tag, level, _: &[u8]| tag == super::TAG_POLYGON && level == 3;
         let cases: [(fn(u16, u16, &[u8]) -> bool, usize); 4] = [
-            (vertices, 4), (component, 36), (component, 200), (component, 204),
+            (vertices, 4), (component, 20), (component, 200), (component, 204),
         ];
         for (pick, offset) in cases {
             let tampered = mutate_body_record(&edited, pick, |data| {
@@ -1909,6 +1878,24 @@ mod tests {
             assert!(check_with_preview_refresh(&original, &tampered)
                 .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
         }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP polygon/curve geometry scenario first"]
+    fn release_hwp_polygon_and_curve_geometry_preserves_vertices() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p3-poly-curve-original.hwp");
+        let edited = read("p3-poly-curve-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
+        let tampered_curve = mutate_body_record(&edited, curve, |data| {
+            let mut changed = data.to_vec();
+            changed[4] ^= 1;
+            changed
+        });
+        assert!(check_with_preview_refresh(&original, &tampered_curve)
+            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -2951,5 +2938,74 @@ mod tests {
         sheared_old[58..66].copy_from_slice(&0.5f64.to_le_bytes());
         let sheared_src = file(4520, 3779, 4050, 2025, 30, sheared_old);
         assert!(!check_with_preview_refresh(&sheared_src, &good).is_empty());
+    }
+
+    #[test]
+    fn hwp_polygon_and_curve_evolution_preserves_vertices_and_segments() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+
+        let poly_leaf = {
+            let mut b = Vec::new();
+            b.extend_from_slice(&3i32.to_le_bytes());
+            for v in [0i32, 0, 10800, 0, 5400, 7200] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            b.extend_from_slice(&0u32.to_le_bytes());
+            b
+        };
+        let curve_leaf = {
+            let mut b = Vec::new();
+            b.extend_from_slice(&3i32.to_le_bytes());
+            for v in [0i32, 0, 5400, 7200, 10800, 0] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            b.extend_from_slice(&[1u8, 1u8]);
+            b.extend_from_slice(&0u32.to_le_bytes());
+            b
+        };
+
+        let build = |w: u32, h: u32, flip: u32, rot: i16, fill: Option<u32>, border_c: u32, leaf_poly: &[u8], leaf_curve: &[u8], locked: bool| {
+            let attr = if locked { super::ATTR_LOCKED } else { 0 } | (1 << 21);
+            let poly = vec![
+                (71, 1, ctrl_header(201, attr, 0, 0, w, h, "", &[])),
+                (76, 2, shape_component_drawing(super::SC_POLYGON, w, h, flip, rot, border_c, fill, 201)),
+                (super::TAG_POLYGON, 3, leaf_poly.to_vec()),
+            ];
+            let curve = vec![
+                (71, 1, ctrl_header(202, attr, 0, 0, w, h, "", &[])),
+                (76, 2, shape_component_drawing(super::SC_CURVE, w, h, flip, rot, border_c, fill, 202)),
+                (super::TAG_CURVE, 3, leaf_curve.to_vec()),
+            ];
+            let sec = wrap_section(vec![poly, curve]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        let orig = build(10800, 7200, 0, 0, None, 0, &poly_leaf, &curve_leaf, false);
+        let edited = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &poly_leaf, &curve_leaf, false);
+        assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
+
+        // Negative 1: mutated polygon vertex or curve segment must fail closed.
+        let mut bad_poly = poly_leaf.clone();
+        bad_poly[8] ^= 1;
+        let tampered_poly = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &bad_poly, &curve_leaf, false);
+        assert!(!check_with_preview_refresh(&orig, &tampered_poly).is_empty());
+
+        let mut bad_curve = curve_leaf.clone();
+        bad_curve[28] = 0; // segment_type flipped
+        let tampered_curve = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &poly_leaf, &bad_curve, false);
+        assert!(!check_with_preview_refresh(&orig, &tampered_curve).is_empty());
+
+        // Negative 2: locked polygon/curve must never allow geometry evolution.
+        let locked_orig = build(10800, 7200, 0, 0, None, 0, &poly_leaf, &curve_leaf, true);
+        let locked_edit = build(15000, 9000, 0, 0, None, 0, &poly_leaf, &curve_leaf, true);
+        assert!(!check_with_preview_refresh(&locked_orig, &locked_edit).is_empty());
+
+        // Deletion of unlocked polygon & curve succeeds cleanly.
+        let deleted_sec = wrap_section(vec![]);
+        let deleted_refs: Vec<_> = deleted_sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let deleted = build_hwp(&di_ref, &deleted_refs, b"\x89PNG\r\n\x1a\n123");
+        assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
     }
 }

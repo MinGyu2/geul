@@ -7525,3 +7525,115 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
     assert!(!prot.view().history.undo);
     assert_eq!(prot.export().unwrap(), prot_before);
 }
+
+#[test]
+fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::freeform::{FreePath, Freeform};
+    use wordcraft_engine::doc::para::{Float, ShapeKind};
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{CharProps, InlineObject};
+    use wordcraft_engine::{io, Session};
+
+    let mut sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    sess.run("caret.docEnd", &json!({})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    let free = Freeform {
+        w: 120.0,
+        h: 80.0,
+        paths: vec![FreePath {
+            pts: vec![[0.0, 0.0], [120.0, 40.0], [30.0, 80.0]],
+            closed: true,
+        }],
+        alpha: 1.0,
+        ink: None,
+        order: None,
+    };
+    let obj = InlineObject::Shape {
+        kind: ShapeKind::Freeform,
+        w: 120.0,
+        h: 80.0,
+        fill: Some(Rgb(0x22, 0x44, 0x66)),
+        stroke: Some(Rgb(0x10, 0x20, 0x30)),
+        stroke_width: 1.5,
+        float: Float::default(),
+        story: None,
+        freeform: Some(std::sync::Arc::new(free)),
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let at = sess.sel.focus.clone();
+    sess.doc.insert_object(&at, obj, &CharProps::default()).unwrap();
+    let original_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+
+    let mut model = DocxModel::open(&original_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
+    let layout = reader.layout();
+    let hit = layout.find_object(0, |o| (o.rect.w - 120.0).abs() < 0.5).unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 10.0,
+        y: hit.rect.y + 10.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "shape");
+    let ops = view["object"]["operations"].as_array().unwrap();
+    for required in ["move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"] {
+        assert!(ops.iter().any(|v| v == required), "missing op {required}: {ops:?}");
+    }
+    let pos = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+
+    let edits = model.apply(&[
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch,
+            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(180.0), height: Some(110.0) },
+        },
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch: epoch + 1,
+            edit: ObjectEdit::Rotate { degrees: 35.0, flip_h: true, flip_v: false },
+        },
+        DocxOp::ObjectEdit {
+            position: pos,
+            epoch: epoch + 2,
+            edit: ObjectEdit::Fill { color: Some("44AA88".into()) },
+        },
+    ]);
+    assert_eq!(edits.changed, 3, "{:?}", edits.rejected);
+    let edited_bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original_bytes,
+        &edited_bytes,
+        None,
+        model.same_as(&edited_bytes),
+    )
+    .is_safe());
+
+    let reopened = io::open_bytes("fixture.docx", &edited_bytes).unwrap();
+    let freeform_after = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .find(|o| matches!(o, InlineObject::Shape { kind: ShapeKind::Freeform, .. }))
+        .unwrap();
+    match freeform_after {
+        InlineObject::Shape { w, h, fill, float, freeform: Some(f), .. } => {
+            assert!((*w - 180.0).abs() < 0.01 && (*h - 110.0).abs() < 0.01);
+            assert_eq!(fill.map(|c| c.hex()), Some("44AA88".into()));
+            assert!((float.rot - 35.0).abs() < 0.01 && float.flip_h && !float.flip_v);
+            assert_eq!(f.paths.len(), 1);
+            assert_eq!(f.paths[0].pts.len(), 3);
+            assert!(f.paths[0].closed);
+        }
+        other => panic!("unexpected shape {other:?}"),
+    }
+}

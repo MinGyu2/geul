@@ -2350,12 +2350,40 @@ impl DocxModel {
         let Some((w, h, _)) = object.frame() else {
             return Err(Rejected);
         };
-        if (snap(w), snap(h)) != (w, h) {
-            object.set_size(snap(w), snap(h));
+        let (nw, nh) = (snap(w), snap(h));
+        if (nw, nh) != (w, h) {
+            object.set_size(nw, nh);
+        }
+        if let InlineObject::Shape {
+            kind: wordcraft_engine::doc::para::ShapeKind::Freeform,
+            freeform: Some(freeform),
+            ..
+        } = object
+        {
+            if (freeform.w, freeform.h) != (nw, nh) {
+                let f = std::sync::Arc::make_mut(freeform);
+                let sx = if f.w > 0.0 { f64::from(nw) / f64::from(f.w) } else { 1.0 };
+                let sy = if f.h > 0.0 { f64::from(nh) / f64::from(f.h) } else { 1.0 };
+                for path in &mut f.paths {
+                    for pt in &mut path.pts {
+                        pt[0] = snap((f64::from(pt[0]) * sx) as f32);
+                        pt[1] = snap((f64::from(pt[1]) * sy) as f32);
+                    }
+                }
+                f.w = nw;
+                f.h = nh;
+            }
         }
         if let Some(float) = object.float_mut() {
             float.x = snap(float.x);
             float.y = snap(float.y);
+            // Match DrawingML's integer-EMU `wp:effectExtent` padding for rotated overhang.
+            let (px, py) = float.spin_pad(nw, nh);
+            if px != 0.0 || py != 0.0 {
+                for (e, p) in float.effect.iter_mut().zip([px, py, px, py]) {
+                    *e = (snap(*e + p) - p).clamp(0.0, 1584.0);
+                }
+            }
             // `wp:inline` carries no position or wrap distance: an object put back in line keeps
             // only what the inline form stores (rotation, flip, alt text, effects).
             if float.wrap == wordcraft_engine::doc::para::Wrap::Inline {
