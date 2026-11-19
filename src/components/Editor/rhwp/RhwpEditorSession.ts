@@ -1767,7 +1767,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
           }
           const canEditChart = graphic?.kind === "chart" && this.history && this.doc.setChartData
-            && (format === "hwpx" || (canEditHwp && this.isEditableHwpChart(hit.bodyEmbedded)));
+            && (format === "hwpx" || (canEditHwp && this.unlockedBodyGso(hit.bodyEmbedded) === "OLE"));
           const chartAddress = canEditChart ? hit.bodyEmbedded : undefined;
           if (chartAddress) operations.push("chart");
           this.selectedObject = {
@@ -4281,36 +4281,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch { return false; }
   }
 
-  private isEditableHwpChart(address: readonly [number, number, number] | undefined): boolean {
+  private unlockedBodyGso(address: readonly [number, number, number] | undefined): string | undefined {
     const doc = this.doc;
-    if (!address || !doc?.getControls) return false;
+    if (!address || !doc?.getControls) return undefined;
     try {
       const [section, para, control] = address;
       let globalPara = para;
       for (let s = 0; s < section; s++) globalPara += doc.getParagraphCount(s);
-      const controls = JSON.parse(doc.getControls()) as { ctrlId?: string; userDesc?: string; list?: number; para?: number; controlIndex?: number; props?: { Lock?: number } }[];
-      const match = controls.find(c => c.ctrlId === "gso" && c.list === 0 && c.para === globalPara && c.controlIndex === control);
-      return !!match && match.props?.Lock !== 1 && match.userDesc === "OLE";
-    } catch {
-      return false;
-    }
+      const controls = JSON.parse(doc.getControls()) as { ctrlId?: string; userDesc?: string; list?: number; para?: number; controlIndex?: number; props?: { Lock?: unknown } }[];
+      const matches = controls.filter(c => c.list === 0 && c.para === globalPara && c.controlIndex === control);
+      const owner = matches[0];
+      // RHWP emits numeric 0/1 from the common-object lock flag.
+      if (matches.length === 1 && owner?.ctrlId === "gso" && owner.props?.Lock === 0) return owner.userDesc;
+    } catch { /* An unreadable inventory cannot prove ownership or protection. */ }
+    return undefined;
   }
 
   private isEditableHwpGso(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
-    const doc = this.doc;
-    if (!address || !doc?.getControls) return false;
-    try {
-      const [section, para, control] = address;
-      let globalPara = para;
-      for (let s = 0; s < section; s++) globalPara += doc.getParagraphCount(s);
-      const controls = JSON.parse(doc.getControls()) as { ctrlId?: string; userDesc?: string; list?: number; para?: number; controlIndex?: number; props?: { Lock?: number } }[];
-      const match = controls.find(c => c.ctrlId === "gso" && c.list === 0 && c.para === globalPara && c.controlIndex === control);
-      if (!match || match.props?.Lock === 1) return false;
-      if (shapeOnly) return match.userDesc === "사각형" || match.userDesc === "타원" || match.userDesc === "직선";
-      return match.userDesc === "그림";
-    } catch {
-      return false;
-    }
+    const kind = this.unlockedBodyGso(address);
+    return shapeOnly ? kind === "사각형" || kind === "타원" || kind === "직선" : kind === "그림";
   }
 
   private gsoFormatEditable(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
@@ -4416,7 +4405,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const doc = this.doc, selected = this.objectSelection;
     if (!selected || !doc?.setChartData || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (format !== "hwpx" && !(format === "hwp" && this.structuralFormat() && this.isEditableHwpChart(address))) return false;
+    if (format !== "hwpx" && !(format === "hwp" && this.structuralFormat() && this.unlockedBodyGso(address) === "OLE")) return false;
     const { edit } = request;
     if (edit.kind !== "chartData") return false;
     const before = this.readChart(address);

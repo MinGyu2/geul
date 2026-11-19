@@ -391,6 +391,48 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("requires an explicit HWP GSO unlock and preserves independent size protection", async () => {
+    const { editor, doc, bytes, take, confirm, pick, edit, calls } = await setup("hwp");
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(editor.execute("insert.shape", { command: "insert.shape", kind: "rectangle" }).accepted).toBe(true);
+      await confirm();
+      const frame = shapes(doc)[0]!, index = frame.controlIdx;
+      const inventory = doc.getControls!.bind(doc);
+      const lock = (locked: boolean) => {
+        const controls = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+        expect(JSON.parse(controls.setControlLock(0, index, locked))).toMatchObject({ ok: true });
+      };
+      expect(JSON.parse(inventory()).find((c: { controlIndex: number }) => c.controlIndex === index)?.props.Lock).toBe(0);
+      expect(pick(frame).operations).toContain("resize");
+      lock(true);
+      expect(JSON.parse(inventory()).find((c: { controlIndex: number }) => c.controlIndex === index)?.props.Lock).toBe(1);
+      expect(edit({ kind: "bounds", width: 90, height: 60 })).toBe(false);
+      expect(pick(frame).operations).toEqual(["deselect"]);
+      lock(false);
+      for (const props of [undefined, {}, { Lock: 2 }, { Lock: false }, { Lock: "0" }]) {
+        expect(pick(frame).operations).toContain("outline");
+        doc.getControls = () => JSON.stringify(JSON.parse(inventory()).map((c: { ctrlId: string }) =>
+          c.ctrlId === "gso" ? { ...c, props } : c));
+        expect(edit({ kind: "outline", color: "333333" })).toBe(false);
+        expect(pick(frame).operations).toEqual(["deselect"]);
+        doc.getControls = inventory;
+      }
+      expect(JSON.parse(doc.setShapeProperties!(0, 0, index, '{"sizeProtect":true}'))).toMatchObject({ ok: true });
+      expect(props(doc, index).sizeProtect).toBe(true);
+      const protectedFrame = shapes(doc)[0]!;
+      expect(pick(protectedFrame).operations).toContain("outline");
+      expect(editor.objectSelection!.operations).not.toContain("resize");
+      expect(edit({ kind: "bounds", width: 90, height: 60 })).toBe(false);
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
+      expect(edit({ kind: "outline", color: "333333" })).toBe(true);
+      await confirm();
+    } finally { editor.dispose(); }
+  });
+
   it("binds delayed text-box IME commits to one live owner", async () => {
     const { editor, doc, confirm, calls } = await setup("hwpx");
     try {
