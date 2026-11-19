@@ -1706,8 +1706,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
               ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
-              ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate");
-            // Z-order: the RHWP HWPX export does not reopen with the changed order (save reopen comparison fails).
+              ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
+              ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
           }
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
@@ -4353,11 +4353,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
         break;
       case "layer":
-        // Not offered: the HWPX export does not preserve the changed z-order on reopen.
-        if (!doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
+        if (format !== "hwpx" || !doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
         operation = () => {
-          const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean };
+          const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean; moves?: unknown[] };
           if (result.ok !== true) throw new Error("z-order refused");
+          if (!Array.isArray(result.moves) || result.moves.length === 0) throw new Error("z-order unchanged");
           const after = inspectRhwpShape(doc, address);
           if (!after || !unchanged(after.raw, all)) throw new Error("z-order changed other fields");
         };

@@ -1185,4 +1185,4 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 
 - HWPX `insert.shape`: 생성 직후 같은 이력 트랜잭션에서 `setShapeProperties({textWrap:"Square"})`로 배치 비트를 동기화하고 다시 읽어
   확인한다(이 없이 저장하면 재열기 컨트롤 비교가 실패).
-- HWPX 도형 `zOrder`는 제공하지 않는다(`changeShapeZOrder` 결과가 HWPX 재열기에서 유지되지 않음).
+- HWPX 도형 `zOrder`(Stage 3 B4 복구): HWPX 본문 도형에 `changeShapeZOrder`(`front`/`back`)를 제공하고 미이동(`moves` 없음)과 HWP 형식은 거부한다. 겹치는 도형의 앞/뒤 전환, `getPageControlLayout`·`getPageLayerTree`·`getControls` 재열기 일치, Undo/Redo 및 `save_check` safe를 확인했다.

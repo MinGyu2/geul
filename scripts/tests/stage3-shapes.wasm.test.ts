@@ -89,7 +89,7 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
       const rect = drawn.find(s => s.w > 100 && Math.abs(s.h - drawn[0]!.h) < 1 && props(doc, s.controlIdx).tbVerticalAlign === undefined)!;
       const selected = pick(rect);
       expect(selected.kind).toBe("shape");
-      expect(selected.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
+      expect(selected.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"]);
       const control = rect.controlIdx;
       expect(edit({ kind: "outline", color: null })).toBe(false);
       expect(edit({ kind: "outline", color: "112233", width: 2 })).toBe(false);
@@ -115,6 +115,14 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
       expect(edit({ kind: "bounds", width: 120, height: 40 })).toBe(true);
       await confirm();
       expect(props(doc, control)).toMatchObject({ width: 12000, height: 4000, horzOffset: 1000 });
+      pick(shapes(doc).find(s => s.controlIdx === control)!);
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      expect(props(doc, control).zOrder).toBe(2);
+      pick(shapes(doc).find(s => s.controlIdx === control)!);
+      expect(edit({ kind: "layer", front: false })).toBe(true);
+      await confirm();
+      expect(props(doc, control).zOrder).toBe(0);
       pick(shapes(doc).find(s => s.controlIdx === control)!);
       expect(edit({ kind: "layer", front: false })).toBe(false);
       const exported = doc.exportHwpxWithReport();
@@ -145,6 +153,80 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
       expect(editor.undo()).toBe(true);
       await confirm();
       expect(shapes(doc)).toHaveLength(2);
+    } finally { editor.dispose(); }
+  });
+
+  it("changes overlapping HWPX shape z-order with hit-testing, reopen equality and undo/redo", async () => {
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx");
+    try {
+      expect(editor.execute("insert.shape", { command: "insert.shape", kind: "rectangle" }).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("insert.shape", { command: "insert.shape", kind: "ellipse" }).accepted).toBe(true);
+      await confirm();
+
+      const initial = shapes(doc);
+      expect(initial).toHaveLength(2);
+      const [first, second0] = initial as [Frame, Frame];
+      // Nudge `second` partially so both an overlapping region and an exposed corner exist.
+      pick(second0);
+      expect(edit({ kind: "nudge", dx: 40, dy: 20 })).toBe(true);
+      await confirm();
+      const second = shapes(doc).find(s => s.controlIdx === second0.controlIdx)!;
+      const overlapX = first.x + first.w - 5;
+      const overlapY = first.y + first.h - 5;
+      const exposedX = second.x + second.w - 5;
+      const exposedY = second.y + second.h - 5;
+
+      // Initially `second` has higher zOrder and wins overlapping hit-testing.
+      expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+
+      // Send `second` to back -> `first` becomes topmost on overlap.
+      expect(edit({ kind: "layer", front: false })).toBe(true);
+      await confirm();
+      expect(props(doc, second.controlIdx).zOrder).toBeLessThan(props(doc, first.controlIdx).zOrder);
+      expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, first.controlIdx]);
+
+      // Select `second` via its exposed corner and bring it back to front -> `second` wins overlap again.
+      expect(editor.pointAt(0, exposedX, exposedY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      expect(props(doc, second.controlIdx).zOrder).toBeGreaterThan(props(doc, first.controlIdx).zOrder);
+      expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+
+      // Send `second` to back, export HWPX and independently reopen.
+      expect(edit({ kind: "layer", front: false })).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const bytes = exported.takeBytes();
+        const report = exported.contentLoss();
+        expectReopenEvidence(doc, bytes, report);
+        const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+        try {
+          expect(reopened.getPageControlLayout!(0)).toBe(doc.getPageControlLayout!(0));
+          expect(reopened.getPageLayerTree!(0)).toBe(doc.getPageLayerTree!(0));
+          expect(props(reopened, second.controlIdx).zOrder).toBe(props(doc, second.controlIdx).zOrder);
+          expect(props(reopened, first.controlIdx).zOrder).toBe(props(doc, first.controlIdx).zOrder);
+          const reopenedShapes = shapes(reopened);
+          expect(reopenedShapes.map(s => s.controlIdx)).toEqual([second.controlIdx, first.controlIdx]);
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
+
+      // Undo/Redo preserve stacking order transitions.
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(props(doc, second.controlIdx).zOrder).toBeGreaterThan(props(doc, first.controlIdx).zOrder);
+      expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(props(doc, second.controlIdx).zOrder).toBeLessThan(props(doc, first.controlIdx).zOrder);
+      expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, first.controlIdx]);
     } finally { editor.dispose(); }
   });
 
