@@ -6322,6 +6322,250 @@ fn stage3_docx_picture_in_table_cell_admits_only_in_place_edits() {
 }
 
 #[test]
+fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::{InlineObject, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    // 1. Depth-2 nested table cell: outer table -> cell -> inner table -> cell -> picture + shape.
+    let mut nested = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    nested.run("caret.docEnd", &json!({})).unwrap();
+    nested.run("text.newParagraph", &json!({})).unwrap();
+    nested.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
+    nested.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
+    nested
+        .run("insert.picture", &json!({"data": tiny_png_b64(2, 2, [4, 5, 6])}))
+        .unwrap();
+    nested.run("picture.size", &json!({"width": 44, "height": 22})).unwrap();
+    nested.run("select.collapse", &json!({"end": true})).unwrap();
+    nested.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    nested.run("picture.size", &json!({"width": 36, "height": 18})).unwrap();
+    let nested_original = io::save_bytes("fixture.docx", &nested.doc).unwrap();
+
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &nested_original).unwrap());
+    let layout = reader.layout();
+    let click = |page: usize, x: f32, y: f32| DocxOp::Pointer {
+        page: page as u32,
+        x,
+        y,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let pic_hit = layout
+        .find_object(0, |o| o.path.0.len() > 4 && (o.rect.w - 44.0).abs() < 0.5)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+
+    let mut model = DocxModel::open(&nested_original).unwrap();
+    model.apply(&[pic_hit.clone()]);
+    let obj_view = |m: &mut DocxModel| serde_json::to_value(m.view()).unwrap()["object"].clone();
+    let v = obj_view(&mut model);
+    assert_eq!(v["operations"], json!(["resize", "delete", "crop", "altText"]));
+    let (pos_p, ep_p) = (v["position"].as_str().unwrap().to_owned(), v["epoch"].as_u64().unwrap());
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit { position: pos_p.clone(), epoch: ep_p, edit: ObjectEdit::Nudge { dx: 2.0, dy: 0.0 } }]).rejected,
+        vec![0]
+    );
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit {
+            position: pos_p.clone(),
+            epoch: ep_p,
+            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(66.0), height: Some(33.0) },
+        }]).changed,
+        1
+    );
+    let v = obj_view(&mut model);
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Crop { left: 0.1, top: 0.0, right: 0.0, bottom: 0.0 },
+        }]).changed,
+        1
+    );
+    let mid_nested = model.export().unwrap();
+    let mut mid_reader = Session::new(io::open_bytes("fixture.docx", &mid_nested).unwrap());
+    let shape_hit = mid_reader
+        .layout()
+        .find_object(0, |o| o.path.0.len() > 4 && (o.rect.w - 36.0).abs() < 0.5)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+    model.apply(&[shape_hit]);
+    let v = obj_view(&mut model);
+    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Fill { color: Some("336699".into()) },
+        }]).changed,
+        1
+    );
+    let saved_nested = model.export().unwrap();
+    assert!(service::check_saved(crate::document::Format::Docx, &nested_original, &saved_nested, None, model.same_as(&saved_nested)).is_safe());
+    let reopened = io::open_bytes("fixture.docx", &saved_nested).unwrap();
+    assert!(reopened.para_paths(StoryRef::Body).iter().any(|path| {
+        path.0.len() > 4 && reopened.para(StoryRef::Body, path).is_some_and(|p| {
+            p.objects.iter().any(|o| matches!(o, InlineObject::Image { w, h, crop, .. } if *w == 66.0 && *h == 33.0 && (crop[0] - 0.1).abs() < 1e-4))
+                && p.objects.iter().any(|o| matches!(o, InlineObject::Shape { fill: Some(c), .. } if c.hex() == "336699"))
+        })
+    }));
+    // Delete picture inside depth-2 cell and verify media cleanup + Undo restore.
+    model.apply(&[pic_hit]);
+    let v = obj_view(&mut model);
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Delete {},
+        }]).changed,
+        1
+    );
+    let deleted_nested = model.export().unwrap();
+    assert!(service::check_saved(crate::document::Format::Docx, &nested_original, &deleted_nested, None, model.same_as(&deleted_nested)).is_safe());
+    assert!(io::open_bytes("fixture.docx", &deleted_nested).unwrap().media.is_empty());
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.diagnostic_document().media.len(), 1);
+
+    // 2. Shapes inside a Body-hosted TextBox (rectangle + ellipse + text inside same TextBox;
+    // pictures inside a TextBox are rejected because pinned WordCraft reader collapses a:blip inside wps:txbx).
+    let mut boxed = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    boxed.run("caret.docEnd", &json!({})).unwrap();
+    boxed.run("text.newParagraph", &json!({})).unwrap();
+    boxed.run("insert.textBox", &json!({"width": 240, "height": 180})).unwrap();
+    boxed.run("text.insert", &json!({"text": "상자안"})).unwrap();
+    boxed.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    boxed.run("picture.size", &json!({"width": 48, "height": 24})).unwrap();
+    boxed.run("select.collapse", &json!({"end": true})).unwrap();
+    boxed.run("insert.shape", &json!({"kind": "ellipse"})).unwrap();
+    boxed.run("picture.size", &json!({"width": 32, "height": 16})).unwrap();
+    let boxed_original = io::save_bytes("fixture.docx", &boxed.doc).unwrap();
+
+    let mut box_reader = Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
+    let box_layout = box_reader.layout();
+    let tb_rect = box_layout
+        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 48.0).abs() < 0.5)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+
+    let mut tb_model = DocxModel::open(&boxed_original).unwrap();
+    tb_model.apply(&[tb_rect.clone()]);
+    let v = obj_view(&mut tb_model);
+    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
+    let (r_pos, r_ep) = (v["position"].as_str().unwrap().to_owned(), v["epoch"].as_u64().unwrap());
+    assert!(r_pos.starts_with("part"), "{r_pos}");
+    assert_eq!(
+        tb_model.apply(&[DocxOp::ObjectEdit { position: r_pos.clone(), epoch: r_ep, edit: ObjectEdit::Wrap { wrap: wordcraft_engine::doc::para::Wrap::Square } }]).rejected,
+        vec![0]
+    );
+    assert_eq!(
+        tb_model.apply(&[DocxOp::ObjectEdit {
+            position: r_pos.clone(),
+            epoch: r_ep,
+            edit: ObjectEdit::AltText { text: "상자 도형".into() },
+        }]).changed,
+        1
+    );
+    let v = obj_view(&mut tb_model);
+    assert_eq!(
+        tb_model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(60.0), height: Some(30.0) },
+        }]).changed,
+        1
+    );
+    let mid_boxed = tb_model.export().unwrap();
+    let mut mid_box_reader = Session::new(io::open_bytes("fixture.docx", &mid_boxed).unwrap());
+    let tb_shape = mid_box_reader
+        .layout()
+        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 32.0).abs() < 0.5)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+    tb_model.apply(&[tb_shape]);
+    let v = obj_view(&mut tb_model);
+    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
+    assert_eq!(
+        tb_model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Outline { color: Some("114488".into()), width: Some(2.0) },
+        }]).changed,
+        1
+    );
+    let saved_boxed = tb_model.export().unwrap();
+    assert!(service::check_saved(crate::document::Format::Docx, &boxed_original, &saved_boxed, None, tb_model.same_as(&saved_boxed)).is_safe());
+    let reopened_box = io::open_bytes("fixture.docx", &saved_boxed).unwrap();
+    let (&tb_id, _) = reopened_box.parts.iter().find(|(_, p)| p.kind == PartKind::TextBox).unwrap();
+    let tb_story = StoryRef::Part(tb_id);
+    assert!(reopened_box.para_paths(tb_story).iter().any(|path| {
+        reopened_box.para(tb_story, path).is_some_and(|p| {
+            p.objects.iter().any(|o| matches!(o, InlineObject::Shape { w, h, float, .. } if *w == 60.0 && *h == 30.0 && float.alt.text == "상자 도형"))
+                && p.objects.iter().any(|o| matches!(o, InlineObject::Shape { stroke: Some(c), stroke_width, .. } if c.hex() == "114488" && (*stroke_width - 2.0).abs() < 0.01))
+        })
+    }));
+    // Delete the rectangle inside TextBox, verify T009, and Undo restore.
+    tb_model.apply(&[tb_rect]);
+    let v = obj_view(&mut tb_model);
+    assert_eq!(
+        tb_model.apply(&[DocxOp::ObjectEdit {
+            position: v["position"].as_str().unwrap().to_owned(),
+            epoch: v["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Delete {},
+        }]).changed,
+        1
+    );
+    let deleted_boxed = tb_model.export().unwrap();
+    assert!(service::check_saved(crate::document::Format::Docx, &boxed_original, &deleted_boxed, None, tb_model.same_as(&deleted_boxed)).is_safe());
+    let reopened_deleted = io::open_bytes("fixture.docx", &deleted_boxed).unwrap();
+    let (&del_tb_id, _) = reopened_deleted.parts.iter().find(|(_, p)| p.kind == PartKind::TextBox).unwrap();
+    assert_eq!(
+        reopened_deleted.para_paths(StoryRef::Part(del_tb_id)).iter()
+            .filter_map(|p| reopened_deleted.para(StoryRef::Part(del_tb_id), p))
+            .map(|p| p.objects.len())
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(tb_model.apply(&[DocxOp::Undo {}]).changed, 1);
+
+    // 3. Negative boundary: a drawing in a separate OPC Header part still prevents delete/renumbering
+    // on Body/TextBox drawings, and Header objects cannot be selected or mutated.
+    let mut with_hdr = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    with_hdr.run("insert.editHeader", &json!({})).unwrap();
+    with_hdr
+        .run("insert.picture", &json!({"data": tiny_png_b64(2, 2, [1, 2, 3])}))
+        .unwrap();
+    with_hdr.run("picture.size", &json!({"width": 40, "height": 20})).unwrap();
+    with_hdr.run("insert.closeHeader", &json!({})).unwrap();
+    with_hdr.run("caret.docEnd", &json!({})).unwrap();
+    with_hdr.run("text.newParagraph", &json!({})).unwrap();
+    with_hdr.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    let hdr_bytes = io::save_bytes("fixture.docx", &with_hdr.doc).unwrap();
+    let mut hdr_reader = Session::new(io::open_bytes("fixture.docx", &hdr_bytes).unwrap());
+    let hdr_lay = hdr_reader.layout();
+    let hdr_pic = hdr_lay
+        .find_object(0, |o| matches!(o.story, StoryRef::Part(id) if hdr_reader.doc.parts.get(&id).is_some_and(|p| p.kind == PartKind::Header)))
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+    let body_shape = hdr_lay
+        .find_object(0, |o| o.story == StoryRef::Body)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+    let mut hdr_model = DocxModel::open(&hdr_bytes).unwrap();
+    // Clicking header area does not select the header picture as an editable object.
+    hdr_model.apply(&[hdr_pic]);
+    assert!(serde_json::to_value(hdr_model.view()).unwrap()["object"].is_null());
+    // Body shape still admits in-place resize/fill/outline/altText, but blocks delete/move when Header has a drawing.
+    hdr_model.apply(&[body_shape]);
+    let v = obj_view(&mut hdr_model);
+    assert_eq!(v["operations"], json!(["resize", "altText", "fill", "outline"]));
+    assert_eq!(hdr_model.export().unwrap(), hdr_bytes);
+}
+
+#[test]
 fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
     use super::engine::{ChartSeriesEdit, ObjectEdit, SmartArtItemEdit};
     use crate::services::save::service;

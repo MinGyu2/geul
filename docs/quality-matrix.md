@@ -219,7 +219,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 플래그 전환과 캡션 객체 삭제는 거부한다. 캡션 내부 편집은 위 P5의 별도 증명에 따른다 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
-| 중첩 개체 (P2) | PARTIAL | PARTIAL | PARTIAL | DOCX 표 셀 그림은 크기·자르기·설명·삭제를 지원한다. HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. HWP도 SAFE 원본 Section0의 한 단계 본문 표에서 지원 범위에 해당하는 인라인 그림 크기를 변경할 수 있다. DOCX 및 RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
+| 중첩 개체 (P2) | PARTIAL | PARTIAL | PARTIAL | DOCX는 중첩 표 셀(깊이 2+ 포함)의 그림·도형·글상자 제자리 편집(`resize`·`crop`·`altText`·`fill`·`outline`·`delete`)과 본문 소속 글상자(`PartKind::TextBox`) 안 도형 제자리 편집을 지원한다(고정 WordCraft `read/story.rs:948`이 `wps:txbx` 안 `a:blip`을 바깥 `Image`로 삼켜 글상자 안 그림·그림 포함 그룹과 별도 OPC `Header`/`Footer`/`Footnote`/`Endnote`/`Comment` 개체는 읽기 전용 유지; `stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits` PASS). HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. HWP도 SAFE 원본 Section0의 한 단계 본문 표에서 지원 범위에 해당하는 인라인 그림 크기를 변경할 수 있다. RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,

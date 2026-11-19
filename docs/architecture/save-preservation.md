@@ -1994,6 +1994,10 @@ HWP5 `SHAPE_COMPONENT_RECTANGLE`(79)은 `round_rate` 1바이트와 부호 있는
 
 `prove_inserted_shape`는 새 사각형·타원·직선의 기본 컴포넌트에서 굵기 1–7200 HWPUNIT을 허용한다. 선 종류·색·변환·기하·컴포넌트 ID는 기본 레코드 증명을 그대로 적용한다. 글상자 내부 및 외곽 규칙과 전체 출력 인스턴스 ID 중복 검사를 유지한다.
 
+### Stage 3 P2 DOCX 중첩 표·글상자 내부 개체 보존
+
+`DocxModel::body_hosted_story`는 `StoryRef::Body`와 `text_box_anchor` 연쇄가 `StoryRef::Body`에 닿는 `PartKind::TextBox`(고정 `word/document.xml` 인라인 직렬화)만 편집 가능 이야기로 인정한다. 중첩 표 셀(깊이 2+ 포함)과 본문 소속 글상자 안 개체는 제자리 편집(`resize`·`delete`·`crop`·`altText`·`fill`·`outline`)만 허용하고 `move`·`wrap`·`rotate`·`zOrder`·`position`은 거부한다. 고정 WordCraft `docx/read/story.rs:948`이 `a:graphicData` 하위 `a:blip`을 먼저 스캔해 글상자 안 그림을 바깥 `Image`로 잘못 읽는 엔진 경계를 고려해, `PartKind::TextBox` 내부의 그림·그림 포함 그룹은 비활성 유지하며 `Header`/`Footer`/`Footnote`/`Endnote`/`Comment` 및 그 안의 글상자는 읽기 전용(별도 OPC 파트 개체 ID 연번 충돌 방지)을 유지한다.
+
 ### Stage 3 P2 HWP 한 단계 셀의 인라인 그림 보존
 
 `prove_cell_picture_resizes`는 본문 표에서 기존 셀·문단·자식 레코드의 순서를 고정하고 같은 인스턴스의 그림 크기 변경만 허용한다. 기존 GSO 크기 증명과 동일 그림 leaf 및 BinData 참조를 요구하며, 원본 표는 비잠금이고 캡션이 없는 떠 있는 표여야 한다. 그림은 비잠금·비회전·비반전·크기 보호 해제 상태로, 표 셀 자체의 크기나 문단은 바뀌지 않아야 한다. 엔진이 다시 계산하는 표 머리글의 높이는 행별 셀 높이에서 독립 산출한 값만 허용한다. 표 너비와 나머지 머리글 필드에도 기존 보존 계약을 적용한다.

@@ -2145,22 +2145,57 @@ impl DocxModel {
         })
     }
 
+    /// Whether `story` serializes inside `word/document.xml` (Body or a Body-anchored TextBox chain).
+    fn body_hosted_story(&self, story: StoryRef) -> bool {
+        use wordcraft_engine::doc::PartKind;
+        let mut current = story;
+        let mut seen = Vec::new();
+        for _ in 0..16 {
+            match current {
+                StoryRef::Body => return true,
+                StoryRef::Part(id) => {
+                    if seen.contains(&id)
+                        || !self
+                            .session
+                            .doc
+                            .parts
+                            .get(&id)
+                            .is_some_and(|p| p.kind == PartKind::TextBox)
+                    {
+                        return false;
+                    }
+                    seen.push(id);
+                    let Some(anchor) = self.session.doc.text_box_anchor(id) else {
+                        return false;
+                    };
+                    current = anchor.story;
+                }
+            }
+        }
+        false
+    }
+
     fn image_insertion_allowed(&self) -> bool {
-        // The pinned writer renumbers drawings in later stories when a body
-        // picture is added. T009 correctly rejects those unrelated part changes.
-        // Keep this context disabled until the engine preserves drawing IDs.
-        self.session.doc.parts.iter().all(|(id, _)| {
-            self.session
-                .doc
-                .para_paths(StoryRef::Part(*id))
-                .iter()
-                .all(|path| {
-                    self.session
-                        .doc
-                        .para(StoryRef::Part(*id), path)
-                        .is_some_and(|p| p.objects.is_empty())
-                })
-        })
+        // The pinned writer renumbers drawings in later OPC parts (headers, footers,
+        // notes, comments) when a body-part drawing is added or removed. T009 rejects
+        // those unrelated part changes; Body-hosted TextBoxes serialize inside document.xml.
+        self.session
+            .doc
+            .parts
+            .iter()
+            .filter(|(id, _)| !self.body_hosted_story(StoryRef::Part(**id)))
+            .all(|(id, _)| {
+                self.session
+                    .doc
+                    .para_paths(StoryRef::Part(*id))
+                    .iter()
+                    .all(|path| {
+                        self.session
+                            .doc
+                            .para(StoryRef::Part(*id), path)
+                            .is_some_and(|p| p.objects.is_empty())
+                    })
+            })
     }
 
     fn object_at(&self, pos: &Pos) -> Option<&InlineObject> {
@@ -2231,20 +2266,24 @@ impl DocxModel {
         })
     }
 
-    /// Which Stage 3 mutations the object at `pos` admits. Body story only: objects in headers,
-    /// footers, notes and text boxes live in other package parts whose changes T009 does not
+    /// Which Stage 3 mutations the object at `pos` admits. Admits `word/document.xml`-hosted
+    /// stories (Body, nested table cells, and Body-anchored TextBox stories); objects in headers,
+    /// footers, notes and comments live in other package parts whose changes T009 does not
     /// admit. Charts and SmartArt are written to their own parts, so their geometry stays frozen.
     fn object_operations(&self, pos: &Pos) -> Vec<&'static str> {
         let doc = &self.session.doc;
-        if pos.story != StoryRef::Body
+        if !self.body_hosted_story(pos.story)
             || doc.settings.protection.is_some()
             || doc.settings.track_changes
         {
             return Vec::new();
         }
+        let Some(object) = self.object_at(pos) else {
+            return Vec::new();
+        };
         // Charts and SmartArt with a WordCraft model are regenerated from that model on save: only
         // their model edits (T009 regenerated-part proof), never their geometry.
-        if let Some(InlineObject::Graphic { graphic, .. }) = self.object_at(pos) {
+        if let InlineObject::Graphic { graphic, .. } = object {
             return match (&graphic.chart, &graphic.smart_art) {
                 (Some(_), _) => vec!["chart"],
                 (None, Some(_)) => vec!["smartArt"],
@@ -2258,12 +2297,21 @@ impl DocxModel {
         if !drawing {
             return Vec::new();
         }
+        // Pinned WordCraft `docx/read/story.rs:948` scans `a:graphicData` descendants for `a:blip`
+        // before `wps:wsp`, collapsing any TextBox that contains an image into a plain Image on reopen.
+        if pos.story != StoryRef::Body {
+            let mut media = Vec::new();
+            if !drawing_media(object, &mut media, 0) || !media.is_empty() {
+                return Vec::new();
+            }
+        }
         let picture = matches!(self.object_kind(pos), Some("picture"));
+        let top_level = pos.story == StoryRef::Body && pos.path.0.len() == 1;
         let mut ops = vec!["resize"];
-        // Relocating or removing a drawing renumbers later drawings: only when no other story has one.
+        // Relocating or removing a drawing renumbers later drawings: only when no separate part has one.
         let relocatable = self.image_insertion_allowed();
         if relocatable {
-            if pos.path.0.len() == 1 {
+            if top_level {
                 ops.insert(0, "move");
             }
             ops.push("delete");
@@ -2273,7 +2321,7 @@ impl DocxModel {
         }
         // Floating an inline object (or back) only changes its own drawing element; the move rules
         // above still apply because the engine anchors floating objects at their paragraph.
-        if relocatable && pos.path.0.len() == 1 {
+        if relocatable && top_level {
             ops.push("wrap");
         }
         ops.push("altText");
@@ -2281,7 +2329,7 @@ impl DocxModel {
             ops.extend(["fill", "outline"]);
         }
         // Rotation and layer change the frame/wrap: the same placement rules as moving.
-        if relocatable && pos.path.0.len() == 1 && !matches!(self.object_kind(pos), Some("group")) {
+        if relocatable && top_level && !matches!(self.object_kind(pos), Some("group")) {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
