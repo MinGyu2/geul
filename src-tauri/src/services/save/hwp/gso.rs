@@ -273,11 +273,40 @@ fn parse_rendering_matrices(bytes: &[u8]) -> Option<[[f64; 6]; 3]> {
     Some(matrices)
 }
 
-fn approx_eq_matrix(actual: [f64; 6], expected: [f64; 6], tol: f64) -> bool {
-    actual
-        .iter()
-        .zip(expected.iter())
-        .all(|(a, e)| a.is_finite() && e.is_finite() && (a - e).abs() <= tol)
+/// Match the HWP parser's T × R × S model and RHWP's generated matrices.
+fn matches_rotated_rendering(
+    raw: &[u8],
+    offset: [f64; 2],
+    angle: i16,
+    original: [usize; 2],
+    current: [usize; 2],
+) -> bool {
+    let Some([translation, scale, rotation]) = parse_rendering_matrices(raw) else {
+        return false;
+    };
+    let [x, y] = offset;
+    let [w, h] = current.map(|dim| dim as f64);
+    let theta = f64::from(angle).to_radians();
+    let (cos, sin) = (theta.cos(), theta.sin());
+    let tx = -(w * cos).min(0.0) - (-h * sin).min(0.0);
+    let ty = -(w * sin).min(0.0) - (h * cos).min(0.0);
+    let scale_matches = |actual: f64, expected: f64| {
+        (actual - expected).abs() <= 8.0 * f64::EPSILON * expected
+    };
+    let position_tol = 16.0 * f64::EPSILON * (w + h + x.abs() + y.abs());
+    translation == [1.0, 0.0, x, 0.0, 1.0, y]
+        && scale[1] == 0.0
+        && scale[2] == 0.0
+        && scale[3] == 0.0
+        && scale[5] == 0.0
+        && scale_matches(scale[0], w / original[0] as f64)
+        && scale_matches(scale[4], h / original[1] as f64)
+        && (rotation[0] - cos).abs() <= 1e-12
+        && (rotation[1] + sin).abs() <= 1e-12
+        && (rotation[3] - sin).abs() <= 1e-12
+        && (rotation[4] - cos).abs() <= 1e-12
+        && (rotation[2] - (tx - x)).abs() <= position_tol
+        && (rotation[5] - (ty - y)).abs() <= position_tol
 }
 
 fn validate_rendering_info(
@@ -285,79 +314,25 @@ fn validate_rendering_info(
     new_r: &[u8],
     picture_transform_changed: bool,
     component_offset: [i32; 2],
-    rotated_pic: Option<(i16, [usize; 2], [usize; 2])>,
+    rotated_pic: Option<(i16, [usize; 2], [usize; 2], [usize; 2])>,
 ) -> Checked<()> {
-    if !picture_transform_changed || old_r == new_r {
+    if !picture_transform_changed {
         return preserved(old_r == new_r, BODY);
     }
     let [x, y] = component_offset.map(f64::from);
-    if let Some((angle, orig_dims, new_cur_dims)) = rotated_pic {
-        let Some([om1, om2, om3]) = parse_rendering_matrices(old_r) else {
-            return Err(finding(FindingCode::RecordsChanged, BODY));
-        };
-        let theta = (angle as f64).to_radians();
-        let (cos, sin) = (theta.cos(), theta.sin());
+    if let Some((angle, orig_dims, old_cur_dims, new_cur_dims)) = rotated_pic {
         preserved(
-            om1[0] == 1.0 && om1[1] == 0.0 && om1[3] == 0.0 && om1[4] == 1.0,
+            orig_dims.into_iter().chain(old_cur_dims).all(|dim| dim > 0)
+                && matches_rotated_rendering(old_r, [x, y], angle, orig_dims, old_cur_dims),
             BODY,
         )?;
-        preserved(
-            om2[0] > 0.0
-                && om2[4] > 0.0
-                && om2[1] == 0.0
-                && om2[2] == 0.0
-                && om2[3] == 0.0
-                && om2[5] == 0.0,
+        return valid(
+            new_cur_dims.into_iter().all(|dim| dim > 0)
+                && matches_rotated_rendering(new_r, [x, y], angle, orig_dims, new_cur_dims),
             BODY,
-        )?;
-        preserved(
-            (om3[0] - cos).abs() <= 1e-6
-                && (om3[1] + sin).abs() <= 1e-6
-                && (om3[3] - sin).abs() <= 1e-6
-                && (om3[4] - cos).abs() <= 1e-6,
-            BODY,
-        )?;
-
-        valid(
-            orig_dims[0] > 0
-                && orig_dims[1] > 0
-                && new_cur_dims[0] > 0
-                && new_cur_dims[1] > 0,
-            BODY,
-        )?;
-        let Some([nm1, nm2, nm3]) = parse_rendering_matrices(new_r) else {
-            return Err(finding(FindingCode::OutputMalformed, BODY));
-        };
-        let expected_m1 = [1.0, 0.0, x, 0.0, 1.0, y];
-        let expected_m2 = [
-            new_cur_dims[0] as f64 / orig_dims[0] as f64,
-            0.0,
-            0.0,
-            0.0,
-            new_cur_dims[1] as f64 / orig_dims[1] as f64,
-            0.0,
-        ];
-        let w = new_cur_dims[0] as f64;
-        let h = new_cur_dims[1] as f64;
-        let corners = [
-            (0.0, 0.0),
-            (w * cos, w * sin),
-            (-h * sin, h * cos),
-            (w * cos - h * sin, w * sin + h * cos),
-        ];
-        let tx = -corners.iter().map(|(cx, _)| *cx).fold(f64::INFINITY, f64::min);
-        let ty = -corners.iter().map(|(_, cy)| *cy).fold(f64::INFINITY, f64::min);
-        let expected_m3 = [cos, -sin, tx - x, sin, cos, ty - y];
-        valid(
-            approx_eq_matrix(nm1, expected_m1, 1e-12)
-                && nm2[1] == 0.0
-                && nm2[2] == 0.0
-                && nm2[3] == 0.0
-                && nm2[5] == 0.0
-                && approx_eq_matrix(nm2, expected_m2, 1e-12)
-                && approx_eq_matrix(nm3, expected_m3, 1e-10),
-            BODY,
-        )?;
+        );
+    }
+    if old_r == new_r {
         return Ok(());
     }
 
@@ -680,6 +655,11 @@ pub(super) fn prove_evolved_gso(
     let new_r_end = r_at + new_r_len;
     valid(old_sc.len() >= old_r_end && new_sc.len() >= new_r_end, BODY)?;
 
+    if rotated_picture && size_changed {
+        preserved(old_w > 0 && old_h_dim > 0, BODY)?;
+        valid(new_w > 0 && new_h_dim > 0, BODY)?;
+    }
+
     let picture_transform_changed = is_picture
         && if rotated_picture {
             size_changed
@@ -695,7 +675,7 @@ pub(super) fn prove_evolved_gso(
         &new_sc[r_at..new_r_end],
         picture_transform_changed,
         component_offset,
-        rotated_picture.then_some((new_rot, [orig_w, orig_h], [new_cw, new_ch])),
+        rotated_picture.then_some((new_rot, [orig_w, orig_h], [old_cw, old_ch], [new_cw, new_ch])),
     )?;
 
     if is_picture {
@@ -1436,6 +1416,43 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Release-WASM fixtures: set GEUL_STAGE3_OUT and run the rotated stage3-picture-size scenario"]
+    fn release_hwp_rotated_picture_requires_consistent_source_and_output_matrices() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let orig = std::fs::read(dir.join("rotated-pic-orig.hwp")).unwrap();
+        let edit = std::fs::read(dir.join("rotated-pic-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&orig, &edit), vec![]);
+
+        let picture =
+            |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cip$cip$");
+        for (label, at, value) in [
+            ("translation", 68, 42.0f64),
+            ("scale", 100, 2.5),
+            ("rotation correction", 164, 17.0),
+            ("rotation angle mismatch", 148, 0.5),
+            ("shear", 108, 0.125),
+            ("non-finite", 52, f64::NAN),
+        ] {
+            let change = |file| {
+                mutate_body_record(file, picture, |payload| {
+                    let mut changed = payload.to_vec();
+                    changed[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    changed
+                })
+            };
+            for findings in [
+                check_with_preview_refresh(&change(orig.as_slice()), &edit),
+                check_with_preview_refresh(&orig, &change(edit.as_slice())),
+            ] {
+                assert!(
+                    findings.iter().any(|f| f.part.as_deref() == Some(super::BODY)),
+                    "{label}: {findings:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
     #[ignore = "Release-WASM fixtures: set GEUL_STAGE3_OUT and run stage3-object-edit.wasm.test.ts first"]
     fn release_hwp_gso_bytes_pass_only_for_proven_edits() {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
@@ -1447,20 +1464,6 @@ mod tests {
             check_with_preview_refresh(&original, &read("gso-deleted")),
             vec![]
         );
-        if dir.join("rotated-pic-orig.hwp").is_file() {
-            let rot_orig = read("rotated-pic-orig");
-            let rot_edit = read("rotated-pic-edited");
-            assert_eq!(check_with_preview_refresh(&rot_orig, &rot_edit), vec![]);
-            let rot_pic =
-                |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cip$cip$");
-            let rot_bad = mutate_body_record(&rot_edit, rot_pic, |payload| {
-                let mut changed = payload.to_vec();
-                changed[100..108].copy_from_slice(&2.5f64.to_le_bytes());
-                changed
-            });
-            assert!(!check_with_preview_refresh(&rot_orig, &rot_bad).is_empty());
-        }
-
         let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at: usize, bytes: &[u8]| {
             mutate_body_record(file, pick, |payload| {
                 let mut changed = payload.to_vec();

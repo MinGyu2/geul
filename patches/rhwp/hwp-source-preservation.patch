@@ -46,7 +46,7 @@ diff --git a/src/document_core/commands/object_ops/picture.rs b/src/document_cor
 index 6f2cf59..61b3bd0 100644
 --- a/src/document_core/commands/object_ops/picture.rs
 +++ b/src/document_core/commands/object_ops/picture.rs
-@@ -293,6 +293,150 @@ impl DocumentCore {
+@@ -293,6 +293,164 @@ impl DocumentCore {
          // 세우는 것도 지우는 것도 근거가 없으므로 파싱된 값을 보존한다. HWP5 저장에는
          // `flip` 만 나가고 `rotate_image` 는 HWPX `rotateimage` 의 원천이다.
      }
@@ -67,32 +67,46 @@ index 6f2cf59..61b3bd0 100644
 +        Some(m)
 +    }
 +
-+    fn validate_source_rotated_rendering(raw: &[u8], rotation_angle: i16) -> bool {
++    fn validate_source_rotated_rendering(sa: &crate::model::shape::ShapeComponentAttr) -> bool {
++        let raw = &sa.raw_rendering;
 +        if raw.len() != 146 || u16::from_le_bytes([raw[0], raw[1]]) != 1 {
 +            return false;
 +        }
-+        let Some(m1) = Self::parse_rendering_matrix(&raw[2..50]) else {
++        let Some(translation) = Self::parse_rendering_matrix(&raw[2..50]) else {
 +            return false;
 +        };
-+        let Some(m2) = Self::parse_rendering_matrix(&raw[50..98]) else {
++        let Some(scale) = Self::parse_rendering_matrix(&raw[50..98]) else {
 +            return false;
 +        };
-+        let Some(m3) = Self::parse_rendering_matrix(&raw[98..146]) else {
++        let Some(rotation) = Self::parse_rendering_matrix(&raw[98..146]) else {
 +            return false;
 +        };
-+        if m1[0] != 1.0 || m1[1] != 0.0 || m1[3] != 0.0 || m1[4] != 1.0 {
-+            return false;
-+        }
-+        if m2[0] <= 0.0 || m2[4] <= 0.0 || m2[1] != 0.0 || m2[2] != 0.0 || m2[3] != 0.0 || m2[5] != 0.0 {
-+            return false;
-+        }
-+        let theta = (rotation_angle as f64).to_radians();
-+        let cos = theta.cos();
-+        let sin = theta.sin();
-+        (m3[0] - cos).abs() <= 1e-6
-+            && (m3[1] + sin).abs() <= 1e-6
-+            && (m3[3] - sin).abs() <= 1e-6
-+            && (m3[4] - cos).abs() <= 1e-6
++
++        // The HWP parser composes T × R × S. The writer and the Hancom
++        // rotated-picture sample use the component offsets in T and cancel
++        // them in R, leaving the rotated bounds at the local origin.
++        let (x, y) = (f64::from(sa.offset_x), f64::from(sa.offset_y));
++        let (w, h) = (f64::from(sa.current_width), f64::from(sa.current_height));
++        let theta = f64::from(sa.rotation_angle).to_radians();
++        let (cos, sin) = (theta.cos(), theta.sin());
++        let tx = -(w * cos).min(0.0) - (-h * sin).min(0.0);
++        let ty = -(w * sin).min(0.0) - (h * cos).min(0.0);
++        let scale_matches = |actual: f64, expected: f64| {
++            (actual - expected).abs() <= 8.0 * f64::EPSILON * expected
++        };
++        // Trigonometry and summation may differ by a few ULPs. The scale
++        // here also covers cancellation near zero and snapped right angles.
++        let position_tol = 16.0 * f64::EPSILON * (w + h + x.abs() + y.abs());
++        translation == [1.0, 0.0, x, 0.0, 1.0, y]
++            && scale[1] == 0.0 && scale[2] == 0.0 && scale[3] == 0.0 && scale[5] == 0.0
++            && scale_matches(scale[0], w / f64::from(sa.original_width))
++            && scale_matches(scale[4], h / f64::from(sa.original_height))
++            && (rotation[0] - cos).abs() <= 1e-12
++            && (rotation[1] + sin).abs() <= 1e-12
++            && (rotation[3] - sin).abs() <= 1e-12
++            && (rotation[4] - cos).abs() <= 1e-12
++            && (rotation[2] - (tx - x)).abs() <= position_tol
++            && (rotation[5] - (ty - y)).abs() <= position_tol
 +    }
 +
 +    fn scale_rotated_picture_axis(source_common: u32, source_current: u32, target: u32) -> Option<u32> {
@@ -158,7 +172,7 @@ index 6f2cf59..61b3bd0 100644
 +        }
 +        if preserve_hwp_geometry
 +            && !sa.raw_rendering.is_empty()
-+            && !Self::validate_source_rotated_rendering(&sa.raw_rendering, sa.rotation_angle)
++            && !Self::validate_source_rotated_rendering(sa)
 +        {
 +            return Err(HwpError::RenderError(
 +                "원본 회전 그림의 렌더링 행렬 형식을 안전하게 검증할 수 없습니다".into(),
@@ -197,7 +211,7 @@ index 6f2cf59..61b3bd0 100644
      fn apply_picture_display_width(pic: &mut crate::model::image::Picture, width: u32) {
          let old_common_width = pic.common.width;
          let old_current_width = pic.shape_attr.current_width;
-@@ -514,6 +658,7 @@ impl DocumentCore {
+@@ -514,6 +672,7 @@ impl DocumentCore {
          // [Issue #6204] 개체의 **배제 밴드 기하**를 변경 전에 찍어 둔다. 위치·크기가
          // 바뀌면 그 개체가 만드는 어울림 배제 밴드도 바뀌므로, 그 밴드에 되감긴 본문
          // 문단의 저장 `LINE_SEG` 는 더는 유효하지 않다.
@@ -205,7 +219,7 @@ index 6f2cf59..61b3bd0 100644
          let band_geometry_before = self
              .resolve_picture_control_ref(section_idx, parent_para_idx, control_idx)
              .ok()
-@@ -530,7 +675,8 @@ impl DocumentCore {
+@@ -530,7 +689,8 @@ impl DocumentCore {
              // [Task #1151 v2] tac false→true migration 검출용 snapshot.
              let was_tac = pic.common.treat_as_char;
              let had_caption = pic.caption.is_some();
@@ -215,7 +229,7 @@ index 6f2cf59..61b3bd0 100644
              let now_tac = pic.common.treat_as_char;
              // tac 토글이 enum 에만 반영되고 packed attr 이 낡으면 직렬화가 옛 앵커를
              // 되살린다 — 여기서 즉시 동기화 (migrate 경로는 rel_to 갱신 후 재동기화).
-@@ -700,6 +846,7 @@ impl DocumentCore {
+@@ -700,6 +860,7 @@ impl DocumentCore {
          inner_control_idx: usize,
          props_json: &str,
      ) -> Result<String, HwpError> {
@@ -223,7 +237,7 @@ index 6f2cf59..61b3bd0 100644
          let caption_created;
          {
              let section = self.document.sections.get_mut(section_idx).ok_or_else(|| {
-@@ -751,7 +898,8 @@ impl DocumentCore {
+@@ -751,7 +912,8 @@ impl DocumentCore {
              // 한다. 머리말/꼬리말 경로는 이 마이그레이션이 누락되어 있었음 — tac on 시
              // 그림 높이가 줄 높이에 반영되지 않아 렌더 시 그림이 겹치거나 잘림.
              let was_tac = pic.common.treat_as_char;
@@ -233,7 +247,7 @@ index 6f2cf59..61b3bd0 100644
              let now_tac = pic.common.treat_as_char;
              // 본문 setter 와 같은 이유로 여기서도 packed attr 을 동기화한다 —
              // 머리말/꼬리말 경로도 같은 tac 토글 마이그레이션을 수행한다 (Issue #3781).
-@@ -981,23 +1129,43 @@ impl DocumentCore {
+@@ -981,23 +1143,43 @@ impl DocumentCore {
      pub(crate) fn apply_picture_props_inner(
          pic: &mut crate::model::image::Picture,
          props_json: &str,
@@ -285,7 +299,7 @@ index 6f2cf59..61b3bd0 100644
              }
          }
  
-@@ -1141,6 +1309,7 @@ impl DocumentCore {
+@@ -1141,6 +1323,7 @@ impl DocumentCore {
              }
          }
          if rotation_changed {
@@ -293,7 +307,7 @@ index 6f2cf59..61b3bd0 100644
              Self::refresh_picture_rotation_layout_for_save(pic);
          }
  
-@@ -1284,7 +1453,7 @@ impl DocumentCore {
+@@ -1284,7 +1467,7 @@ impl DocumentCore {
              }
          }
  
@@ -302,7 +316,7 @@ index 6f2cf59..61b3bd0 100644
      }
      /// 그림 컨트롤을 문단에서 삭제한다 (네이티브).
      pub fn delete_picture_control_native(
-@@ -1317,72 +1486,17 @@ impl DocumentCore {
+@@ -1317,72 +1500,17 @@ impl DocumentCore {
          if !matches!(
              &para.controls[control_idx],
              crate::model::control::Control::Picture(_)
@@ -380,7 +394,7 @@ index 6f2cf59..61b3bd0 100644
          if let Some(active) = self.active_field.as_mut() {
              if active.section_idx == section_idx
                  && active.para_idx == parent_para_idx
-@@ -1393,11 +1507,6 @@ impl DocumentCore {
+@@ -1393,11 +1521,6 @@ impl DocumentCore {
              }
          }
  
