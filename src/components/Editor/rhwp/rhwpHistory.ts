@@ -79,7 +79,9 @@ export function captureCheckpoint(text: RhwpText, caret: DocPosition, anchor: Do
 
 function structurallyValid(text: RhwpText, at: DocPosition): boolean {
   try {
-    if (at.cell) {
+    if (at.cell?.textBox) {
+      if (!text.ownsTextBox(at)) return false;
+    } else if (at.cell) {
       const cells = text.cellCount(at);
       const inner = innermost(at.cell);
       // A nested path must still be owned level by level (a restored model may hold another table there).

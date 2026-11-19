@@ -420,7 +420,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     const box = canvas.getBoundingClientRect();
     const x = (event.clientX - box.left) / scale;
     const y = (event.clientY - box.top) / scale;
-    if (!extend && session.isObjectHitPageCurrent(page, canvas, scale * ratio)) {
+    const editTextBox = event.detail === 2 && session.objectSelection?.kind === "textBox";
+    if (!extend && !editTextBox && session.isObjectHitPageCurrent(page, canvas, scale * ratio)) {
       session.pointAt(page, x, y, false, false, true);
     } else if (drag) {
       session.pointAt(page, x, y, true, true);

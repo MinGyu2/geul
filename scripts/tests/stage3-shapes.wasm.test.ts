@@ -255,6 +255,72 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("edits one owned HWPX text box with Hangul composition and paragraph alignment", async () => {
+    const { editor, doc, confirm } = await setup("hwpx");
+    try {
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+
+      const [target, sibling] = shapes(doc);
+      expect(target).toBeDefined();
+      expect(sibling).toBeDefined();
+      const control = target!.controlIdx;
+      const otherControl = sibling!.controlIdx;
+      const lock = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(lock.setControlLock(0, otherControl, true))).toMatchObject({ ok: true });
+      const original = doc.exportHwpx();
+      const lockedCaret = JSON.parse(doc.getCursorRectInCell(0, 0, otherControl, 0, 0, 0));
+      expect(editor.pointAt(lockedCaret.pageIndex, lockedCaret.x + 1, lockedCaret.y + lockedCaret.height / 2, false)).toBe(false);
+      const paragraphAt = (d: RhwpDocument, index: number) =>
+        d.getTextInCell(0, 0, index, 0, 0, 0, d.getCellParagraphLength(0, 0, index, 0, 0));
+      const body = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+      const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 0, 0));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 1, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.enter()).toBe(false);
+
+      editor.beginComposition();
+      editor.updateComposition("하");
+      editor.updateComposition("한");
+      expect(editor.endComposition("한글")).toBe("한글");
+      await confirm();
+      expect(paragraphAt(doc, control)).toBe("한글");
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphAt(doc, control)).toBe("");
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      expect(editor.moveHorizontal(-1, true)).toBe(true);
+      expect(editor.selectionRects()).not.toHaveLength(0);
+      expect(editor.moveHorizontal(1, false)).toBe(true);
+      expect(editor.execute("paragraph.alignCenter").accepted).toBe(true);
+      await confirm();
+      const alignment = (d: RhwpDocument) => JSON.parse(d.getCellParaPropertiesAt!(0, 0, control, 0, 0)).alignment;
+      expect(alignment(doc)).toBe("center");
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const bytes = exported.takeBytes();
+        const report = exported.contentLoss();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+        try {
+          expect(paragraphAt(reopened, control)).toBe("한글");
+          expect(paragraphAt(reopened, otherControl)).toBe("");
+          expect(reopened.getTextRange(0, 0, 0, reopened.getParagraphLength(0, 0))).toBe(body);
+          expect(alignment(reopened)).toBe("center");
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p2-textbox-original.hwpx"), original);
+          writeFileSync(resolve(out, "p2-textbox-edited.hwpx"), bytes);
+          writeFileSync(resolve(out, "p2-textbox-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("inserts the four supported HWP shape families after SAFE preflight and reopens them without loss", async () => {
     const { editor, doc, bytes, confirm, take, calls } = await setup("hwp");
     try {

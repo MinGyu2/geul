@@ -31,6 +31,8 @@ export interface CellRef {
   cell: number;
   cellParagraph: number;
   nested?: readonly NestedCell[];
+  /** Top-level drawing text story, addressed through RHWP’s paragraph-in-cell API. */
+  textBox?: true;
 }
 
 /** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
@@ -119,20 +121,21 @@ export function parseCaretRect(value: unknown): CaretRect | null {
 }
 
 /** hitTest·moveVertical 결과의 위치. 머리말·꼬리말·각주 표식(아주 큰 문단 번호)은 null. */
-export function parsePosition(value: unknown): DocPosition | null {
+export function parsePosition(value: unknown, allowTextBox = false): DocPosition | null {
   if (!isRecord(value)) return null;
   const { sectionIndex, paragraphIndex, charOffset, parentParaIndex, controlIndex, cellIndex, cellParaIndex, isTextBox } = value;
   if (!isIndex(sectionIndex) || !isIndex(paragraphIndex) || !isIndex(charOffset)) return null;
   if (paragraphIndex >= 0xffffff00) return null;
   if (parentParaIndex === undefined) {
+    if (isTextBox === true) return null;
     // 표 셀 안의 개체(그림 등)를 가리키는 결과는 셀 경로를 다른 모양(`cellPath: [[컨트롤, 셀, 셀 문단]]`, `innerControlIdx`)으로만 준다
     // (고정 rhwp 실측, 여러 구역 문서 예제). 본문 위치로 읽으면 구역 첫 문단으로 커서가 튄다 — 이 모양은 다루지 않는다.
     if (value.cellPath !== undefined || value.innerControlIdx !== undefined) return null;
     return { section: sectionIndex, paragraph: paragraphIndex, offset: charOffset };
   }
-  if (isTextBox === true) return null; // 글상자는 이 PoC 범위 밖
+  if (isTextBox === true && (!allowTextBox || cellIndex !== 0 || cellParaIndex !== 0)) return null;
   if (!isIndex(parentParaIndex) || !isIndex(controlIndex) || !isIndex(cellIndex) || !isIndex(cellParaIndex)) return null;
-  const cell: CellRef = { parentParagraph: parentParaIndex, control: controlIndex, cell: cellIndex, cellParagraph: cellParaIndex };
+  const cell: CellRef = { parentParagraph: parentParaIndex, control: controlIndex, cell: cellIndex, cellParagraph: cellParaIndex, ...(isTextBox === true ? { textBox: true } : {}) };
   if (value.cellPath !== undefined) {
     // The engine repeats the whole path, outermost first. Its first entry must restate the scalar cell fields
     // exactly; anything else (other shapes, extra keys, too deep) is refused rather than read as the outer cell.
@@ -146,7 +149,10 @@ export function parsePosition(value: unknown): DocPosition | null {
     }
     const first = levels[0]!;
     if (first.control !== controlIndex || first.cell !== cellIndex || first.cellParagraph !== cellParaIndex) return null;
-    if (levels.length > 1) cell.nested = levels.slice(1);
+    if (levels.length > 1) {
+      if (cell.textBox) return null;
+      cell.nested = levels.slice(1);
+    }
   }
   return { section: sectionIndex, paragraph: parentParaIndex, offset: charOffset, cell };
 }
@@ -172,7 +178,7 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
   if (a.section !== b.section) return false;
   if (a.cell === undefined || b.cell === undefined) return a.cell === b.cell;
   const x = a.cell, y = b.cell, nx = x.nested ?? [], ny = y.nested ?? [];
-  if (x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
+  if (x.textBox !== y.textBox || x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
   if (nx.length && x.cellParagraph !== y.cellParagraph) return false;
   return nx.every((level, i) => level.control === ny[i]!.control && level.cell === ny[i]!.cell
     && (i === nx.length - 1 || level.cellParagraph === ny[i]!.cellParagraph));
@@ -180,7 +186,7 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
 
 /** Same explicitly owned table; only the innermost cell may differ. */
 export function sameTable(a: DocPosition, b: DocPosition): boolean {
-  return !!a.cell && !!b.cell && sameContext(withCell(a, innermost(b.cell).cell), b);
+  return !!a.cell && !!b.cell && !a.cell.textBox && !b.cell.textBox && sameContext(withCell(a, innermost(b.cell).cell), b);
 }
 
 /** 같은 문맥(본문 또는 같은 셀)에서 문서 순서 비교. */
@@ -213,7 +219,7 @@ export function withCell(position: DocPosition, index: number): DocPosition {
 /** Stable identity of a position's context and paragraph path (cache/history keys; not display text). */
 export function contextKey(at: DocPosition): string {
   const c = at.cell;
-  return c ? `${at.section}:${c.parentParagraph}/${[c, ...(c.nested ?? [])].map(l => `${l.control}.${l.cell}.${l.cellParagraph}`).join(">")}`
+  return c ? `${at.section}:${c.parentParagraph}${c.textBox ? ":textbox" : ""}/${[c, ...(c.nested ?? [])].map(l => `${l.control}.${l.cell}.${l.cellParagraph}`).join(">")}`
     : `${at.section}:body:${at.paragraph}`;
 }
 
@@ -361,6 +367,36 @@ export class RhwpText {
     } catch { return false; }
   }
 
+  /** A single plain paragraph in a top-level, unlocked drawing text box. */
+  ownsTextBox(at: DocPosition): boolean {
+    const c = at.cell, doc = this.doc;
+    if (!c?.textBox || c.nested || c.cell !== 0 || c.cellParagraph !== 0
+      || !doc.getControls || !doc.getCursorModel || !doc.getShapeProperties) return false;
+    try {
+      const rawControls = doc.getControls(), rawLists = doc.getCursorModel();
+      if (rawControls.length + rawLists.length > 8 * 1024 * 1024) return false;
+      const controls = json(rawControls), model = json(rawLists);
+      if (!Array.isArray(controls) || !controls.every(isRecord) || !isRecord(model) || !Array.isArray(model.lists)) return false;
+      const lists = model.lists.filter(isRecord);
+      const owners = lists.filter(list => list.hostListId === 0 && list.sectionIndex === at.section
+        && list.hostPara === c.parentParagraph && list.controlIndex === c.control);
+      if (owners.length !== 1) return false;
+      const list = owners[0]!;
+      if (list.isCell !== false || list.cellIndex !== 0 || list.paraCount !== 1
+        || !isIndex(list.listId) || list.listId < 2 || controls.some(ctrl => ctrl.list === list.listId)
+        || lists.some(child => child.hostListId === list.listId)) return false;
+      let paragraph = c.parentParagraph;
+      for (let section = 0; section < at.section; section++) paragraph += doc.getParagraphCount(section);
+      const hosts = controls.filter(ctrl => ctrl.list === 0 && ctrl.para === paragraph && ctrl.controlIndex === c.control);
+      const host = hosts[0], props = host?.props;
+      if (hosts.length !== 1 || host?.ctrlId !== "gso" || !isRecord(props) || props.Lock !== 0) return false;
+      const shape = json(doc.getShapeProperties(at.section, c.parentParagraph, c.control));
+      return isRecord(shape) && shape.hasCaption === false
+        && ["Top", "Center", "Bottom"].includes(String(shape.tbVerticalAlign))
+        && doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, 0) === 1;
+    } catch { return false; }
+  }
+
   paragraphCount(at: DocPosition): number {
     const c = at.cell;
     if (c?.nested) return this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(c));
@@ -370,7 +406,7 @@ export class RhwpText {
   /** Legacy cell APIs use plain-text offsets; new inline pictures use logical caret slots. */
   private inlineCell(at: DocPosition, count = 0): { length: number; textOffset: number; textCount: number; containsControl: boolean } | null {
     const c = at.cell;
-    if (!c || !this.doc.getCellInlineContextByPath) return null;
+    if (!c || c.textBox || !this.doc.getCellInlineContextByPath) return null;
     const value = json(this.doc.getCellInlineContextByPath(at.section, c.parentParagraph, pathJson(c), at.offset, count));
     if (!isRecord(value) || typeof value.hasPictures !== "boolean" || !isIndex(value.length)
       || !isIndex(value.textOffset) || !isIndex(value.textCount) || typeof value.containsControl !== "boolean") throw new Error("invalid cell inline context");
@@ -477,7 +513,8 @@ export class RhwpText {
         at.section, at.paragraph, at.offset, delta, preferredX,
         c ? c.parentParagraph : NO_CELL, c ? c.control : 0, c ? c.cell : 0, c ? c.cellParagraph : 0,
       ));
-      const position = parsePosition(value);
+      const position = parsePosition(value, c?.textBox);
+      if (c?.textBox && (!position || !sameContext(at, position))) return null;
       if (!position || !isRecord(value) || !isNumber(value.preferredX)) return null;
       return { position, preferredX: value.preferredX };
     } catch {
@@ -535,7 +572,7 @@ export class RhwpText {
         let hostParagraph = c.parentParagraph;
         for (const level of [c, ...(c.nested ?? [])]) {
           const matches = model.lists.filter(l => isRecord(l) && l.sectionIndex === from.section && l.hostListId === list
-            && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell && l.isCell === true);
+            && l.hostPara === hostParagraph && l.controlIndex === level.control && l.cellIndex === level.cell && l.isCell === !c.textBox);
           if (matches.length !== 1 || !isRecord(matches[0]) || !isIndex(matches[0].listId) || matches[0].listId < 2) return null;
           list = matches[0].listId; hostParagraph = level.cellParagraph;
         }
@@ -625,6 +662,7 @@ export class RhwpText {
     if (c) for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
       if (this.inlineCell(withParagraph(from, p, 0))) throw new Error("cross-paragraph inline object selection unsupported");
     }
+    if (c?.textBox) { this.delete(from, to.offset - from.offset); return; }
     if (c?.nested) this.nestedResult(this.doc.deleteRangeInCellByPath!(from.section, c.parentParagraph, pathJson(c),
       paragraphOf(from), from.offset, paragraphOf(to), to.offset));
     else if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);
@@ -1018,6 +1056,7 @@ export class RhwpText {
 
   /** Complete paragraph field inventory, resolved through every explicit cell path entry. */
   private formulaInventory(at: DocPosition): Fields[] {
+    if (at.cell?.textBox) return []; // contains only the plain paragraph proved by ownsTextBox
     if (!at.cell || !this.doc.getFieldList) throw new Error("formula inventory unavailable");
     const fields: unknown = json(this.doc.getFieldList());
     if (!Array.isArray(fields) || fields.length > 4096 || !fields.every(isRecord)) throw new Error("formula inventory invalid");
