@@ -34,7 +34,7 @@ function source(format: "hwp" | "hwpx"): Uint8Array {
   } finally { doc.free(); }
 }
 
-async function setup(format: "hwp" | "hwpx") {
+async function setup(format: "hwp" | "hwpx", approveHwp = false) {
   const control = controlledBackend();
   const sessions = new DocumentSessions(control.backend);
   const open = sessions.open(`/picture.${format}`);
@@ -42,17 +42,23 @@ async function setup(format: "hwp" | "hwpx") {
   control.take("open").reply(ok(sessionInfo({ displayName: `picture.${format}` })));
   await open;
   const bytes = source(format);
-  const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+  let doc: RhwpDocument | undefined;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
-    async () => ({ openDocument: () => doc, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
+    async () => ({ openDocument: (b: Uint8Array) => { const d = new engine.HwpDocument(b) as RhwpDocument; doc ??= d; return d; }, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
   const loading = editor.load();
   control.take("load").reply(loaded(bytes));
   await flush();
   control.take("session").reply(ok(sessionInfo({ state: "loading", sequence: 1, loadGeneration: 1 })));
   control.take("setState").reply(ok(sessionInfo({ state: "ready", sequence: 2, loadGeneration: 1 })));
   await loading;
+  if (format === "hwp" && approveHwp) {
+    control.take("original").reply(ok(bytes));
+    await flush();
+    control.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+    await flush();
+  }
   const pick = (index: number) => {
-    const frame = layout(doc)[index]!;
+    const frame = layout(doc!)[index]!;
     expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
     const selected = editor.objectSelection!;
     return {
@@ -68,7 +74,7 @@ async function setup(format: "hwp" | "hwpx") {
     pending.reply(ok(sessionInfo({ state: "ready", revision, dirty: true, loadGeneration: 1, sequence: 2 + revision })));
     await flush();
   };
-  return { editor, doc, pick, confirm, ...control };
+  return { editor, doc: doc!, pick, confirm, ...control };
 }
 
 describe("Stage 3 HWPX picture size on the Release engine", () => {
@@ -103,7 +109,7 @@ describe("Stage 3 HWPX picture size on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("refuses the same size operation on HWP before mutation or history", async () => {
+  it("refuses the same size operation on HWP before original preflight and history", async () => {
     const { editor, doc, pick, calls } = await setup("hwp");
     try {
       const initial = layout(doc);
@@ -111,6 +117,28 @@ describe("Stage 3 HWPX picture size on the Release engine", () => {
       expect(editor.undo()).toBe(false);
       expect(layout(doc)).toEqual(initial);
       expect(calls.filter(call => call.method === "commit")).toEqual([]);
+    } finally { editor.dispose(); }
+  });
+
+  it("resizes an HWP inline picture after SAFE preflight with undo/redo and reopen equality", async () => {
+    const { editor, doc, pick, confirm } = await setup("hwp", true);
+    try {
+      const initial = layout(doc);
+      expect(editor.execute("picture.size", pick(0)).accepted).toBe(true);
+      await confirm(1);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6100, height: 3050 });
+      expect(editor.undo()).toBe(true);
+      await confirm(2);
+      expect(layout(doc)).toEqual(initial);
+      expect(editor.redo()).toBe(true);
+      await confirm(3);
+      const exported = doc.exportHwpWithReport();
+      try {
+        const reopened = new engine.HwpDocument(exported.takeBytes()) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({ width: 6100, height: 3050 });
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
     } finally { editor.dispose(); }
   });
 });

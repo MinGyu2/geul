@@ -1680,21 +1680,27 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const body = address && address[1] < this.doc.getParagraphCount(address[0]);
           const inspected = body ? inspectRhwpPicture(this.doc, address) : undefined;
           const graphic = this.readChart(hit.bodyEmbedded);
-          // Stage 3: HWPX body pictures only. HWP BodyText record changes for pictures have no T009 proof yet.
-          const hwpx = Boolean(inspected && this.history && this.sessions.get(this.sessionId)?.format === "hwpx");
-          const canResize = hwpx && inspected!.simpleInline && !!this.doc.setPictureProperties;
-          const canMove = hwpx && !!inspected!.movable && !!this.doc.setPictureProperties;
-          const canDelete = hwpx && !!this.doc.deletePictureControl;
-          const canFormat = hwpx && !!this.doc.setPictureProperties && inspected!.plain;
+          const format = this.sessions.get(this.sessionId)?.format;
+          const canEditHwp = format === "hwp" && this.structuralFormat();
+          // Stage 3: HWPX always (with history), or HWP when preflight-safe & baseline-complete with field-level T009 proof.
+          const canEditGso = format === "hwpx" || canEditHwp;
+          const picUnlocked = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(address, false));
+          const canPic = Boolean(inspected && this.history && canEditGso && picUnlocked);
+          const canResize = canPic && inspected!.simpleInline && !!this.doc.setPictureProperties;
+          const canMove = canPic && !!inspected!.movable && !!this.doc.setPictureProperties;
+          const canDelete = format === "hwpx" && canPic && !!this.doc.deletePictureControl;
+          const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
           const operations: MutatingObjectOperation[] = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
             ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
-          // Stage 3 P3: HWPX body shapes and text boxes (outer object).
+          // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
-          const shape = shapeAddress && this.history && this.sessions.get(this.sessionId)?.format === "hwpx" && this.doc.setShapeProperties
+          const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
+          const rawShape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
             ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
+          const shape = rawShape && (format === "hwpx" || !rawShape.hasCaption) ? rawShape : undefined;
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []), "resize",
-              ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
+              ...(format === "hwpx" && this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate");
             // Z-order: the RHWP HWPX export does not reopen with the changed order (save reopen comparison fails).
           }
@@ -4164,12 +4170,36 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch { return false; }
   }
 
-  /** Stage 3 `object.edit` on the selected HWPX body picture: one verified engine call, one history step. */
+  private isEditableHwpGso(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
+    const doc = this.doc;
+    if (!address || !doc?.getControls) return false;
+    try {
+      const [section, para, control] = address;
+      let globalPara = para;
+      for (let s = 0; s < section; s++) globalPara += doc.getParagraphCount(s);
+      const controls = JSON.parse(doc.getControls()) as { ctrlId?: string; userDesc?: string; list?: number; para?: number; controlIndex?: number; props?: { Lock?: number } }[];
+      const match = controls.find(c => c.ctrlId === "gso" && c.list === 0 && c.para === globalPara && c.controlIndex === control);
+      if (!match || match.props?.Lock === 1) return false;
+      if (shapeOnly) return match.userDesc === "사각형" || match.userDesc === "타원" || match.userDesc === "직선";
+      return match.userDesc === "그림";
+    } catch {
+      return false;
+    }
+  }
+
+  private gsoFormatEditable(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format === "hwpx") return true;
+    return format === "hwp" && this.structuralFormat() && this.isEditableHwpGso(address, shapeOnly);
+  }
+
+  /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
-      || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+      || !this.gsoFormatEditable(address, false)) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
     const { edit } = request;
     if (edit.kind === "bounds" && edit.x === undefined) {
       if (edit.width === undefined || edit.height === undefined) return false;
@@ -4189,7 +4219,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     };
     let apply: () => void;
     if (edit.kind === "delete") {
-      if (!doc.deletePictureControl) return false;
+      if (format !== "hwpx" || !doc.deletePictureControl) return false;
       apply = () => {
         const result = JSON.parse(doc.deletePictureControl!(...address)) as { ok?: boolean };
         if (result.ok !== true) throw new Error("picture deletion refused");
@@ -4248,13 +4278,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return accepted;
   }
 
-  /** Stage 3 P3 `object.edit` on the selected HWPX body shape/text box (outer object). */
+  /** Stage 3 P3 `object.edit` on the selected HWPX/HWP body shape/text box (outer object). */
   private editShape(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
     const doc = this.doc, selected = this.objectSelection;
     if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history
-      || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+      || !this.gsoFormatEditable(address, true)) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
     const before = inspectRhwpShape(doc, address);
-    if (!before || !selected.shape || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
+    if (!before || !selected.shape || (format === "hwp" && before.hasCaption)
+      || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
     const { edit } = request;
     type Raw = typeof before.raw;
     // Fields that must stay exactly as they were for each edit (the edited ones are checked separately).
@@ -4265,7 +4297,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (!doc.deleteShapeControl) return false;
+        if (format !== "hwpx" || !doc.deleteShapeControl) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("shape deletion refused");
@@ -4358,7 +4390,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private resizePicture(request: PictureResizeRequest): boolean {
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !pictureResizeMatches(request, selected) || !address || !doc?.setPictureProperties
-      || !this.history || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+      || !this.history || !this.gsoFormatEditable(address, false)) return false;
     const page = this.pages[selected.frame.page], previous = selected.picture;
     if (!page || !previous || ![request.widthPt, request.heightPt].every(side =>
       typeof side === "number" && Number.isFinite(side) && side >= 2 && side <= 4000)) return false;

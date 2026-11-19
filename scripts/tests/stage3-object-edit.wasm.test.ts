@@ -9,6 +9,7 @@ import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
+import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
 
@@ -35,7 +36,7 @@ function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: stri
 }
 
 /** One inline picture (control 2) and one floating picture (control 3) in the first paragraph. */
-function source(format: "hwp" | "hwpx"): Uint8Array {
+function source(format: "hwp" | "hwpx", withShape = false): Uint8Array {
   const doc = engine.HwpDocument.createEmpty();
   try {
     doc.createBlankDocument();
@@ -49,27 +50,41 @@ function source(format: "hwp" | "hwpx"): Uint8Array {
       expect(JSON.parse(doc.setPictureProperties(0, inserted.paraIdx, inserted.controlIdx, props[i])).ok).toBe(true);
       offset = inserted.logicalOffset;
     }
+    if (withShape) {
+      const rect = JSON.parse(doc.createShapeControl(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: offset, shapeType: "rectangle",
+        width: 7200, height: 3600, treatAsChar: false, textWrap: "Square", horzOffset: 4000, vertOffset: 8000,
+      })));
+      expect(rect.ok).toBe(true);
+      expect(JSON.parse(doc.setShapeProperties(0, rect.paraIdx, rect.controlIdx, JSON.stringify({ textWrap: "Square" }))).ok).toBe(true);
+    }
     return format === "hwpx" ? doc.exportHwpx() : doc.exportHwp();
   } finally { doc.free(); }
 }
 
-async function setup(format: "hwp" | "hwpx") {
+async function setup(format: "hwp" | "hwpx", approveHwp = false, withShape = false) {
   const control = controlledBackend();
   const sessions = new DocumentSessions(control.backend);
   const open = sessions.open(`/object.${format}`);
   const sessionInfo = (patch: Parameters<typeof info>[0]) => info({ ...patch, format });
   control.take("open").reply(ok(sessionInfo({ displayName: `object.${format}` })));
   await open;
-  const bytes = source(format);
-  const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+  const bytes = source(format, withShape);
+  let doc: RhwpDocument | undefined;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
-    async () => ({ openDocument: () => doc, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
+    async () => ({ openDocument: (b: Uint8Array) => { const d = new engine.HwpDocument(b) as RhwpDocument; doc ??= d; return d; }, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
   const loading = editor.load();
   control.take("load").reply(loaded(bytes));
   await flush();
   control.take("session").reply(ok(sessionInfo({ state: "loading", sequence: 1, loadGeneration: 1 })));
   control.take("setState").reply(ok(sessionInfo({ state: "ready", sequence: 2, loadGeneration: 1 })));
   await loading;
+  if (format === "hwp" && approveHwp) {
+    control.take("original").reply(ok(bytes));
+    await flush();
+    control.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+    await flush();
+  }
   const pick = (frame: Frame) => {
     expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
     return editor.objectSelection!;
@@ -81,7 +96,7 @@ async function setup(format: "hwp" | "hwpx") {
     pending.reply(ok(sessionInfo({ state: "ready", revision, dirty: true, loadGeneration: 1, sequence: 2 + revision })));
     await flush();
   };
-  return { editor, doc, bytes, pick, edit, confirm, ...control };
+  return { editor, doc: doc!, bytes, pick, edit, confirm, ...control };
 }
 
 const offsets = (doc: RhwpDocument, control: number) => {
@@ -222,7 +237,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("offers no mutation for HWP pictures and refuses object.edit before history", async () => {
+  it("offers no mutation for HWP pictures before original preflight and refuses object.edit", async () => {
     const { editor, doc, pick, edit, calls } = await setup("hwp");
     try {
       const initial = images(doc);
@@ -232,6 +247,58 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(editor.undo()).toBe(false);
       expect(images(doc)).toEqual(initial);
       expect(calls.filter(call => call.method === "commit")).toEqual([]);
+    } finally { editor.dispose(); }
+  });
+
+  it("edits HWP pictures and shapes after SAFE preflight with reopen equality and delete refusal", async () => {
+    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, true);
+    try {
+      const baseline = hwpReopenModel(doc).structure;
+      const byWidth = (frames: Frame[]) => [...frames].sort((a, b) => b.w - a.w);
+      const [inlinePic, floatingPic] = byWidth(images(doc));
+      const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
+        .filter((control: { type: string }) => control.type === "shape") as Frame[];
+
+      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "crop", "wrap", "altText"]);
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
+      await confirm(1);
+
+      expect(pick(inlinePic!).operations).toEqual(["deselect", "resize", "crop", "wrap", "altText"]);
+      expect(edit({ kind: "altText", text: "HWP 그림 설명" })).toBe(true);
+      await confirm(2);
+      pick(byWidth(images(doc))[0]!);
+      expect(edit({ kind: "bounds", width: 50, height: 25 })).toBe(true);
+      await confirm(3);
+
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "wrap", "fill", "outline", "rotate"]);
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(edit({ kind: "fill", color: "336699" })).toBe(true);
+      await confirm(4);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "rotate", degrees: 20, flipH: true, flipV: false })).toBe(true);
+      await confirm(5);
+
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss();
+        const edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
+        const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({
+            width: 5000, height: 2500, description: "HWP 그림 설명",
+          });
+          expect(JSON.parse(reopened.getShapeProperties!(0, 0, 4))).toMatchObject({
+            fillType: "solid", fillBgColor: 0x996633, rotationAngle: 20, horzFlip: true,
+          });
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm(6);
+      expect(JSON.parse(doc.getShapeProperties!(0, 0, 4))).toMatchObject({ rotationAngle: 0, horzFlip: false });
     } finally { editor.dispose(); }
   });
 });

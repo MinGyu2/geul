@@ -1107,11 +1107,11 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   위치·크기를 EMU 격자에 맞추고(재열기 동일성), 편집 전 내보내기 대비 `check_saved` + `same_as`가
   안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
   같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
-- RHWP: HWPX 본문 그림만. 크기는 기존 `picture.size` 경로(단순 인라인), 이동은 `horzAlign=Left`·
-  `vertAlign=Top`·캡션·회전 없는 떠 있는 그림의 `horzOffset`/`vertOffset`(배치 표본 비율로 HWPUNIT 환산),
-  삭제는 `deletePictureControl`. 호출 뒤 같은 주소의 값을 다시 확인하고 RHWP 이력 한 트랜잭션으로 적용한다.
-  BinData는 삭제 뒤에도 원본 그대로 남는다(매니페스트 무변경). HWP는 선택만 제공한다.
-- UI: `ObjectSelectionFrame`의 이동 영역과 8방향 핸들(접근 이름 포함). 그림 모서리는 비율 유지(Shift로 해제),
+- RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·기본 도형(`사각형`·`타원`·`직선`, 잠금/캡션 제외).
+  크기는 `picture.size`/`bounds` 경로, 이동은 `horzAlign=Left`·`vertAlign=Top`·캡션·회전 없는 떠 있는 개체의 `horzOffset`/`vertOffset`,
+  그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원하며 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용으로 유지한다(HWP GSO 삭제/차트/OLE/그룹/다각형은 fail-closed 차단).
+  HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.
+- UI: `ObjectSelectionFrame`의 이동 영역과 8방향 핸들(접근 이름 포함). 그림 모서리는 비율 유지(Shift로 해제; 한/양 축 최소·최대 한계에 닿아도 공통 비율을 유지하며 불가능한 제약에서는 변경 거부),
   Esc·pointercancel·선택/문서/배율 변경은 끌기를 취소한다. 방향키 1pt(Shift 10pt), Delete/Backspace 삭제.
 
 ### P2 그림 편집 (2026-11-19)

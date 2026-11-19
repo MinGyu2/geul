@@ -70,10 +70,19 @@ export function checkCellProperties(o: JsonObject): void {
   field(o, "isHeader", "boolean", "cell");
   fields(o, "cell", "border", ...BORDERS);
 }
+const SHAPE_DESCS = new Set(["사각형", "타원", "직선"]);
+
 export function checkPictureProperties(o: JsonObject): void {
   fields(o, "picture", "uint", "width", "height");
   field(o, "treatAsChar", "boolean", "picture");
   if (typeof o.textWrap !== "string") throw new HwpEvidenceError("picture.textWrap");
+}
+export function checkShapeProperties(o: JsonObject): void {
+  fields(o, "shape", "uint", "width", "height");
+  fields(o, "shape", "int", "horzOffset", "vertOffset", "rotationAngle", "borderColor", "borderWidth");
+  fields(o, "shape", "boolean", "treatAsChar", "horzFlip", "vertFlip");
+  if (typeof o.textWrap !== "string" || !TEXT_WRAPS.has(o.textWrap)) throw new HwpEvidenceError("shape.textWrap");
+  if (typeof o.fillType !== "string") throw new HwpEvidenceError("shape.fillType");
 }
 /** getControls `props` for tables/pictures (all numeric, 0/1 flags). */
 export function checkControlProps(o: JsonObject): void {
@@ -418,6 +427,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   }
   const tables: unknown[] = [];
   const pictures: unknown[] = [];
+  const shapes: unknown[] = [];
   const inventory: unknown[] = [];
   const fields: unknown[] = [];
   let paragraphBase = 0;
@@ -494,6 +504,16 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
           || (props.TreatAsChar === 1) !== picture.treatAsChar) complete = false;
       }
       pictures.push(picture);
+    } else if (c.ctrlId === "gso" && typeof c.userDesc === "string" && SHAPE_DESCS.has(c.userDesc)) {
+      const props = object(c.props); checkControlProps(props);
+      const shape = optional(doc.getShapeProperties && (() => doc.getShapeProperties!(section, p, control)), checkShapeProperties);
+      if (shape) {
+        const { width, height } = shape as { width: number; height: number };
+        if ((width === 0 && height === 0) || width > HWPUNIT_MAX || height > HWPUNIT_MAX
+          || shape.hasCaption === true || props.Width !== width || props.Height !== height
+          || (props.TreatAsChar === 1) !== shape.treatAsChar) complete = false;
+      }
+      shapes.push(shape);
     } else complete = false;
   }
   // T012 Phase 2 — nested table cells. The body-level table model above reads one level only, so text typed
@@ -543,7 +563,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       nested.push({ section, host, levels, coordinates, paragraphs });
     }
   }
-  return { model: canonical({ sections, tables, pictures, fields, nested }), structure: canonical({ inventory, headings }), complete };
+  return { model: canonical({ sections, tables, pictures, shapes, fields, nested }), structure: canonical({ inventory, headings }), complete };
 }
 
 function cursorListMap(cursor: JsonObject): Map<number, JsonObject> {

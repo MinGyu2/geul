@@ -19,6 +19,7 @@ export interface RhwpShapeInspection {
   /** Solid or no fill (gradient/picture fills are not edited). */
   fillEditable: boolean;
   textBox: boolean;
+  hasCaption: boolean;
 }
 
 /** Read an HWPX/HWP body shape through RHWP `getShapeProperties`; undefined if not a modeled drawing. */
@@ -48,6 +49,7 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
       movable: !treatAsChar && v.horzAlign === "Left" && v.vertAlign === "Top",
       fillEditable: fillType === "none" || (fillType === "solid" && fillBgColor !== undefined),
       textBox: "tbVerticalAlign" in v,
+      hasCaption: v.hasCaption === true,
     };
   } catch {
     return undefined;

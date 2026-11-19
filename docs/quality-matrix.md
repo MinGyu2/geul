@@ -270,3 +270,10 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
   Release WASM 시험은 이제 제품 저장 경로와 같은 재열기 증거(쪽 수·글·컨트롤 JSON·손실 0)를 단언한다.
 - NOT RUN: 이번 Release로 한글 IBus 입력·글상자 IME 재실행, HWP 시나리오, 그림 자르기/설명 UI 조작, 차트·SmartArt UI 조작, Word/한컴 상호 운용,
   다른 앱과의 구조 클립보드, Windows/macOS/Wayland.
+
+**2026-11-19 Stage 3 안정화 실행.** Task 1–5 순차 구현 및 검증:
+- Task 1 (`efb42aa`): DOCX 차트/SmartArt T009 재생성 부분 증명을 `word/charts/chartN.xml` 및 `word/diagrams/{data,layout,drawing}N.xml` 스키마·관계 바인딩 검증으로 축소(`colorsN.xml`·`quickStyleN.xml` 면제 제외).
+- Task 2 (`e7614e5`): `documentCommandState("object.edit")`가 `MUTATING_OBJECT_OPERATIONS`(`chart`·`smartArt` 포함)로 가용성을 판정하도록 교정(`deselect`/`copy`/`cut` 제외, `DocxEditorSession` integration PASS).
+- Task 3 (`537ec76`): `ObjectSelectionFrame` 모서리 비율 유지 크기 조정이 최소/최대 한계에서 공통 비율 `[sMin, sMax]`를 보존하고 모순 제약 시 시작 크기를 유지하도록 교정(`ObjectSelectionFrame.test.tsx` 13/13 PASS).
+- Task 4 (`d44e484`): DOCX 그룹 리치 클립보드 v2 라운드트립 수정(중첩 그룹 거부·복수 `text_boxes()` story 검증·총 디코딩 미디어 용량 제한) 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance` + RHWP v2 거부/페이로드 시험 PASS.
+- Task 5: `services::save::hwp::gso` 필드 단위 HWP GSO 진화 증명 + `hwpReopenModel` 도형 검증 + `RhwpEditorSession` HWP 그림·도형 필드 편집 연결(`delete` 및 미모델 개체는 fail-closed 차단). Rust `services::save` 285 PASS / 0 FAIL / 29 ignored, Release WASM `stage3-{object-edit,picture-size,shapes}` 9/9 PASS. Linux native GUI Drag/Save 재실행은 NOT RUN.

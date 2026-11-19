@@ -1,0 +1,1144 @@
+//! Bounded field-level evolution proof for existing HWP5 GSO (`b" osg"`) objects.
+//!
+//! Only surviving top-level Pictures (`b"cip$"`) and basic Shapes (`b"nil$"`, `b"cer$"`,
+//! `b"lle$"`, optionally with a byte-identical TextBox) whose identity matches unambiguously
+//! may evolve within the exact fields owned by supported editor commands. Groups, charts, OLE,
+//! captions, unknown extensions, BinData substitutions, and GSO deletions fail closed.
+
+use super::insertions::{
+    dword, entries, finding, preserved, reference, valid, word, Checked, Defs,
+};
+use super::FindingCode;
+use super::Record;
+
+const BODY: &str = "BodyText/Section0";
+const CTRL_GSO: &[u8; 4] = b" osg";
+const SC_PICTURE: &[u8; 4] = b"cip$";
+const SC_LINE: &[u8; 4] = b"nil$";
+const SC_RECT: &[u8; 4] = b"cer$";
+const SC_ELLIPSE: &[u8; 4] = b"lle$";
+
+const TAG_CTRL_HEADER: u16 = 71;
+const TAG_LIST_HEADER: u16 = 72;
+const TAG_SHAPE_COMPONENT: u16 = 76;
+const TAG_LINE: u16 = 78;
+const TAG_RECTANGLE: u16 = 79;
+const TAG_ELLIPSE: u16 = 80;
+const TAG_PICTURE: u16 = 85;
+
+const MAX_DIM_HU: usize = 2_000_000;
+const MAX_OFFSET_HU: i32 = 2_000_000;
+const MAX_CROP_HU: i32 = 10_000_000;
+const MAX_DESC_UNITS: usize = 256;
+
+/// `CommonObjAttr.attr` bits editable via supported wrap / anchor commands:
+/// - bit 0: `treat_as_char`
+/// - bits 3..=4: `vert_rel_to` (`0..=2`)
+/// - bits 8..=9: `horz_rel_to` (`0..=3`)
+/// - bits 21..=23: `text_wrap` (`0..=3`)
+const MUTABLE_ATTR_MASK: u32 = 0x01 | (0x03 << 3) | (0x03 << 8) | (0x07 << 21);
+const ATTR_SIZE_PROTECT: u32 = 1 << 20;
+const ATTR_LOCKED: u32 = 1 << 30;
+
+fn gso_header_id(rs: &[Record<'_>]) -> Option<u32> {
+    let first = rs.first()?;
+    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 46 {
+        return None;
+    }
+    Some(u32::from_le_bytes(first.2.get(36..40)?.try_into().ok()?))
+}
+
+fn shape_ctrl_id<'a>(rs: &'a [Record<'a>]) -> Option<(&'a [u8; 4], usize)> {
+    let sc = rs.get(1)?;
+    if sc.0 != TAG_SHAPE_COMPONENT || sc.1 != rs[0].1 + 1 || sc.2.len() < 8 {
+        return None;
+    }
+    let two = sc.2[..4] == sc.2[4..8];
+    let id_offset = if two { 8 } else { 4 };
+    if sc.2.len() < id_offset + 44 {
+        return None;
+    }
+    let ctrl_id: &[u8; 4] = sc.2[..4].try_into().ok()?;
+    Some((ctrl_id, id_offset))
+}
+
+fn expected_leaf_tag(ctrl_id: &[u8; 4]) -> Option<u16> {
+    match ctrl_id {
+        SC_PICTURE => Some(TAG_PICTURE),
+        SC_LINE => Some(TAG_LINE),
+        SC_RECT => Some(TAG_RECTANGLE),
+        SC_ELLIPSE => Some(TAG_ELLIPSE),
+        _ => None,
+    }
+}
+
+fn picture_bin_id(rs: &[Record<'_>]) -> Option<usize> {
+    let leaf = rs.last()?;
+    if leaf.0 != TAG_PICTURE || leaf.2.len() < 73 {
+        return None;
+    }
+    Some(usize::from(u16::from_le_bytes([leaf.2[71], leaf.2[72]])))
+}
+
+/// Fast structural correspondence test used to align `old.objects` and `new.objects`
+/// cleanly before full field validation (`prove_evolved_gso`).
+pub(super) fn evolved_candidate(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+) -> bool {
+    if old == new || old.len() < 3 || new.len() < 3 || old[0].1 != 1 || new[0].1 != 1 {
+        return false;
+    }
+    let (Some(old_id), Some(new_id)) = (gso_header_id(old), gso_header_id(new)) else {
+        return false;
+    };
+    let (Some((old_ctrl, old_off)), Some((new_ctrl, new_off))) =
+        (shape_ctrl_id(old), shape_ctrl_id(new))
+    else {
+        return false;
+    };
+    if old_ctrl != new_ctrl || old_off != new_off || expected_leaf_tag(old_ctrl).is_none() {
+        return false;
+    }
+    if old_id != 0 {
+        return new_id == old_id;
+    }
+    // Newly inserted root pictures start with CTRL_HEADER.instance_id == 0. On subsequent
+    // reopen+edit, they keep id == 0 while referencing an *original* BinData (distinct from
+    // freshly appended BinData checked by `validate_picture`). Shapes require non-zero ID.
+    if old_ctrl != SC_PICTURE || new_id != 0 {
+        return false;
+    }
+    let orig_bins = entries(orig_defs, 18).len();
+    matches!(
+        (picture_bin_id(old), picture_bin_id(new)),
+        (Some(a), Some(b)) if a == b && a >= 1 && a <= orig_bins
+    )
+}
+
+fn validate_rendering_info(old_r: &[u8], new_r: &[u8], transform_changed: bool) -> Checked<()> {
+    if !transform_changed {
+        return preserved(old_r == new_r, BODY);
+    }
+    if old_r == new_r {
+        return Ok(());
+    }
+    // When RHWP clears `raw_rendering` after a transform edit at group_level == 0, it emits
+    // cnt=1 + 3 affine f64[6] matrices (2 + 144 = 146 bytes), all finite.
+    valid(new_r.len() == 146 && word(new_r, 0)? == 1, BODY)?;
+    for chunk in new_r[2..].as_chunks::<8>().0 {
+        valid(f64::from_le_bytes(*chunk).is_finite(), BODY)?;
+    }
+    Ok(())
+}
+
+fn check_ctrl_header(
+    old_h: &[u8],
+    new_h: &[u8],
+    is_picture: bool,
+) -> Checked<(usize, usize, usize, usize, bool)> {
+    valid(old_h.len() >= 46 && new_h.len() >= 46, BODY)?;
+    preserved(old_h[..4] == *CTRL_GSO && new_h[..4] == *CTRL_GSO, BODY)?;
+    preserved(old_h[36..40] == new_h[36..40], BODY)?; // instance_id
+    preserved(old_h[24..36] == new_h[24..36], BODY)?; // z_order + margins
+    preserved(old_h[40..44] == new_h[40..44], BODY)?; // prevent_page_break
+
+    let old_attr = dword(old_h, 4)? as u32;
+    let new_attr = dword(new_h, 4)? as u32;
+    preserved((old_attr & ATTR_LOCKED) == 0, BODY)?;
+    preserved(
+        (old_attr & !MUTABLE_ATTR_MASK) == (new_attr & !MUTABLE_ATTR_MASK),
+        BODY,
+    )?;
+    if new_attr != old_attr {
+        let vert_rel_to = (new_attr >> 3) & 0x03;
+        let text_wrap = (new_attr >> 21) & 0x07;
+        valid(vert_rel_to <= 2 && text_wrap <= 3, BODY)?;
+    }
+
+    let old_v = i32::from_le_bytes(old_h[8..12].try_into().unwrap());
+    let old_x = i32::from_le_bytes(old_h[12..16].try_into().unwrap());
+    let new_v = i32::from_le_bytes(new_h[8..12].try_into().unwrap());
+    let new_x = i32::from_le_bytes(new_h[12..16].try_into().unwrap());
+    preserved(
+        new_v == old_v || (-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&new_v),
+        BODY,
+    )?;
+    preserved(
+        new_x == old_x || (-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&new_x),
+        BODY,
+    )?;
+
+    let old_w = dword(old_h, 16)?;
+    let old_h_dim = dword(old_h, 20)?;
+    let new_w = dword(new_h, 16)?;
+    let new_h_dim = dword(new_h, 20)?;
+    if (old_attr & ATTR_SIZE_PROTECT) != 0 {
+        preserved(new_w == old_w && new_h_dim == old_h_dim, BODY)?;
+    } else {
+        valid(new_w == old_w || (1..=MAX_DIM_HU).contains(&new_w), BODY)?;
+        valid(
+            new_h_dim == old_h_dim || (1..=MAX_DIM_HU).contains(&new_h_dim),
+            BODY,
+        )?;
+    }
+
+    let old_n = word(old_h, 44)?;
+    let new_n = word(new_h, 44)?;
+    let old_end = 46usize
+        .checked_add(2 * old_n)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let new_end = 46usize
+        .checked_add(2 * new_n)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(old_h.len() >= old_end && new_h.len() >= new_end, BODY)?;
+    let desc_changed = old_h[44..old_end] != new_h[44..new_end];
+    if desc_changed {
+        preserved(is_picture && new_n <= MAX_DESC_UNITS, BODY)?;
+        let units: Vec<u16> = new_h[46..new_end]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        valid(String::from_utf16(&units).is_ok(), BODY)?;
+    }
+    // Preserve any trailing raw_extra bytes verbatim.
+    preserved(old_h[old_end..] == new_h[new_end..], BODY)?;
+    Ok((
+        old_w,
+        old_h_dim,
+        new_w,
+        new_h_dim,
+        new_w != old_w || new_h_dim != old_h_dim,
+    ))
+}
+
+fn check_fill(old_fill: &[u8], new_fill: &[u8]) -> Checked<()> {
+    let old_type = dword(old_fill, 0)?;
+    if !matches!(old_type, 0 | 1) {
+        return preserved(old_fill == new_fill, BODY);
+    }
+    if old_type == 0 {
+        valid(old_fill == [0u8; 8], BODY)?;
+    } else {
+        valid(old_fill.len() == 21 && dword(old_fill, 16)? == 0, BODY)?;
+    }
+    let new_type = dword(new_fill, 0)?;
+    match new_type {
+        0 => {
+            preserved(new_fill == [0u8; 8], BODY)?;
+            Ok(())
+        }
+        1 => {
+            valid(new_fill.len() == 21 && dword(new_fill, 16)? == 0, BODY)?;
+            valid(new_fill[7] == 0, BODY)?; // RGBX COLORREF high byte is zero
+            if old_type == 1 {
+                preserved(
+                    old_fill[8..16] == new_fill[8..16] && old_fill[20] == new_fill[20],
+                    BODY,
+                )?;
+            } else {
+                // None -> Solid uses canonical pattern_color=0, pattern_type=-1, alpha=0.
+                preserved(
+                    new_fill[8..12] == [0; 4]
+                        && new_fill[12..16] == (-1i32).to_le_bytes()
+                        && new_fill[20] == 0,
+                    BODY,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Err(finding(FindingCode::RecordsChanged, BODY)),
+    }
+}
+
+/// Validates a candidate evolved GSO object pair (`old`, `new`) against strict HWP5 rules.
+pub(super) fn prove_evolved_gso(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(evolved_candidate(old, new, orig_defs), BODY)?;
+    let (ctrl_id, id_off) = shape_ctrl_id(old).unwrap();
+    let is_picture = ctrl_id == SC_PICTURE;
+    let leaf_tag = expected_leaf_tag(ctrl_id).unwrap();
+
+    // Refuse captions, containers, unknown/opaque records, or nested SHAPE_COMPONENTs.
+    let no_extra_markers = |rs: &[Record<'_>]| {
+        rs[2..].iter().all(|r| {
+            r.0 != TAG_SHAPE_COMPONENT
+                && r.0 != 86 // SHAPE_COMPONENT_CONTAINER
+                && r.0 != 87 // CTRL_DATA
+                && matches!(r.0, 66..=85)
+                && !(r.0 == 70 && !r.2.is_empty())
+        })
+    };
+    preserved(no_extra_markers(old) && no_extra_markers(new), BODY)?;
+
+    let (old_w, old_h_dim, new_w, new_h_dim, size_changed) =
+        check_ctrl_header(old[0].2, new[0].2, is_picture)?;
+
+    let old_sc = old[1].2;
+    let new_sc = new[1].2;
+    let attr_at = id_off;
+    preserved(old_sc[..attr_at] == new_sc[..attr_at], BODY)?;
+    // offset_x(4) + offset_y(4) immutable; group_level(2)==0; local_file_version(2) immutable;
+    // original_width(4) + original_height(4) immutable.
+    preserved(
+        old_sc[attr_at..attr_at + 8] == new_sc[attr_at..attr_at + 8],
+        BODY,
+    )?;
+    preserved(
+        word(old_sc, attr_at + 8)? == 0 && word(new_sc, attr_at + 8)? == 0,
+        BODY,
+    )?;
+    preserved(
+        old_sc[attr_at + 10..attr_at + 20] == new_sc[attr_at + 10..attr_at + 20],
+        BODY,
+    )?;
+
+    let old_cw = dword(old_sc, attr_at + 20)?;
+    let old_ch = dword(old_sc, attr_at + 24)?;
+    let new_cw = dword(new_sc, attr_at + 20)?;
+    let new_ch = dword(new_sc, attr_at + 24)?;
+    if new_w == old_w {
+        preserved(new_cw == old_cw, BODY)?;
+    } else {
+        valid((1..=MAX_DIM_HU).contains(&new_cw), BODY)?;
+    }
+    if new_h_dim == old_h_dim {
+        preserved(new_ch == old_ch, BODY)?;
+    } else {
+        valid((1..=MAX_DIM_HU).contains(&new_ch), BODY)?;
+    }
+
+    let old_flip = dword(old_sc, attr_at + 28)? as u32;
+    let new_flip = dword(new_sc, attr_at + 28)? as u32;
+    let old_rot = i16::from_le_bytes(old_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
+    let new_rot = i16::from_le_bytes(new_sc[attr_at + 32..attr_at + 34].try_into().unwrap());
+    if is_picture {
+        preserved(old_flip == new_flip && old_rot == new_rot, BODY)?;
+    } else {
+        preserved((old_flip & !0x03) == (new_flip & !0x03), BODY)?;
+        preserved(new_rot == old_rot || (0..360).contains(&new_rot), BODY)?;
+    }
+
+    let old_rc = &old_sc[attr_at + 34..attr_at + 42];
+    let new_rc = &new_sc[attr_at + 34..attr_at + 42];
+    let new_rc_x = i32::from_le_bytes(new_rc[..4].try_into().unwrap());
+    let new_rc_y = i32::from_le_bytes(new_rc[4..8].try_into().unwrap());
+    preserved(
+        new_rc == old_rc || (new_rc_x == (new_w as i32) / 2 && new_rc_y == (new_h_dim as i32) / 2),
+        BODY,
+    )?;
+
+    let r_at = attr_at + 42;
+    let old_cnt = word(old_sc, r_at)?;
+    let new_cnt = word(new_sc, r_at)?;
+    let old_r_len = 2usize
+        .checked_add(
+            1usize
+                .checked_add(2 * old_cnt)
+                .and_then(|m| m.checked_mul(48))
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+        )
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let new_r_len = 2usize
+        .checked_add(
+            1usize
+                .checked_add(2 * new_cnt)
+                .and_then(|m| m.checked_mul(48))
+                .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+        )
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let old_r_end = r_at + old_r_len;
+    let new_r_end = r_at + new_r_len;
+    valid(old_sc.len() >= old_r_end && new_sc.len() >= new_r_end, BODY)?;
+
+    let transform_changed = size_changed
+        || new_cw != old_cw
+        || new_ch != old_ch
+        || new_flip != old_flip
+        || new_rot != old_rot;
+    validate_rendering_info(
+        &old_sc[r_at..old_r_end],
+        &new_sc[r_at..new_r_end],
+        transform_changed,
+    )?;
+
+    if is_picture {
+        valid(old_sc.len() == old_r_end && new_sc.len() == new_r_end, BODY)?;
+        valid(old.len() == 3 && new.len() == 3, BODY)?;
+        let (old_pic, new_pic) = (old[2], new[2]);
+        valid(
+            old_pic.0 == TAG_PICTURE
+                && old_pic.1 == 3
+                && new_pic.0 == TAG_PICTURE
+                && new_pic.1 == 3,
+            BODY,
+        )?;
+        let (op, np) = (old_pic.2, new_pic.2);
+        valid(op.len() >= 73 && np.len() >= 73, BODY)?;
+        preserved(op[..44] == np[..44], BODY)?; // border + border_x[4] + border_y[4]
+        if op[44..60] != np[44..60] {
+            let i32_at =
+                |b: &[u8], at: usize| i32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+            let (l, t, r, b) = (
+                i32_at(np, 44),
+                i32_at(np, 48),
+                i32_at(np, 52),
+                i32_at(np, 56),
+            );
+            valid(
+                (0..=MAX_CROP_HU).contains(&l)
+                    && (l..=MAX_CROP_HU).contains(&r)
+                    && (0..=MAX_CROP_HU).contains(&t)
+                    && (t..=MAX_CROP_HU).contains(&b),
+                BODY,
+            )?;
+        }
+        preserved(op[60..71] == np[60..71], BODY)?; // padding + brightness + contrast + effect
+        let old_bin = word(op, 71)?;
+        let new_bin = word(np, 71)?;
+        reference(
+            old_bin == new_bin && old_bin >= 1 && old_bin <= entries(orig_defs, 18).len(),
+            BODY,
+        )?;
+        preserved(op[73..] == np[73..], BODY)?; // raw_picture_extra / transparency
+        return Ok(());
+    }
+
+    // Shape GSO (`nil$`, `cer$`, `lle$`): border(13) + fill(>=8) + shadow+inst+alpha(22).
+    valid(
+        old_sc.len() >= old_r_end + 13 + 8 + 22 && new_sc.len() >= new_r_end + 13 + 8 + 22,
+        BODY,
+    )?;
+    let (old_border, new_border) = (
+        &old_sc[old_r_end..old_r_end + 13],
+        &new_sc[new_r_end..new_r_end + 13],
+    );
+    preserved(old_border[4..13] == new_border[4..13], BODY)?;
+    if old_border[..4] != new_border[..4] {
+        valid(new_border[3] == 0, BODY)?;
+    }
+
+    let old_tail_at = old_sc.len() - 22;
+    let new_tail_at = new_sc.len() - 22;
+    preserved(old_sc[old_tail_at..] == new_sc[new_tail_at..], BODY)?;
+    check_fill(
+        &old_sc[old_r_end + 13..old_tail_at],
+        &new_sc[new_r_end + 13..new_tail_at],
+    )?;
+
+    // Optional byte-identical TextBox (`LIST_HEADER` at level 3 + paragraphs), then shape leaf at level 3.
+    let (old_last, new_last) = (old[old.len() - 1], new[new.len() - 1]);
+    valid(
+        old_last.0 == leaf_tag && old_last.1 == 3 && new_last.0 == leaf_tag && new_last.1 == 3,
+        BODY,
+    )?;
+    let old_mid = &old[2..old.len() - 1];
+    let new_mid = &new[2..new.len() - 1];
+    if old_mid.is_empty() && new_mid.is_empty() {
+        // Plain shape with no TextBox.
+    } else {
+        preserved(
+            !old_mid.is_empty()
+                && old_mid == new_mid
+                && old_mid[0].0 == TAG_LIST_HEADER
+                && old_mid[0].1 == 3,
+            BODY,
+        )?;
+    }
+
+    if leaf_tag == TAG_RECTANGLE {
+        valid(old_last.2.len() == 33 && new_last.2.len() == 33, BODY)?;
+        preserved(old_last.2[0] == new_last.2[0], BODY)?; // round_rate
+        if old_last.2[1..] != new_last.2[1..] {
+            let (w, h) = (new_w as i32, new_h_dim as i32);
+            let mut expected = [0u8; 32];
+            // HWP5 SHAPE_COMPONENT_RECTANGLE stores interleaved (x[i], y[i]) pairs for i=0..4.
+            for (i, val) in [0i32, 0, w, 0, w, h, 0, h].into_iter().enumerate() {
+                expected[i * 4..(i + 1) * 4].copy_from_slice(&val.to_le_bytes());
+            }
+            valid(new_last.2[1..] == expected, BODY)?;
+        }
+    } else {
+        preserved(old_last.2 == new_last.2, BODY)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::preview::PreviewRaster;
+    use super::super::{compare_with, refresh_previews, Finding, FindingCode, Mode};
+    use std::io::{Cursor, Write};
+
+    fn pack_records(rs: &[(u16, u16, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for &(tag, level, data) in rs {
+            let len = data.len();
+            let header_len = if len >= 0xFFF { 0xFFF } else { len };
+            let head = u32::from(tag & 0x3FF)
+                | (u32::from(level & 0x3FF) << 10)
+                | ((header_len as u32) << 20);
+            out.extend_from_slice(&head.to_le_bytes());
+            if len >= 0xFFF {
+                out.extend_from_slice(&(len as u32).to_le_bytes());
+            }
+            out.extend_from_slice(data);
+        }
+        out
+    }
+
+    fn build_hwp(
+        doc_info: &[(u16, u16, &[u8])],
+        section: &[(u16, u16, &[u8])],
+        bin1: &[u8],
+    ) -> Vec<u8> {
+        let mut header = vec![0u8; 256];
+        header[..17].copy_from_slice(b"HWP Document File");
+        header[32..36].copy_from_slice(&0x05000000u32.to_le_bytes());
+        let mut buf = Cursor::new(Vec::new());
+        {
+            let mut cf = cfb::CompoundFile::create(&mut buf).unwrap();
+            cf.create_stream("FileHeader")
+                .unwrap()
+                .write_all(&header)
+                .unwrap();
+            cf.create_stream("DocInfo")
+                .unwrap()
+                .write_all(&pack_records(doc_info))
+                .unwrap();
+            cf.create_storage("BodyText").unwrap();
+            cf.create_stream("BodyText/Section0")
+                .unwrap()
+                .write_all(&pack_records(section))
+                .unwrap();
+            cf.create_storage("BinData").unwrap();
+            cf.create_stream("BinData/BIN0001.png")
+                .unwrap()
+                .write_all(bin1)
+                .unwrap();
+            cf.create_stream("PrvText")
+                .unwrap()
+                .write_all(b"\r\0\n\0")
+                .unwrap();
+            cf.create_stream("PrvImage")
+                .unwrap()
+                .write_all(b"old-prv")
+                .unwrap();
+        }
+        buf.into_inner()
+    }
+
+    fn doc_info_records(bin_count: u32) -> Vec<(u16, u16, Vec<u8>)> {
+        let mut id_map = vec![0u8; 64];
+        id_map[0..4].copy_from_slice(&bin_count.to_le_bytes());
+        id_map[4..8].copy_from_slice(&1u32.to_le_bytes()); // font 1
+        id_map[32..36].copy_from_slice(&1u32.to_le_bytes()); // border_fill 1
+        id_map[36..40].copy_from_slice(&1u32.to_le_bytes()); // char_shape 1
+        id_map[40..44].copy_from_slice(&1u32.to_le_bytes()); // tab_def 1
+        id_map[52..56].copy_from_slice(&1u32.to_le_bytes()); // para_shape 1
+        id_map[56..60].copy_from_slice(&1u32.to_le_bytes()); // style 1
+        let mut out = vec![(16, 0, vec![0; 26]), (17, 0, id_map)];
+        for id in 1..=bin_count {
+            let mut bin = vec![0u8; 12];
+            bin[0..2].copy_from_slice(&0x0101u16.to_le_bytes());
+            bin[2..4].copy_from_slice(&(id as u16).to_le_bytes());
+            bin[4..6].copy_from_slice(&3u16.to_le_bytes());
+            for (i, ch) in "png".encode_utf16().enumerate() {
+                bin[6 + i * 2..8 + i * 2].copy_from_slice(&ch.to_le_bytes());
+            }
+            out.push((18, 1, bin));
+        }
+        out.push((19, 1, vec![0; 8]));
+        out.push((20, 1, vec![0; 40]));
+        out.push((21, 1, vec![0; 74]));
+        out.push((22, 1, vec![0; 14]));
+        out.push((25, 1, vec![0; 54]));
+        out.push((26, 1, vec![0; 12]));
+        out
+    }
+
+    fn ctrl_header(
+        id: u32,
+        attr: u32,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        desc: &str,
+        raw_extra: &[u8],
+    ) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(b" osg");
+        b.extend_from_slice(&attr.to_le_bytes());
+        b.extend_from_slice(&y.to_le_bytes());
+        b.extend_from_slice(&x.to_le_bytes());
+        b.extend_from_slice(&w.to_le_bytes());
+        b.extend_from_slice(&h.to_le_bytes());
+        b.extend_from_slice(&1i32.to_le_bytes()); // z_order
+        b.extend_from_slice(&[0u8; 8]); // margins
+        b.extend_from_slice(&id.to_le_bytes());
+        b.extend_from_slice(&0i32.to_le_bytes()); // prevent_page_break
+        let units: Vec<u16> = desc.encode_utf16().collect();
+        b.extend_from_slice(&(units.len() as u16).to_le_bytes());
+        for u in units {
+            b.extend_from_slice(&u.to_le_bytes());
+        }
+        b.extend_from_slice(raw_extra);
+        b
+    }
+
+    fn shape_component_base(
+        ctrl: &[u8; 4],
+        orig_w: u32,
+        orig_h: u32,
+        cur_w: u32,
+        cur_h: u32,
+        flip: u32,
+        rot: i16,
+    ) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(ctrl);
+        b.extend_from_slice(ctrl);
+        b.extend_from_slice(&0i32.to_le_bytes()); // offset_x
+        b.extend_from_slice(&0i32.to_le_bytes()); // offset_y
+        b.extend_from_slice(&0u16.to_le_bytes()); // group_level
+        b.extend_from_slice(&0u16.to_le_bytes()); // local_file_version
+        b.extend_from_slice(&orig_w.to_le_bytes());
+        b.extend_from_slice(&orig_h.to_le_bytes());
+        b.extend_from_slice(&cur_w.to_le_bytes());
+        b.extend_from_slice(&cur_h.to_le_bytes());
+        b.extend_from_slice(&flip.to_le_bytes());
+        b.extend_from_slice(&rot.to_le_bytes());
+        b.extend_from_slice(&(cur_w as i32 / 2).to_le_bytes());
+        b.extend_from_slice(&(cur_h as i32 / 2).to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes()); // cnt = 1
+        for _ in 0..3 {
+            for v in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        b
+    }
+
+    fn picture_leaf(bin_id: u16, crop: [i32; 4], extra: &[u8]) -> Vec<u8> {
+        let mut b = vec![0u8; 73];
+        for (i, c) in crop.into_iter().enumerate() {
+            b[44 + i * 4..48 + i * 4].copy_from_slice(&c.to_le_bytes());
+        }
+        b[71..73].copy_from_slice(&bin_id.to_le_bytes());
+        b.extend_from_slice(extra);
+        b
+    }
+
+    fn shape_component_drawing(
+        ctrl: &[u8; 4],
+        w: u32,
+        h: u32,
+        flip: u32,
+        rot: i16,
+        border_color: u32,
+        solid_color: Option<u32>,
+        sc_inst: u32,
+    ) -> Vec<u8> {
+        let mut b = shape_component_base(ctrl, 10000, 5000, w, h, flip, rot);
+        b.extend_from_slice(&border_color.to_le_bytes());
+        b.extend_from_slice(&33i32.to_le_bytes()); // border_width
+        b.extend_from_slice(&0x01u32.to_le_bytes()); // border_attr
+        b.push(0); // outline_style
+        match solid_color {
+            None => {
+                b.extend_from_slice(&0u32.to_le_bytes());
+                b.extend_from_slice(&0u32.to_le_bytes());
+            }
+            Some(c) => {
+                b.extend_from_slice(&1u32.to_le_bytes());
+                b.extend_from_slice(&c.to_le_bytes());
+                b.extend_from_slice(&0u32.to_le_bytes());
+                b.extend_from_slice(&(-1i32).to_le_bytes());
+                b.extend_from_slice(&0u32.to_le_bytes());
+                b.push(0);
+            }
+        }
+        b.extend_from_slice(&0u32.to_le_bytes()); // shadow_type
+        b.extend_from_slice(&0x00c4c4c4u32.to_le_bytes());
+        b.extend_from_slice(&283i32.to_le_bytes());
+        b.extend_from_slice(&283i32.to_le_bytes());
+        b.extend_from_slice(&sc_inst.to_le_bytes());
+        b.push(0);
+        b.push(0);
+        b
+    }
+
+    fn rect_leaf(round: u8, w: i32, h: i32) -> Vec<u8> {
+        let mut b = vec![round];
+        for val in [0i32, 0, w, 0, w, h, 0, h] {
+            b.extend_from_slice(&val.to_le_bytes());
+        }
+        b
+    }
+
+    fn wrap_section(objects: Vec<Vec<(u16, u16, Vec<u8>)>>) -> Vec<(u16, u16, Vec<u8>)> {
+        let mut text = Vec::new();
+        text.extend_from_slice(&2u16.to_le_bytes());
+        text.extend_from_slice(b"dces");
+        text.extend_from_slice(&[0u8; 8]);
+        text.extend_from_slice(&2u16.to_le_bytes());
+        for _ in &objects {
+            text.extend_from_slice(&11u16.to_le_bytes());
+            text.extend_from_slice(b" osg");
+            text.extend_from_slice(&[0u8; 8]);
+            text.extend_from_slice(&11u16.to_le_bytes());
+        }
+        text.extend_from_slice(b"\r\0");
+        let char_count = ((text.len() / 2) as u32) | 0x8000_0000;
+        let mask: u32 = (1 << 2) | if objects.is_empty() { 0 } else { 1 << 11 };
+        let mut hdr = vec![0u8; 22];
+        hdr[0..4].copy_from_slice(&char_count.to_le_bytes());
+        hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+        hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+        hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+        let mut page_def = vec![0u8; 40];
+        page_def[0..4].copy_from_slice(&59528u32.to_le_bytes());
+        page_def[4..8].copy_from_slice(&84188u32.to_le_bytes());
+        let mut secd_hdr = vec![0u8; 38];
+        secd_hdr[..4].copy_from_slice(b"dces");
+        let mut out = vec![
+            (66, 0, hdr),
+            (67, 1, text),
+            (68, 1, vec![0u8; 8]),
+            (69, 1, vec![0u8; 36]),
+            (71, 1, secd_hdr),
+            (73, 2, page_def),
+        ];
+        for obj in objects {
+            out.extend(obj);
+        }
+        out
+    }
+
+    fn check(orig: &[u8], edited: &[u8]) -> Vec<Finding> {
+        compare_with(orig, edited, Mode::Edited, None)
+    }
+
+    fn check_with_preview_refresh(orig: &[u8], edited: &[u8]) -> Vec<Finding> {
+        let mut pixels = vec![255u8; 724 * 1024 * 3];
+        pixels[0] = 0; // non-uniform raster representing rendered page 1
+        let raster = PreviewRaster {
+            width: 724,
+            height: 1024,
+            rgb: pixels,
+            blank_page: false,
+        };
+        let refreshed = refresh_previews(orig, edited, Some(&raster)).unwrap();
+        let output = refreshed.output.as_deref().unwrap_or(edited);
+        compare_with(orig, output, Mode::Edited, refreshed.image.as_deref())
+    }
+
+    #[test]
+    fn evolved_picture_and_shape_fields_pass_t009() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let pic_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(101, 0x000a_0311, 0, 0, 4000, 3000, "old", b"\xaa\xbb"),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 4000, 3000], b"\x01\x02")),
+        ];
+        let rect_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(202, 0x000a_0000, 500, 600, 10000, 5000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 10000, 5000, 0, 0, 0x112233, Some(0xAABBCC), 9001),
+            ),
+            (79, 3, rect_leaf(7, 10000, 5000)),
+        ];
+        // Include a second picture with id=0 (inserted & saved earlier) + textbox shape
+        let pic0_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(0, 0x000a_0311, 0, 0, 2000, 1500, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 2000, 1500, 2000, 1500, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 2000, 1500], &[0; 18])),
+        ];
+        let orig_sec = wrap_section(vec![pic_orig.clone(), rect_orig.clone(), pic0_orig.clone()]);
+        let orig_sec_ref: Vec<_> = orig_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let orig_cfb = build_hwp(&di_ref, &orig_sec_ref, b"\x89PNG\r\n\x1a\n123");
+
+        // Mutate pic1 (resize, wrap->floating, move, altText, crop), rect (fill none, outline, rotate, flip, resize), pic0 (resize).
+        let pic_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(
+                    101,
+                    0x002a_0000,
+                    1200,
+                    1500,
+                    6000,
+                    4500,
+                    "Updated Alt",
+                    b"\xaa\xbb",
+                ),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 4000, 3000, 6000, 4500, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [100, 100, 3900, 2900], b"\x01\x02")),
+        ];
+        let rect_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(202, 0x000a_0001, 0, 0, 14000, 7000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 14000, 7000, 3, 45, 0x004455, None, 9001),
+            ),
+            (79, 3, rect_leaf(7, 14000, 7000)),
+        ];
+        let pic0_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(0, 0x000a_0311, 0, 0, 3000, 2000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 2000, 1500, 3000, 2000, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 2000, 1500], &[0; 18])),
+        ];
+        let edit_sec = wrap_section(vec![pic_edit, rect_edit, pic0_edit]);
+        let edit_sec_ref: Vec<_> = edit_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let edit_cfb = build_hwp(&di_ref, &edit_sec_ref, b"\x89PNG\r\n\x1a\n123");
+
+        assert_eq!(check_with_preview_refresh(&orig_cfb, &edit_cfb), vec![]);
+
+        // TextBox (with untouched paragraph) + Ellipse + Line evolution also passes.
+        let tbox_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(303, 0x000a_0000, 0, 0, 8000, 4000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, None, 555),
+            ),
+            (72, 3, vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (66, 4, vec![0; 22]),
+            (79, 3, rect_leaf(0, 8000, 4000)),
+        ];
+        let ell_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(404, 0x000a_0000, 0, 0, 5000, 5000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"lle$", 5000, 5000, 0, 0, 0, Some(0xFFFFFF), 666),
+            ),
+            (80, 3, vec![0u8; 60]),
+        ];
+        let line_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(505, 0x000a_0000, 0, 0, 5000, 100, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"nil$", 5000, 100, 0, 0, 0, None, 777),
+            ),
+            (78, 3, vec![0u8; 20]),
+        ];
+        let s1 = wrap_section(vec![tbox_orig, ell_orig, line_orig]);
+        let s1_ref: Vec<_> = s1.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let o1 = build_hwp(&di_ref, &s1_ref, b"\x89PNG\r\n\x1a\n123");
+
+        let tbox_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(303, 0x000a_0000, 100, 200, 9000, 4500, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 9000, 4500, 0, 0, 0xFF0000, Some(0x112233), 555),
+            ),
+            (72, 3, vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (66, 4, vec![0; 22]),
+            (79, 3, rect_leaf(0, 9000, 4500)),
+        ];
+        let ell_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(404, 0x000a_0000, 0, 0, 6000, 6000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"lle$", 6000, 6000, 1, 15, 0x00FF00, Some(0x010203), 666),
+            ),
+            (80, 3, vec![0u8; 60]),
+        ];
+        let line_edit = vec![
+            (
+                71,
+                1,
+                ctrl_header(505, 0x000a_0000, 0, 0, 7000, 100, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"nil$", 7000, 100, 0, 30, 0x0000FF, None, 777),
+            ),
+            (78, 3, vec![0u8; 20]),
+        ];
+        let s2 = wrap_section(vec![tbox_edit, ell_edit, line_edit]);
+        let s2_ref: Vec<_> = s2.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let o2 = build_hwp(&di_ref, &s2_ref, b"\x89PNG\r\n\x1a\n123");
+        assert_eq!(check_with_preview_refresh(&o1, &o2), vec![]);
+    }
+
+    #[test]
+    fn gso_evolution_rejects_unauthorized_mutations_and_tampering() {
+        let di = doc_info_records(2);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let pic_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(101, 0x000a_0311, 0, 0, 4000, 3000, "", b"\xaa"),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 4000, 3000], b"\x05")),
+        ];
+        let rect_orig = vec![
+            (
+                71,
+                1,
+                ctrl_header(202, 0x000a_0000, 0, 0, 10000, 5000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 10000, 5000, 0, 0, 0, Some(0x112233), 9001),
+            ),
+            (72, 3, vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (66, 4, vec![0; 22]),
+            (79, 3, rect_leaf(0, 10000, 5000)),
+        ];
+        let orig_sec = wrap_section(vec![pic_orig.clone(), rect_orig.clone()]);
+        let orig_sec_ref: Vec<_> = orig_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let orig_cfb = build_hwp(&di_ref, &orig_sec_ref, b"\x89PNG\r\n\x1a\n123");
+
+        let assert_refused =
+            |label: &str, pic: Vec<(u16, u16, Vec<u8>)>, rect: Vec<(u16, u16, Vec<u8>)>| {
+                let sec = wrap_section(vec![pic, rect]);
+                let sec_ref: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+                let cfb = build_hwp(&di_ref, &sec_ref, b"\x89PNG\r\n\x1a\n123");
+                assert!(!check(&orig_cfb, &cfb).is_empty(), "must refuse: {label}");
+            };
+
+        // 1. Swapped / changed instance_id
+        {
+            let mut bad = rect_orig.clone();
+            bad[0].2[36..40].copy_from_slice(&999u32.to_le_bytes());
+            assert_refused("changed instance_id", pic_orig.clone(), bad);
+        }
+        // 2. Non-picture shape with id == 0
+        {
+            let mut r0 = rect_orig.clone();
+            r0[0].2[36..40].copy_from_slice(&0u32.to_le_bytes());
+            let s0 = wrap_section(vec![r0.clone()]);
+            let s0_ref: Vec<_> = s0.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o0 = build_hwp(&di_ref, &s0_ref, b"\x89PNG\r\n\x1a\n123");
+            let mut r1 = r0;
+            r1[0].2[16..20].copy_from_slice(&12000u32.to_le_bytes());
+            let s1 = wrap_section(vec![r1]);
+            let s1_ref: Vec<_> = s1.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o1 = build_hwp(&di_ref, &s1_ref, b"\x89PNG\r\n\x1a\n123");
+            assert!(!check(&o0, &o1).is_empty(), "zero-id shape must fail");
+        }
+        // 3. Unknown attr bit modified
+        {
+            let mut bad = pic_orig.clone();
+            bad[0].2[4] ^= 0x02;
+            assert_refused("unknown attr bit", bad, rect_orig.clone());
+        }
+        // 4. CTRL_HEADER raw_extra changed
+        {
+            let mut bad = pic_orig.clone();
+            *bad[0].2.last_mut().unwrap() ^= 1;
+            assert_refused("raw_extra mutated", bad, rect_orig.clone());
+        }
+        // 5. z_order changed
+        {
+            let mut bad = rect_orig.clone();
+            bad[0].2[24] = 9;
+            assert_refused("z_order mutated", pic_orig.clone(), bad);
+        }
+        // 6. BinData reference repointed to bin 2
+        {
+            let mut bad = pic_orig.clone();
+            bad[2].2[71..73].copy_from_slice(&2u16.to_le_bytes());
+            assert_refused("bin_data_id swapped", bad, rect_orig.clone());
+        }
+        // 7. raw_picture_extra mutated
+        {
+            let mut bad = pic_orig.clone();
+            *bad[2].2.last_mut().unwrap() ^= 1;
+            assert_refused("raw_picture_extra mutated", bad, rect_orig.clone());
+        }
+        // 8. Negative crop
+        {
+            let mut bad = pic_orig.clone();
+            bad[2].2[44..48].copy_from_slice(&(-1i32).to_le_bytes());
+            assert_refused("negative crop", bad, rect_orig.clone());
+        }
+        // 9. original_width mutated in SHAPE_COMPONENT
+        {
+            let mut bad = rect_orig.clone();
+            bad[1].2[20..24].copy_from_slice(&9999u32.to_le_bytes());
+            assert_refused("original_width mutated", pic_orig.clone(), bad);
+        }
+        // 10. drawing inst_id mutated in SHAPE_COMPONENT tail
+        {
+            let mut bad = rect_orig.clone();
+            let at = bad[1].2.len() - 6;
+            bad[1].2[at] ^= 1;
+            assert_refused("drawing inst_id mutated", pic_orig.clone(), bad);
+        }
+        // 11. border width mutated
+        {
+            let mut bad = rect_orig.clone();
+            bad[1].2[200] ^= 1;
+            assert_refused("border width mutated", pic_orig.clone(), bad);
+        }
+        // 12. Rectangle round_rate mutated
+        {
+            let mut bad = rect_orig.clone();
+            bad[4].2[0] = 5;
+            assert_refused("round_rate mutated", pic_orig.clone(), bad);
+        }
+        // 13. TextBox paragraph mutated
+        {
+            let mut bad = rect_orig.clone();
+            bad[3].2[0] = 1;
+            assert_refused("textbox para mutated", pic_orig.clone(), bad);
+        }
+        // 14. Unknown extension record (CTRL_DATA 87) injected
+        {
+            let mut bad = rect_orig.clone();
+            bad.insert(2, (87, 2, vec![1, 2, 3, 4]));
+            assert_refused("CTRL_DATA injected", pic_orig.clone(), bad);
+        }
+        // 15. Size-protected GSO resized
+        {
+            let mut sp = pic_orig.clone();
+            sp[0].2[6] |= 0x10; // bit 20 = size_protect
+            let s0 = wrap_section(vec![sp.clone()]);
+            let s0_ref: Vec<_> = s0.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o0 = build_hwp(&di_ref, &s0_ref, b"\x89PNG\r\n\x1a\n123");
+            sp[0].2[16..20].copy_from_slice(&5000u32.to_le_bytes());
+            sp[1].2[28..32].copy_from_slice(&5000u32.to_le_bytes());
+            let s1 = wrap_section(vec![sp]);
+            let s1_ref: Vec<_> = s1.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o1 = build_hwp(&di_ref, &s1_ref, b"\x89PNG\r\n\x1a\n123");
+            assert!(
+                !check(&o0, &o1).is_empty(),
+                "size-protected resize must fail"
+            );
+        }
+        // 16. Locked GSO (bit 30) mutated
+        {
+            let mut lk = pic_orig.clone();
+            lk[0].2[7] |= 0x40; // bit 30 = lock
+            let s0 = wrap_section(vec![lk.clone()]);
+            let s0_ref: Vec<_> = s0.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o0 = build_hwp(&di_ref, &s0_ref, b"\x89PNG\r\n\x1a\n123");
+            lk[0].2[12..16].copy_from_slice(&500i32.to_le_bytes());
+            let s1 = wrap_section(vec![lk]);
+            let s1_ref: Vec<_> = s1.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            let o1 = build_hwp(&di_ref, &s1_ref, b"\x89PNG\r\n\x1a\n123");
+            assert!(!check(&o0, &o1).is_empty(), "locked GSO move must fail");
+        }
+        // 17. GSO deletion refused
+        {
+            let del_sec = wrap_section(vec![pic_orig.clone()]);
+            let del_ref: Vec<_> = del_sec
+                .iter()
+                .map(|(t, l, b)| (*t, *l, b.as_slice()))
+                .collect();
+            let del_cfb = build_hwp(&di_ref, &del_ref, b"\x89PNG\r\n\x1a\n123");
+            assert!(
+                !check(&orig_cfb, &del_cfb).is_empty(),
+                "GSO delete must fail"
+            );
+        }
+        // 18. BinData stream bytes mutated
+        {
+            let tampered_bin = build_hwp(&di_ref, &orig_sec_ref, b"\x89PNG\r\n\x1a\nXXX");
+            let findings = check(&orig_cfb, &tampered_bin);
+            assert!(findings.contains(&Finding::at(
+                FindingCode::PartChanged,
+                "BinData/BIN0001.png"
+            )));
+        }
+        // 19. Duplicate non-zero instance_id across GSO objects refused
+        {
+            let mut dup = rect_orig.clone();
+            dup[0].2[36..40].copy_from_slice(&101u32.to_le_bytes());
+            assert_refused("duplicate non-zero instance_id", pic_orig.clone(), dup);
+        }
+    }
+}

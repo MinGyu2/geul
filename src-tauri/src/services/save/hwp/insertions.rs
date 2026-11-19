@@ -13,8 +13,8 @@ mod parser;
 #[path = "../../../../../patches/rhwp/table-calc/tokenizer.rs"]
 mod tokenizer;
 
-type Checked<T> = Result<T, Finding>;
-type Defs<'a> = BTreeMap<u16, Vec<&'a [u8]>>;
+pub(super) type Checked<T> = Result<T, Finding>;
+pub(super) type Defs<'a> = BTreeMap<u16, Vec<&'a [u8]>>;
 const BODY: &str = "BodyText/Section0";
 const BORDER: u16 = 20;
 const BULLET: u16 = 24;
@@ -28,7 +28,7 @@ pub(super) struct Proof {
     /// `evolved_table` correspondence dropped together with the cells it deleted, as a multiset.
     pub removed: BTreeMap<Vec<u8>, usize>,
 }
-fn finding(code: FindingCode, part: &str) -> Finding {
+pub(super) fn finding(code: FindingCode, part: &str) -> Finding {
     Finding::at(code, part)
 }
 #[track_caller]
@@ -48,23 +48,23 @@ fn require(ok: bool, code: FindingCode, part: &str) -> Checked<()> {
     }
 }
 #[track_caller]
-fn valid(ok: bool, part: &str) -> Checked<()> {
+pub(super) fn valid(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::OutputMalformed, part)
 }
 #[track_caller]
-fn reference(ok: bool, part: &str) -> Checked<()> {
+pub(super) fn reference(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::ReferenceInvalid, part)
 }
 #[track_caller]
-fn preserved(ok: bool, part: &str) -> Checked<()> {
+pub(super) fn preserved(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::RecordsChanged, part)
 }
-fn word(b: &[u8], at: usize) -> Checked<usize> {
+pub(super) fn word(b: &[u8], at: usize) -> Checked<usize> {
     b.get(at..at + 2)
         .map(|p| usize::from(u16::from_le_bytes([p[0], p[1]])))
         .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
 }
-fn dword(b: &[u8], at: usize) -> Checked<usize> {
+pub(super) fn dword(b: &[u8], at: usize) -> Checked<usize> {
     b.get(at..at + 4)
         .map(|p| u32::from_le_bytes([p[0], p[1], p[2], p[3]]) as usize)
         .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
@@ -94,7 +94,7 @@ fn definitions<'a>(rs: &[Record<'a>]) -> Defs<'a> {
     }
     out
 }
-fn entries<'a, 'b>(defs: &'b Defs<'a>, tag: u16) -> &'b [&'a [u8]] {
+pub(super) fn entries<'a, 'b>(defs: &'b Defs<'a>, tag: u16) -> &'b [&'a [u8]] {
     defs.get(&tag).map(Vec::as_slice).unwrap_or_default()
 }
 fn read_records(c: &Container, name: &str) -> Checked<Vec<u8>> {
@@ -148,7 +148,7 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
         // Structural tables/pictures trigger the additive proof; plain text and
         // section/preview normalization retain the existing semantic-reopen path.
         let object_record = |r: &&Record<'_>| {
-            matches!(r.0, 72 | 76 | 77 | 85)
+            matches!(r.0, 72 | 76..=86)
                 || (r.0 == 71 && (r.2.starts_with(b" lbt") || r.2.starts_with(b" osg")))
         };
         let opaque_changed = !xr
@@ -1142,7 +1142,10 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             };
             if o == object {
                 cursor += 1;
-            } else if restructure_candidate(o, object, &bc, &ac) || evolved_candidate(o, object) {
+            } else if restructure_candidate(o, object, &bc, &ac)
+                || evolved_candidate(o, object)
+                || super::gso::evolved_candidate(o, object, &ac)
+            {
                 restructured.push((object_digest(o), object_digest(object)));
                 cursor += 1;
             }
@@ -1196,6 +1199,16 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     &mut table_ids,
                     &mut table_total,
                 )?;
+                cursor += 1;
+                continue;
+            }
+            // Stage 3: bounded field-level evolution of a surviving GSO picture or shape.
+            if let Some(o) = old
+                .objects
+                .get(cursor)
+                .filter(|o| super::gso::evolved_candidate(o, object, &ac))
+            {
+                super::gso::prove_evolved_gso(o, object, &ac)?;
                 cursor += 1;
                 continue;
             }

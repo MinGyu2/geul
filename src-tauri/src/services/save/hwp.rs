@@ -28,6 +28,7 @@ use flate2::read::DeflateDecoder;
 use super::preserve::{Finding, FindingCode};
 use super::preview;
 
+mod gso;
 mod insertions;
 
 const SIGNATURE: &[u8] = b"HWP Document File";
