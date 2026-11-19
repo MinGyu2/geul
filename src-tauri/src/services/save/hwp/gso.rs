@@ -158,10 +158,10 @@ fn plain_textbox(rs: &[Record<'_>]) -> bool {
         && dword(rs[0].2, 4).is_ok_and(|attr| attr as u32 & (ATTR_LOCKED | ATTR_CAPTION) == 0)
         && word(rs[1].2, 16) == Ok(0)
         && list.len() == 33
-        && dword(list, 0) == Ok(1)
+        && dword(list, 0).is_ok_and(|count| (1..=64).contains(&count))
         && list[20..] == [0; 13]
         && rs.last().is_some_and(|r| r.0 == TAG_RECTANGLE && r.1 == 3)
-        && matches!(rs.len(), 7 | 8)
+        && rs.len() >= 7
 }
 
 /// A changed TextBox only reaches the plain-story proof when its original
@@ -200,13 +200,32 @@ pub(super) fn prove_textbox_edit(
     defs: &Defs<'_>,
 ) -> Checked<()> {
     preserved(textbox_edit_candidate(old, new), BODY)?;
-    let old_para = &old[3..old.len() - 1];
-    let new_para = &new[3..new.len() - 1];
-    super::insertions::prove_textbox_paragraph(old_para, original_defs, original_defs)?;
-    super::insertions::prove_textbox_paragraph(new_para, defs, original_defs)?;
-    let old_style = entries(original_defs, 25)[word(old_para[0].2, 8)?];
-    let new_style = entries(defs, 25)[word(new_para[0].2, 8)?];
-    super::insertions::same_textbox_para_style(old_style, new_style)
+    let paragraphs = |rs: &[Record<'_>]| {
+        rs.iter().enumerate().filter_map(|(i, r)| (r.0 == 66 && r.1 == 3).then_some(i))
+            .chain(std::iter::once(rs.len())).collect::<Vec<_>>()
+    };
+    let old_story = &old[3..old.len() - 1];
+    let new_story = &new[3..new.len() - 1];
+    let before = paragraphs(old_story);
+    let after = paragraphs(new_story);
+    let count = dword(old[2].2, 0)?;
+    preserved(
+        before.first() == Some(&0)
+            && after.first() == Some(&0)
+            && before.len() == count + 1
+            && after.len() == count + 1,
+        BODY,
+    )?;
+    for (a, b) in before.windows(2).zip(after.windows(2)) {
+        let old_para = &old_story[a[0]..a[1]];
+        let new_para = &new_story[b[0]..b[1]];
+        super::insertions::prove_textbox_paragraph(old_para, original_defs, original_defs)?;
+        super::insertions::prove_textbox_paragraph(new_para, defs, original_defs)?;
+        let old_style = entries(original_defs, 25)[word(old_para[0].2, 8)?];
+        let new_style = entries(defs, 25)[word(new_para[0].2, 8)?];
+        super::insertions::same_textbox_para_style(old_style, new_style)?;
+    }
+    Ok(())
 }
 
 /// The pinned RHWP body insertion command emits these resource-free defaults.
@@ -1629,7 +1648,7 @@ mod tests {
     // other semantic records, resource streams, or the compression mode.
     fn mutate_body_record(
         file: &[u8],
-        pick: fn(u16, u16, &[u8]) -> bool,
+        pick: impl Fn(u16, u16, &[u8]) -> bool,
         edit: impl FnOnce(&[u8]) -> Vec<u8>,
     ) -> Vec<u8> {
         use std::io::Read;
@@ -1766,6 +1785,33 @@ mod tests {
             });
             assert!(check_with_preview_refresh(&original, &tampered).iter()
                 .any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the multi-paragraph HWP text-box scenario first"]
+    fn release_hwp_existing_textbox_paragraphs_preserve_story_structure() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p2-multipara-original.hwp");
+        let edited = read("p2-multipara-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        for (tag, level, offset, mask) in [(72, 3, 0, 1), (79, 3, 1, 1), (71, 1, 36, 1)] {
+            let tampered = mutate_body_record(
+                &edited,
+                |t, l, data| t == tag && l == level && (t != 71 || data.starts_with(super::CTRL_GSO)),
+                |data| {
+                    let mut v = data.to_vec();
+                    v[offset] ^= mask;
+                    v
+                },
+            );
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted changed text-box record {tag}"
+            );
         }
     }
 

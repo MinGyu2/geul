@@ -517,6 +517,65 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it.each(["hwp", "hwpx"] as const)("edits the second existing paragraph of an owned %s text box", async format => {
+    const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
+    let bytes: Uint8Array, control: number;
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "textbox",
+        width: 10800, height: 7200, treatAsChar: true, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      })));
+      control = created.controlIdx;
+      fixture.insertTextInCell(0, 0, control, 0, 0, 0, "first");
+      fixture.splitParagraphInCell(0, 0, control, 0, 0, 5);
+      fixture.insertTextInCell(0, 0, control, 0, 1, 0, "second");
+      bytes = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const { editor, doc, take, confirm, calls } = await setup(format, bytes);
+    const paragraphs = (file: RhwpDocument) => [0, 1].map(p =>
+      file.getTextInCell(0, 0, control, 0, p, 0, file.getCellParagraphLength(0, 0, control, 0, p)));
+    try {
+      const baseline = format === "hwp" ? hwpReopenModel(doc) : null;
+      if (baseline) {
+        expect(baseline.complete).toBe(true);
+        take("original").reply(ok(bytes));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
+      const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 1, 0));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 1, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell?.cellParagraph).toBe(1);
+      expect(editor.enter()).toBe(false);
+      expect(editor.backspace()).toBe(false); // No implicit join at the paragraph boundary.
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
+      expect(editor.typeText("새 ")).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(["first", "새 second"]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(["first", "second"]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(paragraphs(reopened)).toEqual(["first", "새 second"]);
+          if (baseline) expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p2-multipara-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p2-multipara-edited.${format}`), output);
+          writeFileSync(resolve(out, `p2-multipara-${format}-report.json`), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("edits one owned HWPX text box with Hangul composition and paragraph alignment", async () => {
     const { editor, doc, confirm } = await setup("hwpx");
     try {

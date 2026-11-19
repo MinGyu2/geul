@@ -430,6 +430,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const pictures: unknown[] = [];
   const shapes: unknown[] = [];
   const charts: unknown[] = [];
+  const textBoxes: unknown[] = [];
   const inventory: unknown[] = [];
   const fields: unknown[] = [];
   let paragraphBase = 0;
@@ -535,6 +536,22 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
           || props.Width !== width || props.Height !== height
           || (props.TreatAsChar === 1) !== shape.treatAsChar) complete = false;
       }
+      if (shape && ["Top", "Center", "Bottom"].includes(String(shape.tbVerticalAlign))) {
+        const paragraphCount = count(doc.getCellParagraphCount(section, p, control, 0));
+        if (paragraphCount < 1) complete = false;
+        const paragraphs = [];
+        for (let para = 0; para < paragraphCount; para++) {
+          node();
+          const length = count(doc.getCellParagraphLength(section, p, control, 0, para), 2_000_000);
+          const text = doc.getTextInCell(section, p, control, 0, para, 0, length);
+          if (typeof text !== "string") throw new HwpEvidenceError("text box paragraph text");
+          spend(text.length * 2);
+          const properties = doc.getCellParaPropertiesAt
+            ? object(json(doc.getCellParaPropertiesAt(section, p, control, 0, para))) : null;
+          paragraphs.push({ text, alignment: properties?.alignment });
+        }
+        textBoxes.push({ section, p, control, paragraphs });
+      }
       shapes.push(shape);
     } else if (c.ctrlId === "gso" && c.userDesc === "OLE") {
       const props = object(c.props); checkControlProps(props);
@@ -600,7 +617,7 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       nested.push({ section, host, levels, coordinates, paragraphs });
     }
   }
-  return { model: canonical({ sections, tables, pictures, shapes, charts, fields, nested }), structure: canonical({ inventory, headings }), complete };
+  return { model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes }), structure: canonical({ inventory, headings }), complete };
 }
 
 function cursorListMap(cursor: JsonObject): Map<number, JsonObject> {

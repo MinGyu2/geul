@@ -133,7 +133,7 @@ export function parsePosition(value: unknown, allowTextBox = false): DocPosition
     if (value.cellPath !== undefined || value.innerControlIdx !== undefined) return null;
     return { section: sectionIndex, paragraph: paragraphIndex, offset: charOffset };
   }
-  if (isTextBox === true && (!allowTextBox || cellIndex !== 0 || cellParaIndex !== 0)) return null;
+  if (isTextBox === true && (!allowTextBox || cellIndex !== 0)) return null;
   if (!isIndex(parentParaIndex) || !isIndex(controlIndex) || !isIndex(cellIndex) || !isIndex(cellParaIndex)) return null;
   const cell: CellRef = { parentParagraph: parentParaIndex, control: controlIndex, cell: cellIndex, cellParagraph: cellParaIndex, ...(isTextBox === true ? { textBox: true } : {}) };
   if (value.cellPath !== undefined) {
@@ -367,10 +367,10 @@ export class RhwpText {
     } catch { return false; }
   }
 
-  /** A single plain paragraph in a top-level, unlocked drawing text box. */
+  /** An existing plain paragraph in a top-level, unlocked drawing text box. */
   ownsTextBox(at: DocPosition): boolean {
     const c = at.cell, doc = this.doc;
-    if (!c?.textBox || c.nested || c.cell !== 0 || c.cellParagraph !== 0
+    if (!c?.textBox || c.nested || c.cell !== 0 || !isIndex(c.cellParagraph)
       || !doc.getControls || !doc.getCursorModel || !doc.getShapeProperties) return false;
     try {
       const rawControls = doc.getControls(), rawLists = doc.getCursorModel();
@@ -382,7 +382,8 @@ export class RhwpText {
         && list.hostPara === c.parentParagraph && list.controlIndex === c.control);
       if (owners.length !== 1) return false;
       const list = owners[0]!;
-      if (list.isCell !== false || list.cellIndex !== 0 || list.paraCount !== 1
+      if (list.isCell !== false || list.cellIndex !== 0 || !isIndex(list.paraCount)
+        || list.paraCount > 64 || c.cellParagraph >= list.paraCount
         || !isIndex(list.listId) || list.listId < 2 || controls.some(ctrl => ctrl.list === list.listId)
         || lists.some(child => child.hostListId === list.listId)) return false;
       let paragraph = c.parentParagraph;
@@ -393,7 +394,7 @@ export class RhwpText {
       const shape = json(doc.getShapeProperties(at.section, c.parentParagraph, c.control));
       return isRecord(shape) && shape.hasCaption === false
         && ["Top", "Center", "Bottom"].includes(String(shape.tbVerticalAlign))
-        && doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, 0) === 1;
+        && doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, 0) === list.paraCount;
     } catch { return false; }
   }
 
@@ -429,7 +430,8 @@ export class RhwpText {
 
   /** Admission only: unsupported inline slots must never open a mutation/history transaction. */
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
-    if (!sameContext(from, to) || compare(from, to) > 0) return false;
+    if (!sameContext(from, to) || compare(from, to) > 0
+      || (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to))) return false;
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
         const at = withParagraph(from, p, p === paragraphOf(from) ? from.offset : 0);
