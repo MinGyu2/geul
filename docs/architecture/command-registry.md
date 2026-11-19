@@ -1039,18 +1039,18 @@ DOCX·HWPX·HWP 표면의 일반 클릭은 현재 그려진 쪽의 엔진 배치
 않는다. 이동·크기 조정·삭제에는 형식별 저장 증명과 실행 경로가 남아 있다.
 
 
-### P2 그림 속성과 HWPX 크기 조정
+### P2 그림 속성과 HWP/HWPX 크기 조정
 
 DOCX의 그림 크기와 배치는 WordCraft 문서 모델에서 읽는다. HWP/HWPX는
 렌더 쪽의 문서 경로로 확인한 본문 그림을 `getPictureProperties`로 조회한다.
 속성 창의 크기는 포인트이며 RHWP 값은 100 HWPUNIT = 1pt로 환산한다.
 임베디드 OLE와 소유권을 확인할 수 없는 중첩 그림은 이 조회 범위 밖이다.
 
-`picture.size`는 크기 보호·캡션·회전·반전·크롭·외부 링크가 없는 HWPX 본문
+`picture.size`는 크기 보호·캡션·회전·반전·크롭·외부 링크가 없는 HWP/HWPX 본문
 인라인 그림의 너비/높이를 조정한다. 세션·세대·revision·선택 번호가 모두
 일치할 때만 실행하고, `setPictureProperties` 호출 뒤 동일 주소의 실제
 치수를 다시 확인한다. RHWP 이력의 한 트랜잭션으로 적용한다. 속성 창은
-가로세로 비율 유지를 기본으로 제공한다. 이동·크롭·설명 변경은 미지원이다.
+가로세로 비율 유지를 기본으로 제공한다. HWP는 원본 T009 SAFE와 완전한 재열기 모델이 필요하다. 이동·자르기·배치·설명은 아래 객체 편집 경로를 사용한다.
 
 ### P3 DOCX 도형과 글상자 삽입
 
@@ -1108,11 +1108,15 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
   같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
 - RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·기본 도형(`사각형`·`타원`·`직선`, 잠금/캡션 제외).
-  크기는 `picture.size`/`bounds` 경로, 이동은 `horzAlign=Left`·`vertAlign=Top`·캡션·회전 없는 떠 있는 개체의 `horzOffset`/`vertOffset`,
+  크기는 `picture.size`/`bounds` 경로다. 이동은 왼쪽·위 기준으로 떠 있는 객체의 `horzOffset`/`vertOffset`을 바꾼다. 그림 이동에는 회전이 없어야 한다.
   그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원하며 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용으로 유지한다(HWP GSO 삭제/차트/OLE/그룹/다각형은 fail-closed 차단).
   HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.
+  크기 보호 도형에는 크기 핸들을 제공하지 않는다. HWP 개체 선택 중 Delete/Backspace는 본문 삭제로 넘어가지 않는다.
+  Linux X11/GTK/IBus Release 수용에서 그림 크기·설명과 사각형 이동·회전·좌우 반전, Undo/Redo, 실제 저장과 앱 재시작 후
+  디스크 재열기를 확인했다. 그림 이동·자르기·배치와 나머지 기본 도형 편집은 Release WASM/T009 증거가 있다.
+  [HWP GSO 저장 규칙과 실행 근거](save-preservation.md#stage-3-안정화-hwp-gso-필드-단위-진화-증명-2026-11-19)
 - UI: `ObjectSelectionFrame`의 이동 영역과 8방향 핸들(접근 이름 포함). 그림 모서리는 비율 유지(Shift로 해제; 한/양 축 최소·최대 한계에 닿아도 공통 비율을 유지하며 불가능한 제약에서는 변경 거부),
-  Esc·pointercancel·선택/문서/배율 변경은 끌기를 취소한다. 방향키 1pt(Shift 10pt), Delete/Backspace 삭제.
+  Esc·pointercancel·선택/문서/배율 변경은 끌기를 취소한다. 방향키 1pt(Shift 10pt), 삭제를 지원하는 선택에서 Delete/Backspace.
 
 ### P2 그림 편집 (2026-11-19)
 
@@ -1123,7 +1127,7 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 - WordCraft: `picture.crop`·`arrange.wrap`·`object.altText`·`arrange.position`. 그림만 crop, wrap은 이동 조건과 같음.
   재열기 동일성을 위해 crop을 1/100000, 위치를 EMU로 맞추고, 인라인 복귀 시 `wp:inline`이 담지 않는 위치·거리 필드를
   기본값으로, 떠 있는 개체의 세로 `Column` 기준을 `Paragraph`로 정규화한다. 변경 없는 편집은 거부(빈 이력 없음).
-- RHWP(HWPX): `setPictureProperties`의 `description`·`treatAsChar`/`textWrap`·`cropLeft..cropBottom`(원본 크기 HWPUNIT).
+- RHWP(HWP/HWPX): `setPictureProperties`의 `description`·`treatAsChar`/`textWrap`·`cropLeft..cropBottom`(원본 크기 HWPUNIT).
   캡션·외부 링크·크기 보호가 없는 그림만. 적용 뒤 요청 필드와 나머지(크기·설명·배치·자르기)를 다시 읽어 확인한다.
   RHWP JSON 읽기가 이스케이프를 해석하지 않아 설명의 `"`·`\`를 거부한다. 위치 프리셋은 미지원.
 - 속성 창: 엔진 값으로 채운 크기·자르기·배치·설명·위치·삭제 도구. 편집 대기·조합 중에는 비활성. 적용 뒤 새 선택 번호의

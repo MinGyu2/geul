@@ -193,9 +193,10 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 |---|---|---|---|---|
 | 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
-| 그림 크기 조정 (P2 갱신: DOCX 지원) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | HWPX 단순 본문 인라인 그림, 비율 유지·Undo/Redo·게시·독립 재열기. HWP 레코드 보존 검사 거부 |
-| 개체 이동·크기·삭제 (2026-11-19 P1) | SUPPORTED_AND_VERIFIED | PARTIAL (그림) | BLOCKED | DOCX: 본문 그림·도형·글상자·그룹의 `object.edit`(끌기·핸들·방향키·Delete), 편집 전 내보내기 대비 T009 사전 판정, 게시·독립 재열기. HWPX: 본문 떠 있는 그림 이동·인라인 그림 크기·그림 삭제, Release WASM·`save_check` safe. HWP: `insertions.rs:1154` 원본 gso 객체 바이트 동일 요구로 거부 |
-| 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | 해당 없음 | 8방향 핸들·이동 끌기·Esc/포인터 취소·끌기당 한 번 커밋; native X11 NOT RUN |
+| 그림 크기 조정 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 단순 본문 인라인 그림 40.5×20.25→54×27pt, 네이티브 속성 입력·저장·앱 재시작 후 재열기 |
+| 그림 이동 | SUPPORTED_AND_VERIFIED | PARTIAL | IMPLEMENTED_NOT_ACCEPTED | HWP 떠 있는 본문 그림 이동의 Release WASM/T009 통과. 네이티브 이동 NOT RUN |
+| GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | HWP 원본 객체 생존 필수. 네이티브 Delete/Backspace 거부 뒤 revision·본문·원본 바이트 유지 |
+| 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | IMPLEMENTED_NOT_ACCEPTED | HWP 포인터 선택, 속성 창 크기 조정, 키보드 이동 네이티브 PASS. HWP 포인터 끌기 NOT RUN |
 | 사각형·타원·선 삽입 (P3 갱신) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
 | 글상자 삽입·내부 텍스트 (P3 갱신) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
@@ -207,12 +208,15 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림·도형·글상자·그룹 구조 클립보드 (P5) | SUPPORTED_AND_VERIFIED (앱 내: 그림·도형·글상자·단일 평탄 그룹+자식 도형/그림/글상자; 중첩 그룹·차트/OLE 자식은 명시 거부) | UNSUPPORTED | UNSUPPORTED | DOCX v2 페이로드: WordCraft 조각 + 미디어 바이트·SHA-256 + `text_boxes()` story 전수 검증/재매핑, 대상 소유 미디어 키·글상자 story, 한 번의 Undo/Redo, T009 사전 판정. Rust `stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes` 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance`(같은/다른 DOCX, 자식 도형/그림/글상자, Undo/Redo, 독립 재열기, 11건 음성 거부 무변경) PASS. HWPX/HWP 원본 복사·교차 형식 붙여넣기는 거부 |
 | 차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 붙여넣기가 새 차트/다이어그램 부분을 더하는데 그 T009 증명이 없어 거부 |
 | 시스템 클립보드 구조 MIME | NOT RUN | NOT RUN | NOT RUN | `systemClipboard`에 구조 MIME 쓰기 경로가 없음: 평문 표지 + 앱 내 기억(표지가 바뀌면 폐기). 다른 앱 상호 운용 NOT RUN |
-| 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `picture.crop`(원본 미디어 불변, 1/100000 격자), HWPX crop 양(원본 크기 기준) 읽기 확인·재열기·`save_check` safe |
-| 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `arrange.wrap`(인라인 복귀 시 위치 필드 정규화), HWPX `treatAsChar`/`textWrap` |
-| 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX `object.altText`(제어 문자·줄바꿈 거부), HWPX `description`(`"`·`\\` 거부, 256자) |
-| 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | BLOCKED | DOCX `arrange.position` 여백 기준 9곳. HWPX는 끌기 이동만 |
-| 도형 채우기·선·회전·대칭·앞뒤 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기·앞뒤 순서 제외) | BLOCKED | DOCX `shape.fill`/`shape.outline`/`arrange.rotation`/`bringForward`·`sendBackward`(EMU·60000분의 1도 격자). HWPX `setShapeProperties` 채우기(단색·없음)·선 색·회전·대칭·크기·이동·배치, `changeShapeZOrder`, `deleteShapeControl`; 모든 비편집 필드 다시 읽기 확인 |
-| 기존 도형·글상자 외곽 이동·크기·삭제 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | DOCX P1 경로, HWPX 본문 도형 |
+| 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 자르기 Release WASM 및 T009. 네이티브 자르기·초기화 NOT RUN |
+| 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 인라인→위/아래 배치 Release WASM 및 T009. 네이티브 배치 NOT RUN |
+| 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 실제 속성 창에서 입력한 설명이 게시본에 남고 재열기 UI에서 일치 |
+| 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX `arrange.position` 여백 기준 9곳 |
+| 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기·앞뒤 순서 제외) | PARTIAL | HWP 사각형 회전·좌우 반전 SUPPORTED_AND_VERIFIED. 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009, 네이티브 NOT RUN. 선 굵기·앞뒤 순서 UNSUPPORTED |
+| 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동 SUPPORTED_AND_VERIFIED. 사각형·타원·선 크기는 엔진/T009 통과, 네이티브 크기 NOT RUN |
+| 캡션 있는 GSO 편집 | — | — | BLOCKED | 원본·출력 bit 29 및 캡션 구조 변경 거부. 캡션이 그대로인 다른 편집 통과 |
+| 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
+| 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
 | 중첩 개체 (P3) | PARTIAL | UNSUPPORTED | UNSUPPORTED | DOCX 표 셀 그림: 크기·자르기·설명·삭제만(이동 거부), 머리글/바닥글·글상자 안 개체는 변경 없음. RHWP 셀·머리글 개체는 선택만 |
 | HWPX/HWP 글상자 내부 편집 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | RHWP 글상자 story 커서·IME 경로 미연결 |
 
@@ -276,4 +280,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 - Task 2 (`e7614e5`): `documentCommandState("object.edit")`가 `MUTATING_OBJECT_OPERATIONS`(`chart`·`smartArt` 포함)로 가용성을 판정하도록 교정(`deselect`/`copy`/`cut` 제외, `DocxEditorSession` integration PASS).
 - Task 3 (`537ec76`): `ObjectSelectionFrame` 모서리 비율 유지 크기 조정이 최소/최대 한계에서 공통 비율 `[sMin, sMax]`를 보존하고 모순 제약 시 시작 크기를 유지하도록 교정(`ObjectSelectionFrame.test.tsx` 13/13 PASS).
 - Task 4 (`d44e484`): DOCX 그룹 리치 클립보드 v2 라운드트립 수정(중첩 그룹 거부·복수 `text_boxes()` story 검증·총 디코딩 미디어 용량 제한) 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance` + RHWP v2 거부/페이로드 시험 PASS.
-- Task 5: `services::save::hwp::gso` 필드 단위 HWP GSO 진화 증명 + `hwpReopenModel` 도형 검증 + `RhwpEditorSession` HWP 그림·도형 필드 편집 연결(`delete` 및 미모델 개체는 fail-closed 차단). Rust `services::save` 285 PASS / 0 FAIL / 29 ignored, Release WASM `stage3-{object-edit,picture-size,shapes}` 9/9 PASS. Linux native GUI Drag/Save 재실행은 NOT RUN.
+- Task 5 **COMPLETED**. 크기·행렬·캡션 T009 경계, Rust 저장 286 PASS/0 FAIL/30 ignored, 실제 Release WASM HWP T009 별도 1 PASS, Release WASM 9/9 PASS. Linux X11/GTK/IBus Release `13729f450735…`에서 포인터 선택, 그림 크기·설명, 사각형 이동·회전·좌우 반전, 삭제 거부, Undo/Redo, 실제 게시 및 새 앱 프로세스에서 디스크 재열기 PASS. 범위와 증거는 [HWP GSO 저장 보존](architecture/save-preservation.md#stage-3-안정화-hwp-gso-필드-단위-진화-증명-2026-11-19) 참조.
+- Stage 3 전체 **PARTIALLY COMPLETED**. HWP GSO 삭제, 도형·글상자 삽입, 복합 객체 편집, 교차 형식 구조 클립보드는 수용 범위 밖이다. 한컴 및 다른 플랫폼 상호운용 NOT RUN.
