@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
+import { ImeInput } from "../../src/components/Editor/rhwp/imeInput";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
@@ -387,6 +388,79 @@ describe("Stage 3 shapes on the Release engine", () => {
           writeFileSync(resolve(out, "p2-cell-picture-report.json"), report);
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("binds delayed text-box IME commits to one live owner", async () => {
+    const { editor, doc, confirm, calls } = await setup("hwpx");
+    try {
+      for (let i = 0; i < 2; i++) {
+        expect(editor.execute("insert.textBox").accepted).toBe(true);
+        await confirm();
+      }
+      const [first, second] = shapes(doc).map(frame => frame.controlIdx);
+      const moveToBox = (index: number) => {
+        const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, index, 0, 0, 0));
+        expect(editor.pointAt(cursor.pageIndex, cursor.x + 1, cursor.y + cursor.height / 2, false)).toBe(true);
+      };
+      const contents = (index: number) =>
+        doc.getTextInCell(0, 0, index, 0, 0, 0, doc.getCellParagraphLength(0, 0, index, 0, 0));
+      const ime = new ImeInput(editor);
+      moveToBox(first!);
+      ime.pointerDown();
+      moveToBox(second!);
+      ime.input("한", "insertFromComposition", false);
+      ime.compositionEnd("한");
+      ime.compositionEnd("한");
+      await confirm();
+      expect(contents(first!)).toBe("한");
+      expect(contents(second!)).toBe("");
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(contents(first!)).toBe("");
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(contents(first!)).toBe("한");
+
+      moveToBox(first!);
+      const lockedTarget = editor.markCaret();
+      moveToBox(second!);
+      const locks = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(locks.setControlLock(0, first!, true))).toMatchObject({ ok: true });
+      const beforeRefusal = editor.localRevision;
+      expect(editor.insertCommittedAt(lockedTarget, "글")).toBe(false);
+      expect(contents(first!)).toBe("한");
+      expect(contents(second!)).toBe("");
+
+      const cancelled = new ImeInput(editor);
+      cancelled.pointerDown();
+      cancelled.compositionEnd("");
+      expect(editor.localRevision).toBe(beforeRefusal);
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
+
+      const staleTarget = editor.markCaret();
+      expect(editor.typeText("새")).toBe(true);
+      await confirm();
+      expect(editor.insertCommittedAt(staleTarget, "옛")).toBe(false);
+      expect(contents(second!)).toBe("새");
+
+      moveToBox(second!);
+      const removedTarget = editor.markCaret();
+      {
+        const frame = shapes(doc).find(item => item.controlIdx === second)!;
+        expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+        expect(editor.execute("object.edit", objectEditRequest(editor.objectSelection!, { kind: "delete" })).accepted).toBe(true);
+        await confirm();
+      }
+      expect(editor.insertCommittedAt(removedTarget, "옛")).toBe(false);
+      expect(shapes(doc).map(frame => frame.controlIdx)).toHaveLength(1);
+
+      const finalTarget = editor.markCaret();
+      const other = await setup("hwpx");
+      try { expect(other.editor.insertCommittedAt(finalTarget, "옛")).toBe(false); }
+      finally { other.editor.dispose(); }
+      editor.dispose();
+      expect(editor.insertCommittedAt(finalTarget, "옛")).toBe(false);
     } finally { editor.dispose(); }
   });
 

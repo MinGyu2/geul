@@ -356,6 +356,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 로컬 비동기 작업 소유권. reload 시작(백엔드 응답 전)·dispose에서 무효화한다. */
   private epoch = 0;
   private imeSerial = 0;
+  private readonly imeTargets = new WeakMap<object, { at: DocPosition; epoch: number; version: number }>();
   get imeEpoch() { return this.imeSerial; }
   /** 지금 모델을 만든 불러오기 시도 번호(백엔드가 준 값, 0 = 없음). */
   private generation = 0;
@@ -1573,17 +1574,33 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.emit();
   }
 
-  /** 지금 커서 자리(ImeSession: 끊긴 조합의 늦은 확정을 넣을 자리로 기억). */
-  markCaret(): DocPosition {
-    return this.caret;
+  /** Capture a one-use position owned by this session for a delayed IME commit. */
+  markCaret(): object {
+    const target = {};
+    this.imeTargets.set(target, { at: this.caret, epoch: this.imeEpoch, version: this.modelVersion });
+    return target;
   }
 
   /**
    * 이미 끝낸 위치(at)에 늦게 확정된 글자를 넣는다(조합 중 클릭 뒤 IME가 보낸 확정). 변경 하나로 세고, 커서·선택
    * 기준점은 같은 문단의 그 위치 뒤에 있을 때만 넣은 글자만큼 민다(커서를 확정 위치로 옮기지 않음).
    */
-  insertCommittedAt(at: DocPosition, text: string): boolean {
-    if (!text || this.composition) return false;
+  insertCommittedAt(target: unknown, text: string): boolean {
+    if (!target || typeof target !== "object") return false;
+    const captured = this.imeTargets.get(target);
+    this.imeTargets.delete(target);
+    if (!captured || captured.epoch !== this.imeEpoch || !text || this.composition) return false;
+    const { at, version } = captured;
+    if (at.cell?.textBox) {
+      // A control index may name a different box after any model edit.
+      // A caret move alone leaves the captured owner and offset valid.
+      if (version !== this.modelVersion || this.provisional || !this.ownsPosition(at)
+        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text)) return false;
+      try {
+        if (!this.text || !Number.isSafeInteger(at.offset) || at.offset < 0
+          || !(at.offset <= this.text.paragraphLength(at))) return false;
+      } catch { return false; }
+    }
     this.selectedObject = null; // A late IME commit changes engine addresses.
     const length = charCount(text);
     const shift = (position: DocPosition): DocPosition =>
