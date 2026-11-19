@@ -340,7 +340,7 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 
 ### P6 증분 통합 수용 (2026-11-19)
 
-Linux X11 Release 앱 SHA-256 `f6cffacdb0641ee642e8fdb0802ac5b4fbe6c920e8a00be5c4281b35ad4c0520`, 소스 `1ddbdd5`, RHWP Release `f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9`. `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle` PASS. 아래 기록은 `target/stage3-p6/`의 `accept.py`, 결과 JSON, 출력 문서 및 격리 세션 정리 기록에 있다.
+Linux X11 Release 앱 SHA-256 `f6cffacdb0641ee642e8fdb0802ac5b4fbe6c920e8a00be5c4281b35ad4c0520`, 소스 `1ddbdd5`, RHWP Release `f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9` (`public/rhwp/generations/f2c96060...`에 보존). `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle` PASS. 실행·해시·오라클 감사 매니페스트와 재사용 스크립트는 [P6 감사 매니페스트](architecture/stage3-p6-native-acceptance-2026-11-19.json), [native-stage3-p6.py](../scripts/tests/native-stage3-p6.py), [stage3-p6-graphics-fixture.rs](../scripts/tests/stage3-p6-graphics-fixture.rs)로 Git에 보존하며, 대용량 바이너리(`target/stage3-p6/graphics-fixture` 609 MB)·원본 결과 디렉터리·XDG 프로필은 `target/stage3-p6/`에만 남는다.
 
 | 범위 | 결과 | 확인한 동작 |
 |---|---|---|

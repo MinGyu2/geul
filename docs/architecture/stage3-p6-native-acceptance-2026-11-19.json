@@ -1,0 +1,109 @@
+{
+  "phase": "Stage 3 P6 — Incremental Linux Native Acceptance Audit",
+  "auditedAt": "2026-11-20T00:04:00+09:00",
+  "recordedSourceCommit": "1ddbdd5d884d7562eea396d03d79d4d77be12e2c",
+  "recordedDocumentationCommit": "2c0b05361916fb07ce2dcdbe4467fd4ffe0da395",
+  "rerunPerformed": false,
+  "identity": {
+    "appPath": "src-tauri/target/release/geul",
+    "appBytes": 62322360,
+    "appSha256": "f6cffacdb0641ee642e8fdb0802ac5b4fbe6c920e8a00be5c4281b35ad4c0520",
+    "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "rhwpReleaseWasmGeneration": "f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9",
+    "rhwpArtifacts": {
+      "rhwp.js": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+      "rhwp_bg.wasm": "f017d24c107f79b59515b293871382b87c6aa28595c16de3d201a69a22ed701c"
+    },
+    "retainedWasmDirectory": "public/rhwp/generations/f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9",
+    "note": "Subsequent Work Item 1 updated RELEASE.json to bb0496bc3b10c42f2e4cdde8f27a0c55ad0e22357bdced355012107dc6c0253e while preserving f2c96060... under public/rhwp/generations/."
+  },
+  "durableScripts": {
+    "nativeAcceptanceScript": "scripts/tests/native-stage3-p6.py",
+    "graphicsFixtureGenerator": "scripts/tests/stage3-p6-graphics-fixture.rs"
+  },
+  "disposableSourceFiles": {
+    "root": "target/stage3-p6/",
+    "script": {
+      "path": "target/stage3-p6/accept.py",
+      "sha256": "6f420ca19ac02475b5eee9d1a958ad77c1693896b5842e1c5bd8bf397c882bf9",
+      "note": "Edited after native2 completed (23:08 > 23:06) to fix deletion index filtering and BGR32 color comparison; deletion-oracle.json and shape-oracle.json provide the independent post-run verification."
+    },
+    "inputs": {
+      "target/stage3-gso-acceptance/gso-original.hwp": "49acfbe4e74722691eeac1f7d5103c1346625a517b2297ba3d857b2337b40f94",
+      "target/stage3-caption-story/p5-caption-original.hwp": "528225c293b379a54563a8cf75d0bec576d52e38e024b848aaebb85e82ac90b7",
+      "target/stage3-p6/graphics-original.docx": "4ee8ffe1d825a8f2727ef81f2d7e08eb296d6ed73ca751132e4104a559094abd"
+    },
+    "outputs": {
+      "target/stage3-p6/native1/delete.hwp": "e572fcb8ddec9f554f629c81c36f56117a49abf6044bea7a7e434cef0dcd6ad9",
+      "target/stage3-p6/native1/caption.hwp": "826829c3e4f56667e2a0d10ae9c1124c73cd6a9f6c5a06c31d4f0121a2203d32",
+      "target/stage3-p6/native2/picture.hwp": "adbbf13996aed98bf07fda28968cee401ae8562a9a5f86e066a2614057d32dfe",
+      "target/stage3-p6/native2/shape.hwp": "cdd2cb29c036a45696fb9e7ad7d2cbe7fb1b8f60d6d34b5de2f1691aebaec7",
+      "target/stage3-p6/native2/graphics.docx": "506190daa4b57b29fcd67e6bf912499658e98d30ef53080f36b755f6ed1c988f"
+    },
+    "resultsAndOracles": {
+      "target/stage3-p6/native1/result.json": "9fe35c0d5e80aa8f15ac399fce904c0e9097fe593b670c4e26d21f773caa9ab6",
+      "target/stage3-p6/native2/result.json": "0fc622649206a4c5cf1d5ce903df3010b169e4b711c3a21811ab6360e51484c9",
+      "target/stage3-p6/deletion-oracle.json": "294ec577f560996a5095b62ce771d00a47c14da1c5fcf46c42",
+      "target/stage3-p6/shape-oracle.json": "5193ede14a6974ffd98211de148d5fd2b39abceabf1ee1e75ae86e7ae694b13c",
+      "target/stage3-p6/session1/cleanup.json": "f9e3e60bb261f7b162f0049ee41a4d4f6b9fbcc0f3271ad7b61295c2a03f622a",
+      "target/stage3-p6/session2/cleanup.json": "88f292263cc50dcf46bc4e5c3b7ac07179e41e4e696f4e2977b33d1b609a66a"
+    },
+    "excludedLargeOrEphemeral": [
+      "target/stage3-p6/graphics-fixture (609,411,008 bytes)",
+      "target/stage3-p6/native*/data-* (XDG profiles / caches)",
+      "target/stage3-p6/*.log",
+      "src-tauri/target/release/geul (62,322,360 bytes)"
+    ]
+  },
+  "cases": {
+    "HWP picture": {
+      "status": "PASS",
+      "session": "native2",
+      "inputInteraction": {
+        "trustedX11": ["canvas/selection pointer click and drag (380.1,172.3 -> 426.1,205.3)"],
+        "syntheticWebViewDom": ["crop input/reset dom_click", "HTMLSelectElement wrap=topAndBottom change event"]
+      },
+      "verifiedSavedOutput": "target/stage3-p6/native2/picture.hwp (horzOffset 20000 -> 23450, cropLeft 0, textWrap TopAndBottom, BinData preserved)"
+    },
+    "HWP GSO deletion": {
+      "status": "PASS",
+      "session": "native1",
+      "recordedRunOutcome": "native1/result.json FAIL on harness index assumption; deletion-oracle.json PASS",
+      "inputInteraction": {
+        "trustedX11": ["object pointer selection", "Delete key", "ctrl+z Undo", "re-selection + Delete key"]
+      },
+      "verifiedSavedOutput": "target/stage3-p6/native1/delete.hwp (1 GSO removed at raw section index 3 of 6, remaining objects byte-identical, BinData/BIN0001.png and BIN0002.png preserved)"
+    },
+    "HWP shape format": {
+      "status": "PASS",
+      "session": "native2",
+      "recordedRunOutcome": "native2/result.json FAIL on RGB vs RHWP BGR32 assertion; shape-oracle.json PASS",
+      "inputInteraction": {
+        "trustedX11": ["object pointer selection", "ctrl+z Undo"],
+        "syntheticWebViewDom": ["HTMLInputElement[type=color] fill=#996633 and outline=#442277 change events", "No-Fill, outline submit, and vertical-flip dom_click"]
+      },
+      "verifiedSavedOutput": "target/stage3-p6/native2/shape.hwp (fillBgColor 0x336699 / #996633, borderColor 0x772244 / #442277, vertFlip true, images/body/BinData preserved)"
+    },
+    "HWP caption": {
+      "status": "PASS",
+      "session": "native1",
+      "inputInteraction": {
+        "trustedX11": ["canvas click into @caption/", "keyboard typing Caption"]
+      },
+      "verifiedSavedOutput": "target/stage3-p6/native1/caption.hwp (text '그림  Caption', body and image properties/BinData preserved)"
+    },
+    "DOCX chart and SmartArt": {
+      "status": "PASS",
+      "session": "native2",
+      "inputInteraction": {
+        "trustedX11": ["canvas clicks on chart/SmartArt", "ctrl+a and keyboard typing in SmartArt textarea"],
+        "syntheticWebViewDom": ["chart title/data input + dom_click", "HTMLSelectElement chartType=bar and layout=cycle change events", "SmartArt submit dom_click"]
+      },
+      "verifiedSavedOutput": "target/stage3-p6/native2/graphics.docx (chart1.xml Revenue Native/bar/37, diagrams/data1.xml Plan/Launch, reopened session UI verified)"
+    }
+  },
+  "cleanupVerification": {
+    "session1": { "runId": "ed86aaad1e5b4819afe6506351e1e3b5", "complete": true, "proven": true, "filesystemProven": true, "survivors": 0 },
+    "session2": { "runId": "785d4b1edad44ebbabaada12c921b45a", "complete": true, "proven": true, "filesystemProven": true, "survivors": 0 }
+  }
+}
