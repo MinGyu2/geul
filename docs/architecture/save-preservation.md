@@ -1793,6 +1793,14 @@ previewStale`도 검출됐다. 같은 HWPX 시험 후보는 원시 검사에서 
 새 엔진 인스턴스에서 열린 것을 확인했다. 실제 게시·이력 통합과 기존 개체의
 보존 수용은 후속 관문이다. 이 변경에서 T009 허용 규칙에 변경 사항은 없다.
 
+### Stage 3 P1 HWP 기본 도형·빈 글상자 삽입 보존 증명 (2026-11-19)
+
+- **범위:** 최상위 본문 Section0의 접힌 커서에서 사각형·타원·직선·빈 글상자 삽입. 기존 RHWP `createShapeControl` 경로를 사용하며 SAFE 사전 검사와 단일 Undo/Redo 이력을 요구한다. 기본 삽입 이외의 선행 문서 변경은 T009 증명 범위 밖이면 거부할 수 있다.
+- **T009 (`hwp/gso.rs`, `hwp/insertions.rs`):** 새 인스턴스 ID의 비충돌성, 허용된 기본 기하·서식, 독립 BinData 자원 부재, 글상자 빈 문단의 소유 관계를 증명한다. 실제 HWP fixture에서 레코드 소유·기하 변조 거부도 확인했다.
+- **검증:** Release WASM `f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9`의 `stage3-shapes.wasm.test.ts -t 'inserts the four supported HWP shape families'` 1 PASS(사전 검사, 네 삽입, revision, Undo/Redo, HWP 독립 재열기); `release_hwp_p1_shape_insertions_require_owned_canonical_records -- --ignored` 1 PASS(실제 fixture 및 소유·기하 변조); `npm run typecheck` PASS. 공통 fixture 경로는 `target/stage3-p123456/fixtures`다. DOCX/HWPX 기존 PASS는 관련 경로 불변으로 재사용했다. Native UI는 실행하지 않았다.
+
+이 문서 뒤쪽의 “HWP 도형은 BodyText gso 증명 공백으로 BLOCKED” 및 HWP 삽입 미지원 서술은 위 P1 구현 이전의 역사 기록이다. 현재 지원은 명시한 네 기본 삽입에 한정되며, Stage 3 전체 완료나 임의 도형 변이를 뜻하지 않는다.
+
 
 ### P2 HWPX 그림 크기 조정 보존 확인
 

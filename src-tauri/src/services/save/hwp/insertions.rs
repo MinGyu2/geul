@@ -1097,6 +1097,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         unique_ids(&records, &mut table_ids, name)?;
         unique_field_ids(&records, &mut used.fields, name)?;
     }
+    let original_ids = table_ids.clone();
     let mut table_total = 0;
     for (name, data) in &b.streams {
         if !section_stream(name) {
@@ -1195,6 +1196,8 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             if object[0].2.starts_with(b" lbt") {
                 validate_table(object, &bc, &mut used, &mut table_ids)?;
                 table_total += 1;
+            } else if super::gso::is_basic_shape(object) {
+                super::gso::prove_inserted_shape(object, &bc, &original_ids)?;
             } else if object[0].2.starts_with(b" osg") {
                 validate_picture(object, 1, &bc, &resources.dimensions, &mut used.pictures)?;
             } else {

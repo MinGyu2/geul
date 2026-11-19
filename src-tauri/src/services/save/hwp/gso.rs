@@ -147,6 +147,143 @@ fn expected_leaf_tag(ctrl_id: &[u8; 4]) -> Option<u16> {
     }
 }
 
+/// The pinned RHWP body insertion command emits these resource-free defaults.
+/// Check new objects separately from the evolution proof for originals.
+pub(super) fn prove_inserted_shape(
+    rs: &[Record<'_>],
+    defs: &Defs<'_>,
+    original_ids: &std::collections::BTreeSet<usize>,
+) -> Checked<()> {
+    let Some((kind, 8, 1)) = shape_ctrl_id(rs) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let textbox = rs.len() == 7 && kind == SC_RECT;
+    let (tag, height, description) = match kind {
+        SC_LINE => (TAG_LINE, 100i32, "선입니다."),
+        SC_ELLIPSE => (TAG_ELLIPSE, 7200, "타원입니다."),
+        SC_RECT if textbox => (TAG_RECTANGLE, 7200, "글상자입니다."),
+        SC_RECT => (TAG_RECTANGLE, 7200, "사각형입니다."),
+        _ => return Err(finding(FindingCode::RecordsChanged, BODY)),
+    };
+    let width = 10800i32;
+    let (leaf_tag, leaf_level, leaf) = rs[rs.len() - 1];
+    let h = rs[0].2;
+    let instance = dword(h, 36)?;
+    reference(instance != 0 && !original_ids.contains(&instance), BODY)?;
+    let margin = (if textbox { 283u16 } else { 0 }).to_le_bytes();
+    let desc: Vec<u8> = description
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    preserved(
+        rs[0].1 == 1 && rs[1].1 == 2 && rs.len() == if textbox { 7 } else { 3 },
+        BODY,
+    )?;
+    preserved(
+        dword(h, 4)? == if textbox { 0x000a0211 } else { 0x000a0000 }
+            && h[8..16] == [0; 8]
+            && dword(h, 16)? == width as usize
+            && dword(h, 20)? == height as usize
+            && h[28..36].chunks_exact(2).all(|m| m == margin)
+            && h[40..44] == [0; 4]
+            && word(h, 44)? == desc.len() / 2
+            && h[46..] == desc,
+        BODY,
+    )?;
+
+    let line = kind == SC_LINE;
+    let mut component = vec![0; if line { 239 } else { 252 }];
+    component[..4].copy_from_slice(kind);
+    component[4..8].copy_from_slice(kind);
+    component[18..20].copy_from_slice(&1u16.to_le_bytes()); // local version
+    for (at, value) in [
+        (20, width),
+        (24, height),
+        (28, width),
+        (32, height),
+        (36, 0x0008_0000),
+        (42, width / 2),
+        (46, height / 2),
+        (200, 33),
+        (204, 0xd100_0041u32 as i32),
+    ] {
+        component[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    component[50..52].copy_from_slice(&1u16.to_le_bytes());
+    for matrix in component[52..196].chunks_exact_mut(48) {
+        matrix[..8].copy_from_slice(&1.0f64.to_le_bytes());
+        matrix[32..40].copy_from_slice(&1.0f64.to_le_bytes());
+    }
+    if !line {
+        component[209] = 1; // solid white fill, no pattern
+        component[213..217].copy_from_slice(&0x00ff_ffffu32.to_le_bytes());
+        component[221..225].copy_from_slice(&(-1i32).to_le_bytes());
+    }
+    let subject = ((instance as u32 & 0x3fff_ffff) + 1).to_le_bytes();
+    let at = component.len() - 6;
+    component[at..at + 4].copy_from_slice(&subject);
+    preserved(rs[1].2 == component, BODY)?;
+
+    let mut geometry = Vec::new();
+    if kind == SC_RECT {
+        geometry.push(0); // square corners
+    }
+    let half = width / 2;
+    let middle = height / 2;
+    let coords: &[i32] = match kind {
+        SC_RECT => &[0, 0, width, 0, width, height, 0, height],
+        SC_ELLIPSE => &[
+            0, half, middle, width, middle, half, height, width, middle, width, middle, width,
+            middle, width, middle,
+        ],
+        _ => &[0, 0, width, height, 0],
+    };
+    geometry.extend(coords.iter().flat_map(|v| v.to_le_bytes()));
+    preserved(
+        (leaf_tag, leaf_level, leaf) == (tag, 3, geometry.as_slice()),
+        BODY,
+    )?;
+
+    if textbox {
+        let [(72, 3, list), (66, 3, para), (68, 4, run), (69, 4, line)] = &rs[2..6] else {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        };
+        preserved(
+            list.len() == 33
+                && dword(list, 0)? == 1
+                && dword(list, 4)? == 0x20
+                && list[8..16].chunks_exact(2).all(|m| m == margin)
+                && dword(list, 16)? == width as usize
+                && list[20..] == [0; 13],
+            BODY,
+        )?;
+        preserved(
+            para.len() == 24
+                && para[..8] == [1, 0, 0, 0x80, 0, 0, 0, 0]
+                && para[10..] == [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+                && run.len() == 8
+                && dword(run, 0)? == 0,
+            BODY,
+        )?;
+        reference(
+            word(para, 8)? < entries(defs, 25).len() && dword(run, 4)? < entries(defs, 21).len(),
+            BODY,
+        )?;
+        let expected = [0i32, 0, 1000, 1000, 850, 600, 0, width - 1020, 0x0006_0000];
+        preserved(
+            line.chunks_exact(4)
+                .eq(expected.iter().map(|v| v.to_le_bytes()))
+                && line.len() == 36,
+            BODY,
+        )?;
+    }
+    Ok(())
+}
+
+pub(super) fn is_basic_shape(rs: &[Record<'_>]) -> bool {
+    shape_ctrl_id(rs).is_some_and(|(kind, _, _)| matches!(kind, SC_RECT | SC_ELLIPSE | SC_LINE))
+}
+
 fn picture_bin_id(rs: &[Record<'_>]) -> Option<usize> {
     let leaf = rs.last()?;
     if leaf.0 != TAG_PICTURE || leaf.2.len() < 73 {
@@ -1413,6 +1550,34 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the P1 HWP shape insertion scenario first"]
+    fn release_hwp_p1_shape_insertions_require_owned_canonical_records() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(dir.join("p1-shapes-original.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("p1-shapes-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+
+        let pickers: [(fn(u16, u16, &[u8]) -> bool, usize); 4] = [
+            (|tag, level, _| tag == 78 && level == 3, 8),
+            (|tag, level, _| tag == 80 && level == 3, 4),
+            (|tag, level, _| tag == 79 && level == 3, 0),
+            (|tag, level, _| tag == 72 && level == 3, 0),
+        ];
+        for (pick, offset) in pickers {
+            let tampered = mutate_body_record(&edited, pick, |payload| {
+                let mut bytes = payload.to_vec();
+                bytes[offset] ^= 1;
+                bytes
+            });
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|finding| finding.part.as_deref() == Some(super::BODY))
+            );
+        }
     }
 
     #[test]

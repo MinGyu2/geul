@@ -197,8 +197,9 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 이동 | SUPPORTED_AND_VERIFIED | PARTIAL | IMPLEMENTED_NOT_ACCEPTED | HWP 떠 있는 본문 그림 이동의 Release WASM/T009 통과. 네이티브 이동 NOT RUN |
 | GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | B1: HWP 최상위 비잠금·비캡션 그림/기본 도형 삭제(외부 연결·중첩·CTRL_DATA·그룹 제외), 공유 BinData/DocInfo 보존, Undo/Redo, Release WASM `stage3-object-edit` + `gso-deleted.hwp` T009 + `services::save` 288 PASS (네이티브 GUI 삭제는 NOT RUN) |
 | 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | IMPLEMENTED_NOT_ACCEPTED | HWP 포인터 선택, 속성 창 크기 조정, 키보드 이동 네이티브 PASS. HWP 포인터 끌기 NOT RUN |
-| 사각형·타원·선 삽입 (P3 갱신) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
-| 글상자 삽입·내부 텍스트 (P3 갱신) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
+| 사각형·타원·선 삽입 (P1) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (범위 제한) | HWP: 최상위 본문 Section0의 접힌 커서에서 기본 사각형·타원·직선 삽입. SAFE 사전 검사, 소유·기본 레코드 T009 증명, Undo/Redo 및 독립 재열기; 사용자 지정/후속 변이는 증명 범위 밖이면 거부 |
+| 글상자 삽입 (P1) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | SUPPORTED_AND_VERIFIED (빈 글상자, 범위 제한) | HWP: 최상위 본문 Section0의 접힌 커서에서 소유된 빈 문단을 가진 기본 글상자 삽입; SAFE 사전 검사, T009, Undo/Redo 및 독립 재열기 |
+| 글상자 내부 텍스트 편집 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | HWP/HWPX 내부 story 커서·IME·서식·이력 경로는 미지원; DOCX story·IBus 입력·저장 재열기 근거 유지 |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
 | SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
 | 차트 편집 (P4) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | DOCX: WordCraft 모델이 있는 차트의 제목·종류·항목·계열 값(`chart.title`/`chart.type`/`chart.editData`), T009 재생성 부분 증명. HWPX(B6): `hwp-source-preservation.patch` 내부 OLE(`BinData/*.ole`, `isEmbeded="0"`) manifest·ZIP 보존 + `RhwpEditorSession` `chartData` 편집·Undo/Redo + `hwpx_charts` T009(`Chart/chartN.xml`·중첩 CFB `OOXMLChartContents` 의미 일치·`<hp:switch>`/`content.hpf` 고정) PASS. HWP(B7): `hwp/ole.rs`가 DocInfo 선언과 모든 지원 본문 구역의 OLE·그림·이미지 채우기 참조를 대조해 원본과 출력 모두에서 단독 소유가 확인된 최상위 비잠금 차트만 허용한다. 잠금·지원되지 않는 개체와 공유되거나 참조 소유권이 불명확한 BinData 변경은 거부한다. 기존 중첩 CFB·차트 내용 T009 증명과 `hwpReopenModel`·`RhwpEditorSession`의 HWP `chartData` 편집·Undo/Redo 검증을 유지한다. |
@@ -218,7 +219,6 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
 | 중첩 개체 (P3) | PARTIAL | UNSUPPORTED | UNSUPPORTED | DOCX 표 셀 그림: 크기·자르기·설명·삭제만(이동 거부), 머리글/바닥글·글상자 안 개체는 변경 없음. RHWP 셀·머리글 개체는 선택만 |
-| HWPX/HWP 글상자 내부 편집 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | RHWP 글상자 story 커서·IME 경로 미연결 |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,

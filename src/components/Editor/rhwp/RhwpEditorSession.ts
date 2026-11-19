@@ -3866,9 +3866,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     finally { this.imageSelecting = false; if (this.owns(epoch)) this.emit(); }
   }
 
-  /** Stage 3 P3: HWPX drawing insertion at a collapsed body caret (not in a cell, header or note). */
+  /** Stage 3 drawing insertion at a collapsed body caret (not in a cell, header or note). */
   private canInsertShape(): boolean {
-    return this.sessions.get(this.sessionId)?.format === "hwpx" && !!this.doc?.createShapeControl && !!this.doc.getShapeProperties
+    const format = this.sessions.get(this.sessionId)?.format;
+    const structural = format === "hwpx" || (format === "hwp" && this.structuralBlock() === null);
+    return structural && !!this.doc?.createShapeControl && !!this.doc.getShapeProperties && !!this.doc.setShapeProperties
       && !!this.history && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && !this.caret.cell
       && this.caret.paragraph < this.doc.getParagraphCount(this.caret.section)
       && this.pending === 0 && this.committingEpoch !== this.epoch && !this.objectSelection;
@@ -3894,10 +3896,41 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (!textBox) {
         const synced = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify({ textWrap: "Square" }))) as { ok?: boolean };
         if (synced.ok !== true) throw new Error("shape wrap not synchronised");
+      } else if (this.sessions.get(this.sessionId)?.format === "hwp") {
+        // HWP's pinned serializer reopens a new text box with Center vertical alignment (the
+        // serialized list attribute 0x20), while the live constructor defaults it to Top. Keep
+        // the live model aligned with that supported HWP representation before history capture.
+        const synced = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify({ tbVerticalAlign: "Center" }))) as { ok?: boolean };
+        if (synced.ok !== true) throw new Error("text box alignment not synchronised");
       }
       const created = inspectRhwpShape(doc, address);
       if (!created || created.raw.width !== 10800 || created.textBox !== textBox
         || (!textBox && (created.raw.textWrap !== "Square" || created.raw.treatAsChar))) throw new Error("created shape not verified");
+      if (this.sessions.get(this.sessionId)?.format === "hwp") {
+        // HWP insertion is admitted only for body section 0. Prove the new control has one
+        // unambiguous root-list owner and is exposed as the requested shape family before the
+        // operation enters history. HWPX keeps its existing insertion path unchanged.
+        const controls: unknown = JSON.parse(doc.getControls!());
+        if (!Array.isArray(controls)) throw new Error("shape owners unavailable");
+        const owners = controls.filter((value): value is Record<string, unknown> => !!value && typeof value === "object"
+          && !Array.isArray(value) && value.list === 0 && value.para === at.paragraph && value.controlIndex === address[2]);
+        if (owners.length !== 1 || owners[0]!.ctrlId !== "gso" || !owners[0]!.props || typeof owners[0]!.props !== "object") {
+          throw new Error("shape owner not unique");
+        }
+        const owner = owners[0]!;
+        const family = owner.userDesc;
+        const ownerProps = owner.props as Record<string, unknown>;
+        const familyMatches = shapeType === "textbox" ? created.textBox && (family === "사각형" || family === "글상자")
+          : family === ({ rectangle: "사각형", ellipse: "타원", line: "직선" } as const)[shapeType];
+        if (!familyMatches || ownerProps.Width !== created.raw.width || ownerProps.Height !== created.raw.height
+          || (ownerProps.TreatAsChar === 1) !== created.raw.treatAsChar) throw new Error("shape family or owner geometry not verified");
+        if (textBox) {
+          const textBoxProps: unknown = JSON.parse(doc.getShapeProperties!(...address));
+          if (!textBoxProps || typeof textBoxProps !== "object" || (textBoxProps as Record<string, unknown>).tbVerticalAlign !== "Center") {
+            throw new Error("text box alignment not verified");
+          }
+        }
+      }
       return { caret: at, anchor: at };
     }, true, "other", null, true, true);
   }
@@ -3919,7 +3952,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     else parameterReasons["insert.table"] = format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties) ? "engineUnsupported"
       : !structural ? this.structuralBlock()! : this.pending > 0 ? "pendingEdits" : "caretRequired";
     if (this.canInsertShape()) parameters["insert.shape"] = {};
-    else parameterReasons["insert.shape"] = format !== "hwpx" || !this.doc?.createShapeControl ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
+    else parameterReasons["insert.shape"] = !(format === "hwpx" || format === "hwp") || !this.doc?.createShapeControl
+      || !this.doc.getShapeProperties || !this.doc.setShapeProperties ? "engineUnsupported"
+      : format === "hwp" && this.structuralBlock() ? this.structuralBlock()!
+        : this.pending > 0 ? "pendingEdits" : "caretRequired";
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);

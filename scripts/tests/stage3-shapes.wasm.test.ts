@@ -9,6 +9,7 @@ import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
+import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
 
@@ -50,8 +51,13 @@ async function setup(format: "hwp" | "hwpx") {
   await open;
   const bytes = source(format);
   const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+  let firstOpen = true;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
-    async () => ({ openDocument: () => doc, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
+    async () => ({ openDocument: (input: Uint8Array) => {
+      if (!firstOpen) return new engine.HwpDocument(input) as RhwpDocument;
+      firstOpen = false;
+      return doc;
+    }, memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
   const loading = editor.load();
   control.take("load").reply(loaded(bytes));
   await flush();
@@ -76,7 +82,26 @@ async function setup(format: "hwp" | "hwpx") {
 
 const props = (doc: RhwpDocument, control: number) => JSON.parse(doc.getShapeProperties!(0, 0, control));
 
-describe("Stage 3 HWPX shapes on the Release engine", () => {
+function hwpShapeInventory(doc: RhwpDocument) {
+  const controls: unknown = JSON.parse(doc.getControls!());
+  if (!Array.isArray(controls)) throw new Error("HWP controls unavailable");
+  const rootShapes = controls.filter((value): value is Record<string, unknown> => !!value && typeof value === "object"
+    && !Array.isArray(value) && value.list === 0 && value.para === 0 && value.ctrlId === "gso");
+  const indices = rootShapes.map(owner => owner.controlIndex);
+  expect(new Set(indices).size).toBe(rootShapes.length);
+  return rootShapes.map(owner => {
+    expect(Number.isSafeInteger(owner.controlIndex)).toBe(true);
+    const value = props(doc, owner.controlIndex as number) as Record<string, unknown>;
+    expect(owner.props).toMatchObject({ Width: value.width, Height: value.height, TreatAsChar: value.treatAsChar ? 1 : 0 });
+    const family = value.tbVerticalAlign !== undefined ? "textbox"
+      : owner.userDesc === "사각형" ? "rectangle"
+        : owner.userDesc === "타원" ? "ellipse"
+          : owner.userDesc === "직선" ? "line" : "unknown";
+    return { family, width: value.width, height: value.height, verticalAlign: value.tbVerticalAlign };
+  });
+}
+
+describe("Stage 3 shapes on the Release engine", () => {
   it("inserts a rectangle and a text box, formats, moves, resizes, layers and deletes the outer shape", async () => {
     const { editor, doc, bytes, pick, edit, confirm } = await setup("hwpx");
     try {
@@ -230,13 +255,71 @@ describe("Stage 3 HWPX shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("does not offer HWP shape insertion", async () => {
-    const { editor, doc, calls } = await setup("hwp");
+  it("inserts the four supported HWP shape families after SAFE preflight and reopens them without loss", async () => {
+    const { editor, doc, bytes, confirm, take, calls } = await setup("hwp");
     try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      const bodyText = (file: RhwpDocument) => file.getTextRange(0, 0, 0, file.getParagraphLength(0, 0));
+      const originalText = bodyText(doc);
       expect(editor.execute("insert.shape", { command: "insert.shape", kind: "rectangle" }).accepted).toBe(false);
       expect(editor.execute("insert.textBox").accepted).toBe(false);
       expect(shapes(doc)).toHaveLength(0);
       expect(calls.filter(call => call.method === "commit")).toEqual([]);
+
+      // Match the editor's normal load-time original preflight, then admit the same actions only
+      // after the owned original has a SAFE verdict.
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+
+      const insertShape = async (kind: "rectangle" | "ellipse" | "line") => {
+        expect(editor.execute("insert.shape", { command: "insert.shape", kind }).accepted).toBe(true);
+        await confirm();
+      };
+      await insertShape("rectangle");
+      await insertShape("ellipse");
+      await insertShape("line");
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+
+      const liveShapes = hwpShapeInventory(doc);
+      expect(liveShapes).toHaveLength(4);
+      expect(liveShapes.map(shape => shape.family).sort()).toEqual(["ellipse", "line", "rectangle", "textbox"]);
+      expect(liveShapes).toContainEqual({ family: "rectangle", width: 10800, height: 7200, verticalAlign: undefined });
+      expect(liveShapes).toContainEqual({ family: "ellipse", width: 10800, height: 7200, verticalAlign: undefined });
+      expect(liveShapes).toContainEqual({ family: "line", width: 10800, height: 100, verticalAlign: undefined });
+      expect(liveShapes).toContainEqual({ family: "textbox", width: 10800, height: 7200, verticalAlign: "Center" });
+      expect(bodyText(doc)).toBe(originalText);
+
+      // Undo/Redo the most recent insertion once; each history application is its own revision.
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(hwpShapeInventory(doc).map(shape => shape.family).sort()).toEqual(["ellipse", "line", "rectangle"]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss();
+        const edited = exported.takeBytes();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(edited) as RhwpDocument & { getControls(): string; getTextFileText(): string };
+        try {
+          const reopenedModel = hwpReopenModel(reopened);
+          expect(reopenedModel.complete).toBe(true);
+          expect(hwpReopenEqual(hwpReopenModel(doc), reopenedModel, baseline.structure)).toBe(true);
+          expect(bodyText(reopened)).toBe(originalText);
+          expect(reopened.getTextFileText()).toBe(doc.getTextFileText!());
+          expect(hwpShapeInventory(reopened)).toEqual(liveShapes);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p1-shapes-original.hwp"), bytes);
+          writeFileSync(resolve(out, "p1-shapes-edited.hwp"), edited);
+        }
+      } finally { exported.free(); }
     } finally { editor.dispose(); }
   });
 });

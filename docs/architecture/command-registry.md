@@ -1109,7 +1109,7 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
 - RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·기본 도형(`사각형`·`타원`·`직선`, 잠금/캡션 제외).
   크기는 `picture.size`/`bounds` 경로다. 이동은 왼쪽·위 기준으로 떠 있는 객체의 `horzOffset`/`vertOffset`을 바꾼다. 그림 이동에는 회전이 없어야 한다.
-  그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원하며 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용으로 유지한다(HWP GSO 삭제/차트/OLE/그룹/다각형은 fail-closed 차단).
+  그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원했다. 당시 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용이었다. 이후 HWP의 B1 GSO 삭제와 P1 기본 삽입은 각 기능의 보존 증명 범위에서 지원한다.
   HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.
   크기 보호 도형에는 크기 핸들을 제공하지 않는다. HWP 개체 선택 중 Delete/Backspace는 본문 삭제로 넘어가지 않는다.
   HWP 사각형의 테두리·채우기·이동·회전/반전은 원본 꼭짓점을 보존한다. 원본 꼭짓점이 기존 헤더 크기의 정규 사각형인 경우에만
@@ -1145,8 +1145,12 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 - RHWP(HWPX): `objectHit`의 `bodyShape` 주소로 `getShapeProperties`를 읽어 선택한다(글상자는 `textBox`). 이동(왼쪽/위 기준 떠 있는
   도형)·크기·삭제·배치·채우기(단색/없음, 그라데이션·그림 채우기는 편집 안 함)·선 색·회전(정수 도)·대칭·`changeShapeZOrder`.
   각 편집 뒤 편집하지 않은 필드 14개가 그대로인지 다시 읽는다. 선 굵기 단위와 "선 없음"은 증명하지 않아 거부한다.
-- `insert.shape`·`insert.textBox`(RHWP 지원으로 변경): HWPX 본문 커서(셀·선택 없음)에서 `createShapeControl`(108×72pt, 도형은
-  떠 있는 어울림, 글상자는 글자처럼). 생성 뒤 같은 문단의 새 컨트롤을 다시 읽어 확인한다. HWP는 세션이 제공하지 않는다.
+- `insert.shape`·`insert.textBox`: HWPX 본문 커서(셀·선택 없음)에서 `createShapeControl`(108×72pt, 도형은 떠 있는
+  어울림, 글상자는 글자처럼). HWP도 최상위 본문 Section0의 접힌 커서에서 지원하며, 기본 사각형·타원·직선과 빈 글상자만
+  삽입한다. HWP는 삽입 전 SAFE 저장 검사를 통과해야 하고, 생성 뒤 새 컨트롤·문단 소유 관계를 확인한다. T009는 새롭고
+  충돌하지 않는 인스턴스 ID, 기본 기하·서식, 독립 BinData 리소스 부재, 글상자 안 빈 소유 문단을 증명한다. 증명된 기본값
+  이외의 선행 변경 상태는 거부될 수 있다. 삽입은 한 번의 이력 연산이며 Undo/Redo 및 HWP 독립 재열기를 검증했다.
+  HWPX의 기존 범위는 유지한다. 글상자 내부 텍스트 편집은 별도 P2 범위이며 HWP/HWPX에서는 아직 지원하지 않는다.
 - 모드: 문서 텍스트·개체 선택·(DOCX만) 글상자 내부 편집. 개체 선택 중 입력은 거부되고, 프레임 끌기는 글자에 닿지 않는다.
 
 ### P4 차트·SmartArt (2026-11-19)
