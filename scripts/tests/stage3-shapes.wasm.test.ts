@@ -255,6 +255,47 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("saves a newly inserted HWP rectangle with an edited outline width", async () => {
+    const { editor, doc, bytes, take, confirm, pick, edit } = await setup("hwp");
+    try {
+      const original = hwpReopenModel(doc);
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(editor.execute("insert.shape", { command: "insert.shape", kind: "rectangle" }).accepted).toBe(true);
+      await confirm();
+      const frame = shapes(doc)[0]!;
+      const before = props(doc, frame.controlIdx);
+      expect(pick(frame).shape?.outlineWidthEditable).toBe(true);
+      expect(edit({ kind: "outline", color: "000000", width: 2.45 })).toBe(true);
+      await confirm();
+      const expected = { ...before, borderWidth: 245 };
+      expect(props(doc, frame.controlIdx)).toEqual(expected);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(props(doc, frame.controlIdx)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpWithReport();
+      try {
+        const edited = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, edited, report);
+        const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), original.structure)).toBe(true);
+          expect(props(reopened, frame.controlIdx)).toEqual(expected);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "combined-outline-original.hwp"), bytes);
+          writeFileSync(resolve(out, "combined-outline-edited.hwp"), edited);
+          writeFileSync(resolve(out, "combined-outline-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("persists an existing %s solid outline width", async format => {
     const originalDoc = new engine.HwpDocument(source(format)) as RhwpDocument;
     let original: Uint8Array;

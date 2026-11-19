@@ -210,7 +210,7 @@ pub(super) fn prove_textbox_edit(
 }
 
 /// The pinned RHWP body insertion command emits these resource-free defaults.
-/// Check new objects separately from the evolution proof for originals.
+/// Bare defaults may carry a bounded solid-outline width from a subsequent edit.
 pub(super) fn prove_inserted_shape(
     rs: &[Record<'_>],
     defs: &Defs<'_>,
@@ -285,7 +285,15 @@ pub(super) fn prove_inserted_shape(
     let subject = ((instance as u32 & 0x3fff_ffff) + 1).to_le_bytes();
     let at = component.len() - 6;
     component[at..at + 4].copy_from_slice(&subject);
-    preserved(rs[1].2 == component, BODY)?;
+    let actual = rs[1].2;
+    if !textbox && actual.len() == component.len() {
+        // The surrounding canonical bytes still prove the solid line type,
+        // default color, transforms, geometry-independent fields and subject ID.
+        let border_width = dword(actual, 200)?;
+        valid((1..=7200).contains(&border_width), BODY)?;
+        component[200..204].copy_from_slice(&actual[200..204]);
+    }
+    preserved(actual == component, BODY)?;
 
     let mut geometry = Vec::new();
     if kind == SC_RECT {
@@ -1626,6 +1634,39 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the combined HWP outline width scenario first"]
+    fn release_hwp_inserted_shape_accepts_only_solid_outline_width() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("combined-outline-original.hwp");
+        let edited = read("combined-outline-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+
+        let component = |tag, level, data: &[u8]| {
+            tag == 76 && level == 2 && data.starts_with(b"cer$cer$")
+        };
+        for (offset, value) in [
+            (200, 0u32),
+            (200, 7201),
+            (204, 0xd100_0042),
+            (28, 10801),
+            (196, 1),
+        ] {
+            let tampered = mutate_body_record(&edited, component, |data| {
+                let mut changed = data.to_vec();
+                changed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                changed
+            });
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted unauthorized component value {value} at offset {offset}"
+            );
+        }
     }
 
     #[test]
