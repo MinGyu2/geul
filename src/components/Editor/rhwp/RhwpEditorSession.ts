@@ -4581,11 +4581,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private readCellPicture(address: CellPictureAddress) {
     const doc = this.doc;
-    if (this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.history || !doc?.getControls
-      || !doc.getCursorModel || !doc.getCellPicturePropertiesByPath || !doc.setCellPicturePropertiesByPath) return null;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if ((format !== "hwpx" && !(format === "hwp" && address.section === 0 && this.structuralFormat()))
+      || !this.history || !doc?.getControls || !doc.getCursorModel
+      || !doc.getCellPicturePropertiesByPath || !doc.setCellPicturePropertiesByPath) return null;
     const { section, paragraph, path, control } = address;
     try {
-      const [entry] = JSON.parse(path) as [{ controlIndex: number; cellIndex: number; cellParaIndex: number }];
+      const entries = JSON.parse(path) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[];
+      if (entries.length !== 1) return null;
+      const entry = entries[0]!;
       const rawModel = doc.getCursorModel(), rawControls = doc.getControls();
       if (rawModel.length + rawControls.length > 8 * 1024 * 1024) return null;
       const { lists } = JSON.parse(rawModel) as { lists: { listId: number; isCell: boolean; hostListId: number;
@@ -4596,15 +4600,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       let globalParagraph = paragraph;
       for (let s = 0; s < section; s++) globalParagraph += doc.getParagraphCount(s);
       const controls = JSON.parse(rawControls) as { list: number; para: number; controlIndex: number; ctrlId: string;
-        userDesc: string; props?: { Lock?: number } }[];
+        userDesc: string; props?: { Lock?: number; TreatAsChar?: number } }[];
       const table = controls.filter(c => c.list === 0 && c.para === globalParagraph && c.controlIndex === entry.controlIndex);
       const child = controls.filter(c => c.list === owners[0]!.listId && c.para === entry.cellParaIndex && c.controlIndex === control);
       if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0
         || child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
       const resource = cellPictureEvidence(doc, section, paragraph, path, control);
-      const picture = inspectRhwpPicture({
-        getPictureProperties: () => doc.getCellPicturePropertiesByPath!(section, paragraph, path, control),
-      }, [section, paragraph, control]);
+      const rawPicture = doc.getCellPicturePropertiesByPath(section, paragraph, path, control);
+      if (format === "hwp") {
+        const { rotationAngle, restrictInPage } = JSON.parse(rawPicture) as { rotationAngle?: unknown; restrictInPage?: unknown };
+        // RHWP's picture JSON uses restrictInPage for the flow-with-text flag.
+        // That flag can resize the owning cell as a side effect.
+        if (table[0]!.props.TreatAsChar !== 0 || child[0]!.ctrlId !== "gso"
+          || rotationAngle !== 0 || restrictInPage !== false) return null;
+      }
+      const picture = inspectRhwpPicture({ getPictureProperties: () => rawPicture }, [section, paragraph, control]);
       return resource && picture?.simpleInline && picture.deletable
         && resource.width === Math.round(picture.properties.widthPt * 100)
         && resource.height === Math.round(picture.properties.heightPt * 100)

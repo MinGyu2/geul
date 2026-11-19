@@ -2545,6 +2545,70 @@ fn paragraph_evidence(
 /// unmatched output child must prove its narrow new-control schema, and unknown records stay refused.
 /// A table with no structural change at any depth keeps the original contract (byte-identical):
 /// a text-only edit of an original table is never admitted through this proof.
+fn cell_picture_resize_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    old[0].1 == 1
+        && old.iter().zip(new).any(|(a, b)| {
+            a != b && a.0 == 71 && a.1 == 3 && a.2.starts_with(b" osg")
+                && b.0 == 71 && b.1 == 3 && b.2.starts_with(b" osg")
+                && a.2.get(16..24) != b.2.get(16..24)
+        })
+}
+
+/// A picture resize may synchronize the table's cached height from its rows.
+/// This path admits no changes to the cell grid, texts or other children.
+fn prove_cell_picture_resizes(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    original_defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(old.len() == new.len(), BODY)?;
+    let (old_header, new_header) = (old[0].2, new[0].2);
+    table_header_preserved(1, old_header, new_header)?;
+    preserved(
+        dword(old_header, 4)? & ((1 << 30) | 1) == 0
+            && old_header[..20] == new_header[..20]
+            && old_header[24..40] == new_header[24..40],
+        BODY,
+    )?;
+    let (_, caption) = evolved_cells(old, original_defs, original_defs, &mut BTreeSet::new(), None)?;
+    preserved(caption.is_empty(), BODY)?;
+    let table = old[1].2;
+    let mut row_heights = vec![0; word(table, 4)?];
+    let mut in_cell_paragraph = false;
+    let mut cursor = 2;
+    preserved(old[1] == new[1], BODY)?;
+    while cursor < old.len() {
+        let a = old[cursor];
+        let b = new[cursor];
+        if a.1 == 2 {
+            in_cell_paragraph = a.0 == 66;
+            if a.0 == 72 {
+                let row = word(a.2, 10)?;
+                if word(a.2, 14)? == 1 {
+                    row_heights[row] = row_heights[row].max(dword(a.2, 20)?);
+                }
+            }
+        }
+        // Begin at the owner header, since only component dimensions may
+        // differ on the following record and the leaf must be exact.
+        if in_cell_paragraph && a.0 == 71 && a.1 == 3 && a != b {
+            let end = cursor + 3;
+            let old_pic = old.get(cursor..end).and_then(|r| r.try_into().ok());
+            let new_pic = new.get(cursor..end).and_then(|r| r.try_into().ok());
+            let Some((old_pic, new_pic)) = old_pic.zip(new_pic) else {
+                return Err(finding(FindingCode::RecordsChanged, BODY));
+            };
+            super::gso::prove_cell_picture_resize(old_pic, new_pic, original_defs)?;
+            cursor = end;
+        } else {
+            preserved(a == b, BODY)?;
+            cursor += 1;
+        }
+    }
+    let derived_height: u64 = row_heights.into_iter().map(|height| if height == 0 { 400 } else { height as u64 }).sum();
+    preserved(dword(new_header, 20)? as u64 == derived_height, BODY)
+}
+
 fn evolved_table(
     old: &[Record<'_>],
     new: &[Record<'_>],
@@ -2559,6 +2623,9 @@ fn evolved_table(
     table_header_preserved(level, old[0].2, new[0].2)?;
     validate_existing_table(old)?;
     validate_existing_table(new)?;
+    if cell_picture_resize_candidate(old, new) {
+        return prove_cell_picture_resizes(old, new, original_defs);
+    }
     let mut ignored = BTreeSet::new();
     let (before, caption_a) = evolved_cells(old, original_defs, original_defs, &mut ignored, None)?;
     let (after, caption_b) =

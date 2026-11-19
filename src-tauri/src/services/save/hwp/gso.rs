@@ -411,6 +411,42 @@ pub(super) fn evolved_candidate(
     )
 }
 
+/// A directly owned cell picture only exposes width and height. The table
+/// proof fixes its cell, paragraph and control position before calling this.
+pub(super) fn prove_cell_picture_resize(
+    old: &[Record<'_>; 3],
+    new: &[Record<'_>; 3],
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    let [(71, 3, old_header), (76, 4, component), (85, 5, leaf)] = *old else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let [(71, 3, new_header), (76, 4, _), (85, 5, new_leaf)] = *new else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let Some((SC_PICTURE, id_offset, 1)) = shape_ctrl_id(old) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let attr = dword(old_header, 4)? as u32;
+    const FLOW_WITH_TEXT: u32 = 1 << 13;
+    preserved(
+        gso_header_id(old).is_some_and(|id| id != 0)
+            && attr & (ATTR_LOCKED | ATTR_SIZE_PROTECT | ATTR_CAPTION | FLOW_WITH_TEXT | 1) == 1
+            && old_header.get(8..16) == Some(&[0; 8])
+            && old_header.get(..16) == new_header.get(..16)
+            && old_header.get(24..) == new_header.get(24..)
+            && old_header.get(16..24) != new_header.get(16..24)
+            && dword(component, id_offset + 28)? & 3 == 0
+            && word(component, id_offset + 32)? == 0
+            && leaf == new_leaf,
+        BODY,
+    )?;
+    // Reuse the existing GSO field proof at relative body levels, after
+    // checking the concrete serialized cell record levels above.
+    let normalize = |(tag, level, data)| (tag, level - 2, data);
+    prove_evolved_gso(&old.map(normalize), &new.map(normalize), defs)
+}
+
 /// Only top-level, unlocked, uncaptioned, non-grouped, opaque-free HWP5 GSO pictures
 /// (`b"cip$"`) and basic shapes (`b"nil$"`, `b"cer$"`, `b"lle$"`, optionally with a plain
 /// TextBox) may be deleted. Captions, locked objects, groups, charts, OLE, nested/unknown
@@ -1634,6 +1670,51 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP table-cell picture resize scenario first"]
+    fn release_hwp_cell_picture_resize_preserves_table_and_resource() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p2-cell-picture-original.hwp");
+        let edited = read("p2-cell-picture-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let table = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(b" lbt");
+        let picture = |tag, level, data: &[u8]| tag == 71 && level == 3 && data.starts_with(super::CTRL_GSO);
+        let leaf = |tag, level, _: &[u8]| tag == 85 && level == 5;
+        let cases: [(fn(u16, u16, &[u8]) -> bool, usize, u8); 5] = [
+            (table, 20, 1),
+            (table, 7, 0x40),
+            (picture, 36, 1),
+            (leaf, 71, 1),
+            (|tag, level, data| tag == 67 && level == 3 && data.starts_with(b"s\0i\0"), 0, 1),
+        ];
+        for (pick, offset, mask) in cases {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                changed[offset] ^= mask;
+                changed
+            });
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted tampered table/picture record at offset {offset}"
+            );
+        }
+        for (pick, mask) in [(table as fn(u16, u16, &[u8]) -> bool, 0x40), (picture, 0x40), (picture, 0)] {
+            let set_protection = |data: &[u8]| {
+                let mut changed = data.to_vec();
+                changed[7] |= mask;
+                if mask == 0 { changed[6] |= 0x10; } // independent size protection
+                changed
+            };
+            let original = mutate_body_record(&original, pick, set_protection);
+            let edited = mutate_body_record(&edited, pick, set_protection);
+            assert!(check_with_preview_refresh(&original, &edited)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
     }
 
     #[test]

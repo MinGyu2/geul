@@ -1142,6 +1142,7 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 
 - WordCraft: 본문 도형·글상자에 `shape.fill`·`shape.outline`, 이동 가능 개체에 `arrange.rotation`·`arrange.bringForward/sendBackward`
   (Word처럼 글 앞/뒤 배치). 회전은 1/60000도, 선 굵기는 EMU로 맞춘다. 그룹은 회전·앞뒤 미제공.
+- HWP 표 셀 그림 크기 변경은 SAFE 원본 Section0에서 본문 → 비잠금 떠 있는 표 → 셀·문단 → 비잠금 인라인 그림으로 확인한 경로만 지원한다. 회전·크기 보호·캡션·자르기·외부 그림·글 흐름에 따른 셀 높이 조정이 없는 그림을 대상으로 한다.
 - HWP 본문 GSO 편집은 주소에 고유하게 대응하는 소유자의 숫자 `Lock: 0`을 요구한다. 잠금 `1`, 누락 및 비정상 값은 거부한다. 크기 보호는 별도로 적용하며, 차트의 BinData 소유권과 캡션 삭제 제한은 T009에서 계속 확인한다.
 - RHWP 글상자의 늦은 IME 확정은 세션이 발급한 일회용 위치를 사용한다. 커서 이동 후에도 원래 글상자에 확정하며, 문서 모델을 편집했거나 세대·소유권·잠금·문단 범위를 다시 확인할 수 없으면 거부한다.
 - RHWP(HWPX): `objectHit`의 `bodyShape` 주소로 `getShapeProperties`를 읽어 선택한다(글상자는 `textBox`). 이동(왼쪽/위 기준 떠 있는

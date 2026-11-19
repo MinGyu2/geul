@@ -340,8 +340,8 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("resizes an HWPX table-cell picture through its owned layout path", async () => {
-    const docSource = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+  it.each(["hwp", "hwpx"] as const)("resizes an %s table-cell picture through its owned layout path", async format => {
+    const docSource = new engine.HwpDocument(source(format)) as RhwpDocument;
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC", "base64");
     const table = JSON.parse(docSource.createTable!(0, 0, 1, 1, 2));
     const host = table.paraIdx as number, control = table.controlIdx as number;
@@ -351,12 +351,20 @@ describe("Stage 3 shapes on the Release engine", () => {
       docSource.insertTextInCell(0, host, control, 0, 0, 0, "owned cell");
       docSource.insertTextInCell(0, host, control, 1, 0, 0, "sibling");
       expect(JSON.parse(docSource.insertPictureInCellByPath!(0, host, path, 2, png, 3600, 4800, 48, 64, "png", ""))).toMatchObject({ ok: true, controlIdx: 0 });
-      bytes = docSource.exportHwpx();
+      bytes = format === "hwp" ? docSource.exportHwp() : docSource.exportHwpx();
     } finally { docSource.free(); }
 
-    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const { editor, doc, confirm, take } = await setup(format, bytes);
     const picture = (file: RhwpDocument) => JSON.parse(file.getCellPictureByPath!(0, host, path, 0));
     try {
+      const baseline = format === "hwp" ? hwpReopenModel(doc) : null;
+      if (baseline) {
+        expect(baseline.complete).toBe(true);
+        take("original").reply(ok(bytes));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
       const before = picture(doc);
       const frame = JSON.parse(doc.getPageControlLayout!(0)).controls.find((item: Frame) => item.type === "image");
       expect(frame).toBeDefined();
@@ -371,21 +379,24 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(editor.redo()).toBe(true);
       await confirm();
 
-      const exported = doc.exportHwpxWithReport();
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
       try {
         const report = exported.contentLoss(), output = exported.takeBytes();
         expect(JSON.parse(report)).toMatchObject({ count: 0 });
         const reopened = new engine.HwpDocument(output) as RhwpDocument;
         try {
+          if (baseline) {
+            expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          }
           expect(picture(reopened)).toEqual({ ...before, width: 4200, height: 4200 });
           expect(reopened.getTextInCell(0, host, control, 0, 0, 0, 10)).toBe("owned cell");
           expect(reopened.getTextInCell(0, host, control, 1, 0, 0, 7)).toBe("sibling");
         } finally { reopened.free(); }
         if (out) {
           mkdirSync(out, { recursive: true });
-          writeFileSync(resolve(out, "p2-cell-picture-original.hwpx"), bytes);
-          writeFileSync(resolve(out, "p2-cell-picture-edited.hwpx"), output);
-          writeFileSync(resolve(out, "p2-cell-picture-report.json"), report);
+          writeFileSync(resolve(out, `p2-cell-picture-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p2-cell-picture-edited.${format}`), output);
+          writeFileSync(resolve(out, `p2-cell-picture-${format}-report.json`), report);
         }
       } finally { exported.free(); }
     } finally { editor.dispose(); }

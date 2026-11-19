@@ -218,7 +218,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 내용 변조·bit 29 전환·캡션 객체 삭제는 거부 유지 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
-| 중첩 개체 (P2) | PARTIAL | PARTIAL | UNSUPPORTED | DOCX 표 셀 그림은 크기·자르기·설명·삭제를 지원한다. HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. DOCX 및 RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
+| 중첩 개체 (P2) | PARTIAL | PARTIAL | PARTIAL | DOCX 표 셀 그림은 크기·자르기·설명·삭제를 지원한다. HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. HWP도 SAFE 원본 Section0의 한 단계 본문 표에서 지원 범위에 해당하는 인라인 그림 크기를 변경할 수 있다. DOCX 및 RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
@@ -312,3 +312,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P2 늦은 글상자 IME 확정 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'binds delayed text-box IME'` 1 PASS. 교정 전에는 잠긴 원래 글상자에 확정이 수락됐다. 교정 후 형제로 커서를 옮겨도 원래 글상자에 한 번만 확정되며, 잠금·모델 변경·개체 삭제·다른 세션·폐기 이후에는 거부된다. 빈 취소와 중복 종료는 revision을 추가하지 않으며 Undo/Redo는 원래 글상자의 글자만 바꾼다. T010의 늦은 확정·취소·다시 불러오기 관련 합성 이벤트 8 PASS(`nativeImeOrder.test.tsx`, `imeOwnership.test.tsx`). 실행 로그는 `target/stage3-combined-outline/ime-{wasm,regression}.log`에 있다. 새 네이티브 글상자 IME는 NOT RUN이다.
 
 **HWP GSO 잠금 검증 CURRENT PASS.** RHWP `control_props_json`은 공통 속성의 bool을 숫자 0/1로 내보낸다. Release `f2c96060…`에서 실제 잠금·해제, 누락·비정상 값, 잠금 확인 뒤 상태가 바뀐 선택의 명령 거부와 독립적인 크기 보호를 `stage3-shapes.wasm.test.ts -t 'requires an explicit HWP GSO unlock'` 1 PASS로 확인했다. 교정 전에는 누락된 값으로 선택한 개체를 편집할 수 있었다. 공통 판정 변경의 영향 범위인 기존 HWPX 실선 굵기와 HWP 차트 데이터 편집 WASM 시험 각 1 PASS. 로그는 `target/stage3-combined-outline/gso-lock-{wasm,chart}.log`에 있다. 저장 증명 코드는 변경하지 않아 기존 T009 보호·리소스 근거는 REUSED PASS다.
+
+**P2 HWP 한 단계 표 셀 그림 크기 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'resizes an hwp[x]? table-cell'` 2 PASS(HWP 신규 1, 공유 선택 경로를 변경한 HWPX 영향 회귀 1). 레이아웃·표·셀·문단·그림 소유권, 크기·Undo/Redo, 재열기·형제 셀·리소스 해시를 확인했다. HWP 실제 파일 T009 `release_hwp_cell_picture_resize_preserves_table_and_resource -- --ignored` 1 PASS. 표 높이·소유자·참조·형제 텍스트 변조, 양쪽 잠금 및 크기 보호 반례를 거부했다. 파일과 실행 로그는 `target/stage3-nested-pictures/`에 있다. 네이티브 조작은 NOT RUN이다.
