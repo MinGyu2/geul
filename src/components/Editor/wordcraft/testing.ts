@@ -186,6 +186,7 @@ export class FakeDocx implements DocxBackend {
       fontGeneration: this.fontGeneration,
       ...(this.stage1 ? { ...this.stage1, ...(this.stage1Search ? { search: this.stage1Search } : {}) } : {}),
       ...(this.tableView ? { table: this.tableView } : {}),
+      ...(this.objectView ? { object: this.objectView } : {}),
     };
   }
 
@@ -200,7 +201,7 @@ export class FakeDocx implements DocxBackend {
 
   /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
   private content(): string {
-    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions, [...this.fonts].sort(), this.tableCellsSelection, this.pastedTableCells.length]);
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions, [...this.fonts].sort(), this.tableCellsSelection, this.pastedTableCells.length, this.objectEdits.length]);
   }
 
   private capture(): FakeState {
@@ -282,6 +283,8 @@ export class FakeDocx implements DocxBackend {
 
   /** Stage 3 P5: the engine payload this fake returns for the selected object (null: refused). */
   objectSelectionPayload: string | null = null;
+  objectView: DocxView["object"] | null = null;
+  objectEdits: { position: string; epoch: number; edit: unknown }[] = [];
   async selectionObject(sessionId: number, generation: number, revision: number, position: string, epoch: number): Promise<Result<string>> {
     const checked = this.check(sessionId, generation);
     if (!checked.ok) return checked;
@@ -381,6 +384,12 @@ export class FakeDocx implements DocxBackend {
     const len = (p: number) => chars(this.paragraphs[p]!).length;
     // Stage 1 operations are verified against the real engine (Rust tests); the fake only records them (accepted when
     // it reports Stage 1 state, refused otherwise). It never models their document effect.
+    if (op.op === "objectEdit") {
+      if (!this.objectView || this.objectView.address.engine !== "wordcraft"
+        || this.objectView.address.position !== op.position || this.objectView.epoch !== op.epoch) return false;
+      this.objectEdits.push({ position: op.position, epoch: op.epoch, edit: op.edit });
+      return true;
+    }
     if (op.op === "tableStructure") {
       if (!this.tableView) return false;
       this.stage1Ops.push(op);

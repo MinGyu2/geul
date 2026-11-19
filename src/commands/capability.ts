@@ -16,6 +16,7 @@
 //   한다. 없으면 세션이 준 이유(선택 필요·표 밖) 또는 engineUnsupported.
 // - 서식은 문서 보호가 언제나 거부하는 상태(formatAccess "protected")면 protected. 편집 가능 영역만 허용하는 보호("regions")는
 //   선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 거부하면 세션이 알린다.
+import { isMutatingObjectOperation } from "./objectSelection";
 import { isActionCommandId, isParameterCommandId } from "./parameters";
 import { commandDefinition, type DocumentCommandId } from "./registry";
 import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
@@ -62,7 +63,10 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (snapshot.pending) return unavailable("pendingEdits");
     if (snapshot.composing) return unavailable("composing");
     if (snapshot.saving) return unavailable("saving");
-    return snapshot.objectSelection?.operations.some(op => op === "move" || op === "resize" || op === "delete")
+    if (snapshot.formatAccess === "protected") return unavailable("protected");
+    if (!snapshot.objectSelection) return unavailable("selectionRequired");
+    if (!snapshot.objectSelection.editable) return unavailable("protected");
+    return snapshot.objectSelection.operations.some(isMutatingObjectOperation)
       ? ENABLED : unavailable("selectionRequired");
   }
   if (id === "picture.size") {

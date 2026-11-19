@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../../adapters/contract";
+import { executeCommand } from "../../commands/commands";
 import type { ObjectSelection } from "../../commands/objectSelection";
+import { initialLayout } from "../../hooks/layoutState";
 import { LanguageProvider } from "../../language/LanguageContext";
-import type { DocumentPanelState } from "../Editor/documentPanels";
+import { documentPanelState, type DocumentPanelState } from "../Editor/documentPanels";
+import { flush, readyDocx } from "../Editor/wordcraft/testing";
 import { PropertiesPanel } from "./PropertiesPanel";
 
 const info: SessionInfo = { sessionId: 1, format: "docx", engine: "wordcraft", revision: 3, state: "ready",
@@ -130,5 +133,48 @@ describe("object tools in the properties panel", () => {
     expect(screen.getByRole("button", { name: "Apply items" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Layout"), { target: { value: "cycle" } });
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "smartArtLayout", layout: "cycle" }));
+  });
+
+  it("routes chart and SmartArt UI edits through executeCommand and DocxEditorSession to the backend", async () => {
+    const { editor, fake, sessions } = await readyDocx();
+    fake.objectView = {
+      kind: "chart",
+      address: { engine: "wordcraft", position: "body:0:0" },
+      frame: { page: 0, x: 72, y: 72, width: 200, height: 120 },
+      epoch: 3,
+      operations: ["chart"],
+      graphic: { kind: "chart", plot: "column", title: "Old", labels: ["A"], series: [{ name: "S", values: ["1"] }] },
+    };
+    await editor.load({ discard: true });
+    const ctx = { layout: initialLayout, dispatch: vi.fn(), notify: vi.fn(), document: editor };
+    const { rerender } = render(
+      <LanguageProvider language="en" onLanguageChange={vi.fn()}>
+        <PropertiesPanel state={documentPanelState(editor, sessions.get(1) ?? null)} onClose={vi.fn()}
+          onObjectEdit={req => { executeCommand("object.edit", undefined, ctx, req); }} />
+      </LanguageProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Chart title"), { target: { value: "New Title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply title" }));
+    await flush();
+    expect(fake.objectEdits).toContainEqual({ position: "body:0:0", epoch: 3, edit: { kind: "chartTitle", text: "New Title" } });
+
+    fake.objectView = {
+      kind: "smartArt",
+      address: { engine: "wordcraft", position: "body:1:0" },
+      frame: { page: 0, x: 72, y: 200, width: 200, height: 120 },
+      epoch: 4,
+      operations: ["smartArt"],
+      graphic: { kind: "smartArt", layout: "process", items: [{ text: "Step 1", level: 0 }] },
+    };
+    await editor.load({ discard: true });
+    rerender(
+      <LanguageProvider language="en" onLanguageChange={vi.fn()}>
+        <PropertiesPanel state={documentPanelState(editor, sessions.get(1) ?? null)} onClose={vi.fn()}
+          onObjectEdit={req => { executeCommand("object.edit", undefined, ctx, req); }} />
+      </LanguageProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Layout"), { target: { value: "radial" } });
+    await flush();
+    expect(fake.objectEdits).toContainEqual({ position: "body:1:0", epoch: 4, edit: { kind: "smartArtLayout", layout: "radial" } });
   });
 });

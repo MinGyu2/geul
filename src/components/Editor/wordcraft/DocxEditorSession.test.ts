@@ -1,5 +1,9 @@
 // DOCX 편집 세션(T008)의 순서·수명주기·IME 계약. 가짜 백엔드(testing.ts)는 Rust 어댑터의 계약을 흉내 낸다.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { documentCommandState } from "../../../commands/capability";
+import { executeCommand } from "../../../commands/commands";
+import { objectEditRequest } from "../../../commands/objectSelection";
+import { initialLayout } from "../../../hooks/layoutState";
 import { ImeContext, ImeInput } from "../rhwp/imeInput";
 import { DocxEditorSession } from "./DocxEditorSession";
 import { decodeFake, docxSessions, FakeDocx, flush, readyDocx, recordingCanvas } from "./testing";
@@ -540,5 +544,92 @@ describe("DocxEditorSession", () => {
       { op: "tableRowBreak", target: { anchorKey: "body:0:0", caretKey: "body:0:0" }, mode: "row" },
     ]);
     expect(editor.execute("table.rowBreak", { command: "table.rowBreak", mode: "none" }).accepted).toBe(false);
+  });
+
+  it("차트·SmartArt object.edit: 가용성·선택·신원 검증을 거쳐 실제 DocxEditorSession 편집 경로로 전달된다", async () => {
+    const { editor, fake } = await readyDocx();
+    const chartObject: NonNullable<typeof fake.objectView> = {
+      kind: "chart",
+      address: { engine: "wordcraft", position: "body:0:0" },
+      frame: { page: 0, x: 72, y: 72, width: 240, height: 140 },
+      epoch: 1,
+      operations: ["chart"],
+      graphic: {
+        kind: "chart",
+        plot: "column",
+        title: "Before",
+        labels: ["Q1", "Q2"],
+        series: [{ name: "S1", values: ["1", "2"] }],
+      },
+    };
+    fake.objectView = chartObject;
+    await editor.load({ discard: true });
+
+    expect(documentCommandState("object.edit", editor.snapshot())).toEqual({ available: true });
+    const chartSel = editor.objectSelection!;
+    expect(chartSel.operations).toEqual(["deselect", "chart"]);
+
+    // Chart cannot execute a SmartArt-only edit.
+    const wrongKind = objectEditRequest(chartSel, { kind: "smartArtLayout", layout: "cycle" });
+    expect(editor.execute("object.edit", wrongKind).accepted).toBe(false);
+
+    // Stale identity (sessionId, loadGeneration, revision, selectionEpoch) must be refused.
+    const validTitle = objectEditRequest(chartSel, { kind: "chartTitle", text: "After" });
+    expect(editor.execute("object.edit", { ...validTitle, selectionEpoch: chartSel.epoch + 1 }).accepted).toBe(false);
+    expect(editor.execute("object.edit", { ...validTitle, revision: chartSel.revision + 1 }).accepted).toBe(false);
+    expect(editor.execute("object.edit", { ...validTitle, loadGeneration: chartSel.loadGeneration + 1 }).accepted).toBe(false);
+    expect(editor.execute("object.edit", { ...validTitle, sessionId: (chartSel.sessionId + 1) as never }).accepted).toBe(false);
+    expect(fake.objectEdits).toHaveLength(0);
+
+    // Command dispatcher routes chart edit through DocxEditorSession to the backend.
+    const notices: unknown[] = [];
+    const ctx = { layout: initialLayout, dispatch: vi.fn(), notify: (m: unknown) => notices.push(m), document: editor };
+    expect(executeCommand("object.edit", undefined, ctx, validTitle)).toBe(true);
+    await flush();
+    expect(fake.objectEdits).toEqual([
+      { position: "body:0:0", epoch: 1, edit: { kind: "chartTitle", text: "After" } },
+    ]);
+    expect(notices).toEqual([]);
+
+    // Protected document or pending edit refuses object.edit.
+    fake.formatAccess = "protected";
+    await editor.load({ discard: true });
+    expect(documentCommandState("object.edit", editor.snapshot())).toEqual({ available: false, reason: "protected" });
+    expect(executeCommand("object.edit", undefined, ctx, objectEditRequest(editor.objectSelection!, { kind: "chartType", plot: "line" }))).toBe(false);
+
+    fake.formatAccess = "allowed";
+    fake.objectView = {
+      kind: "smartArt",
+      address: { engine: "wordcraft", position: "body:1:0" },
+      frame: { page: 0, x: 72, y: 240, width: 300, height: 180 },
+      epoch: 2,
+      operations: ["smartArt"],
+      graphic: {
+        kind: "smartArt",
+        layout: "process",
+        items: [{ text: "Plan", level: 0 }, { text: "Build", level: 0 }],
+      },
+    };
+    await editor.load({ discard: true });
+    expect(documentCommandState("object.edit", editor.snapshot())).toEqual({ available: true });
+    const saSel = editor.objectSelection!;
+
+    fake.hold = true;
+    editor.typeText("a"); // pending mutation
+    expect(documentCommandState("object.edit", editor.snapshot())).toEqual({ available: false, reason: "pendingEdits" });
+    expect(editor.execute("object.edit", objectEditRequest(saSel, { kind: "smartArtLayout", layout: "cycle" })).accepted).toBe(false);
+    fake.hold = false;
+    fake.release();
+    await flush();
+
+    // Refresh selection after revision bump and send SmartArt layout edit through command dispatcher.
+    const freshSa = editor.objectSelection!;
+    expect(executeCommand("object.edit", undefined, ctx, objectEditRequest(freshSa, { kind: "smartArtLayout", layout: "cycle" }))).toBe(true);
+    await flush();
+    expect(fake.objectEdits.at(-1)).toEqual({
+      position: "body:1:0",
+      epoch: 2,
+      edit: { kind: "smartArtLayout", layout: "cycle" },
+    });
   });
 });

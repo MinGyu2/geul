@@ -1156,6 +1156,10 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
 - RHWP: 차트는 계속 조회 전용(`editable:false`). 원인은 형식별 표 참조.
 - 속성 창: 제목 적용/제거, 종류 선택, 항목·계열 이름·값 격자(빈 칸 = 값 없음, 숫자가 아니면 적용 비활성), SmartArt 항목 텍스트
   (앞 공백 두 칸 = 한 단계)와 레이아웃.
+- 가용성 수정(Stage 3 안정화): `documentCommandState("object.edit")`는 `move|resize|delete`만이 아니라
+  `MUTATING_OBJECT_OPERATIONS`(`isMutatingObjectOperation`) 전체를 확인해 `chart`·`smartArt`만 가진 선택도 활성화하며,
+  `deselect`/`copy`/`cut`·읽기 전용 선택·`formatAccess === "protected"`·미준비/조합/대기/저장 중 상태는 계속 거부한다.
+  개별 요청은 기존과 같이 `objectEditMatches()`와 세션/버전/epoch 검증을 통과해야 한다.
 
 ### P5 구조 개체 클립보드 v2 (2026-11-19)
 

@@ -54,11 +54,15 @@ export interface ObjectSelection extends ObjectHit {
 }
 
 export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt"] as const;
+const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
 export const MAX_GRAPHIC_TEXT_CHARS = 256;
 export type MutatingObjectOperation = typeof MUTATING_OBJECT_OPERATIONS[number];
 export type ObjectOperation = "deselect" | "copy" | "cut" | MutatingObjectOperation;
+export function isMutatingObjectOperation(op: ObjectOperation): op is MutatingObjectOperation {
+  return MUTATING_OBJECT_OPERATION_SET.has(op);
+}
 export const POSITION_PRESETS = ["topLeft", "topCenter", "topRight", "middleLeft", "middleCenter", "middleRight", "bottomLeft", "bottomCenter", "bottomRight"] as const;
 export type PositionPreset = typeof POSITION_PRESETS[number];
 export const MAX_CROP_FRACTION = 0.45;

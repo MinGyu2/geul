@@ -362,4 +362,52 @@ describe("단축키 처리", () => {
     expect(isDocumentCommandId("view.ribbon")).toBe(false);
     expect(isDocumentCommandId("toString")).toBe(false);
   });
+
+  it("object.edit 가용성: 차트·SmartArt 등 변경 연산만 허용하고 읽기전용·해제 전용·보호·대기 상태는 거부한다", () => {
+    const baseSelection = {
+      kind: "chart" as const,
+      address: { engine: "wordcraft" as const, position: "body:0:0" },
+      frame: { page: 0, x: 10, y: 10, width: 200, height: 120 },
+      epoch: 1,
+      sessionId: 1 as never,
+      loadGeneration: 1,
+      revision: 0,
+      editable: true,
+    };
+    expect(documentCommandState("object.edit", snapshot({
+      objectSelection: { ...baseSelection, kind: "chart", operations: ["chart"] },
+    }))).toEqual({ available: true });
+    expect(documentCommandState("object.edit", snapshot({
+      objectSelection: { ...baseSelection, kind: "smartArt", operations: ["smartArt"] },
+    }))).toEqual({ available: true });
+    expect(documentCommandState("object.edit", snapshot({
+      objectSelection: { ...baseSelection, editable: false, operations: ["deselect", "chart"] },
+    }))).toEqual({ available: false, reason: "protected" });
+    expect(documentCommandState("object.edit", snapshot({
+      objectSelection: { ...baseSelection, operations: ["deselect"] },
+    }))).toEqual({ available: false, reason: "selectionRequired" });
+    expect(documentCommandState("object.edit", snapshot({
+      objectSelection: { ...baseSelection, operations: ["deselect", "copy", "cut"] },
+    }))).toEqual({ available: false, reason: "selectionRequired" });
+    expect(documentCommandState("object.edit", snapshot({
+      formatAccess: "protected",
+      objectSelection: { ...baseSelection, operations: ["chart"] },
+    }))).toEqual({ available: false, reason: "protected" });
+    expect(documentCommandState("object.edit", snapshot({
+      pending: true,
+      objectSelection: { ...baseSelection, operations: ["chart"] },
+    }))).toEqual({ available: false, reason: "pendingEdits" });
+    expect(documentCommandState("object.edit", snapshot({
+      composing: true,
+      objectSelection: { ...baseSelection, operations: ["smartArt"] },
+    }))).toEqual({ available: false, reason: "composing" });
+    expect(documentCommandState("object.edit", snapshot({
+      saving: true,
+      objectSelection: { ...baseSelection, operations: ["smartArt"] },
+    }))).toEqual({ available: false, reason: "saving" });
+    expect(documentCommandState("object.edit", snapshot({
+      loaded: false,
+      objectSelection: { ...baseSelection, operations: ["chart"] },
+    }))).toEqual({ available: false, reason: "notReady" });
+  });
 });
