@@ -1171,6 +1171,14 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     matched = true;
                     break;
                 }
+                if !exact_later && super::gso::picture_caption_candidate(o, object) {
+                    preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
+                    super::gso::prove_picture_caption(o, object, &ac, &bc)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
                 if !exact_later && super::gso::textbox_edit_candidate(o, object) {
                     super::gso::prove_textbox_edit(o, object, &ac, &bc)?;
                     restructured.push((object_digest(o), object_digest(object)));
@@ -1216,6 +1224,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         || evolved_candidate(o, later)
                         || super::gso::evolved_candidate(o, later, &ac)
                         || super::gso::textbox_edit_candidate(o, later)
+                        || super::gso::picture_caption_candidate(o, later)
                         || super::gso::polygon_outline_candidate(o, later)
                 });
                 if survives_later {
@@ -1831,12 +1840,77 @@ pub(super) fn same_textbox_para_style(before: &[u8], after: &[u8]) -> Checked<()
     preserved(para_signature(before)? == para_signature(after)?, BODY)
 }
 
+pub(super) fn prove_picture_caption_paragraph(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    fn number_slot<'a>(rs: &[Record<'a>]) -> Checked<Option<&'a [u8]>> {
+        let text = rs.iter().find(|r| r.0 == 67).map_or(b"\r\0".as_slice(), |r| r.2);
+        let text = text.strip_suffix(b"\r\0")
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+        let mut slot = None;
+        let mut at = 0;
+        while at < text.len() {
+            let ch = word(text, at)?;
+            if ch == 18 && slot.is_none() {
+                let bytes = text.get(at..at + 16)
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+                preserved(bytes[2..6] == *b"onta" && word(bytes, 14)? == 18, BODY)?;
+                slot = Some(bytes);
+                at += 16;
+            } else {
+                preserved(ch >= 32, BODY)?;
+                at += 2;
+            }
+        }
+        Ok(slot)
+    }
+
+    let scratch = || Section {
+        tokens: Vec::new(),
+        objects: Vec::new(),
+        para_ids: BTreeSet::new(),
+        paragraphs: 0,
+        breaks: Vec::new(),
+    };
+    preserved(
+        old.iter().chain(new).all(|r| matches!((r.0, r.1), (66, 2) | (67..=69 | 71, 3)))
+            && number_slot(old)? == number_slot(new)?,
+        BODY,
+    )?;
+    let a = paragraph_with_caption_number(old, 2, original_defs, original_defs, &mut scratch(), true)?;
+    let b = paragraph_with_caption_number(new, 2, defs, original_defs, &mut scratch(), true)?;
+    preserved(
+        a == b
+            && (a.is_empty() || matches!(a.as_slice(), [object] if matches!(object.as_slice(), [(71, 3, raw)] if raw.len() == 16 && raw.starts_with(b"onta"))))
+            && old[0].2.get(10..12) == new[0].2.get(10..12)
+            && old[0].2.get(18..) == new[0].2.get(18..),
+        BODY,
+    )?;
+    let a_style = entries(original_defs, 25)[word(old[0].2, 8)?];
+    let b_style = entries(defs, 25)[word(new[0].2, 8)?];
+    same_textbox_para_style(a_style, b_style)
+}
+
 fn paragraph<'a>(
     rs: &[Record<'a>],
     level: u16,
     defs: &Defs<'_>,
     original_defs: &Defs<'_>,
     out: &mut Section<'a>,
+) -> Checked<Vec<Vec<Record<'a>>>> {
+    paragraph_with_caption_number(rs, level, defs, original_defs, out, false)
+}
+
+fn paragraph_with_caption_number<'a>(
+    rs: &[Record<'a>],
+    level: u16,
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+    out: &mut Section<'a>,
+    caption: bool,
 ) -> Checked<Vec<Vec<Record<'a>>>> {
     let header = rs
         .first()
@@ -1870,7 +1944,7 @@ fn paragraph<'a>(
         .filter(|r| r.0 == 68 && r.1 == level + 1)
         .collect();
     let lines = rs.iter().filter(|r| r.0 == 69 && r.1 == level + 1).count();
-    valid(texts.len() <= 1 && runs.len() == 1 && lines == 1, BODY)?;
+    valid(texts.len() <= 1 && runs.len() == 1 && (lines == 1 || (caption && lines == 0)), BODY)?;
     // Reserve token storage before allocation; shape/paragraph signatures are
     // shared per run/paragraph rather than copied once for every character.
     let text = texts.first().map_or(&b"\r\0"[..], |r| r.2);
@@ -2027,7 +2101,7 @@ fn paragraph<'a>(
             shape += 1;
         }
         // Extended controls with a CTRL_HEADER object: section/column (2), field begin (3), objects (11).
-        if matches!(ch, 2 | 3 | 11) {
+        if matches!(ch, 2 | 3 | 11) || (caption && ch == 18) {
             valid(
                 unit + 8 <= text.len() / 2 && word(text, (unit + 7) * 2)? == ch as usize,
                 BODY,

@@ -526,6 +526,22 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
           || props.Width !== width || props.Height !== height
           || (props.TreatAsChar === 1) !== picture.treatAsChar) complete = false;
       }
+      if (picture?.hasCaption === true) {
+        const paragraphCount = count(doc.getCellParagraphCount(section, p, control, 0));
+        if (paragraphCount < 1) complete = false;
+        const caption = [];
+        for (let para = 0; para < paragraphCount; para++) {
+          node();
+          const length = count(doc.getCellParagraphLength(section, p, control, 0, para), 2_000_000);
+          const text = doc.getTextInCell(section, p, control, 0, para, 0, length);
+          if (typeof text !== "string") throw new HwpEvidenceError("picture caption text");
+          spend(text.length * 2);
+          const properties = doc.getCellParaPropertiesAt
+            ? object(json(doc.getCellParaPropertiesAt(section, p, control, 0, para))) : null;
+          caption.push({ text, alignment: properties?.alignment });
+        }
+        picture.caption = caption;
+      }
       pictures.push(picture);
     } else if (c.ctrlId === "gso" && typeof c.userDesc === "string" && SHAPE_DESCS.has(c.userDesc)) {
       const props = object(c.props); checkControlProps(props);

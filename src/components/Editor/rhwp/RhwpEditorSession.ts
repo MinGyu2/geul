@@ -1055,6 +1055,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * path is proven once per structural version through the engine's cursor lists (RhwpText.ownsNestedCell).
    */
   private ownsPosition(at: DocPosition): boolean {
+    if (at.cell?.caption) return this.ownsHwpPictureCaption(at);
     if (at.cell?.textBox) return this.canEditTextBox(at.section) && this.text?.ownsTextBox(at) === true;
     if (!at.cell?.nested) return true;
     const text = this.text;
@@ -1074,6 +1075,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private canEditTextBox(section: number): boolean {
     const format = this.sessions.get(this.sessionId)?.format;
     return !!this.history && (format === "hwpx" || (format === "hwp" && section === 0 && this.structuralFormat()));
+  }
+
+  private ownsHwpPictureCaption(at: DocPosition): boolean {
+    return this.sessions.get(this.sessionId)?.format === "hwp" && this.structuralFormat()
+      && !!this.history && this.text?.ownsPictureCaption(at) === true;
   }
 
   private ordered(): [DocPosition, DocPosition] {
@@ -1351,7 +1357,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   typeText(text: string): boolean {
     if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     text = text.replace(/\r\n?|\u2029/g, "\n");
-    if (text.includes("\n") && this.caret.cell?.textBox) return false;
+    if (text.includes("\n") && (this.caret.cell?.textBox || this.caret.cell?.caption)) return false;
+    if (this.caret.cell?.caption && text.includes("\t")) return false;
     if (text.includes("\n")) return this.mutate(() => {
       let at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       const lines = text.split("\n");
@@ -1422,7 +1429,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (this.caret.cell?.textBox) return false;
+    if (this.caret.cell?.textBox || this.caret.cell?.caption) return false;
     if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
@@ -1591,11 +1598,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.imeTargets.delete(target);
     if (!captured || captured.epoch !== this.imeEpoch || !text || this.composition) return false;
     const { at, version } = captured;
-    if (at.cell?.textBox) {
+    if (at.cell?.textBox || at.cell?.caption) {
       // A control index may name a different box after any model edit.
       // A caret move alone leaves the captured owner and offset valid.
       if (version !== this.modelVersion || this.provisional || !this.ownsPosition(at)
-        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text)) return false;
+        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text) || (at.cell.caption && text.includes("\t"))) return false;
       try {
         if (!this.text || !Number.isSafeInteger(at.offset) || at.offset < 0
           || !(at.offset <= this.text.paragraphLength(at))) return false;
@@ -1810,7 +1817,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     if (!position) return false;
     // 셀 위치는 그 컨트롤이 실제 표일 때만(엔진이 표가 아닌 컨트롤 안을 셀처럼 돌려주는 경우가 있다 — 그 자리에 쓰면 엔진 예외로 편집이 멈춤).
-    if (position.cell && !position.cell.textBox && this.text?.cellCount(position) === null) return false;
+    if (position.cell && !position.cell.textBox) {
+      if (this.ownsHwpPictureCaption(position)) {
+        position = { ...position, cell: { ...position.cell, caption: true } };
+      } else if (this.text?.cellCount(position) === null) return false;
+    }
     // 중첩 표: 엔진이 준 경로를 화면 좌표와 무관하게 커서 목록으로 다시 증명한다(부모 셀·형제 표로 읽지 않음). 지원 깊이 밖이면 거절.
     if (!this.ownsPosition(position)) return false;
     return this.moveTo(position, extend);
@@ -3845,7 +3856,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private canInsertCellPicture(): boolean {
     const at = this.caret, doc = this.doc;
-    if (!at.cell || at.cell.textBox || !this.history || !this.ownsPosition(at) || !doc?.insertPictureInCellByPath
+    if (!at.cell || at.cell.textBox || at.cell.caption || !this.history || !this.ownsPosition(at) || !doc?.insertPictureInCellByPath
       || !doc.getCellPictureByPath || !doc.canInsertPictureInCellByPath
       || !doc.getCellInlineContextByPath || !doc.insertCellInlineTextByPath) return false;
     try { return doc.canInsertPictureInCellByPath(at.section, at.cell.parentParagraph, pathJson(at.cell), at.offset); }
@@ -4264,7 +4275,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const c = this.caret.cell;
     // New tables are created only within the engine's reader envelope common to HWP/HWPX (MAX_CREATED_TABLE_DEPTH);
     // deeper existing paths stay addressable for editing up to MAX_TABLE_DEPTH.
-    if (!c || c.textBox || !this.doc?.createTableInCellByPath || !this.history || !this.ownsPosition(this.caret)
+    if (!c || c.textBox || c.caption || !this.doc?.createTableInCellByPath || !this.history || !this.ownsPosition(this.caret)
       || 1 + (c.nested?.length ?? 0) >= Math.min(MAX_TABLE_DEPTH, MAX_CREATED_TABLE_DEPTH)) return false;
     const format = this.sessions.get(this.sessionId)?.format;
     if (format !== "hwpx" && (format !== "hwp" || !this.structuralFormat() || !this.doc.getTablePropertiesByPath)) return false;
@@ -5164,7 +5175,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   static positionKey(position: DocPosition): string {
     const c = position.cell;
     const nested = c?.nested?.map(level => `>${level.control}/${level.cell}/${level.cellParagraph}`).join("") ?? "";
-    return `${position.section}:${position.paragraph}:${position.offset}${c ? `@${c.textBox ? "textbox/" : ""}${c.control}/${c.cell}/${c.cellParagraph}${nested}` : ""}`;
+    return `${position.section}:${position.paragraph}:${position.offset}${c ? `@${c.textBox ? "textbox/" : c.caption ? "caption/" : ""}${c.control}/${c.cell}/${c.cellParagraph}${nested}` : ""}`;
   }
 
   /** 커서가 있는 문단의 글자(진단 표시용, 200자까지). */

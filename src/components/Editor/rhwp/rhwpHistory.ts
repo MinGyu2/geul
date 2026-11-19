@@ -81,6 +81,8 @@ function structurallyValid(text: RhwpText, at: DocPosition): boolean {
   try {
     if (at.cell?.textBox) {
       if (!text.ownsTextBox(at)) return false;
+    } else if (at.cell?.caption) {
+      if (!text.ownsPictureCaption(at)) return false;
     } else if (at.cell) {
       const cells = text.cellCount(at);
       const inner = innermost(at.cell);

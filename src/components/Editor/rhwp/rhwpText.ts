@@ -33,6 +33,7 @@ export interface CellRef {
   nested?: readonly NestedCell[];
   /** Top-level drawing text story, addressed through RHWP’s paragraph-in-cell API. */
   textBox?: true;
+  caption?: true;
 }
 
 /** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
@@ -178,7 +179,7 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
   if (a.section !== b.section) return false;
   if (a.cell === undefined || b.cell === undefined) return a.cell === b.cell;
   const x = a.cell, y = b.cell, nx = x.nested ?? [], ny = y.nested ?? [];
-  if (x.textBox !== y.textBox || x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
+  if (x.textBox !== y.textBox || x.caption !== y.caption || x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
   if (nx.length && x.cellParagraph !== y.cellParagraph) return false;
   return nx.every((level, i) => level.control === ny[i]!.control && level.cell === ny[i]!.cell
     && (i === nx.length - 1 || level.cellParagraph === ny[i]!.cellParagraph));
@@ -186,7 +187,7 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
 
 /** Same explicitly owned table; only the innermost cell may differ. */
 export function sameTable(a: DocPosition, b: DocPosition): boolean {
-  return !!a.cell && !!b.cell && !a.cell.textBox && !b.cell.textBox && sameContext(withCell(a, innermost(b.cell).cell), b);
+  return !!a.cell && !!b.cell && !a.cell.textBox && !b.cell.textBox && !a.cell.caption && !b.cell.caption && sameContext(withCell(a, innermost(b.cell).cell), b);
 }
 
 /** 같은 문맥(본문 또는 같은 셀)에서 문서 순서 비교. */
@@ -398,6 +399,27 @@ export class RhwpText {
     } catch { return false; }
   }
 
+  /** Pictures expose their caption through the legacy cell-0 APIs. Verify
+   * the root picture independently before treating a cursor hit as its caption. */
+  ownsPictureCaption(at: DocPosition): boolean {
+    const c = at.cell, doc = this.doc;
+    if (at.section !== 0 || !c || c.nested || c.textBox || c.cell !== 0 || c.cellParagraph !== 0
+      || !isIndex(at.offset) || !doc.getControls || !doc.getPictureProperties) return false;
+    try {
+      const controls = json(doc.getControls());
+      if (!Array.isArray(controls) || !controls.every(isRecord)) return false;
+      const owners = controls.filter(owner => owner.list === 0 && owner.para === c.parentParagraph && owner.controlIndex === c.control);
+      const owner = owners[0];
+      if (owners.length !== 1 || owner?.ctrlId !== "gso" || owner.userDesc !== "그림"
+        || !isRecord(owner.props) || owner.props.Lock !== 0) return false;
+      const address = [at.section, c.parentParagraph, c.control] as const;
+      const props = json(doc.getPictureProperties(...address));
+      return isRecord(props) && props.hasCaption === true && !("externalPath" in props)
+        && doc.getCellParagraphCount(...address, 0) === 1
+        && at.offset <= doc.getCellParagraphLength(...address, 0, 0);
+    } catch { return false; }
+  }
+
   paragraphCount(at: DocPosition): number {
     const c = at.cell;
     if (c?.nested) return this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(c));
@@ -407,7 +429,7 @@ export class RhwpText {
   /** Legacy cell APIs use plain-text offsets; new inline pictures use logical caret slots. */
   private inlineCell(at: DocPosition, count = 0): { length: number; textOffset: number; textCount: number; containsControl: boolean } | null {
     const c = at.cell;
-    if (!c || c.textBox || !this.doc.getCellInlineContextByPath) return null;
+    if (!c || c.textBox || c.caption || !this.doc.getCellInlineContextByPath) return null;
     const value = json(this.doc.getCellInlineContextByPath(at.section, c.parentParagraph, pathJson(c), at.offset, count));
     if (!isRecord(value) || typeof value.hasPictures !== "boolean" || !isIndex(value.length)
       || !isIndex(value.textOffset) || !isIndex(value.textCount) || typeof value.containsControl !== "boolean") throw new Error("invalid cell inline context");
@@ -431,7 +453,7 @@ export class RhwpText {
   /** Admission only: unsupported inline slots must never open a mutation/history transaction. */
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
     if (!sameContext(from, to) || compare(from, to) > 0
-      || (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to))) return false;
+      || ((from.cell?.textBox || from.cell?.caption) && paragraphOf(from) !== paragraphOf(to))) return false;
     try {
       for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
         const at = withParagraph(from, p, p === paragraphOf(from) ? from.offset : 0);
@@ -516,7 +538,10 @@ export class RhwpText {
         c ? c.parentParagraph : NO_CELL, c ? c.control : 0, c ? c.cell : 0, c ? c.cellParagraph : 0,
       ));
       const position = parsePosition(value, c?.textBox);
-      if (c?.textBox && (!position || !sameContext(at, position))) return null;
+      if (c?.caption && position?.cell && !position.cell.nested && !position.cell.textBox) {
+        position.cell.caption = true;
+      }
+      if ((c?.textBox || c?.caption) && (!position || !sameContext(at, position))) return null;
       if (!position || !isRecord(value) || !isNumber(value.preferredX)) return null;
       return { position, preferredX: value.preferredX };
     } catch {
@@ -664,7 +689,7 @@ export class RhwpText {
     if (c) for (let p = paragraphOf(from); p <= paragraphOf(to); p++) {
       if (this.inlineCell(withParagraph(from, p, 0))) throw new Error("cross-paragraph inline object selection unsupported");
     }
-    if (c?.textBox) { this.delete(from, to.offset - from.offset); return; }
+    if (c?.textBox || c?.caption) { this.delete(from, to.offset - from.offset); return; }
     if (c?.nested) this.nestedResult(this.doc.deleteRangeInCellByPath!(from.section, c.parentParagraph, pathJson(c),
       paragraphOf(from), from.offset, paragraphOf(to), to.offset));
     else if (c) this.doc.deleteRangeInCell(from.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, from.offset, to.cell!.cellParagraph, to.offset);
@@ -1058,7 +1083,7 @@ export class RhwpText {
 
   /** Complete paragraph field inventory, resolved through every explicit cell path entry. */
   private formulaInventory(at: DocPosition): Fields[] {
-    if (at.cell?.textBox) return []; // contains only the plain paragraph proved by ownsTextBox
+    if (at.cell?.textBox || at.cell?.caption) return []; // Non-table stories cannot own a table formula.
     if (!at.cell || !this.doc.getFieldList) throw new Error("formula inventory unavailable");
     const fields: unknown = json(this.doc.getFieldList());
     if (!Array.isArray(fields) || fields.length > 4096 || !fields.every(isRecord)) throw new Error("formula inventory invalid");

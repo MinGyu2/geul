@@ -2013,3 +2013,9 @@ RHWP의 `HorzRelTo::Page`·`VertRelTo::Page`는 본문 여백 영역에 대응�
 ### Stage 3 P4 Linux 구조 클립보드 전송
 
 GTK 브리지는 두 geul MIME에만 접근한다. 수신한 개체는 12 MiB, 표 셀은 2 MiB 이내의 UTF-8 데이터만 앱에 넘긴다. 외부 소유자 요청은 UI 스레드를 차단하지 않으며, GTK가 수신 과정에서 일시적으로 할당하는 메모리는 이 상한의 대상이 아니다. 기존 DOCX·표 클립보드 엔진 검증, 이력, T009 판정은 그대로 적용한다.
+
+### Stage 3 P5 HWP 그림 캡션
+
+`picture_caption_candidate`는 본문 그림의 원래 제어 레코드, 이어지는 캡션 목록과 GSO 컴포넌트·그림 leaf, 본문 소유 위치를 대조한다. `prove_picture_caption_paragraph`는 일치한 하나의 캡션 문단에서 UTF-16, 스타일 참조, 줄 레코드, 선택적 자동 번호 슬롯의 전체 바이트 및 `atno` 제어 레코드를 검증한다. 그림 스트림·BinData 참조와 자동 번호의 소유 문단을 유지한다. 잠금, 모호한 캡션 목록, 낯선 컨트롤, 캡션과 바깥 개체를 같은 저장에서 함께 변경하는 흐름은 범위 밖이다. 기존 바깥 개체 편집은 캡션을 그대로 보존하며 캡션 개체 삭제는 계속 거부한다.
+
+HWP5의 GSO 태그에는 컨테이너·OLE·글맵시·차트 데이터가 있다(`external/rhwp/src/parser/tags.rs`). OWPML `ParaList XML schema.xml`은 `container`, `ole`, `textart`, `chart`를 정의한다. 검토한 스키마와 RHWP `Control`·HWPX 파서에 DOCX 다이어그램의 데이터 노드·관계·레이아웃을 편집 가능한 방식으로 연결하는 모델이 없다. 이 개체들을 SmartArt로 변환하거나 미확인 확장을 활성화하지 않는다.

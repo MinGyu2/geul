@@ -5,7 +5,8 @@
 //! whose identity matches unambiguously may evolve within the exact fields owned
 //! by supported editor commands, or be deleted when unlocked, uncaptioned,
 //! non-grouped, and free of opaque/nested controls.
-//! Caption rewrites/deletions, groups, charts, OLE, unknown extensions, and BinData substitutions fail closed.
+//! Picture caption editing has a separate owned story proof. Caption deletion, groups, charts,
+//! OLE, unknown extensions, and BinData substitutions remain outside this module’s edit proofs.
 
 use super::FindingCode;
 use super::Record;
@@ -230,6 +231,39 @@ pub(super) fn prove_textbox_edit(
         super::insertions::same_textbox_para_style(old_style, new_style)?;
     }
     Ok(())
+}
+
+pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    let (Some((SC_PICTURE, _, a)), Some((SC_PICTURE, _, b))) =
+        (shape_ctrl_id(old), shape_ctrl_id(new))
+    else {
+        return false;
+    };
+    old != new && a >= 3 && b >= 3
+        && old[0].1 == 1 && old[0] == new[0]
+        && old[1] == new[1]
+        && old[a..] == new[b..]
+}
+
+pub(super) fn prove_picture_caption(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(picture_caption_candidate(old, new), BODY)?;
+    let a = shape_component_pos(old).unwrap();
+    let b = shape_component_pos(new).unwrap();
+    let list = old[1].2;
+    preserved(
+        picture_bin_id(old).is_some_and(|id| (1..=entries(original_defs, 18).len()).contains(&id))
+            && dword(old[0].2, 4)? as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION
+            && old.len() == a + 2 && new.len() == b + 2
+            && old[a + 1].0 == TAG_PICTURE && old[a + 1].1 == 3
+            && list.len() == 30 && dword(list, 0)? == 1,
+        BODY,
+    )?;
+    super::insertions::prove_picture_caption_paragraph(&old[2..a], &new[2..b], original_defs, defs)
 }
 
 /// The pinned RHWP body insertion command emits these resource-free defaults.
@@ -1796,6 +1830,42 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP owned picture caption scenario first"]
+    fn release_hwp_picture_caption_preserves_owner_and_number_slot() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p5-caption-original.hwp");
+        let edited = read("p5-caption-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let picture = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
+        let cases: [(fn(u16, u16, &[u8]) -> bool, usize); 5] = [
+            (picture, 16),
+            (|t, l, _| t == 72 && l == 2, 4),
+            (|t, l, _| t == 67 && l == 3, 4),
+            (|t, l, bytes| t == 71 && l == 3 && bytes.starts_with(b"onta"), 8),
+            (|t, l, _| t == 85 && l == 3, 71),
+        ];
+        for (pick, offset) in cases {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                changed[offset] ^= 1;
+                changed
+            });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
+        let lock = |header: &[u8]| {
+            let mut changed = header.to_vec();
+            changed[7] |= 0x40;
+            changed
+        };
+        let locked = mutate_body_record(&original, picture, lock);
+        let locked_edit = mutate_body_record(&edited, picture, lock);
+        assert!(check_with_preview_refresh(&locked, &locked_edit)
+            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]

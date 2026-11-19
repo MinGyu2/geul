@@ -480,6 +480,73 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("edits an owned HWP picture caption without changing its picture or body", async () => {
+    const fixture = new engine.HwpDocument(source("hwp"));
+    let original: Uint8Array;
+    try {
+      expect(JSON.parse(fixture.setPictureProperties(0, 0, 2, '{"hasCaption":true}'))).toMatchObject({ ok: true });
+      original = fixture.exportHwp();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, false, original);
+    const properties = (d: RhwpDocument) => JSON.parse(d.getPictureProperties!(0, 0, 2));
+    const text = (d: RhwpDocument) =>
+      d.getTextInCell(0, 0, 2, 0, 0, 0, d.getCellParagraphLength(0, 0, 2, 0, 0));
+    const alignment = (d: RhwpDocument) => JSON.parse(d.getCellParaPropertiesAt!(0, 0, 2, 0, 0)).alignment;
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      const before = properties(doc), caption = text(doc);
+      const body = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+      expect(before.hasCaption).toBe(true);
+      const inline = [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
+      expect(pick(inline).operations).not.toContain("delete");
+      expect(edit({ kind: "delete" })).toBe(false);
+      const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, [...caption].length));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell?.caption).toBe(true);
+      expect(editor.enter()).toBe(false);
+      expect(editor.typeText("한글")).toBe(true);
+      await confirm(1);
+      expect(text(doc)).toBe(caption + "한글");
+      expect(editor.undo()).toBe(true);
+      await confirm(2);
+      expect(editor.caret.cell?.caption).toBe(true);
+      expect(text(doc)).toBe(caption);
+      expect(editor.redo()).toBe(true);
+      await confirm(3);
+      expect(editor.caret.cell?.caption).toBe(true);
+      const wantAlignment = alignment(doc) === "center" ? "paragraph.alignLeft" : "paragraph.alignCenter";
+      expect(editor.execute(wantAlignment).accepted).toBe(true);
+      await confirm(4);
+      const expectedAlignment = alignment(doc);
+      expect(expectedAlignment).toBe(wantAlignment === "paragraph.alignLeft" ? "left" : "center");
+      expect(properties(doc)).toEqual(before);
+      const exported = doc.exportHwpWithReport!();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(text(reopened)).toBe(caption + "한글");
+          expect(alignment(reopened)).toBe(expectedAlignment);
+          expect(properties(reopened)).toEqual(before);
+          expect(reopened.getTextRange(0, 0, 0, reopened.getParagraphLength(0, 0))).toBe(body);
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p5-caption-original.hwp"), original);
+          writeFileSync(resolve(out, "p5-caption-edited.hwp"), output);
+          writeFileSync(resolve(out, "p5-caption-report.json"), report);
+        }
+      } finally { exported.free(); }
+      const controls = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(controls.setControlLock(0, 2, true))).toMatchObject({ ok: true });
+      expect(editor.typeText("잠금")).toBe(false);
+      expect(text(doc)).toBe(caption + "한글");
+    } finally { editor.dispose(); }
+  });
+
   it("edits outer properties of caption-bearing HWP pictures and shapes while preserving captions and blocking deletion", async () => {
     const seed = new engine.HwpDocument(source("hwp", true)) as RhwpDocument;
     let captionedBytes: Uint8Array;
