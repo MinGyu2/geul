@@ -16,6 +16,37 @@ const target = (engine: DocumentCommandSnapshot["engine"] = "wordcraft"): Docume
 afterEach(clearStructuredClipboard);
 
 describe("versioned object clipboard", () => {
+  it("routes Linux structured copy and paste through native MIME without inserting fallback text", async () => {
+    const object = createObjectClipboardPayload("rectangle");
+    const data = JSON.stringify(object), plainText = objectClipboardPlainText(object);
+    const invoke = vi.fn(async (command: string, args: { mime: string }) =>
+      command === "clipboard_read_structured" && args.mime === OBJECT_CLIPBOARD_MIME ? data : null);
+    vi.stubGlobal("isTauri", true);
+    vi.stubGlobal("__TAURI_INTERNALS__", { invoke });
+    const agent = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Linux");
+    try {
+      const doc = target();
+      const editing = {
+        read: async () => null, remove: vi.fn(() => false), insert: vi.fn(() => false),
+        readStructured: async () => ({ status: "ok" as const, mime: OBJECT_CLIPBOARD_MIME, data, plainText }),
+        insertStructured: vi.fn<NonNullable<ClipboardEditing["insertStructured"]>>(async () => "ok"),
+      };
+      expect(await runClipboard(doc, "edit.copy", editing, () => true)).toBe(true);
+      expect(invoke).toHaveBeenCalledWith("clipboard_write_structured", {
+        mime: OBJECT_CLIPBOARD_MIME, data, plainText,
+      }, undefined);
+      expect(await runClipboard(doc, "edit.paste", editing, () => true)).toBe(true);
+      expect(editing.insertStructured).toHaveBeenCalledWith(OBJECT_CLIPBOARD_MIME, data);
+      expect(editing.insert).not.toHaveBeenCalled();
+      expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+        "clipboard_write_structured", "clipboard_read_structured", "clipboard_read_structured",
+      ]);
+    } finally {
+      agent.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("accepts the full standard shape and rejects invalid geometry, resource injection, version and source", () => {
     const valid = createObjectClipboardPayload("ellipse");
     expect(parseObjectClipboardPayload(JSON.stringify(valid))).toEqual(valid);

@@ -53,8 +53,8 @@ export function resetClipboardCapabilityForTests(): void {
 export interface PlainClipboard {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
-  readStructured?(mime: string): Promise<string | null>;
-  writeStructured?(mime: string, data: string, plainText: string): Promise<void>;
+  readStructured?: ((mime: string) => Promise<string | null>) | undefined;
+  writeStructured?: ((mime: string, data: string, plainText: string) => Promise<void>) | undefined;
 }
 export const systemClipboard: PlainClipboard = {
   readText: async () => {
@@ -72,6 +72,26 @@ export const systemClipboard: PlainClipboard = {
     return navigator.clipboard.readText();
   },
   writeText: text => navigator.clipboard.writeText(text),
+  get readStructured() {
+    if (!hasNativeTextRead()) return undefined;
+    return async (mime: string) => {
+      try { return await invoke<string | null>("clipboard_read_structured", { mime }); }
+      catch (error) {
+        if (error !== "Unsupported") throw error;
+        return null;
+      }
+    };
+  },
+  get writeStructured() {
+    if (!hasNativeTextRead()) return undefined;
+    return async (mime: string, data: string, plainText: string) => {
+      try { await invoke("clipboard_write_structured", { mime, data, plainText }); }
+      catch (error) {
+        if (error !== "Unsupported") throw error;
+        await navigator.clipboard.writeText(plainText);
+      }
+    };
+  },
 };
 
 export type StructuredReadResult =

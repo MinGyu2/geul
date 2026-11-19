@@ -85,6 +85,8 @@ pub fn run() {
             adapters::wordcraft::commands::docx_selection_table_cells,
             adapters::wordcraft::commands::docx_selection_object,
             clipboard::clipboard_read_text,
+            clipboard::clipboard_read_structured,
+            clipboard::clipboard_write_structured,
             picture::picture_import,
             adapters::wordcraft::commands::docx_edit,
             adapters::wordcraft::commands::docx_render,

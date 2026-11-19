@@ -1,6 +1,6 @@
 //! Linux WebKitGTK denies async reads of native/external clipboard ownership
-//! even from a trusted ribbon click. Expose only bounded plain-text reading;
-//! no formats, paths, shell access or document operations cross this endpoint.
+//! even from a trusted ribbon click. Expose bounded text and geul MIME
+//! transport without granting access to other clipboard formats.
 
 #[cfg(any(target_os = "linux", test))]
 const MAX_TEXT_BYTES: usize = 4 * 1024 * 1024;
@@ -47,9 +47,132 @@ pub async fn clipboard_read_text(app: tauri::AppHandle) -> Result<String, &'stat
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn structured_limit(mime: &str) -> Result<usize, &'static str> {
+    match mime {
+        "application/x-geul-object+json" => Ok(12 * 1024 * 1024),
+        "application/x-geul-table-cells+json" => Ok(2 * 1024 * 1024),
+        _ => Err("UnsupportedFormat"),
+    }
+}
+
+#[tauri::command]
+pub async fn clipboard_read_structured(
+    app: tauri::AppHandle,
+    mime: String,
+) -> Result<Option<String>, &'static str> {
+    #[cfg(target_os = "linux")]
+    {
+        let limit = structured_limit(&mime)?;
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let target = gtk::gdk::Atom::intern(&mime);
+            gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).request_contents(
+                &target,
+                move |_, selection| {
+                    let result = if selection.length() < 0 {
+                        Ok(None)
+                    } else if selection.length() as usize > limit {
+                        Err("TooLarge")
+                    } else if selection.format() != 8 || selection.data_type() != target {
+                        Err("InvalidData")
+                    } else {
+                        String::from_utf8(selection.data())
+                            .map(Some)
+                            .map_err(|_| "InvalidData")
+                    };
+                    let _ = send.try_send(result);
+                },
+            );
+        })
+        .map_err(|_| "Unavailable")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            receive
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap_or(Err("Unavailable"))
+        })
+        .await
+        .map_err(|_| "Unavailable")?
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, mime);
+        Err("Unsupported")
+    }
+}
+
+#[tauri::command]
+pub async fn clipboard_write_structured(
+    app: tauri::AppHandle,
+    mime: String,
+    data: String,
+    plain_text: String,
+) -> Result<(), &'static str> {
+    #[cfg(target_os = "linux")]
+    {
+        if data.len() > structured_limit(&mime)? {
+            return Err("TooLarge");
+        }
+        if data.is_empty()
+            || plain_text.is_empty()
+            || data.contains('\0')
+            || plain_text.contains('\0')
+        {
+            return Err("InvalidData");
+        }
+        let plain_text = bounded_text(Some(&plain_text))?;
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+            let targets = [
+                gtk::TargetEntry::new(&mime, gtk::TargetFlags::empty(), 0),
+                gtk::TargetEntry::new("UTF8_STRING", gtk::TargetFlags::empty(), 1),
+                gtk::TargetEntry::new("text/plain;charset=utf-8", gtk::TargetFlags::empty(), 1),
+                gtk::TargetEntry::new("text/plain", gtk::TargetFlags::empty(), 1),
+            ];
+            let atom = gtk::gdk::Atom::intern(&mime);
+            let offered = clipboard.set_with_data(&targets, move |_, selection, info| {
+                if info == 0 {
+                    selection.set(&atom, 8, data.as_bytes());
+                } else {
+                    selection.set_text(&plain_text);
+                }
+            });
+            let _ = send.try_send(offered.then_some(()).ok_or("Unavailable"));
+        })
+        .map_err(|_| "Unavailable")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            receive
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap_or(Err("Unavailable"))
+        })
+        .await
+        .map_err(|_| "Unavailable")?
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, mime, data, plain_text);
+        Err("Unsupported")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structured_clipboard_accepts_only_bounded_geul_formats() {
+        assert_eq!(
+            structured_limit("application/x-geul-object+json"),
+            Ok(12 * 1024 * 1024)
+        );
+        assert_eq!(
+            structured_limit("application/x-geul-table-cells+json"),
+            Ok(2 * 1024 * 1024)
+        );
+        assert_eq!(structured_limit("text/html"), Err("UnsupportedFormat"));
+        assert_eq!(structured_limit("image/png"), Err("UnsupportedFormat"));
+    }
 
     #[test]
     fn plain_text_is_complete_and_empty_is_not_an_error() {

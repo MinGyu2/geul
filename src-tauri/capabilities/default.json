@@ -21,6 +21,8 @@
     "allow-docx-selection-table-cells",
     "allow-docx-selection-object",
     "allow-clipboard-read-text",
+    "allow-clipboard-read-structured",
+    "allow-clipboard-write-structured",
     "allow-picture-import",
     "allow-docx-edit",
     "allow-docx-render",

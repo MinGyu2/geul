@@ -45,6 +45,8 @@ fn main() {
         "docx_selection_table_cells",
         "docx_selection_object",
         "clipboard_read_text",
+        "clipboard_read_structured",
+        "clipboard_write_structured",
         "picture_import",
         "docx_edit",
         "docx_render",

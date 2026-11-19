@@ -328,3 +328,7 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P3 남은 경계.** RHWP는 곡선 점·세그먼트와 그룹의 하위 그림을 직렬화한다. 곡선 편집 및 그룹 내부 편집에는 각 기하·변환과 자식 소유권을 증명하는 편집 및 T009 경로가 필요하다. 다각형 꼭짓점 변경, 그룹 재배치·크기·삭제 및 여러 도형 순위가 바뀐 한 번의 HWP 저장은 현재 범위 밖이다.
 
 **P3 HWP 다각형 실선 편집 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'solid outline of an existing HWP polygon'` 1 PASS. 30° 회전된 기존 도형에 실선 색과 2.45pt를 적용했다. 크기·삭제는 거부했고 Undo/Redo와 독립 재열기를 확인했다. 실제 HWP는 T009 `release_hwp_polygon_outline_preserves_geometry -- --ignored` 1 PASS. 정점·변환 플래그·선 종류·범위 밖 굵기 변조를 거부했다. `target/stage3-polygon-outline/`에 출력과 로그가 있다. 네이티브 다각형 편집은 NOT RUN이다.
+
+**P4 Linux 구조 MIME 전송 CURRENT PASS.** 실제 Release 앱 SHA-256 `66c2429408fb9efb2dec2846bccf20b5ed9a63866dde595c45269603c575e7ac`와 별도 GTK 프로세스가 X11에서 두 geul MIME의 바이트를 양방향으로 주고받았다. UTF-8 평문 제공·외부 평문 대체 읽기와 HTML MIME 거부를 확인했다. `native-stage3-clipboard-mime.py`의 `target/stage3-clipboard-mime/probe.IG8IGA/result/result.json` 및 런처 정리 기록, 전송 경로 신규 Vitest 1 PASS, 관련 클립보드 17 PASS, Rust 허용 목록·상한 1 PASS. 첫 네이티브 호출의 GTK 경로 오타와 결과 폴더 충돌은 하네스 실행 문제였으며, 올바른 경로와 새 폴더에서 재검증했다.
+
+**P4 남은 경계.** 기존 DOCX 동일 문서·다른 DOCX 간 자원 재매핑 및 다중 셀 구조 붙여넣기의 문서·이력·T009 근거는 REUSED PASS다. 전송 시험은 외부 오피스 형식 상호운용을 포함하지 않는다. RHWP `copyControl`·`pasteControl`은 내부 문서 클립보드를 사용하므로 이 경로의 도형·글상자·그림과 새 인스턴스 및 BinData에 대한 문서 보존 증명이 남아 있다. WordCraft의 리더는 중첩 그룹을 평탄화하고 라이터는 중첩 그룹 자식을 직렬화하지 않으므로 그대로 거부한다. 차트·SmartArt의 구조 복사에 필요한 새 패키지 부분 증명, RHWP 문서 간 리소스 재매핑, 교차 형식 개체 변환은 미구현이다.
