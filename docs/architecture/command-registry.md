@@ -1187,7 +1187,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
   - 붙여넣기: `DocxOp::PasteObject`가 `atomic` 안에서 미디어 공유/재키잉과 함께 `remap_object`로 내부 glued 도형/연결선(`ConnEnd`) ID를 대상 문서에 충돌 없이 재매핑하고 외부 `ConnEnd`·비참조 `extra.id`를 정리한 뒤 `check_saved`·`same_as`를 통과해야 커밋한다. Undo/Redo 뒤 미참조 미디어를 정리한다.
 - **HWPX v3:** 봉투 `{kind:"geul.object", version:3, sourceFormat:"hwpx", object:"picture"|"shape"|"textBox"|"group", sourceSessionId, sourceGeneration, portable?, token}`.
   - 복사/잘라내기: `RhwpEditorSession`은 HWPX 본문 편집 가능 개체(`picture`·`shape`·`textBox`·`group`, 표 셀/차트/HWP5 제외)에 `"copy"` 및 삭제 가능 시 `"cut"`을 노출하고 `clipboardState()`가 `clipboard.shape`를 제공한다. `copyControl`로 엔진 내부 클립보드에 구조 복제본을 두고, 기본 도형(`사각형`·`타원`·`직선`)·다중 문단 글상자에는 `HwpxPortableShape` 스냅샷을 함께 싣는다.
-  - 붙여넣기: HWPX 본문 접힌 커서(`!caret.cell && !hasSelection`)에서만 받는다. 동일 세션·세대·토큰이고 `clipboardHasControl()`이 참이면 `pasteControl`(`reidentify_clipboard`)으로 그림/다각형/곡선/그룹/글상자를 무손실 복제한다. 다른 HWPX 문서는 `portable`이 있는 기본 도형·다중 문단 글상자만 생성·서식·문단 이식으로 붙여넣고, 타 문서 그림·그룹·DOCX v2/HWPX v3 교차 엔진 붙여넣기·HWP5 붙여넣기는 모두 거부한다.
+  - 붙여넣기: HWPX 본문 접힌 커서(`!caret.cell && !hasSelection`)에서만 받는다. 동일 세션·세대·토큰이고 `clipboardHasControl()`이 참이면 `pasteControl`(`reidentify_clipboard`) 경로를 사용한다. 다른 HWPX 문서의 `portable` 기본 도형·다중 문단 글상자 재구성은 구현돼 있지만 현재 안전 수용 범위가 아니다. Release WASM `3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3`에서 실제 원본·대상 문서를 저장·독립 재열기한 진단으로 캡션 있는 도형의 캡션과 일부 굵은 글자 서식이 각각 유실됐다. 교차 문서 붙여넣기는 이 경계가 교정될 때까지 미수용이다. 타 문서 그림·그룹·DOCX v2/HWPX v3 교차 엔진 붙여넣기·HWP5 붙여넣기는 거부한다. 동일 문서 경로의 이 진단은 수행하지 않았다.
 - **시스템 클립보드:** Linux Tauri는 GTK 브리지로 `application/x-geul-object+json`과 `application/x-geul-table-cells+json` 및 같은 복사의 UTF-8 평문을 제공한다. 다른 플랫폼은 브라우저 평문 + 앱 내 기억을 사용한다. MIME 전송은 형식 간 구조 변환을 활성화하지 않는다.
 
 ### Stage 3 결합 네이티브 수정 (2026-11-19)
