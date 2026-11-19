@@ -159,7 +159,8 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
             || xp != yp
             || (has_bullet && xs != ys)
             || opaque_changed
-            || !super::gso::caption_subtrees(&xr).eq(super::gso::caption_subtrees(&yr));
+            || !super::gso::caption_subtrees(&xr).eq(super::gso::caption_subtrees(&yr))
+            || !super::gso::textbox_story(&xr).eq(super::gso::textbox_story(&yr));
     }
     if !definition_delta && !structural {
         return None;
@@ -1170,6 +1171,13 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     matched = true;
                     break;
                 }
+                if !exact_later && super::gso::textbox_edit_candidate(o, object) {
+                    super::gso::prove_textbox_edit(o, object, &ac, &bc)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
                 if !exact_later && super::gso::evolved_candidate(o, object, &ac) {
                     super::gso::prove_evolved_gso(o, object, &ac)?;
                     restructured.push((object_digest(o), object_digest(object)));
@@ -1182,6 +1190,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         || restructure_candidate(o, later, &bc, &ac)
                         || evolved_candidate(o, later)
                         || super::gso::evolved_candidate(o, later, &ac)
+                        || super::gso::textbox_edit_candidate(o, later)
                 });
                 if survives_later {
                     break;
@@ -1197,7 +1206,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 validate_table(object, &bc, &mut used, &mut table_ids)?;
                 table_total += 1;
             } else if super::gso::is_basic_shape(object) {
-                super::gso::prove_inserted_shape(object, &bc, &original_ids)?;
+                super::gso::prove_inserted_shape(object, &bc, &ac, &original_ids)?;
             } else if object[0].2.starts_with(b" osg") {
                 validate_picture(object, 1, &bc, &resources.dimensions, &mut used.pictures)?;
             } else {
@@ -1749,6 +1758,53 @@ fn section<'a>(
     }
     Ok(out)
 }
+/// A single resource-free drawing story. The paragraph grammar proves
+/// framing, UTF-16/control masks, runs, and every referenced definition.
+pub(super) fn prove_textbox_paragraph(
+    rs: &[Record<'_>],
+    defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
+) -> Checked<()> {
+    let Some(&(66, 3, header)) = rs.first() else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    preserved(
+        header.len() == 24
+            && dword(header, 4)? == 0
+            && header[10] == 0
+            && header[11] == 0
+            && header[18..] == [0; 6]
+            && rs[1..].iter().all(|r| matches!((r.0, r.1), (67..=69, 4))),
+        BODY,
+    )?;
+    if let Some((67, 4, text)) = rs.get(1) {
+        preserved(
+            text.strip_suffix(b"\r\0").is_some_and(|units| {
+                units.len().is_multiple_of(2)
+                    && units
+                        .chunks_exact(2)
+                        .all(|unit| u16::from_le_bytes([unit[0], unit[1]]) >= 32)
+            }),
+            BODY,
+        )?;
+    }
+    let mut checked = Section {
+        tokens: Vec::new(),
+        objects: Vec::new(),
+        para_ids: BTreeSet::new(),
+        paragraphs: 0,
+        breaks: Vec::new(),
+    };
+    preserved(
+        paragraph(rs, 3, defs, original_defs, &mut checked)?.is_empty(),
+        BODY,
+    )
+}
+
+pub(super) fn same_textbox_para_style(before: &[u8], after: &[u8]) -> Checked<()> {
+    preserved(para_signature(before)? == para_signature(after)?, BODY)
+}
+
 fn paragraph<'a>(
     rs: &[Record<'a>],
     level: u16,

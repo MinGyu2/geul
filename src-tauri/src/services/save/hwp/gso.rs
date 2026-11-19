@@ -147,17 +147,80 @@ fn expected_leaf_tag(ctrl_id: &[u8; 4]) -> Option<u16> {
     }
 }
 
+fn plain_textbox(rs: &[Record<'_>]) -> bool {
+    let Some((SC_RECT, 8, 1)) = shape_ctrl_id(rs) else {
+        return false;
+    };
+    let Some(&(72, 3, list)) = rs.get(2) else {
+        return false;
+    };
+    rs[0].1 == 1
+        && dword(rs[0].2, 4).is_ok_and(|attr| attr as u32 & (ATTR_LOCKED | ATTR_CAPTION) == 0)
+        && word(rs[1].2, 16) == Ok(0)
+        && list.len() == 33
+        && dword(list, 0) == Ok(1)
+        && list[20..] == [0; 13]
+        && rs.last().is_some_and(|r| r.0 == TAG_RECTANGLE && r.1 == 3)
+        && matches!(rs.len(), 7 | 8)
+}
+
+/// A changed TextBox only reaches the plain-story proof when its original
+/// control, component, list header, and leaf all independently match.
+pub(super) fn textbox_edit_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    plain_textbox(old)
+        && plain_textbox(new)
+        && old[..3] == new[..3]
+        && old.last() == new.last()
+        && old != new
+}
+
+pub(super) fn textbox_story<'a, 'b>(
+    rs: &'b [Record<'a>],
+) -> impl Iterator<Item = &'b [Record<'a>]> {
+    rs.iter().enumerate().filter_map(move |(index, record)| {
+        if record.0 != TAG_CTRL_HEADER || record.1 != 1 || !record.2.starts_with(CTRL_GSO) {
+            return None;
+        }
+        let end = rs[index + 1..]
+            .iter()
+            .position(|r| r.1 <= 1)
+            .map_or(rs.len(), |next| index + 1 + next);
+        let object = &rs[index..end];
+        object
+            .iter()
+            .any(|r| r.0 == TAG_LIST_HEADER && r.1 == 3)
+            .then_some(object)
+    })
+}
+
+pub(super) fn prove_textbox_edit(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(textbox_edit_candidate(old, new), BODY)?;
+    let old_para = &old[3..old.len() - 1];
+    let new_para = &new[3..new.len() - 1];
+    super::insertions::prove_textbox_paragraph(old_para, original_defs, original_defs)?;
+    super::insertions::prove_textbox_paragraph(new_para, defs, original_defs)?;
+    let old_style = entries(original_defs, 25)[word(old_para[0].2, 8)?];
+    let new_style = entries(defs, 25)[word(new_para[0].2, 8)?];
+    super::insertions::same_textbox_para_style(old_style, new_style)
+}
+
 /// The pinned RHWP body insertion command emits these resource-free defaults.
 /// Check new objects separately from the evolution proof for originals.
 pub(super) fn prove_inserted_shape(
     rs: &[Record<'_>],
     defs: &Defs<'_>,
+    original_defs: &Defs<'_>,
     original_ids: &std::collections::BTreeSet<usize>,
 ) -> Checked<()> {
     let Some((kind, 8, 1)) = shape_ctrl_id(rs) else {
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
-    let textbox = rs.len() == 7 && kind == SC_RECT;
+    let textbox = matches!(rs.len(), 7 | 8) && kind == SC_RECT;
     let (tag, height, description) = match kind {
         SC_LINE => (TAG_LINE, 100i32, "선입니다."),
         SC_ELLIPSE => (TAG_ELLIPSE, 7200, "타원입니다."),
@@ -176,7 +239,7 @@ pub(super) fn prove_inserted_shape(
         .flat_map(u16::to_le_bytes)
         .collect();
     preserved(
-        rs[0].1 == 1 && rs[1].1 == 2 && rs.len() == if textbox { 7 } else { 3 },
+        rs[0].1 == 1 && rs[1].1 == 2 && (textbox || rs.len() == 3),
         BODY,
     )?;
     preserved(
@@ -245,7 +308,7 @@ pub(super) fn prove_inserted_shape(
     )?;
 
     if textbox {
-        let [(72, 3, list), (66, 3, para), (68, 4, run), (69, 4, line)] = &rs[2..6] else {
+        let (72, 3, list) = rs[2] else {
             return Err(finding(FindingCode::RecordsChanged, BODY));
         };
         preserved(
@@ -257,6 +320,12 @@ pub(super) fn prove_inserted_shape(
                 && list[20..] == [0; 13],
             BODY,
         )?;
+        if rs.len() == 8 {
+            return super::insertions::prove_textbox_paragraph(&rs[3..7], defs, original_defs);
+        }
+        let [(66, 3, para), (68, 4, run), (69, 4, line)] = &rs[3..6] else {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        };
         preserved(
             para.len() == 24
                 && para[..8] == [1, 0, 0, 0x80, 0, 0, 0, 0]
@@ -1550,6 +1619,45 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the P2 HWP text-box scenario first"]
+    fn release_hwp_p2_textbox_edit_preserves_owner_and_structure() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let before = read("p2-hwp-before.hwp");
+        let existing = read("p2-hwp-existing.hwp");
+        let edited = read("p2-hwp-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&before, &edited), vec![]);
+        assert_eq!(check_with_preview_refresh(&existing, &edited), vec![]);
+        let locked = mutate_body_record(
+            &existing,
+            |tag, level, data| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO),
+            |data| {
+                let mut h = data.to_vec();
+                h[7] |= 0x40;
+                h
+            },
+        );
+        // Keep the protection bit on both sides so the negative depends on the
+        // text edit’s owner, rather than on clearing protection in the output.
+        let locked_edit = mutate_body_record(
+            &edited,
+            |tag, level, data| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO),
+            |data| {
+                let mut h = data.to_vec();
+                h[7] |= 0x40;
+                h
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&locked, &locked_edit)
+                .iter()
+                .any(|f| {
+                    f.code == FindingCode::RecordsChanged && f.part.as_deref() == Some(super::BODY)
+                })
+        );
     }
 
     #[test]

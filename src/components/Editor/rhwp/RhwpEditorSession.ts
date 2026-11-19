@@ -1054,8 +1054,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * path is proven once per structural version through the engine's cursor lists (RhwpText.ownsNestedCell).
    */
   private ownsPosition(at: DocPosition): boolean {
-    if (at.cell?.textBox) return this.sessions.get(this.sessionId)?.format === "hwpx"
-      && !!this.history && this.text?.ownsTextBox(at) === true;
+    if (at.cell?.textBox) return this.canEditTextBox(at.section) && this.text?.ownsTextBox(at) === true;
     if (!at.cell?.nested) return true;
     const text = this.text;
     if (!text) return false;
@@ -1069,6 +1068,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (this.nestedProof.owned.size < 64) this.nestedProof.owned.set(key, owned);
     }
     return owned;
+  }
+
+  private canEditTextBox(section: number): boolean {
+    const format = this.sessions.get(this.sessionId)?.format;
+    return !!this.history && (format === "hwpx" || (format === "hwp" && section === 0 && this.structuralFormat()));
   }
 
   private ordered(): [DocPosition, DocPosition] {
@@ -1770,7 +1774,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     let position: DocPosition | null;
     try {
-      position = parsePosition(JSON.parse(this.doc.hitTest(page, x, y)), this.sessions.get(this.sessionId)?.format === "hwpx");
+      const hit = JSON.parse(this.doc.hitTest(page, x, y));
+      position = parsePosition(hit, this.canEditTextBox(hit?.sectionIndex));
     } catch {
       position = null;
     }

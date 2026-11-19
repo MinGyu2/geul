@@ -321,6 +321,47 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("edits a plain HWP text box after SAFE preflight and preserves the outer object", async () => {
+    const { editor, doc, bytes, take, confirm } = await setup("hwp");
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+      const control = shapes(doc)[0]!.controlIdx;
+      const originalWithBox = doc.exportHwp();
+      const outer = props(doc, control);
+      const base = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+      const at = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 0, 0));
+      expect(editor.pointAt(at.pageIndex, at.x + 1, at.y + at.height / 2, false)).toBe(true);
+      expect(editor.typeText("본문과 별도")).toBe(true);
+      await confirm();
+      expect(editor.execute("paragraph.alignCenter").accepted).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss();
+        const edited = exported.takeBytes();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+        try {
+          expect(reopened.getTextInCell(0, 0, control, 0, 0, 0, 6)).toBe("본문과 별도");
+          expect(reopened.getTextRange(0, 0, 0, reopened.getParagraphLength(0, 0))).toBe(base);
+          expect(JSON.parse(reopened.getCellParaPropertiesAt!(0, 0, control, 0, 0)).alignment).toBe("center");
+          expect(props(reopened, control)).toEqual(outer);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p2-hwp-before.hwp"), bytes);
+          writeFileSync(resolve(out, "p2-hwp-existing.hwp"), originalWithBox);
+          writeFileSync(resolve(out, "p2-hwp-edited.hwp"), edited);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("inserts the four supported HWP shape families after SAFE preflight and reopens them without loss", async () => {
     const { editor, doc, bytes, confirm, take, calls } = await setup("hwp");
     try {
