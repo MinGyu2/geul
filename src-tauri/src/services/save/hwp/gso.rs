@@ -1,9 +1,10 @@
-//! Bounded field-level evolution proof for existing HWP5 GSO (`b" osg"`) objects.
+//! Bounded field-level evolution and deletion proof for existing HWP5 GSO (`b" osg"`) objects.
 //!
-//! Only surviving top-level Pictures (`b"cip$"`) and basic Shapes (`b"nil$"`, `b"cer$"`,
-//! `b"lle$"`, optionally with a byte-identical TextBox) whose identity matches unambiguously
-//! may evolve within the exact fields owned by supported editor commands. Groups, charts, OLE,
-//! captions, unknown extensions, BinData substitutions, and GSO deletions fail closed.
+//! Only top-level Pictures (`b"cip$"`) and basic Shapes (`b"nil$"`, `b"cer$"`,
+//! `b"lle$"`, optionally with a plain TextBox) whose identity matches unambiguously
+//! may evolve within the exact fields owned by supported editor commands or be deleted
+//! when unlocked, uncaptioned, non-grouped, and free of opaque/nested controls.
+//! Groups, charts, OLE, captions, unknown extensions, and BinData substitutions fail closed.
 
 use super::FindingCode;
 use super::Record;
@@ -154,11 +155,72 @@ pub(super) fn evolved_candidate(
     if old_ctrl != SC_PICTURE || new_id != 0 {
         return false;
     }
+    if old[1].2[old_off + 10..old_off + 20] != new[1].2[new_off + 10..new_off + 20] {
+        return false;
+    }
     let orig_bins = entries(orig_defs, 18).len();
     matches!(
         (picture_bin_id(old), picture_bin_id(new)),
         (Some(a), Some(b)) if a == b && a >= 1 && a <= orig_bins
     )
+}
+
+/// Only top-level, unlocked, uncaptioned, non-grouped, opaque-free HWP5 GSO pictures
+/// (`b"cip$"`) and basic shapes (`b"nil$"`, `b"cer$"`, `b"lle$"`, optionally with a plain
+/// TextBox) may be deleted. Captions, locked objects, groups, charts, OLE, nested/unknown
+/// controls, and opaque records (`CTRL_DATA`, range tags) remain strictly preserved.
+pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
+    if old.len() < 3 || old[0].1 != 1 {
+        return false;
+    }
+    let Some(first) = old.first() else {
+        return false;
+    };
+    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 46 {
+        return false;
+    }
+    let Ok(attr) = dword(first.2, 4).map(|v| v as u32) else {
+        return false;
+    };
+    if (attr & (ATTR_LOCKED | ATTR_CAPTION)) != 0 {
+        return false;
+    }
+    let Some((ctrl_id, id_off)) = shape_ctrl_id(old) else {
+        return false;
+    };
+    let Some(leaf_tag) = expected_leaf_tag(ctrl_id) else {
+        return false;
+    };
+    if word(old[1].2, id_off + 8) != Ok(0) {
+        return false;
+    }
+    if old
+        .iter()
+        .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()))
+    {
+        return false;
+    }
+    if ctrl_id == SC_PICTURE {
+        if old.len() != 3 || old[2].0 != TAG_PICTURE || old[2].1 != 3 || old[2].2.len() < 73 {
+            return false;
+        }
+        let orig_bins = entries(orig_defs, 18).len();
+        return picture_bin_id(old).is_some_and(|bin_id| bin_id >= 1 && bin_id <= orig_bins);
+    }
+    let last = old[old.len() - 1];
+    if last.0 != leaf_tag || last.1 != 3 {
+        return false;
+    }
+    let mid = &old[2..old.len() - 1];
+    if mid.is_empty() {
+        return true;
+    }
+    mid[0].0 == TAG_LIST_HEADER
+        && mid[0].1 == 3
+        && mid.get(1).is_some_and(|r| r.0 == 66 && r.1 == 4)
+        && mid[1..].iter().all(|r| {
+            matches!((r.0, r.1), (66, 4) | (67..=70, 5)) && (r.0 != 70 || r.2.is_empty())
+        })
 }
 
 fn validate_rendering_info(
@@ -1175,6 +1237,10 @@ mod tests {
         let original = read("gso-original");
         let edited = read("gso-edited");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        assert_eq!(
+            check_with_preview_refresh(&original, &read("gso-deleted")),
+            vec![]
+        );
 
         let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at: usize, bytes: &[u8]| {
             mutate_body_record(file, pick, |payload| {
@@ -1525,18 +1591,37 @@ mod tests {
             let o1 = build_hwp(&di_ref, &s1_ref, b"\x89PNG\r\n\x1a\n123");
             assert!(!check(&o0, &o1).is_empty(), "locked GSO move must fail");
         }
-        // 17. GSO deletion refused
+        // 17. Locked, captioned, opaque, and unknown GSO deletion refused
         {
-            let del_sec = wrap_section(vec![pic_orig.clone()]);
-            let del_ref: Vec<_> = del_sec
+            let empty_sec = wrap_section(vec![]);
+            let empty_ref: Vec<_> = empty_sec
                 .iter()
                 .map(|(t, l, b)| (*t, *l, b.as_slice()))
                 .collect();
-            let del_cfb = build_hwp(&di_ref, &del_ref, b"\x89PNG\r\n\x1a\n123");
-            assert!(
-                !check(&orig_cfb, &del_cfb).is_empty(),
-                "GSO delete must fail"
-            );
+            let empty_cfb = build_hwp(&di_ref, &empty_ref, b"\x89PNG\r\n\x1a\n123");
+
+            let mut locked = pic_orig.clone();
+            locked[0].2[7] |= 0x40;
+            let mut captioned = pic_orig.clone();
+            captioned[0].2[7] |= 0x20;
+            let mut opaque = rect_orig.clone();
+            opaque.insert(2, (87, 2, vec![1, 2, 3, 4]));
+            let mut group = rect_orig.clone();
+            group[1].2[0..8].copy_from_slice(b" gp$ gp$");
+            for (label, obj) in [
+                ("locked GSO delete", locked),
+                ("captioned GSO delete", captioned),
+                ("opaque CTRL_DATA GSO delete", opaque),
+                ("group GSO delete", group),
+            ] {
+                let s = wrap_section(vec![obj]);
+                let s_ref: Vec<_> = s.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+                let o = build_hwp(&di_ref, &s_ref, b"\x89PNG\r\n\x1a\n123");
+                assert!(
+                    !check_with_preview_refresh(&o, &empty_cfb).is_empty(),
+                    "{label} must fail"
+                );
+            }
         }
         // 18. BinData stream bytes mutated
         {
@@ -1553,5 +1638,103 @@ mod tests {
             dup[0].2[36..40].copy_from_slice(&101u32.to_le_bytes());
             assert_refused("duplicate non-zero instance_id", pic_orig.clone(), dup);
         }
+    }
+
+    #[test]
+    fn supported_hwp_gso_deletion_passes_only_for_proven_objects() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let pic1 = vec![
+            (
+                71,
+                1,
+                ctrl_header(101, 0x000a_0311, 0, 0, 4000, 3000, "p1", b"\xaa"),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 4000, 3000], b"\x01")),
+        ];
+        let pic2 = vec![
+            (
+                71,
+                1,
+                ctrl_header(102, 0x000a_0311, 0, 0, 2000, 1500, "p2", b"\xbb"),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(b"cip$", 2000, 1500, 2000, 1500, 0, 0),
+            ),
+            (85, 3, picture_leaf(1, [0, 0, 2000, 1500], b"\x02")),
+        ];
+        let rect_tb = vec![
+            (
+                71,
+                1,
+                ctrl_header(202, 0x000a_0000, 0, 0, 8000, 4000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, Some(0x112233), 9001),
+            ),
+            (72, 3, vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            (66, 4, vec![0; 22]),
+            (79, 3, rect_leaf(0, 8000, 4000)),
+        ];
+        let orig_sec = wrap_section(vec![pic1.clone(), pic2.clone(), rect_tb.clone()]);
+        let orig_ref: Vec<_> = orig_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let orig_cfb = build_hwp(&di_ref, &orig_ref, b"\x89PNG\r\n\x1a\n123");
+
+        // Deleting pic1 preserves shared BinData, pic2, and rect_tb.
+        let del_pic1_sec = wrap_section(vec![pic2.clone(), rect_tb.clone()]);
+        let del_pic1_ref: Vec<_> = del_pic1_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let del_pic1_cfb = build_hwp(&di_ref, &del_pic1_ref, b"\x89PNG\r\n\x1a\n123");
+        assert_eq!(check_with_preview_refresh(&orig_cfb, &del_pic1_cfb), vec![]);
+
+        // Deleting rect_tb passes while pic1 and pic2 remain intact.
+        let del_rect_sec = wrap_section(vec![pic1.clone(), pic2.clone()]);
+        let del_rect_ref: Vec<_> = del_rect_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let del_rect_cfb = build_hwp(&di_ref, &del_rect_ref, b"\x89PNG\r\n\x1a\n123");
+        assert_eq!(check_with_preview_refresh(&orig_cfb, &del_rect_cfb), vec![]);
+
+        // Deleting pic1 AND mutating BinData is still rejected.
+        let bad_bin = build_hwp(&di_ref, &del_pic1_ref, b"\x89PNG\r\n\x1a\nBAD");
+        assert!(
+            check_with_preview_refresh(&orig_cfb, &bad_bin)
+                .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.png"))
+        );
+
+        // Deleting a TextBox shape that contains a nested control is rejected.
+        let mut nested_tb = rect_tb;
+        nested_tb.insert(
+            4,
+            (71, 5, b"umf%\x00\x00\x00\x00\x08\x00\x00\x00".to_vec()),
+        );
+        let nested_sec = wrap_section(vec![pic1.clone(), nested_tb]);
+        let nested_ref: Vec<_> = nested_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let nested_orig = build_hwp(&di_ref, &nested_ref, b"\x89PNG\r\n\x1a\n123");
+        let only_pic1_sec = wrap_section(vec![pic1]);
+        let only_pic1_ref: Vec<_> = only_pic1_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
+        let only_pic1_cfb = build_hwp(&di_ref, &only_pic1_ref, b"\x89PNG\r\n\x1a\n123");
+        assert!(!check_with_preview_refresh(&nested_orig, &only_pic1_cfb).is_empty());
     }
 }

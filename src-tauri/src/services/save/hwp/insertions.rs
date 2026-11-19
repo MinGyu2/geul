@@ -1131,84 +1131,65 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             old.paragraphs <= new.paragraphs && old.breaks == new.breaks,
             name,
         )?;
-        // Restructured original tables (candidates only; proven in the object loop below) keep their place in
-        // the token stream under a new anchor digest.
+        // Align and validate objects first so only independently proven restructured or deleted
+        // objects may satisfy the original token sequence below.
         let mut restructured: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut deleted_gso: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
         let mut cursor = 0;
-        for object in &new.objects {
-            let Some(o) = old.objects.get(cursor) else {
-                break;
-            };
-            if o == object {
-                cursor += 1;
-            } else if restructure_candidate(o, object, &bc, &ac)
-                || evolved_candidate(o, object)
-                || super::gso::evolved_candidate(o, object, &ac)
-            {
-                restructured.push((object_digest(o), object_digest(object)));
+        for (ni, object) in new.objects.iter().enumerate() {
+            let mut matched = false;
+            while let Some(o) = old.objects.get(cursor) {
+                if o == object {
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                let exact_later = old.objects[cursor + 1..]
+                    .iter()
+                    .any(|later| later == object);
+                if !exact_later && restructure_candidate(o, object, &bc, &ac) {
+                    restructured_table(o, object, &bc, &ac, &mut used)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                if !exact_later && evolved_candidate(o, object) {
+                    evolved_table(
+                        o,
+                        object,
+                        &bc,
+                        &ac,
+                        &mut used,
+                        &mut table_ids,
+                        &mut table_total,
+                    )?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                if !exact_later && super::gso::evolved_candidate(o, object, &ac) {
+                    super::gso::prove_evolved_gso(o, object, &ac)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                let survives_later = new.objects[ni + 1..].iter().any(|later| {
+                    o == later
+                        || restructure_candidate(o, later, &bc, &ac)
+                        || evolved_candidate(o, later)
+                        || super::gso::evolved_candidate(o, later, &ac)
+                });
+                if survives_later {
+                    break;
+                }
+                preserved(super::gso::deletable_gso(o, &ac), name)?;
+                *deleted_gso.entry(object_digest(o)).or_default() += 1;
                 cursor += 1;
             }
-        }
-        // Insertion/splitting may add text; it must not delete/reformat original characters. The anchor
-        // of a restructured table is preserved as the anchor of its (proven) successor.
-        let mut tokens = new.tokens.iter();
-        for token in &old.tokens {
-            preserved(
-                tokens.any(|t| {
-                    t.preserves(token)
-                        || (t.unit == 0
-                            && token.unit == 0
-                            && restructured
-                                .iter()
-                                .any(|(a, b)| *token.para == a[..] && *t.para == b[..]))
-                }),
-                name,
-            )?;
-        }
-        let mut cursor = 0;
-        for object in &new.objects {
-            if old.objects.get(cursor).is_some_and(|o| o == object) {
-                cursor += 1;
-                continue;
-            }
-            // The same table control (non-zero instance id) at the same position with changed rows,
-            // columns or merges: it must prove the restructure contract, never the new-table schema.
-            if let Some(o) = old
-                .objects
-                .get(cursor)
-                .filter(|o| restructure_candidate(o, object, &bc, &ac))
-            {
-                restructured_table(o, object, &bc, &ac, &mut used)?;
-                cursor += 1;
-                continue;
-            }
-            // Stage 2: the same original table whose cells gained proven new nested tables,
-            // or whose nested tables were themselves restructured/evolved (recursively).
-            if let Some(o) = old
-                .objects
-                .get(cursor)
-                .filter(|o| evolved_candidate(o, object))
-            {
-                evolved_table(
-                    o,
-                    object,
-                    &bc,
-                    &ac,
-                    &mut used,
-                    &mut table_ids,
-                    &mut table_total,
-                )?;
-                cursor += 1;
-                continue;
-            }
-            // Stage 3: bounded field-level evolution of a surviving GSO picture or shape.
-            if let Some(o) = old
-                .objects
-                .get(cursor)
-                .filter(|o| super::gso::evolved_candidate(o, object, &ac))
-            {
-                super::gso::prove_evolved_gso(o, object, &ac)?;
-                cursor += 1;
+            if matched {
                 continue;
             }
             if object[0].2.starts_with(b" lbt") {
@@ -1220,7 +1201,18 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 return Err(finding(FindingCode::RecordsChanged, name));
             }
         }
+        while let Some(o) = old.objects.get(cursor) {
+            preserved(super::gso::deletable_gso(o, &ac), name)?;
+            *deleted_gso.entry(object_digest(o)).or_default() += 1;
+            cursor += 1;
+        }
         preserved(cursor == old.objects.len(), name)?;
+        // Insertion/splitting/deletion may add text or remove proven deleted GSOs; it must not
+        // delete/reformat original characters or surviving unmodelled objects.
+        preserved(
+            tokens_preserved(&old.tokens, &new.tokens, &restructured, &mut deleted_gso),
+            name,
+        )?;
         used.paras.extend(new.para_ids);
         old.objects.clear();
     }
@@ -1627,6 +1619,89 @@ impl Token {
             && self.style == old.style
             && old.char_ids.iter().all(|id| self.char_ids.contains(id))
     }
+}
+
+fn token_matches(new: &Token, old: &Token, restructured: &[(Vec<u8>, Vec<u8>)]) -> bool {
+    new.preserves(old)
+        || (new.unit == 0
+            && old.unit == 0
+            && restructured
+                .iter()
+                .any(|(a, b)| *old.para == a[..] && *new.para == b[..]))
+}
+
+fn tokens_preserved(
+    old_tokens: &[Token],
+    new_tokens: &[Token],
+    restructured: &[(Vec<u8>, Vec<u8>)],
+    deleted_gso: &mut BTreeMap<Vec<u8>, usize>,
+) -> bool {
+    if deleted_gso.is_empty() {
+        let mut tokens = new_tokens.iter();
+        return old_tokens
+            .iter()
+            .all(|token| tokens.any(|t| token_matches(t, token, restructured)));
+    }
+    let mut budget = 2048usize;
+    match_tokens_with_deletions(old_tokens, new_tokens, restructured, deleted_gso, &mut budget)
+}
+
+fn match_tokens_with_deletions(
+    mut old_tokens: &[Token],
+    mut new_tokens: &[Token],
+    restructured: &[(Vec<u8>, Vec<u8>)],
+    deleted_gso: &mut BTreeMap<Vec<u8>, usize>,
+    budget: &mut usize,
+) -> bool {
+    while let Some((token, rest_old)) = old_tokens.split_first() {
+        let is_deleted_obj = token.unit == 0
+            && token.style == 0
+            && token.char_ids.as_ref() == [0]
+            && token.para.len() == 32
+            && deleted_gso
+                .get(token.para.as_ref())
+                .is_some_and(|count| *count > 0);
+        let found = new_tokens
+            .iter()
+            .position(|t| token_matches(t, token, restructured));
+        if !is_deleted_obj {
+            let Some(pos) = found else {
+                return false;
+            };
+            old_tokens = rest_old;
+            new_tokens = &new_tokens[pos + 1..];
+            continue;
+        }
+        if let Some(pos) = found {
+            if *budget == 0 {
+                return false;
+            }
+            *budget -= 1;
+            if match_tokens_with_deletions(
+                rest_old,
+                &new_tokens[pos + 1..],
+                restructured,
+                deleted_gso,
+                budget,
+            ) {
+                return true;
+            }
+        }
+        let count = deleted_gso.get_mut(token.para.as_ref()).unwrap();
+        *count -= 1;
+        let ok = match_tokens_with_deletions(
+            rest_old,
+            new_tokens,
+            restructured,
+            deleted_gso,
+            budget,
+        );
+        if !ok {
+            *deleted_gso.get_mut(token.para.as_ref()).unwrap() += 1;
+        }
+        return ok;
+    }
+    deleted_gso.values().all(|&count| count == 0)
 }
 struct Section<'a> {
     tokens: Vec<Token>,

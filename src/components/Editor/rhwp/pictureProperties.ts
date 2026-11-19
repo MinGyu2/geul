@@ -18,6 +18,8 @@ export interface RhwpPictureInspection {
   movable?: { horzOffset: number; vertOffset: number };
   /** No caption, external link or size protection: format edits change only the requested fields. */
   plain: boolean;
+  /** No caption or external link: top-level body picture may be deleted safely. */
+  deletable: boolean;
   /** Original picture size (HWPUNIT) that crop amounts are measured against. */
   original?: { width: number; height: number };
   /** RHWP crop amounts (HWPUNIT) [left, top, right, bottom]. */
@@ -55,6 +57,7 @@ export function inspectRhwpPicture(
         ...(crop ? { crop } : {}),
       },
       plain: values.hasCaption === false && values.sizeProtect === false && !("externalPath" in values),
+      deletable: values.hasCaption === false && !("externalPath" in values),
       ...(original ? { original } : {}),
       ...(cropAmounts ? { cropAmounts } : {}),
       ...(!treatAsChar && values.horzAlign === "Left" && values.vertAlign === "Top"

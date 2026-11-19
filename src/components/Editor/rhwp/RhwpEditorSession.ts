@@ -1692,7 +1692,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canPic = Boolean(inspected && this.history && canEditGso && picUnlocked);
           const canResize = canPic && inspected!.simpleInline && !!this.doc.setPictureProperties;
           const canMove = canPic && !!inspected!.movable && !!this.doc.setPictureProperties;
-          const canDelete = format === "hwpx" && canPic && !!this.doc.deletePictureControl;
+          const canDelete = canPic && !!this.doc.deletePictureControl && (format === "hwpx" || inspected!.deletable);
           const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
           const operations: MutatingObjectOperation[] = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
             ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
@@ -1705,7 +1705,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
-              ...(format === "hwpx" && this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
+              ...(this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate");
             // Z-order: the RHWP HWPX export does not reopen with the changed order (save reopen comparison fails).
           }
@@ -4224,7 +4224,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     };
     let apply: () => void;
     if (edit.kind === "delete") {
-      if (format !== "hwpx" || !doc.deletePictureControl) return false;
+      if (!doc.deletePictureControl || (format === "hwp" && !before.deletable)) return false;
       apply = () => {
         const result = JSON.parse(doc.deletePictureControl!(...address)) as { ok?: boolean };
         if (result.ok !== true) throw new Error("picture deletion refused");
@@ -4302,7 +4302,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (format !== "hwpx" || !doc.deleteShapeControl) return false;
+        if (!doc.deleteShapeControl) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("shape deletion refused");

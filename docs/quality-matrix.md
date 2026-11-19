@@ -195,7 +195,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
 | 그림 크기 조정 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 단순 본문 인라인 그림 40.5×20.25→54×27pt, 네이티브 속성 입력·저장·앱 재시작 후 재열기 |
 | 그림 이동 | SUPPORTED_AND_VERIFIED | PARTIAL | IMPLEMENTED_NOT_ACCEPTED | HWP 떠 있는 본문 그림 이동의 Release WASM/T009 통과. 네이티브 이동 NOT RUN |
-| GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | BLOCKED | HWP 원본 객체 생존 필수. 네이티브 Delete/Backspace 거부 뒤 revision·본문·원본 바이트 유지 |
+| GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | B1: HWP 최상위 비잠금·비캡션 그림/기본 도형 삭제(외부 연결·중첩·CTRL_DATA·그룹 제외), 공유 BinData/DocInfo 보존, Undo/Redo, Release WASM `stage3-object-edit` + `gso-deleted.hwp` T009 + `services::save` 288 PASS (네이티브 GUI 삭제는 NOT RUN) |
 | 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | IMPLEMENTED_NOT_ACCEPTED | HWP 포인터 선택, 속성 창 크기 조정, 키보드 이동 네이티브 PASS. HWP 포인터 끌기 NOT RUN |
 | 사각형·타원·선 삽입 (P3 갱신) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | UNSUPPORTED | DOCX 문서 끝 본문, 세 도형과 패키지 재열기 |
 | 글상자 삽입·내부 텍스트 (P3 갱신) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | UNSUPPORTED | DOCX 문서 끝 본문, 글상자 story·IBus 한글 입력·저장 재열기 |
@@ -284,3 +284,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 - Stage 3 전체 **PARTIALLY COMPLETED**. HWP GSO 삭제, 도형·글상자 삽입, 복합 객체 편집, 교차 형식 구조 클립보드는 수용 범위 밖이다. 한컴 및 다른 플랫폼 상호운용 NOT RUN.
 
 **HWP 사각형 꼭짓점 후속.** 테두리 색만 바꿀 때 기존 꼭짓점이 덮어써져 이전 T009를 통과하는 반례를 재현했다. HWP setter와 T009를 수정해 비정규 사각형의 서식·이동·회전/반전 시 꼭짓점을 보존하고 크기 변경 게시를 거부한다. 정규 사각형 너비·높이·동시 변경은 Release WASM/전체 T009 통과. `services::save` 287 PASS, Release WASM Stage 3 9 PASS. Linux Release는 비정규 사각형 이동·회전/반전과 꼭짓점 보존 저장·독립 재열기, 크기 변경 저장 거부와 게시본 불변을 확인했다. Task 5 수용 유지. [재현 및 저장 규칙](architecture/save-preservation.md#hwp-사각형-꼭짓점-보존-후속-2026-11-19)
+
+**B1 HWP GSO 삭제 해결 (2026-11-19).** `hwp-source-preservation.patch`에 인라인 컨트롤 슬롯 삭제 시 `char_shapes`·`range_tags`·`markpen_marks`·`line_segs.text_start`·`field_ranges.inner_slot_count` 동기화(`Paragraph::delete_inline_control_slot`)와 남은 컨트롤/빈 문단 삭제 후 `stored_text_partition_dirty` 해제(`common.rs`)를 추가하고, `gso::deletable_gso` 및 `insertions` 토큰 정렬 증명으로 비잠금·비캡션·비그룹·불투명 레코드 없는 최상위 HWP 그림/기본 도형 삭제만 좁게 허용했다(잠금·캡션·그룹·`CTRL_DATA`·중첩 글상자 거부는 유지). Release WASM `38519a7e…`에서 `stage3-{object-edit,picture-size,shapes}` 9/9 PASS, `pictureProperties.test.ts` 13/13 PASS, 실제 WASM 생성 `gso-deleted.hwp` T009 `release_hwp_gso_bytes_pass_only_for_proven_edits` PASS, `services::save` 288 PASS / 0 FAIL / 32 ignored, `typecheck`·`eslint` PASS.

@@ -278,7 +278,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it("edits HWP pictures and shapes after SAFE preflight with reopen equality and delete refusal", async () => {
+  it("edits and deletes HWP pictures and shapes after SAFE preflight with reopen equality and undo/redo", async () => {
     const { editor, doc, bytes, pick, edit, confirm } = await setup("hwp", true, true);
     try {
       const baseline = hwpReopenModel(doc).structure;
@@ -298,20 +298,18 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
         .filter((control: { type: string }) => control.type === "shape") as Frame[];
 
-      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "crop", "wrap", "altText"]);
-      expect(edit({ kind: "delete" })).toBe(false);
+      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText"]);
       expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
       await confirm(1);
 
-      expect(pick(inlinePic!).operations).toEqual(["deselect", "resize", "crop", "wrap", "altText"]);
+      expect(pick(inlinePic!).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
       expect(edit({ kind: "altText", text: "HWP 그림 설명" })).toBe(true);
       await confirm(2);
       pick(byWidth(images(doc))[0]!);
       expect(edit({ kind: "bounds", width: 50, height: 25 })).toBe(true);
       await confirm(3);
 
-      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "wrap", "fill", "outline", "rotate"]);
-      expect(edit({ kind: "delete" })).toBe(false);
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(4);
       pick(shapes()[0]!);
@@ -366,6 +364,49 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(editor.redo()).toBe(true);
       await confirm(13);
       expect(JSON.parse(doc.getPictureProperties!(0, 0, 2))).toMatchObject({ treatAsChar: false, textWrap: "TopAndBottom" });
+
+      // Delete floating picture (leaving inline picture sharing the same BinData) and delete shape.
+      pick(byWidth(images(doc))[1]!);
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm(14);
+      expect(images(doc)).toHaveLength(1);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm(15);
+      expect(shapes()).toHaveLength(0);
+
+      const deletedExport = doc.exportHwpWithReport();
+      try {
+        const delReport = deletedExport.contentLoss();
+        const delBytes = deletedExport.takeBytes();
+        expectReopenEvidence(doc, delBytes, delReport);
+        const reopenedDel = new engine.HwpDocument(delBytes) as RhwpDocument;
+        try {
+          expect(images(reopenedDel)).toHaveLength(1);
+          expect(JSON.parse(reopenedDel.getPageControlLayout!(0)).controls.filter((c: { type: string }) => c.type === "shape")).toHaveLength(0);
+          expect(JSON.parse(reopenedDel.getPictureProperties!(0, 0, 2))).toMatchObject({
+            width: 5000, height: 2500, description: "HWP 그림 설명",
+          });
+        } finally { reopenedDel.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "gso-deleted.hwp"), delBytes);
+          writeFileSync(resolve(out, "gso-deleted-report.json"), delReport);
+        }
+      } finally { deletedExport.free(); }
+
+      // Undo restores deleted shape and picture; Redo restores the deletions.
+      expect(editor.undo()).toBe(true);
+      await confirm(16);
+      expect(shapes()).toHaveLength(1);
+      expect(editor.undo()).toBe(true);
+      await confirm(17);
+      expect(images(doc)).toHaveLength(2);
+      expect(editor.redo()).toBe(true);
+      await confirm(18);
+      expect(images(doc)).toHaveLength(1);
+      expect(editor.redo()).toBe(true);
+      await confirm(19);
+      expect(shapes()).toHaveLength(0);
     } finally { editor.dispose(); }
   });
 });

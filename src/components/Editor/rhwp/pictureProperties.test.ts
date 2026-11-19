@@ -46,6 +46,12 @@ describe("RHWP picture property inspection", () => {
     expect(read({ ...raw, cropRight: 1 })).toBe(false);
     expect(read({ ...raw, externalPath: "picture.png" })).toBe(false);
     expect(read({ ...raw, hasCaption: true })).toBe(false);
+    const deletable = (values: Record<string, unknown>) =>
+      inspectRhwpPicture({ getPictureProperties: () => JSON.stringify(values) }, [0, 0, 2])?.deletable;
+    expect(deletable(raw)).toBe(true);
+    expect(deletable({ ...raw, sizeProtect: true })).toBe(true);
+    expect(deletable({ ...raw, hasCaption: true })).toBe(false);
+    expect(deletable({ ...raw, externalPath: "picture.png" })).toBe(false);
   });
 
   it.each([

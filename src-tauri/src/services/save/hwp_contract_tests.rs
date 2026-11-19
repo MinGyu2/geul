@@ -1228,7 +1228,9 @@ fn hwp_existing_and_new_resources_remain_independently_checked() {
             &format!("{kind} retarget old picture"),
             &original,
             &replaced,
-            FindingCode::RecordsChanged,
+            // Deleting the old id=0 picture is permitted (B1), so retargeting it to bin 2 collides
+            // with the new picture on `used_pictures` and fails as ReferenceInvalid.
+            FindingCode::ReferenceInvalid,
             "BodyText/Section0",
         );
         let modified = edit_records(&output, "/DocInfo", |rs| {
