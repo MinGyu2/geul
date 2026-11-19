@@ -194,29 +194,29 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 선택, 전환, 해제 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release에서 클릭·키 입력 거부·텍스트 복귀·닫기·재열기, 디스크 바이트 일치 |
 | 그림 치수·배치·설명 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | DOCX 그림 모델, RHWP가 소유한 본문 그림 속성 |
 | 그림 크기 조정 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 단순 본문 인라인 그림 40.5×20.25→54×27pt, 네이티브 속성 입력·저장·앱 재시작 후 재열기 |
-| 그림 이동 | SUPPORTED_AND_VERIFIED | PARTIAL | IMPLEMENTED_NOT_ACCEPTED | HWP 떠 있는 본문 그림 이동의 Release WASM/T009 통과. 네이티브 이동 NOT RUN |
-| GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | B1: HWP 최상위 비잠금·비캡션 그림/기본 도형 삭제(외부 연결·중첩·CTRL_DATA·그룹 제외), 공유 BinData/DocInfo 보존, Undo/Redo, Release WASM `stage3-object-edit` + `gso-deleted.hwp` T009 + `services::save` 288 PASS (네이티브 GUI 삭제는 NOT RUN) |
-| 선택 핸들·드래그 (P1) | SUPPORTED (jsdom) | SUPPORTED (jsdom) | IMPLEMENTED_NOT_ACCEPTED | HWP 포인터 선택, 속성 창 크기 조정, 키보드 이동 네이티브 PASS. HWP 포인터 끌기 NOT RUN |
+| 그림 이동 | SUPPORTED_AND_VERIFIED | PARTIAL | SUPPORTED_AND_VERIFIED (범위 제한) | HWP 떠 있는 본문 그림의 Linux X11 끌기, 안전 저장 및 독립 재열기 PASS |
+| GSO 삭제 | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | B1: HWP 최상위 비잠금·비캡션 그림/기본 도형 삭제(외부 연결·중첩·CTRL_DATA·그룹 제외), 공유 BinData/DocInfo 보존, Undo/Redo, Release WASM `stage3-object-edit` + `gso-deleted.hwp` T009 + `services::save` 288 PASS 및 P6 Linux X11 그림 Delete·Undo·재삭제·안전 저장 PASS |
+| 선택 핸들·드래그 (P1) | SUPPORTED_AND_VERIFIED | PARTIAL | PARTIAL | DOCX 도형 이동·크기 핸들, HWP 포인터 선택·떠 있는 그림 끌기·속성 창 크기 조정·도형 키보드 이동 Linux X11 PASS. HWP 그림 크기 핸들 끌기는 NOT RUN |
 | 사각형·타원·선 삽입 (P1) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (범위 제한) | HWP: 최상위 본문 Section0의 접힌 커서에서 기본 사각형·타원·직선 삽입. SAFE 사전 검사, 소유·기본 레코드 T009 증명, Undo/Redo 및 독립 재열기; 기본 실선 굵기의 후속 변경을 같은 저장에 허용하며, 그 외에는 별도 보존 증명이 필요 |
 | 글상자 삽입 (P1) | SUPPORTED_AND_VERIFIED | PARTIAL (삽입·외곽만) | SUPPORTED_AND_VERIFIED (빈 글상자, 범위 제한) | HWP: 최상위 본문 Section0의 접힌 커서에서 소유된 빈 문단을 가진 기본 글상자 삽입; SAFE 사전 검사, T009, Undo/Redo 및 독립 재열기 |
 | 글상자 내부 텍스트 편집 (P2) | SUPPORTED_AND_VERIFIED | PARTIAL (최상위 평문 문단) | PARTIAL (SAFE 원본 Section0의 최상위 평문 문단) | HWPX는 비잠금 글상자의 커서·선택·한글 조합·문단 정렬·Undo/Redo·독립 재열기를 검증했다. HWP는 텍스트·문단 정렬과 삽입 후 같은 저장 및 기존 글상자 편집의 T009 증명을 확인했다. HWP/HWPX 모두 기존 평문 글상자의 각 문단을 편집할 수 있다(1–64개). 문단 분할·병합과 제어 개체를 포함한 글상자, HWP 내부 편집과 외곽 편집을 같은 저장에 적용하는 흐름은 범위 밖이다. DOCX story·IBus·재열기 근거를 재사용했다. |
 | 차트 조회 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | Linux X11 Release 조회·독립 재열기, 입력 바이트 보존 |
 | SmartArt 조회 | READ_ONLY_PRESERVED | UNSUPPORTED | UNSUPPORTED | DOCX의 모델을 읽을 수 있는 경우, 레이아웃·항목 |
 | 차트 편집 (P4) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | DOCX: WordCraft 모델이 있는 차트의 제목·종류·항목·계열 값(`chart.title`/`chart.type`/`chart.editData`), T009 재생성 부분 증명. HWPX(B6): `hwp-source-preservation.patch` 내부 OLE(`BinData/*.ole`, `isEmbeded="0"`) manifest·ZIP 보존 + `RhwpEditorSession` `chartData` 편집·Undo/Redo + `hwpx_charts` T009(`Chart/chartN.xml`·중첩 CFB `OOXMLChartContents` 의미 일치·`<hp:switch>`/`content.hpf` 고정) PASS. HWP(B7): `hwp/ole.rs`가 DocInfo 선언과 모든 지원 본문 구역의 OLE·그림·이미지 채우기 참조를 대조해 원본과 출력 모두에서 단독 소유가 확인된 최상위 비잠금 차트만 허용한다. 잠금·지원되지 않는 개체와 공유되거나 참조 소유권이 불명확한 BinData 변경은 거부한다. 기존 중첩 CFB·차트 내용 T009 증명과 `hwpReopenModel`·`RhwpEditorSession`의 HWP `chartData` 편집·Undo/Redo 검증을 유지한다. |
-| 그림 캡션 내부 (P5) | 기존 범위 | 미지원 | PARTIAL | SAFE Section0의 비잠금 그림 한 문단 텍스트·정렬. 자동 번호·그림·본문 보존, T009·독립 재열기 PASS |
+| 그림 캡션 내부 (P5) | 기존 범위 | 미지원 | PARTIAL | SAFE Section0의 비잠금 그림 한 문단 텍스트·정렬. 자동 번호·그림·본문 보존, T009·독립 재열기·Linux X11 클릭과 일반 문자 입력 PASS |
 | SmartArt 편집 (P4) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX: 항목·단계·레이아웃(`smartArt.items`/`smartArt.layout`). HWP5/OWPML 정의와 RHWP 모델에서 편집 가능한 SmartArt 대응을 확인하지 못해 비활성 상태 |
 | 외부 프로그램 차트·다이어그램 | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | READ_ONLY_PRESERVED | WordCraft 모델이 없으면 원본 markup·부분 그대로, 편집 연산 없음 |
 | 구조 도형 클립보드 | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | 현재 세션의 DOCX 기본 인라인 도형, 네이티브 사각형과 교차 형식 거부 확인 |
 | 그림·도형·글상자·그룹 구조 클립보드 (P5) | SUPPORTED_AND_VERIFIED (앱 내: 그림·도형·글상자·단일 평탄 그룹+자식 도형/그림/글상자; 중첩 그룹·차트/OLE 자식은 명시 거부) | UNSUPPORTED | UNSUPPORTED | DOCX v2 페이로드: WordCraft 조각 + 미디어 바이트·SHA-256 + `text_boxes()` story 전수 검증/재매핑, 대상 소유 미디어 키·글상자 story, 한 번의 Undo/Redo, T009 사전 판정. Rust `stage3_rich_object_clipboard_copies_and_pastes_pictures_shapes_and_text_boxes` 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance`(같은/다른 DOCX, 자식 도형/그림/글상자, Undo/Redo, 독립 재열기, 11건 음성 거부 무변경) PASS. HWPX/HWP 원본 복사·교차 형식 붙여넣기는 거부 |
 | 차트·SmartArt 구조 클립보드 | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | 붙여넣기가 새 차트/다이어그램 부분을 더하는데 그 T009 증명이 없어 거부 |
-| 시스템 클립보드 구조 MIME | NOT RUN | NOT RUN | NOT RUN | `systemClipboard`에 구조 MIME 쓰기 경로가 없음: 평문 표지 + 앱 내 기억(표지가 바뀌면 폐기). 다른 앱 상호 운용 NOT RUN |
-| 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 자르기 Release WASM 및 T009. 네이티브 자르기·초기화 NOT RUN |
-| 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 인라인→위/아래 배치 Release WASM 및 T009. 네이티브 배치 NOT RUN |
+| 시스템 클립보드 구조 MIME | Linux X11 (geul MIME) | Linux X11 (geul MIME) | Linux X11 (geul MIME) | 별도 GTK 프로세스와 두 geul MIME 양방향 전송 및 평문 대체 읽기 PASS. HWP/HWPX 개체 구조 복사는 미구현이며, 외부 오피스 형식 상호 운용은 NOT RUN |
+| 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (범위 제한) | HWP Release WASM·T009 및 Linux X11 속성 창 자르기·초기화 PASS |
+| 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (범위 제한) | HWP 인라인→위/아래 배치 Release WASM·T009 및 Linux X11 속성 창 이벤트·안전 저장 PASS |
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 실제 속성 창에서 입력한 설명이 게시본에 남고 재열기 UI에서 일치 |
 | 위치 프리셋 (P2/P3) | SUPPORTED_AND_VERIFIED | PARTIAL | PARTIAL | 여백 기준 9곳. RHWP는 비잠금 본문의 회전·반전·캡션·외부 링크 없는 어울림 그림으로 한정. 실제 렌더 좌표·T009·독립 재열기 PASS, 네이티브 속성 창 NOT RUN |
-| 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (검증 범위) | PARTIAL | HWPX z-order는 B4 검증 범위에서 지원된다. HWP는 같은 배치 방식의 기존 비잠금 기본 도형을 한 번의 저장에서 한 개까지 맨 앞·뒤로 보낼 수 있다. HWP/HWPX에서 캡션·글상자 하위 구조가 없는 비잠금 기본 도형의 실선 굵기 0.01–72pt를 지원한다. HWP는 기본 도형 삽입 뒤 첫 저장 전에 굵기를 바꾸는 흐름도 지원한다. HWP 사각형 회전·좌우 반전은 검증됐으며, 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009 검증 범위다. 네이티브 확인은 실행하지 않았다. |
+| 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (검증 범위) | PARTIAL | HWPX z-order는 B4 검증 범위에서 지원된다. HWP는 같은 배치 방식의 기존 비잠금 기본 도형을 한 번의 저장에서 한 개까지 맨 앞·뒤로 보낼 수 있다. HWP/HWPX에서 캡션·글상자 하위 구조가 없는 비잠금 기본 도형의 실선 굵기 0.01–72pt를 지원한다. HWP는 기본 도형 삽입 뒤 첫 저장 전에 굵기를 바꾸는 흐름도 지원한다. HWP 사각형 회전·좌우/상하 반전, 단색/없음 채우기와 선 색은 Linux X11에서 확인했다. 도형 배치는 WASM/T009 검증 범위다. |
 | 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동은 검증됐다. 정규 사각형·타원·선의 크기 변경은 엔진·T009 검증을 통과했다. B2의 비정규 사각형 크기 변경은 원본 기하를 기준으로 변경 축 좌표를 비례 변환하고 미변경 축을 보존한다. 지원 범위에서 직렬화·T009 검증을 통과했으며 퇴화 또는 범위 초과 결과는 거부한다. |
-| 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 내용 변조·bit 29 전환·캡션 객체 삭제는 거부 유지 |
+| 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 플래그 전환과 캡션 객체 삭제는 거부한다. 캡션 내부 편집은 위 P5의 별도 증명에 따른다 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
 | 중첩 개체 (P2) | PARTIAL | PARTIAL | PARTIAL | DOCX 표 셀 그림은 크기·자르기·설명·삭제를 지원한다. HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. HWP도 SAFE 원본 Section0의 한 단계 본문 표에서 지원 범위에 해당하는 인라인 그림 크기를 변경할 수 있다. DOCX 및 RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
@@ -335,3 +335,21 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P4 남은 경계.** 기존 DOCX 동일 문서·다른 DOCX 간 자원 재매핑 및 다중 셀 구조 붙여넣기의 문서·이력·T009 근거는 REUSED PASS다. 전송 시험은 외부 오피스 형식 상호운용을 포함하지 않는다. RHWP `copyControl`·`pasteControl`은 내부 문서 클립보드를 사용하므로 이 경로의 도형·글상자·그림과 새 인스턴스 및 BinData에 대한 문서 보존 증명이 남아 있다. WordCraft의 리더는 중첩 그룹을 평탄화하고 라이터는 중첩 그룹 자식을 직렬화하지 않으므로 그대로 거부한다. 차트·SmartArt의 구조 복사에 필요한 새 패키지 부분 증명, RHWP 문서 간 리소스 재매핑, 교차 형식 개체 변환은 미구현이다.
 
 **P5 HWP 그림 캡션 CURRENT PASS.** Release `f2c96060…`의 `stage3-object-edit.wasm.test.ts -t 'edits an owned HWP picture caption|edits outer properties of caption-bearing'` 2 PASS. 실제 캡션 위치 적중, 텍스트·정렬, 실행 취소/다시 실행 시 캡션 커서 복구, 잠금·삭제 거부와 독립 재열기를 확인했다. 개발 중 이력 복원에서 캡션을 셀로 분류해 커서가 본문으로 돌아가는 결함을 교정했다. HWP T009 `release_hwp_picture_caption_preserves_owner_and_number_slot -- --ignored` 1 PASS. 번호 슬롯·번호 레코드·목록·그림 기하·자료 참조·잠금 반례를 거부했다. typecheck PASS. `target/stage3-caption-story/`에 파일과 로그가 있다. 네이티브 캡션 편집은 NOT RUN이다. 다문단 분할·병합과 도형 캡션 내부 편집, HWP/HWPX SmartArt 편집은 활성화하지 않았다.
+
+### P6 증분 통합 수용 (2026-11-19)
+
+Linux X11 Release 앱 SHA-256 `f6cffacdb0641ee642e8fdb0802ac5b4fbe6c920e8a00be5c4281b35ad4c0520`, 소스 `1ddbdd5`, RHWP Release `f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9`. `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle` PASS. 아래 기록은 `target/stage3-p6/`의 `accept.py`, 결과 JSON, 출력 문서 및 격리 세션 정리 기록에 있다.
+
+| 범위 | 결과 | 확인한 동작 |
+|---|---|---|
+| HWP 그림 | CURRENT PASS | `native2/result.json`. 떠 있는 그림을 포인터로 (380.1, 172.3)에서 (426.1, 205.3)으로 이동. 다른 그림을 12% 자른 뒤 초기화하고 인라인에서 위/아래 배치로 변경. 저장 후 독립 재열기에서 위치·배치·초기화 및 본문·이미지 스트림 보존 확인. |
+| HWP GSO 삭제 | CURRENT PASS | `native1/result.json`, `deletion-oracle.json`. 비잠금 그림 Delete→Undo→Delete와 실제 저장. 본문, 나머지 개체 레코드, 두 이미지 스트림 바이트 보존. |
+| HWP 도형 서식 | CURRENT PASS | `native2/result.json`, `shape-oracle.json`. 사각형 단색 채우기·채우기 없음·Undo·선 색·상하 반전. 저장 후 채우기 `#996633`, 선 `#442277`, 상하 반전 및 기존 본문·그림 보존 확인. |
+| HWP 캡션 | CURRENT PASS | `native1/result.json`. 실제 캔버스 클릭과 키 입력으로 한 문단 캡션 편집. 안전 저장과 독립 재열기 뒤 캡션 문자열·그림·본문 확인. 캡션 정렬과 캡션 커서 Undo/Redo는 P5 Release WASM 근거 재사용. |
+| DOCX 차트·SmartArt | CURRENT PASS | `native2/result.json`. 차트 제목·막대 종류·값과 SmartArt 항목·단계·순환 배치 편집. 안전 저장, 패키지 XML 및 문서를 닫고 재열기한 속성 창 확인. |
+
+포인터와 키 입력에는 WebDriver/xdotool을 사용했다. 색상 입력과 두 번째 실행의 드롭다운은 WebView DOM 이벤트로 변경했다. 네이티브 색상 선택기와 드롭다운 탐색은 수용 범위 밖이다. 첫 실행의 선택 프레임·GTK 옵션 처리 오류를 교정한 뒤 영향받은 그림·도형·DOCX 세 흐름만 실행했다. 삭제 검사에서 비교한 화면 개체 인덱스는 삭제로 다시 매겨졌고, 도형 검사에서 색상 값은 BGR로 반환됐다. 두 판정은 기존 게시 결과의 레코드·RGB 값을 독립 확인해 바로잡았다. 두 격리 세션의 프로세스와 소유 임시 디렉터리 정리 PASS.
+
+DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 키보드 이동·좌우 반전, 보호된 삭제 거부, HWP 글상자 IBus와 Linux 구조 MIME 전송은 관련 기록의 REUSED PASS다. P6에서 Rust·Vitest·WASM 전체 묶음과 기존 네이티브 시나리오를 다시 실행하지 않았다.
+
+**Stage 3 전체 PARTIALLY COMPLETED.** P6의 위 수용 범위는 PASS다. P2의 더 깊은 개체 주소와 머리말·꼬리말, P3 그룹·곡선 기하와 다각형 꼭짓점, P4 RHWP 개체 구조 복사·중첩 DOCX 그룹·차트/SmartArt 구조·교차 형식 변환, P5 도형·다문단 캡션은 미구현이다. 잠금·크기 보호, 소유 불명/공유 OLE, 캡션·그룹·미확인 확장 삭제는 안전 거부를 유지한다. 첫 저장 전 HWP 삽입과 굵기의 결합, 그림 크기 핸들, RHWP 위치 프리셋 및 순위 조정의 해당 네이티브 확인은 NOT RUN이며 각 구현의 집중 저장·독립 재열기 근거는 위에 있다.
