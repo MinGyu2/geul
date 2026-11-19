@@ -1134,8 +1134,11 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
     let pictures = hwpx_pictures_appended(original, output);
     // Stage 1 F: embedded fonts (manifest font items + hh:font references); not composed with pictures.
     let fonts = if pictures.is_none() { super::hwpx_fonts::hwpx_fonts_embedded(original, output) } else { None };
+    let charts = super::hwpx_charts::hwpx_charts_edited(original, output).unwrap_or_default();
     let mut findings = compare(original, output, &|name| {
-        (hwpx_body(name) || ((pictures.is_some() || fonts.is_some()) && name == "Contents/content.hpf"))
+        (hwpx_body(name)
+            || ((pictures.is_some() || fonts.is_some()) && name == "Contents/content.hpf")
+            || charts.contains(name))
             || name == HWPX_HEADER
     });
     if let Some(names) = &pictures {
@@ -1195,7 +1198,7 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
             .map(|(name, (_, data))| (name, data))
             .collect()
     };
-    if body(original) != body(output) {
+    if body(original) != body(output) || !charts.is_empty() {
         for (name, (_, data)) in &original.parts {
             if !name.starts_with("Preview/") || output.get(name) != Some(data.as_slice()) {
                 continue;

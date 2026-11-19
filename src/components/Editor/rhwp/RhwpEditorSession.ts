@@ -329,7 +329,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; shapeAddress?: readonly [number, number, number] } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; shapeAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number] } | null = null;
   private objectEpoch = 0;
 
   get objectSelection(): ObjectSelection | null {
@@ -1658,8 +1658,36 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.moveTo(next, false);
   }
 
-  private readChart(address: readonly [number, number, number] | undefined) {
-    const doc = this.doc;
+  private chartsEqualOnReopen(doc: RhwpDocument, reopened: RhwpDocument, controlsJson: string): boolean {
+    try {
+      const parsed = JSON.parse(controlsJson) as { ctrlId?: string; list?: number; para?: number; controlIndex?: number; userDesc?: string }[];
+      const charts = parsed.filter(c => c.ctrlId === "gso" && c.list === 0 && (c.userDesc === "OLE" || c.userDesc === "차트")
+        && typeof c.para === "number" && typeof c.controlIndex === "number");
+      if (!charts.length) return true;
+      const sectionCount = doc.getSectionCount?.() ?? 1;
+      const ends: number[] = [];
+      let total = 0;
+      for (let s = 0; s < sectionCount; s++) {
+        total += doc.getParagraphCount(s);
+        ends.push(total);
+      }
+      for (const c of charts) {
+        const g = c.para!;
+        let s = 0;
+        while (s < ends.length && g >= ends[s]!) s += 1;
+        if (s >= ends.length) continue;
+        const p = g - (s === 0 ? 0 : ends[s - 1]!);
+        const before = this.readChartFrom(doc, [s, p, c.controlIndex!]);
+        const after = this.readChartFrom(reopened, [s, p, c.controlIndex!]);
+        if (before && JSON.stringify(before) !== JSON.stringify(after)) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private readChartFrom(doc: RhwpDocument | null, address: readonly [number, number, number] | undefined) {
     if (!doc?.getChartData || !address) return undefined;
     try {
       if (address[1] >= doc.getParagraphCount(address[0])) return undefined;
@@ -1669,6 +1697,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch {
       return undefined;
     }
+  }
+
+  private readChart(address: readonly [number, number, number] | undefined) {
+    return this.readChartFrom(this.doc, address);
   }
 
   /** 페이지 좌표(배율 1)를 클릭했다. extend면 선택을 넓힌다. */
@@ -1708,10 +1740,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
               ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
           }
+          const chartAddress = graphic?.kind === "chart" && format === "hwpx" && this.history && this.doc.setChartData
+            ? hit.bodyEmbedded : undefined;
+          if (chartAddress) operations.push("chart");
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
             ...(shape && shapeAddress ? { shapeAddress } : {}),
+            ...(chartAddress ? { chartAddress } : {}),
             selection: {
               kind: graphic?.kind ?? (shape?.textBox ? "textBox" : hit.kind), frame: hit.frame, address: { engine: "rhwp", path: hit.path },
               epoch: ++this.objectEpoch, sessionId: this.sessionId, loadGeneration: this.generation,
@@ -1925,6 +1961,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
+      if (format === "hwpx" && typeof doc.getChartData === "function" && typeof reopened.getChartData === "function") {
+        report.controlsEqual &&= this.chartsEqualOnReopen(doc, reopened, controls(doc));
+      }
       if (format === "hwp") {
         report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpBaseline?.structure ?? null);
       }
@@ -4197,8 +4236,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return format === "hwp" && this.structuralFormat() && this.isEditableHwpGso(address, shapeOnly);
   }
 
-  /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape): one verified engine call, one history step. */
+  /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
+    if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
@@ -4274,6 +4314,66 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const accepted = this.mutate(() => {
       apply();
       return { caret: owned(caret), anchor: owned(anchor) };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  /** Stage 3 B6 `object.edit` (`chartData`) on the selected HWPX body OOXML chart: one verified engine call, one history step. */
+  private editChart(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
+    const doc = this.doc, selected = this.objectSelection;
+    if (!selected || !doc?.setChartData || !objectEditMatches(request, selected) || !this.history) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwpx") return false;
+    const { edit } = request;
+    if (edit.kind !== "chartData") return false;
+    const before = this.readChart(address);
+    if (!before || before.kind !== "chart" || selected.graphic?.kind !== "chart"
+      || JSON.stringify(before) !== JSON.stringify(selected.graphic)) return false;
+    if (edit.categories.length !== before.labels.length || edit.series.length !== before.series.length) return false;
+    for (let si = 0; si < edit.series.length; si += 1) {
+      const want = edit.series[si]!, orig = before.series[si]!;
+      if (want.values.length !== before.labels.length || !want.values.every(v => typeof v === "number" && Number.isFinite(v))) return false;
+      if (orig.name === null && want.name.trim() !== "") return false;
+    }
+    const payload = {
+      structure: true,
+      labels: edit.categories,
+      series: edit.series.map((want, si) => {
+        const orig = before.series[si]!;
+        return {
+          ...(orig.name !== null ? { name: want.name } : {}),
+          values: want.values.map((v, vi) => {
+            const prev = orig.values[vi];
+            return prev !== null && prev !== undefined && Number(prev) === v ? prev : String(v);
+          }),
+        };
+      }),
+    };
+    const preview = JSON.parse(doc.setChartData(...address, JSON.stringify({ ...payload, dryRun: true }))) as { ok?: boolean; changedCount?: number };
+    if (preview.ok !== true || !(preview.changedCount && preview.changedCount > 0)) return false;
+
+    const savedSelection = this.selectedObject;
+    this.selectedObject = null;
+    const caret = this.caret, anchor = this.anchor;
+    const accepted = this.mutate(() => {
+      const result = JSON.parse(doc.setChartData!(...address, JSON.stringify(payload))) as { ok?: boolean; changedCount?: number };
+      const after = this.readChart(address);
+      if (result.ok !== true || !(result.changedCount && result.changedCount > 0) || !after || after.kind !== "chart"
+        || after.series.length !== edit.series.length
+        || JSON.stringify(after.labels) !== JSON.stringify(edit.categories)
+        || !edit.series.every((want, si) => {
+          const got = after.series[si]!;
+          const origName = before.series[si]!.name;
+          return (origName === null || got.name === want.name)
+            && want.values.every((v, vi) => got.values[vi] !== null && Number(got.values[vi]) === v);
+        })) {
+        throw new Error("chart data edit did not verify");
+      }
+      return { caret, anchor };
     }, true, "other", null, true, true);
     if (!accepted && this.status.kind === "ready") {
       this.selectedObject = savedSelection;

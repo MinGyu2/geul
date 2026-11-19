@@ -10,6 +10,7 @@ mod metadata;
 pub mod package;
 mod docx_fonts;
 mod docx_graphics;
+mod hwpx_charts;
 mod hwpx_fonts;
 pub mod preserve;
 pub mod preview;

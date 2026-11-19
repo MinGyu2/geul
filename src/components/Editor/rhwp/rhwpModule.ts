@@ -30,6 +30,7 @@ export interface RhwpDocument {
   getTableProperties?(section: number, paragraph: number, control: number): string;
   getCellProperties?(section: number, paragraph: number, control: number, cell: number): string;
   getChartData?(section: number, paragraph: number, control: number): string;
+  setChartData?(section: number, paragraph: number, control: number, editsJson: string): string;
   getPictureProperties?(section: number, paragraph: number, control: number): string;
   getParaPropertiesAt?(section: number, paragraph: number): string;
   ensureDefaultBullet?(character: string): number;
