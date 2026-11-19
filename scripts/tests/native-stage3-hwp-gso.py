@@ -174,6 +174,7 @@ def disk_proof(source, path):
             assert new_h[46:46+2*length].decode("utf-16le") == "Native HWP picture"
         else:
             assert kind == b"cer$" and size == (7200, 3600)
+            assert old[-1] == new[-1] and new[-1][:2] == (79, 3)
             assert struct.unpack_from("<i", new_h, 12)[0] - struct.unpack_from("<i", old_h, 12)[0] == 1000
             assert struct.unpack_from("<h", sc, at + 32)[0] == 27
             assert struct.unpack_from("<I", sc, at + 28)[0] & 3 == 1
@@ -182,7 +183,35 @@ def disk_proof(source, path):
     assert any(row == {"kind": " lbt", "preserved": True} for row in order)
     assert sum(row == {"kind": " osg", "preserved": True} for row in order) == 1
     return {"objects": order, "unchangedStreams": resources, "previewRefreshed": True,
-            "tableAndUnrelatedPictureByteIdentical": True}
+            "tableAndUnrelatedPictureByteIdentical": True, "rectangleLeafByteIdentical": True}
+
+
+def reject_rectangle_resize(acc, path, shape):
+    """Exercise the actual save refusal on an independently reopened noncanonical rectangle."""
+    d = acc.d
+    published = p4.sha256(path)
+    choose(acc, shape, "shape")
+    x, y = d.js("""const r=document.querySelector('[data-handle=se]').getBoundingClientRect();
+      return [r.left+r.width/2,r.top+r.height/2]""")
+    sx, sy = d.pointer_scale
+    p4.rhwp_poc.drag(d, (x * sx, y * sy), ((x + 30) * sx, (y + 20) * sy))
+    at_revision(acc, 1, True)
+    acc.key("ctrl+s")
+    selector = "[data-testid=rhwp-save-result]"
+    acc.wait("return ['saved','failed'].includes(document.querySelector(arguments[0])?.dataset.state)", selector)
+    result = d.js("return {...document.querySelector(arguments[0]).dataset}", selector)
+    assert result["state"] == "failed" and result["error"] == "UnsafeSave", result
+    assert "recordsChanged:BodyText/Section0" in result["findings"], result
+    assert result["synced"] == "" and result["outcome"] == "unsafe", result
+    at_revision(acc, 1, True)
+    assert p4.sha256(path) == published
+    acc.key("ctrl+z")
+    at_revision(acc, 2, True)
+    d.js("""[...document.querySelectorAll('.document-tab__close')]
+      .find(b=>b.getAttribute('aria-label').includes(arguments[0])).click()""", path.name)
+    p4.rhwp_poc.confirm_discard(d, "close")
+    acc.wait("return !document.querySelector('[data-testid=rhwp-status]')")
+    return {"save": result, "publishedBytesUnchanged": True, "undoRevision": 2}
 
 
 def main():
@@ -192,6 +221,8 @@ def main():
     parser.add_argument("--save-check", type=Path, required=True)
     parser.add_argument("--xdotool", required=True)
     parser.add_argument("--ibus", required=True)
+    parser.add_argument("--reject-rectangle-resize", action="store_true",
+                        help="also verify atomic save refusal on a noncanonical rectangle fixture")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     source = args.fixture_dir / "gso-original.hwp"
@@ -233,7 +264,10 @@ def main():
                         choose(acc, other_picture, "picture")
                         assert props(acc, "picture") == report["unrelatedLive"]
                         assert p4.sha256(file) == report["publishedSha256"]
-                        assert p4.rhwp_poc.close_tab(d, file.name)
+                        if args.reject_rectangle_resize:
+                            report["resizeRefusal"] = reject_rectangle_resize(acc, file, shape)
+                        else:
+                            assert p4.rhwp_poc.close_tab(d, file.name)
                 except Exception:
                     report["failureDom"] = d.js("return document.body.innerText.slice(-6000)")
                     d.screenshot(args.out / "failure.png")

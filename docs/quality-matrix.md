@@ -213,7 +213,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 실제 속성 창에서 입력한 설명이 게시본에 남고 재열기 UI에서 일치 |
 | 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX `arrange.position` 여백 기준 9곳 |
 | 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (선 굵기·앞뒤 순서 제외) | PARTIAL | HWP 사각형 회전·좌우 반전 SUPPORTED_AND_VERIFIED. 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009, 네이티브 NOT RUN. 선 굵기·앞뒤 순서 UNSUPPORTED |
-| 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동 SUPPORTED_AND_VERIFIED. 사각형·타원·선 크기는 엔진/T009 통과, 네이티브 크기 NOT RUN |
+| 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동 SUPPORTED_AND_VERIFIED. 정규 사각형·타원·선 크기는 엔진/T009 통과. 비정규 사각형 크기 변경 저장 BLOCKED |
 | 캡션 있는 GSO 편집 | — | — | BLOCKED | 원본·출력 bit 29 및 캡션 구조 변경 거부. 캡션이 그대로인 다른 편집 통과 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
@@ -282,3 +282,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 - Task 4 (`d44e484`): DOCX 그룹 리치 클립보드 v2 라운드트립 수정(중첩 그룹 거부·복수 `text_boxes()` story 검증·총 디코딩 미디어 용량 제한) 및 `stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance` + RHWP v2 거부/페이로드 시험 PASS.
 - Task 5 **COMPLETED**. 크기·행렬·캡션 T009 경계, Rust 저장 286 PASS/0 FAIL/30 ignored, 실제 Release WASM HWP T009 별도 1 PASS, Release WASM 9/9 PASS. Linux X11/GTK/IBus Release `13729f450735…`에서 포인터 선택, 그림 크기·설명, 사각형 이동·회전·좌우 반전, 삭제 거부, Undo/Redo, 실제 게시 및 새 앱 프로세스에서 디스크 재열기 PASS. 범위와 증거는 [HWP GSO 저장 보존](architecture/save-preservation.md#stage-3-안정화-hwp-gso-필드-단위-진화-증명-2026-11-19) 참조.
 - Stage 3 전체 **PARTIALLY COMPLETED**. HWP GSO 삭제, 도형·글상자 삽입, 복합 객체 편집, 교차 형식 구조 클립보드는 수용 범위 밖이다. 한컴 및 다른 플랫폼 상호운용 NOT RUN.
+
+**HWP 사각형 꼭짓점 후속.** 테두리 색만 바꿀 때 기존 꼭짓점이 덮어써져 이전 T009를 통과하는 반례를 재현했다. HWP setter와 T009를 수정해 비정규 사각형의 서식·이동·회전/반전 시 꼭짓점을 보존하고 크기 변경 게시를 거부한다. 정규 사각형 너비·높이·동시 변경은 Release WASM/전체 T009 통과. `services::save` 287 PASS, Release WASM Stage 3 9 PASS. Linux Release는 비정규 사각형 이동·회전/반전과 꼭짓점 보존 저장·독립 재열기, 크기 변경 저장 거부와 게시본 불변을 확인했다. Task 5 수용 유지. [재현 및 저장 규칙](architecture/save-preservation.md#hwp-사각형-꼭짓점-보존-후속-2026-11-19)

@@ -317,6 +317,17 @@ fn check_fill(old_fill: &[u8], new_fill: &[u8]) -> Checked<()> {
     }
 }
 
+fn rectangle_vertices_match_size(vertices: &[u8], width: usize, height: usize) -> bool {
+    let (Ok(w), Ok(h)) = (i32::try_from(width), i32::try_from(height)) else {
+        return false;
+    };
+    // Four interleaved signed HWPUNIT pairs, without round_rate.
+    vertices
+        .chunks_exact(4)
+        .zip([0, 0, w, 0, w, h, 0, h])
+        .all(|(actual, expected)| actual == expected.to_le_bytes())
+}
+
 /// Validates a candidate evolved GSO object pair (`old`, `new`) against strict HWP5 rules.
 pub(super) fn prove_evolved_gso(
     old: &[Record<'_>],
@@ -516,18 +527,19 @@ pub(super) fn prove_evolved_gso(
     if leaf_tag == TAG_RECTANGLE {
         valid(old_last.2.len() == 33 && new_last.2.len() == 33, BODY)?;
         preserved(old_last.2[0] == new_last.2[0], BODY)?; // round_rate
-        if size_changed || old_last.2[1..] != new_last.2[1..] {
-            let (w, h) = (
-                i32::try_from(new_w).map_err(|_| finding(FindingCode::OutputMalformed, BODY))?,
-                i32::try_from(new_h_dim)
-                    .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?,
-            );
-            let mut expected = [0u8; 32];
-            // HWP5 SHAPE_COMPONENT_RECTANGLE stores interleaved (x[i], y[i]) pairs for i=0..4.
-            for (i, val) in [0i32, 0, w, 0, w, h, 0, h].into_iter().enumerate() {
-                expected[i * 4..(i + 1) * 4].copy_from_slice(&val.to_le_bytes());
-            }
-            valid(new_last.2[1..] == expected, BODY)?;
+        let old_vertices = &old_last.2[1..];
+        let new_vertices = &new_last.2[1..];
+        if size_changed {
+            preserved(
+                rectangle_vertices_match_size(old_vertices, old_w, old_h_dim),
+                BODY,
+            )?;
+            valid(
+                rectangle_vertices_match_size(new_vertices, new_w, new_h_dim),
+                BODY,
+            )?;
+        } else {
+            preserved(old_vertices == new_vertices, BODY)?;
         }
     } else {
         preserved(old_last.2 == new_last.2, BODY)?;
@@ -1108,57 +1120,68 @@ mod tests {
         assert!(!check_with_preview_refresh(&captioned, &file(base)).is_empty());
     }
 
+    // Replace a selected record in a real engine-produced CFB without changing
+    // other semantic records, resource streams, or the compression mode.
+    fn mutate_body_record(
+        file: &[u8],
+        pick: fn(u16, u16, &[u8]) -> bool,
+        edit: impl FnOnce(&[u8]) -> Vec<u8>,
+    ) -> Vec<u8> {
+        use std::io::Read;
+
+        let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
+        let mut header = Vec::new();
+        cf.open_stream("FileHeader")
+            .unwrap()
+            .read_to_end(&mut header)
+            .unwrap();
+        let compressed = header[36] & 1 != 0;
+        let path = "BodyText/Section0";
+        let mut raw = Vec::new();
+        let stream = cf.open_stream(path).unwrap();
+        if compressed {
+            flate2::read::DeflateDecoder::new(stream)
+                .read_to_end(&mut raw)
+                .unwrap();
+        } else {
+            let mut stream = stream;
+            stream.read_to_end(&mut raw).unwrap();
+        }
+        let mut rows = super::super::records(&raw).unwrap();
+        let (_, _, payload) = rows
+            .iter_mut()
+            .find(|(tag, level, data)| pick(*tag, *level, data))
+            .unwrap();
+        let changed = edit(payload);
+        *payload = &changed;
+        let raw = pack_records(&rows);
+        let raw = if compressed {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(&raw).unwrap();
+            encoder.finish().unwrap()
+        } else {
+            raw
+        };
+        cf.create_stream(path).unwrap().write_all(&raw).unwrap();
+        cf.into_inner().into_inner()
+    }
+
     #[test]
     #[ignore = "Release-WASM fixtures: set GEUL_STAGE3_OUT and run stage3-object-edit.wasm.test.ts first"]
     fn release_hwp_gso_bytes_pass_only_for_proven_edits() {
-        use std::io::Read;
-
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         let read = |name: &str| std::fs::read(dir.join(format!("{name}.hwp"))).unwrap();
         let original = read("gso-original");
         let edited = read("gso-edited");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
 
-        // Mutate exactly one field of the engine output, retaining its valid CFB,
-        // all other records, and the same source document and intended edit.
-        let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at, bytes: &[u8]| {
-            let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
-            let mut header = Vec::new();
-            cf.open_stream("FileHeader")
-                .unwrap()
-                .read_to_end(&mut header)
-                .unwrap();
-            let compressed = header[36] & 1 != 0;
-            let path = "BodyText/Section0";
-            let mut raw = Vec::new();
-            let stream = cf.open_stream(path).unwrap();
-            if compressed {
-                flate2::read::DeflateDecoder::new(stream)
-                    .read_to_end(&mut raw)
-                    .unwrap();
-            } else {
-                let mut stream = stream;
-                stream.read_to_end(&mut raw).unwrap();
-            }
-            let mut rows = super::super::records(&raw).unwrap();
-            let (_, _, payload) = rows
-                .iter_mut()
-                .find(|(tag, level, data)| pick(*tag, *level, data))
-                .unwrap();
-            let mut changed = payload.to_vec();
-            changed[at..at + bytes.len()].copy_from_slice(bytes);
-            *payload = &changed;
-            let raw = pack_records(&rows);
-            let raw = if compressed {
-                let mut encoder =
-                    flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
-                encoder.write_all(&raw).unwrap();
-                encoder.finish().unwrap()
-            } else {
-                raw
-            };
-            cf.create_stream(path).unwrap().write_all(&raw).unwrap();
-            cf.into_inner().into_inner()
+        let mutate = |file: &[u8], pick: fn(u16, u16, &[u8]) -> bool, at: usize, bytes: &[u8]| {
+            mutate_body_record(file, pick, |payload| {
+                let mut changed = payload.to_vec();
+                changed[at..at + bytes.len()].copy_from_slice(bytes);
+                changed
+            })
         };
         let picture =
             |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cip$cip$");
@@ -1199,6 +1222,137 @@ mod tests {
                 "caption record {tag}"
             );
         }
+    }
+
+    fn rectangle_record(tag: u16, level: u16, _: &[u8]) -> bool {
+        (tag, level) == (79, 3)
+    }
+
+    fn noncanonical_vertices(leaf: &[u8]) -> Vec<u8> {
+        let mut edited = vec![leaf[0]];
+        for value in [100i32, 200, 6800, 200, 6800, 3200, 100, 3200] {
+            edited.extend_from_slice(&value.to_le_bytes());
+        }
+        edited
+    }
+
+    #[test]
+    #[ignore = "Copy the Stage 3 WASM gso-original.hwp to GEUL_RECT_PROOF/canonical.hwp first"]
+    fn prepare_rectangle_fixture() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_RECT_PROOF").unwrap());
+        let original = std::fs::read(dir.join("canonical.hwp")).unwrap();
+        let fixture = mutate_body_record(&original, rectangle_record, noncanonical_vertices);
+        std::fs::write(dir.join("noncanonical.hwp"), fixture).unwrap();
+    }
+
+    #[test]
+    fn rectangle_vertex_edits_require_owned_geometry_in_t009() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let file = |rect| {
+            let sec = wrap_section(vec![rect]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+        let canonical = vec![
+            (
+                71,
+                1,
+                ctrl_header(202, 0x000a_0000, 500, 600, 7200, 3600, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 7200, 3600, 0, 0, 0x112233, Some(0xAABBCC), 9001),
+            ),
+            (79, 3, rect_leaf(7, 7200, 3600)),
+        ];
+        let canonical_file = file(canonical.clone());
+        let mut noncanonical = canonical.clone();
+        noncanonical[2].2 = noncanonical_vertices(&canonical[2].2);
+        let noncanonical_file = file(noncanonical.clone());
+        assert_eq!(check(&noncanonical_file, &noncanonical_file), vec![]);
+        for (original, original_file) in [
+            (&canonical, &canonical_file),
+            (&noncanonical, &noncanonical_file),
+        ] {
+            let mut edited = original.clone();
+            edited[1].2[196..200].copy_from_slice(&0x223344u32.to_le_bytes());
+            assert_eq!(
+                check_with_preview_refresh(original_file, &file(edited.clone())),
+                vec![]
+            );
+            // Normalize on the unrelated border edit, as the old engine did.
+            if original == &noncanonical {
+                let mut normalized = edited.clone();
+                normalized[2].2.clone_from(&canonical[2].2);
+                assert!(!check_with_preview_refresh(original_file, &file(normalized)).is_empty());
+            }
+
+            for edit in [
+                |leaf: &mut Vec<u8>| leaf[1] ^= 1,
+                |leaf: &mut Vec<u8>| leaf[1..17].rotate_left(8),
+                |leaf: &mut Vec<u8>| {
+                    leaf.pop();
+                },
+                |leaf: &mut Vec<u8>| leaf.push(0),
+                |leaf: &mut Vec<u8>| leaf[0] ^= 1,
+            ] {
+                let mut invalid = edited.clone();
+                edit(&mut invalid[2].2);
+                assert!(!check_with_preview_refresh(original_file, &file(invalid)).is_empty());
+            }
+        }
+
+        let mut resized = canonical.clone();
+        resized[0].2[16..20].copy_from_slice(&8200u32.to_le_bytes());
+        resized[1].2[28..32].copy_from_slice(&8200u32.to_le_bytes());
+        resized[2].2 = rect_leaf(7, 8200, 3600);
+        assert_eq!(
+            check_with_preview_refresh(&canonical_file, &file(resized.clone())),
+            vec![]
+        );
+        assert!(!check_with_preview_refresh(&noncanonical_file, &file(resized.clone())).is_empty());
+        let mut stale = resized.clone();
+        stale[2].2.clone_from(&canonical[2].2);
+        assert!(!check_with_preview_refresh(&canonical_file, &file(stale)).is_empty());
+        resized[1].2[28..32].copy_from_slice(&8300u32.to_le_bytes());
+        assert!(!check_with_preview_refresh(&canonical_file, &file(resized)).is_empty());
+    }
+
+    #[test]
+    #[ignore = "GEUL_RECT_PROOF: run hwp-rectangle-geometry.mjs on the prepared fixtures first"]
+    fn release_hwp_rectangle_geometry() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_RECT_PROOF").unwrap());
+        let read = |name: &str| std::fs::read(dir.join(format!("{name}.hwp"))).unwrap();
+        for kind in ["canonical", "noncanonical"] {
+            let original = read(kind);
+            for case in [
+                "noop", "border", "fill", "rotate", "move", "width", "height", "both",
+            ] {
+                let edited = read(&format!("{kind}-{case}"));
+                let findings = check_with_preview_refresh(&original, &edited);
+                if kind == "noncanonical" && matches!(case, "width" | "height" | "both") {
+                    assert!(
+                        findings.contains(&Finding::at(FindingCode::RecordsChanged, super::BODY)),
+                        "{kind}-{case}: {findings:?}"
+                    );
+                } else {
+                    assert!(findings.is_empty(), "{kind}-{case}: {findings:?}");
+                }
+            }
+        }
+        // Reconstruct the exact unauthorized normalization against a real HWP
+        // after the producer no longer generates it.
+        let source = read("noncanonical");
+        let edited = read("noncanonical-border");
+        let normalized = mutate_body_record(&edited, rectangle_record, |leaf| {
+            rect_leaf(leaf[0], 7200, 3600)
+        });
+        assert!(
+            check_with_preview_refresh(&source, &normalized)
+                .contains(&Finding::at(FindingCode::RecordsChanged, super::BODY))
+        );
     }
 
     #[test]

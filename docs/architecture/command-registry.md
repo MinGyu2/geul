@@ -1112,6 +1112,8 @@ Linux WebKitGTK는 기존 일반 텍스트 클립보드 브리지와 앱 안의 
   그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원하며 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용으로 유지한다(HWP GSO 삭제/차트/OLE/그룹/다각형은 fail-closed 차단).
   HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.
   크기 보호 도형에는 크기 핸들을 제공하지 않는다. HWP 개체 선택 중 Delete/Backspace는 본문 삭제로 넘어가지 않는다.
+  HWP 사각형의 테두리·채우기·이동·회전/반전은 원본 꼭짓점을 보존한다. 원본 꼭짓점이 기존 헤더 크기의 정규 사각형인 경우에만
+  사각형 크기 변경을 저장할 수 있다.
   Linux X11/GTK/IBus Release 수용에서 그림 크기·설명과 사각형 이동·회전·좌우 반전, Undo/Redo, 실제 저장과 앱 재시작 후
   디스크 재열기를 확인했다. 그림 이동·자르기·배치와 나머지 기본 도형 편집은 Release WASM/T009 증거가 있다.
   [HWP GSO 저장 규칙과 실행 근거](save-preservation.md#stage-3-안정화-hwp-gso-필드-단위-진화-증명-2026-11-19)
