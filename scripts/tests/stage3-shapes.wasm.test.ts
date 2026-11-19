@@ -484,6 +484,118 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     }
   });
 
+  it.each(["hwp", "hwpx"] as const)("edits outer geometry, position, and wrap of an existing %s group while keeping children intact", async format => {
+    const fixture = new engine.HwpDocument(source(format)) as RhwpDocument & {
+      groupShapes(json: string): string;
+    };
+    let bytes: Uint8Array, groupControl: number;
+    try {
+      const rect = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "rectangle",
+        width: 5000, height: 4000, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      })));
+      const ell = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 3, shapeType: "ellipse",
+        width: 5000, height: 4000, treatAsChar: false, textWrap: "Square", horzOffset: 6000, vertOffset: 1000,
+      })));
+      const grouped = JSON.parse(fixture.groupShapes(JSON.stringify({
+        sectionIdx: 0,
+        targets: [{ paraIdx: 0, controlIdx: rect.controlIdx }, { paraIdx: 0, controlIdx: ell.controlIdx }],
+      })));
+      expect(grouped).toMatchObject({ ok: true });
+      groupControl = grouped.controlIdx;
+      expect(JSON.parse(fixture.setShapeProperties!(0, 0, groupControl, '{"textWrap":"Square","horzOffset":500,"vertOffset":500}'))).toMatchObject({ ok: true });
+      bytes = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
+    } finally { fixture.free(); }
+
+    const { editor, doc, edit, confirm, take } = await setup(format, bytes);
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      if (format === "hwp") {
+        take("original").reply(ok(bytes));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
+      const groupFrame = () => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      const pickGroup = () => {
+        const frame = groupFrame();
+        expect(frame).toBeDefined();
+        expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+        return editor.objectSelection!;
+      };
+      const sel = pickGroup();
+      expect(sel.kind).toBe("group");
+      expect(sel.operations).toContain("move");
+      expect(sel.operations).toContain("resize");
+      expect(sel.operations).toContain("wrap");
+      if (format === "hwpx") {
+        expect(sel.operations).toContain("delete");
+      } else {
+        expect(sel.operations).not.toContain("delete");
+      }
+
+      const before = props(doc, groupControl);
+      expect(edit({ kind: "bounds", width: 160, height: 80 })).toBe(true);
+      await confirm();
+      pickGroup();
+      expect(edit({ kind: "nudge", dx: 10, dy: 5 })).toBe(true);
+      await confirm();
+      pickGroup();
+      expect(edit({ kind: "wrap", wrap: "topAndBottom" })).toBe(true);
+      await confirm();
+
+      const expected = {
+        ...before,
+        width: 16000,
+        height: 8000,
+        horzOffset: before.horzOffset + 1000,
+        vertOffset: before.vertOffset + 500,
+        textWrap: "TopAndBottom",
+      };
+      expect(props(doc, groupControl)).toEqual(expected);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(props(doc, groupControl).textWrap).toBe("Square");
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(props(doc, groupControl)).toEqual(expected);
+
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(props(reopened, groupControl)).toEqual(expected);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p3-group-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p3-group-edited.${format}`), output);
+          writeFileSync(resolve(out, `p3-group-report.${format}.json`), report);
+        }
+      } finally { exported.free(); }
+
+      if (format === "hwpx") {
+        pickGroup();
+        expect(edit({ kind: "delete" })).toBe(true);
+        await confirm();
+        expect(JSON.parse(doc.getPageControlLayout!(0)).controls.some((c: { type: string }) => c.type === "group")).toBe(false);
+        expect(editor.undo()).toBe(true);
+        await confirm();
+        expect(groupFrame()).toBeDefined();
+      } else {
+        const locks = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+        expect(JSON.parse(locks.setControlLock(0, groupControl, true))).toMatchObject({ ok: true });
+        expect(pickGroup().operations).toEqual(["deselect"]);
+        expect(edit({ kind: "bounds", width: 120, height: 60 })).toBe(false);
+      }
+    } finally { editor.dispose(); }
+  });
+
   it("reorders existing HWP basic shapes without moving their anchors", async () => {
     const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
     let bytes: Uint8Array;

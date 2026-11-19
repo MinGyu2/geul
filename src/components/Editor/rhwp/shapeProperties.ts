@@ -60,3 +60,40 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
     return undefined;
   }
 }
+
+export interface RhwpGroupInspection {
+  raw: { width: number; height: number; horzOffset: number; vertOffset: number; treatAsChar: boolean; textWrap: string; description: string };
+  widthPt: number;
+  heightPt: number;
+  movable: boolean;
+  hasCaption: boolean;
+  sizeProtected: boolean;
+}
+
+/** Read an HWPX/HWP body group container (`"그리기"`) through RHWP `getShapeProperties`. */
+export function inspectRhwpGroup(doc: Pick<RhwpDocument, "getShapeProperties">, address: readonly [number, number, number]): RhwpGroupInspection | undefined {
+  if (!doc.getShapeProperties) return undefined;
+  try {
+    const value: unknown = JSON.parse(doc.getShapeProperties(...address));
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const v = value as Record<string, unknown>;
+    if ("borderColor" in v || "fillType" in v || "tbVerticalAlign" in v) return undefined;
+    const int = (key: string) => Number.isSafeInteger(v[key]) ? v[key] as number : undefined;
+    const width = int("width"), height = int("height"), horzOffset = int("horzOffset"), vertOffset = int("vertOffset");
+    const { treatAsChar, textWrap } = v;
+    if (width === undefined || height === undefined || width <= 0 || height <= 0
+      || horzOffset === undefined || vertOffset === undefined || typeof treatAsChar !== "boolean"
+      || typeof textWrap !== "string") return undefined;
+    const description = typeof v.description === "string" ? v.description : "";
+    return {
+      raw: { width, height, horzOffset, vertOffset, treatAsChar, textWrap, description },
+      widthPt: width / 100,
+      heightPt: height / 100,
+      movable: !treatAsChar && v.horzAlign === "Left" && v.vertAlign === "Top",
+      hasCaption: v.hasCaption === true,
+      sizeProtected: v.sizeProtect !== false,
+    };
+  } catch {
+    return undefined;
+  }
+}

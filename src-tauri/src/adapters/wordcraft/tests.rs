@@ -7637,3 +7637,158 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
         other => panic!("unexpected shape {other:?}"),
     }
 }
+
+#[test]
+fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind, Wrap};
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{CharProps, InlineObject};
+    use wordcraft_engine::{io, Session};
+
+    let mut sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    sess.run("caret.docEnd", &json!({})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    let group_obj = InlineObject::Group {
+        w: 200.0,
+        h: 120.0,
+        float: Float::default(),
+        ch_w: 200.0,
+        ch_h: 120.0,
+        canvas: None,
+        children: vec![
+            GroupChild {
+                x: 10.0,
+                y: 10.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::Rectangle,
+                    w: 80.0,
+                    h: 50.0,
+                    fill: Some(Rgb(0x33, 0x66, 0x99)),
+                    stroke: Some(Rgb(0x11, 0x22, 0x33)),
+                    stroke_width: 1.0,
+                    float: Float::default(),
+                    story: None,
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: Default::default(),
+                },
+            },
+            GroupChild {
+                x: 100.0,
+                y: 40.0,
+                obj: InlineObject::Shape {
+                    kind: ShapeKind::Ellipse,
+                    w: 70.0,
+                    h: 50.0,
+                    fill: Some(Rgb(0xCC, 0x88, 0x44)),
+                    stroke: None,
+                    stroke_width: 1.0,
+                    float: Float::default(),
+                    story: None,
+                    freeform: None,
+                    effects: Default::default(),
+                    extra: Default::default(),
+                },
+            },
+        ],
+    };
+    let at = sess.sel.focus.clone();
+    sess.doc.insert_object(&at, group_obj, &CharProps::default()).unwrap();
+    let original_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+
+    let mut model = DocxModel::open(&original_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
+    let layout = reader.layout();
+    let hit = layout.find_object(0, |o| (o.rect.w - 200.0).abs() < 0.5).unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 20.0,
+        y: hit.rect.y + 20.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "group");
+    assert_eq!(view["object"]["shape"]["widthPt"], 200.0);
+    let ops = view["object"]["operations"].as_array().unwrap();
+    for required in ["move", "resize", "delete", "wrap", "altText", "rotate", "zOrder"] {
+        assert!(ops.iter().any(|v| v == required), "missing group op {required}: {ops:?}");
+    }
+    let pos = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+
+    let res = model.apply(&[
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch,
+            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(260.0), height: Some(150.0) },
+        },
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch: epoch + 1,
+            edit: ObjectEdit::Wrap { wrap: Wrap::Square },
+        },
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch: epoch + 2,
+            edit: ObjectEdit::Rotate { degrees: 25.0, flip_h: true, flip_v: false },
+        },
+        DocxOp::ObjectEdit {
+            position: pos.clone(),
+            epoch: epoch + 3,
+            edit: ObjectEdit::Layer { front: false },
+        },
+        DocxOp::ObjectEdit {
+            position: pos,
+            epoch: epoch + 4,
+            edit: ObjectEdit::Bounds { x: Some(90.0), y: Some(140.0), width: None, height: None },
+        },
+    ]);
+    assert_eq!(res.changed, 5, "{:?}", res.rejected);
+    let view_after = serde_json::to_value(model.view()).unwrap();
+    let pos_after = view_after["object"]["position"].as_str().unwrap().to_owned();
+    let epoch_after = view_after["object"]["epoch"].as_u64().unwrap();
+    assert_eq!(view_after["object"]["shape"]["rotation"], 25.0);
+    assert_eq!(view_after["object"]["shape"]["flipH"], true);
+    let del_res = model.apply(&[
+        DocxOp::ObjectEdit {
+            position: pos_after,
+            epoch: epoch_after,
+            edit: ObjectEdit::Delete {},
+        },
+        DocxOp::Undo {},
+    ]);
+    assert_eq!(del_res.changed, 2, "{:?}", del_res.rejected);
+    let edited_bytes = model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original_bytes,
+        &edited_bytes,
+        None,
+        model.same_as(&edited_bytes),
+    )
+    .is_safe());
+
+    let reopened = io::open_bytes("fixture.docx", &edited_bytes).unwrap();
+    let group_after = reopened
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .flat_map(|p| &p.objects)
+        .find(|o| matches!(o, InlineObject::Group { .. }))
+        .unwrap();
+    match group_after {
+        InlineObject::Group { w, h, ch_w, ch_h, float, children, .. } => {
+            assert!((*w - 260.0).abs() < 0.01 && (*h - 150.0).abs() < 0.01);
+            assert!((*ch_w - 200.0).abs() < 0.01 && (*ch_h - 120.0).abs() < 0.01);
+            assert_eq!(float.wrap, Wrap::BehindText);
+            assert!((float.rot - 25.0).abs() < 0.01 && float.flip_h && !float.flip_v);
+            assert_eq!(children.len(), 2);
+        }
+        other => panic!("unexpected group {other:?}"),
+    }
+}

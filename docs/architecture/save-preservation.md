@@ -2010,9 +2010,13 @@ HWP5 `SHAPE_COMPONENT_RECTANGLE`(79)은 `round_rate` 1바이트와 부호 있는
 
 RHWP의 `HorzRelTo::Page`·`VertRelTo::Page`는 본문 여백 영역에 대응한다. 가로·세로 정렬 enum을 사용하고 두 오프셋을 0으로 기록한다. HWP `check_ctrl_header`는 원래 그림의 소유권, 잠금·크기 보호, 크기, z-order, 설명, 여백과 배치 유형을 보존해야 정렬 비트를 바꿀 수 있게 한다. 출력 방향은 각 축의 처음·중앙·끝 중 하나이고, 두 기준은 모두 Page다. 회전·반전이나 그림 leaf·BinData 변화가 있는 출력은 거부한다. HWPX는 기존 패키지·관련 자원 보존 판정을 적용한다.
 
-### Stage 3 P3 HWP 다각형의 실선 편집
+### Stage 3 P3 HWP 다각형·곡선·그룹과 DOCX 자유형·그룹 보존
 
-기존 비잠금·비캡션 본문 다각형의 `$pol` 컴포넌트와 다각형 leaf를 확인한다. 머리글과 꼭짓점·꼬리 레코드, 행렬, 채우기를 바이트 단위로 비교한다. 그 안에서 실선의 색과 1–7200 HWPUNIT 굵기만 바뀔 수 있다. 캡션·그룹·CTRL_DATA가 들어 있는 도형과 다각형 삭제는 기존 거부 경계에 남는다.
+`expected_leaf_tag`는 `$pol`(다각형, `TAG_POLYGON = 82`)과 `$cur`(곡선, `TAG_CURVE = 83`)을 허용해 `prove_evolved_gso`·`deletable_gso`·`shape_layer`가 꼭짓점·세그먼트 바이트(`old_last.2 == new_last.2`)를 훼손 없이 고정한 채 외곽 `CTRL_HEADER` 크기·위치·배치·z-order와 `SHAPE_COMPONENT` 회전·반전·선 색/굵기·채우기를 검증한다(`hwp_polygon_and_curve_evolution_preserves_vertices_and_segments`·`release_hwp_polygon_and_curve_geometry_preserves_vertices` PASS).
+
+HWP5 그룹 컨테이너(`SC_CONTAINER = b"noc$"`)는 `evolved_candidate`와 `prove_evolved_gso`에서 자식 개수·자식 `ctrl_id` 목록·컨테이너 `instance_id`·전체 자식 레코드(`old[old_sc_idx + 1..] == new[new_sc_idx + 1..]`) 바이트 동일성과 컨테이너 `rotation_center`·아핀 `rendering_info` 등가성(`eval_rendering_affine`)을 증명해 외곽 이동·크기·배치만 허용하며, `BinData`/OLE 자식을 가진 그룹의 고아 자원 생성을 막기 위해 HWP5 그룹 삭제는 `deletable_gso` 제외 경계를 유지한다(`hwp_group_container_evolution_preserves_children`·`release_hwp_group_geometry_preserves_children` PASS).
+
+DOCX `DocxModel::snap_to_emu`는 `ShapeKind::Freeform` 크기 조정 시 `freeform.w`/`h` 및 경로 꼭짓점을 새 EMU 격자에 맞게 비례 동기화하고, 인라인 회전 시 `spin_pad`로 늘어나는 `wp:effectExtent`를 EMU 단위로 맞춰 `roundtrip_equivalent`와 `check_saved` 안전 판정을 유지한다.
 
 ### Stage 3 P4 Linux 구조 클립보드 전송
 

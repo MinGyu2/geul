@@ -2,7 +2,7 @@ import { POSITION_PRESETS, objectEditMatches, pictureResizeMatches, type Mutatin
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpShape } from "./shapeProperties";
+import { hexToBgr, inspectRhwpGroup, inspectRhwpShape } from "./shapeProperties";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -329,7 +329,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number] } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; groupAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number] } | null = null;
   private objectEpoch = 0;
 
   get objectSelection(): ObjectSelection | null {
@@ -1781,6 +1781,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
                 ? ["zOrder" as const] : []));
           }
+          const groupAddress = hit.bodyGroup && hit.bodyGroup[1] < this.doc.getParagraphCount(hit.bodyGroup[0]) ? hit.bodyGroup : undefined;
+          const groupSupported = format === "hwpx" || (canEditHwp && this.unlockedBodyGso(groupAddress) === "그리기");
+          const group = groupAddress && this.history && canEditGso && groupSupported && this.doc.setShapeProperties
+            ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
+          if (group) {
+            operations.push(...(group.movable ? ["move" as const] : []),
+              ...(format === "hwpx" || !group.sizeProtected ? ["resize" as const] : []),
+              ...(format === "hwpx" && this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap");
+          }
           const canEditChart = graphic?.kind === "chart" && this.history && this.doc.setChartData
             && (format === "hwpx" || (canEditHwp && this.unlockedBodyGso(hit.bodyEmbedded) === "OLE"));
           const chartAddress = canEditChart ? hit.bodyEmbedded : undefined;
@@ -1790,6 +1799,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
             ...(cellPicture ? { cellPicture: hit.cellPicture } : {}),
             ...(shape && shapeAddress ? { shapeAddress } : {}),
+            ...(group && groupAddress ? { groupAddress } : {}),
             ...(chartAddress ? { chartAddress } : {}),
             selection: {
               kind: graphic?.kind ?? (shape?.textBox ? "textBox" : hit.kind), frame: hit.frame, address: { engine: "rhwp", path: hit.path },
@@ -4367,6 +4377,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private editObject(request: ObjectEditRequest): boolean {
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
+    if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
     if (this.selectedObject?.cellPicture) {
       const cell = this.selectedObject.cellPicture;
       const { edit } = request, selected = this.objectSelection, doc = this.doc;
@@ -4505,6 +4516,84 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // A caret in the edited paragraph may sit after the removed control: return it to the paragraph start.
     const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
       ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const accepted = this.mutate(() => {
+      apply();
+      return { caret: owned(caret), anchor: owned(anchor) };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  /** Stage 3 P3 `object.edit` on the selected HWPX/HWP body group container (outer geometry/wrap/delete). */
+  private editGroup(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
+    const doc = this.doc, selected = this.objectSelection;
+    if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
+    const allowed = format === "hwpx" || (format === "hwp" && this.structuralFormat() && this.unlockedBodyGso(address) === "그리기");
+    if (!allowed) return false;
+    const before = inspectRhwpGroup(doc, address);
+    if (!before || selected.frame.width <= 0) return false;
+    const { edit } = request;
+    type Raw = typeof before.raw;
+    const all: (keyof Raw)[] = ["width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap", "description"];
+    const except = (...keys: (keyof Raw)[]) => all.filter(key => !keys.includes(key));
+    const unchanged = (after: Raw, keep: readonly (keyof Raw)[]) => keep.every(key => after[key] === before.raw[key]);
+    let props: Record<string, unknown>, expect: Partial<Raw>, keep: (keyof Raw)[];
+    let operation: (() => void) | null = null;
+    switch (edit.kind) {
+      case "delete":
+        if (format !== "hwpx" || !doc.deleteShapeControl) return false;
+        operation = () => {
+          const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
+          if (result.ok !== true) throw new Error("group deletion refused");
+        };
+        props = {}; expect = {}; keep = [];
+        break;
+      case "bounds":
+        if (edit.x !== undefined) {
+          if (!before.movable || edit.width !== undefined || edit.height !== undefined) return false;
+          const perFrame = before.raw.width / selected.frame.width;
+          const horzOffset = before.raw.horzOffset + Math.round((edit.x - selected.frame.x) * perFrame);
+          const vertOffset = before.raw.vertOffset + Math.round((edit.y! - selected.frame.y) * perFrame);
+          props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
+        } else {
+          if (edit.width === undefined || edit.height === undefined || (format === "hwp" && before.sizeProtected)) return false;
+          const width = Math.round(edit.width * 100), height = Math.round(edit.height * 100);
+          props = { width, height }; expect = { width, height }; keep = except("width", "height");
+        }
+        break;
+      case "nudge": {
+        if (!before.movable) return false;
+        const horzOffset = before.raw.horzOffset + Math.round(edit.dx * 100), vertOffset = before.raw.vertOffset + Math.round(edit.dy * 100);
+        props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
+        break;
+      }
+      case "wrap":
+        props = edit.wrap === "inline" ? { treatAsChar: true } : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
+        expect = edit.wrap === "inline" ? { treatAsChar: true } : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
+        keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
+        break;
+      default:
+        return false;
+    }
+    if (!operation) {
+      if (Object.entries(expect).every(([key, value]) => before.raw[key as keyof Raw] === value)) return false;
+      operation = () => {
+        const result = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
+        const after = inspectRhwpGroup(doc, address);
+        if (result.ok !== true || !after || !unchanged(after.raw, keep)
+          || !Object.entries(expect).every(([key, value]) => after.raw[key as keyof Raw] === value)) throw new Error("group property did not verify");
+      };
+    }
+    const savedSelection = this.selectedObject;
+    this.selectedObject = null;
+    const caret = this.caret, anchor = this.anchor;
+    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
+      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const apply = operation;
     const accepted = this.mutate(() => {
       apply();
       return { caret: owned(caret), anchor: owned(anchor) };

@@ -28,7 +28,10 @@ describe("RHWP object hit testing", () => {
       frame: { page: 4, x: 20, y: 30, width: 100, height: 60 },
     });
     expect(hitRhwpObject(layout(control({ type: "shape" })), 0, 25, 40)?.kind).toBe("shape");
-    expect(hitRhwpObject(layout(control({ type: "group" })), 0, 25, 40)?.kind).toBe("group");
+    const groupHit = hitRhwpObject(layout(control({ type: "group", stableIndex: [0, 2, 3] })), 0, 25, 40);
+    expect(groupHit?.kind).toBe("group");
+    expect(groupHit?.bodyGroup).toEqual([0, 2, 3]);
+    expect(hitRhwpObject(layout(control({ type: "group", stableIndex: [0, 2, 3], cellIdx: 0 })), 0, 25, 40)?.bodyGroup).toBeUndefined();
   });
 
   it("exposes a body-picture address only when the engine path proves body ownership", () => {

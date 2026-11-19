@@ -1102,12 +1102,13 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 (|d|≤288pt), `{kind:"delete"}`. `objectEditMatches`가 선택 정체성과 `operations`(move·resize·delete)를 함께
 확인한다. 가용성은 편집 가능·대기 편집 없음·조합 중 아님·저장 중 아님·선택의 변경 연산 존재.
 
-- WordCraft: `DocxOp::ObjectEdit {position, epoch, edit}`. 본문 story의 그림·도형·글상자·그룹만. 이동은
+- WordCraft: `DocxOp::ObjectEdit {position, epoch, edit}`. 본문 story의 그림·도형·글상자·그룹만(`InlineObject::Group` 최상위 개체는 `move`·`resize`·`wrap`·`altText`·`delete`에 더해 `rotate`·`zOrder`와 `ShapeView` 프로젝션 지원, `ShapeKind::Freeform`은 크기 조정 시 경로 좌표 비례 동기화). 이동은
   최상위 문단에서만, 이동·삭제는 다른 story에 그림이 없을 때만(그림 ID 재번호 방지). 엔진 명령 뒤
   위치·크기를 EMU 격자에 맞추고(재열기 동일성), 편집 전 내보내기 대비 `check_saved` + `same_as`가
   안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
   같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
-- RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·기본 도형(`사각형`·`타원`·`직선`, 잠금/캡션 제외).
+- RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·도형(`사각형`·`타원`·`직선`·`다각형`·`곡선`, 잠금/캡션 제외) 및 본문 그룹 컨테이너(`그리기`, HWPX `move`·`resize`·`wrap`·`delete`, HWP `move`·`resize`·`wrap`).
+  `editGroup`·`inspectRhwpGroup`·`hit.bodyGroup`은 `drawing()`이 없는 `ShapeObject::Group`의 외곽 기하/배치만 다루며 그룹 회전·채우기·윤곽선과 HWP5 그룹 삭제는 비활성 경계를 유지한다.
   크기는 `picture.size`/`bounds` 경로다. 이동은 왼쪽·위 기준으로 떠 있는 객체의 `horzOffset`/`vertOffset`을 바꾼다. 그림 이동에는 회전이 없어야 한다.
   그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원했다. 당시 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용이었다. 이후 HWP의 B1 GSO 삭제와 P1 기본 삽입은 각 기능의 보존 증명 범위에서 지원한다.
   HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.

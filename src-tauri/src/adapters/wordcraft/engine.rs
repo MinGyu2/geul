@@ -2329,7 +2329,7 @@ impl DocxModel {
             ops.extend(["fill", "outline"]);
         }
         // Rotation and layer change the frame/wrap: the same placement rules as moving.
-        if relocatable && top_level && !matches!(self.object_kind(pos), Some("group")) {
+        if relocatable && top_level {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
@@ -2878,6 +2878,21 @@ impl DocxModel {
                         fill: fill.map(|c| c.hex()),
                         outline: stroke.map(|c| c.hex()),
                         outline_width: *stroke_width,
+                        rotation: float.rot,
+                        flip_h: float.flip_h,
+                        flip_v: float.flip_v,
+                        width_pt: *w,
+                        height_pt: *h,
+                    }),
+                    InlineObject::Group {
+                        w,
+                        h,
+                        float,
+                        ..
+                    } => Some(ShapeView {
+                        fill: None,
+                        outline: None,
+                        outline_width: 0.0,
                         rotation: float.rot,
                         flip_h: float.flip_h,
                         flip_v: float.flip_v,

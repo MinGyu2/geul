@@ -85,6 +85,12 @@ export function checkShapeProperties(o: JsonObject): void {
   if (typeof o.textWrap !== "string" || !TEXT_WRAPS.has(o.textWrap)) throw new HwpEvidenceError("shape.textWrap");
   if (typeof o.fillType !== "string") throw new HwpEvidenceError("shape.fillType");
 }
+export function checkGroupProperties(o: JsonObject): void {
+  fields(o, "group", "uint", "width", "height");
+  fields(o, "group", "int", "horzOffset", "vertOffset");
+  field(o, "treatAsChar", "boolean", "group");
+  if (typeof o.textWrap !== "string" || !TEXT_WRAPS.has(o.textWrap)) throw new HwpEvidenceError("group.textWrap");
+}
 /** getControls `props` for tables/pictures (all numeric, 0/1 flags). */
 export function checkControlProps(o: JsonObject): void {
   if (!isInt(o.TreatAsChar, 0, 1)) throw new HwpEvidenceError("control.TreatAsChar");
@@ -574,6 +580,16 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
         textBoxes.push({ section, p, control, paragraphs });
       }
       shapes.push(shape);
+    } else if (c.ctrlId === "gso" && c.userDesc === "그리기") {
+      const props = object(c.props); checkControlProps(props);
+      const group = optional(doc.getShapeProperties && (() => doc.getShapeProperties!(section, p, control)), checkGroupProperties);
+      if (group) {
+        const { width, height } = group as { width: number; height: number };
+        if ((width === 0 && height === 0) || width > HWPUNIT_MAX || height > HWPUNIT_MAX
+          || props.Width !== width || props.Height !== height
+          || (props.TreatAsChar === 1) !== group.treatAsChar) complete = false;
+      }
+      shapes.push(group);
     } else if (c.ctrlId === "gso" && c.userDesc === "OLE") {
       const props = object(c.props); checkControlProps(props);
       let chart: unknown = null;

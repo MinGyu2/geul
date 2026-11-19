@@ -17,6 +17,7 @@ interface ControlHit {
   cellPicture?: CellPictureAddress;
   bodyEmbedded?: readonly [number, number, number];
   bodyShape?: readonly [number, number, number];
+  bodyGroup?: readonly [number, number, number];
 }
 
 const kinds = new Map<string, ObjectKind>([
@@ -81,6 +82,7 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
       if (kind === "picture") candidate.bodyPicture = address;
       if (kind === "embedded") candidate.bodyEmbedded = address;
       if (kind === "shape") candidate.bodyShape = address;
+      if (kind === "group") candidate.bodyGroup = address;
     }
     // The renderer exposes the model path independently of the sorting key.
     // Admit table-cell picture paths up to the nested table limit (64 levels)
