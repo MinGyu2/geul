@@ -83,19 +83,43 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
       if (kind === "shape") candidate.bodyShape = address;
     }
     // The renderer exposes the model path independently of the sorting key.
-    // Admit only a single table level and require both addresses to agree.
+    // Admit table-cell picture paths up to the nested table limit (64 levels)
+    // and require the explicit cellPath and layout sort path to agree at every segment.
     if (kind === "picture" && !("headerFooter" in control) && !("noteRef" in control)
-      && control.parentParaIdx === control.paraIdx && Array.isArray(control.cellPath) && control.cellPath.length === 1) {
-      const [entry] = control.cellPath as unknown[];
-      if (record(entry) && index(entry.controlIndex) && index(entry.cellIndex) && index(entry.cellParaIndex)
-        && entry.controlIndex === control.outerTableControlIdx && entry.cellIndex === control.cellIdx
-        && entry.cellParaIndex === control.cellParaIdx) {
-        const expected = [control.secIdx, control.paraIdx, entry.controlIndex, entry.cellIndex, entry.cellParaIndex, control.controlIdx];
-        if (path.length === expected.length && expected.every((value, i) => value === path[i])) {
-          candidate.cellPicture = {
-            section: control.secIdx, paragraph: control.paraIdx, control: control.controlIdx,
-            path: JSON.stringify([{ controlIndex: entry.controlIndex, cellIndex: entry.cellIndex, cellParaIndex: entry.cellParaIndex }]),
-          };
+      && control.parentParaIdx === control.paraIdx && Array.isArray(control.cellPath)
+      && control.cellPath.length >= 1 && control.cellPath.length <= 64) {
+      const normalized: { controlIndex: number; cellIndex: number; cellParaIndex: number }[] = [];
+      let validPath = true;
+      for (const entry of control.cellPath as unknown[]) {
+        if (!record(entry) || !index(entry.controlIndex) || !index(entry.cellIndex) || !index(entry.cellParaIndex)) {
+          validPath = false;
+          break;
+        }
+        normalized.push({
+          controlIndex: entry.controlIndex,
+          cellIndex: entry.cellIndex,
+          cellParaIndex: entry.cellParaIndex,
+        });
+      }
+      if (validPath && normalized.length > 0) {
+        const inner = normalized[normalized.length - 1]!;
+        if (inner.controlIndex === control.outerTableControlIdx
+          && inner.cellIndex === control.cellIdx
+          && inner.cellParaIndex === control.cellParaIdx) {
+          const expected = [
+            control.secIdx,
+            control.paraIdx,
+            ...normalized.flatMap(e => [e.controlIndex, e.cellIndex, e.cellParaIndex]),
+            control.controlIdx,
+          ];
+          if (path.length === expected.length && expected.every((value, i) => value === path[i])) {
+            candidate.cellPicture = {
+              section: control.secIdx,
+              paragraph: control.paraIdx,
+              control: control.controlIdx,
+              path: JSON.stringify(normalized),
+            };
+          }
         }
       }
     }

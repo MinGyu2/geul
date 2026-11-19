@@ -1759,8 +1759,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canMove = canPic && !!inspected!.movable && !!this.doc.setPictureProperties;
           const canDelete = canPic && !!this.doc.deletePictureControl && (format === "hwpx" || inspected!.deletable);
           const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
-          const operations: MutatingObjectOperation[] = cellPicture ? ["resize"] : [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
-            ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
+          const operations: MutatingObjectOperation[] = cellPicture
+            ? (format === "hwpx"
+              ? ["resize", ...(this.doc.deleteCellPictureControlByPath ? ["delete" as const] : []), ...(inspected?.original ? ["crop" as const] : []), "altText"]
+              : ["resize"])
+            : [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
+              ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
           if (address && canFormat && inspected?.pagePlacement && this.unlockedBodyGso(address) === "그림") {
             operations.push("position");
           }
@@ -4365,10 +4369,59 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.cellPicture) {
-      const { edit } = request, selected = this.objectSelection;
-      return !!selected && edit.kind === "bounds" && edit.x === undefined && edit.width !== undefined && edit.height !== undefined
-        && objectEditMatches(request, selected)
-        && this.resizePicture({ ...request, widthPt: edit.width, heightPt: edit.height });
+      const cell = this.selectedObject.cellPicture;
+      const { edit } = request, selected = this.objectSelection, doc = this.doc;
+      if (!selected || !doc || !this.history || !objectEditMatches(request, selected)) return false;
+      if (edit.kind === "bounds" && edit.x === undefined && edit.width !== undefined && edit.height !== undefined) {
+        return this.resizePicture({ ...request, widthPt: edit.width, heightPt: edit.height });
+      }
+      if (this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+      const beforeCell = this.readCellPicture(cell);
+      const before = beforeCell?.picture, previous = selected.picture;
+      if (!before || !previous || before.properties.widthPt !== previous.widthPt || before.properties.heightPt !== previous.heightPt) return false;
+      let apply: (() => void) | null = null;
+      if (edit.kind === "delete") {
+        if (!doc.deleteCellPictureControlByPath) return false;
+        apply = () => {
+          const result = JSON.parse(doc.deleteCellPictureControlByPath!(cell.section, cell.paragraph, cell.path, cell.control)) as { ok?: boolean };
+          if (result.ok !== true) throw new Error("cell picture deletion refused");
+        };
+      } else if (edit.kind === "crop" && doc.setCellPicturePropertiesByPath && before.original) {
+        const amounts = [edit.left * before.original.width, edit.top * before.original.height, edit.right * before.original.width, edit.bottom * before.original.height].map(Math.round);
+        const [cropLeft, cropTop, cropRight, cropBottom] = amounts as [number, number, number, number];
+        if (JSON.stringify(amounts) === JSON.stringify(before.cropAmounts)) return false;
+        apply = () => {
+          const result = JSON.parse(doc.setCellPicturePropertiesByPath!(cell.section, cell.paragraph, cell.path, cell.control, JSON.stringify({ cropLeft, cropTop, cropRight, cropBottom }))) as { ok?: boolean };
+          const afterCell = this.readCellPicture(cell);
+          if (result.ok !== true || !afterCell || JSON.stringify(afterCell.picture.cropAmounts) !== JSON.stringify(amounts)
+            || afterCell.picture.properties.widthPt !== previous.widthPt || afterCell.picture.properties.heightPt !== previous.heightPt) {
+            throw new Error("cell picture crop did not verify");
+          }
+        };
+      } else if (edit.kind === "altText" && doc.setCellPicturePropertiesByPath) {
+        if (/["\\]/.test(edit.text) || edit.text.length > 256 || edit.text === (previous.description ?? "")) return false;
+        apply = () => {
+          const result = JSON.parse(doc.setCellPicturePropertiesByPath!(cell.section, cell.paragraph, cell.path, cell.control, JSON.stringify({ description: edit.text }))) as { ok?: boolean };
+          const afterCell = this.readCellPicture(cell);
+          if (result.ok !== true || !afterCell || (afterCell.picture.properties.description ?? "") !== edit.text
+            || afterCell.picture.properties.widthPt !== previous.widthPt || afterCell.picture.properties.heightPt !== previous.heightPt) {
+            throw new Error("cell picture altText did not verify");
+          }
+        };
+      }
+      if (!apply) return false;
+      const savedSelection = this.selectedObject;
+      this.selectedObject = null;
+      const runApply = apply;
+      const accepted = this.mutate(() => {
+        runApply();
+        return { caret: this.caret, anchor: this.anchor };
+      }, true, "other", null, true, true);
+      if (!accepted && this.status.kind === "ready") {
+        this.selectedObject = savedSelection;
+        this.emit();
+      }
+      return accepted;
     }
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
@@ -4667,34 +4720,44 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const { section, paragraph, path, control } = address;
     try {
       const entries = JSON.parse(path) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[];
-      if (entries.length !== 1) return null;
-      const entry = entries[0]!;
+      if (!Array.isArray(entries) || entries.length < 1 || entries.length > 64) return null;
       const rawModel = doc.getCursorModel(), rawControls = doc.getControls();
       if (rawModel.length + rawControls.length > 8 * 1024 * 1024) return null;
       const { lists } = JSON.parse(rawModel) as { lists: { listId: number; isCell: boolean; hostListId: number;
         sectionIndex: number; hostPara: number; controlIndex: number; cellIndex: number }[] };
-      const owners = lists.filter(l => l.isCell && l.hostListId === 0 && l.sectionIndex === section
-        && l.hostPara === paragraph && l.controlIndex === entry.controlIndex && l.cellIndex === entry.cellIndex);
-      if (owners.length !== 1) return null;
-      let globalParagraph = paragraph;
-      for (let s = 0; s < section; s++) globalParagraph += doc.getParagraphCount(s);
       const controls = JSON.parse(rawControls) as { list: number; para: number; controlIndex: number; ctrlId: string;
         userDesc: string; props?: { Lock?: number; TreatAsChar?: number } }[];
-      const table = controls.filter(c => c.list === 0 && c.para === globalParagraph && c.controlIndex === entry.controlIndex);
-      const child = controls.filter(c => c.list === owners[0]!.listId && c.para === entry.cellParaIndex && c.controlIndex === control);
-      if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0
-        || child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
+      let currentListId = 0;
+      let currentPara = paragraph;
+      for (let s = 0; s < section; s++) currentPara += doc.getParagraphCount(s);
+      let localHostPara = paragraph;
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]!;
+        if (!entry || !Number.isSafeInteger(entry.controlIndex) || entry.controlIndex < 0
+          || !Number.isSafeInteger(entry.cellIndex) || entry.cellIndex < 0
+          || !Number.isSafeInteger(entry.cellParaIndex) || entry.cellParaIndex < 0) return null;
+        const table = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === entry.controlIndex);
+        if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0) return null;
+        if (format === "hwp" && i === 0 && table[0]!.props?.TreatAsChar !== 0) return null;
+        const owners = lists.filter(l => l.isCell && l.hostListId === currentListId && l.sectionIndex === section
+          && l.hostPara === localHostPara && l.controlIndex === entry.controlIndex && l.cellIndex === entry.cellIndex);
+        if (owners.length !== 1) return null;
+        currentListId = owners[0]!.listId;
+        currentPara = entry.cellParaIndex;
+        localHostPara = entry.cellParaIndex;
+      }
+      const child = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === control);
+      if (child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
       const resource = cellPictureEvidence(doc, section, paragraph, path, control);
       const rawPicture = doc.getCellPicturePropertiesByPath(section, paragraph, path, control);
       if (format === "hwp") {
         const { rotationAngle, restrictInPage } = JSON.parse(rawPicture) as { rotationAngle?: unknown; restrictInPage?: unknown };
         // RHWP's picture JSON uses restrictInPage for the flow-with-text flag.
         // That flag can resize the owning cell as a side effect.
-        if (table[0]!.props.TreatAsChar !== 0 || child[0]!.ctrlId !== "gso"
-          || rotationAngle !== 0 || restrictInPage !== false) return null;
+        if (child[0]!.ctrlId !== "gso" || rotationAngle !== 0 || restrictInPage !== false) return null;
       }
       const picture = inspectRhwpPicture({ getPictureProperties: () => rawPicture }, [section, paragraph, control]);
-      return resource && picture?.simpleInline && picture.deletable
+      return resource && picture?.deletable && (format !== "hwp" || picture.simpleInline)
         && resource.width === Math.round(picture.properties.widthPt * 100)
         && resource.height === Math.round(picture.properties.heightPt * 100)
         ? { picture, resource } : null;

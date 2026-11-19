@@ -2647,15 +2647,24 @@ fn paragraph_evidence(
 /// a text-only edit of an original table is never admitted through this proof.
 fn cell_picture_resize_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
     old[0].1 == 1
+        && old.len() == new.len()
         && old.iter().zip(new).any(|(a, b)| {
-            a != b && a.0 == 71 && a.1 == 3 && a.2.starts_with(b" osg")
-                && b.0 == 71 && b.1 == 3 && b.2.starts_with(b" osg")
+            a != b
+                && a.0 == 71
+                && a.1 >= 3
+                && a.1 % 2 == 1
+                && a.1 <= MAX_TABLE_LEVEL + 2
+                && a.2.starts_with(b" osg")
+                && b.0 == 71
+                && b.1 == a.1
+                && b.2.starts_with(b" osg")
                 && a.2.get(16..24) != b.2.get(16..24)
         })
 }
 
-/// A picture resize may synchronize the table's cached height from its rows.
-/// This path admits no changes to the cell grid, texts or other children.
+/// A cell picture resize at depth 1 may synchronize the outer table's cached height
+/// from its rows; at depth 2+ all enclosing tables and outer heights remain exact.
+/// This path admits no changes to any cell grid, texts, borders, or other children.
 fn prove_cell_picture_resizes(
     old: &[Record<'_>],
     new: &[Record<'_>],
@@ -2665,7 +2674,7 @@ fn prove_cell_picture_resizes(
     let (old_header, new_header) = (old[0].2, new[0].2);
     table_header_preserved(1, old_header, new_header)?;
     preserved(
-        dword(old_header, 4)? & ((1 << 30) | 1) == 0
+        dword(old_header, 4)? & ((1 << 30) | (1 << 29) | 1) == 0
             && old_header[..20] == new_header[..20]
             && old_header[24..40] == new_header[24..40],
         BODY,
@@ -2674,24 +2683,54 @@ fn prove_cell_picture_resizes(
     preserved(caption.is_empty(), BODY)?;
     let table = old[1].2;
     let mut row_heights = vec![0; word(table, 4)?];
-    let mut in_cell_paragraph = false;
-    let mut cursor = 2;
-    preserved(old[1] == new[1], BODY)?;
+    // Track (table_level, saw_table_record, in_cell_paragraph) across nested tables.
+    let mut table_stack: Vec<(u16, bool, bool)> = vec![(1, false, false)];
+    let mut resized_depth1 = false;
+    let mut resized_deeper = false;
+    let mut cursor = 1;
     while cursor < old.len() {
         let a = old[cursor];
         let b = new[cursor];
-        if a.1 == 2 {
-            in_cell_paragraph = a.0 == 66;
-            if a.0 == 72 {
-                let row = word(a.2, 10)?;
-                if word(a.2, 14)? == 1 {
-                    row_heights[row] = row_heights[row].max(dword(a.2, 20)?);
+        while table_stack.last().is_some_and(|&(tl, _, _)| a.1 <= tl) {
+            table_stack.pop();
+        }
+        if a.1 >= 3 && a.1 % 2 == 1 && a.0 == 71 && a.2.starts_with(b" lbt") {
+            preserved(
+                a == b
+                    && a.1 <= MAX_TABLE_LEVEL
+                    && table_stack
+                        .last()
+                        .is_some_and(|&(tl, saw_tbl, in_para)| saw_tbl && in_para && a.1 == tl + 2)
+                    && (dword(a.2, 4)? & ((1 << 30) | (1 << 29))) == 0,
+                BODY,
+            )?;
+            table_stack.push((a.1, false, false));
+            cursor += 1;
+            continue;
+        }
+        if let Some((tl, saw_tbl, in_para)) = table_stack.last_mut() {
+            if a.1 == *tl + 1 {
+                if a.0 == 77 {
+                    *saw_tbl = true;
+                    *in_para = false;
+                } else if a.0 == 72 {
+                    *in_para = false;
+                    if *tl == 1 {
+                        preserved(*saw_tbl, BODY)?;
+                        let row = word(a.2, 10)?;
+                        if word(a.2, 14)? == 1 {
+                            row_heights[row] = row_heights[row].max(dword(a.2, 20)?);
+                        }
+                    }
+                } else if a.0 == 66 && *saw_tbl {
+                    *in_para = true;
                 }
             }
         }
-        // Begin at the owner header, since only component dimensions may
-        // differ on the following record and the leaf must be exact.
-        if in_cell_paragraph && a.0 == 71 && a.1 == 3 && a != b {
+        let in_target_cell = table_stack
+            .last()
+            .is_some_and(|&(tl, saw_tbl, in_para)| saw_tbl && in_para && a.1 == tl + 2);
+        if in_target_cell && a.0 == 71 && a != b {
             let end = cursor + 3;
             let old_pic = old.get(cursor..end).and_then(|r| r.try_into().ok());
             let new_pic = new.get(cursor..end).and_then(|r| r.try_into().ok());
@@ -2699,13 +2738,26 @@ fn prove_cell_picture_resizes(
                 return Err(finding(FindingCode::RecordsChanged, BODY));
             };
             super::gso::prove_cell_picture_resize(old_pic, new_pic, original_defs)?;
+            if a.1 == 3 {
+                resized_depth1 = true;
+            } else {
+                resized_deeper = true;
+            }
             cursor = end;
         } else {
             preserved(a == b, BODY)?;
             cursor += 1;
         }
     }
-    let derived_height: u64 = row_heights.into_iter().map(|height| if height == 0 { 400 } else { height as u64 }).sum();
+    preserved(resized_depth1 || resized_deeper, BODY)?;
+    if resized_deeper {
+        preserved(!resized_depth1 && old_header == new_header, BODY)?;
+        return Ok(());
+    }
+    let derived_height: u64 = row_heights
+        .into_iter()
+        .map(|height| if height == 0 { 400 } else { height as u64 })
+        .sum();
     preserved(dword(new_header, 20)? as u64 == derived_height, BODY)
 }
 

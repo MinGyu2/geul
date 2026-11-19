@@ -498,7 +498,9 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(frame).toBeDefined();
       expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
       const selected = editor.objectSelection!;
-      expect(selected.operations).toEqual(["deselect", "resize"]);
+      expect(selected.operations).toEqual(
+        format === "hwpx" ? ["deselect", "resize", "delete", "crop", "altText"] : ["deselect", "resize"],
+      );
       expect(editor.execute("object.edit", objectEditRequest(selected, { kind: "bounds", width: 42, height: 42 })).accepted).toBe(true);
       await confirm();
       expect(editor.undo()).toBe(true);
@@ -527,6 +529,140 @@ describe("Stage 3 shapes on the Release engine", () => {
           writeFileSync(resolve(out, `p2-cell-picture-${format}-report.json`), report);
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.each(["hwp", "hwpx"] as const)("resizes a depth-2 nested %s table-cell picture through its multi-level owned layout path", async format => {
+    const docSource = new engine.HwpDocument(source(format)) as RhwpDocument;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC", "base64");
+    const outer = JSON.parse(docSource.createTable!(0, 0, 1, 1, 2));
+    const host = outer.paraIdx as number, outerCtrl = outer.controlIdx as number;
+    const cell0Path = JSON.stringify([{ controlIndex: outerCtrl, cellIndex: 0, cellParaIndex: 0 }]);
+    const inner = JSON.parse(docSource.createTableInCellByPath!(0, host, cell0Path, 0, 1, 2));
+    const innerCtrl = inner.controlIdx as number;
+    const nestedPath = JSON.stringify([
+      { controlIndex: outerCtrl, cellIndex: 0, cellParaIndex: 0 },
+      { controlIndex: innerCtrl, cellIndex: 0, cellParaIndex: 0 },
+    ]);
+    let bytes: Uint8Array;
+    try {
+      docSource.insertTextInCellByPath!(0, host, nestedPath, 0, "deep cell");
+      docSource.insertTextInCell(0, host, outerCtrl, 1, 0, 0, "outer sibling");
+      expect(JSON.parse(docSource.insertPictureInCellByPath!(0, host, nestedPath, 2, png, 3000, 2400, 48, 64, "png", ""))).toMatchObject({ ok: true, controlIdx: 0 });
+      bytes = format === "hwp" ? docSource.exportHwp() : docSource.exportHwpx();
+    } finally { docSource.free(); }
+
+    const { editor, doc, confirm, take } = await setup(format, bytes);
+    const picture = (file: RhwpDocument) => JSON.parse(file.getCellPictureByPath!(0, host, nestedPath, 0));
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      if (format === "hwp") {
+        take("original").reply(ok(bytes));
+        await flush();
+        take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+        await flush();
+      }
+      const before = picture(doc);
+      const frame = JSON.parse(doc.getPageControlLayout!(0)).controls.find((item: Frame) => item.type === "image");
+      expect(frame).toBeDefined();
+      expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+      const selected = editor.objectSelection!;
+      expect(selected.operations).toEqual(
+        format === "hwpx" ? ["deselect", "resize", "delete", "crop", "altText"] : ["deselect", "resize"],
+      );
+      expect(editor.execute("object.edit", objectEditRequest(selected, { kind: "bounds", width: 42, height: 36 })).accepted).toBe(true);
+      await confirm();
+      expect(picture(doc)).toEqual({ ...before, width: 4200, height: 3600 });
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(picture(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(picture(doc)).toEqual({ ...before, width: 4200, height: 3600 });
+
+      const exported = format === "hwp" ? doc.exportHwpWithReport!() : doc.exportHwpxWithReport!();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(picture(reopened)).toEqual({ ...before, width: 4200, height: 3600 });
+          expect(reopened.getTextInCellByPath!(0, host, nestedPath, 0, 9)).toBe("deep cell");
+          expect(reopened.getTextInCell(0, host, outerCtrl, 1, 0, 0, 13)).toBe("outer sibling");
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p2-nested-cell-picture-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p2-nested-cell-picture-edited.${format}`), output);
+          writeFileSync(resolve(out, `p2-nested-cell-picture-${format}-report.json`), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("edits crop, altText, and deletion on an HWPX table-cell picture with undo, redo, and reopen", async () => {
+    const docSource = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC", "base64");
+    const table = JSON.parse(docSource.createTable!(0, 0, 1, 1, 2));
+    const host = table.paraIdx as number, control = table.controlIdx as number;
+    const path = JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]);
+    let bytes: Uint8Array;
+    try {
+      docSource.insertTextInCell(0, host, control, 0, 0, 0, "hwpx cell");
+      expect(JSON.parse(docSource.insertPictureInCellByPath!(0, host, path, 2, png, 3600, 4800, 48, 64, "png", ""))).toMatchObject({ ok: true, controlIdx: 0 });
+      bytes = docSource.exportHwpx();
+    } finally { docSource.free(); }
+
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const props = (d: RhwpDocument) => JSON.parse(d.getCellPicturePropertiesByPath!(0, host, path, 0));
+    const imageFrame = () => JSON.parse(doc.getPageControlLayout!(0)).controls.find((item: Frame) => item.type === "image") as Frame | undefined;
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      const selectCellPic = () => {
+        const frame = imageFrame()!;
+        expect(frame).toBeDefined();
+        expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+        return editor.objectSelection!;
+      };
+      expect(editor.execute("object.edit", objectEditRequest(selectCellPic(), { kind: "altText", text: "셀 그림 설명" })).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("object.edit", objectEditRequest(selectCellPic(), { kind: "crop", left: 0.1, top: 0, right: 0.2, bottom: 0 })).accepted).toBe(true);
+      await confirm();
+      expect(props(doc)).toMatchObject({ description: "셀 그림 설명" });
+      expect(props(doc).cropLeft).toBeGreaterThan(0);
+
+      const exportedEdited = doc.exportHwpxWithReport!();
+      try {
+        const editedBytes = exportedEdited.takeBytes();
+        expect(JSON.parse(exportedEdited.contentLoss())).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(editedBytes) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(props(reopened)).toMatchObject({ description: "셀 그림 설명", cropLeft: props(doc).cropLeft, cropRight: props(doc).cropRight });
+        } finally { reopened.free(); }
+      } finally { exportedEdited.free(); }
+
+      expect(editor.execute("object.edit", objectEditRequest(selectCellPic(), { kind: "delete" })).accepted).toBe(true);
+      await confirm();
+      expect(imageFrame()).toBeUndefined();
+      const exportedDeleted = doc.exportHwpxWithReport!();
+      try {
+        const deletedBytes = exportedDeleted.takeBytes();
+        expect(JSON.parse(exportedDeleted.contentLoss())).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(deletedBytes) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(JSON.parse(reopened.getPageControlLayout!(0)).controls.some((c: { type: string }) => c.type === "image")).toBe(false);
+        } finally { reopened.free(); }
+      } finally { exportedDeleted.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(imageFrame()).toBeDefined();
+      expect(props(doc)).toMatchObject({ description: "셀 그림 설명" });
     } finally { editor.dispose(); }
   });
 

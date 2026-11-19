@@ -552,19 +552,33 @@ pub(super) fn prove_shape_layer(old: &[Record<'_>], new: &[Record<'_>], ranks: &
     )
 }
 
-/// A directly owned cell picture only exposes width and height. The table
-/// proof fixes its cell, paragraph and control position before calling this.
+/// A directly owned cell picture (at depth 1 or inside nested tables) only exposes width
+/// and height. The table proof fixes its cell, paragraph and control position before calling this.
 pub(super) fn prove_cell_picture_resize(
     old: &[Record<'_>; 3],
     new: &[Record<'_>; 3],
     defs: &Defs<'_>,
 ) -> Checked<()> {
-    let [(71, 3, old_header), (76, 4, component), (85, 5, leaf)] = *old else {
+    let [(71, pic_level, old_header), (76, comp_level, component), (85, leaf_level, leaf)] = *old
+    else {
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
-    let [(71, 3, new_header), (76, 4, _), (85, 5, new_leaf)] = *new else {
+    let [(71, new_pic_level, new_header), (76, new_comp_level, _), (85, new_leaf_level, new_leaf)] =
+        *new
+    else {
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
+    preserved(
+        pic_level >= 3
+            && pic_level <= 131
+            && pic_level % 2 == 1
+            && comp_level == pic_level + 1
+            && leaf_level == pic_level + 2
+            && new_pic_level == pic_level
+            && new_comp_level == comp_level
+            && new_leaf_level == leaf_level,
+        BODY,
+    )?;
     let Some((SC_PICTURE, id_offset, 1)) = shape_ctrl_id(old) else {
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
@@ -583,7 +597,8 @@ pub(super) fn prove_cell_picture_resize(
     )?;
     // Reuse the existing GSO field proof at relative body levels, after
     // checking the concrete serialized cell record levels above.
-    let normalize = |(tag, level, data)| (tag, level - 2, data);
+    let shift = pic_level - 1;
+    let normalize = |(tag, level, data)| (tag, level - shift, data);
     prove_evolved_gso(&old.map(normalize), &new.map(normalize), defs)
 }
 
@@ -1992,6 +2007,54 @@ mod tests {
             let edited = mutate_body_record(&edited, pick, set_protection);
             assert!(check_with_preview_refresh(&original, &edited)
                 .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the P2 nested cell picture scenario first"]
+    fn release_hwp_nested_cell_picture_resize_preserves_tables_and_resource() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p2-nested-cell-picture-original.hwp");
+        let edited = read("p2-nested-cell-picture-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+
+        let outer_table = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 1 && data.starts_with(b" lbt");
+        let inner_table = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 3 && data.starts_with(b" lbt");
+        let picture = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 5 && data.starts_with(super::CTRL_GSO);
+        let leaf = |tag: u16, level: u16, _: &[u8]| tag == 85 && level == 7;
+        for (pick, offset, mask) in [
+            (outer_table as fn(u16, u16, &[u8]) -> bool, 20, 1u8),
+            (inner_table, 20, 1),
+            (picture, 36, 1),
+            (leaf, 71, 1),
+            (|tag: u16, level: u16, data: &[u8]| tag == 67 && level == 5 && data.starts_with(b"d\0e\0"), 0, 1),
+        ] {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                changed[offset] ^= mask;
+                changed
+            });
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted tampered nested table/picture record at offset {offset}"
+            );
+        }
+        for pick in [inner_table as fn(u16, u16, &[u8]) -> bool, picture] {
+            let set_locked = |data: &[u8]| {
+                let mut changed = data.to_vec();
+                changed[7] |= 0x40;
+                changed
+            };
+            let locked_orig = mutate_body_record(&original, pick, set_locked);
+            let locked_edit = mutate_body_record(&edited, pick, set_locked);
+            assert!(
+                check_with_preview_refresh(&locked_orig, &locked_edit)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY))
+            );
         }
     }
 

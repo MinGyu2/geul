@@ -83,6 +83,36 @@ describe("RHWP object hit testing", () => {
     expect(hitRhwpObject(layout(control({ missing: true })), 0, 25, 40)).toBeNull();
   });
 
+  it("resolves multi-level nested table cell pictures only when cellPath and stableIndex agree", () => {
+    const nested = control({
+      secIdx: 0,
+      paraIdx: 1,
+      parentParaIdx: 1,
+      outerTableControlIdx: 4,
+      cellIdx: 2,
+      cellParaIdx: 3,
+      controlIdx: 5,
+      cellPath: [
+        { controlIndex: 2, cellIndex: 1, cellParaIndex: 0 },
+        { controlIndex: 4, cellIndex: 2, cellParaIndex: 3 },
+      ],
+      stableIndex: [0, 1, 2, 1, 0, 4, 2, 3, 5],
+    });
+    expect(hitRhwpObject(layout(nested), 0, 25, 40)?.cellPicture).toEqual({
+      section: 0,
+      paragraph: 1,
+      control: 5,
+      path: JSON.stringify([
+        { controlIndex: 2, cellIndex: 1, cellParaIndex: 0 },
+        { controlIndex: 4, cellIndex: 2, cellParaIndex: 3 },
+      ]),
+    });
+
+    expect(hitRhwpObject(layout({ ...nested, stableIndex: [0, 1, 2, 1, 0, 99, 2, 3, 5] }), 0, 25, 40)?.cellPicture).toBeUndefined();
+    expect(hitRhwpObject(layout({ ...nested, headerFooter: true }), 0, 25, 40)?.cellPicture).toBeUndefined();
+    expect(hitRhwpObject(layout({ ...nested, noteRef: 1 }), 0, 25, 40)?.cellPicture).toBeUndefined();
+  });
+
   it("rejects invalid points, pages, bounds, and unknown object types", () => {
     expect(hitRhwpObject(layout(control()), -1, 25, 40)).toBeNull();
     expect(hitRhwpObject(layout(control()), 0, Number.NaN, 40)).toBeNull();

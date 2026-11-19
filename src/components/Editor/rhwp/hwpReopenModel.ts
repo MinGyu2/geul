@@ -253,7 +253,12 @@ function nestedPictureModel(doc: RhwpDocument, c: JsonObject, lists: Map<number,
   checkControlProps(c.props);
   if (!picture || c.props.TreatAsChar !== 1 || c.props.Width !== picture.width || c.props.Height !== picture.height
     || !isInt(c.pos, 0)) return null;
-  return { ...picture, streamPosition: c.pos };
+  let description: string | undefined;
+  if (doc.getCellPicturePropertiesByPath) {
+    const props = readObject(doc.getCellPicturePropertiesByPath(section, host, path, c.controlIndex));
+    if (typeof props.description === "string") description = props.description;
+  }
+  return { ...picture, ...(description !== undefined ? { description } : {}), streamPosition: c.pos };
 }
 
 /** A blank getControls kind is not evidence of a field. Independently join the
