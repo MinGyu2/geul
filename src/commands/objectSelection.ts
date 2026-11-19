@@ -54,7 +54,7 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt"] as const;
 const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
@@ -179,9 +179,12 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
 }
 
 export function objectEditMatches(request: ObjectEditRequest, selection: ObjectSelection): boolean {
+  if (!validObjectEdit(request.edit)) return false;
+  const operation = request.edit.kind === "position" && selection.address.engine === "rhwp"
+    ? "position" : objectEditOperation(request.edit);
   return request.selectionEpoch === selection.epoch && request.sessionId === selection.sessionId
     && request.loadGeneration === selection.loadGeneration && request.revision === selection.revision
-    && validObjectEdit(request.edit) && selection.operations.includes(objectEditOperation(request.edit));
+    && selection.operations.includes(operation);
 }
 
 export interface PictureResizeRequest {

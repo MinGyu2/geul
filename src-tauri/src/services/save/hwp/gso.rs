@@ -39,6 +39,8 @@ const MAX_DESC_UNITS: usize = 256;
 /// - bits 8..=9: `horz_rel_to` (`0..=3`)
 /// - bits 21..=23: `text_wrap` (`0..=3`)
 const MUTABLE_ATTR_MASK: u32 = 0x01 | (0x03 << 3) | (0x03 << 8) | (0x07 << 21);
+const ALIGN_ATTR_MASK: u32 = (0x07 << 5) | (0x07 << 10);
+const FLOW_WITH_TEXT: u32 = 1 << 13;
 const ATTR_SIZE_PROTECT: u32 = 1 << 20;
 const ATTR_CAPTION: u32 = 1 << 29;
 const ATTR_LOCKED: u32 = 1 << 30;
@@ -495,7 +497,6 @@ pub(super) fn prove_cell_picture_resize(
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
     let attr = dword(old_header, 4)? as u32;
-    const FLOW_WITH_TEXT: u32 = 1 << 13;
     preserved(
         gso_header_id(old).is_some_and(|id| id != 0)
             && attr & (ATTR_LOCKED | ATTR_SIZE_PROTECT | ATTR_CAPTION | FLOW_WITH_TEXT | 1) == 1
@@ -691,10 +692,27 @@ fn check_ctrl_header(
     let old_attr = dword(old_h, 4)? as u32;
     let new_attr = dword(new_h, 4)? as u32;
     preserved((old_attr & ATTR_LOCKED) == 0, BODY)?;
-    preserved(
-        (old_attr & !MUTABLE_ATTR_MASK) == (new_attr & !MUTABLE_ATTR_MASK),
-        BODY,
-    )?;
+    let alignment_changed = (old_attr ^ new_attr) & ALIGN_ATTR_MASK != 0;
+    if alignment_changed {
+        const RELATIVE_ATTR_MASK: u32 = (3 << 3) | (3 << 8);
+        const PLACEMENT_MASK: u32 = ALIGN_ATTR_MASK | RELATIVE_ATTR_MASK;
+        const NONPRESET_FLAGS: u32 = ATTR_CAPTION | ATTR_SIZE_PROTECT | FLOW_WITH_TEXT | 1 | (7 << 21);
+        preserved(
+            is_picture
+                && old_attr & NONPRESET_FLAGS == 0
+                && (old_attr ^ new_attr) & !PLACEMENT_MASK == 0
+                && new_attr & RELATIVE_ATTR_MASK == (1 << 3) | (1 << 8)
+                && (new_attr >> 5) & 7 <= 2
+                && (new_attr >> 10) & 7 <= 2
+                && new_h[8..16] == [0; 8]
+                && old_h[16..24] == new_h[16..24]
+                && old_h[28..36] == [0; 8]
+                && old_h[44..] == new_h[44..],
+            BODY,
+        )?;
+    } else {
+        preserved((old_attr ^ new_attr) & !MUTABLE_ATTR_MASK == 0, BODY)?;
+    }
     let has_caption = (old_attr & ATTR_CAPTION) != 0;
     if new_attr != old_attr {
         let vert_rel_to = (new_attr >> 3) & 0x03;
@@ -1009,6 +1027,9 @@ pub(super) fn prove_evolved_gso(
                 && new_pic.1 == 3,
             BODY,
         )?;
+        if (dword(old[0].2, 4)? ^ dword(new[0].2, 4)?) as u32 & ALIGN_ATTR_MASK != 0 {
+            preserved(old_rot == 0 && old_flip & 3 == 0 && old_pic == new_pic, BODY)?;
+        }
         let (op, np) = (old_pic.2, new_pic.2);
         valid(op.len() >= 73 && np.len() >= 73, BODY)?;
         preserved(op[..44] == np[..44], BODY)?; // border + border_x[4] + border_y[4]
@@ -1737,6 +1758,30 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP picture position preset scenario first"]
+    fn release_hwp_picture_position_preserves_resources_and_alignment_contract() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p3-position-original.hwp");
+        let edited = read("p3-position-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let picture = |tag, level, data: &[u8]| {
+            tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO)
+                && super::dword(data, 16) == Ok(3600)
+        };
+        for (offset, mask) in [(4, 8), (4, 0x80), (12, 1), (20, 1), (28, 1)] {
+            let tampered = mutate_body_record(&edited, picture, |data| {
+                let mut changed = data.to_vec();
+                changed[offset] ^= mask;
+                changed
+            });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted unauthorized picture placement field at {offset}");
+        }
     }
 
     #[test]

@@ -57,6 +57,12 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "delete" }));
   });
 
+  it("sends RHWP position presets without enabling drag", () => {
+    const onEdit = panel(selection({ operations: ["deselect", "position"], address: { engine: "rhwp", path: [0, 0, 3] } }));
+    fireEvent.change(screen.getByLabelText("Position"), { target: { value: "bottomCenter" } });
+    expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "position", preset: "bottomCenter" }));
+  });
+
   it("refuses an out-of-range crop and hides controls the object does not admit", () => {
     const onEdit = panel(selection({ operations: ["deselect", "crop"], address: { engine: "rhwp", path: [0, 0, 2] } }));
     fireEvent.change(screen.getByLabelText("Left"), { target: { value: "46" } });

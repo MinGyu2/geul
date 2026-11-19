@@ -1,4 +1,4 @@
-import { objectEditMatches, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
+import { POSITION_PRESETS, objectEditMatches, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
@@ -1754,6 +1754,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
           const operations: MutatingObjectOperation[] = cellPicture ? ["resize"] : [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
             ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
+          if (address && canFormat && inspected?.pagePlacement && this.unlockedBodyGso(address) === "그림") {
+            operations.push("position");
+          }
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
           const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
@@ -4400,8 +4403,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (JSON.stringify(amounts) === JSON.stringify(before.cropAmounts)) return false;
       apply = set({ cropLeft, cropTop, cropRight, cropBottom }, after => same(after, ["size", "description", "wrap"])
         && JSON.stringify(after!.cropAmounts) === JSON.stringify(amounts));
+    } else if (edit.kind === "position") {
+      if (!before.pagePlacement || this.unlockedBodyGso(address) !== "그림") return false;
+      const index = POSITION_PRESETS.indexOf(edit.preset);
+      const placement = {
+        horzRelTo: "Page", vertRelTo: "Page",
+        horzAlign: ["Left", "Center", "Right"][index % 3],
+        vertAlign: ["Top", "Center", "Bottom"][Math.floor(index / 3)],
+        horzOffset: 0, vertOffset: 0,
+      };
+      if (JSON.stringify(placement) === JSON.stringify(before.pagePlacement)) return false;
+      apply = set(placement, after => same(after, ["size", "description", "wrap", "crop"])
+        && JSON.stringify(after!.pagePlacement) === JSON.stringify(placement));
     } else if (edit.kind !== "bounds" && edit.kind !== "nudge") {
-      // Position presets, shape formatting and chart/SmartArt model edits do not apply to RHWP pictures.
+      // Shape formatting and chart/SmartArt model edits do not apply to RHWP pictures.
       return false;
     } else {
       // Move: frame units → HWPUNIT through the same layout sample as the stored size.

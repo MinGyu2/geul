@@ -10,7 +10,7 @@ import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
-import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
+import { POSITION_PRESETS, objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
 
 const artifacts = resolve("public/rhwp");
@@ -150,6 +150,59 @@ const offsets = (doc: RhwpDocument, control: number) => {
 };
 
 describe("Stage 3 HWPX object edit on the Release engine", () => {
+  it.each(["hwp", "hwpx"] as const)("positions a plain %s picture in all nine page-body alignments", async format => {
+    const { editor, doc, bytes, pick, edit, confirm } = await setup(format, true);
+    try {
+      const baseline = format === "hwp" ? hwpReopenModel(doc) : null;
+      const props = (file: RhwpDocument) => JSON.parse(file.getPictureProperties!(0, 0, 3));
+      const frame = (file: RhwpDocument) => [...images(file)].sort((a, b) => a.w - b.w)[0]!;
+      const before = props(doc);
+      expect(before).toMatchObject({ width: 3600, height: 1800 });
+      const inline = images(doc).find(image => image.w > frame(doc).w)!;
+      expect(pick(inline).operations).not.toContain("position");
+      expect(edit({ kind: "position", preset: "topLeft" })).toBe(false);
+      let expected = before;
+      for (const [index, preset] of POSITION_PRESETS.entries()) {
+        expect(pick(frame(doc)).operations).toContain("position");
+        expect(edit({ kind: "position", preset })).toBe(true);
+        await confirm(index + 1);
+        expected = { ...before, horzRelTo: "Page", vertRelTo: "Page", horzOffset: 0, vertOffset: 0,
+          horzAlign: ["Left", "Center", "Right"][index % 3],
+          vertAlign: ["Top", "Center", "Bottom"][Math.floor(index / 3)] };
+        expect(props(doc)).toEqual(expected);
+        const page = JSON.parse(doc.getPageInfo(0));
+        const rect = frame(doc);
+        const top = page.marginTop + page.marginHeader;
+        const bottom = page.height - page.marginBottom - page.marginFooter;
+        expect(rect.x).toBeCloseTo(page.bodyLeft + (page.bodyRight - page.bodyLeft - rect.w) * ((index % 3) / 2), 0);
+        expect(rect.y).toBeCloseTo(top + (bottom - top - rect.h) * (Math.floor(index / 3) / 2), 0);
+      }
+      expect(editor.undo()).toBe(true);
+      await confirm(10);
+      expect(props(doc)).toMatchObject({ horzAlign: "Center", vertAlign: "Bottom" });
+      expect(editor.redo()).toBe(true);
+      await confirm(11);
+      expect(props(doc)).toEqual(expected);
+      const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(props(reopened)).toEqual(expected);
+          expect(frame(reopened)).toEqual(frame(doc));
+          if (baseline) expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, `p3-position-original.${format}`), bytes);
+          writeFileSync(resolve(out, `p3-position-edited.${format}`), output);
+          writeFileSync(resolve(out, `p3-position-${format}-report.json`), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("moves and nudges a floating picture, deletes an inline one, with stale refusal, undo/redo and reopen", async () => {
     const { editor, doc, bytes, pick, edit, confirm, calls } = await setup("hwpx");
     try {
@@ -158,7 +211,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const [inline, floating] = byWidth(images(doc));
       expect(offsets(doc, 3)).toMatchObject({ horzOffset: 20000, vertOffset: 3000 });
       const selected = pick(floating!);
-      expect(selected.operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText"]);
+      expect(selected.operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position"]);
       const inlineSelection = pick(inline!);
       expect(inlineSelection.operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
       // Moving an inline picture is not offered; a stale floating selection is refused.
@@ -315,7 +368,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
         .filter((control: { type: string }) => control.type === "shape") as Frame[];
 
-      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText"]);
+      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position"]);
       expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
       await confirm(1);
 

@@ -212,7 +212,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 그림 자르기·초기화 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 자르기 Release WASM 및 T009. 네이티브 자르기·초기화 NOT RUN |
 | 그림 텍스트 배치 (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | IMPLEMENTED_NOT_ACCEPTED | HWP 인라인→위/아래 배치 Release WASM 및 T009. 네이티브 배치 NOT RUN |
 | 그림 대체 텍스트(설명) (P2) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | HWP 실제 속성 창에서 입력한 설명이 게시본에 남고 재열기 UI에서 일치 |
-| 위치 프리셋 (P2) | SUPPORTED_AND_VERIFIED | UNSUPPORTED | UNSUPPORTED | DOCX `arrange.position` 여백 기준 9곳 |
+| 위치 프리셋 (P2/P3) | SUPPORTED_AND_VERIFIED | PARTIAL | PARTIAL | 여백 기준 9곳. RHWP는 비잠금 본문의 회전·반전·캡션·외부 링크 없는 어울림 그림으로 한정. 실제 렌더 좌표·T009·독립 재열기 PASS, 네이티브 속성 창 NOT RUN |
 | 기본 도형 서식 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED (검증 범위) | PARTIAL | HWPX z-order는 B4 검증 범위에서 지원된다. HWP는 같은 배치 방식의 기존 비잠금 기본 도형을 한 번의 저장에서 한 개까지 맨 앞·뒤로 보낼 수 있다. HWP/HWPX에서 캡션·글상자 하위 구조가 없는 비잠금 기본 도형의 실선 굵기 0.01–72pt를 지원한다. HWP는 기본 도형 삽입 뒤 첫 저장 전에 굵기를 바꾸는 흐름도 지원한다. HWP 사각형 회전·좌우 반전은 검증됐으며, 상하 반전·단색/없음 채우기·선 색·배치는 WASM/T009 검증 범위다. 네이티브 확인은 실행하지 않았다. |
 | 기본 도형 이동·크기 (P3) | SUPPORTED_AND_VERIFIED | SUPPORTED_AND_VERIFIED | PARTIAL | HWP 사각형 키보드 이동은 검증됐다. 정규 사각형·타원·선의 크기 변경은 엔진·T009 검증을 통과했다. B2의 비정규 사각형 크기 변경은 원본 기하를 기준으로 변경 축 좌표를 비례 변환하고 미변경 축을 보존한다. 지원 범위에서 직렬화·T009 검증을 통과했으며 퇴화 또는 범위 초과 결과는 거부한다. |
 | 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 내용 변조·bit 29 전환·캡션 객체 삭제는 거부 유지 |
@@ -322,3 +322,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P2 남은 경계.** WordCraft 본문 표 셀 그림의 기존 편집 근거는 REUSED PASS다. WordCraft의 머리말·꼬리말 객체는 story 선택 API가 있으나 T009가 해당 XML과 소유 관계를 고정하며, 글상자 안 객체에는 소유 story를 바인딩하는 변경 증명이 필요하다. RHWP의 중첩 개체 속성 API와 현재 렌더러의 단일 셀 경로를 연결한 범위는 위 인라인 그림 크기까지다. 더 깊은 셀·글상자 안 개체나 머리말·꼬리말은 전용 주소, UI 소유권, 기록·저장 증명이 미구현이다. HWP 셀 그림의 네이티브 속성 조작은 NOT RUN이다.
 
 **P3 HWP 기본 도형 앞·뒤 보내기 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'reorders existing HWP basic shapes|changes overlapping HWPX shape z-order'` 2 PASS(HWP 신규 1, HWPX 공유 명령 회귀 1). 겹침에서 적중 순서와 개체 주소, 잠긴 형제 거부, Undo/Redo 및 독립 재열기를 확인했다. 실제 HWP 출력의 T009 `release_hwp_basic_shape_layer_preserves_owned_records -- --ignored` 1 PASS. 순위·기하 변조와 잠금 반례를 거부했다. 파일과 로그는 `target/stage3-hwp-layer/`에 있다. 네이티브 순위 조작은 NOT RUN이다.
+
+**P3 그림 위치 프리셋 CURRENT PASS.** Release `f2c96060…`의 `stage3-object-edit.wasm.test.ts -t 'nine page-body alignments'` 2 PASS. HWP/HWPX에서 아홉 위치의 모델과 렌더 좌표, 인라인 그림 거부, Undo/Redo 및 독립 재열기를 확인했다. 영향 범위 WASM 개체 편집 2 PASS, 속성 창 동작 2 PASS, typecheck PASS. 새 HWP T009 실파일 시험과 기존 GSO 필드 증명 2 PASS(비호환 기준·정렬·오프셋·크기·여백 변조 거부), HWPX `save_check saved hwpx`는 `safe`. 실파일·실행 로그는 `target/stage3-position-presets/`에 있다. DOCX 모델·저장 근거는 REUSED PASS이며, 새 네이티브 위치 프리셋 조작은 NOT RUN이다.

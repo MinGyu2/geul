@@ -16,6 +16,9 @@ export interface RhwpPictureInspection {
   simpleInline: boolean;
   /** A floating picture whose position is a plain left/top offset (moved by changing the offsets). */
   movable?: { horzOffset: number; vertOffset: number };
+  /** Geometry and current anchor on a plain floating picture eligible for page presets. */
+  pagePlacement?: { horzRelTo: string; vertRelTo: string; horzAlign: string; vertAlign: string;
+    horzOffset: number; vertOffset: number };
   /** No caption, external link or size protection: format edits change only the requested fields. */
   plain: boolean;
   /** No caption or external link: top-level body picture may be deleted safely. */
@@ -50,7 +53,18 @@ export function inspectRhwpPicture(
     const fraction = (amount: number, side: number) => Math.min(1, amount / side);
     const crop = original && cropAmounts ? [fraction(cropAmounts[0], original.width), fraction(cropAmounts[1], original.height),
       fraction(cropAmounts[2], original.width), fraction(cropAmounts[3], original.height)] as [number, number, number, number] : undefined;
+    const { horzRelTo, vertRelTo, horzAlign, vertAlign, horzOffset, vertOffset } = values;
+    const pagePlacement = !treatAsChar && textWrap === "Square" && values.sizeProtect === false
+      && values.hasCaption === false && values.restrictInPage === false && values.rotationAngle === 0
+      && values.horzFlip === false && values.vertFlip === false && !("externalPath" in values)
+      && ["outerMarginLeft", "outerMarginTop", "outerMarginRight", "outerMarginBottom"].every(key => values[key] === 0)
+      && typeof horzRelTo === "string" && typeof vertRelTo === "string"
+      && typeof horzAlign === "string" && typeof vertAlign === "string"
+      && typeof horzOffset === "number" && Number.isSafeInteger(horzOffset)
+      && typeof vertOffset === "number" && Number.isSafeInteger(vertOffset)
+      ? { horzRelTo, vertRelTo, horzAlign, vertAlign, horzOffset, vertOffset } : undefined;
     return {
+      ...(pagePlacement ? { pagePlacement } : {}),
       properties: {
         widthPt: width / HWPUNIT_PER_POINT, heightPt: height / HWPUNIT_PER_POINT, wrap,
         ...(typeof description === "string" && description.length <= 4096 ? { description } : {}),

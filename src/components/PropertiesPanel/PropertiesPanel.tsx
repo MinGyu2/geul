@@ -118,7 +118,7 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
         </label>
       )}
       {can("altText") && <AltTextField value={picture?.description ?? ""} disabled={disabled} onApply={text => onEdit({ kind: "altText", text })} />}
-      {can("move") && selection.address.engine === "wordcraft" && (
+      {(can("position") || (can("move") && selection.address.engine === "wordcraft")) && (
         <label className="picture-size-field">{t("properties.object.position")}
           <select value="" disabled={disabled}
             onChange={event => { if (event.target.value) onEdit({ kind: "position", preset: event.target.value as PositionPreset }); }}>
