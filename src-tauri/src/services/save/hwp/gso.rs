@@ -19,6 +19,7 @@ const SC_PICTURE: &[u8; 4] = b"cip$";
 const SC_LINE: &[u8; 4] = b"nil$";
 const SC_RECT: &[u8; 4] = b"cer$";
 const SC_ELLIPSE: &[u8; 4] = b"lle$";
+const SC_POLYGON: &[u8; 4] = b"lop$";
 
 const TAG_CTRL_HEADER: u16 = 71;
 const TAG_LIST_HEADER: u16 = 72;
@@ -26,6 +27,7 @@ const TAG_SHAPE_COMPONENT: u16 = 76;
 const TAG_LINE: u16 = 78;
 const TAG_RECTANGLE: u16 = 79;
 const TAG_ELLIPSE: u16 = 80;
+const TAG_POLYGON: u16 = 82;
 const TAG_PICTURE: u16 = 85;
 
 const MAX_DIM_HU: usize = 2_000_000;
@@ -429,6 +431,42 @@ pub(super) fn evolved_candidate(
     matches!(
         (picture_bin_id(old), picture_bin_id(new)),
         (Some(a), Some(b)) if a == b && a >= 1 && a <= orig_bins
+    )
+}
+
+pub(super) fn polygon_outline_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    old != new
+        && shape_ctrl_id(old).is_some_and(|(kind, _, _)| kind == SC_POLYGON)
+        && gso_header_id(old).is_some_and(|id| id != 0 && Some(id) == gso_header_id(new))
+}
+
+/// Existing polygon style changes leave its vertices and all transforms in
+/// the original coordinate system. Polygon insertion/deletion is separate.
+pub(super) fn prove_polygon_outline(old: &[Record<'_>], new: &[Record<'_>]) -> Checked<()> {
+    let Some((SC_POLYGON, offset, 1)) = shape_ctrl_id(old) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let [(71, 1, header), (76, 2, a), (TAG_POLYGON, 3, _)] = *old else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let [(71, 1, _), (76, 2, b), (TAG_POLYGON, 3, _)] = *new else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    preserved(
+        old[0] == new[0] && old[2] == new[2] && a.len() == b.len()
+            && dword(header, 4)? as u32 & (ATTR_LOCKED | ATTR_CAPTION) == 0
+            && word(a, offset + 8)? == 0,
+        BODY,
+    )?;
+    let matrix_count = word(a, offset + 42)?;
+    let border = offset + 44 + (1 + 2 * matrix_count) * 48;
+    valid(a.len() >= border + 13 + 8 + 22, BODY)?;
+    let (a_width, b_width) = (dword(a, border + 4)?, dword(b, border + 4)?);
+    preserved(
+        a[..border] == b[..border] && a[border + 8..] == b[border + 8..]
+            && dword(a, border + 8)? & 0x3f == 1 && b[border + 3] == 0
+            && (1..=7200).contains(&a_width) && (1..=7200).contains(&b_width),
+        BODY,
     )
 }
 
@@ -1758,6 +1796,34 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP polygon outline scenario first"]
+    fn release_hwp_polygon_outline_preserves_geometry() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p3-polygon-original.hwp");
+        let edited = read("p3-polygon-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let component = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(super::SC_POLYGON);
+        let vertices = |tag, level, _: &[u8]| tag == super::TAG_POLYGON && level == 3;
+        let cases: [(fn(u16, u16, &[u8]) -> bool, usize); 4] = [
+            (vertices, 4), (component, 36), (component, 200), (component, 204),
+        ];
+        for (pick, offset) in cases {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                if offset == 200 {
+                    changed[offset..offset+4].copy_from_slice(&7201u32.to_le_bytes());
+                } else {
+                    changed[offset] ^= 1;
+                }
+                changed
+            });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
     }
 
     #[test]

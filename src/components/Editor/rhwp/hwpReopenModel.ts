@@ -71,7 +71,7 @@ export function checkCellProperties(o: JsonObject): void {
   field(o, "isHeader", "boolean", "cell");
   fields(o, "cell", "border", ...BORDERS);
 }
-const SHAPE_DESCS = new Set(["사각형", "타원", "직선"]);
+const SHAPE_DESCS = new Set(["사각형", "타원", "직선", "다각형"]);
 
 export function checkPictureProperties(o: JsonObject): void {
   fields(o, "picture", "uint", "width", "height");

@@ -1178,6 +1178,13 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     matched = true;
                     break;
                 }
+                if !exact_later && super::gso::polygon_outline_candidate(o, object) {
+                    super::gso::prove_polygon_outline(o, object)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
                 if !exact_later && super::gso::shape_layer_changed(o, object) {
                     preserved(
                         cursor == ni && old.objects.len() == new.objects.len()
@@ -1209,6 +1216,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         || evolved_candidate(o, later)
                         || super::gso::evolved_candidate(o, later, &ac)
                         || super::gso::textbox_edit_candidate(o, later)
+                        || super::gso::polygon_outline_candidate(o, later)
                 });
                 if survives_later {
                     break;

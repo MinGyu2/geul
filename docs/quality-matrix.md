@@ -324,3 +324,7 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P3 HWP 기본 도형 앞·뒤 보내기 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'reorders existing HWP basic shapes|changes overlapping HWPX shape z-order'` 2 PASS(HWP 신규 1, HWPX 공유 명령 회귀 1). 겹침에서 적중 순서와 개체 주소, 잠긴 형제 거부, Undo/Redo 및 독립 재열기를 확인했다. 실제 HWP 출력의 T009 `release_hwp_basic_shape_layer_preserves_owned_records -- --ignored` 1 PASS. 순위·기하 변조와 잠금 반례를 거부했다. 파일과 로그는 `target/stage3-hwp-layer/`에 있다. 네이티브 순위 조작은 NOT RUN이다.
 
 **P3 그림 위치 프리셋 CURRENT PASS.** Release `f2c96060…`의 `stage3-object-edit.wasm.test.ts -t 'nine page-body alignments'` 2 PASS. HWP/HWPX에서 아홉 위치의 모델과 렌더 좌표, 인라인 그림 거부, Undo/Redo 및 독립 재열기를 확인했다. 영향 범위 WASM 개체 편집 2 PASS, 속성 창 동작 2 PASS, typecheck PASS. 새 HWP T009 실파일 시험과 기존 GSO 필드 증명 2 PASS(비호환 기준·정렬·오프셋·크기·여백 변조 거부), HWPX `save_check saved hwpx`는 `safe`. 실파일·실행 로그는 `target/stage3-position-presets/`에 있다. DOCX 모델·저장 근거는 REUSED PASS이며, 새 네이티브 위치 프리셋 조작은 NOT RUN이다.
+
+**P3 남은 경계.** RHWP는 곡선 점·세그먼트와 그룹의 하위 그림을 직렬화한다. 곡선 편집 및 그룹 내부 편집에는 각 기하·변환과 자식 소유권을 증명하는 편집 및 T009 경로가 필요하다. 다각형 꼭짓점 변경, 그룹 재배치·크기·삭제 및 여러 도형 순위가 바뀐 한 번의 HWP 저장은 현재 범위 밖이다.
+
+**P3 HWP 다각형 실선 편집 CURRENT PASS.** Release `f2c96060…`의 `stage3-shapes.wasm.test.ts -t 'solid outline of an existing HWP polygon'` 1 PASS. 30° 회전된 기존 도형에 실선 색과 2.45pt를 적용했다. 크기·삭제는 거부했고 Undo/Redo와 독립 재열기를 확인했다. 실제 HWP는 T009 `release_hwp_polygon_outline_preserves_geometry -- --ignored` 1 PASS. 정점·변환 플래그·선 종류·범위 밖 굵기 변조를 거부했다. `target/stage3-polygon-outline/`에 출력과 로그가 있다. 네이티브 다각형 편집은 NOT RUN이다.

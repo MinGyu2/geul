@@ -1759,10 +1759,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           }
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
-          const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
+          const polygon = canEditHwp && this.unlockedBodyGso(shapeAddress) === "다각형";
+          const shapeSupported = polygon || format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
           const shape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
             ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
-          if (shape) {
+          if (polygon) {
+            if (shape?.solidOutline) operations.push("outline");
+          } else if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
               ...(this.doc.deleteShapeControl && !(format === "hwp" && shape.hasCaption) ? ["delete" as const] : []), "wrap",
@@ -1789,7 +1792,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
                 ...shape.properties,
-                ...(shape.solidOutline && this.isEditableHwpGso(shapeAddress, true) ? { outlineWidthEditable: true } : {}),
+                ...(shape.solidOutline && (polygon || this.isEditableHwpGso(shapeAddress, true)) ? { outlineWidthEditable: true } : {}),
               } } : {}),
             },
           };
@@ -4513,10 +4516,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** Stage 3 P3 `object.edit` on the selected HWPX/HWP body shape/text box (outer object). */
   private editShape(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
     const doc = this.doc, selected = this.objectSelection;
-    if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history
-      || !this.gsoFormatEditable(address, true)) return false;
+    if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
+    const polygon = format === "hwp" && this.structuralFormat() && this.unlockedBodyGso(address) === "다각형";
+    if (polygon ? request.edit.kind !== "outline" : !this.gsoFormatEditable(address, true)) return false;
     const before = inspectRhwpShape(doc, address);
+    if (polygon && !before?.solidOutline) return false;
     if (!before || !selected.shape
       || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
     const { edit } = request;
@@ -4570,7 +4575,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           keep = except("borderColor");
         } else {
           const borderWidth = Math.round(edit.width * 100);
-          if (!selected.shape.outlineWidthEditable || !before.solidOutline || !this.isEditableHwpGso(address, true)
+          if (!selected.shape.outlineWidthEditable || !before.solidOutline || (!polygon && !this.isEditableHwpGso(address, true))
             || edit.width < 0.01 || edit.width > 72 || !Number.isSafeInteger(borderWidth)) return false;
           props = expect = { borderColor, borderWidth };
           keep = except("borderColor", "borderWidth");

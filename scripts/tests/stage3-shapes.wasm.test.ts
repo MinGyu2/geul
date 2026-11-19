@@ -256,6 +256,60 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("edits only the solid outline of an existing HWP polygon", async () => {
+    const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
+    let bytes: Uint8Array, control: number;
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
+        width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+      })));
+      control = created.controlIdx;
+      expect(JSON.parse(fixture.setShapeProperties!(0, 0, control, '{"textWrap":"Square","rotationAngle":30}')))
+        .toMatchObject({ ok: true });
+      bytes = fixture.exportHwp();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(pick(shapes(doc)[0]!).operations).toEqual(["deselect", "outline"]);
+      const before = props(doc, control);
+      expect(before.rotationAngle).toBe(30);
+      expect(edit({ kind: "bounds", width: 100, height: 60 })).toBe(false);
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(edit({ kind: "outline", color: "334455", width: 2.45 })).toBe(true);
+      await confirm();
+      const expected = { ...before, borderColor: 0x554433, borderWidth: 245 };
+      expect(props(doc, control)).toEqual(expected);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(props(doc, control)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(props(reopened, control)).toEqual(expected);
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p3-polygon-original.hwp"), bytes);
+          writeFileSync(resolve(out, "p3-polygon-edited.hwp"), output);
+          writeFileSync(resolve(out, "p3-polygon-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("reorders existing HWP basic shapes without moving their anchors", async () => {
     const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
     let bytes: Uint8Array;
