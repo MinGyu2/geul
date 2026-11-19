@@ -1,5 +1,12 @@
 import type { ObjectFrame, ObjectKind } from "../../../commands/objectSelection";
 
+export interface CellPictureAddress {
+  section: number;
+  paragraph: number;
+  path: string;
+  control: number;
+}
+
 interface ControlHit {
   kind: ObjectKind;
   path: readonly number[];
@@ -7,6 +14,7 @@ interface ControlHit {
   plane: number;
   zOrder: number;
   bodyPicture?: readonly [number, number, number];
+  cellPicture?: CellPictureAddress;
   bodyEmbedded?: readonly [number, number, number];
   bodyShape?: readonly [number, number, number];
 }
@@ -73,6 +81,23 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
       if (kind === "picture") candidate.bodyPicture = address;
       if (kind === "embedded") candidate.bodyEmbedded = address;
       if (kind === "shape") candidate.bodyShape = address;
+    }
+    // The renderer exposes the model path independently of the sorting key.
+    // Admit only a single table level and require both addresses to agree.
+    if (kind === "picture" && !("headerFooter" in control) && !("noteRef" in control)
+      && control.parentParaIdx === control.paraIdx && Array.isArray(control.cellPath) && control.cellPath.length === 1) {
+      const [entry] = control.cellPath as unknown[];
+      if (record(entry) && index(entry.controlIndex) && index(entry.cellIndex) && index(entry.cellParaIndex)
+        && entry.controlIndex === control.outerTableControlIdx && entry.cellIndex === control.cellIdx
+        && entry.cellParaIndex === control.cellParaIdx) {
+        const expected = [control.secIdx, control.paraIdx, entry.controlIndex, entry.cellIndex, entry.cellParaIndex, control.controlIdx];
+        if (path.length === expected.length && expected.every((value, i) => value === path[i])) {
+          candidate.cellPicture = {
+            section: control.secIdx, paragraph: control.paraIdx, control: control.controlIdx,
+            path: JSON.stringify([{ controlIndex: entry.controlIndex, cellIndex: entry.cellIndex, cellParaIndex: entry.cellParaIndex }]),
+          };
+        }
+      }
     }
     if (!top || above(candidate, top)) {
       top = candidate;

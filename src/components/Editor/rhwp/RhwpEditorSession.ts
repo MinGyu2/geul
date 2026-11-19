@@ -1,5 +1,5 @@
 import { objectEditMatches, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
-import { hitRhwpObject } from "./objectHit";
+import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { hexToBgr, inspectRhwpShape } from "./shapeProperties";
@@ -49,7 +49,7 @@ import {
 //   조정한다(문서 모델은 하나). 일반 기록과 선택 글자 서식은 제품 capability이며 실제 세션의 IME·기록·소유권·원본 보존 조건으로
 //   가용성을 정한다. HWP는 원본 문자 모양을 파생 직렬화할 수 있어야 한다. 저장은 T009 전체 검증을 다시 통과해야 한다.
 import { sha256 } from "./rhwpArtifactIdentity";
-import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture, insertedCellPicture, insertedNestedTable } from "./hwpReopenModel";
+import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, cellPictureEvidence, insertedBasicTable, insertedInlinePicture, insertedCellPicture, insertedNestedTable } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
@@ -329,7 +329,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; shapeAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number] } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number] } | null = null;
   private objectEpoch = 0;
 
   get objectSelection(): ObjectSelection | null {
@@ -1722,7 +1722,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           this.history?.boundary();
           const address = hit.bodyPicture;
           const body = address && address[1] < this.doc.getParagraphCount(address[0]);
-          const inspected = body ? inspectRhwpPicture(this.doc, address) : undefined;
+          const cellPicture = hit.cellPicture && this.readCellPicture(hit.cellPicture);
+          const inspected = body ? inspectRhwpPicture(this.doc, address) : cellPicture?.picture;
           const graphic = this.readChart(hit.bodyEmbedded);
           const format = this.sessions.get(this.sessionId)?.format;
           const canEditHwp = format === "hwp" && this.structuralFormat();
@@ -1734,7 +1735,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canMove = canPic && !!inspected!.movable && !!this.doc.setPictureProperties;
           const canDelete = canPic && !!this.doc.deletePictureControl && (format === "hwpx" || inspected!.deletable);
           const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
-          const operations: MutatingObjectOperation[] = [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
+          const operations: MutatingObjectOperation[] = cellPicture ? ["resize"] : [...(canMove ? ["move" as const] : []), ...(canResize ? ["resize" as const] : []), ...(canDelete ? ["delete" as const] : []),
             ...(canFormat && inspected!.original ? ["crop" as const] : []), ...(canFormat ? ["wrap" as const, "altText" as const] : [])];
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
@@ -1755,6 +1756,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           this.selectedObject = {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
+            ...(cellPicture ? { cellPicture: hit.cellPicture } : {}),
             ...(shape && shapeAddress ? { shapeAddress } : {}),
             ...(chartAddress ? { chartAddress } : {}),
             selection: {
@@ -4301,6 +4303,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private editObject(request: ObjectEditRequest): boolean {
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
+    if (this.selectedObject?.cellPicture) {
+      const { edit } = request, selected = this.objectSelection;
+      return !!selected && edit.kind === "bounds" && edit.x === undefined && edit.width !== undefined && edit.height !== undefined
+        && objectEditMatches(request, selected)
+        && this.resizePicture({ ...request, widthPt: edit.width, heightPt: edit.height });
+    }
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
     if (!selected || !address || !doc || !objectEditMatches(request, selected) || !this.history
       || !this.gsoFormatEditable(address, false)) return false;
@@ -4552,10 +4560,44 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return accepted;
   }
 
+  private readCellPicture(address: CellPictureAddress) {
+    const doc = this.doc;
+    if (this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.history || !doc?.getControls
+      || !doc.getCursorModel || !doc.getCellPicturePropertiesByPath || !doc.setCellPicturePropertiesByPath) return null;
+    const { section, paragraph, path, control } = address;
+    try {
+      const [entry] = JSON.parse(path) as [{ controlIndex: number; cellIndex: number; cellParaIndex: number }];
+      const rawModel = doc.getCursorModel(), rawControls = doc.getControls();
+      if (rawModel.length + rawControls.length > 8 * 1024 * 1024) return null;
+      const { lists } = JSON.parse(rawModel) as { lists: { listId: number; isCell: boolean; hostListId: number;
+        sectionIndex: number; hostPara: number; controlIndex: number; cellIndex: number }[] };
+      const owners = lists.filter(l => l.isCell && l.hostListId === 0 && l.sectionIndex === section
+        && l.hostPara === paragraph && l.controlIndex === entry.controlIndex && l.cellIndex === entry.cellIndex);
+      if (owners.length !== 1) return null;
+      let globalParagraph = paragraph;
+      for (let s = 0; s < section; s++) globalParagraph += doc.getParagraphCount(s);
+      const controls = JSON.parse(rawControls) as { list: number; para: number; controlIndex: number; ctrlId: string;
+        userDesc: string; props?: { Lock?: number } }[];
+      const table = controls.filter(c => c.list === 0 && c.para === globalParagraph && c.controlIndex === entry.controlIndex);
+      const child = controls.filter(c => c.list === owners[0]!.listId && c.para === entry.cellParaIndex && c.controlIndex === control);
+      if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0
+        || child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
+      const resource = cellPictureEvidence(doc, section, paragraph, path, control);
+      const picture = inspectRhwpPicture({
+        getPictureProperties: () => doc.getCellPicturePropertiesByPath!(section, paragraph, path, control),
+      }, [section, paragraph, control]);
+      return resource && picture?.simpleInline && picture.deletable
+        && resource.width === Math.round(picture.properties.widthPt * 100)
+        && resource.height === Math.round(picture.properties.heightPt * 100)
+        ? { picture, resource } : null;
+    } catch { return null; }
+  }
+
   private resizePicture(request: PictureResizeRequest): boolean {
     const doc = this.doc, selected = this.objectSelection, address = this.selectedObject?.pictureAddress;
-    if (!selected || !pictureResizeMatches(request, selected) || !address || !doc?.setPictureProperties
-      || !this.history || !this.gsoFormatEditable(address, false)) return false;
+    const cell = this.selectedObject?.cellPicture;
+    if (!selected || !pictureResizeMatches(request, selected) || !doc || !this.history) return false;
+    if (!cell && (!address || !doc.setPictureProperties || !this.gsoFormatEditable(address, false))) return false;
     const page = this.pages[selected.frame.page], previous = selected.picture;
     if (!page || !previous || ![request.widthPt, request.heightPt].every(side =>
       typeof side === "number" && Number.isFinite(side) && side >= 2 && side <= 4000)) return false;
@@ -4565,13 +4607,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (width * selected.frame.width / (previous.widthPt * 100) > page.width
       || height * selected.frame.height / (previous.heightPt * 100) > page.height
       || (width === Math.round(previous.widthPt * 100) && height === Math.round(previous.heightPt * 100))) return false;
-    const before = inspectRhwpPicture(doc, address);
+    const cellBefore = cell ? this.readCellPicture(cell) : null;
+    const before = cell ? cellBefore?.picture : inspectRhwpPicture(doc, address!);
     if (!before?.simpleInline || before.properties.widthPt !== previous.widthPt || before.properties.heightPt !== previous.heightPt) return false;
     const savedSelection = this.selectedObject;
     this.selectedObject = null;
     const accepted = this.mutate(() => {
-      const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify({ width, height }))) as { ok?: boolean };
-      const after = inspectRhwpPicture(doc, address);
+      const payload = JSON.stringify({ width, height });
+      const result = JSON.parse(cell
+        ? doc.setCellPicturePropertiesByPath!(cell.section, cell.paragraph, cell.path, cell.control, payload)
+        : doc.setPictureProperties!(...address!, payload)) as { ok?: boolean };
+      const cellAfter = cell ? this.readCellPicture(cell) : null;
+      if (cellBefore && (!cellAfter || JSON.stringify(cellAfter.resource) !== JSON.stringify({ ...cellBefore.resource, width, height }))) {
+        throw new Error("cell picture resource or ownership changed");
+      }
+      const after = cell ? cellAfter?.picture : inspectRhwpPicture(doc, address!);
       if (result.ok !== true || !after?.simpleInline || after.properties.widthPt !== width / 100
         || after.properties.heightPt !== height / 100 || after.properties.description !== previous.description) {
         throw new Error("picture dimensions did not verify");

@@ -221,7 +221,7 @@ export function insertedCellPicture(doc: RhwpDocument, section: number, host: nu
   } catch { return false; }
 }
 
-function cellPictureEvidence(doc: RhwpDocument, section: number, host: number, path: string, control: number): JsonObject | null {
+export function cellPictureEvidence(doc: RhwpDocument, section: number, host: number, path: string, control: number): JsonObject | null {
   if (!doc.getCellPictureByPath) return null;
   const p = readObject(doc.getCellPictureByPath(section, host, path, control));
   if (p.ok !== true || p.section !== section || p.paraIdx !== host || p.controlIdx !== control

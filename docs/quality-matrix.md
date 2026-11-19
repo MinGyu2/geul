@@ -218,7 +218,7 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 캡션 있는 GSO 편집 | — | — | PARTIAL | B5: 캡션 있는 최상위 비잠금 그림/기본 도형의 안전한 바깥 개체 편집(이동·크기·배치·채우기·선 색·회전·자르기·설명) 허용(캡션 `LIST_HEADER`/`PARA_TEXT`/이진 트리는 바이트 동일 유지). 캡션 내용 변조·bit 29 전환·캡션 객체 삭제는 거부 유지 |
 | 보호된 GSO 편집 | — | — | BLOCKED | 잠금 객체 변경, 크기 보호 객체 크기 변경 거부 |
 | 미지·중첩 GSO 구조 변경 | — | — | BLOCKED | 최상위 기본 도형·그림으로 한정. 글상자 평문 레코드, 원본 리소스와 미지 확장 바이트 보존 |
-| 중첩 개체 (P3) | PARTIAL | UNSUPPORTED | UNSUPPORTED | DOCX 표 셀 그림: 크기·자르기·설명·삭제만(이동 거부), 머리글/바닥글·글상자 안 개체는 변경 없음. RHWP 셀·머리글 개체는 선택만 |
+| 중첩 개체 (P2) | PARTIAL | PARTIAL | UNSUPPORTED | DOCX 표 셀 그림은 크기·자르기·설명·삭제를 지원한다. HWPX는 본문 표 한 단계 안의 비잠금 인라인 그림 크기 변경을 표·셀·문단·그림 주소와 리소스를 확인한 뒤 허용한다. DOCX 및 RHWP의 나머지 중첩 경로는 별도 소유권·저장 증명이 필요하다. |
 
 현재 P1 관련 Vitest 85 PASS, WordCraft 개체 선택 집중 시험 1 PASS,
 T009 저장 278 PASS / 0 FAIL / 29 ignored. P2 집중 Vitest 59 PASS,
@@ -302,3 +302,5 @@ Redo, 같은 문서 붙여넣기 미디어 공유, 낡은 선택 복사 거부, 
 **P2 HWPX 단일 문단 글상자 CURRENT PASS.** Release WASM `f2c96060519075d4bd74021cb302cda8407341928822351d4c544d0c4b2828c9`의 `stage3-shapes.wasm.test.ts -t 'edits one owned HWPX text box'` 1 PASS. 실제 hit-test와 소유권 검사, 잠금 형제 진입 거부, 한글 조합·선택·문단 정렬·Undo/Redo, 내보내기·독립 재열기를 확인했다. 새 `p2-textbox-*.hwpx`와 엔진 손실 보고서의 T009 `save_check saved hwpx` 결과는 `safe`, `npm run typecheck`는 PASS다. 네이티브 입력기 확인과 중첩 개체는 후속 수용 범위다.
 
 **P2 HWP 단일 문단 글상자 CURRENT PASS.** 동일 Release WASM에서 `stage3-shapes.wasm.test.ts -t 'edits a plain HWP text box'` 1 PASS. SAFE 사전 검사 뒤 글상자에 텍스트와 문단 정렬을 적용했고 원본 본문과 바깥 개체가 재열기 후 같았다. `release_hwp_p -- --ignored` 2 PASS. 새 HWP 실파일에서 삽입과 내부 편집 동시 저장, 기존 소유 글상자 편집, 잠금 글상자 내부 변경 거부를 확인했다. 글상자 신규 레코드 분기를 확장했으므로 P1은 기존 fixture로 T009만 재검증했다.
+
+**P2 HWPX 표 셀 인라인 그림 CURRENT PASS.** 동일 Release WASM에서 `stage3-shapes.wasm.test.ts -t 'resizes an HWPX table-cell picture'` 1 PASS. 레이아웃과 모델 주소의 일치, 크기 변경·Undo/Redo, 독립 재열기와 자원 해시·형제 셀 텍스트 보존을 확인했다. `p2-cell-picture-*.hwpx` 실파일과 손실 보고서의 T009 `save_check saved hwpx` 결과는 `safe`, `npm run typecheck`는 PASS다.

@@ -42,14 +42,14 @@ function source(format: "hwp" | "hwpx"): Uint8Array {
   } finally { doc.free(); }
 }
 
-async function setup(format: "hwp" | "hwpx") {
+async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
   const control = controlledBackend();
   const sessions = new DocumentSessions(control.backend);
   const open = sessions.open(`/shape.${format}`);
   const sessionInfo = (patch: Parameters<typeof info>[0]) => info({ ...patch, format });
   control.take("open").reply(ok(sessionInfo({ displayName: `shape.${format}` })));
   await open;
-  const bytes = source(format);
+  const bytes = initial ?? source(format);
   const doc = new engine.HwpDocument(bytes) as RhwpDocument;
   let firstOpen = true;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
@@ -252,6 +252,57 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(props(doc, second.controlIdx).zOrder).toBeLessThan(props(doc, first.controlIdx).zOrder);
       expect(editor.pointAt(0, overlapX, overlapY, false, false, true)).toBe(true);
       expect(editor.objectSelection?.address.path).toEqual([0, 0, first.controlIdx]);
+    } finally { editor.dispose(); }
+  });
+
+  it("resizes an HWPX table-cell picture through its owned layout path", async () => {
+    const docSource = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC", "base64");
+    const table = JSON.parse(docSource.createTable!(0, 0, 1, 1, 2));
+    const host = table.paraIdx as number, control = table.controlIdx as number;
+    const path = JSON.stringify([{ controlIndex: control, cellIndex: 0, cellParaIndex: 0 }]);
+    let bytes: Uint8Array;
+    try {
+      docSource.insertTextInCell(0, host, control, 0, 0, 0, "owned cell");
+      docSource.insertTextInCell(0, host, control, 1, 0, 0, "sibling");
+      expect(JSON.parse(docSource.insertPictureInCellByPath!(0, host, path, 2, png, 3600, 4800, 48, 64, "png", ""))).toMatchObject({ ok: true, controlIdx: 0 });
+      bytes = docSource.exportHwpx();
+    } finally { docSource.free(); }
+
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const picture = (file: RhwpDocument) => JSON.parse(file.getCellPictureByPath!(0, host, path, 0));
+    try {
+      const before = picture(doc);
+      const frame = JSON.parse(doc.getPageControlLayout!(0)).controls.find((item: Frame) => item.type === "image");
+      expect(frame).toBeDefined();
+      expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+      const selected = editor.objectSelection!;
+      expect(selected.operations).toEqual(["deselect", "resize"]);
+      expect(editor.execute("object.edit", objectEditRequest(selected, { kind: "bounds", width: 42, height: 42 })).accepted).toBe(true);
+      await confirm();
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(picture(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(picture(reopened)).toEqual({ ...before, width: 4200, height: 4200 });
+          expect(reopened.getTextInCell(0, host, control, 0, 0, 0, 10)).toBe("owned cell");
+          expect(reopened.getTextInCell(0, host, control, 1, 0, 0, 7)).toBe("sibling");
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p2-cell-picture-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "p2-cell-picture-edited.hwpx"), output);
+          writeFileSync(resolve(out, "p2-cell-picture-report.json"), report);
+        }
+      } finally { exported.free(); }
     } finally { editor.dispose(); }
   });
 
