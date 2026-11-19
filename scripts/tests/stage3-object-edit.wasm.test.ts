@@ -889,4 +889,85 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       } finally { editor.dispose(); }
     }
   });
+  it("accepts a 64-paragraph caption replacement after removing a boundary", async () => {
+    for (const format of ["hwp", "hwpx"] as const) {
+      const fixture = new engine.HwpDocument(source(format));
+      let original: Uint8Array;
+      try {
+        expect(JSON.parse(fixture.setPictureProperties(0, 0, 2, '{"hasCaption":true}')).ok).toBe(true);
+        for (let p = 0; p < 63; p++) {
+          const end = fixture.getCellParagraphLength(0, 0, 2, 0, p);
+          expect(JSON.parse(fixture.splitParagraphInCell(0, 0, 2, 0, p, end)).ok).toBe(true);
+          expect(JSON.parse(fixture.insertTextInCell(0, 0, 2, 0, p + 1, 0, "x")).ok).toBe(true);
+        }
+        original = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
+      } finally { fixture.free(); }
+      const { editor, doc, confirm, calls, sessions } = await setup(format, true, false, original);
+      const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string }[]).filter(c => c.ctrlId === "atno");
+      const text = (d: RhwpDocument, p: number) => d.getTextInCell(0,0,2,0,p,0,d.getCellParagraphLength(0,0,2,0,p));
+      try {
+        const initialAtno = atnos(doc), initialPicture = JSON.parse(doc.getPictureProperties!(0,0,2));
+        expect(initialAtno).toHaveLength(1);
+        expect(doc.getCellParagraphCount(0, 0, 2, 0)).toBe(64);
+        const end = doc.getCellParagraphLength(0, 0, 2, 0, 0);
+        const pointEnd = () => {
+          const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, end));
+          expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
+          expect(editor.caret.cell?.caption).toBe(true);
+        };
+        const state = () => ({bytes: format === "hwp" ? doc.exportHwp() : doc.exportHwpx(), rev:sessions.get(1)?.revision,
+          commits:calls.filter(c => c.method === "commit").length, undo:editor.canUndo, redo:editor.canRedo, controls:doc.getControls!()});
+        pointEnd();
+        const frozen = state();
+        expect(editor.enter()).toBe(false); // 64 -> 65 without selection
+        expect(state()).toEqual(frozen);
+        expect(editor.moveHorizontal(1, true)).toBe(true); // remove one boundary
+        const selected = state();
+        expect(editor.typeText("A\nB\nC")).toBe(false); // 64 - 1 + 2 = 65
+        expect(state()).toEqual(selected);
+        expect(editor.typeText("A\nB")).toBe(true); // 64 - 1 + 1 = 64
+        await confirm(1);
+        expect(doc.getCellParagraphCount(0,0,2,0)).toBe(64);
+        expect(text(doc,0).endsWith("A")).toBe(true); expect(text(doc,1)).toBe("Bx");
+        expect(atnos(doc)).toEqual(initialAtno);
+        expect(editor.undo()).toBe(true); await confirm(2);
+        expect(doc.getCellParagraphCount(0,0,2,0)).toBe(64); expect(text(doc,1)).toBe("x");
+        expect(editor.redo()).toBe(true); await confirm(3); expect(text(doc,1)).toBe("Bx");
+        expect(editor.undo()).toBe(true); await confirm(4);
+        pointEnd(); expect(editor.moveHorizontal(1, true)).toBe(true);
+        expect(editor.enter()).toBe(true); await confirm(5); // same boundary replacement using Enter
+        expect(doc.getCellParagraphCount(0,0,2,0)).toBe(64); expect(text(doc,1)).toBe("x");
+        expect(editor.undo()).toBe(true); await confirm(6);
+        expect(editor.redo()).toBe(true); await confirm(7);
+        expect(atnos(doc)).toEqual(initialAtno);
+        expect(JSON.parse(doc.getPictureProperties!(0,0,2))).toEqual(initialPicture);
+        pointEnd(); expect(editor.moveHorizontal(1, true)).toBe(true);
+        expect(editor.typeText("A\nB")).toBe(true); await confirm(8);
+        expect(text(doc,0).endsWith("A")).toBe(true); expect(text(doc,1)).toBe("Bx");
+        pointEnd(); expect(editor.moveLineEdge("start", false)).toBe(true);
+        expect(editor.moveHorizontal(1, true)).toBe(true); expect(editor.moveHorizontal(1, true)).toBe(true);
+        expect(editor.moveHorizontal(1, true)).toBe(true); // overlaps atno at offset 2
+        const guarded = state(); expect(editor.typeText("X\nY")).toBe(false); expect(editor.enter()).toBe(false);
+        expect(state()).toEqual(guarded);
+        const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
+        try {
+          const edited = exported.takeBytes(), report = exported.contentLoss();
+          const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+          try {
+            expect(reopened.getCellParagraphCount(0,0,2,0)).toBe(64);
+            expect(Array.from({length:64},(_,p) => text(reopened,p))).toEqual(Array.from({length:64},(_,p) => text(doc,p)));
+            expect(atnos(reopened)).toEqual(initialAtno);
+            expect(JSON.parse(reopened.getPictureProperties!(0,0,2))).toEqual(initialPicture);
+          } finally { reopened.free(); }
+          if (out) {
+            mkdirSync(out, {recursive:true});
+            writeFileSync(resolve(out, `p5-boundary-original.${format}`), original);
+            writeFileSync(resolve(out, `p5-boundary-edited.${format}`), edited);
+            writeFileSync(resolve(out, `p5-boundary-report.${format}.json`), report);
+          }
+        } finally { exported.free(); }
+      } finally { editor.dispose(); }
+    }
+  });
+
 });

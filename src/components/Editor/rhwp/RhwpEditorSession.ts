@@ -1354,6 +1354,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.text?.canDeleteRange(from, to) ?? false;
   }
 
+  /** Call after canDeleteSelection: caption range deletion joins each selected paragraph boundary. */
+  private captionAllowsSplits(added: number): boolean {
+    if (!this.caret.cell?.caption) return true;
+    if (!this.text) return false;
+    try {
+      const [from, to] = this.ordered();
+      const removed = this.hasSelection ? paragraphOf(to) - paragraphOf(from) : 0;
+      const result = this.text.paragraphCount(this.caret) - removed + added;
+      return Number.isSafeInteger(result) && result >= 1 && result <= 64;
+    } catch { return false; }
+  }
+
   private deleteSelectionRaw(): DocPosition {
     const [from, to] = this.ordered();
     this.text!.deleteRange(from, to);
@@ -1366,7 +1378,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (text.includes("\n") && this.caret.cell?.textBox) return false;
     if (text.includes("\n") && this.caret.cell?.caption) {
       const added = text.split("\n").length - 1;
-      if (!this.text || this.text.paragraphCount(this.caret) + added > 64) return false;
+      if (!this.captionAllowsSplits(added)) return false;
     }
     if (this.caret.cell?.caption && text.includes("\t")) return false;
     if (text.includes("\n")) return this.mutate(() => {
@@ -1440,8 +1452,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   enter(): boolean {
     if (this.caret.cell?.textBox) return false;
-    if (this.caret.cell?.caption && (!this.text || this.text.paragraphCount(this.caret) >= 64)) return false;
-    if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
+    if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret) || !this.captionAllowsSplits(1)) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
     // otherwise the same keystroke would split while the preflight is CHECKING and exit once it is SAFE.

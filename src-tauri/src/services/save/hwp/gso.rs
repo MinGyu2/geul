@@ -1955,6 +1955,15 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Release-WASM 64-paragraph caption boundary fixture"]
+    fn release_hwp_caption_boundary_preservation() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(dir.join("p5-boundary-original.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("p5-boundary-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+    }
+
+    #[test]
     #[ignore = "Release-WASM fixtures: run the HWP owned picture caption scenario first"]
     fn release_hwp_picture_caption_preserves_owner_and_number_slot() {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
