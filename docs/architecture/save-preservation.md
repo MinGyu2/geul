@@ -1891,3 +1891,13 @@ WordCraft는 모델이 있는 차트·SmartArt를 모델에서만 쓰고, DOCX �
 붙여넣기는 그림 삽입과 같은 기존 `pictures_appended` 규칙(검증된 새 미디어와 그 패키지 메타데이터만 추가)과 본문 부분 변경만 만들며,
 편집 시점 `check_saved`·`same_as`를 통과해야 커밋한다. 실패하면 `atomic`이 문서·미디어·이력을 되돌린다(시험: 7가지 잘못된 페이로드 뒤
 내보내기 바이트·Undo 가능 여부 불변). 같은 미디어 바이트는 새 부분 없이 공유된다.
+
+### Stage 3 안정화: 차트·SmartArt XML 의미 보존 증명 축소 (2026-11-19)
+
+기존 `graphic_parts_regenerated`는 대상 차트·다이어그램 XML 부분 전체를 일반 비교에서 면제해, WordCraft 편집 모델 밖의 속성·노드·확장·범례·색상 변경도 통과할 수 있었다. `services::save::docx_graphics::graphic_parts_regenerated`로 다음 좁은 의미 증명으로 축소했다:
+
+- **소유권·관계 고정:** `word/_rels/document.xml.rels`는 바이트가 같아야 하고, 대상 부분에 자체 `.rels`가 양쪽 모두 없어야 하며, **원본과 출력 `word/document.xml` 모두**가 `<c:chart r:id="..."/>` 또는 `<dgm:relIds r:dm="..." r:lo="..." r:qs="..." r:cs="..."/>`로 그 부분을 실제로 가리켜야 한다.
+- **허용 부분 축소:** `word/diagrams/colorsN.xml`과 `word/diagrams/quickStyleN.xml`은 어떤 지원 편집(`ChartTitle`·`ChartType`·`ChartData`·`SmartArtItems`·`SmartArtLayout`)도 바꾸지 않으므로 변경 면제에서 제외했다(변경 시 `partChanged` 거부).
+- **차트(`word/charts/chartN.xml`):** 원본·출력 모두 WordCraft 차트 스키마(`c:chartSpace`의 `roundedCorners`, `chart`, `spPr`, 축·정규 숫자 리터럴)와 엄격히 일치해야 하며, 미지원 요소(`<c:style>`, `<c:extLst>`, `<c:externalData>`, `<c:dPt>`, XML 주석 등)가 있거나 편집 불가 속성(`legend`, `dataLabels`)이 달라지면 거부한다.
+- **SmartArt(`word/diagrams/{data,layout,drawing}N.xml`):** 원본·출력 `dataN.xml`과 `layoutN.xml`·`drawingN.xml`이 모두 WordCraft 스키마와 일치하고 상호 일관되어야 한다(`data.layout == layout`, `colors`/`quickStyle`/`dsp:dataModelExt/@relId` 불변, `drawing`의 모든 `dsp:sp` 프리셋·강조색·문단 텍스트가 `data`의 레이아웃·색상·항목 계층에서 파생됨). 임의의 속성 추가(`<dgm:bg x="1"/>`), 노드 추가(`<dgm:bg><a:noFill/></dgm:bg>`), `drawing` 텍스트 위조, 불일치 `layout` 변경, 합성 `<c:title>`/`<d x="1"/>` 반례는 `reopen_equal=true`여도 거부된다.
+- **검증:** `services::save` 283 PASS / 0 FAIL / 29 ignored (`docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts`, `docx_all_chart_types_and_smart_art_layouts_pass_narrow_graphic_proof` 포함), `adapters::wordcraft::tests::stage3` 9 PASS.

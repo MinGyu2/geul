@@ -13832,12 +13832,298 @@ fn docx_body_picture_deletion_proof_admits_only_drawing_owned_media() {
 
 #[test]
 fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts() {
+    use wordcraft_engine::{io, Session};
+
     const CHART_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
     const DATA_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData";
     const PACKAGE_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package";
+
+    // Build a real WordCraft DOCX with one editable chart and one editable SmartArt diagram.
+    let mut sess = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    sess.run("insert.chart", &json!({"type": "column", "title": "Original"}))
+        .unwrap();
+    sess.run("caret.docEnd", &json!({})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    sess.run("insert.smartArt", &json!({"layout": "process"}))
+        .unwrap();
+    let base_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+    let base_pkg = package::open(&base_bytes, package::Side::Original).unwrap();
+
+    // Positive: legitimate chart (title, type, data) and SmartArt (items, layout) edits pass.
+    let mut edited_sess = Session::new(io::open_bytes("fixture.docx", &base_bytes).unwrap());
+    edited_sess.run("select.objects", &json!({"index": 0})).unwrap();
+    edited_sess.run("chart.title", &json!({"text": "Updated Title"})).unwrap();
+    edited_sess.run("chart.type", &json!({"type": "pie"})).unwrap();
+    edited_sess
+        .run(
+            "chart.editData",
+            &json!({"data": {"categories": ["X", "Y"], "series": [{"name": "S", "values": [10.0, null]}]}}),
+        )
+        .unwrap();
+
+    edited_sess.run("select.objects", &json!({"index": 1})).unwrap();
+    edited_sess
+        .run(
+            "smartArt.items",
+            &json!({"items": [{"text": "Top", "level": 0}, {"text": "Sub", "level": 1}]}),
+        )
+        .unwrap();
+    edited_sess
+        .run("smartArt.layout", &json!({"layout": "hierarchy"}))
+        .unwrap();
+    let edited_bytes = io::save_bytes("fixture.docx", &edited_sess.doc).unwrap();
+    let edited_pkg = package::open(&edited_bytes, package::Side::Output).unwrap();
+    assert_eq!(package::compare_saved_docx(&base_pkg, &edited_pkg), vec![]);
+    assert!(service::check_saved(Format::Docx, &base_bytes, &edited_bytes, None, true).is_safe());
+
+    // Helper: clone a package with part overrides and repack as DOCX bytes.
+    let repack = |pkg_src: &package::Package, overrides: &[(&str, Vec<u8>)], removals: &[&str]| -> Vec<u8> {
+        let mut owned: Vec<(String, Vec<u8>)> = Vec::new();
+        for (name, (_, data)) in &pkg_src.parts {
+            if removals.contains(&name.as_str()) {
+                continue;
+            }
+            if let Some((_, replacement)) = overrides.iter().find(|(k, _)| *k == name.as_str()) {
+                owned.push((name.clone(), replacement.clone()));
+            } else {
+                owned.push((name.clone(), data.clone()));
+            }
+        }
+        for (name, data) in overrides {
+            if !pkg_src.parts.contains_key(*name) {
+                owned.push(((*name).to_string(), data.clone()));
+            }
+        }
+        let entries: Vec<ZipEntry> = owned.iter().map(|(n, d)| entry(n, d)).collect();
+        zip(&entries, false)
+    };
+
+    let replace_str = |part: &str, from: &str, to: &str| -> Vec<u8> {
+        let s = std::str::from_utf8(base_pkg.get(part).unwrap()).unwrap();
+        assert!(s.contains(from), "{part} missing {from}");
+        s.replace(from, to).into_bytes()
+    };
+
+    // Counterexample previously accepted by the broad rule: arbitrary XML edits (synthetic <d x="1"/>,
+    // extra attributes, extra <c:style>, <c:extLst>, <c:legend> edits, <dgm:bg> edits, injected drawing text)
+    // must now be rejected EVEN when reopen_equal = true!
+    let orig_chart = base_pkg.get("word/charts/chart1.xml").unwrap();
+    let orig_data = base_pkg.get("word/diagrams/data1.xml").unwrap();
+    let orig_drawing = base_pkg.get("word/diagrams/drawing1.xml").unwrap();
+    assert!(std::str::from_utf8(orig_chart).is_ok());
+    assert!(std::str::from_utf8(orig_data).is_ok());
+    assert!(std::str::from_utf8(orig_drawing).is_ok());
+
+    let negative_mutations: Vec<(&str, Vec<(&str, Vec<u8>)>, Vec<&str>)> = vec![
+        // Unrelated attribute changed
+        (
+            "chart unrelated attr roundedCorners",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    r#"<c:roundedCorners val="0"/>"#,
+                    r#"<c:roundedCorners val="1"/>"#,
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "chart non-canonical number format",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str("word/charts/chart1.xml", "<c:v>3.2</c:v>", "<c:v>3.20</c:v>"),
+            )],
+            vec![],
+        ),
+        (
+            "chart unrelated node <c:style>",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    r#"<c:roundedCorners val="0"/>"#,
+                    r#"<c:roundedCorners val="0"/><c:style val="2"/>"#,
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "chart unknown extension <c:extLst>",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    "</c:chartSpace>",
+                    r#"<c:extLst><c:ext uri="urn:test:ext"/></c:extLst></c:chartSpace>"#,
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "chart unauthorized legend mutation",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    r#"<c:legendPos val="b"/>"#,
+                    r#"<c:legendPos val="t"/>"#,
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "chart externalData workbook reference",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    "</c:chartSpace>",
+                    r#"<c:externalData r:id="rId99"/></c:chartSpace>"#,
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "chart malformed XML",
+            vec![("word/charts/chart1.xml", b"<c:chartSpace><broken".to_vec())],
+            vec![],
+        ),
+        (
+            "chart XML comment injection",
+            vec![(
+                "word/charts/chart1.xml",
+                replace_str(
+                    "word/charts/chart1.xml",
+                    "</c:chartSpace>",
+                    "<!-- injected --></c:chartSpace>",
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt data unrelated attribute on bg",
+            vec![(
+                "word/diagrams/data1.xml",
+                replace_str("word/diagrams/data1.xml", "<dgm:bg/>", r#"<dgm:bg x="1"/>"#),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt data unrelated node inside bg",
+            vec![(
+                "word/diagrams/data1.xml",
+                replace_str(
+                    "word/diagrams/data1.xml",
+                    "<dgm:bg/>",
+                    "<dgm:bg><a:noFill/></dgm:bg>",
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt data unauthorized color scheme change",
+            vec![(
+                "word/diagrams/data1.xml",
+                replace_str("word/diagrams/data1.xml", "accent1", "accent2"),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt data unauthorized dataModelExt relId change",
+            vec![(
+                "word/diagrams/data1.xml",
+                replace_str(
+                    "word/diagrams/data1.xml",
+                    "minVer=",
+                    "extra=\"1\" minVer=",
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt drawing injected text mismatch",
+            vec![(
+                "word/diagrams/drawing1.xml",
+                replace_str(
+                    "word/diagrams/drawing1.xml",
+                    "<a:t>Plan</a:t>",
+                    "<a:t>Sneaky</a:t>",
+                ),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt layout changed without data layout change",
+            vec![(
+                "word/diagrams/layout1.xml",
+                edited_pkg.get("word/diagrams/layout1.xml").unwrap().to_vec(),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt colors1.xml unauthorized mutation",
+            vec![(
+                "word/diagrams/colors1.xml",
+                replace_str("word/diagrams/colors1.xml", "Accent 1", "Accent X"),
+            )],
+            vec![],
+        ),
+        (
+            "SmartArt quickStyle1.xml unauthorized mutation",
+            vec![(
+                "word/diagrams/quickStyle1.xml",
+                replace_str("word/diagrams/quickStyle1.xml", "Flat", "3D"),
+            )],
+            vec![],
+        ),
+        (
+            "Unrelated document.xml missing chart reference",
+            vec![(
+                "word/document.xml",
+                replace_str("word/document.xml", "<c:chart ", "<c:ignoredChart "),
+            ),
+            (
+                "word/charts/chart1.xml",
+                edited_pkg.get("word/charts/chart1.xml").unwrap().to_vec(),
+            )],
+            vec![],
+        ),
+        (
+            "Unrelated package part word/styles.xml changed",
+            vec![(
+                "word/styles.xml",
+                replace_str("word/styles.xml", "</w:styles>", "<!-- x --></w:styles>"),
+            )],
+            vec![],
+        ),
+    ];
+
+    for (label, overrides, removals) in negative_mutations {
+        let bad_bytes = repack(&base_pkg, &overrides, &removals);
+        let verdict = service::check_saved(Format::Docx, &base_bytes, &bad_bytes, None, true);
+        assert!(
+            !verdict.is_safe(),
+            "expected T009 refusal for `{label}`, got {verdict:?}"
+        );
+    }
+
+    // Negative: original chart with unknown extension (<c:style val="2"/>) must stay frozen even if edited.
+    let ext_chart = replace_str(
+        "word/charts/chart1.xml",
+        r#"<c:roundedCorners val="0"/>"#,
+        r#"<c:roundedCorners val="0"/><c:style val="2"/>"#,
+    );
+    let orig_with_ext = repack(&base_pkg, &[("word/charts/chart1.xml", ext_chart)], &[]);
+    assert!(
+        !service::check_saved(Format::Docx, &orig_with_ext, &edited_bytes, None, true).is_safe(),
+        "original chart with unknown <c:style> must not be overwritten"
+    );
+
+    // Negative: synthetic non-WordCraft XML (which the previous broad rule accepted!) must be rejected.
     let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
     let rels = |list: &[(&str, &str, &str)]| {
         let body: String = list
@@ -13872,107 +14158,72 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         ("rId1", CHART_REL, "charts/chart1.xml"),
         ("rId2", DATA_REL, "diagrams/data1.xml"),
     ]);
-    let original = build(
+    let syn_orig = build(
         &bound,
         &[
             ("word/charts/chart1.xml", chart("A")),
             ("word/diagrams/data1.xml", "<d/>".into()),
         ],
     );
-    // Positive: the bound chart and diagram data parts change.
-    let edited = build(
+    let syn_edit = build(
         &bound,
         &[
             ("word/charts/chart1.xml", chart("B")),
             ("word/diagrams/data1.xml", "<d x=\"1\"/>".into()),
         ],
     );
-    assert_eq!(package::compare_saved_docx(&original, &edited), vec![]);
+    assert!(
+        !package::compare_saved_docx(&syn_orig, &syn_edit).is_empty(),
+        "counterexample: arbitrary synthetic <c:title> and <d x=\"1\"/> must be rejected"
+    );
+
     // Negative: a chart with its own relationships (embedded workbook) stays frozen.
     let chart_rels = rels(&[("rId1", PACKAGE_REL, "../embeddings/Book1.xlsx")]);
-    let with_rels = build(
-        &bound,
+    let with_rels = repack(
+        &base_pkg,
         &[
-            ("word/charts/chart1.xml", chart("A")),
-            ("word/charts/_rels/chart1.xml.rels", chart_rels.clone()),
-            ("word/diagrams/data1.xml", "<d/>".into()),
+            ("word/charts/_rels/chart1.xml.rels", chart_rels.into_bytes()),
+            ("word/embeddings/Book1.xlsx", b"xlsx-orig".to_vec()),
         ],
+        &[],
     );
-    let with_rels_edited = build(
-        &bound,
+    let with_rels_edited = repack(
+        &edited_pkg,
         &[
-            ("word/charts/chart1.xml", chart("B")),
-            ("word/charts/_rels/chart1.xml.rels", chart_rels),
-            ("word/diagrams/data1.xml", "<d/>".into()),
+            (
+                "word/charts/_rels/chart1.xml.rels",
+                rels(&[("rId1", PACKAGE_REL, "../embeddings/Book1.xlsx")]).into_bytes(),
+            ),
+            ("word/embeddings/Book1.xlsx", b"xlsx-mutated".to_vec()),
         ],
+        &[],
     );
-    assert!(!package::compare_saved_docx(&with_rels, &with_rels_edited).is_empty());
-    // Negative: a chart part the main document does not bind (or binds with another type).
-    let unbound = rels(&[("rId2", DATA_REL, "diagrams/data1.xml")]);
-    let wrong = rels(&[
-        ("rId1", DATA_REL, "charts/chart1.xml"),
-        ("rId2", DATA_REL, "diagrams/data1.xml"),
-    ]);
-    for doc_rels in [unbound, wrong] {
-        let a = build(
-            &doc_rels,
-            &[
-                ("word/charts/chart1.xml", chart("A")),
-                ("word/diagrams/data1.xml", "<d/>".into()),
-            ],
-        );
-        let b = build(
-            &doc_rels,
-            &[
-                ("word/charts/chart1.xml", chart("B")),
-                ("word/diagrams/data1.xml", "<d/>".into()),
-            ],
-        );
-        assert!(!package::compare_saved_docx(&a, &b).is_empty());
-    }
-    // Negative: other chart-folder parts (style/colours) and changed document relationships.
-    let colors = build(
-        &bound,
-        &[
-            ("word/charts/chart1.xml", chart("A")),
-            ("word/charts/colors1.xml", "<cs/>".into()),
-            ("word/diagrams/data1.xml", "<d/>".into()),
-        ],
+    assert!(
+        !service::check_saved(Format::Docx, &with_rels, &with_rels_edited, None, true).is_safe()
     );
-    let colors_edited = build(
-        &bound,
-        &[
-            ("word/charts/chart1.xml", chart("A")),
-            ("word/charts/colors1.xml", "<cs v=\"2\"/>".into()),
-            ("word/diagrams/data1.xml", "<d/>".into()),
-        ],
-    );
-    assert!(!package::compare_saved_docx(&colors, &colors_edited).is_empty());
-    let more = rels(&[
-        ("rId1", CHART_REL, "charts/chart1.xml"),
-        ("rId2", DATA_REL, "diagrams/data1.xml"),
-        ("rId3", CHART_REL, "charts/chart2.xml"),
-    ]);
-    let rels_changed = build(
-        &more,
-        &[
-            ("word/charts/chart1.xml", chart("B")),
-            ("word/diagrams/data1.xml", "<d/>".into()),
-        ],
-    );
-    assert!(!package::compare_saved_docx(&original, &rels_changed).is_empty());
+
     // Negative: a removed or added graphic part is not a regeneration.
-    let removed = build(&bound, &[("word/charts/chart1.xml", chart("B"))]);
-    assert!(!package::compare_saved_docx(&original, &removed).is_empty());
-    let added = build(
-        &bound,
-        &[
-            ("word/charts/chart1.xml", chart("B")),
-            ("word/diagrams/data1.xml", "<d/>".into()),
-            ("word/charts/chart2.xml", chart("C")),
-        ],
+    let removed = repack(&edited_pkg, &[], &["word/diagrams/data1.xml"]);
+    assert!(!service::check_saved(Format::Docx, &base_bytes, &removed, None, true).is_safe());
+    let added = repack(
+        &edited_pkg,
+        &[(
+            "word/charts/chart2.xml",
+            edited_pkg.get("word/charts/chart1.xml").unwrap().to_vec(),
+        )],
+        &[],
     );
-    assert!(!package::compare_saved_docx(&original, &added).is_empty());
+    assert!(!service::check_saved(Format::Docx, &base_bytes, &added, None, true).is_safe());
+
+    // Negative: document relationships changed or unbound chart part changed.
+    let extra_rels = replace_str(
+        "word/_rels/document.xml.rels",
+        "</Relationships>",
+        &format!(r#"<Relationship Id="rId99" Type="{CHART_REL}" Target="charts/chart2.xml"/></Relationships>"#),
+    );
+    let rels_changed = repack(&edited_pkg, &[("word/_rels/document.xml.rels", extra_rels)], &[]);
+    assert!(!service::check_saved(Format::Docx, &base_bytes, &rels_changed, None, true).is_safe());
+
     assert!(package::regenerated_graphic_part(
         "word/diagrams/quickStyle12.xml"
     ));
@@ -13981,6 +14232,95 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     ));
     assert!(!package::regenerated_graphic_part("word/charts/chartX.xml"));
     assert!(!package::regenerated_graphic_part("word/charts/style1.xml"));
+}
+
+#[test]
+fn docx_all_chart_types_and_smart_art_layouts_pass_narrow_graphic_proof() {
+    use wordcraft_engine::{io, Session};
+
+    let chart_types = [
+        "column",
+        "columnStacked",
+        "bar",
+        "barStacked",
+        "line",
+        "area",
+        "pie",
+        "doughnut",
+        "scatter",
+    ];
+    let layouts = [
+        "basicList",
+        "process",
+        "cycle",
+        "hierarchy",
+        "pyramid",
+        "radial",
+        "matrix",
+        "venn",
+    ];
+
+    let mut sess = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    sess.run("insert.chart", &json!({"type": "column", "title": "Init"}))
+        .unwrap();
+    sess.run("caret.docEnd", &json!({})).unwrap();
+    sess.run("text.newParagraph", &json!({})).unwrap();
+    sess.run("insert.smartArt", &json!({"layout": "basicList"}))
+        .unwrap();
+    let orig_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+    let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
+
+    for kind in chart_types {
+        let mut s = Session::new(io::open_bytes("fixture.docx", &orig_bytes).unwrap());
+        s.run("select.objects", &json!({"index": 0})).unwrap();
+        s.run("chart.type", &json!({"type": kind})).unwrap();
+        s.run("chart.title", &json!({"text": format!("Title {kind}")}))
+            .unwrap();
+        if kind == "scatter" {
+            s.run(
+                "chart.editData",
+                &json!({"data": {"categories": ["1", "2.5"], "series": [{"name": "XY", "values": [0.0, -3.5]}]}}),
+            )
+            .unwrap();
+        }
+        let out_bytes = io::save_bytes("fixture.docx", &s.doc).unwrap();
+        let out_pkg = package::open(&out_bytes, package::Side::Output).unwrap();
+        assert_eq!(
+            package::compare_saved_docx(&orig_pkg, &out_pkg),
+            vec![],
+            "chart type {kind}"
+        );
+        assert!(
+            service::check_saved(Format::Docx, &orig_bytes, &out_bytes, None, true).is_safe(),
+            "chart type {kind} check_saved"
+        );
+    }
+
+    for layout in layouts {
+        let mut s = Session::new(io::open_bytes("fixture.docx", &orig_bytes).unwrap());
+        s.run("select.objects", &json!({"index": 1})).unwrap();
+        s.run("smartArt.layout", &json!({"layout": layout})).unwrap();
+        s.run(
+            "smartArt.items",
+            &json!({"items": [
+                {"text": "Root", "level": 0},
+                {"text": "Child", "level": 1},
+                {"text": "Peer", "level": 0}
+            ]}),
+        )
+        .unwrap();
+        let out_bytes = io::save_bytes("fixture.docx", &s.doc).unwrap();
+        let out_pkg = package::open(&out_bytes, package::Side::Output).unwrap();
+        assert_eq!(
+            package::compare_saved_docx(&orig_pkg, &out_pkg),
+            vec![],
+            "smartArt layout {layout}"
+        );
+        assert!(
+            service::check_saved(Format::Docx, &orig_bytes, &out_bytes, None, true).is_safe(),
+            "smartArt layout {layout} check_saved"
+        );
+    }
 }
 
 #[test]
