@@ -430,6 +430,54 @@ pub(super) fn evolved_candidate(
     )
 }
 
+/// Rank and wrapping plane for a bare floating body shape. Reordering is
+/// never routed through the broader field evolution or deletion proofs.
+pub(super) fn shape_layer(rs: &[Record<'_>]) -> Option<(i32, u32)> {
+    let (kind, offset, 1) = shape_ctrl_id(rs)? else { return None };
+    let [header, component, leaf] = rs else { return None };
+    let attr = dword(header.2, 4).ok()? as u32;
+    if !is_basic_shape(rs) || gso_header_id(rs)? == 0
+        || (header.1, component.1, leaf.1) != (1, 2, 3)
+        || expected_leaf_tag(kind)? != leaf.0
+        || word(component.2, offset + 8).ok()? != 0
+        || attr & (ATTR_LOCKED | ATTR_CAPTION | 1) != 0
+    {
+        return None;
+    }
+    let rank = super::insertions::signed_dword(header.2, 24).ok()?;
+    let wrap = (attr >> 21) & 7;
+    ((-1_000_000..=1_000_000).contains(&rank) && wrap <= 3).then_some((rank, wrap))
+}
+
+pub(super) fn shape_layer_changed(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    old.first().zip(new.first()).is_some_and(|(a, b)| {
+        a.2.starts_with(CTRL_GSO) && b.2.starts_with(CTRL_GSO)
+            && gso_header_id(old).is_some_and(|id| id != 0 && Some(id) == gso_header_id(new))
+            && a.2.get(24..28) != b.2.get(24..28)
+    })
+}
+
+pub(super) fn prove_shape_layer(old: &[Record<'_>], new: &[Record<'_>], ranks: &[(i32, u32)]) -> Checked<()> {
+    let (Some((before, wrap)), Some((after, new_wrap))) = (shape_layer(old), shape_layer(new)) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    preserved(
+        ranks.len() >= 2 && ranks.iter().all(|r| r.1 == wrap) && new_wrap == wrap
+            && old[0].2[..24] == new[0].2[..24] && old[0].2[28..] == new[0].2[28..]
+            && old[1..] == new[1..],
+        BODY,
+    )?;
+    let low = ranks.iter().map(|r| r.0).min().unwrap();
+    let high = ranks.iter().map(|r| r.0).max().unwrap();
+    // Tied ranks depend on address ordering; limit this proof to distinct ranks.
+    let distinct = ranks.iter().map(|r| r.0).collect::<std::collections::BTreeSet<_>>();
+    preserved(
+        distinct.len() == ranks.len()
+            && ((before != high && after == high + 1) || (before != low && after == low - 1)),
+        BODY,
+    )
+}
+
 /// A directly owned cell picture only exposes width and height. The table
 /// proof fixes its cell, paragraph and control position before calling this.
 pub(super) fn prove_cell_picture_resize(
@@ -1689,6 +1737,36 @@ mod tests {
         };
         cf.create_stream(path).unwrap().write_all(&raw).unwrap();
         cf.into_inner().into_inner()
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the existing HWP shape reorder scenario first"]
+    fn release_hwp_basic_shape_layer_preserves_owned_records() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p3-layer-original.hwp");
+        let edited = read("p3-layer-edited.hwp");
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+        let shape = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
+        let leaf = |tag, level, _: &[u8]| tag == 80 && level == 3;
+        for (pick, offset, value) in [(shape as fn(u16, u16, &[u8]) -> bool, 24, 1000u32), (leaf, 8, 1)] {
+            let tampered = mutate_body_record(&edited, pick, |data| {
+                let mut changed = data.to_vec();
+                changed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                changed
+            });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
+        let locked = |data: &[u8]| {
+            let mut changed = data.to_vec();
+            changed[7] |= 0x40;
+            changed
+        };
+        let original = mutate_body_record(&original, shape, locked);
+        let edited = mutate_body_record(&edited, shape, locked);
+        assert!(check_with_preview_refresh(&original, &edited)
+            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]

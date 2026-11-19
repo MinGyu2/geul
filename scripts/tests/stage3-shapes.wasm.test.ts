@@ -256,6 +256,80 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("reorders existing HWP basic shapes without moving their anchors", async () => {
+    const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
+    let bytes: Uint8Array;
+    try {
+      for (const [i, shapeType] of ["rectangle", "ellipse"].entries()) {
+        const added = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 2 + i, shapeType, width: 10800, height: 7200,
+          treatAsChar: false, textWrap: "Square", horzOffset: i * 4000, vertOffset: i * 2000,
+        })));
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, added.controlIdx, '{"textWrap":"Square"}'))).toMatchObject({ ok: true });
+      }
+      bytes = fixture.exportHwp();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm, take, calls } = await setup("hwp", bytes);
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const [first, second] = shapes(doc) as [Frame, Frame];
+      const a = props(doc, first.controlIdx), b = props(doc, second.controlIdx);
+      const overlap = [first.x + first.w - 10, first.y + first.h - 10] as const;
+      const top = () => {
+        expect(editor.pointAt(0, ...overlap, false, false, true)).toBe(true);
+        return editor.objectSelection?.address.path;
+      };
+      expect(top()).toEqual([0, 0, second.controlIdx]);
+      expect(editor.objectSelection!.operations).toContain("zOrder");
+      expect(edit({ kind: "layer", front: false })).toBe(true);
+      await confirm();
+      const lowered = { ...b, zOrder: a.zOrder - 1 };
+      expect(props(doc, second.controlIdx)).toEqual(lowered);
+      expect(props(doc, first.controlIdx)).toEqual(a);
+      expect(top()).toEqual([0, 0, first.controlIdx]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(top()).toEqual([0, 0, second.controlIdx]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(top()).toEqual([0, 0, first.controlIdx]);
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(props(reopened, first.controlIdx)).toEqual(a);
+          expect(props(reopened, second.controlIdx)).toEqual(lowered);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p3-layer-original.hwp"), bytes);
+          writeFileSync(resolve(out, "p3-layer-edited.hwp"), output);
+          writeFileSync(resolve(out, "p3-layer-report.json"), report);
+        }
+      } finally { exported.free(); }
+      const exposed = shapes(doc).find(frame => frame.controlIdx === second.controlIdx)!;
+      expect(editor.pointAt(0, exposed.x + exposed.w - 4, exposed.y + exposed.h - 4, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+      expect(edit({ kind: "layer", front: false })).toBe(false);
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      expect(top()).toEqual([0, 0, second.controlIdx]);
+      const owner = pick(second);
+      const lock = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(lock.setControlLock(0, first.controlIdx, true))).toMatchObject({ ok: true });
+      expect(editor.execute("object.edit", objectEditRequest(owner, { kind: "layer", front: false })).accepted).toBe(false);
+    } finally { editor.dispose(); }
+  });
+
   it("saves a newly inserted HWP rectangle with an edited outline width", async () => {
     const { editor, doc, bytes, take, confirm, pick, edit } = await setup("hwp");
     try {

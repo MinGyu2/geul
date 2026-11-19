@@ -1764,7 +1764,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
               ...(this.doc.deleteShapeControl && !(format === "hwp" && shape.hasCaption) ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
-              ...(format === "hwpx" && this.doc.changeShapeZOrder ? ["zOrder" as const] : []));
+              ...(this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
+                ? ["zOrder" as const] : []));
           }
           const canEditChart = graphic?.kind === "chart" && this.history && this.doc.setChartData
             && (format === "hwpx" || (canEditHwp && this.unlockedBodyGso(hit.bodyEmbedded) === "OLE"));
@@ -4302,6 +4303,40 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return shapeOnly ? kind === "사각형" || kind === "타원" || kind === "직선" : kind === "그림";
   }
 
+  /** Existing floating basic shapes in the same drawing plane of Section0. */
+  private hwpShapeLayers(address: readonly [number, number, number] | undefined) {
+    const doc = this.doc;
+    if (!address || address[0] !== 0 || !doc?.getControls || !doc.getShapeProperties) return null;
+    try {
+      const count = doc.getParagraphCount(0);
+      const controls = JSON.parse(doc.getControls()) as { list: number; para: number; controlIndex: number;
+        ctrlId: string; userDesc: string; props?: { Lock?: number; TreatAsChar?: number } }[];
+      const owners = controls.filter(c => c.list === 0 && c.para < count && c.ctrlId === "gso");
+      if (owners.length < 2 || owners.length > 4096) return null;
+      const ranks = new Map<string, number>();
+      let wrap: string | undefined;
+      for (const owner of owners) {
+        if (!["사각형", "타원", "직선"].includes(owner.userDesc) || owner.props?.Lock !== 0
+          || owner.props.TreatAsChar !== 0 || !Number.isSafeInteger(owner.para) || owner.para < 0
+          || !Number.isSafeInteger(owner.controlIndex) || owner.controlIndex < 0) return null;
+        const raw = JSON.parse(doc.getShapeProperties(0, owner.para, owner.controlIndex)) as Record<string, unknown>;
+        if (raw.hasCaption !== false || "tbVerticalAlign" in raw || raw.treatAsChar !== false
+          || typeof raw.zOrder !== "number" || !Number.isSafeInteger(raw.zOrder) || Math.abs(raw.zOrder) > 1_000_000
+          || !["Square", "Tight", "Through", "TopAndBottom"].includes(String(raw.textWrap))
+          || (wrap !== undefined && raw.textWrap !== wrap)) return null;
+        wrap = String(raw.textWrap);
+        const key = `${owner.para}/${owner.controlIndex}`;
+        if (ranks.has(key)) return null;
+        ranks.set(key, raw.zOrder);
+      }
+      const values = [...ranks.values()];
+      const key = `${address[1]}/${address[2]}`;
+      const current = ranks.get(key);
+      return current === undefined || new Set(values).size !== values.length
+        ? null : { ranks, key, current, min: Math.min(...values), max: Math.max(...values) };
+    } catch { return null; }
+  }
+
   private gsoFormatEditable(address: readonly [number, number, number] | undefined, shapeOnly: boolean): boolean {
     const format = this.sessions.get(this.sessionId)?.format;
     if (format === "hwpx") return true;
@@ -4539,17 +4574,30 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         expect = edit.wrap === "inline" ? { treatAsChar: true } : { treatAsChar: false, textWrap: HWPX_WRAPS[edit.wrap] };
         keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
         break;
-      case "layer":
-        if (format !== "hwpx" || !doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
+      case "layer": {
+        if (!doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
+        const layers = format === "hwp" ? this.hwpShapeLayers(address) : null;
+        if (format === "hwp" && !layers) return false;
+        const edge = layers && (edit.front ? layers.max : layers.min);
+        const next = edge === null ? null : edge + (edit.front ? 1 : -1);
+        if (layers && (layers.current === edge || next === null || Math.abs(next) > 1_000_000)) return false;
         operation = () => {
           const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean; moves?: unknown[] };
           if (result.ok !== true) throw new Error("z-order refused");
           if (!Array.isArray(result.moves) || result.moves.length === 0) throw new Error("z-order unchanged");
           const after = inspectRhwpShape(doc, address);
           if (!after || !unchanged(after.raw, all)) throw new Error("z-order changed other fields");
+          if (layers) {
+            const updated = this.hwpShapeLayers(address);
+            if (!updated || updated.current !== next || updated.ranks.size !== layers.ranks.size
+              || [...layers.ranks].some(([key, rank]) => key !== layers.key && updated.ranks.get(key) !== rank)) {
+              throw new Error("z-order changed another shape");
+            }
+          }
         };
         props = {}; expect = {}; keep = [];
         break;
+      }
       default:
         return false;
     }

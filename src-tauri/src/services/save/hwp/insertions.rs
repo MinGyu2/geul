@@ -74,7 +74,7 @@ fn signed_word(b: &[u8], at: usize) -> Checked<i16> {
         .map(|p| i16::from_le_bytes([p[0], p[1]]))
         .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
 }
-fn signed_dword(b: &[u8], at: usize) -> Checked<i32> {
+pub(super) fn signed_dword(b: &[u8], at: usize) -> Checked<i32> {
     b.get(at..at + 4)
         .map(|p| i32::from_le_bytes([p[0], p[1], p[2], p[3]]))
         .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))
@@ -1173,6 +1173,24 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 }
                 if !exact_later && super::gso::textbox_edit_candidate(o, object) {
                     super::gso::prove_textbox_edit(o, object, &ac, &bc)?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                if !exact_later && super::gso::shape_layer_changed(o, object) {
+                    preserved(
+                        cursor == ni && old.objects.len() == new.objects.len()
+                            && old.objects[..cursor] == new.objects[..ni]
+                            && old.objects[cursor + 1..] == new.objects[ni + 1..],
+                        name,
+                    )?;
+                    let ranks = old.objects.iter()
+                        .filter(|r| r[0].2.starts_with(b" osg"))
+                        .map(|r| super::gso::shape_layer(r))
+                        .collect::<Option<Vec<_>>>()
+                        .ok_or_else(|| finding(FindingCode::RecordsChanged, name))?;
+                    super::gso::prove_shape_layer(o, object, &ranks)?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;
