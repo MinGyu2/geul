@@ -1137,6 +1137,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         // objects may satisfy the original token sequence below.
         let mut restructured: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
         let mut deleted_gso: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
+        let mut layers_proven = false;
         let mut cursor = 0;
         for (ni, object) in new.objects.iter().enumerate() {
             let mut matched = false;
@@ -1187,25 +1188,18 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     break;
                 }
                 if !exact_later && super::gso::shape_layer_changed(o, object) {
-                    preserved(
-                        cursor == ni && old.objects.len() == new.objects.len()
-                            && old.objects[..cursor] == new.objects[..ni]
-                            && old.objects[cursor + 1..] == new.objects[ni + 1..],
-                        name,
-                    )?;
-                    let ranks = old.objects.iter()
-                        .filter(|r| r[0].2.starts_with(b" osg"))
-                        .map(|r| super::gso::shape_layer(r))
-                        .collect::<Option<Vec<_>>>()
-                        .ok_or_else(|| finding(FindingCode::RecordsChanged, name))?;
-                    super::gso::prove_shape_layer(o, object, &ranks)?;
+                    preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
+                    if !layers_proven {
+                        super::gso::prove_shape_layers(&old.objects, &new.objects)?;
+                        layers_proven = true;
+                    }
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;
                     break;
                 }
                 if !exact_later && super::gso::evolved_candidate(o, object, &ac) {
-                    super::gso::prove_evolved_gso(o, object, &ac)?;
+                    super::gso::prove_evolved_gso(o, object, &ac, &bc)?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;

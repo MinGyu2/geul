@@ -809,6 +809,124 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
     }
   });
 
+  it("combines HWP caption editing and outer formatting in one save with undo/redo and reopen", async () => {
+    const seed = new engine.HwpDocument(source("hwp", true)) as RhwpDocument;
+    let original: Uint8Array;
+    try {
+      expect(JSON.parse(seed.setPictureProperties!(0, 0, 2, '{"hasCaption":true}')).ok).toBe(true);
+      expect(JSON.parse(seed.setShapeProperties!(0, 0, 4, '{"hasCaption":true}')).ok).toBe(true);
+      original = seed.exportHwp!();
+    } finally { seed.free(); }
+
+    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, true, original);
+    const picCap = (d: RhwpDocument, p = 0) =>
+      d.getTextInCell(0, 0, 2, 0, p, 0, d.getCellParagraphLength(0, 0, 2, 0, p));
+    const shapeCap = (d: RhwpDocument, p = 0) =>
+      d.getTextInCell(0, 0, 4, 65534, p, 0, d.getCellParagraphLength(0, 0, 4, 65534, p));
+    const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string; list?: number; pos?: number }[])
+      .filter(c => c.ctrlId === "atno");
+    const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
+      .filter((control: { type: string }) => control.type === "shape") as Frame[];
+    const pic = () => [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
+    let seq = 0;
+    try {
+      const baseline = hwpReopenModel(doc).structure;
+      const beforePicCap = picCap(doc, 0);
+      const beforeShapeCap = shapeCap(doc, 0);
+      const atnosBefore = atnos(doc);
+      expect(atnosBefore).toHaveLength(2);
+
+      // 1. Edit shape caption: append text, split paragraph, align second paragraph center.
+      const shapeEnd = doc.getCellParagraphLength(0, 0, 4, 65534, 0);
+      const shapeCursor = JSON.parse(doc.getCursorRectInCell(0, 0, 4, 65534, 0, shapeEnd));
+      expect(editor.pointAt(shapeCursor.pageIndex, shapeCursor.x, shapeCursor.y + shapeCursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell).toMatchObject({ parentParagraph: 0, control: 4, cell: 65534, caption: true });
+      expect(editor.typeText("첫줄")).toBe(true);
+      await confirm(++seq);
+      expect(editor.enter()).toBe(true);
+      await confirm(++seq);
+      expect(editor.typeText("둘째줄")).toBe(true);
+      await confirm(++seq);
+      expect(editor.execute("paragraph.alignCenter").accepted).toBe(true);
+      await confirm(++seq);
+
+      // 2. Edit outer shape properties on the same captioned shape in the same unsaved session.
+      pick(shapes()[0]!);
+      expect(edit({ kind: "outline", color: "772244", width: 2.0 })).toBe(false);
+      expect(edit({ kind: "fill", color: "336699" })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "outline", color: "772244" })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "rotate", degrees: 25, flipH: true, flipV: false })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "bounds", width: 84, height: 42 })).toBe(true);
+      await confirm(++seq);
+      pick(shapes()[0]!);
+      expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
+      await confirm(++seq);
+
+      // 3. Edit picture caption + outer picture properties in the same unsaved session.
+      const picEnd = doc.getCellParagraphLength(0, 0, 2, 0, 0);
+      const picCursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, picEnd));
+      expect(editor.pointAt(picCursor.pageIndex, picCursor.x, picCursor.y + picCursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell).toMatchObject({ parentParagraph: 0, control: 2, cell: 0, caption: true });
+      expect(editor.typeText("그림설명")).toBe(true);
+      await confirm(++seq);
+      pick(pic());
+      expect(edit({ kind: "altText", text: "결합 그림" })).toBe(true);
+      await confirm(++seq);
+      pick(pic());
+      expect(edit({ kind: "bounds", width: 52, height: 26 })).toBe(true);
+      await confirm(++seq);
+      pick(pic());
+      expect(edit({ kind: "crop", left: 0.1, top: 0, right: 0.2, bottom: 0 })).toBe(true);
+      await confirm(++seq);
+
+      // Undo/Redo restores combined state.
+      expect(editor.undo()).toBe(true);
+      await confirm(++seq);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2)).cropLeft).toBe(0);
+      expect(editor.redo()).toBe(true);
+      await confirm(++seq);
+      expect(JSON.parse(doc.getPictureProperties!(0, 0, 2)).cropLeft).toBeGreaterThan(0);
+
+      const exported = doc.exportHwpWithReport!();
+      let edited: Uint8Array;
+      try {
+        const report = exported.contentLoss();
+        edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
+      } finally { exported.free(); }
+
+      const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+      try {
+        expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+        expect(shapeCap(reopened, 0)).toBe(beforeShapeCap + "첫줄");
+        expect(shapeCap(reopened, 1)).toBe("둘째줄");
+        expect(JSON.parse(reopened.getCellParaPropertiesAt!(0, 0, 4, 65534, 1)).alignment).toBe("center");
+        expect(JSON.parse(reopened.getShapeProperties!(0, 0, 4))).toMatchObject({
+          hasCaption: true, width: 8400, height: 4200,
+          horzOffset: 4400, vertOffset: 7800, fillType: "solid", fillBgColor: 0x996633,
+          borderColor: 0x442277, rotationAngle: 25, horzFlip: true, vertFlip: false,
+        });
+        expect(picCap(reopened, 0)).toBe(beforePicCap + "그림설명");
+        expect(JSON.parse(reopened.getPictureProperties!(0, 0, 2))).toMatchObject({
+          hasCaption: true, width: 5200, height: 2600, description: "결합 그림",
+        });
+        expect(atnos(reopened)).toHaveLength(2);
+      } finally { reopened.free(); }
+
+      if (out) {
+        mkdirSync(out, { recursive: true });
+        writeFileSync(resolve(out, "b1-2-combined-caption-original.hwp"), original);
+        writeFileSync(resolve(out, "b1-2-combined-caption-edited.hwp"), edited);
+      }
+    } finally { editor.dispose(); }
+  });
+
   it("splits, merges, selects across, aligns, and edits multi-paragraph captions in HWP and HWPX while preserving atno", async () => {
     for (const format of ["hwp", "hwpx"] as const) {
       const fixture = new engine.HwpDocument(source(format));

@@ -677,6 +677,107 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("reorders multiple HWP basic shapes in one save with undo/redo and reopen", async () => {
+    const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument;
+    let bytes: Uint8Array;
+    try {
+      for (const [i, shapeType] of ["rectangle", "ellipse", "rectangle"].entries()) {
+        const added = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 2 + i, shapeType, width: 10800, height: 7200,
+          treatAsChar: false, textWrap: "Square", horzOffset: i * 1500, vertOffset: i * 1000,
+        })));
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, added.controlIdx, '{"textWrap":"Square"}'))).toMatchObject({ ok: true });
+      }
+      bytes = fixture.exportHwp();
+    } finally { fixture.free(); }
+
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      const baseline = hwpReopenModel(doc);
+      expect(baseline.complete).toBe(true);
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+
+      const all = shapes(doc);
+      expect(all).toHaveLength(3);
+      const [first, second, third] = all as [Frame, Frame, Frame];
+      const beforeA = props(doc, first.controlIdx);
+      const beforeB = props(doc, second.controlIdx);
+      const beforeC = props(doc, third.controlIdx);
+      const commonOverlap = [third.x + 10, third.y + 10] as const;
+      const topAt = (pt: readonly [number, number]) => {
+        expect(editor.pointAt(0, pt[0], pt[1], false, false, true)).toBe(true);
+        return editor.objectSelection?.address.path;
+      };
+      // Initially: third > second > first
+      expect(topAt(commonOverlap)).toEqual([0, 0, third.controlIdx]);
+
+      // Move third (top) to back -> zOrder < first.zOrder
+      pick(third);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, third.controlIdx]);
+      expect(edit({ kind: "layer", front: false })).toBe(true);
+      await confirm();
+      const zThirdBack = props(doc, third.controlIdx).zOrder as number;
+      expect(zThirdBack).toBe(beforeA.zOrder - 1);
+
+      // Move first (hit its exposed top-left corner) to front -> zOrder > second.zOrder
+      expect(editor.pointAt(0, first.x + 2, first.y + 2, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, first.controlIdx]);
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      const zFirstFront = props(doc, first.controlIdx).zOrder as number;
+      expect(zFirstFront).toBe(beforeB.zOrder + 1);
+
+      // Move second (hit its exposed top-right strip above third and right of first) to front -> zOrder > first's new zOrder
+      expect(editor.pointAt(0, second.x + second.w - 3, second.y + 2, false, false, true)).toBe(true);
+      expect(editor.objectSelection?.address.path).toEqual([0, 0, second.controlIdx]);
+      expect(edit({ kind: "layer", front: true })).toBe(true);
+      await confirm();
+      const zSecondFront = props(doc, second.controlIdx).zOrder as number;
+      expect(zSecondFront).toBe(zFirstFront + 1);
+      expect(topAt(commonOverlap)).toEqual([0, 0, second.controlIdx]);
+
+      // Undo -> first returns to top; Redo -> second returns to top
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(topAt(commonOverlap)).toEqual([0, 0, first.controlIdx]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(topAt(commonOverlap)).toEqual([0, 0, second.controlIdx]);
+
+      // Geometry, fill, outline, and anchors stay identical; only zOrder changed.
+      expect(props(doc, first.controlIdx)).toEqual({ ...beforeA, zOrder: zFirstFront });
+      expect(props(doc, second.controlIdx)).toEqual({ ...beforeB, zOrder: zSecondFront });
+      expect(props(doc, third.controlIdx)).toEqual({ ...beforeC, zOrder: zThirdBack });
+
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline.structure)).toBe(true);
+          expect(props(reopened, first.controlIdx)).toEqual({ ...beforeA, zOrder: zFirstFront });
+          expect(props(reopened, second.controlIdx)).toEqual({ ...beforeB, zOrder: zSecondFront });
+          expect(props(reopened, third.controlIdx)).toEqual({ ...beforeC, zOrder: zThirdBack });
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "b1-1-multi-layer-original.hwp"), bytes);
+          writeFileSync(resolve(out, "b1-1-multi-layer-edited.hwp"), output);
+        }
+      } finally { exported.free(); }
+
+      // Locked shape participation still fails closed without partial commit.
+      const lock = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(lock.setControlLock(0, third.controlIdx, true))).toMatchObject({ ok: true });
+      const selFirst = pick(first);
+      expect(editor.execute("object.edit", objectEditRequest(selFirst, { kind: "layer", front: false })).accepted).toBe(false);
+    } finally { editor.dispose(); }
+  });
+
   it("saves a newly inserted HWP rectangle with an edited outline width", async () => {
     const { editor, doc, bytes, take, confirm, pick, edit } = await setup("hwp");
     try {

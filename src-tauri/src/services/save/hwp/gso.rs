@@ -533,23 +533,69 @@ pub(super) fn shape_layer_changed(old: &[Record<'_>], new: &[Record<'_>]) -> boo
     })
 }
 
-pub(super) fn prove_shape_layer(old: &[Record<'_>], new: &[Record<'_>], ranks: &[(i32, u32)]) -> Checked<()> {
-    let (Some((before, wrap)), Some((after, new_wrap))) = (shape_layer(old), shape_layer(new)) else {
-        return Err(finding(FindingCode::RecordsChanged, BODY));
-    };
+pub(super) fn prove_shape_layers(
+    old_objects: &[Vec<Record<'_>>],
+    new_objects: &[Vec<Record<'_>>],
+) -> Checked<()> {
+    preserved(old_objects.len() == new_objects.len(), BODY)?;
+    let mut old_ranks = Vec::new();
+    let mut new_ranks = Vec::new();
+    let mut plane: Option<u32> = None;
+    let mut changed = 0usize;
+    for (old, new) in old_objects.iter().zip(new_objects.iter()) {
+        if !old.first().is_some_and(|r| r.2.starts_with(CTRL_GSO)) {
+            preserved(old == new, BODY)?;
+            continue;
+        }
+        let (Some((before, wrap)), Some((after, new_wrap))) =
+            (shape_layer(old), shape_layer(new))
+        else {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        };
+        let expected_wrap = *plane.get_or_insert(wrap);
+        preserved(
+            wrap == expected_wrap
+                && new_wrap == expected_wrap
+                && old[0].2[..24] == new[0].2[..24]
+                && old[0].2[28..] == new[0].2[28..]
+                && old[1..] == new[1..],
+            BODY,
+        )?;
+        if before != after {
+            changed += 1;
+        }
+        old_ranks.push(before);
+        new_ranks.push(after);
+    }
+    let n = old_ranks.len();
+    let distinct_old: std::collections::BTreeSet<_> = old_ranks.iter().copied().collect();
+    let distinct_new: std::collections::BTreeSet<_> = new_ranks.iter().copied().collect();
     preserved(
-        ranks.len() >= 2 && ranks.iter().all(|r| r.1 == wrap) && new_wrap == wrap
-            && old[0].2[..24] == new[0].2[..24] && old[0].2[28..] == new[0].2[28..]
-            && old[1..] == new[1..],
+        n >= 2 && changed >= 1 && distinct_old.len() == n && distinct_new.len() == n,
         BODY,
     )?;
-    let low = ranks.iter().map(|r| r.0).min().unwrap();
-    let high = ranks.iter().map(|r| r.0).max().unwrap();
-    // Tied ranks depend on address ordering; limit this proof to distinct ranks.
-    let distinct = ranks.iter().map(|r| r.0).collect::<std::collections::BTreeSet<_>>();
+    let low = *distinct_old.first().unwrap();
+    let high = *distinct_old.last().unwrap();
+    if n == 2 && changed == 1 {
+        let (before, after) = old_ranks
+            .iter()
+            .zip(&new_ranks)
+            .find(|(a, b)| a != b)
+            .map(|(&a, &b)| (a, b))
+            .unwrap();
+        return preserved(
+            (before != high && after == high + 1) || (before != low && after == low - 1),
+            BODY,
+        );
+    }
+    // Multi-edit z-order shifts in one save remain strictly bounded around [low, high].
+    let max_steps = (n as i32).saturating_mul(8).min(256);
     preserved(
-        distinct.len() == ranks.len()
-            && ((before != high && after == high + 1) || (before != low && after == low - 1)),
+        old_ranks.iter().zip(&new_ranks).all(|(&before, &after)| {
+            before == after
+                || (after >= low.saturating_sub(max_steps)
+                    && after <= high.saturating_add(max_steps))
+        }),
         BODY,
     )
 }
@@ -601,7 +647,7 @@ pub(super) fn prove_cell_picture_resize(
     // checking the concrete serialized cell record levels above.
     let shift = pic_level - 1;
     let normalize = |(tag, level, data)| (tag, level - shift, data);
-    prove_evolved_gso(&old.map(normalize), &new.map(normalize), defs)
+    prove_evolved_gso(&old.map(normalize), &new.map(normalize), defs, defs)
 }
 
 /// Only top-level, unlocked, uncaptioned, non-grouped, opaque-free HWP5 GSO pictures
@@ -1037,6 +1083,7 @@ pub(super) fn prove_evolved_gso(
     old: &[Record<'_>],
     new: &[Record<'_>],
     orig_defs: &Defs<'_>,
+    defs: &Defs<'_>,
 ) -> Checked<()> {
     preserved(evolved_candidate(old, new, orig_defs), BODY)?;
     let (ctrl_id, id_off, old_sc_idx) = shape_ctrl_id(old).unwrap();
@@ -1052,17 +1099,47 @@ pub(super) fn prove_evolved_gso(
     let (old_w, old_h_dim, new_w, new_h_dim, size_changed, has_caption) =
         check_ctrl_header(old[0].2, new[0].2, is_picture)?;
     if has_caption {
-        // B5: Caption list/paragraphs before SHAPE_COMPONENT stay byte-identical.
         preserved(
             old_sc_idx >= 3
-                && old_sc_idx == new_sc_idx
+                && new_sc_idx >= 3
                 && old[1].0 == TAG_LIST_HEADER
                 && old[1].1 == 2
+                && new[1].0 == TAG_LIST_HEADER
+                && new[1].1 == 2
                 && old[2].0 == 66
                 && old[2].1 == 2
-                && old[1..old_sc_idx] == new[1..new_sc_idx],
+                && new[2].0 == 66
+                && new[2].1 == 2,
             BODY,
         )?;
+        if old[1..old_sc_idx] != new[1..new_sc_idx] {
+            preserved(
+                !is_container
+                    && old.len() == old_sc_idx + 2
+                    && new.len() == new_sc_idx + 2,
+                BODY,
+            )?;
+            let old_list = old[1].2;
+            let new_list = new[1].2;
+            let old_count = word(old_list, 0)?;
+            let new_count = word(new_list, 0)?;
+            preserved(
+                old_list.len() == 30
+                    && new_list.len() == 30
+                    && old_list[2..] == new_list[2..]
+                    && (1..=64).contains(&old_count)
+                    && (1..=64).contains(&new_count),
+                BODY,
+            )?;
+            super::insertions::prove_caption_paragraphs(
+                &old[2..old_sc_idx],
+                &new[2..new_sc_idx],
+                old_count,
+                new_count,
+                orig_defs,
+                defs,
+            )?;
+        }
     } else {
         preserved(old_sc_idx == 1 && new_sc_idx == 1, BODY)?;
     }
@@ -3399,6 +3476,231 @@ mod tests {
         for (orig_name, edit_name) in [
             ("p5-shape-caption-original.hwp", "p5-shape-caption-edited.hwp"),
             ("p5-multipara-caption-original.hwp", "p5-multipara-caption-edited.hwp"),
+        ] {
+            let orig = read(orig_name);
+            let edited = read(edit_name);
+            assert_eq!(check_with_preview_refresh(&orig, &edited), vec![], "{edit_name}");
+        }
+    }
+
+    #[test]
+    fn multi_shape_z_order_preserves_owned_records_and_refuses_tamper() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let make_shape = |id: u32, z: i32, wrap: u32, fill: Option<u32>, locked: bool| {
+            let attr = (wrap << 21) | if locked { super::ATTR_LOCKED } else { 0 };
+            let mut hdr = ctrl_header(id, attr, 0, 0, 6000, 4000, "", &[]);
+            hdr[24..28].copy_from_slice(&z.to_le_bytes());
+            vec![
+                (71, 1, hdr),
+                (76, 2, shape_component_drawing(super::SC_RECT, 6000, 4000, 0, 0, 0, fill, id)),
+                (super::TAG_RECTANGLE, 3, rect_leaf(0, 6000, 4000)),
+            ]
+        };
+        let build = |s1: Vec<(u16, u16, Vec<u8>)>, s2: Vec<(u16, u16, Vec<u8>)>, s3: Vec<(u16, u16, Vec<u8>)>| {
+            let sec = wrap_section(vec![s1, s2, s3]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+        let orig = build(
+            make_shape(101, 1, 1, None, false),
+            make_shape(102, 2, 1, None, false),
+            make_shape(103, 3, 1, None, false),
+        );
+        // Positive: shape 3 moved back (0), shape 1 moved front (4), shape 2 moved front (5).
+        let valid_multi = build(
+            make_shape(101, 4, 1, None, false),
+            make_shape(102, 5, 1, None, false),
+            make_shape(103, 0, 1, None, false),
+        );
+        assert_eq!(check_with_preview_refresh(&orig, &valid_multi), vec![]);
+
+        // Negative 1: duplicate ranks must fail closed.
+        let dup_ranks = build(
+            make_shape(101, 4, 1, None, false),
+            make_shape(102, 4, 1, None, false),
+            make_shape(103, 0, 1, None, false),
+        );
+        assert!(!check_with_preview_refresh(&orig, &dup_ranks).is_empty());
+
+        // Negative 2: locked shape participation must fail closed.
+        let locked_orig = build(
+            make_shape(101, 1, 1, None, false),
+            make_shape(102, 2, 1, None, false),
+            make_shape(103, 3, 1, None, true),
+        );
+        let locked_edit = build(
+            make_shape(101, 4, 1, None, false),
+            make_shape(102, 5, 1, None, false),
+            make_shape(103, 3, 1, None, true),
+        );
+        assert!(!check_with_preview_refresh(&locked_orig, &locked_edit).is_empty());
+
+        // Negative 3: out-of-bounds rank jump must fail closed.
+        let jumped = build(
+            make_shape(101, 1000, 1, None, false),
+            make_shape(102, 1001, 1, None, false),
+            make_shape(103, 0, 1, None, false),
+        );
+        assert!(!check_with_preview_refresh(&orig, &jumped).is_empty());
+
+        // Negative 4: mixing fill mutation with multi z-order must fail closed.
+        let mixed_fill = build(
+            make_shape(101, 4, 1, Some(0x0011_2233), false),
+            make_shape(102, 5, 1, None, false),
+            make_shape(103, 0, 1, None, false),
+        );
+        assert!(!check_with_preview_refresh(&orig, &mixed_fill).is_empty());
+    }
+
+    #[test]
+    fn combined_hwp_caption_and_outer_edit_preserves_autonumber_and_refuses_tamper() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let cap_para = |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
+            let mut raw_text = Vec::new();
+            for cu in text.encode_utf16() {
+                raw_text.extend_from_slice(&cu.to_le_bytes());
+            }
+            if with_atno {
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+                raw_text.extend_from_slice(b"onta");
+                raw_text.extend_from_slice(&[0u8; 8]);
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+            }
+            raw_text.extend_from_slice(b"\r\0");
+            let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
+            let mask: u32 = if with_atno { 1 << 18 } else { 0 };
+            let mut hdr = vec![0u8; 22];
+            hdr[0..4].copy_from_slice(&cc.to_le_bytes());
+            hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+            hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+            hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+            let mut cs = vec![0u8; 8];
+            cs[0..4].copy_from_slice(&0u32.to_le_bytes());
+            let mut ls = vec![0u8; 36];
+            ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
+            ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
+            ls[12..16].copy_from_slice(&850i32.to_le_bytes());
+            let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
+            if with_atno {
+                let mut atno = vec![0u8; 16];
+                atno[0..4].copy_from_slice(b"onta");
+                out.push((71, 3, atno));
+            }
+            out
+        };
+        let cap_list = |para_count: u16, extra: u8| -> Vec<u8> {
+            let mut list = vec![0u8; 30];
+            list[0..2].copy_from_slice(&para_count.to_le_bytes());
+            list[8] = extra;
+            list
+        };
+        let build = |paras: Vec<Vec<(u16, u16, Vec<u8>)>>, list: Vec<u8>, attr: u32, w: u32, h: u32, fill: Option<u32>, bw: i32| {
+            let mut obj = vec![
+                (71, 1, ctrl_header(201, attr, 500, 500, w, h, "", &[])),
+                (72, 2, list),
+            ];
+            for p in paras {
+                obj.extend(p);
+            }
+            let mut sc = shape_component_drawing(super::SC_RECT, w, h, 0, 0, 0, fill, 201);
+            // Update border_width at offset 200..204 (2+3*48 = 146 after attr+42 = 196; border_color 196..200, border_width 200..204).
+            sc[200..204].copy_from_slice(&bw.to_le_bytes());
+            obj.push((76, 2, sc));
+            obj.push((super::TAG_RECTANGLE, 3, rect_leaf(0, w as i32, h as i32)));
+            let sec = wrap_section(vec![obj]);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        let orig = build(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 0),
+            super::ATTR_CAPTION | (1 << 21),
+            6000,
+            4000,
+            Some(0x00ff_ffff),
+            33,
+        );
+        // Positive: split caption + outer resize + solid fill in one save.
+        let combined = build(
+            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION | (1 << 21),
+            8400,
+            4200,
+            Some(0x0099_6633),
+            33,
+        );
+        assert_eq!(check_with_preview_refresh(&orig, &combined), vec![]);
+
+        // Negative 1: missing atno fails closed.
+        let no_atno = build(
+            vec![cap_para("도형 ", false, false), cap_para("편집", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION | (1 << 21),
+            8400,
+            4200,
+            Some(0x0099_6633),
+            33,
+        );
+        assert!(!check_with_preview_refresh(&orig, &no_atno).is_empty());
+
+        // Negative 2: LIST_HEADER tamper fails closed.
+        let bad_list = build(
+            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            cap_list(2, 1),
+            super::ATTR_CAPTION | (1 << 21),
+            8400,
+            4200,
+            Some(0x0099_6633),
+            33,
+        );
+        assert!(!check_with_preview_refresh(&orig, &bad_list).is_empty());
+
+        // Negative 3: outline width mutation on caption-bearing shape remains refused.
+        let bad_bw = build(
+            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION | (1 << 21),
+            8400,
+            4200,
+            Some(0x0099_6633),
+            200,
+        );
+        assert!(!check_with_preview_refresh(&orig, &bad_bw).is_empty());
+
+        // Negative 4: locked caption owner fails closed.
+        let locked_orig = build(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 0),
+            super::ATTR_CAPTION | super::ATTR_LOCKED | (1 << 21),
+            6000,
+            4000,
+            Some(0x00ff_ffff),
+            33,
+        );
+        let locked_edit = build(
+            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            cap_list(2, 0),
+            super::ATTR_CAPTION | super::ATTR_LOCKED | (1 << 21),
+            8400,
+            4200,
+            Some(0x0099_6633),
+            33,
+        );
+        assert!(!check_with_preview_refresh(&locked_orig, &locked_edit).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run B1.1 and B1.2 WASM tests with GEUL_STAGE3_OUT first"]
+    fn release_hwp_b1_multi_shape_layer_and_combined_caption() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        for (orig_name, edit_name) in [
+            ("b1-1-multi-layer-original.hwp", "b1-1-multi-layer-edited.hwp"),
+            ("b1-2-combined-caption-original.hwp", "b1-2-combined-caption-edited.hwp"),
         ] {
             let orig = read(orig_name);
             let edited = read(edit_name);
