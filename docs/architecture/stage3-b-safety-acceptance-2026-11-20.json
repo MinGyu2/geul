@@ -1,0 +1,106 @@
+{
+  "scope": "Stage 3-B Safety-Blocked Object Editing (B1, B2, B3)",
+  "date": "2026-11-20",
+  "timezone": "Asia/Seoul",
+  "stage3b": "COMPLETED",
+  "baselineHead": "41f0b075e721674e6fd0f0134801bbd35fb0855f",
+  "commits": [
+    {
+      "stage": "B1",
+      "sha": "08109a1c07983513c2e6a86d1638be77d81427f4",
+      "message": "fix(stage3b): preserve combined HWP object edits"
+    },
+    {
+      "stage": "B2",
+      "sha": "4096acc",
+      "message": "fix(stage3b): safely delete owned HWP objects"
+    },
+    {
+      "stage": "B3",
+      "sha": "a735b17",
+      "message": "feat(stage3b): support proven structured object transfers"
+    },
+    {
+      "stage": "B3/Native-Fix",
+      "sha": "0be8877",
+      "message": "fix(stage3b): align HWPX caption offsets and T010 drawText save gate"
+    }
+  ],
+  "branch": "master",
+  "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "wordcraftCommit": "b2c974369dd02d322a5498db484bcf96906dad15",
+  "rhwpGeneration": "92b8135be4772ec7247a7208a252c1e3126bfbec9d620bf75ed12e03c4a8074f",
+  "rhwpArtifacts": {
+    "rhwp.js": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+    "rhwp_bg.wasm": "f745d40020ed362537ff545c285919fa8607fb8f6b5ba21c5fd2faadb8a5c914"
+  },
+  "nativeAppSha256": "9921a5a641ab36e8d15a928c2a5e3fe706f6552b440cf93f78c3cc5572cc1681",
+  "runtimeEnvironment": {
+    "os": "Linux 7.2.14-arch1-1 x86_64",
+    "display": "X11/Xvfb",
+    "harness": "scripts/tests/native-ibus-session.py + scripts/tests/native-stage3-b.py",
+    "cleanupProven": true,
+    "filesystemProven": true,
+    "ownedProcessesCleaned": 30
+  },
+  "supportBoundary": {
+    "B1.1": {
+      "status": "SUPPORTED",
+      "subset": "Unlocked owned body basic shapes in SAFE Section0 sharing wrap mode with distinct initial zOrder; multiple changeShapeZOrder edits within one save",
+      "stillRefused": ["locked siblings", "mixed control types or containers", "non-unique initial zOrder", "geometry or anchor mutation"]
+    },
+    "B1.2": {
+      "status": "SUPPORTED",
+      "subset": "Unlocked owned body picture or leaf basic shape (non-TextBox) caption editing (1..=64 paragraphs preserving atno) combined with outer formatting in one save",
+      "stillRefused": ["outlineWidth on caption-bearing shapes", "position preset on caption-bearing pictures", "TextBox+caption nesting", "Stage 3-C west/north resize handles"]
+    },
+    "B2.1": {
+      "status": "SUPPORTED",
+      "subset": "Deletion of unlocked SAFE Section0 caption-bearing body picture or leaf basic shape (non-TextBox)",
+      "stillRefused": ["locked caption-bearing GSO", "caption-bearing TextBox", "dangling shared BinData mutation", "missing atno or unowned LIST_HEADER"]
+    },
+    "B2.2": {
+      "status": "SUPPORTED",
+      "subset": "Deletion of unlocked SAFE Section0 flat HWP5 group (groupFlatDeletable=true: non-captioned group containing only unlocked non-captioned leaf shapes, plain TextBoxes, or valid body pictures)",
+      "stillRefused": ["nested Group", "Chart or Ole child", "external image child", "locked child or group", "captioned group or captioned child"]
+    },
+    "B3.1": {
+      "status": "SUPPORTED",
+      "subset": "Same-document HWP5 copy/cut/paste of SAFE unlocked body pictures, leaf basic shapes, 1..=64 para plain TextBoxes, and flat deletable groups at collapsed body caret",
+      "stillRefused": ["cross-document HWP5 paste", "cross-format HWP<->HWPX/DOCX", "locked or unsafe group/OLE/Chart", "orphan plain-text object marker fallback"]
+    },
+    "B3.2": {
+      "status": "SUPPORTED",
+      "subset": "Cross-document HWPX portable paste of Pictures (<=8 MiB MIME/magic verified, optional caption), leaf Rect/Ellipse/Line (solid/none fill, solid/none stroke, optional caption), and TextBox (1..=64 paras with alignment and character formatting runs)",
+      "stillRefused": ["cross-document HWPX group", "polygon or curve portable snapshot", "gradient or image fill", "nested controls inside caption/textbox", "forged MIME/magic bytes", "orphan marker fallback", "DOCX cross-engine"]
+    }
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "rhwpProfiles": { "passed": 3, "failed": 0 },
+    "vitestUnit": { "files": ["pictureProperties.test.ts", "objectClipboard.test.ts", "clipboard.test.ts"], "passed": 65, "failed": 0 },
+    "vitestStage3Wasm": {
+      "rhwpAssets": { "passed": 12, "failed": 0 },
+      "hwpxClipboardSafety": { "passed": 7, "failed": 0 },
+      "objectEdit": { "passed": 14, "failed": 0 },
+      "shapes": { "passed": 27, "failed": 0 },
+      "pictureSize": { "passed": 4, "failed": 0 },
+      "chartInspection": { "passed": 7, "failed": 0 },
+      "totalPassed": 71
+    },
+    "rustSaveService": {
+      "servicesSave": { "passed": 302, "failed": 0, "ignored": 54 },
+      "releaseIgnoredB1": { "test": "release_hwp_b1_multi_shape_layer_and_combined_caption", "passed": 1 },
+      "releaseIgnoredB2": { "tests": ["release_hwp_b2_1_captioned_gso_deletion", "release_hwp_b2_2_group_deletion"], "passed": 2 },
+      "releaseIgnoredB3": { "test": "release_hwp_b3_1_hwp_clipboard", "passed": 1 }
+    },
+    "nativeX11": {
+      "B1-1": { "status": "PASS", "publishedSha256": "3edc8ac15829ae18f378d27f52452ff28f90c8231c509b1fc7e91c173ea6566c" },
+      "B1-2": { "status": "PASS", "publishedSha256": "eed957db29fd0c268c9939ca3b12a5905e3e260d37471f8dc3ce82d73c55de63" },
+      "B2-1": { "status": "PASS", "publishedSha256": "2882ac9f2751a6139d4025687e8a5930c60c83a4f15c91e0ba724a8a509a5cc3" },
+      "B2-2": { "status": "PASS", "publishedSha256": "082b48ac37d234c0acd04a21729ee5ca88879dea4befea97f9e534efa18345a" },
+      "B3-1": { "status": "PASS", "publishedSha256": "230cd4df71e6abdc61c51cf6488db94f548359a42e16bdee02ce4b0e1cbc172f" },
+      "B3-2": { "status": "PASS", "publishedSha256": "3b32473614485b767c1be6a59b5ea6c00f76434712dbcf8ebd3bfac30f66da28" }
+    }
+  }
+}

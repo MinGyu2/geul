@@ -1200,3 +1200,12 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 - HWPX `insert.shape`: 생성 직후 같은 이력 트랜잭션에서 `setShapeProperties({textWrap:"Square"})`로 배치 비트를 동기화하고 다시 읽어
   확인한다(이 없이 저장하면 재열기 컨트롤 비교가 실패).
 - HWPX 도형 `zOrder`(Stage 3 B4 복구): HWPX 본문 도형에 `changeShapeZOrder`(`front`/`back`)를 제공하고 미이동(`moves` 없음)과 HWP 형식은 거부한다. 겹치는 도형의 앞/뒤 전환, `getPageControlLayout`·`getPageLayerTree`·`getControls` 재열기 일치, Undo/Redo 및 `save_check` safe를 확인했다.
+
+### Stage 3-B 개체 안전 편집 및 구조 클립보드 확장 (2026-11-20)
+
+- **B1.1 (HWP5 단일 저장 내 다중 기본 도형 `zOrder`):** 같은 Section0·배치 유형·고유 순위를 가진 비잠금 본문 기본 도형에 대해 한 저장 안에서 여러 번 `changeShapeZOrder`를 실행할 수 있다. 기하·앵커·소유권·미선택 레코드 불변을 유지하며 Undo/Redo와 독립 재열기 적중 순서를 보존한다. 잠긴 형제, 혼합 개체 유형, 비고유 초기 순위는 계속 거부한다.
+- **B1.2 (HWP5 캡션 편집 + 외곽 도형 서식 결합 저장):** 비잠금·SAFE Section0 소유 그림·기본 도형(컨테이너·글상자+캡션 제외)에 대해 1–64문단 캡션 편집(`atno` 슬롯 보존)과 외곽 크기·위치·회전·대칭·채우기·선 색·배치 편집을 같은 저장에서 결합 허용한다. 캡션 있는 도형의 `outlineWidth` 편집과 캡션 있는 그림의 위치 프리셋(`position`) 및 Stage 3-C의 서쪽/북쪽 크기 조절 핸들 제한은 계속 비활성/거부한다.
+- **B2.1 (캡션 포함 HWP GSO 삭제):** 비잠금·SAFE Section0 소유 캡션 포함 본문 그림 및 기본 도형(캡션 포함 글상자 제외)에 `delete`를 제공한다. 삭제 뒤 캡션 문단 커서가 남아 있으면 본문 시작 또는 유효 커서로 재설정하며, 다른 개체의 캡션·공유 `BinData`·잠긴 개체 보호를 유지한다.
+- **B2.2 (HWP5 평면 그룹 삭제):** `stage3b-object-safety.patch`가 `get_shape_properties_native` 및 `format_shape_props_inner`에 노출하는 `groupFlatDeletable`이 `true`이고 Section0 SAFE 사전 검사가 통과한 비잠금 본문 그룹(캡션 없음, 자식 비잠금·캡션 없음·평문 리프 도형 또는 유효 본문 `Picture`만 포함, `Group`/`Chart`/`Ole`/외부 그림 제외)만 `delete`를 제공한다. T009가 타 개체가 공유하는 `BinData`·미선택 레코드 보존을 검증하며, 중첩 그룹·OLE/차트/캡션 포함 그룹은 계속 거부한다.
+- **B3.1 (HWP5 동일 문서 구조 클립보드):** SAFE Section0·비잠금 본문 개체(그림, 기본 도형, 1–64문단 평문 글상자, `groupFlatDeletable` 평면 그룹) 중 삭제·소유권 증명을 충족하는 선택에 `edit.copy`·`edit.cut`·`edit.paste`를 제공한다. 페이로드(`version: 3, sourceFormat: "hwp"`, `portable` 없음)는 동일 `sourceSessionId`·`sourceGeneration`·`token`·`clipboardHasControl()`이 일치하는 HWP5 본문 접힌 커서에만 `pasteControl`로 붙여넣으며, 교차 문서 HWP5, 교차 형식(HWP↔HWPX/DOCX), 잠금·OLE/차트·비평면 그룹, 예약 표식 폴백은 history 경계 전에 거부한다.
+- **B3.2 (HWPX 교차 문서 휴대용 구조 붙여넣기):** `version: 3, sourceFormat: "hwpx"` 페이로드가 검증된 `portable` 스냅샷(`HwpxPortablePicture` ≤8 MiB + MIME/매직바이트 검증, 또는 `HwpxPortableShape` `rectangle`·`ellipse`·`line`·`textbox` — 단색/무채우기, 실선/없음, 1–64문단 정렬/서식 run, 선택적 1–64문단 캡션 + `atno` 슬롯)을 실은 경우 다른 HWPX 문서의 본문 접힌 커서에 붙여넣기를 허용한다. 신규 캡션 `atno` 오프셋(`vec![0, 1, 2, 10]`)과 `setShapeProperties`의 `textWrap` 동기화로 `reopenMismatch` 없이 저장·재열기 일치를 유지한다. `group`·`polygon`·`curve`, 그라데이션/그림 채우기, 캡션/글상자 내 중첩 컨트롤, 위조 MIME/매직바이트, `portable` 없는 payload, `DOCX` 간 교차 형식, 예약 표식 평문 폴백은 계속 거부한다.
