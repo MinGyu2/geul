@@ -1,0 +1,557 @@
+{
+  "scope": "Stage 3-C floating resize and C09 persistence follow-up on Linux X11",
+  "date": "2026-11-20",
+  "baseline": "6e894b40c96c7c030fe23afe37f874691d8b09f5",
+  "followUp": "COMPLETED",
+  "stage3C": "COMPLETED (original Linux X11 scope)",
+  "stage3": "PARTIALLY COMPLETED",
+  "runtime": {
+    "os": "Linux 7.2.14-arch1-1 x86_64",
+    "xvfb": "21.1.23",
+    "webkitgtk": "2.54.1",
+    "tauri": "2.12.1",
+    "ibus": "1.5.33 (isolation launcher; no Korean input in these cases)",
+    "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftCommit": "b2c974369dd02d322a5498db484bcf96906dad15",
+    "rhwpGeneration": "3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3",
+    "rhwpWasmSha256": "ef91fa8a33c0fd1bb4ef8e21be95688f187480d780c0ec2b03b95a0dcafd6044"
+  },
+  "mixedBounds": {
+    "rootCause": "Leading-edge resize advertised mixed position and size that RHWP rejects. Existing floating picture eligibility only advertises movement.",
+    "restriction": "A movable RHWP shape/group only shows e, se and s if resize is available. Mixed bounds are rejected before mutation. Inline picture handles and WordCraft are unchanged.",
+    "coordinateContract": "Pointer CSS delta / zoom = engine layout units. RHWP positions are 96 DPI layout coordinates and a move offset is converted to HWPUNIT in the session. Resize dimensions use per-axis model-to-frame ratios and are converted from points to HWPUNIT once.",
+    "roundingCorrection": "Read exact model sides at selection; a 146.7 px rounded group frame no longer changes its 110 pt width during a south drag.",
+    "nativeDispositions": {
+      "floatingPicture": "PASS for hidden handles and independent movement, no floating-picture resize",
+      "floatingShape": "PASS for hidden leading handles and safe south resize",
+      "floatingGroup": "PASS for hidden leading handles and safe south resize",
+      "inlinePicture": "PASS for eight existing resize handles"
+    }
+  },
+  "c09Movement": {
+    "formats": [
+      "hwp",
+      "hwpx"
+    ],
+    "status": "PASS",
+    "command": "Shift+Right",
+    "originalOffsetsHwpunit": [
+      500,
+      500
+    ],
+    "publishedOffsetsHwpunit": [
+      1500,
+      500
+    ],
+    "basis": "Paper-relative on both axes, Left / Top, floating before and after wrapping",
+    "originalFrameOrigin": [
+      6.7,
+      6.7
+    ],
+    "publishedAndReopenedFrameOrigin": [
+      20,
+      6.7
+    ],
+    "page": 0,
+    "retainedChecks": [
+      "Resize; wrapping; Undo/Redo; HWPX reversible deletion",
+      "Unchanged child geometry/transforms and body",
+      "Publication and reopen"
+    ]
+  },
+  "historicSessionAudit": {
+    "originalAggregate": "docs/architecture/stage3-c-native-acceptance-2026-11-20.json",
+    "originalAggregateSha256": "56e0ffa1a3f9db20b6afbec4c5503965ab2425992d225ccb8601275475479065",
+    "recordedRunnerBatches": 12,
+    "isolatedX11IbusSessions": 12,
+    "reconciliationBatches": 4,
+    "appDriverSessionsClosed": 50,
+    "method": "Cross checked the unique run IDs from session/cleanup/result directories with the original aggregate and result hashes. Each successful WebDriver session deletion represents a case-level launch inside its parent launcher.",
+    "correction": "The earlier completion response said 13 isolated sessions. There are 12 corroborating sessions and no thirteenth session record in the original acceptance root.",
+    "acceptedItems": 13,
+    "formatSpecificPassRows": 19,
+    "positivePublicationsAndReopens": 18,
+    "intentionalRefusalRows": 1,
+    "runs": {
+      "reconcile1": {
+        "runId": "71d150a530bc412a9a533ec8c6846073",
+        "result": "target/stage3c-native/reconcile1/run/result.json",
+        "session": "target/stage3c-native/reconcile1/session/session.json",
+        "cleanup": "target/stage3c-native/reconcile1/session/cleanup.json",
+        "appDriverSessionsClosed": 11
+      },
+      "reconcile2": {
+        "runId": "7acb0b75ad2c465e818f34e08aa24d1d",
+        "result": "target/stage3c-native/reconcile2/run/result.json",
+        "session": "target/stage3c-native/reconcile2/session/session.json",
+        "cleanup": "target/stage3c-native/reconcile2/session/cleanup.json",
+        "appDriverSessionsClosed": 5
+      },
+      "reconcile3": {
+        "runId": "a73f021eb0684de3a3fad5fd7762bd5d",
+        "result": "target/stage3c-native/reconcile3/run/result.json",
+        "session": "target/stage3c-native/reconcile3/session/session.json",
+        "cleanup": "target/stage3c-native/reconcile3/session/cleanup.json",
+        "appDriverSessionsClosed": 2
+      },
+      "reconcile4": {
+        "runId": "7ed915b67a66461784a2f783c4af850c",
+        "result": "target/stage3c-native/reconcile4/run/result.json",
+        "session": "target/stage3c-native/reconcile4/session/session.json",
+        "cleanup": "target/stage3c-native/reconcile4/session/cleanup.json",
+        "appDriverSessionsClosed": 3
+      },
+      "step1-attempt1": {
+        "runId": "5e90884671064e4ea1e80214ca33b06c",
+        "result": "target/stage3c-native/step1-attempt1/run/result.json",
+        "session": "target/stage3c-native/step1-attempt1/session/session.json",
+        "cleanup": "target/stage3c-native/step1-attempt1/session/cleanup.json",
+        "appDriverSessionsClosed": 2
+      },
+      "step1-attempt2": {
+        "runId": "5245c026e39c4efb9cc0a80bb9fbea76",
+        "result": "target/stage3c-native/step1-attempt2/run/result.json",
+        "session": "target/stage3c-native/step1-attempt2/session/session.json",
+        "cleanup": "target/stage3c-native/step1-attempt2/session/cleanup.json",
+        "appDriverSessionsClosed": 2
+      },
+      "step1-attempt3": {
+        "runId": "5cd18631a80d4cf08990d465859f0b20",
+        "result": "target/stage3c-native/step1-attempt3/run/result.json",
+        "session": "target/stage3c-native/step1-attempt3/session/session.json",
+        "cleanup": "target/stage3c-native/step1-attempt3/session/cleanup.json",
+        "appDriverSessionsClosed": 2
+      },
+      "step2-attempt1": {
+        "runId": "ecf7d3669d274132ae62aac71447ddf8",
+        "result": "target/stage3c-native/step2-attempt1/run/result.json",
+        "session": "target/stage3c-native/step2-attempt1/session/session.json",
+        "cleanup": "target/stage3c-native/step2-attempt1/session/cleanup.json",
+        "appDriverSessionsClosed": 4
+      },
+      "step2-attempt2": {
+        "runId": "d0e38c3c88174398884ef976c5d407ed",
+        "result": "target/stage3c-native/step2-attempt2/run/result.json",
+        "session": "target/stage3c-native/step2-attempt2/session/session.json",
+        "cleanup": "target/stage3c-native/step2-attempt2/session/cleanup.json",
+        "appDriverSessionsClosed": 4
+      },
+      "step2-attempt3": {
+        "runId": "3a3f46bf6a214a9e971860cbcc13caae",
+        "result": "target/stage3c-native/step2-attempt3/run/result.json",
+        "session": "target/stage3c-native/step2-attempt3/session/session.json",
+        "cleanup": "target/stage3c-native/step2-attempt3/session/cleanup.json",
+        "appDriverSessionsClosed": 2
+      },
+      "step3-attempt1": {
+        "runId": "2807b37662c34b51954ce7d2d2fb280b",
+        "result": "target/stage3c-native/step3-attempt1/run/result.json",
+        "session": "target/stage3c-native/step3-attempt1/session/session.json",
+        "cleanup": "target/stage3c-native/step3-attempt1/session/cleanup.json",
+        "appDriverSessionsClosed": 7
+      },
+      "steps4-6-attempt1": {
+        "runId": "065d990ec7344682bbcd12c1eb906cb1",
+        "result": "target/stage3c-native/steps4-6-attempt1/run/result.json",
+        "session": "target/stage3c-native/steps4-6-attempt1/session/session.json",
+        "cleanup": "target/stage3c-native/steps4-6-attempt1/session/cleanup.json",
+        "appDriverSessionsClosed": 6
+      }
+    }
+  },
+  "followUpRuns": {
+    "task1-attempt1": {
+      "appSha256": "d43f336fe1913cb6805d62a59c62f42e0660e182ec9f15361ec1b22170ca02ee",
+      "result": "target/stage3c-resize-followup/task1-attempt1/run/result.json",
+      "resultSha256": "14f959b37428c85d559c68d4ebc336e538d744825b8f440746f4eaced763d26c",
+      "session": "target/stage3c-resize-followup/task1-attempt1/session/session.json",
+      "cleanup": "target/stage3c-resize-followup/task1-attempt1/session/cleanup.json",
+      "runId": "918115c46cc44e5dacbbe26f8af72074",
+      "exit": 1,
+      "cleanupProven": true,
+      "cases": {
+        "floating-picture": {
+          "status": "PASS",
+          "fixture": "gso-original.hwp",
+          "fixtureSha256": "49acfbe4e74722691eeac1f7d5103c1346625a517b8297ba3d857b2337b40f94",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          },
+          "resizeHandles": [],
+          "startFrame": {
+            "width": 48,
+            "height": 24,
+            "top": 172.3,
+            "left": 380.1
+          },
+          "editedFrame": {
+            "width": 48,
+            "height": 24,
+            "top": 180.3,
+            "left": 392.1
+          },
+          "reopenedFrame": {
+            "width": 48,
+            "height": 24,
+            "top": 180.3,
+            "left": 392.1
+          },
+          "publishedSha256": "d05effea45056dca0dd84728381b3ee7adeb7ff26141bf9953b6fc571b3cd17d",
+          "published": "target/stage3c-resize-followup/task1-attempt1/run/floating-picture.hwp"
+        },
+        "floating-shape": {
+          "status": "PASS",
+          "fixture": "gso-original.hwp",
+          "fixtureSha256": "49acfbe4e74722691eeac1f7d5103c1346625a517b8297ba3d857b2337b40f94",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          },
+          "resizeHandles": [
+            "e",
+            "se",
+            "s"
+          ],
+          "startFrame": {
+            "width": 96,
+            "height": 48,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "editedFrame": {
+            "width": 96,
+            "height": 60,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "reopenedFrame": {
+            "width": 96,
+            "height": 60,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "publishedSha256": "d8b455eded23ad8c3fe8361b064da4ed55049a0c27301c448fae0ffaadd70d7e",
+          "published": "target/stage3c-resize-followup/task1-attempt1/run/floating-shape.hwp"
+        },
+        "floating-group": {
+          "status": "FAIL",
+          "fixture": "p3-group-original.hwp",
+          "fixtureSha256": "6f129489154356d86f5258fb331ea1d45530fcb83a46c6f60690e8c37b3e49c8",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          },
+          "resizeHandles": [
+            "e",
+            "se",
+            "s"
+          ],
+          "startFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "editedFrame": {
+            "width": 146.7,
+            "height": 78.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "failure": "The original south drag changed group width from 11000 to 11003 HWPUNIT, preventing its reopen assertion."
+        },
+        "inline-picture": {
+          "status": "PASS",
+          "fixture": "gso-original.hwp",
+          "fixtureSha256": "49acfbe4e74722691eeac1f7d5103c1346625a517b8297ba3d857b2337b40f94",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "17"
+          },
+          "publishedSha256": "de6ac48faa05eaf14f5cf0e0d3aecc46d4d2bd5401f2ec5a6caec991fc00fe19",
+          "published": "target/stage3c-resize-followup/task1-attempt1/run/c01.hwp"
+        }
+      }
+    },
+    "task1-attempt2": {
+      "appSha256": "00adc565c8a712d43e351c28ce405da562e8c4f185e9f288987742542fe6122c",
+      "result": "target/stage3c-resize-followup/task1-attempt2/run/result.json",
+      "resultSha256": "eadeebe1b944f9178cf3c8cd2c966b64c3f60eebfd6a2ba568c31b3771a8daaf",
+      "session": "target/stage3c-resize-followup/task1-attempt2/session/session.json",
+      "cleanup": "target/stage3c-resize-followup/task1-attempt2/session/cleanup.json",
+      "runId": "fd790dfffbba4545952e60eea1e8ea7a",
+      "exit": 0,
+      "cleanupProven": true,
+      "cases": {
+        "floating-shape": {
+          "status": "PASS",
+          "fixture": "gso-original.hwp",
+          "fixtureSha256": "49acfbe4e74722691eeac1f7d5103c1346625a517b8297ba3d857b2337b40f94",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          },
+          "resizeHandles": [
+            "e",
+            "se",
+            "s"
+          ],
+          "startFrame": {
+            "width": 96,
+            "height": 48,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "editedFrame": {
+            "width": 96,
+            "height": 60,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "reopenedFrame": {
+            "width": 96,
+            "height": 60,
+            "top": 106.7,
+            "left": 53.3
+          },
+          "publishedSha256": "d8b455eded23ad8c3fe8361b064da4ed55049a0c27301c448fae0ffaadd70d7e",
+          "published": "target/stage3c-resize-followup/task1-attempt2/run/floating-shape.hwp"
+        },
+        "floating-group": {
+          "status": "PASS",
+          "fixture": "p3-group-original.hwp",
+          "fixtureSha256": "6f129489154356d86f5258fb331ea1d45530fcb83a46c6f60690e8c37b3e49c8",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          },
+          "resizeHandles": [
+            "e",
+            "se",
+            "s"
+          ],
+          "startFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "editedFrame": {
+            "width": 146.7,
+            "height": 78.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "reopenedFrame": {
+            "width": 146.7,
+            "height": 78.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "publishedSha256": "cc0494bf2649c120772ebcd765896e4bd2b46eab362990517ab091ac48175533",
+          "published": "target/stage3c-resize-followup/task1-attempt2/run/floating-group.hwp"
+        }
+      }
+    },
+    "task2-attempt1": {
+      "appSha256": "00adc565c8a712d43e351c28ce405da562e8c4f185e9f288987742542fe6122c",
+      "result": "target/stage3c-resize-followup/task2-attempt1/run/result.json",
+      "resultSha256": "75dd56313dd1c3ae79160128e51fa050955814c7d8bf19b25d62c734d6bbf943",
+      "session": "target/stage3c-resize-followup/task2-attempt1/session/session.json",
+      "cleanup": "target/stage3c-resize-followup/task2-attempt1/session/cleanup.json",
+      "runId": "5076fc44ebae4bbaa93e598b63f16c03",
+      "exit": 0,
+      "cleanupProven": true,
+      "cases": {
+        "C09-hwp": {
+          "status": "PASS",
+          "fixture": "p3-group-original.hwp",
+          "fixtureSha256": "6f129489154356d86f5258fb331ea1d45530fcb83a46c6f60690e8c37b3e49c8",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "7"
+          },
+          "startFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "movedFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "wrappedFrame": {
+            "width": 160.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "reopenedFrame": {
+            "width": 160.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "reopenedPage": 0,
+          "placement": {
+            "original": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 500,
+              "vertOffset": 500
+            },
+            "expected": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 1500,
+              "vertOffset": 500
+            },
+            "published": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 1500,
+              "vertOffset": 500
+            }
+          },
+          "publishedSha256": "b055720a938c33e5ea0f0a7002683c440900d9522204b2ebda8b9684374565d1",
+          "published": "target/stage3c-resize-followup/task2-attempt1/run/c09.hwp"
+        },
+        "C09-hwpx": {
+          "status": "PASS",
+          "fixture": "p3-group-original.hwpx",
+          "fixtureSha256": "b9cf5bc791f76eec87f4fed73b53c2d2f87d142edf0eb4bdd29d653e3c24ebfb",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "9"
+          },
+          "startFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 6.7
+          },
+          "movedFrame": {
+            "width": 146.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "wrappedFrame": {
+            "width": 160.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "reopenedFrame": {
+            "width": 160.7,
+            "height": 66.7,
+            "top": 6.7,
+            "left": 20
+          },
+          "reopenedPage": 0,
+          "placement": {
+            "original": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 500,
+              "vertOffset": 500
+            },
+            "expected": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 1500,
+              "vertOffset": 500
+            },
+            "published": {
+              "horzRelTo": "Paper",
+              "vertRelTo": "Paper",
+              "horzAlign": "Left",
+              "vertAlign": "Top",
+              "treatAsChar": false,
+              "horzOffset": 1500,
+              "vertOffset": 500
+            }
+          },
+          "publishedSha256": "39a829927c3a54a7347877418953a7f6e88a66fa0d3fa19c6503394a3fa30272",
+          "published": "target/stage3c-resize-followup/task2-attempt1/run/c09.hwpx"
+        }
+      }
+    }
+  },
+  "followUpIsolatedX11IbusSessions": 3,
+  "verification": {
+    "typecheck": 0,
+    "frontendTestsPassed": 33,
+    "wasmTestsPassed": 6,
+    "groupWasmTestsRepeatedOnFinalSelectionPassed": 2,
+    "pythonNegativeTestsPassed": 2,
+    "rawOutputRoot": "target/stage3c-resize-followup"
+  }
+}

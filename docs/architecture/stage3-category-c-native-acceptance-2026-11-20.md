@@ -2,6 +2,8 @@
 
 형식별 판정, 실행 파일과 WASM 식별자, 저장 해시, 원시 실행 경로는 [Stage 3-C 실행 기록](stage3-c-native-acceptance-2026-11-20.json)에 있다. 전체 Stage 3의 상태는 **PARTIALLY COMPLETED**다.
 
+이전 완료 응답의 **격리 세션 13개** 표기를 정정한다. 원본 실행 디렉터리에서 `session.json`, `cleanup.json`, `result.json`이 쌍을 이루는 고유 실행은 각각 **12개**였다. 그중 재검증 배치는 4개이며, 배치 안의 개별 WebDriver 앱 세션 종료는 **50건**이다. 기존 **13개 항목, 19개 형식별 PASS, 18개 게시·재열기** 판정은 그대로다. 후속 검증의 격리 세션 3개와 그 결과는 [별도 후속 기록](stage3-c-resize-followup-2026-11-20.json)에 보존했다.
+
 Stage 3-C 시험은 실제 Tauri 앱을 격리된 Linux X11/Xvfb에서 실행한다. 문서는 GTK 열기 대화상자로 연다. 개체와 편집 조작부는 WebDriver 포인터로 선택하고 키보드 입력은 xdotool을 사용한다. 문서 관찰에는 편집기 상태와 독립 RHWP 또는 DOCX 패키지 검사를 사용한다. C05의 한국어 입력은 실제 IBus Hangul 조합이다. 발행된 HWP/HWPX에는 앱 보존 검사가 적용된다.
 
 ## 재실행
@@ -43,6 +45,12 @@ python3 -O scripts/tests/native-ibus-session.py \
 C03은 WordCraft가 직렬화한 패키지를 시험 원본으로 사용한다. 최초 최소 OOXML 패키지에서는 앱이 기본 파트 추가를 안전 저장 검사에서 차단했다. C07의 GTK 목록은 WebDriver의 항목 클릭과 신뢰된 `change` 이벤트로 확인했다.
 
 C12의 재실행 명령은 기존 T009에서 인정하는 빈 미리보기를 가진 원본 fixture를 사용한다. 미리보기 외 원본 차트, 소유 관계와 리소스는 유지한다. 배포 앱이 실제로 게시한 파일을 독립 검사한다. 비어 있지 않은 미리보기와 다른 패키지 구조에서 발생한 저장 거부는 집계 기록에 따로 남긴다.
+
+## 부유 개체 크기 안전 및 C09 후속 검증
+
+이동 가능 RHWP 도형·그룹의 서쪽·북쪽 앵커를 옮기는 핸들(`nw`, `n`, `ne`, `sw`, `w`)은 표시하지 않는다. 해당 혼합 위치·크기 명령은 선택 권한 검사에서도 거부한다. 기존 이동과 동·남동·남쪽 크기 변경, 부유 그림 이동, 지원 인라인 그림의 여덟 크기 핸들은 유지한다. 남쪽 크기 변경에서는 선택 모델의 치수로 변환해 원래 너비를 정확히 보존한다. 초기에 발견한 0.03pt 너비 변동과 그 교정 결과는 후속 기록에 별도로 남겼다.
+
+기존 fixture를 쓸 수 있으면 `--fixtures target/stage3c-native/fixtures`를 사용한다. 위의 X11 실행기와 Release 빌드 조건에서 `native-stage3-c-resize.py`의 `floating-picture floating-shape floating-group inline-picture`를 실행한다. 별도 출력 경로에서 `native-stage3-c.py`의 `C09-hwp C09-hwpx`를 실행한다. C09 검사는 종이 기준 왼쪽·위쪽 정렬을 확인하고, 10pt 이동 뒤 예상 가로·세로 오프셋과 게시본을 비교한다. 재열기 화면의 양쪽 위치와 페이지도 독립 RHWP 레이아웃과 대조한다.
 
 ## 기존 검증 범위
 
