@@ -73,22 +73,27 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
     return { owner, index: state.child.index, x: state.child.x, y: state.child.y, width: w, height: h };
   }
 
+  function beginCapture(event: PointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* capture is best effort */ }
+  }
+
   function startMove(event: PointerEvent<HTMLButtonElement>, child: GroupChildGeometry) {
-    if (event.button !== 0 || width <= 0 || height <= 0) return;
+    if (drag.current || event.button !== 0 || width <= 0 || height <= 0) return;
     event.stopPropagation();
     setSelectedIndex(child.index);
     setDraft(undefined);
     if (!child.canMove) return;
     drag.current = { kind: "move", owner, pointer: event.pointerId, child, clientX: event.clientX, clientY: event.clientY };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    beginCapture(event);
   }
 
   function startResize(event: PointerEvent<HTMLButtonElement>, handle: ChildHandle) {
-    if (event.button !== 0 || width <= 0 || height <= 0 || !selected.canResize) return;
-    event.stopPropagation();
+    if (drag.current || event.button !== 0 || width <= 0 || height <= 0 || !selected.canResize) return;
     setDraft(undefined);
     drag.current = { kind: "resize", owner, pointer: event.pointerId, child: selected, handle, clientX: event.clientX, clientY: event.clientY };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    beginCapture(event);
   }
 
   function finishDrag(event: PointerEvent<HTMLButtonElement>, commit: boolean) {
@@ -96,6 +101,11 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
     if (!current || current.pointer !== event.pointerId) return;
     drag.current = null;
     setPreview(undefined);
+    try {
+      if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+      }
+    } catch { /* release is best effort */ }
     if (!commit || current.owner !== owner) return;
     if (Math.hypot(event.clientX - current.clientX, event.clientY - current.clientY) < 3) return;
     const next = computeTarget(event, current);

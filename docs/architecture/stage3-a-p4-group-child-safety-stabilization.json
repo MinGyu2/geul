@@ -1,0 +1,48 @@
+{
+  "baselineHead": "0b8a2e4c906999f2db06baf19a0de03fb4e88085",
+  "phase": "P4.6-stabilization",
+  "date": "2026-11-21",
+  "status": "COMPLETED",
+  "releaseWasm": {
+    "generation": "972f25b90b41680f6a3212738723155497a34df5744a51aead36fa2a13b3ce61",
+    "artifacts": {
+      "rhwp.js": "eda1fda0e929c6d0820a27fc752ae1a0435248bd6abe0a916f94155d68a51281",
+      "rhwp_bg.wasm": "97e8af217d8ef0a11405101a37692bc5fd5a4e43049816223412048e5d8c3deb"
+    },
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15",
+    "externalUnchanged": true
+  },
+  "corrections": {
+    "task1RawMatrixSafety": {
+      "originalWeakness": "geul_flat_hwpx_identity inspected only composed render_* values with abs(v - expected) > 1e-6 (which yields false on NaN), omitted saturating-cast bounds before round() as i32, and did not validate every matrix inside ShapeComponentAttr.raw_rendering.",
+      "contract": "Every non-empty raw_rendering buffer must match length 2 + 48 + count*96 (count <= 64) with all finite f64 entries; transMatrix linear entries must be exact identity [1,0,tx,0,1,ty] with integer translation in [0, MAX_RECT_DIM_HU] matching either (0,0) or child offset (0,0 for parent); every (scaMatrix, rotMatrix) pair must be exact [1,0,0,0,1,0]; all 6 modeled render_* fields must be finite with exact identity linear components and bounded integer translation matching offset.",
+      "tests": "T1-T8 in scripts/tests/stage3-shapes.wasm.test.ts"
+    },
+    "task2EllipseGeometrySafety": {
+      "originalWeakness": "geul_group_child_geom_ok used signed i32 subtraction and .abs() <= 1 (which can overflow/wrap to <= 1 on extreme coordinates like i32::MIN + 1) and checked start1 == end1 without verifying canonical full-ellipse endpoint equality to axis1 before resize.",
+      "contract": "All center/axis1/axis2/endpoint checks use overflow-free i64 comparisons with odd-width rounding tolerance [w/2, (w+1)/2] for center only (exact w/h on axis1/axis2) and attr == 0; canonical full ellipses (all four start/end endpoints == axis1) support move and resize, whereas valid-axis ellipses with noncanonical endpoints preserve endpoints on move and refuse resize without silent normalization; extreme/degenerate axes fail closed.",
+      "tests": "E1-E7 in scripts/tests/stage3-shapes.wasm.test.ts"
+    },
+    "task3ResizePointerCapture": {
+      "originalState": "startResize in src/components/Editor/GroupChildEditor.tsx already called setPointerCapture?.(event.pointerId) and wired onPointerCancel/onLostPointerCapture; lacked active-pointer guard against secondary pointer hijack, best-effort try/catch capture/release, preventDefault, and U1-U8 test coverage.",
+      "contract": "Single active pointer owns drag.current; best-effort setPointerCapture/releasePointerCapture never throw when unsupported; pointerCancel and lostPointerCapture clear preview/drag with zero mutation; pointerUp commits at most one edit; north/west handles remain absent.",
+      "tests": "U1-U8 in src/components/Editor/ObjectSelectionFrame.test.tsx (jsdom mocked setPointerCapture); Native X11 not rerun after stabilization (previously PASS at 0b8a2e4)."
+    }
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "rhwpProfiles": "3 tests OK",
+    "uiFrameTests": "22 passed (ObjectSelectionFrame.test.tsx)",
+    "wasmGroupTests": "10 passed, 47 skipped (stage3-shapes.wasm.test.ts -t group)",
+    "saveCheckSavedHwpx": "safe (findings: [])",
+    "native": "NOT RUN (stabilization verified by Release WASM, save_check, and jsdom U1-U8; prior P4.3/P4.6 Native PASS at 0b8a2e4)"
+  },
+  "remainingUnsupported": [
+    "Nested groups or non-Rectangle/Ellipse group children",
+    "Rotated, flipped, scaled, sheared, composite-nonidentity, malformed, or nonfinite transform matrices",
+    "Ellipses with invalid/degenerate axes or noncanonical endpoints for resize",
+    "Locked parents/children, size-protected parents or resize of size-protected children, captioned parents/children, textBox children",
+    "HWP5 and DOCX group-child geometry editing"
+  ]
+}

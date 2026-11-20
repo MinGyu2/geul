@@ -2069,7 +2069,7 @@ T009는 원래와 출력의 곡선 리프를 각각 개수, HWPUNIT 좌표, 실�
 
 ## Stage 3-A P4.6 HWPX 평면 그룹 자식 기하 보존 및 편집
 
-HWPX 평면 컨테이너 직속 사각형·타원 자식은 항등 행렬과 비영 `<hp:offset>` 조합을 파서/직렬화기에서 손실·이중 적용 없이 왕복 보존한다([P4.6-1 수용 기록](stage3-a-p4-group-geometry-acceptance.json)). `moveGroupChild`와 `resizeGroupChild` 편집 시 대상 자식의 `offset`, `pos`, `orgSz`/`curSz`/`sz`, `renderingInfo`, `rotationInfo` 중심 및 사각형 꼭짓점/타원 축 좌표만을 부모 범위 안에서 일관되게 갱신하며, 부모 컨테이너 속성·크기·위치, 형제 개체, 선/채우기/설명 및 타 ZIP 파트를 그대로 보존하고 T009(`save_check saved hwpx`)와 독립 재열기 동등성으로 검증한다([P4.6-2 수용 기록](stage3-a-p4-group-child-edit-acceptance.json)).
+HWPX 평면 컨테이너 직속 사각형·타원 자식은 항등 행렬과 비영 `<hp:offset>` 조합을 파서/직렬화기에서 손실·이중 적용 없이 왕복 보존한다([P4.6-1 수용 기록](stage3-a-p4-group-geometry-acceptance.json)). `moveGroupChild`와 `resizeGroupChild`는 `raw_rendering` 개별 행렬 구조·유한성 검증과 `i64` 기반 타원 축/정규 끝점 검사를 통과한 대상에 한해 자식의 `offset`, `pos`, `orgSz`/`curSz`/`sz`, `renderingInfo`, `rotationInfo` 중심 및 사각형 꼭짓점/정규 타원 축 좌표를 부모 범위 안에서 일관되게 갱신하며(비정규 끝점 타원은 이동 시 원본 끝점을 무손실 보존하고 크기 조절을 차단), 부모 컨테이너 속성·크기·위치, 형제 개체, 선/채우기/설명 및 타 ZIP 파트를 보존해 T009(`save_check saved hwpx`)와 독립 재열기 동등성으로 검증한다([P4.6-2 수용 기록](stage3-a-p4-group-child-edit-acceptance.json), [P4.6 안전화 기록](stage3-a-p4-group-child-safety-stabilization.json)).
 
 ## Stage 3-A P5.5 HWPX 글상자 문단 병합
 

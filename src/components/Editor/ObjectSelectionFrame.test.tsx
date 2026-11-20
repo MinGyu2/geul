@@ -314,3 +314,93 @@ it("edits flat-group child positions and left/top-anchored sizes with ownership 
   expect(screen.queryByRole("button", { name: "Finish child editing" })).toBeNull();
   expect(screen.getByRole("button", { name: "Edit group children" })).toBeTruthy();
 });
+
+it("manages group-child resize and move pointer capture, outside-handle drags, and safe cancellation (U1-U8)", () => {
+  const { onEdit } = frame({ selection: selection({
+    kind: "group",
+    address: { engine: "rhwp", path: [0, 0, 2] },
+    // scale=2 in frame(): rendered container size is 234 x 98 px -> 50 HWPUNIT / px
+    frame: { page: 0, x: 5, y: 5, width: 117, height: 49 },
+    operations: ["deselect", "move", "resize", "groupChildGeometry"],
+    groupChildren: {
+      parentId: 0,
+      width: 11700,
+      height: 4900,
+      children: [
+        {
+          index: 0, kind: "rectangle", id: 2112144572, instId: 1038402749,
+          x: 0, y: 0, width: 5200, height: 4100,
+          sizeProtect: false, locked: false, canMove: true, canResize: true,
+        },
+        {
+          index: 1, kind: "ellipse", id: 2112169928, instId: 1038428105,
+          x: 6500, y: 800, width: 5200, height: 4100,
+          sizeProtect: false, locked: false, canMove: true, canResize: true,
+        },
+      ],
+    },
+  }) });
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit group children" }));
+  // U8: Unsupported north/west resize handles are never rendered.
+  expect(["nw", "n", "ne", "sw", "w"].map(h => document.querySelector(`[data-handle="${h}"]`))).toEqual([null, null, null, null, null]);
+
+  const seHandle = document.querySelector('.object-group-child-handle[data-handle="se"]') as HTMLButtonElement;
+  const setCapture = vi.fn();
+  const hasCapture = vi.fn(() => true);
+  const releaseCapture = vi.fn();
+  seHandle.setPointerCapture = setCapture;
+  seHandle.hasPointerCapture = hasCapture;
+  seHandle.releasePointerCapture = releaseCapture;
+
+  // U1 & U2 & U3: Resize acquires capture, continues tracking far outside the handle, and commits once.
+  fireEvent.pointerDown(seHandle, { pointerId: 42, button: 0, clientX: 100, clientY: 100 });
+  expect(setCapture).toHaveBeenCalledWith(42);
+  // Secondary pointer must not hijack active drag
+  fireEvent.pointerDown(seHandle, { pointerId: 99, button: 0, clientX: 200, clientY: 200 });
+  fireEvent.pointerMove(seHandle, { pointerId: 42, clientX: 110, clientY: 108 });
+  const previewFrame = document.querySelector(".object-group-child-frame") as HTMLElement;
+  expect(previewFrame.style.width).toBe(`${(5200 + 500) / 11700 * 100}%`);
+  fireEvent.pointerUp(seHandle, { pointerId: 42, clientX: 110, clientY: 108 });
+  // Follow-up lostPointerCapture after normal pointerUp must not duplicate or fail
+  fireEvent.lostPointerCapture(seHandle, { pointerId: 42 });
+  expect(onEdit).toHaveBeenCalledTimes(1);
+  expect(onEdit).toHaveBeenLastCalledWith({
+    kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 5700, height: 4500,
+  }, 7);
+
+  // U4: PointerCancel clears preview & drag without emitting a mutation.
+  fireEvent.pointerDown(seHandle, { pointerId: 7, button: 0, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(seHandle, { pointerId: 7, clientX: 120, clientY: 112 });
+  fireEvent.pointerCancel(seHandle, { pointerId: 7 });
+  fireEvent.pointerUp(seHandle, { pointerId: 7, clientX: 120, clientY: 112 });
+  expect(onEdit).toHaveBeenCalledTimes(1);
+  expect((document.querySelector(".object-group-child-frame") as HTMLElement).style.width).toBe(`${5200 / 11700 * 100}%`);
+
+  // U5: LostPointerCapture mid-drag cancels cleanly without emitting a mutation.
+  fireEvent.pointerDown(seHandle, { pointerId: 8, button: 0, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(seHandle, { pointerId: 8, clientX: 120, clientY: 112 });
+  fireEvent.lostPointerCapture(seHandle, { pointerId: 8 });
+  fireEvent.pointerUp(seHandle, { pointerId: 8, clientX: 120, clientY: 112 });
+  expect(onEdit).toHaveBeenCalledTimes(1);
+
+  // U6: Subsequent drag after cancellation works normally.
+  fireEvent.pointerDown(seHandle, { pointerId: 9, button: 0, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(seHandle, { pointerId: 9, clientX: 90, clientY: 94 });
+  fireEvent.pointerUp(seHandle, { pointerId: 9, clientX: 90, clientY: 94 });
+  expect(onEdit).toHaveBeenCalledTimes(2);
+  expect(onEdit).toHaveBeenLastCalledWith({
+    kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 4700, height: 3800,
+  }, 7);
+
+  // U7: Move dragging retains its existing pointer capture + commit behavior.
+  const rectChild = document.querySelector('.object-group-child[data-index="0"]') as HTMLButtonElement;
+  const moveCapture = vi.fn();
+  rectChild.setPointerCapture = moveCapture;
+  drag(rectChild, [10, 10], [18, 16]);
+  expect(moveCapture).toHaveBeenCalledWith(1);
+  expect(onEdit).toHaveBeenCalledTimes(3);
+  expect(onEdit).toHaveBeenLastCalledWith({
+    kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 400, y: 300,
+  }, 7);
+});
