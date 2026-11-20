@@ -2,6 +2,7 @@
 """P4 Linux X11 editor acceptance using published files and independent inspection."""
 
 import importlib.util
+import math
 from pathlib import Path
 import struct
 import sys
@@ -459,6 +460,144 @@ def group_child_edit_case(acc, row, fixtures, out):
     h.require(ui_vals() == [5200, 200, 4600, 3200], "reopened ellipse differs")
 
 
+def group_child_capture_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-group-original.hwpx"
+    before = inspect(fixture)
+    target = next(frame for frame in before["frames"] if frame["groupChildren"])
+    group = target["groupChildren"]
+    rect, sibling = group["children"]
+    path = h.begin(acc, row, fixture, out, "a-p4-group-child-capture.hwpx")
+    child = ".object-group-child[data-index='0']"
+    handle = ".object-group-child-handle[data-handle='se']"
+    inputs = ".object-group-child-coordinates input"
+    initial = [rect[key] for key in ("x", "y", "width", "height")]
+
+    def select_rect():
+        h.select_object(acc, target, "group")
+        if not acc.d.exists(child):
+            acc.dom_click(".object-group-child-mode")
+        acc.dom_click(child)
+        acc.wait("return !!document.querySelector(arguments[0])", handle)
+
+    def values():
+        return acc.d.js("return [...document.querySelectorAll(arguments[0])].map(e=>+e.value)", inputs)
+
+    select_rect()
+    h.require(values() == initial, "wrong initial rectangle", values())
+    frame = h.frame(acc)
+    sx, sy = acc.d.pointer_scale
+    acc.d.js("""
+      const selector = arguments[0];
+      window.p46Capture = [];
+      for (const type of ['pointerdown','gotpointercapture','pointermove','pointerup','lostpointercapture']) {
+        document.addEventListener(type, e => {
+          const handle = document.querySelector(selector);
+          const tracked = e.target === handle;
+          if (!tracked && !window.p46Capture.some(p => p.type === 'pointerdown' && p.id === e.pointerId)) return;
+          window.p46Capture.push({type, id:e.pointerId, x:e.clientX, y:e.clientY, buttons:e.buttons,
+            trusted:e.isTrusted, handle:tracked, hit:document.elementFromPoint(e.clientX,e.clientY) === handle,
+            captured:handle?.hasPointerCapture(e.pointerId) ?? false});
+        }, true);
+      }
+    """, handle)
+
+    def move(x, y):
+        return {"type": "pointerMove", "x": int(x * sx), "y": int(y * sy),
+                "origin": "viewport", "duration": 75}
+
+    def pointer(*actions):
+        acc.d.call("POST", "/actions", {"actions": [{
+            "type": "pointer", "id": "p46-capture", "parameters": {"pointerType": "mouse"},
+            "actions": list(actions),
+        }]})
+
+    def drag(evidence, lose_capture=False):
+        acc.d.js("window.p46Capture.length = 0")
+        x, y = acc.d.js("""
+          const r = document.querySelector(arguments[0]).getBoundingClientRect();
+          return [r.x+r.width/2, r.y+r.height/2];
+        """, handle)
+        # Overshoot the parent height so the clamped preview handle cannot follow the pointer.
+        delta_y = frame["height"] * (group["height"] - rect["height"] - rect["y"]) / group["height"] + 24
+        end_x, end_y = x - 24, y + delta_y
+        try:
+            pointer(move(x, y), {"type": "pointerDown", "button": 0}, move(end_x, end_y))
+            acc.wait("""return window.p46Capture.some(e =>
+                e.type === 'pointermove' && e.buttons === 1 && e.trusted && e.handle && e.captured && !e.hit)""")
+            if lose_capture:
+                # Ask WebKit to end the live capture while the real mouse button is still down.
+                # The browser dispatches lostpointercapture itself.
+                acc.d.js("""
+                  const down = window.p46Capture.find(e => e.type === 'pointerdown');
+                  document.querySelector(arguments[0]).releasePointerCapture(down.id);
+                """, handle)
+                pointer(move(end_x - 2, end_y))
+                before_up = acc.d.js("return window.p46Capture")
+                row["captureLossBeforeUp"] = before_up
+                h.require(not any(e["type"] == "pointerup" for e in before_up)
+                          and any(e["type"] == "lostpointercapture" and e["trusted"] and e["handle"] for e in before_up)
+                          and any(e["type"] == "pointermove" and e["trusted"] and e["buttons"] == 1
+                                  and not e["captured"] and not e["handle"] for e in before_up),
+                          "WebKit did not end capture while the pointer was still down", before_up)
+            pointer({"type": "pointerUp", "button": 0})
+        finally:
+            try:
+                row[evidence] = acc.d.js("return window.p46Capture")
+            finally:
+                acc.d.call("DELETE", "/actions")
+
+    drag("captureLoss", lose_capture=True)
+    acc.settle("hwpx")
+    h.require(acc.status("hwpx")["revision"] == row["initialSession"]["revision"] and values() == initial,
+              "capture loss committed a resize", acc.status("hwpx"))
+
+    drag("capturedDrag")
+    events = row["capturedDrag"]
+    down, = [e for e in events if e["type"] == "pointerdown"]
+    up, = [e for e in events if e["type"] == "pointerup"]
+    h.require(all(e["trusted"] and e["handle"] for e in (down, up)) and down["id"] == up["id"]
+              and up["captured"] and not up["hit"], "trusted pointerup was not routed from off the handle", events)
+    h.require(any(e["type"] == "gotpointercapture" and e["trusted"] and e["handle"] and e["id"] == down["id"]
+                  for e in events), "WebKit did not establish capture", events)
+    # JS Math.round for signed pointer deltas, including half ties.
+    dx = math.floor((up["x"] - down["x"]) * group["width"] / frame["width"] + 0.5)
+    dy = math.floor((up["y"] - down["y"]) * group["height"] / frame["height"] + 0.5)
+    width = min(group["width"] - rect["x"], max(1, rect["width"] + dx))
+    height = min(group["height"] - rect["y"], max(1, rect["height"] + dy))
+    resized = row["expectedRect"] = [rect["x"], rect["y"], width, height]
+    h.require(resized != initial, "pointer did not change the expected bounds", events)
+
+    row["commit"] = h.revision(acc, "hwpx", 1)
+    h.require(values() == resized and acc.d.exists(handle), "resize or selection mismatch", values())
+    acc.key("ctrl+z")
+    row["undo"] = h.revision(acc, "hwpx", 2)
+    select_rect()
+    h.require(values() == initial, "one Undo did not restore the original rectangle", values())
+    acc.key("ctrl+y")
+    row["redo"] = h.revision(acc, "hwpx", 3)
+    select_rect()
+    h.require(values() == resized, "Redo did not restore the resize", values())
+
+    h.publish(acc, "hwpx", row)
+    after = inspect(path)
+    expected_group = {**group, "children": [{**rect, "width": width, "height": height}, sibling]}
+    expected_frames = [{**target, "groupChildren": expected_group} if item == target else item for item in before["frames"]]
+    h.require(after == {**before, "frames": expected_frames}, "independent reopen geometry changed unexpectedly", after)
+    old, new = section_pair(fixture, path)
+    old_c, new_c = old.find(".//{*}container"), new.find(".//{*}container")
+    old_r, new_r = old_c.find("{*}rect"), new_c.find("{*}rect")
+    for tag in ("orgSz", "curSz", "sz"):
+        size = new_r.find("{*}" + tag).attrib
+        h.require([int(size["width"]), int(size["height"])] == [width, height], "saved dimensions differ", size)
+    h.require(old_r.find("{*}offset").attrib == new_r.find("{*}offset").attrib, "resize changed local anchor")
+    old_c.remove(old_r)
+    new_c.remove(new_r)
+    h.require(ET.tostring(old_c) == ET.tostring(new_c), "parent or sibling XML changed")
+    h.reopen(acc, path, row)
+    select_rect()
+    h.require(values() == resized, "published dimensions did not reopen in the app", values())
+
+
 h.CASES = {
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
@@ -466,6 +605,7 @@ h.CASES = {
     "P4.4": polygon_vertices_case,
     "P4.5": curve_terminal_line_case,
     "P4.6": group_child_edit_case,
+    "P4.6-capture": group_child_capture_case,
 }
 
 if __name__ == "__main__":

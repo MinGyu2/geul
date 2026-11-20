@@ -1,0 +1,116 @@
+{
+  "phase": "P4.6 final boundary verification",
+  "date": "2026-11-21",
+  "status": "COMPLETED",
+  "stage3AStatus": "PARTIALLY COMPLETED",
+  "baselineHead": "303c131e844f3c2ee1e953394699ad0f07d0ec82",
+  "baselineReleaseGeneration": "972f25b90b41680f6a3212738723155497a34df5744a51aead36fa2a13b3ce61",
+  "releaseWasm": {
+    "generation": "53bf1a68e1fc174e23bf8759e3c92d5f7734b8693196aeb4afe33da11fd39743",
+    "artifacts": {
+      "rhwp.js": "eda1fda0e929c6d0820a27fc752ae1a0435248bd6abe0a916f94155d68a51281",
+      "rhwp_bg.wasm": "6a5d934d864f43a15a70b13fd8af97deb8757bd023283f16100a8b54c70f903f"
+    },
+    "sourceTreeSha256": "f94a387eb3a1bca91099e3534336cb9d0626175c851db21717e5fb1c89e0bbea",
+    "groupChildPatch": {
+      "name": "stage3a-group-child-editing.patch",
+      "sha256": "06df015895196b2fe9ecb51672134b3923fd33613c4b00bf2a982b564c9a9052"
+    },
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15"
+  },
+  "ellipse": {
+    "sourceDimensions": [
+      101,
+      51
+    ],
+    "sourceCenter": [
+      51,
+      26
+    ],
+    "enlargedOrReducedAxisRule": "Use integer floor half for a changed dimension. Preserve the imported center and rotation center components for an unchanged dimension.",
+    "E8": {
+      "resizeTo": [
+        101,
+        39
+      ],
+      "baselineCenter": [
+        50,
+        19
+      ],
+      "savedAndReopenedCenter": [
+        51,
+        19
+      ]
+    },
+    "E9": {
+      "resizeTo": [
+        85,
+        51
+      ],
+      "baselineCenter": [
+        42,
+        25
+      ],
+      "savedAndReopenedCenter": [
+        42,
+        26
+      ]
+    },
+    "E10-E13": "Even sizes, lower-half odd sizes, both changed axes, and no-op tested. Noncanonical endpoints remain move-only and a refused resize leaves the export and history equal.",
+    "geometryEvidence": "Compared orgSz, curSz, sz, offset, center, ax1, ax2, four endpoints, rotation center, rendering matrices, complete parent and sibling geometry, live and independently reopened group state, and live and reopened SVG. The baseline changed stored coordinates on the unchanged axis while RHWP SVG continued to use the same bounding-box axis."
+  },
+  "identity": {
+    "schema": "Pinned RHWP mydocs/manual/OWPML SCHEMA/ParaList XML schema.xml. AbstractShapeObjectType@id and AbstractShapeComponentType@instid are optional xs:nonNegativeInteger attributes inherited by rect, ellipse, and container.",
+    "parserAndSerializer": "For imported direct rectangle/ellipse children at groupLevel=1, id is stored in CommonObjAttr.instance_id and instid in DrawingObjAttr.inst_id as independent u32 values. The scoped presence flags preserve explicit zero and omission in write_rect and render_common_shape_xml. The parent container path continues to use its common instance ID. Generated drawings use generated common and drawing IDs.",
+    "baseline": "Reading (0,1) produced (1,1). Writing (1,0) produced (1,1), so distinct identities could converge after publication.",
+    "ownership": "A supplied child index must identify a child with the expected id and instId in the live parent. A missing attribute contributes 0 to the tuple and stays omitted in XML. A child with no nonzero ID is ineligible. Duplicate tuples refuse group-child geometry. I1-I9 cover eligible one-zero children, omission, duplicates, wrong IDs and index, and round-trip stability."
+  },
+  "rawRendering": {
+    "parserInvariant": "parse_rendering_info reads matrices into [f64;6] arrays, fills a missing member of a scale/rotation pair with identity, and make_raw_rendering writes the u16 count, 48-byte translation, and 96 bytes per complete pair. A missing rendering block leaves the buffer empty. An XML reader error returns XmlError. Even a pair count above u16::MAX would yield an overlong buffer relative to the wrapped header, so valid external HWPX cannot create an internally truncated buffer.",
+    "externalReleaseWasm": "PASS. A scaling matrix with e1=2 and missing rotMatrix was parsed and saved with an identity rotMatrix. Both app and WASM APIs refused move/resize, with revision zero, empty history, and byte-identical export before and after refusal. This exercises the unsupported transform guard.",
+    "directRust": "PASS. geul_raw_matrix_validation_rejects_canceling_nonfinite_and_truncated_data called geul_flat_hwpx_identity after removing one byte from an otherwise accepted 146-byte buffer. Ran cargo test --lib --locked --offline on a task-local copy of the patched tree with the pinned include fixtures restored. In that copy only, two unrelated table test constructor calls and two unrelated picture test initializers needed compilation fixes. The production code and the selected test were identical to the patched tree."
+  },
+  "nativeX11": {
+    "releaseBuilt": true,
+    "appSha256": "72e62983b5028d50203aee64d614008892ff0780606c327af5c4db0881cbab07",
+    "platform": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "webkitGtk": "2.54.1",
+    "fixtureSha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856",
+    "case": "P4.6-capture",
+    "status": "PASS",
+    "pointerDownClientPx": [
+      302,
+      648
+    ],
+    "pointerUpClientPx": [
+      278,
+      683
+    ],
+    "trustedOutsideRelease": true,
+    "captureLoss": "WebKit emitted trusted lostpointercapture after releasePointerCapture on the active pointer. The subsequent move was trusted, uncaptured and still had the mouse button down. Revision stayed 0. The next drag succeeded.",
+    "revisions": {
+      "resize": 1,
+      "undo": 2,
+      "redo": 3
+    },
+    "savedRect": [
+      0,
+      0,
+      3400,
+      4900
+    ],
+    "publishedSha256": "69eed1b9b3172bb2beeed5f8361774ae51726b89fc46e4dc1e8fd2625a2542cd",
+    "publication": "Saved and synchronized through the app. Source and published XML and independent RHWP reopen verified dimensions, fixed top-left anchor, parent and sibling preservation. App reopen passed. Test-owned session and process cleanup verified.",
+    "buildCommand": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+    "reproduction": "With WebKitWebDriver on PATH and tauri-driver installed at the supplied path, run python3 scripts/tests/native-ibus-session.py --out target/stage3a-p46-final/native-session-next -- python3 scripts/tests/native-stage3a-p4.py --app src-tauri/target/release/geul --driver /tmp/geul-tauri-driver-target/debug/tauri-driver --out target/stage3a-p46-final/native-run-next --fixtures target/stage3a-p4/fixtures --cases P4.6-capture --xdotool @XDOTOOL@ --ibus @IBUS@"
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "rhwpProfiles": "3 PASS",
+    "focusedReleaseWasm": "11 PASS, 53 outside filter. node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'Stage 3-A P4\\.6'",
+    "savedHwpx": "11 SAFE, no findings. E8-E12 and six identity cases verified by save_check and independent RHWP reopen.",
+    "objectSelectionFrameUi": "NOT RUN in this follow-up. Existing frontend code for pointer capture was exercised in the new Native Release app.",
+    "evidenceDir": "target/stage3a-p46-final"
+  }
+}
