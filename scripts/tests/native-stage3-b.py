@@ -110,7 +110,13 @@ def inspect_hwpx_clip(path):
         } catch {}
         return {...x, props, capTexts, capBold, capAlign, boxTexts, boxAlign, boxRun};
       });
-      console.log(JSON.stringify({body, shapes}));
+      const pictures = all.filter(x => x.type === "image").map(x => {
+        const props = JSON.parse(doc.getPictureProperties(x.secIdx, x.paraIdx, x.controlIdx));
+        const bytes = doc.getControlImageData(x.secIdx, x.paraIdx, "[]", x.controlIdx);
+        const sha256 = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+        return {...x, props, sha256};
+      });
+      console.log(JSON.stringify({body, shapes, pictures}));
     """)
 
 
@@ -144,6 +150,9 @@ def prepare_b3_2_fixtures(staging: Path):
           width:5200, height:3200, treatAsChar:false, textWrap:'Square', horzOffset:9000, vertOffset:1500
         })));
         if (!mixBox.ok) throw Error('mixBox create failed');
+        if (!JSON.parse(srcDoc.setShapeProperties(0,0,mixBox.controlIdx,JSON.stringify({
+          tbVerticalAlign:'Bottom', tbMarginLeft:90, tbMarginRight:110, tbMarginTop:130, tbMarginBottom:150
+        }))).ok) throw Error('textbox layout fixture failed');
         srcDoc.insertTextInCell(0,0,mixBox.controlIdx,0,0,0,'plain bold');
         const bp = JSON.stringify([{controlIndex:mixBox.controlIdx,cellIndex:0,cellParaIndex:0}]);
         const fontIds = JSON.parse(srcDoc.resolveDocumentFontFamily('함초롬돋움'));
@@ -160,6 +169,12 @@ def prepare_b3_2_fixtures(staging: Path):
         if (!dotted.ok || !JSON.parse(srcDoc.setShapeProperties(0,0,dotted.controlIdx,'{"lineType":3}')).ok) {
           throw Error('DOT rectangle fixture failed');
         }
+        const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC', 'base64');
+        const picture = JSON.parse(srcDoc.insertPicture(0,0,0,'[]',png,4200,2100,48,64,'png','B3.2 cropped'));
+        if (!picture.ok || !JSON.parse(srcDoc.setPictureProperties(0,0,picture.controlIdx,JSON.stringify({
+          treatAsChar:false, textWrap:'InFrontOfText', horzOffset:11500, vertOffset:8000,
+          cropLeft:120, cropTop:60, cropRight:720, cropBottom:90
+        }))).ok) throw Error('crop fixture failed');
         fs.writeFileSync(process.argv[1], srcDoc.exportHwpx());
         srcDoc.free();
 
@@ -376,6 +391,7 @@ def b3_2(acc, row, b_root, out):
     before_src = row["beforeSource"] = inspect_hwpx_clip(src)
     cap_rect = next(s for s in before_src["shapes"] if s["props"]["hasCaption"])
     mix_box = next(s for s in before_src["shapes"] if s["boxTexts"] is not None)
+    source_picture, = before_src["pictures"]
     dotted = next(s for s in before_src["shapes"] if s["props"]["lineType"] == 3)
     require(mix_box["boxRun"]["fontFamilies"] == ["함초롬돋움"] * 7, "source font fixture")
 
@@ -413,6 +429,18 @@ def b3_2(acc, row, b_root, out):
     select_object(acc, mix_box, "textBox")
     acc.key("Escape")
 
+    acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(src.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", src.name)
+    select_object(acc, source_picture, "picture")
+    acc.key("ctrl+c")
+    acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(dst.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", dst.name)
+    c.body_end(acc)
+    acc.key("ctrl+v")
+    row["afterPicturePaste"] = revision(acc, "hwpx", 5)
+    select_object(acc, source_picture, "picture")
+    acc.key("Escape")
+
     publish(acc, "hwpx", row)
     require(digest(dst) != row["fixtureSha256"]["destination"], "B3.2 did not publish a changed destination")
     after = row["after"] = inspect_hwpx_clip(dst)
@@ -430,12 +458,26 @@ def b3_2(acc, row, b_root, out):
             and pasted_box["boxRun"]["fontSize"] == 1400 and pasted_box["boxRun"]["fontFamilies"] == ["함초롬돋움"] * 7,
             "mixed textbox run fidelity lost", pasted_box["boxRun"])
 
+    expected_box = {"tbVerticalAlign": "Bottom", "tbMarginLeft": 90, "tbMarginRight": 110,
+                    "tbMarginTop": 130, "tbMarginBottom": 150}
+    require(all(pasted_box["props"][k] == mix_box["props"][k] == v for k, v in expected_box.items()),
+            "textbox vertical alignment or margins changed", pasted_box["props"])
+    pasted_picture, = after["pictures"]
+    expected_picture = {"borderType": 0, "borderWidth": 0, "borderColor": 0,
+                        "cropLeft": 120, "cropTop": 60, "cropRight": 720, "cropBottom": 90,
+                        "cropRect": {"left": 120, "top": 60, "right": 3480, "bottom": 2010},
+                        "cropReferenceWidth": 3600, "cropReferenceHeight": 4800}
+    require(all(pasted_picture["props"][k] == source_picture["props"][k] == v for k, v in expected_picture.items())
+            and pasted_picture["sha256"] == source_picture["sha256"], "picture crop or bytes changed", pasted_picture)
     with ZipFile(dst) as package:
         section = ElementTree.fromstring(package.read("Contents/section0.xml"))
         captions = section.findall(".//{*}caption")
         numbers = captions[0].findall(".//{*}autoNum") if len(captions) == 1 else []
         require(len(numbers) == 1, "published caption must own exactly one autoNum")
         row["publishedAtno"] = numbers[0].attrib
+        clip, = section.findall(".//{*}pic/{*}imgClip")
+        require(clip.attrib == {k: str(v) for k, v in expected_picture["cropRect"].items()}, "published crop rectangle changed")
+        row["publishedCrop"] = clip.attrib
 
     # Negative refusals on a clean third document
     acc.open_native("hwpx", dst_refusal)
@@ -476,6 +518,8 @@ def b3_2(acc, row, b_root, out):
     select_object(acc, pasted_cap, "shape")
     acc.key("Escape")
     select_object(acc, pasted_box, "textBox")
+    acc.key("Escape")
+    select_object(acc, pasted_picture, "picture")
     acc.key("Escape")
     require(digest(src) == src_hash and inspect_hwpx_clip(src) == before_src, "B3.2 changed source HWPX")
     row["preservation"] = {"sourceBytesAndContent": True, "destinationBody": True, "reopenedObjects": True}

@@ -270,6 +270,7 @@ describe("rich object clipboard (v2)", () => {
       borderWidth: 0,
       borderType: 0,
       crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      cropRect: { left: 0, top: 0, right: 3600, bottom: 4800 },
       caption: {
         direction: "Bottom",
         vertAlign: "Top",
@@ -301,6 +302,8 @@ describe("rich object clipboard (v2)", () => {
       borderWidth: 0,
       lineType: 0,
       fillType: "none",
+      tbVerticalAlign: "Top",
+      tbMargins: { left: 0, right: 0, top: 0, bottom: 0 },
       paragraphs: [{ text: "abc", align: "left", runs: [{ start: 1, end: 4, bold: true }] }],
     })).toBeNull();
   });

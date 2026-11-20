@@ -1,0 +1,164 @@
+--- a/src/model/image.rs
++++ b/src/model/image.rs
+@@ -32,6 +32,12 @@
+     pub border_width: i32,
+     /// 테두리 속성
+     pub border_attr: ShapeBorderLine,
++    /// The HWPX picture writer cannot reproduce this source lineShape.
++    #[serde(skip)]
++    pub hwpx_unmodeled_border: bool,
++    /// An explicit imgClip failed to provide four unambiguous coordinates.
++    #[serde(skip)]
++    pub hwpx_invalid_clip: bool,
+     /// 이미지 테두리 좌표 X (4개)
+     pub border_x: [i32; 4],
+     /// 이미지 테두리 좌표 Y (4개)
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -3139,6 +3139,9 @@
+     common.hwp5_gen_shape_attr_bit26 = true;
+     let mut shape_attr = ShapeComponentAttr::default();
+     let mut crop = CropInfo::default();
++    let mut saw_img_clip = false;
++    let mut invalid_clip = false;
++    let mut unmodeled_border = false;
+     let mut padding = crate::model::Padding::default();
+     let mut border_x = [0i32; 4];
+     let mut border_y = [0i32; 4];
+@@ -3418,8 +3421,43 @@
+                             }
+                         }
+                     }
++                    b"lineShape" => {
++                        // The picture writer emits no lineShape. Only an explicit
++                        // default NONE has the same border properties as omission.
++                        let mut style_none = false;
++                        let mut default_values = true;
++                        for attr in ce.attributes() {
++                            let Ok(attr) = attr else {
++                                default_values = false;
++                                break;
++                            };
++                            match attr.key.as_ref().as_bytes() {
++                                b"style" => style_none = attr_str(&attr) == "NONE",
++                                b"color" => default_values &= attr_str(&attr) == "#000000",
++                                b"width" => default_values &= attr_str(&attr).parse::<i32>() == Ok(0),
++                                _ => {}
++                            }
++                        }
++                        unmodeled_border |= !style_none || !default_values;
++                    }
+                     b"imgClip" => {
+-                        for attr in ce.attributes().flatten() {
++                        let mut fields = 0u8;
++                        invalid_clip |= saw_img_clip;
++                        saw_img_clip = true;
++                        for attr in ce.attributes() {
++                            let Ok(attr) = attr else {
++                                invalid_clip = true;
++                                continue;
++                            };
++                            if attr_str(&attr).parse::<i32>().is_ok() {
++                                fields |= match attr.key.as_ref().as_bytes() {
++                                    b"left" => 1,
++                                    b"top" => 2,
++                                    b"right" => 4,
++                                    b"bottom" => 8,
++                                    _ => 0,
++                                };
++                            }
+                             match attr.key.as_ref().as_bytes() {
+                                 b"left" => crop.left = parse_i32(&attr),
+                                 b"right" => crop.right = parse_i32(&attr),
+@@ -3428,6 +3466,7 @@
+                                 _ => {}
+                             }
+                         }
++                        invalid_clip |= fields != 15;
+                     }
+                     b"img" | b"image" => {
+                         for attr in ce.attributes().flatten() {
+@@ -3525,6 +3564,8 @@
+     pic.shape_attr = shape_attr;
+     pic.href = href;
+     pic.crop = crop;
++    pic.hwpx_unmodeled_border = unmodeled_border;
++    pic.hwpx_invalid_clip = invalid_clip;
+     pic.padding = padding;
+     pic.border_x = border_x;
+     pic.border_y = border_y;
+--- a/src/document_core/commands/object_ops/picture.rs
++++ b/src/document_core/commands/object_ops/picture.rs
+@@ -591,6 +591,13 @@
+
+         let sa = &pic.shape_attr;
+         let (crop_left, crop_top, crop_right, crop_bottom) = Self::picture_crop_ui_amounts(pic);
++        let crop_rect = if pic.hwpx_invalid_clip {
++            "null".to_string()
++        } else {
++            let crop = &pic.crop;
++            format!(r#"{{"left":{},"top":{},"right":{},"bottom":{}}}"#, crop.left, crop.top, crop.right, crop.bottom)
++        };
++        let border_type = if pic.hwpx_unmodeled_border { -1 } else { (pic.border_attr.attr & 0x3f) as i32 };
+
+         Ok(format!(
+             concat!(
+@@ -612,7 +619,8 @@
+                 // 바깥 여백
+                 "\"outerMarginLeft\":{},\"outerMarginTop\":{},\"outerMarginRight\":{},\"outerMarginBottom\":{},",
+                 // 테두리
+-                "\"borderColor\":{},\"borderWidth\":{},",
++                "\"borderColor\":{},\"borderWidth\":{},\"borderType\":{},",
++                "\"cropRect\":{},\"cropReferenceWidth\":{},\"cropReferenceHeight\":{},",
+                 // 캡션
+                 "\"hasCaption\":{},\"captionDirection\":\"{}\",\"captionVertAlign\":\"{}\",",
+                 "\"captionWidth\":{},\"captionSpacing\":{},\"captionMaxWidth\":{},\"captionIncludeMargin\":{}{}}}"
+@@ -638,7 +646,8 @@
+             // 바깥 여백
+             c.margin.left, c.margin.top, c.margin.right, c.margin.bottom,
+             // 테두리
+-            pic.border_color, pic.border_width,
++            pic.border_color, pic.border_width, border_type,
++            crop_rect, pic.img_dim.0, pic.img_dim.1,
+             // 캡션
+             pic.caption.is_some(),
+             pic.caption.as_ref().map_or("Bottom", |cap| match cap.direction {
+@@ -1147,6 +1156,26 @@
+     ) -> Result<bool, HwpError> {
+         use crate::document_core::helpers::{json_bool, json_i16, json_i32, json_str, json_u32};
+
++        // Portable HWPX insertion has the exact imgClip rectangle. The ordinary
++        // inspector setter works in edge amounts based on the object's extent.
++        let exact_crop = if json_bool(props_json, "portableCropRect") == Some(true) {
++            let fail = || HwpError::RenderError("invalid portable picture crop".into());
++            let [left, top, right, bottom] = ["cropLeft", "cropTop", "cropRight", "cropBottom"]
++                .map(|key| json_i32(props_json, key));
++            let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
++                return Err(fail());
++            };
++            let full_image_sentinel = [left, top, right, bottom] == [0; 4];
++            if !full_image_sentinel && (left < 0 || top < 0 || right <= left || bottom <= top
++                || right as u32 > pic.img_dim.0.max(pic.shape_attr.original_width)
++                || bottom as u32 > pic.img_dim.1.max(pic.shape_attr.original_height)) {
++                return Err(fail());
++            }
++            Some(crate::model::image::CropInfo { left, top, right, bottom })
++        } else {
++            None
++        };
++
+         let req_w = json_u32(props_json, "width");
+         let req_h = json_u32(props_json, "height");
+         let req_rot = json_i16(props_json, "rotationAngle");
+@@ -1348,7 +1377,10 @@
+         let crop_top = json_i32(props_json, "cropTop");
+         let crop_right = json_i32(props_json, "cropRight");
+         let crop_bottom = json_i32(props_json, "cropBottom");
+-        if crop_left.is_some()
++        if let Some(crop) = exact_crop {
++            pic.crop = crop;
++            pic.hwpx_invalid_clip = false;
++        } else if crop_left.is_some()
+             || crop_top.is_some()
+             || crop_right.is_some()
+             || crop_bottom.is_some()

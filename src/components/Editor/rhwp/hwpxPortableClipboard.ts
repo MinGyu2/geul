@@ -1,8 +1,8 @@
 import {
   HWPX_CAPTION_DIRECTIONS, HWPX_CAPTION_VERT_ALIGNS, HWPX_PARA_ALIGNS, HWPX_PICTURE_MIMES,
-  HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes,
+  HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes, validHwpxPortablePictureCrop,
   type HwpxPortableCaption, type HwpxPortableCharRun, type HwpxPortableObject, type HwpxPortableParagraph,
-  type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
+  type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import { fontFamilyProblem } from "../../../commands/parameters";
 import { documentFontTable, type DocumentFontTable } from "./rhwpFonts";
@@ -343,14 +343,21 @@ function readPortableObject(
     if (!nat) return undefined;
     const int = (key: string) => Number.isSafeInteger(raw[key]) ? raw[key] as number : undefined;
     const width = int("width"), height = int("height"), horzOffset = int("horzOffset"), vertOffset = int("vertOffset");
-    const borderColor = int("borderColor") ?? 0, borderWidth = int("borderWidth") ?? 0, borderType = int("borderType") ?? 0;
+    const { borderColor, borderWidth, borderType } = raw;
     const textWrap = HWPX_WRAP_VALUES.find(w => w === raw.textWrap);
+    // HWPX picture serialization cannot reproduce a picture lineShape. The
+    // getter accounts for even a zero-width visible border in its eligibility.
     if (width === undefined || height === undefined || horzOffset === undefined || vertOffset === undefined
-      || typeof raw.treatAsChar !== "boolean" || !textWrap) return undefined;
-    const crop = {
-      left: int("cropLeft") ?? 0, top: int("cropTop") ?? 0,
-      right: int("cropRight") ?? 0, bottom: int("cropBottom") ?? 0,
-    };
+      || typeof raw.treatAsChar !== "boolean" || !textWrap
+      || borderColor !== 0 || borderWidth !== 0 || borderType !== 0) return undefined;
+    const crop = { left: raw.cropLeft, top: raw.cropTop, right: raw.cropRight, bottom: raw.cropBottom };
+    const cropRect = raw.cropRect;
+    if (!validHwpxPortablePictureCrop(crop, cropRect, width, height, nat.width, nat.height)) return undefined;
+    // The zero rectangle is the engine's uncropped sentinel. A nonempty
+    // rectangle needs the same image reference as the destination constructor.
+    const rect = cropRect as HwpxPortablePicture["cropRect"];
+    if (rect.right !== 0 && (raw.cropReferenceWidth !== nat.width * 75
+      || raw.cropReferenceHeight !== nat.height * 75)) return undefined;
     const description = typeof raw.description === "string" && raw.description.length > 0 ? raw.description : undefined;
     let caption: HwpxPortableCaption | undefined;
     if (raw.hasCaption === true) {
@@ -361,7 +368,7 @@ function readPortableObject(
       kind: "picture", mime, bytesBase64, width, height,
       naturalWidth: nat.width, naturalHeight: nat.height,
       horzOffset, vertOffset, treatAsChar: raw.treatAsChar, textWrap,
-      borderColor, borderWidth, borderType, crop,
+      borderColor, borderWidth, borderType, crop: crop as HwpxPortablePicture["crop"], cropRect: rect,
       ...(description ? { description } : {}),
       ...(caption ? { caption } : {}),
     };
@@ -388,6 +395,7 @@ function readPortableObject(
     shapeType = "line";
   }
   if (!shapeType || (!!shape.textBox !== (shapeType === "textbox"))) return undefined;
+  if (shapeType !== "textbox" && ["tbMarginLeft", "tbMarginRight", "tbMarginTop", "tbMarginBottom"].some(key => key in raw)) return undefined;
   if ((raw.roundRate !== undefined && raw.roundRate !== 0) || raw.shadowType !== 0) return undefined;
   if (shapeType === "line" && !hasPortableLineGeometry(doc, address, shape.raw)) return undefined;
   // ShapeBorderLine: 0 is NONE and 1 is SOLID, including a visible zero-width hairline.
@@ -409,12 +417,13 @@ function readPortableObject(
 
   if (shapeType === "textbox") {
     if (!doc.getCellParagraphCount || !doc.getCellParagraphLength || !doc.getTextInCell || !doc.getCellInlineContextByPath) return undefined;
-    tbVerticalAlign = HWPX_TB_VERTICAL_ALIGNS.find(a => a === raw.tbVerticalAlign) ?? "Top";
-    const int = (key: string) => Number.isSafeInteger(raw[key]) ? raw[key] as number : 0;
-    tbMargins = {
-      left: int("tbMarginLeft"), right: int("tbMarginRight"),
-      top: int("tbMarginTop"), bottom: int("tbMarginBottom"),
-    };
+    tbVerticalAlign = HWPX_TB_VERTICAL_ALIGNS.find(a => a === raw.tbVerticalAlign);
+    const { tbMarginLeft: left, tbMarginRight: right, tbMarginTop: top, tbMarginBottom: bottom } = raw;
+    // The getter always emits all four signed i16 HWPUNIT margins. Only the
+    // supported nonnegative subset can enter a portable snapshot.
+    const margin = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= 32767;
+    if (!tbVerticalAlign || !margin(left) || !margin(right) || !margin(top) || !margin(bottom)) return undefined;
+    tbMargins = { left, right, top, bottom };
     const count = doc.getCellParagraphCount(sec, para, control, 0);
     if (!Number.isSafeInteger(count) || count < 1 || count > 1024) return undefined;
     paragraphs = [];
@@ -617,13 +626,11 @@ function createPortableObject(
       textWrap: portable.textWrap,
       horzOffset: portable.horzOffset,
       vertOffset: portable.vertOffset,
-      borderColor: portable.borderColor,
-      borderWidth: portable.borderWidth,
-      borderType: portable.borderType,
-      cropLeft: portable.crop.left,
-      cropTop: portable.crop.top,
-      cropRight: portable.crop.right,
-      cropBottom: portable.crop.bottom,
+      portableCropRect: true,
+      cropLeft: portable.cropRect.left,
+      cropTop: portable.cropRect.top,
+      cropRight: portable.cropRect.right,
+      cropBottom: portable.cropRect.bottom,
       description: portable.description ?? "",
       ...(portable.caption ? {
         hasCaption: true,
@@ -762,7 +769,7 @@ export function insertHwpxPortableObject(
   const actual = applied as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(object)) {
     if (key === "paragraphs" || (key === "kind" && value === undefined)) continue;
-    if (key === "crop" || key === "tbMargins") {
+    if (key === "crop" || key === "cropRect" || key === "tbMargins") {
       const fields = actual[key] as Record<string, unknown> | undefined;
       if (!fields || !Object.entries(value).every(([side, n]) => fields[side] === n)) {
         throw new Error("portable object geometry mismatch");

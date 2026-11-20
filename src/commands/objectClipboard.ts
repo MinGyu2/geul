@@ -112,6 +112,8 @@ export interface HwpxPortablePicture {
   borderWidth: number;
   borderType: number;
   crop: { left: number; top: number; right: number; bottom: number };
+  /** Stored imgClip coordinates in the picture's proven image reference space. */
+  cropRect: { left: number; top: number; right: number; bottom: number };
   description?: string;
   caption?: HwpxPortableCaption;
 }
@@ -330,6 +332,23 @@ function validHwpxPortableCaption(raw: unknown): raw is HwpxPortableCaption {
   return validHwpxPortableParagraphs(raw.paragraphs, true, 64);
 }
 
+/** The destination constructor uses natural pixels × 75 HU as its crop reference
+ * and the pasted frame size as the extent of the edge-amount getter. */
+export function validHwpxPortablePictureCrop(
+  crop: unknown, rect: unknown, width: number, height: number, naturalWidth: number, naturalHeight: number,
+): boolean {
+  if (!record(crop) || !record(rect) || Object.keys(crop).length !== 4 || Object.keys(rect).length !== 4
+    || !intInRange(rect.left, 0, Math.max(width, naturalWidth * 75))
+    || !intInRange(rect.top, 0, Math.max(height, naturalHeight * 75))
+    || !intInRange(rect.right, 0, Math.max(width, naturalWidth * 75))
+    || !intInRange(rect.bottom, 0, Math.max(height, naturalHeight * 75))) return false;
+  const empty = rect.left === 0 && rect.top === 0 && rect.right === 0 && rect.bottom === 0;
+  return (empty || (rect.left < rect.right && rect.top < rect.bottom))
+    && crop.left === rect.left && crop.top === rect.top
+    && crop.right === (empty ? 0 : Math.max(0, width - rect.right))
+    && crop.bottom === (empty ? 0 : Math.max(0, height - rect.bottom));
+}
+
 function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is HwpxPortableObject {
   if (!record(raw) || kind === "group") return false;
   if (raw.kind === "picture") {
@@ -341,16 +360,12 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
       || !intInRange(raw.horzOffset, -1_000_000, 2_000_000) || !intInRange(raw.vertOffset, -1_000_000, 2_000_000)
       || typeof raw.treatAsChar !== "boolean"
       || !HWPX_WRAP_VALUES.some(w => w === raw.textWrap)
-      || !intInRange(raw.borderColor, 0, 0xFFFFFFFF)
-      || !intInRange(raw.borderWidth, 0, 7200)
-      || !intInRange(raw.borderType, 0, 17)) return false;
-    if (!record(raw.crop) || Object.keys(raw.crop).length !== 4
-      || !intInRange(raw.crop.left, 0, 10_000_000) || !intInRange(raw.crop.top, 0, 10_000_000)
-      || !intInRange(raw.crop.right, 0, 10_000_000) || !intInRange(raw.crop.bottom, 0, 10_000_000)) return false;
+      || raw.borderColor !== 0 || raw.borderWidth !== 0 || raw.borderType !== 0) return false;
+    if (!validHwpxPortablePictureCrop(raw.crop, raw.cropRect, raw.width, raw.height, raw.naturalWidth, raw.naturalHeight)) return false;
     if (raw.description !== undefined && (typeof raw.description !== "string" || raw.description.length > 4096)) return false;
     if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
     const allowedKeys = new Set(["kind", "mime", "bytesBase64", "width", "height", "naturalWidth", "naturalHeight",
-      "horzOffset", "vertOffset", "treatAsChar", "textWrap", "borderColor", "borderWidth", "borderType", "crop", "description", "caption"]);
+      "horzOffset", "vertOffset", "treatAsChar", "textWrap", "borderColor", "borderWidth", "borderType", "crop", "cropRect", "description", "caption"]);
     return Object.keys(raw).every(key => allowedKeys.has(key));
   }
   if (raw.kind !== undefined && raw.kind !== "shape") return false;
@@ -368,14 +383,13 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
     || (raw.fillType !== "none" && raw.fillType !== "solid")) return false;
   if (raw.fillType === "solid" ? !intInRange(raw.fillBgColor, 0, 0xFFFFFFFF) : raw.fillBgColor !== undefined) return false;
   if (raw.description !== undefined && (typeof raw.description !== "string" || raw.description.length > 4096)) return false;
-  if (raw.tbVerticalAlign !== undefined && !HWPX_TB_VERTICAL_ALIGNS.some(a => a === raw.tbVerticalAlign)) return false;
-  if (raw.tbMargins !== undefined) {
-    if (!record(raw.tbMargins) || Object.keys(raw.tbMargins).length !== 4
-      || !intInRange(raw.tbMargins.left, 0, 100_000) || !intInRange(raw.tbMargins.right, 0, 100_000)
-      || !intInRange(raw.tbMargins.top, 0, 100_000) || !intInRange(raw.tbMargins.bottom, 0, 100_000)) return false;
-  }
-  if (shapeType === "textbox" ? !validHwpxPortableParagraphs(raw.paragraphs, false, 1024)
-    : raw.paragraphs !== undefined) return false;
+  if (shapeType === "textbox") {
+    if (!HWPX_TB_VERTICAL_ALIGNS.some(a => a === raw.tbVerticalAlign)
+      || !record(raw.tbMargins) || Object.keys(raw.tbMargins).length !== 4
+      || !intInRange(raw.tbMargins.left, 0, 32767) || !intInRange(raw.tbMargins.right, 0, 32767)
+      || !intInRange(raw.tbMargins.top, 0, 32767) || !intInRange(raw.tbMargins.bottom, 0, 32767)
+      || !validHwpxPortableParagraphs(raw.paragraphs, false, 1024)) return false;
+  } else if (raw.tbVerticalAlign !== undefined || raw.tbMargins !== undefined || raw.paragraphs !== undefined) return false;
   if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
   const allowedKeys = new Set(["kind", "shapeType", "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap",
     "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "lineType", "fillType", "fillBgColor",
