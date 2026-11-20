@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-20",
+  "baselineHead": "f61e208c556875bb01cd2d5332f725b4b697be95",
+  "feature": "P6.7 caption spacing for an existing owned HWPX picture caption",
+  "status": "IMPLEMENTED_VERIFIED",
+  "changedFiles": [
+    "scripts/tests/native-stage3a-p6.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "src/commands/objectSelection.ts",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/PropertiesPanel/PropertiesPanel.tsx",
+    "src/components/PropertiesPanel/objectTools.test.tsx",
+    "src/language/en.json",
+    "src/language/ko.json"
+  ],
+  "previousLimitation": "The properties panel could change only the Top/Bottom caption placement.",
+  "supported": "Use the existing picture caption owner and verified rich caption snapshot. The panel accepts 0–327.67pt in 0.01pt increments; the engine stores a nonnegative signed-16-bit HWPUNIT gap. It checks the new gap and all retained properties before committing history.",
+  "refused": "Missing or unrelated caption, locked or non-body owner, unproven atno and formatting, absent or out-of-range current gap, negative or fractional HWPUNIT, unchanged gap, unsupported caption placement, and HWP5 or DOCX.",
+  "release": {
+    "generation": "2246172b41362c99c094969f4840dd3508df8a668e9dff1578e9c6fedc16cd6f",
+    "artifacts": {
+      "rhwp.js": "8d7da0e802f00870acd3956baa47e825c6d2c5f08f7bb3db699543f8d909cfdd",
+      "rhwp_bg.wasm": "617290c514bb0395b6bed6cfe6729d8a96a59f5cc2fe3cb0cbbfb254e21ec9b7"
+    },
+    "reused": true
+  },
+  "checks": [
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run src/components/PropertiesPanel/objectTools.test.tsx src/commands/objectClipboard.test.ts",
+      "exit": 0,
+      "passed": 20
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts stage3-hwpx-clipboard-safety.wasm.test.ts -t 'Stage 3-A P6|B3.2'",
+      "exit": 0,
+      "passed": 72,
+      "filtered": 52
+    },
+    {
+      "command": "save_check saved hwpx <original> <edited> <loss-report> true",
+      "exit": 0,
+      "outcome": "safe"
+    },
+    {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "protectedBuildExit": 0,
+      "logCollectionShellExit": 143
+    },
+    {
+      "command": "python3 scripts/check-release-paths.py src-tauri/target/release/geul --report <report>",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p6.py --out <result> --fixtures <fixture-dir> --cases P6.7 --xdotool <xdotool> --ibus <ibus>",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "correctedFailure": "An incomplete session selection edit left captionSpacing out of scope; type checking and the real selection/clipboard regression detected it. After initializing and gating the property where the selected caption is read, all 72 selected regressions passed.",
+  "wasmOutputSha256": "e602ae231e949e6da035197e0c2e8e099cb8f194fbf3a4514697e1ca4ace701e",
+  "native": {
+    "status": "PASS",
+    "appSha256": "722a4845c9cd2be6adc3680de498f2238994041891534f0af41ee7d9d789a877",
+    "fixtureSha256": "d376fa56cb1bfcb6e761e56eae676dc0b80a1de1b800ab54a671d01ea3d7fb6d",
+    "publishedSha256": "e602ae231e949e6da035197e0c2e8e099cb8f194fbf3a4514697e1ca4ace701e",
+    "revision": 3,
+    "reopened": "ready",
+    "resources": {
+      "BinData/image1.png": "d9e87506e49db16781b0e41efac3f99b54125bd404f1ebc570ebbeca903c48cb"
+    },
+    "independentXml": "Only owned picture caption gap differs, from 0 to 425. Caption atno, paragraph formatting and text, image bytes and other non-preview package parts match. The bottom caption's rendered position moved as expected.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true
+    },
+    "exit": 0
+  },
+  "rawEvidence": "target/stage3a-caption-spacing/"
+}

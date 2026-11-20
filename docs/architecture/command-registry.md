@@ -1249,4 +1249,4 @@ Backspace/Delete는 HWPX 본문 글상자의 같은 문단 모양·스타일을 
 
 `object.edit/convertShape`는 WordCraft `shape.change`를 대상 종류 하나로 제한한다. HWPX에서 DOCX로 붙여넣을 때 `pasteHwpxPolygon`은 별도 입력 DTO의 정수 범위와 폐합 기하를 재검증하고 WordCraft의 기존 구조 붙여넣기 이력 및 T009를 사용한다. 나머지 혼합 형식과 규격 밖 폴리곤은 거부한다.
 
-`object.edit/captionSide`는 RHWP가 단일 `atno` 소유와 문단 서식을 증명한 HWPX 본문 내장 그림의 기존 캡션을 위 또는 아래로 바꾼다. 그림 속성, 캡션 서식·텍스트, 컨트롤 레코드와 번호는 다시 비교한다. 기존 포맷의 WordCraft SmartArt 항목·레이아웃 명령은 [기존 그래픽 보존 범위](stage3-p6-native-acceptance-2026-11-19.json)를 따른다.
+`object.edit/captionSide`는 RHWP가 단일 `atno` 소유와 문단 서식을 증명한 HWPX 본문 내장 그림의 기존 캡션을 위 또는 아래로 바꾼다. 같은 소유권 증명을 쓰는 `object.edit/captionSpacing`은 기존 캡션의 간격(0–327.67pt)을 바꾼다. 속성 창은 0.01pt를 HWPUNIT 하나로 변환한다. 내용·번호·서식과 나머지 그림 속성을 다시 비교한다. [P6.7 수용 기록](stage3-a-p6-caption-spacing-acceptance.json) 기존 포맷의 WordCraft SmartArt 항목·레이아웃 명령은 [기존 그래픽 보존 범위](stage3-p6-native-acceptance-2026-11-19.json)를 따른다.

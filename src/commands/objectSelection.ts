@@ -66,6 +66,7 @@ export interface ObjectHit {
   groupChildFills?: readonly GroupChildFill[];
   convertShape?: "rectangle" | "ellipse";
   captionSide?: "Top" | "Bottom";
+  captionSpacing?: number;
 }
 
 export interface ObjectSelection extends ObjectHit {
@@ -76,7 +77,9 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "convertShape", "captionSide"] as const;
+export const MAX_CAPTION_SPACING_HWPUNIT = 32767;
+
+export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "convertShape", "captionSide", "captionSpacing"] as const;
 const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
@@ -116,7 +119,8 @@ export type ObjectEdit =
   | { kind: "pathSegment"; action: "remove" }
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
-  | { kind: "captionSide"; side: "Top" | "Bottom" };
+  | { kind: "captionSide"; side: "Top" | "Bottom" }
+  | { kind: "captionSpacing"; spacing: number };
 
 export const OBJECT_SIDE_LIMITS = { min: 2, max: 4000 } as const;
 export const MAX_NUDGE_PT = 288;
@@ -142,7 +146,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "layer": return "zOrder";
     case "chartTitle": case "chartType": case "chartData": return "chart";
     case "smartArtItems": case "smartArtLayout": return "smartArt";
-    case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape": case "captionSide": return edit.kind;
+    case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape": case "captionSide": case "captionSpacing": return edit.kind;
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -179,6 +183,7 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && typeof value.color === "string" && color(value.color);
   if (value.kind === "convertShape") return keys === "kind,to" && (value.to === "rectangle" || value.to === "ellipse");
   if (value.kind === "captionSide") return keys === "kind,side" && (value.side === "Top" || value.side === "Bottom");
+  if (value.kind === "captionSpacing") return keys === "kind,spacing" && integer(value.spacing, MAX_CAPTION_SPACING_HWPUNIT);
   if (value.kind === "fill") return keys === "color,kind" && color(value.color);
   if (value.kind === "outline") return (keys === "color,kind" || keys === "color,kind,width") && color(value.color)
     && (!("width" in value) || (finite(value.width, 72) && (value.width as number) >= 0));

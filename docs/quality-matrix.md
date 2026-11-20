@@ -388,7 +388,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 |---|---|---|
 | P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩, HWP5와 DOCX의 꼭짓점 이동은 범위 밖이다. |
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차 및 HWPX/DOCX의 무손실 곡선 구간 모델은 남아 있다. |
-| P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. 자식 이동·크기, 중첩 그룹, HWP5/DOCX 자식 저장 증명은 남아 있다. |
+| P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. 자식 이동·크기는 오프셋·렌더 행렬의 저장 재열기 일치 증명이 필요하다. 중첩 그룹과 HWP5/DOCX 자식 저장 증명은 남아 있다. |
 | P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
 | P4.5 곡선 구간 | SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점에 직선 추가 및 마지막 직선 삭제 | 집중 T009·Release WASM·Linux X11 실제 게시 2건·독립 CFB·앱 재열기 PASS. 중간 구간과 cubic·이차 구간 삽입·삭제는 범위 밖이다. [수용 기록](architecture/stage3-a-p4-terminal-line-acceptance.json) |
 
@@ -409,6 +409,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 | P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경 | 형상 프리셋만 변경. 다른 도형 종류와 RHWP 유형 변환은 남아 있다. |
 | P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
 | P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 다른 위치, 그룹 캡션, DOCX/HWP5 배치 변경은 남아 있다. |
+| P6.7 캡션 간격 | HWPX 본문 그림의 기존 위·아래 캡션에서 간격 0–327.67pt | Linux X11 속성 입력·Undo/Redo·게시·앱 재열기 PASS. 독립 XML에서 `gap`만 바뀌고 번호·서식·이미지 바이트는 보존됐다. [수용 기록](architecture/stage3-a-p6-caption-spacing-acceptance.json) |
 | P6.4 SmartArt | 기존 DOCX 모델의 항목·단계·지원 레이아웃 편집 | 집중 WordCraft 재검증 PASS, 기존 X11 수용 재사용. 일반 다이어그램 편집, 노드별 스타일, 외부·공유 파트 편집은 남아 있다. |
 
-네 신규 경로의 Linux X11 실제 조작, Undo/Redo, 안전 저장, 독립 저장본 검사 및 앱 재열기가 PASS했다. 이 수용 실행의 RHWP Release는 `5ca8f50d…`였다. 자세한 형식 조합, 실행 및 아티팩트는 [변환 조합](architecture/command-registry.md#stage-3-a-p6-구조-전송과-변환)과 [P6 수용 기록](architecture/stage3-a-p6-advanced-structure-acceptance.json)에 있다. Stage 3-A 및 Stage 3 전체 상태는 **PARTIALLY COMPLETED**다.
+초기 P6 네 경로의 Linux X11 실제 조작, Undo/Redo, 안전 저장, 독립 저장본 검사 및 앱 재열기가 PASS했다. 이 수용 실행의 RHWP Release는 `5ca8f50d…`였다. 자세한 형식 조합, 실행 및 아티팩트는 [변환 조합](architecture/command-registry.md#stage-3-a-p6-구조-전송과-변환)과 [P6 수용 기록](architecture/stage3-a-p6-advanced-structure-acceptance.json)에 있다. Stage 3-A 및 Stage 3 전체 상태는 **PARTIALLY COMPLETED**다.

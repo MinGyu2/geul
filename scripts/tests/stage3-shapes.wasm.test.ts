@@ -1902,7 +1902,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { from.editor.dispose(); to.editor.dispose(); clearStructuredClipboard(); }
   });
 
-  it("Stage 3-A P6 changes picture caption side without changing its number, runs, or picture", async () => {
+  it.each(["side", "spacing"] as const)("Stage 3-A P6 changes picture caption %s without changing its number, runs, or picture", async field => {
     const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADYAAAAbCAIAAAC4FetiAAAAN0lEQVR4nO3OUQkAIBBAsethFvv3MIklBN/HYAE2Z+24+T5QVFRUbFFUrFBUrFBUrFBUrFB84QIyEvyvRSPr3QAAAABJRU5ErkJggg==", "base64");
     let bytes: Uint8Array, control: number;
@@ -1923,19 +1923,29 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       const before = JSON.parse(doc.getPictureProperties!(0, 0, control));
       const owner = doc.getControls!();
       const read = () => JSON.parse(doc.getPictureProperties!(0, 0, control));
-      expect(pick(picture).captionSide).toBe("Bottom");
+      const selection = pick(picture);
+      expect(selection.captionSide).toBe("Bottom");
+      expect(selection.captionSpacing).toBe(0);
+      const untouched = doc.exportHwpx();
       expect(edit({ kind: "captionSide", side: "Bottom" })).toBe(false);
+      for (const spacing of [0, -1, 32768, 425.5]) expect(edit({ kind: "captionSpacing", spacing })).toBe(false);
       expect(doc.getControls!()).toBe(owner);
-      expect(editor.snapshot().history?.undo).toBe(false);
-      expect(edit({ kind: "captionSide", side: "Top" })).toBe(true);
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      const change = field === "side" ? { kind: "captionSide", side: "Top" } as const
+        : { kind: "captionSpacing", spacing: 425 } as const;
+      const expected = field === "side" ? { ...before, captionDirection: "Top" } : { ...before, captionSpacing: 425 };
+      expect(edit(change)).toBe(true);
       await confirm();
-      expect(read()).toEqual({ ...before, captionDirection: "Top" });
+      expect(read()).toEqual(expected);
       expect(editor.undo()).toBe(true);
       await confirm();
       expect(read()).toEqual(before);
       expect(editor.redo()).toBe(true);
       await confirm();
-      expect(read()).toEqual({ ...before, captionDirection: "Top" });
+      expect(read()).toEqual(expected);
       expect(doc.getControls!()).toBe(owner);
       const exported = doc.exportHwpxWithReport();
       try {
@@ -1945,9 +1955,10 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         try { expect(JSON.parse(reopened.getPictureProperties!(0, 0, control))).toEqual(read()); }
         finally { reopened.free(); }
         if (out) {
-          writeFileSync(resolve(out, "a-p6-caption-original.hwpx"), bytes);
-          writeFileSync(resolve(out, "a-p6-caption-edited.hwpx"), output);
-          writeFileSync(resolve(out, "a-p6-caption-report.json"), report);
+          const name = field === "side" ? "a-p6-caption" : "a-p6-caption-spacing";
+          writeFileSync(resolve(out, `${name}-original.hwpx`), bytes);
+          writeFileSync(resolve(out, `${name}-edited.hwpx`), output);
+          writeFileSync(resolve(out, `${name}-report.json`), report);
         }
       } finally { exported.free(); }
     } finally { editor.dispose(); }

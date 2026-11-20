@@ -57,6 +57,23 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "delete" }));
   });
 
+  it("converts a changed caption gap from points to exact HWPUNITs", () => {
+    const onEdit = panel(selection({
+      address: { engine: "rhwp", path: [0, 0, 2] },
+      operations: ["deselect", "captionSide", "captionSpacing"], captionSide: "Bottom", captionSpacing: 0,
+    }));
+    const spacing = screen.getByLabelText("Caption spacing (pt)");
+    const apply = screen.getByRole<HTMLButtonElement>("button", { name: "Apply caption spacing" });
+    expect(apply.disabled).toBe(true);
+    for (const value of ["", "-0.01", "327.68", "4.255"]) {
+      fireEvent.change(spacing, { target: { value } });
+      expect(apply.disabled).toBe(true);
+    }
+    fireEvent.change(spacing, { target: { value: "4.25" } });
+    fireEvent.click(apply);
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(request({ kind: "captionSpacing", spacing: 425 }));
+  });
+
   it("sends RHWP position presets without enabling drag", () => {
     const onEdit = panel(selection({ operations: ["deselect", "position"], address: { engine: "rhwp", path: [0, 0, 3] } }));
     fireEvent.change(screen.getByLabelText("Position"), { target: { value: "bottomCenter" } });

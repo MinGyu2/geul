@@ -801,6 +801,8 @@
   "properties.caption.side": "Caption position",
   "properties.caption.top": "Above picture",
   "properties.caption.bottom": "Below picture",
+  "properties.caption.spacing": "Caption spacing (pt)",
+  "properties.caption.spacingApply": "Apply caption spacing",
   "properties.group.children": "Edit group children",
   "properties.group.child": "Group child",
   "properties.group.chooseChild": "Choose child",

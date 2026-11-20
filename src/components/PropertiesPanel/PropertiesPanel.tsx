@@ -1,6 +1,6 @@
 import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
-import { CHART_PLOTS, MAX_ALT_TEXT_CHARS, MAX_CROP_FRACTION, MAX_GRAPHIC_TEXT_CHARS, SMART_ART_LAYOUTS, validObjectEdit, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
+import { CHART_PLOTS, MAX_ALT_TEXT_CHARS, MAX_CAPTION_SPACING_HWPUNIT, MAX_CROP_FRACTION, MAX_GRAPHIC_TEXT_CHARS, SMART_ART_LAYOUTS, validObjectEdit, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
@@ -147,12 +147,39 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
           <option value="Bottom">{t("properties.caption.bottom")}</option>
         </select>
       </label>}
+      {selection.captionSpacing !== undefined && can("captionSpacing") &&
+        <CaptionSpacingField value={selection.captionSpacing} disabled={disabled} onEdit={onEdit} />}
       {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
         outlineWidth={selection.address.engine === "wordcraft" ? 0 : selection.shape.outlineWidthEditable ? 0.01 : null} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
         onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
     </div>
   );
+}
+
+function CaptionSpacingField({ value, disabled, onEdit }: {
+  value: number;
+  disabled: boolean;
+  onEdit: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(String(value / 100));
+  const units = Number(draft) * 100;
+  const edit: ObjectEdit = { kind: "captionSpacing", spacing: Math.round(units) };
+  const canApply = !disabled && draft.trim() !== "" && Math.abs(units - edit.spacing) < 1e-7
+    && edit.spacing !== value && validObjectEdit(edit);
+  return <form className="caption-spacing" onSubmit={event => {
+    event.preventDefault();
+    if (canApply) onEdit(edit);
+  }}>
+    <label className="picture-size-field">{t("properties.caption.spacing")}
+      <input type="number" min={0} max={MAX_CAPTION_SPACING_HWPUNIT / 100} step={0.01}
+        value={draft} disabled={disabled} onChange={event => setDraft(event.target.value)} />
+    </label>
+    <button type="submit" className="document-bar__button" disabled={!canApply}>
+      {t("properties.caption.spacingApply")}
+    </button>
+  </form>;
 }
 
 function GroupChildFields({ children, disabled, onEdit }: {

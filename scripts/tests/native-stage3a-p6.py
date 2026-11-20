@@ -221,11 +221,51 @@ def caption(acc, row, fixtures, out):
     pick(after,"Top")
 
 
+def caption_spacing(acc, row, fixtures, out):
+    fixture = fixtures / "a-p6-caption-spacing-original.hwpx"
+    before = row["before"] = h.p6.hwp(fixture)
+    path = h.begin(acc,row,fixture,out,"a-p6-caption-spacing-published.hwpx")
+    field = ".caption-spacing input"
+
+    def pick(layout, points):
+        h.select_object(acc, layout["images"][0], "picture")
+        acc.wait("return +document.querySelector(arguments[0])?.value===arguments[1]", field, points)
+
+    pick(before, 0)
+    h.p6.gso.replace(acc, field, "4.25")
+    acc.dom_click(".caption-spacing button")
+    h.revision(acc,"hwpx",1)
+    acc.key("ctrl+z")
+    h.revision(acc,"hwpx",2)
+    pick(before,0)
+    acc.key("ctrl+y")
+    h.revision(acc,"hwpx",3)
+    pick(before,4.25)
+    h.publish(acc,"hwpx",row)
+
+    after = row["after"] = h.p6.hwp(path)
+    h.require(after["caption"]["text"] == before["caption"]["text"] and after["body"] == before["body"], "caption or body text changed")
+    h.require(after["caption"]["caret"]["y"] > before["caption"]["caret"]["y"],
+              "the positive gap did not move the bottom caption")
+    row["resources"] = h.checked_resources(fixture,path)
+    verify_other_parts(fixture,path,lambda name: name=="Contents/section0.xml" or name.startswith("Preview/"))
+    with zipfile.ZipFile(fixture) as a, zipfile.ZipFile(path) as b:
+        old,new=[ET.fromstring(p.read("Contents/section0.xml")) for p in (a,b)]
+    original = old.find(".//{*}pic/{*}caption")
+    h.require(original is not None and original.get("gap")=="0", "wrong caption owner or initial gap")
+    original.set("gap","425")
+    h.require(ET.tostring(old)==ET.tostring(new), "caption gap edit changed atno, formatting or other XML")
+    h.reopen(acc,path,row)
+    pick(after,4.25)
+
+
+
 h.CASES = {
     "P6.1": lambda *args: paste_polygon(*args, "hwpx"),
     "P6.2-type": preset,
     "P6.2-format": lambda *args: paste_polygon(*args, "docx"),
     "P6.3": caption,
+    "P6.7": caption_spacing,
 }
 
 if __name__ == "__main__":

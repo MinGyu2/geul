@@ -801,6 +801,8 @@
   "properties.caption.side": "캡션 위치",
   "properties.caption.top": "그림 위",
   "properties.caption.bottom": "그림 아래",
+  "properties.caption.spacing": "캡션 간격(pt)",
+  "properties.caption.spacingApply": "캡션 간격 적용",
   "properties.group.children": "그룹 자식 편집",
   "properties.group.child": "그룹 자식",
   "properties.group.chooseChild": "자식 선택",
