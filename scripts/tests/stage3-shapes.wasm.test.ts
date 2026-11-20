@@ -988,6 +988,229 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A P4.6-2 moves and resizes flat-group rectangle and ellipse children with Undo/Redo and save preservation (P1-P4)", async () => {
+    const svgShapes = (d: RhwpDocument) => {
+      const svg = (d as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0);
+      const rectMatch = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="#518934"/.exec(svg);
+      const ellipseMatch = /<ellipse cx="([^"]+)" cy="([^"]+)" rx="([^"]+)" ry="([^"]+)" fill="#341260"/.exec(svg);
+      expect(rectMatch, `missing rect in SVG: ${svg}`).not.toBeNull();
+      expect(ellipseMatch, `missing ellipse in SVG: ${svg}`).not.toBeNull();
+      return {
+        rect: rectMatch!.slice(1, 5).map(Number) as [number, number, number, number],
+        ellipse: ellipseMatch!.slice(1, 5).map(Number) as [number, number, number, number],
+      };
+    };
+    const px = (hu: number) => hu * 96 / 7200;
+    const fixturePath = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
+    const fixtureBytes = new Uint8Array(readFileSync(fixturePath));
+
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", fixtureBytes);
+    try {
+      const controls = JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[];
+      const groupFrame = controls.find(c => c.type === "group")!;
+      const [sec, para, ctrl] = groupFrame.stableIndex;
+      const beforeProps = doc.getShapeProperties!(sec, para, ctrl);
+
+      const sel0 = pick(groupFrame)!;
+      expect(sel0.operations).toContain("groupChildGeometry");
+      const gc0 = sel0.groupChildren!;
+      expect(gc0.width).toBe(11700);
+      expect(gc0.height).toBe(4900);
+      expect(gc0.children).toEqual([
+        { index: 0, kind: "rectangle", id: 2112144572, instId: 1038402749, x: 0, y: 0, width: 5200, height: 4100, sizeProtect: false, locked: false, canMove: true, canResize: true },
+        { index: 1, kind: "ellipse", id: 2112169928, instId: 1038428105, x: 6500, y: 800, width: 5200, height: 4100, sizeProtect: false, locked: false, canMove: true, canResize: true },
+      ]);
+
+      // P1: Move rectangle inside parent
+      expect(edit({ kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 400, y: 300 })).toBe(true);
+      await confirm();
+      expect(doc.getShapeProperties!(sec, para, ctrl)).toBe(beforeProps);
+      let svg = svgShapes(doc);
+      expect(svg.rect[0]).toBeCloseTo(px(500 + 400), 6);
+      expect(svg.rect[1]).toBeCloseTo(px(500 + 300), 6);
+      expect(svg.ellipse[0]).toBeCloseTo(px(500 + 6500 + 2600), 6);
+      expect(svg.ellipse[1]).toBeCloseTo(px(500 + 800 + 2050), 6);
+
+      // P2: Move ellipse left/up inside parent
+      expect(edit({ kind: "groupChildMove", index: 1, id: 2112169928, instId: 1038428105, x: 5200, y: 200 })).toBe(true);
+      await confirm();
+      svg = svgShapes(doc);
+      expect(svg.ellipse[0]).toBeCloseTo(px(500 + 5200 + 2600), 6);
+      expect(svg.ellipse[1]).toBeCloseTo(px(500 + 200 + 2050), 6);
+
+      // P3: Resize rectangle & ellipse (left/top anchored)
+      expect(edit({ kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 4200, height: 3500 })).toBe(true);
+      await confirm();
+      expect(edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 4600, height: 3200 })).toBe(true);
+      await confirm();
+
+      const expectedAfter = {
+        parentId: 0, width: 11700, height: 4900,
+        children: [
+          { index: 0, kind: "rectangle", id: 2112144572, instId: 1038402749, x: 400, y: 300, width: 4200, height: 3500, sizeProtect: false, locked: false, canMove: true, canResize: true },
+          { index: 1, kind: "ellipse", id: 2112169928, instId: 1038428105, x: 5200, y: 200, width: 4600, height: 3200, sizeProtect: false, locked: false, canMove: true, canResize: true },
+        ],
+      };
+      expect(JSON.parse(doc.getEditableGroupChildren!(sec, para, ctrl))).toEqual(expectedAfter);
+      svg = svgShapes(doc);
+      expect(svg.rect).toEqual([expect.closeTo(px(900), 6), expect.closeTo(px(800), 6), expect.closeTo(px(4200), 6), expect.closeTo(px(3500), 6)]);
+      expect(svg.ellipse).toEqual([expect.closeTo(px(500 + 5200 + 2300), 6), expect.closeTo(px(500 + 200 + 1600), 6), expect.closeTo(px(2300), 6), expect.closeTo(px(1600), 6)]);
+
+      // P4: Repeated Undo/Redo restores exact intermediate & final child states
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(JSON.parse(doc.getEditableGroupChildren!(sec, para, ctrl)).children[1]).toMatchObject({ x: 5200, y: 200, width: 5200, height: 4100 });
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(JSON.parse(doc.getEditableGroupChildren!(sec, para, ctrl)).children[0]).toMatchObject({ x: 400, y: 300, width: 5200, height: 4100 });
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(JSON.parse(doc.getEditableGroupChildren!(sec, para, ctrl))).toEqual(expectedAfter);
+
+      // Save, independent XML inspection, reopen, and save_check verification
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const outBytes = exported.takeBytes();
+        expectReopenEvidence(doc, outBytes, exported.contentLoss());
+        const reopened = new engine.HwpDocument(outBytes) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getEditableGroupChildren!(sec, para, ctrl))).toEqual(expectedAfter);
+          expect(svgShapes(reopened)).toEqual(svg);
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A P4.6-2 rejects unsupported, protected, transformed, out-of-range, and misowned group child geometry edits (N1-N12)", async () => {
+    const fixturePath = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
+    const fixtureBytes = new Uint8Array(readFileSync(fixturePath));
+    const patchSection = (pyReplace: string) => execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                xml = data.decode("utf-8")
+                ${pyReplace}
+                data = xml.encode("utf-8")
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`], { input: fixtureBytes });
+
+    // N1: HWP5 file & non-group shape HWPX must reject getEditableGroupChildren
+    const hwpDoc = new engine.HwpDocument(source("hwp")) as RhwpDocument;
+    try {
+      expect(hwpDoc.getEditableGroupChildren!(0, 0, 0)).toBe("null");
+    } finally { hwpDoc.free(); }
+
+    const nonGroupDoc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    try {
+      const created = JSON.parse(nonGroupDoc.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "rectangle", width: 3600, height: 2400, treatAsChar: false,
+      })));
+      expect(nonGroupDoc.getEditableGroupChildren!(0, 0, created.controlIdx)).toBe("null");
+      expect(() => nonGroupDoc.moveGroupChild!(0, 0, created.controlIdx, 0, 0, 0, 100, 100)).toThrow();
+    } finally { nonGroupDoc.free(); }
+
+    // N2..N5, N7..N8, N11..N12: Group-level blockers must yield null; child-level blockers must mark child non-editable & throw on mutate
+    const rejectGroupCases: [string, string][] = [
+      ["N2-nested-group", `xml = xml.replace('<hp:ellipse ', '<hp:container id="9" groupLevel="1"><hp:offset x="0" y="0"/><hp:orgSz width="100" height="100"/><hp:curSz width="100" height="100"/><hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="50" centerY="50" rotateimage="0"/></hp:container><hp:ellipse ', 1)`],
+      ["N3-locked-parent", `xml = xml.replace('<hp:container id="0" zOrder="2" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0"', '<hp:container id="0" zOrder="2" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="1"', 1)`],
+      ["N3-size-protect-parent", `xml = xml.replace('<hp:sz width="11700" widthRelTo="ABSOLUTE" height="4900" heightRelTo="ABSOLUTE" protect="0"/>', '<hp:sz width="11700" widthRelTo="ABSOLUTE" height="4900" heightRelTo="ABSOLUTE" protect="1"/>', 1)`],
+      ["N4-rotated-parent", `xml = xml.replace('<hp:rotationInfo angle="0" centerX="5850" centerY="2450" rotateimage="0"/>', '<hp:rotationInfo angle="15" centerX="5850" centerY="2450" rotateimage="0"/>', 1)`],
+      ["N4-flipped-parent", `xml = xml.replace('<hp:flip horizontal="0" vertical="0"/>', '<hp:flip horizontal="1" vertical="0"/>', 1)`],
+      ["N4-scaled-parent", `xml = xml.replace('<hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>', '<hc:scaMatrix e1="0.8" e2="0" e3="0" e4="0" e5="1" e6="0"/>', 1)`],
+      ["N4-skewed-parent", `xml = xml.replace('<hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>', '<hc:rotMatrix e1="1" e2="0.2" e3="0" e4="0" e5="1" e6="0"/>', 1)`],
+      ["N5-all-locked-children", `xml = xml.replace('id="2112144572" zOrder="0" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0"', 'id="2112144572" zOrder="0" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="1"', 1).replace('id="2112169928" zOrder="1" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0"', 'id="2112169928" zOrder="1" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="1"', 1)`],
+      ["N7-captioned-parent", `xml = xml.replace('<hp:shapeComment>묶음 개체입니다.</hp:shapeComment>', '<hp:caption side="BOTTOM" fullSz="0" width="850" gap="850" lastWidth="11700"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>c</hp:t></hp:run></hp:p></hp:subList></hp:caption><hp:shapeComment>묶음 개체입니다.</hp:shapeComment>', 1)`],
+      ["N8-all-textbox-children", `xml = xml.replace('<hp:shapeComment>사각형입니다.</hp:shapeComment>', '<hp:drawText lastWidth="5200" name="" editable="0"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>t</hp:t></hp:run></hp:p></hp:subList></hp:drawText><hp:shapeComment>사각형입니다.</hp:shapeComment>', 1).replace('<hp:shapeComment>타원입니다.</hp:shapeComment>', '<hp:drawText lastWidth="5200" name="" editable="0"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>t2</hp:t></hp:run></hp:p></hp:subList></hp:drawText><hp:shapeComment>타원입니다.</hp:shapeComment>', 1)`],
+      ["N11-duplicate-ids", `xml = xml.replace('id="2112169928"', 'id="2112144572"', 1).replace('instid="1038428105"', 'instid="1038402749"', 1)`],
+      ["N12-nonzero-parent-offset", `xml = xml.replace('<hp:offset x="0" y="0"/>', '<hp:offset x="100" y="0"/>', 1)`],
+    ];
+
+    for (const [label, script] of rejectGroupCases) {
+      const modBytes = patchSection(script);
+      const d = new engine.HwpDocument(modBytes) as RhwpDocument;
+      try {
+        const ctrls = JSON.parse(d.getPageControlLayout!(0)).controls as Frame[];
+        const g = ctrls.find(c => c.type === "group");
+        if (g) {
+          const [s, p, c] = g.stableIndex;
+          expect(d.getEditableGroupChildren!(s, p, c), label).toBe("null");
+          expect(() => d.moveGroupChild!(s, p, c, 0, 2112144572, 1038402749, 10, 10), label).toThrow();
+        }
+      } finally { d.free(); }
+    }
+
+    // Per-child transform/textbox blockers must mark only the affected child non-editable & throw on mutate
+    const rejectChildCases: [string, string][] = [
+      ["N4-rotated-child", `xml = xml.replace('<hp:rotationInfo angle="0" centerX="2600" centerY="2050" rotateimage="0"/>', '<hp:rotationInfo angle="15" centerX="2600" centerY="2050" rotateimage="0"/>', 1)`],
+      ["N4-flipped-child", `xml = xml.replace('<hp:flip horizontal="0" vertical="0"/>', '<hp:flip horizontal="1" vertical="0"/>', 2).replace('<hp:flip horizontal="1" vertical="0"/>', '<hp:flip horizontal="0" vertical="0"/>', 1)`],
+      ["N4-scaled-child", `xml = xml.replace('<hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>', '<hc:scaMatrix e1="0.8" e2="0" e3="0" e4="0" e5="1" e6="0"/>', 2).replace('<hc:scaMatrix e1="0.8" e2="0" e3="0" e4="0" e5="1" e6="0"/>', '<hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>', 1)`],
+      ["N8-textbox-child", `xml = xml.replace('<hp:shapeComment>사각형입니다.</hp:shapeComment>', '<hp:drawText lastWidth="5200" name="" editable="0"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0"><hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>t</hp:t></hp:run></hp:p></hp:subList></hp:drawText><hp:shapeComment>사각형입니다.</hp:shapeComment>', 1)`],
+    ];
+    for (const [label, script] of rejectChildCases) {
+      const modBytes = patchSection(script);
+      const d = new engine.HwpDocument(modBytes) as RhwpDocument;
+      try {
+        const ctrls = JSON.parse(d.getPageControlLayout!(0)).controls as Frame[];
+        const g = ctrls.find(c => c.type === "group")!;
+        const [s, p, c] = g.stableIndex;
+        const parsed = JSON.parse(d.getEditableGroupChildren!(s, p, c));
+        expect(parsed.children[0], label).toMatchObject({ canMove: false, canResize: false });
+        expect(() => d.moveGroupChild!(s, p, c, 0, 2112144572, 1038402749, 10, 10), label).toThrow();
+        expect(() => d.resizeGroupChild!(s, p, c, 0, 2112144572, 1038402749, 4000, 3000), label).toThrow();
+      } finally { d.free(); }
+    }
+
+    // N5 mixed (locked rect + unlocked ellipse) & N6 size-protected ellipse (move OK, resize refused)
+    const protectedBytes = patchSection(
+      `xml = xml.replace('id="2112144572" zOrder="0" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0"', 'id="2112144572" zOrder="0" numberingType="NONE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="1"', 1).replace('<hp:sz width="5200" height="4100" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="0"/>', '<hp:sz width="5200" height="4100" widthRelTo="ABSOLUTE" heightRelTo="ABSOLUTE" protect="1"/>', 1)`
+    );
+    const protSetup = await setup("hwpx", protectedBytes);
+    try {
+      const g = (JSON.parse(protSetup.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      const [s, p, c] = g.stableIndex;
+      const sel = protSetup.pick(g)!;
+      expect(sel.groupChildren?.children[0]).toMatchObject({ canMove: false, canResize: false, locked: true });
+      expect(sel.groupChildren?.children[1]).toMatchObject({ canMove: true, canResize: false, sizeProtect: true });
+      expect(protSetup.edit({ kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 100, y: 100 })).toBe(false);
+      expect(protSetup.edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 4000, height: 3000 })).toBe(false);
+      expect(() => protSetup.doc.resizeGroupChild!(s, p, c, 1, 2112169928, 1038428105, 4000, 3000)).toThrow();
+      expect(protSetup.edit({ kind: "groupChildMove", index: 1, id: 2112169928, instId: 1038428105, x: 5800, y: 400 })).toBe(true);
+      await protSetup.confirm();
+    } finally { protSetup.editor.dispose(); }
+
+    // N9 & N10: Out-of-bounds, invalid sizes, no-op, and wrong child ownership
+    const baseSetup = await setup("hwpx", fixtureBytes);
+    try {
+      const g = (JSON.parse(baseSetup.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      const [s, p, c] = g.stableIndex;
+      const sel = baseSetup.pick(g)!;
+      expect(sel).toBeTruthy();
+      for (const bad of [
+        { kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: -1, y: 0 },
+        { kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 6501, y: 0 },
+        { kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 0, y: 0 },
+        { kind: "groupChildMove", index: 0, id: 999, instId: 1038402749, x: 100, y: 100 },
+        { kind: "groupChildMove", index: 0, id: 2112144572, instId: 999, x: 100, y: 100 },
+        { kind: "groupChildMove", index: 1, id: 2112144572, instId: 1038402749, x: 100, y: 100 },
+        { kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 0, height: 100 },
+        { kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 11701, height: 100 },
+        { kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 5200, height: 4100 },
+      ] as const) {
+        expect(baseSetup.edit(bad as never), JSON.stringify(bad)).toBe(false);
+      }
+      expect(() => baseSetup.doc.moveGroupChild!(s, p, c, 0, 999, 1038402749, 100, 100)).toThrow();
+      expect(() => baseSetup.doc.resizeGroupChild!(s, p, c, 0, 2112144572, 1038402749, 0, 100)).toThrow();
+      expect(() => baseSetup.doc.resizeGroupChild!(s, p, c, 0, 2112144572, 1038402749, 12000, 100)).toThrow();
+    } finally { baseSetup.editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("edits %s polygon and curve outer geometry, transforms, and deletion cleanly", async format => {
     const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
     let baseHwpx: Uint8Array;

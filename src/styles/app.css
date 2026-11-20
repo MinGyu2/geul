@@ -1243,3 +1243,54 @@ button {
   display: flex;
   gap: 6px;
 }
+
+.object-group-child-mode,
+.object-group-child,
+.object-group-child-frame,
+.object-group-child-coordinates {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.object-group-child-mode {
+  right: 0;
+  bottom: calc(100% + 6px);
+  white-space: nowrap;
+}
+
+.object-group-child {
+  box-sizing: border-box;
+  padding: 0;
+  background: transparent;
+  border: 1px dashed rgba(47, 91, 211, 0.55);
+  cursor: move;
+  touch-action: none;
+}
+
+.object-group-child[aria-pressed="true"] {
+  border: 2px solid #2f5bd3;
+  background: rgba(47, 91, 211, 0.08);
+}
+
+.object-group-child-frame {
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.object-group-child-handle {
+  pointer-events: auto;
+}
+
+.object-group-child-coordinates {
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 6px;
+  align-items: center;
+  padding: 4px;
+  white-space: nowrap;
+  background: var(--surface);
+}
+
+.object-group-child-coordinates input { width: 7em; }

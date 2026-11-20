@@ -250,3 +250,67 @@ it("offers terminal line edits only at the final HWP5 endpoint", () => {
   fireEvent.click(screen.getByRole("button", { name: "Remove final line" }));
   expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "remove" }, 7);
 });
+
+it("edits flat-group child positions and left/top-anchored sizes with ownership and protection checks", () => {
+  const { onEdit } = frame({ selection: selection({
+    kind: "group",
+    address: { engine: "rhwp", path: [0, 0, 2] },
+    frame: { page: 0, x: 5, y: 5, width: 117, height: 49 },
+    operations: ["deselect", "move", "resize", "groupChildGeometry"],
+    groupChildren: {
+      parentId: 0,
+      width: 11700,
+      height: 4900,
+      children: [
+        {
+          index: 0, kind: "rectangle", id: 2112144572, instId: 1038402749,
+          x: 0, y: 0, width: 5200, height: 4100,
+          sizeProtect: false, locked: false, canMove: true, canResize: true,
+        },
+        {
+          index: 1, kind: "ellipse", id: 2112169928, instId: 1038428105,
+          x: 6500, y: 800, width: 5200, height: 4100,
+          sizeProtect: true, locked: false, canMove: true, canResize: false,
+        },
+      ],
+    },
+  }) });
+  expect(validObjectEdit({ kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 100, y: 200 })).toBe(true);
+  expect(validObjectEdit({ kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 0, height: 100 })).toBe(false);
+  expect(validObjectEdit({ kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: -1, y: 0 })).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit group children" }));
+  expect(screen.queryByTestId("object-handle-nw")).toBeNull();
+  const childHandles = [...document.querySelectorAll(".object-group-child-handle")].map(e => (e as HTMLElement).dataset.handle);
+  expect(childHandles).toEqual(["e", "se", "s"]);
+
+  const moveBtn = screen.getByRole<HTMLButtonElement>("button", { name: "Move child" });
+  const resizeBtn = screen.getByRole<HTMLButtonElement>("button", { name: "Resize child" });
+  expect(moveBtn.disabled).toBe(true);
+  expect(resizeBtn.disabled).toBe(true);
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "X (HWPUNIT)" }), { target: { value: "500" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Y (HWPUNIT)" }), { target: { value: "300" } });
+  expect(moveBtn.disabled).toBe(false);
+  fireEvent.click(moveBtn);
+  expect(onEdit).toHaveBeenLastCalledWith({
+    kind: "groupChildMove", index: 0, id: 2112144572, instId: 1038402749, x: 500, y: 300,
+  }, 7);
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Width (HWPUNIT)" }), { target: { value: "4800" } });
+  fireEvent.click(resizeBtn);
+  expect(onEdit).toHaveBeenLastCalledWith({
+    kind: "groupChildResize", index: 0, id: 2112144572, instId: 1038402749, width: 4800, height: 4100,
+  }, 7);
+
+  // Switch to size-protected ellipse: resize handles disappear, move input stays enabled.
+  fireEvent.click(screen.getByRole("button", { name: "Ellipse 2" }));
+  expect(document.querySelectorAll(".object-group-child-handle")).toHaveLength(0);
+  expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Width (HWPUNIT)" }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "X (HWPUNIT)" }).disabled).toBe(false);
+
+  // Escape exits group-child editing mode cleanly.
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("button", { name: "Finish child editing" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Edit group children" })).toBeTruthy();
+});

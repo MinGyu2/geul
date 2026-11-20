@@ -1,4 +1,4 @@
-import type { GroupChildFill, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
+import type { EditableGroupChildren, GroupChildFill, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
 import type { RhwpDocument } from "./rhwpModule";
 
 /** HWP colors are 0x00BBGGRR. */
@@ -136,6 +136,50 @@ export function inspectRhwpGroupFills(doc: RhwpDocument, address: readonly [numb
       || !children.every((child, i) => child && within(child.index, 127) && within(child.color, 0xff_ffff)
         && (child.kind === "rectangle" || child.kind === "ellipse") && (i === 0 || child.index > children[i - 1].index))) return undefined;
     return children.map(child => ({ index: child.index, kind: child.kind, color: bgrToHex(child.color) }));
+  } catch {
+    return undefined;
+  }
+}
+
+export function inspectRhwpGroupChildren(doc: RhwpDocument, address: readonly [number, number, number]): EditableGroupChildren | undefined {
+  if (!doc.getEditableGroupChildren) return undefined;
+  try {
+    const value: unknown = JSON.parse(doc.getEditableGroupChildren(...address));
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const { parentId, width, height, children } = value as Record<string, unknown>;
+    const u32 = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 && n <= 0xffff_ffff;
+    if (!u32(parentId) || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0
+      || !Array.isArray(children) || !children.length || children.length > 128) return undefined;
+    const seen = new Set<string>();
+    const parsed = children.map((raw, i) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+      const c = raw as Record<string, unknown>;
+      if (c.index !== i || (c.kind !== "rectangle" && c.kind !== "ellipse") || !u32(c.id) || !u32(c.instId)
+        || !within(c.x, width) || !within(c.y, height) || !within(c.width, width) || c.width === 0
+        || !within(c.height, height) || c.height === 0 || (c.x as number) + (c.width as number) > width
+        || (c.y as number) + (c.height as number) > height
+        || typeof c.sizeProtect !== "boolean" || typeof c.locked !== "boolean"
+        || typeof c.canMove !== "boolean" || typeof c.canResize !== "boolean") return null;
+      const key = `${c.id}:${c.instId}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        index: c.index as number,
+        kind: c.kind as "rectangle" | "ellipse",
+        id: c.id as number,
+        instId: c.instId as number,
+        x: c.x as number,
+        y: c.y as number,
+        width: c.width as number,
+        height: c.height as number,
+        sizeProtect: c.sizeProtect as boolean,
+        locked: c.locked as boolean,
+        canMove: c.canMove as boolean,
+        canResize: c.canResize as boolean,
+      };
+    });
+    if (parsed.some(item => !item) || !parsed.some(item => item!.canMove || item!.canResize)) return undefined;
+    return { parentId, width, height, children: parsed as NonNullable<typeof parsed[number]>[] };
   } catch {
     return undefined;
   }

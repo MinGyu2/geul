@@ -1,0 +1,56 @@
+{
+  "baselineHead": "d59670c",
+  "phase": "P4.6-2",
+  "date": "2026-11-21",
+  "status": "COMPLETED",
+  "releaseWasm": {
+    "generation": "f7319ca5923f9d5b35453e1e0ef726843ff867ac72b996f81f808653240d88f9",
+    "artifacts": {
+      "rhwp.js": "eda1fda0e929c6d0820a27fc752ae1a0435248bd6abe0a916f94155d68a51281",
+      "rhwp_bg.wasm": "6e35819b017f9b88dde5d07dba144090446369ba0ed27922e375845064ba824a"
+    },
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15",
+    "externalUnchanged": true
+  },
+  "nativeAcceptance": {
+    "appSha256": "96addfcecfc5728b171b56bfae60aba255eabf00916295219fa37ac25d789c63",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "cases": {
+      "P4.3": "PASS",
+      "P4.6": "PASS"
+    },
+    "publishedSha256": "470fdf902158c25b41456a167fc111542f4df79da056573ed3bc561ae351c1a5",
+    "fixture": "target/stage3a-p4/fixtures/a-p4-group-original.hwpx",
+    "fixtureSha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856",
+    "pointerMovesChild0To": [750, 525],
+    "pointerResizesChild0To": [4525, 3650],
+    "precisionMovesResizesChild1To": [5200, 200, 4600, 3200],
+    "sessionCleanupProven": true
+  },
+  "supportedContract": {
+    "format": "hwpx",
+    "container": "Unlocked, uncaptioned, sizeProtect=false body Group at groupLevel=0 with identity rendering matrices and zero container offset, 1..128 direct Rectangle/Ellipse children.",
+    "children": "Unique non-zero (id, instId) ownership tuple, groupLevel=1, uncaptioned, no textBox, zero rotation/flip, identity scale/shear, integer translation matching hp:offset, axis-aligned rect points or full axis-aligned ellipse axes, bounds contained within parent [0, width] x [0, height].",
+    "operations": {
+      "move": "moveGroupChild(sec, para, ctrl, index, expectedId, expectedInstId, x, y) when !child.locked, keeping child inside parent bounds.",
+      "resize": "resizeGroupChild(sec, para, ctrl, index, expectedId, expectedInstId, width, height) when !child.locked && !child.sizeProtect; left/top-anchored only (UI handles e/se/s), updating orgSz/curSz/common dims, rotation_center, rect pts or ellipse axes/start/end, and clearing raw_rendering so HWPX serialization stays synchronized."
+    }
+  },
+  "outOfScope": [
+    "Nested groups or non-Rectangle/Ellipse group children",
+    "Rotated, flipped, scaled, sheared, or ambiguous-transform groups or children",
+    "Locked parents/children, size-protected parents (or resize of size-protected children)",
+    "Captioned parents/children or textBox-bearing children",
+    "Leading-edge (n/w) anchored child resize",
+    "HWP5 and DOCX group-child geometry editing"
+  ],
+  "verification": {
+    "typecheck": "PASS",
+    "rhwpProfiles": "3 tests OK",
+    "uiFrameTests": "21 passed (ObjectSelectionFrame.test.tsx)",
+    "wasmShapesSuite": "52 passed, 4 proprietary HWP5 skipped (stage3-shapes.wasm.test.ts including P1-P4 & N1-N12)",
+    "saveCheckSavedHwpx": "safe (findings: [])",
+    "linuxX11Native": "P4.3 PASS, P4.6 PASS"
+  }
+}

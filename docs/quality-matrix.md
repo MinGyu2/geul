@@ -388,7 +388,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 |---|---|---|
 | P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩, HWP5와 DOCX의 꼭짓점 이동은 범위 밖이다. |
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차 및 HWPX/DOCX의 무손실 곡선 구간 모델은 남아 있다. |
-| P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. [P4.6-1 그룹 기하 교정](architecture/stage3-a-p4-group-geometry-acceptance.json)으로 `write_rendering_info`의 명시 행렬 직렬화와 항등 행렬·비영 `hp:offset` 자식 좌표 복원 및 무편집 저장/재열기(`save_check` safe)를 검증했다. 중첩 그룹·HWP5/DOCX 자식 기하 편집은 범위 밖이다. |
+| P4.3 그룹 자식 | HWPX의 비잠금·비보호 평면 사각형·타원 그룹에서 지정 자식의 단색 배경 변경(`groupChildFill`) 및 위치·왼쪽/위 기준 크기 편집(`groupChildMove`/`groupChildResize`) | Release WASM(`f7319ca5...`, P1–P4·N1–N12 포함 52 통과)·`save_check` safe·UI 21 통과·Linux X11 Native(`P4.3`/`P4.6` PASS, 게시·Undo/Redo·독립 XML 검사·앱 재열기) PASS. [P4.6-1 그룹 기하 교정](architecture/stage3-a-p4-group-geometry-acceptance.json), [P4.6-2 그룹 자식 기하 편집 수용 기록](architecture/stage3-a-p4-group-child-edit-acceptance.json). 중첩 그룹·회전/반전/배율/전단·캡션·글상자 자식·잠금/크기보호 경계 및 HWP5/DOCX 자식 기하 편집은 거부하며 범위 밖이다. |
 | P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
 | P4.5 곡선 구간 | SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점에 직선 추가 및 마지막 직선 삭제 | 집중 T009·Release WASM·Linux X11 실제 게시 2건·독립 CFB·앱 재열기 PASS. 중간 구간과 cubic·이차 구간 삽입·삭제는 범위 밖이다. [수용 기록](architecture/stage3-a-p4-terminal-line-acceptance.json) |
 

@@ -2067,6 +2067,10 @@ DOCX 프리셋 변경은 기존 InlineObject의 종류에만 적용한다. HWPX�
 
 T009는 원래와 출력의 곡선 리프를 각각 개수, HWPUNIT 좌표, 실제로 소비된 직선·cubic 명령, 사용되지 않은 0 명령 및 4바이트 0 패딩까지 해석한다. 점 개수가 변할 때 유지된 좌표와 사용 명령은 같은 접두부여야 한다. 남는 명령은 점 하나에 직선 하나만 허용한다. 컴포넌트·프레임·캡션·형제·리소스 및 나머지 레코드는 기존 검사를 적용한다. [P4.5 수용 기록](stage3-a-p4-terminal-line-acceptance.json)
 
+## Stage 3-A P4.6 HWPX 평면 그룹 자식 기하 보존 및 편집
+
+HWPX 평면 컨테이너 직속 사각형·타원 자식은 항등 행렬과 비영 `<hp:offset>` 조합을 파서/직렬화기에서 손실·이중 적용 없이 왕복 보존한다([P4.6-1 수용 기록](stage3-a-p4-group-geometry-acceptance.json)). `moveGroupChild`와 `resizeGroupChild` 편집 시 대상 자식의 `offset`, `pos`, `orgSz`/`curSz`/`sz`, `renderingInfo`, `rotationInfo` 중심 및 사각형 꼭짓점/타원 축 좌표만을 부모 범위 안에서 일관되게 갱신하며, 부모 컨테이너 속성·크기·위치, 형제 개체, 선/채우기/설명 및 타 ZIP 파트를 그대로 보존하고 T009(`save_check saved hwpx`)와 독립 재열기 동등성으로 검증한다([P4.6-2 수용 기록](stage3-a-p4-group-child-edit-acceptance.json)).
+
 ## Stage 3-A P5.5 HWPX 글상자 문단 병합
 
 지원 본문 글상자의 인접 문단 두 개를 대상으로 문단 모양·스타일, 문자와 언어별 서식 범위, 글상자 외곽, 문단 개수 및 소유를 확인한다. HWPX 저장 정책은 기존 T009와 독립 재열기를 사용한다. 실제 게시 후 인접 문단과 나머지 ZIP 부분이 보존되고 서식이 의도한 구간에 남았음을 독립 확인했다. [P5.5 수용 기록](stage3-a-p5-textbox-join-acceptance.json)

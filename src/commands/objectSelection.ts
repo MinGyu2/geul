@@ -51,6 +51,28 @@ export interface GroupChildFill {
   color: string;
 }
 
+export interface GroupChildGeometry {
+  index: number;
+  kind: "rectangle" | "ellipse";
+  id: number;
+  instId: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sizeProtect: boolean;
+  locked: boolean;
+  canMove: boolean;
+  canResize: boolean;
+}
+
+export interface EditableGroupChildren {
+  parentId: number;
+  width: number;
+  height: number;
+  children: readonly GroupChildGeometry[];
+}
+
 export interface ObjectHit {
   kind: ObjectKind;
   address: { engine: "wordcraft"; position: string } | { engine: "rhwp"; path: readonly number[] };
@@ -64,6 +86,7 @@ export interface ObjectHit {
   shapePath?: ShapePath;
   curveTerminalLine?: { append: boolean; remove: boolean };
   groupChildFills?: readonly GroupChildFill[];
+  groupChildren?: EditableGroupChildren;
   convertShape?: "rectangle" | "ellipse";
   captionSide?: "Top" | "Bottom";
   captionSpacing?: number;
@@ -79,7 +102,7 @@ export interface ObjectSelection extends ObjectHit {
 
 export const MAX_CAPTION_SPACING_HWPUNIT = 32767;
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "convertShape", "captionSide", "captionSpacing"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "groupChildGeometry", "convertShape", "captionSide", "captionSpacing"] as const;
 const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
@@ -118,6 +141,8 @@ export type ObjectEdit =
   | { kind: "pathSegment"; action: "append"; x: number; y: number }
   | { kind: "pathSegment"; action: "remove" }
   | { kind: "groupChildFill"; index: number; color: string }
+  | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
+  | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
   | { kind: "captionSide"; side: "Top" | "Bottom" }
   | { kind: "captionSpacing"; spacing: number };
@@ -147,6 +172,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "chartTitle": case "chartType": case "chartData": return "chart";
     case "smartArtItems": case "smartArtLayout": return "smartArt";
     case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape": case "captionSide": case "captionSpacing": return edit.kind;
+    case "groupChildMove": case "groupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -181,6 +207,14 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     || (value.action === "append" && keys === "action,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000));
   if (value.kind === "groupChildFill") return keys === "color,index,kind" && integer(value.index, 127)
     && typeof value.color === "string" && color(value.color);
+  const u32 = (n: unknown) => integer(n, 0xffff_ffff);
+  if (value.kind === "groupChildMove") return keys === "id,index,instId,kind,x,y"
+    && integer(value.index, 127) && u32(value.id) && u32(value.instId)
+    && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
+  if (value.kind === "groupChildResize") return keys === "height,id,index,instId,kind,width"
+    && integer(value.index, 127) && u32(value.id) && u32(value.instId)
+    && integer(value.width, 2_000_000) && (value.width as number) >= 1
+    && integer(value.height, 2_000_000) && (value.height as number) >= 1;
   if (value.kind === "convertShape") return keys === "kind,to" && (value.to === "rectangle" || value.to === "ellipse");
   if (value.kind === "captionSide") return keys === "kind,side" && (value.side === "Top" || value.side === "Bottom");
   if (value.kind === "captionSpacing") return keys === "kind,spacing" && integer(value.spacing, MAX_CAPTION_SPACING_HWPUNIT);
@@ -236,6 +270,9 @@ export function objectEditMatches(request: ObjectEditRequest, selection: ObjectS
   const { edit } = request;
   if (!validObjectEdit(edit)) return false;
   if (edit.kind === "convertShape" && selection.convertShape !== edit.to) return false;
+  if ((edit.kind === "groupChildMove" || edit.kind === "groupChildResize") && !selection.groupChildren?.children.some(child =>
+    child.index === edit.index && child.id === edit.id && child.instId === edit.instId
+    && (edit.kind === "groupChildMove" ? child.canMove : child.canResize))) return false;
   if (edit.kind === "bounds" && edit.x !== undefined && (edit.width !== undefined || edit.height !== undefined)
     && !supportsAnchoredResize(selection)) return false;
   const operation = request.edit.kind === "position" && selection.address.engine === "rhwp"

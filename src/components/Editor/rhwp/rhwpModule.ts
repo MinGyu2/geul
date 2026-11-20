@@ -56,6 +56,15 @@ export interface RhwpDocument {
   editCurveTerminalLine?(section: number, paragraph: number, control: number, append: boolean, x: number, y: number): void;
   getEditableGroupFills?(section: number, paragraph: number, control: number): string;
   setGroupChildFill?(section: number, paragraph: number, control: number, index: number, color: number): void;
+  getEditableGroupChildren?(section: number, paragraph: number, control: number): string;
+  moveGroupChild?(
+    section: number, paragraph: number, control: number,
+    index: number, expectedId: number, expectedInstId: number, x: number, y: number,
+  ): void;
+  resizeGroupChild?(
+    section: number, paragraph: number, control: number,
+    index: number, expectedId: number, expectedInstId: number, width: number, height: number,
+  ): void;
   setShapeProperties?(section: number, paragraph: number, control: number, properties: string): string;
   deleteShapeControl?(section: number, paragraph: number, control: number): string;
   changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;

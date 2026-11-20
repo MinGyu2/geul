@@ -2,7 +2,7 @@ import { MAX_CAPTION_SPACING_HWPUNIT, POSITION_PRESETS, objectEditMatches, objec
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -1812,6 +1812,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (doc.getEditableShapePath?.(...address) !== reopened.getEditableShapePath?.(...address)) return false;
         } else if (c.userDesc === "그리기") {
           if (doc.getEditableGroupFills?.(...address) !== reopened.getEditableGroupFills?.(...address)) return false;
+          if (doc.getEditableGroupChildren?.(...address) !== reopened.getEditableGroupChildren?.(...address)) return false;
         } else if (c.userDesc === "그림") {
           if (JSON.stringify(readHwpxPictureCaption(doc, address)) !== JSON.stringify(readHwpxPictureCaption(reopened, address))) return false;
         } else {
@@ -1912,7 +1913,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
           const groupChildFills = group && groupAddress && this.doc.setGroupChildFill
             ? inspectRhwpGroupFills(this.doc, groupAddress) : undefined;
+          const groupChildren = format === "hwpx" && group && groupAddress && this.doc.moveGroupChild && this.doc.resizeGroupChild
+            ? inspectRhwpGroupChildren(this.doc, groupAddress) : undefined;
           if (groupChildFills) operations.push("groupChildFill");
+          if (groupChildren) operations.push("groupChildGeometry");
           const groupWrap = group && !group.raw.treatAsChar
             ? group.raw.textWrap === "Square" ? "square"
               : group.raw.textWrap === "TopAndBottom" ? "topAndBottom" : undefined
@@ -1961,6 +1965,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(captionSide ? { captionSide } : {}),
               ...(captionSpacing !== undefined ? { captionSpacing } : {}),
               ...(groupChildFills ? { groupChildFills } : {}),
+              ...(groupChildren ? { groupChildren } : {}),
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
                 ...shape.properties,
@@ -4628,7 +4633,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
     if (request.edit.kind === "pathPoint" || request.edit.kind === "pathVertex" || request.edit.kind === "pathSegment"
-      || request.edit.kind === "groupChildFill") {
+      || request.edit.kind === "groupChildFill" || request.edit.kind === "groupChildMove" || request.edit.kind === "groupChildResize") {
       return this.editAdvancedShape(request);
     }
     if (request.edit.kind === "captionSide" || request.edit.kind === "captionSpacing") return this.editPictureCaption(request);
@@ -4791,12 +4796,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || !objectEditMatches(request, selected)) return false;
     const { edit } = request;
     const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex" || edit.kind === "pathSegment";
-    if (!pathEdit && edit.kind !== "groupChildFill") return false;
+    const groupChildGeomEdit = edit.kind === "groupChildMove" || edit.kind === "groupChildResize";
+    if (!pathEdit && edit.kind !== "groupChildFill" && !groupChildGeomEdit) return false;
+    if (groupChildGeomEdit && this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
     const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
     if (!address || !this.gsoFormatEditable(address, pathEdit)) return false;
-    const read = pathEdit ? inspectRhwpShapePath : inspectRhwpGroupFills;
+    const read = (d: RhwpDocument, a: readonly [number, number, number]) => pathEdit
+      ? inspectRhwpShapePath(d, a)
+      : groupChildGeomEdit ? inspectRhwpGroupChildren(d, a) : inspectRhwpGroupFills(d, a);
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "curveTerminalLine" | "operations">;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "operations">;
     if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
@@ -4841,23 +4850,57 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }
       const curveTerminalLine = { append: points.length < 257, remove: points.at(-2)!.control === false };
       refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine };
-    } else {
+    } else if (edit.kind === "groupChildFill") {
       const children = selected.groupChildFills;
       const child = children?.find(item => item.index === edit.index);
       const color = edit.color.toUpperCase();
       if (!children || !child || !doc.setGroupChildFill || child.color === color) return false;
       refreshed = { operations: selected.operations, groupChildFills: children.map(item => item === child ? { ...item, color } : item) };
       apply = () => doc.setGroupChildFill!(...address, edit.index, hexToBgr(color));
+    } else if (edit.kind === "groupChildMove") {
+      const group = selected.groupChildren;
+      const child = group?.children[edit.index];
+      if (!group || !child || child.index !== edit.index || child.id !== edit.id || child.instId !== edit.instId
+        || !child.canMove || !doc.moveGroupChild || edit.x < 0 || edit.y < 0
+        || edit.x + child.width > group.width || edit.y + child.height > group.height
+        || (edit.x === child.x && edit.y === child.y)) return false;
+      refreshed = {
+        operations: selected.operations,
+        groupChildren: {
+          ...group,
+          children: group.children.map(item => item === child ? { ...item, x: edit.x, y: edit.y } : item),
+        },
+      };
+      apply = () => doc.moveGroupChild!(...address, edit.index, edit.id, edit.instId, edit.x, edit.y);
+    } else {
+      const group = selected.groupChildren;
+      const child = group?.children[edit.index];
+      if (!group || !child || child.index !== edit.index || child.id !== edit.id || child.instId !== edit.instId
+        || !child.canResize || !doc.resizeGroupChild || edit.width < 1 || edit.height < 1
+        || child.x + edit.width > group.width || child.y + edit.height > group.height
+        || (edit.width === child.width && edit.height === child.height)) return false;
+      refreshed = {
+        operations: selected.operations,
+        groupChildren: {
+          ...group,
+          children: group.children.map(item => item === child ? { ...item, width: edit.width, height: edit.height } : item),
+        },
+      };
+      apply = () => doc.resizeGroupChild!(...address, edit.index, edit.id, edit.instId, edit.width, edit.height);
     }
     let before: string;
     try { before = doc.getShapeProperties(...address); } catch { return false; }
-    if (JSON.stringify(read(doc, address)) !== JSON.stringify(pathEdit ? selected.shapePath : selected.groupChildFills)) return false;
+    const currentSnapshot = pathEdit
+      ? selected.shapePath
+      : groupChildGeomEdit ? selected.groupChildren : selected.groupChildFills;
+    if (JSON.stringify(read(doc, address)) !== JSON.stringify(currentSnapshot)) return false;
     const { caret, anchor } = this;
     this.selectedObject = null;
     const accepted = this.mutate(() => {
       apply();
+      const refreshedSnapshot = refreshed.shapePath ?? refreshed.groupChildren ?? refreshed.groupChildFills;
       if (doc.getShapeProperties!(...address) !== before
-        || JSON.stringify(read(doc, address)) !== JSON.stringify(refreshed.shapePath ?? refreshed.groupChildFills)) {
+        || JSON.stringify(read(doc, address)) !== JSON.stringify(refreshedSnapshot)) {
         throw new Error("advanced shape edit did not verify");
       }
       if (refreshed.curveTerminalLine) {

@@ -1226,7 +1226,9 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 
 `pathSegment {action, x?, y?}`는 SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점으로부터 입력 좌표까지 직선을 붙이거나 마지막 직선을 제거한다. 끝점 모드에서 기존 명령과 네 패딩 바이트를 검증하며, cubic만 남으면 삭제를 비활성화한다. 점 개수 변경과 함께 유지된 구간의 좌표를 바꾼 저장은 별도 증명이 필요하다. [P4.5 수용 기록](stage3-a-p4-terminal-line-acceptance.json)
 
-`groupChildFill {index, color}`는 속성 창에서 HWPX 평면 그룹의 사각형·타원 자식 번호를 지정한다. 기존 단색 배경의 RGB만 편집하며, 다른 자식이나 부모의 로컬·페이지 변환은 수정하지 않는다. 선택 주소, 세션, 로드 세대, 문서 판, 선택 번호를 다시 확인한다. 두 경로 모두 RHWP 이력 한 단계로 적용하고, 모델 재조회가 예상과 다르면 복원한다. 기존 그룹 삭제 가용성에 이 권한을 사용하지 않는다. [P4 수용 기록](stage3-a-p4-object-geometry-acceptance.json)
+`groupChildFill {index, color}`는 속성 창에서 HWPX 평면 그룹의 사각형·타원 자식 번호를 지정한다. 기존 단색 배경의 RGB만 편집하며, 다른 자식이나 부모의 로컬·페이지 변환은 수정하지 않는다.
+
+`groupChildMove {index, id, instId, x, y}`와 `groupChildResize {index, id, instId, width, height}` (`groupChildGeometry` 권한)는 비잠금·비보호·비캡션 HWPX 평면 그룹의 직속 사각형·타원 자식을 대상으로 그룹 안 도형 편집 모드(`GroupChildEditor`)에서 자식 이동과 왼쪽/위 기준 크기 조절(`e`/`se`/`s` 핸들 및 HWPUNIT 정밀 입력)을 수행한다. 부모 컨테이너 크기 `[0, width] x [0, height]` 안에 머무르며 `sizeProtect` 자식은 이동만 허용하고 크기 조절을 거부한다. RHWP WASM(`getEditableGroupChildren`, `moveGroupChild`, `resizeGroupChild`)과 세션 양쪽에서 `(index, id, instId)` 소유권·항등 변환·비중첩·비잠금·비글상자·비캡션을 재확인하며, 선택 주소, 세션, 로드 세대, 문서 판, 선택 번호를 다시 확인해 RHWP 이력 한 단계로 적용하고, ESC로 모드를 종료한다. 기존 그룹 삭제 가용성에 이 권한을 사용하지 않는다. [P4 수용 기록](stage3-a-p4-object-geometry-acceptance.json), [P4.6-2 수용 기록](stage3-a-p4-group-child-edit-acceptance.json)
 
 ## Stage 3-A P5 이야기 그림과 글상자 문단
 

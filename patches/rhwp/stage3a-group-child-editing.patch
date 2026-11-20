@@ -1,0 +1,366 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -137,6 +137,135 @@
+     (color <= 0xff_ffff).then_some(color)
+ }
+ 
++#[derive(serde::Serialize)]
++#[serde(rename_all = "camelCase")]
++struct GeulGroupChildState {
++    index: usize,
++    kind: &'static str,
++    id: u32,
++    inst_id: u32,
++    x: i32,
++    y: i32,
++    width: u32,
++    height: u32,
++    size_protect: bool,
++    locked: bool,
++    can_move: bool,
++    can_resize: bool,
++}
++
++#[derive(serde::Serialize)]
++#[serde(rename_all = "camelCase")]
++struct GeulEditableGroupChildren {
++    parent_id: u32,
++    width: u32,
++    height: u32,
++    children: Vec<GeulGroupChildState>,
++}
++
++fn geul_flat_hwpx_identity(sa: &crate::model::shape::ShapeComponentAttr, require_zero_offset: bool) -> bool {
++    if sa.rotation_angle != 0 || sa.horz_flip || sa.vert_flip || (sa.flip & 3) != 0
++        || (sa.render_sx - 1.0).abs() > 1e-6 || (sa.render_sy - 1.0).abs() > 1e-6
++        || sa.render_b.abs() > 1e-6 || sa.render_c.abs() > 1e-6
++        || !sa.render_tx.is_finite() || !sa.render_ty.is_finite()
++        || (sa.render_tx - sa.render_tx.round()).abs() > 1e-6
++        || (sa.render_ty - sa.render_ty.round()).abs() > 1e-6
++    {
++        return false;
++    }
++    let tx = sa.render_tx.round() as i32;
++    let ty = sa.render_ty.round() as i32;
++    if require_zero_offset {
++        sa.offset_x == 0 && sa.offset_y == 0 && tx == 0 && ty == 0
++    } else {
++        tx == sa.offset_x && ty == sa.offset_y
++    }
++}
++
++fn geul_exact_hwpx_size(
++    common: &crate::model::shape::CommonObjAttr,
++    sa: &crate::model::shape::ShapeComponentAttr,
++) -> Option<(u32, u32)> {
++    let (w, h) = (common.width, common.height);
++    if w == 0 || w > MAX_RECT_DIM_HU || h == 0 || h > MAX_RECT_DIM_HU
++        || sa.original_width_was_zero || sa.original_height_was_zero
++        || sa.current_width_was_zero || sa.current_height_was_zero
++        || sa.original_width != w || sa.original_height != h
++        || sa.current_width != w || sa.current_height != h
++    {
++        return None;
++    }
++    Some((w, h))
++}
++
++fn geul_group_child_geom_ok(child: &ShapeObject, w: u32, h: u32) -> bool {
++    let Ok(w_i) = i32::try_from(w) else { return false };
++    let Ok(h_i) = i32::try_from(h) else { return false };
++    match child {
++        ShapeObject::Rectangle(rect) => {
++            rect.round_rate <= 100
++                && rect.source_hwp_geometry.is_none()
++                && rect.x_coords == [0, w_i, w_i, 0]
++                && rect.y_coords == [0, 0, h_i, h_i]
++        }
++        ShapeObject::Ellipse(ellipse) => {
++            (ellipse.center.x - w_i / 2).abs() <= 1
++                && (ellipse.center.y - h_i / 2).abs() <= 1
++                && (ellipse.axis1.x - w_i).abs() <= 1
++                && ellipse.axis1.y == ellipse.center.y
++                && ellipse.axis2.x == ellipse.center.x
++                && (ellipse.axis2.y - h_i).abs() <= 1
++                && ellipse.start1.x == ellipse.end1.x
++                && ellipse.start1.y == ellipse.end1.y
++                && ellipse.start2.x == ellipse.end2.x
++                && ellipse.start2.y == ellipse.end2.y
++        }
++        _ => false,
++    }
++}
++
++fn geul_group_child_state(index: usize, child: &ShapeObject, gw: u32, gh: u32) -> Option<GeulGroupChildState> {
++    let kind = match child {
++        ShapeObject::Rectangle(_) => "rectangle",
++        ShapeObject::Ellipse(_) => "ellipse",
++        _ => return None,
++    };
++    let common = child.common();
++    let drawing = child.drawing()?;
++    let sa = child.shape_attr();
++    let id = common.instance_id;
++    let inst_id = drawing.inst_id;
++    let (x, y) = (sa.offset_x, sa.offset_y);
++    let exact_size = geul_exact_hwpx_size(common, sa);
++    let (w, h) = exact_size.unwrap_or((common.width, common.height));
++    let structurally_valid = exact_size.is_some()
++        && !(id == 0 && inst_id == 0)
++        && sa.group_level == 1
++        && drawing.caption.is_none()
++        && drawing.text_box.is_none()
++        && geul_flat_hwpx_identity(sa, false)
++        && geul_group_child_geom_ok(child, w, h)
++        && x >= 0 && y >= 0
++        && i64::from(x) + i64::from(w) <= i64::from(gw)
++        && i64::from(y) + i64::from(h) <= i64::from(gh);
++    let can_move = structurally_valid && !common.locked;
++    let can_resize = can_move && !common.size_protect;
++    Some(GeulGroupChildState {
++        index,
++        kind,
++        id,
++        inst_id,
++        x,
++        y,
++        width: w,
++        height: h,
++        size_protect: common.size_protect,
++        locked: common.locked,
++        can_move,
++        can_resize,
++    })
++}
++
+ const MAX_RECT_DIM_HU: u32 = 2_000_000;
+ const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
+ 
+@@ -829,6 +958,162 @@
+         Ok(())
+     }
+ 
++    /// Editable geometry state of direct flat-group rectangle/ellipse children.
++    pub fn editable_group_children(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
++        self.inspect_editable_group_children(sec, para, ctrl)
++            .and_then(|state| serde_json::to_value(state).ok())
++    }
++
++    pub fn move_group_child(
++        &mut self,
++        sec: usize,
++        para: usize,
++        ctrl: usize,
++        index: usize,
++        expected_id: u32,
++        expected_inst_id: u32,
++        x: i32,
++        y: i32,
++    ) -> Result<(), HwpError> {
++        let state = self.inspect_editable_group_children(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let target = state.children.get(index).ok_or_else(geul_bad_shape_edit)?;
++        if !target.can_move || target.id != expected_id || target.inst_id != expected_inst_id
++            || x < 0 || y < 0
++            || i64::from(x) + i64::from(target.width) > i64::from(state.width)
++            || i64::from(y) + i64::from(target.height) > i64::from(state.height)
++            || (x == target.x && y == target.y)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++        {
++            let sa = child.shape_attr_mut();
++            sa.offset_x = x;
++            sa.offset_y = y;
++            sa.render_tx = f64::from(x);
++            sa.render_ty = f64::from(y);
++            sa.raw_rendering.clear();
++        }
++        let common = child.common_mut();
++        common.horizontal_offset = x as u32;
++        common.vertical_offset = y as u32;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    pub fn resize_group_child(
++        &mut self,
++        sec: usize,
++        para: usize,
++        ctrl: usize,
++        index: usize,
++        expected_id: u32,
++        expected_inst_id: u32,
++        width: i32,
++        height: i32,
++    ) -> Result<(), HwpError> {
++        let state = self.inspect_editable_group_children(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let target = state.children.get(index).ok_or_else(geul_bad_shape_edit)?;
++        if !target.can_resize || target.id != expected_id || target.inst_id != expected_inst_id
++            || width < 1 || height < 1
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let new_w = width as u32;
++        let new_h = height as u32;
++        if i64::from(target.x) + i64::from(new_w) > i64::from(state.width)
++            || i64::from(target.y) + i64::from(new_h) > i64::from(state.height)
++            || (new_w == target.width && new_h == target.height)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++        {
++            let sa = child.shape_attr_mut();
++            sa.original_width = new_w;
++            sa.original_height = new_h;
++            sa.current_width = new_w;
++            sa.current_height = new_h;
++            sa.original_width_was_zero = false;
++            sa.original_height_was_zero = false;
++            sa.current_width_was_zero = false;
++            sa.current_height_was_zero = false;
++            sa.rotation_center = crate::model::Point { x: width / 2, y: height / 2 };
++            sa.render_sx = 1.0;
++            sa.render_sy = 1.0;
++            sa.render_b = 0.0;
++            sa.render_c = 0.0;
++            sa.raw_rendering.clear();
++        }
++        {
++            let common = child.common_mut();
++            common.width = new_w;
++            common.height = new_h;
++        }
++        match child {
++            ShapeObject::Rectangle(rect) => {
++                rect.x_coords = [0, width, width, 0];
++                rect.y_coords = [0, 0, height, height];
++            }
++            ShapeObject::Ellipse(ellipse) => {
++                let cx = width / 2;
++                let cy = height / 2;
++                ellipse.center = crate::model::Point { x: cx, y: cy };
++                ellipse.axis1 = crate::model::Point { x: width, y: cy };
++                ellipse.axis2 = crate::model::Point { x: cx, y: height };
++                let p = crate::model::Point { x: width, y: cy };
++                ellipse.start1 = p;
++                ellipse.end1 = p;
++                ellipse.start2 = p;
++                ellipse.end2 = p;
++            }
++            _ => return Err(geul_bad_shape_edit()),
++        }
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    fn inspect_editable_group_children(&self, sec: usize, para: usize, ctrl: usize) -> Option<GeulEditableGroupChildren> {
++        use crate::parser::FileFormat;
++        if self.source_format != FileFormat::Hwpx {
++            return None;
++        }
++        let ShapeObject::Group(group) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        if group.caption.is_some() || group.common.size_protect || group.shape_attr.group_level != 0
++            || group.children.is_empty() || group.children.len() > 128
++            || !geul_flat_hwpx_identity(&group.shape_attr, true)
++        {
++            return None;
++        }
++        let (gw, gh) = geul_exact_hwpx_size(&group.common, &group.shape_attr)?;
++        let mut seen = std::collections::HashSet::with_capacity(group.children.len());
++        let mut children = Vec::with_capacity(group.children.len());
++        for (index, child) in group.children.iter().enumerate() {
++            let state = geul_group_child_state(index, child, gw, gh)?;
++            if !seen.insert((state.id, state.inst_id)) {
++                return None;
++            }
++            children.push(state);
++        }
++        if !children.iter().any(|c| c.can_move || c.can_resize) {
++            return None;
++        }
++        Some(GeulEditableGroupChildren {
++            parent_id: group.common.instance_id,
++            width: gw,
++            height: gh,
++            children,
++        })
++    }
++
+     /// The editor merges only neighboring, ordinary paragraphs that share
+     /// their exact format definitions. Refuse invisible structure which the
+     /// text/font-run query cannot observe.
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4734,6 +4734,62 @@
+             .map_err(|e| e.into())
+     }
+ 
++    #[wasm_bindgen(js_name = getEditableGroupChildren)]
++    pub fn get_editable_group_children(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.editable_group_children(sec as usize, para as usize, ctrl as usize)
++            .unwrap_or(serde_json::Value::Null).to_string()
++    }
++
++    #[wasm_bindgen(js_name = moveGroupChild)]
++    pub fn move_group_child_wasm(
++        &mut self,
++        sec: u32,
++        para: u32,
++        ctrl: u32,
++        index: u32,
++        expected_id: u32,
++        expected_inst_id: u32,
++        x: i32,
++        y: i32,
++    ) -> Result<(), JsValue> {
++        self.move_group_child(
++            sec as usize,
++            para as usize,
++            ctrl as usize,
++            index as usize,
++            expected_id,
++            expected_inst_id,
++            x,
++            y,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = resizeGroupChild)]
++    pub fn resize_group_child_wasm(
++        &mut self,
++        sec: u32,
++        para: u32,
++        ctrl: u32,
++        index: u32,
++        expected_id: u32,
++        expected_inst_id: u32,
++        width: i32,
++        height: i32,
++    ) -> Result<(), JsValue> {
++        self.resize_group_child(
++            sec as usize,
++            para as usize,
++            ctrl as usize,
++            index as usize,
++            expected_id,
++            expected_inst_id,
++            width,
++            height,
++        )
++        .map_err(|e| e.into())
++    }
++
+     /// Shape(글상자) 속성을 변경한다.
+     ///
+     /// 반환: JSON `{"ok":true}`

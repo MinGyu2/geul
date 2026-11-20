@@ -24,7 +24,9 @@ def inspect(path):
         && c.stableIndex.length === 3).map(c => {
           const at=[c.secIdx,c.paraIdx,c.controlIdx];
           return {...c,page:i,props:JSON.parse(doc.getShapeProperties(...at)),
-            path:JSON.parse(doc.getEditableShapePath(...at)),children:JSON.parse(doc.getEditableGroupFills(...at))};
+            path:JSON.parse(doc.getEditableShapePath(...at)),
+            children:JSON.parse(doc.getEditableGroupFills(...at)),
+            groupChildren:JSON.parse(doc.getEditableGroupChildren(...at))};
         }));
       console.log(JSON.stringify({frames,body,controls}));
     """)
@@ -339,12 +341,131 @@ def group_case(acc, row, fixtures, out):
     h.require(choose() == chosen, "published group child did not reopen in app")
 
 
+def group_child_edit_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-group-original.hwpx"
+    before = row["before"] = inspect(fixture)
+    target = next(frame for frame in before["frames"] if frame["groupChildren"])
+    gc = target["groupChildren"]
+    rect0, ell0 = gc["children"]
+    path = h.begin(acc, row, fixture, out, "a-p4-group-child-edited.hwpx")
+    CHILD = ".object-group-child"
+    HANDLE = ".object-group-child-handle"
+    CCOORDS = ".object-group-child-coordinates"
+
+    def enter_mode(child_idx=0):
+        h.select_object(acc, target, "group")
+        acc.dom_click(".object-group-child-mode")
+        acc.wait("return document.querySelectorAll(arguments[0]).length===2", CHILD)
+        h.require(acc.d.js("return document.querySelectorAll('[data-testid^=object-handle-]').length") == 0,
+                  "outer resize handles remained active in child edit mode")
+        acc.dom_click(f"{CHILD}[data-index='{child_idx}']")
+
+    def ui_vals():
+        return acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", CCOORDS)
+
+    enter_mode(0)
+    h.require(ui_vals() == [rect0["x"], rect0["y"], rect0["width"], rect0["height"]], "initial rect child coords mismatch")
+    handles = acc.d.js("return [...document.querySelectorAll(arguments[0])].map(e=>e.dataset.handle)", HANDLE)
+    h.require(handles == ["e", "se", "s"], "expected left/top-anchored child resize handles only", handles)
+
+    # Trusted pointer drag to move child 0 rectangle
+    acc.d.js("""
+      window.p46Move=[];
+      for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, e => {
+        if (e.target.closest?.('.object-group-child')) window.p46Move.push({type, x:e.clientX, y:e.clientY, trusted:e.isTrusted});
+      }, true);
+    """)
+    rx0, ry0 = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2];",
+                        f"{CHILD}[data-index='0']")
+    frame = h.frame(acc)
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (rx0*sx, ry0*sy), ((rx0+10)*sx, (ry0+7)*sy))
+    h.revision(acc, "hwpx", 1)
+    mev = row["movePointer"] = acc.d.js("return window.p46Move")
+    h.require(len(mev) == 2 and all(e["trusted"] for e in mev), "missing trusted child move pointer events", mev)
+    moved_rx = min(gc["width"] - rect0["width"], max(0, round(rect0["x"] + (mev[1]["x"] - mev[0]["x"]) * gc["width"] / frame["width"])))
+    moved_ry = min(gc["height"] - rect0["height"], max(0, round(rect0["y"] + (mev[1]["y"] - mev[0]["y"]) * gc["height"] / frame["height"])))
+    h.require(ui_vals() == [moved_rx, moved_ry, rect0["width"], rect0["height"]], "pointer move mismatch", ui_vals())
+
+    # Undo & Redo
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    enter_mode(0)
+    h.require(ui_vals() == [rect0["x"], rect0["y"], rect0["width"], rect0["height"]], "Undo did not restore rect pos")
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    enter_mode(0)
+    h.require(ui_vals() == [moved_rx, moved_ry, rect0["width"], rect0["height"]], "Redo did not restore rect pos")
+
+    # Trusted pointer drag on SE handle to shrink rectangle (left/top anchored)
+    acc.d.js("""
+      window.p46Resize=[];
+      for (const type of ['pointerdown', 'pointerup']) document.addEventListener(type, e => {
+        if (e.target.closest?.('.object-group-child-handle')) window.p46Resize.push({type, x:e.clientX, y:e.clientY, trusted:e.isTrusted});
+      }, true);
+    """)
+    hx0, hy0 = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2];",
+                        f"{HANDLE}[data-handle='se']")
+    h.p4.rhwp_poc.drag(acc.d, (hx0*sx, hy0*sy), ((hx0-9)*sx, (hy0-6)*sy))
+    h.revision(acc, "hwpx", 4)
+    rev_ev = row["resizePointer"] = acc.d.js("return window.p46Resize")
+    h.require(len(rev_ev) == 2 and all(e["trusted"] for e in rev_ev), "missing trusted resize handle events", rev_ev)
+    resized_rw = min(gc["width"] - moved_rx, max(1, round(rect0["width"] + (rev_ev[1]["x"] - rev_ev[0]["x"]) * gc["width"] / frame["width"])))
+    resized_rh = min(gc["height"] - moved_ry, max(1, round(rect0["height"] + (rev_ev[1]["y"] - rev_ev[0]["y"]) * gc["height"] / frame["height"])))
+    h.require(ui_vals() == [moved_rx, moved_ry, resized_rw, resized_rh], "pointer resize mismatch", ui_vals())
+
+    # Precision move + resize on child 1 ellipse
+    acc.dom_click(f"{CHILD}[data-index='1']")
+    h.require(ui_vals() == [ell0["x"], ell0["y"], ell0["width"], ell0["height"]], "initial ellipse coords mismatch")
+    h.p6.gso.replace(acc, f"{CCOORDS} label:nth-of-type(1) input", 5200)
+    h.p6.gso.replace(acc, f"{CCOORDS} label:nth-of-type(2) input", 200)
+    acc.dom_click(".object-group-child-apply-move")
+    h.revision(acc, "hwpx", 5)
+    h.p6.gso.replace(acc, f"{CCOORDS} label:nth-of-type(3) input", 4600)
+    h.p6.gso.replace(acc, f"{CCOORDS} label:nth-of-type(4) input", 3200)
+    acc.dom_click(".object-group-child-apply-resize")
+    h.revision(acc, "hwpx", 6)
+    h.require(ui_vals() == [5200, 200, 4600, 3200], "precision edit mismatch", ui_vals())
+
+    acc.key("Escape")
+    h.require(not acc.d.exists(CHILD), "Escape did not exit group child editing")
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = inspect(path)
+    want_gc = {
+        **gc,
+        "children": [
+            {**rect0, "x": moved_rx, "y": moved_ry, "width": resized_rw, "height": resized_rh},
+            {**ell0, "x": 5200, "y": 200, "width": 4600, "height": 3200},
+        ],
+    }
+    want = {**target, "groupChildren": want_gc}
+    h.require(after == {**before, "frames": [want if item == target else item for item in before["frames"]]},
+              "published group model differs from expected", after)
+    old, new = section_pair(fixture, path)
+    old_c = old.find(".//{*}container")
+    new_c = new.find(".//{*}container")
+    h.require(old_c is not None and new_c is not None and old_c.attrib == new_c.attrib, "parent container attributes changed")
+    new_r, new_e = new_c.find("{*}rect"), new_c.find("{*}ellipse")
+    h.require(new_r.find("{*}offset").attrib == {"x": str(moved_rx), "y": str(moved_ry)}, "saved rect offset differs")
+    h.require(new_r.find("{*}orgSz").attrib == {"width": str(resized_rw), "height": str(resized_rh)}, "saved rect orgSz differs")
+    h.require(new_e.find("{*}offset").attrib == {"x": "5200", "y": "200"}, "saved ellipse offset differs")
+    h.require(new_e.find("{*}orgSz").attrib == {"width": "4600", "height": "3200"}, "saved ellipse orgSz differs")
+
+    h.reopen(acc, path, row)
+    enter_mode(0)
+    h.require(ui_vals() == [moved_rx, moved_ry, resized_rw, resized_rh], "reopened rect differs")
+    acc.dom_click(f"{CHILD}[data-index='1']")
+    h.require(ui_vals() == [5200, 200, 4600, 3200], "reopened ellipse differs")
+
+
 h.CASES = {
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
     "P4.3": group_case,
     "P4.4": polygon_vertices_case,
     "P4.5": curve_terminal_line_case,
+    "P4.6": group_child_edit_case,
 }
 
 if __name__ == "__main__":
