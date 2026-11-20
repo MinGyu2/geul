@@ -68,6 +68,7 @@ export interface RhwpGroupInspection {
   movable: boolean;
   hasCaption: boolean;
   sizeProtected: boolean;
+  groupFlatDeletable: boolean;
 }
 
 /** Read an HWPX/HWP body group container (`"그리기"`) through RHWP `getShapeProperties`. */
@@ -92,6 +93,7 @@ export function inspectRhwpGroup(doc: Pick<RhwpDocument, "getShapeProperties">, 
       movable: !treatAsChar && v.horzAlign === "Left" && v.vertAlign === "Top",
       hasCaption: v.hasCaption === true,
       sizeProtected: v.sizeProtect !== false,
+      groupFlatDeletable: v.groupFlatDeletable === true,
     };
   } catch {
     return undefined;

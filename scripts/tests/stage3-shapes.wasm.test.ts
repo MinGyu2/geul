@@ -534,11 +534,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(sel.operations).toContain("move");
       expect(sel.operations).toContain("resize");
       expect(sel.operations).toContain("wrap");
-      if (format === "hwpx") {
-        expect(sel.operations).toContain("delete");
-      } else {
-        expect(sel.operations).not.toContain("delete");
-      }
+      expect(sel.operations).toContain("delete");
 
       const before = props(doc, groupControl);
       expect(edit({ kind: "bounds", x: sel.frame.x, y: sel.frame.y - 10, width: 110, height: 60 })).toBe(false);
@@ -601,6 +597,144 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         expect(edit({ kind: "bounds", width: 120, height: 60 })).toBe(false);
       }
     } finally { editor.dispose(); }
+  });
+
+  it("B2.2: safely deletes flat HWP5 group containers with shared BinData preservation and refuses unsafe groups", async () => {
+    const samplePng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC", "base64");
+    const buildFlatGroupFixture = (opts?: { captioned?: boolean; nested?: boolean; locked?: boolean }) => {
+      const fixture = new engine.HwpDocument(source("hwp")) as RhwpDocument & {
+        groupShapes(json: string): string;
+        setControlLock(para: number, index: number, locked: boolean): string;
+      };
+      try {
+        // Surviving standalone picture sharing the same PNG image bytes/BinData.
+        const survivorPic = JSON.parse(fixture.insertPicture!(0, 0, 2, "[]", samplePng, 3600, 2400, 10, 10, "png", "survivor-pic"));
+        expect(survivorPic).toMatchObject({ ok: true });
+        expect(JSON.parse(fixture.setPictureProperties!(0, 0, survivorPic.controlIdx, JSON.stringify({
+          textWrap: "Square", horzOffset: 500, vertOffset: 6500,
+        })))).toMatchObject({ ok: true });
+
+        // Children for flat group: rectangle + picture sharing samplePng.
+        const rect = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 4, shapeType: "rectangle",
+          width: 4800, height: 3200, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+        })));
+        const childPic = JSON.parse(fixture.insertPicture!(0, 0, 5, "[]", samplePng, 3200, 2400, 10, 10, "png", "child-pic"));
+        expect(childPic).toMatchObject({ ok: true });
+        expect(JSON.parse(fixture.setPictureProperties!(0, 0, childPic.controlIdx, JSON.stringify({
+          textWrap: "Square", horzOffset: 5500, vertOffset: 400,
+        })))).toMatchObject({ ok: true });
+
+        const grouped = JSON.parse(fixture.groupShapes(JSON.stringify({
+          sectionIdx: 0,
+          targets: [{ paraIdx: 0, controlIdx: rect.controlIdx }, { paraIdx: 0, controlIdx: childPic.controlIdx }],
+        })));
+        expect(grouped).toMatchObject({ ok: true });
+        let targetCtrl = grouped.controlIdx as number;
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, targetCtrl, '{"textWrap":"Square","horzOffset":500,"vertOffset":500}'))).toMatchObject({ ok: true });
+
+        if (opts?.nested) {
+          const extra = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+            sectionIdx: 0, paraIdx: 0, charOffset: 6, shapeType: "ellipse",
+            width: 3000, height: 2000, treatAsChar: false, textWrap: "Square", horzOffset: 1000, vertOffset: 1000,
+          })));
+          const nested = JSON.parse(fixture.groupShapes(JSON.stringify({
+            sectionIdx: 0,
+            targets: [{ paraIdx: 0, controlIdx: targetCtrl }, { paraIdx: 0, controlIdx: extra.controlIdx }],
+          })));
+          expect(nested).toMatchObject({ ok: true });
+          targetCtrl = nested.controlIdx;
+        }
+        if (opts?.captioned) {
+          expect(JSON.parse(fixture.setShapeProperties!(0, 0, targetCtrl, '{"hasCaption":true,"captionDirection":"Bottom"}'))).toMatchObject({ ok: true });
+        }
+        if (opts?.locked) {
+          expect(JSON.parse(fixture.setControlLock(0, targetCtrl, true))).toMatchObject({ ok: true });
+        }
+        return fixture.exportHwp();
+      } finally { fixture.free(); }
+    };
+
+    // 1. Positive: flat HWP5 group (rect + picture) deleted cleanly, Undo/Redo works, surviving picture preserved.
+    const bytes = buildFlatGroupFixture();
+    const { editor, doc, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+
+      const groupFrame = () => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group");
+      const picFrames = () => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "image");
+      expect(groupFrame()).toBeDefined();
+      expect(picFrames()).toHaveLength(1);
+      const frame = groupFrame()!;
+      expect(editor.pointAt(0, frame.x + frame.w / 2, frame.y + frame.h / 2, false, false, true)).toBe(true);
+      const sel = editor.objectSelection!;
+      expect(sel.kind).toBe("group");
+      expect(sel.operations).toContain("delete");
+
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm();
+      expect(groupFrame()).toBeUndefined();
+      expect(picFrames()).toHaveLength(1);
+      expect(editor.objectSelection).toBeNull();
+
+      // Undo restores group & children; Redo deletes again cleanly.
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(groupFrame()).toBeDefined();
+      expect(picFrames()).toHaveLength(1);
+
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(groupFrame()).toBeUndefined();
+      expect(picFrames()).toHaveLength(1);
+
+      const exported = doc.exportHwpWithReport();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        editor.save();
+        await flush();
+        take("save").reply(ok({ durable: true }));
+        await flush();
+
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument & {
+          getControlImageData(section: number, para: number, cellPathJson: string, control: number): Uint8Array;
+        };
+        try {
+          const rGroups = (JSON.parse(reopened.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "group");
+          const rPics = (JSON.parse(reopened.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "image");
+          expect(rGroups).toHaveLength(0);
+          expect(rPics).toHaveLength(1);
+          expect(Buffer.from(reopened.getControlImageData(0, 0, "[]", rPics[0]!.controlIdx))).toEqual(samplePng);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "b2-2-group-delete-original.hwp"), bytes);
+          writeFileSync(resolve(out, "b2-2-group-delete-edited.hwp"), output);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+
+    // 2. Negative refusals: nested group, captioned group, and locked group cannot be deleted.
+    for (const [label, opts] of [
+      ["nested", { nested: true }],
+      ["captioned", { captioned: true }],
+      ["locked", { locked: true }],
+    ] as const) {
+      const unsafeBytes = buildFlatGroupFixture(opts);
+      const { editor: uEd, doc: uDoc, edit: uEdit } = await setup("hwp", unsafeBytes);
+      try {
+        const gf = (JSON.parse(uDoc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group");
+        if (gf) {
+          uEd.pointAt(0, gf.x + gf.w / 2, gf.y + gf.h / 2, false, false, true);
+          expect(uEd.objectSelection?.operations ?? [], `${label} group must refuse delete`).not.toContain("delete");
+        }
+        expect(uEdit({ kind: "delete" }), `${label} group delete edit must fail`).toBe(false);
+      } finally { uEd.dispose(); }
+    }
   });
 
   it("reorders existing HWP basic shapes without moving their anchors", async () => {

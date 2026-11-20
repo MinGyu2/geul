@@ -1779,7 +1779,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canPic = Boolean(inspected && this.history && canEditGso && picUnlocked);
           const canResize = canPic && inspected!.simpleInline && !!this.doc.setPictureProperties;
           const canMove = canPic && !!inspected!.movable && !!this.doc.setPictureProperties;
-          const canDelete = canPic && !!this.doc.deletePictureControl && (format === "hwpx" || inspected!.deletable);
+          const canDelete = canPic && !!this.doc.deletePictureControl
+            && (format === "hwpx" || inspected!.deletable || this.ownsHwpGsoCaption(address, false));
           const canFormat = canPic && !!this.doc.setPictureProperties && inspected!.plain;
           const operations: MutatingObjectOperation[] = cellPicture
             ? (format === "hwpx"
@@ -1798,7 +1799,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
-              ...(this.doc.deleteShapeControl && !(format === "hwp" && shape.hasCaption) ? ["delete" as const] : []), "wrap",
+              ...(this.doc.deleteShapeControl
+                && (format !== "hwp" || !shape.hasCaption || this.ownsHwpGsoCaption(shapeAddress, true))
+                ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
               ...(this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
                 ? ["zOrder" as const] : []));
@@ -1811,10 +1814,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? group.raw.textWrap === "Square" ? "square"
               : group.raw.textWrap === "TopAndBottom" ? "topAndBottom" : undefined
             : undefined;
+          const groupDeletable = !!this.doc.deleteShapeControl
+            && (format === "hwpx" || (canEditHwp && !!group?.groupFlatDeletable));
           if (group) {
             operations.push(...(group.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !group.sizeProtected ? ["resize" as const] : []),
-              ...(format === "hwpx" && this.doc.deleteShapeControl ? ["delete" as const] : []), "wrap");
+              ...(groupDeletable ? ["delete" as const] : []), "wrap");
           }
           const canEditChart = graphic?.kind === "chart" && this.history && this.doc.setChartData
             && (format === "hwpx" || (canEditHwp && this.unlockedBodyGso(hit.bodyEmbedded) === "OLE"));
@@ -4453,6 +4458,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       : kind === "그림";
   }
 
+  private ownsHwpGsoCaption(address: readonly [number, number, number] | undefined, isShape: boolean): boolean {
+    if (!address || address[0] !== 0 || !this.text) return false;
+    return this.text.ownsPictureCaption({
+      section: address[0],
+      paragraph: address[1],
+      offset: 0,
+      cell: { parentParagraph: address[1], control: address[2], cell: isShape ? 65534 : 0, cellParagraph: 0, caption: true },
+    });
+  }
+
   /** Existing floating basic shapes in the same drawing plane of Section0. */
   private hwpShapeLayers(address: readonly [number, number, number] | undefined) {
     const doc = this.doc;
@@ -4576,7 +4591,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     };
     let apply: () => void;
     if (edit.kind === "delete") {
-      if (!doc.deletePictureControl || (format === "hwp" && !before.deletable)) return false;
+      if (!doc.deletePictureControl || (format === "hwp" && !before.deletable && !this.ownsHwpGsoCaption(address, false))) return false;
       apply = () => {
         const result = JSON.parse(doc.deletePictureControl!(...address)) as { ok?: boolean };
         if (result.ok !== true) throw new Error("picture deletion refused");
@@ -4633,9 +4648,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const savedSelection = this.selectedObject;
     this.selectedObject = null;
     const caret = this.caret, anchor = this.anchor;
-    // A caret in the edited paragraph may sit after the removed control: return it to the paragraph start.
-    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
-      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    // A caret in the edited paragraph (or inside a deleted control's caption/cell) returns to the paragraph start.
+    const owned = (at: DocPosition) => edit.kind === "delete" && at.section === address[0]
+      && ((!at.cell && at.paragraph === address[1]) || at.cell?.parentParagraph === address[1])
+      ? { section: at.section, paragraph: address[1], offset: 0 } : at;
     const accepted = this.mutate(() => {
       apply();
       return { caret: owned(caret), anchor: owned(anchor) };
@@ -4665,7 +4681,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (format !== "hwpx" || !doc.deleteShapeControl) return false;
+        if (!doc.deleteShapeControl || (format !== "hwpx" && (format !== "hwp" || !before.groupFlatDeletable))) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("group deletion refused");
@@ -4711,8 +4727,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const savedSelection = this.selectedObject;
     this.selectedObject = null;
     const caret = this.caret, anchor = this.anchor;
-    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
-      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const owned = (at: DocPosition) => edit.kind === "delete" && at.section === address[0]
+      && ((!at.cell && at.paragraph === address[1]) || at.cell?.parentParagraph === address[1])
+      ? { section: at.section, paragraph: address[1], offset: 0 } : at;
     const apply = operation;
     const accepted = this.mutate(() => {
       apply();
@@ -4804,7 +4821,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (!doc.deleteShapeControl || (format === "hwp" && before.hasCaption)) return false;
+        if (!doc.deleteShapeControl || (format === "hwp" && before.hasCaption && !this.ownsHwpGsoCaption(address, true))) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("shape deletion refused");
@@ -4903,8 +4920,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const savedSelection = this.selectedObject;
     this.selectedObject = null;
     const caret = this.caret, anchor = this.anchor;
-    const owned = (at: DocPosition) => edit.kind === "delete" && !at.cell && at.section === address[0] && at.paragraph === address[1]
-      ? { section: at.section, paragraph: at.paragraph, offset: 0 } : at;
+    const owned = (at: DocPosition) => edit.kind === "delete" && at.section === address[0]
+      && ((!at.cell && at.paragraph === address[1]) || at.cell?.parentParagraph === address[1])
+      ? { section: at.section, paragraph: address[1], offset: 0 } : at;
     const apply = operation;
     const accepted = this.mutate(() => {
       apply();

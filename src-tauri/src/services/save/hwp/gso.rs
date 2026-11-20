@@ -650,10 +650,125 @@ pub(super) fn prove_cell_picture_resize(
     prove_evolved_gso(&old.map(normalize), &new.map(normalize), defs, defs)
 }
 
-/// Only top-level, unlocked, uncaptioned, non-grouped, opaque-free HWP5 GSO pictures
-/// (`b"cip$"`) and basic shapes (`b"nil$"`, `b"cer$"`, `b"lle$"`, optionally with a plain
-/// TextBox) may be deleted. Captions, locked objects, groups, charts, OLE, nested/unknown
-/// controls, and opaque records (`CTRL_DATA`, range tags) remain strictly preserved.
+/// Validated HWP5 `SHAPE_COMPONENT` rendering-matrix end offset (`r_at + 2 + (1 + 2 * cnt) * 48`).
+fn shape_rendering_end(sc: &[u8], id_off: usize) -> Option<usize> {
+    let r_at = id_off.checked_add(42)?;
+    let cnt = word(sc, r_at).ok()?;
+    let r_len = 2usize.checked_add(1usize.checked_add(2 * cnt)?.checked_mul(48)?)?;
+    let r_end = r_at.checked_add(r_len)?;
+    (sc.len() >= r_end).then_some(r_end)
+}
+
+/// Validates a flat, unlocked, uncaptioned HWP5 `SC_CONTAINER` child list for safe deletion:
+/// no nested containers (`noc$`), no OLE/Chart/Arc/unknown children, no `CTRL_HEADER`,
+/// optional plain level-4 TextBox, valid leaf shape/picture tags, and valid `BinData` IDs.
+fn deletable_flat_group(old: &[Record<'_>], id_off: usize, orig_defs: &Defs<'_>) -> bool {
+    let sc = old[1].2;
+    let Some(r_end) = shape_rendering_end(sc, id_off) else {
+        return false;
+    };
+    let Ok(child_count) = word(sc, r_end) else {
+        return false;
+    };
+    let Some(expected_tail) = child_count.checked_mul(4).and_then(|n| n.checked_add(6)) else {
+        return false;
+    };
+    if child_count == 0 || sc.len() != r_end + expected_tail {
+        return false;
+    }
+    let body = &old[2..];
+    if body.is_empty()
+        || body[0].0 != TAG_SHAPE_COMPONENT
+        || body[0].1 != 3
+        || body.iter().any(|r| {
+            r.1 < 3
+                || !matches!(r.0, 66..=85)
+                || r.0 == TAG_CTRL_HEADER
+                || r.0 == 70
+                || r.0 == 81
+                || r.0 == 84
+        })
+    {
+        return false;
+    }
+    let mut starts: Vec<usize> = body
+        .iter()
+        .enumerate()
+        .filter_map(|(i, r)| (r.0 == TAG_SHAPE_COMPONENT && r.1 == 3).then_some(i))
+        .collect();
+    if starts.len() != child_count {
+        return false;
+    }
+    starts.push(body.len());
+    let orig_bins = entries(orig_defs, 18).len();
+    for (idx, w) in starts.windows(2).enumerate() {
+        let child = &body[w[0]..w[1]];
+        if child.len() < 2 {
+            return false;
+        }
+        let child_sc = child[0].2;
+        if child_sc.len() < 48 {
+            return false;
+        }
+        let two = child_sc.len() >= 8 && child_sc[4..8] == child_sc[..4];
+        let child_id_off = if two { 8 } else { 4 };
+        if child_sc.len() < child_id_off + 44 {
+            return false;
+        }
+        let expected_id = &sc[r_end + 2 + idx * 4..r_end + 6 + idx * 4];
+        if &child_sc[..4] != expected_id
+            || word(child_sc, child_id_off + 8)
+                .ok()
+                .is_none_or(|gl| gl < 1)
+        {
+            return false;
+        }
+        let Ok(child_ctrl): Result<&[u8; 4], _> = child_sc[..4].try_into() else {
+            return false;
+        };
+        let Some(leaf_tag) = expected_leaf_tag(child_ctrl) else {
+            return false;
+        };
+        if child_ctrl == SC_PICTURE {
+            if child.len() != 2
+                || child[1].0 != TAG_PICTURE
+                || child[1].1 != 4
+                || child[1].2.len() < 73
+                || word(child[1].2, 71)
+                    .ok()
+                    .is_none_or(|id| id == 0 || id > orig_bins)
+            {
+                return false;
+            }
+        } else {
+            let last = child[child.len() - 1];
+            if last.0 != leaf_tag || last.1 != 4 {
+                return false;
+            }
+            let mid = &child[1..child.len() - 1];
+            if !mid.is_empty()
+                && !(mid[0].0 == TAG_LIST_HEADER
+                    && mid[0].1 == 4
+                    && mid[0].2.len() == 33
+                    && mid[0].2[20..] == [0; 13]
+                    && mid.get(1).is_some_and(|r| r.0 == 66 && r.1 == 5)
+                    && mid[1..].iter().all(|r| {
+                        matches!((r.0, r.1), (66, 5) | (67..=70, 6)) && (r.0 != 70 || r.2.is_empty())
+                    }))
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Only top-level, unlocked, opaque-free HWP5 GSO pictures (`b"cip$"`) and basic shapes
+/// (`b"nil$"`, `b"cer$"`, `b"lle$"`, `b"lop$"`, `b"ruc$"`) — optionally with a
+/// plain TextBox (when uncaptioned) or a proven plain caption (`1..=64` paragraphs, at most one
+/// `atno`), plus flat uncaptioned `SC_CONTAINER` (`b"noc$"`) leaf groups — may be deleted.
+/// Locked objects, TextBox+caption, nested/captioned/OLE/Chart groups,
+/// nested/unknown controls, and opaque records (`CTRL_DATA`, range tags) remain strictly preserved.
 pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
     if old.len() < 3 || old[0].1 != 1 {
         return false;
@@ -667,26 +782,63 @@ pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
     let Ok(attr) = dword(first.2, 4).map(|v| v as u32) else {
         return false;
     };
-    if (attr & (ATTR_LOCKED | ATTR_CAPTION)) != 0 {
+    if (attr & ATTR_LOCKED) != 0 {
         return false;
     }
+    let has_caption = (attr & ATTR_CAPTION) != 0;
     let Some((ctrl_id, id_off, sc_idx)) = shape_ctrl_id(old) else {
         return false;
     };
+    if word(old[sc_idx].2, id_off + 8) != Ok(0) {
+        return false;
+    }
+    if ctrl_id == SC_CONTAINER {
+        return !has_caption && sc_idx == 1 && deletable_flat_group(old, id_off, orig_defs);
+    }
     let Some(leaf_tag) = expected_leaf_tag(ctrl_id) else {
         return false;
     };
-    if sc_idx != 1 || word(old[sc_idx].2, id_off + 8) != Ok(0) {
+    if has_caption {
+        if sc_idx < 3
+            || old[1].0 != TAG_LIST_HEADER
+            || old[1].1 != 2
+            || old[1].2.len() != 30
+            || old[2].0 != 66
+            || old[2].1 != 2
+        {
+            return false;
+        }
+        let Ok(cap_count) = word(old[1].2, 0) else {
+            return false;
+        };
+        if !(1..=64).contains(&cap_count)
+            || super::insertions::prove_caption_paragraphs(
+                &old[2..sc_idx],
+                &old[2..sc_idx],
+                cap_count,
+                cap_count,
+                orig_defs,
+                orig_defs,
+            )
+            .is_err()
+        {
+            return false;
+        }
+    } else if sc_idx != 1 {
         return false;
     }
-    if old
+    if old[sc_idx..]
         .iter()
         .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()))
     {
         return false;
     }
     if ctrl_id == SC_PICTURE {
-        if old.len() != 3 || old[2].0 != TAG_PICTURE || old[2].1 != 3 || old[2].2.len() < 73 {
+        if old.len() != sc_idx + 2
+            || old[sc_idx + 1].0 != TAG_PICTURE
+            || old[sc_idx + 1].1 != 3
+            || old[sc_idx + 1].2.len() < 73
+        {
             return false;
         }
         let orig_bins = entries(orig_defs, 18).len();
@@ -696,9 +848,12 @@ pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
     if last.0 != leaf_tag || last.1 != 3 {
         return false;
     }
-    let mid = &old[2..old.len() - 1];
+    let mid = &old[sc_idx + 1..old.len() - 1];
     if mid.is_empty() {
         return true;
+    }
+    if has_caption {
+        return false;
     }
     mid[0].0 == TAG_LIST_HEADER
         && mid[0].1 == 3
@@ -3326,11 +3481,11 @@ mod tests {
         let bad_r = build(16000, 10000, [8000, 5000], &[0u8; 2 + 3 * 48], &child_leaf);
         assert!(!check_with_preview_refresh(&orig, &bad_r).is_empty());
 
-        // Negative 3: HWP5 container deletion stays rejected (`deletable_gso` does not admit `SC_CONTAINER`).
+        // Flat unlocked uncaptioned HWP5 container deletion succeeds cleanly.
         let deleted_sec = wrap_section(vec![]);
         let deleted_refs: Vec<_> = deleted_sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
         let deleted = build_hwp(&di_ref, &deleted_refs, b"\x89PNG\r\n\x1a\n123");
-        assert!(!check_with_preview_refresh(&orig, &deleted).is_empty());
+        assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
     }
 
     #[test]
@@ -3706,5 +3861,257 @@ mod tests {
             let edited = read(edit_name);
             assert_eq!(check_with_preview_refresh(&orig, &edited), vec![], "{edit_name}");
         }
+    }
+
+    #[test]
+    fn captioned_hwp_gso_deletion_preserves_siblings_and_refuses_unsafe_captions() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let cap_para = |text: &str, with_atno: bool, dup_atno: bool| -> Vec<(u16, u16, Vec<u8>)> {
+            let mut raw_text = Vec::new();
+            for cu in text.encode_utf16() {
+                raw_text.extend_from_slice(&cu.to_le_bytes());
+            }
+            if with_atno {
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+                raw_text.extend_from_slice(b"onta");
+                raw_text.extend_from_slice(&[0u8; 8]);
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+            }
+            if dup_atno {
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+                raw_text.extend_from_slice(b"onta");
+                raw_text.extend_from_slice(&[0u8; 8]);
+                raw_text.extend_from_slice(&18u16.to_le_bytes());
+            }
+            raw_text.extend_from_slice(b"\r\0");
+            let cc = ((raw_text.len() / 2) as u32) | 0x8000_0000;
+            let mask: u32 = if with_atno || dup_atno { 1 << 18 } else { 0 };
+            let mut hdr = vec![0u8; 22];
+            hdr[0..4].copy_from_slice(&cc.to_le_bytes());
+            hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+            hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+            hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+            let cs = vec![0u8; 8];
+            let mut ls = vec![0u8; 36];
+            ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
+            ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
+            ls[12..16].copy_from_slice(&850i32.to_le_bytes());
+            let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
+            if with_atno {
+                let mut atno = vec![0u8; 16];
+                atno[0..4].copy_from_slice(b"onta");
+                out.push((71, 3, atno));
+            }
+            if dup_atno {
+                let mut atno = vec![0u8; 16];
+                atno[0..4].copy_from_slice(b"onta");
+                out.push((71, 3, atno));
+            }
+            out
+        };
+        let mut list = vec![0u8; 30];
+        list[0..2].copy_from_slice(&1u16.to_le_bytes());
+
+        let pic_obj = |id: u32, attr: u32, dup_atno: bool, extra: Option<(u16, u16, Vec<u8>)>| {
+            let mut obj = vec![
+                (71, 1, ctrl_header(id, attr, 0, 0, 4000, 3000, "", &[])),
+                (72, 2, list.clone()),
+            ];
+            obj.extend(cap_para("그림 ", true, dup_atno));
+            if let Some(ex) = extra {
+                obj.push(ex);
+            }
+            obj.push((76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)));
+            obj.push((85, 3, picture_leaf(1, [0; 4], &[])));
+            obj
+        };
+        let shape_obj = |id: u32, attr: u32, with_textbox: bool| {
+            let mut obj = vec![
+                (71, 1, ctrl_header(id, attr, 500, 500, 5000, 3000, "", &[])),
+                (72, 2, list.clone()),
+            ];
+            obj.extend(cap_para("도형 ", true, false));
+            obj.push((76, 2, shape_component_drawing(super::SC_RECT, 5000, 3000, 0, 0, 0, None, id)));
+            if with_textbox {
+                obj.push((72, 3, vec![0u8; 33]));
+                obj.push((66, 4, vec![0u8; 22]));
+                obj.push((68, 4, vec![0u8; 8]));
+                obj.push((69, 4, vec![0u8; 36]));
+            }
+            obj.push((super::TAG_RECTANGLE, 3, rect_leaf(0, 5000, 3000)));
+            obj
+        };
+        let build = |objs: Vec<Vec<(u16, u16, Vec<u8>)>>| {
+            let sec = wrap_section(objs);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        let survivor = pic_obj(102, super::ATTR_CAPTION | 1, false, None);
+        let orig = build(vec![
+            pic_obj(101, super::ATTR_CAPTION | 1, false, None),
+            shape_obj(103, super::ATTR_CAPTION, false),
+            survivor.clone(),
+        ]);
+        let deleted = build(vec![survivor]);
+        assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
+
+        // Negative 1: locked captioned picture deletion refused.
+        let locked_orig = build(vec![pic_obj(101, super::ATTR_CAPTION | super::ATTR_LOCKED | 1, false, None)]);
+        assert!(!check_with_preview_refresh(&locked_orig, &build(vec![])).is_empty());
+
+        // Negative 2: malformed caption (duplicate atno) deletion refused.
+        let dup_orig = build(vec![pic_obj(101, super::ATTR_CAPTION | 1, true, None)]);
+        assert!(!check_with_preview_refresh(&dup_orig, &build(vec![])).is_empty());
+
+        // Negative 3: unknown dependent record inside caption (e.g. CTRL_DATA tag 90) refused.
+        let unknown_orig = build(vec![pic_obj(101, super::ATTR_CAPTION | 1, false, Some((90, 3, vec![1, 2, 3])))]);
+        assert!(!check_with_preview_refresh(&unknown_orig, &build(vec![])).is_empty());
+
+        // Negative 4: TextBox+caption deletion refused.
+        let tb_cap_orig = build(vec![shape_obj(103, super::ATTR_CAPTION, true)]);
+        assert!(!check_with_preview_refresh(&tb_cap_orig, &build(vec![])).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run B2.1 WASM test with GEUL_STAGE3_OUT first"]
+    fn release_hwp_b2_1_captioned_gso_deletion() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let orig = std::fs::read(dir.join("b2-1-caption-delete-original.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("b2-1-caption-delete-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
+    }
+
+    #[test]
+    fn b2_2_flat_group_deletion_and_refusals() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let identity_render = || {
+            let mut r = vec![0u8; 2 + 3 * 48];
+            r[..2].copy_from_slice(&1u16.to_le_bytes());
+            r
+        };
+        let container_sc = |inst: u32, child_ids: &[&[u8; 4]]| {
+            let mut b = Vec::new();
+            b.extend_from_slice(super::SC_CONTAINER);
+            b.extend_from_slice(super::SC_CONTAINER);
+            b.extend_from_slice(&0i32.to_le_bytes());
+            b.extend_from_slice(&0i32.to_le_bytes());
+            b.extend_from_slice(&0u16.to_le_bytes());
+            b.extend_from_slice(&0u16.to_le_bytes());
+            b.extend_from_slice(&12000u32.to_le_bytes());
+            b.extend_from_slice(&8000u32.to_le_bytes());
+            b.extend_from_slice(&12000u32.to_le_bytes());
+            b.extend_from_slice(&8000u32.to_le_bytes());
+            b.extend_from_slice(&0u32.to_le_bytes());
+            b.extend_from_slice(&0i16.to_le_bytes());
+            b.extend_from_slice(&6000i32.to_le_bytes());
+            b.extend_from_slice(&4000i32.to_le_bytes());
+            b.extend_from_slice(&identity_render());
+            b.extend_from_slice(&(child_ids.len() as u16).to_le_bytes());
+            for id in child_ids {
+                b.extend_from_slice(*id);
+            }
+            b.extend_from_slice(&inst.to_le_bytes());
+            b
+        };
+        let child_sc = |ctrl: &[u8; 4], tail: usize| {
+            let mut b = Vec::new();
+            b.extend_from_slice(ctrl);
+            b.extend_from_slice(&0i32.to_le_bytes());
+            b.extend_from_slice(&0i32.to_le_bytes());
+            b.extend_from_slice(&1u16.to_le_bytes());
+            b.extend_from_slice(&0u16.to_le_bytes());
+            b.extend_from_slice(&4000u32.to_le_bytes());
+            b.extend_from_slice(&3000u32.to_le_bytes());
+            b.extend_from_slice(&4000u32.to_le_bytes());
+            b.extend_from_slice(&3000u32.to_le_bytes());
+            b.extend_from_slice(&0u32.to_le_bytes());
+            b.extend_from_slice(&0i16.to_le_bytes());
+            b.extend_from_slice(&2000i32.to_le_bytes());
+            b.extend_from_slice(&1500i32.to_le_bytes());
+            b.extend_from_slice(&identity_render());
+            b.extend(vec![0u8; tail]);
+            b
+        };
+        let survivor_pic = vec![
+            (71, 1, ctrl_header(202, 1 << 21 | 1, 0, 0, 4000, 3000, "", &[])),
+            (76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)),
+            (85, 3, picture_leaf(1, [0; 4], &[])),
+        ];
+        let flat_group = vec![
+            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (76, 2, container_sc(201, &[super::SC_RECT, super::SC_PICTURE])),
+            (76, 3, child_sc(super::SC_RECT, 13 + 8 + 22)),
+            (super::TAG_RECTANGLE, 4, rect_leaf(0, 4000, 3000)),
+            (76, 3, child_sc(super::SC_PICTURE, 0)),
+            (super::TAG_PICTURE, 4, picture_leaf(1, [0; 4], &[])),
+        ];
+        let build = |objs: Vec<Vec<(u16, u16, Vec<u8>)>>| {
+            let sec = wrap_section(objs);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        // Positive: deleting flat unlocked uncaptioned group (rect + picture) preserves sibling picture & shared BinData.
+        let orig = build(vec![flat_group.clone(), survivor_pic.clone()]);
+        let after_delete = build(vec![survivor_pic.clone()]);
+        assert_eq!(check_with_preview_refresh(&orig, &after_delete), vec![]);
+
+        // Negative 1: locked group deletion refused.
+        let mut locked = flat_group.clone();
+        locked[0].2 = ctrl_header(201, (1 << 21) | super::ATTR_LOCKED, 500, 500, 12000, 8000, "", &[]);
+        assert!(!check_with_preview_refresh(&build(vec![locked, survivor_pic.clone()]), &after_delete).is_empty());
+
+        // Negative 2: captioned group deletion refused.
+        let captioned = vec![
+            (71, 1, ctrl_header(201, (1 << 21) | super::ATTR_CAPTION, 500, 500, 12000, 8000, "", &[])),
+            (72, 2, vec![0u8; 30]),
+            (66, 2, vec![0u8; 22]),
+            (68, 2, vec![0u8; 8]),
+            (69, 2, vec![0u8; 36]),
+            (76, 2, container_sc(201, &[super::SC_RECT])),
+            (76, 3, child_sc(super::SC_RECT, 13 + 8 + 22)),
+            (super::TAG_RECTANGLE, 4, rect_leaf(0, 4000, 3000)),
+        ];
+        assert!(!check_with_preview_refresh(&build(vec![captioned, survivor_pic.clone()]), &after_delete).is_empty());
+
+        // Negative 3: nested group child refused.
+        let nested = vec![
+            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (76, 2, container_sc(201, &[super::SC_CONTAINER])),
+            (76, 3, child_sc(super::SC_CONTAINER, 10)),
+            (76, 4, child_sc(super::SC_RECT, 13 + 8 + 22)),
+            (super::TAG_RECTANGLE, 5, rect_leaf(0, 4000, 3000)),
+        ];
+        assert!(!check_with_preview_refresh(&build(vec![nested, survivor_pic.clone()]), &after_delete).is_empty());
+
+        // Negative 4: OLE child inside group refused.
+        let ole_group = vec![
+            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (76, 2, container_sc(201, &[b"elo$"])),
+            (76, 3, child_sc(b"elo$", 0)),
+            (84, 4, vec![0u8; 30]),
+        ];
+        assert!(!check_with_preview_refresh(&build(vec![ole_group, survivor_pic.clone()]), &after_delete).is_empty());
+
+        // Negative 5: Arc child inside group refused.
+        let arc_group = vec![
+            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (76, 2, container_sc(201, &[b"cra$"])),
+            (76, 3, child_sc(b"cra$", 13 + 8 + 22)),
+            (81, 4, vec![0u8; 25]),
+        ];
+        assert!(!check_with_preview_refresh(&build(vec![arc_group, survivor_pic]), &after_delete).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run B2.2 WASM test with GEUL_STAGE3_OUT first"]
+    fn release_hwp_b2_2_group_deletion() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let orig = std::fs::read(dir.join("b2-2-group-delete-original.hwp")).unwrap();
+        let edited = std::fs::read(dir.join("b2-2-group-delete-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
     }
 }

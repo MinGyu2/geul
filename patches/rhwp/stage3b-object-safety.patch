@@ -1,0 +1,101 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -193,6 +193,72 @@
+         )
+     }
+ 
++    fn flat_leaf_drawing_deletable(
++        drawing: &crate::model::shape::DrawingObjAttr,
++        common: &crate::model::shape::CommonObjAttr,
++        expected_ctrl_id: u32,
++    ) -> bool {
++        drawing.shape_attr.ctrl_id == expected_ctrl_id
++            && (common.attr & (1 << 30)) == 0
++            && drawing.caption.is_none()
++            && drawing.text_box.as_ref().is_none_or(|tb| {
++                (1..=64).contains(&tb.paragraphs.len())
++                    && tb.paragraphs.iter().all(|p| {
++                        p.controls.is_empty()
++                            && p.field_ranges.is_empty()
++                            && p.orphan_field_ends.is_empty()
++                    })
++            })
++    }
++
++    fn format_group_props_json(shape: &ShapeObject) -> String {
++        let ShapeObject::Group(group) = shape else {
++            return String::new();
++        };
++        let flat_deletable = group.caption.is_none()
++            && (group.common.attr & (1 << 30)) == 0
++            && !group.children.is_empty()
++            && group.children.iter().all(|child| match child {
++                ShapeObject::Line(s) => Self::flat_leaf_drawing_deletable(
++                    &s.drawing,
++                    &s.common,
++                    crate::parser::tags::SHAPE_LINE_ID,
++                ),
++                ShapeObject::Rectangle(s) => Self::flat_leaf_drawing_deletable(
++                    &s.drawing,
++                    &s.common,
++                    crate::parser::tags::SHAPE_RECT_ID,
++                ),
++                ShapeObject::Ellipse(s) => Self::flat_leaf_drawing_deletable(
++                    &s.drawing,
++                    &s.common,
++                    crate::parser::tags::SHAPE_ELLIPSE_ID,
++                ),
++                ShapeObject::Polygon(s) => Self::flat_leaf_drawing_deletable(
++                    &s.drawing,
++                    &s.common,
++                    crate::parser::tags::SHAPE_POLYGON_ID,
++                ),
++                ShapeObject::Curve(s) => Self::flat_leaf_drawing_deletable(
++                    &s.drawing,
++                    &s.common,
++                    crate::parser::tags::SHAPE_CURVE_ID,
++                ),
++                ShapeObject::Picture(pic) => {
++                    matches!(pic.shape_attr.ctrl_id, 0 | crate::parser::tags::SHAPE_PICTURE_ID)
++                        && (pic.common.attr & (1 << 30)) == 0
++                        && pic.caption.is_none()
++                        && pic.image_attr.external_path.is_none()
++                        && pic.image_attr.bin_data_id >= 1
++                }
++                ShapeObject::Arc(_)
++                | ShapeObject::Group(_)
++                | ShapeObject::Chart(_)
++                | ShapeObject::Ole(_) => false,
++            });
++        format!(",\"groupFlatDeletable\":{}", flat_deletable)
++    }
++
+     fn apply_shape_caption_props(shape: &mut ShapeObject, props_json: &str) -> bool {
+         use crate::document_core::helpers::{json_bool, json_i16, json_str, json_u32};
+ 
+@@ -473,9 +539,10 @@
+         };
+ 
+         let caption_json = Self::format_shape_caption_props_json(shape);
++        let group_json = Self::format_group_props_json(shape);
+         Ok(format!(
+-            "{{{}{}{}{}{}{}}}",
+-            common_json, tb_json, extra_json, round_json, connector_json, caption_json
++            "{{{}{}{}{}{}{}{}}}",
++            common_json, tb_json, extra_json, round_json, connector_json, caption_json, group_json
+         ))
+     }
+     /// 글상자(Shape) 속성 변경 (네이티브).
+@@ -874,9 +941,10 @@
+         };
+ 
+         let caption_json = Self::format_shape_caption_props_json(shape);
++        let group_json = Self::format_group_props_json(shape);
+         Ok(format!(
+-            "{{{}{}{}{}{}{}}}",
+-            common_json, tb_json, extra_json, round_json, connector_json, caption_json
++            "{{{}{}{}{}{}{}{}}}",
++            common_json, tb_json, extra_json, round_json, connector_json, caption_json, group_json
+         ))
+     }
+     /// [Task #1138] Shape 속성 JSON 적용 (mutation only). 후처리 (recompose /

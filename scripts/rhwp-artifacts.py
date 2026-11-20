@@ -13,6 +13,7 @@ ARTIFACTS = ("rhwp.js", "rhwp_bg.wasm")
 PUBLIC_FIELDS = {"schemaVersion", "engine", "commit", "profile", "tools", "sourceFingerprint", "generation", "artifacts"}
 HEX256 = re.compile(r"[0-9a-f]{64}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?")
+MAX_PATCHES = 64
 MAX_GENERATIONS = 6
 OPT_FLAGS = ("-O",)
 
@@ -59,7 +60,7 @@ def validate_identity(identity):
         if not isinstance(integration["sourceTreeSha256"], str) or not HEX256.fullmatch(integration["sourceTreeSha256"]):
             raise ValueError("Invalid patched source tree digest")
         patches = integration["patches"]
-        if not isinstance(patches, list) or not 1 <= len(patches) <= 32:
+        if not isinstance(patches, list) or not 1 <= len(patches) <= MAX_PATCHES:
             raise ValueError("Invalid patch series")
         names = set()
         for patch in patches:

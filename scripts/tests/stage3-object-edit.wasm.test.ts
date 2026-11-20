@@ -508,8 +508,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const body = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
       expect(before.hasCaption).toBe(true);
       const inline = [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
-      expect(pick(inline).operations).not.toContain("delete");
-      expect(edit({ kind: "delete" })).toBe(false);
+      expect(pick(inline).operations).toContain("delete");
       const cursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, [...caption].length));
       expect(editor.pointAt(cursor.pageIndex, cursor.x, cursor.y + cursor.height / 2, false)).toBe(true);
       expect(editor.caret.cell?.caption).toBe(true);
@@ -683,18 +682,16 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
         .filter((control: { type: string }) => control.type === "shape") as Frame[];
       const pic = () => [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
 
-      // Captioned inline picture: outer ops permitted, delete excluded & refused.
-      expect(pick(pic()).operations).toEqual(["deselect", "resize", "crop", "wrap", "altText"]);
-      expect(edit({ kind: "delete" })).toBe(false);
+      // Captioned inline picture: outer ops including owned delete permitted.
+      expect(pick(pic()).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
       expect(edit({ kind: "altText", text: "캡션 그림 outer" })).toBe(true);
       await confirm(++seq);
       pick(pic());
       expect(edit({ kind: "bounds", width: 52, height: 26 })).toBe(true);
       await confirm(++seq);
 
-      // Captioned shape: outer ops permitted, delete excluded & refused.
-      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "wrap", "fill", "outline", "rotate"]);
-      expect(edit({ kind: "delete" })).toBe(false);
+      // Captioned shape: outer ops including owned delete permitted.
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(++seq);
       pick(shapes()[0]!);
@@ -923,6 +920,106 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
         mkdirSync(out, { recursive: true });
         writeFileSync(resolve(out, "b1-2-combined-caption-original.hwp"), original);
         writeFileSync(resolve(out, "b1-2-combined-caption-edited.hwp"), edited);
+      }
+    } finally { editor.dispose(); }
+  });
+
+  it("safely deletes caption-bearing HWP pictures and shapes while preserving unrelated captions, shared BinData, and lock refusal", async () => {
+    // Fixture contains: (1) inline captioned picture (control 2), (2) second floating picture sharing/retaining BinData (control 3),
+    // (3) captioned rectangle (control 4), (4) second captioned ellipse that must survive deletion (control 5).
+    const seed = new engine.HwpDocument(source("hwp", true)) as RhwpDocument;
+    let original: Uint8Array;
+    try {
+      expect(JSON.parse(seed.setPictureProperties!(0, 0, 2, '{"hasCaption":true}')).ok).toBe(true);
+      expect(JSON.parse(seed.setShapeProperties!(0, 0, 4, '{"hasCaption":true}')).ok).toBe(true);
+      const addedEllipse = JSON.parse(seed.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: seed.getParagraphLength(0, 0), shapeType: "ellipse",
+        width: 4800, height: 3200, treatAsChar: false, textWrap: "Square", horzOffset: 16000, vertOffset: 12000,
+      })));
+      expect(addedEllipse.ok).toBe(true);
+      expect(JSON.parse(seed.setShapeProperties!(0, 0, addedEllipse.controlIdx, '{"hasCaption":true,"textWrap":"Square"}')).ok).toBe(true);
+      original = seed.exportHwp!();
+    } finally { seed.free(); }
+
+    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, true, original);
+    const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
+      .filter((control: { type: string }) => control.type === "shape") as Frame[];
+    const atnos = (d: RhwpDocument) => (JSON.parse(d.getControls!()) as { ctrlId?: string; list?: number; pos?: number }[])
+      .filter(c => c.ctrlId === "atno");
+    let seq = 0;
+    try {
+      const baseline = hwpReopenModel(doc).structure;
+      expect(images(doc)).toHaveLength(2);
+      expect(shapes()).toHaveLength(2);
+      expect(atnos(doc)).toHaveLength(3);
+
+      // Put caret inside the captioned picture's caption first, then click the outer picture and delete it.
+      const capEnd = doc.getCellParagraphLength(0, 0, 2, 0, 0);
+      const capCursor = JSON.parse(doc.getCursorRectInCell(0, 0, 2, 0, 0, capEnd));
+      expect(editor.pointAt(capCursor.pageIndex, capCursor.x, capCursor.y + capCursor.height / 2, false)).toBe(true);
+      expect(editor.caret.cell?.caption).toBe(true);
+
+      const targetPic = [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
+      expect(pick(targetPic).operations).toContain("delete");
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm(++seq);
+      expect(editor.caret.cell).toBeUndefined();
+      expect(images(doc)).toHaveLength(1);
+      expect(atnos(doc)).toHaveLength(2);
+
+      // Delete the captioned rectangle (the earlier shape), leaving the captioned ellipse intact.
+      const targetShape = shapes()[0]!;
+      expect(pick(targetShape).operations).toContain("delete");
+      expect(edit({ kind: "delete" })).toBe(true);
+      await confirm(++seq);
+      expect(shapes()).toHaveLength(1);
+      expect(atnos(doc)).toHaveLength(1);
+
+      // Undo both deletions -> restores both captioned controls and all 3 auto-numbers; Redo -> deletes both again.
+      expect(editor.undo()).toBe(true);
+      await confirm(++seq);
+      expect(shapes()).toHaveLength(2);
+      expect(atnos(doc)).toHaveLength(2);
+      expect(editor.undo()).toBe(true);
+      await confirm(++seq);
+      expect(images(doc)).toHaveLength(2);
+      expect(atnos(doc)).toHaveLength(3);
+      expect(editor.redo()).toBe(true);
+      await confirm(++seq);
+      expect(editor.redo()).toBe(true);
+      await confirm(++seq);
+      expect(images(doc)).toHaveLength(1);
+      expect(shapes()).toHaveLength(1);
+      expect(atnos(doc)).toHaveLength(1);
+
+      // Locked remaining captioned ellipse must refuse deletion.
+      const survivor = shapes()[0]!;
+      const controls = doc as RhwpDocument & { setControlLock(para: number, index: number, locked: boolean): string };
+      expect(JSON.parse(controls.setControlLock(0, survivor.controlIdx, true))).toMatchObject({ ok: true });
+      expect(pick(survivor).operations).not.toContain("delete");
+      expect(edit({ kind: "delete" })).toBe(false);
+      expect(JSON.parse(controls.setControlLock(0, survivor.controlIdx, false))).toMatchObject({ ok: true });
+
+      const exported = doc.exportHwpWithReport!();
+      let edited: Uint8Array;
+      try {
+        const report = exported.contentLoss();
+        edited = exported.takeBytes();
+        expectReopenEvidence(doc, edited, report);
+      } finally { exported.free(); }
+
+      const reopened = new engine.HwpDocument(edited) as RhwpDocument;
+      try {
+        expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), baseline)).toBe(true);
+        expect(images(reopened)).toHaveLength(1);
+        expect((JSON.parse(reopened.getPageControlLayout!(0)).controls as { type: string }[]).filter(c => c.type === "shape")).toHaveLength(1);
+        expect(atnos(reopened)).toHaveLength(1);
+      } finally { reopened.free(); }
+
+      if (out) {
+        mkdirSync(out, { recursive: true });
+        writeFileSync(resolve(out, "b2-1-caption-delete-original.hwp"), original);
+        writeFileSync(resolve(out, "b2-1-caption-delete-edited.hwp"), edited);
       }
     } finally { editor.dispose(); }
   });
