@@ -1,0 +1,92 @@
+{
+  "scope": "Stage 3-B B3.2 HWPX picture lineShape eligibility stabilization",
+  "date": "2026-11-20",
+  "timezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "stage3b": "COMPLETED within the documented supported subset",
+  "stage3Overall": "PARTIALLY COMPLETED",
+  "startingHead": "403efe2ea1e1e2645bc2b3f995f94706b0d3df08",
+  "patch": "patches/rhwp/stage3b-portable-picture-properties.patch",
+  "preservedAcceptanceRecords": [
+    "stage3-b-safety-acceptance-2026-11-20.json",
+    "stage3-b-clipboard-fidelity-followup-2026-11-20.json",
+    "stage3-b-portable-property-safety-2026-11-20.json"
+  ],
+  "rootCause": "The picture reader checked style, color and width. It could classify NONE with unmodeled attributes as borderless, while the HWPX picture writer omits lineShape.",
+  "supportedDefaults": {
+    "noElement": "Eligible borderless representation.",
+    "explicitElement": "One empty lineShape with explicit NONE. XML whitespace in a paired empty tag is allowed.",
+    "optionalCoreValues": {
+      "color": "#000000",
+      "width": 0
+    },
+    "optionalModeledValues": {
+      "endCap": "ROUND",
+      "headStyle": "NORMAL",
+      "tailStyle": "NORMAL",
+      "headfill": "0 or false",
+      "tailfill": "0 or false",
+      "headSz": "SMALL_SMALL",
+      "tailSz": "SMALL_SMALL",
+      "outlineStyle": "NORMAL",
+      "alpha": "0"
+    },
+    "basis": "Pinned RHWP ShapeBorderLine::default, parse_line_shape_attr and write_line_shape. The OWPML LineShapeType schema declares FLAT as an attribute default, while RHWP models an unset cap as ROUND. An explicit FLAT value is unsupported by the portable picture contract."
+  },
+  "rejected": "Visible SOLID, DASH and DOT including width zero, non-default caps/arrows/fill/sizes/outline/alpha, unknown or malformed values, missing style, duplicate attributes or elements and child properties. The getter continues to signal borderType=-1 for those modeled pictures.",
+  "baselineDiagnostic": {
+    "generation": "3052392dfb96b2f167bc392941bed19009945ff7ca6bb73fd5935766527250e6",
+    "case": "NONE with explicit FLAT endCap returned borderType=0",
+    "vitestExit": 1
+  },
+  "releaseWasm": {
+    "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "165fc4092820c28ffa7299ec93f091bcf4d2e9d784c65c011db807492898a892",
+    "artifacts": {
+      "rhwp.js": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+      "rhwp_bg.wasm": "9520e24b34c33d5f49fdd267f08fd858fea098fd2b8a58395e65b5768b26aef4"
+    },
+    "patchSha256": "1b997b3556dbb8cfdc947e6ddff8bd2998b4b09100f7da28ffb49d1afbb4b60f",
+    "sourceTreeSha256": "d57b24dd9218f382115b5e2052fe081c0bda4499d5a90b018021f27472b90db5",
+    "buildCommand": "PATH=\"$HOME/.cache/.wasm-pack/wasm-bindgen-834c8396d913406b:$PATH\" scripts/build-rhwp-wasm.sh",
+    "exit": 0,
+    "initialBuild": "Exit 1 due to the quick-xml BytesText call. Corrected and rebuilt from verified patched inputs.",
+    "archivedInactiveGeneration": "18ab25e01b18fa72dc5d1ef1a96a495c862c81d0a90646d0585be1c472833010"
+  },
+  "verification": [
+    {
+      "command": "python3 -m unittest scripts/tests/test_rhwp_profiles.py",
+      "passed": 3,
+      "exit": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "PASS",
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-hwpx-clipboard-safety.wasm.test.ts -t 'preserves a borderless picture|picture lineShape safety|handles real HWPX picture metadata'",
+      "passed": 25,
+      "failed": 0,
+      "filteredOut": 46,
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS",
+      "exit": 0
+    }
+  ],
+  "regressions": {
+    "lineShapeRefusals": 20,
+    "borderlessPictureRoundTrips": 3,
+    "existingCropMetadataCases": 2,
+    "refusalProof": "Real HWPX XML reaches the Release parser. Copy yields a same-document envelope without portable data, cross-document paste is refused before insertion, and destination and source identity, body, history, resources, font inventory and serialization stay intact.",
+    "roundTripProof": "Cross-document copy/paste, Undo restoring original target bytes, Redo, exportHwpxWithReport with no loss, and reopen in a separate Release document preserve ownership, MIME, image bytes, natural and picture dimensions, crop edges and imgClip, and styled caption paragraph order with one owned atno."
+  },
+  "native": {
+    "status": "NOT RUN",
+    "reason": "The production change is in the source HWPX parser eligibility gate. Real Release WASM clipboard tests cover refusal and successful export/reopen; UI and destination save paths were unchanged.",
+    "historicalEvidence": "stage3-b-portable-property-safety-2026-11-20.json"
+  }
+}

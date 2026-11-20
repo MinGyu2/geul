@@ -15,36 +15,55 @@
      /// 이미지 테두리 좌표 Y (4개)
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
-@@ -3139,6 +3139,9 @@
+@@ -3139,6 +3139,10 @@
      common.hwp5_gen_shape_attr_bit26 = true;
      let mut shape_attr = ShapeComponentAttr::default();
      let mut crop = CropInfo::default();
 +    let mut saw_img_clip = false;
 +    let mut invalid_clip = false;
 +    let mut unmodeled_border = false;
++    let mut saw_line_shape = false;
      let mut padding = crate::model::Padding::default();
      let mut border_x = [0i32; 4];
      let mut border_y = [0i32; 4];
-@@ -3418,8 +3421,43 @@
+@@ -3418,8 +3422,61 @@
                              }
                          }
                      }
 +                    b"lineShape" => {
-+                        // The picture writer emits no lineShape. Only an explicit
-+                        // default NONE has the same border properties as omission.
++                        // Picture serialization omits lineShape. Match the neutral
++                        // values of ShapeBorderLine::default and write_line_shape
++                        // explicitly; the general parser also maps unknown values
++                        // to zero and therefore cannot prove this equivalence.
 +                        let mut style_none = false;
-+                        let mut default_values = true;
++                        let mut default_values = !saw_line_shape;
++                        saw_line_shape = true;
++                        // Attribute iteration checks duplicate names.
 +                        for attr in ce.attributes() {
 +                            let Ok(attr) = attr else {
 +                                default_values = false;
 +                                break;
 +                            };
-+                            match attr.key.as_ref().as_bytes() {
-+                                b"style" => style_none = attr_str(&attr) == "NONE",
-+                                b"color" => default_values &= attr_str(&attr) == "#000000",
-+                                b"width" => default_values &= attr_str(&attr).parse::<i32>() == Ok(0),
-+                                _ => {}
-+                            }
++                            let value = attr_str(&attr);
++                            default_values &= match attr.key.as_ref().as_bytes() {
++                                b"style" if value == "NONE" => {
++                                    style_none = true;
++                                    true
++                                }
++                                b"color" => value == "#000000",
++                                b"width" => value.parse::<i32>() == Ok(0),
++                                b"endCap" => value == "ROUND",
++                                b"headStyle" | b"tailStyle" | b"outlineStyle" => value == "NORMAL",
++                                b"headfill" | b"tailfill" => matches!(value.as_str(), "0" | "false"),
++                                b"headSz" | b"tailSz" => value == "SMALL_SMALL",
++                                b"alpha" => value == "0",
++                                _ => false,
++                            };
++                        }
++                        if !self_closing {
++                            let contents = reader.read_text(ce.name())
++                                .map_err(|e| HwpxError::XmlError(format!("picture lineShape: {e}")))?;
++                            default_values &= contents.into_inner().bytes().all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'));
 +                        }
 +                        unmodeled_border |= !style_none || !default_values;
 +                    }
@@ -70,7 +89,7 @@
                              match attr.key.as_ref().as_bytes() {
                                  b"left" => crop.left = parse_i32(&attr),
                                  b"right" => crop.right = parse_i32(&attr),
-@@ -3428,6 +3466,7 @@
+@@ -3428,6 +3485,7 @@
                                  _ => {}
                              }
                          }
@@ -78,7 +97,7 @@
                      }
                      b"img" | b"image" => {
                          for attr in ce.attributes().flatten() {
-@@ -3525,6 +3564,8 @@
+@@ -3525,6 +3583,8 @@
      pic.shape_attr = shape_attr;
      pic.href = href;
      pic.crop = crop;

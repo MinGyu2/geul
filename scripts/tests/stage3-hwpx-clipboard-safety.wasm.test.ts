@@ -84,6 +84,11 @@ async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
 
 const props = (doc: RhwpDocument, control: number) => JSON.parse(doc.getShapeProperties!(0, 0, control));
 
+const pictureLineShape = '<hp:lineShape style="NONE" color="#000000" width="0"/>';
+const defaultPictureLineShape = '<hp:lineShape style="NONE" color="#000000" width="0" endCap="ROUND" '
+  + 'headStyle="NORMAL" tailStyle="NORMAL" headfill="0" tailfill="false" headSz="SMALL_SMALL" tailSz="SMALL_SMALL" '
+  + 'outlineStyle="NORMAL" alpha="0"> </hp:lineShape>';
+
 describe("HWPX object clipboard fidelity boundary", () => {
   for (const kind of ["caption", "mixed", "rectangle", "ellipse", "line", "noOutline", "plainTextBox"] as const) it(`B3.2: pastes cross-document HWPX ${kind} faithfully with Undo/Redo and reopen`, async () => {
     const fixture = engine.HwpDocument.createEmpty();
@@ -225,59 +230,96 @@ describe("HWPX object clipboard fidelity boundary", () => {
     } finally {src.editor.dispose(); dst.editor.dispose();}
   });
 
-  it.each([false, true])("B3.2: preserves picture bytes and properties with caption=%s", async hasCaption => {
-    const srcBytes = pictureFixture(hasCaption);
+  it.each([
+    { border: "absent lineShape", lineShape: "", hasCaption: false },
+    { border: "explicit NONE with omitted color and width", lineShape: '<hp:lineShape style="NONE"/>', hasCaption: false },
+    { border: "all explicit defaults", lineShape: defaultPictureLineShape, hasCaption: true },
+  ])("B3.2: preserves a borderless picture with $border across paste, Undo/Redo and reopen", async ({ lineShape, hasCaption }) => {
+    const fixture = pictureFixture(hasCaption);
+    const bytes = lineShape ? editPictureXml(fixture, "lineShape", lineShape) : fixture;
     const expected = {
       width: 4200, height: 2100, borderType: 0, borderColor: 0, borderWidth: 0,
+      horzOffset: 1000, vertOffset: 1200, treatAsChar: false, textWrap: "Square",
       cropLeft: hasCaption ? 120 : 0, cropTop: hasCaption ? 60 : 0,
       cropRight: hasCaption ? 720 : 600, cropBottom: hasCaption ? 90 : 0,
       cropRect: hasCaption ? { left: 120, top: 60, right: 3480, bottom: 2010 }
         : { left: 0, top: 0, right: 3600, bottom: 4800 },
       cropReferenceWidth: 3600, cropReferenceHeight: 4800,
-      description: "b32-alt", hasCaption, ...(hasCaption ? { captionSpacing: 150 } : {}),
+      description: "b32-alt", hasCaption, ...(hasCaption ? { captionDirection: "Bottom", captionSpacing: 150 } : {}),
+    };
+    const verify = (doc: RhwpDocument) => {
+      const frames = pictures(doc);
+      expect(frames).toHaveLength(1);
+      const { secIdx, paraIdx, controlIdx } = frames[0]!;
+      expect([secIdx, paraIdx]).toEqual([0, 0]);
+      const controls = JSON.parse(doc.getControls!());
+      expect(controls).toContainEqual(expect.objectContaining({ list: 0, para: 0, controlIndex: controlIdx, ctrlId: "gso" }));
+      expect(JSON.parse(doc.getPictureProperties!(secIdx, paraIdx, controlIdx))).toMatchObject(expected);
+      expect(doc.getControlImageMime!(secIdx, paraIdx, "[]", controlIdx)).toBe("image/png");
+      expect(Buffer.from(doc.getControlImageData!(secIdx, paraIdx, "[]", controlIdx))).toEqual(picturePng);
+      if (hasCaption) {
+        expect(doc.getCellParagraphCount!(secIdx, paraIdx, controlIdx, 0)).toBe(2);
+        const texts = [0, 1].map(p => doc.getTextInCell!(secIdx, paraIdx, controlIdx, 0, p, 0,
+          doc.getCellParagraphLength!(secIdx, paraIdx, controlIdx, 0, p)));
+        expect(texts).toEqual(["그림  pic cap", "pic line 2"]);
+        const path = (cellParaIndex: number) => JSON.stringify([{ controlIndex: controlIdx, cellIndex: 0, cellParaIndex }]);
+        expect(JSON.parse(doc.getCellCharPropertiesAtByPath!(secIdx, paraIdx, path(0), 4)).bold).toBe(true);
+        expect(JSON.parse(doc.getCellCharPropertiesAtByPath!(secIdx, paraIdx, path(1), 0)).italic).toBe(true);
+        const { lists } = JSON.parse(doc.getCursorModel!());
+        const owned = lists.filter((list: { isCell: boolean; hostListId: number; hostPara: number; sectionIndex: number; controlIndex: number; cellIndex: number }) =>
+          !list.isCell && list.hostListId === 0 && list.sectionIndex === secIdx && list.hostPara === paraIdx
+          && list.controlIndex === controlIdx && list.cellIndex === 0);
+        expect(owned).toHaveLength(1);
+        expect(controls.filter((c: { list: number }) => c.list === owned[0].listId)).toEqual([
+          expect.objectContaining({ ctrlId: "atno", ctrlCh: 18, para: 0, pos: 2 }),
+        ]);
+      }
     };
 
-    const src = await setup("hwpx", srcBytes); const dst = await setup("hwpx");
-    let payload = "", plain = "";
-    const clip: PlainClipboard = { readText: async () => plain, writeText: async () => {}, writeStructured: async (_m, d, t) => { payload = d; plain = t; }, readStructured: async m => m === OBJECT_CLIPBOARD_MIME ? payload : null };
+    const src = await setup("hwpx", bytes);
+    const dst = await setup("hwpx");
+    const clip = objectClip();
     try {
       const sourceBefore = src.doc.exportHwpx();
-      const picFrame = (JSON.parse(src.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "image")!;
-      expect(JSON.parse(src.doc.getPictureProperties!(0, 0, picFrame.controlIdx))).toMatchObject(expected);
-      src.pick(picFrame);
-      expect(await src.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
-      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
+      const targetBefore = dst.doc.exportHwpx();
+      const bodyBefore = dst.doc.getTextFileText!();
+      verify(src.doc);
+      src.pick(pictures(src.doc)[0]!);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
+      expect(parseObjectClipboardPayload(clip.payload())).toMatchObject({
+        version: 3, sourceFormat: "hwpx", object: "picture",
+        portable: { kind: "picture", mime: "image/png", naturalWidth: 48, naturalHeight: 64, borderType: 0,
+          cropRect: expected.cropRect },
+      });
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip.clipboard)).toBe(true);
       await dst.confirm();
-
-      const dstPics = (JSON.parse(dst.doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "image");
-      expect(dstPics).toHaveLength(1);
-      const dPicCtrl = dstPics[0]!.controlIdx;
-      const dPicProps = JSON.parse(dst.doc.getPictureProperties!(0, 0, dPicCtrl));
-      expect(dPicProps).toMatchObject(expected);
-      expect(Buffer.from(dst.doc.getControlImageData!(0, 0, "[]", dPicCtrl))).toEqual(picturePng);
-      const dCapLen = hasCaption ? dst.doc.getCellParagraphLength!(0, 0, dPicCtrl, 0, 0) : 0;
-      if (hasCaption) expect(dst.doc.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen)).toContain("pic cap");
+      verify(dst.doc);
+      const pasted = dst.doc.getControls!();
+      expect(dst.editor.undo()).toBe(true);
+      await dst.confirm();
+      expect(pictures(dst.doc)).toHaveLength(0);
+      expect(dst.doc.exportHwpx()).toEqual(targetBefore);
+      expect(dst.editor.redo()).toBe(true);
+      await dst.confirm();
+      expect(dst.doc.getControls!()).toBe(pasted);
+      verify(dst.doc);
+      expect(dst.doc.getTextFileText!()).toBe(bodyBefore);
       expect(src.doc.exportHwpx()).toEqual(sourceBefore);
 
       const exported = dst.doc.exportHwpxWithReport();
       try {
-        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss(), reopened => {
-          expect(JSON.parse(reopened.getPictureProperties!(0, 0, dPicCtrl))).toMatchObject(expected);
-          expect(Buffer.from(reopened.getControlImageData!(0, 0, "[]", dPicCtrl))).toEqual(picturePng);
-          if (hasCaption) expect(reopened.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen))
-            .toBe(dst.doc.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen));
-        });
+        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss(), verify);
       } finally { exported.free(); }
 
-      // Only one fixture is needed to test the forged MIME.
+      // Check the forged MIME once.
       if (!hasCaption) return;
       const beforeTamper = dst.doc.exportHwpx();
       const snapshot = dst.editor.snapshot();
-      const tamperedMime = JSON.parse(payload);
+      const tamperedMime = JSON.parse(clip.payload());
       tamperedMime.portable.mime = "image/jpeg";
       expect(parseObjectClipboardPayload(JSON.stringify(tamperedMime))).toBeNull();
-      const badClip: PlainClipboard = { readText: async () => "fallback", writeText: async () => {}, readStructured: async () => JSON.stringify(tamperedMime) };
-      expect(await dst.editor.executeClipboard("edit.paste", () => true, badClip)).toBe(false);
+      const forged = objectClip(JSON.stringify(tamperedMime));
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, forged.clipboard)).toBe(false);
       expect(dst.doc.exportHwpx()).toEqual(beforeTamper);
       expect(dst.editor.snapshot()).toEqual(snapshot);
     } finally { src.editor.dispose(); dst.editor.dispose(); }
@@ -330,6 +372,33 @@ const picturePng = Buffer.from(
   "base64",
 );
 
+function pictures(doc: RhwpDocument) {
+  type PictureFrame = Frame & { secIdx: number; paraIdx: number };
+  return (JSON.parse(doc.getPageControlLayout!(0)).controls as PictureFrame[]).filter(c => c.type === "image");
+}
+
+function editPictureXml(bytes: Uint8Array, property: "lineShape" | "imgClip", xml: string): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+property, replacement = sys.argv[1], sys.argv[2].encode()
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == 'Contents/section0.xml':
+                if property == 'lineShape':
+                    assert b'<hp:lineShape' not in data
+                    assert data.count(b'<hp:imgRect>') == 1
+                    data = data.replace(b'<hp:imgRect>', replacement + b'<hp:imgRect>', 1)
+                else:
+                    data, count = re.subn(rb'<hp:imgClip [^>]*/>', replacement, data)
+                    assert count == 1
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`, property, xml], { input: bytes });
+}
+
 function pictureFixture(hasCaption = false): Uint8Array {
   const doc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
   try {
@@ -345,6 +414,11 @@ function pictureFixture(hasCaption = false): Uint8Array {
     if (hasCaption) {
       const len = doc.getCellParagraphLength!(0, 0, pic.controlIdx, 0, 0);
       expect(JSON.parse(doc.insertTextInCell!(0, 0, pic.controlIdx, 0, 0, len, "pic cap")).ok).toBe(true);
+      const path = (cellParaIndex: number) => JSON.stringify([{ controlIndex: pic.controlIdx, cellIndex: 0, cellParaIndex }]);
+      expect(JSON.parse(doc.applyCharFormatInCellByPath!(0, 0, path(0), len, len + 7, '{"bold":true}')).ok).toBe(true);
+      expect(JSON.parse(doc.splitParagraphInCell!(0, 0, pic.controlIdx, 0, 0, len + 7)).ok).toBe(true);
+      expect(JSON.parse(doc.insertTextInCell!(0, 0, pic.controlIdx, 0, 1, 0, "pic line 2")).ok).toBe(true);
+      expect(JSON.parse(doc.applyCharFormatInCellByPath!(0, 0, path(1), 0, 10, '{"italic":true}')).ok).toBe(true);
     }
     return doc.exportHwpx();
   } finally { doc.free(); }
@@ -571,60 +645,90 @@ describe("B3.2 portable textbox and picture property evidence", () => {
     });
   }
 
-  it.each(["NONE", "SOLID", "missing crop edge", "omitted crop"] as const)(
-    "handles real HWPX picture metadata %s", async property => {
-      // Insert input XML the existing setters cannot produce, while opening
-      // the package and running the clipboard against the real Release model.
-      const bytes = execFileSync("python3", ["-c", `
-import io, re, sys, zipfile
-case = sys.argv[1]
-with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, 'w') as dst:
-        for entry in src.infolist():
-            data = src.read(entry)
-            if entry.filename == 'Contents/section0.xml':
-                if case in ('NONE', 'SOLID'):
-                    line = f'<hp:lineShape color="#000000" width="0" style="{case}"/>'.encode()
-                    assert b'<hp:imgRect>' in data
-                    data = data.replace(b'<hp:imgRect>', line + b'<hp:imgRect>', 1)
-                else:
-                    replacement = b'<hp:imgClip left="0" right="3600" top="0"/>' if case == 'missing crop edge' else b''
-                    data, count = re.subn(rb'<hp:imgClip [^>]*/>', replacement, data)
-                    assert count == 1
-            dst.writestr(entry, data)
-    sys.stdout.buffer.write(out.getvalue())
-`, property], { input: pictureFixture() });
-      const src = await setup("hwpx", bytes);
-      const dst = await setup("hwpx");
-      const clip = objectClip();
-      try {
-        const picture = (doc: RhwpDocument) =>
-          (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(f => f.type === "image")!;
-        const frame = picture(src.doc);
-        const before = src.doc.exportHwpx();
-        const none = property === "omitted crop";
-        const expected = {
-          borderType: property === "SOLID" ? -1 : 0, borderColor: 0, borderWidth: 0,
-          cropRect: property === "missing crop edge" ? null
-            : { left: 0, top: 0, right: none ? 0 : 3600, bottom: none ? 0 : 4800 },
-        };
-        expect(JSON.parse(src.doc.getPictureProperties!(0, 0, frame.controlIdx))).toMatchObject(expected);
-        src.pick(frame);
-        expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
-        if (property === "SOLID" || property === "missing crop edge") {
-          expect(parseObjectClipboardPayload(clip.payload())).not.toHaveProperty("portable");
-          await expectRefused(dst, clip.clipboard);
-        } else {
-          expect(await dst.editor.executeClipboard("edit.paste", () => true, clip.clipboard)).toBe(true);
-          await dst.confirm();
-          const reopened = new engine.HwpDocument(dst.doc.exportHwpx()) as RhwpDocument;
-          try {
-            expect(JSON.parse(reopened.getPictureProperties!(0, 0, picture(reopened).controlIdx))).toMatchObject(expected);
-          } finally { reopened.free(); }
-        }
-        expect(src.doc.exportHwpx()).toEqual(before);
-      } finally { src.editor.dispose(); dst.editor.dispose(); }
-    },
-  );
+  it.each(["missing crop edge", "omitted crop"] as const)("handles real HWPX picture metadata %s", async property => {
+    const missing = property === "missing crop edge";
+    const bytes = editPictureXml(pictureFixture(), "imgClip", missing ? '<hp:imgClip left="0" right="3600" top="0"/>' : "");
+    const src = await setup("hwpx", bytes);
+    const dst = await setup("hwpx");
+    const clip = objectClip();
+    try {
+      const frame = pictures(src.doc)[0]!;
+      const before = src.doc.exportHwpx();
+      const expected = { borderType: 0, borderColor: 0, borderWidth: 0,
+        cropRect: missing ? null : { left: 0, top: 0, right: 0, bottom: 0 } };
+      expect(JSON.parse(src.doc.getPictureProperties!(0, 0, frame.controlIdx))).toMatchObject(expected);
+      src.pick(frame);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
+      if (missing) {
+        expect(parseObjectClipboardPayload(clip.payload())).not.toHaveProperty("portable");
+        await expectRefused(dst, clip.clipboard);
+      } else {
+        expect(await dst.editor.executeClipboard("edit.paste", () => true, clip.clipboard)).toBe(true);
+        await dst.confirm();
+        const reopened = new engine.HwpDocument(dst.doc.exportHwpx()) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, pictures(reopened)[0]!.controlIdx))).toMatchObject(expected);
+        } finally { reopened.free(); }
+      }
+      expect(src.doc.exportHwpx()).toEqual(before);
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+});
+
+describe("B3.2 picture lineShape safety", () => {
+  const extra = (attributes: string) => pictureLineShape.replace("/>", ` ${attributes}/>`);
+  const refused = [
+    ["FLAT endCap", extra('endCap="FLAT"')],
+    ["head arrow", extra('headStyle="ARROW"')],
+    ["tail arrow", extra('tailStyle="SPEAR"')],
+    ["filled head", extra('headfill="1"')],
+    ["tail size", extra('tailSz="LARGE_LARGE"')],
+    ["OUTER outline", extra('outlineStyle="OUTER"')],
+    ["non-default alpha", extra('alpha="0.5"')],
+    ["unknown attribute", extra('vendorExtension="0"')],
+    ["unknown enum value", extra('endCap="UNKNOWN"')],
+    ["malformed fill value", extra('tailfill="off"')],
+    ["malformed width", pictureLineShape.replace('width="0"', 'width="0.5"')],
+    ["malformed color", pictureLineShape.replace('#000000', '#INVALID')],
+    ["unknown style", pictureLineShape.replace('style="NONE"', 'style="UNKNOWN"')],
+    ["omitted style", pictureLineShape.replace('style="NONE" ', '')],
+    ["duplicate width", extra('width="0"')],
+    ["duplicate element", pictureLineShape + pictureLineShape],
+    ["child property", pictureLineShape.replace('/>', '><hp:extra/></hp:lineShape>')],
+    ...["SOLID", "DASH", "DOT"].map(style => [style, pictureLineShape.replace("NONE", style)]),
+  ] as const;
+
+  it.each(refused)("refuses %s from HWPX XML before destination mutation", async (_label, xml) => {
+    const src = await setup("hwpx", editPictureXml(pictureFixture(), "lineShape", xml));
+    const dst = await setup("hwpx", pictureFixture());
+    const clip = objectClip();
+    try {
+      const [frame] = pictures(src.doc);
+      expect(frame).toBeDefined();
+      const { controlIdx } = frame!;
+      const sourceBefore = src.doc.exportHwpx();
+      const sourceControls = src.doc.getControls!();
+      const sourceState = src.sessions.get(1);
+      expect(JSON.parse(src.doc.getPictureProperties!(0, 0, controlIdx))).toMatchObject({ borderType: -1 });
+      expect(src.pick(frame!).kind).toBe("picture");
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
+      const parsed = parseObjectClipboardPayload(clip.payload());
+      expect(parsed).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "picture" });
+      expect(parsed).not.toHaveProperty("portable");
+      const targetBefore = pictures(dst.doc);
+      expect(targetBefore).toHaveLength(1);
+      const targetControl = targetBefore[0]!.controlIdx;
+      const targetProps = dst.doc.getPictureProperties!(0, 0, targetControl);
+      const insert = vi.spyOn(dst.doc, "insertPicture");
+      await expectRefused(dst, clip.clipboard);
+      expect(insert).not.toHaveBeenCalled();
+      expect(pictures(dst.doc)).toEqual(targetBefore);
+      expect(dst.doc.getPictureProperties!(0, 0, targetControl)).toBe(targetProps);
+      expect(Buffer.from(dst.doc.getControlImageData!(0, 0, "[]", targetControl))).toEqual(picturePng);
+      expect(Buffer.from(src.doc.getControlImageData!(0, 0, "[]", controlIdx))).toEqual(picturePng);
+      expect(src.sessions.get(1)).toEqual(sourceState);
+      expect(src.doc.getControls!()).toBe(sourceControls);
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
 });
