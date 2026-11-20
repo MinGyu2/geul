@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Stage 3 P3: HWPX shape/text box insertion and outer formatting on the Release engine.
 // With GEUL_STAGE3_OUT=<dir>, writes original/edited HWPX bytes and loss reports for `save_check`.
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -106,6 +107,54 @@ function hwpShapeInventory(doc: RhwpDocument) {
           : owner.userDesc === "직선" ? "line" : "unknown";
     return { family, width: value.width, height: value.height, verticalAlign: value.tbVerticalAlign };
   });
+}
+
+function polygonFixture(): { bytes: Uint8Array; index: number } {
+  const doc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+  try {
+    const created = JSON.parse(doc.createShapeControl!(JSON.stringify({
+      sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
+      width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 1200, vertOffset: 600,
+      polygonPoints: [{ x: 1600, y: 1300 }, { x: 9700, y: 700 }, { x: 6400, y: 6500 }, { x: 1600, y: 1300 }],
+    })));
+    return { index: created.controlIdx, bytes: doc.exportHwpx() };
+  } finally { doc.free(); }
+}
+
+function withPolygonTransform(bytes: Uint8Array, original: string, replacement: string): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+original, replacement = (a.encode() for a in sys.argv[1:])
+def change(match):
+    polygon = match[0]
+    assert original in polygon
+    return polygon.replace(original, replacement, 1)
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == 'Contents/section0.xml':
+                data, count = re.subn(rb'<hp:polygon\\b.*?</hp:polygon>', change, data, flags=re.S)
+                assert count == 1
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`, original, replacement], { input: bytes });
+}
+
+function polygonXml(bytes: Uint8Array): { section: string; points: [number, number][] } {
+  return JSON.parse(execFileSync("python3", ["-c", `
+from xml.etree import ElementTree as ET
+import io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as doc:
+    root = ET.fromstring(doc.read("Contents/section0.xml"))
+polygon = root.find(".//{*}polygon")
+vertices = polygon.findall("{*}pt")
+points = [(int(pt.attrib["x"]), int(pt.attrib["y"])) for pt in vertices]
+for pt in vertices:
+    polygon.remove(pt)
+print(json.dumps(dict(section=ET.tostring(root, encoding="unicode"), points=points)))
+`], { input: bytes, encoding: "utf8" }));
 }
 
 describe("Stage 3 shapes on the Release engine", () => {
@@ -321,20 +370,15 @@ describe("Stage 3 shapes on the Release engine", () => {
   });
 
   it("Stage 3-A edits a closed HWPX polygon point as one history step", async () => {
-    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
-    let bytes: Uint8Array, index: number;
-    try {
-      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
-        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
-        width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 1200, vertOffset: 600,
-        polygonPoints: [{ x: 1600, y: 1300 }, { x: 9700, y: 700 }, { x: 6400, y: 6500 }, { x: 1600, y: 1300 }],
-      })));
-      index = created.controlIdx;
-      bytes = fixture.exportHwpx();
-    } finally { fixture.free(); }
+    const { bytes, index } = polygonFixture();
     const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
     try {
       const sel = pick(shapes(doc)[0]!);
+      const firstRenderedPoint = () => {
+        const rendered = (doc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0);
+        const coordinates = /<path d="M([0-9.]+) ([0-9.]+) L/.exec(rendered)!;
+        return [Number(coordinates[1]), Number(coordinates[2])];
+      };
       const original = sel.shapePath!;
       expect(original).toMatchObject({ kind: "polygon", closed: true, width: 10800, height: 7200 });
       const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
@@ -342,6 +386,13 @@ describe("Stage 3 shapes on the Release engine", () => {
         { x: 1600, y: 1300, control: false }, { x: 9700, y: 700, control: false },
         { x: 6400, y: 6500, control: false }, { x: 1600, y: 1300, control: false },
       ]);
+      expect(sel.frame).toMatchObject({ x: 16, y: 8, width: 144, height: 96 });
+      const projected = (x: number, y: number) => {
+        const [screenX, screenY] = firstRenderedPoint();
+        expect(screenX).toBeCloseTo(sel.frame.x + x * sel.frame.width / original.width, 8);
+        expect(screenY).toBeCloseTo(sel.frame.y + y * sel.frame.height / original.height, 8);
+      };
+      projected(1600, 1300);
       const beforeProperties = doc.getShapeProperties!(0, 0, index);
       const untouched = doc.exportHwpx();
       for (const invalid of [
@@ -359,6 +410,7 @@ describe("Stage 3 shapes on the Release engine", () => {
       const after = { ...original, points: original.points.map((point, i) =>
         i === 0 || i === 3 ? { ...point, x: 2701, y: 1502 } : point) };
       expect(read()).toEqual(after);
+      projected(2701, 1502);
       expect(editor.undo()).toBe(true);
       await confirm();
       expect(read()).toEqual(original);
@@ -370,6 +422,10 @@ describe("Stage 3 shapes on the Release engine", () => {
       try {
         const output = exported.takeBytes();
         expectReopenEvidence(doc, output, exported.contentLoss());
+        expect(polygonXml(output)).toEqual({
+          section: polygonXml(bytes).section,
+          points: after.points.map(({ x, y }) => [x, y]),
+        });
         const reopened = new engine.HwpDocument(output) as RhwpDocument;
         try { expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(after); }
         finally { reopened.free(); }
@@ -383,6 +439,43 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(JSON.parse(lock.setControlLock(0, index, true))).toMatchObject({ ok: true });
       expect(pick(shapes(doc)[0]!).operations).not.toContain("pathPoint");
       expect(() => doc.moveShapePathPoint!(0, 0, index, 0, 2801, 1602)).toThrow();
+    } finally { editor.dispose(); }
+  });
+
+  it.each([
+    ["raw translation", 'transMatrix e1="1" e2="0" e3="0"', 'transMatrix e1="1" e2="0" e3="4500"'],
+    ["raw nonuniform scale", 'scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1"', 'scaMatrix e1="2" e2="0" e3="0" e4="0" e5="0.5"'],
+    ["raw reflection", 'scaMatrix e1="1"', 'scaMatrix e1="-1"'],
+    ["raw skew", 'rotMatrix e1="1" e2="0"', 'rotMatrix e1="1" e2="0.25"'],
+    ["component offset", 'offset x="0" y="0"', 'offset x="2200" y="300"'],
+    ["singular matrix", 'scaMatrix e1="1"', 'scaMatrix e1="0"'],
+    ["nonfinite matrix", 'transMatrix e1="1"', 'transMatrix e1="NaN"'],
+    ["malformed translation", 'transMatrix e1="1" e2="0" e3="0"', 'transMatrix e1="1" e2="0" e3="invalid"'],
+    ["missing matrix value", 'transMatrix e1="1" e2="0"', 'transMatrix e1="1"'],
+    ["duplicate matrix value", 'transMatrix e1="1" e2="0"', 'transMatrix e1="1" e2="0" e2="0"'],
+    ["duplicate matrix element", '</hp:renderingInfo>', '<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>'],
+    ["explicit rotation", 'rotationInfo angle="0"', 'rotationInfo angle="30"'],
+  ])("Stage 3-A refuses HWPX polygon point edits with %s", async (_label, original, replacement) => {
+    const { bytes, index } = polygonFixture();
+    const { editor, doc, pick, edit } = await setup("hwpx", withPolygonTransform(bytes, original, replacement));
+    try {
+      const frame = shapes(doc).find(shape => shape.controlIdx === index)!;
+      expect(frame).toMatchObject({ x: 16, y: 8, w: 144, h: 96 });
+      const selection = pick(frame);
+      expect(selection.operations).not.toContain("pathPoint");
+      expect(selection.shapePath).toBeUndefined();
+      const before = doc.exportHwpx();
+      const owners = doc.getControls!();
+      const history = editor.snapshot().history;
+      expect(history).toMatchObject({ undo: false, redo: false });
+      expect(edit({ kind: "pathPoint", index: 0, x: 2701, y: 1502 })).toBe(false);
+      expect(() => doc.moveShapePathPoint!(0, 0, index, 0, 2701, 1502)).toThrow();
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toEqual(history);
+      expect(editor.objectSelection).toEqual(selection);
+      expect(doc.getControls!()).toBe(owners);
+      expect(doc.exportHwpx()).toEqual(before);
     } finally { editor.dispose(); }
   });
 
@@ -434,6 +527,26 @@ describe("Stage 3 shapes on the Release engine", () => {
           writeFileSync(resolve(out, "a-p4-curve-report.json"), exported.contentLoss());
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.skipIf(!process.env.GEUL_STAGE3_TRANSLATED_CUBIC)("Stage 3-A refuses a real HWP5 cubic with matrix translation", async () => {
+    const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_TRANSLATED_CUBIC!));
+    const { editor, doc, pick, edit, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const frame = shapes(doc).find(shape => Math.abs(shape.x - 266.7) < 0.1 && shape.y === 160)!;
+      const before = doc.exportHwp();
+      expect(pick(frame).operations).not.toContain("pathPoint");
+      expect(edit({ kind: "pathPoint", index: 1, x: 3001, y: 1402 })).toBe(false);
+      expect(() => doc.moveShapePathPoint!(0, 0, frame.controlIdx, 1, 3001, 1402)).toThrow();
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwp()).toEqual(before);
     } finally { editor.dispose(); }
   });
 

@@ -1,0 +1,91 @@
+{
+  "baselineHead": "ab990437f1226a9f4891e394d0da331699efcc03",
+  "date": "2026-11-20",
+  "status": "IMPLEMENTED_VERIFIED",
+  "scope": "Stage 3-A P4 body path transform eligibility",
+  "changes": [
+    "patches/rhwp/stage3a-path-transform-safety.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "src-tauri/src/services/save/hwp/gso.rs"
+  ],
+  "baselineReproduction": {
+    "releaseGeneration": "5ca8f50df72af8509367fe179d852f8d513fca5bb36372567841f2dc200c6dd7",
+    "hwpx": "The body renderer ignored stored raw affines and component offsets. The engine exposed and mutated polygon points with matrix translation, nonuniform scale, skew, nonzero component offset, singular and nonfinite matrices, and malformed translation.",
+    "hwp5": "A binary cubic with nonzero raw matrix translation accepted the same control-point mutation as the identity fixture."
+  },
+  "transformContract": {
+    "rendering": "Body polygon and curve points use the same renderer frame as the selection overlay. Each axis maps from original HWPUNIT extent to frame extent, added to the page placement origin. Group rendering can use a separate affine and remains out of scope.",
+    "allowed": "Zero explicit rotation; no flip; each present stored matrix is identity. HWPX can omit renderingInfo and uses zero component offset. HWP5 uses common object placement, retaining the component offset for the top-level body curve.",
+    "refused": "Stored translation, scale, reflection, rotation, shear, nonidentity compound matrices, singular or nonfinite matrices, and malformed HWPX transform encoding. HWPX nonzero or ambiguous component offsets are ineligible.",
+    "hwp5Save": "Point-only cubic edits also require identity matrix bytes by value and every surrounding object record to match byte for byte, including component offset, frame, and metadata."
+  },
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "ada5c16d36d5d0ddf85d17b75bac9be704e7c52f962b865239289d5e6122d079",
+    "artifacts": {
+      "rhwp.js": "ba1d26e648ba943c912ecfeb693bfa5bbeff1849e244a04101bcf45ca5af3559",
+      "rhwp_bg.wasm": "d3bbab5f60658d4e63d790fc538d11a09906ffa3ca1b37b408415a034a999041"
+    },
+    "patch": {
+      "name": "stage3a-path-transform-safety.patch",
+      "sha256": "ed268ee81c0b63d59c769ff5b0fac2454be25f9fb63e0ae1d5a06c213623782c"
+    }
+  },
+  "checks": [
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts/tests -p test_rhwp_profiles.py",
+      "exit": 0,
+      "passed": 3
+    },
+    {
+      "command": "scripts/build-rhwp-wasm.sh (locked wasm-bindgen on PATH)",
+      "exit": 0
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> GEUL_STAGE3_CUBIC=<original> GEUL_STAGE3_TRANSLATED_CUBIC=<translated> node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'Stage 3-A (edits|refuses|P6 transfers)'",
+      "exit": 0,
+      "passed": 17,
+      "filtered": 29
+    },
+    {
+      "command": "python3 scripts/cargo-geul.py test --lib --no-run",
+      "exit": 0
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> geul_lib services::save::hwp::gso::tests::release_stage3a_hwp_cubic_preserves_segment_structure --ignored --exact",
+      "exit": 0,
+      "passed": 1
+    },
+    {
+      "command": "save_check saved hwpx <original> <edited> <loss-report> true",
+      "exit": 0,
+      "outcome": "safe"
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "independentOutputs": {
+    "hwpx": "Section XML with the point elements removed compares equal. Closed polygon first and final vertices both become (2701, 1502). Independent RHWP reopen and undo/redo passed.",
+    "hwp5": "Independent CFB comparison found one modified record, curve leaf tag 83 level 3. Only the intended control and shared endpoint coordinates changed. Component, segment commands, padding and non-preview streams were preserved. Independent RHWP reopen and undo/redo passed.",
+    "files": {
+      "a-p4-polygon-original.hwpx": "cfabf3fa66ebeae856158fa31d00d773f258a20bd3bf6f7d4659f708e3260406",
+      "a-p4-polygon-edited.hwpx": "7fdc450cec7cff13442da3e65456b40cf8a608e92377a1c9244a5eaf468f92f4",
+      "a-p4-curve-original.hwp": "1b6874c2bb294f585d92a678ca5e1e6f799caaae352fa7dfb837c17b41775917",
+      "a-p4-curve-edited.hwp": "b5807242a7c65f5676c4cf0184f20b2225003e733b79340602d92fe458be4547",
+      "a-p4-curve-translated.hwp": "0431003392b8b42b804a3667c2b4ae46a965b070fe3e45475d4fe7c8842c288c"
+    }
+  },
+  "native": {
+    "result": "NOT RUN",
+    "reason": "The point editor mapping and UI interaction are unchanged. Focused Release rendering, command refusal, export, T009 and independent XML/CFB/reopen checks cover this eligibility change.",
+    "historicalEvidence": "stage3-a-p4-object-geometry-acceptance.json"
+  },
+  "rawEvidence": "target/stage3a-transform/"
+}

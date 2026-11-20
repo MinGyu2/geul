@@ -1714,7 +1714,13 @@ pub(super) fn prove_evolved_gso(
                 && old[..old.len() - 1] == new[..new.len() - 1]
                 && dword(old[0].2, 4)? as u32 & ATTR_SIZE_PROTECT == 0
                 && old_flip & 3 == 0
-                && old_rot.rem_euclid(360) == 0
+                && old_rot == 0
+                && old_sc[r_at + 2..old_r_end].chunks_exact(48).all(|matrix| {
+                    matrix.chunks_exact(8).enumerate().all(|(index, bytes)| {
+                        f64::from_le_bytes(bytes.try_into().unwrap())
+                            == if index == 0 || index == 4 { 1.0 } else { 0.0 }
+                    })
+                })
                 && (1..=2_000_000).contains(&orig_w)
                 && (1..=2_000_000).contains(&orig_h)
                 && same_cubic_structure(old_last.2, new_last.2, orig_w, orig_h),
@@ -2495,7 +2501,23 @@ mod tests {
         let candidate = mutate_body_record(
             &original, |tag, level, _| tag == super::TAG_CURVE && level == 3, |_| path,
         );
-        std::fs::write(directory.join("a-p4-curve-original.hwp"), candidate).unwrap();
+        std::fs::write(directory.join("a-p4-curve-original.hwp"), &candidate).unwrap();
+        let translated = mutate_p4_cubic_component(&candidate, 68, &9000.0f64.to_le_bytes());
+        std::fs::write(directory.join("a-p4-curve-translated.hwp"), translated).unwrap();
+    }
+
+    fn mutate_p4_cubic_component(bytes: &[u8], offset: usize, replacement: &[u8]) -> Vec<u8> {
+        mutate_body_record(
+            bytes,
+            |tag, level, data| {
+                tag == super::TAG_SHAPE_COMPONENT && level == 2 && data.starts_with(b"ruc$ruc$")
+            },
+            |data| {
+                let mut changed = data.to_vec();
+                changed[offset..offset + replacement.len()].copy_from_slice(replacement);
+                changed
+            },
+        )
     }
 
     #[test]
@@ -2512,6 +2534,18 @@ mod tests {
                 bytes[offset] ^= 1;
                 bytes
             });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        }
+        // Even identical transformed components cannot authorize a point-only edit.
+        let translation = 9000.0f64.to_le_bytes();
+        let translated_original = mutate_p4_cubic_component(&original, 68, &translation);
+        let translated_output = mutate_p4_cubic_component(&output, 68, &translation);
+        assert!(check_with_preview_refresh(&translated_original, &translated_output)
+            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        // Component offset_x and the translation matrix's tx are outside the leaf.
+        for (offset, replacement) in [(8, &15001i32.to_le_bytes()[..]), (68, &9000.0f64.to_le_bytes()[..])] {
+            let tampered = mutate_p4_cubic_component(&output, offset, replacement);
             assert!(check_with_preview_refresh(&original, &tampered)
                 .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }

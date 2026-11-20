@@ -1,0 +1,223 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+index 09e90e1..0cc4cf2 100644
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -15,6 +15,22 @@ fn geul_bad_shape_edit() -> HwpError {
+     HwpError::RenderError("Unsupported shape edit".into())
+ }
+
++/// Stored matrices are retained on save. The body point overlay only maps through the
++/// renderer's frame (page origin plus frame extent divided by original extent).
++fn geul_path_has_identity_matrices(raw: &[u8]) -> bool {
++    let Some((count, matrices)) = raw.split_at_checked(2) else {
++        return false;
++    };
++    let count = u16::from_le_bytes([count[0], count[1]]) as usize;
++    matrices.len() == 48 + count * 96
++        && matrices.chunks_exact(48).all(|matrix| {
++            matrix.chunks_exact(8).enumerate().all(|(index, bytes)| {
++                let value = f64::from_le_bytes(bytes.try_into().unwrap());
++                value == if index == 0 || index == 4 { 1.0 } else { 0.0 }
++            })
++        })
++}
++
+ fn geul_same_point(a: &crate::model::Point, b: &crate::model::Point) -> bool {
+     a.x == b.x && a.y == b.y
+ }
+@@ -491,7 +507,13 @@ impl DocumentCore {
+         use crate::parser::FileFormat;
+         let shape = self.advanced_body_shape(sec, para, ctrl)?;
+         let attr = shape.shape_attr();
+-        if attr.group_level != 0 || attr.rotation_angle.rem_euclid(360) != 0
++        // The HWP5 component offset is relative to a group. The top-level renderer
++        // positions a body curve with CommonObjAttr and keeps the component bytes intact.
++        if attr.group_level != 0 || attr.rotation_angle != 0
++            || (self.source_format == FileFormat::Hwpx
++                && (attr.hwpx_unproven_path_transform || attr.offset_x != 0 || attr.offset_y != 0))
++            || (!(attr.raw_rendering.is_empty() && self.source_format == FileFormat::Hwpx)
++                && !geul_path_has_identity_matrices(&attr.raw_rendering))
+             || attr.horz_flip || attr.vert_flip || attr.flip & 3 != 0
+             || attr.original_width_was_zero || attr.original_height_was_zero
+             || !(1..=2_000_000).contains(&attr.original_width)
+diff --git a/src/model/shape.rs b/src/model/shape.rs
+index 4781cca..8db3415 100644
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -263,6 +263,8 @@ pub struct ShapeComponentAttr {
+     pub rotation_center: Point,
+     /// 렌더링 정보 원본 바이트 (변환 행렬 등, 라운드트립 보존용)
+     pub raw_rendering: Vec<u8>,
++    /// HWPX path edit eligibility when the XML transform could not establish identity.
++    pub hwpx_unproven_path_transform: bool,
+     /// 렌더링 변환 합성 결과: 아핀 행렬 [a, b, tx, c, d, ty]
+     /// (x', y') = (a*x + b*y + tx, c*x + d*y + ty)
+     /// render_sx = a, render_b = b, render_tx = tx
+@@ -300,6 +302,7 @@ impl Default for ShapeComponentAttr {
+             rotate_image: false,
+             rotation_center: Point::default(),
+             raw_rendering: Vec::new(),
++            hwpx_unproven_path_transform: false,
+             render_tx: 0.0,
+             render_ty: 0.0,
+             render_sx: 1.0,
+diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
+index 1ce3f66..afef5df 100644
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -4209,24 +4209,34 @@ fn parse_rendering_info(
+     }
+
+     // 행렬 값 파싱 헬퍼
+-    fn read_matrix(ce: &quick_xml::events::BytesStart) -> [f64; 6] {
++    fn read_matrix(ce: &quick_xml::events::BytesStart) -> ([f64; 6], bool) {
+         let mut m = [0.0f64; 6];
+-        for attr in ce.attributes().flatten() {
+-            let val: f64 = attr_str(&attr)
+-                .parse()
+-                .map(hwp5_matrix_value)
+-                .unwrap_or(0.0);
+-            match attr.key.as_ref().as_bytes() {
+-                b"e1" => m[0] = val,
+-                b"e2" => m[1] = val,
+-                b"e3" => m[2] = val,
+-                b"e4" => m[3] = val,
+-                b"e5" => m[4] = val,
+-                b"e6" => m[5] = val,
+-                _ => {}
+-            }
++        let mut seen = 0;
++        let mut exact_identity = true;
++        for attr in ce.attributes() {
++            let Ok(attr) = attr else {
++                exact_identity = false;
++                continue;
++            };
++            let index = match attr.key.as_ref().as_bytes() {
++                b"e1" => 0,
++                b"e2" => 1,
++                b"e3" => 2,
++                b"e4" => 3,
++                b"e5" => 4,
++                b"e6" => 5,
++                _ => {
++                    exact_identity = false;
++                    continue;
++                }
++            };
++            let parsed = attr_str(&attr).parse::<f64>().ok();
++            let expected = if index == 0 || index == 4 { 1.0 } else { 0.0 };
++            exact_identity &= parsed == Some(expected);
++            seen |= 1 << index;
++            m[index] = parsed.map(hwp5_matrix_value).unwrap_or(0.0);
+         }
+-        m
++        (m, exact_identity && seen == 0b111111)
+     }
+     // 아핀 행렬 합성: result = A × B
+     fn compose(a: &[f64; 6], b: &[f64; 6]) -> [f64; 6] {
+@@ -4260,18 +4270,27 @@ fn parse_rendering_info(
+     let mut sca_rot_pairs: Vec<([f64; 6], [f64; 6])> = Vec::new();
+     let mut pending_sca: Option<[f64; 6]> = None;
+
++    let mut next_matrix: &[u8] = b"transMatrix";
++    let mut exact_identity = true;
+     loop {
+         match reader.read_event_into(&mut buf) {
+             Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                let (matrix, identity) = read_matrix(ce);
++                exact_identity &= identity && local == next_matrix;
+                 match local {
+-                    b"transMatrix" => trans = read_matrix(ce),
++                    b"transMatrix" => {
++                        trans = matrix;
++                        next_matrix = b"scaMatrix";
++                    }
+                     b"scaMatrix" => {
+-                        pending_sca = Some(read_matrix(ce));
++                        pending_sca = Some(matrix);
++                        next_matrix = b"rotMatrix";
+                     }
+                     b"rotMatrix" => {
+-                        let rot = read_matrix(ce);
++                        let rot = matrix;
++                        next_matrix = b"scaMatrix";
+                         let sca = pending_sca.take().unwrap_or([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+                         sca_rot_pairs.push((sca, rot));
+                     }
+@@ -4283,9 +4302,14 @@ fn parse_rendering_info(
+                     break;
+                 }
+             }
+-            Ok(Event::Eof) => break,
++            Ok(Event::Text(text)) if text.as_ref().bytes().all(|byte| byte.is_ascii_whitespace()) => {}
++            Ok(Event::Comment(_)) => {}
++            Ok(Event::Eof) => {
++                exact_identity = false;
++                break;
++            }
+             Err(e) => return Err(HwpxError::XmlError(format!("renderingInfo: {}", e))),
+-            _ => {}
++            _ => exact_identity = false,
+         }
+         buf.clear();
+     }
+@@ -4309,6 +4333,7 @@ fn parse_rendering_info(
+     shape_attr.render_sy = result[4]; // d
+     shape_attr.render_ty = result[5]; // ty
+     shape_attr.raw_rendering = make_raw_rendering(&trans, &sca_rot_pairs);
++    shape_attr.hwpx_unproven_path_transform |= !exact_identity || next_matrix != b"scaMatrix";
+
+     Ok(())
+ }
+@@ -4796,6 +4821,8 @@ fn parse_shape_object(
+     let mut text_box: Option<TextBox> = None;
+     let mut shadow_acc: Option<(u32, u32, i32, i32, u8)> = None;
+     let mut has_pos = false;
++    let mut seen_path_rendering = false;
++    let mut seen_path_offset = false;
+     let mut x_coords = [0i32; 4];
+     let mut y_coords = [0i32; 4];
+     // [Task #1067] polygon / curve 의 가변 꼭짓점 `<hc:pt x=... y=.../>` 누적.
+@@ -4849,6 +4876,27 @@ fn parse_shape_object(
+                 match local {
+                     b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
+                     | b"rotationInfo" => {
++                        if shape_type == b"polygon" && local == b"offset" {
++                            let mut axes = 0;
++                            let mut valid = self_closing && !seen_path_offset;
++                            for attr in ce.attributes() {
++                                let Ok(attr) = attr else {
++                                    valid = false;
++                                    continue;
++                                };
++                                axes |= match attr.key.as_ref().as_bytes() {
++                                    b"x" => 1,
++                                    b"y" => 2,
++                                    _ => {
++                                        valid = false;
++                                        0
++                                    }
++                                };
++                                valid &= attr_str(&attr).parse::<i32>() == Ok(0);
++                            }
++                            shape_attr.hwpx_unproven_path_transform |= !valid || axes != 3;
++                            seen_path_offset = true;
++                        }
+                         parse_object_layout_child(
+                             local,
+                             ce,
+@@ -4986,6 +5034,11 @@ fn parse_shape_object(
+                     b"start2" => parse_xy(ce, &mut e_start2),
+                     b"end2" => parse_xy(ce, &mut e_end2),
+                     b"renderingInfo" => {
++                        if shape_type == b"polygon" {
++                            shape_attr.hwpx_unproven_path_transform |=
++                                self_closing || seen_path_rendering || ce.attributes().next().is_some();
++                            seen_path_rendering = true;
++                        }
+                         if !self_closing {
+                             parse_rendering_info(reader, &mut shape_attr)?;
+                         }
