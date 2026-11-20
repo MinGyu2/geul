@@ -143,4 +143,31 @@ describe("HWPX object clipboard fidelity boundary", () => {
       try { expect(shapes(reopened)).toHaveLength(2); } finally { reopened.free(); }
     } finally {src.editor.dispose();}
   });
+  it("routes missing MIME object markers without text downgrade", async () => {
+    const src = await setup("hwpx"), dst = await setup("hwpx");
+    let plain = "";
+    const clip: PlainClipboard = {readText: async () => plain, writeText: async t => { plain = t; }};
+    try {
+      clearStructuredClipboard();
+      expect(src.editor.execute("insert.shape", {command:"insert.shape",kind:"rectangle"}).accepted).toBe(true); await src.confirm();
+      src.pick(shapes(src.doc)[0]!);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
+      expect(src.editor.execute("object.deselect").accepted).toBe(true);
+      const before = dst.doc.exportHwpx(), snapshot = dst.editor.snapshot();
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(false); // remembered source is not destination
+      expect(dst.doc.exportHwpx()).toEqual(before); expect(dst.editor.snapshot()).toEqual(snapshot);
+      expect(await src.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true); await src.confirm();
+      expect(shapes(src.doc)).toHaveLength(2); // same-document remembered object
+      clearStructuredClipboard();
+      const srcBytes = src.doc.exportHwpx(), srcSnapshot = src.editor.snapshot();
+      expect(await src.editor.executeClipboard("edit.paste", () => true, clip)).toBe(false);
+      expect(src.doc.exportHwpx()).toEqual(srcBytes); expect(src.editor.snapshot()).toEqual(srcSnapshot);
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(false);
+      expect(dst.doc.exportHwpx()).toEqual(before); expect(dst.editor.snapshot()).toEqual(snapshot);
+      plain = "Geul shape notes";
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true); await dst.confirm();
+      expect(dst.doc.getTextFileText!()).toContain("Geul shape notes");
+    } finally {clearStructuredClipboard(); src.editor.dispose(); dst.editor.dispose();}
+  });
+
 });

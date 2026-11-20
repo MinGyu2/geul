@@ -1,4 +1,4 @@
-import { MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
+import { MAX_OBJECT_CLIPBOARD_BYTES, OBJECT_CLIPBOARD_MIME, isObjectClipboardPlainText, objectClipboardPlainText, parseObjectClipboardPayload } from "./objectClipboard";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { documentCommandState } from "./capability";
 import {
@@ -159,7 +159,8 @@ export async function runClipboard(
       if (shape !== null) return await pasteObject(shape);
       const recalled = recallStructuredClipboard(TABLE_CLIPBOARD_MIME, text);
       if (recalled !== null && editing.insertStructured) return await pasteStructured(recalled, true);
-      return text !== "" && validClipboardText(text) && editing.insert(text);
+      // An orphaned object marker must never degrade into ordinary document text.
+      return text !== "" && !isObjectClipboardPlainText(text) && validClipboardText(text) && editing.insert(text);
     }
     if (editing.readStructured) {
       const structured = await editing.readStructured();

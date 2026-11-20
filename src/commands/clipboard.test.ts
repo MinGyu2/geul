@@ -321,3 +321,26 @@ describe("structured paste fallback ownership (P4 stabilization)", () => {
     }
   });
 });
+
+describe("object marker fallback boundary", () => {
+  afterEach(() => clearStructuredClipboard());
+  const marker = "Geul shape [0123456789abcdef01234567]";
+  it("refuses an orphaned structured object marker without inserting text", async () => {
+    clearStructuredClipboard();
+    const h = harness(); h.clipboard.readText = vi.fn(async () => marker);
+    expect(await h.run("edit.paste")).toBe(false);
+    expect(h.editing.insert).not.toHaveBeenCalled();
+  });
+  it("allows ordinary text with similar words or a non-marker token", async () => {
+    for (const text of ["Geul shape", "Geul shape [not a token]", "Notes: Geul shape [0123456789abcdef01234567]", "Geul shape [0123456789abcdef01234567]\n"]) {
+      const h = harness(); h.clipboard.readText = vi.fn(async () => text);
+      expect(await h.run("edit.paste")).toBe(true); expect(h.editing.insert).toHaveBeenCalledWith(text);
+    }
+  });
+  it("refuses malformed structured MIME without reading plain text", async () => {
+    const h = harness(); h.clipboard.readText = vi.fn(async () => marker);
+    h.clipboard.readStructured = vi.fn(async mime => mime === "application/x-geul-object+json" ? "{" : null);
+    expect(await h.run("edit.paste")).toBe(false);
+    expect(h.clipboard.readText).not.toHaveBeenCalled(); expect(h.editing.insert).not.toHaveBeenCalled();
+  });
+});

@@ -140,6 +140,12 @@ export function createHwpxObjectClipboardPayload(
   };
 }
 
+/** Exact reserved object marker; without its structured payload it is not document text. */
+export function isObjectClipboardPlainText(text: string): boolean {
+  const match = /^Geul (rectangle|ellipse|line|picture|shape|textBox|group) \[([0-9a-f]{24})\]$/.exec(text);
+  return match !== null && match[0] === text;
+}
+
 export function objectClipboardPlainText(payload: ObjectClipboardPayload): string {
   return payload.version === 1 ? `Geul ${payload.object.shape} [${payload.token}]` : `Geul ${payload.object} [${payload.token}]`;
 }
