@@ -792,6 +792,8 @@
   "editor.object.path.x": "X (HWPUNIT)",
   "editor.object.path.y": "Y (HWPUNIT)",
   "editor.object.path.apply": "Apply coordinates",
+  "editor.object.path.addVertex": "Add vertex on next edge",
+  "editor.object.path.removeVertex": "Remove vertex",
   "properties.shape.convert.rectangle": "Change to rectangle",
   "properties.shape.convert.ellipse": "Change to ellipse",
   "properties.caption.side": "Caption position",

@@ -1227,7 +1227,8 @@ button {
 .object-path-coordinates {
   top: calc(100% + 6px);
   left: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
   gap: 6px;
   align-items: center;
   padding: 4px;
@@ -1236,3 +1237,9 @@ button {
 }
 
 .object-path-coordinates input { width: 7em; }
+
+.object-path-vertex-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}

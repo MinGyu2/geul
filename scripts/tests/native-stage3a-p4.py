@@ -144,6 +144,79 @@ def section_pair(fixture, path):
         return ET.fromstring(before.read(section)), ET.fromstring(after.read(section))
 
 
+def polygon_vertices_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-polygon-original.hwpx"
+    before = row["before"] = inspect(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "polygon")
+    path = h.begin(acc, row, fixture, out, "a-p4-vertices-published.hwpx")
+
+    def select():
+        h.select_object(acc, target, "shape")
+        acc.dom_click(".object-path-mode")
+
+    def count(expected):
+        h.require(acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT) == expected,
+                  "unexpected number of polygon vertices", expected)
+
+    select()
+    count(3)
+    h.require(acc.d.js("return document.querySelector('.object-path-remove-vertex').disabled"),
+              "triangle must retain at least three vertices")
+    acc.d.js("""
+      window.vertexActions = [];
+      document.addEventListener('click', e => {
+        if (e.target.matches('.object-path-add-vertex,.object-path-remove-vertex'))
+          window.vertexActions.push({action: e.target.className, trusted: e.isTrusted});
+      }, true);
+    """)
+    acc.dom_click(f"{POINT}:nth-of-type(4)")  # Closing edge starts at the third vertex.
+    acc.dom_click(".object-path-add-vertex")
+    h.revision(acc, "hwpx", 1)
+    count(4)
+    acc.dom_click(".object-path-add-vertex")
+    h.revision(acc, "hwpx", 2)
+    count(5)
+    acc.dom_click(f"{POINT}:nth-of-type(2)")
+    acc.dom_click(".object-path-remove-vertex")
+    h.revision(acc, "hwpx", 3)
+    count(4)
+    actions = row["vertexActions"] = acc.d.js("return window.vertexActions")
+    h.require([item["action"] for item in actions] ==
+              ["object-path-add-vertex", "object-path-add-vertex", "object-path-remove-vertex"]
+              and all(item["trusted"] for item in actions), "missing trusted vertex edit clicks", actions)
+
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 4)
+    select()
+    count(5)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 5)
+    select()
+    count(4)
+    acc.key("Escape")
+    h.publish(acc, "hwpx", row)
+
+    points = [(9700,700), (6400,6500), (5200,5200), (4000,3900), (9700,700)]
+    want = {**target, "path": {**target["path"],
+        "points": [{"x":x, "y":y, "control":False} for x,y in points]}}
+    after = row["after"] = inspect(path)
+    h.require(after == {**before,"frames":[want if item == target else item for item in before["frames"]]},
+              "independent engine polygon projection differs", after)
+    old, new = section_pair(fixture, path)
+    for section in (old, new):
+        polygon = section.find(".//{*}polygon")
+        vertices = polygon.findall("{*}pt")
+        if section is new:
+            h.require([(int(p.attrib["x"]), int(p.attrib["y"])) for p in vertices] == points,
+                      "published vertex list differs")
+        for vertex in vertices:
+            polygon.remove(vertex)
+    h.require(ET.tostring(old) == ET.tostring(new), "unrelated HWPX content or properties changed")
+    h.reopen(acc, path, row)
+    select()
+    count(4)
+
+
 def group_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-group-original.hwpx"
     before = row["before"] = inspect(fixture)
@@ -197,6 +270,7 @@ h.CASES = {
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
     "P4.3": group_case,
+    "P4.4": polygon_vertices_case,
 }
 
 if __name__ == "__main__":

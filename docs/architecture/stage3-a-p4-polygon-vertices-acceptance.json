@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-20",
+  "baselineHead": "07686be593cb16c7b200a470ec4c66ba5d7fac16",
+  "feature": "P4.4 HWPX polygon vertex insertion and deletion",
+  "status": "IMPLEMENTED_VERIFIED",
+  "previousLimitation": "Point edits could change coordinates of existing vertices only.",
+  "changedFiles": [
+    "patches/rhwp/stage3a-polygon-vertices.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/native-stage3a-p4.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "src/commands/objectSelection.ts",
+    "src/components/Editor/ShapePointEditor.tsx",
+    "src/components/Editor/ObjectSelectionFrame.tsx",
+    "src/components/Editor/ObjectSelectionFrame.test.tsx",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/shapeProperties.ts",
+    "src/language/en.json",
+    "src/language/ko.json",
+    "src/styles/app.css"
+  ],
+  "supported": "An owned, unlocked, size-unprotected, top-level HWPX simple closed polygon with the P4 transform proof. Insertion chooses an exact interior integer point on the selected outgoing edge. Deletion re-closes the ordered list using the new first point. Each edit is reversible independently.",
+  "refused": "Open, self-intersecting, degenerate, ambiguous, transformed and grouped paths. Fewer than three or more than 256 distinct vertices, off-edge points, repeated closure index and winding reversal, HWP5 and DOCX structural edits.",
+  "release": {
+    "generation": "142268880a560504d1f2d647f319e8a1cebc04eef79b65a4be25bb7621990f64",
+    "artifacts": {
+      "rhwp.js": "908119ccaeb0967e52ff60813c0a4c44505175175eeacdf680b5f6fd1ee59555",
+      "rhwp_bg.wasm": "5720d73a0045659afaf186079b3a8871bddabc12e35693ba89611919ed935d7c"
+    },
+    "patch": {
+      "name": "stage3a-polygon-vertices.patch",
+      "sha256": "74e33b35945052640738e332363fddba19868ea24471cec0c390397506a3ef5c"
+    }
+  },
+  "checks": [
+    {
+      "command": "scripts/build-rhwp-wasm.sh (locked wasm-bindgen on PATH)",
+      "exit": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run src/components/Editor/ObjectSelectionFrame.test.tsx",
+      "exit": 0,
+      "passed": 19
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> GEUL_STAGE3_CUBIC=<original> GEUL_STAGE3_TRANSLATED_CUBIC=<translated> node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'Stage 3-A (inserts on the closing|refuses|edits|P6 transfers)'",
+      "exit": 0,
+      "passed": 20,
+      "filtered": 29
+    },
+    {
+      "command": "save_check saved hwpx <original> <inserted>; save_check saved hwpx <inserted> <edited> (loss report and independent reopen)",
+      "exit": 0,
+      "outcome": "safe (both)"
+    },
+    {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p4.py --out <result> --fixtures target/stage3a-p4/fixtures --cases P4.4 --xdotool <xdotool> --ibus <ibus>",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "correctedFailures": [
+    "The initial integration test detected rollback because the newly constructed point and the RHWP point used different JSON field orders. The adapter now reads points into the canonical application field order.",
+    "The initial Native attempt clicked the form outside the scrolling viewport. The retry reused the same binary and used the harness's scroll-aware trusted click."
+  ],
+  "wasmOutputs": {
+    "a-p4-vertices-edited.hwpx": "adcb4fc9d0086792feb0ffad880b8ecd307db5d913fd20c24efcad7c2fff839d",
+    "a-p4-vertices-inserted.hwpx": "6a8201b42b8f9994be2d594aa94c340fa9a30024ac0f5d7e422dab3c81eebcd6",
+    "a-p4-vertices-original.hwpx": "cfabf3fa66ebeae856158fa31d00d773f258a20bd3bf6f7d4659f708e3260406"
+  },
+  "native": {
+    "status": "PASS",
+    "appSha256": "ca03c893152dc0c18747dbe422f5cee7a96c037bb5c486856d4c870f8bcf4619",
+    "fixtureSha256": "cfabf3fa66ebeae856158fa31d00d773f258a20bd3bf6f7d4659f708e3260406",
+    "publishedSha256": "bf93fc2c881c0cf626d49b2dbbf24d4047d96127887e5927d59eb863ffeb341e",
+    "revision": 5,
+    "trustedClicks": [
+      {
+        "action": "object-path-add-vertex",
+        "trusted": true
+      },
+      {
+        "action": "object-path-add-vertex",
+        "trusted": true
+      },
+      {
+        "action": "object-path-remove-vertex",
+        "trusted": true
+      }
+    ],
+    "independentXml": "Published file has one more vertex than the fixture. The closure matches the new first vertex. All other section XML and non-preview package entries match.",
+    "reopened": {
+      "state": "ready",
+      "dirty": false,
+      "handles": 4
+    },
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true
+    },
+    "exit": 0
+  },
+  "rawEvidence": "target/stage3a-vertices/"
+}

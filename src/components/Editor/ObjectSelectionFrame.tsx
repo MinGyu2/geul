@@ -165,7 +165,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
       </button>}
       {editingPath && selection.shapePath && onEdit &&
         <ShapePointEditor path={selection.shapePath} owner={owner} width={selection.frame.width * scale}
-          height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}
+          height={selection.frame.height * scale} editVertices={selection.operations.includes("pathVertex")}
+          onEdit={edit => onEdit(edit, selection.epoch)} />}
       {canMove && (
         <div className="object-selection-frame__body" role="button" aria-label={t("editor.object.move", { kind })}
           data-testid="object-move" onPointerDown={event => start(event, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel} onMouseDown={swallow} />

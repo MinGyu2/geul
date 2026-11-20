@@ -113,7 +113,7 @@ export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [numbe
       || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0
       || typeof closed !== "boolean" || !Array.isArray(points) || points.length < 3 || points.length > 257
       || !points.every(p => p && within(p.x, width) && within(p.y, height) && typeof p.control === "boolean")) return undefined;
-    return { kind, width, height, points, closed };
+    return { kind, width, height, points: points.map(({ x, y, control }) => ({ x, y, control })), closed };
   } catch {
     return undefined;
   }

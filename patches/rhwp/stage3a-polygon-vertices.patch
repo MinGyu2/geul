@@ -1,0 +1,209 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+index 0cc4cf2..49d106d 100644
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -51,6 +51,50 @@ fn geul_polygon_valid(points: &[crate::model::Point]) -> bool {
+     }).sum::<i128>() != 0
+ }
+
++fn geul_cross(a: crate::model::Point, b: crate::model::Point, c: crate::model::Point) -> i64 {
++    (i64::from(b.x) - i64::from(a.x)) * (i64::from(c.y) - i64::from(a.y))
++        - (i64::from(b.y) - i64::from(a.y)) * (i64::from(c.x) - i64::from(a.x))
++}
++
++fn geul_within_segment_bounds(p: crate::model::Point, a: crate::model::Point, b: crate::model::Point) -> bool {
++    (a.x.min(b.x)..=a.x.max(b.x)).contains(&p.x) && (a.y.min(b.y)..=a.y.max(b.y)).contains(&p.y)
++}
++
++// Input coordinates already fit the editable path's bounded original extent.
++fn geul_simple_closed_polygon(points: &[crate::model::Point]) -> bool {
++    if !geul_polygon_valid(points) || !geul_same_point(&points[0], &points[points.len() - 1]) {
++        return false;
++    }
++    let vertices = &points[..points.len() - 1];
++    let n = vertices.len();
++    let edges = points.windows(2);
++    for (i, edge) in edges.clone().enumerate() {
++        let (a, b) = (edge[0], edge[1]);
++        let prev = vertices[(i + n - 1) % n];
++        if geul_cross(prev, a, b) == 0 && !geul_within_segment_bounds(a, prev, b) {
++            return false;
++        }
++        for other in edges.clone().take(if i == 0 { n - 1 } else { n }).skip(i + 2) {
++            let (c, d) = (other[0], other[1]);
++            let (ac, ad, ca, cb) = (geul_cross(a, b, c), geul_cross(a, b, d),
++                geul_cross(c, d, a), geul_cross(c, d, b));
++            if (ac * ad.signum() < 0 && ca * cb.signum() < 0)
++                || (ac == 0 && geul_within_segment_bounds(c, a, b))
++                || (ad == 0 && geul_within_segment_bounds(d, a, b))
++                || (ca == 0 && geul_within_segment_bounds(a, c, d))
++                || (cb == 0 && geul_within_segment_bounds(b, c, d))
++            {
++                return false;
++            }
++        }
++    }
++    true
++}
++
++fn geul_polygon_winding(points: &[crate::model::Point]) -> i64 {
++    points.windows(2).map(|edge| geul_cross(crate::model::Point::default(), edge[0], edge[1])).sum::<i64>().signum()
++}
++
+ /// Match the HWP5 renderer's existing command decoding. Only accept a
+ /// complete command stream, with zero-valued unused storage bytes.
+ fn geul_cubic_handles(points: &[crate::model::Point], segments: &[u8]) -> Option<Vec<bool>> {
+@@ -634,6 +678,58 @@ impl DocumentCore {
+         Ok(())
+     }
+
++    fn editable_polygon_vertices(&self, sec: usize, para: usize, ctrl: usize) -> Option<&[crate::model::Point]> {
++        let ShapeObject::Polygon(polygon) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        if polygon.drawing.shape_attr.hwpx_unproven_polygon_vertices {
++            return None;
++        }
++        self.editable_shape_path(sec, para, ctrl)?;
++        geul_simple_closed_polygon(&polygon.points).then_some(&polygon.points)
++    }
++
++    pub fn can_edit_polygon_vertices(&self, sec: usize, para: usize, ctrl: usize) -> bool {
++        self.editable_polygon_vertices(sec, para, ctrl).is_some()
++    }
++
++    pub fn edit_polygon_vertex(
++        &mut self, sec: usize, para: usize, ctrl: usize, index: usize, insert: Option<crate::model::Point>,
++    ) -> Result<(), HwpError> {
++        let original = self.editable_polygon_vertices(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        if index >= original.len() - 1 {
++            return Err(geul_bad_shape_edit());
++        }
++        let mut updated = original.to_vec();
++        if let Some(point) = insert {
++            let (a, b) = (original[index], original[index + 1]);
++            // The inserted HWPUNIT point must be strictly inside the chosen edge.
++            if original.len() == 257 || !geul_within_segment_bounds(point, a, b)
++                || geul_same_point(&point, &a) || geul_same_point(&point, &b)
++                || geul_cross(a, b, point) != 0
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            updated.insert(index + 1, point);
++        } else {
++            if original.len() <= 4 {
++                return Err(geul_bad_shape_edit());
++            }
++            updated.pop();
++            updated.remove(index);
++            updated.push(updated[0]);
++        }
++        if !geul_simple_closed_polygon(&updated) || geul_polygon_winding(original) != geul_polygon_winding(&updated) {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Polygon(polygon) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        polygon.points = updated;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
+     /// Editable solid colors of direct, resource-free children of a body-owned HWPX group.
+     pub fn editable_group_fills(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
+         use crate::parser::FileFormat;
+diff --git a/src/model/shape.rs b/src/model/shape.rs
+index 8db3415..3653270 100644
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -265,6 +265,7 @@ pub struct ShapeComponentAttr {
+     pub raw_rendering: Vec<u8>,
+     /// HWPX path edit eligibility when the XML transform could not establish identity.
+     pub hwpx_unproven_path_transform: bool,
++    pub hwpx_unproven_polygon_vertices: bool,
+     /// 렌더링 변환 합성 결과: 아핀 행렬 [a, b, tx, c, d, ty]
+     /// (x', y') = (a*x + b*y + tx, c*x + d*y + ty)
+     /// render_sx = a, render_b = b, render_tx = tx
+@@ -303,6 +304,7 @@ impl Default for ShapeComponentAttr {
+             rotation_center: Point::default(),
+             raw_rendering: Vec::new(),
+             hwpx_unproven_path_transform: false,
++            hwpx_unproven_polygon_vertices: false,
+             render_tx: 0.0,
+             render_ty: 0.0,
+             render_sx: 1.0,
+diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
+index afef5df..f1b369c 100644
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -4957,22 +4957,36 @@ fn parse_shape_object(
+                     // [Task #1067] polygon / curve 의 가변 꼭짓점 (<hc:pt x="..." y="..."/>).
+                     // pt0/pt1/pt2/pt3 (rect 의 4 꼭짓점) 매칭 후 fall-through 로 본 분기 도달.
+                     b"pt" => {
+-                        let mut px: i32 = 0;
+-                        let mut py: i32 = 0;
+-                        for attr in ce.attributes().flatten() {
+-                            match attr.key.as_ref().as_bytes() {
+-                                b"x" => px = parse_i32(&attr),
+-                                b"y" => py = parse_i32(&attr),
+-                                _ => {}
+-                            }
++                        let (mut x, mut y) = (None, None);
++                        let mut valid = self_closing;
++                        for attr in ce.attributes() {
++                            let Ok(attr) = attr else {
++                                valid = false;
++                                continue;
++                            };
++                            let target = match attr.key.as_ref().as_bytes() {
++                                b"x" => &mut x,
++                                b"y" => &mut y,
++                                _ => {
++                                    valid = false;
++                                    continue;
++                                }
++                            };
++                            *target = attr_str(&attr).parse::<i32>().ok();
+                         }
+-                        polygon_points.push(crate::model::Point { x: px, y: py });
++                        if shape_type == b"polygon" {
++                            shape_attr.hwpx_unproven_polygon_vertices |= !valid || x.is_none() || y.is_none();
++                        }
++                        polygon_points.push(crate::model::Point { x: x.unwrap_or(0), y: y.unwrap_or(0) });
+                     }
+                     // [#1200] curve 의 가변 꼭짓점이 `<hp:seg x1 y1 x2 y2>` (점-대-점 chain)
+                     // 으로 인코딩된 경우. `<hc:pt>` 미사용 curve 는 이 경로로 점을 채운다.
+                     // seg 는 제어점이 아닌 sampled 꼭짓점이므로 폴리라인(LineTo)으로 재구성:
+                     // 첫 seg 의 시작점 1회 + 각 seg 의 끝점.
+                     b"seg" => {
++                        if shape_type == b"polygon" {
++                            shape_attr.hwpx_unproven_polygon_vertices = true;
++                        }
+                         let mut x1: i32 = 0;
+                         let mut y1: i32 = 0;
+                         let mut x2: i32 = 0;
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index 99c6591..7a67b6a 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4686,6 +4686,20 @@ impl HwpDocument {
+             .map_err(|e| e.into())
+     }
+
++    #[wasm_bindgen(js_name = canEditPolygonVertices)]
++    pub fn can_edit_polygon_vertices_wasm(&self, sec: u32, para: u32, ctrl: u32) -> bool {
++        self.can_edit_polygon_vertices(sec as usize, para as usize, ctrl as usize)
++    }
++
++    #[wasm_bindgen(js_name = editPolygonVertex)]
++    pub fn edit_polygon_vertex_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, index: u32, insert: bool, x: i32, y: i32,
++    ) -> Result<(), JsValue> {
++        self.edit_polygon_vertex(sec as usize, para as usize, ctrl as usize, index as usize,
++            insert.then_some(crate::model::Point { x, y }))
++            .map_err(|e| e.into())
++    }
++
+     #[wasm_bindgen(js_name = getEditableGroupFills)]
+     pub fn get_editable_group_fills(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_group_fills(sec as usize, para as usize, ctrl as usize)

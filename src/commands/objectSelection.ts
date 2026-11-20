@@ -75,7 +75,7 @@ export interface ObjectSelection extends ObjectHit {
   operations: readonly ObjectOperation[];
 }
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "groupChildFill", "convertShape", "captionSide"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "groupChildFill", "convertShape", "captionSide"] as const;
 const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
@@ -109,6 +109,8 @@ export type ObjectEdit =
   | { kind: "smartArtItems"; items: { text: string; level: number }[] }
   | { kind: "smartArtLayout"; layout: typeof SMART_ART_LAYOUTS[number] }
   | { kind: "pathPoint"; index: number; x: number; y: number }
+  | { kind: "pathVertex"; action: "insert"; index: number; x: number; y: number }
+  | { kind: "pathVertex"; action: "remove"; index: number }
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
   | { kind: "captionSide"; side: "Top" | "Bottom" };
@@ -137,7 +139,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "layer": return "zOrder";
     case "chartTitle": case "chartType": case "chartData": return "chart";
     case "smartArtItems": case "smartArtLayout": return "smartArt";
-    case "pathPoint": case "groupChildFill": case "convertShape": case "captionSide": return edit.kind;
+    case "pathPoint": case "pathVertex": case "groupChildFill": case "convertShape": case "captionSide": return edit.kind;
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -165,6 +167,9 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   const integer = (n: unknown, max: number) => finite(n, max) && Number.isSafeInteger(n) && n >= 0;
   if (value.kind === "pathPoint") return keys === "index,kind,x,y" && integer(value.index, 256)
     && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
+  if (value.kind === "pathVertex") return integer(value.index, 255) && (
+    (value.action === "remove" && keys === "action,index,kind")
+    || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
   if (value.kind === "groupChildFill") return keys === "color,index,kind" && integer(value.index, 127)
     && typeof value.color === "string" && color(value.color);
   if (value.kind === "convertShape") return keys === "kind,to" && (value.to === "rectangle" || value.to === "ellipse");

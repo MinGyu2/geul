@@ -442,6 +442,115 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A inserts on the closing HWPX edge and removes the first vertex", async () => {
+    const { bytes, index } = polygonFixture();
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const selected = pick(shapes(doc)[0]!);
+      expect(selected.operations).toContain("pathVertex");
+      const initial = selected.shapePath!;
+      const path = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      const before = doc.exportHwpx();
+      for (const invalid of [
+        { kind: "pathVertex", action: "remove", index: 0 },
+        { kind: "pathVertex", action: "insert", index: 0, x: 1600, y: 1300 },
+        { kind: "pathVertex", action: "insert", index: 0, x: 2000, y: 1200 },
+        { kind: "pathVertex", action: "insert", index: 3, x: 5650, y: 1000 },
+      ] as const) expect(edit(invalid)).toBe(false);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(before);
+      const insert = objectEditRequest(selected, { kind: "pathVertex", action: "insert", index: 2, x: 4000, y: 3900 });
+      expect(editor.execute("object.edit", insert).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("object.edit", insert).accepted).toBe(false);
+      const inserted = { ...initial, points: [
+        ...initial.points.slice(0, -1), { x: 4000, y: 3900, control: false }, initial.points[0],
+      ] };
+      expect(path()).toEqual(inserted);
+      const insertedBytes = doc.exportHwpx();
+      expect(polygonXml(insertedBytes)).toEqual({
+        section: polygonXml(bytes).section,
+        points: [[1600, 1300], [9700, 700], [6400, 6500], [4000, 3900], [1600, 1300]],
+      });
+      const independentlyInserted = new engine.HwpDocument(insertedBytes) as RhwpDocument;
+      try { expect(JSON.parse(independentlyInserted.getEditableShapePath!(0, 0, index))).toEqual(inserted); }
+      finally { independentlyInserted.free(); }
+
+      expect(edit({ kind: "pathVertex", action: "remove", index: 0 })).toBe(true);
+      await confirm();
+      const final = { ...initial, points: [...inserted.points.slice(1, -1), initial.points[1]] };
+      expect(path()).toEqual(final);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(path()).toEqual(inserted);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(path()).toEqual(initial);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(path()).toEqual(inserted);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        expect(polygonXml(output)).toEqual({
+          section: polygonXml(bytes).section,
+          points: [[9700, 700], [6400, 6500], [4000, 3900], [9700, 700]],
+        });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(final);
+          expect(reopened.canEditPolygonVertices!(0, 0, index)).toBe(true);
+        } finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p4-vertices-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-vertices-inserted.hwpx"), insertedBytes);
+          writeFileSync(resolve(out, "a-p4-vertices-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-vertices-report.json"), exported.contentLoss());
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A refuses a vertex deletion that creates an intersecting HWPX polygon", async () => {
+    const { bytes, index } = polygonFixture();
+    const points = (pairs: number[][]) => pairs.map(([x, y]) => `<hc:pt x="${x}" y="${y}"/>`).join("");
+    const initial = [[1600, 1300], [9700, 700], [6400, 6500], [1600, 1300]];
+    const concave = [[1000, 1000], [9000, 1000], [9000, 6000], [5000, 3000], [1000, 6000], [1000, 1000]];
+    const { editor, doc, pick, edit } = await setup("hwpx", withPolygonTransform(bytes, points(initial), points(concave)));
+    try {
+      const picked = pick(shapes(doc)[0]!);
+      expect(picked.operations).toContain("pathVertex");
+      const previous = doc.exportHwpx();
+      expect(edit({ kind: "pathVertex", action: "remove", index: 1 })).toBe(false);
+      expect(() => doc.editPolygonVertex!(0, 0, index, 1, false, 0, 0)).toThrow();
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(previous);
+      expect(polygonXml(doc.exportHwpx()).points).toEqual(concave);
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A refuses structural edits of a polygon with an ambiguous source vertex", async () => {
+    const { bytes, index } = polygonFixture();
+    const converted = withPolygonTransform(bytes, '<hc:pt x="9700" y="700"/>', '<hc:pt y="700"/>');
+    const { editor, doc, pick, edit } = await setup("hwpx", converted);
+    try {
+      expect(pick(shapes(doc)[0]!).operations).not.toContain("pathVertex");
+      const unchanged = doc.exportHwpx();
+      expect(edit({ kind: "pathVertex", action: "insert", index: 2, x: 4000, y: 3900 })).toBe(false);
+      expect(() => doc.editPolygonVertex!(0, 0, index, 2, true, 4000, 3900)).toThrow();
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(unchanged);
+    } finally { editor.dispose(); }
+  });
+
   it.each([
     ["raw translation", 'transMatrix e1="1" e2="0" e3="0"', 'transMatrix e1="1" e2="0" e3="4500"'],
     ["raw nonuniform scale", 'scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1"', 'scaMatrix e1="2" e2="0" e3="0" e4="0" e5="0.5"'],
@@ -490,6 +599,7 @@ describe("Stage 3 shapes on the Release engine", () => {
       const frame = shapes(doc).find(frame => JSON.parse(doc.getEditableShapePath!(0, 0, frame.controlIdx)) !== null)!;
       const selection = pick(frame), index = frame.controlIdx;
       const path = selection.shapePath!;
+      expect(selection.operations).not.toContain("pathVertex");
       const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
       expect(path.kind).toBe("curve");
       expect(path.points.map(point => point.control)).toEqual([false, true, true, false, false]);

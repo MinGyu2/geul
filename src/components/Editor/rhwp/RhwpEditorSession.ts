@@ -1842,6 +1842,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
             ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
           if (shapePath) operations.push("pathPoint");
+          if (format === "hwpx" && shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
+            && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
@@ -4571,7 +4573,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
-    if (request.edit.kind === "pathPoint" || request.edit.kind === "groupChildFill") return this.editAdvancedShape(request);
+    if (request.edit.kind === "pathPoint" || request.edit.kind === "pathVertex" || request.edit.kind === "groupChildFill") {
+      return this.editAdvancedShape(request);
+    }
     if (request.edit.kind === "captionSide") return this.editCaptionSide(request);
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
@@ -4731,28 +4735,44 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!selected || !saved || !doc?.getShapeProperties || !this.history || this.imeUnsettled
       || !objectEditMatches(request, selected)) return false;
     const { edit } = request;
-    const pathEdit = edit.kind === "pathPoint";
+    const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex";
     if (!pathEdit && edit.kind !== "groupChildFill") return false;
     const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
     if (!address || !this.gsoFormatEditable(address, pathEdit)) return false;
     const read = pathEdit ? inspectRhwpShapePath : inspectRhwpGroupFills;
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills">;
-    if (pathEdit) {
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "operations">;
+    if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
       if (!path || !point || !doc.moveShapePathPoint || edit.x > path.width || edit.y > path.height
         || (edit.x === point.x && edit.y === point.y) || (path.closed && edit.index === path.points.length - 1)) return false;
-      refreshed = { shapePath: { ...path, points: path.points.map((p, index) =>
+      refreshed = { operations: selected.operations, shapePath: { ...path, points: path.points.map((p, index) =>
         index === edit.index || (path.closed && edit.index === 0 && index === path.points.length - 1)
           ? { ...p, x: edit.x, y: edit.y } : p) } };
       apply = () => doc.moveShapePathPoint!(...address, edit.index, edit.x, edit.y);
+    } else if (edit.kind === "pathVertex") {
+      const path = selected.shapePath;
+      if (this.sessions.get(this.sessionId)?.format !== "hwpx" || path?.kind !== "polygon" || !path.closed
+        || !doc.editPolygonVertex || !doc.canEditPolygonVertices?.(...address) || edit.index >= path.points.length - 1) return false;
+      const points = path.points.slice(0, -1);
+      if (edit.action === "insert") {
+        if (points.length >= 256 || edit.x > path.width || edit.y > path.height) return false;
+        points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
+        apply = () => doc.editPolygonVertex!(...address, edit.index, true, edit.x, edit.y);
+      } else {
+        if (points.length <= 3) return false;
+        points.splice(edit.index, 1);
+        apply = () => doc.editPolygonVertex!(...address, edit.index, false, 0, 0);
+      }
+      points.push(points[0]!);
+      refreshed = { operations: selected.operations, shapePath: { ...path, points } };
     } else {
       const children = selected.groupChildFills;
       const child = children?.find(item => item.index === edit.index);
       const color = edit.color.toUpperCase();
       if (!children || !child || !doc.setGroupChildFill || child.color === color) return false;
-      refreshed = { groupChildFills: children.map(item => item === child ? { ...item, color } : item) };
+      refreshed = { operations: selected.operations, groupChildFills: children.map(item => item === child ? { ...item, color } : item) };
       apply = () => doc.setGroupChildFill!(...address, edit.index, hexToBgr(color));
     }
     let before: string;
@@ -4765,6 +4785,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (doc.getShapeProperties!(...address) !== before
         || JSON.stringify(read(doc, address)) !== JSON.stringify(refreshed.shapePath ?? refreshed.groupChildFills)) {
         throw new Error("advanced shape edit did not verify");
+      }
+      if (pathEdit && refreshed.shapePath?.kind === "polygon") {
+        const canEditVertices = refreshed.shapePath.closed && !!doc.editPolygonVertex && doc.canEditPolygonVertices?.(...address) === true;
+        if (edit.kind === "pathVertex" && !canEditVertices) throw new Error("polygon vertex edit did not verify");
+        if (canEditVertices !== selected.operations.includes("pathVertex")) {
+          refreshed.operations = canEditVertices ? [...selected.operations, "pathVertex"]
+            : selected.operations.filter(operation => operation !== "pathVertex");
+        }
       }
       return { caret, anchor };
     }, true, "other", null, true, true);

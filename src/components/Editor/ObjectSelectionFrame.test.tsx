@@ -91,6 +91,15 @@ describe("object edit requests", () => {
       expect(validObjectEdit(bad)).toBe(false);
     }
   });
+  it("validates polygon vertex positions and rejects mixed insertion and deletion fields", () => {
+    expect(validObjectEdit({ kind: "pathVertex", action: "insert", index: 2, x: 20, y: 30 })).toBe(true);
+    expect(validObjectEdit({ kind: "pathVertex", action: "remove", index: 2 })).toBe(true);
+    for (const edit of [
+      { kind: "pathVertex", action: "remove", index: 2, x: 20 },
+      { kind: "pathVertex", action: "insert", index: 256, x: 20, y: 30 },
+      { kind: "pathVertex", action: "insert", index: 2, x: 20.5, y: 30 },
+    ]) expect(validObjectEdit(edit)).toBe(false);
+  });
   it("binds a request to the selection identity and its allowed operations", () => {
     const selected = selection({ operations: ["deselect", "resize"] });
     const resize = objectEditRequest(selected, { kind: "bounds", width: 50, height: 25 });
@@ -200,4 +209,21 @@ describe("ObjectSelectionFrame", () => {
       7,
     );
   });
+});
+
+it("adds an exact interior point on the chosen closing edge and removes the selected vertex", () => {
+  const vertices = [[10, 10], [31, 21], [26, 44], [10, 34], [10, 10]];
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] }, operations: ["deselect", "pathPoint", "pathVertex"],
+    shapePath: { kind: "polygon", closed: true, width: 60, height: 60,
+      points: vertices.map(([x, y]) => ({ x: x!, y: y!, control: false })) },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  const add = screen.getByRole<HTMLButtonElement>("button", { name: "Add vertex on next edge" });
+  expect(add.disabled).toBe(true); // The first edge has no interior lattice point.
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 4" }));
+  fireEvent.click(add);
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathVertex", action: "insert", index: 3, x: 10, y: 22 }, 7);
+  fireEvent.click(screen.getByRole("button", { name: "Remove vertex" }));
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathVertex", action: "remove", index: 3 }, 7);
 });

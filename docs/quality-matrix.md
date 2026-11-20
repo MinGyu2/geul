@@ -386,9 +386,10 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
-| P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩·점 개수 변경, HWP5와 DOCX의 꼭짓점 편집은 남아 있다. |
+| P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩, HWP5와 DOCX의 꼭짓점 이동은 범위 밖이다. |
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차·구간 추가/제거 및 HWPX/DOCX의 무손실 구간 모델은 남아 있다. |
 | P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. 자식 이동·크기, 중첩 그룹, HWP5/DOCX 자식 저장 증명은 남아 있다. |
+| P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
 
 본문 점 편집은 현재 항등 저장 행렬과 회전·반전 없는 프레임을 요구한다. 쪽 배치와 프레임 너비·높이의 축별 배율을 유지한다. HWPX 컴포넌트 오프셋은 0이어야 하며 HWP5 곡선의 원래 컴포넌트 오프셋은 바이트 보존한다. [변환 안전 후속 검증](architecture/stage3-a-p4-transform-safety-acceptance.json)
 

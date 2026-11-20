@@ -50,6 +50,8 @@ export interface RhwpDocument {
   getEditableShapePath?(section: number, paragraph: number, control: number): string;
   getPortablePolygonPath?(section: number, paragraph: number, control: number): string;
   moveShapePathPoint?(section: number, paragraph: number, control: number, index: number, x: number, y: number): void;
+  canEditPolygonVertices?(section: number, paragraph: number, control: number): boolean;
+  editPolygonVertex?(section: number, paragraph: number, control: number, index: number, insert: boolean, x: number, y: number): void;
   getEditableGroupFills?(section: number, paragraph: number, control: number): string;
   setGroupChildFill?(section: number, paragraph: number, control: number, index: number, color: number): void;
   setShapeProperties?(section: number, paragraph: number, control: number, properties: string): string;

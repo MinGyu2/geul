@@ -10,20 +10,34 @@ interface PointDrag {
   clientY: number;
 }
 
-export function ShapePointEditor({ path, owner, width, height, onEdit }: {
+/** An exact lattice point on the edge nearest its midpoint, when one exists. */
+function edgeInteriorPoint(a: ShapePath["points"][number], b: ShapePath["points"][number]) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let steps = Math.abs(dx), remainder = Math.abs(dy);
+  while (remainder !== 0) [steps, remainder] = [remainder, steps % remainder];
+  if (steps < 2) return undefined;
+  const step = Math.floor(steps / 2);
+  return { x: a.x + dx / steps * step, y: a.y + dy / steps * step };
+}
+
+export function ShapePointEditor({ path, owner, width, height, editVertices, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
   height: number;
-  onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" }>) => void;
+  editVertices: boolean;
+  onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" }>) => void;
 }) {
   const { t } = useTranslation();
-  const [index, setIndex] = useState(0);
+  const [vertexIndex, setIndex] = useState(0);
   const [draft, setDraft] = useState<{ owner: string; index: number; x: string; y: string }>();
   const [preview, setPreview] = useState<{ owner: string; index: number; x: number; y: number }>();
   const drag = useRef<PointDrag | null>(null);
   const points = path.closed ? path.points.slice(0, -1) : path.points;
-  const selected = points[index] ?? points[0]!;
+  const index = Math.min(vertexIndex, points.length - 1);
+  const selected = points[index]!;
+  const newVertex = editVertices && points.length < 256
+    ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined;
   const activeDraft = draft?.owner === owner && draft.index === index ? draft : null;
   const rawX = activeDraft?.x ?? String(selected.x), rawY = activeDraft?.y ?? String(selected.y);
   const x = Number(rawX), y = Number(rawY);
@@ -81,6 +95,16 @@ export function ShapePointEditor({ path, owner, width, height, onEdit }: {
       <label>{t("editor.object.path.y")} <input type="number" value={rawY} min={0} max={path.height} step={1}
         onChange={event => setDraft({ owner, index, x: rawX, y: event.target.value })} /></label>
       <button type="submit" disabled={!valid}>{t("editor.object.path.apply")}</button>
+      {editVertices && <div className="object-path-vertex-actions">
+        <button type="button" className="object-path-add-vertex" disabled={!newVertex}
+          onClick={() => { if (newVertex) onEdit({ kind: "pathVertex", action: "insert", index, ...newVertex }); }}>
+          {t("editor.object.path.addVertex")}
+        </button>
+        <button type="button" className="object-path-remove-vertex" disabled={points.length <= 3}
+          onClick={() => onEdit({ kind: "pathVertex", action: "remove", index })}>
+          {t("editor.object.path.removeVertex")}
+        </button>
+      </div>}
     </form>
   </>;
 }
