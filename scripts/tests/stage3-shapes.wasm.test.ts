@@ -88,6 +88,84 @@ async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
   return { editor, doc, bytes, pick, edit, confirm, ...control };
 }
 
+const groupFrame = (doc: RhwpDocument) =>
+  (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+
+function patchGroupFixture(change: string, fixture = readFileSync(resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx"))) {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                xml = data.decode("utf-8")
+                exec(sys.argv[1], globals())
+                data = xml.encode("utf-8")
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`, change], { input: fixture });
+}
+
+const identityMatrix = [1, 0, 0, 0, 1, 0];
+
+function boundaryGroupXml(bytes: Uint8Array): {
+  parent: string;
+  children: { owner: (string | null)[]; matrices: number[][]; offset: number[]; other: string[] }[];
+} {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    group = ET.fromstring(zf.read("Contents/section0.xml")).find(".//{*}container")
+
+def tag(el):
+    return el.tag.split("}")[-1]
+
+def pair(el, keys):
+    return [int(el.attrib[key]) for key in keys]
+
+children = []
+for shape in list(group):
+    if tag(shape) not in ("rect", "ellipse"):
+        continue
+    group.remove(shape)
+    info = {
+        "owner": [tag(shape), shape.get("id"), shape.get("instid")],
+        "offset": pair(shape.find("{*}offset"), ["x", "y"]),
+        "sizes": [pair(shape.find("{*}"+key), ["width", "height"]) for key in ("orgSz", "curSz", "sz")],
+        "rotation": pair(shape.find("{*}rotationInfo"), ["centerX", "centerY"]),
+        "matrices": [[float(m.attrib["e"+str(i)]) for i in range(1, 7)] for m in shape.find("{*}renderingInfo")],
+    }
+    coordinates = ("center", "ax1", "ax2", "start1", "end1", "start2", "end2") if tag(shape) == "ellipse" else ("pt0", "pt1", "pt2", "pt3")
+    info.update({key: pair(shape.find("{*}"+key), ["x", "y"]) for key in coordinates})
+    geometry = {"offset", "orgSz", "curSz", "sz", "rotationInfo", "renderingInfo", *coordinates}
+    info["other"] = [ET.tostring(el, encoding="unicode") for el in shape if tag(el) not in geometry]
+    children.append(info)
+print(json.dumps({"parent": ET.tostring(group, encoding="unicode"), "children": children}))
+`], { input: bytes, encoding: "utf8" }));
+}
+
+function expectUnchangedRefusal({ doc, editor }: Awaited<ReturnType<typeof setup>>, attempt: () => void) {
+  const before = doc.exportHwpx();
+  attempt();
+  expect(editor.localRevision).toBe(0);
+  expect(editor.hasUnpreservedChanges).toBe(false);
+  expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+  expect(doc.exportHwpx()).toEqual(before);
+}
+
+function writeGroupBoundaryEvidence(label: string, source: Uint8Array, saved: Uint8Array, report: string) {
+  const dir = process.env.GEUL_P46_BOUNDARY_OUT;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(resolve(dir, `${label}-original.hwpx`), source);
+  writeFileSync(resolve(dir, `${label}-saved.hwpx`), saved);
+  writeFileSync(resolve(dir, `${label}-report.json`), report);
+}
+
 const props = (doc: RhwpDocument, control: number) => JSON.parse(doc.getShapeProperties!(0, 0, control));
 
 function hwpShapeInventory(doc: RhwpDocument) {
@@ -1214,20 +1292,7 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
   it("Stage 3-A P4.6 group child stabilization rejects composite/nonfinite raw transforms (T1-T8) and guards ellipse geometry (E1-E7)", async () => {
     const fixturePath = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
     const fixtureBytes = new Uint8Array(readFileSync(fixturePath));
-    const patchXml = (fn: string) => execFileSync("python3", ["-c", `
-import io, sys, zipfile
-with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w") as dst:
-        for entry in src.infolist():
-            data = src.read(entry)
-            if entry.filename == "Contents/section0.xml":
-                xml = data.decode("utf-8")
-                ${fn}
-                data = xml.encode("utf-8")
-            dst.writestr(entry, data)
-    sys.stdout.buffer.write(out.getvalue())
-`], { input: fixtureBytes });
+    const patchXml = (fn: string) => patchGroupFixture(fn, fixtureBytes);
 
     const idRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
     const cancelScaleRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="2" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="0.5" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
@@ -1307,8 +1372,10 @@ xml = head + '<hp:ellipse ' + ell
       const g = (JSON.parse(noncanonSetup.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
       const sel = noncanonSetup.pick(g)!;
       expect(sel.groupChildren?.children[1]).toMatchObject({ canMove: true, canResize: false });
-      expect(noncanonSetup.edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 4000, height: 3000 })).toBe(false);
-      expect(() => noncanonSetup.doc.resizeGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 4000, 3000)).toThrow();
+      expectUnchangedRefusal(noncanonSetup, () => {
+        expect(noncanonSetup.edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 4000, height: 3000 })).toBe(false);
+        expect(() => noncanonSetup.doc.resizeGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 4000, 3000)).toThrow();
+      });
       expect(noncanonSetup.edit({ kind: "groupChildMove", index: 1, id: 2112169928, instId: 1038428105, x: 5800, y: 400 })).toBe(true);
       await noncanonSetup.confirm();
       const exported = noncanonSetup.doc.exportHwpxWithReport();
@@ -1334,6 +1401,203 @@ xml = head + '<hp:ellipse ' + ell
         expect(() => d.resizeGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 4000, 3000), label).toThrow();
       } finally { d.free(); }
     }
+  });
+
+  it.each([
+    { label: "E8 upper odd width", from: [101, 51, 51, 26], to: [101, 39, 51, 19] },
+    { label: "E9 upper odd height", from: [101, 51, 51, 26], to: [85, 51, 42, 26] },
+    { label: "E10 even", from: [100, 50, 50, 25], to: [100, 40, 50, 20] },
+    { label: "E11 lower odd", from: [101, 51, 50, 25], to: [101, 39, 50, 19] },
+    { label: "E12 both axes", from: [101, 51, 51, 26], to: [85, 39, 42, 19] },
+  ])("Stage 3-A P4.6 group ellipse single-axis preservation ($label)", async ({ label, from, to }) => {
+    const [oldW, oldH, oldX, oldY] = from;
+    const [width, height, cx, cy] = to;
+    const bytes = patchGroupFixture(`
+def resize_source(m):
+    shape = m[0].replace('width="5200"', 'width="${oldW}"').replace('height="4100"', 'height="${oldH}"')
+    shape = shape.replace('centerX="2600" centerY="2050"', 'centerX="${oldX}" centerY="${oldY}"')
+    shape = shape.replace('<hc:center x="2600" y="2050"', '<hc:center x="${oldX}" y="${oldY}"')
+    shape = shape.replace('<hc:ax2 x="2600" y="4100"', '<hc:ax2 x="${oldX}" y="${oldH}"')
+    return shape.replace('x="5200" y="2050"', 'x="${oldW}" y="${oldY}"')
+xml, count = re.subn(r'<hp:ellipse .*?</hp:ellipse>', resize_source, xml, flags=re.S)
+assert count == 1
+`);
+    const sourceXml = boundaryGroupXml(bytes);
+    const [rect, ellipse] = sourceXml.children;
+    const expectedGeometry = (w: number, h: number, x: number, y: number) => ({
+      sizes: [[w, h], [w, h], [w, h]],
+      center: [x, y], ax1: [w, y], ax2: [x, h],
+      start1: [w, y], end1: [w, y], start2: [w, y], end2: [w, y],
+      rotation: [x, y], offset: [6500, 800],
+    });
+    expect(ellipse).toMatchObject({ ...expectedGeometry(oldW, oldH, oldX, oldY), matrices: [identityMatrix, identityMatrix, identityMatrix] });
+
+    const run = await setup("hwpx", bytes);
+    const read = (doc: RhwpDocument) => JSON.parse(doc.getEditableGroupChildren!(0, 0, 2));
+    const svg = (doc: RhwpDocument) => {
+      const shape = /<ellipse cx="([^"]+)" cy="([^"]+)" rx="([^"]+)" ry="([^"]+)" fill="#341260"/
+        .exec((doc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0));
+      expect(shape).not.toBeNull();
+      return shape!.slice(1).map(Number);
+    };
+    try {
+      const { doc, editor, pick, edit, confirm } = run;
+      const group = pick(groupFrame(doc)).groupChildren!;
+      const child = group.children[1]!;
+      expect(child).toMatchObject({ x: 6500, y: 800, width: oldW, height: oldH, canResize: true });
+      expect(boundaryGroupXml(doc.exportHwpx())).toEqual(sourceXml);
+      const beforeSvg = svg(doc);
+      const resize = { kind: "groupChildResize", index: 1, id: child.id, instId: child.instId } as const;
+
+      if (label.startsWith("E8")) {
+        // E13: no-op at the command and engine boundaries leaves history and publication intact.
+        expectUnchangedRefusal(run, () => {
+          expect(edit({ ...resize, width: oldW, height: oldH })).toBe(false);
+          expect(() => doc.resizeGroupChild!(0, 0, 2, 1, child.id, child.instId, oldW, oldH)).toThrow();
+        });
+      }
+
+      expect(edit({ ...resize, width, height })).toBe(true);
+      await confirm();
+      expect(read(doc)).toEqual({ ...group, children: [group.children[0], { ...child, width, height }] });
+      expect(editor.snapshot().history).toMatchObject({ undo: true, redo: false });
+      const afterSvg = svg(doc);
+      const px = (hu: number) => hu * 96 / 7200;
+      expect(afterSvg).toEqual([
+        expect.closeTo(px(7000 + width / 2), 6), expect.closeTo(px(1300 + height / 2), 6),
+        expect.closeTo(px(width / 2), 6), expect.closeTo(px(height / 2), 6),
+      ]);
+      if (width === oldW) expect([afterSvg[0], afterSvg[2]]).toEqual([beforeSvg[0], beforeSvg[2]]);
+      if (height === oldH) expect([afterSvg[1], afterSvg[3]]).toEqual([beforeSvg[1], beforeSvg[3]]);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const saved = exported.takeBytes();
+        const expectedXml = {
+          ...sourceXml, children: [rect, {
+            ...ellipse, ...expectedGeometry(width, height, cx, cy),
+            matrices: [[1, 0, 6500, 0, 1, 800], identityMatrix, identityMatrix, identityMatrix, identityMatrix],
+          }],
+        };
+        expect(boundaryGroupXml(saved)).toEqual(expectedXml);
+        expectReopenEvidence(doc, saved, exported.contentLoss());
+        const reopened = new engine.HwpDocument(saved) as RhwpDocument;
+        try {
+          expect(read(reopened)).toEqual(read(doc));
+          expect(svg(reopened)).toEqual(afterSvg);
+          expect(boundaryGroupXml(reopened.exportHwpx())).toEqual(expectedXml);
+        } finally { reopened.free(); }
+        writeGroupBoundaryEvidence(label.split(" ")[0]!, bytes, saved, exported.contentLoss());
+      } finally { exported.free(); }
+    } finally { run.editor.dispose(); }
+  });
+
+  it("Stage 3-A P4.6 group child identity keeps independent IDs through save/reopen (I1-I9)", async () => {
+    const cases = [
+      { label: "I1", index: 0, source: [2112144572, 1038402749] },
+      { label: "I2", index: 0, source: [0, 1] },
+      { label: "I3", index: 1, source: [1, 0] },
+      { label: "I2-omitted-id", index: 1, source: [null, 2] },
+      { label: "I3-omitted-instid", index: 0, source: [2, null] },
+      { label: "I4", index: 0, source: [0, 0] },
+      { label: "I5", index: 0, source: [2112169928, 1038428105] },
+      // The old fallback either merged or produced these pairs on reopen.
+      { label: "I2-I3-distinct", index: 0, source: [0, 1], sibling: [1, 0] },
+    ] as const;
+    for (const { label, index, source, ...extra } of cases) {
+      const sibling = "sibling" in extra ? extra.sibling : null;
+      const bytes = patchGroupFixture(`
+def set_ids(m, ids):
+    element = m[0]
+    for attr, val in zip(("id", "instid"), ids):
+        element, count = re.subn(r' '+attr+r'="[0-9]+"', '' if val is None else f' {attr}="{val}"', element)
+        assert count == 1
+    return element
+xml, count = re.subn(r'<hp:${index === 0 ? "rect" : "ellipse"} [^>]+>', lambda m: set_ids(m, ${JSON.stringify(source).replace("null", "None")}), xml)
+assert count == 1
+${sibling ? `xml, count = re.subn(r'<hp:ellipse [^>]+>', lambda m: set_ids(m, ${JSON.stringify(sibling)}), xml)
+assert count == 1` : ""}
+`);
+      const orig = boundaryGroupXml(bytes);
+      const [id, instId] = source.map(value => value ?? 0) as [number, number];
+      const run = await setup("hwpx", bytes);
+      try {
+        const { doc, pick, edit, confirm } = run;
+        const before = pick(groupFrame(doc)).groupChildren;
+        const move = { kind: "groupChildMove", index, id, instId, x: 100, y: 150 } as const;
+        const moveDirect = (at: number, expectedId: number, expectedInstId: number) =>
+          doc.moveGroupChild!(0, 0, 2, at, expectedId, expectedInstId, move.x, move.y);
+        if (label === "I4" || label === "I5") {
+          if (label === "I4") expect(before?.children[index]).toMatchObject({ id: 0, instId: 0, canMove: false, canResize: false });
+          else expect(before).toBeUndefined();
+          expectUnchangedRefusal(run, () => {
+            expect(edit(move), label).toBe(false);
+            expect(() => moveDirect(index, id, instId), label).toThrow();
+          });
+          continue;
+        }
+
+        expect(before?.children[index], label).toMatchObject({ id, instId, canMove: true, canResize: true });
+        if (label === "I1") {
+          expectUnchangedRefusal(run, () => {
+            for (const owner of [
+              { index, id: id + 1, instId }, { index, id, instId: instId + 1 }, { index: 1, id, instId },
+            ]) {
+              expect(edit({ ...move, ...owner })).toBe(false);
+              expect(() => moveDirect(owner.index, owner.id, owner.instId)).toThrow();
+            }
+          });
+        }
+        expect(edit(move), label).toBe(true);
+        await confirm();
+        const exported = doc.exportHwpxWithReport();
+        try {
+          const saved = exported.takeBytes();
+          const xml = boundaryGroupXml(saved);
+          expect(xml.parent).toEqual(orig.parent);
+          expect(xml.children.map(child => child.owner)).toEqual(orig.children.map(child => child.owner));
+          expect(xml.children[1 - index]).toEqual(orig.children[1 - index]);
+          expect(xml.children[index]).toMatchObject({ offset: [100, 150] });
+          expectReopenEvidence(doc, saved, exported.contentLoss());
+          const reopened = new engine.HwpDocument(saved) as RhwpDocument;
+          try {
+            const state = JSON.parse(reopened.getEditableGroupChildren!(0, 0, 2));
+            const children = before!.children.map((child, at) => at === index ? { ...child, x: 100, y: 150 } : child);
+            expect(state).toEqual({ ...before, children });
+          } finally { reopened.free(); }
+          writeGroupBoundaryEvidence(label, bytes, saved, exported.contentLoss());
+        } finally { exported.free(); }
+      } finally { run.editor.dispose(); }
+    }
+  });
+
+  it("Stage 3-A P4.6 group refuses an externally incomplete nonidentity matrix pair without mutation", async () => {
+    const bytes = patchGroupFixture(`
+def incomplete(m):
+    shape = m[0]
+    shape, count = re.subn(r'<hc:rotMatrix [^>]*/>', '', shape)
+    assert count == 1
+    return shape.replace('<hc:scaMatrix e1="1"', '<hc:scaMatrix e1="2"')
+xml, count = re.subn(r'<hp:rect .*?</hp:rect>', incomplete, xml, flags=re.S)
+assert count == 1
+`);
+    expect(boundaryGroupXml(bytes).children[0]!.matrices).toEqual([identityMatrix, [2, 0, 0, 0, 1, 0]]);
+    const run = await setup("hwpx", bytes);
+    try {
+      const { doc, pick, edit } = run;
+      const children = pick(groupFrame(doc)).groupChildren!.children;
+      const { id, instId } = children[0]!;
+      expect(children[0]).toMatchObject({ canMove: false, canResize: false });
+      expect(children[1]).toMatchObject({ canMove: true, canResize: true });
+      // The parser fills the absent rotation with identity before constructing the buffer.
+      expect(boundaryGroupXml(doc.exportHwpx()).children[0]!.matrices)
+        .toEqual([identityMatrix, [2, 0, 0, 0, 1, 0], identityMatrix]);
+      expectUnchangedRefusal(run, () => {
+        expect(edit({ kind: "groupChildMove", index: 0, id, instId, x: 100, y: 150 })).toBe(false);
+        expect(edit({ kind: "groupChildResize", index: 0, id, instId, width: 4000, height: 3000 })).toBe(false);
+        expect(() => doc.moveGroupChild!(0, 0, 2, 0, id, instId, 100, 150)).toThrow();
+        expect(() => doc.resizeGroupChild!(0, 0, 2, 0, id, instId, 4000, 3000)).toThrow();
+      });
+    } finally { run.editor.dispose(); }
   });
 
   it.each(["hwp", "hwpx"] as const)("edits %s polygon and curve outer geometry, transforms, and deletion cleanly", async format => {

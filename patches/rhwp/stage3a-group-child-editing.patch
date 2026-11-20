@@ -221,7 +221,7 @@
  const MAX_RECT_DIM_HU: u32 = 2_000_000;
  const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
  
-@@ -829,6 +1043,162 @@
+@@ -829,6 +1043,172 @@
          Ok(())
      }
  
@@ -301,6 +301,9 @@
 +            return Err(geul_bad_shape_edit());
 +        };
 +        let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++        let is_ellipse = matches!(child, ShapeObject::Ellipse(_));
++        let width_changed = new_w != target.width;
++        let height_changed = new_h != target.height;
 +        {
 +            let sa = child.shape_attr_mut();
 +            sa.original_width = new_w;
@@ -311,7 +314,12 @@
 +            sa.original_height_was_zero = false;
 +            sa.current_width_was_zero = false;
 +            sa.current_height_was_zero = false;
-+            sa.rotation_center = crate::model::Point { x: width / 2, y: height / 2 };
++            if width_changed || !is_ellipse {
++                sa.rotation_center.x = width / 2;
++            }
++            if height_changed || !is_ellipse {
++                sa.rotation_center.y = height / 2;
++            }
 +            sa.render_sx = 1.0;
 +            sa.render_sy = 1.0;
 +            sa.render_b = 0.0;
@@ -329,8 +337,10 @@
 +                rect.y_coords = [0, 0, height, height];
 +            }
 +            ShapeObject::Ellipse(ellipse) => {
-+                let cx = width / 2;
-+                let cy = height / 2;
++                // Both integer halves of an odd source dimension are valid.
++                // Keep the imported coordinate on an untouched axis.
++                let cx = if width_changed { width / 2 } else { ellipse.center.x };
++                let cy = if height_changed { height / 2 } else { ellipse.center.y };
 +                ellipse.center = crate::model::Point { x: cx, y: cy };
 +                ellipse.axis1 = crate::model::Point { x: width, y: cy };
 +                ellipse.axis2 = crate::model::Point { x: cx, y: height };
@@ -384,7 +394,7 @@
      /// The editor merges only neighboring, ordinary paragraphs that share
      /// their exact format definitions. Refuse invisible structure which the
      /// text/font-run query cannot observe.
-@@ -3852,4 +4222,99 @@
+@@ -3852,4 +4232,99 @@
          assert_eq!(rect.common.width, 7200);
          assert_eq!(rect.x_coords, [100, 100, 100, 100]);
      }
@@ -549,3 +559,227 @@
      /// Shape(글상자) 속성을 변경한다.
      ///
      /// 반환: JSON `{"ok":true}`
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -263,6 +263,10 @@
+     pub rotation_center: Point,
+     /// 렌더링 정보 원본 바이트 (변환 행렬 등, 라운드트립 보존용)
+     pub raw_rendering: Vec<u8>,
++    /// Attribute presence for imported direct HWPX rectangle/ellipse children.
++    /// A missing attribute occupies the same ownership slot as an explicit zero.
++    #[serde(skip)]
++    pub hwpx_group_child_id_presence: Option<(bool, bool)>,
+     /// HWPX path edit eligibility when the XML transform could not establish identity.
+     pub hwpx_unproven_path_transform: bool,
+     pub hwpx_unproven_polygon_vertices: bool,
+@@ -305,6 +309,7 @@
+             rotate_image: false,
+             rotation_center: Point::default(),
+             raw_rendering: Vec::new(),
++            hwpx_group_child_id_presence: None,
+             hwpx_unproven_path_transform: false,
+             hwpx_unproven_polygon_vertices: false,
+             hwp5_known_curve_leaf: false,
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -891,7 +891,7 @@
+                     b"rect" | b"ellipse" | b"line" | b"connectLine" | b"arc" | b"polygon"
+                     | b"curve" => {
+                         // 그리기 객체 파싱
+-                        let shape = parse_shape_object(local, ce, reader)?;
++                        let shape = parse_shape_object(local, ce, reader, false)?;
+                         push_object_slot_placeholder(&mut text_parts);
+                         para.controls.push(shape);
+                     }
+@@ -3758,7 +3758,8 @@
+
+ #[derive(Default)]
+ struct ObjectElementIds {
+-    instid: u32,
++    id: Option<u32>,
++    instid: Option<u32>,
+     round_rate: u8,
+     is_reverse_hv: bool,
+ }
+@@ -3856,7 +3857,7 @@
+     let mut ids = ObjectElementIds::default();
+     for attr in e.attributes().flatten() {
+         match attr.key.as_ref().as_bytes() {
+-            b"id" => common.instance_id = parse_u32(&attr),
++            b"id" => ids.id = Some(parse_u32(&attr)),
+             b"zOrder" => common.z_order = parse_i32(&attr),
+             b"textWrap" => {
+                 common.text_wrap = match attr_str(&attr).as_str() {
+@@ -3877,7 +3878,7 @@
+                     _ => crate::model::shape::TextFlow::BothSides,
+                 };
+             }
+-            b"instid" => ids.instid = parse_u32(&attr),
++            b"instid" => ids.instid = Some(parse_u32(&attr)),
+             b"groupLevel" => shape_attr.group_level = attr_str(&attr).parse().unwrap_or(0),
+             b"ratio" => ids.round_rate = parse_u8(&attr).min(100),
+             // [Task #1379] numberingType (캡션 번호 범주) 보존 — exam_kor 등 광범위 사용.
+@@ -3899,8 +3900,9 @@
+         }
+     }
+
+-    if common.instance_id == 0 && ids.instid != 0 {
+-        common.instance_id = ids.instid;
++    common.instance_id = ids.id.unwrap_or(common.instance_id);
++    if common.instance_id == 0 {
++        common.instance_id = ids.instid.unwrap_or(0);
+     }
+
+     // HWP5 공통 개체 attr bit 28은 한컴 2020이 `numberingType="PICTURE"`인
+@@ -4813,6 +4815,7 @@
+     shape_type: &[u8],
+     e: &quick_xml::events::BytesStart,
+     reader: &mut Reader<&[u8]>,
++    direct_group_child: bool,
+ ) -> Result<Control, HwpxError> {
+     let mut common = CommonObjAttr::default();
+     let mut shape_attr = ShapeComponentAttr::default();
+@@ -4839,6 +4842,11 @@
+     let mut e_end2 = crate::model::Point::default();
+
+     let object_ids = parse_object_element_attrs(e, &mut common, &mut shape_attr);
++    if direct_group_child && shape_attr.group_level == 1 && matches!(shape_type, b"rect" | b"ellipse") {
++        // The two optional HWPX identifiers are independent at the editable child boundary.
++        common.instance_id = object_ids.id.unwrap_or(0);
++        shape_attr.hwpx_group_child_id_presence = Some((object_ids.id.is_some(), object_ids.instid.is_some()));
++    }
+     let connect_line_type = parse_connect_line_type_attr(e);
+     // [#4388] `<hp:arc>` 전용 `type` 속성 — 다른 태그의 동명 `type` 속성과
+     // 섞이지 않도록 shape_type == b"arc" 로 한정한다.
+@@ -5100,7 +5108,7 @@
+         shadow_offset_x,
+         shadow_offset_y,
+         shadow_alpha,
+-        inst_id: object_ids.instid,
++        inst_id: object_ids.instid.unwrap_or(0),
+         text_box,
+         caption,
+     };
+@@ -5346,7 +5354,7 @@
+                         if !self_closing =>
+                     {
+                         // 자식 그리기 객체
+-                        let child = parse_shape_object(local, ce, reader)?;
++                        let child = parse_shape_object(local, ce, reader, depth == 0)?;
+                         if let Control::Shape(shape) = child {
+                             children.push(*shape);
+                         }
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -36,6 +36,19 @@
+ // <hp:rect>
+ // =====================================================================
+
++/// Preserve the independent identifiers (including explicit zero and omission) on direct
++/// HWPX group children. Generated nonzero identifiers take precedence over prior omission.
++pub(crate) fn drawing_ids(c: &CommonObjAttr, d: &DrawingObjAttr) -> (Option<u32>, Option<u32>) {
++    if let Some((has_id, has_instid)) = d.shape_attr.hwpx_group_child_id_presence {
++        return (
++            (has_id || c.instance_id != 0).then_some(c.instance_id),
++            (has_instid || d.inst_id != 0).then_some(d.inst_id),
++        );
++    }
++    let instid = if d.inst_id != 0 { d.inst_id } else { c.instance_id };
++    (Some(c.instance_id), Some(instid))
++}
++
+ /// `<hp:rect>` 직렬화 진입점. Rectangle IR → XML.
+ pub fn write_rect<W: Write>(
+     w: &mut Writer<W>,
+@@ -47,38 +60,34 @@
+     // 속성 (부모 AbstractShapeObjectType + 자신):
+     // id, zOrder, numberingType, textWrap, textFlow, lock, dropcapstyle,
+     // href, groupLevel, instid, ratio
+-    let id_str = c.instance_id.to_string();
++    let (id, instid) = drawing_ids(c, &rect.drawing);
++    let id = id.map(|id| id.to_string());
++    let instid = instid.map(|id| id.to_string());
+     let z_order = c.z_order.to_string();
+     let tw = text_wrap_str(c.text_wrap);
+     let tf = text_flow_str(c.text_flow);
+     let group_level = sa.group_level.to_string();
+-    // 파서는 instid 를 drawing.inst_id 에 보존한다 (0이면 instance_id 대체).
+-    let instid = if rect.drawing.inst_id != 0 {
+-        rect.drawing.inst_id
+-    } else {
+-        c.instance_id
+-    }
+-    .to_string();
+     let ratio = rect.round_rate.to_string();
+
+-    start_tag_attrs(
+-        w,
+-        "hp:rect",
+-        &[
+-            ("id", &id_str),
+-            ("zOrder", &z_order),
+-            ("numberingType", numbering_type_str(c.numbering_type)),
+-            ("textWrap", tw),
+-            ("textFlow", tf),
+-            // [#2840] lock(개체 잠금) — 파서가 읽기 시작했으므로 IR 값을 방출한다.
+-            ("lock", bool01(c.locked)),
+-            ("dropcapstyle", "None"),
+-            ("href", ""),
+-            ("groupLevel", &group_level),
+-            ("instid", &instid),
+-            ("ratio", &ratio),
+-        ],
+-    )?;
++    let mut attrs = Vec::with_capacity(11);
++    if let Some(id) = id.as_deref() {
++        attrs.push(("id", id));
++    }
++    attrs.extend([
++        ("zOrder", z_order.as_str()),
++        ("numberingType", numbering_type_str(c.numbering_type)),
++        ("textWrap", tw),
++        ("textFlow", tf),
++        ("lock", bool01(c.locked)),
++        ("dropcapstyle", "None"),
++        ("href", ""),
++        ("groupLevel", group_level.as_str()),
++    ]);
++    if let Some(instid) = instid.as_deref() {
++        attrs.push(("instid", instid));
++    }
++    attrs.push(("ratio", &ratio));
++    start_tag_attrs(w, "hp:rect", &attrs)?;
+
+     // 자식 순서 — 한컴 원본 실측 (tbox-v-flow-01) 기준.
+     write_offset(w, sa)?;
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -3405,13 +3405,14 @@
+         .unwrap_or_default();
+     // 태그 부수 속성 — numberingType/dropcapstyle/href/groupLevel/instid (rect/line 동형).
+     let group_level = drawing.map(|d| d.shape_attr.group_level).unwrap_or(0);
+-    let instid = drawing
+-        .map(|d| d.inst_id)
+-        .filter(|&i| i != 0)
+-        .unwrap_or(c.instance_id);
++    let (id, instid) = drawing
++        .map(|d| super::shape::drawing_ids(c, d))
++        .unwrap_or((Some(c.instance_id), Some(c.instance_id)));
++    let id = id.map(|value| format!(r#" id="{value}""#)).unwrap_or_default();
++    let instid = instid.map(|value| format!(r#" instid="{value}""#)).unwrap_or_default();
+     let mut out = format!(
+         concat!(
+-            r#"<hp:{tag} id="{id}" zOrder="{zo}" numberingType="{nt}" textWrap="{tw}" textFlow="{tf}" lock="{lock}" dropcapstyle="None" href="" groupLevel="{gl}" instid="{iid}"{extra}>"#,
++            r#"<hp:{tag}{id} zOrder="{zo}" numberingType="{nt}" textWrap="{tw}" textFlow="{tf}" lock="{lock}" dropcapstyle="None" href="" groupLevel="{gl}"{iid}{extra}>"#,
+             "{block}",
+             "{geometry}",
+             r#"<hp:sz width="{w}" height="{h}" widthRelTo="{wrt}" heightRelTo="{hrt}" protect="{prot}"/>"#,
+@@ -3422,7 +3423,7 @@
+         extra = extra_attrs,
+         block = shape_block,
+         geometry = geometry,
+-        id = c.instance_id,
++        id = id,
+         zo = c.z_order,
+         nt = super::shape::numbering_type_str(c.numbering_type),
+         // [#2840] lock(개체 잠금) — IR 보존 값 방출 (종전 "0" 하드코딩).
