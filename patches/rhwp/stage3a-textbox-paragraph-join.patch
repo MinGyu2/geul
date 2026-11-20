@@ -1,0 +1,64 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+index e879544..be4fe4a 100644
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -829,6 +829,43 @@ impl DocumentCore {
+         Ok(())
+     }
+
++    /// The editor merges only neighboring, ordinary paragraphs that share
++    /// their exact format definitions. Refuse invisible structure which the
++    /// text/font-run query cannot observe.
++    pub fn can_join_textbox_paragraphs(&self, sec: usize, para: usize, ctrl: usize, first: usize) -> bool {
++        use crate::model::paragraph::{ColumnBreakType, Paragraph};
++        use crate::parser::FileFormat;
++        if self.source_format != FileFormat::Hwpx {
++            return false;
++        }
++        let Some(shape) = self.advanced_body_shape(sec, para, ctrl) else {
++            return false;
++        };
++        let Some(textbox) = get_textbox_from_shape(shape) else {
++            return false;
++        };
++        if shape.shape_attr().group_level != 0 || Self::shape_caption_ref(shape).is_some()
++            || textbox.paragraphs.len() > 64
++        {
++            return false;
++        }
++        let Some(pair) = textbox.paragraphs.get(first..).and_then(|paragraphs| paragraphs.get(..2)) else {
++            return false;
++        };
++        fn ordinary(para: &Paragraph) -> bool {
++            !para.text.is_empty()
++                && para.column_type == ColumnBreakType::None && para.raw_break_type == 0
++                && !para.page_break_synthesized && para.raw_header_extra.len() <= 10
++                && para.controls.is_empty() && para.ctrl_data_records.is_empty()
++                && para.field_ranges.is_empty() && para.orphan_field_ends.is_empty()
++                && para.range_tags.is_empty() && para.title_marks.is_empty() && para.markpen_marks.is_empty()
++                && para.tab_extended.is_empty() && !para.text.contains('\t')
++                && para.hwpx_text_topology.is_none() && para.numbering_restart.is_none()
++        }
++        pair.iter().all(ordinary)
++            && pair[0].para_shape_id == pair[1].para_shape_id && pair[0].style_id == pair[1].style_id
++    }
++
+     fn advanced_body_shape(&self, sec: usize, para: usize, ctrl: usize) -> Option<&ShapeObject> {
+         let Control::Shape(shape) = self.document.sections.get(sec)?.paragraphs.get(para)?.controls.get(ctrl)? else {
+             return None;
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index 1216c7e..a166412 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4715,6 +4715,11 @@ impl HwpDocument {
+             .map_err(|e| e.into())
+     }
+
++    #[wasm_bindgen(js_name = canJoinTextBoxParagraphs)]
++    pub fn can_join_textbox_paragraphs_wasm(&self, sec: u32, para: u32, ctrl: u32, first: u32) -> bool {
++        self.can_join_textbox_paragraphs(sec as usize, para as usize, ctrl as usize, first as usize)
++    }
++
+     #[wasm_bindgen(js_name = getEditableGroupFills)]
+     pub fn get_editable_group_fills(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_group_fills(sec as usize, para as usize, ctrl as usize)

@@ -1401,9 +1401,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }, true, "typing", start);
   }
 
+  private deleteByKeySelection(): boolean {
+    const [from, to] = this.ordered();
+    if (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to)) {
+      return this.joinOwnedTextBoxParagraphs(from, to);
+    }
+    return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
+  }
+
   backspace(): boolean {
     if (this.objectSelection && this.sessions.get(this.sessionId)?.format === "hwp") return false;
-    if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
+    if (this.hasSelection) return this.deleteByKeySelection();
     const at = this.caret;
     const text = this.text;
     if (!text) return false;
@@ -1418,6 +1426,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const paragraph = paragraphOf(at);
     if (paragraph === 0) return false; // 문맥의 처음: 바꿀 것이 없음(변경 아님)
     const previousEnd = withParagraph(at, paragraph - 1, text.paragraphLength(withParagraph(at, paragraph - 1, 0)));
+    if (at.cell?.textBox) return this.joinOwnedTextBoxParagraphs(previousEnd, at);
     if (!text.canDeleteRange(previousEnd, at)) return false;
     return this.mutate(() => {
       const previous = withParagraph(at, paragraph - 1, 0);
@@ -1431,7 +1440,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // An HWP GSO selection owns the key even when object deletion is unavailable.
     // Never apply Delete to the text caret left behind the selected object.
     if (this.objectSelection && this.sessions.get(this.sessionId)?.format === "hwp") return false;
-    if (this.hasSelection) return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
+    if (this.hasSelection) return this.deleteByKeySelection();
     const at = this.caret;
     const text = this.text;
     if (!text) return false;
@@ -1444,7 +1453,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     const paragraph = paragraphOf(at);
     if (paragraph + 1 >= text.paragraphCount(at)) return false;
-    if (!text.canDeleteRange(at, withParagraph(at, paragraph + 1, 0))) return false;
+    const nextStart = withParagraph(at, paragraph + 1, 0);
+    if (at.cell?.textBox) return this.joinOwnedTextBoxParagraphs(at, nextStart);
+    if (!text.canDeleteRange(at, nextStart)) return false;
     return this.mutate(() => {
       text.mergeIntoPrevious(at, paragraph + 1);
       return at;
@@ -1478,6 +1489,40 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       return this.splitText(at);
     });
+  }
+
+  private joinOwnedTextBoxParagraphs(from: DocPosition, to: DocPosition): boolean {
+    const { doc, text } = this;
+    const box = from.cell;
+    if (this.objectSelection || !box?.textBox || !to.cell?.textBox || !doc?.canJoinTextBoxParagraphs
+      || !doc.getShapeProperties || !text || this.imeUnsettled || this.sessions.get(this.sessionId)?.format !== "hwpx"
+      || !sameContext(from, to) || paragraphOf(to) !== paragraphOf(from) + 1
+      || !this.ownsPosition(from) || !this.ownsPosition(to)) return false;
+    const address = [from.section, box.parentParagraph, box.control] as const;
+    const left = text.textBoxParagraph(from), right = text.textBoxParagraph(to);
+    if (!left || !right || left.properties !== right.properties
+      || !Number.isSafeInteger(from.offset) || from.offset < 0 || from.offset > left.styles.length
+      || !Number.isSafeInteger(to.offset) || to.offset < 0 || to.offset > right.styles.length) return false;
+    const expectedLength = from.offset + right.styles.length - to.offset;
+    if (expectedLength < 1 || expectedLength > 65_536) return false;
+    let count: number, geometry: string;
+    try {
+      if (!doc.canJoinTextBoxParagraphs(...address, paragraphOf(from))) return false;
+      count = text.paragraphCount(from);
+      geometry = doc.getShapeProperties(...address);
+    } catch { return false; }
+    const expectedText = Array.from(left.text).slice(0, from.offset).join("")
+      + Array.from(right.text).slice(to.offset).join("");
+    return this.mutate(() => {
+      text.joinTextBoxParagraphs(from, to, left.styles.length);
+      const joined = text.textBoxParagraph(from);
+      if (!joined || joined.properties !== left.properties || joined.text !== expectedText
+        || joined.styles.length !== expectedLength
+        || joined.styles.some((style, i) => style !== (i < from.offset ? left.styles[i] : right.styles[i - from.offset + to.offset]))
+        || text.paragraphCount(from) !== count - 1 || doc.getShapeProperties!(...address) !== geometry
+        || !this.ownsPosition(from)) throw new Error("text box join did not preserve content or ownership");
+      return from;
+    }, true, "other", null, true, true);
   }
 
   private splitOwnedTextBox(): boolean {

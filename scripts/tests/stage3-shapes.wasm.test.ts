@@ -157,6 +157,29 @@ print(json.dumps(dict(section=ET.tostring(root, encoding="unicode"), points=poin
 `], { input: bytes, encoding: "utf8" }));
 }
 
+function mixedTextBoxFixture(splitForJoin = false): { bytes: Uint8Array; control: number } {
+  const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+  try {
+    const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+      sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "textbox", width: 16000, height: 9600,
+      treatAsChar: true, textWrap: "Square",
+    })));
+    const control = created.controlIdx;
+    fixture.setShapeProperties!(0, 0, control, '{"tbVerticalAlign":"Bottom","tbMarginLeft":640,"tbMarginTop":310}');
+    const address = [0, 0, control, 0] as const;
+    fixture.insertTextInCell(...address, 0, 0, "First paragraph");
+    fixture.splitParagraphInCell(...address, 0, 15);
+    fixture.insertTextInCell(...address, 1, 0, "Bold plain");
+    fixture.applyParaFormatInCell!(...address, 1, '{"alignment":"center"}');
+    fixture.applyCharFormatInCell!(...address, 1, 0, 4, '{"bold":true,"textColor":"#992244"}');
+    fixture.applyCharFormatInCell!(...address, 1, 5, 10, '{"italic":true}');
+    fixture.splitParagraphInCell(...address, 1, 10);
+    fixture.insertTextInCell(...address, 2, 0, "Trailing paragraph");
+    if (splitForJoin) fixture.splitParagraphInCell(...address, 1, 5);
+    return { bytes: fixture.exportHwpx(), control };
+  } finally { fixture.free(); }
+}
+
 describe("Stage 3 shapes on the Release engine", () => {
   it("inserts a rectangle and a text box, formats, moves, resizes, layers and deletes the outer shape", async () => {
     const { editor, doc, bytes, pick, edit, confirm } = await setup("hwpx");
@@ -1931,26 +1954,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
   });
 
   it("Stage 3-A splits an owned mixed-format HWPX text box paragraph", async () => {
-    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
-    let bytes: Uint8Array, control: number;
-    try {
-      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
-        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "textbox", width: 16000, height: 9600,
-        treatAsChar: true, textWrap: "Square",
-      })));
-      control = created.controlIdx;
-      fixture.setShapeProperties!(0, 0, control, '{"tbVerticalAlign":"Bottom","tbMarginLeft":640,"tbMarginTop":310}');
-      const address = [0, 0, control, 0] as const;
-      fixture.insertTextInCell(...address, 0, 0, "First paragraph");
-      fixture.splitParagraphInCell(...address, 0, 15);
-      fixture.insertTextInCell(...address, 1, 0, "Bold plain");
-      fixture.applyParaFormatInCell!(...address, 1, '{"alignment":"center"}');
-      fixture.applyCharFormatInCell!(...address, 1, 0, 4, '{"bold":true,"textColor":"#992244"}');
-      fixture.applyCharFormatInCell!(...address, 1, 5, 10, '{"italic":true}');
-      fixture.splitParagraphInCell(...address, 1, 10);
-      fixture.insertTextInCell(...address, 2, 0, "Trailing paragraph");
-      bytes = fixture.exportHwpx();
-    } finally { fixture.free(); }
+    const { bytes, control } = mixedTextBoxFixture();
     const { editor, doc, confirm } = await setup("hwpx", bytes);
     const address = [0, 0, control, 0] as const;
     const read = (file: RhwpDocument) => ({
@@ -2000,6 +2004,76 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A joins compatible HWPX text box paragraphs and deletes an owned cross-paragraph selection", async () => {
+    const { bytes, control } = mixedTextBoxFixture(true);
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const address = [0, 0, control, 0] as const;
+    const point = (paragraph: number, offset: number, extend = false) => {
+      const cursor = JSON.parse(doc.getCursorRectInCell(...address, paragraph, offset));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 0.1, cursor.y + cursor.height / 2, extend)).toBe(true);
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: paragraph }, offset });
+    };
+    const paragraphs = (file: RhwpDocument) => Array.from({ length: file.getCellParagraphCount(...address) }, (_, p) => {
+      const n = file.getCellParagraphLength(...address, p);
+      return { text: file.getTextInCell(...address, p, 0, n), props: file.getCellParaPropertiesAt!(...address, p),
+        runs: JSON.parse(file.getFormattingRuns!(...address, p, 0, n)).runs };
+    });
+    try {
+      const before = paragraphs(doc);
+      expect(before.map(p => p.text)).toEqual(["First paragraph", "Bold ", "plain", "Trailing paragraph"]);
+      const shape = doc.getShapeProperties!(0, 0, control);
+      const untouched = doc.exportHwpx();
+      point(1, 0);
+      expect(editor.backspace()).toBe(false); // Different paragraph format on the preceding paragraph.
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(untouched);
+
+      point(2, 0);
+      expect(editor.backspace()).toBe(true);
+      await confirm();
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 5 });
+      expect(paragraphs(doc)).toEqual([
+        before[0], { ...before[1], text: "Bold plain", runs: [[0, 4, 1], [4, 5, 0], [5, 10, 2]] }, before[3],
+      ]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+
+      point(1, 2);
+      point(2, 2, true);
+      expect(editor.typeText("blocked")).toBe(false);
+      expect(editor.deleteForward()).toBe(true);
+      await confirm();
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 2 });
+      const after = [before[0], { ...before[1], text: "Boain", runs: [[0, 2, 1], [2, 5, 2]] }, before[3]];
+      expect(paragraphs(doc)).toEqual(after);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(after);
+      expect(doc.getShapeProperties!(0, 0, control)).toBe(shape);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(paragraphs(reopened)).toEqual(after);
+          expect(reopened.getShapeProperties!(0, 0, control)).toBe(shape);
+        } finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p5-textbox-join-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p5-textbox-join-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p5-textbox-join-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("edits the second existing paragraph of an owned %s text box", async format => {
     const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
     let bytes: Uint8Array, control: number;
@@ -2012,6 +2086,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       fixture.insertTextInCell(0, 0, control, 0, 0, 0, "first");
       fixture.splitParagraphInCell(0, 0, control, 0, 0, 5);
       fixture.insertTextInCell(0, 0, control, 0, 1, 0, "second");
+      if (format === "hwpx") fixture.applyParaFormatInCell!(0, 0, control, 0, 1, '{"alignment":"center"}');
       bytes = format === "hwp" ? fixture.exportHwp() : fixture.exportHwpx();
     } finally { fixture.free(); }
     const { editor, doc, take, confirm, calls } = await setup(format, bytes);
@@ -2030,7 +2105,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(editor.pointAt(cursor.pageIndex, cursor.x + 1, cursor.y + cursor.height / 2, false)).toBe(true);
       expect(editor.caret.cell?.cellParagraph).toBe(1);
       expect(editor.enter()).toBe(false);
-      expect(editor.backspace()).toBe(false); // No implicit join at the paragraph boundary.
+      expect(editor.backspace()).toBe(false); // HWP5 and incompatible HWPX paragraph formats are refused.
       expect(calls.filter(call => call.method === "commit")).toEqual([]);
       expect(editor.typeText("새 ")).toBe(true);
       await confirm();

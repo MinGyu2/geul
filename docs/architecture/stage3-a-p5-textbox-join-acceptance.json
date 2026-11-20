@@ -1,0 +1,84 @@
+{
+  "date": "2026-11-20",
+  "baselineHead": "9fb57e2de8984f44f9dc8667157da597a9bcfc8d",
+  "feature": "P5.5 HWPX textbox paragraph join and keyboard range deletion",
+  "status": "IMPLEMENTED_VERIFIED",
+  "changedFiles": [
+    "patches/rhwp/stage3a-textbox-paragraph-join.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/native-stage3a-p5.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/rhwpText.ts"
+  ],
+  "previousLimitation": "Enter could split an owned HWPX textbox paragraph. Keyboard deletion across its paragraph boundary was refused.",
+  "supported": "Backspace or Delete merges two adjacent, nonempty, ordinary paragraphs of a single unlocked body HWPX textbox. The two paragraphs must share their paragraph shape and style IDs. Selection deletion retains exactly the prefix and suffix, with their character font runs and original paragraph formatting. The operation verifies the resulting owner and box geometry and is one Undo step.",
+  "refused": "Additional boundaries, empty result, different paragraph formats, paragraph breaks and structural markup, hidden text topology, nested controls, HWP5, DOCX, cross-owner selection. Cross-boundary text replacement, clipboard and IME retain their prior admission.",
+  "release": {
+    "generation": "2246172b41362c99c094969f4840dd3508df8a668e9dff1578e9c6fedc16cd6f",
+    "artifacts": {
+      "rhwp.js": "8d7da0e802f00870acd3956baa47e825c6d2c5f08f7bb3db699543f8d909cfdd",
+      "rhwp_bg.wasm": "617290c514bb0395b6bed6cfe6729d8a96a59f5cc2fe3cb0cbbfb254e21ec9b7"
+    },
+    "patch": {
+      "name": "stage3a-textbox-paragraph-join.patch",
+      "sha256": "b5fd8e792c337474e9f40afa085161b4bda17ab3ae6ba6454066ea685305f8a6"
+    }
+  },
+  "checks": [
+    {
+      "command": "scripts/build-rhwp-wasm.sh (locked wasm-bindgen on PATH)",
+      "exit": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run src/components/Editor/rhwp/RhwpEditorSession.test.ts",
+      "exit": 0,
+      "passed": 22
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'joins compatible|splits an owned mixed|edits the second existing paragraph|edits one owned HWPX text box|binds delayed text-box'",
+      "exit": 0,
+      "passed": 6,
+      "filtered": 46
+    },
+    {
+      "command": "save_check saved hwpx <original> <edited> <loss-report> true",
+      "exit": 0,
+      "outcome": "safe"
+    },
+    {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p5.py --out <result> --fixtures <fixture-dir> --cases P5.5 --xdotool <xdotool> --ibus <ibus>",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "wasmOutputSha256": "017f862b71dca00b86551000c97dfd0d985faf3a9c1b8d8c341881897ea3e233",
+  "native": {
+    "status": "PASS",
+    "appSha256": "3c67b2a39a63c940aa8d2ab08d3858d714e0bf9570fee55d6b24c8a4395388bb",
+    "fixtureSha256": "5c0f4576bea453dc59eb4f632d2b99e0427e06777851716c577854c17b927c66",
+    "publishedSha256": "017f862b71dca00b86551000c97dfd0d985faf3a9c1b8d8c341881897ea3e233",
+    "revision": 5,
+    "reopened": "ready",
+    "independentXml": "Retained Bo and ain with bold and italic runs. Surrounding paragraphs, paragraph format, textbox geometry and margins, body text and non-preview package entries match.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true
+    },
+    "exit": 0
+  },
+  "rawEvidence": "target/stage3a-textbox-join/"
+}

@@ -189,7 +189,78 @@ def textbox(acc, row, fixtures, out):
     h.require(h.core_shapes(path)["frames"][0]["props"] == after["shape"], "published textbox did not reopen")
 
 
-h.CASES = {"P5.1": stories, "P5.2": textbox}
+def textbox_join(acc, row, fixtures, out):
+    fixture = fixtures / "a-p5-textbox-join-original.hwpx"
+    before = row["before"] = inspect_box(fixture)
+    path = h.begin(acc, row, fixture, out, "a-p5-textbox-join-published.hwpx")
+    positions = h.inspect_rhwp(fixture, """
+      const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
+      const addr=[0,owner.para,owner.controlIndex,0];
+      console.log(JSON.stringify([[2,0],[1,2]].map(([p,o])=>JSON.parse(doc.getCursorRectInCell(...addr,p,o)))));
+    """)
+
+    def place(at):
+        h.p6.pointer(acc, (at["pageIndex"], at["x"]+.1, at["y"]+at["height"]/2))
+        if acc.d.exists(h.FRAME):
+            x, y = acc.d.js("""
+              const at=arguments[0], c=document.querySelectorAll('.rhwp-page__canvas')[at.pageIndex];
+              const r=c.getBoundingClientRect(), k=r.width/c.clientWidth;
+              return [r.left+(at.x+.1)*k,r.top+(at.y+at.height/2)*k];
+            """, at)
+            sx, sy = acc.d.pointer_scale
+            h.p4.rhwp_poc.perform(acc.d, [{"type":"pointer","id":"join-box","parameters":{"pointerType":"mouse"},
+                "actions":[{"type":"pointerMove","x":round(x*sx),"y":round(y*sy),"origin":"viewport"},
+                           {"type":"pointerDown","button":0},{"type":"pointerUp","button":0},
+                           {"type":"pause","duration":40},{"type":"pointerDown","button":0},{"type":"pointerUp","button":0}]}])
+
+    place(positions[0])
+    h.require(acc.status("hwpx")["caret"].endswith("/0/2") and ":0@textbox/" in acc.status("hwpx")["caret"],
+              "did not own the right textbox paragraph boundary", acc.status("hwpx"))
+    acc.key("BackSpace")
+    h.revision(acc, "hwpx", 1)
+    acc.text_is("hwpx", "Bold plain")
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    place(positions[1])
+    for _ in range(6):
+        acc.key("shift+Right")
+    h.require(acc.status("hwpx")["selection"] and acc.status("hwpx")["caret"].endswith("/0/2")
+              and ":2@textbox/" in acc.status("hwpx")["caret"], "did not make a cross-paragraph selection", acc.status("hwpx"))
+    acc.key("Delete")
+    h.revision(acc, "hwpx", 3)
+    acc.text_is("hwpx", "Boain")
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 4)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 5)
+    acc.text_is("hwpx", "Boain")
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = inspect_box(path)
+    old = before["paragraphs"]
+    expected = [old[0], {**old[1], "text":"Boain", "runs":[[0,2,1],[2,5,2]]}, old[3]]
+    h.require(after["paragraphs"] == expected and after["shape"] == before["shape"] and after["body"] == before["body"],
+              "text, retained formatting or owner differs", after)
+    with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
+        section = "Contents/section0.xml"
+        unrelated = lambda package: {part: package.read(part) for part in package.namelist()
+                                      if part != section and not part.startswith("Preview/")}
+        h.require(unrelated(original) == unrelated(published), "unrelated HWPX parts changed")
+        roots = [ET.fromstring(package.read(section)) for package in (original,published)]
+        for root,count in zip(roots,(2,1),strict=True):
+            sub = root.find(".//{*}drawText/{*}subList")
+            for para in sub.findall("{*}p")[1:1+count]:
+                sub.remove(para)
+            for para in sub.findall("{*}p"):
+                for layout in para.findall("{*}linesegarray"):
+                    para.remove(layout)
+        h.require(ET.tostring(roots[0]) == ET.tostring(roots[1]), "unrelated section XML changed")
+    h.reopen(acc, path, row)
+    h.require(inspect_box(path)["paragraphs"] == expected, "reopened file no longer matches")
+
+
+
+h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join}
 
 if __name__ == "__main__":
     sys.exit(h.main())
