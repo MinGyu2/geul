@@ -103,10 +103,11 @@ export function inspectRhwpGroup(doc: Pick<RhwpDocument, "getShapeProperties">, 
 const within = (value: unknown, max: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max;
 
-export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [number, number, number]): ShapePath | undefined {
-  if (!doc.getEditableShapePath) return undefined;
+export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [number, number, number], portable = false): ShapePath | undefined {
   try {
-    const value = JSON.parse(doc.getEditableShapePath(...address));
+    const raw = portable ? doc.getPortablePolygonPath?.(...address) : doc.getEditableShapePath?.(...address);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw);
     const { kind, width, height, points, closed } = value ?? {};
     if ((kind !== "polygon" && kind !== "curve")
       || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0

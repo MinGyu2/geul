@@ -1,0 +1,66 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -524,6 +524,48 @@
+                 "x": point.x, "y": point.y, "control": handle
+             })).collect::<Vec<_>>(),
+         }))
++    }
++
++    /// Only polygons whose placement, style, and component matrix the
++    /// portable constructor can reproduce in another HWPX document.
++    pub fn portable_polygon_path(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
++        use crate::model::shape::*;
++        let ShapeObject::Polygon(polygon) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        let common = &polygon.common;
++        let drawing = &polygon.drawing;
++        let attr = &drawing.shape_attr;
++        let line = &drawing.border_line;
++        let fill = &drawing.fill;
++        let margin = &common.margin;
++        let raw = &attr.raw_rendering;
++        let identity = [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0];
++        let identity_matrices = raw.is_empty() || (raw.len() == 146 && raw[..2] == [1, 0]
++            && raw[2..].chunks_exact(8).enumerate().all(|(i, bytes)| {
++                bytes == identity[i % identity.len()].to_le_bytes()
++            }));
++        if !identity_matrices || attr.offset_x != 0 || attr.offset_y != 0 || attr.rotate_image
++            || attr.current_width_was_zero || attr.current_height_was_zero
++            || attr.original_width != common.width || attr.current_width != common.width
++            || attr.original_height != common.height || attr.current_height != common.height
++            || attr.rotation_center.x != (common.width / 2) as i32
++            || attr.rotation_center.y != (common.height / 2) as i32
++            || common.horz_rel_to != HorzRelTo::Paper || common.horz_align != HorzAlign::Left
++            || common.vert_rel_to != VertRelTo::Paper || common.vert_align != VertAlign::Top
++            || common.width_criterion != SizeCriterion::Absolute || common.height_criterion != SizeCriterion::Absolute
++            || common.text_flow != TextFlow::BothSides || common.numbering_type != ObjectNumberingType::None
++            || common.drop_cap_style != DropCapStyle::None || common.flow_with_text || common.allow_overlap
++            || common.affect_line_spacing || common.prevent_page_break != 0 || !common.raw_extra.is_empty()
++            || [margin.left, margin.right, margin.top, margin.bottom] != [0; 4]
++            || drawing.shadow_type != 0 || line.outline_style != 0 || line.attr & !0x3f != 0xd1000041 & !0x3f
++            || line.attr & 0x3f > 1 || line.color > 0xff_ffff || !(0..=7200).contains(&line.width)
++            || fill.gradient.is_some() || fill.image.is_some() || fill.alpha != 0
++        {
++            return None;
++        }
++        let path = self.editable_shape_path(sec, para, ctrl)?;
++        (path["closed"].as_bool() == Some(true)).then_some(path)
+     }
+ 
+     pub fn move_shape_path_point(
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4669,6 +4669,12 @@
+     #[wasm_bindgen(js_name = getEditableShapePath)]
+     pub fn get_editable_shape_path(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_shape_path(sec as usize, para as usize, ctrl as usize)
++            .unwrap_or(serde_json::Value::Null).to_string()
++    }
++
++    #[wasm_bindgen(js_name = getPortablePolygonPath)]
++    pub fn get_portable_polygon_path(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.portable_polygon_path(sec as usize, para as usize, ctrl as usize)
+             .unwrap_or(serde_json::Value::Null).to_string()
+     }
+ 

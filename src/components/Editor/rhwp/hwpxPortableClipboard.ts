@@ -7,7 +7,7 @@ import {
 import { fontFamilyProblem } from "../../../commands/parameters";
 import { documentFontTable, type DocumentFontTable } from "./rhwpFonts";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { inspectRhwpShape } from "./shapeProperties";
+import { inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import type { RhwpDocument } from "./rhwpModule";
 
 const EXT_BY_MIME: Record<HwpxPortablePictureMime, string> = {
@@ -283,6 +283,19 @@ function extractHwpxCaption(
   return { direction, vertAlign, width, spacing, includeMargin, paragraphs };
 }
 
+/** Uses the same single-owned-atno and rich paragraph proof as the portable clipboard. */
+export function readHwpxPictureCaption(doc: RhwpDocument, address: readonly [number, number, number]) {
+  try {
+    const props = JSON.parse(doc.getPictureProperties?.(...address) ?? "null");
+    if (props?.hasCaption !== true || props.externalPath
+      || (props.captionDirection !== "Top" && props.captionDirection !== "Bottom")) return undefined;
+    const caption = extractHwpxCaption(doc, ...address, false, props, true);
+    return caption && { props, caption, side: props.captionDirection as "Top" | "Bottom" };
+  } catch {
+    return undefined;
+  }
+}
+
 function hasPortableLineGeometry(
   doc: RhwpDocument, [section, paragraph, control]: readonly [number, number, number],
   shape: { width: number; height: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean },
@@ -385,6 +398,7 @@ function readPortableObject(
   const controls = JSON.parse(doc.getControls()) as { list?: number; section?: number; para?: number; controlIndex?: number; userDesc?: string }[];
   const owner = controls.find(c => (c.list ?? 0) === 0 && (c.section ?? 0) === sec && c.para === para && c.controlIndex === control);
   let shapeType: HwpxPortableShapeType | undefined;
+  let polygonPoints: { x: number; y: number }[] | undefined;
   if (shape.textBox && (owner?.userDesc === "사각형" || owner?.userDesc === "글상자")) {
     shapeType = "textbox";
   } else if (owner?.userDesc === "사각형") {
@@ -393,6 +407,13 @@ function readPortableObject(
     shapeType = "ellipse";
   } else if (owner?.userDesc === "직선" || owner?.userDesc === "선") {
     shapeType = "line";
+  } else if (owner?.userDesc === "다각형") {
+    const path = inspectRhwpShapePath(doc, address, true);
+    if (!path || path.kind !== "polygon" || !path.closed || !path.points.every(p => !p.control)
+      || (shape.raw.fillType === "solid" && (raw.fillPatColor !== 0 || raw.fillPatType !== -1))
+      || shape.raw.horzOffset < 0 || shape.raw.vertOffset < 0) return undefined;
+    shapeType = "polygon";
+    polygonPoints = path.points.map(({ x, y }) => ({ x, y }));
   }
   if (!shapeType || (!!shape.textBox !== (shapeType === "textbox"))) return undefined;
   if (shapeType !== "textbox" && ["tbMarginLeft", "tbMarginRight", "tbMarginTop", "tbMarginBottom"].some(key => key in raw)) return undefined;
@@ -474,6 +495,7 @@ function readPortableObject(
     ...(tbMargins ? { tbMargins } : {}),
     ...(paragraphs ? { paragraphs } : {}),
     ...(caption ? { caption } : {}),
+    ...(polygonPoints ? { polygonPoints } : {}),
   };
 }
 
@@ -661,7 +683,7 @@ function createPortableObject(
     shapeType: portable.shapeType,
     lineFlipX: false,
     lineFlipY: false,
-    polygonPoints: [],
+    polygonPoints: portable.polygonPoints ?? [],
   }))) as { ok?: boolean; paraIdx?: number; controlIdx?: number };
   if (created.ok !== true || !Number.isSafeInteger(created.paraIdx) || !Number.isSafeInteger(created.controlIdx)) {
     throw new Error("createShapeControl failed");
@@ -769,6 +791,10 @@ export function insertHwpxPortableObject(
   const actual = applied as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(object)) {
     if (key === "paragraphs" || (key === "kind" && value === undefined)) continue;
+    if (key === "polygonPoints") {
+      if (JSON.stringify(actual[key]) !== JSON.stringify(value)) throw new Error("portable polygon points mismatch");
+      continue;
+    }
     if (key === "crop" || key === "cropRect" || key === "tbMargins") {
       const fields = actual[key] as Record<string, unknown> | undefined;
       if (!fields || !Object.entries(value).every(([side, n]) => fields[side] === n)) {

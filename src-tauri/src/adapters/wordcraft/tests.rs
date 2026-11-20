@@ -6755,12 +6755,25 @@ fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
     let charted = safe(&model);
 
     model.apply(&[DocxOp::DeselectObject {}, diagram]);
-    let (_, _, view) = state(&mut model);
+    let (diagram_position, diagram_epoch, view) = state(&mut model);
     assert_eq!(view["operations"], json!(["smartArt"]));
+    assert_eq!(
+        model.apply(&[DocxOp::ObjectEdit {
+            position: diagram_position,
+            epoch: diagram_epoch.saturating_sub(1),
+            edit: ObjectEdit::SmartArtLayout { layout: "cycle".into() },
+        }]).rejected,
+        vec![0]
+    );
+    assert_eq!(
+        apply(&mut model, ObjectEdit::SmartArtLayout { layout: "unsupported".into() }).rejected,
+        vec![0]
+    );
     assert_eq!(
         apply(&mut model, ObjectEdit::ChartTitle { text: None }).rejected,
         vec![0]
     );
+    assert_eq!(model.export().unwrap(), charted);
     assert_eq!(
         apply(
             &mut model,
@@ -6857,6 +6870,9 @@ fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
     // One history step per edit.
     assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
     assert_eq!(model.export().unwrap(), charted);
+    assert_eq!(model.apply(&[DocxOp::Redo {}, DocxOp::Redo {}]).changed, 2);
+    assert_eq!(model.export().unwrap(), edited);
+    assert_eq!(model.apply(&[DocxOp::Undo {}, DocxOp::Undo {}]).changed, 2);
     assert_eq!(
         model
             .apply(&[DocxOp::Undo {}, DocxOp::Undo {}, DocxOp::Undo {}])
@@ -8110,5 +8126,91 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         std::fs::create_dir_all(&out).unwrap();
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
         std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use super::engine::{BasicShape, HwpxPolygon, ObjectEdit};
+    use wordcraft_engine::doc::{para::ShapeKind, InlineObject, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut m = model();
+    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph,
+        DocxOp::Shape { kind: BasicShape::Rectangle }]).changed, 2);
+    let original = m.export().unwrap();
+    let mut reader = Session::new(io::open_bytes("p6.docx", &original).unwrap());
+    let hit = reader.layout().find_object(0, |o| o.rect.w == 108.0).unwrap();
+    let select = DocxOp::Pointer {
+        page: hit.page as u32, x: hit.rect.x + hit.rect.w / 2.0, y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false, before_insert: false, drag: false, select_object: true,
+    };
+    assert!(m.apply(&[select.clone()]).rejected.is_empty());
+    assert_eq!(serde_json::to_value(m.view()).unwrap()["object"]["convertShape"], "ellipse");
+    let edit = |m: &mut DocxModel, to| {
+        let view = serde_json::to_value(m.view()).unwrap();
+        let object = &view["object"];
+        let position = object["position"].as_str().unwrap().into();
+        let epoch = object["epoch"].as_u64().unwrap();
+        DocxOp::ObjectEdit { position, epoch, edit: ObjectEdit::ConvertShape { to } }
+    };
+    let same_type = edit(&mut m, BasicShape::Rectangle);
+    assert_eq!(m.apply(&[same_type]).rejected, vec![0]);
+    assert_eq!(m.export().unwrap(), original);
+    let to_ellipse = edit(&mut m, BasicShape::Ellipse);
+    assert_eq!(m.apply(&[to_ellipse]).changed, 1);
+    let ellipse = m.export().unwrap();
+    assert!(m.same_as(&ellipse));
+    assert!(service::check_saved(Format::Docx, &original, &ellipse, None, true).is_safe());
+    let before = package::open(&original, package::Side::Original).unwrap();
+    let after = package::open(&ellipse, package::Side::Output).unwrap();
+    let main = "word/document.xml";
+    for name in before.parts.keys().filter(|name| name.as_str() != main) {
+        assert_eq!(before.get(name), after.get(name));
+    }
+    let xml = std::str::from_utf8(before.get(main).unwrap()).unwrap();
+    assert_eq!(xml.replacen("prst=\"rect\"", "prst=\"ellipse\"", 1).as_bytes(), after.get(main).unwrap());
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.export().unwrap(), original);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.export().unwrap(), ellipse);
+    m.apply(&[select]);
+    let to_rectangle = edit(&mut m, BasicShape::Rectangle);
+    assert_eq!(m.apply(&[to_rectangle]).changed, 1);
+    assert_eq!(m.export().unwrap(), original);
+
+    m.apply(&[DocxOp::DeselectObject {}, mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    let before_import = m.export().unwrap();
+    let polygon = HwpxPolygon { width: 10800, height: 7200, points: vec![[1600,1300],[9700,700],[6400,6500]],
+        fill: "442277".into(), description: "HWPX polygon".into() };
+    let mut invalid = polygon.clone();
+    invalid.points[1][0] = 10801;
+    assert!(!validate(&[DocxOp::PasteHwpxPolygon { polygon: invalid.clone() }]));
+    assert_eq!(m.apply(&[DocxOp::PasteHwpxPolygon { polygon: invalid }]).rejected, vec![0]);
+    assert_eq!(m.export().unwrap(), before_import);
+    assert_eq!(m.apply(&[DocxOp::PasteHwpxPolygon { polygon }]).changed, 1);
+    let imported = m.export().unwrap();
+    assert!(m.same_as(&imported));
+    assert!(service::check_saved(Format::Docx, &before_import, &imported, None, true).is_safe());
+    let reopened = io::open_bytes("import.docx", &imported).unwrap();
+    let last = reopened.para_at(&reopened.end_of(StoryRef::Body)).unwrap();
+    let Some(InlineObject::Shape { kind: ShapeKind::Freeform, freeform: Some(path), fill: Some(fill), stroke: None, float, .. }) = last.object_at(0)
+        else { panic!("import did not remain an editable freeform"); };
+    assert_eq!(fill.hex(), "442277");
+    assert_eq!(float.alt.text, "HWPX polygon");
+    assert_eq!(path.paths[0].pts, vec![[16.,13.],[97.,7.],[64.,65.]]);
+    assert!(path.paths[0].closed);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.export().unwrap(), before_import);
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(m.export().unwrap(), imported);
+
+    if let Some(out) = std::env::var_os("GEUL_STAGE3A_P6_OUT") {
+        let out = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("a-p6-rect-original.docx"), original).unwrap();
+        std::fs::write(out.join("a-p6-import-destination.docx"), before_import).unwrap();
     }
 }

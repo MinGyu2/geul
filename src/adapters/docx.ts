@@ -266,6 +266,7 @@ export type DocxOp =
   | { op: "objectEdit"; position: string; epoch: number; edit: ObjectEdit }
   /** Stage 3 P5: the engine part of a v2 object clipboard payload (validated by the engine). */
   | { op: "pasteObject"; payload: unknown }
+  | { op: "pasteHwpxPolygon"; polygon: { width: number; height: number; points: [number, number][]; fill: string; description: string } }
   | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }
@@ -670,7 +671,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : []), ...("convertShape" in raw ? ["convertShape"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -680,6 +681,10 @@ function parseDocxBaseView(value: unknown): DocxView | null {
     if (!Array.isArray(operations) || operations.length > MUTATING_OBJECT_OPERATIONS.length
       || !operations.every((op, i) => MUTATING_OBJECT_OPERATIONS.some(known => known === op) && operations.indexOf(op) === i)) return null;
     object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as MutatingObjectOperation[] };
+    if ("convertShape" in raw) {
+      if (kind !== "shape" || (raw.convertShape !== "rectangle" && raw.convertShape !== "ellipse")) return null;
+      object.convertShape = raw.convertShape;
+    }
     if ("picture" in raw) {
       const picture = parsePictureView(raw.picture);
       if (kind !== "picture" || !picture) return null;

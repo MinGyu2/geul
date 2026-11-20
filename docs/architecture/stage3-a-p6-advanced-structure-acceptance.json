@@ -1,0 +1,144 @@
+{
+  "phase": "P6",
+  "date": "2026-11-20",
+  "baseline": "1a9ab105364710fe00a83891f7b66c058ef4c6ef",
+  "status": "PARTIAL_SUPPORT",
+  "runtime": {
+    "os": "Linux 7.2.14-arch1-1 x86_64, glibc 2.44, X11/Xvfb, IBus",
+    "docxAppSha256": "723aa981208514a56aac3c67382ffaa84e1f189cf3354cdd6cd7ab788a41aae2",
+    "hwpxAppSha256": "6a21714aa80370baef90ce1d42b1e2dd6aeadce7c3c48c4e31aa9463ea9fe142",
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "rhwpGeneration": "5ca8f50df72af8509367fe179d852f8d513fca5bb36372567841f2dc200c6dd7",
+    "rhwpWasmSha256": "4ca9238b7a16f1132c6e94e7724ead9ecd397f791eb0e2d7461e3747f57bb337",
+    "rhwpJsSha256": "ba1d26e648ba943c912ecfeb693bfa5bbeff1849e244a04101bcf45ca5af3559",
+    "p6RhwpPatchSha256": "f4a14f8ed28511fa894cbb1ba53b8b9d960b2bb89c4b3d029857f33db18848db",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15"
+  },
+  "sources": {
+    "clipAndConversion": [
+      "patches/rhwp/stage3a-polygon-clipboard.patch",
+      "scripts/rhwp-patches.py",
+      "src/commands/objectClipboard.ts",
+      "src/components/Editor/rhwp/shapeProperties.ts",
+      "src/components/Editor/rhwp/rhwpModule.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.ts"
+    ],
+    "selectionAndMutation": [
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src/adapters/docx.ts",
+      "src/commands/objectSelection.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/PropertiesPanel/PropertiesPanel.tsx",
+      "src/language/en.json",
+      "src/language/ko.json"
+    ],
+    "tests": [
+      "scripts/tests/stage3-shapes.wasm.test.ts",
+      "scripts/tests/native-stage3a-p6.py",
+      "src-tauri/src/adapters/wordcraft/tests.rs"
+    ]
+  },
+  "features": [
+    {
+      "feature": "P6.1",
+      "format": "HWPX to HWPX",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Portable object clipboard accepted some leaf shapes but not polygon paths.",
+      "api": "getPortablePolygonPath, object clipboard v3 polygonPoints, createShapeControl",
+      "supported": "Owned untransformed body polygon with closed integer HWPUNIT path, reproducible frame, supported outline and no fill or solid RGB fill, no nested content or caption.",
+      "positive": "Separate source and destination documents through X11 structured MIME, geometry and style retained under new target identity.",
+      "negative": "Invalid closing point rejected with destination export and Undo state unchanged. Path, transforms, dimensions, paint and ownership checked before portable extraction.",
+      "undoRedo": "PASS",
+      "native": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "Source bytes, destination body, existing sibling, and unrelated package parts retained. Published polygon XML matches except freshly allocated identity and ordering fields.",
+      "publishedSha256": "ca52e72235aff8f3c39eb7c81c0ba3d0628b04d95beed755414c207e1bffe665",
+      "remaining": "HWP5 cross-document remapping of document tables and resources, grouped/nested HWPX reconstruction, curves and captioned polygons, DOCX chart and SmartArt transfer."
+    },
+    {
+      "feature": "P6.2-type",
+      "format": "DOCX",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Existing presets could be inserted but no exposed safe type-conversion command existed.",
+      "api": "object.edit/convertShape, WordCraft shape.change",
+      "supported": "Body inline rectangle and ellipse with no connection or unsupported effect or shape data. Preset silhouette changes while the outer frame, drawing identity and other XML stay the same.",
+      "positive": "WordCraft tests both directions and native tests rectangle to ellipse, then selects the reopened target and sees the inverse action.",
+      "negative": "Same preset rejected, output bytes unchanged. Normal eligibility and ownership checks exclude other shapes, stories and unsupported drawings.",
+      "undoRedo": "PASS",
+      "native": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "Only a:prstGeom/@prst changed. Unrelated package parts retained.",
+      "publishedSha256": "e80a911b0207953ed46880975ed1625f0d3e94674dcc1482a626317d4a18441e",
+      "remaining": "Other shape mappings and RHWP in-format conversion."
+    },
+    {
+      "feature": "P6.2-format",
+      "format": "HWPX to DOCX",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "No editable cross-format drawing import.",
+      "api": "pasteHwpxPolygon, WordCraft paste_object with an inline Freeform fragment",
+      "supported": "The portable polygon subset with inline placement, zero offsets, square wrap property, 2–144pt frame on both axes, no outline, solid RGB and valid alt description. Insertion is at the collapsed DOCX main-body end.",
+      "positive": "X11 structured paste creates an editable DrawingML freeform with moveTo, lnTo and close, exact HWPUNIT-to-EMU coordinates, the fill and alt description.",
+      "negative": "Out-of-frame vertex rejected by IPC validation and model, with pre-edit output unchanged. Source gates reject unsupported style and ownership.",
+      "undoRedo": "PASS",
+      "native": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "WordCraft reopened the freeform with its path and style. OPC XML verified the intended new drawing and the unchanged sibling, body and unrelated parts. HWPX source bytes unchanged.",
+      "publishedSha256": "1b50974bd3deb6dd2f217cb2a662c19168d19cb6249fd3e4bdae1a931539e123",
+      "remaining": "Reverse mapping, HWP5, other objects, styles, caption import and curves."
+    },
+    {
+      "feature": "P6.3",
+      "format": "HWPX",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Existing captions were editable but there was no position control for the supported owned caption.",
+      "api": "object.edit/captionSide, getPictureProperties, setPictureProperties, existing B3 caption proof",
+      "supported": "Top/Bottom of an owned existing body embedded-picture caption with one atno and supported styled paragraphs.",
+      "positive": "Above/below selection in properties panel, painted caption above the image after edit.",
+      "negative": "Unchanged side rejected with unchanged controls and Undo state. The command excludes unsupported slot, side, external pictures and ownership.",
+      "undoRedo": "PASS",
+      "native": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "Only caption @side changed in the section. atno, run styling, body and image resource preserved.",
+      "publishedSha256": "e52f3cd16faa43eb4f546aa81eb7febfa868e8842e93208630f0ad968b9b1d26",
+      "remaining": "Other placement, additional styling and nested or grouped owners. HWP5 and DOCX caption placement remain unsupported by this command."
+    },
+    {
+      "feature": "P6.4",
+      "format": "DOCX",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "The existing modeled SmartArt subset is already editable. General authored diagrams require a richer package model.",
+      "api": "Existing WordCraft SmartArtSpec and smartArt.items/layout",
+      "supported": "Modeled diagram item text, hierarchy levels and supported layout changes.",
+      "positive": "stage3_docx_chart_and_smart_art_model_edits_save_and_reopen covers the existing SmartArt commands on the current adapter.",
+      "negative": "The focused test checks unsupported layout and stale graphic edits with unchanged output. Existing T009 limits the diagram packages the editor can change.",
+      "undoRedo": "PASS in focused WordCraft test",
+      "native": "REUSED PASS for the modeled subset, current repeat NOT RUN",
+      "publish": "REUSED PASS",
+      "independentReopen": "PASS model and REUSED PASS native",
+      "preservation": "Existing related OOXML diagrams and unrelated package entries covered by the focused engine test and native record.",
+      "historicalNative": "stage3-p6-native-acceptance-2026-11-19.json",
+      "remaining": "Arbitrary diagram parts, node-specific drawing/style/color editing, geometry, shared diagram resources and RHWP SmartArt."
+    }
+  ],
+  "verification": {
+    "root": "target/stage3a-p6",
+    "typecheck": "PASS",
+    "focusedFrontend": "33 passed, frontend.log",
+    "releaseWasm": "2 passed, p6-wasm-final.log, polygon and caption reopen reports in fixtures",
+    "hwpxSaveGates": "SAFE for both WASM fixture exports, actual Release native publication independently verified",
+    "wordcraftConversion": "PASS, wordcraft-conversion-final.log, includes DOCX safe-save check and independent editable target reopen",
+    "wordcraftSmartArt": "PASS, wordcraft-smartart-final.log",
+    "nativeRuns": {
+      "hwpx": "native-run1/result.json (P6.1 and P6.3), native-session1/cleanup.json",
+      "docx": "native-run3/result.json (P6.2-type and P6.2-format), native-session3/cleanup.json",
+      "superseded": "Initial DOCX conversion failed due to IPC field casing and test navigation. Rust/Release rebuild fixed convertShape casing. The second run exposed the harness picking the first properties button and failing to target the final paragraph. Run 3 verified the exact button and visually targeted the final paragraph on the same rebuilt binary. The two supported HWPX cases are unaffected by the DOCX field correction."
+    },
+    "otherPlatforms": "Wayland, Windows and macOS NOT RUN"
+  }
+}

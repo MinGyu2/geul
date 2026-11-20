@@ -393,3 +393,15 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 지원 경로의 Undo/Redo와 거부 범위는 [P4 수용 기록](architecture/stage3-a-p4-object-geometry-acceptance.json)에 있다. 단계 시작 시점의 형식별 비교는 [초기 감사](architecture/stage3-a-initial-audit.md)에 있다.
 
 **Stage 3-A P5 문서 이야기와 복합 글상자 (2026-11-20) — PARTIAL_SUPPORT.** DOCX의 머리말·꼬리말·각주·미주에서 최상위 인라인 내장 그림의 대체 설명을 수정할 수 있다. HWPX의 지원 본문 글상자에서는 혼합 서식 문단 내부를 Enter로 분할할 수 있다. 네 DOCX 이야기와 HWPX 글상자를 Linux X11에서 각각 편집·Undo/Redo·게시하고, 별도 XML/엔진으로 검사한 뒤 앱에서 다시 열었다. 이야기 개체의 이동·크기·삭제, 다른 형식의 이야기 개체, 중첩 컨트롤과 교차 문단 삭제는 범위 밖이다. [P5 수용 기록](architecture/stage3-a-p5-nested-story-acceptance.json)
+
+**Stage 3-A P6 고급 개체 구조 (2026-11-20) — PARTIAL_SUPPORT.**
+
+| 항목 | 수용 범위 | 증거와 남은 경계 |
+|---|---|---|
+| P6.1 구조 클립보드 | HWPX 본문 폐합 다각형을 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, 경로·속성, 원본과 대상 형제 보존. HWP5 교차 문서 리소스 매핑, 그룹·중첩·곡선은 남아 있다. |
+| P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경 | 형상 프리셋만 변경. 다른 도형 종류와 RHWP 유형 변환은 남아 있다. |
+| P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
+| P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 다른 위치, 그룹 캡션, DOCX/HWP5 배치 변경은 남아 있다. |
+| P6.4 SmartArt | 기존 DOCX 모델의 항목·단계·지원 레이아웃 편집 | 집중 WordCraft 재검증 PASS, 기존 X11 수용 재사용. 일반 다이어그램 편집, 노드별 스타일, 외부·공유 파트 편집은 남아 있다. |
+
+네 신규 경로의 Linux X11 실제 조작, Undo/Redo, 안전 저장, 독립 저장본 검사 및 앱 재열기가 PASS했다. 현재 RHWP Release는 `5ca8f50d…`다. 자세한 형식 조합, 실행 및 아티팩트는 [변환 조합](architecture/command-registry.md#stage-3-a-p6-구조-전송과-변환)과 [P6 수용 기록](architecture/stage3-a-p6-advanced-structure-acceptance.json)에 있다. Stage 3-A 및 Stage 3 전체 상태는 **PARTIALLY COMPLETED**다.

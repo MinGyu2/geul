@@ -29,7 +29,7 @@ export interface ObjectClipboardPayloadV1 {
 export const RICH_OBJECT_KINDS = ["picture", "shape", "textBox", "group"] as const;
 export type RichObjectKind = typeof RICH_OBJECT_KINDS[number];
 
-export const HWPX_PORTABLE_SHAPE_TYPES = ["rectangle", "ellipse", "line", "textbox"] as const;
+export const HWPX_PORTABLE_SHAPE_TYPES = ["rectangle", "ellipse", "line", "textbox", "polygon"] as const;
 export type HwpxPortableShapeType = typeof HWPX_PORTABLE_SHAPE_TYPES[number];
 
 export const HWPX_PICTURE_MIMES = ["image/png", "image/jpeg", "image/gif", "image/bmp", "image/webp"] as const;
@@ -94,6 +94,7 @@ export interface HwpxPortableShape {
   tbMargins?: { left: number; right: number; top: number; bottom: number };
   paragraphs?: readonly HwpxPortableParagraph[];
   caption?: HwpxPortableCaption;
+  polygonPoints?: readonly { x: number; y: number }[];
 }
 
 export interface HwpxPortablePicture {
@@ -383,6 +384,20 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
     || (raw.fillType !== "none" && raw.fillType !== "solid")) return false;
   if (raw.fillType === "solid" ? !intInRange(raw.fillBgColor, 0, 0xFFFFFFFF) : raw.fillBgColor !== undefined) return false;
   if (raw.description !== undefined && (typeof raw.description !== "string" || raw.description.length > 4096)) return false;
+  if (shapeType === "polygon") {
+    const points = raw.polygonPoints;
+    if (raw.rotationAngle !== 0 || raw.horzFlip || raw.vertFlip || raw.caption !== undefined
+      || !intInRange(raw.borderColor, 0, 0xffffff)
+      || (raw.fillBgColor !== undefined && !intInRange(raw.fillBgColor, 0, 0xffffff))
+      || !Array.isArray(points) || points.length < 4 || points.length > 257
+      || !points.every(p => record(p) && Object.keys(p).sort().join(",") === "x,y"
+        && intInRange(p.x, 0, raw.width as number) && intInRange(p.y, 0, raw.height as number))) return false;
+    const vertices = points.slice(0, -1);
+    const last = points.at(-1);
+    if (points[0].x !== last.x || points[0].y !== last.y
+      || new Set(vertices.map(p => `${p.x},${p.y}`)).size !== vertices.length
+      || vertices.reduce((area, p, i) => area + p.x * points[i + 1].y - p.y * points[i + 1].x, 0) === 0) return false;
+  } else if (raw.polygonPoints !== undefined) return false;
   if (shapeType === "textbox") {
     if (!HWPX_TB_VERTICAL_ALIGNS.some(a => a === raw.tbVerticalAlign)
       || !record(raw.tbMargins) || Object.keys(raw.tbMargins).length !== 4
@@ -393,7 +408,7 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
   if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
   const allowedKeys = new Set(["kind", "shapeType", "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap",
     "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "lineType", "fillType", "fillBgColor",
-    "description", "tbVerticalAlign", "tbMargins", "paragraphs", "caption"]);
+    "description", "tbVerticalAlign", "tbMargins", "paragraphs", "caption", "polygonPoints"]);
   return Object.keys(raw).every(key => allowedKeys.has(key));
 }
 

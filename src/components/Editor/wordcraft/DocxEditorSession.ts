@@ -1,5 +1,5 @@
 import { OBJECT_CLIPBOARD_MIME, RICH_OBJECT_KINDS, createRichObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload, type RichObjectKind } from "../../../commands/objectClipboard";
-import { objectEditMatches, type ObjectSelection } from "../../../commands/objectSelection";
+import { objectEditMatches, validAltText, type ObjectSelection } from "../../../commands/objectSelection";
 import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   buildTableClipboardPlainText,
@@ -106,7 +106,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering",
-  "continueNumbering", "pageSetup", "objectEdit", "pasteObject", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
+  "continueNumbering", "pageSetup", "objectEdit", "pasteObject", "pasteHwpxPolygon", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells",
 ]);
 const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as const;
 /**
@@ -137,7 +137,7 @@ const ACTION_IDS = [
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "font", "embedFont", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
   "align", "fontSize", "fontColor", "highlight", "script", "paragraph", "list", "listIndent", "restartNumbering", "continueNumbering",
-  "pageSetup", "objectEdit", "pasteObject", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
+  "pageSetup", "objectEdit", "pasteObject", "pasteHwpxPolygon", "replace", "replaceAll", "tableStructure", "tableShading", "tableBorders", "tableAlignment", "tableColumnWidth", "tableRowHeight", "tableCellMargins", "tablePositioning", "tableRepeatHeader", "tableRowBreak", "cutTableCells", "pasteTableCells"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1180,7 +1180,21 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         if (!view) return "rejected";
         if (mime === OBJECT_CLIPBOARD_MIME) {
           const object = parseObjectClipboardPayload(data);
-          if (!object || object.sourceFormat !== "docx" || !view.drawingInsertionAllowed) return "rejected";
+          if (!object || !view.drawingInsertionAllowed) return "rejected";
+          if (object.version === 3) {
+            const shape = object.portable;
+            if (object.sourceFormat !== "hwpx" || object.object !== "shape" || !shape || shape.kind === "picture"
+              || shape.shapeType !== "polygon" || !shape.polygonPoints || !shape.treatAsChar || shape.textWrap !== "Square"
+              || shape.horzOffset !== 0 || shape.vertOffset !== 0 || shape.lineType !== 0
+              || shape.borderWidth !== 0 || shape.borderColor !== 0 || shape.fillType !== "solid" || shape.fillBgColor === undefined
+              || shape.width < 200 || shape.width > 14_400 || shape.height < 200 || shape.height > 14_400
+              || !validAltText(shape.description ?? "")) return "rejected";
+            const fill = [shape.fillBgColor & 0xff, (shape.fillBgColor >> 8) & 0xff, (shape.fillBgColor >> 16) & 0xff]
+              .map(part => part.toString(16).padStart(2, "0")).join("");
+            return this.push({ op: "pasteHwpxPolygon", polygon: { width: shape.width, height: shape.height, fill,
+              points: shape.polygonPoints.slice(0, -1).map(({ x, y }) => [x, y]), description: shape.description ?? "" } })
+              ? "ok" : "rejected";
+          }
           if (object.version === 1) return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
           return this.push({ op: "pasteObject", payload: object.engine }) ? "ok" : "rejected";
         }

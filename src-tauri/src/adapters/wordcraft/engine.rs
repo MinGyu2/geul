@@ -170,6 +170,9 @@ pub enum DocxOp {
     PasteObject {
         payload: Box<ObjectPayload>,
     },
+    PasteHwpxPolygon {
+        polygon: HwpxPolygon,
+    },
     /// Stage 3: an edit of the selected drawing. `position`/`epoch` must name the current object selection
     /// (stale selections are rejected); the change must pass the DOCX T009 check against the pre-edit export.
     ObjectEdit {
@@ -453,6 +456,35 @@ pub struct ObjectPayload {
     pub media: Vec<PayloadMedia>,
 }
 
+/// HWPUNIT coordinates for a supported inline, filled, borderless HWPX polygon.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HwpxPolygon {
+    pub width: u32,
+    pub height: u32,
+    pub points: Vec<[u32; 2]>,
+    pub fill: String,
+    pub description: String,
+}
+
+impl HwpxPolygon {
+    fn valid(&self) -> bool {
+        if !(200..=14_400).contains(&self.width)
+            || !(200..=14_400).contains(&self.height)
+            || !(3..=256).contains(&self.points.len())
+            || self.fill.len() != 6 || !self.fill.bytes().all(|b| b.is_ascii_hexdigit())
+            || !valid_object_alt_text(&self.description)
+            || self.points.iter().any(|[x, y]| *x > self.width || *y > self.height)
+            || self.points.iter().collect::<std::collections::BTreeSet<_>>().len() != self.points.len()
+        {
+            return false;
+        }
+        self.points.iter().zip(self.points.iter().cycle().skip(1))
+            .map(|([a, b], [c, d])| i64::from(*a) * i64::from(*d) - i64::from(*b) * i64::from(*c))
+            .sum::<i64>() != 0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PayloadMedia {
@@ -639,6 +671,9 @@ pub enum ObjectEdit {
     Fill {
         color: Option<String>,
     },
+    ConvertShape {
+        to: BasicShape,
+    },
     /// Shape outline `RRGGBB` (`None`: no line) and width in points.
     Outline {
         color: Option<String>,
@@ -761,6 +796,12 @@ pub const MAX_CROP_FRACTION: f32 = 0.45;
 pub const MAX_OBJECT_SIDE_PT: f32 = 4000.0;
 pub const MIN_OBJECT_SIDE_PT: f32 = 2.0;
 
+fn valid_object_alt_text(text: &str) -> bool {
+    text.chars().count() <= MAX_ALT_TEXT_CHARS
+        // XML attribute values normalize line breaks.
+        && !text.chars().any(|c| c.is_control() || c == '\u{FFFC}')
+}
+
 impl ObjectEdit {
     fn valid(&self) -> bool {
         let coord =
@@ -799,6 +840,7 @@ impl ObjectEdit {
                 .all(|v| v.is_finite() && (0.0..=MAX_CROP_FRACTION).contains(*v)),
             Self::Wrap { .. } | Self::Position { .. } => true,
             Self::Fill { color } => valid_rgb(color),
+            Self::ConvertShape { to } => matches!(to, BasicShape::Rectangle | BasicShape::Ellipse),
             Self::Outline { color, width } => {
                 valid_rgb(color) && width.is_none_or(|w| w.is_finite() && (0.0..=72.0).contains(&w))
             }
@@ -833,11 +875,7 @@ impl ObjectEdit {
                         .all(|i| i.level <= 7 && !i.text.is_empty() && valid_graphic_text(&i.text))
             }
             Self::SmartArtLayout { layout } => SMART_ART_LAYOUTS.contains(&layout.as_str()),
-            Self::AltText { text } => {
-                text.chars().count() <= MAX_ALT_TEXT_CHARS
-                    // XML attribute values normalise line breaks: a newline would not reopen as written.
-                    && !text.chars().any(|c| c.is_control() || c == '\u{FFFC}')
-            }
+            Self::AltText { text } => valid_object_alt_text(text),
         }
     }
 
@@ -850,6 +888,7 @@ impl ObjectEdit {
             Self::Wrap { .. } => "wrap",
             Self::AltText { .. } => "altText",
             Self::Fill { .. } => "fill",
+            Self::ConvertShape { .. } => "convertShape",
             Self::Outline { .. } => "outline",
             Self::Rotate { .. } => "rotate",
             Self::Layer { .. } => "zOrder",
@@ -914,6 +953,7 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     <= MAX_PAYLOAD_MEDIA_BYTES.div_ceil(3) * 4
                     && payload.drawing().is_some()
             }
+            DocxOp::PasteHwpxPolygon { polygon } => polygon.valid(),
             DocxOp::ObjectEdit {
                 position,
                 epoch,
@@ -1096,6 +1136,8 @@ pub struct ObjectView {
     /// Mutations this object admits now (Stage 3): `move`, `resize`, `delete`. Each is still
     /// re-validated and T009-checked when applied.
     operations: Vec<&'static str>,
+    #[serde(rename = "convertShape", skip_serializing_if = "Option::is_none")]
+    convert_shape: Option<BasicShape>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shape: Option<ShapeView>,
 }
@@ -1701,6 +1743,7 @@ impl DocxModel {
                 edit,
             } => self.object_edit(position, *epoch, edit),
             DocxOp::PasteObject { payload } => self.paste_object(payload),
+            DocxOp::PasteHwpxPolygon { polygon } => self.paste_hwpx_polygon(polygon),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -2351,11 +2394,57 @@ impl DocxModel {
         if matches!(self.object_kind(pos), Some("shape" | "textBox")) {
             ops.extend(["fill", "outline"]);
         }
+        if self.conversion_target(pos).is_some() {
+            ops.push("convertShape");
+        }
         // Rotation and layer change the frame/wrap: the same placement rules as moving.
         if relocatable && top_level {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
+    }
+
+    fn conversion_target(&self, pos: &Pos) -> Option<BasicShape> {
+        use wordcraft_engine::doc::para::{ShapeKind, Wrap};
+        let InlineObject::Shape { kind, story: None, freeform: None, effects, extra, float, .. }
+            = self.object_at(pos)? else { return None };
+        if pos.story != StoryRef::Body || pos.path.0.len() != 1 || !effects.is_empty()
+            || !extra.is_empty() || float.wrap != Wrap::Inline {
+            return None;
+        }
+        match kind {
+            ShapeKind::Rectangle => Some(BasicShape::Ellipse),
+            ShapeKind::Ellipse => Some(BasicShape::Rectangle),
+            _ => None,
+        }
+    }
+
+    fn paste_hwpx_polygon(&mut self, polygon: &HwpxPolygon) -> Result<bool, Rejected> {
+        use wordcraft_engine::doc::{
+            edit::Fragment, freeform::{FreePath, Freeform}, para::{Float, ShapeKind},
+            props::{CharProps, Rgb}, Block, Paragraph,
+        };
+        if !polygon.valid() {
+            return Err(Rejected);
+        }
+        let rgb = u32::from_str_radix(&polygon.fill, 16).map_err(|_| Rejected)?;
+        let (w, h) = (polygon.width as f32 / 100.0, polygon.height as f32 / 100.0);
+        let mut drawing = InlineObject::Shape {
+            kind: ShapeKind::Freeform, w, h, fill: Some(Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)),
+            stroke: None, stroke_width: 0.0, float: Float::default(), story: None,
+            freeform: Some(std::sync::Arc::new(Freeform {
+                w, h, paths: vec![FreePath { closed: true, pts: polygon.points.iter().map(|[x, y]|
+                    [*x as f32 / 100.0, *y as f32 / 100.0]).collect() }], ..Freeform::default()
+            })),
+            effects: Default::default(), extra: Default::default(),
+        };
+        drawing.set_alt_text(&polygon.description);
+        let mut para = Paragraph::new();
+        para.insert_object(0, drawing, &CharProps::default()).map_err(|_| Rejected)?;
+        self.paste_object(&ObjectPayload {
+            fragment: Fragment { blocks: vec![Block::Para(para)], ..Fragment::default() },
+            media: Vec::new(),
+        })
     }
 
     /// The engine computes drag offsets in f32 points; DOCX stores whole EMUs. Snap the edited
@@ -2770,6 +2859,11 @@ impl DocxModel {
         {
             return Err(Rejected);
         }
+        if let ObjectEdit::ConvertShape { to } = edit {
+            if self.conversion_target(&pos) != Some(*to) {
+                return Err(Rejected);
+            }
+        }
         let before = self.export().ok_or(Rejected)?;
         let end = Pos {
             off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
@@ -2847,6 +2941,10 @@ impl DocxModel {
                 ),
                 ObjectEdit::Fill { color } => (
                     model.run("shape.fill", json!({ "color": color }))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::ConvertShape { to } => (
+                    model.run("shape.change", json!({ "kind": to.name() }))?,
                     Some(pos.clone()),
                 ),
                 ObjectEdit::Outline { color, width } => {
@@ -3006,6 +3104,7 @@ impl DocxModel {
                 graphic: self.graphic_properties(pos),
                 clipboard_shape: self.clipboard_shape(pos),
                 operations: self.object_operations(pos),
+                convert_shape: self.conversion_target(pos),
                 shape: match self.object_at(pos)? {
                     InlineObject::Shape {
                         fill,

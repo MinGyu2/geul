@@ -133,6 +133,20 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
       {selection.graphic?.kind === "smartArt" && can("smartArt") && <SmartArtFields art={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.groupChildFills && can("groupChildFill") &&
         <GroupChildFields children={selection.groupChildFills} disabled={disabled} onEdit={onEdit} />}
+      {selection.convertShape && can("convertShape") && <button type="button" className="document-bar__button" disabled={disabled}
+        onClick={() => onEdit({ kind: "convertShape", to: selection.convertShape! })}>
+        {t(`properties.shape.convert.${selection.convertShape}`)}
+      </button>}
+      {selection.captionSide && can("captionSide") && <label className="picture-size-field">
+        {t("properties.caption.side")}
+        <select value={selection.captionSide} disabled={disabled} onChange={event => {
+          const side = event.target.value;
+          if (side === "Top" || side === "Bottom") onEdit({ kind: "captionSide", side });
+        }}>
+          <option value="Top">{t("properties.caption.top")}</option>
+          <option value="Bottom">{t("properties.caption.bottom")}</option>
+        </select>
+      </label>}
       {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
         outlineWidth={selection.address.engine === "wordcraft" ? 0 : selection.shape.outlineWidthEditable ? 0.01 : null} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}

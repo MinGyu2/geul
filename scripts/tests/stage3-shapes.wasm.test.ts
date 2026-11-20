@@ -1486,6 +1486,144 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A P6 transfers a proven closed HWPX polygon across documents", async () => {
+    const input = source("hwpx");
+    const fixture = new engine.HwpDocument(input) as RhwpDocument;
+    let bytes: Uint8Array, control: number;
+    const points = [{ x: 1601, y: 1302 }, { x: 9703, y: 705 }, { x: 6404, y: 6506 }, { x: 1601, y: 1302 }];
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
+        width: 10800, height: 7200, treatAsChar: true, textWrap: "Square", polygonPoints: points,
+      })));
+      control = created.controlIdx;
+      expect(JSON.parse(fixture.setShapeProperties!(0, 0, control,
+        '{"lineType":0,"borderWidth":0,"borderColor":0,"fillType":"solid","fillBgColor":7807556,"description":"Portable polygon"}')).ok).toBe(true);
+      bytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const destination = new engine.HwpDocument(input) as RhwpDocument;
+    let destinationBytes: Uint8Array, sibling: number;
+    try {
+      const shape = JSON.parse(destination.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "rectangle", width: 3000, height: 2400,
+        treatAsChar: true, textWrap: "Square",
+      })));
+      expect(shape.ok).toBe(true);
+      sibling = shape.controlIdx;
+      destinationBytes = destination.exportHwpx();
+    } finally { destination.free(); }
+    const from = await setup("hwpx", bytes), to = await setup("hwpx", destinationBytes);
+    const owns = () => true;
+    let data = "", plain = "";
+    const clip: PlainClipboard = {
+      readText: async () => plain, writeText: async text => { plain = text; data = ""; },
+      readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? data : null,
+      writeStructured: async (mime, payload, text) => {
+        expect(mime).toBe(OBJECT_CLIPBOARD_MIME); data = payload; plain = text;
+      },
+    };
+    try {
+      const original = from.doc.exportHwpx();
+      const originalDestination = to.doc.exportHwpx();
+      const siblingProperties = props(to.doc, sibling);
+      from.pick(shapes(from.doc)[0]!);
+      expect(await from.editor.executeClipboard("edit.copy", owns, clip)).toBe(true);
+      const payload = parseObjectClipboardPayload(data);
+      expect(payload).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "shape",
+        portable: { shapeType: "polygon", polygonPoints: points, borderWidth: 0, lineType: 0 } });
+      const validData = data;
+      const invalid = JSON.parse(validData);
+      invalid.portable.polygonPoints[3].x += 1;
+      data = JSON.stringify(invalid);
+      expect(await to.editor.executeClipboard("edit.paste", owns, clip)).toBe(false);
+      expect(to.doc.exportHwpx()).toEqual(originalDestination);
+      expect(to.editor.snapshot().history?.undo).toBe(false);
+      data = validData;
+      expect(await to.editor.executeClipboard("edit.paste", owns, clip)).toBe(true);
+      await to.confirm();
+      const index = shapes(to.doc).find(frame => frame.controlIdx !== sibling)!.controlIdx;
+      const getPath = (document: RhwpDocument, ctrl: number) => JSON.parse(document.getEditableShapePath!(0, 0, ctrl));
+      expect(getPath(to.doc, index)).toEqual(getPath(from.doc, control));
+      expect(props(to.doc, index).instanceId).not.toBe(props(from.doc, control).instanceId);
+      expect(props(to.doc, index).instanceId).not.toBe(siblingProperties.instanceId);
+      expect(props(to.doc, sibling)).toEqual(siblingProperties);
+      expect(from.doc.exportHwpx()).toEqual(original);
+      expect(to.editor.undo()).toBe(true);
+      await to.confirm();
+      expect(shapes(to.doc).map(frame => frame.controlIdx)).toEqual([sibling]);
+      expect(to.editor.redo()).toBe(true);
+      await to.confirm();
+      expect(getPath(to.doc, index)).toEqual(getPath(from.doc, control));
+      const exported = to.doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(to.doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(getPath(reopened, index)).toEqual(getPath(from.doc, control));
+          expect(props(reopened, index)).toEqual(props(to.doc, index));
+        } finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p6-polygon-source.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p6-polygon-destination.hwpx"), destinationBytes);
+          writeFileSync(resolve(out, "a-p6-polygon-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p6-polygon-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { from.editor.dispose(); to.editor.dispose(); clearStructuredClipboard(); }
+  });
+
+  it("Stage 3-A P6 changes picture caption side without changing its number, runs, or picture", async () => {
+    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADYAAAAbCAIAAAC4FetiAAAAN0lEQVR4nO3OUQkAIBBAsethFvv3MIklBN/HYAE2Z+24+T5QVFRUbFFUrFBUrFBUrFBUrFB84QIyEvyvRSPr3QAAAABJRU5ErkJggg==", "base64");
+    let bytes: Uint8Array, control: number;
+    try {
+      const created = JSON.parse(fixture.insertPicture!(0, 0, 0, "[]", png, 6300, 3150, 54, 27, "png", "Owned picture"));
+      expect(created.ok).toBe(true);
+      control = created.controlIdx;
+      expect(JSON.parse(fixture.setPictureProperties!(0, 0, control,
+        '{"hasCaption":true,"captionDirection":"Bottom","treatAsChar":true}')).ok).toBe(true);
+      const length = fixture.getCellParagraphLength(0, 0, control, 0, 0);
+      fixture.insertTextInCell(0, 0, control, 0, 0, length, " caption");
+      fixture.applyCharFormatInCell!(0, 0, control, 0, 0, length + 1, length + 8, '{"bold":true}');
+      bytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const picture = (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "image")!;
+      const before = JSON.parse(doc.getPictureProperties!(0, 0, control));
+      const owner = doc.getControls!();
+      const read = () => JSON.parse(doc.getPictureProperties!(0, 0, control));
+      expect(pick(picture).captionSide).toBe("Bottom");
+      expect(edit({ kind: "captionSide", side: "Bottom" })).toBe(false);
+      expect(doc.getControls!()).toBe(owner);
+      expect(editor.snapshot().history?.undo).toBe(false);
+      expect(edit({ kind: "captionSide", side: "Top" })).toBe(true);
+      await confirm();
+      expect(read()).toEqual({ ...before, captionDirection: "Top" });
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual({ ...before, captionDirection: "Top" });
+      expect(doc.getControls!()).toBe(owner);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(JSON.parse(reopened.getPictureProperties!(0, 0, control))).toEqual(read()); }
+        finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p6-caption-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p6-caption-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p6-caption-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("Stage 3-A splits an owned mixed-format HWPX text box paragraph", async () => {
     const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
     let bytes: Uint8Array, control: number;

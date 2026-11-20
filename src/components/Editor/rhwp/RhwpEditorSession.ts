@@ -3,7 +3,7 @@ import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { hexToBgr, inspectRhwpGroup, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
-import { extractHwpxPortableObject, insertHwpxPortableObject } from "./hwpxPortableClipboard";
+import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
@@ -1744,8 +1744,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private bodyDrawingsEqualOnReopen(doc: RhwpDocument, reopened: RhwpDocument, controlsJson: string): boolean {
     try {
       const parsed = JSON.parse(controlsJson) as { ctrlId?: string; list?: number; para?: number; controlIndex?: number; userDesc?: string }[];
+      const hwpx = doc.getSourceFormat() === "hwpx";
       const drawings = parsed.filter(c => c.ctrlId === "gso" && c.list === 0
-        && ["OLE", "차트", "다각형", "곡선", "그리기"].includes(c.userDesc ?? "")
+        && (["OLE", "차트", "다각형", "곡선", "그리기"].includes(c.userDesc ?? "") || (hwpx && c.userDesc === "그림"))
         && typeof c.para === "number" && typeof c.controlIndex === "number");
       if (!drawings.length) return true;
       const sectionCount = doc.getSectionCount?.() ?? 1;
@@ -1766,6 +1767,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (doc.getEditableShapePath?.(...address) !== reopened.getEditableShapePath?.(...address)) return false;
         } else if (c.userDesc === "그리기") {
           if (doc.getEditableGroupFills?.(...address) !== reopened.getEditableGroupFills?.(...address)) return false;
+        } else if (c.userDesc === "그림") {
+          if (JSON.stringify(readHwpxPictureCaption(doc, address)) !== JSON.stringify(readHwpxPictureCaption(reopened, address))) return false;
         } else {
           const before = this.readChartFrom(doc, address);
           const after = this.readChartFrom(reopened, address);
@@ -1828,6 +1831,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (address && canFormat && inspected?.pagePlacement && this.unlockedBodyGso(address) === "그림") {
             operations.push("position");
           }
+          const captionSide = format === "hwpx" && address && canPic && this.doc.setPictureProperties
+            && this.unlockedBodyGso(address) === "그림" ? readHwpxPictureCaption(this.doc, address)?.side : undefined;
+          if (captionSide) operations.push("captionSide");
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line/polygon/curve body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
           const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
@@ -1897,6 +1903,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(group ? { groupSize: { widthPt: group.widthPt, heightPt: group.heightPt } } : {}),
               ...(groupWrap ? { groupWrap } : {}),
               ...(shapePath ? { shapePath } : {}),
+              ...(captionSide ? { captionSide } : {}),
               ...(groupChildFills ? { groupChildFills } : {}),
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
@@ -3229,7 +3236,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
     const portable = !sameDoc && format === "hwpx" ? payload.portable : undefined;
 
-    // HWP5 and non-portable HWPX snapshots (e.g. groups, polygon/curve, gradients, or unsafe captions/stories)
+    // HWP5 and non-portable HWPX snapshots (e.g. groups, curves, gradients, or unsafe captions/stories)
     // remain same-document only.
     if (!sameDoc && !portable) return "rejected";
     this.history.boundary();
@@ -4565,6 +4572,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
     if (request.edit.kind === "pathPoint" || request.edit.kind === "groupChildFill") return this.editAdvancedShape(request);
+    if (request.edit.kind === "captionSide") return this.editCaptionSide(request);
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
@@ -4765,6 +4773,35 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         this.selectedObject = { ...saved, model: this.modelVersion, layout: this.layoutVersion,
           selection: { ...selected, ...refreshed, epoch: ++this.objectEpoch, revision: this.committed + this.pending } };
       } else this.selectedObject = saved;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  private editCaptionSide(request: ObjectEditRequest): boolean {
+    const { edit } = request;
+    const selection = this.objectSelection, saved = this.selectedObject, doc = this.doc;
+    const address = saved?.pictureAddress;
+    if (edit.kind !== "captionSide" || !address || !selection || !doc?.setPictureProperties || !doc.getControls
+      || this.imeUnsettled || !objectEditMatches(request, selection)
+      || this.sessions.get(this.sessionId)?.format !== "hwpx" || this.unlockedBodyGso(address) !== "그림") return false;
+    const before = readHwpxPictureCaption(doc, address);
+    if (!before || before.side === edit.side || before.side !== selection.captionSide) return false;
+    const controls = doc.getControls();
+    const { caret, anchor } = this;
+    this.selectedObject = null;
+    const accepted = this.mutate(() => {
+      const result = JSON.parse(doc.setPictureProperties!(...address, JSON.stringify({ hasCaption: true, captionDirection: edit.side })));
+      const after = readHwpxPictureCaption(doc, address);
+      if (result.ok !== true || !after || after.side !== edit.side || doc.getControls!() !== controls
+        || JSON.stringify(after.props) !== JSON.stringify({ ...before.props, captionDirection: edit.side })
+        || JSON.stringify(after.caption) !== JSON.stringify({ ...before.caption, direction: edit.side })) {
+        throw new Error("caption placement did not preserve its owner or contents");
+      }
+      return { caret, anchor };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = saved;
       this.emit();
     }
     return accepted;
