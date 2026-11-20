@@ -618,6 +618,24 @@ def c08(acc,row,fixtures,out,fmt):
         acc.key("Escape")
 
 
+def group_placement(group):
+    """The stored reference, alignment and offsets that locate a group."""
+    return {key: group["props"][key] for key in (
+        "horzRelTo", "vertRelTo", "horzAlign", "vertAlign", "treatAsChar", "horzOffset", "vertOffset",
+    )}
+
+
+def verify_group_origin(visible, layout, scale, context):
+    require_near(visible["left"], layout["x"] * scale, f"{context}: horizontal origin", .2)
+    require_near(visible["top"], layout["y"] * scale, f"{context}: vertical origin", .2)
+
+
+def verify_group_placement(saved, expected):
+    actual = group_placement(saved)
+    require(actual == expected, "saved group placement does not match the movement and anchor basis",
+            {"expected": expected, "observed": actual})
+
+
 def c09(acc,row,fixtures,out,fmt):
     fixture = fixtures / f"p3-group-original.{fmt}"
     before = row["before"] = core_shapes(fixture)
@@ -626,12 +644,24 @@ def c09(acc,row,fixtures,out,fmt):
     group = before["frames"][0]
     path = begin(acc,row,fixture,out,f"c09.{fmt}")
     select_object(acc,group,"group")
-    start = frame(acc)
+    start = row["startFrame"] = frame(acc)
+    scale = start["width"] / group["w"]
+    original_placement = group_placement(group)
+    require(not original_placement["treatAsChar"] and
+            (original_placement["horzAlign"], original_placement["vertAlign"]) == ("Left", "Top"),
+            "fixture must have a movable group anchored at its top left", original_placement)
+    verify_group_origin(start, group, scale, "original group")
     acc.key("shift+Right")
     revision(acc,fmt,1)
     select_object(acc,group,"group")
-    moved = frame(acc)
-    require(moved["left"] > start["left"],"group movement not visible")
+    moved = row["movedFrame"] = frame(acc)
+    # Shift+Right nudges 10 pt. The RHWP model stores 100 HWPUNIT/pt
+    # and its unzoomed layout uses 96 px/in (72 pt/in).
+    nudge_pt = 10
+    moved_layout = {**group, "x": group["x"] + nudge_pt * 96 / 72}
+    verify_group_origin(moved, moved_layout, scale, "live group movement")
+    expected_placement = {**original_placement, "horzOffset": original_placement["horzOffset"] + nudge_pt * 100}
+    row["placement"] = {"original": original_placement, "expected": expected_placement}
     row["beforeResize"] = moved
     x,y = acc.d.js("""
       const r=document.querySelector('[data-handle=e]').getBoundingClientRect();
@@ -668,14 +698,29 @@ def c09(acc,row,fixtures,out,fmt):
     require(p6.value(acc,p6.WRAP) == "square","group wrapping undo")
     acc.key("ctrl+y")
     revision(acc,fmt,wrap_revision+2)
+    select_object(acc,moved_layout,"group")
+    wrapped = row["wrappedFrame"] = frame(acc)
     publish(acc,fmt,row)
     after = row["after"] = core_shapes(path)
     require(after["body"] == before["body"],"group edit changed body")
-    require(after["frames"][0]["props"]["textWrap"] == "TopAndBottom","saved group wrap")
+    require(len(after["frames"]) == 1,"published group count changed")
+    saved = after["frames"][0]
+    require(all(saved[key] == group[key] for key in ("secIdx","paraIdx","controlIdx","page")),
+            "published group address changed", saved)
+    require(saved["props"]["textWrap"] == "TopAndBottom","saved group wrap")
+    # The known Square -> TopAndBottom transition retains the positioning basis
+    # of this fixture. Check it explicitly along with both HWPUNIT offsets.
+    row["placement"]["published"] = group_placement(saved)
+    verify_group_placement(saved, expected_placement)
+    verify_group_origin(wrapped, saved, scale, "published group versus live wrapped group")
     require(shape_payload(path,group=True) == payload,"group child geometry or transforms changed")
     reopen(acc,path,row)
-    select_object(acc,after["frames"][0],"group")
-    require(frame(acc)["width"] == resized["width"] and frame(acc)["height"] == resized["height"],
+    select_object(acc,saved,"group")
+    reopened = row["reopenedFrame"] = frame(acc)
+    row["reopenedPage"] = acc.d.js("return +document.querySelector(arguments[0]).closest('.rhwp-page').dataset.page", FRAME)
+    require(row["reopenedPage"] == saved["page"], "reopened group page differs")
+    verify_group_origin(reopened, saved, scale, "reopened group versus published group")
+    require(reopened["width"] == resized["width"] and reopened["height"] == resized["height"],
             "reopened group dimensions differ")
     require(p6.value(acc,p6.WRAP) == "topAndBottom","reopened group wrap")
     require_near(resized["width"],moved["width"]+14,"group width did not follow pointer")
