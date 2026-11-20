@@ -60,14 +60,19 @@ def gtk_peer(args):
         gtk.gtk_selection_data_set.restype = None
         gtk.gtk_selection_data_set.argtypes = [ptr, ptr, c.c_int, c.c_char_p, c.c_int]
         data = sys.stdin.buffer.read()
-        target = atom(args.mime)
+        payloads = [(args.mime, data)]
+        if args.plain is not None:
+            payloads.append(("UTF8_STRING", args.plain.encode()))
 
         @getter
-        def serve(_clipboard, selection, _info, _user):
-            gtk.gtk_selection_data_set(selection, target, 8, data, len(data))
+        def serve(_clipboard, selection, info, _user):
+            mime, payload = payloads[info]
+            gtk.gtk_selection_data_set(selection, atom(mime), 8, payload, len(payload))
 
-        entry = Target(args.mime.encode(), 0, 0)
-        assert gtk.gtk_clipboard_set_with_data(clipboard, c.byref(entry), 1, serve, None, None)
+        targets = (Target * len(payloads))(
+            *(Target(mime.encode(), 0, i) for i, (mime, _) in enumerate(payloads)))
+        if not gtk.gtk_clipboard_set_with_data(clipboard, targets, len(payloads), serve, None, None):
+            raise RuntimeError("GTK did not acquire clipboard ownership")
 
     print("ready", flush=True)
     gtk.gtk_main()
@@ -134,6 +139,7 @@ def main():
     parser.add_argument("--gtk", type=Path, required=True)
     parser.add_argument("--peer", choices=("read", "offer"))
     parser.add_argument("--mime")
+    parser.add_argument("--plain", help="additional UTF8_STRING target when offering structured MIME")
     for name in ("app", "driver", "out"):
         parser.add_argument("--" + name, type=Path)
     args = parser.parse_args()
