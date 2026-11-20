@@ -794,6 +794,8 @@
   "editor.object.path.apply": "Apply coordinates",
   "editor.object.path.addVertex": "Add vertex on next edge",
   "editor.object.path.removeVertex": "Remove vertex",
+  "editor.object.path.appendLine": "Append line to coordinates",
+  "editor.object.path.removeLine": "Remove final line",
   "properties.shape.convert.rectangle": "Change to rectangle",
   "properties.shape.convert.ellipse": "Change to ellipse",
   "properties.caption.side": "Caption position",

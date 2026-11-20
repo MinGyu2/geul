@@ -41,7 +41,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/stage3a-path-and-group-editing.patch",
           "patches/rhwp/stage3a-polygon-clipboard.patch",
           "patches/rhwp/stage3a-path-transform-safety.patch",
-          "patches/rhwp/stage3a-polygon-vertices.patch")
+          "patches/rhwp/stage3a-polygon-vertices.patch",
+          "patches/rhwp/stage3a-curve-terminal-line.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"

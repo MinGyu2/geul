@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-20",
+  "baselineHead": "bc74823183ed3e4c3974c7af810b0bb885b62c91",
+  "feature": "P4.5 append and remove terminal straight segments of an HWP5 cubic path",
+  "status": "IMPLEMENTED_VERIFIED",
+  "changedFiles": [
+    "patches/rhwp/stage3a-curve-terminal-line.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/native-stage3a-p4.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "src-tauri/src/services/save/hwp/gso.rs",
+    "src/commands/objectSelection.ts",
+    "src/components/Editor/ObjectSelectionFrame.test.tsx",
+    "src/components/Editor/ObjectSelectionFrame.tsx",
+    "src/components/Editor/ShapePointEditor.tsx",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/shapeProperties.ts",
+    "src/language/en.json",
+    "src/language/ko.json"
+  ],
+  "previousLimitation": "The curve point editor could not change the number of points or segments.",
+  "supported": "For an eligible SAFE HWP5 open cubic path, append a line from the final endpoint to supplied integer coordinates, or remove the final line while keeping all preceding segments. Verify original count, command array and zero padding.",
+  "refused": "Cubic/quadratic segment edits, interior surgery, closed or transformed paths, unsupported raw curve storage, empty lines and closure, saving a point count change together with changes to the retained prefix, HWPX and DOCX segment edits.",
+  "release": {
+    "generation": "449b38133e8fae3d51fa1ad8b449a03e368aface32a1ebf24a7f0c8c66aca432",
+    "artifacts": {
+      "rhwp.js": "918ea8503fcb37a181d52d11126661c5b724037411aa1817efb6c484bdecb240",
+      "rhwp_bg.wasm": "b88fb16e925c16f50340d8f5d7aea209e449c9a37792ea1496db407d25b2c92a"
+    },
+    "patch": {
+      "name": "stage3a-curve-terminal-line.patch",
+      "sha256": "30c37328c208280c31886b9635d6a12f1ba44a3272c8ed995c1be141ffd71f3c"
+    }
+  },
+  "checks": [
+    {
+      "command": "scripts/build-rhwp-wasm.sh (locked wasm-bindgen on PATH)",
+      "exit": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run src/components/Editor/ObjectSelectionFrame.test.tsx",
+      "exit": 0,
+      "passed": 20
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> GEUL_STAGE3_CUBIC=<original> GEUL_STAGE3_TRANSLATED_CUBIC=<translated> GEUL_STAGE3_CUBIC_UNMODELED=<unmodeled> node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'Stage 3-A (appends|inserts on the closing|refuses|edits|P6 transfers)'",
+      "exit": 0,
+      "passed": 22,
+      "filtered": 29
+    },
+    {
+      "command": "python3 scripts/cargo-geul.py test --lib --no-run",
+      "exit": 0
+    },
+    {
+      "command": "GEUL_STAGE3_OUT=<dir> geul_lib services::save::hwp::gso::tests::release_stage3a_hwp_cubic --ignored",
+      "exit": 0,
+      "passed": 2
+    },
+    {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p4.py --out <result> --fixtures <fixture-dir> --cases P4.5 --xdotool <xdotool> --ibus <ibus>",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "wasmOutputSha256": {
+    "a-p4-curve-line-appended.hwp": "23b4f2e9ea5da4e9f18e0658d3cb43b9d5caa6de6d914e69327468e5a065007e",
+    "a-p4-curve-line-removed.hwp": "f96aa0364baa7adf2ea666ebaeab8aedc4b07d9825c01b2cb9769bcc33d8c5e5"
+  },
+  "native": {
+    "status": "PASS",
+    "appSha256": "03069430b64af75b21c11eed65fc85e03c05ce6bafa5eea07c4e265ecb76c07d",
+    "fixtureSha256": "1b6874c2bb294f585d92a678ca5e1e6f799caaae352fa7dfb837c17b41775917",
+    "append": {
+      "publishedSha256": "62d7c90655f856efd9a61624d57a46b6af394b3afd6125396985f406f6d34bbf",
+      "revision": 1,
+      "reopened": "ready",
+      "points": 6
+    },
+    "remove": {
+      "publishedSha256": "03dcd57fe0941c3b944f4fef9623b9b93caefddd01b4c02359bc2fc0efd1a968",
+      "revision": 4,
+      "reopened": "ready",
+      "points": 4
+    },
+    "independentCfb": "One changed record, curve leaf tag 83 level 3. Exact point counts, payload lengths, ordered retained cubic coordinates, commands and four padding bytes verified. All other records, resources, transforms and non-preview streams unchanged.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true
+    },
+    "exit": 0
+  },
+  "rawEvidence": "target/stage3a-curve-segments/"
+}

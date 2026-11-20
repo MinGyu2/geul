@@ -1,0 +1,133 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+index 49d106d..e879544 100644
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -730,6 +730,63 @@ impl DocumentCore {
+         Ok(())
+     }
+
++    fn editable_terminal_curve(&self, sec: usize, para: usize, ctrl: usize)
++        -> Option<(&crate::model::shape::CurveShape, usize)>
++    {
++        let ShapeObject::Curve(curve) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        if !curve.drawing.shape_attr.hwp5_known_curve_leaf {
++            return None;
++        }
++        let path = self.editable_shape_path(sec, para, ctrl)?;
++        let handles = path["points"].as_array()?;
++        let controls = handles.iter().filter(|point| point["control"].as_bool() == Some(true)).count();
++        Some((curve, curve.segment_types.len() - controls))
++    }
++
++    pub fn curve_terminal_line_edits(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
++        let (curve, used) = self.editable_terminal_curve(sec, para, ctrl)?;
++        Some(serde_json::json!({
++            "append": curve.points.len() < 257,
++            "remove": curve.segment_types[used - 1] == 0
++        }))
++    }
++
++    pub fn edit_curve_terminal_line(
++        &mut self, sec: usize, para: usize, ctrl: usize, append: Option<crate::model::Point>,
++    ) -> Result<(), HwpError> {
++        let (curve, used) = self.editable_terminal_curve(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let mut points = curve.points.clone();
++        let mut commands = curve.segment_types.clone();
++        if let Some(end) = append {
++            let attr = &curve.drawing.shape_attr;
++            if points.len() == 257 || !(0..=attr.original_width as i32).contains(&end.x)
++                || !(0..=attr.original_height as i32).contains(&end.y)
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            points.push(end);
++            // An unused zero command at 'used' is now a line. The array still
++            // has one byte per point after the start, including unused zeroes.
++            commands.push(0);
++        } else {
++            if commands[used - 1] != 0 {
++                return Err(geul_bad_shape_edit());
++            }
++            points.pop();
++            commands.pop();
++        }
++        geul_cubic_handles(&points, &commands).ok_or_else(geul_bad_shape_edit)?;
++        let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        curve.points = points;
++        curve.segment_types = commands;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
+     /// Editable solid colors of direct, resource-free children of a body-owned HWPX group.
+     pub fn editable_group_fills(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
+         use crate::parser::FileFormat;
+diff --git a/src/model/shape.rs b/src/model/shape.rs
+index 3653270..2e06a76 100644
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -266,6 +266,8 @@ pub struct ShapeComponentAttr {
+     /// HWPX path edit eligibility when the XML transform could not establish identity.
+     pub hwpx_unproven_path_transform: bool,
+     pub hwpx_unproven_polygon_vertices: bool,
++    /// The HWP5 curve leaf had a complete command array and four zero padding bytes.
++    pub hwp5_known_curve_leaf: bool,
+     /// 렌더링 변환 합성 결과: 아핀 행렬 [a, b, tx, c, d, ty]
+     /// (x', y') = (a*x + b*y + tx, c*x + d*y + ty)
+     /// render_sx = a, render_b = b, render_tx = tx
+@@ -305,6 +307,7 @@ impl Default for ShapeComponentAttr {
+             raw_rendering: Vec::new(),
+             hwpx_unproven_path_transform: false,
+             hwpx_unproven_polygon_vertices: false,
++            hwp5_known_curve_leaf: false,
+             render_tx: 0.0,
+             render_ty: 0.0,
+             render_sx: 1.0,
+diff --git a/src/parser/control/shape.rs b/src/parser/control/shape.rs
+index 5d00569..0662d8b 100644
+--- a/src/parser/control/shape.rs
++++ b/src/parser/control/shape.rs
+@@ -1145,8 +1145,11 @@ fn parse_curve_shape_data(data: &[u8], curve: &mut CurveShape) {
+             curve.segment_types.push(r.read_u8().unwrap_or(0));
+         }
+     }
+-    // hwplib: sr.skip(4) — 4바이트 패딩
+-    let _ = r.read_u32();
++    // Preserve the old rendering fallback, but require the original leaf's
++    // exact count, command bytes and four zero padding bytes for segment edits.
++    curve.drawing.shape_attr.hwp5_known_curve_leaf = (4..=257).contains(&cnt)
++        && cnt_raw == cnt as i32 && data.len() == 4 + 8 * cnt + (cnt - 1) + 4
++        && r.read_u32().is_ok_and(|padding| padding == 0);
+ }
+
+ // ============================================================
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index 7a67b6a..1216c7e 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4700,6 +4700,21 @@ impl HwpDocument {
+             .map_err(|e| e.into())
+     }
+
++    #[wasm_bindgen(js_name = getCurveTerminalLineEdits)]
++    pub fn get_curve_terminal_line_edits(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.curve_terminal_line_edits(sec as usize, para as usize, ctrl as usize)
++            .unwrap_or(serde_json::Value::Null).to_string()
++    }
++
++    #[wasm_bindgen(js_name = editCurveTerminalLine)]
++    pub fn edit_curve_terminal_line_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, append: bool, x: i32, y: i32,
++    ) -> Result<(), JsValue> {
++        self.edit_curve_terminal_line(sec as usize, para as usize, ctrl as usize,
++            append.then_some(crate::model::Point { x, y }))
++            .map_err(|e| e.into())
++    }
++
+     #[wasm_bindgen(js_name = getEditableGroupFills)]
+     pub fn get_editable_group_fills(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_group_fills(sec as usize, para as usize, ctrl as usize)

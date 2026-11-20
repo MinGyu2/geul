@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent } from "react";
-import type { ObjectEdit, ShapePath } from "../../commands/objectSelection";
+import type { ObjectEdit, ObjectSelection, ShapePath } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
 
 interface PointDrag {
@@ -20,13 +20,14 @@ function edgeInteriorPoint(a: ShapePath["points"][number], b: ShapePath["points"
   return { x: a.x + dx / steps * step, y: a.y + dy / steps * step };
 }
 
-export function ShapePointEditor({ path, owner, width, height, editVertices, onEdit }: {
+export function ShapePointEditor({ path, owner, width, height, editVertices, curveTerminalLine, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
   height: number;
   editVertices: boolean;
-  onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" }>) => void;
+  curveTerminalLine: ObjectSelection["curveTerminalLine"];
+  onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
 }) {
   const { t } = useTranslation();
   const [vertexIndex, setIndex] = useState(0);
@@ -103,6 +104,17 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, onE
         <button type="button" className="object-path-remove-vertex" disabled={points.length <= 3}
           onClick={() => onEdit({ kind: "pathVertex", action: "remove", index })}>
           {t("editor.object.path.removeVertex")}
+        </button>
+      </div>}
+      {curveTerminalLine && index === points.length - 1 && <div className="object-path-vertex-actions">
+        <button type="button" className="object-path-append-line"
+          disabled={!curveTerminalLine.append || !valid || (x === points[0]!.x && y === points[0]!.y)}
+          onClick={() => onEdit({ kind: "pathSegment", action: "append", x, y })}>
+          {t("editor.object.path.appendLine")}
+        </button>
+        <button type="button" className="object-path-remove-line" disabled={!curveTerminalLine.remove}
+          onClick={() => onEdit({ kind: "pathSegment", action: "remove" })}>
+          {t("editor.object.path.removeLine")}
         </button>
       </div>}
     </form>

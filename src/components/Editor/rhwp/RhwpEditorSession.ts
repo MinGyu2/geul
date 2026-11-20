@@ -2,7 +2,7 @@ import { POSITION_PRESETS, objectEditMatches, objectEditRequest, pictureResizeMa
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpGroup, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -1842,6 +1842,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
             ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
           if (shapePath) operations.push("pathPoint");
+          const curveTerminalLine = format === "hwp" && shapePath?.kind === "curve" && shapeAddress
+            ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
+          if (curveTerminalLine?.append || curveTerminalLine?.remove) operations.push("pathSegment");
           if (format === "hwpx" && shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
@@ -1905,6 +1908,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(group ? { groupSize: { widthPt: group.widthPt, heightPt: group.heightPt } } : {}),
               ...(groupWrap ? { groupWrap } : {}),
               ...(shapePath ? { shapePath } : {}),
+              ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(captionSide ? { captionSide } : {}),
               ...(groupChildFills ? { groupChildFills } : {}),
               ...(graphic ? { graphic } : {}),
@@ -4573,7 +4577,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
-    if (request.edit.kind === "pathPoint" || request.edit.kind === "pathVertex" || request.edit.kind === "groupChildFill") {
+    if (request.edit.kind === "pathPoint" || request.edit.kind === "pathVertex" || request.edit.kind === "pathSegment"
+      || request.edit.kind === "groupChildFill") {
       return this.editAdvancedShape(request);
     }
     if (request.edit.kind === "captionSide") return this.editCaptionSide(request);
@@ -4735,13 +4740,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!selected || !saved || !doc?.getShapeProperties || !this.history || this.imeUnsettled
       || !objectEditMatches(request, selected)) return false;
     const { edit } = request;
-    const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex";
+    const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex" || edit.kind === "pathSegment";
     if (!pathEdit && edit.kind !== "groupChildFill") return false;
     const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
     if (!address || !this.gsoFormatEditable(address, pathEdit)) return false;
     const read = pathEdit ? inspectRhwpShapePath : inspectRhwpGroupFills;
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "operations">;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "curveTerminalLine" | "operations">;
     if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
@@ -4767,6 +4772,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }
       points.push(points[0]!);
       refreshed = { operations: selected.operations, shapePath: { ...path, points } };
+    } else if (edit.kind === "pathSegment") {
+      const path = selected.shapePath;
+      const available = inspectRhwpCurveTerminalLine(doc, address);
+      if (this.sessions.get(this.sessionId)?.format !== "hwp" || path?.kind !== "curve" || path.closed
+        || !doc.editCurveTerminalLine || !available?.[edit.action]
+        || available.append !== selected.curveTerminalLine?.append || available.remove !== selected.curveTerminalLine?.remove) return false;
+      const points = path.points.slice();
+      if (edit.action === "append") {
+        const start = points[0]!, end = points[points.length - 1]!;
+        if (edit.x > path.width || edit.y > path.height
+          || [start, end].some(point => point.x === edit.x && point.y === edit.y)) return false;
+        points.push({ x: edit.x, y: edit.y, control: false });
+        apply = () => doc.editCurveTerminalLine!(...address, true, edit.x, edit.y);
+      } else {
+        points.pop();
+        apply = () => doc.editCurveTerminalLine!(...address, false, 0, 0);
+      }
+      const curveTerminalLine = { append: points.length < 257, remove: points.at(-2)!.control === false };
+      refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine };
     } else {
       const children = selected.groupChildFills;
       const child = children?.find(item => item.index === edit.index);
@@ -4785,6 +4809,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (doc.getShapeProperties!(...address) !== before
         || JSON.stringify(read(doc, address)) !== JSON.stringify(refreshed.shapePath ?? refreshed.groupChildFills)) {
         throw new Error("advanced shape edit did not verify");
+      }
+      if (refreshed.curveTerminalLine) {
+        const available = inspectRhwpCurveTerminalLine(doc, address);
+        if (JSON.stringify(available) !== JSON.stringify(refreshed.curveTerminalLine)) {
+          throw new Error("curve terminal line edit did not verify");
+        }
       }
       if (pathEdit && refreshed.shapePath?.kind === "polygon") {
         const canEditVertices = refreshed.shapePath.closed && !!doc.editPolygonVertex && doc.canEditPolygonVertices?.(...address) === true;

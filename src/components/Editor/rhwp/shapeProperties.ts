@@ -119,6 +119,15 @@ export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [numbe
   }
 }
 
+export function inspectRhwpCurveTerminalLine(doc: RhwpDocument, address: readonly [number, number, number]) {
+  if (!doc.getCurveTerminalLineEdits || !doc.editCurveTerminalLine) return undefined;
+  try {
+    const value = JSON.parse(doc.getCurveTerminalLineEdits(...address));
+    if (typeof value?.append !== "boolean" || typeof value?.remove !== "boolean") return undefined;
+    return { append: value.append as boolean, remove: value.remove as boolean };
+  } catch { return undefined; }
+}
+
 export function inspectRhwpGroupFills(doc: RhwpDocument, address: readonly [number, number, number]): GroupChildFill[] | undefined {
   if (!doc.getEditableGroupFills) return undefined;
   try {

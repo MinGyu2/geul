@@ -1707,7 +1707,7 @@ pub(super) fn prove_evolved_gso(
     } else if leaf_tag == TAG_CURVE && old_last.2 != new_last.2 {
         // The point editor keeps the frame, transform and every other record
         // byte fixed. In particular a path edit cannot hide a caption change
-        // or any change to the segment kinds or their padding.
+        // or any change to the existing segment kinds or their padding.
         preserved(
             !has_caption
                 && old_mid.is_empty()
@@ -1723,7 +1723,7 @@ pub(super) fn prove_evolved_gso(
                 })
                 && (1..=2_000_000).contains(&orig_w)
                 && (1..=2_000_000).contains(&orig_h)
-                && same_cubic_structure(old_last.2, new_last.2, orig_w, orig_h),
+                && prove_cubic_leaf_edit(old_last.2, new_last.2, orig_w, orig_h),
             BODY,
         )?;
     } else {
@@ -1732,47 +1732,66 @@ pub(super) fn prove_evolved_gso(
     Ok(())
 }
 
-fn same_cubic_structure(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
-    let Ok(count) = dword(old, 0) else { return false };
+struct CubicLeaf<'a> {
+    point_bytes: &'a [u8],
+    used_commands: &'a [u8],
+}
+
+fn parse_cubic_leaf(data: &[u8], width: usize, height: usize) -> Option<CubicLeaf<'_>> {
+    let count = dword(data, 0).ok()?;
     if !(4..=257).contains(&count) {
-        return false;
+        return None;
     }
     let point_end = 4 + 8 * count;
     let end = point_end + count - 1;
-    if old.len() != end + 4 || new.len() != old.len()
-        || old[..4] != new[..4] || old[point_end..] != new[point_end..]
-        || old[end..] != [0; 4]
-    {
-        return false;
+    if data.len() != end + 4 || data[end..] != [0; 4] {
+        return None;
     }
-    let segments = &old[point_end..end];
-    [old, new].into_iter().all(|data| {
-        let points: Vec<_> = data[4..point_end].chunks_exact(8).collect();
-        if points.first() == points.last()
-            || !points.iter().all(|point| dword(point, 0).is_ok_and(|x| x <= width)
-                && dword(point, 4).is_ok_and(|y| y <= height))
-        {
-            return false;
-        }
-        let (mut offset, mut segment) = (1, 0);
-        let mut cubic = false;
-        while offset < count {
-            let start = offset - 1;
-            match segments[segment] {
-                0 => offset += 1,
-                1 if offset + 2 < count => {
-                    cubic = true;
-                    offset += 3;
-                }
-                _ => return false,
+    let commands = &data[point_end..end];
+    let point_bytes = &data[4..point_end];
+    let points: Vec<_> = point_bytes.chunks_exact(8).collect();
+    if points.first() == points.last()
+        || !points.iter().all(|point| dword(point, 0).is_ok_and(|x| x <= width)
+            && dword(point, 4).is_ok_and(|y| y <= height))
+    {
+        return None;
+    }
+    let (mut offset, mut segment) = (1, 0);
+    let mut cubic = false;
+    while offset < count {
+        let start = offset - 1;
+        match commands[segment] {
+            0 => offset += 1,
+            1 if offset + 2 < count => {
+                cubic = true;
+                offset += 3;
             }
-            if points[start] == points[offset - 1] {
-                return false;
-            }
-            segment += 1;
+            _ => return None,
         }
-        cubic && segments[segment..].iter().all(|value| *value == 0)
-    })
+        if points[start] == points[offset - 1] {
+            return None;
+        }
+        segment += 1;
+    }
+    (cubic && commands[segment..].iter().all(|value| *value == 0))
+        .then_some(CubicLeaf { point_bytes, used_commands: &commands[..segment] })
+}
+
+fn prove_cubic_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
+    let (Some(old), Some(new)) = (parse_cubic_leaf(old, width, height), parse_cubic_leaf(new, width, height)) else {
+        return false;
+    };
+    if old.point_bytes.len() == new.point_bytes.len() {
+        return old.used_commands == new.used_commands;
+    }
+    let (short, long) = if old.point_bytes.len() < new.point_bytes.len() { (old, new) } else { (new, old) };
+    // The entire existing path prefix is byte-identical. Each added or removed
+    // terminal LINE consumes exactly one point and one command byte.
+    long.point_bytes.starts_with(short.point_bytes)
+        && long.used_commands.strip_prefix(short.used_commands).is_some_and(|added| {
+            added.len() * 8 == long.point_bytes.len() - short.point_bytes.len()
+                && added.iter().all(|command| *command == 0)
+        })
 }
 
 #[cfg(test)]
@@ -2504,6 +2523,16 @@ mod tests {
         std::fs::write(directory.join("a-p4-curve-original.hwp"), &candidate).unwrap();
         let translated = mutate_p4_cubic_component(&candidate, 68, &9000.0f64.to_le_bytes());
         std::fs::write(directory.join("a-p4-curve-translated.hwp"), translated).unwrap();
+        let unmodeled_padding = mutate_body_record(
+            &candidate,
+            |tag, level, _| tag == super::TAG_CURVE && level == 3,
+            |data| {
+                let mut changed = data.to_vec();
+                *changed.last_mut().unwrap() = 1;
+                changed
+            },
+        );
+        std::fs::write(directory.join("a-p4-curve-unmodeled.hwp"), unmodeled_padding).unwrap();
     }
 
     fn mutate_p4_cubic_component(bytes: &[u8], offset: usize, replacement: &[u8]) -> Vec<u8> {
@@ -2549,6 +2578,33 @@ mod tests {
             assert!(check_with_preview_refresh(&original, &tampered)
                 .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 terminal line append and remove fixtures"]
+    fn release_stage3a_hwp_cubic_terminal_line_changes_are_bounded() {
+        let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |filename| std::fs::read(directory.join(filename)).unwrap();
+        let source = read("a-p4-curve-original.hwp");
+        let appended = read("a-p4-curve-line-appended.hwp");
+        let removed = read("a-p4-curve-line-removed.hwp");
+        assert_eq!(check_with_preview_refresh(&source, &appended), vec![]);
+        assert_eq!(check_with_preview_refresh(&appended, &removed), vec![]);
+        assert_eq!(check_with_preview_refresh(&source, &removed), vec![]);
+        let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
+        for (offset, mask) in [(0, 1), (12, 1), (53, 1), (55, 1), (60, 1)] {
+            let tampered = mutate_body_record(&appended, curve, |data| {
+                let mut changed = data.to_vec();
+                changed[offset] ^= mask;
+                changed
+            });
+            assert!(check_with_preview_refresh(&source, &tampered)
+                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)),
+                "accepted a tampered count, point, command or padding at {offset}");
+        }
+        let shifted = mutate_p4_cubic_component(&appended, 8, &15001i32.to_le_bytes());
+        assert!(check_with_preview_refresh(&source, &shifted)
+            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]

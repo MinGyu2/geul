@@ -227,3 +227,26 @@ it("adds an exact interior point on the chosen closing edge and removes the sele
   fireEvent.click(screen.getByRole("button", { name: "Remove vertex" }));
   expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathVertex", action: "remove", index: 3 }, 7);
 });
+
+it("offers terminal line edits only at the final HWP5 endpoint", () => {
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 3] }, operations: ["deselect", "pathPoint", "pathSegment"],
+    curveTerminalLine: { append: true, remove: true },
+    shapePath: { kind: "curve", closed: false, width: 100, height: 100, points: [
+      { x: 10, y: 10, control: false }, { x: 20, y: 20, control: true }, { x: 30, y: 25, control: true },
+      { x: 50, y: 50, control: false }, { x: 70, y: 55, control: false },
+    ] },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  expect(screen.queryByRole("button", { name: "Append line to coordinates" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 5" }));
+  const append = screen.getByRole<HTMLButtonElement>("button", { name: "Append line to coordinates" });
+  expect(append.disabled).toBe(true);
+  fireEvent.change(screen.getByRole("spinbutton", { name: "X (HWPUNIT)" }), { target: { value: "85" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Y (HWPUNIT)" }), { target: { value: "60" } });
+  expect(append.disabled).toBe(false);
+  fireEvent.click(append);
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "append", x: 85, y: 60 }, 7);
+  fireEvent.click(screen.getByRole("button", { name: "Remove final line" }));
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "remove" }, 7);
+});
