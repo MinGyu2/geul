@@ -1,5 +1,14 @@
 --- a/src/document_core/commands/object_ops/shape.rs
 +++ b/src/document_core/commands/object_ops/shape.rs
+@@ -122,7 +122,7 @@
+                 para.char_count = 13;
+                 para.char_count_msb = true;
+                 para.control_mask = 1u32 << 0x12;
+-                para.char_offsets = vec![0, 1, 2, 11];
++                para.char_offsets = vec![0, 1, 2, 10];
+                 para.controls
+                     .push(crate::model::control::Control::AutoNumber(auto_number));
+                 para.ctrl_data_records.push(None);
 @@ -193,6 +193,72 @@
          )
      }
@@ -99,3 +108,14 @@
          ))
      }
      /// [Task #1138] Shape 속성 JSON 적용 (mutation only). 후처리 (recompose /
+--- a/src/document_core/commands/object_ops/picture.rs
++++ b/src/document_core/commands/object_ops/picture.rs
+@@ -630,7 +630,7 @@
+                 self.resolve_picture_control_mut(section_idx, parent_para_idx, control_idx)?;
+             let para = &mut pic_mut.caption.as_mut().unwrap().paragraphs[0];
+             para.text = "그림  ".to_string();
+-            para.char_offsets = vec![0, 1, 2, 11];
++            para.char_offsets = vec![0, 1, 2, 10];
+             para.char_count = 13;
+         }
+         // [Issue #6204] 배제 밴드 기하가 바뀌었으면 그 밴드에 되감긴 문단들의 저장

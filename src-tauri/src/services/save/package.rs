@@ -1423,21 +1423,42 @@ pub(super) fn hwpx_char_shape_uses(output: &Package) -> Option<std::collections:
                     .and_then(|i| stack.get(i))
                     .is_some_and(|a| a.namespace.as_deref() == Some(ns) && a.name == name)
             };
+            let ancestor_paragraph = |back: usize| {
+                stack
+                    .len()
+                    .checked_sub(back + 1)
+                    .and_then(|i| stack.get(i))
+                    .is_some_and(|a| a.paragraph)
+            };
+            let shape_leaf = |back: usize| {
+                stack
+                    .len()
+                    .checked_sub(back + 1)
+                    .and_then(|i| stack.get(i))
+                    .is_some_and(|a| {
+                        a.namespace.as_deref() == Some(HWPML_PARAGRAPH)
+                            && matches!(
+                                a.name.as_str(),
+                                "rect" | "ellipse" | "line" | "polygon" | "curve"
+                            )
+                    })
+            };
             let parent_paragraph = stack.last().is_some_and(|a| a.paragraph);
             let paragraph = !element.self_closing
                 && element.namespace.as_deref() == Some(HWPML_PARAGRAPH)
                 && element.name == "p"
                 && ((stack.len() == 1 && is(0, HWPML_SECTION, "sec"))
                     || (is(0, HWPML_PARAGRAPH, "subList")
-                        && is(1, HWPML_PARAGRAPH, "tc")
-                        && is(2, HWPML_PARAGRAPH, "tr")
-                        && is(3, HWPML_PARAGRAPH, "tbl")
-                        && is(4, HWPML_PARAGRAPH, "run")
-                        && stack
-                            .len()
-                            .checked_sub(6)
-                            .and_then(|i| stack.get(i))
-                            .is_some_and(|a| a.paragraph)));
+                        && ((is(1, HWPML_PARAGRAPH, "tc")
+                            && is(2, HWPML_PARAGRAPH, "tr")
+                            && is(3, HWPML_PARAGRAPH, "tbl")
+                            && is(4, HWPML_PARAGRAPH, "run")
+                            && ancestor_paragraph(5))
+                            || (((is(1, HWPML_PARAGRAPH, "caption")
+                                && (is(2, HWPML_PARAGRAPH, "pic") || shape_leaf(2)))
+                                || (is(1, HWPML_PARAGRAPH, "drawText") && shape_leaf(2)))
+                                && is(3, HWPML_PARAGRAPH, "run")
+                                && ancestor_paragraph(4)))));
             let reads = element.namespace.as_deref() == Some(HWPML_PARAGRAPH)
                 && ((element.name == "run" && parent_paragraph)
                     || (element.name == "formCharPr"

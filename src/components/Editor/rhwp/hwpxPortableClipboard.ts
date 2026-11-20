@@ -494,33 +494,31 @@ function populateCaption(
   const p0 = caption.paragraphs[0]!;
   const srcSlot = p0.autoNumberOffset!;
   const srcPrefix = p0.text.slice(0, srcSlot);
-  const rawSuffix = p0.text.slice(srcSlot + 1);
+  const srcSuffix = p0.text.slice(srcSlot + 1);
   const dstPrefix = slotInfo.para0Text.slice(0, slotInfo.slotInPara0);
-  // RHWP initializes an in-memory caption as `"그림 " + atno`, whereas reopened HWPX parses
-  // `"그림" + atno + " "`. Preserving the `"그림 "` prefix + trailing space avoids an extra space on save/reopen.
-  const keepSpaceTransition = srcPrefix + " " === dstPrefix && rawSuffix.startsWith(" ");
-  const srcSuffix = keepSpaceTransition ? rawSuffix.slice(1) : rawSuffix;
   let curSlot = slotInfo.slotInPara0;
   const afterLen = slotInfo.para0Text.length - (curSlot + 1);
+  // Insert replacement suffix after existing trailing characters first so the +8 char_offsets jump at `atno` stays intact.
+  if (srcSuffix.length > 0) {
+    const res = JSON.parse(doc.insertTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, curSlot + 1 + afterLen, srcSuffix)) as { ok?: boolean };
+    if (res.ok !== true) throw new Error("insertTextInCell suffix failed");
+  }
   if (afterLen > 0) {
     const res = JSON.parse(doc.deleteTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, curSlot + 1, afterLen)) as { ok?: boolean };
     if (res.ok !== true) throw new Error("deleteTextInCell suffix failed");
   }
-  if (!keepSpaceTransition && curSlot > 0 && dstPrefix !== srcPrefix) {
-    const res = JSON.parse(doc.deleteTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, 0, curSlot)) as { ok?: boolean };
-    if (res.ok !== true) throw new Error("deleteTextInCell prefix failed");
-    curSlot = 0;
-  }
-  if (curSlot === 0 && srcPrefix.length > 0) {
-    const res = JSON.parse(doc.insertTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, 0, srcPrefix)) as { ok?: boolean };
-    if (res.ok !== true) throw new Error("insertTextInCell prefix failed");
+  if (dstPrefix !== srcPrefix) {
+    if (srcPrefix.length > 0) {
+      const res = JSON.parse(doc.insertTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, 0, srcPrefix)) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("insertTextInCell prefix failed");
+    }
+    if (curSlot > 0) {
+      const res = JSON.parse(doc.deleteTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, srcPrefix.length, curSlot)) as { ok?: boolean };
+      if (res.ok !== true) throw new Error("deleteTextInCell prefix failed");
+    }
     curSlot = srcPrefix.length;
   }
-  if (srcSuffix.length > 0) {
-    const res = JSON.parse(doc.insertTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, curSlot + 1, srcSuffix)) as { ok?: boolean };
-    if (res.ok !== true) throw new Error("insertTextInCell suffix failed");
-  }
-  const suffixShift = keepSpaceTransition ? curSlot - srcSlot - 1 : curSlot - srcSlot;
+  const suffixShift = curSlot - srcSlot;
   applyParaAlign(doc, sec, paraIdx, controlIdx, cellIndex, 0, p0.align);
   for (const run of p0.runs ?? []) {
     if (run.end <= srcSlot) {
@@ -623,6 +621,7 @@ export function insertHwpxPortableObject(
     const paraIdx = created.paraIdx!;
     const controlIdx = created.controlIdx!;
     const props: Record<string, unknown> = {
+      textWrap: portable.textWrap,
       rotationAngle: portable.rotationAngle,
       horzFlip: portable.horzFlip,
       vertFlip: portable.vertFlip,

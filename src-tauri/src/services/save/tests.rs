@@ -7713,9 +7713,16 @@ fn formcharpr는_엔진이_읽는_양식_자리만_쓰임이다() {
             changed.clone(),
         ),
         (
-            "G2 표 셀이 아닌 subList(글상자 — 이 규칙 밖, fail-closed)",
+            "G2 미지원 컨테이너 subList(글상자 컨테이너 — 이 규칙 밖, fail-closed)",
             sec_with(
-                r#"<hp:run charPrIDRef="0"><hp:rect><hp:drawText><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>b</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:rect></hp:run>"#,
+                r#"<hp:run charPrIDRef="0"><hp:container><hp:drawText><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>b</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:container></hp:run>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "G2-b 미지원 OLE 캡션 subList(fail-closed)",
+            sec_with(
+                r#"<hp:run charPrIDRef="0"><hp:ole><hp:caption><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>b</hp:t></hp:run></hp:p></hp:subList></hp:caption></hp:ole></hp:run>"#,
             ),
             changed.clone(),
         ),
@@ -14520,4 +14527,17 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
         &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
     );
     assert!(!package::compare_saved_docx(&orig, &bad_non_image_id).is_empty());
+}
+
+#[test]
+fn hwpx_char_shape_uses_recognizes_supported_captions_and_draw_text_only() {
+    let section = br#"<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p id="0" paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:rect><hp:caption><hp:subList><hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="7"><hp:t>cap</hp:t></hp:run></hp:p></hp:subList></hp:caption><hp:drawText><hp:subList><hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="8"><hp:t>box</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:rect><hp:pic><hp:caption><hp:subList><hp:p id="3" paraPrIDRef="0"><hp:run charPrIDRef="9"><hp:t>piccap</hp:t></hp:run></hp:p></hp:subList></hp:caption></hp:pic><hp:container><hp:caption><hp:subList><hp:p id="4" paraPrIDRef="0"><hp:run charPrIDRef="99"><hp:t>ignored</hp:t></hp:run></hp:p></hp:subList></hp:caption></hp:container><hp:unknown><hp:drawText><hp:subList><hp:p id="5" paraPrIDRef="0"><hp:run charPrIDRef="100"><hp:t>ignored</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:unknown></hp:run></hp:p></hs:sec>"#;
+    let pkg = package::Package {
+        order: vec!["Contents/section0.xml".into()],
+        parts: [("Contents/section0.xml".into(), (0, section.to_vec()))]
+            .into_iter()
+            .collect(),
+    };
+    let used = package::hwpx_char_shape_uses(&pkg).expect("section charPr uses");
+    assert_eq!(used, [1, 7, 8, 9].into_iter().collect());
 }

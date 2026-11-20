@@ -32,9 +32,7 @@ function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: stri
     expect(JSON.parse(report)).toMatchObject({ count: 0 });
     expect(reopened.pageCount()).toBe(live.pageCount());
     expect(reopened.getTextFileText()).toBe(live.getTextFileText());
-    const norm = (s: string) => (JSON.parse(s) as Record<string, unknown>[]).map(c =>
-      c.ctrlId === "atno" ? { ...c, pos: "atno" } : c);
-    expect(norm(reopened.getControls())).toEqual(norm(live.getControls()));
+    expect(reopened.getControls()).toBe(live.getControls());
   } finally { reopened.free(); }
 }
 type Frame = { type: string; x: number; y: number; w: number; h: number; controlIdx: number };
