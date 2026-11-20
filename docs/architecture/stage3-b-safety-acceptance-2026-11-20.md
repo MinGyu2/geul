@@ -10,7 +10,11 @@
 - **Linux X11 Release 앱 SHA-256**: `9921a5a641ab36e8d15a928c2a5e3fe706f6552b440cf93f78c3cc5572cc1681`
 - **Submodule 상태**: `external/rhwp` (`1a76570e833917d15817415a53c09ad61ab3203f`), `external/wordcraft` (`b2c974369dd02d322a5498db484bcf96906dad15`) 모두 clean
 
-## 지원 및 거부 경계 요약
+이 문서는 원래 Stage 3-B 수용 당시의 범위와 실행 결과를 기록한다. B3.1의 동일 문서 HWP5 구조 복제 및 B3.2의 HWPX 교차 문서 지원은 앞선 P4/C11의 거부 범위보다 좁은 승인 조건을 새로 정의했다. Historical behavior at the time; superseded within the documented Stage 3-B supported subset.
+
+현재 B3.2는 실선·무윤곽 구분, 문단 정렬과 전체 문자 서식 범위, 명시 글꼴의 7개 언어별 참조를 확인한다. 실패 시 개체와 글꼴 등록을 함께 되돌린다. 새 Linux X11 B3-2 실행 및 저장·재열기 증거는 [후속 검증](stage3-b-clipboard-fidelity-followup-2026-11-20.json)에 별도로 기록했다.
+
+## 당시 지원 및 거부 경계 요약
 
 | 항목 | 수용 범위 | 계속 거부되는 범위 |
 |---|---|---|
@@ -21,7 +25,7 @@
 | **B3.1** | 동일 문서 HWP5 본문 그림·기본 도형·평문 글상자·평면 그룹 복사/잘라내기/붙여넣기 | 교차 문서 HWP5 붙여넣기, 교차 형식 변환, 잠금/OLE/차트/비평면 그룹, 예약 표식 폴백 |
 | **B3.2** | HWPX 교차 문서 휴대용 붙여넣기: `Picture`(<=8 MiB MIME/매직바이트 검증), `Rect`/`Ellipse`/`Line`(단색/무채우기, 실선/없음, 선택적 캡션), `TextBox`(1–64문단 정렬/서식 run) | 교차 문서 `Group`, `Polygon`/`Curve`, 그라데이션/그림 채우기, 내부 컨트롤, 위조 MIME/매직바이트, 예약 표식 폴백, DOCX 간 변환 |
 
-## 검증 요약
+## 당시 검증 요약
 
 - `npm run typecheck`: **PASS**
 - `python3 -m unittest scripts/tests/test_rhwp_profiles.py`: **3/3 PASS**

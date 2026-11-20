@@ -1,0 +1,235 @@
+{
+  "scope": "Stage 3-B B3.2 HWPX portable clipboard fidelity follow-up",
+  "date": "2026-11-20",
+  "timezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "stage3Overall": "PARTIALLY COMPLETED",
+  "stage3cLinuxX11": "COMPLETED (historical acceptance retained)",
+  "baselineHead": "ddb952cf706778355acb60e1797d8d5f89297eff",
+  "implementationCommit": "3368d69ffd1bdbb5b3ba2a1f57418797d34a04cb",
+  "changedCodePaths": [
+    "src/commands/objectClipboard.ts",
+    "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+    "src/commands/objectClipboard.test.ts",
+    "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts",
+    "scripts/tests/native-stage3-b.py"
+  ],
+  "historicalAcceptance": "stage3-b-safety-acceptance-2026-11-20.json",
+  "originalFailureConditions": {
+    "fontFamily": "An absent, throwing or malformed destination resolver could silently leave the destination default. The source display getter gave one primary family name.",
+    "outline": "The snapshot omitted lineType, so unsupported visible outlines could be reconstructed as a default solid outline.",
+    "alignment": "Unproven source alignment or a missing destination setter could be omitted.",
+    "formatting": "An incomplete range list could be accepted. A boolean-mask inventory can merge runs that differ in other properties. Engine cell offsets count Unicode scalar values and the caption atno owns one slot."
+  },
+  "currentSupport": {
+    "sameDocument": "Existing HWPX structural clone and Stage 3-B SAFE Section0 HWP5 picture, basic shape, plain textbox and flat group clipboard.",
+    "portable": "Validated HWPX picture (MIME and image bytes, up to 8 MiB), rectangle, ellipse, basic line and textbox. Patternless opaque solid or no fill, default-cap arrowless solid or no outline, verifiable geometry.",
+    "text": "Paragraph text, order and proven alignment. Full run coverage excluding the single caption atno slot, with empty paragraphs allowed. Supported bold, italic, underline, strikethrough, size, color, shading and family.",
+    "fontFamily": "An explicit family requires the same source name in all seven slots. Destination lookup or registration must return seven valid IDs pointing to the exact requested family, with round-trip formatting readback. A run with no explicit family retains its valid destination default.",
+    "transaction": "Within the existing recoverable history mutation, reconstruction and character-shape compaction precede readback. A refusal restores the before snapshot including appended font definitions and objects. A failed rollback or engine trap retains the existing uncertain editing path."
+  },
+  "remainingUnsupported": [
+    "Cross-document HWP5 object paste and DOCX/HWP/HWPX cross-format object conversion",
+    "HWPX portable Group, Polygon, Curve, Chart, SmartArt and arbitrary OLE",
+    "Dotted, dashed and other unrepresentable outlines, unsupported line geometry, gradient/image or other unrepresentable fills",
+    "Nested controls, unproven ownership or resource references, unsupported text formatting and language-specific font mixtures",
+    "Incomplete or malformed portable data and orphan object-marker plain-text fallback"
+  ],
+  "rhwp": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "92b8135be4772ec7247a7208a252c1e3126bfbec9d620bf75ed12e03c4a8074f",
+    "artifacts": {
+      "rhwp.js": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+      "rhwp_bg.wasm": "f745d40020ed362537ff545c285919fa8607fb8f6b5ba21c5fd2faadb8a5c914"
+    },
+    "rebuiltForFollowup": false
+  },
+  "wordcraftCommit": "b2c974369dd02d322a5498db484bcf96906dad15",
+  "verification": {
+    "typecheck": {
+      "command": "npm run typecheck",
+      "status": "PASS",
+      "exit": 0
+    },
+    "clipboardUnit": {
+      "command": "npm test -- src/commands/objectClipboard.test.ts src/commands/clipboard.test.ts",
+      "passed": 52,
+      "failed": 0,
+      "exit": 0
+    },
+    "releaseWasm": {
+      "command": "node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-hwpx-clipboard-safety.wasm.test.ts stage3-object-edit.wasm.test.ts stage3-shapes.wasm.test.ts -t 'B3.2|portable refusals and rollback|retains same-document|routes missing MIME|owned HWP and HWPX shape captions|multi-paragraph captions|copies, cuts, and pastes HWPX body|edits the second existing paragraph of an owned hwpx text box|edits one owned HWPX text box'",
+      "passed": 33,
+      "failed": 0,
+      "excludedByFilter": 36,
+      "exit": 0,
+      "b32Suite": 28,
+      "existingCaptionTextboxAndClipboardRegressions": 5
+    },
+    "rustSave": [
+      {
+        "command": "npm run rust -- test --lib hwpx_char_shape_uses_recognizes_supported_captions_and_draw_text_only",
+        "passed": 1,
+        "failed": 0
+      },
+      {
+        "command": "npm run rust -- test --lib font_proof_existing_and_appended_language_ids",
+        "passed": 2,
+        "failed": 0
+      }
+    ],
+    "negative": {
+      "result": "PASS",
+      "cases": [
+        "Missing font resolver, exception after actual font registration, short array, invalid ID and valid IDs for another family",
+        "Real HWPX DOT outline survives source reopen and is refused cross-document",
+        "Leading, interior and trailing gaps, overlaps, out-of-bounds ranges and invalid ordering in source and envelope",
+        "Unreadable source alignment, absent destination setter and destination setter returning ok without applying alignment",
+        "Missing ordinary text beside atno and a run crossing atno",
+        "Character-format setter returning ok without applying the requested run, forged picture MIME and orphan object marker"
+      ],
+      "sessionInvariants": "No commit, revision or dirty change. Object identity/count, body, font inventory and serialized destination unchanged. No Undo/Redo entry."
+    },
+    "positive": {
+      "result": "PASS",
+      "cases": [
+        "Plain and captioned picture with image bytes and crop preserved",
+        "Solid rectangle, ellipse and zero-width visible solid line, plus a no-outline rectangle with nonzero border width",
+        "Two caption paragraphs with atno ownership, alignment, bold and italic",
+        "Mixed textbox with a supplementary Unicode character, an empty paragraph, supported style runs and an explicitly registered font across seven slots",
+        "Destination default font for a payload without a family requirement",
+        "Cross-document Undo/Redo, independent export/reopen, source bytes unchanged and HWPX same-document structural clone"
+      ]
+    }
+  },
+  "nativeB32": {
+    "status": "PASS",
+    "platform": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "display": "Linux X11/Xvfb",
+    "build": {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --no-bundle",
+      "exit": 0
+    },
+    "command": "python3 scripts/tests/native-ibus-session.py --out target/stage3b-clipboard-fidelity/final/session -- python3 scripts/tests/native-stage3-b.py --out target/stage3b-clipboard-fidelity/final/results --xdotool /nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool --ibus /nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus --driver /tmp/geul-tauri-driver-target/debug/tauri-driver --cases B3-2",
+    "exit": 0,
+    "resultPath": "target/stage3b-clipboard-fidelity/final/results/result.json",
+    "cleanupPath": "target/stage3b-clipboard-fidelity/final/session/cleanup.json",
+    "appSha256": "bba50e16e24670eb9b9b8907287a07f80c921257039f719b03dac9f88698b325",
+    "liveAppSha256": "bba50e16e24670eb9b9b8907287a07f80c921257039f719b03dac9f88698b325",
+    "activeRhwpGeneration": "92b8135be4772ec7247a7208a252c1e3126bfbec9d620bf75ed12e03c4a8074f",
+    "fixtureSha256": {
+      "source": "23fe832975310083f52e9116d6e8e1584c04253749dbda0bec93434773c5e7c2",
+      "destination": "0534e8442f45215bf93fed52a19d51dbf8075aaec37d96eacd9adca74133cc92",
+      "refusalDestination": "0534e8442f45215bf93fed52a19d51dbf8075aaec37d96eacd9adca74133cc92"
+    },
+    "publishedSha256": "0b7e3ad47287aaba1417a499a19c6cb65c35cb05b4983c369a93b26e5b907732",
+    "sourceEditingState": {
+      "status": "ready",
+      "revision": "0",
+      "localRevision": "0",
+      "dirty": "false",
+      "uncertain": "false"
+    },
+    "afterCaptionPaste": {
+      "status": "ready",
+      "revision": "1",
+      "localRevision": "1",
+      "dirty": "true",
+      "uncertain": "false"
+    },
+    "afterTextboxPaste": {
+      "status": "ready",
+      "revision": "2",
+      "localRevision": "2",
+      "dirty": "true",
+      "uncertain": "false"
+    },
+    "afterUndo": {
+      "status": "ready",
+      "revision": "3",
+      "localRevision": "3",
+      "dirty": "true",
+      "uncertain": "false"
+    },
+    "afterRedo": {
+      "status": "ready",
+      "revision": "4",
+      "localRevision": "4",
+      "dirty": "true",
+      "uncertain": "false"
+    },
+    "save": {
+      "state": "saved",
+      "revision": "4",
+      "synced": "true",
+      "changedSince": "false"
+    },
+    "reopenedSession": {
+      "status": "ready",
+      "revision": "0",
+      "localRevision": "0",
+      "dirty": "false",
+      "uncertain": "false"
+    },
+    "independentInspection": {
+      "captionTexts": [
+        "그림  cap bold",
+        "cap line 2"
+      ],
+      "captionAlignment": [
+        "justify",
+        "right"
+      ],
+      "captionBold": true,
+      "publishedCaptionAtno": {
+        "num": "1",
+        "numType": "PICTURE"
+      },
+      "textboxTexts": [
+        "plain bold",
+        "second line"
+      ],
+      "textboxAlignment": "center",
+      "mixedRun": {
+        "bold": true,
+        "italic": true,
+        "fontSize": 1400,
+        "textColor": "#cc2200",
+        "shadeColor": "#ffff00",
+        "fontFamilies": [
+          "함초롬돋움",
+          "함초롬돋움",
+          "함초롬돋움",
+          "함초롬돋움",
+          "함초롬돋움",
+          "함초롬돋움",
+          "함초롬돋움"
+        ]
+      },
+      "preservation": {
+        "sourceBytesAndContent": true,
+        "destinationBody": true,
+        "reopenedObjects": true
+      }
+    },
+    "negative": {
+      "real DOT outline": "refused",
+      "orphan marker": "refused",
+      "tampered cross-doc group": "refused"
+    },
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": [],
+      "driverComplete": true
+    },
+    "earlierHarnessAttempt": {
+      "status": "FAIL",
+      "exit": 1,
+      "appSha256": "9921a5a641ab36e8d15a928c2a5e3fe706f6552b440cf93f78c3cc5572cc1681",
+      "resultPath": "target/stage3b-clipboard-fidelity/native/results/result.json",
+      "cause": "The DOT fixture overlapped the caption selection and the run used the prior Release binary. The fixture was separated and the final run used a fresh build."
+    }
+  }
+}
