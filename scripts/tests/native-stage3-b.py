@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -80,13 +82,15 @@ def inspect_hwpx_clip(path):
       const all = pages.flatMap((p, page) => p.map(item => ({...item, page})));
       const shapes = all.filter(x => x.type === 'shape' || x.type === 'group').map(x => {
         const props = JSON.parse(doc.getShapeProperties(x.secIdx, x.paraIdx, x.controlIdx));
-        let capTexts = null, capBold = null, boxTexts = null, boxAlign = null, boxRun = null;
+        let capTexts = null, capBold = null, capAlign = null, boxTexts = null, boxAlign = null, boxRun = null;
         if (props.hasCaption) {
           const cnt = doc.getCellParagraphCount(x.secIdx, x.paraIdx, x.controlIdx, 65534);
           capTexts = Array.from({length: cnt}, (_, i) => {
             const len = doc.getCellParagraphLength(x.secIdx, x.paraIdx, x.controlIdx, 65534, i);
             return doc.getTextInCell(x.secIdx, x.paraIdx, x.controlIdx, 65534, i, 0, len);
           });
+          capAlign = capTexts.map((_, cellParaIndex) => JSON.parse(doc.getCellParaPropertiesAtByPath(x.secIdx, x.paraIdx,
+            JSON.stringify([{controlIndex: x.controlIdx, cellIndex: 65534, cellParaIndex}]))).alignment);
           const p0Len = doc.getCellParagraphLength(x.secIdx, x.paraIdx, x.controlIdx, 65534, 0);
           capBold = p0Len > 0 ? JSON.parse(doc.getCellCharPropertiesAt(x.secIdx, x.paraIdx, x.controlIdx, 65534, 0, p0Len - 1)).bold : null;
         }
@@ -104,7 +108,7 @@ def inspect_hwpx_clip(path):
             }
           }
         } catch {}
-        return {...x, props, capTexts, capBold, boxTexts, boxAlign, boxRun};
+        return {...x, props, capTexts, capBold, capAlign, boxTexts, boxAlign, boxRun};
       });
       console.log(JSON.stringify({body, shapes}));
     """)
@@ -132,6 +136,8 @@ def prepare_b3_2_fixtures(staging: Path):
         srcDoc.applyCharFormatInCellByPath(0,0,JSON.stringify([{controlIndex:capRect.controlIdx,cellIndex:65534,cellParaIndex:0}]),capLen+4,capLen+8,'{"bold":true}');
         srcDoc.splitParagraphInCell(0,0,capRect.controlIdx,65534,0,capLen+8);
         srcDoc.insertTextInCell(0,0,capRect.controlIdx,65534,1,0,'cap line 2');
+        srcDoc.applyParaFormatInCellByPath(0,0,JSON.stringify([{controlIndex:capRect.controlIdx,cellIndex:65534,cellParaIndex:1}]),
+          '{"alignment":"right"}');
 
         const mixBox = JSON.parse(srcDoc.createShapeControl(JSON.stringify({
           sectionIdx:0, paraIdx:0, charOffset:0, shapeType:'textbox',
@@ -140,10 +146,20 @@ def prepare_b3_2_fixtures(staging: Path):
         if (!mixBox.ok) throw Error('mixBox create failed');
         srcDoc.insertTextInCell(0,0,mixBox.controlIdx,0,0,0,'plain bold');
         const bp = JSON.stringify([{controlIndex:mixBox.controlIdx,cellIndex:0,cellParaIndex:0}]);
-        srcDoc.applyCharFormatInCellByPath(0,0,bp,6,10,'{"bold":true,"italic":true,"fontSize":1400,"textColor":"#cc2200","shadeColor":"#ffff00"}');
+        const fontIds = JSON.parse(srcDoc.resolveDocumentFontFamily('함초롬돋움'));
+        srcDoc.applyCharFormatInCellByPath(0,0,bp,6,10,JSON.stringify({
+          bold:true, italic:true, fontSize:1400, textColor:'#cc2200', shadeColor:'#ffff00', fontIds
+        }));
         srcDoc.applyParaFormatInCellByPath(0,0,bp,'{"alignment":"center"}');
         srcDoc.splitParagraphInCell(0,0,mixBox.controlIdx,0,0,10);
         srcDoc.insertTextInCell(0,0,mixBox.controlIdx,0,1,0,'second line');
+        const dotted = JSON.parse(srcDoc.createShapeControl(JSON.stringify({
+          sectionIdx:0, paraIdx:0, charOffset:0, shapeType:'rectangle',
+          width:4800, height:3000, treatAsChar:false, textWrap:'Square', horzOffset:16500, vertOffset:14000
+        })));
+        if (!dotted.ok || !JSON.parse(srcDoc.setShapeProperties(0,0,dotted.controlIdx,'{"lineType":3}')).ok) {
+          throw Error('DOT rectangle fixture failed');
+        }
         fs.writeFileSync(process.argv[1], srcDoc.exportHwpx());
         srcDoc.free();
 
@@ -355,22 +371,31 @@ def b3_2(acc, row, b_root, out):
     shutil.copyfile(src_orig, src)
     shutil.copyfile(dst_orig, dst)
     src_hash = digest(src)
+    row["fixtureSha256"] = {"source": src_hash, "destination": digest(dst_orig), "refusalDestination": digest(dst_refusal)}
+    before_dst = inspect_hwpx_clip(dst)
     before_src = row["beforeSource"] = inspect_hwpx_clip(src)
     cap_rect = next(s for s in before_src["shapes"] if s["props"]["hasCaption"])
     mix_box = next(s for s in before_src["shapes"] if s["boxTexts"] is not None)
+    dotted = next(s for s in before_src["shapes"] if s["props"]["lineType"] == 3)
+    require(mix_box["boxRun"]["fontFamilies"] == ["함초롬돋움"] * 7, "source font fixture")
 
     acc.open_native("hwpx", src)
     row["activeGeneration"] = acc.async_js("return (await (await fetch('rhwp/BUILD.json')).json()).generation")["value"]
+    require(row["activeGeneration"] == json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())["generation"],
+            "app and oracle engine differ")
     select_object(acc, cap_rect, "shape")
     acc.key("ctrl+c")
 
     acc.open_native("hwpx", dst)
     acc.key("ctrl+v")
-    revision(acc, "hwpx", 1)
+    row["afterCaptionPaste"] = revision(acc, "hwpx", 1)
+    select_object(acc, cap_rect, "shape")
+    acc.key("Escape")
 
     # Switch back to source tab to copy mixed TextBox
     acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(src.name)}))")
     acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", src.name)
+    row["sourceEditingState"] = revision(acc, "hwpx", 0)
     select_object(acc, mix_box, "textBox")
     acc.key("ctrl+c")
 
@@ -378,25 +403,39 @@ def b3_2(acc, row, b_root, out):
     acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", dst.name)
     c.body_end(acc)
     acc.key("ctrl+v")
-    revision(acc, "hwpx", 2)
+    row["afterTextboxPaste"] = revision(acc, "hwpx", 2)
     acc.key("ctrl+z")
-    revision(acc, "hwpx", 3)
+    row["afterUndo"] = revision(acc, "hwpx", 3)
+    p6.pointer(acc, (mix_box["page"], mix_box["x"] + mix_box["w"] / 2, mix_box["y"] + mix_box["h"] / 2))
+    require(acc.d.js("return !document.querySelector(arguments[0])", FRAME), "Undo left the textbox selectable")
     acc.key("ctrl+y")
-    revision(acc, "hwpx", 4)
+    row["afterRedo"] = revision(acc, "hwpx", 4)
+    select_object(acc, mix_box, "textBox")
+    acc.key("Escape")
 
     publish(acc, "hwpx", row)
-    require(digest(src) == src_hash, "B3.2 modified source HWPX on disk")
+    require(digest(dst) != row["fixtureSha256"]["destination"], "B3.2 did not publish a changed destination")
     after = row["after"] = inspect_hwpx_clip(dst)
     require(len(after["shapes"]) == 2, "expected 2 pasted HWPX objects", after["shapes"])
     pasted_cap = next(s for s in after["shapes"] if s["props"]["hasCaption"])
     pasted_box = next(s for s in after["shapes"] if s["boxTexts"] is not None)
-    require(pasted_cap["capTexts"][0].endswith("cap bold") and pasted_cap["capTexts"][1] == "cap line 2" and pasted_cap["capBold"] is True,
+    require(after["body"] == before_dst["body"], "B3.2 changed destination body text")
+    require(pasted_cap["capTexts"] == cap_rect["capTexts"] and pasted_cap["capAlign"] == ["justify", "right"]
+            and pasted_cap["capBold"] is True,
             "captioned rectangle fidelity lost", pasted_cap)
     require(pasted_box["boxTexts"] == ["plain bold", "second line"] and pasted_box["boxAlign"] == "center",
             "mixed textbox paragraph/alignment lost", pasted_box)
     require(pasted_box["boxRun"]["bold"] is True and pasted_box["boxRun"]["italic"] is True
-            and pasted_box["boxRun"]["textColor"] == "#cc2200" and pasted_box["boxRun"]["shadeColor"] == "#ffff00",
+            and pasted_box["boxRun"]["textColor"] == "#cc2200" and pasted_box["boxRun"]["shadeColor"] == "#ffff00"
+            and pasted_box["boxRun"]["fontSize"] == 1400 and pasted_box["boxRun"]["fontFamilies"] == ["함초롬돋움"] * 7,
             "mixed textbox run fidelity lost", pasted_box["boxRun"])
+
+    with ZipFile(dst) as package:
+        section = ElementTree.fromstring(package.read("Contents/section0.xml"))
+        captions = section.findall(".//{*}caption")
+        numbers = captions[0].findall(".//{*}autoNum") if len(captions) == 1 else []
+        require(len(numbers) == 1, "published caption must own exactly one autoNum")
+        row["publishedAtno"] = numbers[0].attrib
 
     # Negative refusals on a clean third document
     acc.open_native("hwpx", dst_refusal)
@@ -412,6 +451,15 @@ def b3_2(acc, row, b_root, out):
         require(digest(dst_refusal) == ref_hash, f"{label} changed file on disk")
         row["negative"][label] = "refused"
 
+    acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(src.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", src.name)
+    select_object(acc, dotted, "shape")
+    acc.key("ctrl+c")
+    acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(dst_refusal.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", dst_refusal.name)
+    acc.key("ctrl+v")
+    verify_refused("real DOT outline")
+
     # Orphan marker
     c.clipboard_peer(acc, "UTF8_STRING", "Geul shape [" + "0" * 24 + "]", lambda: (acc.key("ctrl+v"), verify_refused("orphan marker")))
     # Tampered portable group payload
@@ -424,8 +472,13 @@ def b3_2(acc, row, b_root, out):
 
     require(p4.rhwp_poc.close_tab(acc.d, dst_refusal.name), "refusal tab close")
     reopen(acc, dst, row)
+    require(inspect_hwpx_clip(dst) == after, "reopened destination differs from independently inspected save")
     select_object(acc, pasted_cap, "shape")
     acc.key("Escape")
+    select_object(acc, pasted_box, "textBox")
+    acc.key("Escape")
+    require(digest(src) == src_hash and inspect_hwpx_clip(src) == before_src, "B3.2 changed source HWPX")
+    row["preservation"] = {"sourceBytesAndContent": True, "destinationBody": True, "reopenedObjects": True}
 
 
 CASES = {

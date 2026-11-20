@@ -1,9 +1,11 @@
 import {
   HWPX_CAPTION_DIRECTIONS, HWPX_CAPTION_VERT_ALIGNS, HWPX_PARA_ALIGNS, HWPX_PICTURE_MIMES,
-  HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, decodePortableImageBytes,
+  HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes,
   type HwpxPortableCaption, type HwpxPortableCharRun, type HwpxPortableObject, type HwpxPortableParagraph,
   type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
+import { fontFamilyProblem } from "../../../commands/parameters";
+import { documentFontTable, type DocumentFontTable } from "./rhwpFonts";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { inspectRhwpShape } from "./shapeProperties";
 import type { RhwpDocument } from "./rhwpModule";
@@ -81,30 +83,38 @@ function readCharStyleAt(
   para: number,
   pathJson: string,
   offset: number,
+  fonts: DocumentFontTable | null,
+  expectedShapeId?: number,
 ): RunStyle | null {
   if (!doc.getCellCharPropertiesAtByPath) return null;
   try {
-    const raw = JSON.parse(doc.getCellCharPropertiesAtByPath(sec, para, pathJson, offset)) as Record<string, unknown>;
-    const style: RunStyle = {};
-    if (typeof raw.bold === "boolean" && raw.bold) style.bold = true;
-    else if (raw.bold === false) style.bold = false;
-    if (typeof raw.italic === "boolean") style.italic = raw.italic;
-    if (typeof raw.underline === "boolean") style.underline = raw.underline;
-    if (typeof raw.strikethrough === "boolean") style.strikethrough = raw.strikethrough;
-    if (typeof raw.fontSize === "number" && Number.isSafeInteger(raw.fontSize) && raw.fontSize >= 100 && raw.fontSize <= 409_600) {
-      style.fontSize = raw.fontSize;
-    }
-    if (typeof raw.textColor === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.textColor)) {
-      style.textColor = raw.textColor.toLowerCase();
-    }
-    if (typeof raw.shadeColor === "string" && (raw.shadeColor === "none" || /^#[0-9a-fA-F]{6}$/.test(raw.shadeColor))) {
-      style.shadeColor = raw.shadeColor === "none" ? "none" : raw.shadeColor.toLowerCase();
-    }
-    if (typeof raw.fontFamily === "string" && raw.fontFamily.length >= 1 && raw.fontFamily.length <= 256
-      && raw.fontFamily.trim() === raw.fontFamily && !/[\x00-\x1f"\\{}\uFFFC]/.test(raw.fontFamily)) {
-      style.fontFamily = raw.fontFamily;
-    }
-    return style;
+    const raw = JSON.parse(doc.getCellCharPropertiesAtByPath(sec, para, pathJson, offset));
+    const { charShapeId, bold, italic, underline, strikethrough, fontSize, textColor, shadeColor } = raw;
+    const hex = /^#[0-9a-fA-F]{6}$/;
+    if (!Number.isSafeInteger(charShapeId) || (expectedShapeId !== undefined && charShapeId !== expectedShapeId)
+      || typeof bold !== "boolean" || typeof italic !== "boolean" || typeof underline !== "boolean"
+      || typeof strikethrough !== "boolean" || !Number.isSafeInteger(fontSize) || fontSize < 100 || fontSize > 409_600
+      || typeof textColor !== "string" || !hex.test(textColor)
+      || typeof shadeColor !== "string" || (shadeColor !== "none" && !hex.test(shadeColor))) return null;
+
+    if ((underline && (raw.underlineType !== "Bottom" || raw.underlineShape !== 0 || raw.underlineColor !== "#000000"))
+      || (strikethrough && (raw.strikeShape !== 0 || raw.strikeColor !== "#000000"))
+      || raw.shadowType !== 0 || raw.outlineType !== 0 || raw.emphasisDot !== 0
+      || raw.subscript !== false || raw.superscript !== false || raw.emboss !== false || raw.engrave !== false
+      || raw.kerning !== false || raw.fillType !== "none"
+      || !["borderLeft", "borderRight", "borderTop", "borderBottom"].every(key => raw[key]?.type === 0)
+      || !Object.entries({ ratios: 100, spacings: 0, relativeSizes: 100, charOffsets: 0 }).every(([key, value]) =>
+        Array.isArray(raw[key]) && raw[key].length === 7 && raw[key].every((slot: unknown) => slot === value))) return null;
+
+    // The display getter reports the Hangul primary name. The portable family applies
+    // to all seven slots, so read the actual CHAR_SHAPE references and face names.
+    const ids = fonts?.charShapes[charShapeId]?.fontIds;
+    const family = ids && fonts?.languages[0]!.fonts[ids[0]!]!.definition.name;
+    const uniformFamily = ids && family && fonts && family === family.trim() && fontFamilyProblem(family) === null
+      && ids.every((id, lang) => fonts.languages[lang]!.fonts[id]!.definition.name === family);
+    return { bold, italic, underline, strikethrough, fontSize,
+      textColor: textColor.toLowerCase(), shadeColor: shadeColor.toLowerCase(),
+      ...(uniformFamily ? { fontFamily: family } : {}) };
   } catch {
     return null;
   }
@@ -120,66 +130,65 @@ function readParagraphRuns(
   doc: RhwpDocument,
   sec: number,
   para: number,
-  control: number,
-  cellIndex: number,
-  cellParaIndex: number,
+  pathJson: string,
   length: number,
+  fonts: DocumentFontTable | null,
+  requireFont: boolean,
   forbiddenOffset?: number,
 ): HwpxPortableCharRun[] | null {
-  if (length <= 0) return [];
-  const pathJson = JSON.stringify([{ controlIndex: control, cellIndex, cellParaIndex }]);
+  if (length === 0 || (length === 1 && forbiddenOffset === 0)) return [];
+  if (requireFont && !fonts) return null;
   const merged: HwpxPortableCharRun[] = [];
   const pushSpan = (start: number, end: number, style: RunStyle) => {
-    if (start >= end) return;
     const prev = merged[merged.length - 1];
     if (prev && prev.end === start && sameRunStyle(prev, style)) {
       prev.end = end;
-      return;
+    } else {
+      merged.push({ start, end, ...style });
     }
-    merged.push({ start, end, ...style });
   };
 
   if (forbiddenOffset === undefined && doc.getFormattingRunsByPath) {
     try {
-      const parsed = JSON.parse(doc.getFormattingRunsByPath(sec, para, pathJson, 0, length)) as {
-        runs?: [number, number, number][];
-        fontRuns?: [number, number, number, number][] | null;
-      };
-      const spans = Array.isArray(parsed.fontRuns) ? parsed.fontRuns : parsed.runs;
-      if (Array.isArray(spans) && spans.length <= 4096) {
-        const byShapeId = new Map<number, RunStyle>();
-        for (const span of spans) {
-          const [start, end, key] = span;
-          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start || end > length) return null;
-          let style = Array.isArray(parsed.fontRuns) ? byShapeId.get(key) : undefined;
-          if (!style) {
-            style = readCharStyleAt(doc, sec, para, pathJson, start) ?? undefined;
-            if (!style) return null;
-            if (Array.isArray(parsed.fontRuns)) byShapeId.set(key, style);
-          }
+      const parsed = JSON.parse(doc.getFormattingRunsByPath(sec, para, pathJson, 0, length));
+      if (parsed.length !== length || !Array.isArray(parsed.runs)
+        || !parsed.runs.every((span: unknown) => Array.isArray(span) && span.length === 3)
+        || !coversHwpxPortableText(parsed.runs, length)) return null;
+      // The boolean-mask inventory can merge spans with different colors, sizes or faces.
+      if (parsed.fontRuns !== null) {
+        const spans = parsed.fontRuns;
+        if (!Array.isArray(spans) || spans.length > 4096
+          || !spans.every(span => Array.isArray(span) && span.length === 4
+            && Number.isSafeInteger(span[2]) && Number.isSafeInteger(span[3]) && span[3] >= 0 && span[3] < 7)
+          || !coversHwpxPortableText(spans, length)) return null;
+        for (const [start, end, id] of spans) {
+          const style = readCharStyleAt(doc, sec, para, pathJson, start, fonts, id);
+          if (!style || (requireFont && !style.fontFamily)) return null;
           pushSpan(start, end, style);
         }
         return merged;
       }
     } catch {
-      // Fall through to bounded character scan if getFormattingRunsByPath rejects inline markers.
+      return null;
     }
   }
 
+  // The caption's protected atno marker is excluded from ordinary formatting.
+  // With no full shape inventory, prove every required position individually.
   if (length > 512) return null;
   for (let offset = 0; offset < length; offset += 1) {
     if (offset === forbiddenOffset) continue;
-    const style = readCharStyleAt(doc, sec, para, pathJson, offset);
-    if (!style) return null;
+    const style = readCharStyleAt(doc, sec, para, pathJson, offset, fonts);
+    if (!style || (requireFont && !style.fontFamily)) return null;
     pushSpan(offset, offset + 1, style);
   }
   return merged;
 }
 
-function readParagraphAlign(doc: RhwpDocument, sec: number, para: number, control: number, cellIndex: number, cellParaIndex: number) {
+function readParagraphAlign(doc: RhwpDocument, sec: number, para: number, pathJson: string) {
   if (!doc.getCellParaPropertiesAtByPath) return undefined;
   try {
-    const raw = JSON.parse(doc.getCellParaPropertiesAtByPath(sec, para, JSON.stringify([{ controlIndex: control, cellIndex, cellParaIndex }]))) as { alignment?: unknown };
+    const raw = JSON.parse(doc.getCellParaPropertiesAtByPath(sec, para, pathJson)) as { alignment?: unknown };
     return HWPX_PARA_ALIGNS.find(a => a === raw.alignment);
   } catch {
     return undefined;
@@ -222,11 +231,23 @@ function findCaptionAtnoSlots(
     const p0Text = doc.getTextInCell(sec, para, control, cellArg, 0, 0, p0Len);
     if (typeof p0Text !== "string") return null;
     const slot = atno.pos - atno.controlIndex * 8;
-    if (slot < 0 || slot >= p0Text.length || p0Text[slot] !== " ") return null;
+    if (!Number.isSafeInteger(slot) || slot < 0 || slot >= p0Len || Array.from(p0Text)[slot] !== " ") return null;
     return { paraCount, slotInPara0: slot, para0Text: p0Text };
   } catch {
     return null;
   }
+}
+
+function readPortableParagraph(
+  doc: RhwpDocument, sec: number, para: number, pathJson: string,
+  text: string, length: number, fonts: DocumentFontTable | null, requireFont: boolean, autoNumberOffset?: number,
+): HwpxPortableParagraph | undefined {
+  if (typeof text !== "string" || /[\r\n\uFFFC]/.test(text) || Array.from(text).length !== length) return undefined;
+  const align = readParagraphAlign(doc, sec, para, pathJson);
+  const runs = readParagraphRuns(doc, sec, para, pathJson, length, fonts, requireFont, autoNumberOffset);
+  if (!align || !runs) return undefined;
+  return { text, align, ...(runs.length ? { runs } : {}),
+    ...(autoNumberOffset !== undefined ? { autoNumberOffset } : {}) };
 }
 
 function extractHwpxCaption(
@@ -236,6 +257,7 @@ function extractHwpxCaption(
   control: number,
   isShape: boolean,
   rawProps: Record<string, unknown>,
+  requireFont: boolean,
 ): HwpxPortableCaption | undefined {
   const direction = HWPX_CAPTION_DIRECTIONS.find(d => d === rawProps.captionDirection);
   const vertAlign = HWPX_CAPTION_VERT_ALIGNS.find(v => v === rawProps.captionVertAlign);
@@ -248,28 +270,48 @@ function extractHwpxCaption(
   if (!capInfo || !doc.getCellParagraphLength || !doc.getTextInCell) return undefined;
   const cellIndex = isShape ? 65534 : 0;
   const paragraphs: HwpxPortableParagraph[] = [];
+  const fonts = documentFontTable(doc);
   for (let p = 0; p < capInfo.paraCount; p += 1) {
     const len = doc.getCellParagraphLength(sec, para, control, cellIndex, p);
     if (!Number.isSafeInteger(len) || len < 0 || len > 65536) return undefined;
     const text = p === 0 ? capInfo.para0Text : (len > 0 ? doc.getTextInCell(sec, para, control, cellIndex, p, 0, len) : "");
-    if (typeof text !== "string" || /[\r\n\uFFFC]/.test(text)) return undefined;
-    const align = readParagraphAlign(doc, sec, para, control, cellIndex, p);
-    const runs = readParagraphRuns(doc, sec, para, control, cellIndex, p, len, p === 0 ? capInfo.slotInPara0 : undefined);
-    if (!runs) return undefined;
-    paragraphs.push({
-      text,
-      ...(align ? { align } : {}),
-      ...(runs.length > 0 ? { runs } : {}),
-      ...(p === 0 ? { autoNumberOffset: capInfo.slotInPara0 } : {}),
-    });
+    const path = JSON.stringify([{ controlIndex: control, cellIndex, cellParaIndex: p }]);
+    const paragraph = readPortableParagraph(doc, sec, para, path, text, len, fonts, requireFont, p === 0 ? capInfo.slotInPara0 : undefined);
+    if (!paragraph) return undefined;
+    paragraphs.push(paragraph);
   }
   return { direction, vertAlign, width, spacing, includeMargin, paragraphs };
 }
 
+function hasPortableLineGeometry(
+  doc: RhwpDocument, [section, paragraph, control]: readonly [number, number, number],
+  shape: { width: number; height: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean },
+): boolean {
+  // createShapeControl constructs a line from (0,0) to (width,height).
+  // RHWP's page layout exposes the endpoints at 96 DPI, rounded to 0.1 px.
+  if (!doc.getPageControlLayout || shape.rotationAngle !== 0 || shape.horzFlip || shape.vertFlip) return false;
+  try {
+    for (let page = 0; page < doc.pageCount(); page += 1) {
+      const layout = JSON.parse(doc.getPageControlLayout(page));
+      const line = layout.controls.find((c: Record<string, unknown>) => c.type === "line"
+        && c.secIdx === section && c.paraIdx === paragraph && c.controlIdx === control);
+      if (line) return Math.abs(line.x2 - line.x1 - shape.width / 75) <= 0.1
+        && Math.abs(line.y2 - line.y1 - shape.height / 75) <= 0.1;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function extractHwpxPortableObject(
-  doc: RhwpDocument,
-  address: readonly [number, number, number],
-  kind: RichObjectKind,
+  doc: RhwpDocument, address: readonly [number, number, number], kind: RichObjectKind,
+): HwpxPortableObject | undefined {
+  return readPortableObject(doc, address, kind, true);
+}
+
+function readPortableObject(
+  doc: RhwpDocument, address: readonly [number, number, number], kind: RichObjectKind, requireFont: boolean,
 ): HwpxPortableObject | undefined {
   if (kind === "group") return undefined;
   const [sec, para, control] = address;
@@ -312,7 +354,7 @@ export function extractHwpxPortableObject(
     const description = typeof raw.description === "string" && raw.description.length > 0 ? raw.description : undefined;
     let caption: HwpxPortableCaption | undefined;
     if (raw.hasCaption === true) {
-      caption = extractHwpxCaption(doc, sec, para, control, false, raw);
+      caption = extractHwpxCaption(doc, sec, para, control, false, raw, requireFont);
       if (!caption) return undefined;
     }
     return {
@@ -336,7 +378,7 @@ export function extractHwpxPortableObject(
   const controls = JSON.parse(doc.getControls()) as { list?: number; section?: number; para?: number; controlIndex?: number; userDesc?: string }[];
   const owner = controls.find(c => (c.list ?? 0) === 0 && (c.section ?? 0) === sec && c.para === para && c.controlIndex === control);
   let shapeType: HwpxPortableShapeType | undefined;
-  if (shape.textBox) {
+  if (shape.textBox && (owner?.userDesc === "사각형" || owner?.userDesc === "글상자")) {
     shapeType = "textbox";
   } else if (owner?.userDesc === "사각형") {
     shapeType = "rectangle";
@@ -345,11 +387,21 @@ export function extractHwpxPortableObject(
   } else if (owner?.userDesc === "직선" || owner?.userDesc === "선") {
     shapeType = "line";
   }
-  if (!shapeType) return undefined;
+  if (!shapeType || (!!shape.textBox !== (shapeType === "textbox"))) return undefined;
+  if ((raw.roundRate !== undefined && raw.roundRate !== 0) || raw.shadowType !== 0) return undefined;
+  if (shapeType === "line" && !hasPortableLineGeometry(doc, address, shape.raw)) return undefined;
+  // ShapeBorderLine: 0 is NONE and 1 is SOLID, including a visible zero-width hairline.
+  // The constructor uses a round cap and no arrows. Other visible outline details
+  // have no representation in the portable subset.
+  if (raw.lineType !== 0 && raw.lineType !== 1) return undefined;
+  if (raw.lineType === 1 && (raw.lineEndShape !== 1 || raw.arrowStart !== 0
+    || raw.arrowEnd !== 0 || raw.borderOutlineStyle !== 0)) return undefined;
+  if (raw.connectorType !== undefined) return undefined;
   if (kind === "textBox" ? shapeType !== "textbox" : shapeType === "textbox") return undefined;
 
   const textWrap = HWPX_WRAP_VALUES.find(w => w === shape.raw.textWrap);
   if (!textWrap || (shape.raw.fillType !== "none" && shape.raw.fillType !== "solid")) return undefined;
+  if (shape.raw.fillType === "solid" && (raw.fillAlpha !== 0 || typeof raw.fillPatType !== "number" || raw.fillPatType > 0)) return undefined;
 
   let tbVerticalAlign: typeof HWPX_TB_VERTICAL_ALIGNS[number] | undefined;
   let tbMargins: { left: number; right: number; top: number; bottom: number } | undefined;
@@ -366,6 +418,7 @@ export function extractHwpxPortableObject(
     const count = doc.getCellParagraphCount(sec, para, control, 0);
     if (!Number.isSafeInteger(count) || count < 1 || count > 1024) return undefined;
     paragraphs = [];
+    const fonts = documentFontTable(doc);
     for (let p = 0; p < count; p += 1) {
       const len = doc.getCellParagraphLength(sec, para, control, 0, p);
       if (!Number.isSafeInteger(len) || len < 0 || len > 65536) return undefined;
@@ -377,21 +430,15 @@ export function extractHwpxPortableObject(
         return undefined;
       }
       const text = len > 0 ? doc.getTextInCell(sec, para, control, 0, p, 0, len) : "";
-      if (typeof text !== "string" || /[\r\n\uFFFC]/.test(text)) return undefined;
-      const align = readParagraphAlign(doc, sec, para, control, 0, p);
-      const runs = readParagraphRuns(doc, sec, para, control, 0, p, len);
-      if (!runs) return undefined;
-      paragraphs.push({
-        text,
-        ...(align ? { align } : {}),
-        ...(runs.length > 0 ? { runs } : {}),
-      });
+      const paragraph = readPortableParagraph(doc, sec, para, pathJson, text, len, fonts, requireFont);
+      if (!paragraph) return undefined;
+      paragraphs.push(paragraph);
     }
   }
 
   let caption: HwpxPortableCaption | undefined;
   if (shape.hasCaption) {
-    caption = extractHwpxCaption(doc, sec, para, control, true, raw);
+    caption = extractHwpxCaption(doc, sec, para, control, true, raw, requireFont);
     if (!caption) return undefined;
   }
 
@@ -410,6 +457,7 @@ export function extractHwpxPortableObject(
     vertFlip: shape.raw.vertFlip,
     borderColor: shape.raw.borderColor >>> 0,
     borderWidth: shape.raw.borderWidth,
+    lineType: raw.lineType,
     fillType: shape.raw.fillType,
     ...(shape.raw.fillType === "solid" && shape.raw.fillBgColor !== undefined ? { fillBgColor: shape.raw.fillBgColor >>> 0 } : {}),
     ...(shape.raw.description ? { description: shape.raw.description } : {}),
@@ -428,29 +476,28 @@ function applyRunFormatting(
   cellIndex: number,
   cellParaIndex: number,
   run: HwpxPortableCharRun,
-  offsetShift = 0,
+  resolvedFonts: Map<string, readonly number[]>,
 ) {
-  if (!doc.applyCharFormatInCellByPath) throw new Error("applyCharFormatInCellByPath unavailable");
-  const start = run.start + offsetShift;
-  const end = run.end + offsetShift;
-  if (start >= end) return;
-  const props: Record<string, unknown> = {};
-  if (run.bold !== undefined) props.bold = run.bold;
-  if (run.italic !== undefined) props.italic = run.italic;
-  if (run.underline !== undefined) props.underline = run.underline;
-  if (run.strikethrough !== undefined) props.strikethrough = run.strikethrough;
-  if (run.fontSize !== undefined) props.fontSize = run.fontSize;
-  if (run.textColor !== undefined) props.textColor = run.textColor;
-  if (run.shadeColor !== undefined) props.shadeColor = run.shadeColor;
-  if (run.fontFamily !== undefined && doc.resolveDocumentFontFamily) {
-    try {
-      const fontIds = JSON.parse(doc.resolveDocumentFontFamily(run.fontFamily)) as unknown;
-      if (Array.isArray(fontIds) && fontIds.length === 7) props.fontIds = fontIds;
-    } catch {
-      // Keep destination's default font if destination's font table cannot resolve custom family.
+  const { start, end, fontFamily, ...format } = run;
+  const props: Record<string, unknown> = format;
+  if (fontFamily !== undefined) {
+    let ids = resolvedFonts.get(fontFamily);
+    if (!ids) {
+      if (!doc.resolveDocumentFontFamily) throw new Error("portable font resolver unavailable");
+      const result: unknown = JSON.parse(doc.resolveDocumentFontFamily(fontFamily));
+      const table = documentFontTable(doc);
+      if (!table || !Array.isArray(result) || result.length !== table.languages.length
+        || !result.every((id, lang) => Number.isSafeInteger(id) && id >= 0 && id <= 65535
+          && table.languages[lang]!.fonts[id]?.definition.name === fontFamily)) {
+        throw new Error("portable font mapping does not match the requested family");
+      }
+      ids = result;
+      resolvedFonts.set(fontFamily, ids);
     }
+    props.fontIds = ids;
   }
   if (Object.keys(props).length === 0) return;
+  if (!doc.applyCharFormatInCellByPath) throw new Error("applyCharFormatInCellByPath unavailable");
   const pathJson = JSON.stringify([{ controlIndex: controlIdx, cellIndex, cellParaIndex }]);
   const res = JSON.parse(doc.applyCharFormatInCellByPath(sec, paraIdx, pathJson, start, end, JSON.stringify(props))) as { ok?: boolean };
   if (res.ok !== true) throw new Error("applyCharFormatInCellByPath failed");
@@ -463,9 +510,8 @@ function applyParaAlign(
   controlIdx: number,
   cellIndex: number,
   cellParaIndex: number,
-  align: string | undefined,
+  align: HwpxPortableParagraph["align"],
 ) {
-  if (!align) return;
   const pathJson = JSON.stringify([{ controlIndex: controlIdx, cellIndex, cellParaIndex }]);
   if (doc.applyParaFormatInCellByPath) {
     const res = JSON.parse(doc.applyParaFormatInCellByPath(sec, paraIdx, pathJson, JSON.stringify({ alignment: align }))) as { ok?: boolean };
@@ -473,7 +519,10 @@ function applyParaAlign(
   } else if (doc.applyParaFormatInCell) {
     const res = JSON.parse(doc.applyParaFormatInCell(sec, paraIdx, controlIdx, cellIndex, cellParaIndex, JSON.stringify({ alignment: align }))) as { ok?: boolean };
     if (res.ok !== true) throw new Error("applyParaFormatInCell failed");
+  } else {
+    throw new Error("portable paragraph alignment API unavailable");
   }
+  if (readParagraphAlign(doc, sec, paraIdx, pathJson) !== align) throw new Error("portable paragraph alignment mismatch");
 }
 
 function populateCaption(
@@ -483,6 +532,7 @@ function populateCaption(
   controlIdx: number,
   isShape: boolean,
   caption: HwpxPortableCaption,
+  resolvedFonts: Map<string, readonly number[]>,
 ) {
   if (!doc.insertTextInCell || !doc.deleteTextInCell || !doc.splitParagraphInCell) {
     throw new Error("caption cell APIs unavailable");
@@ -493,11 +543,13 @@ function populateCaption(
 
   const p0 = caption.paragraphs[0]!;
   const srcSlot = p0.autoNumberOffset!;
-  const srcPrefix = p0.text.slice(0, srcSlot);
-  const srcSuffix = p0.text.slice(srcSlot + 1);
-  const dstPrefix = slotInfo.para0Text.slice(0, slotInfo.slotInPara0);
-  let curSlot = slotInfo.slotInPara0;
-  const afterLen = slotInfo.para0Text.length - (curSlot + 1);
+  const srcChars = Array.from(p0.text);
+  const dstChars = Array.from(slotInfo.para0Text);
+  const srcPrefix = srcChars.slice(0, srcSlot).join("");
+  const srcSuffix = srcChars.slice(srcSlot + 1).join("");
+  const dstPrefix = dstChars.slice(0, slotInfo.slotInPara0).join("");
+  const curSlot = slotInfo.slotInPara0;
+  const afterLen = dstChars.length - (curSlot + 1);
   // Insert replacement suffix after existing trailing characters first so the +8 char_offsets jump at `atno` stays intact.
   if (srcSuffix.length > 0) {
     const res = JSON.parse(doc.insertTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, curSlot + 1 + afterLen, srcSuffix)) as { ok?: boolean };
@@ -513,23 +565,13 @@ function populateCaption(
       if (res.ok !== true) throw new Error("insertTextInCell prefix failed");
     }
     if (curSlot > 0) {
-      const res = JSON.parse(doc.deleteTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, srcPrefix.length, curSlot)) as { ok?: boolean };
+      const res = JSON.parse(doc.deleteTextInCell(sec, paraIdx, controlIdx, cellIndex, 0, srcSlot, curSlot)) as { ok?: boolean };
       if (res.ok !== true) throw new Error("deleteTextInCell prefix failed");
     }
-    curSlot = srcPrefix.length;
   }
-  const suffixShift = curSlot - srcSlot;
   applyParaAlign(doc, sec, paraIdx, controlIdx, cellIndex, 0, p0.align);
   for (const run of p0.runs ?? []) {
-    if (run.end <= srcSlot) {
-      applyRunFormatting(doc, sec, paraIdx, controlIdx, cellIndex, 0, run, 0);
-    } else if (run.start > srcSlot) {
-      const shiftedStart = Math.max(curSlot + 1, run.start + suffixShift);
-      const shiftedEnd = run.end + suffixShift;
-      if (shiftedStart < shiftedEnd) {
-        applyRunFormatting(doc, sec, paraIdx, controlIdx, cellIndex, 0, { ...run, start: shiftedStart, end: shiftedEnd }, 0);
-      }
-    }
+    applyRunFormatting(doc, sec, paraIdx, controlIdx, cellIndex, 0, run, resolvedFonts);
   }
 
   let prevLen = doc.getCellParagraphLength!(sec, paraIdx, controlIdx, cellIndex, 0);
@@ -543,100 +585,46 @@ function populateCaption(
     }
     applyParaAlign(doc, sec, paraIdx, controlIdx, cellIndex, p, para.align);
     for (const run of para.runs ?? []) {
-      applyRunFormatting(doc, sec, paraIdx, controlIdx, cellIndex, p, run);
+      applyRunFormatting(doc, sec, paraIdx, controlIdx, cellIndex, p, run, resolvedFonts);
     }
-    prevLen = para.text.length;
+    prevLen = Array.from(para.text).length;
   }
 }
 
-export function insertHwpxPortableObject(
+function createPortableObject(
   doc: RhwpDocument,
   at: { section: number; paragraph: number; offset: number },
   portable: HwpxPortableObject,
+  resolvedFonts: Map<string, readonly number[]>,
 ): { paraIdx: number; controlIdx: number } {
-  const charBaseline = doc.charShapeCount?.();
-  try {
-    if (portable.kind === "picture") {
-      if (!doc.insertPicture || !doc.setPictureProperties) throw new Error("picture insert APIs unavailable");
-      const bytes = decodePortableImageBytes(portable.mime, portable.bytesBase64);
-      if (!bytes) throw new Error("invalid portable picture bytes");
-      const ext = EXT_BY_MIME[portable.mime];
-      const created = JSON.parse(doc.insertPicture(
-        at.section, at.paragraph, at.offset, "[]", bytes,
-        portable.width, portable.height, portable.naturalWidth, portable.naturalHeight,
-        ext, portable.description ?? "",
-      )) as { ok?: boolean; paraIdx?: number; controlIdx?: number };
-      if (created.ok !== true || !Number.isSafeInteger(created.paraIdx) || !Number.isSafeInteger(created.controlIdx)) {
-        throw new Error("insertPicture failed");
-      }
-      const paraIdx = created.paraIdx!;
-      const controlIdx = created.controlIdx!;
-      const props: Record<string, unknown> = {
-        treatAsChar: portable.treatAsChar,
-        textWrap: portable.textWrap,
-        horzOffset: portable.horzOffset,
-        vertOffset: portable.vertOffset,
-        borderColor: portable.borderColor,
-        borderWidth: portable.borderWidth,
-        borderType: portable.borderType,
-        cropLeft: portable.crop.left,
-        cropTop: portable.crop.top,
-        cropRight: portable.crop.right,
-        cropBottom: portable.crop.bottom,
-        description: portable.description ?? "",
-        ...(portable.caption ? {
-          hasCaption: true,
-          captionDirection: portable.caption.direction,
-          captionVertAlign: portable.caption.vertAlign,
-          captionWidth: portable.caption.width,
-          captionSpacing: portable.caption.spacing,
-          captionIncludeMargin: portable.caption.includeMargin,
-        } : {}),
-      };
-      const updated = JSON.parse(doc.setPictureProperties(at.section, paraIdx, controlIdx, JSON.stringify(props))) as { ok?: boolean };
-      if (updated.ok !== true) throw new Error("setPictureProperties failed");
-      if (portable.caption) populateCaption(doc, at.section, paraIdx, controlIdx, false, portable.caption);
-      return { paraIdx, controlIdx };
-    }
-
-    if (!doc.createShapeControl || !doc.setShapeProperties) throw new Error("shape insert APIs unavailable");
-    const created = JSON.parse(doc.createShapeControl(JSON.stringify({
-      sectionIdx: at.section,
-      paraIdx: at.paragraph,
-      charOffset: at.offset,
-      width: portable.width,
-      height: portable.height,
-      horzOffset: portable.horzOffset,
-      vertOffset: portable.vertOffset,
-      treatAsChar: portable.treatAsChar,
-      textWrap: portable.textWrap,
-      shapeType: portable.shapeType,
-      lineFlipX: false,
-      lineFlipY: false,
-      polygonPoints: [],
-    }))) as { ok?: boolean; paraIdx?: number; controlIdx?: number };
+  if (portable.kind === "picture") {
+    if (!doc.insertPicture || !doc.setPictureProperties) throw new Error("picture insert APIs unavailable");
+    const bytes = decodePortableImageBytes(portable.mime, portable.bytesBase64);
+    if (!bytes) throw new Error("invalid portable picture bytes");
+    const ext = EXT_BY_MIME[portable.mime];
+    const created = JSON.parse(doc.insertPicture(
+      at.section, at.paragraph, at.offset, "[]", bytes,
+      portable.width, portable.height, portable.naturalWidth, portable.naturalHeight,
+      ext, portable.description ?? "",
+    )) as { ok?: boolean; paraIdx?: number; controlIdx?: number };
     if (created.ok !== true || !Number.isSafeInteger(created.paraIdx) || !Number.isSafeInteger(created.controlIdx)) {
-      throw new Error("createShapeControl failed");
+      throw new Error("insertPicture failed");
     }
     const paraIdx = created.paraIdx!;
     const controlIdx = created.controlIdx!;
     const props: Record<string, unknown> = {
+      treatAsChar: portable.treatAsChar,
       textWrap: portable.textWrap,
-      rotationAngle: portable.rotationAngle,
-      horzFlip: portable.horzFlip,
-      vertFlip: portable.vertFlip,
+      horzOffset: portable.horzOffset,
+      vertOffset: portable.vertOffset,
       borderColor: portable.borderColor,
       borderWidth: portable.borderWidth,
-      fillType: portable.fillType,
-      ...(portable.fillType === "solid" && portable.fillBgColor !== undefined ? { fillBgColor: portable.fillBgColor } : {}),
+      borderType: portable.borderType,
+      cropLeft: portable.crop.left,
+      cropTop: portable.crop.top,
+      cropRight: portable.crop.right,
+      cropBottom: portable.crop.bottom,
       description: portable.description ?? "",
-      ...(portable.tbVerticalAlign ? { tbVerticalAlign: portable.tbVerticalAlign } : {}),
-      ...(portable.tbMargins ? {
-        tbMarginLeft: portable.tbMargins.left,
-        tbMarginRight: portable.tbMargins.right,
-        tbMarginTop: portable.tbMargins.top,
-        tbMarginBottom: portable.tbMargins.bottom,
-      } : {}),
       ...(portable.caption ? {
         hasCaption: true,
         captionDirection: portable.caption.direction,
@@ -646,35 +634,153 @@ export function insertHwpxPortableObject(
         captionIncludeMargin: portable.caption.includeMargin,
       } : {}),
     };
-    const updated = JSON.parse(doc.setShapeProperties(at.section, paraIdx, controlIdx, JSON.stringify(props))) as { ok?: boolean };
-    if (updated.ok !== true) throw new Error("setShapeProperties failed");
-
-    if (portable.shapeType === "textbox" && portable.paragraphs) {
-      if (!doc.insertTextInCell || !doc.splitParagraphInCell) throw new Error("textbox cell APIs unavailable");
-      let prevLen = 0;
-      for (let p = 0; p < portable.paragraphs.length; p += 1) {
-        if (p > 0) {
-          const splitRes = JSON.parse(doc.splitParagraphInCell(at.section, paraIdx, controlIdx, 0, p - 1, prevLen)) as { ok?: boolean };
-          if (splitRes.ok !== true) throw new Error("splitParagraphInCell textbox failed");
-        }
-        const para = portable.paragraphs[p]!;
-        if (para.text.length > 0) {
-          const ins = JSON.parse(doc.insertTextInCell(at.section, paraIdx, controlIdx, 0, p, 0, para.text)) as { ok?: boolean };
-          if (ins.ok !== true) throw new Error("insertTextInCell textbox failed");
-        }
-        applyParaAlign(doc, at.section, paraIdx, controlIdx, 0, p, para.align);
-        for (const run of para.runs ?? []) {
-          applyRunFormatting(doc, at.section, paraIdx, controlIdx, 0, p, run);
-        }
-        prevLen = para.text.length;
-      }
-    }
-
-    if (portable.caption) populateCaption(doc, at.section, paraIdx, controlIdx, true, portable.caption);
+    const updated = JSON.parse(doc.setPictureProperties(at.section, paraIdx, controlIdx, JSON.stringify(props))) as { ok?: boolean };
+    if (updated.ok !== true) throw new Error("setPictureProperties failed");
+    if (portable.caption) populateCaption(doc, at.section, paraIdx, controlIdx, false, portable.caption, resolvedFonts);
     return { paraIdx, controlIdx };
-  } finally {
-    if (charBaseline !== undefined && doc.compactAppendedCharShapes) {
-      try { doc.compactAppendedCharShapes(charBaseline); } catch { /* best-effort compaction */ }
+  }
+
+  if (!doc.createShapeControl || !doc.setShapeProperties) throw new Error("shape insert APIs unavailable");
+  const created = JSON.parse(doc.createShapeControl(JSON.stringify({
+    sectionIdx: at.section,
+    paraIdx: at.paragraph,
+    charOffset: at.offset,
+    width: portable.width,
+    height: portable.height,
+    horzOffset: portable.horzOffset,
+    vertOffset: portable.vertOffset,
+    treatAsChar: portable.treatAsChar,
+    textWrap: portable.textWrap,
+    shapeType: portable.shapeType,
+    lineFlipX: false,
+    lineFlipY: false,
+    polygonPoints: [],
+  }))) as { ok?: boolean; paraIdx?: number; controlIdx?: number };
+  if (created.ok !== true || !Number.isSafeInteger(created.paraIdx) || !Number.isSafeInteger(created.controlIdx)) {
+    throw new Error("createShapeControl failed");
+  }
+  const paraIdx = created.paraIdx!;
+  const controlIdx = created.controlIdx!;
+  const props: Record<string, unknown> = {
+    textWrap: portable.textWrap,
+    rotationAngle: portable.rotationAngle,
+    horzFlip: portable.horzFlip,
+    vertFlip: portable.vertFlip,
+    borderColor: portable.borderColor,
+    borderWidth: portable.borderWidth,
+    lineType: portable.lineType,
+    fillType: portable.fillType,
+    ...(portable.fillType === "solid" && portable.fillBgColor !== undefined ? { fillBgColor: portable.fillBgColor } : {}),
+    description: portable.description ?? "",
+    ...(portable.tbVerticalAlign ? { tbVerticalAlign: portable.tbVerticalAlign } : {}),
+    ...(portable.tbMargins ? {
+      tbMarginLeft: portable.tbMargins.left,
+      tbMarginRight: portable.tbMargins.right,
+      tbMarginTop: portable.tbMargins.top,
+      tbMarginBottom: portable.tbMargins.bottom,
+    } : {}),
+    ...(portable.caption ? {
+      hasCaption: true,
+      captionDirection: portable.caption.direction,
+      captionVertAlign: portable.caption.vertAlign,
+      captionWidth: portable.caption.width,
+      captionSpacing: portable.caption.spacing,
+      captionIncludeMargin: portable.caption.includeMargin,
+    } : {}),
+  };
+  const updated = JSON.parse(doc.setShapeProperties(at.section, paraIdx, controlIdx, JSON.stringify(props))) as { ok?: boolean };
+  if (updated.ok !== true) throw new Error("setShapeProperties failed");
+
+  if (portable.shapeType === "textbox" && portable.paragraphs) {
+    if (!doc.insertTextInCell || !doc.splitParagraphInCell) throw new Error("textbox cell APIs unavailable");
+    let prevLen = 0;
+    for (let p = 0; p < portable.paragraphs.length; p += 1) {
+      if (p > 0) {
+        const splitRes = JSON.parse(doc.splitParagraphInCell(at.section, paraIdx, controlIdx, 0, p - 1, prevLen)) as { ok?: boolean };
+        if (splitRes.ok !== true) throw new Error("splitParagraphInCell textbox failed");
+      }
+      const para = portable.paragraphs[p]!;
+      if (para.text.length > 0) {
+        const ins = JSON.parse(doc.insertTextInCell(at.section, paraIdx, controlIdx, 0, p, 0, para.text)) as { ok?: boolean };
+        if (ins.ok !== true) throw new Error("insertTextInCell textbox failed");
+      }
+      applyParaAlign(doc, at.section, paraIdx, controlIdx, 0, p, para.align);
+      for (const run of para.runs ?? []) {
+        applyRunFormatting(doc, at.section, paraIdx, controlIdx, 0, p, run, resolvedFonts);
+      }
+      prevLen = Array.from(para.text).length;
     }
   }
+
+  if (portable.caption) populateCaption(doc, at.section, paraIdx, controlIdx, true, portable.caption, resolvedFonts);
+  return { paraIdx, controlIdx };
+}
+
+function verifyPortableParagraphs(
+  expected: readonly HwpxPortableParagraph[], actual: readonly HwpxPortableParagraph[] | undefined,
+): void {
+  if (actual?.length !== expected.length) throw new Error("portable paragraph count mismatch");
+  for (const [i, source] of expected.entries()) {
+    const target = actual[i]!;
+    if (source.text !== target.text || source.align !== target.align || source.autoNumberOffset !== target.autoNumberOffset) {
+      throw new Error("portable paragraph text, alignment or atno mismatch");
+    }
+    const appliedRuns = target.runs ?? [];
+    let index = 0;
+    for (const { start, end, ...style } of source.runs ?? []) {
+      let offset = start;
+      while (offset < end) {
+        const applied = appliedRuns[index];
+        if (!applied || applied.start > offset || applied.end <= offset
+          || !(Object.keys(style) as (keyof RunStyle)[]).every(key => (key === "textColor" || key === "shadeColor"
+            ? style[key]?.toLowerCase() === applied[key] : style[key] === applied[key]))) {
+          throw new Error("portable character formatting mismatch");
+        }
+        offset = applied.end;
+        if (offset <= end) index += 1;
+      }
+    }
+  }
+}
+
+export function insertHwpxPortableObject(
+  doc: RhwpDocument,
+  at: { section: number; paragraph: number; offset: number },
+  portable: HwpxPortableObject,
+): { paraIdx: number; controlIdx: number } {
+  const baseline = doc.charShapeCount?.();
+  const result = createPortableObject(doc, at, portable, new Map());
+  if (baseline !== undefined && doc.compactAppendedCharShapes) {
+    // Run inside the same history transaction. Engine errors must reach rollback.
+    const compacted = JSON.parse(doc.compactAppendedCharShapes(baseline)) as { ok?: boolean };
+    if (compacted.ok !== true) throw new Error("portable character shape compaction failed");
+  }
+  const kind = portable.kind === "picture" ? "picture" : portable.shapeType === "textbox" ? "textBox" : "shape";
+  const applied = readPortableObject(doc, [at.section, result.paraIdx, result.controlIdx], kind, false);
+  if (!applied) throw new Error("portable object verification failed");
+  const { caption, ...object } = portable;
+  const actual = applied as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(object)) {
+    if (key === "paragraphs" || (key === "kind" && value === undefined)) continue;
+    if (key === "crop" || key === "tbMargins") {
+      const fields = actual[key] as Record<string, unknown> | undefined;
+      if (!fields || !Object.entries(value).every(([side, n]) => fields[side] === n)) {
+        throw new Error("portable object geometry mismatch");
+      }
+    } else if (actual[key] !== value) {
+      throw new Error(`portable object property mismatch: ${key}`);
+    }
+  }
+  if (portable.kind !== "picture" && portable.paragraphs) {
+    verifyPortableParagraphs(portable.paragraphs, applied.kind === "picture" ? undefined : applied.paragraphs);
+  }
+  if (caption) {
+    const { paragraphs, ...properties } = caption;
+    const appliedCaption = applied.caption;
+    if (!appliedCaption || !(Object.keys(properties) as (keyof typeof properties)[]).every(key => properties[key] === appliedCaption[key])) {
+      throw new Error("portable caption properties mismatch");
+    }
+    verifyPortableParagraphs(paragraphs, appliedCaption.paragraphs);
+  }
+  return result;
 }

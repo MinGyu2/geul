@@ -200,11 +200,13 @@ describe("rich object clipboard (v2)", () => {
       vertFlip: false,
       borderColor: 0x005a400e,
       borderWidth: 100,
+      lineType: 1,
       fillType: "solid",
       fillBgColor: 0x00826015,
       tbVerticalAlign: "Center",
       tbMargins: { left: 283, right: 283, top: 141, bottom: 141 },
-      paragraphs: [{ text: "첫 줄", align: "center" }, { text: "둘째 줄", align: "right" }],
+      paragraphs: [{ text: "첫 줄", align: "center", runs: [{ start: 0, end: 3, bold: true }] },
+        { text: "둘째 줄", align: "right", runs: [{ start: 0, end: 4, bold: false }] }],
     })!;
     expect(portable.version).toBe(3);
     expect(portable.sourceFormat).toBe("hwpx");
@@ -274,7 +276,8 @@ describe("rich object clipboard (v2)", () => {
         width: 3600,
         spacing: 120,
         includeMargin: false,
-        paragraphs: [{ text: "그림  caption", autoNumberOffset: 2, runs: [{ start: 4, end: 11, bold: true, fontSize: 1200, textColor: "#112233" }] }],
+        paragraphs: [{ text: "그림  caption", align: "justify", autoNumberOffset: 2,
+          runs: [{ start: 0, end: 2, bold: false }, { start: 3, end: 11, bold: true, fontSize: 1200, textColor: "#112233" }] }],
       },
     })!;
     expect(picPortable).not.toBeNull();
@@ -296,8 +299,9 @@ describe("rich object clipboard (v2)", () => {
       vertFlip: false,
       borderColor: 0,
       borderWidth: 0,
+      lineType: 0,
       fillType: "none",
-      paragraphs: [{ text: "abc", runs: [{ start: 1, end: 4, bold: true }] }],
+      paragraphs: [{ text: "abc", align: "left", runs: [{ start: 1, end: 4, bold: true }] }],
     })).toBeNull();
   });
 });

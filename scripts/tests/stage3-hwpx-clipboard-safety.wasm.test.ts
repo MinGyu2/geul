@@ -1,19 +1,15 @@
 // @vitest-environment jsdom
-// Stage 3 P3: HWPX shape/text box insertion and outer formatting on the Release engine.
-// With GEUL_STAGE3_OUT=<dir>, writes original/edited HWPX bytes and loss reports for `save_check`.
+// Stage 3-B portable HWPX clipboard on the Release engine.
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
-import { ImeInput } from "../../src/components/Editor/rhwp/imeInput";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
-import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
-import { documentCommandState } from "../../src/commands/capability";
 import type { PlainClipboard } from "../../src/commands/clipboard";
-import { OBJECT_CLIPBOARD_MIME, createRichObjectClipboardPayload, parseObjectClipboardPayload } from "../../src/commands/objectClipboard";
+import { OBJECT_CLIPBOARD_MIME, createHwpxObjectClipboardPayload, parseObjectClipboardPayload } from "../../src/commands/objectClipboard";
 import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { clearStructuredClipboard } from "../../src/commands/tableClipboard";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
@@ -23,9 +19,8 @@ const identity = await readRhwpGeneration(artifacts, "release");
 const folder = resolve(artifacts, "generations", identity.generation);
 const engine = createRequire(import.meta.url)(resolve(folder, "rhwp.js"));
 engine.initSync({ module: readFileSync(resolve(folder, "rhwp_bg.wasm")) });
-const out = process.env.GEUL_STAGE3_OUT;
 /** The save path's reopen evidence (RhwpEditorSession export check): pages, text and controls equal, no loss. */
-function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string) {
+function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: string, verify: (reopened: RhwpDocument) => void) {
   const reopened = new engine.HwpDocument(bytes) as RhwpDocument & { getControls(): string; getTextFileText(): string };
   const live = doc as RhwpDocument & { getControls(): string; getTextFileText(): string };
   try {
@@ -33,10 +28,11 @@ function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: stri
     expect(reopened.pageCount()).toBe(live.pageCount());
     expect(reopened.getTextFileText()).toBe(live.getTextFileText());
     expect(reopened.getControls()).toBe(live.getControls());
+    verify(reopened);
   } finally { reopened.free(); }
 }
 type Frame = { type: string; x: number; y: number; w: number; h: number; controlIdx: number };
-const shapes = (doc: RhwpDocument) => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "shape");
+const shapes = (doc: RhwpDocument) => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "shape" || c.type === "line");
 
 function source(format: "hwp" | "hwpx"): Uint8Array {
   const doc = engine.HwpDocument.createEmpty();
@@ -82,18 +78,23 @@ async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
     return editor.objectSelection!;
   };
   const edit = (edit: ObjectEdit) => editor.execute("object.edit", objectEditRequest(editor.objectSelection!, edit)).accepted;
-  return { editor, doc, bytes, pick, edit, confirm, ...control };
+  return { editor, doc, bytes, pick, edit, confirm, sessions, ...control };
 }
 
 const props = (doc: RhwpDocument, control: number) => JSON.parse(doc.getShapeProperties!(0, 0, control));
 
 describe("HWPX object clipboard fidelity boundary", () => {
-  for (const kind of ["caption", "mixed", "plainShape", "plainTextBox"] as const) it(`B3.2: pastes cross-document HWPX ${kind} faithfully with Undo/Redo and reopen`, async () => {
+  for (const kind of ["caption", "mixed", "rectangle", "ellipse", "line", "noOutline", "plainTextBox"] as const) it(`B3.2: pastes cross-document HWPX ${kind} faithfully with Undo/Redo and reopen`, async () => {
     const fixture = engine.HwpDocument.createEmpty();
     fixture.createBlankDocument(); fixture.insertText(0, 0, 0, "seed");
     const box = kind === "mixed" || kind === "plainTextBox";
-    const result = JSON.parse(fixture.createShapeControl(JSON.stringify({sectionIdx:0, paraIdx:0, charOffset:0, shapeType:box ? "textbox" : "rectangle", width:5000, height:3000, treatAsChar:false, textWrap:"Square", horzOffset:2000, vertOffset:2000})));
+    const shapeType = box ? "textbox" : kind === "ellipse" || kind === "line" ? kind : "rectangle";
+    const result = JSON.parse(fixture.createShapeControl(JSON.stringify({sectionIdx:0, paraIdx:0, charOffset:0, shapeType, width:5000, height:3000, treatAsChar:false, textWrap:"Square", horzOffset:2000, vertOffset:2000})));
     expect(result.ok).toBe(true);
+    if (kind === "noOutline" || kind === "line") {
+      expect(JSON.parse(fixture.setShapeProperties(0, 0, result.controlIdx,
+        JSON.stringify({ lineType: kind === "noOutline" ? 0 : 1, borderWidth: kind === "noOutline" ? 33 : 0 }))).ok).toBe(true);
+    }
     if (kind === "caption") {
       expect(JSON.parse(fixture.setShapeProperties(0, 0, result.controlIdx, '{"hasCaption":true,"captionDirection":"Top","fillType":"solid","fillBgColor":11223344}')).ok).toBe(true);
       const capLen = fixture.getCellParagraphLength(0, 0, result.controlIdx, 65534, 0);
@@ -102,15 +103,23 @@ describe("HWPX object clipboard fidelity boundary", () => {
       expect(JSON.parse(fixture.applyCharFormatInCellByPath(0, 0, capPath0, capLen + 4, capLen + 8, '{"bold":true}')).ok).toBe(true);
       expect(JSON.parse(fixture.splitParagraphInCell(0, 0, result.controlIdx, 65534, 0, capLen + 8)).ok).toBe(true);
       expect(JSON.parse(fixture.insertTextInCell(0, 0, result.controlIdx, 65534, 1, 0, "cap line 2")).ok).toBe(true);
+      const capPath1 = JSON.stringify([{ controlIndex: result.controlIdx, cellIndex: 65534, cellParaIndex: 1 }]);
+      expect(JSON.parse(fixture.applyParaFormatInCellByPath(0, 0, capPath1, '{"alignment":"right"}')).ok).toBe(true);
+      expect(JSON.parse(fixture.applyCharFormatInCellByPath(0, 0, capPath1, 0, 10, '{"italic":true}')).ok).toBe(true);
     }
     if (box) {
-      expect(JSON.parse(fixture.insertTextInCell(0,0,result.controlIdx,0,0,0,"plain bold")).ok).toBe(true);
+      expect(JSON.parse(fixture.insertTextInCell(0,0,result.controlIdx,0,0,0,kind === "mixed" ? "😀lain bold" : "plain bold")).ok).toBe(true);
       if (kind === "mixed") {
         const boxPath0 = JSON.stringify([{ controlIndex: result.controlIdx, cellIndex: 0, cellParaIndex: 0 }]);
-        expect(JSON.parse(fixture.applyCharFormatInCellByPath(0,0,boxPath0,6,10,'{"bold":true,"italic":true,"fontSize":1400,"textColor":"#cc2200","shadeColor":"#ffff00"}')).ok).toBe(true);
+        const fontIds = JSON.parse(fixture.resolveDocumentFontFamily("Geul Portable Test Face"));
+        expect(JSON.parse(fixture.applyCharFormatInCellByPath(0, 0, boxPath0, 6, 10, JSON.stringify({
+          bold: true, italic: true, underline: true, strikethrough: true, fontSize: 1400,
+          textColor: "#cc2200", shadeColor: "#ffff00", fontIds,
+        }))).ok).toBe(true);
         expect(JSON.parse(fixture.applyParaFormatInCellByPath(0,0,boxPath0,'{"alignment":"center"}')).ok).toBe(true);
         expect(JSON.parse(fixture.splitParagraphInCell(0,0,result.controlIdx,0,0,10)).ok).toBe(true);
         expect(JSON.parse(fixture.insertTextInCell(0,0,result.controlIdx,0,1,0,"second line")).ok).toBe(true);
+        expect(JSON.parse(fixture.splitParagraphInCell(0,0,result.controlIdx,0,1,11)).ok).toBe(true);
       }
     }
     const bytes = fixture.exportHwpx(); fixture.free();
@@ -126,36 +135,69 @@ describe("HWPX object clipboard fidelity boundary", () => {
       const parsed = parseObjectClipboardPayload(payload);
       expect(parsed).toMatchObject({version:3, sourceFormat:"hwpx", object:box ? "textBox" : "shape"});
       expect(parsed && parsed.version === 3 ? parsed.portable : undefined).toBeDefined();
+      if (kind === "caption") {
+        const tampered = JSON.parse(payload);
+        const p0 = tampered.portable.caption.paragraphs[0];
+        expect(p0.autoNumberOffset).toBe(2);
+        expect(p0.runs.map(({ start, end }: { start: number; end: number }) => [start, end]))
+          .toEqual([[0, 2], [3, 8], [8, 12]]);
+        const complete = p0.runs;
+        p0.runs = complete.slice(1); // Missing ordinary prefix.
+        await expectRefused(dst, objectClip(JSON.stringify(tampered)).clipboard);
+        p0.runs = [{ ...complete[0], end: 3 }, ...complete.slice(1)]; // Crosses atno.
+        await expectRefused(dst, objectClip(JSON.stringify(tampered)).clipboard);
+      }
 
       expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
       await dst.confirm();
       expect(src.doc.exportHwpx()).toEqual(sourceBefore);
 
-      const pasted = shapes(dst.doc);
-      expect(pasted).toHaveLength(1);
-      const pastedCtrl = pasted[0]!.controlIdx;
-      if (kind === "caption") {
-        expect(props(dst.doc, pastedCtrl).hasCaption).toBe(true);
-        expect(props(dst.doc, pastedCtrl).captionDirection).toBe("Top");
-        expect(dst.doc.getCellParagraphCount!(0, 0, pastedCtrl, 65534)).toBe(2);
-        const p0Len = dst.doc.getCellParagraphLength!(0, 0, pastedCtrl, 65534, 0);
-        expect(dst.doc.getTextInCell!(0, 0, pastedCtrl, 65534, 0, 0, p0Len)).toContain("cap bold");
-        expect(JSON.parse(dst.doc.getCellCharPropertiesAt!(0, 0, pastedCtrl, 65534, 0, p0Len - 1)).bold).toBe(true);
-        const p1Len = dst.doc.getCellParagraphLength!(0, 0, pastedCtrl, 65534, 1);
-        expect(dst.doc.getTextInCell!(0, 0, pastedCtrl, 65534, 1, 0, p1Len)).toBe("cap line 2");
-      }
-      if (box) {
-        const len0 = dst.doc.getCellParagraphLength!(0, 0, pastedCtrl, 0, 0);
-        expect(dst.doc.getTextInCell!(0, 0, pastedCtrl, 0, 0, 0, len0)).toBe("plain bold");
-      }
-      if (kind === "mixed") {
-        expect(dst.doc.getCellParagraphCount!(0, 0, pastedCtrl, 0)).toBe(2);
-        const c6 = JSON.parse(dst.doc.getCellCharPropertiesAt!(0, 0, pastedCtrl, 0, 0, 7));
-        expect(c6).toMatchObject({ bold: true, italic: true, fontSize: 1400, textColor: "#cc2200", shadeColor: "#ffff00" });
-        expect(JSON.parse(dst.doc.getCellCharPropertiesAt!(0, 0, pastedCtrl, 0, 0, 1)).bold).toBe(false);
-        const boxPath0 = JSON.stringify([{ controlIndex: pastedCtrl, cellIndex: 0, cellParaIndex: 0 }]);
-        expect(JSON.parse(dst.doc.getCellParaPropertiesAtByPath!(0, 0, boxPath0)).alignment).toBe("center");
-      }
+      const sourceShape = props(src.doc, frame.controlIdx);
+      const verifyPasted = (doc: RhwpDocument, count: number) => {
+        const pasted = shapes(doc);
+        expect(pasted).toHaveLength(count);
+        for (const { controlIdx } of pasted) {
+          expect(props(doc, controlIdx)).toMatchObject({
+            width: 5000, height: 3000, lineType: kind === "noOutline" ? 0 : 1, borderWidth: kind === "line" ? 0 : 33,
+            borderColor: sourceShape.borderColor, fillType: sourceShape.fillType, hasCaption: kind === "caption",
+          });
+          const text = (cell: number, p: number) => doc.getTextInCell!(0, 0, controlIdx, cell, p, 0,
+            doc.getCellParagraphLength!(0, 0, controlIdx, cell, p));
+          const style = (cell: number, p: number, at: number) =>
+            JSON.parse(doc.getCellCharPropertiesAt!(0, 0, controlIdx, cell, p, at));
+          const align = (cellIndex: number, cellParaIndex: number) => JSON.parse(doc.getCellParaPropertiesAtByPath!(0, 0,
+            JSON.stringify([{ controlIndex: controlIdx, cellIndex, cellParaIndex }]))).alignment;
+          if (kind === "caption") {
+            expect(props(doc, controlIdx)).toMatchObject({ captionDirection: "Top", fillBgColor: 11223344 });
+            expect(doc.getCellParagraphCount!(0, 0, controlIdx, 65534)).toBe(2);
+            const sourceLen = src.doc.getCellParagraphLength!(0, 0, frame.controlIdx, 65534, 0);
+            expect(text(65534, 0)).toBe(src.doc.getTextInCell!(0, 0, frame.controlIdx, 65534, 0, 0, sourceLen));
+            expect(text(65534, 1)).toBe("cap line 2");
+            expect(style(65534, 0, sourceLen - 1).bold).toBe(true);
+            expect(style(65534, 1, 0).italic).toBe(true);
+            expect(align(65534, 1)).toBe("right");
+          }
+          if (box) expect(text(0, 0)).toBe(kind === "mixed" ? "😀lain bold" : "plain bold");
+          if (kind === "mixed") {
+            expect(doc.getCellParagraphCount!(0, 0, controlIdx, 0)).toBe(3);
+            expect(text(0, 1)).toBe("second line");
+            expect(text(0, 2)).toBe("");
+            expect(style(0, 0, 6)).toMatchObject({
+              bold: true, italic: true, underline: true, strikethrough: true, fontSize: 1400,
+              textColor: "#cc2200", shadeColor: "#ffff00",
+              fontFamilies: Array(7).fill("Geul Portable Test Face"),
+            });
+            expect(style(0, 0, 5)).toMatchObject({ bold: false, italic: false, fontFamily: "함초롬바탕" });
+            expect(align(0, 0)).toBe("center");
+          }
+        }
+        if (kind === "caption") {
+          const atno = JSON.parse(doc.getControls!()).filter((control: { ctrlId: string }) => control.ctrlId === "atno");
+          expect(atno).toHaveLength(count);
+          for (const control of atno) expect(control).toMatchObject({ ctrlCh: 18, para: 0, pos: 2 });
+        }
+      };
+      verifyPasted(dst.doc, 1);
 
       // Repeated cross-doc paste creates a second independent object; Undo/Redo works cleanly.
       expect(await dst.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
@@ -163,19 +205,19 @@ describe("HWPX object clipboard fidelity boundary", () => {
       expect(shapes(dst.doc)).toHaveLength(2);
       expect(dst.editor.undo()).toBe(true);
       await dst.confirm();
-      expect(shapes(dst.doc)).toHaveLength(1);
+      verifyPasted(dst.doc, 1);
       expect(dst.editor.redo()).toBe(true);
       await dst.confirm();
-      expect(shapes(dst.doc)).toHaveLength(2);
+      verifyPasted(dst.doc, 2);
 
       const exported = dst.doc.exportHwpxWithReport();
       try {
-        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss());
+        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss(), reopened => verifyPasted(reopened, 2));
       } finally { exported.free(); }
     } finally {src.editor.dispose(); dst.editor.dispose();}
   });
 
-  it("B3.2: pastes cross-doc captioned HWPX picture and rejects tampered/unsupported portable payloads", async () => {
+  it.each([false, true])("B3.2: preserves picture bytes and properties with caption=%s", async hasCaption => {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC",
       "base64",
@@ -186,16 +228,19 @@ describe("HWPX object clipboard fidelity boundary", () => {
     expect(pic.ok).toBe(true);
     expect(JSON.parse(fix.setPictureProperties(0, 0, pic.controlIdx, JSON.stringify({
       treatAsChar: false, textWrap: "Square", horzOffset: 1000, vertOffset: 1200,
-      cropLeft: 120, cropTop: 60, hasCaption: true, captionDirection: "Bottom", captionSpacing: 150,
+      cropLeft: 120, cropTop: 60, hasCaption, captionDirection: "Bottom", captionSpacing: 150,
     }))).ok).toBe(true);
-    const cap0Len = fix.getCellParagraphLength(0, 0, pic.controlIdx, 0, 0);
-    expect(JSON.parse(fix.insertTextInCell(0, 0, pic.controlIdx, 0, 0, cap0Len, "pic cap")).ok).toBe(true);
+    if (hasCaption) {
+      const cap0Len = fix.getCellParagraphLength(0, 0, pic.controlIdx, 0, 0);
+      expect(JSON.parse(fix.insertTextInCell(0, 0, pic.controlIdx, 0, 0, cap0Len, "pic cap")).ok).toBe(true);
+    }
     const srcBytes = fix.exportHwpx(); fix.free();
 
     const src = await setup("hwpx", srcBytes); const dst = await setup("hwpx");
     let payload = "", plain = "";
     const clip: PlainClipboard = { readText: async () => plain, writeText: async () => {}, writeStructured: async (_m, d, t) => { payload = d; plain = t; }, readStructured: async m => m === OBJECT_CLIPBOARD_MIME ? payload : null };
     try {
+      const sourceBefore = src.doc.exportHwpx();
       const picFrame = (JSON.parse(src.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "image")!;
       src.pick(picFrame);
       expect(await src.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
@@ -206,17 +251,26 @@ describe("HWPX object clipboard fidelity boundary", () => {
       expect(dstPics).toHaveLength(1);
       const dPicCtrl = dstPics[0]!.controlIdx;
       const dPicProps = JSON.parse(dst.doc.getPictureProperties!(0, 0, dPicCtrl));
-      expect(dPicProps).toMatchObject({ width: 4200, height: 2100, cropLeft: 120, cropTop: 60, description: "b32-alt", hasCaption: true, captionSpacing: 150 });
+      expect(dPicProps).toMatchObject({ width: 4200, height: 2100, cropLeft: 120, cropTop: 60, description: "b32-alt", hasCaption, ...(hasCaption ? { captionSpacing: 150 } : {}) });
       expect(Buffer.from(dst.doc.getControlImageData!(0, 0, "[]", dPicCtrl))).toEqual(png);
-      const dCapLen = dst.doc.getCellParagraphLength!(0, 0, dPicCtrl, 0, 0);
-      expect(dst.doc.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen)).toContain("pic cap");
+      const dCapLen = hasCaption ? dst.doc.getCellParagraphLength!(0, 0, dPicCtrl, 0, 0) : 0;
+      if (hasCaption) expect(dst.doc.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen)).toContain("pic cap");
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
 
       const exported = dst.doc.exportHwpxWithReport();
       try {
-        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss());
+        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss(), reopened => {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, dPicCtrl))).toMatchObject({
+            width: 4200, height: 2100, cropLeft: 120, cropTop: 60, description: "b32-alt", hasCaption, ...(hasCaption ? { captionSpacing: 150 } : {}),
+          });
+          expect(Buffer.from(reopened.getControlImageData!(0, 0, "[]", dPicCtrl))).toEqual(png);
+          if (hasCaption) expect(reopened.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen))
+            .toBe(dst.doc.getTextInCell!(0, 0, dPicCtrl, 0, 0, 0, dCapLen));
+        });
       } finally { exported.free(); }
 
-      // Tampered MIME (PNG bytes labeled image/jpeg) and malformed run ranges must fail closed without mutating dst.
+      // Only one fixture is needed to test the forged MIME.
+      if (!hasCaption) return;
       const beforeTamper = dst.doc.exportHwpx();
       const snapshot = dst.editor.snapshot();
       const tamperedMime = JSON.parse(payload);
@@ -269,4 +323,184 @@ describe("HWPX object clipboard fidelity boundary", () => {
     } finally {clearStructuredClipboard(); src.editor.dispose(); dst.editor.dispose();}
   });
 
+});
+
+function portableFixture(kind: "textbox" | "rectangle" = "textbox", lineType = 1): Uint8Array {
+  const doc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+  try {
+    const created = JSON.parse(doc.createShapeControl!(JSON.stringify({
+      sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: kind,
+      width: 5000, height: 3000, treatAsChar: false, textWrap: "Square", horzOffset: 2000, vertOffset: 2000,
+    })));
+    expect(created.ok).toBe(true);
+    expect(JSON.parse(doc.setShapeProperties!(0, 0, created.controlIdx, JSON.stringify({ lineType }))).ok).toBe(true);
+    if (kind === "textbox") expect(JSON.parse(doc.insertTextInCell!(0, 0, created.controlIdx, 0, 0, 0, "abcd")).ok).toBe(true);
+    return doc.exportHwpx();
+  } finally { doc.free(); }
+}
+
+function objectClip(data = "") {
+  let payload = data;
+  let plain = "clipboard text must not be inserted";
+  const clipboard: PlainClipboard = {
+    readText: async () => plain,
+    writeText: async () => {},
+    readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? payload : null,
+    writeStructured: async (_mime, raw, text) => { payload = raw; plain = text; },
+  };
+  return { clipboard, payload: () => payload };
+}
+
+function textboxEnvelope(fontFamily?: string) {
+  return createHwpxObjectClipboardPayload("textBox", 100, 1, {
+    kind: "shape", shapeType: "textbox", width: 5000, height: 3000, horzOffset: 2000, vertOffset: 2000,
+    treatAsChar: false, textWrap: "Square", rotationAngle: 0, horzFlip: false, vertFlip: false,
+    lineType: 1, borderColor: 0, borderWidth: 33, fillType: "none",
+    paragraphs: [{ text: "abcd", align: "right", runs: [{ start: 0, end: 4, bold: true, ...(fontFamily ? { fontFamily } : {}) }] }],
+  })!;
+}
+
+async function expectRefused(dst: Awaited<ReturnType<typeof setup>>, clipboard: PlainClipboard) {
+  const bytes = dst.doc.exportHwpx();
+  const fonts = dst.doc.getDocumentFontTable!();
+  const objects = dst.doc.getControls!();
+  const layout = shapes(dst.doc);
+  const text = dst.doc.getTextFileText!();
+  const snapshot = dst.editor.snapshot();
+  const session = dst.sessions.get(1);
+  const pending = [...dst.calls];
+  expect(session).toMatchObject({ revision: 0, dirty: false });
+  expect(await dst.editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(false);
+  expect(dst.calls).toEqual(pending);
+  expect(dst.editor.snapshot()).toEqual(snapshot);
+  expect(dst.sessions.get(1)).toEqual(session);
+  expect(dst.doc.getTextFileText!()).toBe(text);
+  expect(dst.doc.getDocumentFontTable!()).toBe(fonts);
+  expect(dst.doc.getControls!()).toBe(objects);
+  expect(shapes(dst.doc)).toEqual(layout);
+  expect(dst.doc.exportHwpx()).toEqual(bytes);
+  expect(dst.editor.undo()).toBe(false);
+  expect(dst.editor.redo()).toBe(false);
+}
+
+describe("B3.2 portable refusals and rollback", () => {
+  const family = "Geul Rollback Test Face";
+
+  it.each(["unavailable", "throws after registration", "short array", "invalid ID", "different family"])(
+    "refuses an explicit family with resolver %s", async mode => {
+      const dst = await setup("hwpx", portableFixture("rectangle"));
+      const envelope = textboxEnvelope(family);
+      expect(envelope).not.toBeNull();
+      const clip = objectClip(JSON.stringify(envelope));
+      const resolveFont = dst.doc.resolveDocumentFontFamily!.bind(dst.doc);
+      const create = vi.spyOn(dst.doc, "createShapeControl");
+      try {
+        if (mode === "unavailable") {
+          Object.defineProperty(dst.doc, "resolveDocumentFontFamily", { value: undefined });
+        } else {
+          vi.spyOn(dst.doc, "resolveDocumentFontFamily").mockImplementation(name => {
+            const ids = JSON.parse(resolveFont(name));
+            // Exercise rollback after genuine engine mutation, including font table registration.
+            expect(dst.doc.getDocumentFontTable!()).toContain(family);
+            if (mode === "throws after registration") throw new Error("injected resolver failure");
+            if (mode === "short array") return JSON.stringify(ids.slice(0, 6));
+            if (mode === "invalid ID") return JSON.stringify([65536, ...ids.slice(1)]);
+            return JSON.stringify(Array(7).fill(0)); // valid IDs, different family
+          });
+        }
+        await expectRefused(dst, clip.clipboard);
+        expect(create).toHaveBeenCalledOnce();
+      } finally { dst.editor.dispose(); }
+    },
+  );
+
+  it.each(["missing", "no-op"])("refuses a destination alignment setter that is %s", async mode => {
+    const dst = await setup("hwpx", portableFixture("rectangle"));
+    const clip = objectClip(JSON.stringify(textboxEnvelope()));
+    try {
+      if (mode === "missing") {
+        Object.defineProperty(dst.doc, "applyParaFormatInCellByPath", { value: undefined });
+        Object.defineProperty(dst.doc, "applyParaFormatInCell", { value: undefined });
+      } else {
+        vi.spyOn(dst.doc, "applyParaFormatInCellByPath").mockReturnValue('{"ok":true}');
+      }
+      await expectRefused(dst, clip.clipboard);
+    } finally { dst.editor.dispose(); }
+  });
+
+  it("refuses a character formatting setter reporting success without applying it", async () => {
+    const dst = await setup("hwpx", portableFixture("rectangle"));
+    const clip = objectClip(JSON.stringify(textboxEnvelope(family)));
+    try {
+      const setter = vi.spyOn(dst.doc, "applyCharFormatInCellByPath").mockReturnValue('{"ok":true}');
+      await expectRefused(dst, clip.clipboard);
+      expect(setter).toHaveBeenCalledOnce();
+    } finally { dst.editor.dispose(); }
+  });
+
+  it("keeps the destination's default font when the payload has no family requirement", async () => {
+    const dst = await setup("hwpx");
+    const clip = objectClip(JSON.stringify(textboxEnvelope()));
+    Object.defineProperty(dst.doc, "resolveDocumentFontFamily", { value: undefined });
+    try {
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clip.clipboard)).toBe(true);
+      await dst.confirm();
+      const file = new engine.HwpDocument(dst.doc.exportHwpx()) as RhwpDocument;
+      try {
+        expect(JSON.parse(file.getCellCharPropertiesAt!(0, 0, shapes(file)[0]!.controlIdx, 0, 0, 3)))
+          .toMatchObject({ bold: true, fontFamilies: Array(7).fill("함초롬바탕") });
+      } finally { file.free(); }
+    } finally { dst.editor.dispose(); }
+  });
+
+  const invalidRuns = [
+    ["leading gap", [[1, 4]]],
+    ["interior gap", [[0, 1], [2, 4]]],
+    ["trailing gap", [[0, 3]]],
+    ["overlap", [[0, 3], [2, 4]]],
+    ["out of bounds", [[0, 5]]],
+    ["incorrect ordering", [[2, 4], [0, 2]]],
+  ] as const;
+
+  it.each(invalidRuns)("refuses source inventory and clipboard payload with %s", async (_label, spans) => {
+    const src = await setup("hwpx", portableFixture());
+    const dst = await setup("hwpx", portableFixture("rectangle"));
+    const clip = objectClip();
+    try {
+      src.pick(shapes(src.doc)[0]!);
+      const before = src.doc.exportHwpx();
+      const original = src.doc.getFormattingRunsByPath!.bind(src.doc);
+      vi.spyOn(src.doc, "getFormattingRunsByPath").mockImplementation((...args) => {
+        const data = JSON.parse(original(...args));
+        data.fontRuns = spans.map(([start, end]) => [start, end, data.fontRuns[0][2], 1]);
+        return JSON.stringify(data);
+      });
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
+      expect(parseObjectClipboardPayload(clip.payload())).not.toHaveProperty("portable");
+      await expectRefused(dst, clip.clipboard);
+      expect(src.doc.exportHwpx()).toEqual(before);
+
+      const tampered = JSON.parse(JSON.stringify(textboxEnvelope()));
+      tampered.portable.paragraphs[0].runs = spans.map(([start, end]) => ({ start, end, bold: true }));
+      await expectRefused(dst, objectClip(JSON.stringify(tampered)).clipboard);
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+
+  it.each(["dotted outline", "unreadable alignment"] as const)("refuses cross-document paste from a source with %s", async reason => {
+    // Release ShapeBorderLine uses 3 for DOT, which is also the HWPX round-trip mapping.
+    const src = await setup("hwpx", reason === "dotted outline" ? portableFixture("rectangle", 3) : portableFixture());
+    const dst = await setup("hwpx", portableFixture("rectangle"));
+    const clip = objectClip();
+    try {
+      const frame = shapes(src.doc)[0]!;
+      if (reason === "dotted outline") expect(props(src.doc, frame.controlIdx).lineType).toBe(3);
+      else vi.spyOn(src.doc, "getCellParaPropertiesAtByPath").mockReturnValue("{}");
+      src.pick(frame);
+      const before = src.doc.exportHwpx();
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clip.clipboard)).toBe(true);
+      expect(parseObjectClipboardPayload(clip.payload())).not.toHaveProperty("portable");
+      await expectRefused(dst, clip.clipboard);
+      expect(src.doc.exportHwpx()).toEqual(before);
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
 });

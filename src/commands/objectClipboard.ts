@@ -1,4 +1,5 @@
 import { BASIC_SHAPES, type BasicShape } from "./objectSelection";
+import { fontFamilyProblem } from "./parameters";
 
 export const OBJECT_CLIPBOARD_MIME = "application/x-geul-object+json";
 /** v2 payloads carry media bytes (base64, at most 8 MiB decoded in the engine). */
@@ -57,7 +58,7 @@ export interface HwpxPortableCharRun {
 
 export interface HwpxPortableParagraph {
   text: string;
-  align?: typeof HWPX_PARA_ALIGNS[number];
+  align: typeof HWPX_PARA_ALIGNS[number];
   runs?: readonly HwpxPortableCharRun[];
   autoNumberOffset?: number;
 }
@@ -85,6 +86,7 @@ export interface HwpxPortableShape {
   vertFlip: boolean;
   borderColor: number;
   borderWidth: number;
+  lineType: 0 | 1;
   fillType: "none" | "solid";
   fillBgColor?: number;
   description?: string;
@@ -263,26 +265,36 @@ export function decodePortableImageBytes(mime: HwpxPortablePictureMime, base64: 
   }
 }
 
-function validHwpxPortableRuns(runs: unknown, text: string, forbiddenOffset?: number): runs is readonly HwpxPortableCharRun[] {
+/** RHWP cell offsets count Unicode scalar values. The caption control owns one slot. */
+export function coversHwpxPortableText(
+  spans: readonly (readonly [unknown, unknown])[], length: number, forbiddenOffset?: number,
+): boolean {
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    if (cursor === forbiddenOffset) cursor += 1;
+    if (start !== cursor || !intInRange(end, cursor + 1, length)
+      || (forbiddenOffset !== undefined && cursor < forbiddenOffset && end > forbiddenOffset)) return false;
+    cursor = end;
+  }
+  if (cursor === forbiddenOffset) cursor += 1;
+  return cursor === length;
+}
+
+function validHwpxPortableRuns(runs: unknown, length: number, forbiddenOffset?: number): runs is readonly HwpxPortableCharRun[] {
   if (!Array.isArray(runs) || runs.length > 4096) return false;
   const runAllowed = new Set(["start", "end", "bold", "italic", "underline", "strikethrough", "fontSize", "textColor", "shadeColor", "fontFamily"]);
-  let cursor = 0;
   for (const run of runs) {
     if (!record(run) || Object.keys(run).some(k => !runAllowed.has(k))) return false;
-    if (!intInRange(run.start, cursor, text.length) || !intInRange(run.end, run.start + 1, text.length)) return false;
-    if (forbiddenOffset !== undefined && run.start <= forbiddenOffset && forbiddenOffset < run.end) return false;
     for (const flag of ["bold", "italic", "underline", "strikethrough"] as const) {
       if (run[flag] !== undefined && typeof run[flag] !== "boolean") return false;
     }
     if (run.fontSize !== undefined && !intInRange(run.fontSize, 100, 409_600)) return false;
     if (run.textColor !== undefined && !hexColor(run.textColor)) return false;
     if (run.shadeColor !== undefined && run.shadeColor !== "none" && !hexColor(run.shadeColor)) return false;
-    if (run.fontFamily !== undefined && (typeof run.fontFamily !== "string" || run.fontFamily.length < 1
-      || run.fontFamily.length > 256 || run.fontFamily.trim() !== run.fontFamily
-      || /[\x00-\x1f"\\{}\uFFFC]/.test(run.fontFamily))) return false;
-    cursor = run.end;
+    if (run.fontFamily !== undefined && (typeof run.fontFamily !== "string" || run.fontFamily.trim() !== run.fontFamily
+      || fontFamilyProblem(run.fontFamily) !== null)) return false;
   }
-  return true;
+  return coversHwpxPortableText(runs.map(run => [run.start, run.end]), length, forbiddenOffset);
 }
 
 function validHwpxPortableParagraphs(raw: unknown, allowAutoNumber: boolean, maxParas: number): raw is readonly HwpxPortableParagraph[] {
@@ -292,17 +304,18 @@ function validHwpxPortableParagraphs(raw: unknown, allowAutoNumber: boolean, max
     const para = raw[i];
     if (!record(para) || typeof para.text !== "string" || para.text.length > 65536 || /[\r\n\uFFFC]/.test(para.text)) return false;
     if (Object.keys(para).some(k => !allowedKeys.has(k))) return false;
-    if (para.align !== undefined && !HWPX_PARA_ALIGNS.some(a => a === para.align)) return false;
+    if (!HWPX_PARA_ALIGNS.some(a => a === para.align) || /[\uD800-\uDFFF]/u.test(para.text)) return false;
+    const chars = Array.from(para.text);
     let atnoOffset: number | undefined;
     if (allowAutoNumber) {
       if (i === 0) {
-        if (!intInRange(para.autoNumberOffset, 0, para.text.length - 1) || para.text[para.autoNumberOffset] !== " ") return false;
+        if (!intInRange(para.autoNumberOffset, 0, chars.length - 1) || chars[para.autoNumberOffset] !== " ") return false;
         atnoOffset = para.autoNumberOffset;
       } else if (para.autoNumberOffset !== undefined) {
         return false;
       }
     }
-    if (para.runs !== undefined && !validHwpxPortableRuns(para.runs, para.text, atnoOffset)) return false;
+    if (!validHwpxPortableRuns(para.runs === undefined ? [] : para.runs, chars.length, atnoOffset)) return false;
   }
   return true;
 }
@@ -351,6 +364,7 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
     || !intInRange(raw.rotationAngle, 0, 359)
     || typeof raw.horzFlip !== "boolean" || typeof raw.vertFlip !== "boolean"
     || !intInRange(raw.borderColor, 0, 0xFFFFFFFF) || !intInRange(raw.borderWidth, 0, 7200)
+    || (raw.lineType !== 0 && raw.lineType !== 1)
     || (raw.fillType !== "none" && raw.fillType !== "solid")) return false;
   if (raw.fillType === "solid" ? !intInRange(raw.fillBgColor, 0, 0xFFFFFFFF) : raw.fillBgColor !== undefined) return false;
   if (raw.description !== undefined && (typeof raw.description !== "string" || raw.description.length > 4096)) return false;
@@ -360,12 +374,11 @@ function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is Hwp
       || !intInRange(raw.tbMargins.left, 0, 100_000) || !intInRange(raw.tbMargins.right, 0, 100_000)
       || !intInRange(raw.tbMargins.top, 0, 100_000) || !intInRange(raw.tbMargins.bottom, 0, 100_000)) return false;
   }
-  if (raw.paragraphs !== undefined) {
-    if (shapeType !== "textbox" || !validHwpxPortableParagraphs(raw.paragraphs, false, 1024)) return false;
-  }
+  if (shapeType === "textbox" ? !validHwpxPortableParagraphs(raw.paragraphs, false, 1024)
+    : raw.paragraphs !== undefined) return false;
   if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
   const allowedKeys = new Set(["kind", "shapeType", "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap",
-    "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "fillType", "fillBgColor",
+    "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "lineType", "fillType", "fillBgColor",
     "description", "tbVerticalAlign", "tbMargins", "paragraphs", "caption"]);
   return Object.keys(raw).every(key => allowedKeys.has(key));
 }
