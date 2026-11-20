@@ -1,0 +1,47 @@
+{
+  "phase": "P4.6 HWPX group-child identifier validation",
+  "date": "2026-11-21",
+  "status": "COMPLETED",
+  "stage3AStatus": "PARTIALLY COMPLETED",
+  "baselineHead": "d287dbb6029e32d146cc12a93b13a4dfb96c9d19",
+  "baselineReleaseGeneration": "53bf1a68e1fc174e23bf8759e3c92d5f7734b8693196aeb4afe33da11fd39743",
+  "baselineObserved": {
+    "fixture": "target/stage3a-p4/fixtures/a-p4-group-original.hwpx",
+    "fixtureSha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856",
+    "parserAndMutation": "The XML was well formed. ObjectElementIds stored Some(0) after parse_u32 failed on id=\"invalid\" or instid=\"invalid\". The child presence flag was set and CommonObjAttr.instance_id / DrawingObjAttr.inst_id exposed (0,1) or (1,0) to eligibility. Both session commands committed and entered history for A5/A6, and both direct WASM mutations succeeded for A5-A8.",
+    "exportAndReopen": "The malformed values were emitted as explicit zero, and independent reopen agreed with the already normalized model with a zero-loss report.",
+    "publicationBoundary": "The actual backend preflight rejected the unedited export for A5-A8 with partChanged in Contents/section0.xml. The post-edit check in isolation was safe given the measured reopen evidence. Normal publication requires the preflight, so these probes establish an in-memory authorization and export defect."
+  },
+  "contract": {
+    "scope": "Direct level-1 HWPX rectangle and ellipse children of a top-level container. Parent IDs, other shape readers and general parse_u32 retain their compatibility path.",
+    "parser": "Use XML-normalized attribute text and parse xs:nonNegativeInteger spellings representable as u32, including ASCII XML whitespace around the integer, leading zeros, a leading plus and signed zero. Presence metadata distinguishes omission and explicit zero. Preserve alternate and unusable spellings and record parse failure separately from the numeric model value.",
+    "ownership": "An unusable child identifier prevents a complete group-child geometry ownership inventory, so groupChildGeometry, moveGroupChild and resizeGroupChild refuse that group. Duplicate numeric tuples, mismatched or stale ownership and fully zero target identities remain guarded.",
+    "publication": "The document loads when the XML is well formed. Both serializers escape and preserve the XML-normalized attribute value, including unusable values, without fabricating a valid zero. Independent reopen keeps the refusal. A clone assigned new IDs drops source spelling metadata, leaving the source intact.",
+    "schema": "Pinned RHWP OWPML ParaList XML schema.xml lines 1971 and 2263. XSD nonNegativeInteger is unbounded. 4294967296 is a schema value outside RHWP's u32 ownership range and is preserved without eligibility."
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "rhwpProfiles": "3 PASS",
+    "focusedReleaseWasm": "13 PASS, 53 outside filter. node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t 'Stage 3-A P4\\.6'",
+    "identityCoverage": "I1-I9 plus malformed id and instid, -1, overflow, empty, fractional, whitespace-only, XML-escaped invalid values, leading zeros, signed/padded valid input, u32::MAX, equivalent numeric duplicates and cloned identity regeneration.",
+    "refusalInvariants": "Checked the session and WASM move/resize paths. Both revisions stayed zero, dirty and pending stayed false, Undo/Redo stayed empty and the complete export was byte-identical before and after refusal.",
+    "saveAndReopen": "Backend preflight and post-export checks both SAFE on 18 ID fixtures with independent reopen. Nine valid cases moved and retained their XML identity; nine refused cases retained the unchanged export and original XML attribute values.",
+    "native": "NOT RUN for this parser and serialization follow-up. Existing Linux X11 P4.6 acceptance remains recorded.",
+    "evidenceDir": "target/stage3a-p46-id-validation"
+  },
+  "releaseWasm": {
+    "generation": "304cf9cf1b4bebb057bb7c52183ab34b8d3e14d3c1ed9e3cf9bd8259e38c0cb1",
+    "artifacts": {
+      "rhwp.js": "eda1fda0e929c6d0820a27fc752ae1a0435248bd6abe0a916f94155d68a51281",
+      "rhwp_bg.wasm": "7ffc6e4b129dc4e055c576df4e10564e58ef13abd30d5a114ae97e7e4932767d"
+    },
+    "sourceTreeSha256": "759e22d5977d551fcdb70714c2f38418eec0b9d401eee907417a433c1c5aae01",
+    "patchCount": 42,
+    "groupChildPatch": {
+      "name": "stage3a-group-child-editing.patch",
+      "sha256": "182095cfe9dc0314f82deec2beeeacd8c904320dade2e60057a224ee5a045802"
+    },
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15"
+  }
+}

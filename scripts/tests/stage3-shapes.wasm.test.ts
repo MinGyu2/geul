@@ -108,6 +108,30 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 `, change], { input: fixture });
 }
 
+type GroupChildIds = readonly [string | number | null, string | number | null];
+
+function withGroupChildIds(index: 0 | 1, ids: GroupChildIds, sibling?: GroupChildIds | null) {
+  const tags = ["rect", "ellipse"] as const;
+  const updates = [[tags[index], ids]];
+  if (sibling) updates.push([tags[1 - index]!, sibling]);
+  return patchGroupFixture(`
+import json
+from xml.sax.saxutils import quoteattr
+
+def set_ids(match, ids):
+    element = match[0]
+    for attr, val in zip(("id", "instid"), ids, strict=True):
+        spelling = '' if val is None else f' {attr}={quoteattr(str(val))}'
+        element, count = re.subn(r' '+attr+r'="[0-9]+"', lambda _: spelling, element)
+        assert count == 1
+    return element
+
+for tag, ids in json.loads(${JSON.stringify(JSON.stringify(updates))}):
+    xml, count = re.subn(r'<hp:'+tag+r' [^>]+>', lambda m: set_ids(m, ids), xml)
+    assert count == 1
+`);
+}
+
 const identityMatrix = [1, 0, 0, 0, 1, 0];
 
 function boundaryGroupXml(bytes: Uint8Array): {
@@ -153,8 +177,18 @@ function expectUnchangedRefusal({ doc, editor }: Awaited<ReturnType<typeof setup
   attempt();
   expect(editor.localRevision).toBe(0);
   expect(editor.hasUnpreservedChanges).toBe(false);
-  expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+  expect(editor.snapshot()).toMatchObject({ revision: 0, pending: false, history: { undo: false, redo: false } });
   expect(doc.exportHwpx()).toEqual(before);
+}
+
+function expectGroupIdentityRefusal(run: Awaited<ReturnType<typeof setup>>, index: number, id: number, instId: number, label: string) {
+  const { doc, edit } = run;
+  expectUnchangedRefusal(run, () => {
+    expect(edit({ kind: "groupChildMove", index, id, instId, x: 100, y: 150 }), label).toBe(false);
+    expect(edit({ kind: "groupChildResize", index, id, instId, width: 4000, height: 3000 }), label).toBe(false);
+    expect(() => doc.moveGroupChild!(0, 0, 2, index, id, instId, 100, 150), label).toThrow();
+    expect(() => doc.resizeGroupChild!(0, 0, 2, index, id, instId, 4000, 3000), label).toThrow();
+  });
 }
 
 function writeGroupBoundaryEvidence(label: string, source: Uint8Array, saved: Uint8Array, report: string) {
@@ -1502,53 +1536,36 @@ assert count == 1
       { label: "I5", index: 0, source: [2112169928, 1038428105] },
       // The old fallback either merged or produced these pairs on reopen.
       { label: "I2-I3-distinct", index: 0, source: [0, 1], sibling: [1, 0] },
+      { label: "A11-leading-zero", index: 0, source: ["0000", "0001"], numbers: [0, 1] },
+      { label: "A12-sign-and-whitespace", index: 1, source: ["-00", "\t+0042\n"], numbers: [0, 42] },
+      { label: "A13-u32-max", index: 0, source: ["4294967295", "0"], numbers: [4294967295, 0] },
+      { label: "A9-equivalent-spellings", index: 0, source: ["0001", "2"], sibling: [1, 2], numbers: [1, 2] },
     ] as const;
     for (const { label, index, source, ...extra } of cases) {
-      const sibling = "sibling" in extra ? extra.sibling : null;
-      const bytes = patchGroupFixture(`
-def set_ids(m, ids):
-    element = m[0]
-    for attr, val in zip(("id", "instid"), ids):
-        element, count = re.subn(r' '+attr+r'="[0-9]+"', '' if val is None else f' {attr}="{val}"', element)
-        assert count == 1
-    return element
-xml, count = re.subn(r'<hp:${index === 0 ? "rect" : "ellipse"} [^>]+>', lambda m: set_ids(m, ${JSON.stringify(source).replace("null", "None")}), xml)
-assert count == 1
-${sibling ? `xml, count = re.subn(r'<hp:ellipse [^>]+>', lambda m: set_ids(m, ${JSON.stringify(sibling)}), xml)
-assert count == 1` : ""}
-`);
+      const bytes = withGroupChildIds(index, source, "sibling" in extra ? extra.sibling : null);
       const orig = boundaryGroupXml(bytes);
-      const [id, instId] = source.map(value => value ?? 0) as [number, number];
+      const [id, instId] = "numbers" in extra ? extra.numbers : source.map(value => Number(value ?? 0)) as [number, number];
       const run = await setup("hwpx", bytes);
       try {
         const { doc, pick, edit, confirm } = run;
         const before = pick(groupFrame(doc)).groupChildren;
         const move = { kind: "groupChildMove", index, id, instId, x: 100, y: 150 } as const;
-        const moveDirect = (at: number, expectedId: number, expectedInstId: number) =>
-          doc.moveGroupChild!(0, 0, 2, at, expectedId, expectedInstId, move.x, move.y);
-        if (label === "I4" || label === "I5") {
+        if (label === "I4" || label === "I5" || label === "A9-equivalent-spellings") {
           if (label === "I4") expect(before?.children[index]).toMatchObject({ id: 0, instId: 0, canMove: false, canResize: false });
           else expect(before).toBeUndefined();
-          expectUnchangedRefusal(run, () => {
-            expect(edit(move), label).toBe(false);
-            expect(() => moveDirect(index, id, instId), label).toThrow();
-          });
+          expectGroupIdentityRefusal(run, index, id, instId, label);
           continue;
         }
 
         expect(before?.children[index], label).toMatchObject({ id, instId, canMove: true, canResize: true });
         if (label === "I1") {
-          expectUnchangedRefusal(run, () => {
-            for (const owner of [
-              { index, id: id + 1, instId }, { index, id, instId: instId + 1 }, { index: 1, id, instId },
-            ]) {
-              expect(edit({ ...move, ...owner })).toBe(false);
-              expect(() => moveDirect(owner.index, owner.id, owner.instId)).toThrow();
-            }
-          });
+          for (const owner of [
+            { index, id: id + 1, instId }, { index, id, instId: instId + 1 }, { index: 1, id, instId },
+          ]) expectGroupIdentityRefusal(run, owner.index, owner.id, owner.instId, label);
         }
         expect(edit(move), label).toBe(true);
         await confirm();
+        if (label === "A12-sign-and-whitespace") expect(run.editor.roundTrip("hwpx")).toMatchObject({ passed: true });
         const exported = doc.exportHwpxWithReport();
         try {
           const saved = exported.takeBytes();
@@ -1568,6 +1585,66 @@ assert count == 1` : ""}
         } finally { exported.free(); }
       } finally { run.editor.dispose(); }
     }
+  });
+
+  it("Stage 3-A P4.6 group child identity refuses malformed identifiers and preserves the source XML (A5-A8)", async () => {
+    const cases = [
+      { label: "A5-invalid-id", index: 0, source: ["invalid", 1], alias: [0, 1] },
+      { label: "A6-invalid-instid", index: 1, source: [1, "invalid"], alias: [1, 0] },
+      { label: "A7-negative", index: 0, source: ["-1", 1], alias: [0, 1] },
+      { label: "A8-overflow", index: 1, source: [1, "4294967296"], alias: [1, 0] },
+      { label: "A14-empty", index: 0, source: ["", 1], alias: [0, 1] },
+      { label: "A15-fractional", index: 1, source: [1, "0.5"], alias: [1, 0] },
+      { label: "A16-whitespace-only", index: 0, source: [" \t ", 1], alias: [0, 1] },
+      { label: "A17-escaped-id", index: 0, source: ['a<&"\t', 1], alias: [0, 1] },
+      { label: "A18-escaped-instid", index: 1, source: [1, 'a<&"\n'], alias: [1, 0] },
+    ] as const;
+    for (const { label, index, source, alias } of cases) {
+      const bytes = withGroupChildIds(index, source);
+      const xml = boundaryGroupXml(bytes);
+      expect(xml.children[index]!.owner.slice(1), label).toEqual(source.map(String));
+      const run = await setup("hwpx", bytes);
+      try {
+        const { doc, pick } = run;
+        const group = pick(groupFrame(doc));
+        expect(group.groupChildren, label).toBeUndefined();
+        expect(group.operations, label).not.toContain("groupChildGeometry");
+        expect(doc.getEditableGroupChildren!(0, 0, 2), label).toBe("null");
+        expectGroupIdentityRefusal(run, index, ...alias, label);
+
+        const exported = doc.exportHwpxWithReport();
+        try {
+          const saved = exported.takeBytes();
+          expect(boundaryGroupXml(saved), label).toEqual(xml);
+          expectReopenEvidence(doc, saved, exported.contentLoss());
+          const reopened = new engine.HwpDocument(saved) as RhwpDocument;
+          try {
+            expect(reopened.getEditableGroupChildren!(0, 0, 2), label).toBe("null");
+            expect(boundaryGroupXml(reopened.exportHwpx()), label).toEqual(xml);
+          } finally { reopened.free(); }
+          writeGroupBoundaryEvidence(label, bytes, saved, exported.contentLoss());
+        } finally { exported.free(); }
+      } finally { run.editor.dispose(); }
+    }
+  });
+
+  it("Stage 3-A P4.6 group cloning keeps regenerated child IDs independent of source spelling", () => {
+    const bytes = withGroupChildIds(0, ["invalid", 1]);
+    const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+    try {
+      expect(JSON.parse(doc.copyControl!(0, 0, "[]", 2))).toMatchObject({ ok: true });
+      const { ok, paraIdx, controlIdx } = JSON.parse(doc.pasteControl!(0, 0, 0));
+      expect(ok).toBe(true);
+      const cloned = doc.getEditableGroupChildren!(0, paraIdx, controlIdx);
+      expect(JSON.parse(cloned)?.children[0]).toMatchObject({ canMove: true, canResize: true });
+      const saved = doc.exportHwpx();
+      expect(boundaryGroupXml(saved).children[0]!.owner).toEqual(["rect", "invalid", "1"]);
+      const reopened = new engine.HwpDocument(saved) as RhwpDocument;
+      try {
+        expect(reopened.getEditableGroupChildren!(0, 0, 2)).toBe("null");
+        expect(reopened.getEditableGroupChildren!(0, paraIdx, controlIdx)).toBe(cloned);
+      } finally { reopened.free(); }
+    } finally { doc.free(); }
   });
 
   it("Stage 3-A P4.6 group refuses an externally incomplete nonidentity matrix pair without mutation", async () => {

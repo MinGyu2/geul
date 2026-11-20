@@ -1,6 +1,6 @@
 --- a/src/document_core/commands/object_ops/shape.rs
 +++ b/src/document_core/commands/object_ops/shape.rs
-@@ -137,6 +137,220 @@
+@@ -137,6 +137,223 @@
      (color <= 0xff_ffff).then_some(color)
  }
  
@@ -184,6 +184,9 @@
 +    let common = child.common();
 +    let drawing = child.drawing()?;
 +    let sa = child.shape_attr();
++    if sa.hwpx_group_child_source_ids.as_ref().is_some_and(|source| source.invalid) {
++        return None;
++    }
 +    let id = common.instance_id;
 +    let inst_id = drawing.inst_id;
 +    let (x, y) = (sa.offset_x, sa.offset_y);
@@ -221,7 +224,7 @@
  const MAX_RECT_DIM_HU: u32 = 2_000_000;
  const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
  
-@@ -829,6 +1043,172 @@
+@@ -829,6 +1046,172 @@
          Ok(())
      }
  
@@ -394,7 +397,7 @@
      /// The editor merges only neighboring, ordinary paragraphs that share
      /// their exact format definitions. Refuse invisible structure which the
      /// text/font-run query cannot observe.
-@@ -3852,4 +4232,99 @@
+@@ -3852,4 +4235,99 @@
          assert_eq!(rect.common.width, 7200);
          assert_eq!(rect.x_coords, [100, 100, 100, 100]);
      }
@@ -561,7 +564,22 @@
      /// 반환: JSON `{"ok":true}`
 --- a/src/model/shape.rs
 +++ b/src/model/shape.rs
-@@ -263,6 +263,10 @@
+@@ -212,6 +212,14 @@
+     LargestOnly,
+ }
+
++/// Imported noncanonical or unusable HWPX group-child identifier spellings.
++#[derive(Debug, Clone, Default)]
++pub struct HwpxGroupChildSourceIds {
++    pub id: Option<String>,
++    pub inst_id: Option<String>,
++    pub invalid: bool,
++}
++
+ /// 개체 요소 속성 (그리기 개체 공통)
+ #[derive(Debug, Clone, serde::Serialize)]
+ pub struct ShapeComponentAttr {
+@@ -263,6 +271,12 @@
      pub rotation_center: Point,
      /// 렌더링 정보 원본 바이트 (변환 행렬 등, 라운드트립 보존용)
      pub raw_rendering: Vec<u8>,
@@ -569,14 +587,17 @@
 +    /// A missing attribute occupies the same ownership slot as an explicit zero.
 +    #[serde(skip)]
 +    pub hwpx_group_child_id_presence: Option<(bool, bool)>,
++    #[serde(skip)]
++    pub hwpx_group_child_source_ids: Option<Box<HwpxGroupChildSourceIds>>,
      /// HWPX path edit eligibility when the XML transform could not establish identity.
      pub hwpx_unproven_path_transform: bool,
      pub hwpx_unproven_polygon_vertices: bool,
-@@ -305,6 +309,7 @@
+@@ -305,6 +319,8 @@
              rotate_image: false,
              rotation_center: Point::default(),
              raw_rendering: Vec::new(),
 +            hwpx_group_child_id_presence: None,
++            hwpx_group_child_source_ids: None,
              hwpx_unproven_path_transform: false,
              hwpx_unproven_polygon_vertices: false,
              hwp5_known_curve_leaf: false,
@@ -631,7 +652,52 @@
      }
 
      // HWP5 공통 개체 attr bit 28은 한컴 2020이 `numberingType="PICTURE"`인
-@@ -4813,6 +4815,7 @@
+@@ -4808,11 +4810,52 @@
+
+ // ─── 그리기 객체 파싱 (rect, ellipse, line, arc, polygon, curve) ───
+
++fn parse_group_child_ids(
++    element: &quick_xml::events::BytesStart,
++    shape_attr: &mut ShapeComponentAttr,
++) -> Result<(u32, u32), HwpxError> {
++    let mut source = crate::model::shape::HwpxGroupChildSourceIds::default();
++    let (mut id, mut inst_id) = (None, None);
++    for attr in element.attributes() {
++        let attr = attr.map_err(|err| HwpxError::XmlError(format!("group child attributes: {err}")))?;
++        let (number, spelling) = match attr.key.as_ref().as_bytes() {
++            b"id" => (&mut id, &mut source.id),
++            b"instid" => (&mut inst_id, &mut source.inst_id),
++            _ => continue,
++        };
++        let value = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
++            .map_err(|err| HwpxError::XmlError(format!("group child identifier: {err}")))?;
++        if value.chars().any(|ch| !matches!(ch, '\t' | '\n' | '\r'
++            | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
++        {
++            return Err(HwpxError::XmlError("invalid XML character in group child identifier".into()));
++        }
++        let lexical = value.trim_matches([' ', '\t', '\n', '\r']);
++        // xs:nonNegativeInteger permits signed zero, but Rust's u32 parser rejects a minus sign.
++        let parsed = if let Some(magnitude) = lexical.strip_prefix('-') {
++            (!magnitude.is_empty() && magnitude.bytes().all(|b| b == b'0')).then_some(0)
++        } else {
++            lexical.parse::<u32>().ok()
++        };
++        source.invalid |= parsed.is_none();
++        *number = Some(parsed.unwrap_or(0));
++        if parsed.is_none_or(|value_num| value_num.to_string() != value) {
++            *spelling = Some(value.into_owned());
++        }
++    }
++    shape_attr.hwpx_group_child_id_presence = Some((id.is_some(), inst_id.is_some()));
++    if source.id.is_some() || source.inst_id.is_some() {
++        shape_attr.hwpx_group_child_source_ids = Some(Box::new(source));
++    }
++    Ok((id.unwrap_or(0), inst_id.unwrap_or(0)))
++}
++
+ /// `<hp:rect>`, `<hp:ellipse>` 등 그리기 객체를 파싱하여 `Control::Shape`를 반환한다.
+ fn parse_shape_object(
      shape_type: &[u8],
      e: &quick_xml::events::BytesStart,
      reader: &mut Reader<&[u8]>,
@@ -639,28 +705,30 @@
  ) -> Result<Control, HwpxError> {
      let mut common = CommonObjAttr::default();
      let mut shape_attr = ShapeComponentAttr::default();
-@@ -4839,6 +4842,11 @@
+@@ -4839,6 +4882,13 @@
      let mut e_end2 = crate::model::Point::default();
 
      let object_ids = parse_object_element_attrs(e, &mut common, &mut shape_attr);
-+    if direct_group_child && shape_attr.group_level == 1 && matches!(shape_type, b"rect" | b"ellipse") {
-+        // The two optional HWPX identifiers are independent at the editable child boundary.
-+        common.instance_id = object_ids.id.unwrap_or(0);
-+        shape_attr.hwpx_group_child_id_presence = Some((object_ids.id.is_some(), object_ids.instid.is_some()));
-+    }
++    let inst_id = if direct_group_child && shape_attr.group_level == 1 && matches!(shape_type, b"rect" | b"ellipse") {
++        let (id, inst_id) = parse_group_child_ids(e, &mut shape_attr)?;
++        common.instance_id = id;
++        inst_id
++    } else {
++        object_ids.instid.unwrap_or(0)
++    };
      let connect_line_type = parse_connect_line_type_attr(e);
      // [#4388] `<hp:arc>` 전용 `type` 속성 — 다른 태그의 동명 `type` 속성과
      // 섞이지 않도록 shape_type == b"arc" 로 한정한다.
-@@ -5100,7 +5108,7 @@
+@@ -5100,7 +5150,7 @@
          shadow_offset_x,
          shadow_offset_y,
          shadow_alpha,
 -        inst_id: object_ids.instid,
-+        inst_id: object_ids.instid.unwrap_or(0),
++        inst_id,
          text_box,
          caption,
      };
-@@ -5346,7 +5354,7 @@
+@@ -5346,7 +5396,7 @@
                          if !self_closing =>
                      {
                          // 자식 그리기 객체
@@ -671,34 +739,37 @@
                          }
 --- a/src/serializer/hwpx/shape.rs
 +++ b/src/serializer/hwpx/shape.rs
-@@ -36,6 +36,19 @@
+@@ -36,6 +36,24 @@
  // <hp:rect>
  // =====================================================================
 
-+/// Preserve the independent identifiers (including explicit zero and omission) on direct
-+/// HWPX group children. Generated nonzero identifiers take precedence over prior omission.
-+pub(crate) fn drawing_ids(c: &CommonObjAttr, d: &DrawingObjAttr) -> (Option<u32>, Option<u32>) {
++/// Preserve explicit zero, omission and the XML-normalized spelling of imported identifiers.
++pub(crate) fn drawing_ids(c: &CommonObjAttr, d: &DrawingObjAttr) -> (Option<String>, Option<String>) {
 +    if let Some((has_id, has_instid)) = d.shape_attr.hwpx_group_child_id_presence {
++        let source = d.shape_attr.hwpx_group_child_source_ids.as_deref();
++        let attribute = |present: bool, number: u32, spelling: Option<&str>| {
++            (present || number != 0).then(|| {
++                spelling.map(str::to_owned).unwrap_or_else(|| number.to_string())
++            })
++        };
 +        return (
-+            (has_id || c.instance_id != 0).then_some(c.instance_id),
-+            (has_instid || d.inst_id != 0).then_some(d.inst_id),
++            attribute(has_id, c.instance_id, source.and_then(|ids| ids.id.as_deref())),
++            attribute(has_instid, d.inst_id, source.and_then(|ids| ids.inst_id.as_deref())),
 +        );
 +    }
 +    let instid = if d.inst_id != 0 { d.inst_id } else { c.instance_id };
-+    (Some(c.instance_id), Some(instid))
++    (Some(c.instance_id.to_string()), Some(instid.to_string()))
 +}
 +
  /// `<hp:rect>` 직렬화 진입점. Rectangle IR → XML.
  pub fn write_rect<W: Write>(
      w: &mut Writer<W>,
-@@ -47,38 +60,34 @@
+@@ -47,38 +65,32 @@
      // 속성 (부모 AbstractShapeObjectType + 자신):
      // id, zOrder, numberingType, textWrap, textFlow, lock, dropcapstyle,
      // href, groupLevel, instid, ratio
 -    let id_str = c.instance_id.to_string();
 +    let (id, instid) = drawing_ids(c, &rect.drawing);
-+    let id = id.map(|id| id.to_string());
-+    let instid = instid.map(|id| id.to_string());
      let z_order = c.z_order.to_string();
      let tw = text_wrap_str(c.text_wrap);
      let tf = text_flow_str(c.text_flow);
@@ -754,7 +825,7 @@
      write_offset(w, sa)?;
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
-@@ -3405,13 +3405,14 @@
+@@ -3405,13 +3405,18 @@
          .unwrap_or_default();
      // 태그 부수 속성 — numberingType/dropcapstyle/href/groupLevel/instid (rect/line 동형).
      let group_level = drawing.map(|d| d.shape_attr.group_level).unwrap_or(0);
@@ -764,9 +835,13 @@
 -        .unwrap_or(c.instance_id);
 +    let (id, instid) = drawing
 +        .map(|d| super::shape::drawing_ids(c, d))
-+        .unwrap_or((Some(c.instance_id), Some(c.instance_id)));
-+    let id = id.map(|value| format!(r#" id="{value}""#)).unwrap_or_default();
-+    let instid = instid.map(|value| format!(r#" instid="{value}""#)).unwrap_or_default();
++        .unwrap_or_else(|| (Some(c.instance_id.to_string()), Some(c.instance_id.to_string())));
++    let id_attribute = |name: &str, value: String| {
++        let attr = quick_xml::events::attributes::Attribute::from((name, value.as_str()));
++        format!(r#" {name}="{}""#, attr.value)
++    };
++    let id = id.map(|value| id_attribute("id", value)).unwrap_or_default();
++    let instid = instid.map(|value| id_attribute("instid", value)).unwrap_or_default();
      let mut out = format!(
          concat!(
 -            r#"<hp:{tag} id="{id}" zOrder="{zo}" numberingType="{nt}" textWrap="{tw}" textFlow="{tf}" lock="{lock}" dropcapstyle="None" href="" groupLevel="{gl}" instid="{iid}"{extra}>"#,
@@ -774,7 +849,7 @@
              "{block}",
              "{geometry}",
              r#"<hp:sz width="{w}" height="{h}" widthRelTo="{wrt}" heightRelTo="{hrt}" protect="{prot}"/>"#,
-@@ -3422,7 +3423,7 @@
+@@ -3422,7 +3427,7 @@
          extra = extra_attrs,
          block = shape_block,
          geometry = geometry,
@@ -783,3 +858,13 @@
          zo = c.z_order,
          nt = super::shape::numbering_type_str(c.numbering_type),
          // [#2840] lock(개체 잠금) — IR 보존 값 방출 (종전 "0" 하드코딩).
+--- a/src/document_core/commands/clone_identity/remap.rs
++++ b/src/document_core/commands/clone_identity/remap.rs
+@@ -126,6 +126,7 @@
+                     shape.common_mut().instance_id = new_common;
+                     let target = if let Some(drawing) = shape.drawing_mut() {
+                         drawing.inst_id = allocator.id()?;
++                        drawing.shape_attr.hwpx_group_child_source_ids = None;
+                         drawing.inst_id
+                     } else {
+                         new_common
