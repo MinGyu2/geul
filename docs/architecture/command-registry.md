@@ -1182,7 +1182,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 
 ### P5 도형·다문단 캡션 Linux Native 수용 (2026-11-20)
 
-이 수용은 시험한 캡션 문맥과 해당 Release/런타임 세대에 한정되며 개체 소유권이나 직렬화 허용 범위를 넓히지 않는다. Linux X11에서 HWP/HWPX 도형 캡션을 실제 포인터로 선택하고 xdotool 키 입력으로 편집해 문단 분할·병합, 문단 간 선택 교체, Undo/Redo, 정렬, 저장·닫기·재열기를 수행했다. 독립 RHWP 오라클은 캡션 문단과 정렬, `atno`, 도형 속성 및 본문 텍스트의 보존을 확인했다. HWPX는 신뢰된 IBus 한글 조합 입력과 저장·재열기도 통과했고, 잠긴 도형의 캡션에는 진입하지 못했고 revision은 0으로 유지됐다. HWP의 IBus/잠금 소유자 Native 수용과 Windows/macOS/Wayland는 NOT RUN이다. 출처 및 결과 해시: [캡션 Native 수용 기록](stage3-caption-native-acceptance-2026-11-20.json) (source `ec22a6fc55b3d7aca9400b248d7720fa71804726`, app SHA-256 `9feec38c7a24d3a4e733e45d2ea660e51fcd6573bd8af4e243d837a2d90dd0b7`, RHWP generation `3414cfb0…`).
+이 수용은 시험한 캡션 문맥과 해당 Release/런타임 세대에 한정되며 개체 소유권이나 직렬화 허용 범위를 넓히지 않는다. Linux X11에서 HWP/HWPX 도형 캡션을 실제 포인터로 선택하고 xdotool 키 입력으로 편집해 문단 분할·병합, 문단 간 선택 교체, Undo/Redo, 정렬, 저장·닫기·재열기를 수행했다. 독립 RHWP 오라클은 캡션 문단과 정렬, `atno`, 도형 속성 및 본문 텍스트의 보존을 확인했다. HWPX는 신뢰된 IBus 한글 조합 입력과 저장·재열기, 잠긴 도형의 캡션 진입 거부 및 revision 불변이 PASS다. 후속 HWP 수용도 같은 app SHA-256 `9feec38c7a24d3a4e733e45d2ea660e51fcd6573bd8af4e243d837a2d90dd0b7` 및 RHWP generation `3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3`에서 PASS했다: 기록된 Linux X11/Xvfb `:0`, IBus 1.5.33 + Hangul 1.5.5로 사각형 HWP 캡션의 trusted 조합·저장(revision 2)·재열기를 확인했고, 잠긴 사각형은 캡션 진입이 거부되어 caret `0:0:0` 및 revision `0`이 불변이며 대상 바이트도 같았다. 이 결과는 해당 HWP fixture와 실행 바이너리에 한정되며 Windows/macOS/Wayland 및 다른 IME는 NOT RUN이다. [기존 HWPX 및 후속 HWP 수용 증거](stage3-caption-native-acceptance-2026-11-20.json)에서 기존 `imeAndLock`은 HWPX 결과, `hwpImeAndLock`은 HWP 결과를 각각 기록한다.
 
 ### P4/P5 구조 개체 클립보드 v2(DOCX)·v3(HWPX)
 

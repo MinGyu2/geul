@@ -102,11 +102,11 @@
     "survivors": []
   },
   "remainingNotRun": [
-    "HWP native caption IBus composition and locked-owner refusal",
     "Windows/macOS and Wayland acceptance"
   ],
   "previousFailedAttempts": "run1 relative chooser path; run2-4 caret/selection expectation; run5 body oracle included caption text. Corrections retained acceptance assertions; run6 passed.",
   "imeAndLock": {
+    "format": "hwpx",
     "executedCommand": "python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin --out target/stage3-caption-native-20261120/session7 -- python3 target/stage3-caption-native-20261120/ime-lock.py --out target/stage3-caption-native-20261120/run7 --xdotool @XDOTOOL@ --ibus @IBUS@",
     "executedHarnessSha256": "636fe380d525dbac6c60adf0e7cd157bb08cd881b2518988482e996f53ad0985",
     "durableHarness": "scripts/tests/native-stage3-caption-ime-lock.py",
@@ -207,6 +207,140 @@
       "proven": true,
       "filesystemProven": true,
       "survivors": []
+    }
+  },
+  "hwpImeAndLock": {
+    "format": "hwp",
+    "sourceCommit": "23d3cd5e9b97e4a6cffef8754eb6c66aa2a849b4",
+    "appSha256": "9feec38c7a24d3a4e733e45d2ea660e51fcd6573bd8af4e243d837a2d90dd0b7",
+    "appBuild": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+    "rhwpGeneration": "3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3",
+    "rhwpJsSha256": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+    "rhwpWasmSha256": "ef91fa8a33c0fd1bb4ef8e21be95688f187480d780c0ec2b03b95a0dcafd6044",
+    "runtime": {
+      "display": "private Xvfb X11 :0",
+      "xvfb": "21.1.23",
+      "xdotool": "3.20211022.1",
+      "ibus": "IBus 1.5.33",
+      "inputEngine": "hangul",
+      "ibusHangul": "1.5.5",
+      "privateHangulInitialMode": "hangul",
+      "privateHangulDisableLatin": true,
+      "webkitgtk": "2.54.1 ABI 4.1",
+      "driverSha256": "1d1ca38626716dd2fd77e7b2c2be42ec93a40818a9aa053d06c50b4946f889c5"
+    },
+    "executedCommand": "python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin --out target/stage3-hwp-caption-native/session1 -- python3 scripts/tests/native-stage3-hwp-caption-ime-lock.py --out target/stage3-hwp-caption-native/run1 --fixtures target/stage3-hwp-caption-native/fixtures --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "launcherCommandSha256": "dbe4926f1a3941236bee99df5e876f040e72543882b668c2b79fff44926ae0b8",
+    "durableHarness": "scripts/tests/native-stage3-hwp-caption-ime-lock.py",
+    "durableHarnessSha256": "313102075fbd2f4f002d398e91c5d4a9d77e5f9c94d5cd9e99cdd9a74caad625",
+    "fixtureGenerator": "scripts/tests/stage3-hwp-caption-native-fixtures.cjs",
+    "fixtureGeneratorSha256": "cb661cc0324a85e632c4cf46b6a84af3b9a22561ec6180673d57434a4c91653f",
+    "cases": {
+      "ime": {
+        "status": "PASS",
+        "sourceSha256": "5a03421343a13be0243c462bfdbfc16f3319c9f7296b1f168ef7b0e6b0aafc14",
+        "savedSha256": "6f52f78df30452fdade52ab40195918e671802193901d2af6562adc17e6c1177",
+        "input": "Native X11 pointer/keyboard and actual IBus Hangul composition (trusted composition events)",
+        "events": [
+          {
+            "type": "compositionstart",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "ㅎ",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "하",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "한",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "한",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionstart",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "ㄱ",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "그",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "글",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "글",
+            "isTrusted": true
+          }
+        ],
+        "texts": [
+          "그림  한글"
+        ],
+        "revisionAfterInput": "2",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "2"
+        },
+        "atnoUnchanged": true,
+        "shapeUnchanged": true,
+        "bodyUnchanged": true,
+        "reopenedInApp": true
+      },
+      "locked": {
+        "status": "PASS",
+        "sourceSha256": "78ace91ca893b7fd396fc0863b9ede5762bda5ba24227678c9ba2be436089a6d",
+        "beforeCaret": "0:0:0",
+        "afterCaret": "0:0:0",
+        "beforeRevision": "0",
+        "afterRevision": "0",
+        "targetBytesUnchanged": true,
+        "note": "locked rectangle caption click refused entry"
+      }
+    },
+    "cleanup": {
+      "runId": "7024420e86a04bff81268a2ed84b80fa",
+      "complete": true,
+      "exit": 0,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": [],
+      "processErrors": []
     }
   }
 }
