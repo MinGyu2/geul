@@ -3,7 +3,7 @@
 // With GEUL_STAGE3_OUT=<dir>, writes original/edited HWPX bytes and loss reports for `save_check`.
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
@@ -820,6 +820,170 @@ describe("Stage 3 shapes on the Release engine", () => {
           writeFileSync(resolve(out, "a-p4-group-edited.hwpx"), output);
           writeFileSync(resolve(out, "a-p4-group-report.json"), exported.contentLoss());
         }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A P4.6-1 preserves HWPX group child geometry, rendering, save/reopen, parent translation, and fill edits", async () => {
+    const svgShapes = (d: RhwpDocument) => {
+      const svg = (d as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0);
+      const rectMatch = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="#518934"/.exec(svg);
+      const ellipseMatch = /<ellipse cx="([^"]+)" cy="([^"]+)" rx="([^"]+)" ry="([^"]+)" fill="#(341260|ff8833)"/i.exec(svg);
+      expect(rectMatch, `missing group rect in SVG: ${svg}`).not.toBeNull();
+      expect(ellipseMatch, `missing group ellipse in SVG: ${svg}`).not.toBeNull();
+      return {
+        rect: rectMatch!.slice(1, 5).map(Number) as [number, number, number, number],
+        ellipse: ellipseMatch!.slice(1, 5).map(Number) as [number, number, number, number],
+      };
+    };
+    const inspectGroupXml = (bytes: Uint8Array) => JSON.parse(execFileSync("python3", ["-c", `
+from xml.etree import ElementTree as ET
+import io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    root = ET.fromstring(zf.read("Contents/section0.xml"))
+c = root.find(".//{*}container")
+def child_info(el):
+    return {
+        "tag": el.tag.split("}")[-1],
+        "id": el.attrib.get("id"),
+        "offset": el.find("{*}offset").attrib,
+        "orgSz": el.find("{*}orgSz").attrib,
+        "curSz": el.find("{*}curSz").attrib,
+        "sz": el.find("{*}sz").attrib,
+        "pos": el.find("{*}pos").attrib,
+        "matrices": [(m.tag.split("}")[-1], m.attrib) for m in el.find("{*}renderingInfo")],
+    }
+print(json.dumps({
+    "parent": {
+        "pos": c.find("{*}pos").attrib,
+        "orgSz": c.find("{*}orgSz").attrib,
+        "curSz": c.find("{*}curSz").attrib,
+    },
+    "children": [child_info(ch) for ch in c if ch.tag.split("}")[-1] in ("rect", "ellipse")],
+}))
+`], { input: bytes, encoding: "utf8" }));
+
+    // G1 & G2: groupShapes -> exportHwpx emits non-zero transMatrix matching child offset, and renders identically before & after reopen.
+    const created = new engine.HwpDocument(source("hwpx")) as RhwpDocument & { groupShapes(json: string): string };
+    let generatedBytes: Uint8Array;
+    let groupIndex: number;
+    try {
+      const targets = ["rectangle", "ellipse"].map((shapeType, i) => {
+        const { controlIdx } = JSON.parse(created.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 2 + i, shapeType, width: 5200, height: 4100,
+          treatAsChar: false, textWrap: "Square", horzOffset: i * 6500, vertOffset: i * 800,
+        })));
+        created.setShapeProperties!(0, 0, controlIdx, JSON.stringify({ fillType: "solid", fillBgColor: i ? 0x601234 : 0x348951 }));
+        return { paraIdx: 0, controlIdx };
+      });
+      const grouped = JSON.parse(created.groupShapes(JSON.stringify({ sectionIdx: 0, targets })));
+      expect(grouped.ok).toBe(true);
+      groupIndex = grouped.controlIdx;
+      created.setShapeProperties!(0, 0, groupIndex, '{"textWrap":"Square","horzOffset":500,"vertOffset":500}');
+      const inMemory = svgShapes(created);
+      expect(inMemory.rect[0]).toBeCloseTo(500 * 96 / 7200, 6);
+      expect(inMemory.rect[1]).toBeCloseTo(500 * 96 / 7200, 6);
+      expect(inMemory.ellipse[0]).toBeCloseTo((500 + 6500 + 2600) * 96 / 7200, 6);
+      expect(inMemory.ellipse[1]).toBeCloseTo((500 + 800 + 2050) * 96 / 7200, 6);
+      generatedBytes = created.exportHwpx();
+    } finally { created.free(); }
+
+    const genXml = inspectGroupXml(generatedBytes);
+    expect(genXml.children).toHaveLength(2);
+    expect(genXml.children[1].offset).toEqual({ x: "6500", y: "800" });
+    expect(genXml.children[1].matrices[0]).toEqual(["transMatrix", { e1: "1", e2: "0", e3: "6500", e4: "0", e5: "1", e6: "800" }]);
+
+    // G3 & G5: Identity renderingInfo with nonzero <hp:offset> preserves child placement without double-apply, and survives no-op save/reopen.
+    const identityMatrixHwpx = execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                data = data.replace(b'e3="6500" e4="0" e5="1" e6="800"', b'e3="0" e4="0" e5="1" e6="0"', 1)
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`], { input: generatedBytes });
+    const legacyFixtures: Uint8Array[] = [identityMatrixHwpx];
+    const recordedFixture = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
+    if (existsSync(recordedFixture)) legacyFixtures.push(new Uint8Array(readFileSync(recordedFixture)));
+
+    for (const fixtureBytes of legacyFixtures) {
+      const d = new engine.HwpDocument(fixtureBytes) as RhwpDocument;
+      try {
+        const rendered = svgShapes(d);
+        expect(rendered.rect[0]).toBeCloseTo(500 * 96 / 7200, 6);
+        expect(rendered.rect[1]).toBeCloseTo(500 * 96 / 7200, 6);
+        expect(rendered.ellipse[0]).toBeCloseTo((500 + 6500 + 2600) * 96 / 7200, 6);
+        expect(rendered.ellipse[1]).toBeCloseTo((500 + 800 + 2050) * 96 / 7200, 6);
+        const noop = d.exportHwpxWithReport();
+        try {
+          const noopBytes = noop.takeBytes();
+          expectReopenEvidence(d, noopBytes, noop.contentLoss());
+          expect(inspectGroupXml(noopBytes)).toEqual(inspectGroupXml(fixtureBytes));
+          const reopened = new engine.HwpDocument(noopBytes) as RhwpDocument;
+          try { expect(svgShapes(reopened)).toEqual(rendered); }
+          finally { reopened.free(); }
+        } finally { noop.free(); }
+      } finally { d.free(); }
+    }
+
+    // G6: Non-identity renderingInfo (explicit transMatrix + scaMatrix) must not double-apply offset_x/y and preserves raw matrices.
+    const scaledMatrixHwpx = execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                data = data.replace(
+                    b'<hc:transMatrix e1="1" e2="0" e3="6500" e4="0" e5="1" e6="800"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>',
+                    b'<hc:transMatrix e1="1" e2="0" e3="6500" e4="0" e5="1" e6="800"/><hc:scaMatrix e1="0.5" e2="0" e3="0" e4="0" e5="0.5" e6="0"/>',
+                    1,
+                )
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`], { input: generatedBytes });
+    const scaledDoc = new engine.HwpDocument(scaledMatrixHwpx) as RhwpDocument;
+    try {
+      const scaledSvg = svgShapes(scaledDoc);
+      expect(scaledSvg.ellipse[0]).toBeCloseTo((500 + 6500 + 1300) * 96 / 7200, 6);
+      expect(scaledSvg.ellipse[1]).toBeCloseTo((500 + 800 + 1025) * 96 / 7200, 6);
+      const savedScaled = scaledDoc.exportHwpx();
+      expect(inspectGroupXml(savedScaled)).toEqual(inspectGroupXml(scaledMatrixHwpx));
+    } finally { scaledDoc.free(); }
+
+    // G4 & G7: Parent translation and child fill edit preserve relative geometry across save/reopen.
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", identityMatrixHwpx);
+    try {
+      const frame = (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      pick(frame);
+      expect(edit({ kind: "nudge", dx: 15, dy: 10 })).toBe(true);
+      await confirm();
+      const movedSvg = svgShapes(doc);
+      expect(movedSvg.rect[0]).toBeCloseTo(2000 * 96 / 7200, 6);
+      expect(movedSvg.rect[1]).toBeCloseTo(1500 * 96 / 7200, 6);
+      expect(movedSvg.ellipse[0]).toBeCloseTo((2000 + 6500 + 2600) * 96 / 7200, 6);
+      expect(movedSvg.ellipse[1]).toBeCloseTo((1500 + 800 + 2050) * 96 / 7200, 6);
+      const movedFrame = (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      pick(movedFrame);
+      expect(edit({ kind: "groupChildFill", index: 1, color: "FF8833" })).toBe(true);
+      await confirm();
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const outBytes = exported.takeBytes();
+        expectReopenEvidence(doc, outBytes, exported.contentLoss());
+        const afterXml = inspectGroupXml(outBytes);
+        const beforeXml = inspectGroupXml(identityMatrixHwpx);
+        expect(afterXml.parent.pos.horzOffset).toBe("2000");
+        expect(afterXml.parent.pos.vertOffset).toBe("1500");
+        expect(afterXml.children).toEqual(beforeXml.children);
+        const reopened = new engine.HwpDocument(outBytes) as RhwpDocument;
+        try { expect(svgShapes(reopened)).toEqual(movedSvg); }
+        finally { reopened.free(); }
       } finally { exported.free(); }
     } finally { editor.dispose(); }
   });

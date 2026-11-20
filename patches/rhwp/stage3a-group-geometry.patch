@@ -1,0 +1,133 @@
+diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
+index f1b369c..1881c79 100644
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -5240,6 +5240,59 @@ fn parse_container(
+     parse_container_body(e, reader, depth)
+ }
+ 
++fn raw_rendering_is_empty_or_identity(raw: &[u8]) -> bool {
++    if raw.is_empty() {
++        return true;
++    }
++    if raw.len() < 2 + 48 {
++        return false;
++    }
++    let cnt = u16::from_le_bytes([raw[0], raw[1]]) as usize;
++    if raw.len() != 2 + 48 + cnt * 96 {
++        return false;
++    }
++    let is_identity = |off: usize| -> bool {
++        let mut m = [0.0f64; 6];
++        for (i, slot) in m.iter_mut().enumerate() {
++            let p = off + i * 8;
++            *slot = f64::from_le_bytes(raw[p..p + 8].try_into().unwrap());
++        }
++        m == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
++    };
++    if !is_identity(2) {
++        return false;
++    }
++    (0..cnt).all(|k| {
++        let base = 2 + 48 + k * 96;
++        is_identity(base) && is_identity(base + 48)
++    })
++}
++
++fn apply_hwpx_group_child_offset_if_identity(shape: &mut ShapeObject) {
++    if matches!(shape, ShapeObject::Group(_)) {
++        return;
++    }
++    let sa = shape.shape_attr_mut();
++    if sa.offset_x == 0 && sa.offset_y == 0 {
++        return;
++    }
++    let composed_identity = (sa.render_sx - 1.0).abs() <= 1e-6
++        && (sa.render_sy - 1.0).abs() <= 1e-6
++        && sa.render_b.abs() <= 1e-6
++        && sa.render_c.abs() <= 1e-6
++        && sa.render_tx.abs() <= 1e-6
++        && sa.render_ty.abs() <= 1e-6;
++    if composed_identity
++        && raw_rendering_is_empty_or_identity(&sa.raw_rendering)
++        && sa.rotation_angle.rem_euclid(360) == 0
++        && !sa.horz_flip
++        && !sa.vert_flip
++    {
++        sa.render_tx = f64::from(sa.offset_x);
++        sa.render_ty = f64::from(sa.offset_y);
++    }
++}
++
+ fn parse_container_body(
+     e: &quick_xml::events::BytesStart,
+     reader: &mut Reader<&[u8]>,
+@@ -5333,6 +5386,12 @@ fn parse_container_body(
+         buf.clear();
+     }
+ 
++    if depth == 0 {
++        for child in &mut children {
++            apply_hwpx_group_child_offset_if_identity(child);
++        }
++    }
++
+     materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, ShapeStorageKind::Group);
+ 
+     let group = GroupShape {
+diff --git a/src/serializer/hwpx/shape.rs b/src/serializer/hwpx/shape.rs
+index e6acd7d..f433bc7 100644
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -714,9 +714,8 @@ pub(crate) fn write_rendering_info<W: Write>(
+     w: &mut Writer<W>,
+     sa: &ShapeComponentAttr,
+ ) -> Result<(), SerializeError> {
+-    const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+-    let (trans, pairs) =
+-        decode_raw_rendering(&sa.raw_rendering).unwrap_or((IDENTITY, vec![(IDENTITY, IDENTITY)]));
++    let (trans, pairs) = decode_raw_rendering(&sa.raw_rendering)
++        .unwrap_or_else(|| generated_rendering_matrices(sa));
+ 
+     start_tag(w, "hp:renderingInfo")?;
+     write_matrix(w, "hc:transMatrix", &trans)?;
+@@ -729,6 +728,39 @@ pub(crate) fn write_rendering_info<W: Write>(
+ 
+ type RenderMatrices = ([f64; 6], Vec<([f64; 6], [f64; 6])>);
+ 
++fn generated_rendering_matrices(sa: &ShapeComponentAttr) -> RenderMatrices {
++    const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
++    const EPSILON: f64 = 1e-6;
++    let explicit = [
++        sa.render_sx,
++        sa.render_b,
++        sa.render_tx,
++        sa.render_c,
++        sa.render_sy,
++        sa.render_ty,
++    ]
++    .iter()
++    .all(|v| v.is_finite())
++        && ((sa.render_sx - 1.0).abs() > EPSILON
++            || sa.render_b.abs() > EPSILON
++            || sa.render_tx.abs() > EPSILON
++            || sa.render_c.abs() > EPSILON
++            || (sa.render_sy - 1.0).abs() > EPSILON
++            || sa.render_ty.abs() > EPSILON);
++    if explicit {
++        let trans = [1.0, 0.0, sa.render_tx, 0.0, 1.0, sa.render_ty];
++        let sca = [sa.render_sx, sa.render_b, 0.0, sa.render_c, sa.render_sy, 0.0];
++        let mut pairs = Vec::with_capacity(sa.group_level as usize + 1);
++        pairs.push((sca, IDENTITY));
++        for _ in 0..sa.group_level {
++            pairs.push((IDENTITY, IDENTITY));
++        }
++        (trans, pairs)
++    } else {
++        (IDENTITY, vec![(IDENTITY, IDENTITY)])
++    }
++}
++
+ fn decode_raw_rendering(raw: &[u8]) -> Option<RenderMatrices> {
+     if raw.len() < 2 + 48 {
+         return None;

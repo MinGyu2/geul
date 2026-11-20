@@ -1,0 +1,118 @@
+{
+  "baselineHead": "7f98d7ac90a8118bf080124e4d15295d29312a13",
+  "phase": "P4.6-1",
+  "date": "2026-11-21",
+  "status": "COMPLETED",
+  "fixture": {
+    "path": "target/stage3a-p4/fixtures/a-p4-group-original.hwpx",
+    "sha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856",
+    "unmodified": true
+  },
+  "discrepancy": {
+    "baselineReleaseGeneration": "2246172b41362c99c094969f4840dd3508df8a668e9dff1578e9c6fedc16cd6f",
+    "observation": "a-p4-group-original.hwpx stores parent container at (500, 500) HWPUNIT, rect child at offset=(0, 0), and ellipse child at offset=(6500, 800) / pos=(6500, 800), but child renderingInfo matrices are identity. Baseline SVG placed rect at (6.6667, 6.6667) px and ellipse at cx=41.3333, cy=34 px (same origin as rect).",
+    "rootCause": [
+      "HWPX serializer write_rendering_info (src/serializer/hwpx/shape.rs) ignored ShapeComponentAttr.render_tx/ty/sx/sy/b/c whenever raw_rendering was empty (as cleared by group_shapes_native), emitting identity transMatrix despite model render_tx=6500, render_ty=800.",
+      "HWPX container parser parse_container_body (src/parser/hwpx/section.rs) left render_tx=0, render_ty=0 when renderingInfo contained exact identity matrices and nonzero hp:offset, causing shape_layout.rs to collapse the ellipse onto the group origin."
+    ]
+  },
+  "geometryContract": {
+    "parentLocal": "Top-level container (groupLevel=0) positions on page from CommonObjAttr horzOffset/vertOffset (base_x/base_y -> group_origin). Flat children live in container-local HWPUNIT coordinates.",
+    "childTransform": "When renderingInfo is non-identity or non-empty non-identity raw_rendering, composed render_sx/b/tx/c/sy/ty is authoritative (no double-application of offset_x/offset_y). When a flat HWPX container child has exact identity rendering matrices, zero rotation, no flip, and nonzero hp:offset, render_tx/render_ty inherit offset_x/offset_y in memory without mutating raw_rendering or offset.",
+    "serialization": "write_rendering_info preserves decoded raw_rendering verbatim when present (no-op save equality); when raw_rendering is empty, explicit render_tx/ty/sx/sy/b/c matrices are emitted instead of falling back to identity."
+  },
+  "sourceChanges": [
+    "patches/rhwp/stage3a-group-geometry.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/stage3-shapes.wasm.test.ts"
+  ],
+  "beforeAfter": {
+    "rectExpectedSvg": {
+      "x": 6.666666666666667,
+      "y": 6.666666666666667,
+      "width": 69.33333333333333,
+      "height": 54.666666666666664
+    },
+    "ellipseBaselineSvg": {
+      "cx": 41.33333333333333,
+      "cy": 34,
+      "rx": 34.666666666666664,
+      "ry": 27.333333333333332
+    },
+    "ellipseCorrectedSvg": {
+      "cx": 128,
+      "cy": 44.666666666666664,
+      "rx": 34.666666666666664,
+      "ry": 27.333333333333332
+    },
+    "groupShapesExportedTransMatrix": {
+      "e1": "1",
+      "e2": "0",
+      "e3": "6500",
+      "e4": "0",
+      "e5": "1",
+      "e6": "800"
+    }
+  },
+  "saveReopen": {
+    "noopFixtureSha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856",
+    "noopFixtureSaveCheck": {
+      "outcome": "safe",
+      "findings": []
+    },
+    "generatedGroupSha256": "fd81055f982629c9098e970de49e29523e39b25c134717b797cff429f019e8f",
+    "generatedGroupNoopSha256": "fd81055f982629c9098e970de49e29523e39b25c134717b797cff429f019e8f",
+    "generatedGroupSaveCheck": {
+      "outcome": "safe",
+      "findings": []
+    }
+  },
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "556b0f7f8ff2f819963274f36df9e0c627ce7589a3bf639fe9db6d9653e378b2",
+    "artifacts": {
+      "rhwp.js": "8d7da0e802f00870acd3956baa47e825c6d2c5f08f7bb3db699543f8d909cfdd",
+      "rhwp_bg.wasm": "9eca054958e825c51489953ed8527f34338641a856f11ff832d156a2dea5361b"
+    },
+    "patch": {
+      "name": "stage3a-group-geometry.patch",
+      "sha256": "96d4f60b219db3f3799414da060de9960b606aff8bf776d51832a8f84635d104"
+    }
+  },
+  "checks": [
+    {
+      "command": "scripts/build-rhwp-wasm.sh",
+      "exit": 0
+    },
+    {
+      "command": "npm run typecheck",
+      "exit": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts/tests -p test_rhwp_profiles.py",
+      "exit": 0,
+      "passed": 3
+    },
+    {
+      "command": "node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-shapes.wasm.test.ts -t \"group\"",
+      "exit": 0,
+      "passed": 7,
+      "skipped": 47
+    },
+    {
+      "command": "src-tauri/target/debug/examples/save_check preflight hwpx target/stage3a-p4/fixtures/a-p4-group-original.hwpx target/stage3a-p4-group/a-p4-group-noop-saved.hwpx target/stage3a-p4/fixtures/a-p4-group-report.json",
+      "exit": 0,
+      "outcome": "safe"
+    },
+    {
+      "command": "src-tauri/target/debug/examples/save_check preflight hwpx target/stage3a-p4-group/generated-group-after-fix.hwpx target/stage3a-p4-group/generated-group-noop-saved.hwpx target/stage3a-p4/fixtures/a-p4-group-report.json",
+      "exit": 0,
+      "outcome": "safe"
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0
+    }
+  ],
+  "rawEvidence": "target/stage3a-p4-group/baseline-reproduction.json"
+}
