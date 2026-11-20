@@ -98,10 +98,14 @@ def execute(acc, case, out, fixtures):
     if case == 'locked':
         acc.settle('hwp')
         after_click = acc.status('hwp')
-        assert '@caption/' not in after_click['caret'], after_click
-        assert after_click['caret'] == before_click['caret'], (before_click, after_click)
-        assert after_click['revision'] == before_click['revision'] == '0', (before_click, after_click)
-        assert a.sha(source) == a.sha(target)
+        if '@caption/' in after_click['caret']:
+            raise ValueError('locked caption entry was permitted')
+        if after_click['caret'] != before_click['caret']:
+            raise ValueError('locked caption click changed caret')
+        if after_click['revision'] != '0' or before_click['revision'] != '0':
+            raise ValueError('locked caption click changed revision')
+        if a.sha(source) != a.sha(target):
+            raise ValueError('locked caption click changed target bytes')
         return {'status': 'PASS', 'format': 'hwp', 'sourceSha256': a.sha(source),
                 'beforeCaret': before_click['caret'], 'afterCaret': after_click['caret'],
                 'beforeRevision': before_click['revision'], 'afterRevision': after_click['revision'], 'fixtureLock': lock_evidence,
@@ -116,14 +120,23 @@ def execute(acc, case, out, fixtures):
     acc.settle('hwp')
     status = acc.status('hwp')
     events = d.js('return window.__captionIme')
-    assert any(e['type'] == 'compositionstart' and e['isTrusted'] for e in events), events
-    assert any(e['type'] == 'compositionend' and e['isTrusted'] and e['data'] for e in events), events
+    if not any(e['type'] == 'compositionstart' and e['isTrusted'] for e in events):
+        raise ValueError('trusted compositionstart not observed')
+    if not any(e['type'] == 'compositionend' and e['isTrusted'] and e['data'] for e in events):
+        raise ValueError('trusted committed compositionend not observed')
     save = acc.save('hwp')
     validate_ime_observations(status, save)
+    if save.get('state') != 'saved':
+        raise ValueError('HWP caption save did not succeed')
     after = a.oracle(target)
-    assert after['texts'] == [before['texts'][0] + '한글'], after
-    assert after['atnos'] == before['atnos'] and after['props'] == before['props'] and after['body'] == before['body']
-    assert p.p4.rhwp_poc.close_tab(d, target.name)
+    if after['texts'] != [before['texts'][0] + '한글']:
+        raise ValueError('saved caption text differs from committed input')
+    for key in ('atnos', 'props', 'body'):
+        if after[key] != before[key]:
+            raise ValueError(f'HWP caption save changed {key}')
+    closed = p.p4.rhwp_poc.close_tab(d, target.name)
+    if not closed:
+        raise ValueError('HWP caption document tab did not close')
     acc.open_native('hwp', target)
     at = after['caret']
     p.pointer(acc, (at['pageIndex'], at['x'] + 1, at['y'] + at['height'] / 2))
