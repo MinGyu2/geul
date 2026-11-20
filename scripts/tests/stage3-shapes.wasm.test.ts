@@ -13,7 +13,9 @@ import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
 import { documentCommandState } from "../../src/commands/capability";
 import type { PlainClipboard } from "../../src/commands/clipboard";
-import { OBJECT_CLIPBOARD_MIME, createRichObjectClipboardPayload, parseObjectClipboardPayload } from "../../src/commands/objectClipboard";
+import {
+  OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createRichObjectClipboardPayload, parseObjectClipboardPayload,
+} from "../../src/commands/objectClipboard";
 import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { clearStructuredClipboard } from "../../src/commands/tableClipboard";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
@@ -1648,7 +1650,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       copiedPicMime = mimes().get(OBJECT_CLIPBOARD_MIME)!;
       const parsedPic = parseObjectClipboardPayload(copiedPicMime);
       expect(parsedPic).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "picture" });
-      expect(parsedPic && parsedPic.version === 3 ? parsedPic.portable : undefined).toBeUndefined();
+      expect(parsedPic && parsedPic.version === 3 ? parsedPic.portable : undefined).toMatchObject({ kind: "picture", mime: "image/png" });
 
       expect(src.editor.execute("object.deselect").accepted).toBe(true);
       expect(await src.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
@@ -1679,7 +1681,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(await src.editor.executeClipboard("edit.copy", () => true, clip)).toBe(true);
       copiedTextBoxMime = mimes().get(OBJECT_CLIPBOARD_MIME)!;
       const parsedBox = parseObjectClipboardPayload(copiedTextBoxMime);
-      expect(parsedBox && parsedBox.version === 3 ? parsedBox.portable : undefined).toBeUndefined();
+      expect(parsedBox && parsedBox.version === 3 ? parsedBox.portable : undefined).toMatchObject({ shapeType: "textbox" });
       const boxCountBefore = shapeFrames().filter(f => src.pick(f).kind === "textBox").length;
       expect(src.editor.execute("object.deselect").accepted).toBe(true);
       expect(await src.editor.executeClipboard("edit.paste", () => true, clip)).toBe(true);
@@ -1723,7 +1725,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       } finally { exported.free(); }
     } finally { src.editor.dispose(); }
 
-    // Cross-document HWPX portable paste + fail-closed refusals (cross-doc picture/group, DOCX v2, HWP5).
+    // Cross-document HWPX portable paste (picture + textBox) + fail-closed refusals (cross-doc group, DOCX v2, HWP5).
     const dst = await setup("hwpx");
     try {
       const boxObj = parseObjectClipboardPayload(copiedTextBoxMime)!;
@@ -1732,10 +1734,24 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         writeText: async () => undefined,
         readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? copiedTextBoxMime : null,
       };
-      expect(await dst.editor.executeClipboard("edit.paste", () => true, boxClipboard)).toBe(false);
-      // Cross-doc picture, cross-doc group, and DOCX v2 payload must all fail closed without mutating dst.
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, boxClipboard)).toBe(true);
+      await dst.confirm();
+      expect(layoutFrames(dst.doc).filter(f => f.type === "shape" && dst.pick(f).kind === "textBox")).toHaveLength(1);
+      expect(dst.editor.execute("object.deselect").accepted).toBe(true);
+
+      const picClipboard: PlainClipboard = {
+        readText: async () => "fallback",
+        writeText: async () => undefined,
+        readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? copiedPicMime : null,
+      };
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, picClipboard)).toBe(true);
+      await dst.confirm();
+      expect(layoutFrames(dst.doc).filter(f => f.type === "image")).toHaveLength(1);
+
+      const revBeforeRefusals = dst.editor.snapshot().revision;
+      const commitsBefore = dst.calls.filter(c => c.method === "commit").length;
+      // Cross-doc group and DOCX v2 payload must fail closed without mutating dst.
       for (const rejectedPayload of [
-        copiedPicMime,
         copiedGroupMime,
         JSON.stringify(createRichObjectClipboardPayload("shape", JSON.stringify({ fragment: {}, media: [] }))!),
       ]) {
@@ -1746,13 +1762,15 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         };
         expect(await dst.editor.executeClipboard("edit.paste", () => true, badClip)).toBe(false);
       }
-      expect(dst.calls.filter(c => c.method === "commit")).toHaveLength(0);
-      expect(dst.editor.snapshot().revision).toBe(0);
+      expect(dst.calls.filter(c => c.method === "commit")).toHaveLength(commitsBefore);
+      expect(dst.editor.snapshot().revision).toBe(revBeforeRefusals);
     } finally { dst.editor.dispose(); }
 
-    // HWP5 documents must never offer copy/cut on selected objects or accept HWPX v3 object paste.
+    // HWP5 documents must never offer copy/cut on locked objects or accept HWPX v3 object paste.
     let hwpBytes: Uint8Array;
-    const hwpFix = engine.HwpDocument.createEmpty() as ExtendedFixtureDoc;
+    const hwpFix = engine.HwpDocument.createEmpty() as ExtendedFixtureDoc & {
+      setControlLock(para: number, index: number, locked: boolean): string;
+    };
     try {
       hwpFix.createBlankDocument();
       hwpFix.insertText(0, 0, 0, "hwp target");
@@ -1761,6 +1779,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         width: 4000, height: 3000, treatAsChar: false, textWrap: "Square", horzOffset: 2000, vertOffset: 2000,
       })));
       expect(r.ok).toBe(true);
+      expect(JSON.parse(hwpFix.setControlLock(0, r.controlIdx, true))).toMatchObject({ ok: true });
       hwpBytes = hwpFix.exportHwp();
     } finally { hwpFix.free(); }
 
@@ -1780,5 +1799,223 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       };
       expect(await hwp.editor.executeClipboard("edit.paste", () => true, boxClip)).toBe(false);
     } finally { hwp.editor.dispose(); }
+  });
+
+  it("B3.1: copies, cuts, and pastes HWP5 pictures, shapes, text boxes, and flat groups within one document and refuses unsafe/cross-doc transfers", async () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC",
+      "base64",
+    );
+    type ExtendedHwpDoc = RhwpDocument & {
+      groupShapes(json: string): string;
+      getControls(): string;
+      setControlLock(para: number, index: number, locked: boolean): string;
+      splitParagraph(sec: number, para: number, offset: number): string;
+    };
+    const layoutFrames = (doc: RhwpDocument) => JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[];
+    const listControls = (doc: RhwpDocument) =>
+      JSON.parse((doc as ExtendedHwpDoc).getControls()) as { list: number; para: number; controlIndex: number; userDesc: string; instanceId?: number }[];
+
+    const makeFixture = () => {
+      const fix = engine.HwpDocument.createEmpty() as ExtendedHwpDoc;
+      try {
+        fix.createBlankDocument();
+        fix.insertText(0, 0, 0, "anchor para");
+        fix.splitParagraph(0, 0, 11);
+        fix.insertText(0, 1, 0, "paste target");
+
+        const pic = JSON.parse(fix.insertPicture!(0, 0, 1, "[]", png, 4200, 2100, 48, 64, "png", "b31-pic"));
+        expect(pic.ok).toBe(true);
+        expect(JSON.parse(fix.setPictureProperties!(0, 0, pic.controlIdx, JSON.stringify({
+          textWrap: "Square", horzOffset: 1000, vertOffset: 1500, hasCaption: true,
+        }))).ok).toBe(true);
+
+        const shape = JSON.parse(fix.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "rectangle",
+          width: 4800, height: 3200, treatAsChar: false, textWrap: "Square", horzOffset: 7000, vertOffset: 1500,
+        })));
+        expect(JSON.parse(fix.setShapeProperties!(0, 0, shape.controlIdx, JSON.stringify({
+          fillType: "solid", fillBgColor: 0x00446688, borderWidth: 100,
+        }))).ok).toBe(true);
+
+        const box = JSON.parse(fix.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 3, shapeType: "textbox",
+          width: 6000, height: 3200, treatAsChar: false, textWrap: "Square", horzOffset: 13000, vertOffset: 1500,
+        })));
+        expect(JSON.parse(fix.insertTextInCell!(0, 0, box.controlIdx, 0, 0, 0, "hwp5 textbox line")).ok).toBe(true);
+
+        const g1 = JSON.parse(fix.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 4, shapeType: "rectangle",
+          width: 2400, height: 1800, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+        })));
+        const g2 = JSON.parse(fix.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 5, shapeType: "ellipse",
+          width: 2400, height: 1800, treatAsChar: false, textWrap: "Square", horzOffset: 2600, vertOffset: 0,
+        })));
+        const grp = JSON.parse(fix.groupShapes(JSON.stringify({
+          sectionIdx: 0,
+          targets: [{ paraIdx: 0, controlIdx: g1.controlIdx }, { paraIdx: 0, controlIdx: g2.controlIdx }],
+        })));
+        expect(grp.ok).toBe(true);
+        expect(JSON.parse(fix.setShapeProperties!(0, 0, grp.controlIdx, '{"textWrap":"Square","horzOffset":20000,"vertOffset":1500}')).ok).toBe(true);
+        return fix.exportHwp();
+      } finally { fix.free(); }
+    };
+
+    const origBytes = makeFixture();
+    // 1. Copy + Paste all four object classes within the same HWP5 document + Undo/Redo + reopen.
+    const src = await setup("hwp", origBytes);
+    let copiedShapeMime = "";
+    try {
+      src.take("original").reply(ok(origBytes));
+      await flush();
+      src.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+
+      const clipboard = new Map<string, string>();
+      let plainText = "";
+      const bridge: PlainClipboard = {
+        readText: async () => plainText,
+        writeText: async text => { plainText = text; },
+        readStructured: async mime => clipboard.get(mime) ?? null,
+        writeStructured: async (mime, data) => { clipboard.set(mime, data); },
+      };
+
+      const pasteAtCaret = async () => {
+        expect(src.editor.execute("object.deselect").accepted).toBe(true);
+        expect(await src.editor.executeClipboard("edit.paste", () => true, bridge)).toBe(true);
+        await src.confirm();
+      };
+
+      const picFrame = layoutFrames(src.doc).find(f => f.type === "image")!;
+      expect(src.pick(picFrame).operations).toEqual(expect.arrayContaining(["copy", "cut"]));
+      expect(await src.editor.executeClipboard("edit.copy", () => true, bridge)).toBe(true);
+      await pasteAtCaret();
+
+      const shapeFrames = () => layoutFrames(src.doc).filter(f => f.type === "shape");
+      const rectFrame = shapeFrames().find(f => src.pick(f).kind === "shape")!;
+      expect(src.pick(rectFrame).operations).toEqual(expect.arrayContaining(["copy", "cut"]));
+      expect(await src.editor.executeClipboard("edit.copy", () => true, bridge)).toBe(true);
+      copiedShapeMime = clipboard.get(OBJECT_CLIPBOARD_MIME)!;
+      expect(parseObjectClipboardPayload(copiedShapeMime)).toMatchObject({ sourceFormat: "hwp", object: "shape" });
+      await pasteAtCaret();
+
+      const boxFrame = shapeFrames().find(f => src.pick(f).kind === "textBox")!;
+      expect(src.pick(boxFrame).operations).toEqual(expect.arrayContaining(["copy", "cut"]));
+      expect(await src.editor.executeClipboard("edit.copy", () => true, bridge)).toBe(true);
+      await pasteAtCaret();
+
+      const grpFrame = layoutFrames(src.doc).find(f => f.type === "group")!;
+      expect(src.pick(grpFrame).operations).toEqual(expect.arrayContaining(["copy", "cut"]));
+      expect(await src.editor.executeClipboard("edit.copy", () => true, bridge)).toBe(true);
+      await pasteAtCaret();
+
+      expect(layoutFrames(src.doc).filter(f => f.type === "image")).toHaveLength(2);
+      expect(shapeFrames()).toHaveLength(4);
+      expect(layoutFrames(src.doc).filter(f => f.type === "group")).toHaveLength(2);
+
+      // Verify Undo/Redo cleanly removes and restores the last pasted group.
+      expect(src.editor.undo()).toBe(true);
+      await src.confirm();
+      expect(layoutFrames(src.doc).filter(f => f.type === "group")).toHaveLength(1);
+      expect(src.editor.redo()).toBe(true);
+      await src.confirm();
+      expect(layoutFrames(src.doc).filter(f => f.type === "group")).toHaveLength(2);
+
+      // Reserved plain-text fallback without structured MIME must fail closed.
+      const fallbackClip: PlainClipboard = {
+        readText: async () => plainText,
+        writeText: async () => undefined,
+        readStructured: async () => null,
+      };
+      expect(src.editor.objectSelection).toBeNull();
+      expect(await src.editor.executeClipboard("edit.paste", () => true, fallbackClip)).toBe(false);
+
+      const exported = src.doc.exportHwpWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(src.doc, output, exported.contentLoss());
+        const reopened = new engine.HwpDocument(output) as ExtendedHwpDoc;
+        try {
+          const gsoCtrls = listControls(reopened).filter(c => c.list === 0 && ["그림", "사각형", "그리기"].includes(c.userDesc));
+          expect(gsoCtrls).toHaveLength(8);
+          expect(new Set(gsoCtrls.map(c => `${c.para}:${c.controlIndex}`)).size).toBe(8);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "b3-1-copy-paste-original.hwp"), origBytes);
+          writeFileSync(resolve(out, "b3-1-copy-paste-edited.hwp"), output);
+        }
+      } finally { exported.free(); }
+    } finally { src.editor.dispose(); }
+
+    // 2. Cut + Paste within HWP5 document (styled rectangle + flat group) + Undo/Redo + reopen.
+    const cutSession = await setup("hwp", origBytes);
+    try {
+      cutSession.take("original").reply(ok(origBytes));
+      await flush();
+      cutSession.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const clipboard = new Map<string, string>();
+      const bridge: PlainClipboard = {
+        readText: async () => "",
+        writeText: async () => undefined,
+        readStructured: async mime => clipboard.get(mime) ?? null,
+        writeStructured: async (mime, data) => { clipboard.set(mime, data); },
+      };
+
+      const grpFrame = layoutFrames(cutSession.doc).find(f => f.type === "group")!;
+      cutSession.pick(grpFrame);
+      expect(await cutSession.editor.executeClipboard("edit.cut", () => true, bridge)).toBe(true);
+      await cutSession.confirm();
+      expect(layoutFrames(cutSession.doc).filter(f => f.type === "group")).toHaveLength(0);
+
+      expect(await cutSession.editor.executeClipboard("edit.paste", () => true, bridge)).toBe(true);
+      await cutSession.confirm();
+      const pastedGroups = layoutFrames(cutSession.doc).filter(f => f.type === "group");
+      expect(pastedGroups).toHaveLength(1);
+      expect(pastedGroups[0]!.x).toBeGreaterThan(grpFrame.x);
+
+      const exported = cutSession.doc.exportHwpWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(cutSession.doc, output, exported.contentLoss());
+        if (out) {
+          writeFileSync(resolve(out, "b3-1-cut-paste-original.hwp"), origBytes);
+          writeFileSync(resolve(out, "b3-1-cut-paste-edited.hwp"), output);
+        }
+      } finally { exported.free(); }
+    } finally { cutSession.editor.dispose(); }
+
+    // 3. Cross-doc HWP5 -> HWP5 and cross-format HWP5 -> HWPX paste must fail closed.
+    const dstHwp = await setup("hwp", origBytes);
+    try {
+      dstHwp.take("original").reply(ok(origBytes));
+      await flush();
+      dstHwp.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const foreignClip: PlainClipboard = {
+        readText: async () => "fallback",
+        writeText: async () => undefined,
+        readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? copiedShapeMime : null,
+      };
+      expect(await dstHwp.editor.executeClipboard("edit.paste", () => true, foreignClip)).toBe(false);
+      expect(dstHwp.editor.snapshot().revision).toBe(0);
+    } finally { dstHwp.editor.dispose(); }
+
+    const dstHwpx = await setup("hwpx", source("hwpx"));
+    try {
+      const crossFmtClip: PlainClipboard = {
+        readText: async () => "fallback",
+        writeText: async () => undefined,
+        readStructured: async mime => mime === OBJECT_CLIPBOARD_MIME ? copiedShapeMime : null,
+      };
+      expect(await dstHwpx.editor.executeClipboard("edit.paste", () => true, crossFmtClip)).toBe(false);
+      expect(dstHwpx.editor.snapshot().revision).toBe(0);
+
+      // Tampered HWP5 payload carrying portable data must be rejected by parser & session.
+      const hwpPayload = createHwpObjectClipboardPayload("shape", 1, 1)!;
+      expect(parseObjectClipboardPayload(JSON.stringify({ ...hwpPayload, portable: { shapeType: "rectangle" } }))).toBeNull();
+    } finally { dstHwpx.editor.dispose(); }
   });
 });

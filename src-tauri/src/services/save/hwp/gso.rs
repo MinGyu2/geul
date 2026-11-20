@@ -659,6 +659,24 @@ fn shape_rendering_end(sc: &[u8], id_off: usize) -> Option<usize> {
     (sc.len() >= r_end).then_some(r_end)
 }
 
+/// Validates a plain, control-free TextBox subtree after `LIST_HEADER` at `base_lvl`.
+/// Both HWP5 sibling paragraphs (`para_lvl = base_lvl`, e.g. RHWP/Hancom) and nested-child
+/// representations (`para_lvl = base_lvl + 1`) are accepted as long as every record in `mid`
+/// keeps a single consistent paragraph level and carries no controls (`71`) or opaque tags.
+fn plain_textbox_records(mid: &[Record<'_>], base_lvl: u16) -> bool {
+    if mid.len() < 2 || mid[0].0 != TAG_LIST_HEADER || mid[0].1 != base_lvl || mid[1].0 != 66 {
+        return false;
+    }
+    let para_lvl = mid[1].1;
+    if para_lvl != base_lvl && para_lvl != base_lvl + 1 {
+        return false;
+    }
+    mid[1..].iter().all(|r| {
+        ((r.0 == 66 && r.1 == para_lvl) || (matches!(r.0, 67..=70) && r.1 == para_lvl + 1))
+            && (r.0 != 70 || r.2.is_empty())
+    })
+}
+
 /// Validates a flat, unlocked, uncaptioned HWP5 `SC_CONTAINER` child list for safe deletion:
 /// no nested containers (`noc$`), no OLE/Chart/Arc/unknown children, no `CTRL_HEADER`,
 /// optional plain level-4 TextBox, valid leaf shape/picture tags, and valid `BinData` IDs.
@@ -746,16 +764,7 @@ fn deletable_flat_group(old: &[Record<'_>], id_off: usize, orig_defs: &Defs<'_>)
                 return false;
             }
             let mid = &child[1..child.len() - 1];
-            if !mid.is_empty()
-                && !(mid[0].0 == TAG_LIST_HEADER
-                    && mid[0].1 == 4
-                    && mid[0].2.len() == 33
-                    && mid[0].2[20..] == [0; 13]
-                    && mid.get(1).is_some_and(|r| r.0 == 66 && r.1 == 5)
-                    && mid[1..].iter().all(|r| {
-                        matches!((r.0, r.1), (66, 5) | (67..=70, 6)) && (r.0 != 70 || r.2.is_empty())
-                    }))
-            {
+            if !mid.is_empty() && !plain_textbox_records(mid, 4) {
                 return false;
             }
         }
@@ -855,12 +864,147 @@ pub(super) fn deletable_gso(old: &[Record<'_>], orig_defs: &Defs<'_>) -> bool {
     if has_caption {
         return false;
     }
-    mid[0].0 == TAG_LIST_HEADER
-        && mid[0].1 == 3
-        && mid.get(1).is_some_and(|r| r.0 == 66 && r.1 == 4)
-        && mid[1..].iter().all(|r| {
-            matches!((r.0, r.1), (66, 4) | (67..=70, 5)) && (r.0 != 70 || r.2.is_empty())
-        })
+    plain_textbox_records(mid, 3)
+}
+
+/// Validates that `dst` is a faithful same-document RHWP clone (`copyControl` + `pasteControl`)
+/// of an unlocked, opaque-free modeled `src` GSO from `old_objects`, preserving all geometry,
+/// attributes, resources (`BinData`), captions, TextBox paragraphs, and group children while
+/// assigning fresh unique IDs, valid z-order, and bounded cascade offsets.
+pub(super) fn prove_cloned_gso(
+    src: &[Record<'_>],
+    dst: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+    original_ids: &std::collections::BTreeSet<usize>,
+) -> bool {
+    if !deletable_gso(src, orig_defs) || dst.len() != src.len() || dst.len() < 3 || dst[0].1 != 1 {
+        return false;
+    }
+    let Some((ctrl_id, _, sc_idx)) = shape_ctrl_id(src) else {
+        return false;
+    };
+    if shape_ctrl_id(dst).map(|(c, _, i)| (c, i)) != Some((ctrl_id, sc_idx)) {
+        return false;
+    }
+    let (sh, dh) = (src[0].2, dst[0].2);
+    if dst[0].0 != TAG_CTRL_HEADER
+        || dh.len() != sh.len()
+        || sh.len() < 46
+        || sh[..8] != dh[..8]
+        || sh[16..24] != dh[16..24]
+        || sh[28..36] != dh[28..36]
+        || sh[40..] != dh[40..]
+    {
+        return false;
+    }
+    let (Ok(attr), Ok(sv), Ok(sh_off), Ok(dv), Ok(dh_off), Ok(dz), Ok(dst_id)) = (
+        dword(dh, 4),
+        super::insertions::signed_dword(sh, 8),
+        super::insertions::signed_dword(sh, 12),
+        super::insertions::signed_dword(dh, 8),
+        super::insertions::signed_dword(dh, 12),
+        super::insertions::signed_dword(dh, 24),
+        dword(dh, 36),
+    ) else {
+        return false;
+    };
+    let delta_v = dv.checked_sub(sv);
+    let delta_h = dh_off.checked_sub(sh_off);
+    let inline = (attr as u32 & 1) != 0;
+    if dst_id == 0
+        || original_ids.contains(&dst_id)
+        || !(-1_000_000..=1_000_000).contains(&dz)
+        || !(-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&dv)
+        || !(-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&dh_off)
+        || delta_v.is_none()
+        || delta_v != delta_h
+        || if inline {
+            delta_v != Some(0)
+        } else {
+            delta_v.is_none_or(|d| !(0..=64 * 1417).contains(&d))
+        }
+    {
+        return false;
+    }
+
+    let para_eq_except_inst = |a: &Record<'_>, b: &Record<'_>| {
+        a.0 == 66
+            && b.0 == 66
+            && a.1 == b.1
+            && a.2.len() == b.2.len()
+            && a.2.len() >= 22
+            && a.2[..18] == b.2[..18]
+            && a.2[22..] == b.2[22..]
+    };
+
+    // Caption subtree (`1..sc_idx`): LIST_HEADER must match byte-for-byte; PARA_HEADER may remap `instance_id`.
+    if sc_idx > 1 {
+        if dst[1] != src[1] {
+            return false;
+        }
+        if !src[2..sc_idx]
+            .iter()
+            .zip(&dst[2..sc_idx])
+            .all(|(a, b)| a == b || para_eq_except_inst(a, b))
+        {
+            return false;
+        }
+    }
+
+    // Outer `SHAPE_COMPONENT` (`sc_idx`).
+    let (osc, nsc) = (src[sc_idx], dst[sc_idx]);
+    if osc.0 != nsc.0 || osc.1 != nsc.1 || osc.2.len() != nsc.2.len() {
+        return false;
+    }
+    if ctrl_id == SC_CONTAINER {
+        if osc.2.len() < 4 || osc.2[..osc.2.len() - 4] != nsc.2[..nsc.2.len() - 4] {
+            return false;
+        }
+    } else if ctrl_id == SC_PICTURE {
+        if osc != nsc {
+            return false;
+        }
+    } else if osc.2.len() < 22
+        || osc.2[..osc.2.len() - 6] != nsc.2[..nsc.2.len() - 6]
+        || osc.2[osc.2.len() - 2..] != nsc.2[nsc.2.len() - 2..]
+    {
+        return false;
+    }
+
+    // Subtree after `SHAPE_COMPONENT` (`TAG_PICTURE`, shape leaf, TextBox, or flat container children).
+    src[sc_idx + 1..].iter().zip(&dst[sc_idx + 1..]).all(|(a, b)| {
+        if a == b {
+            return true;
+        }
+        if a.0 != b.0 || a.1 != b.1 || a.2.len() != b.2.len() {
+            return false;
+        }
+        match a.0 {
+            TAG_PICTURE if a.2.len() >= 78 => a.2[..74] == b.2[..74] && a.2[78..] == b.2[78..],
+            TAG_SHAPE_COMPONENT if a.1 == 3 => {
+                if a.2.starts_with(SC_PICTURE) {
+                    false
+                } else {
+                    a.2.len() >= 22
+                        && a.2[..a.2.len() - 6] == b.2[..b.2.len() - 6]
+                        && a.2[a.2.len() - 2..] == b.2[b.2.len() - 2..]
+                }
+            }
+            66 => para_eq_except_inst(a, b),
+            _ => false,
+        }
+    })
+}
+
+pub(super) fn prove_cloned_gso_from(
+    sources: &[Vec<Record<'_>>],
+    dst: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+    original_ids: &std::collections::BTreeSet<usize>,
+) -> bool {
+    sources
+        .iter()
+        .any(|src| prove_cloned_gso(src, dst, orig_defs, original_ids))
 }
 
 fn parse_rendering_matrices(bytes: &[u8]) -> Option<[[f64; 6]; 3]> {
@@ -4113,5 +4257,104 @@ mod tests {
         let orig = std::fs::read(dir.join("b2-2-group-delete-original.hwp")).unwrap();
         let edited = std::fs::read(dir.join("b2-2-group-delete-edited.hwp")).unwrap();
         assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
+    }
+
+    #[test]
+    fn b3_1_cloned_hwp_gso_copy_cut_paste_and_refusals() {
+        let di = doc_info_records(1);
+        let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+
+        let pic_obj = |id: u32, attr: u32, off: i32, pic_inst: u32| {
+            let mut leaf = picture_leaf(1, [0; 4], &[0u8; 9]);
+            leaf[74..78].copy_from_slice(&pic_inst.to_le_bytes());
+            vec![
+                (71, 1, ctrl_header(id, attr, off, off, 4000, 3000, "pic", &[])),
+                (76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)),
+                (85, 3, leaf),
+            ]
+        };
+        let shape_obj = |id: u32, attr: u32, off: i32, sc_inst: u32, border_color: u32| {
+            vec![
+                (71, 1, ctrl_header(id, attr, off, off, 5000, 3000, "rect", &[])),
+                (
+                    76,
+                    2,
+                    shape_component_drawing(
+                        super::SC_RECT,
+                        5000,
+                        3000,
+                        0,
+                        0,
+                        border_color,
+                        None,
+                        sc_inst,
+                    ),
+                ),
+                (super::TAG_RECTANGLE, 3, rect_leaf(0, 5000, 3000)),
+            ]
+        };
+        let build = |objs: Vec<Vec<(u16, u16, Vec<u8>)>>| {
+            let sec = wrap_section(objs);
+            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+
+        let src_pic = pic_obj(101, 1 << 21, 500, 1);
+        let src_shape = shape_obj(102, 1 << 21, 1500, 2, 100);
+        let cloned_pic = pic_obj(201, 1 << 21, 1067, 9);
+        let cloned_shape = shape_obj(202, 1 << 21, 2067, 10, 100);
+
+        let orig = build(vec![src_pic.clone(), src_shape.clone()]);
+        // Positive 1: Copy + Paste preserves original and admits cloned picture + styled shape.
+        let copied = build(vec![
+            src_pic.clone(),
+            src_shape.clone(),
+            cloned_pic.clone(),
+            cloned_shape.clone(),
+        ]);
+        assert_eq!(check_with_preview_refresh(&orig, &copied), vec![]);
+
+        // Positive 2: Cut + Paste (deletes src_shape and inserts cloned_shape with fresh ID + cascade).
+        let cut_pasted = build(vec![src_pic.clone(), cloned_shape.clone()]);
+        assert_eq!(check_with_preview_refresh(&orig, &cut_pasted), vec![]);
+
+        // Negative 1: Cloning a locked source or fabricating an unowned styled shape must fail closed.
+        let locked_orig = build(vec![shape_obj(102, (1 << 21) | super::ATTR_LOCKED, 1500, 2, 100)]);
+        let locked_clone = build(vec![
+            shape_obj(102, (1 << 21) | super::ATTR_LOCKED, 1500, 2, 100),
+            shape_obj(202, (1 << 21) | super::ATTR_LOCKED, 2067, 10, 100),
+        ]);
+        assert!(!check_with_preview_refresh(&locked_orig, &locked_clone).is_empty());
+
+        let tampered_border = build(vec![
+            src_pic.clone(),
+            src_shape.clone(),
+            shape_obj(202, 1 << 21, 2067, 10, 250),
+        ]);
+        assert!(!check_with_preview_refresh(&orig, &tampered_border).is_empty());
+
+        // Negative 2: Reusing original instance_id in cloned object must fail closed.
+        let reused_id = build(vec![
+            src_pic,
+            src_shape,
+            pic_obj(101, 1 << 21, 1067, 9),
+        ]);
+        assert!(!check_with_preview_refresh(&orig, &reused_id).is_empty());
+
+        // Negative 3: Cross-document / unowned BinData ID in pasted picture fails closed.
+        let mut foreign_pic = cloned_pic;
+        foreign_pic[2].2[71..73].copy_from_slice(&2u16.to_le_bytes());
+        assert!(!check_with_preview_refresh(&orig, &build(vec![foreign_pic])).is_empty());
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run B3.1 WASM test with GEUL_STAGE3_OUT first"]
+    fn release_hwp_b3_1_hwp_clipboard() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        for prefix in ["b3-1-copy-paste", "b3-1-cut-paste"] {
+            let orig = std::fs::read(dir.join(format!("{prefix}-original.hwp"))).unwrap();
+            let edited = std::fs::read(dir.join(format!("{prefix}-edited.hwp"))).unwrap();
+            assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
+        }
     }
 }

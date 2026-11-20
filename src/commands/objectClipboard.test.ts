@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { documentCommandState } from "./capability";
 import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clipboard";
 import {
+  createHwpObjectClipboardPayload,
   createHwpxObjectClipboardPayload,
   createObjectClipboardPayload,
   createRichObjectClipboardPayload,
@@ -154,10 +155,11 @@ describe("rich object clipboard (v2)", () => {
     expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
     expect(insertStructured).toHaveBeenCalledOnce();
     expect(insert).toHaveBeenCalledWith("copied elsewhere");
-    // Even restoring the marker text later does not resurrect the forgotten payload.
+    // Even restoring the marker text later does not resurrect the forgotten payload or degrade to text.
     system = plainText;
-    expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(true);
+    expect(await runClipboard(docx, "edit.paste", editing, () => true, clipboard)).toBe(false);
     expect(insertStructured).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledOnce();
   });
 
   it("carries grouped v2 objects in the envelope and refuses unsupported RHWP destination without mutation", async () => {
@@ -233,6 +235,70 @@ describe("rich object clipboard (v2)", () => {
     expect(documentCommandState("edit.copy", rhwpTarget)).toEqual({ available: true });
     expect(documentCommandState("edit.cut", rhwpTarget)).toEqual({ available: true });
     expect(documentCommandState("edit.paste", rhwpTarget)).toEqual({ available: false, reason: "protected" });
+
+    const hwpPayload = createHwpObjectClipboardPayload("group", 7, 3)!;
+    expect(hwpPayload).toMatchObject({
+      kind: "geul.object",
+      version: 3,
+      sourceFormat: "hwp",
+      object: "group",
+      sourceSessionId: 7,
+      sourceGeneration: 3,
+    });
+    expect(parseObjectClipboardPayload(JSON.stringify(hwpPayload))).toEqual(hwpPayload);
+    expect(parseObjectClipboardPayload(JSON.stringify({
+      ...hwpPayload,
+      portable: { shapeType: "rectangle", width: 100, height: 100, horzOffset: 0, vertOffset: 0, treatAsChar: false, textWrap: "Square", rotationAngle: 0, horzFlip: false, vertFlip: false, borderColor: 0, borderWidth: 33, fillType: "none" },
+    }))).toBeNull();
+
+    const pngB64 = "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC";
+    const picPortable = createHwpxObjectClipboardPayload("picture", 2, 1, {
+      kind: "picture",
+      mime: "image/png",
+      bytesBase64: pngB64,
+      width: 3600,
+      height: 2400,
+      naturalWidth: 48,
+      naturalHeight: 64,
+      horzOffset: 100,
+      vertOffset: 200,
+      treatAsChar: false,
+      textWrap: "Square",
+      borderColor: 0,
+      borderWidth: 0,
+      borderType: 0,
+      crop: { left: 0, top: 0, right: 0, bottom: 0 },
+      caption: {
+        direction: "Bottom",
+        vertAlign: "Top",
+        width: 3600,
+        spacing: 120,
+        includeMargin: false,
+        paragraphs: [{ text: "그림  caption", autoNumberOffset: 2, runs: [{ start: 4, end: 11, bold: true, fontSize: 1200, textColor: "#112233" }] }],
+      },
+    })!;
+    expect(picPortable).not.toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify(picPortable))).toEqual(picPortable);
+    expect(createHwpxObjectClipboardPayload("picture", 2, 1, {
+      ...(picPortable.portable as any),
+      mime: "image/jpeg",
+    })).toBeNull();
+    expect(createHwpxObjectClipboardPayload("textBox", 2, 1, {
+      shapeType: "textbox",
+      width: 5000,
+      height: 3000,
+      horzOffset: 0,
+      vertOffset: 0,
+      treatAsChar: false,
+      textWrap: "Square",
+      rotationAngle: 0,
+      horzFlip: false,
+      vertFlip: false,
+      borderColor: 0,
+      borderWidth: 0,
+      fillType: "none",
+      paragraphs: [{ text: "abc", runs: [{ start: 1, end: 4, bold: true }] }],
+    })).toBeNull();
   });
 });
 

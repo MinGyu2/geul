@@ -1226,6 +1226,9 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             if object[0].2.starts_with(b" lbt") {
                 validate_table(object, &bc, &mut used, &mut table_ids)?;
                 table_total += 1;
+            } else if object[0].2.starts_with(b" osg")
+                && super::gso::prove_cloned_gso_from(&old.objects, object, &ac, &original_ids)
+            {
             } else if super::gso::is_basic_shape(object) {
                 super::gso::prove_inserted_shape(object, &bc, &ac, &original_ids)?;
             } else if object[0].2.starts_with(b" osg") {

@@ -3,10 +3,11 @@ import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { hexToBgr, inspectRhwpGroup, inspectRhwpShape } from "./shapeProperties";
+import { extractHwpxPortableObject, insertHwpxPortableObject } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
-  OBJECT_CLIPBOARD_MIME, createHwpxObjectClipboardPayload, objectClipboardPlainText, parseObjectClipboardPayload,
-  type RichObjectKind,
+  OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
+  objectClipboardPlainText, parseObjectClipboardPayload, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import {
   TABLE_CLIPBOARD_MIME, buildTableClipboardPlainText, parseTableClipboardPayload,
@@ -1831,7 +1832,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const copyKind: RichObjectKind | null = group ? "group"
             : shape ? (shape.textBox ? "textBox" : "shape")
             : copyAddress ? "picture" : null;
-          const canCopyObject = format === "hwpx" && operations.length > 0 && !!copyAddress && !!copyKind
+          const canCopyObject = (format === "hwpx" || (format === "hwp" && operations.includes("delete")))
+            && operations.length > 0 && !!copyAddress && !!copyKind
             && !!this.doc.copyControl && !!this.doc.pasteControl;
           const clipboardOps: ObjectOperation[] = canCopyObject
             ? ["copy", ...(operations.includes("delete") ? ["cut" as const] : [])]
@@ -3135,13 +3137,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const copyControl = selected?.copyControl;
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (!selected || !copyControl || format !== "hwpx" || this.uncertain
+    if (!selected || !copyControl || (format !== "hwpx" && format !== "hwp") || this.uncertain
       || !doc?.copyControl || !doc.clipboardHasControl) return null;
     try {
       const [section, para, control] = copyControl.address;
       const res = JSON.parse(doc.copyControl(section, para, "[]", control)) as { ok?: boolean };
       if (res.ok !== true || !doc.clipboardHasControl()) return null;
-      const payload = createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation);
+      const portable = format === "hwpx"
+        ? extractHwpxPortableObject(doc, copyControl.address, copyControl.kind)
+        : undefined;
+      const payload = format === "hwp"
+        ? createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation)
+        : createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, portable);
       if (!payload) return null;
       this.lastCopiedObjectToken = payload.token;
       return {
@@ -3156,8 +3163,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private removeStructuredObject(): boolean {
     const selected = this.selectedObject;
+    const format = this.sessions.get(this.sessionId)?.format;
     if (!selected?.copyControl || !selected.selection.operations.includes("cut")
-      || this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
+      || (format !== "hwpx" && format !== "hwp")) return false;
     return this.editObject(objectEditRequest(selected.selection, { kind: "delete" }));
   }
 
@@ -3165,7 +3173,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const payload = parseObjectClipboardPayload(data);
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (!payload || payload.version !== 3 || payload.sourceFormat !== "hwpx" || format !== "hwpx") return "rejected";
+    if (!payload || payload.version !== 3 || (payload.sourceFormat !== "hwpx" && payload.sourceFormat !== "hwp")
+      || payload.sourceFormat !== format) return "rejected";
     if (!doc || !this.history || !this.editable || this.imeUnsettled || this.uncertain
       || this.objectSelection || this.hasSelection || this.caret.cell
       || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return "rejected";
@@ -3174,25 +3183,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
     const sameDoc = payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
+    const portable = !sameDoc && format === "hwpx" ? payload.portable : undefined;
 
-    // Portable snapshots do not prove source fidelity; never reconstruct an object from them.
-    // Refuse before a history boundary, including payloads from older clients.
-    if (!sameDoc) return "rejected";
+    // HWP5 and non-portable HWPX snapshots (e.g. groups, polygon/curve, gradients, or unsafe captions/stories)
+    // remain same-document only.
+    if (!sameDoc && !portable) return "rejected";
     this.history.boundary();
-    let applied = false;
-    if (sameDoc) {
-      applied = this.mutate(() => {
-        const res = JSON.parse(doc.pasteControl!(at.section, at.paragraph, at.offset)) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown };
-        if (res.ok !== true || !Number.isSafeInteger(res.paraIdx) || !Number.isSafeInteger(res.controlIdx)) {
-          throw new Error("pasteControl failed");
-        }
-        const maxPara = Math.max(0, doc.getParagraphCount(at.section) - 1);
-        const targetPara = Math.min(res.paraIdx as number, maxPara);
-        const targetOffset = Math.min(at.offset, doc.getParagraphLength(at.section, targetPara));
-        const nextPos = { section: at.section, paragraph: targetPara, offset: targetOffset };
-        return { caret: nextPos, anchor: nextPos };
-      }, true, "other", null, true, true);
-    }
+    const applied = this.mutate(() => {
+      const res = sameDoc
+        ? JSON.parse(doc.pasteControl!(at.section, at.paragraph, at.offset)) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown }
+        : insertHwpxPortableObject(doc, at, portable!);
+      if ((res as { ok?: boolean }).ok === false || !Number.isSafeInteger(res.paraIdx) || !Number.isSafeInteger(res.controlIdx)) {
+        throw new Error("paste object failed");
+      }
+      const maxPara = Math.max(0, doc.getParagraphCount(at.section) - 1);
+      const targetPara = Math.min(res.paraIdx as number, maxPara);
+      const targetOffset = Math.min(at.offset, doc.getParagraphLength(at.section, targetPara));
+      const nextPos = { section: at.section, paragraph: targetPara, offset: targetOffset };
+      return { caret: nextPos, anchor: nextPos };
+    }, true, "other", null, true, true);
     this.history.boundary();
     return applied ? "ok" : "rejected";
   }
@@ -3202,7 +3211,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.imeSerial, this.anchor, this.caret, this.structuralKey(), this.selectedObject?.selection.epoch ?? null]);
     if (this.objectSelection) {
       const copyControl = this.selectedObject?.copyControl;
-      if (copyControl && !this.uncertain && this.sessions.get(this.sessionId)?.format === "hwpx") {
+      const format = this.sessions.get(this.sessionId)?.format;
+      if (copyControl && !this.uncertain && (format === "hwpx" || format === "hwp")) {
         const cutAllowed = this.editable && this.objectSelection.operations.includes("cut");
         return { key, selection: true, writable: cutAllowed, shape: { cutAllowed } };
       }

@@ -31,16 +31,48 @@ export type RichObjectKind = typeof RICH_OBJECT_KINDS[number];
 export const HWPX_PORTABLE_SHAPE_TYPES = ["rectangle", "ellipse", "line", "textbox"] as const;
 export type HwpxPortableShapeType = typeof HWPX_PORTABLE_SHAPE_TYPES[number];
 
-const HWPX_WRAP_VALUES = ["Square", "Tight", "Through", "TopAndBottom", "BehindText", "InFrontOfText"] as const;
-const HWPX_TB_VERTICAL_ALIGNS = ["Top", "Center", "Bottom"] as const;
-const HWPX_PARA_ALIGNS = ["left", "center", "right", "justify"] as const;
+export const HWPX_PICTURE_MIMES = ["image/png", "image/jpeg", "image/gif", "image/bmp", "image/webp"] as const;
+export type HwpxPortablePictureMime = typeof HWPX_PICTURE_MIMES[number];
+
+export const HWPX_WRAP_VALUES = ["Square", "Tight", "Through", "TopAndBottom", "BehindText", "InFrontOfText"] as const;
+export const HWPX_TB_VERTICAL_ALIGNS = ["Top", "Center", "Bottom"] as const;
+export const HWPX_PARA_ALIGNS = ["left", "center", "right", "justify"] as const;
+export const HWPX_CAPTION_DIRECTIONS = ["Left", "Right", "Top", "Bottom"] as const;
+export const HWPX_CAPTION_VERT_ALIGNS = ["Top", "Center", "Bottom"] as const;
+
+export const MAX_HWPX_PICTURE_BYTES = 8 * 1024 * 1024;
+
+export interface HwpxPortableCharRun {
+  start: number;
+  end: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  fontSize?: number;
+  textColor?: string;
+  shadeColor?: string;
+  fontFamily?: string;
+}
 
 export interface HwpxPortableParagraph {
   text: string;
   align?: typeof HWPX_PARA_ALIGNS[number];
+  runs?: readonly HwpxPortableCharRun[];
+  autoNumberOffset?: number;
+}
+
+export interface HwpxPortableCaption {
+  direction: typeof HWPX_CAPTION_DIRECTIONS[number];
+  vertAlign: typeof HWPX_CAPTION_VERT_ALIGNS[number];
+  width: number;
+  spacing: number;
+  includeMargin: boolean;
+  paragraphs: readonly HwpxPortableParagraph[];
 }
 
 export interface HwpxPortableShape {
+  kind?: "shape";
   shapeType: HwpxPortableShapeType;
   width: number;
   height: number;
@@ -59,7 +91,30 @@ export interface HwpxPortableShape {
   tbVerticalAlign?: typeof HWPX_TB_VERTICAL_ALIGNS[number];
   tbMargins?: { left: number; right: number; top: number; bottom: number };
   paragraphs?: readonly HwpxPortableParagraph[];
+  caption?: HwpxPortableCaption;
 }
+
+export interface HwpxPortablePicture {
+  kind: "picture";
+  mime: HwpxPortablePictureMime;
+  bytesBase64: string;
+  width: number;
+  height: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  horzOffset: number;
+  vertOffset: number;
+  treatAsChar: boolean;
+  textWrap: typeof HWPX_WRAP_VALUES[number];
+  borderColor: number;
+  borderWidth: number;
+  borderType: number;
+  crop: { left: number; top: number; right: number; bottom: number };
+  description?: string;
+  caption?: HwpxPortableCaption;
+}
+
+export type HwpxPortableObject = HwpxPortableShape | HwpxPortablePicture;
 
 /**
  * v2 (Stage 3 P5): the engine's structural copy of one drawing — a WordCraft fragment with the
@@ -76,18 +131,18 @@ export interface ObjectClipboardPayloadV2 {
 }
 
 /**
- * v3 (Stage 3 P4): RHWP HWPX structural copy of one body object (`picture`, `shape`, `textBox`,
- * `group`), bound to the live document identity for lossless same-document structural clone and
- * optionally carrying a portable shape/textBox snapshot for cross-document HWPX paste.
+ * v3 (Stage 3 P4 / Stage 3-B): RHWP structural copy of one body object (`picture`, `shape`,
+ * `textBox`, `group`), bound to the live document identity for lossless same-document structural
+ * clone and optionally carrying a portable HWPX snapshot for cross-document HWPX paste.
  */
 export interface ObjectClipboardPayloadV3 {
   kind: "geul.object";
   version: 3;
-  sourceFormat: "hwpx";
+  sourceFormat: "hwpx" | "hwp";
   object: RichObjectKind;
   sourceSessionId: number;
   sourceGeneration: number;
-  portable?: HwpxPortableShape;
+  portable?: HwpxPortableObject;
   token: string;
 }
 
@@ -122,12 +177,12 @@ export function createHwpxObjectClipboardPayload(
   object: RichObjectKind,
   sourceSessionId: number,
   sourceGeneration: number,
-  portable?: HwpxPortableShape,
+  portable?: HwpxPortableObject,
 ): ObjectClipboardPayloadV3 | null {
   if (!intInRange(sourceSessionId, 0, Number.MAX_SAFE_INTEGER) || !intInRange(sourceGeneration, 0, Number.MAX_SAFE_INTEGER)) {
     return null;
   }
-  if (portable !== undefined && !validHwpxPortableShape(portable, object)) return null;
+  if (portable !== undefined && !validHwpxPortableObject(portable, object)) return null;
   return {
     kind: "geul.object",
     version: 3,
@@ -136,6 +191,25 @@ export function createHwpxObjectClipboardPayload(
     sourceSessionId,
     sourceGeneration,
     ...(portable !== undefined ? { portable } : {}),
+    token: token(),
+  };
+}
+
+export function createHwpObjectClipboardPayload(
+  object: RichObjectKind,
+  sourceSessionId: number,
+  sourceGeneration: number,
+): ObjectClipboardPayloadV3 | null {
+  if (!intInRange(sourceSessionId, 0, Number.MAX_SAFE_INTEGER) || !intInRange(sourceGeneration, 0, Number.MAX_SAFE_INTEGER)) {
+    return null;
+  }
+  return {
+    kind: "geul.object",
+    version: 3,
+    sourceFormat: "hwp",
+    object,
+    sourceSessionId,
+    sourceGeneration,
     token: token(),
   };
 }
@@ -154,8 +228,119 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const intInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
 
-function validHwpxPortableShape(raw: unknown, kind: RichObjectKind): raw is HwpxPortableShape {
+const hexColor = (value: unknown): value is string => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+
+export function decodePortableImageBytes(mime: HwpxPortablePictureMime, base64: string): Uint8Array | null {
+  if (typeof base64 !== "string" || base64.length < 12 || base64.length > Math.ceil(MAX_HWPX_PICTURE_BYTES * 4 / 3) + 16
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length % 4 !== 0) return null;
+  try {
+    const raw = atob(base64);
+    if (raw.length < 8 || raw.length > MAX_HWPX_PICTURE_BYTES) return null;
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    if (mime === "image/png") {
+      const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      return sig.every((v, i) => bytes[i] === v) ? bytes : null;
+    }
+    if (mime === "image/jpeg") {
+      return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? bytes : null;
+    }
+    if (mime === "image/gif") {
+      const hdr = String.fromCharCode(...bytes.subarray(0, 6));
+      return hdr === "GIF87a" || hdr === "GIF89a" ? bytes : null;
+    }
+    if (mime === "image/bmp") {
+      return bytes[0] === 0x42 && bytes[1] === 0x4d ? bytes : null;
+    }
+    if (mime === "image/webp") {
+      return bytes.length >= 12
+        && String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF"
+        && String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP" ? bytes : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function validHwpxPortableRuns(runs: unknown, text: string, forbiddenOffset?: number): runs is readonly HwpxPortableCharRun[] {
+  if (!Array.isArray(runs) || runs.length > 4096) return false;
+  const runAllowed = new Set(["start", "end", "bold", "italic", "underline", "strikethrough", "fontSize", "textColor", "shadeColor", "fontFamily"]);
+  let cursor = 0;
+  for (const run of runs) {
+    if (!record(run) || Object.keys(run).some(k => !runAllowed.has(k))) return false;
+    if (!intInRange(run.start, cursor, text.length) || !intInRange(run.end, run.start + 1, text.length)) return false;
+    if (forbiddenOffset !== undefined && run.start <= forbiddenOffset && forbiddenOffset < run.end) return false;
+    for (const flag of ["bold", "italic", "underline", "strikethrough"] as const) {
+      if (run[flag] !== undefined && typeof run[flag] !== "boolean") return false;
+    }
+    if (run.fontSize !== undefined && !intInRange(run.fontSize, 100, 409_600)) return false;
+    if (run.textColor !== undefined && !hexColor(run.textColor)) return false;
+    if (run.shadeColor !== undefined && run.shadeColor !== "none" && !hexColor(run.shadeColor)) return false;
+    if (run.fontFamily !== undefined && (typeof run.fontFamily !== "string" || run.fontFamily.length < 1
+      || run.fontFamily.length > 256 || run.fontFamily.trim() !== run.fontFamily
+      || /[\x00-\x1f"\\{}\uFFFC]/.test(run.fontFamily))) return false;
+    cursor = run.end;
+  }
+  return true;
+}
+
+function validHwpxPortableParagraphs(raw: unknown, allowAutoNumber: boolean, maxParas: number): raw is readonly HwpxPortableParagraph[] {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > maxParas) return false;
+  const allowedKeys = new Set(["text", "align", "runs", ...(allowAutoNumber ? ["autoNumberOffset"] : [])]);
+  for (let i = 0; i < raw.length; i += 1) {
+    const para = raw[i];
+    if (!record(para) || typeof para.text !== "string" || para.text.length > 65536 || /[\r\n\uFFFC]/.test(para.text)) return false;
+    if (Object.keys(para).some(k => !allowedKeys.has(k))) return false;
+    if (para.align !== undefined && !HWPX_PARA_ALIGNS.some(a => a === para.align)) return false;
+    let atnoOffset: number | undefined;
+    if (allowAutoNumber) {
+      if (i === 0) {
+        if (!intInRange(para.autoNumberOffset, 0, para.text.length - 1) || para.text[para.autoNumberOffset] !== " ") return false;
+        atnoOffset = para.autoNumberOffset;
+      } else if (para.autoNumberOffset !== undefined) {
+        return false;
+      }
+    }
+    if (para.runs !== undefined && !validHwpxPortableRuns(para.runs, para.text, atnoOffset)) return false;
+  }
+  return true;
+}
+
+function validHwpxPortableCaption(raw: unknown): raw is HwpxPortableCaption {
   if (!record(raw)) return false;
+  const allowed = new Set(["direction", "vertAlign", "width", "spacing", "includeMargin", "paragraphs"]);
+  if (Object.keys(raw).some(k => !allowed.has(k))) return false;
+  if (!HWPX_CAPTION_DIRECTIONS.some(d => d === raw.direction)) return false;
+  if (!HWPX_CAPTION_VERT_ALIGNS.some(v => v === raw.vertAlign)) return false;
+  if (!intInRange(raw.width, 0, 2_000_000) || !intInRange(raw.spacing, -100_000, 100_000) || typeof raw.includeMargin !== "boolean") return false;
+  return validHwpxPortableParagraphs(raw.paragraphs, true, 64);
+}
+
+function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is HwpxPortableObject {
+  if (!record(raw) || kind === "group") return false;
+  if (raw.kind === "picture") {
+    if (kind !== "picture") return false;
+    const mime = HWPX_PICTURE_MIMES.find(m => m === raw.mime);
+    if (!mime || !decodePortableImageBytes(mime, String(raw.bytesBase64 ?? ""))) return false;
+    if (!intInRange(raw.width, 1, 2_000_000) || !intInRange(raw.height, 1, 2_000_000)
+      || !intInRange(raw.naturalWidth, 1, 20_000) || !intInRange(raw.naturalHeight, 1, 20_000)
+      || !intInRange(raw.horzOffset, -1_000_000, 2_000_000) || !intInRange(raw.vertOffset, -1_000_000, 2_000_000)
+      || typeof raw.treatAsChar !== "boolean"
+      || !HWPX_WRAP_VALUES.some(w => w === raw.textWrap)
+      || !intInRange(raw.borderColor, 0, 0xFFFFFFFF)
+      || !intInRange(raw.borderWidth, 0, 7200)
+      || !intInRange(raw.borderType, 0, 17)) return false;
+    if (!record(raw.crop) || Object.keys(raw.crop).length !== 4
+      || !intInRange(raw.crop.left, 0, 10_000_000) || !intInRange(raw.crop.top, 0, 10_000_000)
+      || !intInRange(raw.crop.right, 0, 10_000_000) || !intInRange(raw.crop.bottom, 0, 10_000_000)) return false;
+    if (raw.description !== undefined && (typeof raw.description !== "string" || raw.description.length > 4096)) return false;
+    if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
+    const allowedKeys = new Set(["kind", "mime", "bytesBase64", "width", "height", "naturalWidth", "naturalHeight",
+      "horzOffset", "vertOffset", "treatAsChar", "textWrap", "borderColor", "borderWidth", "borderType", "crop", "description", "caption"]);
+    return Object.keys(raw).every(key => allowedKeys.has(key));
+  }
+  if (raw.kind !== undefined && raw.kind !== "shape") return false;
   const shapeType = HWPX_PORTABLE_SHAPE_TYPES.find(t => t === raw.shapeType);
   if (!shapeType) return false;
   if (kind === "textBox" ? shapeType !== "textbox" : kind !== "shape" || shapeType === "textbox") return false;
@@ -176,17 +361,12 @@ function validHwpxPortableShape(raw: unknown, kind: RichObjectKind): raw is Hwpx
       || !intInRange(raw.tbMargins.top, 0, 100_000) || !intInRange(raw.tbMargins.bottom, 0, 100_000)) return false;
   }
   if (raw.paragraphs !== undefined) {
-    if (shapeType !== "textbox" || !Array.isArray(raw.paragraphs) || raw.paragraphs.length < 1 || raw.paragraphs.length > 1024) return false;
-    for (const para of raw.paragraphs) {
-      if (!record(para) || typeof para.text !== "string" || para.text.length > 65536 || /[\r\n]/.test(para.text)) return false;
-      if (para.align !== undefined && !HWPX_PARA_ALIGNS.some(a => a === para.align)) return false;
-      const keys = Object.keys(para);
-      if (keys.some(k => k !== "text" && k !== "align")) return false;
-    }
+    if (shapeType !== "textbox" || !validHwpxPortableParagraphs(raw.paragraphs, false, 1024)) return false;
   }
-  const allowedKeys = new Set(["shapeType", "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap",
+  if (raw.caption !== undefined && !validHwpxPortableCaption(raw.caption)) return false;
+  const allowedKeys = new Set(["kind", "shapeType", "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap",
     "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "fillType", "fillBgColor",
-    "description", "tbVerticalAlign", "tbMargins", "paragraphs"]);
+    "description", "tbVerticalAlign", "tbMargins", "paragraphs", "caption"]);
   return Object.keys(raw).every(key => allowedKeys.has(key));
 }
 
@@ -198,17 +378,18 @@ export function parseObjectClipboardPayload(serialized: string): ObjectClipboard
     if (!record(raw) || raw.kind !== "geul.object"
       || typeof raw.token !== "string" || !/^[0-9a-f]{24}$/.test(raw.token)) return null;
     if (raw.version === 3) {
-      if (raw.sourceFormat !== "hwpx") return null;
+      if (raw.sourceFormat !== "hwpx" && raw.sourceFormat !== "hwp") return null;
       const object = RICH_OBJECT_KINDS.find(kind => kind === raw.object);
       const allowedKeys = new Set(["kind", "version", "sourceFormat", "object", "sourceSessionId", "sourceGeneration", "portable", "token"]);
       if (!object || Object.keys(raw).some(key => !allowedKeys.has(key))
         || !intInRange(raw.sourceSessionId, 0, Number.MAX_SAFE_INTEGER)
         || !intInRange(raw.sourceGeneration, 0, Number.MAX_SAFE_INTEGER)) return null;
-      if (raw.portable !== undefined && !validHwpxPortableShape(raw.portable, object)) return null;
+      if (raw.sourceFormat === "hwp" && raw.portable !== undefined) return null;
+      if (raw.portable !== undefined && !validHwpxPortableObject(raw.portable, object)) return null;
       return {
         kind: "geul.object",
         version: 3,
-        sourceFormat: "hwpx",
+        sourceFormat: raw.sourceFormat,
         object,
         sourceSessionId: raw.sourceSessionId,
         sourceGeneration: raw.sourceGeneration,

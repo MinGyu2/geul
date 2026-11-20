@@ -372,11 +372,11 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const shapes = () => JSON.parse(doc.getPageControlLayout!(0)).controls
         .filter((control: { type: string }) => control.type === "shape") as Frame[];
 
-      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position"]);
+      expect(pick(floatingPic!).operations).toEqual(["deselect", "move", "delete", "crop", "wrap", "altText", "position", "copy", "cut"]);
       expect(edit({ kind: "nudge", dx: 4, dy: -2 })).toBe(true);
       await confirm(1);
 
-      expect(pick(inlinePic!).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
+      expect(pick(inlinePic!).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "copy", "cut"]);
       expect(edit({ kind: "altText", text: "HWP 그림 설명" })).toBe(true);
       await confirm(2);
       pick(byWidth(images(doc))[0]!);
@@ -384,7 +384,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       await confirm(3);
 
       const shape = pick(shapes()[0]!);
-      expect(shape.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
+      expect(shape.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "copy", "cut"]);
       const address = [0, 0, shapes()[0]!.controlIdx] as const;
       const beforeMixed = doc.getShapeProperties!(...address);
       expect(edit({ kind: "bounds", x: shape.frame.x - 10, y: shape.frame.y, width: 80, height: 36 })).toBe(false);
@@ -683,7 +683,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const pic = () => [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
 
       // Captioned inline picture: outer ops including owned delete permitted.
-      expect(pick(pic()).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText"]);
+      expect(pick(pic()).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "copy", "cut"]);
       expect(edit({ kind: "altText", text: "캡션 그림 outer" })).toBe(true);
       await confirm(++seq);
       pick(pic());
@@ -691,7 +691,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       await confirm(++seq);
 
       // Captioned shape: outer ops including owned delete permitted.
-      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "copy", "cut"]);
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(++seq);
       pick(shapes()[0]!);
