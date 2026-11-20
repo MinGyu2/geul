@@ -1704,10 +1704,69 @@ pub(super) fn prove_evolved_gso(
         } else {
             preserved(old_vertices == new_vertices, BODY)?;
         }
+    } else if leaf_tag == TAG_CURVE && old_last.2 != new_last.2 {
+        // The point editor keeps the frame, transform and every other record
+        // byte fixed. In particular a path edit cannot hide a caption change
+        // or any change to the segment kinds or their padding.
+        preserved(
+            !has_caption
+                && old_mid.is_empty()
+                && old[..old.len() - 1] == new[..new.len() - 1]
+                && dword(old[0].2, 4)? as u32 & ATTR_SIZE_PROTECT == 0
+                && old_flip & 3 == 0
+                && old_rot.rem_euclid(360) == 0
+                && (1..=2_000_000).contains(&orig_w)
+                && (1..=2_000_000).contains(&orig_h)
+                && same_cubic_structure(old_last.2, new_last.2, orig_w, orig_h),
+            BODY,
+        )?;
     } else {
         preserved(old_last.2 == new_last.2, BODY)?;
     }
     Ok(())
+}
+
+fn same_cubic_structure(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
+    let Ok(count) = dword(old, 0) else { return false };
+    if !(4..=257).contains(&count) {
+        return false;
+    }
+    let point_end = 4 + 8 * count;
+    let end = point_end + count - 1;
+    if old.len() != end + 4 || new.len() != old.len()
+        || old[..4] != new[..4] || old[point_end..] != new[point_end..]
+        || old[end..] != [0; 4]
+    {
+        return false;
+    }
+    let segments = &old[point_end..end];
+    [old, new].into_iter().all(|data| {
+        let points: Vec<_> = data[4..point_end].chunks_exact(8).collect();
+        if points.first() == points.last()
+            || !points.iter().all(|point| dword(point, 0).is_ok_and(|x| x <= width)
+                && dword(point, 4).is_ok_and(|y| y <= height))
+        {
+            return false;
+        }
+        let (mut offset, mut segment) = (1, 0);
+        let mut cubic = false;
+        while offset < count {
+            let start = offset - 1;
+            match segments[segment] {
+                0 => offset += 1,
+                1 if offset + 2 < count => {
+                    cubic = true;
+                    offset += 3;
+                }
+                _ => return false,
+            }
+            if points[start] == points[offset - 1] {
+                return false;
+            }
+            segment += 1;
+        }
+        cubic && segments[segment..].iter().all(|value| *value == 0)
+    })
 }
 
 #[cfg(test)]
@@ -2419,6 +2478,43 @@ mod tests {
         });
         assert!(check_with_preview_refresh(&original, &tampered_curve)
             .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+    }
+
+    #[test]
+    #[ignore = "Builds an open HWP5 cubic and line fixture from the existing Stage 3 shape fixture"]
+    fn prepare_stage3a_hwp_curve_fixture() {
+        let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(directory.join("p3-poly-curve-original.hwp")).unwrap();
+        let mut path = 5u32.to_le_bytes().to_vec();
+        for (x, y) in [(0i32, 2000i32), (2500, 1000), (4300, 6300), (8100, 5800), (10000, 4200)] {
+            path.extend(x.to_le_bytes());
+            path.extend(y.to_le_bytes());
+        }
+        path.extend([1, 0, 0, 0]); // cubic, line, unused slots
+        path.extend([0; 4]); // padding
+        let candidate = mutate_body_record(
+            &original, |tag, level, _| tag == super::TAG_CURVE && level == 3, |_| path,
+        );
+        std::fs::write(directory.join("a-p4-curve-original.hwp"), candidate).unwrap();
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 editable cubic path and published fixture"]
+    fn release_stage3a_hwp_cubic_preserves_segment_structure() {
+        let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(directory.join("a-p4-curve-original.hwp")).unwrap();
+        let output = std::fs::read(directory.join("a-p4-curve-edited.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&original, &output), vec![]);
+        let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
+        for offset in [0, 44, 46, 48] {
+            let tampered = mutate_body_record(&output, curve, |data| {
+                let mut bytes = data.to_vec();
+                bytes[offset] ^= 1;
+                bytes
+            });
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        }
     }
 
     #[test]

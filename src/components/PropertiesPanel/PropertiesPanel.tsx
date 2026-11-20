@@ -131,12 +131,55 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
       )}
       {selection.graphic?.kind === "chart" && can("chart") && <ChartFields chart={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.graphic?.kind === "smartArt" && can("smartArt") && <SmartArtFields art={selection.graphic} disabled={disabled} onEdit={onEdit} />}
+      {selection.groupChildFills && can("groupChildFill") &&
+        <GroupChildFields children={selection.groupChildFills} disabled={disabled} onEdit={onEdit} />}
       {selection.shape && <ShapeFields shape={selection.shape} disabled={disabled} can={can}
         outlineWidth={selection.address.engine === "wordcraft" ? 0 : selection.shape.outlineWidthEditable ? 0.01 : null} onEdit={onEdit} />}
       {can("delete") && <button type="button" className="document-bar__button" disabled={disabled}
         onClick={() => onEdit({ kind: "delete" })}>{t("properties.object.delete")}</button>}
     </div>
   );
+}
+
+function GroupChildFields({ children, disabled, onEdit }: {
+  children: NonNullable<ObjectSelection["groupChildFills"]>;
+  disabled: boolean;
+  onEdit: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const [index, setIndex] = useState<number>();
+  const child = children.find(item => item.index === index);
+  const [color, setColor] = useState("");
+  const canApply = !disabled && child && /^[0-9a-f]{6}$/i.test(color) && color.toUpperCase() !== child.color;
+  return <details>
+    <summary>{t("properties.group.children")}</summary>
+    <form onSubmit={event => {
+      event.preventDefault();
+      if (canApply) onEdit({ kind: "groupChildFill", index: child.index, color });
+    }}>
+      <label className="picture-size-field">{t("properties.group.child")}
+        <select value={index ?? ""} disabled={disabled} onChange={event => {
+          const item = children.find(item => String(item.index) === event.target.value);
+          setIndex(item?.index);
+          setColor(item?.color ?? "");
+        }}>
+          <option value="">{t("properties.group.chooseChild")}</option>
+          {children.map(item => <option key={item.index} value={item.index}>
+            {t(`properties.group.child.${item.kind}`, { index: item.index + 1 })}
+          </option>)}
+        </select>
+      </label>
+      {child && <>
+        <label className="picture-size-field">{t("properties.group.childFill")}
+          <input type="text" value={color} maxLength={6} placeholder="RRGGBB" disabled={disabled}
+            onChange={event => setColor(event.target.value)} />
+        </label>
+        <button type="submit" className="document-bar__button" disabled={!canApply}>
+          {t("properties.group.childApply")}
+        </button>
+      </>}
+    </form>
+  </details>;
 }
 
 type ChartGraphic = Extract<GraphicProperties, { kind: "chart" }>;

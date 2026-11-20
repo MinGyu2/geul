@@ -1,4 +1,4 @@
-import type { ShapeProperties } from "../../../commands/objectSelection";
+import type { GroupChildFill, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
 import type { RhwpDocument } from "./rhwpModule";
 
 /** HWP colors are 0x00BBGGRR. */
@@ -95,6 +95,37 @@ export function inspectRhwpGroup(doc: Pick<RhwpDocument, "getShapeProperties">, 
       sizeProtected: v.sizeProtect !== false,
       groupFlatDeletable: v.groupFlatDeletable === true,
     };
+  } catch {
+    return undefined;
+  }
+}
+
+const within = (value: unknown, max: number): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max;
+
+export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [number, number, number]): ShapePath | undefined {
+  if (!doc.getEditableShapePath) return undefined;
+  try {
+    const value = JSON.parse(doc.getEditableShapePath(...address));
+    const { kind, width, height, points, closed } = value ?? {};
+    if ((kind !== "polygon" && kind !== "curve")
+      || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0
+      || typeof closed !== "boolean" || !Array.isArray(points) || points.length < 3 || points.length > 257
+      || !points.every(p => p && within(p.x, width) && within(p.y, height) && typeof p.control === "boolean")) return undefined;
+    return { kind, width, height, points, closed };
+  } catch {
+    return undefined;
+  }
+}
+
+export function inspectRhwpGroupFills(doc: RhwpDocument, address: readonly [number, number, number]): GroupChildFill[] | undefined {
+  if (!doc.getEditableGroupFills) return undefined;
+  try {
+    const children: unknown = JSON.parse(doc.getEditableGroupFills(...address));
+    if (!Array.isArray(children) || !children.length || children.length > 128
+      || !children.every((child, i) => child && within(child.index, 127) && within(child.color, 0xff_ffff)
+        && (child.kind === "rectangle" || child.kind === "ellipse") && (i === 0 || child.index > children[i - 1].index))) return undefined;
+    return children.map(child => ({ index: child.index, kind: child.kind, color: bgrToHex(child.color) }));
   } catch {
     return undefined;
   }

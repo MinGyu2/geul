@@ -1,0 +1,259 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -10,6 +10,72 @@
+ use crate::model::shape::{
+     Caption, CaptionDirection, CaptionVertAlign, RectangleShape, ShapeObject, SourceHwpRectGeometry,
+ };
++
++fn geul_bad_shape_edit() -> HwpError {
++    HwpError::RenderError("Unsupported shape edit".into())
++}
++
++fn geul_same_point(a: &crate::model::Point, b: &crate::model::Point) -> bool {
++    a.x == b.x && a.y == b.y
++}
++
++fn geul_polygon_valid(points: &[crate::model::Point]) -> bool {
++    if !(3..=257).contains(&points.len()) {
++        return false;
++    }
++    let closed = points.last().is_some_and(|last| geul_same_point(&points[0], last));
++    let vertices = &points[..points.len() - usize::from(closed)];
++    if vertices.len() < 3 || vertices.iter().map(|p| (p.x, p.y)).collect::<std::collections::BTreeSet<_>>().len() != vertices.len() {
++        return false;
++    }
++    // A closed polygon needs nonzero signed area. Check collinearity separately
++    // for an open polyline, where a negative or zero signed area can be valid.
++    !closed || vertices.iter().zip(vertices.iter().cycle().skip(1)).map(|(a, b)| {
++        i128::from(a.x) * i128::from(b.y) - i128::from(a.y) * i128::from(b.x)
++    }).sum::<i128>() != 0
++}
++
++/// Match the HWP5 renderer's existing command decoding. Only accept a
++/// complete command stream, with zero-valued unused storage bytes.
++fn geul_cubic_handles(points: &[crate::model::Point], segments: &[u8]) -> Option<Vec<bool>> {
++    if !(4..=257).contains(&points.len()) || segments.len() + 1 != points.len()
++        || geul_same_point(points.first()?, points.last()?)
++    {
++        return None;
++    }
++    let mut handles = vec![false; points.len()];
++    let (mut offset, mut segment) = (1, 0);
++    while offset < points.len() {
++        let start = offset - 1;
++        match segments[segment] {
++            0 => offset += 1,
++            1 if offset + 2 < points.len() => {
++                handles[offset..offset + 2].fill(true);
++                offset += 3;
++            }
++            _ => return None,
++        }
++        if geul_same_point(&points[start], &points[offset - 1]) {
++            return None;
++        }
++        segment += 1;
++    }
++    (handles.contains(&true) && segments[segment..].iter().all(|value| *value == 0))
++        .then_some(handles)
++}
++
++fn geul_group_child_color(child: &ShapeObject) -> Option<u32> {
++    let drawing = child.drawing()?;
++    if child.common().locked || child.common().size_protect
++        || drawing.caption.is_some() || drawing.text_box.is_some()
++        || drawing.fill.fill_type != crate::model::style::FillType::Solid
++        || drawing.fill.gradient.is_some() || drawing.fill.image.is_some()
++    {
++        return None;
++    }
++    let color = drawing.fill.solid.as_ref()?.background_color;
++    (color <= 0xff_ffff).then_some(color)
++}
+ 
+ const MAX_RECT_DIM_HU: u32 = 2_000_000;
+ const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
+@@ -420,6 +486,146 @@
+             )),
+         }
+     }
++    /// An editable top-level path in its stored HWPUNIT coordinate space.
++    pub fn editable_shape_path(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
++        use crate::parser::FileFormat;
++        let shape = self.advanced_body_shape(sec, para, ctrl)?;
++        let attr = shape.shape_attr();
++        if attr.group_level != 0 || attr.rotation_angle.rem_euclid(360) != 0
++            || attr.horz_flip || attr.vert_flip || attr.flip & 3 != 0
++            || attr.original_width_was_zero || attr.original_height_was_zero
++            || !(1..=2_000_000).contains(&attr.original_width)
++            || !(1..=2_000_000).contains(&attr.original_height)
++            || shape.common().size_protect || shape.common().width == 0 || shape.common().height == 0
++            || get_textbox_from_shape(shape).is_some() || Self::shape_caption_ref(shape).is_some()
++        {
++            return None;
++        }
++        let (kind, points, handles) = match shape {
++            ShapeObject::Polygon(p) if self.source_format == FileFormat::Hwpx
++                && p.raw_trailing.is_empty() && geul_polygon_valid(&p.points) =>
++            {
++                ("polygon", &p.points, vec![false; p.points.len()])
++            }
++            ShapeObject::Curve(c) if self.source_format == FileFormat::Hwp =>
++                ("curve", &c.points, geul_cubic_handles(&c.points, &c.segment_types)?),
++            _ => return None,
++        };
++        if !points.iter().all(|p| (0..=attr.original_width as i32).contains(&p.x)
++            && (0..=attr.original_height as i32).contains(&p.y))
++        {
++            return None;
++        }
++        let closed = kind == "polygon" && geul_same_point(&points[0], points.last()?);
++        Some(serde_json::json!({
++            "kind": kind, "width": attr.original_width, "height": attr.original_height,
++            "closed": closed,
++            "points": points.iter().zip(handles).map(|(point, handle)| serde_json::json!({
++                "x": point.x, "y": point.y, "control": handle
++            })).collect::<Vec<_>>(),
++        }))
++    }
++
++    pub fn move_shape_path_point(
++        &mut self, sec: usize, para: usize, ctrl: usize, index: usize, x: i32, y: i32,
++    ) -> Result<(), HwpError> {
++        use crate::model::Point;
++        let path = self.editable_shape_path(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let shape = self.resolve_shape_control_mut(sec, para, ctrl)?;
++        let attr = shape.shape_attr();
++        if !(0..=attr.original_width as i32).contains(&x) || !(0..=attr.original_height as i32).contains(&y) {
++            return Err(geul_bad_shape_edit());
++        }
++        let closed = path["closed"].as_bool() == Some(true);
++        let accepted_points = |points: &[Point]| -> Option<Vec<Point>> {
++            let old = points.get(index)?;
++            if (old.x == x && old.y == y) || (closed && index + 1 == points.len()) {
++                return None;
++            }
++            let mut changed = points.to_vec();
++            changed[index] = Point { x, y };
++            if closed && index == 0 {
++                *changed.last_mut()? = Point { x, y };
++            }
++            Some(changed)
++        };
++        match shape {
++            ShapeObject::Polygon(p) => {
++                let points = accepted_points(&p.points).filter(|pts| geul_polygon_valid(pts))
++                    .ok_or_else(geul_bad_shape_edit)?;
++                if closed != geul_same_point(&points[0], points.last().ok_or_else(geul_bad_shape_edit)?) {
++                    return Err(geul_bad_shape_edit());
++                }
++                p.points = points;
++            }
++            ShapeObject::Curve(c) => {
++                let points = accepted_points(&c.points)
++                    .filter(|pts| geul_cubic_handles(pts, &c.segment_types).is_some())
++                    .ok_or_else(geul_bad_shape_edit)?;
++                c.points = points;
++            }
++            _ => return Err(geul_bad_shape_edit()),
++        }
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    /// Editable solid colors of direct, resource-free children of a body-owned HWPX group.
++    pub fn editable_group_fills(&self, sec: usize, para: usize, ctrl: usize) -> Option<serde_json::Value> {
++        use crate::parser::FileFormat;
++        if self.source_format != FileFormat::Hwpx {
++            return None;
++        }
++        let ShapeObject::Group(group) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        if group.caption.is_some() || group.shape_attr.group_level != 0 || group.common.size_protect
++            || group.children.is_empty() || group.children.len() > 128
++            || group.children.iter().any(|s| !matches!(s, ShapeObject::Rectangle(_) | ShapeObject::Ellipse(_)))
++        {
++            return None;
++        }
++        Some(serde_json::json!(group.children.iter().enumerate().filter_map(|(index, child)| {
++            let color = geul_group_child_color(child)?;
++            let kind = if matches!(child, ShapeObject::Rectangle(_)) { "rectangle" } else { "ellipse" };
++            Some(serde_json::json!({"index": index, "kind": kind, "color": color}))
++        }).collect::<Vec<_>>()))
++    }
++
++    pub fn set_group_child_fill(
++        &mut self, sec: usize, para: usize, ctrl: usize, index: usize, color: u32,
++    ) -> Result<(), HwpError> {
++        if color > 0xFF_FFFF || !self.editable_group_fills(sec, para, ctrl).is_some_and(|children| {
++            children.as_array().is_some_and(|children| children.iter().any(|child| {
++                child["index"].as_u64() == Some(index as u64) && child["color"].as_u64() != Some(color as u64)
++            }))
++        }) {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        let solid = group.children.get_mut(index).and_then(ShapeObject::drawing_mut)
++            .and_then(|drawing| drawing.fill.solid.as_mut()).ok_or_else(geul_bad_shape_edit)?;
++        solid.background_color = color;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    fn advanced_body_shape(&self, sec: usize, para: usize, ctrl: usize) -> Option<&ShapeObject> {
++        let Control::Shape(shape) = self.document.sections.get(sec)?.paragraphs.get(para)?.controls.get(ctrl)? else {
++            return None;
++        };
++        (!shape.common().locked).then_some(shape)
++    }
++
++    fn refresh_advanced_shape(&mut self, sec: usize) {
++        self.document.sections[sec].raw_stream = None;
++        self.recompose_section(sec);
++        self.paginate_if_needed();
++        self.invalidate_page_tree_cache();
++    }
++
+     /// 글상자(Shape) 속성 조회 (네이티브).
+     pub fn get_shape_properties_native(
+         &self,
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4664,6 +4664,34 @@
+             control_idx as usize,
+         )
+         .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = getEditableShapePath)]
++    pub fn get_editable_shape_path(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.editable_shape_path(sec as usize, para as usize, ctrl as usize)
++            .unwrap_or(serde_json::Value::Null).to_string()
++    }
++
++    #[wasm_bindgen(js_name = moveShapePathPoint)]
++    pub fn move_shape_path_point_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, index: u32, x: i32, y: i32,
++    ) -> Result<(), JsValue> {
++        self.move_shape_path_point(sec as usize, para as usize, ctrl as usize, index as usize, x, y)
++            .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = getEditableGroupFills)]
++    pub fn get_editable_group_fills(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.editable_group_fills(sec as usize, para as usize, ctrl as usize)
++            .unwrap_or(serde_json::Value::Null).to_string()
++    }
++
++    #[wasm_bindgen(js_name = setGroupChildFill)]
++    pub fn set_group_child_fill_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, index: u32, color: u32,
++    ) -> Result<(), JsValue> {
++        self.set_group_child_fill(sec as usize, para as usize, ctrl as usize, index as usize, color)
++            .map_err(|e| e.into())
+     }
+ 
+     /// Shape(글상자) 속성을 변경한다.

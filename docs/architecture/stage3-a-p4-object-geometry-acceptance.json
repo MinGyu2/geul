@@ -1,0 +1,137 @@
+{
+  "baseline": "b411b850c6bb09082341f12439b7d623704a5faf",
+  "phase": "P4",
+  "date": "2026-11-20",
+  "status": "PARTIAL_SUPPORT",
+  "runtime": {
+    "appSha256": "eb27320c031e603c3afb24acdb05730b7e58657238a91ccc1fd87602418eb50f",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "rhwpGeneration": "fc4d0741736a980b41afebf80d03481ab39f4eec4c60c647b815852c36938bef",
+    "rhwpArtifacts": {
+      "rhwp.js": "241b22c1f339f6a070ad0f9c93c7a8f62aa64dbeda5c1d4541507ba386eaa7c5",
+      "rhwp_bg.wasm": "b2a407880a9b37b039e801c51eb29c9b1e261baea4eef20c46bbddee5f755a90"
+    },
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15"
+  },
+  "modifiedSources": [
+    "patches/rhwp/stage3a-path-and-group-editing.patch",
+    "scripts/rhwp-patches.py",
+    "src/commands/objectSelection.ts",
+    "src/components/Editor/ObjectSelectionFrame.tsx",
+    "src/components/Editor/ShapePointEditor.tsx",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/shapeProperties.ts",
+    "src/components/PropertiesPanel/PropertiesPanel.tsx",
+    "src/language/en.json",
+    "src/language/ko.json",
+    "src/styles/app.css",
+    "src-tauri/src/services/save/hwp/gso.rs",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "scripts/tests/native-stage3a-p4.py"
+  ],
+  "features": [
+    {
+      "feature": "P4.1",
+      "format": "hwpx",
+      "previousGap": "Polygon point edits were missing.",
+      "api": "getEditableShapePath/moveShapePathPoint",
+      "supported": "Unlocked body polygon, integer point movement without rotation or flip. Closing point tracks vertex 0.",
+      "releaseWasm": "PASS",
+      "undoRedo": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "rawPreservation": "PASS",
+      "native": "PASS",
+      "status": "PARTIAL_SUPPORT",
+      "negativeCases": [
+        "invalid closing point index",
+        "duplicate vertex",
+        "fractional/out-of-bounds coordinate",
+        "stale selection",
+        "locked shape"
+      ],
+      "remaining": [
+        "Translated parent ownership, rotation, flip, captions, vertices added/removed, HWP5 and DOCX paths."
+      ],
+      "publishedSha256": "9b40eaa2935715bc262f321591499663691d7eaaa72ec29aaeddbaf7776d7eb2",
+      "fixtureSha256": "cfabf3fa66ebeae856158fa31d00d773f258a20bd3bf6f7d4659f708e3260406"
+    },
+    {
+      "feature": "P4.2",
+      "format": "hwp",
+      "previousGap": "Only outer attributes and unchanged leaf records were admitted.",
+      "api": "getEditableShapePath/moveShapePathPoint",
+      "supported": "Section0 preflight-safe open cubic and line commands, cubic control points and shared endpoints.",
+      "releaseWasm": "PASS",
+      "undoRedo": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "rawPreservation": "PASS",
+      "native": "PASS",
+      "status": "PARTIAL_SUPPORT",
+      "negativeCases": [
+        "modified point count",
+        "modified path command",
+        "modified unused command byte",
+        "modified padding"
+      ],
+      "remaining": [
+        "Closed or quadratic curves, curve segment insertion/removal and combined geometry/outer edits. HWPX discards types; WordCraft samples curves as straight lines."
+      ],
+      "publishedSha256": "b0824ff120ccc6d84165069d049ca4ee264654778c0b99bf297f8defae25d391",
+      "fixtureSha256": "1b6874c2bb294f585d92a678ca5e1e6f799caaae352fa7dfb837c17b41775917"
+    },
+    {
+      "feature": "P4.3",
+      "format": "hwpx",
+      "previousGap": "Groups exposed only exterior operations.",
+      "api": "getEditableGroupFills/setGroupChildFill",
+      "supported": "Existing solid background of an eligible direct rectangle or ellipse in a body-owned flat group.",
+      "releaseWasm": "PASS",
+      "undoRedo": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "rawPreservation": "PASS",
+      "native": "PASS",
+      "status": "PARTIAL_SUPPORT",
+      "negativeCases": [
+        "invalid child index",
+        "invalid RGB text",
+        "no mutation before valid input"
+      ],
+      "remaining": [
+        "Nested groups, unsupported child types, geometry edits, unproven HWP5 child records and WordCraft flattened groups."
+      ],
+      "publishedSha256": "198ca95ba2ca978e7e0668129bbd7a7f545e4ca129bfc19781ed12a26f794a72",
+      "fixtureSha256": "df3d5bf97481b05f661c9356d09a09b0054af8f279b9a7b42328bcc9c0cf2856"
+    }
+  ],
+  "checks": {
+    "typecheck": "PASS",
+    "focusedReleaseWasm": "3 PASS",
+    "focusedHwpT009": "1 PASS with preview regeneration",
+    "hwpxSaveGate": "2 SAFE",
+    "linuxX11": "3 PASS across separate runs",
+    "otherPlatforms": {
+      "linuxWayland": "NOT RUN",
+      "windows": "NOT RUN",
+      "macos": "NOT RUN"
+    }
+  },
+  "reports": {
+    "p41p42": "target/stage3a-p4/native-run1/result.json",
+    "p43": "target/stage3a-p4/native-run3/result.json",
+    "cleanup": [
+      "target/stage3a-p4/native-session1/cleanup.json",
+      "target/stage3a-p4/native-session3/cleanup.json"
+    ],
+    "wasmBuild": "target/stage3a-p4/wasm-build.log",
+    "appBuild": "target/stage3a-p4/native-build.log"
+  },
+  "earlierAttempts": [
+    "P4.3 runs 1 and 2 failed at the fixture color assertion. The oracle gives a BGR integer while the UI gives RGB text. Run 3 corrected the oracle comparison and tested actual edit, Undo/Redo, and persistence.",
+    "Existing standalone save_check binary predates the P4 HWP5 gate and lacks preview regeneration; raw HWP5 was refused. The focused HWP5 checker with preview evidence and the Release app publication passed."
+  ]
+}

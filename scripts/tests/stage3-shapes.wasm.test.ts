@@ -320,6 +320,181 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A edits a closed HWPX polygon point as one history step", async () => {
+    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    let bytes: Uint8Array, index: number;
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
+        width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 1200, vertOffset: 600,
+        polygonPoints: [{ x: 1600, y: 1300 }, { x: 9700, y: 700 }, { x: 6400, y: 6500 }, { x: 1600, y: 1300 }],
+      })));
+      index = created.controlIdx;
+      bytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const sel = pick(shapes(doc)[0]!);
+      const original = sel.shapePath!;
+      expect(original).toMatchObject({ kind: "polygon", closed: true, width: 10800, height: 7200 });
+      const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      expect(original.points).toEqual([
+        { x: 1600, y: 1300, control: false }, { x: 9700, y: 700, control: false },
+        { x: 6400, y: 6500, control: false }, { x: 1600, y: 1300, control: false },
+      ]);
+      const beforeProperties = doc.getShapeProperties!(0, 0, index);
+      const untouched = doc.exportHwpx();
+      for (const invalid of [
+        { index: 3, x: 1800, y: 1400 }, { index: 0, x: 9700, y: 700 },
+        { index: 0, x: 5.1, y: 1400 }, { index: 0, x: 10801, y: 1400 },
+      ]) expect(edit({ kind: "pathPoint", ...invalid })).toBe(false);
+      expect(read()).toEqual(original);
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.snapshot().history?.undo).toBe(false);
+      expect(editor.objectSelection?.epoch).toBe(sel.epoch);
+      const request = objectEditRequest(sel, { kind: "pathPoint", index: 0, x: 2701, y: 1502 });
+      expect(editor.execute("object.edit", request).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("object.edit", request).accepted).toBe(false);
+      const after = { ...original, points: original.points.map((point, i) =>
+        i === 0 || i === 3 ? { ...point, x: 2701, y: 1502 } : point) };
+      expect(read()).toEqual(after);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(original);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(after);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(after); }
+        finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p4-polygon-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-polygon-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-polygon-report.json"), exported.contentLoss());
+        }
+      } finally { exported.free(); }
+      const lock = doc as RhwpDocument & { setControlLock(para: number, control: number, locked: boolean): string };
+      expect(JSON.parse(lock.setControlLock(0, index, true))).toMatchObject({ ok: true });
+      expect(pick(shapes(doc)[0]!).operations).not.toContain("pathPoint");
+      expect(() => doc.moveShapePathPoint!(0, 0, index, 0, 2801, 1602)).toThrow();
+    } finally { editor.dispose(); }
+  });
+
+  it.skipIf(!process.env.GEUL_STAGE3_CUBIC)("Stage 3-A edits HWP5 cubic handles and a shared line endpoint", async () => {
+    const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC!));
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const frame = shapes(doc).find(frame => JSON.parse(doc.getEditableShapePath!(0, 0, frame.controlIdx)) !== null)!;
+      const selection = pick(frame), index = frame.controlIdx;
+      const path = selection.shapePath!;
+      const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      expect(path.kind).toBe("curve");
+      expect(path.points.map(point => point.control)).toEqual([false, true, true, false, false]);
+      const beforeProperties = doc.getShapeProperties!(0, 0, index);
+      expect(edit({ kind: "pathPoint", index: 1, x: 3001, y: 1402 })).toBe(true);
+      await confirm();
+      const first = read();
+      expect(first.points[1]).toEqual({ x: 3001, y: 1402, control: true });
+      expect(edit({ kind: "pathPoint", index: 3, x: 7602, y: 4901 })).toBe(true);
+      await confirm();
+      const after = { ...first, points: first.points.map((p: unknown, i: number) =>
+        i === 3 ? { x: 7602, y: 4901, control: false } : p) };
+      expect(read()).toEqual(after);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(first);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(path);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(after);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+      const exported = doc.exportHwpWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(after); }
+        finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p4-curve-edited.hwp"), output);
+          writeFileSync(resolve(out, "a-p4-curve-report.json"), exported.contentLoss());
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A edits only the selected HWPX group child's solid fill", async () => {
+    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument & { groupShapes(json: string): string };
+    let bytes: Uint8Array, index: number;
+    try {
+      const targets = ["rectangle", "ellipse"].map((shapeType, i) => {
+        const { controlIdx } = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 2 + i, shapeType, width: 5200, height: 4100,
+          treatAsChar: false, textWrap: "Square", horzOffset: i * 6500, vertOffset: i * 800,
+        })));
+        fixture.setShapeProperties!(0, 0, controlIdx, JSON.stringify({ fillType: "solid", fillBgColor: i ? 0x601234 : 0x348951 }));
+        return { paraIdx: 0, controlIdx };
+      });
+      const grouped = JSON.parse(fixture.groupShapes(JSON.stringify({ sectionIdx: 0, targets })));
+      expect(grouped.ok).toBe(true);
+      index = grouped.controlIdx;
+      fixture.setShapeProperties!(0, 0, index, '{"textWrap":"Square","horzOffset":500,"vertOffset":500}');
+      bytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const frame = (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      const selected = pick(frame);
+      expect(selected.groupChildFills).toEqual([
+        { index: 0, kind: "rectangle", color: "518934" }, { index: 1, kind: "ellipse", color: "341260" },
+      ]);
+      const read = () => doc.getEditableGroupFills!(0, 0, index);
+      const original = read();
+      expect(edit({ kind: "groupChildFill", index: 2, color: "FF8833" })).toBe(false);
+      expect(editor.snapshot().history?.undo).toBe(false);
+      expect(read()).toBe(original);
+      const beforeProperties = doc.getShapeProperties!(0, 0, index);
+      expect(edit({ kind: "groupChildFill", index: 1, color: "FF8833" })).toBe(true);
+      await confirm();
+      const after = read();
+      expect(JSON.parse(after)).toEqual([{ index: 0, kind: "rectangle", color: 0x348951 }, { index: 1, kind: "ellipse", color: 0x3388ff }]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toBe(original);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toBe(after);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(reopened.getEditableGroupFills!(0, 0, index)).toBe(after); }
+        finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p4-group-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-group-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-group-report.json"), exported.contentLoss());
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("edits %s polygon and curve outer geometry, transforms, and deletion cleanly", async format => {
     const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
     let baseHwpx: Uint8Array;

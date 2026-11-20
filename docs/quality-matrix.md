@@ -381,3 +381,13 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 **Stage 3-B B3.2 클립보드 보존 후속 (2026-11-20) — COMPLETED.** 휴대용 그림·사각형·타원·기본 직선·글상자는 지원되는 속성을 모두 적용하고 다시 읽어 확인한 경우에 수용한다. 도형의 실선과 무윤곽을 명시적으로 구분한다. 문단 정렬, 전체 문자 서식 범위(캡션의 `atno` 슬롯 제외), 7개 언어별 글꼴 참조 일치를 확인하며 실패한 붙여넣기는 개체와 글꼴 표를 함께 되돌린다. Release WASM 33건, 클립보드 단위 52건, 저장 보존 Rust 3건, 새 Linux X11 Native B3-2 1건이 PASS했다. 실제 저장 및 독립 RHWP·ZIP 검사와 앱 재열기에서 다문단 캡션, `atno`, 혼합 서식과 명시 글꼴을 확인했다. 점선 도형은 거부됐다. Stage 3 전체는 **PARTIALLY COMPLETED**다. [B3.2 후속 검증](architecture/stage3-b-clipboard-fidelity-followup-2026-11-20.json)
 
 **Stage 3-B B3.2 개체 속성 보존 후속 (2026-11-20).** 글상자의 세로 정렬과 네 내부 여백, 무테두리 그림과 실제 자르기 좌표를 확인한다. Linux X11 B3-2에서 Bottom 글상자와 자르기한 PNG를 게시·독립 검사·재열기했고 원본 바이트와 대상 본문을 보존했다. [속성 감사와 실행 기록](architecture/stage3-b-portable-property-safety-2026-11-20.json)
+
+**Stage 3-A P4 고급 기하 및 그룹 자식 편집 (2026-11-20) — PARTIAL_SUPPORT.**
+
+| 항목 | 수용 범위 | 증거와 남은 경계 |
+|---|---|---|
+| P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩·점 개수 변경, HWP5와 DOCX의 꼭짓점 편집은 남아 있다. |
+| P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차·구간 추가/제거 및 HWPX/DOCX의 무손실 구간 모델은 남아 있다. |
+| P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. 자식 이동·크기, 중첩 그룹, HWP5/DOCX 자식 저장 증명은 남아 있다. |
+
+지원 경로의 Undo/Redo와 거부 범위는 [P4 수용 기록](architecture/stage3-a-p4-object-geometry-acceptance.json)에 있다. 단계 시작 시점의 형식별 비교는 [초기 감사](architecture/stage3-a-initial-audit.md)에 있다.

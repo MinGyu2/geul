@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { OBJECT_SIDE_LIMITS, supportsAnchoredResize, type ObjectEdit, type ObjectFrame, type ObjectSelection } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
+import { ShapePointEditor } from "./ShapePointEditor";
 
 export const RESIZE_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 export type ResizeHandle = typeof RESIZE_HANDLES[number];
@@ -78,8 +79,12 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
   const preview = previewState?.owner === owner ? previewState.box : null;
   const setPreview = (box: Box | null) => setPreviewState(box ? { owner, box } : null);
   const drag = useRef<Drag | null>(null);
-  const canMove = Boolean(onEdit) && selection.operations.includes("move");
-  const canResize = Boolean(onEdit) && selection.operations.includes("resize");
+  const pathOwner = selection.address.engine === "rhwp" && selection.shapePath && selection.operations.includes("pathPoint")
+    ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.path.join(".")}` : null;
+  const [pathMode, setPathMode] = useState<string | null>(null);
+  const editingPath = !!pathOwner && pathOwner === pathMode;
+  const canMove = !editingPath && Boolean(onEdit) && selection.operations.includes("move");
+  const canResize = !editingPath && Boolean(onEdit) && selection.operations.includes("resize");
   const resizeHandles = canMove && !supportsAnchoredResize(selection)
     ? RESIZE_HANDLES.filter(handle => !handle.startsWith("n") && !handle.includes("w"))
     : RESIZE_HANDLES;
@@ -87,16 +92,16 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
 
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !drag.current) return;
-      // Escape ends the drag only; the object stays selected.
+      if (event.key !== "Escape" || (!drag.current && !editingPath)) return;
       event.preventDefault();
       event.stopPropagation();
       drag.current = null;
       setPreviewState(null);
+      setPathMode(null);
     };
     window.addEventListener("keydown", cancel, true);
     return () => window.removeEventListener("keydown", cancel, true);
-  }, []);
+  }, [editingPath]);
 
   const start = (event: ReactPointerEvent<HTMLElement>, handle: Drag["handle"]) => {
     if (event.button !== 0) return;
@@ -154,6 +159,13 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
     <div className="object-selection-frame" data-object-kind={selection.kind} data-dragging={preview ? "true" : undefined}
       style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale }}>
       <span role="status" className="object-selection-frame__label">{t(label, { kind })}</span>
+      {pathOwner && onEdit && <button type="button" className="object-path-mode" aria-pressed={editingPath}
+        onMouseDown={event => event.stopPropagation()} onClick={() => setPathMode(editingPath ? null : pathOwner)}>
+        {t(editingPath ? "editor.object.path.done" : "editor.object.path.edit")}
+      </button>}
+      {editingPath && selection.shapePath && onEdit &&
+        <ShapePointEditor path={selection.shapePath} owner={owner} width={selection.frame.width * scale}
+          height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}
       {canMove && (
         <div className="object-selection-frame__body" role="button" aria-label={t("editor.object.move", { kind })}
           data-testid="object-move" onPointerDown={event => start(event, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel} onMouseDown={swallow} />

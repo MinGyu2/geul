@@ -2,7 +2,7 @@ import { POSITION_PRESETS, objectEditMatches, objectEditRequest, pictureResizeMa
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpGroup, inspectRhwpShape } from "./shapeProperties";
+import { hexToBgr, inspectRhwpGroup, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import { extractHwpxPortableObject, insertHwpxPortableObject } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -1713,12 +1713,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return this.moveTo(next, false);
   }
 
-  private chartsEqualOnReopen(doc: RhwpDocument, reopened: RhwpDocument, controlsJson: string): boolean {
+  private bodyDrawingsEqualOnReopen(doc: RhwpDocument, reopened: RhwpDocument, controlsJson: string): boolean {
     try {
       const parsed = JSON.parse(controlsJson) as { ctrlId?: string; list?: number; para?: number; controlIndex?: number; userDesc?: string }[];
-      const charts = parsed.filter(c => c.ctrlId === "gso" && c.list === 0 && (c.userDesc === "OLE" || c.userDesc === "차트")
+      const drawings = parsed.filter(c => c.ctrlId === "gso" && c.list === 0
+        && ["OLE", "차트", "다각형", "곡선", "그리기"].includes(c.userDesc ?? "")
         && typeof c.para === "number" && typeof c.controlIndex === "number");
-      if (!charts.length) return true;
+      if (!drawings.length) return true;
       const sectionCount = doc.getSectionCount?.() ?? 1;
       const ends: number[] = [];
       let total = 0;
@@ -1726,15 +1727,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         total += doc.getParagraphCount(s);
         ends.push(total);
       }
-      for (const c of charts) {
+      for (const c of drawings) {
         const g = c.para!;
         let s = 0;
         while (s < ends.length && g >= ends[s]!) s += 1;
         if (s >= ends.length) continue;
         const p = g - (s === 0 ? 0 : ends[s - 1]!);
-        const before = this.readChartFrom(doc, [s, p, c.controlIndex!]);
-        const after = this.readChartFrom(reopened, [s, p, c.controlIndex!]);
-        if (before && JSON.stringify(before) !== JSON.stringify(after)) return false;
+        const address = [s, p, c.controlIndex!] as const;
+        if (c.userDesc === "다각형" || c.userDesc === "곡선") {
+          if (doc.getEditableShapePath?.(...address) !== reopened.getEditableShapePath?.(...address)) return false;
+        } else if (c.userDesc === "그리기") {
+          if (doc.getEditableGroupFills?.(...address) !== reopened.getEditableGroupFills?.(...address)) return false;
+        } else {
+          const before = this.readChartFrom(doc, address);
+          const after = this.readChartFrom(reopened, address);
+          if (before && JSON.stringify(before) !== JSON.stringify(after)) return false;
+        }
       }
       return true;
     } catch {
@@ -1797,6 +1805,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
           const shape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
             ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
+          const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
+            ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
+          if (shapePath) operations.push("pathPoint");
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
@@ -1811,6 +1822,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const groupSupported = format === "hwpx" || (canEditHwp && this.unlockedBodyGso(groupAddress) === "그리기");
           const group = groupAddress && this.history && canEditGso && groupSupported && this.doc.setShapeProperties
             ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
+          const groupChildFills = group && groupAddress && this.doc.setGroupChildFill
+            ? inspectRhwpGroupFills(this.doc, groupAddress) : undefined;
+          if (groupChildFills) operations.push("groupChildFill");
           const groupWrap = group && !group.raw.treatAsChar
             ? group.raw.textWrap === "Square" ? "square"
               : group.raw.textWrap === "TopAndBottom" ? "topAndBottom" : undefined
@@ -1854,6 +1868,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(inspected ? { picture: inspected.properties } : {}),
               ...(group ? { groupSize: { widthPt: group.widthPt, heightPt: group.heightPt } } : {}),
               ...(groupWrap ? { groupWrap } : {}),
+              ...(shapePath ? { shapePath } : {}),
+              ...(groupChildFills ? { groupChildFills } : {}),
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
                 ...shape.properties,
@@ -2069,8 +2085,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
-      if ((format === "hwpx" || format === "hwp") && typeof doc.getChartData === "function" && typeof reopened.getChartData === "function") {
-        report.controlsEqual &&= this.chartsEqualOnReopen(doc, reopened, controls(doc));
+      if ((format === "hwpx" || format === "hwp") && (doc.getChartData || doc.getEditableShapePath || doc.getEditableGroupFills)) {
+        report.controlsEqual &&= this.bodyDrawingsEqualOnReopen(doc, reopened, controls(doc));
       }
       if (format === "hwp") {
         report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpBaseline?.structure ?? null);
@@ -4520,6 +4536,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
+    if (request.edit.kind === "pathPoint" || request.edit.kind === "groupChildFill") return this.editAdvancedShape(request);
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
@@ -4668,6 +4685,58 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }, true, "other", null, true, true);
     if (!accepted && this.status.kind === "ready") {
       this.selectedObject = savedSelection;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  private editAdvancedShape(request: ObjectEditRequest): boolean {
+    const selected = this.objectSelection, saved = this.selectedObject, doc = this.doc;
+    if (!selected || !saved || !doc?.getShapeProperties || !this.history || this.imeUnsettled
+      || !objectEditMatches(request, selected)) return false;
+    const { edit } = request;
+    const pathEdit = edit.kind === "pathPoint";
+    if (!pathEdit && edit.kind !== "groupChildFill") return false;
+    const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
+    if (!address || !this.gsoFormatEditable(address, pathEdit)) return false;
+    const read = pathEdit ? inspectRhwpShapePath : inspectRhwpGroupFills;
+    let apply: () => void;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills">;
+    if (pathEdit) {
+      const path = selected.shapePath;
+      const point = path?.points[edit.index];
+      if (!path || !point || !doc.moveShapePathPoint || edit.x > path.width || edit.y > path.height
+        || (edit.x === point.x && edit.y === point.y) || (path.closed && edit.index === path.points.length - 1)) return false;
+      refreshed = { shapePath: { ...path, points: path.points.map((p, index) =>
+        index === edit.index || (path.closed && edit.index === 0 && index === path.points.length - 1)
+          ? { ...p, x: edit.x, y: edit.y } : p) } };
+      apply = () => doc.moveShapePathPoint!(...address, edit.index, edit.x, edit.y);
+    } else {
+      const children = selected.groupChildFills;
+      const child = children?.find(item => item.index === edit.index);
+      const color = edit.color.toUpperCase();
+      if (!children || !child || !doc.setGroupChildFill || child.color === color) return false;
+      refreshed = { groupChildFills: children.map(item => item === child ? { ...item, color } : item) };
+      apply = () => doc.setGroupChildFill!(...address, edit.index, hexToBgr(color));
+    }
+    let before: string;
+    try { before = doc.getShapeProperties(...address); } catch { return false; }
+    if (JSON.stringify(read(doc, address)) !== JSON.stringify(pathEdit ? selected.shapePath : selected.groupChildFills)) return false;
+    const { caret, anchor } = this;
+    this.selectedObject = null;
+    const accepted = this.mutate(() => {
+      apply();
+      if (doc.getShapeProperties!(...address) !== before
+        || JSON.stringify(read(doc, address)) !== JSON.stringify(refreshed.shapePath ?? refreshed.groupChildFills)) {
+        throw new Error("advanced shape edit did not verify");
+      }
+      return { caret, anchor };
+    }, true, "other", null, true, true);
+    if (this.status.kind === "ready") {
+      if (accepted) {
+        this.selectedObject = { ...saved, model: this.modelVersion, layout: this.layoutVersion,
+          selection: { ...selected, ...refreshed, epoch: ++this.objectEpoch, revision: this.committed + this.pending } };
+      } else this.selectedObject = saved;
       this.emit();
     }
     return accepted;
