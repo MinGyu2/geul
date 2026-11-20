@@ -1807,6 +1807,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const groupSupported = format === "hwpx" || (canEditHwp && this.unlockedBodyGso(groupAddress) === "그리기");
           const group = groupAddress && this.history && canEditGso && groupSupported && this.doc.setShapeProperties
             ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
+          const groupWrap = group && !group.raw.treatAsChar
+            ? group.raw.textWrap === "Square" ? "square"
+              : group.raw.textWrap === "TopAndBottom" ? "topAndBottom" : undefined
+            : undefined;
           if (group) {
             operations.push(...(group.movable ? ["move" as const] : []),
               ...(format === "hwpx" || !group.sizeProtected ? ["resize" as const] : []),
@@ -1841,6 +1845,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               revision: this.committed + this.pending, editable: operations.length > 0,
               operations: ["deselect", ...operations, ...clipboardOps],
               ...(inspected ? { picture: inspected.properties } : {}),
+              ...(groupWrap ? { groupWrap } : {}),
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
                 ...shape.properties,

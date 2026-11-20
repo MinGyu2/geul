@@ -104,16 +104,18 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
 }) {
   const { t } = useTranslation();
   const can = (op: ObjectSelection["operations"][number]) => selection.operations.includes(op);
+  const wrap = picture?.wrap ?? selection.groupWrap;
+  const wraps: readonly PictureWrap[] = selection.groupWrap ? ["square", "topAndBottom"] : PICTURE_WRAPS;
   return (
     <div className="object-tools">
       {picture && can("resize") && <PictureSizeFields picture={picture} disabled={disabled}
         onApply={(width, height) => onEdit({ kind: "bounds", width, height })} />}
       {picture?.crop && can("crop") && <PictureCropFields crop={picture.crop} disabled={disabled} onApply={onEdit} />}
-      {picture && can("wrap") && (
+      {wrap && can("wrap") && (
         <label className="picture-size-field">{t("properties.picture.wrapInput")}
-          <select value={picture.wrap} disabled={disabled}
+          <select value={wrap} disabled={disabled}
             onChange={event => onEdit({ kind: "wrap", wrap: event.target.value as PictureWrap })}>
-            {PICTURE_WRAPS.map(wrap => <option key={wrap} value={wrap}>{t(`properties.picture.wrap.${wrap}`)}</option>)}
+            {wraps.map(option => <option key={option} value={option}>{t(`properties.picture.wrap.${option}`)}</option>)}
           </select>
         </label>
       )}

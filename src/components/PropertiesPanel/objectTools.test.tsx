@@ -63,6 +63,19 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "position", preset: "bottomCenter" }));
   });
 
+  it("uses the group address for the two proven RHWP wrapping choices", () => {
+    const onEdit = panel({ ...shapeSelection({
+      address: { engine: "rhwp", path: [0, 0, 2] },
+      operations: ["deselect", "move", "resize", "wrap"],
+      groupWrap: "square",
+    }), kind: "group" });
+    const wrap = screen.getByLabelText<HTMLSelectElement>("Text wrapping");
+    expect(Array.from(wrap.options, option => option.value)).toEqual(["square", "topAndBottom"]);
+    fireEvent.change(wrap, { target: { value: "topAndBottom" } });
+    expect(onEdit).toHaveBeenCalledWith(request({ kind: "wrap", wrap: "topAndBottom" }));
+    expect(screen.queryByRole("button", { name: "Delete object" })).toBeNull();
+  });
+
   it("refuses an out-of-range crop and hides controls the object does not admit", () => {
     const onEdit = panel(selection({ operations: ["deselect", "crop"], address: { engine: "rhwp", path: [0, 0, 2] } }));
     fireEvent.change(screen.getByLabelText("Left"), { target: { value: "46" } });

@@ -42,6 +42,7 @@ export interface ObjectHit {
   frame: ObjectFrame;
   epoch: number;
   picture?: PictureProperties;
+  groupWrap?: "square" | "topAndBottom";
   graphic?: GraphicProperties;
   shape?: ShapeProperties;
 }

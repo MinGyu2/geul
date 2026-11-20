@@ -445,7 +445,15 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     focusInput();
   }, [session, pointer, focusInput]);
   const onObjectEdit = useCallback((selection: ObjectSelection, edit: ObjectEdit, epoch: number) => {
-    session.execute("object.edit", objectEditRequest(selection, edit, epoch));
+    // RHWP lays out frames at 96 DPI. Document bounds commands take points.
+    // Pictures also expose the precise dimensions of the selected resource.
+    const { picture, frame } = selection;
+    const request = edit.kind === "bounds" && edit.width !== undefined && edit.height !== undefined
+      ? { ...edit,
+          width: edit.width * (picture && frame.width > 0 ? picture.widthPt / frame.width : 72 / 96),
+          height: edit.height * (picture && frame.height > 0 ? picture.heightPt / frame.height : 72 / 96) }
+      : edit;
+    session.execute("object.edit", objectEditRequest(selection, request, epoch));
     focusInput();
   }, [session, focusInput]);
   const onMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
