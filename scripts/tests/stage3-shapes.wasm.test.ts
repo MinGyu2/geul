@@ -1486,6 +1486,76 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A splits an owned mixed-format HWPX text box paragraph", async () => {
+    const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    let bytes: Uint8Array, control: number;
+    try {
+      const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "textbox", width: 16000, height: 9600,
+        treatAsChar: true, textWrap: "Square",
+      })));
+      control = created.controlIdx;
+      fixture.setShapeProperties!(0, 0, control, '{"tbVerticalAlign":"Bottom","tbMarginLeft":640,"tbMarginTop":310}');
+      const address = [0, 0, control, 0] as const;
+      fixture.insertTextInCell(...address, 0, 0, "First paragraph");
+      fixture.splitParagraphInCell(...address, 0, 15);
+      fixture.insertTextInCell(...address, 1, 0, "Bold plain");
+      fixture.applyParaFormatInCell!(...address, 1, '{"alignment":"center"}');
+      fixture.applyCharFormatInCell!(...address, 1, 0, 4, '{"bold":true,"textColor":"#992244"}');
+      fixture.applyCharFormatInCell!(...address, 1, 5, 10, '{"italic":true}');
+      fixture.splitParagraphInCell(...address, 1, 10);
+      fixture.insertTextInCell(...address, 2, 0, "Trailing paragraph");
+      bytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const address = [0, 0, control, 0] as const;
+    const read = (file: RhwpDocument) => ({
+      shape: JSON.parse(file.getShapeProperties!(0, 0, control)),
+      paragraphs: Array.from({ length: file.getCellParagraphCount(...address) }, (_, para) => {
+        const length = file.getCellParagraphLength(...address, para);
+        return { text: file.getTextInCell(...address, para, 0, length),
+          format: JSON.parse(file.getFormattingRuns!(...address, para, 0, length)),
+          properties: JSON.parse(file.getCellParaPropertiesAt!(...address, para)) };
+      }),
+    });
+    try {
+      const before = read(doc);
+      const cursor = JSON.parse(doc.getCursorRectInCell(...address, 1, 5));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 0.1, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 5 });
+      expect(before.paragraphs[1]!.format.runs).toEqual([[0, 4, 1], [4, 5, 0], [5, 10, 2]]);
+      expect(editor.enter()).toBe(true);
+      await confirm();
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 2 }, offset: 0 });
+      const after = read(doc);
+      expect(after.shape).toEqual(before.shape);
+      expect(after.paragraphs.map(p => p.text)).toEqual(["First paragraph", "Bold ", "plain", "Trailing paragraph"]);
+      expect(after.paragraphs[1]!.format.runs).toEqual([[0, 4, 1], [4, 5, 0]]);
+      expect(after.paragraphs[2]!.format.runs).toEqual([[0, 5, 2]]);
+      expect(after.paragraphs.slice(1, 3).map(p => p.properties)).toEqual([before.paragraphs[1]!.properties, before.paragraphs[1]!.properties]);
+      expect(after.paragraphs[0]).toEqual(before.paragraphs[0]);
+      expect(after.paragraphs[3]).toEqual(before.paragraphs[2]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read(doc)).toEqual(after);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(read(reopened)).toEqual(after); } finally { reopened.free(); }
+        if (out) {
+          writeFileSync(resolve(out, "a-p5-textbox-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p5-textbox-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p5-textbox-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("edits the second existing paragraph of an owned %s text box", async format => {
     const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
     let bytes: Uint8Array, control: number;

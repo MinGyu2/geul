@@ -391,3 +391,5 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 | P4.3 그룹 자식 | HWPX의 비잠금 평면 사각형·타원 그룹에서 지정 자식의 기존 단색 배경 변경 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 부모 변환·형제 유지. 자식 이동·크기, 중첩 그룹, HWP5/DOCX 자식 저장 증명은 남아 있다. |
 
 지원 경로의 Undo/Redo와 거부 범위는 [P4 수용 기록](architecture/stage3-a-p4-object-geometry-acceptance.json)에 있다. 단계 시작 시점의 형식별 비교는 [초기 감사](architecture/stage3-a-initial-audit.md)에 있다.
+
+**Stage 3-A P5 문서 이야기와 복합 글상자 (2026-11-20) — PARTIAL_SUPPORT.** DOCX의 머리말·꼬리말·각주·미주에서 최상위 인라인 내장 그림의 대체 설명을 수정할 수 있다. HWPX의 지원 본문 글상자에서는 혼합 서식 문단 내부를 Enter로 분할할 수 있다. 네 DOCX 이야기와 HWPX 글상자를 Linux X11에서 각각 편집·Undo/Redo·게시하고, 별도 XML/엔진으로 검사한 뒤 앱에서 다시 열었다. 이야기 개체의 이동·크기·삭제, 다른 형식의 이야기 개체, 중첩 컨트롤과 교차 문단 삭제는 범위 밖이다. [P5 수용 기록](architecture/stage3-a-p5-nested-story-acceptance.json)

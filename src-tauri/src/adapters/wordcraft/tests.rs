@@ -7982,3 +7982,133 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
     assert_eq!(group_ids[1].1, Some(group_ids[1].0));
     assert!(group_ids[1].2, "external connector glue must be cleared on paste");
 }
+
+#[test]
+fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use super::engine::ObjectEdit;
+    use wordcraft_engine::doc::{para::NoteKind, para_block, props::CharProps, InlineObject, Paragraph, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("insert.picture", &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) })).unwrap();
+    source.run("picture.size", &json!({ "width": 28, "height": 22 })).unwrap();
+    source.run("object.altText", &json!({ "text": "body picture" })).unwrap();
+    let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
+    let props = CharProps::default();
+    let stories = [
+        (PartKind::Header, "header", None, "word/header1.xml"),
+        (PartKind::Footer, "footer", None, "word/footer1.xml"),
+        (PartKind::Footnote, "footnote", Some(NoteKind::Footnote), "word/footnotes.xml"),
+        (PartKind::Endnote, "endnote", Some(NoteKind::Endnote), "word/endnotes.xml"),
+    ];
+    for (kind, label, note, _) in stories {
+        let id = source.doc.add_part(kind, Vec::new());
+        let mut para = Paragraph::with_text(&format!("{label} text "), props.clone());
+        if let Some(kind) = note {
+            let marker = InlineObject::NoteRef { kind, id, custom: String::new() };
+            para.insert_object(0, marker.clone(), &props).unwrap();
+            let end = source.doc.end_of(StoryRef::Body);
+            source.doc.insert_object(&end, marker, &props).unwrap();
+        }
+        let mut picture = picture.clone();
+        picture.set_alt_text(label);
+        para.insert_object(para.len(), picture, &props).unwrap();
+        source.doc.set_story(StoryRef::Part(id), vec![para_block(para)]).unwrap();
+        match kind {
+            PartKind::Header => source.doc.last_section.headers.default = Some(id),
+            PartKind::Footer => source.doc.last_section.footers.default = Some(id),
+            _ => {}
+        }
+    }
+    let draft = io::save_bytes("story.docx", &source.doc).unwrap();
+    // Use the pinned writer's canonical OPC identities in the publication tests.
+    let original = io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
+    let mut baseline = Session::new(io::open_bytes("story.docx", &original).unwrap());
+    let layout = baseline.layout();
+    let mut positions = serde_json::Map::new();
+    for (kind, label, _, part) in stories {
+        let id = *baseline.doc.parts.iter().find(|(_, p)| p.kind == kind).unwrap().0;
+        let story = StoryRef::Part(id);
+        let hit = layout.find_object(0, |object| object.story == story).unwrap_or_else(|| panic!("missing displayed {label} picture"));
+        let (x, y) = (hit.rect.x + hit.rect.w / 2.0, hit.rect.y + hit.rect.h / 2.0);
+        positions.insert(label.into(), json!({"page":hit.page,"x":x,"y":y,"part":part}));
+        let click = DocxOp::Pointer { page: hit.page as u32, x, y,
+            extend: false, before_insert: false, drag: false, select_object: true };
+        let mut model = DocxModel::open(&original).unwrap();
+        assert_eq!(model.apply(&[click.clone()]).changed, 0);
+        let selected = serde_json::to_value(model.view()).unwrap();
+        let selected = &selected["object"];
+        assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
+        assert_eq!(selected["operations"], json!(["altText"]));
+        assert_eq!(selected["picture"]["description"], label);
+
+        let position = selected["position"].as_str().unwrap().to_owned();
+        let epoch = selected["epoch"].as_u64().unwrap();
+        let command = DocxOp::ObjectEdit { position: position.clone(), epoch,
+            edit: ObjectEdit::AltText { text: format!("{label} edited") } };
+        let before = model.export().unwrap();
+        let wrong = DocxOp::ObjectEdit { position: "body:0:0".into(), epoch,
+            edit: ObjectEdit::AltText { text: "wrong owner".into() } };
+        let stale = DocxOp::ObjectEdit { position, epoch: epoch - 1,
+            edit: ObjectEdit::AltText { text: "stale owner".into() } };
+        assert_eq!(model.apply(&[wrong, stale]).rejected, vec![0, 1]);
+        assert_eq!(model.export().unwrap(), before);
+        assert!(!model.view().history.undo);
+        let result = model.apply(&[command]);
+        if result.changed != 1 {
+            let mut isolated = Session::new(io::open_bytes("story.docx", &original).unwrap());
+            let at = hit.pos();
+            let end = wordcraft_engine::doc::Pos { off: at.off + 3, ..at.clone() };
+            isolated.run("select.range", &json!({"anchor":at,"focus":end})).unwrap();
+            isolated.run("object.altText", &json!({"text":format!("{label} edited")})).unwrap();
+            let candidate = io::save_bytes("story.docx", &isolated.doc).unwrap();
+            let restored = io::open_bytes("story.docx", &candidate).unwrap();
+            let same = wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&isolated.doc, &restored);
+            let gate = service::check_saved(Format::Docx, &original, &candidate, None, matches!(same, Ok(true)));
+            panic!("{label} edit rejected: {same:?} with {gate:?}");
+        }
+        let after = model.export().unwrap();
+        assert!(model.same_as(&after));
+        assert!(service::check_saved(Format::Docx, &original, &after, None, true).is_safe());
+        let left = package::open(&original, package::Side::Original).unwrap();
+        let mut right = package::open(&after, package::Side::Output).unwrap();
+        assert_eq!(left.parts.keys().collect::<Vec<_>>(), right.parts.keys().collect::<Vec<_>>());
+        for name in left.parts.keys().filter(|name| name.as_str() != part) {
+            assert_eq!(left.get(name), right.get(name), "unrelated part changed: {name}");
+        }
+        let edited = io::open_bytes("story.docx", &after).unwrap();
+        let reopened = edited.parts.values().find(|p| p.kind == kind).unwrap();
+        let p = match reopened.blocks[0].as_ref() {
+            wordcraft_engine::doc::Block::Para(p) => p,
+            _ => panic!("picture left its paragraph"),
+        };
+        let alt = p.object_offsets().iter().find_map(|off| match p.object_at(*off) {
+            Some(InlineObject::Image { alt, .. }) => Some(alt.as_str()),
+            _ => None,
+        });
+        assert_eq!(alt, Some(format!("{label} edited").as_str()));
+        assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), before);
+        assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), after);
+        // A change to only one mirrored description must not be treated as the
+        // description edit WordCraft issued. No additions, mutations or remapping
+        // of the target's relationship are part of this contract.
+        let (_, part_bytes) = right.parts.get_mut(part).unwrap();
+        let xml = std::str::from_utf8(part_bytes).unwrap();
+        let descr = format!("descr=\"{label} edited\"");
+        assert_eq!(xml.matches(&descr).count(), 2);
+        *part_bytes = xml.replacen(&descr, "descr=\"unpaired\"", 1).into_bytes();
+        assert!(package::compare_saved_docx(&left, &right).iter().any(|f| f.part.as_deref() == Some(part)));
+    }
+    if let Some(out) = std::env::var_os("GEUL_STAGE3A_STORY_OUT") {
+        let out = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
+        std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
+    }
+}

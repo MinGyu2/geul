@@ -371,6 +371,8 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     // Stage 3 P4 / stabilization: narrow semantic proof for chart/SmartArt parts WordCraft
     // regenerates from an edited model (`docx_graphics`).
     let graphics = super::docx_graphics::graphic_parts_regenerated(original, output);
+    let story_drawing_descriptions =
+        super::docx_story_drawings::description_edits(original, output);
     let media_removed = if added.is_none() && pictures.is_none() {
         authorized_table_media_changes(original, output)
     } else {
@@ -413,6 +415,7 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
             || graphics.contains(name)
+            || story_drawing_descriptions.contains(name)
             || fonts.as_ref().is_some_and(|f| {
                 f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
             })

@@ -1,0 +1,158 @@
+{
+  "phase": "P5",
+  "date": "2026-11-20",
+  "baseline": "2accc598266b0c19bef59fe7d777ca7a8bfce633",
+  "status": "PARTIAL_SUPPORT",
+  "runtime": {
+    "appSha256": "3f4ce3dd7653ced26751e37943ff0c4f71d7a4e61b84dce546953c9184381ede",
+    "rhwpGeneration": "fc4d0741736a980b41afebf80d03481ab39f4eec4c60c647b815852c36938bef",
+    "wordcraftPin": "b2c974369dd02d322a5498db484bcf96906dad15",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44"
+  },
+  "sources": [
+    "src-tauri/src/adapters/wordcraft/engine.rs",
+    "src-tauri/src/services/save/docx_story_drawings.rs",
+    "src-tauri/src/services/save/mod.rs",
+    "src-tauri/src/services/save/package.rs",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpText.ts",
+    "src-tauri/src/adapters/wordcraft/tests.rs",
+    "scripts/tests/stage3-shapes.wasm.test.ts",
+    "scripts/tests/native-stage3a-p5.py"
+  ],
+  "features": [
+    {
+      "feature": "P5.1",
+      "story": "endnote",
+      "format": "docx",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Non-body stories had no object edit permission.",
+      "api": "WordCraft object.altText at StoryRef::Part plus paragraph path and object offset",
+      "positive": "Inline embedded picture description mutation through proper story owner",
+      "undoRedo": "PASS",
+      "negative": [
+        "wrong body position and stale epoch rejected with unchanged bytes/history",
+        "unpaired description blocked by T009"
+      ],
+      "native": "PASS",
+      "revision": 3,
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "PASS",
+      "publishedSha256": "78f512e34ef9f29122b846304717253e9ebfaae36f470c294baeef0ee99c3db0",
+      "remaining": [
+        "Other object types and geometry. HWP/HWPX story ownership and save proof remain separate."
+      ]
+    },
+    {
+      "feature": "P5.1",
+      "story": "footer",
+      "format": "docx",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Non-body stories had no object edit permission.",
+      "api": "WordCraft object.altText at StoryRef::Part plus paragraph path and object offset",
+      "positive": "Inline embedded picture description mutation through proper story owner",
+      "undoRedo": "PASS",
+      "negative": [
+        "wrong body position and stale epoch rejected with unchanged bytes/history",
+        "unpaired description blocked by T009"
+      ],
+      "native": "PASS",
+      "revision": 6,
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "PASS",
+      "publishedSha256": "78f512e34ef9f29122b846304717253e9ebfaae36f470c294baeef0ee99c3db0",
+      "remaining": [
+        "Other object types and geometry. HWP/HWPX story ownership and save proof remain separate."
+      ]
+    },
+    {
+      "feature": "P5.1",
+      "story": "footnote",
+      "format": "docx",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Non-body stories had no object edit permission.",
+      "api": "WordCraft object.altText at StoryRef::Part plus paragraph path and object offset",
+      "positive": "Inline embedded picture description mutation through proper story owner",
+      "undoRedo": "PASS",
+      "negative": [
+        "wrong body position and stale epoch rejected with unchanged bytes/history",
+        "unpaired description blocked by T009"
+      ],
+      "native": "PASS",
+      "revision": 9,
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "PASS",
+      "publishedSha256": "78f512e34ef9f29122b846304717253e9ebfaae36f470c294baeef0ee99c3db0",
+      "remaining": [
+        "Other object types and geometry. HWP/HWPX story ownership and save proof remain separate."
+      ]
+    },
+    {
+      "feature": "P5.1",
+      "story": "header",
+      "format": "docx",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "Non-body stories had no object edit permission.",
+      "api": "WordCraft object.altText at StoryRef::Part plus paragraph path and object offset",
+      "positive": "Inline embedded picture description mutation through proper story owner",
+      "undoRedo": "PASS",
+      "negative": [
+        "wrong body position and stale epoch rejected with unchanged bytes/history",
+        "unpaired description blocked by T009"
+      ],
+      "native": "PASS",
+      "revision": 12,
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "PASS",
+      "publishedSha256": "78f512e34ef9f29122b846304717253e9ebfaae36f470c294baeef0ee99c3db0",
+      "remaining": [
+        "Other object types and geometry. HWP/HWPX story ownership and save proof remain separate."
+      ]
+    },
+    {
+      "feature": "P5.2",
+      "format": "hwpx",
+      "status": "PARTIAL_SUPPORT",
+      "previousGap": "The editor refused Enter even within a plain multi-paragraph textbox.",
+      "api": "Existing RHWP splitParagraphInCell with verified owner, run/paragraph snapshot and transaction",
+      "supported": "Split in the interior of an unlocked body textbox plain paragraph with mixed character formatting.",
+      "negative": [
+        "Structural split outside supported paragraph/source/ownership remains refused."
+      ],
+      "native": "PASS",
+      "undoRedo": "PASS",
+      "publish": "PASS",
+      "independentReopen": "PASS",
+      "preservation": "PASS",
+      "publishedSha256": "04d4c20a61a93f71e3290ee131e6b4f450ebcdfb6a1eb63bb303d9f61a4dd189",
+      "remaining": [
+        "Embedded controls, cross-paragraph deletion/join, complex overflow, and other document formats."
+      ]
+    }
+  ],
+  "checks": {
+    "wordcraft": "1 focused test, four story kinds, PASS",
+    "releaseRhwpWasm": "3 PASS (mixed textbox split and two existing textbox input cases)",
+    "hwpxSaveCheck": "SAFE",
+    "typecheck": "PASS as part of Release app build",
+    "native": "P5.1 and P5.2 PASS on separate runs"
+  },
+  "reports": {
+    "wordcraft": "target/stage3a-p5/wordcraft-story-final.log",
+    "releaseWasm": "target/stage3a-p5/textbox-wasm.log",
+    "nativeStories": "target/stage3a-p5/native-run4/result.json",
+    "nativeTextbox": "target/stage3a-p5/native-run1/result.json",
+    "cleanup": [
+      "target/stage3a-p5/native-session4/cleanup.json",
+      "target/stage3a-p5/native-session1/cleanup.json"
+    ]
+  },
+  "earlierAttempts": {
+    "storyEngine": "Rejected until the two WordCraft description attributes were proved together.",
+    "storyNative": "Runs 1\u20133 failed locating picture pixels. Run 4 locates the actual painted rectangles including the dimmed inactive header/footer."
+  }
+}

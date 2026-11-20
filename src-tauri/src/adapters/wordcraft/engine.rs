@@ -1631,7 +1631,15 @@ impl DocxModel {
                     let layout = self.session.layout();
                     let hit = layout
                         .object_at_in(*page as usize, *x, *y, 2.0, story)
-                        .or_else(|| layout.object_at(*page as usize, *x, *y, 2.0));
+                        .or_else(|| layout.object_at(*page as usize, *x, *y, 2.0))
+                        .or_else(|| {
+                            // Only fall back to the displayed margin story. An inactive
+                            // header/footer drawing overlapping the body retains its story
+                            // and must not intercept a body click.
+                            let (owner, _) = layout.header_footer_at(*page as usize, *y)?;
+                            let hit = layout.object_at_in(*page as usize, *x, *y, 2.0, owner)?;
+                            self.story_inline_picture(&hit.pos()).then_some(hit)
+                        });
                     if let Some(hit) = hit {
                         let pos = hit.pos();
                         if self.object_kind(&pos).is_some() {
@@ -2202,6 +2210,22 @@ impl DocxModel {
         self.session.doc.para_at(pos)?.object_at(pos.off)
     }
 
+    fn story_inline_picture(&self, pos: &Pos) -> bool {
+        use wordcraft_engine::doc::{para::Wrap, PartKind};
+        let StoryRef::Part(id) = pos.story else { return false };
+        let doc = &self.session.doc;
+        pos.path.0.len() == 1
+            && doc.parts.get(&id).is_some_and(|part| {
+                matches!(part.kind, PartKind::Header | PartKind::Footer)
+                    || (matches!(part.kind, PartKind::Footnote | PartKind::Endnote)
+                        && doc.counted_stories().contains(&pos.story))
+            })
+            && matches!(self.object_at(pos),
+                Some(InlineObject::Image { ole: None, media, float, w, h, .. })
+                    if float.wrap == Wrap::Inline && doc.media.contains_key(media)
+                        && w.is_finite() && *w > 0.0 && h.is_finite() && *h > 0.0)
+    }
+
     fn object_kind(&self, pos: &Pos) -> Option<&'static str> {
         use wordcraft_engine::doc::graphic::GraphicKind;
         match self.object_at(pos)? {
@@ -2266,17 +2290,16 @@ impl DocxModel {
         })
     }
 
-    /// Which Stage 3 mutations the object at `pos` admits. Admits `word/document.xml`-hosted
-    /// stories (Body, nested table cells, and Body-anchored TextBox stories); objects in headers,
-    /// footers, notes and comments live in other package parts whose changes T009 does not
-    /// admit. Charts and SmartArt are written to their own parts, so their geometry stays frozen.
+    /// Which mutations the object at `pos` admits. Secondary stories only expose
+    /// inline picture descriptions with a separate T009 proof. Charts and SmartArt
+    /// are written to their own parts, so their geometry stays frozen.
     fn object_operations(&self, pos: &Pos) -> Vec<&'static str> {
         let doc = &self.session.doc;
-        if !self.body_hosted_story(pos.story)
-            || doc.settings.protection.is_some()
-            || doc.settings.track_changes
-        {
+        if doc.settings.protection.is_some() || doc.settings.track_changes {
             return Vec::new();
+        }
+        if !self.body_hosted_story(pos.story) {
+            return if self.story_inline_picture(pos) { vec!["altText"] } else { Vec::new() };
         }
         let Some(object) = self.object_at(pos) else {
             return Vec::new();
@@ -2882,7 +2905,7 @@ impl DocxModel {
             if !changed {
                 return Err(Rejected);
             }
-            if let Some(at) = &at {
+            if let Some(at) = at.as_ref().filter(|at| !model.story_inline_picture(at)) {
                 model.snap_to_emu(at)?;
             }
             let mut after = model.export().ok_or(Rejected)?;

@@ -399,6 +399,35 @@ export class RhwpText {
     } catch { return false; }
   }
 
+  /** Same-engine proof for an owned, control-free textbox paragraph. */
+  textBoxParagraph(at: DocPosition) {
+    const c = at.cell, doc = this.doc;
+    if (!c?.textBox || !doc.getFormattingRuns || !doc.getCellParaPropertiesAt) return null;
+    const address = [at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph] as const;
+    try {
+      const length = doc.getCellParagraphLength(...address);
+      if (!isIndex(length) || length > 65_536) return null;
+      const text = doc.getTextInCell(...address, 0, length);
+      if (typeof text !== "string" || /[\r\n\ufffc]/u.test(text) || charCount(text) !== length) return null;
+      const raw = json(doc.getFormattingRuns(...address, 0, length));
+      if (!isRecord(raw) || raw.length !== length || !Array.isArray(raw.fontRuns) || raw.fontRuns.length > 4096) return null;
+      const styles = new Uint32Array(length);
+      let offset = 0;
+      for (const run of raw.fontRuns) {
+        if (!Array.isArray(run) || run.length !== 4 || !run.every(isIndex)) return null;
+        const [start, end, style, language] = run as [number, number, number, number];
+        if (start !== offset || end <= start || end > length || style > 65_535 || language > 6) return null;
+        styles.fill(style * 8 + language, start, end);
+        offset = end;
+      }
+      if (offset !== length) return null;
+      const properties = doc.getCellParaPropertiesAt(...address);
+      const parsed = json(properties);
+      if (!isRecord(parsed) || parsed.headType !== "None") return null;
+      return { text, styles, properties };
+    } catch { return null; }
+  }
+
   /** Pictures (`cell === 0`) and shapes (`cell === 65534`) expose their captions through cell APIs.
    * Verify root GSO ownership, lock state, and caption structure before treating a hit as editable. */
   ownsPictureCaption(at: DocPosition): boolean {
@@ -1273,6 +1302,7 @@ export class RhwpText {
   split(at: DocPosition): void {
     const c = at.cell;
     if (c?.nested) this.nestedResult(this.doc.splitParagraphInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset));
+    else if (c?.textBox) this.nestedResult(this.doc.splitParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset));
     else if (c) this.doc.splitParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset);
     else this.doc.splitParagraph(at.section, at.paragraph, at.offset);
   }

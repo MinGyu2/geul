@@ -1452,7 +1452,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (this.caret.cell?.textBox) return false;
+    if (this.caret.cell?.textBox) return this.splitOwnedTextBox();
     if (!this.canDeleteSelection() || !this.text?.canInsertText(this.caret) || !this.captionAllowsSplits(1)) return false;
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
@@ -1478,6 +1478,34 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       return this.splitText(at);
     });
+  }
+
+  private splitOwnedTextBox(): boolean {
+    const { caret: at, doc, text } = this;
+    const c = at.cell;
+    if (!c?.textBox || !doc?.getShapeProperties || !text || this.hasSelection || this.imeUnsettled
+      || this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.ownsPosition(at)) return false;
+    const old = text.textBoxParagraph(at);
+    if (!old || !Number.isSafeInteger(at.offset) || at.offset <= 0 || at.offset >= old.styles.length) return false;
+    const address = [at.section, c.parentParagraph, c.control] as const;
+    let count: number, shape: string;
+    try {
+      count = text.paragraphCount(at);
+      if (count >= 64) return false;
+      shape = doc.getShapeProperties(...address);
+    } catch { return false; }
+    return this.mutate(() => {
+      const next = this.splitText(at);
+      const left = text.textBoxParagraph(at), right = text.textBoxParagraph(next);
+      if (!left || !right || left.styles.length !== at.offset || left.text + right.text !== old.text
+        || left.properties !== old.properties || right.properties !== old.properties
+        || left.styles.length + right.styles.length !== old.styles.length
+        || left.styles.some((style, i) => style !== old.styles[i])
+        || right.styles.some((style, i) => style !== old.styles[i + at.offset])
+        || text.paragraphCount(next) !== count + 1 || doc.getShapeProperties!(...address) !== shape
+        || !this.ownsPosition(next)) throw new Error("text box split did not preserve content or ownership");
+      return next;
+    }, true, "other", null, true, true);
   }
 
   // ---- IME 조합 ----
