@@ -342,5 +342,88 @@
       "survivors": [],
       "processErrors": []
     }
+  },
+  "hwpHardenedHarnessRun": {
+    "purpose": "Fresh Linux Native HWP execution of the strengthened fixture-Lock preflight and explicit IME revision/save synchronization acceptance criteria; separate from the historical hwpImeAndLock observation.",
+    "sourceCommit": "59f829fff7ec39ad327be9722f8d2a13a781ea73",
+    "harnessWorkingTreeSha256": "39178bd9625035d7b223b385f9d10876ec3171c0b5b40f7a368fcdfc03db8482",
+    "fixtureGeneratorWorkingTreeSha256": "cb661cc0324a85e632c4cf46b6a84af3b9a22561ec6180673d57434a4c91653f",
+    "app": {
+      "path": "src-tauri/target/release/geul",
+      "sha256": "9feec38c7a24d3a4e733e45d2ea660e51fcd6573bd8af4e243d837a2d90dd0b7",
+      "rebuilt": false
+    },
+    "rhwpGeneration": "3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3",
+    "executedCommand": "python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin --out target/stage3-hwp-caption-hardened/session1 -- python3 scripts/tests/native-stage3-hwp-caption-ime-lock.py --out target/stage3-hwp-caption-hardened/run1 --fixtures target/stage3-hwp-caption-native/fixtures --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "runtime": {
+      "display": "Xvfb X11 :0",
+      "xvfb": "21.1.23",
+      "xdotool": "3.20211022.1",
+      "ibus": "IBus 1.5.33",
+      "inputEngine": "hangul",
+      "ibusHangul": "1.5.5",
+      "privateHangulInitialMode": "hangul",
+      "privateHangulDisableLatin": true
+    },
+    "sessionRunId": "f4c4cd45e8454474b1a06d5a09d3217f",
+    "cases": {
+      "ime": {
+        "status": "PASS",
+        "format": "hwp",
+        "sourceSha256": "5a03421343a13be0243c462bfdbfc16f3319c9f7296b1f168ef7b0e6b0aafc14",
+        "savedSha256": "6f52f78df30452fdade52ab40195918e671802193901d2af6562adc17e6c1177",
+        "texts": [
+          "그림  한글"
+        ],
+        "revisionAfterInput": "2",
+        "save": {
+          "state": "saved",
+          "revision": "2",
+          "synced": "true",
+          "error": "",
+          "findings": ""
+        },
+        "trustedCompositionEvents": true,
+        "atnoUnchanged": true,
+        "shapeUnchanged": true,
+        "bodyUnchanged": true,
+        "fixtureLock": {
+          "section": 0,
+          "paragraph": 0,
+          "control": 2,
+          "attribute": "0x200a0000",
+          "caption": true,
+          "locked": false
+        },
+        "reopenedInApp": true
+      },
+      "locked": {
+        "status": "PASS",
+        "format": "hwp",
+        "sourceSha256": "78ace91ca893b7fd396fc0863b9ede5762bda5ba24227678c9ba2be436089a6d",
+        "beforeCaret": "0:0:0",
+        "afterCaret": "0:0:0",
+        "beforeRevision": "0",
+        "afterRevision": "0",
+        "fixtureLock": {
+          "section": 0,
+          "paragraph": 0,
+          "control": 2,
+          "attribute": "0x600a0000",
+          "caption": true,
+          "locked": true
+        },
+        "note": "locked rectangle caption click refused entry"
+      }
+    },
+    "cleanup": {
+      "complete": true,
+      "exit": 0,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": [],
+      "processErrors": [],
+      "temporaryResourcesRemoved": true
+    }
   }
 }
