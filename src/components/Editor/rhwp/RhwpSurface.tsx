@@ -51,6 +51,19 @@ const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility:
 const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
 
 const EMPTY_RECTS: PageRect[] = [];
+
+/** Pointer bounds come from the rounded 96 DPI layout. Use the selected
+ * model dimensions so an untouched side survives a drag without rounding. */
+export function rhwpPointerEdit(selection: ObjectSelection, edit: ObjectEdit): ObjectEdit {
+  if (edit.kind !== "bounds" || edit.width === undefined || edit.height === undefined) return edit;
+  const { picture, shape, groupSize, frame } = selection;
+  const size = picture ?? shape ?? groupSize;
+  return {
+    ...edit,
+    width: size && frame.width > 0 ? (edit.width / frame.width) * size.widthPt : edit.width * 72 / 96,
+    height: size && frame.height > 0 ? (edit.height / frame.height) * size.heightPt : edit.height * 72 / 96,
+  };
+}
 /** 응답 시간 표본 하나: 입력 시각, 그 입력이 만든 판, 커서 쪽을 그렸는지(그렸으면 frame을 기다리는 중). */
 interface LatencySample { started: number; version: number; drawn: boolean }
 interface PageFrameProps {
@@ -445,15 +458,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     focusInput();
   }, [session, pointer, focusInput]);
   const onObjectEdit = useCallback((selection: ObjectSelection, edit: ObjectEdit, epoch: number) => {
-    // RHWP lays out frames at 96 DPI. Document bounds commands take points.
-    // Pictures also expose the precise dimensions of the selected resource.
-    const { picture, frame } = selection;
-    const request = edit.kind === "bounds" && edit.width !== undefined && edit.height !== undefined
-      ? { ...edit,
-          width: edit.width * (picture && frame.width > 0 ? picture.widthPt / frame.width : 72 / 96),
-          height: edit.height * (picture && frame.height > 0 ? picture.heightPt / frame.height : 72 / 96) }
-      : edit;
-    session.execute("object.edit", objectEditRequest(selection, request, epoch));
+    session.execute("object.edit", objectEditRequest(selection, rhwpPointerEdit(selection, edit), epoch));
     focusInput();
   }, [session, focusInput]);
   const onMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {

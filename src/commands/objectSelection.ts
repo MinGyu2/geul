@@ -42,6 +42,7 @@ export interface ObjectHit {
   frame: ObjectFrame;
   epoch: number;
   picture?: PictureProperties;
+  groupSize?: { widthPt: number; heightPt: number };
   groupWrap?: "square" | "topAndBottom";
   graphic?: GraphicProperties;
   shape?: ShapeProperties;
@@ -70,7 +71,7 @@ export type PositionPreset = typeof POSITION_PRESETS[number];
 export const MAX_CROP_FRACTION = 0.45;
 export const MAX_ALT_TEXT_CHARS = 1024;
 
-/** Stage 3 object mutation. Coordinates are page points (zoom 1) on the selected object's page. */
+/** Bounds positions use the selected frame's unzoomed layout units. Dimensions and nudges use document points. */
 export type ObjectEdit =
   | { kind: "bounds"; x?: number; y?: number; width?: number; height?: number }
   | { kind: "nudge"; dx: number; dy: number }
@@ -179,8 +180,17 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   return "x" in value || "width" in value || "height" in value;
 }
 
+/** Whether a resize can also shift the origin to keep the opposite edge fixed. */
+export function supportsAnchoredResize(selection: ObjectSelection): boolean {
+  // RHWP's supported move and resize paths accept separate bounds requests.
+  return selection.address.engine === "wordcraft";
+}
+
 export function objectEditMatches(request: ObjectEditRequest, selection: ObjectSelection): boolean {
-  if (!validObjectEdit(request.edit)) return false;
+  const { edit } = request;
+  if (!validObjectEdit(edit)) return false;
+  if (edit.kind === "bounds" && edit.x !== undefined && (edit.width !== undefined || edit.height !== undefined)
+    && !supportsAnchoredResize(selection)) return false;
   const operation = request.edit.kind === "position" && selection.address.engine === "rhwp"
     ? "position" : objectEditOperation(request.edit);
   return request.selectionEpoch === selection.epoch && request.sessionId === selection.sessionId

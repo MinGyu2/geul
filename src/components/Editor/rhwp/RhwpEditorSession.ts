@@ -1845,6 +1845,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               revision: this.committed + this.pending, editable: operations.length > 0,
               operations: ["deselect", ...operations, ...clipboardOps],
               ...(inspected ? { picture: inspected.properties } : {}),
+              ...(group ? { groupSize: { widthPt: group.widthPt, heightPt: group.heightPt } } : {}),
               ...(groupWrap ? { groupWrap } : {}),
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {

@@ -2,8 +2,24 @@ import { act, fireEvent, render } from "@testing-library/react";
 import { StrictMode } from "react";
 import { expect, it, vi } from "vitest";
 import { LanguageProvider } from "../../../language/LanguageContext";
-import { RhwpSurface } from "./RhwpSurface";
+import type { ObjectSelection } from "../../../commands/objectSelection";
+import { RhwpSurface, rhwpPointerEdit } from "./RhwpSurface";
 import { readySession } from "./testing";
+
+it("keeps the stored group width when a south drag starts from a rounded layout frame", () => {
+  const group: ObjectSelection = {
+    kind: "group", address: { engine: "rhwp", path: [0, 0, 2] },
+    frame: { page: 0, x: 6.7, y: 6.7, width: 146.7, height: 66.7 },
+    epoch: 1, sessionId: 1 as ObjectSelection["sessionId"], revision: 0, loadGeneration: 1,
+    operations: ["deselect", "move", "resize"], editable: true,
+    groupSize: { widthPt: 110, heightPt: 50 },
+  };
+  const resized = rhwpPointerEdit(group, { kind: "bounds", width: 146.7, height: 78.7 });
+  expect(resized).toMatchObject({ kind: "bounds", width: 110 });
+  expect(resized.kind === "bounds" && resized.height).toBeCloseTo(59, 1);
+  expect(resized).not.toHaveProperty("x");
+  expect(rhwpPointerEdit(group, { kind: "bounds", x: 16.7, y: 6.7 })).toEqual({ kind: "bounds", x: 16.7, y: 6.7 });
+});
 
 it("StrictMode의 cleanup 뒤에도 같은 모델의 Canvas를 다시 그리고 해제한다", async () => {
   const { editor, doc } = await readySession();

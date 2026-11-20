@@ -221,6 +221,10 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
 
       const moving = pick(floating!);
       const ratio = moving.picture!.widthPt * 100 / moving.frame.width;
+      expect(edit({ kind: "bounds", x: moving.frame.x - 8, y: moving.frame.y - 4, width: 42, height: 21 })).toBe(false);
+      expect(offsets(doc, 3)).toEqual({ horzOffset: 20000, vertOffset: 3000, width: 3600, height: 1800 });
+      expect(editor.snapshot().history?.undo).toBe(false);
+      expect(calls.filter(call => call.method === "commit")).toEqual([]);
       expect(edit({ kind: "bounds", x: moving.frame.x + 30, y: moving.frame.y + 15 })).toBe(true);
       await confirm(1);
       expect(offsets(doc, 3)).toMatchObject({ horzOffset: 20000 + Math.round(30 * ratio), vertOffset: 3000 + Math.round(15 * ratio), width: 3600, height: 1800 });
@@ -379,7 +383,12 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(edit({ kind: "bounds", width: 50, height: 25 })).toBe(true);
       await confirm(3);
 
-      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
+      const shape = pick(shapes()[0]!);
+      expect(shape.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate"]);
+      const address = [0, 0, shapes()[0]!.controlIdx] as const;
+      const beforeMixed = doc.getShapeProperties!(...address);
+      expect(edit({ kind: "bounds", x: shape.frame.x - 10, y: shape.frame.y, width: 80, height: 36 })).toBe(false);
+      expect(doc.getShapeProperties!(...address)).toBe(beforeMixed);
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(4);
       pick(shapes()[0]!);

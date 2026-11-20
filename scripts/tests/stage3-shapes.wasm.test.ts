@@ -541,6 +541,9 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       }
 
       const before = props(doc, groupControl);
+      expect(edit({ kind: "bounds", x: sel.frame.x, y: sel.frame.y - 10, width: 110, height: 60 })).toBe(false);
+      expect(props(doc, groupControl)).toEqual(before);
+      expect(editor.snapshot().history?.undo).toBe(false);
       expect(edit({ kind: "bounds", width: 160, height: 80 })).toBe(true);
       await confirm();
       pickGroup();

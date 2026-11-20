@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { OBJECT_SIDE_LIMITS, type ObjectEdit, type ObjectFrame, type ObjectSelection } from "../../commands/objectSelection";
+import { OBJECT_SIDE_LIMITS, supportsAnchoredResize, type ObjectEdit, type ObjectFrame, type ObjectSelection } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
 
 export const RESIZE_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -80,6 +80,9 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
   const drag = useRef<Drag | null>(null);
   const canMove = Boolean(onEdit) && selection.operations.includes("move");
   const canResize = Boolean(onEdit) && selection.operations.includes("resize");
+  const resizeHandles = canMove && !supportsAnchoredResize(selection)
+    ? RESIZE_HANDLES.filter(handle => !handle.startsWith("n") && !handle.includes("w"))
+    : RESIZE_HANDLES;
   const keepAspect = selection.kind === "picture";
 
   useEffect(() => {
@@ -155,7 +158,7 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
         <div className="object-selection-frame__body" role="button" aria-label={t("editor.object.move", { kind })}
           data-testid="object-move" onPointerDown={event => start(event, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel} onMouseDown={swallow} />
       )}
-      {canResize && RESIZE_HANDLES.map(handle => (
+      {canResize && resizeHandles.map(handle => (
         <div key={handle} className={`object-selection-frame__handle object-selection-frame__handle--${handle}`}
           role="button" aria-label={t(`editor.object.handle.${handle}`)} data-handle={handle} data-testid={`object-handle-${handle}`}
           onPointerDown={event => start(event, handle)} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel} onMouseDown={swallow} />

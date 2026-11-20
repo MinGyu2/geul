@@ -113,6 +113,33 @@ describe("object edit requests", () => {
 });
 
 describe("ObjectSelectionFrame", () => {
+  const rhwp = { engine: "rhwp", path: [0, 0, 2] } as const;
+
+  it.each(["picture", "shape", "group"] as const)("does not offer uncommittable leading-edge resizing for a movable RHWP %s", kind => {
+    const selected = selection({ kind, address: rhwp });
+    const mixed = objectEditRequest(selected, { kind: "bounds", x: 90, y: 195, width: 90, height: 45 });
+    const { onEdit } = frame({ selection: selected });
+
+    expect(screen.getAllByRole("button", { name: /Resize from/ }).map(handle => handle.dataset.handle))
+      .toEqual(["e", "se", "s"]);
+    expect(objectEditMatches(mixed, selected)).toBe(false);
+    drag(screen.getByTestId("object-handle-e"), [0, 0], [20, 0]);
+    drag(screen.getByTestId("object-handle-s"), [0, 0], [0, 20]);
+    drag(screen.getByTestId("object-move"), [0, 0], [20, -10]);
+    expect(onEdit.mock.calls).toEqual([
+      [{ kind: "bounds", width: 90, height: 40 }, 7],
+      [{ kind: "bounds", width: 80, height: 50 }, 7],
+      [{ kind: "bounds", x: 110, y: 195 }, 7],
+    ]);
+  });
+
+  it("keeps all eight handles for a resize-only RHWP inline picture", () => {
+    const { onEdit } = frame({ selection: selection({ address: rhwp, operations: ["deselect", "resize"] }) });
+    expect(screen.getAllByRole("button", { name: /Resize from/ })).toHaveLength(8);
+    drag(screen.getByTestId("object-handle-nw"), [0, 0], [40, 20]);
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "bounds", width: 60, height: 30 }, 7);
+  });
+
   it("shows labelled handles and commits one move per drag without reaching the page", () => {
     const { onEdit, pageDown } = frame();
     expect(screen.getAllByRole("button", { name: /Resize from/ })).toHaveLength(8);
