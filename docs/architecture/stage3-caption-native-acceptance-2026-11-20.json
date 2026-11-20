@@ -1,0 +1,212 @@
+{
+  "scope": "Stage 3 shape caption and multi-paragraph native acceptance",
+  "sourceCommit": "ec22a6fc55b3d7aca9400b248d7720fa71804726",
+  "app": {
+    "path": "src-tauri/target/release/geul",
+    "sha256": "9feec38c7a24d3a4e733e45d2ea660e51fcd6573bd8af4e243d837a2d90dd0b7",
+    "build": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle"
+  },
+  "rhwp": {
+    "generation": "3414cfb09a20d6c51cc4d034f3350dc3997a4d85cc3fb93d93fb64775fcbbbd3",
+    "jsSha256": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+    "wasmSha256": "ef91fa8a33c0fd1bb4ef8e21be95688f187480d780c0ec2b03b95a0dcafd6044"
+  },
+  "runtime": {
+    "display": "private Xvfb X11",
+    "xvfb": "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23",
+    "xdotool": "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1",
+    "ibus": "IBus 1.5.33",
+    "inputEngine": "xkb:us::eng",
+    "webkitgtk": "2.54.1 ABI 4.1",
+    "driver": "/tmp/geul-tauri-driver-target/debug/tauri-driver",
+    "driverSha256": "1d1ca38626716dd2fd77e7b2c2be42ec93a40818a9aa053d06c50b4946f889c5"
+  },
+  "executedCommand": "python3 scripts/tests/native-ibus-session.py --out target/stage3-caption-native-20261120/session6 -- python3 target/stage3-caption-native-20261120/accept.py --out target/stage3-caption-native-20261120/run6 --xdotool @XDOTOOL@ --ibus @IBUS@",
+  "executedHarnessSha256": "3d9b79051ded22f756e7f43250ec306f31e8aec5318da5fc40b51a6ecbaba988",
+  "durableHarness": "scripts/tests/native-stage3-caption-acceptance.py",
+  "harnessDifference": "Durable copy derives workspace root from script path; executed copy used the absolute workspace path.",
+  "fixtureGenerator": "scripts/tests/stage3-caption-native-fixtures.cjs",
+  "results": {
+    "hwp": {
+      "status": "PASS",
+      "sourceSha256": "5a03421343a13be0243c462bfdbfc16f3319c9f7296b1f168ef7b0e6b0aafc14",
+      "savedSha256": "f1788ff5c0ac18d74b75e584c26a0c428370cc36979886829e9004b9de77dd0a",
+      "trustedInput": "X11 pointer and xdotool keyboard: shape selection, caption entry, typing, Enter, Backspace, cross-paragraph selection and replacement, Undo/Redo, Ctrl+E alignment, save and reopen",
+      "syntheticDOM": "read-only state and geometry observations; no synthetic editing",
+      "firstCaret": "0:0:4@caption/2/65534/0",
+      "finalCaret": "0:0:9@caption/2/65534/0",
+      "save": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "19"
+      },
+      "independentReopen": {
+        "texts": [
+          "그림  First",
+          "Second"
+        ],
+        "alignments": [
+          "justify",
+          "center"
+        ],
+        "atnoUnchanged": true,
+        "shapePropertiesUnchanged": true,
+        "bodyUnchanged": true
+      },
+      "reopenedInApp": true
+    },
+    "hwpx": {
+      "status": "PASS",
+      "sourceSha256": "c5350df541aec8eb673b811b5e260d465f0bf84bf5ccb518a3066b290629cbd1",
+      "savedSha256": "c338ad341d3c9868f7322269327604cdffa90bac0b88f5889ef0664426aa94a3",
+      "trustedInput": "X11 pointer and xdotool keyboard: shape selection, caption entry, typing, Enter, Backspace, cross-paragraph selection and replacement, Undo/Redo, Ctrl+E alignment, save and reopen",
+      "syntheticDOM": "read-only state and geometry observations; no synthetic editing",
+      "firstCaret": "0:0:4@caption/2/65534/0",
+      "finalCaret": "0:0:9@caption/2/65534/0",
+      "save": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "19"
+      },
+      "independentReopen": {
+        "texts": [
+          "그림  First",
+          "Second"
+        ],
+        "alignments": [
+          "justify",
+          "center"
+        ],
+        "atnoUnchanged": true,
+        "shapePropertiesUnchanged": true,
+        "bodyUnchanged": true
+      },
+      "reopenedInApp": true
+    }
+  },
+  "cleanup": {
+    "runId": "c417533c59b44c58851d3ff78a25467f",
+    "complete": true,
+    "proven": true,
+    "filesystemProven": true,
+    "survivors": []
+  },
+  "remainingNotRun": [
+    "HWP native caption IBus composition and locked-owner refusal",
+    "Windows/macOS and Wayland acceptance"
+  ],
+  "previousFailedAttempts": "run1 relative chooser path; run2-4 caret/selection expectation; run5 body oracle included caption text. Corrections retained acceptance assertions; run6 passed.",
+  "imeAndLock": {
+    "executedCommand": "python3 scripts/tests/native-ibus-session.py --hangul-initial-mode hangul --hangul-disable-latin --out target/stage3-caption-native-20261120/session7 -- python3 target/stage3-caption-native-20261120/ime-lock.py --out target/stage3-caption-native-20261120/run7 --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "executedHarnessSha256": "636fe380d525dbac6c60adf0e7cd157bb08cd881b2518988482e996f53ad0985",
+    "durableHarness": "scripts/tests/native-stage3-caption-ime-lock.py",
+    "harnessDifference": "Durable copy derives workspace root and imports the retained acceptance harness.",
+    "cases": {
+      "ime": {
+        "status": "PASS",
+        "sourceSha256": "c5350df541aec8eb673b811b5e260d465f0bf84bf5ccb518a3066b290629cbd1",
+        "savedSha256": "9298e0eac775a75870e11ab5f6010bc6debfc52bbd642c1b38fe63c75788d35f",
+        "events": [
+          {
+            "type": "compositionstart",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "ㅎ",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "하",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "한",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "한",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionstart",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "ㄱ",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "그",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionupdate",
+            "data": "글",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "",
+            "isTrusted": true
+          },
+          {
+            "type": "compositionend",
+            "data": "글",
+            "isTrusted": true
+          }
+        ],
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "2"
+        },
+        "after": [
+          "그림  한글"
+        ],
+        "reopenedInApp": true
+      },
+      "locked": {
+        "status": "PASS",
+        "sourceSha256": "6d8fe3ebda8ac60525f02b913532042f44412d5a6c5c5d7dd1496349e07d4544",
+        "caret": "0:0:0",
+        "revision": "0",
+        "note": "locked shape caption click refused caption entry"
+      }
+    },
+    "cleanup": {
+      "runId": "4ce6188ace844153b8e36ddaf41782bb",
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": []
+    }
+  }
+}
