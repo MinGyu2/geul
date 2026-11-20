@@ -1,0 +1,217 @@
+{
+  "scope": "Stage 3-B B3.2 portable textbox layout and picture border/crop safety",
+  "date": "2026-11-20",
+  "timezone": "Asia/Seoul",
+  "status": "COMPLETED",
+  "stage3b": "COMPLETED within the documented supported subset",
+  "stage3Overall": "PARTIALLY COMPLETED",
+  "referenceHead": "53f04511d1fbf7f3a91a13ec21491cefcebff761",
+  "startingHead": "53f04511d1fbf7f3a91a13ec21491cefcebff761",
+  "implementationCommit": "ab3db0e5c8d8eb13ea82d0fa8d7ec51f06d3ad7f",
+  "historicalEvidence": [
+    "stage3-b-safety-acceptance-2026-11-20.json",
+    "stage3-b-clipboard-fidelity-followup-2026-11-20.json",
+    "stage3-c-native-acceptance-2026-11-20.json"
+  ],
+  "affectedProperties": {
+    "textboxVerticalAlignment": {
+      "previous": "Use Top if tbVerticalAlign does not match a supported enum value.",
+      "contract": "getShapeProperties formats every modeled TextBox alignment as Top, Center or Bottom. createShapeControl starts at Top. The drawText reader materializes defaults and the writer emits subList.vertAlign.",
+      "safeDefault": "The engine-materialized Top value is valid when explicitly returned. Missing or unknown getter values cannot prove Top.",
+      "correction": "Require a recognized explicit source and payload value, apply via setShapeProperties and verify by readback."
+    },
+    "textboxMargins": {
+      "previous": "Use zero whenever a getter field is missing or fails the integer check.",
+      "contract": "getShapeProperties emits all four margins as signed HWPUNIT16. Creation initializes 283 HU per side. The setter narrows to i16 and the writer emits textMargin for nonzero margins. The parser materializes zero when XML margin data is absent.",
+      "safeDefault": "Explicit zero from the model is valid. A missing, malformed or out-of-range getter value has no default semantics.",
+      "correction": "Require all four explicit integers in 0–32767 HU and verify applied and reopened values."
+    },
+    "pictureBorder": {
+      "previous": "Substitute zero for missing or malformed color, width or type.",
+      "contract": "The old getPictureProperties emitted color and width but no type. The picture renderer uses line type and can render a default stroke at width zero. The HWPX picture reader and writer did not round-trip lineShape. setPictureProperties handles color and width but does not reconstruct line style.",
+      "safeDefault": "A missing XML lineShape or an explicit default NONE proves model borderless 0/0/0. A missing getter field or a visible or unsupported lineShape does not prove it.",
+      "correction": "Retain unsupported source lineShape evidence during parse, expose borderType and require the exact borderless triple. Refuse visible borders including width-zero SOLID."
+    },
+    "pictureCrop": {
+      "previous": "Substitute zero for missing or malformed edges and reapply object-relative edge amounts.",
+      "contract": "The getter always emits four edge amounts using object extent. HWPX imgClip holds absolute coordinates and imgDim supplies the image reference. InsertPicture uses 75 HU per decoded pixel for its reference. The ordinary edge-amount setter cannot invert every getter result.",
+      "safeDefault": "Explicit zero edge amounts are valid when consistent with imgClip. An omitted imgClip materializes the engine uncropped zero rectangle. Missing getter edges and incomplete explicit imgClip elements are ambiguous.",
+      "correction": "Validate both sets of coordinates and the source reference. Require cropRect in the picture payload, apply the stored rectangle without passing it through the edge-amount transformation, and read both back. Refuse a nonempty crop whose reference cannot be reconstructed."
+    }
+  },
+  "baselineCropReproduction": {
+    "rhwpGeneration": "92b8135be4772ec7247a7208a252c1e3126bfbec9d620bf75ed12e03c4a8074f",
+    "getterAmountsBoth": {
+      "left": 0,
+      "top": 0,
+      "right": 600,
+      "bottom": 0
+    },
+    "sourceImgClip": {
+      "left": "0",
+      "right": "3600",
+      "top": "0",
+      "bottom": "4800"
+    },
+    "reappliedImgClip": {
+      "left": "0",
+      "right": "3600",
+      "top": "0",
+      "bottom": "2100"
+    }
+  },
+  "releaseWasm": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "3052392dfb96b2f167bc392941bed19009945ff7ca6bb73fd5935766527250e6",
+    "artifacts": {
+      "rhwp.js": "433c875955582d89dacfa379216f50380dc65c17b22a7afac35604af1bc58600",
+      "rhwp_bg.wasm": "2edd4cbcbfdb96fd2c0cad61a599a604addad97d06f3f2d369b423771c8f49c3"
+    },
+    "buildCommand": "PATH=\"$HOME/.cache/.wasm-pack/wasm-bindgen-834c8396d913406b:$PATH\" scripts/build-rhwp-wasm.sh",
+    "exit": 0,
+    "initialPublication": {
+      "exit": 1,
+      "reason": "Generation retention limit after successful compilation",
+      "archivedGeneration": "09e28d84951808a609e25de98c38bd371c1ee3871afa1d8de6dc044b949221cb"
+    }
+  },
+  "verification": [
+    {
+      "command": "npm run typecheck",
+      "result": "PASS",
+      "exit": 0
+    },
+    {
+      "command": "npm test -- src/commands/objectClipboard.test.ts src/commands/clipboard.test.ts",
+      "passed": 52,
+      "failed": 0,
+      "exit": 0
+    },
+    {
+      "command": "node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts stage3-hwpx-clipboard-safety.wasm.test.ts stage3-shapes.wasm.test.ts stage3-picture-size.wasm.test.ts -t 'B3.2|portable refusals and rollback|retains same-document|routes missing MIME|copies, cuts, and pastes HWPX body|resizes an HWP inline picture|resizes a rotated HWP picture'",
+      "passed": 55,
+      "failed": 0,
+      "filteredOut": 28,
+      "exit": 0
+    },
+    {
+      "command": "python3 -m unittest scripts/tests/test_rhwp_profiles.py",
+      "passed": 3,
+      "failed": 0,
+      "exit": 0
+    },
+    {
+      "command": "npm run rust -- test --lib hwpx_출력은_mimetype_첫_항목과_manifest를_검사하고_본문_밖은_원본과_같아야_한다",
+      "passed": 1,
+      "failed": 0,
+      "exit": 0
+    },
+    {
+      "command": "npm run rust -- test --lib hwpx_char_shape_uses_recognizes_supported_captions_and_draw_text_only",
+      "passed": 1,
+      "failed": 0,
+      "exit": 0
+    },
+    {
+      "command": "python3 -m py_compile scripts/tests/native-stage3-b.py",
+      "result": "PASS",
+      "exit": 0
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS",
+      "exit": 0
+    }
+  ],
+  "regressions": {
+    "refused": [
+      "Unreadable or unsupported vertical alignment",
+      "Missing, null, string, fractional or overflowing textbox margins",
+      "Missing or malformed picture border fields and visible border at zero width",
+      "Missing or invalid edge amounts, incomplete imgClip and incompatible crop reference"
+    ],
+    "negativeInvariants": "Cross-document refusal with no object insertion, body/owners/font table or serialized-byte change, committed revision or Undo/Redo entry.",
+    "preserved": [
+      "Default NONE and source imgClip omission",
+      "Uncropped image whose frame differs from its natural dimensions",
+      "Captioned image with four nonzero crop amounts and original image bytes",
+      "Center and Bottom textboxes with nonzero and zero margins",
+      "Existing supported outlines, mixed formatting, explicit family, caption atno, Undo/Redo and same-document clone"
+    ]
+  },
+  "nativeB32": {
+    "status": "PASS",
+    "exit": 0,
+    "platform": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "buildCommand": "VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --no-bundle",
+    "buildExit": 0,
+    "command": "PATH=\"/nix/store/mhq9kk703lrphqxjqzphva99f1qa5s0c-webkitgtk-2.54.1+abi=4.1/bin:$PATH\" python3 scripts/tests/native-ibus-session.py --out target/stage3b-portable-properties/native/session -- python3 scripts/tests/native-stage3-b.py --out target/stage3b-portable-properties/native/results --xdotool /nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool --ibus /nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus --driver /tmp/geul-tauri-driver-target/debug/tauri-driver --cases B3-2",
+    "resultPath": "target/stage3b-portable-properties/native/results/result.json",
+    "cleanupPath": "target/stage3b-portable-properties/native/session/cleanup.json",
+    "appSha256": "2de4712f6f73c70dea93c9219f92f1cc9ba932f3d908b935e44c8f06505a934c",
+    "liveAppSha256": "2de4712f6f73c70dea93c9219f92f1cc9ba932f3d908b935e44c8f06505a934c",
+    "activeRhwpGeneration": "3052392dfb96b2f167bc392941bed19009945ff7ca6bb73fd5935766527250e6",
+    "fixtureSha256": {
+      "source": "6be28dd7d82fa223e361b0a1238348854b9975e88b3d930c91040200ffee4a83",
+      "destination": "0534e8442f45215bf93fed52a19d51dbf8075aaec37d96eacd9adca74133cc92",
+      "refusalDestination": "0534e8442f45215bf93fed52a19d51dbf8075aaec37d96eacd9adca74133cc92"
+    },
+    "publishedSha256": "c0815f9fcee74e3863e24db685c26e0e1a0f8da1fbf7c57d25fd7c1c2b887ec0",
+    "pictureSha256": "b27055105808701195fb56d4afb1c14135b04b065593d2107ac150779344240a",
+    "publishedCrop": {
+      "left": "120",
+      "right": "3480",
+      "top": "60",
+      "bottom": "2010"
+    },
+    "publishedAtno": {
+      "num": "1",
+      "numType": "PICTURE"
+    },
+    "textboxLayout": {
+      "tbVerticalAlign": "Bottom",
+      "tbMarginLeft": 90,
+      "tbMarginRight": 110,
+      "tbMarginTop": 130,
+      "tbMarginBottom": 150
+    },
+    "afterPicturePaste": {
+      "status": "ready",
+      "revision": "5",
+      "localRevision": "5",
+      "dirty": "true",
+      "uncertain": "false"
+    },
+    "savedRevision": "5",
+    "reopened": {
+      "status": "ready",
+      "revision": "0",
+      "localRevision": "0",
+      "dirty": "false",
+      "uncertain": "false"
+    },
+    "negative": {
+      "real DOT outline": "refused",
+      "orphan marker": "refused",
+      "tampered cross-doc group": "refused"
+    },
+    "preservation": {
+      "sourceBytesAndContent": true,
+      "destinationBody": true,
+      "reopenedObjects": true
+    },
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": []
+    }
+  },
+  "remainingUnsupported": [
+    "Visible or unproven picture borders",
+    "Missing or unsupported textbox layout or invalid crop geometry/reference",
+    "HWP5 cross-document clipboard and cross-format object conversion",
+    "HWPX portable Group, Polygon, Curve, Chart, SmartArt, OLE, unsupported formats and nested controls",
+    "Stage 3-A implementation and Wayland/Windows/macOS acceptance"
+  ]
+}

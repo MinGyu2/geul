@@ -1091,7 +1091,8 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 
 이 최초 구현에서 Linux WebKitGTK는 일반 텍스트 클립보드 브리지와 앱 안의 구조
 데이터 저장을 함께 썼다. 객체별 무작위 토큰 텍스트가 일치할 때만 구조
-데이터를 읽는다. HWP/HWPX에 객체 구조 붙여넣기를 요청하면 거부한다.
+데이터를 읽었다. 당시 DOCX v1 경로는 HWP/HWPX 구조 붙여넣기를 거부했다.
+현재 HWP5 동일 문서 및 HWPX 휴대용 붙여넣기의 범위는 [Stage 3-B 개체 안전 편집 및 구조 클립보드 확장](#stage-3-b-개체-안전-편집-및-구조-클립보드-확장-2026-11-20)의 B3.1/B3.2를 따른다.
 표 셀 MIME과 일반 텍스트 경로는 기존 명령과 검증기를 계속 사용한다.
 최초 구현의 크로스 앱 객체 MIME 상호운용은 NOT RUN이었다. 후속 Linux GTK 전송 경로는 아래 구조 클립보드 절에 기록했다.
 
@@ -1108,7 +1109,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
   안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
   같은 개체를 계속 선택한다. 차트·SmartArt는 고정(P4).
 - RHWP: HWPX 본문 그림 및 검증된 HWP(`originalState === "safe"` + `hwpReopenModel.complete`) 본문 그림·도형(`사각형`·`타원`·`직선`·`다각형`·`곡선`, 잠금/캡션 제외) 및 본문 그룹 컨테이너(`그리기`, HWPX `move`·`resize`·`wrap`·`delete`, HWP `move`·`resize`·`wrap`).
-  `editGroup`·`inspectRhwpGroup`·`hit.bodyGroup`은 `drawing()`이 없는 `ShapeObject::Group`의 외곽 기하/배치만 다루며 그룹 회전·채우기·윤곽선과 HWP5 그룹 삭제는 비활성 경계를 유지한다.
+  `editGroup`·`inspectRhwpGroup`·`hit.bodyGroup`은 `drawing()`이 없는 `ShapeObject::Group`의 외곽 기하/배치만 다룬다. 그룹 회전·채우기·윤곽선은 비활성이다. P1 당시 HWP5 그룹 삭제는 거부했다. 현재 소유된 평면 그룹의 삭제 경계는 [Stage 3-B 개체 안전 편집 및 구조 클립보드 확장](#stage-3-b-개체-안전-편집-및-구조-클립보드-확장-2026-11-20)의 B2.2를 따른다.
   크기는 `picture.size`/`bounds` 경로다. 이동은 왼쪽·위 기준으로 떠 있는 객체의 `horzOffset`/`vertOffset`을 바꾼다. 그림 이동에는 회전이 없어야 한다.
   그림은 `crop`·`wrap`·`altText`, 도형은 `fill`·`outline`·`rotate`·`wrap`을 지원했다. 당시 `delete`와 `insert.shape`/`insert.textBox`는 HWPX 전용이었다. 이후 HWP의 B1 GSO 삭제와 P1 기본 삽입은 각 기능의 보존 증명 범위에서 지원한다.
   HWP 저장은 `services::save::hwp::gso` 필드 단위 진화 증명과 `hwpReopenModel` 재열기 모델 일치를 요구한다.
@@ -1210,6 +1211,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 - **B2.2 (HWP5 평면 그룹 삭제):** `stage3b-object-safety.patch`가 `get_shape_properties_native` 및 `format_shape_props_inner`에 노출하는 `groupFlatDeletable`이 `true`이고 Section0 SAFE 사전 검사가 통과한 비잠금 본문 그룹(캡션 없음, 자식 비잠금·캡션 없음·평문 리프 도형 또는 유효 본문 `Picture`만 포함, `Group`/`Chart`/`Ole`/외부 그림 제외)만 `delete`를 제공한다. T009가 타 개체가 공유하는 `BinData`·미선택 레코드 보존을 검증하며, 중첩 그룹·OLE/차트/캡션 포함 그룹은 계속 거부한다.
 - **B3.1 (HWP5 동일 문서 구조 클립보드):** SAFE Section0·비잠금 본문 개체(그림, 기본 도형, 1–64문단 평문 글상자, `groupFlatDeletable` 평면 그룹) 중 삭제·소유권 증명을 충족하는 선택에 `edit.copy`·`edit.cut`·`edit.paste`를 제공한다. 페이로드(`version: 3, sourceFormat: "hwp"`, `portable` 없음)는 동일 `sourceSessionId`·`sourceGeneration`·`token`·`clipboardHasControl()`이 일치하는 HWP5 본문 접힌 커서에만 `pasteControl`로 붙여넣으며, 교차 문서 HWP5, 교차 형식(HWP↔HWPX/DOCX), 잠금·OLE/차트·비평면 그룹, 예약 표식 폴백은 history 경계 전에 거부한다.
 - **B3.2 (HWPX 교차 문서 휴대용 구조 붙여넣기):** 검증된 v3 `portable`을 다른 HWPX 문서의 본문 접힌 커서에 재구성한다. 8 MiB 이하의 MIME·매직바이트가 일치하는 그림과 사각형·타원·기본 직선·글상자에 한정한다. 도형은 무채우기 또는 불투명 무늬 없는 단색 채우기, 무윤곽(`lineType=0`) 또는 기본 끝 모양의 화살표 없는 실선(`lineType=1`)을 지원한다. 폭 0의 실선은 가는 실선으로 보존한다. 직선은 생성 API의 끝점과 일치하는 기하만 허용한다.
+  - 글상자는 `Top`·`Center`·`Bottom`과 네 내부 여백(0–32767 HWPUNIT)을 명시적으로 확인한다. 그림은 `lineShape`가 없거나 기본 `NONE`으로 확인된 무테두리만 허용하며, 폭 0의 `SOLID`는 거부한다. 저장된 `imgClip`의 네 좌표와 표시 자르기 양을 대조하고, 자르기 사각형의 이미지 기준을 대상에서 재현할 수 있어야 한다. 모델의 무자르기 영 사각형은 보존한다. [속성 감사 및 재열기 기록](stage3-b-portable-property-safety-2026-11-20.json)
   - 그림·도형의 1–64문단 캡션에는 소유가 증명된 `atno` 한 개가 있어야 한다. 캡션과 글상자의 문단 순서·텍스트·정렬을 보존하고, 일반 문자에 대한 서식 범위가 RHWP 유니코드 코드 포인트 단위로 빈틈 없이 덮였는지 검증한다. `atno`의 보호 슬롯에는 일반 문자 서식을 적용하지 않는다. 서식은 지원되는 굵기·기울임·밑줄·취소선·크기·글자색·음영·글꼴을 보존한다.
   - `fontFamily`는 원본 글자 모양의 7개 언어별 글꼴 참조가 하나의 이름으로 일치해야 추출한다. 대상에서 이름별 ID를 등록 또는 조회하고 실제 글꼴 표의 7개 이름이 일치하는지 확인한다. 글꼴 요구가 없는 run에는 대상 기본 글꼴을 허용한다. 적용 후 대상 값을 다시 읽고, API 누락·오류·불일치 시 기존 이력의 스냅숏으로 개체·글꼴·리소스를 되돌린다. 적용 성공과 독립 재열기는 [B3.2 후속 검증](stage3-b-clipboard-fidelity-followup-2026-11-20.json)에 기록했다.
   - 교차 문서 그룹·다각형·곡선·차트·SmartArt·OLE, 점선과 파선 등 미지원 윤곽선, 그라데이션·이미지 채우기, 중첩 제어, 미확인 리소스 소유권, 위조 이미지 MIME과 불완전하거나 잘못된 `portable`은 거부한다. HWP5 교차 문서 붙여넣기, DOCX/HWP/HWPX 교차 형식 변환, 소유된 구조 데이터 없는 예약 표식의 평문 폴백도 거부한다.
