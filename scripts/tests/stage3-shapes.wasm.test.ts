@@ -1211,6 +1211,131 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     } finally { baseSetup.editor.dispose(); }
   });
 
+  it("Stage 3-A P4.6 group child stabilization rejects composite/nonfinite raw transforms (T1-T8) and guards ellipse geometry (E1-E7)", async () => {
+    const fixturePath = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
+    const fixtureBytes = new Uint8Array(readFileSync(fixturePath));
+    const patchXml = (fn: string) => execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                xml = data.decode("utf-8")
+                ${fn}
+                data = xml.encode("utf-8")
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`], { input: fixtureBytes });
+
+    const idRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const cancelScaleRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="2" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="0.5" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const cancelRotRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="0" e2="-1" e3="0" e4="1" e5="0" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="0" e2="1" e3="0" e4="-1" e5="0" e6="0"/></hp:renderingInfo>';
+    const cancelTransRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="100" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="-100" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const nanRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="NaN" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const infRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="Infinity" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const hugeTxRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="1e20" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+    const mismatchTxRI = '<hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="100" e4="0" e5="1" e6="0"/><hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/><hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>';
+
+    const replaceChild0RI = (newRI: string) =>
+      `parts = xml.split(${JSON.stringify(idRI)}); assert len(parts) == 4; xml = parts[0] + ${JSON.stringify(idRI)} + parts[1] + ${JSON.stringify(newRI)} + parts[2] + ${JSON.stringify(idRI)} + parts[3]`;
+
+    // T1: Empty/absent <hp:renderingInfo/> on rect child still accepted when modeled transform is clean identity
+    const emptyRawBytes = patchXml(replaceChild0RI(""));
+    const emptyDoc = new engine.HwpDocument(emptyRawBytes) as RhwpDocument;
+    try {
+      const parsed = JSON.parse(emptyDoc.getEditableGroupChildren!(0, 0, 2));
+      expect(parsed.children[0]).toMatchObject({ canMove: true, canResize: true });
+    } finally { emptyDoc.free(); }
+
+    // T3/T4/T5/T6/T8: Canceling composites (scale 2*0.5, rot 90*-90, trans +100/-100), nonfinite NaN/Inf/1e20, and mismatched translation on child or parent fail closed
+    for (const [label, replaceScript] of [
+      ["T3-child-mismatch-trans", replaceChild0RI(mismatchTxRI)],
+      ["T4-child-cancel-scale", replaceChild0RI(cancelScaleRI)],
+      ["T4-child-cancel-rot", replaceChild0RI(cancelRotRI)],
+      ["T4-child-cancel-trans", replaceChild0RI(cancelTransRI)],
+      ["T5-child-nan-matrix", replaceChild0RI(nanRI)],
+      ["T5-child-inf-trans", replaceChild0RI(infRI)],
+      ["T5-child-huge-trans", replaceChild0RI(hugeTxRI)],
+      ["T8-parent-cancel-scale", `xml = xml.replace(${JSON.stringify(idRI)}, ${JSON.stringify(cancelScaleRI)}, 1)`],
+    ] as const) {
+      const modBytes = patchXml(replaceScript);
+      const d = new engine.HwpDocument(modBytes) as RhwpDocument;
+      try {
+        const raw = d.getEditableGroupChildren!(0, 0, 2);
+        if (label.startsWith("T8")) {
+          expect(raw, label).toBe("null");
+        } else {
+          const parsed = JSON.parse(raw);
+          expect(parsed.children[0], label).toMatchObject({ canMove: false, canResize: false });
+        }
+        expect(() => d.moveGroupChild!(0, 0, 2, 0, 2112144572, 1038402749, 10, 10), label).toThrow();
+        expect(() => d.resizeGroupChild!(0, 0, 2, 0, 2112144572, 1038402749, 4000, 3000), label).toThrow();
+      } finally { d.free(); }
+    }
+
+    // E2: Standard odd-sized ellipse (101x51) moves and resizes to odd (85x39) and survives save/reopen
+    const oddBytes = patchXml(`
+head, ell = xml.split('<hp:ellipse ', 1)
+ell = ell.replace('<hp:orgSz width="5200" height="4100"/><hp:curSz width="5200" height="4100"/>', '<hp:orgSz width="101" height="51"/><hp:curSz width="101" height="51"/>', 1).replace('<hc:center x="2600" y="2050"/><hc:ax1 x="5200" y="2050"/><hc:ax2 x="2600" y="4100"/><hc:start1 x="5200" y="2050"/><hc:end1 x="5200" y="2050"/><hc:start2 x="5200" y="2050"/><hc:end2 x="5200" y="2050"/><hp:sz width="5200" height="4100"', '<hc:center x="50" y="25"/><hc:ax1 x="101" y="25"/><hc:ax2 x="50" y="51"/><hc:start1 x="101" y="25"/><hc:end1 x="101" y="25"/><hc:start2 x="101" y="25"/><hc:end2 x="101" y="25"/><hp:sz width="101" height="51"', 1)
+xml = head + '<hp:ellipse ' + ell
+`.trim().replace(/\n/g, "; "));
+    const oddSetup = await setup("hwpx", oddBytes);
+    try {
+      const g = (JSON.parse(oddSetup.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      oddSetup.pick(g);
+      expect(oddSetup.edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 85, height: 39 })).toBe(true);
+      await oddSetup.confirm();
+      const exported = oddSetup.doc.exportHwpxWithReport();
+      try {
+        const outBytes = exported.takeBytes();
+        expectReopenEvidence(oddSetup.doc, outBytes, exported.contentLoss());
+        const reopened = new engine.HwpDocument(outBytes) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getEditableGroupChildren!(0, 0, 2)).children[1]).toMatchObject({ width: 85, height: 39 });
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
+    } finally { oddSetup.editor.dispose(); }
+
+    // E3: Noncanonical ellipse endpoints (equal start1==end1==(0,0)) refuse resize without normalizing, while safe move preserves them verbatim
+    const noncanonBytes = patchXml(
+      `xml = xml.replace('<hc:start1 x="5200" y="2050"/><hc:end1 x="5200" y="2050"/>', '<hc:start1 x="0" y="0"/><hc:end1 x="0" y="0"/>', 1)`
+    );
+    const noncanonSetup = await setup("hwpx", noncanonBytes);
+    try {
+      const g = (JSON.parse(noncanonSetup.doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
+      const sel = noncanonSetup.pick(g)!;
+      expect(sel.groupChildren?.children[1]).toMatchObject({ canMove: true, canResize: false });
+      expect(noncanonSetup.edit({ kind: "groupChildResize", index: 1, id: 2112169928, instId: 1038428105, width: 4000, height: 3000 })).toBe(false);
+      expect(() => noncanonSetup.doc.resizeGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 4000, 3000)).toThrow();
+      expect(noncanonSetup.edit({ kind: "groupChildMove", index: 1, id: 2112169928, instId: 1038428105, x: 5800, y: 400 })).toBe(true);
+      await noncanonSetup.confirm();
+      const exported = noncanonSetup.doc.exportHwpxWithReport();
+      try {
+        const outBytes = exported.takeBytes();
+        expectReopenEvidence(noncanonSetup.doc, outBytes, exported.contentLoss());
+        const savedXml = execFileSync("python3", ["-c", `import io,sys,zipfile; print(zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())).read("Contents/section0.xml").decode())`], { input: outBytes, encoding: "utf8" });
+        expect(savedXml).toContain('<hc:start1 x="0" y="0"/><hc:end1 x="0" y="0"/>');
+      } finally { exported.free(); }
+    } finally { noncanonSetup.editor.dispose(); }
+
+    // E4 & E5: Extreme i32::MIN+1 / i32::MAX center & invalid/degenerate axes fail closed without overflow or mutation
+    for (const [label, replaceScript] of [
+      ["E4-extreme-center", `xml = xml.replace('<hc:center x="2600" y="2050"/>', '<hc:center x="-2147483647" y="2147483647"/>', 1)`],
+      ["E5-degenerate-axis1", `xml = xml.replace('<hc:ax1 x="5200" y="2050"/>', '<hc:ax1 x="0" y="0"/>', 1)`],
+    ] as const) {
+      const modBytes = patchXml(replaceScript);
+      const d = new engine.HwpDocument(modBytes) as RhwpDocument;
+      try {
+        const parsed = JSON.parse(d.getEditableGroupChildren!(0, 0, 2));
+        expect(parsed.children[1], label).toMatchObject({ canMove: false, canResize: false });
+        expect(() => d.moveGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 5800, 400), label).toThrow();
+        expect(() => d.resizeGroupChild!(0, 0, 2, 1, 2112169928, 1038428105, 4000, 3000), label).toThrow();
+      } finally { d.free(); }
+    }
+  });
+
   it.each(["hwp", "hwpx"] as const)("edits %s polygon and curve outer geometry, transforms, and deletion cleanly", async format => {
     const fixture = new engine.HwpDocument(source(format)) as RhwpDocument;
     let baseHwpx: Uint8Array;

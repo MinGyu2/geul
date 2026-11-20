@@ -1,6 +1,6 @@
 --- a/src/document_core/commands/object_ops/shape.rs
 +++ b/src/document_core/commands/object_ops/shape.rs
-@@ -137,6 +137,135 @@
+@@ -137,6 +137,220 @@
      (color <= 0xff_ffff).then_some(color)
  }
  
@@ -30,23 +30,93 @@
 +    children: Vec<GeulGroupChildState>,
 +}
 +
++fn geul_read_matrix_f64_le(bytes: &[u8]) -> Option<[f64; 6]> {
++    if bytes.len() != 48 {
++        return None;
++    }
++    let mut out = [0.0f64; 6];
++    for (dst, chunk) in out.iter_mut().zip(bytes.chunks_exact(8)) {
++        let value = f64::from_le_bytes(chunk.try_into().ok()?);
++        if !value.is_finite() {
++            return None;
++        }
++        *dst = value;
++    }
++    Some(out)
++}
++
++fn geul_is_exact_identity_matrix(m: &[f64; 6]) -> bool {
++    m[0] == 1.0 && m[1] == 0.0 && m[2] == 0.0 && m[3] == 0.0 && m[4] == 1.0 && m[5] == 0.0
++}
++
++fn geul_finite_hwpx_int(value: f64, max_hu: u32) -> Option<i32> {
++    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > f64::from(max_hu) {
++        return None;
++    }
++    Some(value as i32)
++}
++
 +fn geul_flat_hwpx_identity(sa: &crate::model::shape::ShapeComponentAttr, require_zero_offset: bool) -> bool {
 +    if sa.rotation_angle != 0 || sa.horz_flip || sa.vert_flip || (sa.flip & 3) != 0
-+        || (sa.render_sx - 1.0).abs() > 1e-6 || (sa.render_sy - 1.0).abs() > 1e-6
-+        || sa.render_b.abs() > 1e-6 || sa.render_c.abs() > 1e-6
-+        || !sa.render_tx.is_finite() || !sa.render_ty.is_finite()
-+        || (sa.render_tx - sa.render_tx.round()).abs() > 1e-6
-+        || (sa.render_ty - sa.render_ty.round()).abs() > 1e-6
++        || !sa.render_sx.is_finite() || !sa.render_sy.is_finite()
++        || !sa.render_b.is_finite() || !sa.render_c.is_finite()
++        || sa.render_sx != 1.0 || sa.render_sy != 1.0
++        || sa.render_b != 0.0 || sa.render_c != 0.0
 +    {
 +        return false;
 +    }
-+    let tx = sa.render_tx.round() as i32;
-+    let ty = sa.render_ty.round() as i32;
-+    if require_zero_offset {
-+        sa.offset_x == 0 && sa.offset_y == 0 && tx == 0 && ty == 0
-+    } else {
-+        tx == sa.offset_x && ty == sa.offset_y
++    let Some(tx) = geul_finite_hwpx_int(sa.render_tx, MAX_RECT_DIM_HU) else {
++        return false;
++    };
++    let Some(ty) = geul_finite_hwpx_int(sa.render_ty, MAX_RECT_DIM_HU) else {
++        return false;
++    };
++    if tx != sa.offset_x || ty != sa.offset_y {
++        return false;
 +    }
++    if require_zero_offset && (tx != 0 || ty != 0) {
++        return false;
++    }
++    if !sa.raw_rendering.is_empty() {
++        let Some((cnt_bytes, rest)) = sa.raw_rendering.split_at_checked(2) else {
++            return false;
++        };
++        let count = u16::from_le_bytes([cnt_bytes[0], cnt_bytes[1]]) as usize;
++        if count > 64 || count.checked_mul(96).and_then(|n| n.checked_add(48)) != Some(rest.len()) {
++            return false;
++        }
++        let Some(trans) = geul_read_matrix_f64_le(&rest[..48]) else {
++            return false;
++        };
++        if trans[0] != 1.0 || trans[1] != 0.0 || trans[3] != 0.0 || trans[4] != 1.0 {
++            return false;
++        }
++        let Some(rtx) = geul_finite_hwpx_int(trans[2], MAX_RECT_DIM_HU) else {
++            return false;
++        };
++        let Some(rty) = geul_finite_hwpx_int(trans[5], MAX_RECT_DIM_HU) else {
++            return false;
++        };
++        if require_zero_offset {
++            if rtx != 0 || rty != 0 {
++                return false;
++            }
++        } else if !((rtx == 0 && rty == 0) || (rtx == tx && rty == ty)) {
++            return false;
++        }
++        for pair in rest[48..].chunks_exact(96) {
++            let Some(sca) = geul_read_matrix_f64_le(&pair[..48]) else {
++                return false;
++            };
++            let Some(rot) = geul_read_matrix_f64_le(&pair[48..96]) else {
++                return false;
++            };
++            if !geul_is_exact_identity_matrix(&sca) || !geul_is_exact_identity_matrix(&rot) {
++                return false;
++            }
++        }
++    }
++    true
 +}
 +
 +fn geul_exact_hwpx_size(
@@ -65,29 +135,43 @@
 +    Some((w, h))
 +}
 +
-+fn geul_group_child_geom_ok(child: &ShapeObject, w: u32, h: u32) -> bool {
-+    let Ok(w_i) = i32::try_from(w) else { return false };
-+    let Ok(h_i) = i32::try_from(h) else { return false };
++fn geul_group_child_geom_support(child: &ShapeObject, w: u32, h: u32) -> (bool, bool) {
++    let Ok(w_i) = i32::try_from(w) else { return (false, false) };
++    let Ok(h_i) = i32::try_from(h) else { return (false, false) };
 +    match child {
 +        ShapeObject::Rectangle(rect) => {
-+            rect.round_rate <= 100
++            let ok = rect.round_rate <= 100
 +                && rect.source_hwp_geometry.is_none()
 +                && rect.x_coords == [0, w_i, w_i, 0]
-+                && rect.y_coords == [0, 0, h_i, h_i]
++                && rect.y_coords == [0, 0, h_i, h_i];
++            (ok, ok)
 +        }
 +        ShapeObject::Ellipse(ellipse) => {
-+            (ellipse.center.x - w_i / 2).abs() <= 1
-+                && (ellipse.center.y - h_i / 2).abs() <= 1
-+                && (ellipse.axis1.x - w_i).abs() <= 1
-+                && ellipse.axis1.y == ellipse.center.y
-+                && ellipse.axis2.x == ellipse.center.x
-+                && (ellipse.axis2.y - h_i).abs() <= 1
-+                && ellipse.start1.x == ellipse.end1.x
-+                && ellipse.start1.y == ellipse.end1.y
-+                && ellipse.start2.x == ellipse.end2.x
-+                && ellipse.start2.y == ellipse.end2.y
++            let w64 = i64::from(w);
++            let h64 = i64::from(h);
++            let cx = i64::from(ellipse.center.x);
++            let cy = i64::from(ellipse.center.y);
++            let a1x = i64::from(ellipse.axis1.x);
++            let a1y = i64::from(ellipse.axis1.y);
++            let a2x = i64::from(ellipse.axis2.x);
++            let a2y = i64::from(ellipse.axis2.y);
++            let axes_ok = ellipse.attr == 0
++                && cx >= w64 / 2 && cx <= (w64 + 1) / 2
++                && cy >= h64 / 2 && cy <= (h64 + 1) / 2
++                && a1x == w64 && a1y == cy
++                && a2x == cx && a2y == h64;
++            if !axes_ok {
++                return (false, false);
++            }
++            let canonical_endpoints = i64::from(ellipse.start1.x) == a1x && i64::from(ellipse.start1.y) == a1y
++                && i64::from(ellipse.end1.x) == a1x && i64::from(ellipse.end1.y) == a1y
++                && i64::from(ellipse.start2.x) == a1x && i64::from(ellipse.start2.y) == a1y
++                && i64::from(ellipse.end2.x) == a1x && i64::from(ellipse.end2.y) == a1y;
++            // Moving only updates parent-local offset and leaves ellipse axes/endpoints untouched,
++            // whereas resizing overwrites start1..end2 with the canonical full-ellipse endpoint.
++            (true, canonical_endpoints)
 +        }
-+        _ => false,
++        _ => (false, false),
 +    }
 +}
 +
@@ -105,18 +189,19 @@
 +    let (x, y) = (sa.offset_x, sa.offset_y);
 +    let exact_size = geul_exact_hwpx_size(common, sa);
 +    let (w, h) = exact_size.unwrap_or((common.width, common.height));
++    let (geom_move_ok, geom_resize_ok) = geul_group_child_geom_support(child, w, h);
 +    let structurally_valid = exact_size.is_some()
 +        && !(id == 0 && inst_id == 0)
 +        && sa.group_level == 1
 +        && drawing.caption.is_none()
 +        && drawing.text_box.is_none()
 +        && geul_flat_hwpx_identity(sa, false)
-+        && geul_group_child_geom_ok(child, w, h)
++        && geom_move_ok
 +        && x >= 0 && y >= 0
 +        && i64::from(x) + i64::from(w) <= i64::from(gw)
 +        && i64::from(y) + i64::from(h) <= i64::from(gh);
 +    let can_move = structurally_valid && !common.locked;
-+    let can_resize = can_move && !common.size_protect;
++    let can_resize = can_move && geom_resize_ok && !common.size_protect;
 +    Some(GeulGroupChildState {
 +        index,
 +        kind,
@@ -136,7 +221,7 @@
  const MAX_RECT_DIM_HU: u32 = 2_000_000;
  const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
  
-@@ -829,6 +958,162 @@
+@@ -829,6 +1043,162 @@
          Ok(())
      }
  
@@ -299,6 +384,106 @@
      /// The editor merges only neighboring, ordinary paragraphs that share
      /// their exact format definitions. Refuse invisible structure which the
      /// text/font-run query cannot observe.
+@@ -3852,4 +4222,99 @@
+         assert_eq!(rect.common.width, 7200);
+         assert_eq!(rect.x_coords, [100, 100, 100, 100]);
+     }
++
++    #[test]
++    fn geul_raw_matrix_validation_rejects_canceling_nonfinite_and_truncated_data() {
++        let pack = |trans: [f64; 6], pairs: &[([f64; 6], [f64; 6])]| -> Vec<u8> {
++            let mut raw = Vec::with_capacity(2 + 48 + pairs.len() * 96);
++            raw.extend_from_slice(&(pairs.len() as u16).to_le_bytes());
++            for v in trans {
++                raw.extend_from_slice(&v.to_le_bytes());
++            }
++            for (sca, rot) in pairs {
++                for v in sca {
++                    raw.extend_from_slice(&v.to_le_bytes());
++                }
++                for v in rot {
++                    raw.extend_from_slice(&v.to_le_bytes());
++                }
++            }
++            raw
++        };
++        let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
++
++        // T1: Empty raw_rendering with valid modeled identity
++        let mut sa = crate::model::shape::ShapeComponentAttr::default();
++        assert!(geul_flat_hwpx_identity(&sa, true));
++
++        // T2: Canonical identity raw_rendering + T7 nonzero child offset
++        sa.raw_rendering = pack(id, &[(id, id)]);
++        assert!(geul_flat_hwpx_identity(&sa, true));
++        sa.offset_x = 6500;
++        sa.offset_y = 800;
++        sa.render_tx = 6500.0;
++        sa.render_ty = 800.0;
++        assert!(geul_flat_hwpx_identity(&sa, false));
++
++        // T4: Two canceling nonidentity scale matrices
++        let sca2 = [2.0, 0.0, 0.0, 0.0, 1.0, 0.0];
++        let sca_half = [0.5, 0.0, 0.0, 0.0, 1.0, 0.0];
++        let mut composite = sa.clone();
++        composite.raw_rendering = pack(id, &[(sca2, id), (sca_half, id)]);
++        assert!(!geul_flat_hwpx_identity(&composite, false));
++
++        // T5: Nonfinite modeled transform values (NaN / Inf / oversized float)
++        for bad_mut in [
++            |s: &mut crate::model::shape::ShapeComponentAttr| s.render_sx = f64::NAN,
++            |s: &mut crate::model::shape::ShapeComponentAttr| s.render_b = f64::NAN,
++            |s: &mut crate::model::shape::ShapeComponentAttr| s.render_sy = f64::INFINITY,
++            |s: &mut crate::model::shape::ShapeComponentAttr| s.render_tx = 1e20,
++        ] {
++            let mut m = crate::model::shape::ShapeComponentAttr::default();
++            bad_mut(&mut m);
++            assert!(!geul_flat_hwpx_identity(&m, false));
++        }
++
++        // T6: Malformed / truncated / NaN raw_rendering
++        let mut trunc = sa.clone();
++        trunc.raw_rendering.pop();
++        assert!(!geul_flat_hwpx_identity(&trunc, false));
++        let mut nan_raw = sa.clone();
++        nan_raw.raw_rendering = pack(id, &[([1.0, f64::NAN, 0.0, 0.0, 1.0, 0.0], id)]);
++        assert!(!geul_flat_hwpx_identity(&nan_raw, false));
++    }
++
++    #[test]
++    fn geul_ellipse_geometry_prevents_overflow_and_blocks_noncanonical_resize() {
++        let mk_ellipse = |w: u32, h: u32| -> crate::model::shape::EllipseShape {
++            let wi = w as i32;
++            let hi = h as i32;
++            let p = crate::model::Point { x: wi, y: hi / 2 };
++            let mut e = crate::model::shape::EllipseShape::default();
++            e.common.width = w;
++            e.common.height = h;
++            e.center = crate::model::Point { x: wi / 2, y: hi / 2 };
++            e.axis1 = p;
++            e.axis2 = crate::model::Point { x: wi / 2, y: hi };
++            e.start1 = p;
++            e.end1 = p;
++            e.start2 = p;
++            e.end2 = p;
++            e
++        };
++        // E1 & E2: Even & odd canonical ellipses support move + resize
++        assert_eq!(geul_group_child_geom_support(&ShapeObject::Ellipse(mk_ellipse(5200, 4100)), 5200, 4100), (true, true));
++        assert_eq!(geul_group_child_geom_support(&ShapeObject::Ellipse(mk_ellipse(101, 51)), 101, 51), (true, true));
++
++        // E3: Noncanonical start1..end2 (even when pairs are equal) preserves move but rejects resize
++        let mut noncanon = mk_ellipse(5200, 4100);
++        noncanon.start1 = crate::model::Point { x: 0, y: 0 };
++        noncanon.end1 = crate::model::Point { x: 0, y: 0 };
++        assert_eq!(geul_group_child_geom_support(&ShapeObject::Ellipse(noncanon), 5200, 4100), (true, false));
++
++        // E4: Extreme i32::MIN / i32::MAX must never overflow or pass
++        let mut extreme = mk_ellipse(2, 2);
++        extreme.center = crate::model::Point { x: i32::MIN + 1, y: i32::MAX };
++        assert_eq!(geul_group_child_geom_support(&ShapeObject::Ellipse(extreme), 2, 2), (false, false));
++    }
+ }
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
 @@ -4734,6 +4734,62 @@
