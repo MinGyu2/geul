@@ -1,6 +1,6 @@
 import type { GraphicProperties } from "../../commands/graphicProperties";
 import { useState } from "react";
-import { CHART_PLOTS, MAX_ALT_TEXT_CHARS, MAX_CAPTION_SPACING_HWPUNIT, MAX_CROP_FRACTION, MAX_GRAPHIC_TEXT_CHARS, SMART_ART_LAYOUTS, validObjectEdit, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
+import { CAPTION_SIDES, CAPTION_VERTICAL_ALIGNS, CHART_PLOTS, MAX_ALT_TEXT_CHARS, MAX_CAPTION_SPACING_HWPUNIT, MAX_CROP_FRACTION, MAX_GRAPHIC_TEXT_CHARS, SMART_ART_LAYOUTS, validObjectEdit, PICTURE_WRAPS, POSITION_PRESETS, objectEditRequest, validAltText, type ObjectEdit, type ObjectEditRequest, type ObjectSelection, type PictureProperties, type PictureWrap, type PositionPreset, type ShapeProperties } from "../../commands/objectSelection";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
@@ -139,12 +139,22 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
       </button>}
       {selection.captionSide && can("captionSide") && <label className="picture-size-field">
         {t("properties.caption.side")}
-        <select value={selection.captionSide} disabled={disabled} onChange={event => {
-          const side = event.target.value;
-          if (side === "Top" || side === "Bottom") onEdit({ kind: "captionSide", side });
+        <select data-testid="caption-side" value={selection.captionSide} disabled={disabled} onChange={event => {
+          const side = CAPTION_SIDES.find(side => side === event.target.value);
+          if (side) onEdit({ kind: "captionSide", side });
         }}>
-          <option value="Top">{t("properties.caption.top")}</option>
-          <option value="Bottom">{t("properties.caption.bottom")}</option>
+          {(selection.captionLateral ? CAPTION_SIDES : CAPTION_SIDES.slice(0, 2)).map(side =>
+            <option key={side} value={side}>{t(`properties.caption.side.${side}`)}</option>)}
+        </select>
+      </label>}
+      {selection.captionVerticalAlign && can("captionVerticalAlign") && <label className="picture-size-field">
+        {t("properties.caption.verticalAlign")}
+        <select data-testid="caption-vertical-align" value={selection.captionVerticalAlign} disabled={disabled} onChange={event => {
+          const align = CAPTION_VERTICAL_ALIGNS.find(align => align === event.target.value);
+          if (align) onEdit({ kind: "captionVerticalAlign", align });
+        }}>
+          {CAPTION_VERTICAL_ALIGNS.map(align =>
+            <option key={align} value={align}>{t(`properties.caption.verticalAlign.${align}`)}</option>)}
         </select>
       </label>}
       {selection.captionSpacing !== undefined && can("captionSpacing") &&

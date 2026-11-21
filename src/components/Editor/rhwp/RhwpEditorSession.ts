@@ -1885,10 +1885,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const caption = format === "hwpx" && address && canPic && this.doc.setPictureProperties
             && this.unlockedBodyGso(address) === "그림" ? readHwpxPictureCaption(this.doc, address) : undefined;
           const captionSide = caption?.side;
+          const captionLateral = caption?.lateral === true;
+          const captionVerticalAlign = captionSide === "Left" || captionSide === "Right" ? caption?.caption.vertAlign : undefined;
           const spacing = caption?.caption.spacing;
-          const captionSpacing = spacing !== undefined && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT ? spacing : undefined;
+          const captionSpacing = !captionVerticalAlign && spacing !== undefined && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
+            ? spacing : undefined;
           if (captionSide) operations.push("captionSide");
           if (captionSpacing !== undefined) operations.push("captionSpacing");
+          if (captionVerticalAlign) operations.push("captionVerticalAlign");
           // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line/polygon/curve body shapes.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
           const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
@@ -1968,7 +1972,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(shapePath ? { shapePath } : {}),
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(captionSide ? { captionSide } : {}),
+              ...(captionLateral ? { captionLateral: true } : {}),
               ...(captionSpacing !== undefined ? { captionSpacing } : {}),
+              ...(captionVerticalAlign ? { captionVerticalAlign } : {}),
               ...(groupChildFills ? { groupChildFills } : {}),
               ...(groupChildren ? { groupChildren } : {}),
               ...(graphic ? { graphic } : {}),
@@ -4641,7 +4647,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || request.edit.kind === "groupChildFill" || request.edit.kind === "groupChildMove" || request.edit.kind === "groupChildResize") {
       return this.editAdvancedShape(request);
     }
-    if (request.edit.kind === "captionSide" || request.edit.kind === "captionSpacing") return this.editPictureCaption(request);
+    if (request.edit.kind === "captionSide" || request.edit.kind === "captionSpacing" || request.edit.kind === "captionVerticalAlign") {
+      return this.editPictureCaption(request);
+    }
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
@@ -4938,16 +4946,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const { edit } = request;
     const selection = this.objectSelection, saved = this.selectedObject, doc = this.doc;
     const address = saved?.pictureAddress;
-    if ((edit.kind !== "captionSide" && edit.kind !== "captionSpacing") || !address || !selection || !doc?.setPictureProperties || !doc.getControls
+    if ((edit.kind !== "captionSide" && edit.kind !== "captionSpacing" && edit.kind !== "captionVerticalAlign")
+      || !address || !selection || !doc?.setPictureProperties || !doc.getControls
       || this.imeUnsettled || !objectEditMatches(request, selection)
       || this.sessions.get(this.sessionId)?.format !== "hwpx" || this.unlockedBodyGso(address) !== "그림") return false;
     const before = readHwpxPictureCaption(doc, address);
     if (!before || before.side !== selection.captionSide) return false;
     const side = edit.kind === "captionSide" ? edit.side : before.side;
     const spacing = edit.kind === "captionSpacing" ? edit.spacing : before.caption.spacing;
+    const vertAlign = edit.kind === "captionVerticalAlign" ? edit.align : before.caption.vertAlign;
+    if ((side === "Left" || side === "Right") && (!selection.captionLateral || !before.lateral)) return false;
     if (edit.kind === "captionSpacing" && selection.captionSpacing !== before.caption.spacing) return false;
-    if (side === before.side && spacing === before.caption.spacing) return false;
-    const update = edit.kind === "captionSide" ? { captionDirection: side } : { captionSpacing: spacing };
+    if (edit.kind === "captionVerticalAlign" && selection.captionVerticalAlign !== before.caption.vertAlign) return false;
+    if (side === before.side && spacing === before.caption.spacing && vertAlign === before.caption.vertAlign) return false;
+    const update = edit.kind === "captionSide" ? { captionDirection: side }
+      : edit.kind === "captionSpacing" ? { captionSpacing: spacing } : { captionVertAlign: vertAlign };
     const controls = doc.getControls();
     const { caret, anchor } = this;
     this.selectedObject = null;
@@ -4956,7 +4969,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const after = readHwpxPictureCaption(doc, address);
       if (result.ok !== true || !after || after.side !== side || doc.getControls!() !== controls
         || JSON.stringify(after.props) !== JSON.stringify({ ...before.props, ...update })
-        || JSON.stringify(after.caption) !== JSON.stringify({ ...before.caption, direction: side, spacing })) {
+        || JSON.stringify(after.caption) !== JSON.stringify({ ...before.caption, direction: side, spacing, vertAlign })) {
         throw new Error("caption placement did not preserve its owner or contents");
       }
       return { caret, anchor };

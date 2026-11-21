@@ -5,6 +5,7 @@ import {
   type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import { fontFamilyProblem } from "../../../commands/parameters";
+import { MAX_CAPTION_SPACING_HWPUNIT } from "../../../commands/objectSelection";
 import { documentFontTable, type DocumentFontTable } from "./rhwpFonts";
 import { inspectRhwpPicture } from "./pictureProperties";
 import { inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
@@ -287,10 +288,21 @@ function extractHwpxCaption(
 export function readHwpxPictureCaption(doc: RhwpDocument, address: readonly [number, number, number]) {
   try {
     const props = JSON.parse(doc.getPictureProperties?.(...address) ?? "null");
-    if (props?.hasCaption !== true || props.externalPath
-      || (props.captionDirection !== "Top" && props.captionDirection !== "Bottom")) return undefined;
+    if (props?.hasCaption !== true || props.externalPath) return undefined;
     const caption = extractHwpxCaption(doc, ...address, false, props, true);
-    return caption && { props, caption, side: props.captionDirection as "Top" | "Bottom" };
+    if (!caption) return undefined;
+    const { direction: side, width, spacing } = caption;
+    // RHWP's inline body layout paints lateral captions below the picture.
+    // The column-anchored floating layout implements lateral positioning and alignment.
+    const picture = inspectRhwpPicture(doc, address);
+    const lateral = width > 0 && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
+      && width + props.width + spacing <= 0x7fff_ffff
+      && !caption.includeMargin && picture?.properties.wrap === "square" && picture.plain && !!picture.movable
+      && props.horzRelTo === "Column" && props.vertRelTo === "Para"
+      && props.horzFlip === false && props.vertFlip === false
+      && ["outerMarginLeft", "outerMarginTop", "outerMarginRight", "outerMarginBottom"].every(key => props[key] === 0);
+    if (!lateral && (side === "Left" || side === "Right")) return undefined;
+    return { props, caption, side, lateral };
   } catch {
     return undefined;
   }

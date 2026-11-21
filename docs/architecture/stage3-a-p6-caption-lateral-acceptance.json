@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-21",
+  "baselineHead": "2b25b915fad9472382b1bcbcaea2d0444b16ef56",
+  "features": [
+    "P6-HX-CAP-SIDE",
+    "P6-HX-CAP-ALIGN"
+  ],
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "Existing separately owned HWPX caption on a supported unrotated and unflipped embedded floating Square body picture anchored Column/Para, Left/Top, with zero outer margins, positive caption width, and a nonnegative stored gap. Supports moving the caption left or right and setting Top, Center, or Bottom vertical alignment.",
+  "refused": "Inline lateral placement: representative identical inline SVG and caret geometry before and after changing side, although XML persisted new values. Unsupported float anchors or transforms, included caption margin, missing atno or unsupported formatting, and vertical alignment for upper/lower captions remain refused. Lateral gap editing is outside this slice.",
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "304cf9cf1b4bebb057bb7c52183ab34b8d3e14d3c1ed9e3cf9bd8259e38c0cb1",
+    "artifacts": {
+      "rhwp.js": "eda1fda0e929c6d0820a27fc752ae1a0435248bd6abe0a916f94155d68a51281",
+      "rhwp_bg.wasm": "7ffc6e4b129dc4e055c576df4e10564e58ef13abd30d5a114ae97e7e4932767d"
+    }
+  },
+  "checks": {
+    "typecheck": "PASS (Tauri build hook)",
+    "propertyAndClipboardUnit": "21 PASS",
+    "focusReleaseWasm": "4 PASS, including refusals for positive-width inline lateral placement and zero-width lateral placement",
+    "saveCheck": "2 SAFE, findings []",
+    "gitDiffCheck": "PASS"
+  },
+  "nativeX11": {
+    "releaseBuild": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+    "appSha256": "304756498cc54d3e12dde9281f6f91067e78ca9eceaeb372d2999b822f680151",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "acceptance": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p6.py --out <result> --fixtures <fixtures> --cases P6-HX-CAP-LEFT P6-HX-CAP-RIGHT --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "cases": {
+      "P6-HX-CAP-LEFT": {
+        "status": "PASS",
+        "fixtureSha256": "e3bc9f191f54d8ab42533465f0efddc17bbdedac2ff1d3f3d2d8404266e5ca4a",
+        "publishedSha256": "b7328b9319e0b56d1afc2d5696834e03da10a22c9fb576788cce7bd13dfd9334",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "6"
+        },
+        "resources": {
+          "BinData/image1.png": "d9e87506e49db16781b0e41efac3f99b54125bd404f1ebc570ebbeca903c48cb"
+        }
+      },
+      "P6-HX-CAP-RIGHT": {
+        "status": "PASS",
+        "fixtureSha256": "e3bc9f191f54d8ab42533465f0efddc17bbdedac2ff1d3f3d2d8404266e5ca4a",
+        "publishedSha256": "4b2e9a76b0a565df1d366e8992f5332bf757bb167ecb84b28112635bf52aa294",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "6"
+        },
+        "resources": {
+          "BinData/image1.png": "d9e87506e49db16781b0e41efac3f99b54125bd404f1ebc570ebbeca903c48cb"
+        }
+      }
+    },
+    "independentReopen": "Separate HWPX XML comparison restricts changes to the owned caption side and subList vertAlign; other entries and image bytes retained. A separate RHWP load verifies left/center or right/bottom rendered geometry and retained body text. Each direction and alignment was individually undone and redone. App reports the saved values after reopening.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "exit": 0
+    }
+  },
+  "rawEvidence": "target/stage3a-caption-lateral/",
+  "otherPlatforms": "Wayland, Windows and macOS: NOT RUN."
+}

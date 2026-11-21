@@ -2078,3 +2078,8 @@ HWPX 평면 컨테이너 직속 사각형·타원 자식은 항등 행렬과 비
 ## Stage 3-A P6.7 HWPX 그림 캡션 간격
 
 소유된 본문 그림의 기존 상·하 캡션에서 간격만 갱신한다. 편집 뒤 자동 번호·캡션 문단 순서와 문자 서식·외곽 그림 속성을 재검증한다. 기존 HWPX T009와 재열기 검사를 사용한다. 독립 XML과 패키지 비교에서 `gap`의 변경과 이미지 바이트 보존을 확인했다. [P6.7 수용 기록](stage3-a-p6-caption-spacing-acceptance.json)
+
+
+## Stage 3-A P6 HWPX 그림 캡션의 좌우 배치와 세로 정렬
+
+열 기준·문단 상단에 고정된 부유 본문 그림의 기존 캡션 중, 단일 `atno` 소유와 서식 및 지원 프레임이 확인된 경우만 좌우 배치와 세로 정렬을 허용한다. 변경 뒤 캡션·그림 속성과 소유 목록을 다시 읽고, 게시 시 기존 T009와 독립 재열기 검사를 수행한다. Linux X11 게시본에서 `caption@side`와 `subList@vertAlign` 외의 XML 및 BinData 바이트가 동일하고, 별도 RHWP 실행에서 좌우·세로 좌표를 확인했다. [수락 기록](stage3-a-p6-caption-lateral-acceptance.json)

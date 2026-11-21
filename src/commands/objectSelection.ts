@@ -88,8 +88,10 @@ export interface ObjectHit {
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;
   convertShape?: "rectangle" | "ellipse";
-  captionSide?: "Top" | "Bottom";
+  captionSide?: CaptionSide;
   captionSpacing?: number;
+  captionLateral?: true;
+  captionVerticalAlign?: CaptionVerticalAlign;
 }
 
 export interface ObjectSelection extends ObjectHit {
@@ -101,8 +103,12 @@ export interface ObjectSelection extends ObjectHit {
 }
 
 export const MAX_CAPTION_SPACING_HWPUNIT = 32767;
+export const CAPTION_SIDES = ["Top", "Bottom", "Left", "Right"] as const;
+export const CAPTION_VERTICAL_ALIGNS = ["Top", "Center", "Bottom"] as const;
+export type CaptionSide = typeof CAPTION_SIDES[number];
+export type CaptionVerticalAlign = typeof CAPTION_VERTICAL_ALIGNS[number];
 
-export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "groupChildGeometry", "convertShape", "captionSide", "captionSpacing"] as const;
+export const MUTATING_OBJECT_OPERATIONS = ["move", "position", "resize", "delete", "crop", "wrap", "altText", "fill", "outline", "rotate", "zOrder", "chart", "smartArt", "pathPoint", "pathVertex", "pathSegment", "groupChildFill", "groupChildGeometry", "convertShape", "captionSide", "captionSpacing", "captionVerticalAlign"] as const;
 const MUTATING_OBJECT_OPERATION_SET: ReadonlySet<string> = new Set(MUTATING_OBJECT_OPERATIONS);
 export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "line", "area", "pie", "doughnut", "scatter"] as const;
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
@@ -144,8 +150,9 @@ export type ObjectEdit =
   | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
-  | { kind: "captionSide"; side: "Top" | "Bottom" }
-  | { kind: "captionSpacing"; spacing: number };
+  | { kind: "captionSide"; side: CaptionSide }
+  | { kind: "captionSpacing"; spacing: number }
+  | { kind: "captionVerticalAlign"; align: CaptionVerticalAlign };
 
 export const OBJECT_SIDE_LIMITS = { min: 2, max: 4000 } as const;
 export const MAX_NUDGE_PT = 288;
@@ -171,7 +178,8 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "layer": return "zOrder";
     case "chartTitle": case "chartType": case "chartData": return "chart";
     case "smartArtItems": case "smartArtLayout": return "smartArt";
-    case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape": case "captionSide": case "captionSpacing": return edit.kind;
+    case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape":
+    case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
     case "groupChildMove": case "groupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
@@ -216,8 +224,9 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && integer(value.width, 2_000_000) && (value.width as number) >= 1
     && integer(value.height, 2_000_000) && (value.height as number) >= 1;
   if (value.kind === "convertShape") return keys === "kind,to" && (value.to === "rectangle" || value.to === "ellipse");
-  if (value.kind === "captionSide") return keys === "kind,side" && (value.side === "Top" || value.side === "Bottom");
+  if (value.kind === "captionSide") return keys === "kind,side" && CAPTION_SIDES.some(side => side === value.side);
   if (value.kind === "captionSpacing") return keys === "kind,spacing" && integer(value.spacing, MAX_CAPTION_SPACING_HWPUNIT);
+  if (value.kind === "captionVerticalAlign") return keys === "align,kind" && CAPTION_VERTICAL_ALIGNS.some(align => align === value.align);
   if (value.kind === "fill") return keys === "color,kind" && color(value.color);
   if (value.kind === "outline") return (keys === "color,kind" || keys === "color,kind,width") && color(value.color)
     && (!("width" in value) || (finite(value.width, 72) && (value.width as number) >= 0));

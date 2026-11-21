@@ -1,4 +1,4 @@
-import { BASIC_SHAPES, type BasicShape } from "./objectSelection";
+import { BASIC_SHAPES, CAPTION_SIDES, CAPTION_VERTICAL_ALIGNS, type BasicShape } from "./objectSelection";
 import { fontFamilyProblem } from "./parameters";
 
 export const OBJECT_CLIPBOARD_MIME = "application/x-geul-object+json";
@@ -38,8 +38,8 @@ export type HwpxPortablePictureMime = typeof HWPX_PICTURE_MIMES[number];
 export const HWPX_WRAP_VALUES = ["Square", "Tight", "Through", "TopAndBottom", "BehindText", "InFrontOfText"] as const;
 export const HWPX_TB_VERTICAL_ALIGNS = ["Top", "Center", "Bottom"] as const;
 export const HWPX_PARA_ALIGNS = ["left", "center", "right", "justify"] as const;
-export const HWPX_CAPTION_DIRECTIONS = ["Left", "Right", "Top", "Bottom"] as const;
-export const HWPX_CAPTION_VERT_ALIGNS = ["Top", "Center", "Bottom"] as const;
+export const HWPX_CAPTION_DIRECTIONS = CAPTION_SIDES;
+export const HWPX_CAPTION_VERT_ALIGNS = CAPTION_VERTICAL_ALIGNS;
 
 export const MAX_HWPX_PICTURE_BYTES = 8 * 1024 * 1024;
 

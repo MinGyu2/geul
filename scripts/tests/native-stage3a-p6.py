@@ -258,6 +258,64 @@ def caption_spacing(acc, row, fixtures, out):
     h.reopen(acc,path,row)
     pick(after,4.25)
 
+def caption_lateral(acc, row, fixtures, out, side, align):
+    name = f"a-p6-caption-{side.lower()}"
+    fixture = fixtures / f"{name}-original.hwpx"
+    old_layout = row["before"] = h.p6.hwp(fixture)
+    new_layout = h.p6.hwp(fixtures / f"{name}-edited.hwpx")
+    path = h.begin(acc, row, fixture, out, f"{name}-published.hwpx")
+    alignment = "[data-testid=caption-vertical-align]"
+
+    def pick(layout, position, vertical=None):
+        h.select_object(acc, layout["images"][0], "picture")
+        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", CAPTION, position)
+        if vertical:
+            acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", alignment, vertical)
+        else:
+            h.require(not acc.d.exists(alignment), "upper and lower captions do not have a vertical alignment control")
+
+    pick(old_layout, "Bottom")
+    acc.d.click(f"{CAPTION} option[value='{side}']")
+    h.revision(acc, "hwpx", 1)
+    pick(new_layout, side, "Top")
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    pick(old_layout, "Bottom")
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    pick(new_layout, side, "Top")
+    acc.d.click(f"{alignment} option[value='{align}']")
+    h.revision(acc, "hwpx", 4)
+    pick(new_layout, side, align)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 5)
+    pick(new_layout, side, "Top")
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 6)
+    pick(new_layout, side, align)
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = h.p6.hwp(path)
+    h.require(after == new_layout, "published picture and caption differ from the independent expected layout")
+    h.require(after["caption"]["text"] == old_layout["caption"]["text"] and after["body"] == old_layout["body"],
+              "caption or body text changed")
+    pic, caret = after["images"][0], after["caption"]["caret"]
+    h.require(caret["x"] < pic["x"] if side == "Left" else caret["x"] > pic["x"] + pic["w"],
+              "caption did not render beside the picture")
+    h.require(pic["y"] < caret["y"] < pic["y"] + pic["h"], "caption did not render at the edited vertical alignment")
+    row["resources"] = h.checked_resources(fixture, path)
+    verify_other_parts(fixture, path, lambda part: part == "Contents/section0.xml" or part.startswith("Preview/"))
+    with zipfile.ZipFile(fixture) as a, zipfile.ZipFile(path) as b:
+        old, new = [ET.fromstring(p.read("Contents/section0.xml")) for p in (a, b)]
+    caption = old.find(".//{*}pic/{*}caption")
+    h.require(caption is not None and caption.get("side") == "BOTTOM", "unexpected source caption")
+    sub_list = caption.find("{*}subList")
+    h.require(sub_list is not None and sub_list.get("vertAlign") == "TOP", "unexpected source alignment")
+    caption.set("side", side.upper())
+    sub_list.set("vertAlign", align.upper())
+    h.require(ET.tostring(old) == ET.tostring(new), "unrelated section XML, including numbering or runs, changed")
+    h.reopen(acc, path, row)
+    pick(after, side, align)
 
 
 h.CASES = {
@@ -266,6 +324,8 @@ h.CASES = {
     "P6.2-format": lambda *args: paste_polygon(*args, "docx"),
     "P6.3": caption,
     "P6.7": caption_spacing,
+    "P6-HX-CAP-LEFT": lambda *args: caption_lateral(*args, "Left", "Center"),
+    "P6-HX-CAP-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom"),
 }
 
 if __name__ == "__main__":

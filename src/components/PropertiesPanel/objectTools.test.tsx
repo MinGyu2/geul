@@ -74,6 +74,20 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenCalledExactlyOnceWith(request({ kind: "captionSpacing", spacing: 425 }));
   });
 
+  it("sends lateral position and vertical alignment as identity-bound caption edits", () => {
+    const onEdit = panel(selection({
+      address: { engine: "rhwp", path: [0, 0, 2] },
+      operations: ["deselect", "captionSide", "captionVerticalAlign"],
+      captionSide: "Left", captionLateral: true, captionVerticalAlign: "Top",
+    }));
+    fireEvent.change(screen.getByLabelText("Caption position"), { target: { value: "Right" } });
+    fireEvent.change(screen.getByLabelText("Caption vertical alignment"), { target: { value: "Center" } });
+    expect(onEdit.mock.calls).toEqual([
+      [request({ kind: "captionSide", side: "Right" })],
+      [request({ kind: "captionVerticalAlign", align: "Center" })],
+    ]);
+  });
+
   it("sends RHWP position presets without enabling drag", () => {
     const onEdit = panel(selection({ operations: ["deselect", "position"], address: { engine: "rhwp", path: [0, 0, 3] } }));
     fireEvent.change(screen.getByLabelText("Position"), { target: { value: "bottomCenter" } });

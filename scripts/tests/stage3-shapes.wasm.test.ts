@@ -2760,16 +2760,20 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { from.editor.dispose(); to.editor.dispose(); clearStructuredClipboard(); }
   });
 
-  it.each(["side", "spacing"] as const)("Stage 3-A P6 changes picture caption %s without changing its number, runs, or picture", async field => {
+  it.each(["side", "spacing", "Left", "Right"] as const)("Stage 3-A P6 changes picture caption %s without changing its number, runs, or picture", async field => {
     const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADYAAAAbCAIAAAC4FetiAAAAN0lEQVR4nO3OUQkAIBBAsethFvv3MIklBN/HYAE2Z+24+T5QVFRUbFFUrFBUrFBUrFBUrFB84QIyEvyvRSPr3QAAAABJRU5ErkJggg==", "base64");
+    const lateral = field === "Left" || field === "Right";
     let bytes: Uint8Array, control: number;
     try {
-      const created = JSON.parse(fixture.insertPicture!(0, 0, 0, "[]", png, 6300, 3150, 54, 27, "png", "Owned picture"));
+      const created = JSON.parse(fixture.insertPicture!(0, 0, 0, "[]", png,
+        lateral ? 4050 : 6300, lateral ? 2025 : 3150, 54, 27, "png", "Owned picture"));
       expect(created.ok).toBe(true);
       control = created.controlIdx;
-      expect(JSON.parse(fixture.setPictureProperties!(0, 0, control,
-        '{"hasCaption":true,"captionDirection":"Bottom","treatAsChar":true}')).ok).toBe(true);
+      expect(JSON.parse(fixture.setPictureProperties!(0, 0, control, JSON.stringify({
+        hasCaption: true, captionDirection: "Bottom", treatAsChar: !lateral, captionWidth: field === "spacing" ? 0 : 8000,
+        ...(lateral ? { horzRelTo: "Column", vertRelTo: "Para", horzOffset: 3000, vertOffset: 3000 } : {}),
+      }))).ok).toBe(true);
       const length = fixture.getCellParagraphLength(0, 0, control, 0, 0);
       fixture.insertTextInCell(0, 0, control, 0, 0, length, " caption");
       fixture.applyCharFormatInCell!(0, 0, control, 0, 0, length + 1, length + 8, '{"bold":true}');
@@ -2777,24 +2781,27 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { fixture.free(); }
     const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
     try {
-      const picture = (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "image")!;
+      const picture = () => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "image")!;
       const before = JSON.parse(doc.getPictureProperties!(0, 0, control));
       const owner = doc.getControls!();
       const read = () => JSON.parse(doc.getPictureProperties!(0, 0, control));
-      const selection = pick(picture);
+      const selection = pick(picture());
       expect(selection.captionSide).toBe("Bottom");
       expect(selection.captionSpacing).toBe(0);
+      expect(selection.captionLateral === true, JSON.stringify(before)).toBe(lateral);
       const untouched = doc.exportHwpx();
       expect(edit({ kind: "captionSide", side: "Bottom" })).toBe(false);
+      expect(edit({ kind: "captionVerticalAlign", align: "Center" })).toBe(false);
+      if (!lateral) expect(edit({ kind: "captionSide", side: "Left" })).toBe(false);
       for (const spacing of [0, -1, 32768, 425.5]) expect(edit({ kind: "captionSpacing", spacing })).toBe(false);
       expect(doc.getControls!()).toBe(owner);
       expect(doc.exportHwpx()).toEqual(untouched);
       expect(editor.localRevision).toBe(0);
       expect(editor.hasUnpreservedChanges).toBe(false);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
-      const change = field === "side" ? { kind: "captionSide", side: "Top" } as const
-        : { kind: "captionSpacing", spacing: 425 } as const;
-      const expected = field === "side" ? { ...before, captionDirection: "Top" } : { ...before, captionSpacing: 425 };
+      const change = field === "spacing" ? { kind: "captionSpacing", spacing: 425 } as const
+        : { kind: "captionSide", side: field === "side" ? "Top" : field } as const;
+      let expected = change.kind === "captionSide" ? { ...before, captionDirection: change.side } : { ...before, captionSpacing: 425 };
       expect(edit(change)).toBe(true);
       await confirm();
       expect(read()).toEqual(expected);
@@ -2804,6 +2811,22 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(editor.redo()).toBe(true);
       await confirm();
       expect(read()).toEqual(expected);
+      if (lateral) {
+        const aligned = pick(picture());
+        expect(aligned.captionVerticalAlign).toBe("Top");
+        expect(aligned.captionSpacing).toBeUndefined();
+        const align = field === "Left" ? "Center" : "Bottom";
+        expect(edit({ kind: "captionVerticalAlign", align })).toBe(true);
+        await confirm();
+        expect(read()).toEqual({ ...expected, captionVertAlign: align });
+        expect(editor.undo()).toBe(true);
+        await confirm();
+        expect(read()).toEqual(expected);
+        expect(editor.redo()).toBe(true);
+        await confirm();
+        expected = { ...expected, captionVertAlign: align };
+        expect(read()).toEqual(expected);
+      }
       expect(doc.getControls!()).toBe(owner);
       const exported = doc.exportHwpxWithReport();
       try {
@@ -2813,7 +2836,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
         try { expect(JSON.parse(reopened.getPictureProperties!(0, 0, control))).toEqual(read()); }
         finally { reopened.free(); }
         if (out) {
-          const name = field === "side" ? "a-p6-caption" : "a-p6-caption-spacing";
+          const name = field === "side" ? "a-p6-caption" : `a-p6-caption-${field.toLowerCase()}`;
           writeFileSync(resolve(out, `${name}-original.hwpx`), bytes);
           writeFileSync(resolve(out, `${name}-edited.hwpx`), output);
           writeFileSync(resolve(out, `${name}-report.json`), report);
