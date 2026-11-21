@@ -1882,7 +1882,9 @@ fn prove_cubic_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) ->
     let (new_start, new) = canonical_cubic_path(new);
     old_start == new_start
         && (extends_curve_with_lines(old_start, &old, &new)
-            || extends_curve_with_lines(old_start, &new, &old))
+            || extends_curve_with_lines(old_start, &new, &old)
+            || differs_by_one_cubic(&old, &new)
+            || differs_by_one_cubic(&new, &old))
 }
 
 type CurvePoint = [i64; 2];
@@ -1955,6 +1957,15 @@ fn extends_curve_with_lines(start: CurvePoint, short: &[CurveStep], long: &[Curv
     };
     strictly_between(prefix.last().map_or(start, CurveStep::end), *old_end, *new_end)
         && suffix.iter().all(|step| matches!(step, CurveStep::Line(_)))
+}
+
+fn differs_by_one_cubic(short: &[CurveStep], long: &[CurveStep]) -> bool {
+    if long.len() != short.len() + 1 { return false; }
+    (0..long.len()).any(|index| {
+        matches!(&long[index], CurveStep::Cubic(_))
+            && short.get(..index) == long.get(..index)
+            && short.get(index..) == long.get(index + 1..)
+    })
 }
 
 #[cfg(test)]
@@ -2765,6 +2776,28 @@ mod tests {
     }
 
     #[test]
+    fn stage3a_cubic_segment_proof_allows_one_owned_cubic_and_preserves_neighbors() {
+        let old = cubic_fixture_leaf(&[(0, 0), (10, 5), (20, 10), (30, 15), (40, 15)], &[1, 0]);
+        let inserted = cubic_fixture_leaf(
+            &[(0, 0), (10, 5), (20, 10), (30, 15), (34, 17), (38, 17), (42, 15), (40, 15)],
+            &[1, 1, 0],
+        );
+        assert!(super::prove_cubic_leaf_edit(&old, &inserted, 100, 100));
+        assert!(super::prove_cubic_leaf_edit(&inserted, &old, 100, 100));
+
+        let changed_neighbor = cubic_fixture_leaf(
+            &[(0, 0), (10, 5), (20, 10), (30, 15), (34, 17), (38, 17), (42, 15), (41, 15)],
+            &[1, 1, 0],
+        );
+        let inserted_line = cubic_fixture_leaf(
+            &[(0, 0), (10, 5), (20, 10), (30, 15), (35, 20), (40, 15)],
+            &[1, 0, 0],
+        );
+        assert!(!super::prove_cubic_leaf_edit(&old, &changed_neighbor, 100, 100));
+        assert!(!super::prove_cubic_leaf_edit(&old, &inserted_line, 100, 100));
+    }
+
+    #[test]
     #[ignore = "Release-WASM HWP5 interior line split and join fixtures"]
     fn release_stage3a_hwp_cubic_interior_line_reopens() {
         let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
@@ -2775,6 +2808,18 @@ mod tests {
         assert_eq!(check_with_preview_refresh(&source, &split), vec![]);
         assert_eq!(check_with_preview_refresh(&split, &joined), vec![]);
         assert_eq!(check_with_preview_refresh(&source, &joined), vec![]);
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 cubic insertion and removal fixtures"]
+    fn release_stage3a_hwp_cubic_segment_reopens() {
+        let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let source = std::fs::read(directory.join("a-p4-curve-interior-original.hwp")).unwrap();
+        let inserted = std::fs::read(directory.join("a-p4-curve-cubic-inserted.hwp")).unwrap();
+        let removed = std::fs::read(directory.join("a-p4-curve-cubic-removed.hwp")).unwrap();
+        assert_eq!(check_with_preview_refresh(&source, &inserted), vec![]);
+        assert_eq!(check_with_preview_refresh(&inserted, &removed), vec![]);
+        assert_eq!(check_with_preview_refresh(&source, &removed), vec![]);
     }
 
     fn mutate_p4_cubic_component(bytes: &[u8], offset: usize, replacement: &[u8]) -> Vec<u8> {

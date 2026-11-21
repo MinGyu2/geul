@@ -1,0 +1,57 @@
+{
+  "baselineHead": "4fccb5bdbde7eadad66412f153525d04cb62ce90",
+  "feature": "P4-H5-SEG",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "SAFE, top-level Section0 open HWP5 cubic/line paths with known tag-83 source leaf, identity transform and zero component offset. Supports non-collinear cubic control-point edits, insertion of one cubic after an eligible endpoint, and removal of the selected cubic control1/control2/endpoint while retaining at least one cubic.",
+  "refused": "Unknown or malformed command storage/padding, non-curve or unmodeled leaves, unsupported transforms/offsets, locked or stale ownership, unsupported selected points, degenerate/zero-length endpoint chords, bounds overflow, point counts above 257, or deletion of the last cubic. These paths fail closed.",
+  "engineIntegration": {
+    "rhwpSubmodule": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patchSeriesIndex": 46,
+    "patch": "patches/rhwp/stage3a-hwp5-cubic-segments.patch",
+    "patchSha256": "9e1ae30d6db7c3c4830460f4e7ce579512d1f30d1bc86384e0b8cb36e9bd6960",
+    "seriesSource": "scripts/rhwp-patches.py",
+    "officialBuildExternalUnchanged": true,
+    "releaseGeneration": "36f8d0036cbfaafd236018313e686297d84f29c75a2e1748edfce4778f890a44",
+    "artifacts": {
+      "rhwp.js": "fe3942733de35ff18566b529e0a0a26589e4bd40a7f0990cb2e7bce7957cb334",
+      "rhwp_bg.wasm": "76cd9dfe9b33f06916393f84ee48e3e7abb911d0901b67a9043ee9929bfdabcc"
+    }
+  },
+  "checks": {
+    "releaseWasmOperation": "PASS — actual HWP5 cubic/line fixture; one cubic insertion and removal; 1/1.",
+    "releaseWasmRegressions": "PASS — focused HWPX curve identity, HWP5 cubic handle, terminal line, interior line split/join, cubic insert/remove, and malformed/unmodeled padding refusal; 6 passed, 69 skipped.",
+    "t009": "PASS — release_stage3a_hwp_cubic_segment_reopens, 1/1. Actual CFB source→inserted, inserted→removed, and source→removed proof through check_with_preview_refresh.",
+    "independentCfb": "PASS — each saved edit changed exactly one BodyText/Section0 tag-83 level-3 leaf. Independent inspection checked point count/coordinates, command identity/order, zeroed unused command storage, 4-byte padding, and unchanged non-preview streams and neighboring records.",
+    "undoRedo": "PASS — Native X11 control-point edit and cubic insertion undo/redo; cubic deletion undo restores the segment and redo removes it again. Release acceptance checks safe revision/history behavior.",
+    "reopen": "PASS — each published output reopened in an independent app session; cubic removal geometry and owner match the original fixture.",
+    "ui": "PASS — ObjectSelectionFrame Vitest 31/31.",
+    "typecheck": "PASS — npm run typecheck.",
+    "tauriRelease": "PASS — npm run tauri -- build --no-bundle.",
+    "native": "PASS — actual Linux X11/Xvfb app with private IBus Hangul; run11. Trusted native insert/remove actions; saves synced; reopen status ready.",
+    "nativeCleanup": "PASS — session cleanup and filesystem ownership proven; no surviving processes or temporary directories.",
+    "pythonSyntax": "PASS — python3 -m py_compile scripts/tests/native-stage3a-p4.py.",
+    "diffCheck": "PASS — git diff --check.",
+    "rhwpUpstreamUnitSuite": "UNVERIFIED — the prepared RHWP source omits upstream test fixtures and its full unit-test target has unrelated existing fixture/type/API compilation blockers; targeted source cargo test was not reported as passing. Actual Release WASM, T009, and real-fixture Native acceptance are recorded above."
+  },
+  "outputs": {
+    "fixture": "a-p4-curve-interior-original.hwp",
+    "fixtureSha256": "b33767b964bb3331c71416d0c3c29c6c332521a9703ec0412ede8b31bd04930f",
+    "noncollinearControl": "1ba572e993fe37f620d1590b839d7e9cbad903f065de132f2aee4564d484503b",
+    "inserted": "0f5cbaefc2c11793674887532b96371cb627513103882f6ad40e9d5417c4bc5b",
+    "removed": "f3875edecd3a93e1739b93e3e3424edeb947b4eb36df654e2512efb93b353ff8"
+  },
+  "native": {
+    "platform": "Linux X11/Xvfb + private IBus Hangul",
+    "result": "PASS",
+    "appSha256": "017fd588570a0c113d13d753bb23f650b79346e1cc6d1f2fd98d038248c0b63a",
+    "rhwpGeneration": "36f8d0036cbfaafd236018313e686297d84f29c75a2e1748edfce4778f890a44",
+    "run": "target/p4-h5-seg-work/native/result11/result.json",
+    "cleanup": "target/p4-h5-seg-work/native/session11/cleanup.json"
+  },
+  "notRun": [
+    "Wayland UI for this newly added HWP5 cubic structure operation.",
+    "Windows and macOS Native acceptance; those hosts are unavailable.",
+    "External Microsoft Office/other HWP application interoperability reopen."
+  ],
+  "evidence": "target/p4-h5-seg-work/"
+}

@@ -433,3 +433,11 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 이 작업의 Linux Native는 X11 4건과 Wayland 5건 PASS다. Wayland에서 새 다각형 점·DOCX 프리셋과 기존 HWP5 내부 직선, HWPX 다문단 범위 삭제, 오른쪽/아래 캡션을 수락했다. Windows와 macOS는 Native 환경이 없어 NOT RUN이다. [실행·게시·재열기 기록](architecture/stage3-a-native-p4-p5-p6-acceptance.json)
 
 최신 누락 기능, 안전 차단과 플랫폼 수락 의무는 [Stage 3-A 현행 인벤토리](architecture/stage3-a-current-inventory.md)에서 관리한다.
+
+### P4-H5-SEG HWP5 cubic segment 편집 (2026-11-22)
+
+**CURRENT PASS — 명시한 SAFE HWP5 범위.** Ordered RHWP patch 46과 geul 명령/UI가 안전한 최상위 Section0 열린 cubic path의 비공선 제어점 이동, cubic segment 한 개 삽입·삭제를 지원한다. 미지원 leaf·명령·패딩, 비항등 transform/오프셋, 잘못된 소유권과 마지막 cubic 삭제는 계속 거부한다.
+
+Release WASM의 곡선 회귀 6건, 실제 HWP fixture 삽입·삭제 1건, `release_stage3a_hwp_cubic_segment_reopens` T009 1건, ObjectSelectionFrame UI 31건, TypeScript typecheck, protected Tauri Release build가 PASS다. Linux X11/Xvfb + private IBus Native run11은 제어점·삽입·삭제, 삭제 Undo/Redo, synced save 및 독립 앱 재열기를 확인했다. 독립 CFB 검사는 저장마다 tag 83 level-3 leaf 하나만 바뀌고 좌표·command identity·unused command bytes·4-byte padding과 다른 stream/record가 유지됨을 확인했다. 상세 빌드·해시·출력은 [P4-H5-SEG 수락 기록](architecture/stage3-a-p4-hwp5-cubic-segment-acceptance.json)을 따른다.
+
+Wayland/Windows/macOS, 외부 오피스 재열기와 준비된 RHWP 소스의 전체 upstream Cargo test suite는 NOT RUN/UNVERIFIED이며 PASS로 세지 않는다. 지원 범위 밖 curve record는 계속 fail-closed다.

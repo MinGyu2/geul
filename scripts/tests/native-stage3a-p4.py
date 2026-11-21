@@ -767,6 +767,139 @@ def curve_interior_line_case(acc, row, fixtures, out):
     enter(8)
 
 
+def curve_cubic_segment_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-curve-interior-original.hwp"
+    before = row["before"] = inspect(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "curve")
+    points = target["path"]["points"]
+    h.require(len(points) == 8 and [point["control"] for point in points] ==
+              [False, True, True, False, False, True, True, False], "unexpected cubic-line-cubic fixture", points)
+
+    control_row = row["noncollinearControl"] = {}
+    control_path = h.begin(acc, control_row, fixture, out, "a-p4-cubic-control.hwp")
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    acc.dom_click(f"{POINT}:nth-of-type(3)")
+    h.p6.gso.replace(acc, COORDS + " > label:nth-of-type(1) input", 3001)
+    h.p6.gso.replace(acc, COORDS + " > label:nth-of-type(2) input", 1402)
+    acc.dom_click(COORDS + " > button[type=submit]")
+    h.revision(acc, "hwp", 1)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    acc.dom_click(f"{POINT}:nth-of-type(3)")
+    control_row["undoControlSelection"] = acc.d.js("""
+      return {
+        values: [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value),
+        selected: [...document.querySelectorAll(arguments[1])].map((e,i)=>e.getAttribute('aria-pressed')==='true'?i:null).filter(i=>i!==null),
+        labels: [...document.querySelectorAll(arguments[1])].map(e=>e.getAttribute('aria-label')),
+        target: document.querySelector(arguments[1]+':nth-of-type(3)')?.getAttribute('aria-label')
+      }
+    """, COORDS, POINT)
+    h.require(control_row["undoControlSelection"]["values"][:2] == [2500, 1000],
+              "Undo did not restore the original cubic control", control_row["undoControlSelection"])
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    acc.dom_click(f"{POINT}:nth-of-type(3)")
+    expected_control = [dict(point) for point in points]
+    expected_control[1] = {"x": 3001, "y": 1402, "control": True}
+    control_row["redoControlSelection"] = acc.d.js("""
+      return [...document.querySelectorAll(arguments[0]+' input')].slice(0,2).map(e=>+e.value)
+    """, COORDS)
+    h.require(control_row["redoControlSelection"] == [3001, 1402],
+              "Redo did not restore the noncollinear cubic control", control_row["redoControlSelection"])
+    acc.key("Escape")
+    h.publish(acc, "hwp", control_row)
+    control_row["publishedSha256"] = inspect_saved_curve(
+        fixture, control_path, before, target, expected_control, [1, 0, 1])
+    h.reopen(acc, control_path, control_row)
+    expected_control_model = {**before, "frames": [
+        {**target, "path": {**target["path"], "points": expected_control}}
+        if item == target else item for item in before["frames"]]}
+    h.require(inspect(control_path) == expected_control_model,
+              "noncollinear control point did not reopen", inspect(control_path))
+
+    path = h.begin(acc, row, fixture, out, "a-p4-cubic-inserted.hwp")
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    count = lambda expected: h.require(
+        acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT) == expected,
+        "unexpected cubic point count", expected)
+    count(8)
+    acc.d.js("""
+      window.hwp5CubicActions=[];
+      document.addEventListener('click',e=>{
+        if(e.target.matches('.object-path-insert-cubic,.object-path-remove-cubic'))
+          window.hwp5CubicActions.push({action:e.target.className,trusted:e.isTrusted});
+      },true);
+    """)
+    acc.dom_click(f"{POINT}:nth-of-type(5)")
+    for index, value in enumerate([8500, 6600, 9300, 6600, 10400, 5400], 1):
+        h.p6.gso.replace(acc, f".object-path-cubic-actions label:nth-of-type({index}) input", value)
+    added = [*points[:4],
+             {"x": 8500, "y": 6600, "control": True}, {"x": 9300, "y": 6600, "control": True},
+             {"x": 10400, "y": 5400, "control": False}, *points[4:]]
+    acc.dom_click(".object-path-insert-cubic")
+    h.revision(acc, "hwp", 1)
+    count(11)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    count(8)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    h.select_object(acc, target, "shape")
+    acc.dom_click(".object-path-mode")
+    count(11)
+    acc.key("Escape")
+    insert_row = row["insert"] = {}
+    h.publish(acc, "hwp", insert_row)
+    insert_row["publishedSha256"] = inspect_saved_curve(fixture, path, before, target, added, [1, 1, 0, 1])
+    insert_row["trustedActions"] = acc.d.js("return window.hwp5CubicActions")
+    h.require(insert_row["trustedActions"] == [
+        {"action": "object-path-insert-cubic", "trusted": True}],
+        "cubic insertion did not come from trusted native input", insert_row["trustedActions"])
+
+    inserted_snapshot = out / "a-p4-cubic-inserted-baseline.hwp"
+    shutil.copyfile(path, inserted_snapshot)
+    inserted_before = inspect(inserted_snapshot)
+    inserted_target = next(item for item in inserted_before["frames"] if item["path"] and item["path"]["kind"] == "curve")
+    h.reopen(acc, path, insert_row)
+    h.select_object(acc, inserted_target, "shape")
+    acc.dom_click(".object-path-mode")
+    acc.d.js("window.hwp5CubicActions=[]")
+    count(11)
+    acc.dom_click(f"{POINT}:nth-of-type(6)")
+    acc.dom_click(".object-path-remove-cubic")
+    h.revision(acc, "hwp", 1)
+    count(8)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    h.select_object(acc, inserted_target, "shape")
+    acc.dom_click(".object-path-mode")
+    count(11)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    h.select_object(acc, inserted_target, "shape")
+    acc.dom_click(".object-path-mode")
+    count(8)
+    acc.key("Escape")
+    remove_row = row["remove"] = {}
+    h.publish(acc, "hwp", remove_row)
+    remove_row["publishedSha256"] = inspect_saved_curve(
+        inserted_snapshot, path, inserted_before, inserted_target, points, [1, 0, 1])
+    remove_row["trustedActions"] = acc.d.js("return window.hwp5CubicActions")
+    h.require(remove_row["trustedActions"] == [
+        {"action": "object-path-remove-cubic", "trusted": True}],
+        "cubic removal did not come from trusted native input", remove_row["trustedActions"])
+    h.reopen(acc, path, remove_row)
+    h.require(inspect(path) == before, "cubic removal did not restore original geometry and owner", inspect(path))
+
+
 def group_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-group-original.hwpx"
     before = row["before"] = inspect(fixture)
@@ -1082,6 +1215,7 @@ h.CASES = {
     "P4.4": polygon_vertices_case,
     "P4.5": curve_terminal_line_case,
     "P4-H5-SEG-LINE": curve_interior_line_case,
+    "P4-H5-SEG": curve_cubic_segment_case,
     "P4-H5-POLY-POINT": lambda *args: points_case(*args, "polygon", "hwp"),
     "P4-H5-POLY-EDGES": hwp5_polygon_edges,
     "P4.6": group_child_edit_case,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "../../language/LanguageContext";
 import { objectEditMatches, objectEditRequest, objectKeyEdit, validObjectEdit, type ObjectSelection } from "../../commands/objectSelection";
@@ -98,6 +98,17 @@ describe("object edit requests", () => {
       { kind: "pathVertex", action: "remove", index: 2, x: 20 },
       { kind: "pathVertex", action: "insert", index: 256, x: 20, y: 30 },
       { kind: "pathVertex", action: "insert", index: 2, x: 20.5, y: 30 },
+    ]) expect(validObjectEdit(edit)).toBe(false);
+  });
+  it("validates HWP5 cubic segment edits as exact integer payloads", () => {
+    expect(validObjectEdit({ kind: "pathSegment", action: "insertCubic", index: 3,
+      c1x: 20, c1y: 30, c2x: 40, c2y: 30, x: 60, y: 50 })).toBe(true);
+    expect(validObjectEdit({ kind: "pathSegment", action: "removeCubic", index: 3 })).toBe(true);
+    for (const edit of [
+      { kind: "pathSegment", action: "insertCubic", index: 3, c1x: 20, c1y: 30, c2x: 40, c2y: 30, x: 60, y: 50, extra: true },
+      { kind: "pathSegment", action: "insertCubic", index: 256, c1x: 20, c1y: 30, c2x: 40, c2y: 30, x: 60, y: 50 },
+      { kind: "pathSegment", action: "insertCubic", index: 3, c1x: -1, c1y: 30, c2x: 40, c2y: 30, x: 60, y: 50 },
+      { kind: "pathSegment", action: "removeCubic", index: 3, x: 20 },
     ]) expect(validObjectEdit(edit)).toBe(false);
   });
   it("validates DrawingML path control requests against the current selected geometry", () => {
@@ -389,6 +400,39 @@ it("offers terminal line edits only at the final HWP5 endpoint", () => {
   expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "append", x: 85, y: 60 }, 7);
   fireEvent.click(screen.getByRole("button", { name: "Remove final line" }));
   expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "remove" }, 7);
+});
+
+it("inserts a cubic after an endpoint and removes the selected cubic from an HWP5 curve", () => {
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 3] }, operations: ["deselect", "pathPoint", "pathSegment"],
+    curveCubicStructure: true,
+    shapePath: { kind: "curve", closed: false, width: 400, height: 300, points: [
+      { x: 10, y: 10, control: false }, { x: 20, y: 30, control: true }, { x: 35, y: 40, control: true },
+      { x: 50, y: 50, control: false }, { x: 80, y: 60, control: false },
+    ] },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 4" }));
+  const insert = screen.getByTestId("hwp5-cubic-insert");
+  expect((insert as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(insert);
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "insertCubic", index: 3,
+    c1x: 90, c1y: 90, c2x: 130, c2y: 90, x: 170, y: 50 }, 7);
+  cleanup();
+  const added = selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 3] }, operations: ["deselect", "pathPoint", "pathSegment"],
+    curveCubicStructure: true,
+    shapePath: { kind: "curve", closed: false, width: 400, height: 300, points: [
+      { x: 10, y: 10, control: false }, { x: 20, y: 30, control: true }, { x: 35, y: 40, control: true },
+      { x: 50, y: 50, control: false }, { x: 90, y: 90, control: true }, { x: 130, y: 90, control: true },
+      { x: 170, y: 50, control: false }, { x: 80, y: 60, control: false },
+    ] },
+  });
+  const { onEdit: onRemove } = frame({ selection: added });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  fireEvent.click(screen.getByRole("button", { name: "Control point 5" }));
+  fireEvent.click(screen.getByTestId("hwp5-cubic-remove"));
+  expect(onRemove).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "removeCubic", index: 4 }, 7);
 });
 
 it("edits flat-group child positions and left/top-anchored sizes with ownership and protection checks", () => {

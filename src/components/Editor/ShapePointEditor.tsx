@@ -26,7 +26,17 @@ function canJoinEdges(previous: ShapePath["points"][number], selected: ShapePath
   return ax * by === ay * bx && ax * bx + ay * by > 0;
 }
 
-export function ShapePointEditor({ path, owner, width, height, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, onEdit }: {
+function defaultCubic(path: ShapePath, point: ShapePath["points"][number]) {
+  const dx = point.x + 120 <= path.width ? 120 : point.x >= 120 ? -120 : 0;
+  const dy = point.y + 40 <= path.height ? 40 : point.y >= 40 ? -40 : 0;
+  return {
+    c1x: String(point.x + Math.round(dx / 3)), c1y: String(point.y + dy),
+    c2x: String(point.x + Math.round(2 * dx / 3)), c2y: String(point.y + dy),
+    x: String(point.x + dx), y: String(point.y),
+  };
+}
+
+export function ShapePointEditor({ path, owner, width, height, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveCubicStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
@@ -35,11 +45,13 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
   collinearVertexRemoval: ObjectSelection["collinearVertexRemoval"];
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
   curveLineStructure: ObjectSelection["curveLineStructure"];
+  curveCubicStructure: ObjectSelection["curveCubicStructure"];
   onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
 }) {
   const { t } = useTranslation();
   const [vertexIndex, setIndex] = useState(0);
   const [draft, setDraft] = useState<{ owner: string; index: number; x: string; y: string }>();
+  const [cubicDraft, setCubicDraft] = useState<{ owner: string; index: number; c1x: string; c1y: string; c2x: string; c2y: string; x: string; y: string }>();
   const [preview, setPreview] = useState<{ owner: string; index: number; x: number; y: number }>();
   const drag = useRef<PointDrag | null>(null);
   const points = path.closed ? path.points.slice(0, -1) : path.points;
@@ -59,6 +71,23 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
   const x = Number(rawX), y = Number(rawY);
   const valid = rawX !== "" && rawY !== "" && Number.isSafeInteger(x) && Number.isSafeInteger(y)
     && x >= 0 && x <= path.width && y >= 0 && y <= path.height && (x !== selected.x || y !== selected.y);
+  const cubicDefaults = defaultCubic(path, selected);
+  const activeCubicDraft = cubicDraft?.owner === owner && cubicDraft.index === index ? cubicDraft : null;
+  const cubic = {
+    c1x: activeCubicDraft?.c1x ?? cubicDefaults.c1x, c1y: activeCubicDraft?.c1y ?? cubicDefaults.c1y,
+    c2x: activeCubicDraft?.c2x ?? cubicDefaults.c2x, c2y: activeCubicDraft?.c2y ?? cubicDefaults.c2y,
+    x: activeCubicDraft?.x ?? cubicDefaults.x, y: activeCubicDraft?.y ?? cubicDefaults.y,
+  };
+  const cubicPoint = Object.fromEntries(Object.entries(cubic).map(([key, value]) => [key, Number(value)])) as Record<keyof typeof cubic, number>;
+  const cubicValid = Object.values(cubic).every(value => value !== "")
+    && Object.values(cubicPoint).every(Number.isSafeInteger)
+    && cubicPoint.c1x >= 0 && cubicPoint.c1x <= path.width && cubicPoint.c2x >= 0 && cubicPoint.c2x <= path.width
+    && cubicPoint.x >= 0 && cubicPoint.x <= path.width && cubicPoint.c1y >= 0 && cubicPoint.c1y <= path.height
+    && cubicPoint.c2y >= 0 && cubicPoint.c2y <= path.height && cubicPoint.y >= 0 && cubicPoint.y <= path.height
+    && (cubicPoint.x !== selected.x || cubicPoint.y !== selected.y);
+  const removableCubic = curveCubicStructure && selected.control && points[index + 1]?.control === true
+    && points[index + 2]?.control === false
+    && points.filter(point => point.control).length > 2;
 
   function target(event: PointerEvent<HTMLButtonElement>, current: PointDrag) {
     const point = points[current.index]!;
@@ -141,6 +170,22 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
           onClick={() => onEdit({ kind: "pathSegment", action: "joinLines", index })}>
           {t("editor.object.path.joinLines")}
         </button>}
+      </div>}
+      {curveCubicStructure && !selected.control && index > 0 && points.length <= 254 && <div className="object-path-vertex-actions object-path-cubic-actions">
+        {(["c1x", "c1y", "c2x", "c2y", "x", "y"] as const).map(key =>
+          <label key={key}>{t(`editor.object.path.cubic.${key}`)} <input type="number" min={0}
+            max={key.endsWith("x") ? path.width : path.height} step={1} value={cubic[key]}
+            onChange={event => setCubicDraft({ owner, index, ...cubic, [key]: event.target.value })} /></label>)}
+        <button type="button" className="object-path-insert-cubic" data-testid="hwp5-cubic-insert"
+          disabled={!cubicValid} onClick={() => cubicValid && onEdit({ kind: "pathSegment", action: "insertCubic", index, ...cubicPoint })}>
+          {t("editor.object.path.insertCubic")}
+        </button>
+      </div>}
+      {removableCubic && <div className="object-path-vertex-actions">
+        <button type="button" className="object-path-remove-cubic" data-testid="hwp5-cubic-remove"
+          onClick={() => onEdit({ kind: "pathSegment", action: "removeCubic", index })}>
+          {t("editor.object.path.removeCubic")}
+        </button>
       </div>}
     </form>
   </>;

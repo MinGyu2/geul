@@ -98,6 +98,7 @@ export interface ObjectHit {
   collinearVertexRemoval?: true;
   curveTerminalLine?: { append: boolean; remove: boolean };
   curveLineStructure?: true;
+  curveCubicStructure?: true;
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;
   convertShape?: "rectangle" | "ellipse";
@@ -164,6 +165,8 @@ export type ObjectEdit =
   | { kind: "pathSegment"; action: "remove" }
   | { kind: "pathSegment"; action: "splitLine"; index: number; x: number; y: number }
   | { kind: "pathSegment"; action: "joinLines"; index: number }
+  | { kind: "pathSegment"; action: "insertCubic"; index: number; c1x: number; c1y: number; c2x: number; c2y: number; x: number; y: number }
+  | { kind: "pathSegment"; action: "removeCubic"; index: number }
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
@@ -241,8 +244,13 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
   if (value.kind === "pathSegment") return (value.action === "remove" && keys === "action,kind")
     || (value.action === "joinLines" && keys === "action,index,kind" && integer(value.index, 255))
+    || (value.action === "removeCubic" && keys === "action,index,kind" && integer(value.index, 255))
     || (((value.action === "append" && keys === "action,kind,x,y")
       || (value.action === "splitLine" && keys === "action,index,kind,x,y" && integer(value.index, 255)))
+      && integer(value.x, 2_000_000) && integer(value.y, 2_000_000))
+    || (value.action === "insertCubic" && keys === "action,c1x,c1y,c2x,c2y,index,kind,x,y"
+      && integer(value.index, 255) && integer(value.c1x, 2_000_000) && integer(value.c1y, 2_000_000)
+      && integer(value.c2x, 2_000_000) && integer(value.c2y, 2_000_000)
       && integer(value.x, 2_000_000) && integer(value.y, 2_000_000));
   if (value.kind === "groupChildFill") return keys === "color,index,kind" && integer(value.index, 127)
     && typeof value.color === "string" && color(value.color);

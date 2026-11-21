@@ -1144,6 +1144,82 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it.skipIf(!process.env.GEUL_STAGE3_CUBIC_INTERIOR)("Stage 3-A inserts and removes one HWP5 cubic segment without changing neighboring commands", async () => {
+    const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC_INTERIOR!));
+    if (out) {
+      mkdirSync(out, { recursive: true });
+      writeFileSync(resolve(out, "a-p4-curve-interior-original.hwp"), bytes);
+    }
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const frame = shapes(doc).find(candidate => JSON.parse(doc.getEditableShapePath!(0, 0, candidate.controlIdx))?.kind === "curve")!;
+      const address = [0, 0, frame.controlIdx] as const;
+      const selection = pick(frame);
+      const before = doc.exportHwp();
+      const original = selection.shapePath!;
+      const read = () => JSON.parse(doc.getEditableShapePath!(...address));
+      expect(original.points.map(point => point.control)).toEqual([false, true, true, false, false, true, true, false]);
+      expect(selection.curveCubicStructure).toBe(true);
+
+      expect(edit({ kind: "pathSegment", action: "insertCubic", index: 1,
+        c1x: 8500, c1y: 6800, c2x: 9500, c2y: 6800, x: 10300, y: 5500 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "insertCubic", index: 3,
+        c1x: 8500, c1y: 6800, c2x: 9500, c2y: 6800, x: original.points[3]!.x, y: original.points[3]!.y })).toBe(false);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwp()).toEqual(before);
+
+      const insert = objectEditRequest(editor.objectSelection!, { kind: "pathSegment", action: "insertCubic", index: 3,
+        c1x: 8500, c1y: 6800, c2x: 9500, c2y: 6800, x: 10300, y: 5500 });
+      const outcome = editor.execute("object.edit", insert);
+      expect(outcome.accepted).toBe(true);
+      await confirm();
+      const added = { ...original, points: [...original.points.slice(0, 4),
+        { x: 8500, y: 6800, control: true }, { x: 9500, y: 6800, control: true },
+        { x: 10300, y: 5500, control: false }, ...original.points.slice(4)] };
+      expect(read()).toEqual(added);
+      expect(editor.execute("object.edit", insert).accepted).toBe(false);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(original);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(added);
+
+      const insertedExport = doc.exportHwpWithReport();
+      try {
+        const output = insertedExport.takeBytes();
+        expectReopenEvidence(doc, output, insertedExport.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(JSON.parse(reopened.getEditableShapePath!(...address))).toEqual(added); }
+        finally { reopened.free(); }
+        if (out) writeFileSync(resolve(out, "a-p4-curve-cubic-inserted.hwp"), output);
+      } finally { insertedExport.free(); }
+
+      const currentFrame = shapes(doc).find(candidate => JSON.parse(doc.getEditableShapePath!(0, 0, candidate.controlIdx))?.kind === "curve")!;
+      const removal = objectEditRequest(pick(currentFrame), { kind: "pathSegment", action: "removeCubic", index: 4 });
+      expect(editor.execute("object.edit", removal).accepted).toBe(true);
+      await confirm();
+      expect(read()).toEqual(original);
+      expect(editor.execute("object.edit", removal).accepted).toBe(false);
+      expect(editor.localRevision).toBe(4);
+      const removedExport = doc.exportHwpWithReport();
+      try {
+        const output = removedExport.takeBytes();
+        expectReopenEvidence(doc, output, removedExport.contentLoss());
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(JSON.parse(reopened.getEditableShapePath!(...address))).toEqual(original); }
+        finally { reopened.free(); }
+        if (out) writeFileSync(resolve(out, "a-p4-curve-cubic-removed.hwp"), output);
+      } finally { removedExport.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it.skipIf(!process.env.GEUL_STAGE3_CUBIC_UNMODELED)("Stage 3-A refuses HWP5 line segment edits with unmodeled curve padding", async () => {
     const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC_UNMODELED!));
     const { editor, doc, pick, edit, take } = await setup("hwp", bytes);

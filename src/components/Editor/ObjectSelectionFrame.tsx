@@ -186,6 +186,7 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
           collinearVertexRemoval={selection.collinearVertexRemoval}
           curveTerminalLine={selection.curveTerminalLine}
           curveLineStructure={selection.curveLineStructure}
+          curveCubicStructure={selection.curveCubicStructure}
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingPath && selection.drawingMlPaths && onEdit &&
         <DrawingMlPathEditor paths={selection.drawingMlPaths} owner={owner} width={selection.frame.width * scale}

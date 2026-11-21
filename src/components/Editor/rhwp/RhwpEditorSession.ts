@@ -1986,7 +1986,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const curveTerminalLine = format === "hwp" && shapePath?.kind === "curve" && shapeAddress
             ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
           const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
-          if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure) operations.push("pathSegment");
+          const curveCubicStructure = format === "hwp" && shapePath?.kind === "curve"
+            && !!curveTerminalLine && !!this.doc.editCurveCubicSegment
+            && shapePath.points.some((point, index) => point.control && shapePath.points[index + 1]?.control);
+          if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure || curveCubicStructure) operations.push("pathSegment");
           if (shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
@@ -2056,6 +2059,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(format === "hwp" && shapePath?.kind === "polygon" ? { collinearVertexRemoval: true } : {}),
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(curveLineStructure ? { curveLineStructure: true } : {}),
+              ...(curveCubicStructure ? { curveCubicStructure: true } : {}),
               ...(captionSide ? { captionSide } : {}),
               ...(captionLateral ? { captionLateral: true } : {}),
               ...(captionSpacing !== undefined ? { captionSpacing } : {}),
@@ -4909,7 +4913,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       ? inspectRhwpShapePath(d, a)
       : groupChildGeomEdit ? inspectRhwpGroupChildren(d, a) : inspectRhwpGroupFills(d, a);
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "operations">;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "curveCubicStructure" | "operations">;
     if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
@@ -4942,7 +4946,28 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         || !available
         || available.append !== selected.curveTerminalLine?.append || available.remove !== selected.curveTerminalLine?.remove) return false;
       const points = path.points.slice();
-      if (edit.action === "append") {
+      if (edit.action === "insertCubic") {
+        const anchor = points[edit.index];
+        if (!selected.curveCubicStructure || !doc.editCurveCubicSegment || edit.index === 0
+          || edit.index >= points.length || !anchor || anchor.control || points.length > 254
+          || [edit.c1x, edit.c1y, edit.c2x, edit.c2y, edit.x, edit.y].some(value => value < 0)
+          || edit.c1x > path.width || edit.c2x > path.width || edit.x > path.width
+          || edit.c1y > path.height || edit.c2y > path.height || edit.y > path.height
+          || (anchor.x === edit.x && anchor.y === edit.y)) return false;
+        points.splice(edit.index + 1, 0,
+          { x: edit.c1x, y: edit.c1y, control: true },
+          { x: edit.c2x, y: edit.c2y, control: true },
+          { x: edit.x, y: edit.y, control: false });
+        apply = () => doc.editCurveCubicSegment!(...address, edit.index, true,
+          edit.c1x, edit.c1y, edit.c2x, edit.c2y, edit.x, edit.y);
+      } else if (edit.action === "removeCubic") {
+        const first = points[edit.index], second = points[edit.index + 1], end = points[edit.index + 2];
+        if (!selected.curveCubicStructure || !doc.editCurveCubicSegment
+          || !first?.control || !second?.control || !end || end.control) return false;
+        points.splice(edit.index, 3);
+        if (!points.some((point, index) => point.control && points[index + 1]?.control)) return false;
+        apply = () => doc.editCurveCubicSegment!(...address, edit.index, false, 0, 0, 0, 0, 0, 0);
+      } else if (edit.action === "append") {
         const start = points[0]!, end = points[points.length - 1]!;
         if (!doc.editCurveTerminalLine || !available.append || edit.x > path.width || edit.y > path.height
           || [start, end].some(point => point.x === edit.x && point.y === edit.y)) return false;
@@ -4965,7 +4990,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         }
       }
       const curveTerminalLine = { append: points.length < 257, remove: points.at(-2)!.control === false };
-      refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine };
+      refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine,
+        ...(selected.curveCubicStructure ? { curveCubicStructure: true as const } : {}) };
     } else if (edit.kind === "groupChildFill") {
       const children = selected.groupChildFills;
       const child = children?.find(item => item.index === edit.index);
