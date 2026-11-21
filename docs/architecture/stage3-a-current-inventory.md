@@ -17,7 +17,7 @@
 | P4-DX-CURVE | DOCX DrawingML 자유형 | `read/freeform.rs`의 quadratic/cubic 샘플링, `FreePath` 점 모델 / 원본 구간 변경 없음 | 외곽 크기만 | 원본 좌표·구간·path별 속성을 담는 모델과 writer 교정 | 없음 / 없음 | A UNIMPLEMENTED |
 | P4-H5-SEG-LINE | HWP5 SAFE 본문 열린 cubic 안의 정확한 직선 분할·병합 | 구간과 원본 CFB leaf / `editCurveInteriorLine` | `pathSegment/splitLine·joinLines`, 점 편집 상태 | 같은 방향 직선과 정수 점, cubic·패딩 불변, T009·CFB 독립 검사 | PASS / X11 PASS | A 구현, IMPLEMENTED_VERIFIED `fb720240`. [수락 기록](stage3-a-p4-curve-interior-acceptance.json) |
 | P4-H5-SEG | HWP5 본문 cubic 구간 자체 추가·삭제, 비공선 직선 접점 삭제 | 원본 구간 모델 / 기존 점 및 지원 직선 구조 편집 | 지원 점·직선 명령 | 기존 곡선 경계·연결성 및 새 타입의 CFB leaf 보존 증명 | 기존 P4.2/P4.5/P4-H5-SEG-LINE 범위 | A PARTIALLY_IMPLEMENTED |
-| P4-H5-POLY | HWP5 본문 다각형 | 정수 점 / HWPX용 점 편집 기반 | HWP5 점·꼭짓점 미노출 | HWP5 leaf의 점/폐합과 보존 검증 범위 확장 | 미실행 | A PARTIALLY_IMPLEMENTED |
+| P4-H5-POLY | SAFE HWP5 Section0 본문 단순 폐합 다각형 | 정수 점 / `moveShapePathPoint`, `editPolygonVertex` | 핸들·좌표 입력, 공선 변 분할·병합 | 태그 82와 영 패딩, 항등 행렬·영 오프셋, 나머지 레코드 보존. 비공선 모서리 삭제와 혼합 구조 편집 게시 제외 | Release WASM·T009·독립 CFB 검사 및 RHWP 재열기 PASS. Linux X11 수락 대기 | C IMPLEMENTED_UNVERIFIED. [검증 기록](stage3-a-p4-hwp5-polygon-acceptance.json) |
 | P4-DX-PATH | DOCX 직선·폐합 사용자 경로 | f32 정규화 선 경로 / 외곽 스케일 | 점·꼭짓점 없음 | 좌표 정밀도와 path 속성의 원본 왕복 및 독립 DrawingML 검사 | 변환 수락만 | A PARTIALLY_IMPLEMENTED |
 | P4-H5-GROUP | HWP5 그룹 자식 | 재귀 SC_CONTAINER 모델 / HWPX 전용 자식 API | HWP5 자식 기하 없음 | 자식 leaf 보존과 주소·이동/크기 증명 | 기존 그룹 외곽만 | A PARTIALLY_IMPLEMENTED |
 | P4-DX-GROUP | DOCX 그룹 자식 | `GroupChild`, 그룹 내부 경로 / WordCraft canvas 기반 | geul 자식 주소·편집 없음 | child transform·미디어·sibling 순서, 중첩 평탄화 해결 | 기존 그룹 외곽만 | A PARTIALLY_IMPLEMENTED |

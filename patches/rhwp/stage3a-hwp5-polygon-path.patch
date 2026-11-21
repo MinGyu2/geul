@@ -1,0 +1,54 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -790,6 +790,15 @@
+             {
+                 ("polygon", &p.points, vec![false; p.points.len()])
+             }
++            ShapeObject::Polygon(p) if self.source_format == FileFormat::Hwp
++                && attr.offset_x == 0 && attr.offset_y == 0
++                && p.raw_trailing == [0; 4]
++                && p.points.iter().all(|p| (0..=attr.original_width as i32).contains(&p.x)
++                    && (0..=attr.original_height as i32).contains(&p.y))
++                && geul_simple_closed_polygon(&p.points) =>
++            {
++                ("polygon", &p.points, vec![false; p.points.len()])
++            }
+             ShapeObject::Curve(c) if self.source_format == FileFormat::Hwp =>
+                 ("curve", &c.points, geul_cubic_handles(&c.points, &c.segment_types)?),
+             _ => return None,
+@@ -856,6 +865,7 @@
+     ) -> Result<(), HwpError> {
+         use crate::model::Point;
+         let path = self.editable_shape_path(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let hwp5 = self.source_format == crate::parser::FileFormat::Hwp;
+         let shape = self.resolve_shape_control_mut(sec, para, ctrl)?;
+         let attr = shape.shape_attr();
+         if !(0..=attr.original_width as i32).contains(&x) || !(0..=attr.original_height as i32).contains(&y) {
+@@ -879,6 +889,11 @@
+                 let points = accepted_points(&p.points).filter(|pts| geul_polygon_valid(pts))
+                     .ok_or_else(geul_bad_shape_edit)?;
+                 if closed != geul_same_point(&points[0], points.last().ok_or_else(geul_bad_shape_edit)?) {
++                    return Err(geul_bad_shape_edit());
++                }
++                if hwp5 && (!geul_simple_closed_polygon(&points)
++                    || geul_polygon_winding(&p.points) != geul_polygon_winding(&points))
++                {
+                     return Err(geul_bad_shape_edit());
+                 }
+                 p.points = points;
+@@ -929,7 +944,13 @@
+             }
+             updated.insert(index + 1, point);
+         } else {
+-            if original.len() <= 4 {
++            let prev = original[(index + original.len() - 2) % (original.len() - 1)];
++            let point = original[index];
++            let next = original[index + 1];
++            // In HWP5 topology edits preserve the outline exactly.
++            if original.len() <= 4 || (self.source_format == crate::parser::FileFormat::Hwp
++                && (geul_cross(prev, point, next) != 0 || !geul_within_segment_bounds(point, prev, next)))
++            {
+                 return Err(geul_bad_shape_edit());
+             }
+             updated.pop();

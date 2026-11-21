@@ -386,10 +386,11 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
-| P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩, HWP5와 DOCX의 꼭짓점 이동은 범위 밖이다. |
+| P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩은 이 수용 범위 밖이다. |
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차 및 HWPX/DOCX의 무손실 곡선 구간 모델은 남아 있다. |
 | P4.3 그룹 자식 | HWPX의 비잠금·비보호 평면 사각형·타원 그룹에서 지정 자식의 단색 배경 변경(`groupChildFill`) 및 위치·왼쪽/위 기준 크기 편집(`groupChildMove`/`groupChildResize`) | Release WASM(`972f25b9...`, P1–P4·N1–N12·T1–T8·E1–E7 포함 그룹 테스트 10 통과)·`save_check` safe·UI 22 통과(U1–U8 포함)·기존 Linux X11 Native(`P4.3`/`P4.6` PASS, `0b8a2e4`). [P4.6-1 그룹 기하 교정](architecture/stage3-a-p4-group-geometry-acceptance.json), [P4.6-2 그룹 자식 기하 편집 수용 기록](architecture/stage3-a-p4-group-child-edit-acceptance.json), [P4.6 안전화 후속 기록](architecture/stage3-a-p4-group-child-safety-stabilization.json). 홀수 타원의 변경되지 않은 축과 자식 식별자 왕복 보존, 절단 버퍼 거부, Linux X11 Release의 실제 핸들 밖 포인터 캡처·해제 및 저장을 추가 검증했다. [P4.6 최종 경계 검증](architecture/stage3-a-p4-group-child-boundary-verification.json). 상쇄 복합/비유한/손상 `raw_rendering`, 오버플로/비정규 타원 크기조절(비정규 끝점은 이동만 보존·크기조절 거부), 중첩 그룹·회전/반전/배율/전단·캡션·글상자 자식 및 HWP5/DOCX 자식 기하 편집은 거부하며 범위 밖이다. |
 | P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
+| P4-H5-POLY HWP5 다각형 | SAFE Section0의 본문 단순 폐합에서 정수 점 이동, 공선 변 분할·병합 | Release WASM·T009·독립 CFB 검사·RHWP 재열기 PASS. X11 수락 대기. 회전·반전·비영 오프셋, 비공선 모서리 삭제, 모서리 이동과 꼭짓점 수 변경을 함께 담은 게시는 제외한다. [검증 기록](architecture/stage3-a-p4-hwp5-polygon-acceptance.json) |
 | P4.5 곡선 구간 | SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점에 직선 추가 및 마지막 직선 삭제 | 집중 T009·Release WASM·Linux X11 실제 게시 2건·독립 CFB·앱 재열기 PASS. 직선 내부의 정확한 정수 점 분할과 같은 방향의 인접 두 직선을 합치는 기능도 지원한다. 두 cubic 사이의 직선에서 새 Linux X11 실제 편집·Undo/Redo·두 차례 게시·독립 CFB·앱 재열기 PASS다. 비공선 접점 삭제와 cubic·이차 구간 삽입·삭제는 제외한다. [내부 직선 수락 기록](architecture/stage3-a-p4-curve-interior-acceptance.json) [수용 기록](architecture/stage3-a-p4-terminal-line-acceptance.json) |
 
 본문 점 편집은 현재 항등 저장 행렬과 회전·반전 없는 프레임을 요구한다. 쪽 배치와 프레임 너비·높이의 축별 배율을 유지한다. HWPX 컴포넌트 오프셋은 0이어야 하며 HWP5 곡선의 원래 컴포넌트 오프셋은 바이트 보존한다. [변환 안전 후속 검증](architecture/stage3-a-p4-transform-safety-acceptance.json)

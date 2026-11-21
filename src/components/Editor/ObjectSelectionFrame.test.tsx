@@ -228,6 +228,23 @@ it("adds an exact interior point on the chosen closing edge and removes the sele
   expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathVertex", action: "remove", index: 3 }, 7);
 });
 
+it("only enables HWP5 vertex removal when joining collinear edges", () => {
+  const vertices = [[10, 10], [30, 10], [50, 10], [20, 40], [10, 10]];
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] }, operations: ["deselect", "pathPoint", "pathVertex"],
+    collinearVertexRemoval: true,
+    shapePath: { kind: "polygon", closed: true, width: 60, height: 60,
+      points: vertices.map(([x, y]) => ({ x: x!, y: y!, control: false })) },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  const remove = screen.getByRole<HTMLButtonElement>("button", { name: "Remove vertex" });
+  expect(remove.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 2" }));
+  expect(remove.disabled).toBe(false);
+  fireEvent.click(remove);
+  expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "pathVertex", action: "remove", index: 1 }, 7);
+});
+
 it("offers terminal line edits only at the final HWP5 endpoint", () => {
   const { onEdit } = frame({ selection: selection({
     kind: "shape", address: { engine: "rhwp", path: [0, 0, 3] }, operations: ["deselect", "pathPoint", "pathSegment"],

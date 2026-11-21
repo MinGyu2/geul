@@ -2,6 +2,7 @@ import { paragraphFieldMap } from "./fieldOwnership";
 import type { RhwpDocument } from "./rhwpModule";
 import { canonical } from "./rhwpArtifactIdentity";
 import { cachedFormula } from "./formulaDependencies";
+import { inspectRhwpShapePath } from "./shapeProperties";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 
 type JsonObject = Record<string, unknown>;
@@ -562,6 +563,13 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
         if ((width === 0 && height === 0) || width > HWPUNIT_MAX || height > HWPUNIT_MAX
           || props.Width !== width || props.Height !== height
           || (props.TreatAsChar === 1) !== shape.treatAsChar) complete = false;
+        if (c.userDesc === "다각형") {
+          const path = inspectRhwpShapePath(doc, [section, p, control]);
+          if (path) {
+            spend(path.points.length * 32);
+            shape.path = path;
+          }
+        }
       }
       if (shape && ["Top", "Center", "Bottom"].includes(String(shape.tbVerticalAlign))) {
         const paragraphCount = count(doc.getCellParagraphCount(section, p, control, 0));

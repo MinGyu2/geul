@@ -1,0 +1,44 @@
+{
+  "baselineHead": "c1a46d47304d0cfe9eb410e999b41a25781bf879",
+  "feature": "P4-H5-POLY",
+  "status": "IMPLEMENTED_UNVERIFIED",
+  "supported": "Owned simple closed polygon in SAFE HWP5 Section0, with bounded integer vertices and zero component offsets. Point movement preserves winding and the repeated closing point. Insertions and removals split and join collinear edges.",
+  "refused": "Locked or size-protected shape, captions, textboxes, open or self-intersecting paths, nonidentity matrices, nonzero component offsets, unrecognized padding, insertion off an edge, removal of a corner, stale selection or foreign session.",
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c",
+    "artifacts": {
+      "rhwp.js": "723da472c5d670baba1726f6df8a1da9f3a83541751e69c5c132d41956fd659e",
+      "rhwp_bg.wasm": "4ac219821407295e722e7a4be56dafbae7539b78c102d4bdaff5d643ed0b4935"
+    },
+    "patch": {
+      "name": "stage3a-hwp5-polygon-path.patch",
+      "sha256": "910cb1720203de6fc060377e5666910d383ab1ab043b0c491b29f3eb860f9149"
+    },
+    "sourceTreeSha256": "b9a7c65edf6aebd5d603953fd5068d5b0bd7e575133c2b665ea3aa6ec4a99aea"
+  },
+  "checks": {
+    "typescript": "npm run typecheck — PASS",
+    "frontend": "npm test -- src/components/Editor/ObjectSelectionFrame.test.tsx — 23 PASS",
+    "rhwpProfiles": "python3 -m pytest -q scripts/tests/test_rhwp_profiles.py — 3 PASS",
+    "releaseWasm": "npm test -- --config scripts/tests/vitest.config.ts scripts/tests/stage3-shapes.wasm.test.ts -t <four polygon cases> — 4 PASS",
+    "independentCFB": "hwp_record_diff.py read tag 82, the coordinate order, the closed point, and 4 zero padding bytes. All other non-preview CFB streams and BodyText/Section0 records were byte-identical.",
+    "reopen": "Independent RHWP document instances reopened each output and matched path, shape properties and editable status. Moving the first vertex rewrote both copies of the closing point.",
+    "t009": "GEUL_STAGE3_OUT=target/stage3a-p4-hwp5-polygon npm run rust -- test --lib release_stage3a_hwp5_polygon_preserves_cfb_records -- --ignored — 1 PASS with actual WASM exports and staged preview refresh. Off-edge insertion, changed padding, negative point and a translated source component were rejected.",
+    "releaseProduct": "npm run build and rhwp-artifacts.py --verify-product dist/rhwp --profile release — PASS",
+    "regression": "HWP polygon/curve outer geometry proof and real rotated polygon outline T009 — 2 PASS"
+  },
+  "outputs": {
+    "original": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf",
+    "moved": "d378d78a90267b744d1fd9ba402741b19b0c4b923550c4294be4c8c9c9cbddaf",
+    "split": "a087be65ffca1a8b2df7555a2a841d2afa876eb59742420332efb0feef2048f0",
+    "joined": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf"
+  },
+  "native": {
+    "linuxX11": "NOT RUN",
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN — environment unavailable",
+    "macOS": "NOT RUN — environment unavailable"
+  },
+  "evidence": "target/stage3a-p4-hwp5-polygon/"
+}

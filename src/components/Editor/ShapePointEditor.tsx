@@ -20,12 +20,19 @@ function edgeInteriorPoint(a: ShapePath["points"][number], b: ShapePath["points"
   return { x: a.x + dx / steps * step, y: a.y + dy / steps * step };
 }
 
-export function ShapePointEditor({ path, owner, width, height, editVertices, curveTerminalLine, curveLineStructure, onEdit }: {
+function canJoinEdges(previous: ShapePath["points"][number], selected: ShapePath["points"][number], next: ShapePath["points"][number]) {
+  const ax = selected.x - previous.x, ay = selected.y - previous.y;
+  const bx = next.x - selected.x, by = next.y - selected.y;
+  return ax * by === ay * bx && ax * bx + ay * by > 0;
+}
+
+export function ShapePointEditor({ path, owner, width, height, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
   height: number;
   editVertices: boolean;
+  collinearVertexRemoval: ObjectSelection["collinearVertexRemoval"];
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
   curveLineStructure: ObjectSelection["curveLineStructure"];
   onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
@@ -40,12 +47,13 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, cur
   const selected = points[index]!;
   const newVertex = editVertices && points.length < 256
     ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined;
+  const removable = editVertices && points.length > 3 && (!collinearVertexRemoval
+    || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!));
   const previous = points[index - 1], next = points[index + 1];
   const split = curveLineStructure && points.length < 257 && !selected.control && next && !next.control
     ? edgeInteriorPoint(selected, next) : undefined;
   const canJoin = curveLineStructure && previous && next && !previous.control && !selected.control && !next.control
-    && (selected.x - previous.x) * (next.y - previous.y) === (selected.y - previous.y) * (next.x - previous.x)
-    && (selected.x - previous.x) * (next.x - selected.x) + (selected.y - previous.y) * (next.y - selected.y) > 0;
+    && canJoinEdges(previous, selected, next);
   const activeDraft = draft?.owner === owner && draft.index === index ? draft : null;
   const rawX = activeDraft?.x ?? String(selected.x), rawY = activeDraft?.y ?? String(selected.y);
   const x = Number(rawX), y = Number(rawY);
@@ -108,7 +116,7 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, cur
           onClick={() => { if (newVertex) onEdit({ kind: "pathVertex", action: "insert", index, ...newVertex }); }}>
           {t("editor.object.path.addVertex")}
         </button>
-        <button type="button" className="object-path-remove-vertex" disabled={points.length <= 3}
+        <button type="button" className="object-path-remove-vertex" disabled={!removable}
           onClick={() => onEdit({ kind: "pathVertex", action: "remove", index })}>
           {t("editor.object.path.removeVertex")}
         </button>

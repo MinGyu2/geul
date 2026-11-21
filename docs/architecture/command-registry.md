@@ -1224,6 +1224,8 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 
 `pathVertex {action, index, x?, y?}`는 지원되는 HWPX 단순 폐합 다각형에서 동작한다. 선택한 꼭짓점부터 순서상 다음 점으로 이어지는 변에 정확한 HWPUNIT 정수 점을 추가하거나 선택한 꼭짓점을 삭제할 수 있다. 닫는 점에 기존 순서의 새 첫 점을 쓰며, 꼭짓점 3–256개와 방향을 보존한다. 교차·퇴화, 변 밖 삽입, 모호한 원본 좌표 및 만료된 선택은 거부한다. 각 성공은 이력 한 단계다. [P4.4 수용 기록](stage3-a-p4-polygon-vertices-acceptance.json)
 
+SAFE HWP5 Section0의 단순 폐합 다각형에도 `pathPoint`와 `pathVertex`를 제공한다. 소유 본문 제어, 잠금·크기 보호, 항등 저장 행렬, 영 컴포넌트 오프셋, 회전·반전 없음 및 4바이트 0 패딩을 검사한다. 점 이동 후 교차·퇴화·방향 반전은 거부한다. 꼭짓점 삭제는 같은 직선 위에서 같은 방향으로 이어지는 두 변을 합칠 때만 활성화한다. 꼭짓점 수 변경과 모서리 위치 변경을 함께 게시하려면 둘 사이에 저장하여 각 변경의 보존을 확인해야 한다.
+
 `pathSegment {action, x?, y?}`는 SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점으로부터 입력 좌표까지 직선을 붙이거나 마지막 직선을 제거한다. 끝점 모드에서 기존 명령과 네 패딩 바이트를 검증하며, cubic만 남으면 삭제를 비활성화한다. 지원 열린 HWP5 곡선의 `pathSegment {action:"splitLine", index, x, y}`는 입력한 정확한 HWPUNIT 점에서 다음 직선을 분할한다. UI는 변 위에서 중점에 가까운 정수 점을 선택한다. `pathSegment {action:"joinLines", index}`는 같은 방향으로 이어지는 두 직선 사이의 내부 점을 제거한다. 대상 좌표와 구간 종류를 RHWP가 재검증하고 기존 cubic은 그대로 보존한다. 점 개수 변경과 함께 유지된 구간의 기하를 바꾼 저장은 별도 증명이 필요하다. [내부 직선 수락 기록](stage3-a-p4-curve-interior-acceptance.json) [P4.5 수용 기록](stage3-a-p4-terminal-line-acceptance.json)
 
 `groupChildFill {index, color}`는 속성 창에서 HWPX 평면 그룹의 사각형·타원 자식 번호를 지정한다. 기존 단색 배경의 RGB만 편집하며, 다른 자식이나 부모의 로컬·페이지 변환은 수정하지 않는다.

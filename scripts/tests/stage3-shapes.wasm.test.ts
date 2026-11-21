@@ -221,15 +221,15 @@ function hwpShapeInventory(doc: RhwpDocument) {
   });
 }
 
-function polygonFixture(): { bytes: Uint8Array; index: number } {
-  const doc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+function polygonFixture(format: "hwp" | "hwpx" = "hwpx"): { bytes: Uint8Array; index: number } {
+  const doc = new engine.HwpDocument(source(format)) as RhwpDocument;
   try {
     const created = JSON.parse(doc.createShapeControl!(JSON.stringify({
       sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "polygon",
       width: 10800, height: 7200, treatAsChar: false, textWrap: "Square", horzOffset: 1200, vertOffset: 600,
       polygonPoints: [{ x: 1600, y: 1300 }, { x: 9700, y: 700 }, { x: 6400, y: 6500 }, { x: 1600, y: 1300 }],
     })));
-    return { index: created.controlIdx, bytes: doc.exportHwpx() };
+    return { index: created.controlIdx, bytes: format === "hwp" ? doc.exportHwp() : doc.exportHwpx() };
   } finally { doc.free(); }
 }
 
@@ -506,6 +506,91 @@ describe("Stage 3 shapes on the Release engine", () => {
           writeFileSync(resolve(out, "p3-polygon-report.json"), report);
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A edits owned HWP5 polygon points and splits or joins straight edges", async () => {
+    const { bytes, index } = polygonFixture("hwp");
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const selection = pick(shapes(doc)[0]!);
+      expect(selection.address.path).toEqual([0, 0, index]);
+      expect(selection.operations).toEqual(expect.arrayContaining(["pathPoint", "pathVertex"]));
+      const initial = selection.shapePath!;
+      expect(initial).toMatchObject({ kind: "polygon", closed: true, width: 10800, height: 7200 });
+      const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      const properties = doc.getShapeProperties!(0, 0, index);
+      const untouched = doc.exportHwp();
+      const move = { kind: "pathPoint", index: 0, x: 1602, y: 1300 } as const;
+      const request = objectEditRequest(selection, move);
+      expect(editor.execute("object.edit", { ...request, sessionId: selection.sessionId + 1 }).accepted).toBe(false);
+      expect(() => doc.moveShapePathPoint!(0, 1, index, 0, 1602, 1300)).toThrow();
+      expect(edit({ kind: "pathPoint", index: 0, x: 9700, y: 700 })).toBe(false);
+      expect(edit({ kind: "pathPoint", index: 0, x: 10801, y: 1300 })).toBe(false);
+      expect(edit({ kind: "pathVertex", action: "insert", index: 2, x: 4000, y: 3901 })).toBe(false);
+      expect(doc.exportHwp()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.undo()).toBe(false);
+
+      function verifyOutput(name: string) {
+        const report = doc.exportHwpWithReport();
+        try {
+          const output = report.takeBytes();
+          expectReopenEvidence(doc, output, report.contentLoss());
+          const reopened = new engine.HwpDocument(output) as RhwpDocument;
+          try {
+            expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(read());
+            expect(reopened.getShapeProperties!(0, 0, index)).toBe(properties);
+            expect(reopened.canEditPolygonVertices!(0, 0, index)).toBe(true);
+            expect(hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), null)).toBe(true);
+          } finally { reopened.free(); }
+          if (out) {
+            mkdirSync(out, { recursive: true });
+            writeFileSync(resolve(out, "a-p4-hwp5-polygon-original.hwp"), bytes);
+            writeFileSync(resolve(out, `a-p4-hwp5-polygon-${name}.hwp`), output);
+          }
+        } finally { report.free(); }
+      }
+
+      expect(editor.execute("object.edit", request).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("object.edit", request).accepted).toBe(false);
+      const moved = { ...initial, points: initial.points.map((p, i, a) =>
+        i === 0 || i === a.length - 1 ? { ...p, x: 1602 } : p) };
+      expect(read()).toEqual(moved);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(initial);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(moved);
+      verifyOutput("moved");
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      pick(shapes(doc)[0]!);
+
+      expect(edit({ kind: "pathVertex", action: "insert", index: 2, x: 4000, y: 3900 })).toBe(true);
+      await confirm();
+      const inserted = { ...initial, points: [...initial.points.slice(0, -1),
+        { x: 4000, y: 3900, control: false }, initial.points[0]] };
+      expect(read()).toEqual(inserted);
+      expect(edit({ kind: "pathVertex", action: "remove", index: 0 })).toBe(false);
+      expect(read()).toEqual(inserted);
+      verifyOutput("split");
+      expect(edit({ kind: "pathVertex", action: "remove", index: 3 })).toBe(true);
+      await confirm();
+      expect(read()).toEqual(initial);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(inserted);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(initial);
+      verifyOutput("joined");
     } finally { editor.dispose(); }
   });
 

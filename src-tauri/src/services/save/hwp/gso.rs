@@ -1704,7 +1704,7 @@ pub(super) fn prove_evolved_gso(
         } else {
             preserved(old_vertices == new_vertices, BODY)?;
         }
-    } else if leaf_tag == TAG_CURVE && old_last.2 != new_last.2 {
+    } else if matches!(leaf_tag, TAG_CURVE | TAG_POLYGON) && old_last.2 != new_last.2 {
         // The point editor keeps the frame, transform and every other record
         // byte fixed. In particular a path edit cannot hide a caption change
         // or any change to the existing segment kinds or their padding.
@@ -1723,13 +1723,107 @@ pub(super) fn prove_evolved_gso(
                 })
                 && (1..=2_000_000).contains(&orig_w)
                 && (1..=2_000_000).contains(&orig_h)
-                && prove_cubic_leaf_edit(old_last.2, new_last.2, orig_w, orig_h),
+                && if leaf_tag == TAG_CURVE {
+                    prove_cubic_leaf_edit(old_last.2, new_last.2, orig_w, orig_h)
+                } else {
+                    old_sc[attr_at..attr_at + 8] == [0; 8]
+                        && prove_polygon_leaf_edit(old_last.2, new_last.2, orig_w, orig_h)
+                },
             BODY,
         )?;
     } else {
         preserved(old_last.2 == new_last.2, BODY)?;
     }
     Ok(())
+}
+
+fn polygon_cross(a: CurvePoint, b: CurvePoint, c: CurvePoint) -> i64 {
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+}
+
+fn polygon_contains(a: CurvePoint, b: CurvePoint, p: CurvePoint) -> bool {
+    (a[0].min(b[0])..=a[0].max(b[0])).contains(&p[0])
+        && (a[1].min(b[1])..=a[1].max(b[1])).contains(&p[1])
+}
+
+fn polygon_edges_intersect(a: CurvePoint, b: CurvePoint, c: CurvePoint, d: CurvePoint) -> bool {
+    let (ac, ad) = (polygon_cross(a, b, c), polygon_cross(a, b, d));
+    let (ca, cb) = (polygon_cross(c, d, a), polygon_cross(c, d, b));
+    (ac.signum() * ad.signum() < 0 && ca.signum() * cb.signum() < 0)
+        || (ac == 0 && polygon_contains(a, b, c))
+        || (ad == 0 && polygon_contains(a, b, d))
+        || (ca == 0 && polygon_contains(c, d, a))
+        || (cb == 0 && polygon_contains(c, d, b))
+}
+
+struct PolygonLeaf {
+    vertices: Vec<CurvePoint>,
+    winding: i64,
+}
+
+fn parse_polygon_leaf(data: &[u8], width: usize, height: usize) -> Option<PolygonLeaf> {
+    let count = dword(data, 0).ok()?;
+    if !(4..=257).contains(&count) || data.len() != 8 + 8 * count || data[4 + 8 * count..] != [0; 4] {
+        return None;
+    }
+    let mut points = Vec::with_capacity(count);
+    for bytes in data[4..4 + 8 * count].chunks_exact(8) {
+        let (x, y) = (dword(bytes, 0).ok()?, dword(bytes, 4).ok()?);
+        if x > width || y > height {
+            return None;
+        }
+        points.push([x as i64, y as i64]);
+    }
+    let vertices = &points[..count - 1];
+    if points.first() != points.last()
+        || vertices.iter().collect::<std::collections::BTreeSet<_>>().len() != vertices.len()
+    {
+        return None;
+    }
+    let winding = points.windows(2).map(|e| polygon_cross([0, 0], e[0], e[1])).sum::<i64>().signum();
+    if winding == 0 {
+        return None;
+    }
+    for (i, edge) in points.windows(2).enumerate() {
+        let (a, b) = (edge[0], edge[1]);
+        let prev = vertices[(i + count - 2) % (count - 1)];
+        if polygon_cross(prev, a, b) == 0 && !strictly_between(prev, a, b) {
+            return None;
+        }
+        let end = if i == 0 { count - 2 } else { count - 1 };
+        if points.windows(2).take(end).skip(i + 2).any(|e| polygon_edges_intersect(a, b, e[0], e[1])) {
+            return None;
+        }
+    }
+    points.pop();
+    Some(PolygonLeaf { vertices: points, winding })
+}
+
+fn polygon_corners(vertices: &[CurvePoint]) -> Vec<CurvePoint> {
+    let count = vertices.len();
+    vertices.iter().enumerate().filter_map(|(i, &p)| {
+        let (prev, next) = (vertices[(i + count - 1) % count], vertices[(i + 1) % count]);
+        (!strictly_between(prev, p, next)).then_some(p)
+    }).collect()
+}
+
+fn prove_polygon_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
+    let Some(old) = parse_polygon_leaf(old, width, height) else { return false };
+    let Some(new) = parse_polygon_leaf(new, width, height) else { return false };
+    if old.winding != new.winding {
+        return false;
+    }
+    // Structural edits only split or join straight edges, in the original
+    // traversal order. A removed first point may be an interior edge point.
+    if polygon_corners(&old.vertices) == polygon_corners(&new.vertices) {
+        return true;
+    }
+    // Point edits preserve indices. An existing vertex cannot be relocated to
+    // another slot by a serialized permutation.
+    old.vertices.len() == new.vertices.len()
+        && new.vertices.iter().enumerate().all(|(i, point)| {
+            old.vertices[i] == *point || !old.vertices.contains(point)
+        })
 }
 
 struct CubicLeaf<'a> {
@@ -2572,6 +2666,41 @@ mod tests {
         });
         assert!(check_with_preview_refresh(&original, &tampered_curve)
             .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 polygon source, point move, edge split and join fixtures"]
+    fn release_stage3a_hwp5_polygon_preserves_cfb_records() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(format!("a-p4-hwp5-polygon-{name}.hwp"))).unwrap();
+        let source = read("original");
+        let moved = read("moved");
+        let split = read("split");
+        let joined = read("joined");
+        assert_eq!(check_with_preview_refresh(&source, &moved), vec![]);
+        assert_eq!(check_with_preview_refresh(&source, &split), vec![]);
+        assert_eq!(check_with_preview_refresh(&split, &joined), vec![]);
+
+        let polygon = |tag, level, _: &[u8]| tag == super::TAG_POLYGON && level == 3;
+        for (offset, value) in [(4 + 3 * 8 + 4, 3901i32), (4 + 5 * 8, 1), (4, -1)] {
+            let tampered = mutate_body_record(&split, polygon, |data| {
+                let mut changed = data.to_vec();
+                changed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                changed
+            });
+            assert!(check_with_preview_refresh(&source, &tampered)
+                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        }
+        let comp = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"lop$lop$");
+        let translated = |data: &[u8]| {
+            let mut changed = data.to_vec();
+            changed[8] = 1;
+            changed
+        };
+        assert!(check_with_preview_refresh(
+            &mutate_body_record(&source, comp, translated),
+            &mutate_body_record(&moved, comp, translated),
+        ).iter().any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]

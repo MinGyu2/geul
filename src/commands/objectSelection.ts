@@ -84,6 +84,7 @@ export interface ObjectHit {
   graphic?: GraphicProperties;
   shape?: ShapeProperties;
   shapePath?: ShapePath;
+  collinearVertexRemoval?: true;
   curveTerminalLine?: { append: boolean; remove: boolean };
   curveLineStructure?: true;
   groupChildFills?: readonly GroupChildFill[];

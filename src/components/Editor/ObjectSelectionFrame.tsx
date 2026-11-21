@@ -178,6 +178,7 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
       {editingPath && selection.shapePath && onEdit &&
         <ShapePointEditor path={selection.shapePath} owner={owner} width={selection.frame.width * scale}
           height={selection.frame.height * scale} editVertices={selection.operations.includes("pathVertex")}
+          collinearVertexRemoval={selection.collinearVertexRemoval}
           curveTerminalLine={selection.curveTerminalLine}
           curveLineStructure={selection.curveLineStructure}
           onEdit={edit => onEdit(edit, selection.epoch)} />}

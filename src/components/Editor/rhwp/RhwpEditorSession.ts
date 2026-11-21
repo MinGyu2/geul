@@ -1905,7 +1905,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
           const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
           if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure) operations.push("pathSegment");
-          if (format === "hwpx" && shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
+          if (shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
@@ -1971,6 +1971,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(group ? { groupSize: { widthPt: group.widthPt, heightPt: group.heightPt } } : {}),
               ...(groupWrap ? { groupWrap } : {}),
               ...(shapePath ? { shapePath } : {}),
+              ...(format === "hwp" && shapePath?.kind === "polygon" ? { collinearVertexRemoval: true } : {}),
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(curveLineStructure ? { curveLineStructure: true } : {}),
               ...(captionSide ? { captionSide } : {}),
@@ -4832,7 +4833,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       apply = () => doc.moveShapePathPoint!(...address, edit.index, edit.x, edit.y);
     } else if (edit.kind === "pathVertex") {
       const path = selected.shapePath;
-      if (this.sessions.get(this.sessionId)?.format !== "hwpx" || path?.kind !== "polygon" || !path.closed
+      if (path?.kind !== "polygon" || !path.closed
         || !doc.editPolygonVertex || !doc.canEditPolygonVertices?.(...address) || edit.index >= path.points.length - 1) return false;
       const points = path.points.slice(0, -1);
       if (edit.action === "insert") {
