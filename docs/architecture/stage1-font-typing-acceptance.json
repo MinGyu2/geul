@@ -1,0 +1,326 @@
+{
+  "status": "PASS",
+  "head": "5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff",
+  "appSha256": "8be2293c3b8c074e8b713644b60aafcab5348fdc8753d23a4cc2adca8bba15e6",
+  "harnessSha256": "710dcf1598fd09f71181b1ce75a287e5089b409232c3d25378079e9ce2b475ee",
+  "fixtureSha256": "7286a49b2801ea1d4069a2173a440c4ad06718ae779345626fed52b27b56ee6c",
+  "sourceDiffSha256": "36ac6450ef490b338f38ad51548697053092d76b5c1193b7af617cc3b63b4c2f",
+  "environment": {
+    "display": "Linux X11/Xvfb",
+    "input": "trusted xdotool key events",
+    "ime": "IBus Hangul",
+    "syntheticComposition": false
+  },
+  "pointerScale": {
+    "value": 1.0,
+    "devicePixelRatio": 1
+  },
+  "setOriginalSize": {
+    "size": 10,
+    "selectionMethod": "focused select change event"
+  },
+  "setPendingSize": {
+    "size": 24,
+    "selectionMethod": "focused select change event"
+  },
+  "focusReturn": {
+    "sameCaret": true,
+    "size": 24,
+    "caretKey": "body:0:41"
+  },
+  "nativeIme": {
+    "status": "PASS",
+    "trustedEvents": [
+      {
+        "type": "compositionstart",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "",
+        "inputType": null
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "ㅎ",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "ㅎ",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "하",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "하",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "한",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "한",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": null,
+        "inputType": "deleteCompositionText"
+      },
+      {
+        "type": "compositionend",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "한",
+        "inputType": "insertFromComposition"
+      },
+      {
+        "type": "compositionend",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "한",
+        "inputType": null
+      },
+      {
+        "type": "compositionstart",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "",
+        "inputType": null
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "ㄱ",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "ㄱ",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "그",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "그",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "compositionupdate",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "글",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "글",
+        "inputType": "insertCompositionText"
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": null,
+        "inputType": "deleteCompositionText"
+      },
+      {
+        "type": "compositionend",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "글",
+        "inputType": "insertFromComposition"
+      },
+      {
+        "type": "compositionend",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "글",
+        "inputType": null
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": " ",
+        "inputType": "insertText"
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "A",
+        "inputType": "insertText"
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "B",
+        "inputType": "insertText"
+      },
+      {
+        "type": "input",
+        "target": "rhwp-input",
+        "trusted": true,
+        "data": "C",
+        "inputType": "insertText"
+      }
+    ],
+    "paragraphText": "한글 문단입니다. Korean paragraph.한글 ABC"
+  },
+  "save": {
+    "findings": "",
+    "error": "",
+    "testid": "docx-save-result",
+    "changedSince": "false",
+    "synced": "true",
+    "outcome": "",
+    "state": "saved",
+    "revision": "10"
+  },
+  "savedSha256": "54da6679a84440e4120340c4bbf20ad092bcfd2df588f34e55c8a8a232ea9610",
+  "serialized": {
+    "paragraph": {
+      "text": "한글 문단입니다. Korean paragraph.한글 ABC",
+      "runs": [
+        {
+          "text": "한글 문단입니다. Korean paragraph.",
+          "size": "20",
+          "color": null,
+          "highlight": null
+        },
+        {
+          "text": "한글 ABC",
+          "size": "48",
+          "color": null,
+          "highlight": null
+        }
+      ]
+    },
+    "originalCharacterSizes": [
+      "20"
+    ],
+    "insertedRuns": [
+      {
+        "text": "한글 ABC",
+        "size": "48",
+        "color": null,
+        "highlight": null
+      }
+    ],
+    "zipIntegrity": "PASS"
+  },
+  "reopen": {
+    "status": "PASS",
+    "freshSession": true,
+    "revision": 0,
+    "sizeAtTypedTextEnd": 24,
+    "paragraphText": "한글 문단입니다. Korean paragraph.한글 ABC"
+  },
+  "teardown": [
+    {
+      "sessionDeletes": [
+        {
+          "outcome": "ok",
+          "seconds": 0.006
+        }
+      ],
+      "complete": true,
+      "beforeDriverStop": [
+        {
+          "pid": 3296156,
+          "comm": "tauri-driver",
+          "state": "S",
+          "ppid": 3296152
+        },
+        {
+          "pid": 3296157,
+          "comm": "WebKitWebDriver",
+          "state": "S",
+          "ppid": 3296156
+        },
+        {
+          "pid": 3296172,
+          "comm": "WebKitNetworkPr",
+          "state": "S",
+          "ppid": 3296104
+        },
+        {
+          "pid": 3296195,
+          "comm": "WebKitWebProces",
+          "state": "S",
+          "ppid": 3296104
+        }
+      ],
+      "driverKilled": false,
+      "driverExit": 0,
+      "afterDriverStop": [
+        {
+          "pid": 3296172,
+          "comm": "WebKitNetworkPr",
+          "state": "R",
+          "ppid": 3296104
+        },
+        {
+          "pid": 3296195,
+          "comm": "WebKitWebProces",
+          "state": "R",
+          "ppid": 3296104
+        }
+      ],
+      "driverStopSeconds": 0.015,
+      "remainingAfterWait": [],
+      "sigtermSent": [],
+      "sigtermErrors": [],
+      "survivorsAfterSigterm": []
+    }
+  ]
+}

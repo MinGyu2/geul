@@ -154,6 +154,14 @@ T009 전체 acceptance matrix, T010 D1–D5, native 50/50·56/56, Stage 2 그림
 | 글자+목록 결합 저장 | — | IV | IV | CURRENT PASS | 같음 |
 | 글꼴 embedding | IV | IV | 형식 제한 | CURRENT PASS(native는 5.5) | 같음 |
 
+### Stage 1 P0 — S1-FONT-TYPING (2026-11-21)
+
+| 항목 | DOCX | HWPX | HWP | 기능·보존 판정 | 증거 |
+|---|---|---|---|---|---|
+| collapsed caret에서 다음 글자 크기 유지: 같은 위치 focus-return, IME/연속 입력, 선택 교체·의도적 이동, Undo/Redo 및 저장 | `IV` | `IV` | `IV` | CURRENT PASS — DOCX는 WordCraft 실제 엔진 IPC와 `w:sz=48` 저장 구조 확인. HWP/HWPX는 각 실제 포맷을 Release WASM 세션으로 검증. 미지원 경로를 열지 않고 같은 caret 위치 포인터만 보존 | [Stage 1 §11](architecture/stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21), [DOCX X11/IBus 보고서](architecture/stage1-font-typing-acceptance.json), [실행 원장](architecture/stage3-a-current-inventory.md#p0-stage-1-회귀) |
+
+`GEUL_SANDBOX=userns-root-bwrap npm run rust -- test --lib stage1_docx_`: 13/13 PASS; `GEUL_STAGE1_HWP_SEED=... GEUL_FORMAT_OUT=... npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage1-format.wasm.test.ts`: 28 passed, 1 skipped; `npx vitest run src/components/Editor/wordcraft/DocxSurface.test.tsx`: 13/13 PASS; `npm run typecheck`: PASS. Native Linux X11/Xvfb + IBus Hangul: run7 PASS (trusted composition, Undo/Redo, T009, raw OPC inspection, fresh session reopen). External Word/한컴 재열기와 Windows/macOS는 NOT RUN.
+
 ### Stage 2 / Phase 0 — HWPX 분할 run 글자 서식 (2026-11-17)
 
 | 항목 | HWPX | 판정 | 근거 |

@@ -1709,6 +1709,22 @@ impl DocxModel {
                         }
                     }
                 }
+                // A ribbon control takes focus from the editor's input surface. Clicking the
+                // already active insertion point to return to it is focus restoration, not
+                // navigation: WordCraft's `caret.set` deliberately clears pending next-input
+                // formatting, so avoid that command when the actual hit is unchanged. A click
+                // at any other position still follows the normal navigation path below.
+                let focus_restore = if !extend && self.session.sel.is_collapsed() {
+                    let story = self.session.sel.focus.story;
+                    self.hit_before_insert(*page, *x, *y, *before_insert)
+                        .or_else(|| self.session.layout().hit(*page as usize, *x, *y, story))
+                        .is_some_and(|pos| self.session.doc.clamp(&pos) == self.session.sel.focus)
+                } else {
+                    false
+                };
+                if focus_restore {
+                    return Ok(false);
+                }
                 let params = match self.hit_before_insert(*page, *x, *y, *before_insert) {
                     Some(pos) => json!({ "pos": pos, "extend": extend }),
                     None => json!({ "page": page, "x": x, "y": y, "extend": extend }),

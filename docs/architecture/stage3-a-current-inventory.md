@@ -6,6 +6,14 @@
 
 이번 작업의 시작 HEAD는 `c1a46d47304d0cfe9eb410e999b41a25781bf879`다. 새 Linux Native 수락은 소스 `778573e874db221e68765c86b9608d4889990e86`와 RHWP Release `b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c`에서 실행했다. X11 4건과 Wayland 5건의 앱·출력 SHA-256, Undo/Redo, 게시 및 재열기 근거는 별도 기록에 있다. [Native 수락 기록](stage3-a-native-p4-p5-p6-acceptance.json)
 
+> **현 실행 추적:** 사용자가 지정한 historical audit baseline은 `5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff`이며 실제 시작 HEAD로 확인했다. 아래의 기존 Stage 3-A 기준과 완료 기록은 역사적 근거로 보존한다. 이번 범위는 P0 회귀 1개와 아래 P4/P5/P6의 정확한 38개 ID(24 A, 14 B), 합계 39개다. 각 구현/안전 상태는 기존 상세 행에서 갱신하며 해결 항목은 별도 커밋과 수락 증거를 기록한다.
+
+## P0 Stage 1 회귀
+
+| ID | 범주 | 구현·보존 상태 | 변경 영역 | 증거 | Native | 로컬 커밋 | 남은 경계 |
+|---|---|---|---|---|---|---|---|
+| S1-FONT-TYPING | 회귀 | IMPLEMENTED_VERIFIED — collapsed caret의 같은 위치 focus-return이 pending 서식을 유지하고 deliberate navigation은 기존 정책을 따른다. selection replacement, Undo/Redo, T009 및 실제 reopen도 확인 | WordCraft pointer routing, DOCX IME overlay, RHWP format-specific Release WASM regression, Native acceptance harness | [Stage 1 §11](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21); `stage1_docx_` 13/13; Stage1 format WASM 28 passed/1 skipped; DOCX UI 13/13; typecheck PASS; [Native 보고서](stage1-font-typing-acceptance.json) | Linux X11/Xvfb + trusted IBus Hangul DOCX run7 PASS; HWP/HWPX per-format native GUI, Windows/macOS NOT RUN | 기록 대기 | 외부 Microsoft Word/한컴오피스 재열기 NOT RUN |
+
 ## P4 기하와 그룹
 
 | ID | 형식·소유자 | 파서·모델 / 변경 API | geul 명령·UI | 저장 경계 및 필요한 수락 | 기존 단위·WASM / Native | A/B/C·상태·커밋 |

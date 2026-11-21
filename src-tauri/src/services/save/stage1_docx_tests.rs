@@ -6,7 +6,7 @@ use crate::adapters::wordcraft::engine::stage1::{
     SearchQuery,
 };
 use crate::adapters::wordcraft::engine::DocxView;
-use wordcraft_engine::doc::props::{Align, LineSpacing, VertAlign};
+use wordcraft_engine::doc::props::{Align, LineSpacing, Rgb, TextColor, VertAlign};
 
 fn run(doc: &mut Docx, ops: Vec<DocxOp>) -> (DocxView, Vec<usize>) {
     let edited = block_on(docx::edit(
@@ -40,6 +40,21 @@ fn save_reopen(doc: &mut Docx, original: &[u8]) -> wordcraft_engine::doc::Docume
         assert!(model.body_text().contains(text));
     }
     wordcraft_engine::io::open_bytes("x.docx", &written).unwrap()
+}
+
+fn rendered_page(doc: &Docx) -> Vec<u8> {
+    let frame = block_on(docx::render(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        0,
+        1.0,
+        None,
+    ))
+    .expect("render current committed DOCX revision");
+    assert!(frame.len() > docx::RENDER_HEADER_LEN);
+    frame[docx::RENDER_HEADER_LEN..].to_vec()
 }
 
 fn paras(doc: &wordcraft_engine::doc::Document) -> Vec<&wordcraft_engine::doc::Paragraph> {
@@ -183,6 +198,251 @@ fn stage1_docx_character_formatting_save_reopen() {
     assert!(p[1].runs.iter().any(|r| r.props.bold == Some(true)));
     assert!(p[1].runs.iter().all(|r| r.props.size.is_none()));
     assert_eq!(p[0].text, basic::PARAGRAPHS[0]);
+}
+
+#[test]
+fn stage1_docx_collapsed_font_size_survives_focus_return_at_same_caret() {
+    const PENDING_FONT: &str = "Geul Pending Font";
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+
+    let mut ops = select_first_paragraph();
+    ops.extend([
+        DocxOp::FontSize { size: 10.0 },
+        // Collapse the formatted selection at its end, then set the next-input size.
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: false,
+        },
+        DocxOp::FontSize { size: 24.0 },
+        DocxOp::FontColor {
+            color: "C00000".into(),
+        },
+        DocxOp::Highlight {
+            color: "yellow".into(),
+        },
+        DocxOp::Script {
+            value: ScriptValue::Superscript,
+        },
+        DocxOp::Font {
+            name: PENDING_FONT.into(),
+        },
+    ]);
+    let (view, rejected) = run(&mut doc, ops);
+    assert!(rejected.is_empty());
+    assert!(view.collapsed);
+    assert_eq!(view.chars.size, Some(24.0));
+    assert_eq!(view.chars.color.as_deref(), Some("C00000"));
+    assert_eq!(view.chars.highlight.as_deref(), Some("FFFF00"));
+    assert!(view.chars.superscript && !view.chars.subscript);
+    assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
+
+    // Returning focus from the ribbon clicks the already active caret. The pointer hit must
+    // not be treated as deliberate navigation and discard its next-input formatting.
+    let caret = view.caret.expect("caret");
+    let (view, rejected) = run(
+        &mut doc,
+        vec![DocxOp::Pointer {
+            page: caret.page as u32,
+            x: caret.x,
+            y: caret.y + caret.height * 0.5,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: false,
+        }],
+    );
+    assert!(rejected.is_empty());
+    assert_eq!(view.chars.size, Some(24.0));
+    assert_eq!(view.chars.color.as_deref(), Some("C00000"));
+    assert_eq!(view.chars.highlight.as_deref(), Some("FFFF00"));
+    assert!(view.chars.superscript && !view.chars.subscript);
+    assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
+
+    let (_, rejected) = run(&mut doc, vec![DocxOp::InsertText { text: "한글".into() }]);
+    assert!(rejected.is_empty());
+    let (view, rejected) = run(
+        &mut doc,
+        vec![DocxOp::Script {
+            value: ScriptValue::Subscript,
+        }],
+    );
+    assert!(rejected.is_empty());
+    assert_eq!(view.chars.size, Some(24.0));
+    assert_eq!(view.chars.color.as_deref(), Some("C00000"));
+    assert_eq!(view.chars.highlight.as_deref(), Some("FFFF00"));
+    assert!(!view.chars.superscript && view.chars.subscript);
+    assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
+
+    // A second focus return and a separate committed input preserve the accumulated size and
+    // other next-input properties while the script property changes independently.
+    let caret = view.caret.expect("caret after first input");
+    let (view, rejected) = run(
+        &mut doc,
+        vec![DocxOp::Pointer {
+            page: caret.page as u32,
+            x: caret.x,
+            y: caret.y + caret.height * 0.5,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: false,
+        }],
+    );
+    assert!(rejected.is_empty());
+    assert_eq!(view.chars.size, Some(24.0));
+    assert_eq!(view.chars.color.as_deref(), Some("C00000"));
+    assert_eq!(view.chars.highlight.as_deref(), Some("FFFF00"));
+    assert!(!view.chars.superscript && view.chars.subscript);
+    let (view, rejected) = run(&mut doc, vec![DocxOp::InsertText { text: " ABC".into() }]);
+    assert!(rejected.is_empty());
+    assert!(view.paragraph_text.contains("한글 ABC"));
+    assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
+
+    let (view, rejected) = run(&mut doc, vec![DocxOp::Undo {}]);
+    assert!(rejected.is_empty());
+    assert!(!view.paragraph_text.contains("한글 ABC"));
+    let (view, rejected) = run(&mut doc, vec![DocxOp::Redo {}]);
+    assert!(rejected.is_empty());
+    assert!(view.paragraph_text.contains("한글 ABC"));
+
+    let reopened = save_reopen(&mut doc, &original);
+    let paragraph = &paras(&reopened)[0];
+    let byte_start = paragraph.text.find("한글 ABC").expect("typed text");
+    let byte_end = byte_start + "한글 ABC".len();
+    let mut covered = byte_start;
+    for (range, props) in paragraph.run_ranges() {
+        if range.start < byte_end && range.end > byte_start {
+            assert_eq!(props.size, Some(24.0), "run {range:?}");
+            assert_eq!(props.color, Some(TextColor::Rgb(Rgb(0xC0, 0, 0))), "run {range:?}");
+            assert!(props.highlight.is_some(), "run {range:?}");
+            assert_eq!(props.font.as_deref(), Some(PENDING_FONT), "run {range:?}");
+            if range.start < byte_start + "한글".len() {
+                assert_eq!(props.vert_align, Some(VertAlign::Superscript), "run {range:?}");
+            } else {
+                assert_eq!(props.vert_align, Some(VertAlign::Subscript), "run {range:?}");
+            }
+            covered = covered.max(range.end.min(byte_end));
+        }
+    }
+    assert_eq!(covered, byte_end, "all typed bytes have reopened character formatting");
+
+    // Inspect the actual durable DrawingML run properties instead of relying on appearance.
+    let output = package::open(&doc.bytes(), package::Side::Output).expect("saved OPC package");
+    let xml = String::from_utf8(output.get("word/document.xml").expect("document part").to_vec()).unwrap();
+    for (marker, script) in [("한글", "superscript"), (" ABC", "subscript")] {
+        let text_at = xml.rfind(marker).expect("serialized typed text");
+        let run_start = xml[..text_at]
+            .rmatch_indices("<w:r")
+            .find(|(at, _)| matches!(xml.as_bytes().get(at + 4), Some(b'>' | b' ')))
+            .map(|(at, _)| at)
+            .expect("serialized run start");
+        let run_end = text_at + xml[text_at..].find("</w:r>").expect("serialized run end") + "</w:r>".len();
+        let run = &xml[run_start..run_end];
+        assert!(run.contains("w:sz w:val=\"48\""), "{marker}: {run}");
+        assert!(run.contains("w:color w:val=\"C00000\""), "{marker}: {run}");
+        assert!(run.contains("w:highlight w:val=\"yellow\""), "{marker}: {run}");
+        assert!(run.contains(&format!("w:ascii=\"{PENDING_FONT}\"")), "{marker}: {run}");
+        assert!(run.contains(&format!("w:val=\"{script}\"")), "{marker}: {run}");
+    }
+}
+
+#[test]
+fn stage1_docx_selection_font_size_replaces_only_selected_text_and_navigation_clears_pending() {
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    let (view, rejected) = run(
+        &mut doc,
+        vec![
+            DocxOp::Move {
+                to: MoveTarget::DocStart,
+                extend: false,
+            },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: true,
+            },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: true,
+            },
+            DocxOp::FontSize { size: 24.0 },
+            DocxOp::InsertText { text: "대체".into() },
+        ],
+    );
+    assert!(rejected.is_empty());
+    assert!(view.paragraph_text.starts_with("대체"));
+    assert_eq!(doc.info.revision, 2, "selection formatting plus replacement");
+    let reopened = save_reopen(&mut doc, &original);
+    let first = &paras(&reopened)[0];
+    let end = "대체".len();
+    let mut covered = 0;
+    for (range, props) in first.run_ranges() {
+        if range.start < end && range.end > 0 {
+            assert_eq!(props.size, Some(24.0), "{range:?}");
+            covered = covered.max(range.end.min(end));
+        }
+    }
+    assert_eq!(covered, end, "replacement text is serialized at 24 pt");
+
+    // A deliberate keyboard navigation retains the established policy: pending next-input
+    // formatting is discarded and the destination's effective formatting is reported.
+    let mut navigation = open_docx(&original);
+    let (view, rejected) = run(
+        &mut navigation,
+        vec![
+            DocxOp::Move {
+                to: MoveTarget::DocEnd,
+                extend: false,
+            },
+            DocxOp::FontSize { size: 24.0 },
+        ],
+    );
+    assert!(rejected.is_empty());
+    assert_eq!(view.chars.size, Some(24.0));
+    let (view, rejected) = run(
+        &mut navigation,
+        vec![DocxOp::Move {
+            to: MoveTarget::Left,
+            extend: false,
+        }],
+    );
+    assert!(rejected.is_empty());
+    assert_eq!(view.chars.size, Some(12.0));
+}
+
+#[test]
+fn stage1_docx_next_input_size_changes_layout_and_rendered_page() {
+    let original = basic::basic_ko().unwrap();
+    let typed_width = |size| {
+        let mut doc = open_docx(&original);
+        let mut ops = select_first_paragraph();
+        ops.extend([
+            DocxOp::FontSize { size: 10.0 },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: false,
+            },
+        ]);
+        if size != 10.0 {
+            ops.push(DocxOp::FontSize { size });
+        }
+        ops.push(DocxOp::InsertText {
+            text: "한글 ABC".into(),
+        });
+        let (view, rejected) = run(&mut doc, ops);
+        assert!(rejected.is_empty());
+        assert_eq!(view.chars.size, Some(size));
+        assert!(view.paragraph_text.contains("한글 ABC"));
+        let x = view.caret.expect("rendered caret").x;
+        let page = rendered_page(&doc);
+        (x, page)
+    };
+
+    let (ten_pt_x, ten_pt_page) = typed_width(10.0);
+    let (twenty_four_pt_x, twenty_four_pt_page) = typed_width(24.0);
+    assert!(twenty_four_pt_x > ten_pt_x + 20.0, "caret geometry: {ten_pt_x} → {twenty_four_pt_x}");
+    assert_ne!(ten_pt_page, twenty_four_pt_page, "rendered page raster reflects the effective font size");
 }
 
 #[test]

@@ -81,6 +81,16 @@ describe("DocxSurface", () => {
     expect(t.editor.firstPaintMs).not.toBeNull();
   });
 
+  it("IME overlay uses effective next-input font size when the caret has formatting", async () => {
+    const t = await mounted();
+    t.fake.stage1 = { chars: { size: 24, color: "C00000", highlight: "FFFF00", superscript: true, subscript: false } };
+    await act(async () => t.editor.fontsChanged());
+    await t.play(startWith("ㅎ"));
+    const overlay = t.view.getByTestId("docx-composition");
+    expect(overlay.textContent).toBe("ㅎ");
+    expect(overlay.style.fontSize).toBe(`${24 * CSS_PX_PER_PT}px`);
+  });
+
   it("keeps object hit-testing enabled when pointer-down queues an IME caret mark", async () => {
     const t = await mounted();
     await t.click(MARGIN + CHAR, MARGIN + 8);

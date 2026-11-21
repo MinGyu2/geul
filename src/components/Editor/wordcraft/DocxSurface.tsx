@@ -61,6 +61,10 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
   const pages = view?.pages ?? [];
   const caret = view?.caret ?? null;
   const composition = session.compositionText;
+  // A collapsed caret can carry next-input formatting while the composition is only an overlay.
+  // Use that effective character size when available; caret geometry remains a fallback for mixed
+  // selections or older views that do not report character formatting.
+  const compositionFontSize = view?.chars?.size ?? (caret ? caret.height * 0.8 : 0);
 
   const visiblePages = useCallback(() => {
     const result: number[] = [];
@@ -323,7 +327,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
                   data-testid="docx-composition"
                   style={{
                     left: caret.x * k, top: caret.y * k, height: caret.height * k,
-                    fontSize: caret.height * k * 0.8, lineHeight: `${caret.height * k}px`,
+                    fontSize: compositionFontSize * k, lineHeight: `${caret.height * k}px`,
                     visibility: composition ? "visible" : "hidden",
                   }}
                 >

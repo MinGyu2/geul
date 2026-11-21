@@ -418,12 +418,22 @@ describe.skipIf(phase !== "generate")("Stage 1 mixed script state and caret next
         const revision = editor.snapshot().revision;
         expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 20 }).accepted).toBe(true);
         expect(editor.execute("format.fontColor", { command: "format.fontColor", color: "0070C0" }).accepted).toBe(true);
+        expect(editor.execute("format.highlight", { command: "format.highlight", color: "yellow" }).accepted).toBe(true);
         expect(editor.execute("format.subscript").accepted).toBe(true);
         expect(editor.snapshot().revision).toBe(revision);
         expect(editor.snapshot().chars).toMatchObject({ size: 20, color: "0070C0", subscript: true });
+        const pendingCaret = editor.caretRect();
+        expect(pendingCaret).not.toBeNull();
+        // The Ribbon temporarily owns focus. Returning to the same rendered caret is not
+        // navigation and must keep the next-input values in both HWP and HWPX sessions.
+        expect(editor.pointAt(pendingCaret!.page, pendingCaret!.x, pendingCaret!.y + pendingCaret!.height / 2, false)).toBe(true);
+        expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2000, textColor: "#0070C0", shadeColor: "#FFFF00", subscript: true });
+        // Cancelling an in-progress IME composition leaves the same pending values available.
+        editor.beginComposition(); editor.updateComposition("ㄱ"); editor.endComposition(""); await settle();
+        expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2000, textColor: "#0070C0", shadeColor: "#FFFF00", subscript: true });
         expect(editor.typeText("가b")).toBe(true); await settle();
         const typed = properties(doc, 1, end);
-        expect([typed.fontSize, typed.textColor, typed.subscript]).toEqual([2000, "#0070c0", true]);
+        expect([typed.fontSize, typed.textColor, typed.shadeColor, typed.subscript]).toEqual([2000, "#0070c0", "#ffff00", true]);
         expect(properties(doc, 1, end + 1).fontSize).toBe(2000);
         expect(properties(doc, 1, end - 1).fontSize).toBe(1000); // existing text untouched
         // Korean IME composition and commit at the pending caret.

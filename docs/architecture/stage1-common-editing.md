@@ -4,6 +4,8 @@
 Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌드에서 활성화했다. 나머지는 레지스트리에서 `unsupported`이며 실행되지 않는다.
 이 문서는 Stage 1 구현·활성화·focused 검증 기록이며 T014/T015/T016 수용, native GUI 수용, 외부 Office/한컴 호환을 뜻하지 않는다.
 
+> **현행 상태 안내:** 1절 표와 4절 제한은 2026-11-16 당시 기록이다. RHWP 다음 입력 서식은 2026-11-17의 5.1절에서 지원으로 바뀌었고, collapsed caret에서 포커스 복귀 후 서식이 사라지던 회귀는 2026-11-21의 11절에서 수정·검증했다. 최신 상태는 해당 갱신 절을 따른다.
+
 ## 1. 형식별 지원 범위
 
 | 기능군 | DOCX (WordCraft) | HWPX (RHWP) | HWP (RHWP) |
@@ -432,5 +434,28 @@ DOCX(WordCraft)·HWP(RHWP)·HWPX(RHWP)에서 다중 셀 구조 클립보드(`P4-
 RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모듈 35개 오류로 컴파일되지 않아 엔진 시험은 Release WASM API 수준으로 수행했다.
 
 주의 사항(제외 범위): 외부 Microsoft Word/한컴오피스 직접 재열기, 크로스 앱 구조 MIME 상호운용 및 Windows/macOS·Wayland 수용은 NOT RUN이다.
+
+
+## 11. P0 — S1-FONT-TYPING collapsed-caret 서식 유지 (2026-11-21)
+
+### 재현과 수정
+
+- DOCX 회귀를 WordCraft 실제 엔진 IPC 경로에서 재현했다. 기존 10pt 문장을 선택한 뒤 collapsed caret에 24pt를 지정하고 같은 caret 위치로 돌아오는 포인터 입력이 `caret.set`을 호출해 pending next-input formatting을 지웠다. 선택 교체와 실제 다른 위치로 이동은 구분해 확인했다.
+- `src-tauri/src/adapters/wordcraft/engine.rs`는 collapsed selection의 비확장 포인터 적중이 현재 실제 caret과 같을 때만 caret 재설정을 생략한다. 다른 위치로 이동하는 기존 navigation 정책과 안전 검사는 유지한다.
+- `DocxSurface.tsx`의 composition overlay 크기는 WordCraft view의 effective `chars.size`를 우선 사용하고 값이 없는 경우에만 기존 caret-height 추정을 사용한다.
+- RHWP는 공유 구현으로 바꾸지 않았다. HWP/HWPX Release WASM에서 `pointAt` 이후 pending 글자 크기·색·강조·아래첨자, 취소된 composition, Hangul/Latin 입력을 형식별 문서로 검증했다.
+
+### 수락 및 보존 증거
+
+| 확인 | 결과 |
+|---|---|
+| DOCX Rust 회귀·T009 | `GEUL_SANDBOX=userns-root-bwrap npm run rust -- test --lib stage1_docx_` — 13/13 PASS. 포커스 복귀, 반복 입력·문단/선택·의도적 이동, 글꼴·색·강조·위/아래 첨자, Undo/Redo, T009 저장, WordCraft 독립 재열기를 확인했다. |
+| DOCX 화면 모델·렌더 | `npx vitest run src/components/Editor/wordcraft/DocxSurface.test.tsx` — 13/13 PASS; IME overlay 24pt. 엔진 렌더 페이지도 10pt/24pt caret geometry와 PNG 차이를 확인했다. |
+| HWP/HWPX Release WASM·저장 | `scripts/tests/stage1-format.wasm.test.ts` — 두 실제 형식 PASS. pending 서식, 취소, 반복 입력, T009 게시와 독립 WASM 재열기를 확인했다. |
+| Linux X11 Native DOCX·IBus | `scripts/tests/native-ibus-session.py --hangul-initial-mode hangul -- ... native-stage1-font-typing.py` — PASS. XTEST를 통한 trusted IBus Hangul composition, 포커스 복귀, `한글 ABC`, Undo/Redo, T009 `saved`/synced, 새 WordCraft session 재열기를 확인했다. [추적 가능한 실행 보고서](stage1-font-typing-acceptance.json). |
+| 저장된 DrawingML | Native 출력의 `word/document.xml`에서 기존 문자열은 `w:sz=20`(10pt), 입력 문자열은 별도 run의 `w:sz=48`(24pt). ZIP 무결성 PASS; 재열기 모델 끝 caret도 24pt. |
+| TypeScript / UI | `npm run typecheck` 및 대상 Vitest PASS. |
+
+이 수락은 DOCX Linux X11 실제 IME 입력을 포함한다. HWP/HWPX의 이 회귀에 대한 Native GUI 직접 입력, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. HWP/HWPX는 Release WASM 실제 문서·저장 경로로 확인했으며 포맷별로 다른 엔진 경계를 유지한다. 이 항목의 로컬 커밋은 실행 ledger가 반영되면 기록한다.
 
 
