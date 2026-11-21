@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-21",
+  "features": [
+    "P5-DX-HDR-SIZE",
+    "P5-DX-FTR-SIZE",
+    "P5-DX-FN-SIZE",
+    "P5-DX-EN-SIZE"
+  ],
+  "platform": "Linux Wayland",
+  "result": "PASS",
+  "appSha256": "21891b7d8aacd43e8692597b15a76de6fc5830bbfca636278c891c67c727df76",
+  "processAppSha256": "21891b7d8aacd43e8692597b15a76de6fc5830bbfca636278c891c67c727df76",
+  "backend": "GDK Wayland, Weston 15 nested X11 host, no XWayland",
+  "input": "The isolated Weston forwarded pointer and keyboard events to native Wayland surfaces. DISPLAY was absent in the app; trace included xdg_wm_base, wl_pointer and wl_keyboard. Document selection used real pointer events in the viewport, and the GTK chooser opened both times.",
+  "fixtureSha256": "620bb60cd0b9e56f85e492e02050a3fe4920d9788850b8ed8f7fe4408f87450b",
+  "publishedSha256": "b9cb464f7a462028aa5bf96ca90b3e22bce2dcc9088d43546fd66d924bceb503",
+  "save": {
+    "findings": "",
+    "error": "",
+    "testid": "docx-save-result",
+    "changedSince": "false",
+    "synced": "true",
+    "outcome": "",
+    "state": "saved",
+    "revision": "12"
+  },
+  "reopened": "ready",
+  "storyRevisions": {
+    "endnote": 3,
+    "footer": 6,
+    "footnote": 9,
+    "header": 12
+  },
+  "unchangedResources": [
+    "word/media/image1.png"
+  ],
+  "checked": "Each owned story used the properties panel to resize, undo and redo, with a single synchronized publication. Independent OPC comparison verified both extents in each story and all unrelated XML, relationships and media. The app reselected each picture at the correct size after reopening.",
+  "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-wayland.py --case P5-DX-STORY-SIZE --out <result> --fixtures <story-fixtures> --app src-tauri/target/release/geul --weston <Weston 15 executable> --xdotool @XDOTOOL@ --ibus @IBUS@",
+  "cleanup": {
+    "complete": true,
+    "proven": true,
+    "filesystemProven": true,
+    "exit": 0
+  },
+  "rawEvidence": "target/stage3a-docx-story-size/wayland-result/"
+}

@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-21",
+  "feature": "P6-HX-CAP-SIDE and P6-HX-CAP-ALIGN, left/center representative flow",
+  "platform": "Linux Wayland",
+  "result": "PASS",
+  "appSha256": "34d12df2052465f3c122d4a2d35750e6656dd996a1eb126384963d94e33e0b69",
+  "processAppSha256": "34d12df2052465f3c122d4a2d35750e6656dd996a1eb126384963d94e33e0b69",
+  "rhwpGeneration": "96fd98d23e8483ad5cd2b34c54f52a4a71dd175c1d2f879ac49fae34774d9325",
+  "backend": "GDK Wayland, Weston 15 nested X11 host, no XWayland",
+  "input": "Weston passed test-seat pointer and keyboard events from the private outer display to native Wayland surfaces. The GTK chooser showed on Wayland; the WebView reported trusted inputs. DISPLAY was absent in the live app process and the Wayland trace contained xdg_wm_base, wl_pointer, and wl_keyboard.",
+  "fixtureSha256": "e3bc9f191f54d8ab42533465f0efddc17bbdedac2ff1d3f3d2d8404266e5ca4a",
+  "publishedSha256": "b7328b9319e0b56d1afc2d5696834e03da10a22c9fb576788cce7bd13dfd9334",
+  "save": {
+    "findings": "",
+    "error": "",
+    "testid": "rhwp-save-result",
+    "changedSince": "false",
+    "synced": "true",
+    "outcome": "",
+    "state": "saved",
+    "revision": "6"
+  },
+  "reopened": "ready",
+  "checked": "Left placement and Center alignment, separate Undo and Redo, synchronized save, independent HWPX XML, BinData, rendered geometry and actual reopen.",
+  "command": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-wayland.py --out <result> --fixtures <P6-fixtures> --app src-tauri/target/release/geul --weston <Weston 15 executable> --xdotool @XDOTOOL@ --ibus @IBUS@",
+  "cleanup": {
+    "complete": true,
+    "proven": true,
+    "filesystemProven": true,
+    "exit": 0
+  },
+  "correctedAttempts": "The first harness used a missing X11 window PID property. The second launched the app but attempted an X11-only IBus engine switch with DISPLAY absent. Reused the same binary after selecting the known compositor output and using GTK simple IM, then passed.",
+  "rawEvidence": "target/stage3a-platform-probe/wayland-result3/"
+}
