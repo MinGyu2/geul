@@ -1,0 +1,6 @@
+tree 43073ee2c3d31d6837ad135b39bb003716ff39ab
+parent 656ae2b443004e589675070c0cd092587a1dd89c
+author geul-source <geul-local> 1795291277 +0900
+committer geul-source <geul-local> 1795291277 +0900
+
+fix(docx): preserve fill semantics after path edits [P4-DX-PATH]
