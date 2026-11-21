@@ -12,7 +12,7 @@
 
 | ID | 범주 | 구현·보존 상태 | 변경 영역 | 증거 | Native | 로컬 커밋 | 남은 경계 |
 |---|---|---|---|---|---|---|---|
-| S1-FONT-TYPING | 회귀 | IMPLEMENTED_VERIFIED — collapsed caret의 같은 위치 focus-return이 pending 서식을 유지하고 deliberate navigation은 기존 정책을 따른다. selection replacement, Undo/Redo, T009 및 실제 reopen도 확인 | WordCraft pointer routing, DOCX IME overlay, RHWP format-specific Release WASM regression, Native acceptance harness | [Stage 1 §11](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21); `stage1_docx_` 13/13; Stage1 format WASM 28 passed/1 skipped; DOCX UI 13/13; typecheck PASS; [Native 보고서](stage1-font-typing-acceptance.json) | Linux X11/Xvfb + trusted IBus Hangul DOCX run7 PASS; HWP/HWPX per-format native GUI, Windows/macOS NOT RUN | 기록 대기 | 외부 Microsoft Word/한컴오피스 재열기 NOT RUN |
+| S1-FONT-TYPING | 회귀 | IMPLEMENTED_VERIFIED — collapsed caret의 같은 위치 focus-return이 pending 서식을 유지하고 deliberate navigation은 기존 정책을 따른다. selection replacement, Undo/Redo, T009 및 실제 reopen도 확인 | WordCraft pointer routing, DOCX IME overlay, RHWP format-specific Release WASM regression, Native acceptance harness | [Stage 1 §11](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21); `stage1_docx_` 13/13; Stage1 format WASM 28 passed/1 skipped; DOCX UI 13/13; typecheck PASS; [Native 보고서](stage1-font-typing-acceptance.json) | Linux X11/Xvfb + trusted IBus Hangul DOCX run7 PASS; HWP/HWPX per-format native GUI, Windows/macOS NOT RUN | `938d6638739b3d13d79fc436d0f16880e707e7e2` | 외부 Microsoft Word/한컴오피스 재열기 NOT RUN |
 
 ## P4 기하와 그룹
 

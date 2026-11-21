@@ -456,6 +456,6 @@ RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모�
 | 저장된 DrawingML | Native 출력의 `word/document.xml`에서 기존 문자열은 `w:sz=20`(10pt), 입력 문자열은 별도 run의 `w:sz=48`(24pt). ZIP 무결성 PASS; 재열기 모델 끝 caret도 24pt. |
 | TypeScript / UI | `npm run typecheck` 및 대상 Vitest PASS. |
 
-이 수락은 DOCX Linux X11 실제 IME 입력을 포함한다. HWP/HWPX의 이 회귀에 대한 Native GUI 직접 입력, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. HWP/HWPX는 Release WASM 실제 문서·저장 경로로 확인했으며 포맷별로 다른 엔진 경계를 유지한다. 이 항목의 로컬 커밋은 실행 ledger가 반영되면 기록한다.
+이 수락은 DOCX Linux X11 실제 IME 입력을 포함한다. HWP/HWPX의 이 회귀에 대한 Native GUI 직접 입력, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. HWP/HWPX는 Release WASM 실제 문서·저장 경로로 확인했으며 포맷별로 다른 엔진 경계를 유지한다. 구현 커밋은 `938d6638739b3d13d79fc436d0f16880e707e7e2`이다.
 
 
