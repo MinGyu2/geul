@@ -219,8 +219,8 @@ def textbox(acc, row, fixtures, out):
     h.require(h.core_shapes(path)["frames"][0]["props"] == after["shape"], "published textbox did not reopen")
 
 
-def textbox_join(acc, row, fixtures, out, span=2):
-    name = "a-p5-textbox-join" if span == 2 else "a-p5-textbox-range"
+def textbox_join(acc, row, fixtures, out, span=2, replace=False):
+    name = "a-p5-textbox-paste" if replace else "a-p5-textbox-join" if span == 2 else "a-p5-textbox-range"
     fixture = fixtures / f"{name}-original.hwpx"
     before = row["before"] = inspect_box(fixture)
     path = h.begin(acc, row, fixture, out, f"{name}-published.hwpx")
@@ -260,20 +260,43 @@ def textbox_join(acc, row, fixtures, out, span=2):
         acc.key("shift+Right")
     h.require(acc.status("hwpx")["selection"] and acc.status("hwpx")["caret"].endswith(f"/0/{span}")
               and ":2@textbox/" in acc.status("hwpx")["caret"], "did not make a cross-paragraph selection", acc.status("hwpx"))
-    acc.key("Delete")
-    h.revision(acc, "hwpx", revision + 1)
-    acc.text_is("hwpx", "Boain")
+    edited_text = "nextain" if replace else "Boain"
+    if replace:
+        acc.d.js("""
+          window.pasteKeys=[];
+          addEventListener('keydown', e => {
+            if (e.ctrlKey && e.key.toLowerCase() === 'v') pasteKeys.push(e.isTrusted);
+          }, true);
+        """)
+
+        def paste():
+            acc.key("ctrl+v")
+            h.revision(acc, "hwpx", revision + 1)
+
+        h.clipboard_peer(acc, "UTF8_STRING", "새\nnext", paste)
+        row["trustedPaste"] = acc.d.js("return window.pasteKeys")
+        h.require(row["trustedPaste"] == [True], "missing trusted paste key", row["trustedPaste"])
+    else:
+        acc.key("Delete")
+        h.revision(acc, "hwpx", revision + 1)
+    acc.text_is("hwpx", edited_text)
     acc.key("ctrl+z")
     h.revision(acc, "hwpx", revision + 2)
     acc.text_is("hwpx", "plain")
     acc.key("ctrl+y")
     h.revision(acc, "hwpx", revision + 3)
-    acc.text_is("hwpx", "Boain")
+    acc.text_is("hwpx", edited_text)
     h.publish(acc, "hwpx", row)
 
     after = row["after"] = inspect_box(path)
     old = before["paragraphs"]
-    expected = [old[0], {**old[1], "text":"Boain", "runs":[[0,2,1],[2,5,2]]}, old[span + 1]]
+    if replace:
+        expected = [old[0],
+                    {**old[1], "text": "Bo새", "runs": [[0, 3, old[1]["runs"][0][2]]]},
+                    {**old[1], "text": "nextain", "runs": [[0, 7, old[3]["runs"][0][2]]]},
+                    old[span + 1]]
+    else:
+        expected = [old[0], {**old[1], "text":"Boain", "runs":[[0,2,1],[2,5,2]]}, old[span + 1]]
     h.require(after["paragraphs"] == expected and after["shape"] == before["shape"] and after["body"] == before["body"],
               "text, retained formatting or owner differs", after)
     with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
@@ -282,7 +305,7 @@ def textbox_join(acc, row, fixtures, out, span=2):
                                       if part != section and not part.startswith("Preview/")}
         h.require(unrelated(original) == unrelated(published), "unrelated HWPX parts changed")
         roots = [ET.fromstring(package.read(section)) for package in (original,published)]
-        for root,count in zip(roots,(span,1),strict=True):
+        for root,count in zip(roots,(span,2 if replace else 1),strict=True):
             sub = root.find(".//{*}drawText/{*}subList")
             for para in sub.findall("{*}p")[1:1+count]:
                 sub.remove(para)
@@ -291,12 +314,20 @@ def textbox_join(acc, row, fixtures, out, span=2):
                     para.remove(layout)
         h.require(ET.tostring(roots[0]) == ET.tostring(roots[1]), "unrelated section XML changed")
     h.reopen(acc, path, row)
-    place(positions[1])
-    acc.text_is("hwpx", "Boain")
+    if replace:
+        inserted = h.inspect_rhwp(path, """
+          const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
+          console.log(JSON.stringify(JSON.parse(doc.getCursorRectInCell(0,owner.para,owner.controlIndex,0,2,4))));
+        """)
+        place(inserted)
+    else:
+        place(positions[1])
+    acc.text_is("hwpx", edited_text)
 
 
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
+           "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
 

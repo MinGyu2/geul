@@ -35,10 +35,11 @@ def inspect(path):
 
 
 def points_case(acc, row, fixtures, out, kind, fmt):
-    fixture = fixtures / f"a-p4-{kind}-original.{fmt}"
+    label = "hwp5-polygon" if (kind, fmt) == ("polygon", "hwp") else kind
+    fixture = fixtures / f"a-p4-{label}-original.{fmt}"
     before = row["before"] = inspect(fixture)
     target = next(frame for frame in before["frames"] if frame["path"] and frame["path"]["kind"] == kind)
-    path = h.begin(acc, row, fixture, out, f"a-p4-{kind}-edited.{fmt}")
+    path = h.begin(acc, row, fixture, out, f"a-p4-{label}-edited.{fmt}")
     model = target["path"]
     point_index = 1 if kind == "curve" else 0
     point = model["points"][point_index]
@@ -112,7 +113,9 @@ def points_case(acc, row, fixtures, out, kind, fmt):
     want = {**target, "path": {**model,"points": expected}}
     h.require(after == {**before, "frames":[want if item == target else item for item in before["frames"]]},
               "independent engine changed unrelated content or geometry", after)
-    if fmt == "hwp":
+    if fmt == "hwp" and kind == "polygon":
+        inspect_polygon_records(fixture, path, model["points"], expected)
+    elif fmt == "hwp":
         streams = [h.p6.gso.cfb_streams(item.read_bytes()) for item in (fixture, path)]
         h.require({k:v for k,v in streams[0].items() if k not in {"BodyText/Section0","PrvText","PrvImage"}}
                   == {k:v for k,v in streams[1].items() if k not in {"BodyText/Section0","PrvText","PrvImage"}},
@@ -137,6 +140,102 @@ def points_case(acc, row, fixtures, out, kind, fmt):
     select()
     acc.dom_click(endpoint)
     h.require(ui_point() == exact, "published point did not reopen in app")
+
+
+def inspect_polygon_records(source, path, before, after):
+    gso = h.p6.gso
+    streams = [gso.cfb_streams(item.read_bytes()) for item in (source, path)]
+    ignored = {"BodyText/Section0", "PrvText", "PrvImage"}
+    rest = lambda stream: {name: data for name, data in stream.items() if name not in ignored}
+    h.require(rest(streams[0]) == rest(streams[1]), "unrelated HWP streams changed")
+    records = [gso.records(gso.unpacked(stream, "BodyText/Section0")) for stream in streams]
+    changes = [(a, b) for a, b in zip(*records, strict=True) if a != b]
+    h.require(len(changes) == 1 and all(item[:2] == (82, 3) for item in changes[0]),
+              "non-polygon HWP records changed", changes)
+    for (_, _, payload), points in zip(changes[0], (before, after), strict=True):
+        count, = struct.unpack_from("<I", payload)
+        end = 4 + count * 8
+        h.require(count == len(points) and payload[end:] == bytes(4), "polygon count or padding differs")
+        h.require(list(struct.iter_unpack("<ii", payload[4:end])) == [(p["x"], p["y"]) for p in points],
+                  "raw HWP polygon coordinates differ")
+
+
+def hwp5_polygon_edges(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-hwp5-polygon-original.hwp"
+    before = inspect(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "polygon")
+    points = target["path"]["points"]
+    split_row, join_row = row["split"], row["join"] = {}, {}
+    split_path = h.begin(acc, split_row, fixture, out, "a-p4-hwp5-polygon-split.hwp")
+
+    def select():
+        h.select_object(acc, target, "shape")
+        acc.dom_click(".object-path-mode")
+
+    def count(expected):
+        h.require(acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT) == expected,
+                  "unexpected HWP polygon vertex count", expected)
+
+    select()
+    count(3)
+    acc.d.js("""
+      window.polygonClicks=[];
+      addEventListener('click', e => {
+        if (e.target.matches('.object-path-add-vertex, .object-path-remove-vertex'))
+          polygonClicks.push({ action:e.target.className, trusted:e.isTrusted });
+      }, true);
+    """)
+    acc.dom_click(f"{POINT}:nth-of-type(4)")
+    acc.dom_click(".object-path-add-vertex")
+    h.revision(acc, "hwp", 1)
+    count(4)
+    acc.dom_click(f"{POINT}:nth-of-type(2)")
+    h.require(acc.d.js("return document.querySelector('.object-path-remove-vertex').disabled"),
+              "noncollinear corner removal must be disabled")
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    select()
+    count(3)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    select()
+    count(4)
+    h.publish(acc, "hwp", split_row)
+    split_points = points[:-1] + [{"x": 4000, "y": 3900, "control": False}, points[-1]]
+    inspect_polygon_records(fixture, split_path, points, split_points)
+    split_model = inspect(split_path)
+    expected_target = {**target, "path": {**target["path"], "points": split_points}}
+    h.require(split_model == {**before, "frames": [expected_target if item == target else item for item in before["frames"]]},
+              "independent engine changed shape owner or surrounding content", split_model)
+    h.reopen(acc, split_path, split_row)
+    select()
+    count(4)
+
+    join_path = h.begin(acc, join_row, split_path, out, "a-p4-hwp5-polygon-joined.hwp")
+    select()
+    acc.dom_click(f"{POINT}:nth-of-type(5)")
+    acc.dom_click(".object-path-remove-vertex")
+    h.revision(acc, "hwp", 1)
+    count(3)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    select()
+    count(4)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    select()
+    count(3)
+    row["trustedClicks"] = acc.d.js("return window.polygonClicks")
+    h.require(row["trustedClicks"] == [
+        {"action": "object-path-add-vertex", "trusted": True},
+        {"action": "object-path-remove-vertex", "trusted": True},
+    ], "missing trusted polygon clicks", row["trustedClicks"])
+    h.publish(acc, "hwp", join_row)
+    inspect_polygon_records(split_path, join_path, split_points, points)
+    h.require(inspect(join_path) == before, "join did not restore the original geometry and owner")
+    h.reopen(acc, join_path, join_row)
+    select()
+    count(3)
 
 
 def section_pair(fixture, path):
@@ -668,6 +767,8 @@ h.CASES = {
     "P4.4": polygon_vertices_case,
     "P4.5": curve_terminal_line_case,
     "P4-H5-SEG-LINE": curve_interior_line_case,
+    "P4-H5-POLY-POINT": lambda *args: points_case(*args, "polygon", "hwp"),
+    "P4-H5-POLY-EDGES": hwp5_polygon_edges,
     "P4.6": group_child_edit_case,
     "P4.6-capture": group_child_capture_case,
 }

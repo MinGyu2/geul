@@ -390,7 +390,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차 및 HWPX/DOCX의 무손실 곡선 구간 모델은 남아 있다. |
 | P4.3 그룹 자식 | HWPX의 비잠금·비보호 평면 사각형·타원 그룹에서 지정 자식의 단색 배경 변경(`groupChildFill`) 및 위치·왼쪽/위 기준 크기 편집(`groupChildMove`/`groupChildResize`) | Release WASM(`972f25b9...`, P1–P4·N1–N12·T1–T8·E1–E7 포함 그룹 테스트 10 통과)·`save_check` safe·UI 22 통과(U1–U8 포함)·기존 Linux X11 Native(`P4.3`/`P4.6` PASS, `0b8a2e4`). [P4.6-1 그룹 기하 교정](architecture/stage3-a-p4-group-geometry-acceptance.json), [P4.6-2 그룹 자식 기하 편집 수용 기록](architecture/stage3-a-p4-group-child-edit-acceptance.json), [P4.6 안전화 후속 기록](architecture/stage3-a-p4-group-child-safety-stabilization.json). 홀수 타원의 변경되지 않은 축과 자식 식별자 왕복 보존, 절단 버퍼 거부, Linux X11 Release의 실제 핸들 밖 포인터 캡처·해제 및 저장을 추가 검증했다. [P4.6 최종 경계 검증](architecture/stage3-a-p4-group-child-boundary-verification.json). 상쇄 복합/비유한/손상 `raw_rendering`, 오버플로/비정규 타원 크기조절(비정규 끝점은 이동만 보존·크기조절 거부), 중첩 그룹·회전/반전/배율/전단·캡션·글상자 자식 및 HWP5/DOCX 자식 기하 편집은 거부하며 범위 밖이다. |
 | P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
-| P4-H5-POLY HWP5 다각형 | SAFE Section0의 본문 단순 폐합에서 정수 점 이동, 공선 변 분할·병합 | Release WASM·T009·독립 CFB 검사·RHWP 재열기 PASS. X11 수락 대기. 회전·반전·비영 오프셋, 비공선 모서리 삭제, 모서리 이동과 꼭짓점 수 변경을 함께 담은 게시는 제외한다. [검증 기록](architecture/stage3-a-p4-hwp5-polygon-acceptance.json) |
+| P4-H5-POLY HWP5 다각형 | SAFE Section0의 본문 단순 폐합에서 정수 점 이동, 공선 변 분할·병합 | Release WASM·T009·독립 CFB 검사·RHWP 재열기 PASS. X11 점 이동·변 분할/병합 및 Wayland 점 이동 PASS. 회전·반전·비영 오프셋, 비공선 모서리 삭제, 모서리 이동과 꼭짓점 수 변경을 함께 담은 게시는 제외한다. [검증 기록](architecture/stage3-a-p4-hwp5-polygon-acceptance.json) |
 | P4.5 곡선 구간 | SAFE HWP5 본문의 지원 열린 cubic 경로에서 마지막 끝점에 직선 추가 및 마지막 직선 삭제 | 집중 T009·Release WASM·Linux X11 실제 게시 2건·독립 CFB·앱 재열기 PASS. 직선 내부의 정확한 정수 점 분할과 같은 방향의 인접 두 직선을 합치는 기능도 지원한다. 두 cubic 사이의 직선에서 새 Linux X11 실제 편집·Undo/Redo·두 차례 게시·독립 CFB·앱 재열기 PASS다. 비공선 접점 삭제와 cubic·이차 구간 삽입·삭제는 제외한다. [내부 직선 수락 기록](architecture/stage3-a-p4-curve-interior-acceptance.json) [수용 기록](architecture/stage3-a-p4-terminal-line-acceptance.json) |
 
 본문 점 편집은 현재 항등 저장 행렬과 회전·반전 없는 프레임을 요구한다. 쪽 배치와 프레임 너비·높이의 축별 배율을 유지한다. HWPX 컴포넌트 오프셋은 0이어야 하며 HWP5 곡선의 원래 컴포넌트 오프셋은 바이트 보존한다. [변환 안전 후속 검증](architecture/stage3-a-p4-transform-safety-acceptance.json)
@@ -404,19 +404,21 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 **P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. 같은 문단 모양·스타일의 일반 문단 세 개 이상에 걸친 키보드 삭제도 지원한다(글상자 최대 64문단). Linux X11에서 세 문단 선택과 Delete, Undo/Redo, 동기 게시, 독립 XML·RHWP 검사와 앱 재열기를 확인했다. HWP5와 다른 문단 서식, 중첩 제어, 다문단 IME 교체는 제외한다. [P5.5 수락 기록](architecture/stage3-a-p5-textbox-join-acceptance.json), [P5-TB-RANGE 수락 기록](architecture/stage3-a-p5-textbox-range-acceptance.json)
 
 
-**P5-TB-REPLACE HWPX 글상자 붙여넣기.** 같은 모양과 스타일의 본문 글상자 다문단 선택을 평문 클립보드로 교체한다. 앞뒤의 문자 서식과 글상자 범위를 유지하며 삽입 실패 시 삭제도 되돌린다. Release WASM, T009, 독립 XML 및 RHWP 재열기 PASS. Native 수락 대기. [검증 기록](architecture/stage3-a-p5-textbox-paste-acceptance.json)
+**P5-TB-REPLACE HWPX 글상자 붙여넣기.** 같은 모양과 스타일의 본문 글상자 다문단 선택을 평문 클립보드로 교체한다. 앞뒤의 문자 서식과 글상자 범위를 유지하며 삽입 실패 시 삭제도 되돌린다. Release WASM, T009, 독립 XML 및 RHWP 재열기 PASS. X11 실제 Ctrl+V·Undo/Redo·게시·앱 재열기 PASS. [검증 기록](architecture/stage3-a-p5-textbox-paste-acceptance.json)
 
 **Stage 3-A P6 고급 개체 구조 (2026-11-20) — PARTIAL_SUPPORT.**
 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
 | P6.1 구조 클립보드 | HWPX 본문 폐합 다각형을 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, 경로·속성, 원본과 대상 형제 보존. HWP5 교차 문서 리소스 매핑, 그룹·중첩·곡선은 남아 있다. |
-| P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경. 원본 본문 XML 왕복이 일치하는 기본 `roundRect`에서 `rect`로 변환 | 둥근 사각형 변환은 집중 Rust·T009·독립 OPC 검사·재열기 PASS, Native 수락 대기. 사용자 조정·비슷한 프리셋 정규화는 거부한다. [검증 기록](architecture/stage3-a-p6-round-rect-acceptance.json) |
+| P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경. 원본 본문 XML 왕복이 일치하는 기본 `roundRect`에서 `rect`로 변환 | 둥근 사각형 변환은 집중 Rust·T009·독립 OPC 검사·재열기 및 X11·Wayland PASS. 사용자 조정·비슷한 프리셋 정규화는 거부한다. [검증 기록](architecture/stage3-a-p6-round-rect-acceptance.json) |
 | P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
 | P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 지원 열 기준 부유 그림에 좌우 위치와 위·가운데·아래 세로 정렬을 제공한다. Linux X11 실제 속성 편집, 각각 Undo/Redo, 안전 게시, 독립 XML/배치 검사와 앱 재열기 PASS다. 인라인 그림의 좌우 배치, 그룹 캡션, DOCX/HWP5 위치 변경은 남아 있다. [좌우 배치·정렬 수락](architecture/stage3-a-p6-caption-lateral-acceptance.json) |
 | P6.7 캡션 간격 | HWPX 본문 그림의 기존 위·아래 캡션에서 간격 0–327.67pt | Linux X11 속성 입력·Undo/Redo·게시·앱 재열기 PASS. 독립 XML에서 `gap`만 바뀌고 번호·서식·이미지 바이트는 보존됐다. [수용 기록](architecture/stage3-a-p6-caption-spacing-acceptance.json) |
 | P6.4 SmartArt | 기존 DOCX 모델의 항목·단계·지원 레이아웃 편집 | 집중 WordCraft 재검증 PASS, 기존 X11 수용 재사용. 일반 다이어그램 편집, 노드별 스타일, 외부·공유 파트 편집은 남아 있다. |
 
 초기 P6 네 경로의 Linux X11 실제 조작, Undo/Redo, 안전 저장, 독립 저장본 검사 및 앱 재열기가 PASS했다. 이 수용 실행의 RHWP Release는 `5ca8f50d…`였다. 자세한 형식 조합, 실행 및 아티팩트는 [변환 조합](architecture/command-registry.md#stage-3-a-p6-구조-전송과-변환)과 [P6 수용 기록](architecture/stage3-a-p6-advanced-structure-acceptance.json)에 있다. Stage 3-A 및 Stage 3 전체 상태는 **PARTIALLY COMPLETED**다.
+
+이 작업의 Linux Native는 X11 4건과 Wayland 5건 PASS다. Wayland에서 새 다각형 점·DOCX 프리셋과 기존 HWP5 내부 직선, HWPX 다문단 범위 삭제, 오른쪽/아래 캡션을 수락했다. Windows와 macOS는 Native 환경이 없어 NOT RUN이다. [실행·게시·재열기 기록](architecture/stage3-a-native-p4-p5-p6-acceptance.json)
 
 최신 누락 기능, 안전 차단과 플랫폼 수락 의무는 [Stage 3-A 현행 인벤토리](architecture/stage3-a-current-inventory.md)에서 관리한다.

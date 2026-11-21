@@ -12,11 +12,23 @@ import time
 import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
-entry = ROOT / "scripts/tests/native-stage3a-p6.py"
-spec = importlib.util.spec_from_file_location("stage3a_p6", entry)
-p6 = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(p6)
+
+
+def load_workstream(number):
+    entry = ROOT / f"scripts/tests/native-stage3a-p{number}.py"
+    spec = importlib.util.spec_from_file_location(f"stage3a_p{number}", entry)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+p4, p5, p6 = (load_workstream(number) for number in (4, 5, 6))
 h = p6.h
+cases = {key: module.h.CASES[key] for key, module in (
+    ("P4-H5-SEG-LINE", p4), ("P4-H5-POLY-POINT", p4),
+    ("P5-DX-STORY-SIZE", p5), ("P5-TB-RANGE", p5),
+    ("P6-HX-CAP-LEFT", p6), ("P6-HX-CAP-RIGHT", p6), ("P6-DX-TYPE", p6),
+)}
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--weston", required=True)
@@ -25,7 +37,7 @@ parser.add_argument("--fixtures", type=Path, required=True)
 parser.add_argument("--app", type=Path, required=True)
 parser.add_argument("--xdotool", required=True)
 parser.add_argument("--ibus", required=True)
-parser.add_argument("--case", choices=("P6-HX-CAP-LEFT", "P5-DX-STORY-SIZE"), default="P6-HX-CAP-LEFT")
+parser.add_argument("--case", choices=cases, default="P6-HX-CAP-LEFT")
 parser.add_argument("--driver", default="/tmp/geul-tauri-driver-target/debug/tauri-driver")
 args = parser.parse_args()
 args.out = args.out.resolve()
@@ -69,7 +81,7 @@ class WaylandAcceptance(h.p4.P4Acceptance):
           s.scrollTop+=r.top+y*k-(v.top+v.height/2);
           const after=c.getBoundingClientRect();
           return [(after.left+x*k)*devicePixelRatio,(after.top+y*k)*devicePixelRatio];
-        """, list(point), ".docx-page canvas" if args.case == "P5-DX-STORY-SIZE" else ".rhwp-page__canvas")
+        """, list(point), ".docx-page canvas" if args.case in {"P5-DX-STORY-SIZE", "P6-DX-TYPE"} else ".rhwp-page__canvas")
         self.command(self.args.xdotool, "mousemove", "--window", self.window, str(round(x)), str(round(y)), "click", "1")
 
 
@@ -106,25 +118,20 @@ with (args.out / "weston-stderr.log").open("w") as stderr:
                     h.require(b"GDK_BACKEND=wayland" in env and not any(e.startswith(b"DISPLAY=") for e in env),
                               "application is not forced to native Wayland")
                     row["processAppSha256"] = h.digest(Path(f"/proc/{pids[0]}/exe"))
+                    h.require(row["processAppSha256"] == report["appSha256"], "unexpected live application binary")
                     acc.calibrate_pointer()
-                    h.p6.pointer = lambda current, point: current.pointer(point)
+                    for module in (p4, p5, p6):
+                        module.h.p6.pointer = lambda current, point: current.pointer(point)
                     acc.d.js("""
                       window.actualWaylandInput=[];
                       for (const type of ['pointerdown', 'keydown']) addEventListener(type, event => {
                         if (event.isTrusted) actualWaylandInput.push({type, key: event.key});
                       }, true);
                     """)
-                    if args.case == "P5-DX-STORY-SIZE":
-                        stories = ROOT / "scripts/tests/native-stage3a-p5.py"
-                        spec = importlib.util.spec_from_file_location("stage3a_p5", stories)
-                        p5 = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(p5)
-                        p5.h.p6.pointer = lambda current, point: current.pointer(point)
-                        p5.stories(acc, row, args.fixtures, args.out, resize=True)
-                    else:
-                        p6.caption_lateral(acc, row, args.fixtures, args.out, "Left", "Center")
+                    cases[args.case](acc, row, args.fixtures, args.out)
                     row["trustedInput"] = acc.d.js("return actualWaylandInput")
-                    h.require(any(e["type"] == "pointerdown" for e in row["trustedInput"]), "no trusted pointer event")
+                    h.require({e["type"] for e in row["trustedInput"]} >= {"pointerdown", "keydown"},
+                              "missing trusted pointer or keyboard event")
                 except Exception:
                     driver.screenshot(args.out / "error.png")
                     raise

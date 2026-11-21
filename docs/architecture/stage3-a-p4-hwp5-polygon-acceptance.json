@@ -1,7 +1,7 @@
 {
   "baselineHead": "c1a46d47304d0cfe9eb410e999b41a25781bf879",
   "feature": "P4-H5-POLY",
-  "status": "IMPLEMENTED_UNVERIFIED",
+  "status": "IMPLEMENTED_VERIFIED",
   "supported": "Owned simple closed polygon in SAFE HWP5 Section0, with bounded integer vertices and zero component offsets. Point movement preserves winding and the repeated closing point. Insertions and removals split and join collinear edges.",
   "refused": "Locked or size-protected shape, captions, textboxes, open or self-intersecting paths, nonidentity matrices, nonzero component offsets, unrecognized padding, insertion off an edge, removal of a corner, stale selection or foreign session.",
   "release": {
@@ -35,10 +35,27 @@
     "joined": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf"
   },
   "native": {
-    "linuxX11": "NOT RUN",
-    "linuxWayland": "NOT RUN",
+    "linuxX11": {
+      "result": "PASS",
+      "cases": [
+        "P4-H5-POLY-POINT",
+        "P4-H5-POLY-EDGES"
+      ]
+    },
+    "linuxWayland": {
+      "result": "PASS",
+      "cases": [
+        "P4-H5-POLY-POINT"
+      ],
+      "notRun": [
+        "P4-H5-POLY-EDGES"
+      ]
+    },
     "windows": "NOT RUN — environment unavailable",
-    "macOS": "NOT RUN — environment unavailable"
+    "macOS": "NOT RUN — environment unavailable",
+    "appSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+    "evidence": "stage3-a-native-p4-p5-p6-acceptance.json"
   },
-  "evidence": "target/stage3a-p4-hwp5-polygon/"
+  "evidence": "target/stage3a-p4-hwp5-polygon/",
+  "implementationCommit": "5816bdc573b8bfbcac958a70425b888fae4628b4"
 }

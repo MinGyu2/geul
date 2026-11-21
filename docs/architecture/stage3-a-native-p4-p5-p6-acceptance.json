@@ -1,0 +1,284 @@
+{
+  "startingHead": "c1a46d47304d0cfe9eb410e999b41a25781bf879",
+  "buildSourceHead": "778573e874db221e68765c86b9608d4889990e86",
+  "implementationCommits": {
+    "P4-H5-POLY": "5816bdc573b8bfbcac958a70425b888fae4628b4",
+    "P5-TB-REPLACE": "59e27f60593439cfaac1eae1b9455c889663e93e",
+    "P6-DX-TYPE": "778573e874db221e68765c86b9608d4889990e86"
+  },
+  "app": {
+    "path": "src-tauri/target/release/geul",
+    "sha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "buildCommand": "VITE_GEUL_TEST_HOOKS=1 CARGO_BUILD_JOBS=8 npm run tauri -- build --no-bundle",
+    "buildLog": "target/stage3a-native-final/release-build.log"
+  },
+  "engines": {
+    "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraft": "b2c974369dd02d322a5498db484bcf96906dad15",
+    "orderedPatchCount": 44,
+    "orderedPatchListSha256": "808e5e4cf35160d56ba475444c28af524157192b5bdee4230b9b61815650e2fe",
+    "rhwpGeneration": "b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c",
+    "releaseArtifacts": {
+      "rhwp.js": "723da472c5d670baba1726f6df8a1da9f3a83541751e69c5c132d41956fd659e",
+      "rhwp_bg.wasm": "4ac219821407295e722e7a4be56dafbae7539b78c102d4bdaff5d643ed0b4935"
+    }
+  },
+  "x11": "Real Tauri GTK window on private Xvfb with GDK_BACKEND=x11 and no WAYLAND_DISPLAY.",
+  "wayland": "Real GDK Wayland with DISPLAY absent in the app, a private Weston 15 nested compositor, no XWayland, xdg_wm_base/wl_pointer/wl_keyboard traffic, and trusted pointer and keyboard events.",
+  "runs": [
+    {
+      "feature": "P4-H5-POLY-POINT",
+      "platform": "Linux X11",
+      "result": "PASS",
+      "checks": "Trusted handle drag and precise integer input, Undo/Redo, safe save, independent CFB and RHWP inspection, editable reopen.",
+      "harness": "scripts/tests/native-stage3a-p4.py",
+      "rawEvidence": "target/stage3a-native-final/x11-p4/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p4-hwp5-polygon-edited.hwp",
+          "sha256": "3d3e1afb7524339aaf8d3db126531328490a4d84b35788b30d876f33f8b759c0",
+          "saveRevision": 4,
+          "reopened": "ready",
+          "fixture": "a-p4-hwp5-polygon-original.hwp",
+          "fixtureSha256": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-x11-p4/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      }
+    },
+    {
+      "feature": "P4-H5-POLY-EDGES",
+      "platform": "Linux X11",
+      "result": "PASS",
+      "checks": "Trusted split and join clicks, disabled corner removal, separate Undo/Redo, saved outputs with exact tag 82 points and padding, reopened editable after each operation.",
+      "harness": "scripts/tests/native-stage3a-p4.py",
+      "rawEvidence": "target/stage3a-native-final/x11-p4/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p4-hwp5-polygon-split.hwp",
+          "sha256": "6b91c2f93ea5922b8f699e2690354302d942e459e86de23cab230a9b72638e4b",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p4-hwp5-polygon-original.hwp",
+          "fixtureSha256": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf"
+        },
+        {
+          "file": "a-p4-hwp5-polygon-joined.hwp",
+          "sha256": "4dffb25263ec226a732ae952ff05b1dfa342b036a9eb6093aba70744ffb6bc0b",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p4-hwp5-polygon-split.hwp",
+          "fixtureSha256": "6b91c2f93ea5922b8f699e2690354302d942e459e86de23cab230a9b72638e4b"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-x11-p4/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      }
+    },
+    {
+      "feature": "P5-TB-REPLACE",
+      "platform": "Linux X11",
+      "result": "PASS",
+      "checks": "Trusted Ctrl+V with GTK clipboard text across three textbox paragraphs, Undo/Redo, safe save, retained formatting and owner, independent HWPX XML and RHWP reopen.",
+      "harness": "scripts/tests/native-stage3a-p5.py",
+      "rawEvidence": "target/stage3a-native-final/x11-p5/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p5-textbox-paste-published.hwpx",
+          "sha256": "773e50867b18e93953bb8926766b185a5b31d0977d1b95e8fae4aee3a22dca19",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p5-textbox-paste-original.hwpx",
+          "fixtureSha256": "e99448f289e09adcfdb4ec7e7555f3d1de4066feba6e436936be77c72c409340"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-x11-p5/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      }
+    },
+    {
+      "feature": "P6-DX-TYPE",
+      "platform": "Linux X11",
+      "result": "PASS",
+      "checks": "Trusted Properties click, Undo/Redo, unchanged frame, safe DOCX save, independent exact preset and OPC checks, reopened editable.",
+      "harness": "scripts/tests/native-stage3a-p6.py",
+      "rawEvidence": "target/stage3a-native-final/x11-p6/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p6-round-rect-published.docx",
+          "sha256": "5cd0386f7472e57aa6bd41dd14094fe45c86777abad8de279fd632637db8510d",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p6-round-rect-original.docx",
+          "fixtureSha256": "b4e3393e7b8aa3052f38dd72020e93aa53cc1c416eae5af7fa173afeae621541"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-x11-p6/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      }
+    },
+    {
+      "feature": "P4-H5-POLY-POINT",
+      "platform": "Linux Wayland",
+      "result": "PASS",
+      "checks": "Trusted handle drag and precise integer input, Undo/Redo, safe save, independent CFB and RHWP inspection, editable reopen.",
+      "harness": "scripts/tests/native-stage3a-wayland.py",
+      "rawEvidence": "target/stage3a-native-final/wayland-p4-poly/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p4-hwp5-polygon-edited.hwp",
+          "sha256": "dc8cb9ceb5bc723dd954be87d2845fd897d9a924c1abb4f7a8eed15120ee729b",
+          "saveRevision": 4,
+          "reopened": "ready",
+          "fixture": "a-p4-hwp5-polygon-original.hwp",
+          "fixtureSha256": "d145c43f213aea9dfe19aeb85a9af802de2bb5e4659a0eb45e7e26a9bd3bbedf"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-wayland-p4-poly/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      },
+      "trustedWaylandEvents": 32,
+      "westonExit": 0
+    },
+    {
+      "feature": "P4-H5-SEG-LINE",
+      "platform": "Linux Wayland",
+      "result": "PASS",
+      "checks": "Split and join the straight line between cubic segments, each with Undo/Redo, safe save, independent exact CFB and engine inspection, app reopen.",
+      "harness": "scripts/tests/native-stage3a-wayland.py",
+      "rawEvidence": "target/stage3a-native-final/wayland-p4-seg/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p4-interior-line-split.hwp",
+          "sha256": "47b1fe2d29da08a4e60c322a8b815b5211243e551587b84bcff9f71c6e044894",
+          "saveRevision": 3,
+          "reopened": "ready"
+        },
+        {
+          "file": "a-p4-interior-line.hwp",
+          "sha256": "69188240841b69c3e8970394479a22faff34b7ea4e2eba19e5bfbccccca48e6a",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p4-curve-interior-original.hwp",
+          "fixtureSha256": "b33767b964bb3331c71416d0c3c29c6c332521a9703ec0412ede8b31bd04930f"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-wayland-p4-seg/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      },
+      "trustedWaylandEvents": 39,
+      "westonExit": 0
+    },
+    {
+      "feature": "P5-TB-RANGE",
+      "platform": "Linux Wayland",
+      "result": "PASS",
+      "checks": "Delete a selected range across three textbox paragraphs, Undo/Redo, safe save, independent XML and engine inspection, app reopen.",
+      "harness": "scripts/tests/native-stage3a-wayland.py",
+      "rawEvidence": "target/stage3a-native-final/wayland-p5-range/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p5-textbox-range-published.hwpx",
+          "sha256": "7e4a6a433c7eb3c1a0467693c38fbfaad468894c388a7f17f43f715b84a8e8b9",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p5-textbox-range-original.hwpx",
+          "fixtureSha256": "e99448f289e09adcfdb4ec7e7555f3d1de4066feba6e436936be77c72c409340"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-wayland-p5-range/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      },
+      "trustedWaylandEvents": 43,
+      "westonExit": 0
+    },
+    {
+      "feature": "P6-HX-CAP-RIGHT",
+      "platform": "Linux Wayland",
+      "result": "PASS",
+      "checks": "Right-side floating caption and Bottom vertical alignment, Undo/Redo, safe save, renderer placement, XML and image bytes, app reopen.",
+      "harness": "scripts/tests/native-stage3a-wayland.py",
+      "rawEvidence": "target/stage3a-native-final/wayland-p6-cap/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p6-caption-right-published.hwpx",
+          "sha256": "4b2e9a76b0a565df1d366e8992f5332bf757bb167ecb84b28112635bf52aa294",
+          "saveRevision": 6,
+          "reopened": "ready",
+          "fixture": "a-p6-caption-right-original.hwpx",
+          "fixtureSha256": "e3bc9f191f54d8ab42533465f0efddc17bbdedac2ff1d3f3d2d8404266e5ca4a"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-wayland-p6-cap/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      },
+      "trustedWaylandEvents": 22,
+      "westonExit": 0
+    },
+    {
+      "feature": "P6-DX-TYPE",
+      "platform": "Linux Wayland",
+      "result": "PASS",
+      "checks": "Trusted Properties click, Undo/Redo, unchanged frame, safe DOCX save, independent exact preset and OPC checks, reopened editable.",
+      "harness": "scripts/tests/native-stage3a-wayland.py",
+      "rawEvidence": "target/stage3a-native-final/wayland-p6-type/result.json",
+      "processAppSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+      "outputs": [
+        {
+          "file": "a-p6-round-rect-published.docx",
+          "sha256": "5cd0386f7472e57aa6bd41dd14094fe45c86777abad8de279fd632637db8510d",
+          "saveRevision": 3,
+          "reopened": "ready",
+          "fixture": "a-p6-round-rect-original.docx",
+          "fixtureSha256": "b4e3393e7b8aa3052f38dd72020e93aa53cc1c416eae5af7fa173afeae621541"
+        }
+      ],
+      "cleanup": {
+        "rawEvidence": "target/stage3a-native-final/session-wayland-p6-type/cleanup.json",
+        "proven": true,
+        "filesystemProven": true
+      },
+      "trustedWaylandEvents": 15,
+      "westonExit": 0
+    }
+  ],
+  "otherPlatformResults": {
+    "Windows": "NOT RUN — Windows Native environment unavailable.",
+    "macOS": "NOT RUN — macOS Native environment unavailable."
+  },
+  "waylandNotRun": [
+    "P4-H5-POLY-EDGES",
+    "P5-TB-REPLACE"
+  ],
+  "stage3a": "PARTIALLY COMPLETED",
+  "acceptanceCommands": {
+    "linuxX11": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 <X11 harness> --out <result> --fixtures target/stage3a-native-final/fixtures --app src-tauri/target/release/geul --xdotool @XDOTOOL@ --ibus @IBUS@ --cases <features>",
+    "linuxWayland": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-wayland.py --out <result> --fixtures target/stage3a-native-final/fixtures --app src-tauri/target/release/geul --xdotool @XDOTOOL@ --ibus @IBUS@ --weston <Weston 15> --case <feature>"
+  }
+}

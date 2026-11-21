@@ -1,7 +1,7 @@
 {
   "baselineHead": "59e27f60593439cfaac1eae1b9455c889663e93e",
   "feature": "P6-DX-TYPE (roundRect to rect)",
-  "status": "IMPLEMENTED_UNVERIFIED",
+  "status": "IMPLEMENTED_VERIFIED",
   "wordcraftCommit": "b2c974369dd02d322a5498db484bcf96906dad15",
   "rhwpRelease": {
     "generation": "b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c",
@@ -25,10 +25,23 @@
     "edited": "5cd0386f7472e57aa6bd41dd14094fe45c86777abad8de279fd632637db8510d"
   },
   "native": {
-    "linuxX11": "NOT RUN",
-    "linuxWayland": "NOT RUN",
+    "linuxX11": {
+      "result": "PASS",
+      "cases": [
+        "P6-DX-TYPE"
+      ]
+    },
+    "linuxWayland": {
+      "result": "PASS",
+      "cases": [
+        "P6-DX-TYPE"
+      ]
+    },
     "windows": "NOT RUN — environment unavailable",
-    "macOS": "NOT RUN — environment unavailable"
+    "macOS": "NOT RUN — environment unavailable",
+    "appSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+    "evidence": "stage3-a-native-p4-p5-p6-acceptance.json"
   },
-  "evidence": "target/stage3a-p6-round-rect/"
+  "evidence": "target/stage3a-p6-round-rect/",
+  "implementationCommit": "778573e874db221e68765c86b9608d4889990e86"
 }

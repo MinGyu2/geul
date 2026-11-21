@@ -1,7 +1,7 @@
 {
   "baselineHead": "5816bdc573b8bfbcac958a70425b888fae4628b4",
   "feature": "P5-TB-REPLACE (HWPX plain clipboard subset)",
-  "status": "IMPLEMENTED_UNVERIFIED",
+  "status": "IMPLEMENTED_VERIFIED",
   "supported": "Plain clipboard text, including multiple nonempty resulting paragraphs, replaces a selection spanning compatible paragraphs within one owned HWPX body textbox. The new paragraphs inherit the starting paragraph shape and style.",
   "refused": "Stale clipboard owner or selection, incompatible paragraph shapes or styles, fields and nested controls, IME replacement across paragraphs, HWP5, tabs, blank result paragraphs, and resulting textbox count above 64.",
   "release": {
@@ -26,10 +26,18 @@
     "edited": "773e50867b18e93953bb8926766b185a5b31d0977d1b95e8fae4aee3a22dca19"
   },
   "native": {
-    "linuxX11": "NOT RUN",
+    "linuxX11": {
+      "result": "PASS",
+      "cases": [
+        "P5-TB-REPLACE"
+      ]
+    },
     "linuxWayland": "NOT RUN",
     "windows": "NOT RUN — environment unavailable",
-    "macOS": "NOT RUN — environment unavailable"
+    "macOS": "NOT RUN — environment unavailable",
+    "appSha256": "1fac27cdc2fc965fecf05d0963e27986355570e9060807d2bfd611c7d454fd35",
+    "evidence": "stage3-a-native-p4-p5-p6-acceptance.json"
   },
-  "evidence": "target/stage3a-p5-textbox-paste/"
+  "evidence": "target/stage3a-p5-textbox-paste/",
+  "implementationCommit": "59e27f60593439cfaac1eae1b9455c889663e93e"
 }

@@ -147,9 +147,10 @@ def paste_polygon(acc, row, fixtures, out, fmt):
         h.require(acc.d.exists("[data-testid='object-handle-se']"), "converted drawing is not editable")
 
 
-def preset(acc, row, fixtures, out):
-    fixture = fixtures / "a-p6-rect-original.docx"
-    path = h.begin(acc, row, fixture, out, "a-p6-ellipse-edited.docx")
+def preset(acc, row, fixtures, out, rounded=False):
+    fixture = fixtures / ("a-p6-round-rect-original.docx" if rounded else "a-p6-rect-original.docx")
+    output = "a-p6-round-rect-published.docx" if rounded else "a-p6-ellipse-edited.docx"
+    path = h.begin(acc, row, fixture, out, output)
     selector = "[aria-labelledby=properties-selection] .object-tools button:enabled"
 
     def pick_shape(label):
@@ -159,30 +160,42 @@ def preset(acc, row, fixtures, out):
         acc.wait("return [...document.querySelectorAll(arguments[0])].some(b=>b.textContent.trim()===arguments[1])", selector,label)
 
     ellipse, rect = "타원으로 변경","사각형으로 변경"
-    pick_shape(ellipse)
+    before_label, after_label = (rect, ellipse) if rounded else (ellipse, rect)
+    pick_shape(before_label)
     start = h.frame(acc)
+    acc.d.js("""
+      const label=arguments[0];
+      window.presetClicks=[];
+      addEventListener('click', e => {
+        if (e.target.closest('button')?.textContent.trim() === label) presetClicks.push(e.isTrusted);
+      }, true);
+    """, before_label)
     point = acc.d.js("""
       const b=[...document.querySelectorAll(arguments[0])].find(b=>b.textContent.trim()===arguments[1]);
       b.scrollIntoView({block:'nearest'});
       const r=b.getBoundingClientRect();
       return [r.left+r.width/2,r.top+r.height/2];
-    """, selector, ellipse)
+    """, selector, before_label)
     h.p4.rhwp_poc.click(acc.d, *point)
     h.revision(acc, "docx", 1)
+    row["trustedClicks"] = acc.d.js("return window.presetClicks")
+    h.require(row["trustedClicks"] == [True], "missing trusted preset click", row["trustedClicks"])
     h.require(h.frame(acc) == start, "conversion moved or resized the frame")
     acc.key("ctrl+z")
     h.revision(acc, "docx", 2)
-    pick_shape(ellipse)
+    pick_shape(before_label)
     acc.key("ctrl+y")
     h.revision(acc, "docx", 3)
-    pick_shape(rect)
+    pick_shape(after_label)
     h.publish(acc, "docx", row)
     verify_other_parts(fixture,path,lambda name: name=="word/document.xml")
     old,new=docx_root(fixture),docx_root(path)
-    old.find(f".//{A}prstGeom").set("prst","ellipse")
+    geometry = old.find(f".//{A}prstGeom")
+    h.require(geometry.get("prst") == ("roundRect" if rounded else "rect"), "unexpected source preset")
+    geometry.set("prst","rect" if rounded else "ellipse")
     h.require(ET.tostring(old)==ET.tostring(new), "more than the shape preset changed")
     h.reopen(acc,path,row)
-    pick_shape(rect)
+    pick_shape(after_label)
 
 
 def caption(acc, row, fixtures, out):
@@ -321,6 +334,7 @@ def caption_lateral(acc, row, fixtures, out, side, align):
 h.CASES = {
     "P6.1": lambda *args: paste_polygon(*args, "hwpx"),
     "P6.2-type": preset,
+    "P6-DX-TYPE": lambda *args: preset(*args, rounded=True),
     "P6.2-format": lambda *args: paste_polygon(*args, "docx"),
     "P6.3": caption,
     "P6.7": caption_spacing,
