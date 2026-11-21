@@ -91,6 +91,14 @@ def docx_curve_select_shape(acc):
     h.require(False, "native pointer could not select the DrawingML shape")
 
 
+def docx_curve_enter_path_mode(acc):
+    docx_curve_select_shape(acc)
+    if not acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"):
+        acc.dom_click(".object-path-mode")
+    h.require(acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"),
+              "native path edit mode did not activate")
+
+
 def docx_curve_handle(acc, testid):
     selector = f'[data-testid="{testid}"]'
     h.require(acc.d.exists(selector), "DrawingML control handle missing", testid)
@@ -102,15 +110,16 @@ def docx_curve_handle(acc, testid):
     """)
 
 
-def docx_curve_drag(acc, testid, dx, dy):
-    selector = f'[data-testid="{testid}"]'
-    h.require(acc.d.exists(selector), "DrawingML drag handle missing", testid)
-    x, y = acc.d.js("""
-      const r=document.querySelector(arguments[0]).getBoundingClientRect();
-      return [r.left+r.width/2,r.top+r.height/2];
-    """, selector)
-    sx, sy = acc.d.pointer_scale
-    h.p4.rhwp_poc.drag(acc.d, (x*sx,y*sy), ((x+dx)*sx,(y+dy)*sy))
+def docx_curve_set_coordinates(acc, target):
+    for selector, value in zip((
+        ".object-path-coordinates label:nth-of-type(1) input",
+        ".object-path-coordinates label:nth-of-type(2) input",
+    ), target, strict=True):
+        acc.dom_click(selector)
+        acc.key("ctrl+a")
+        acc.type(str(value))
+        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", selector, str(value))
+    acc.dom_click(".object-path-coordinates button[type=submit]")
 
 
 def docx_curve_case(acc, row, fixtures, out):
@@ -119,44 +128,50 @@ def docx_curve_case(acc, row, fixtures, out):
     h.require([item["commands"][1]["type"] for item in before["paths"]] == ["quadBezTo", "cubicBezTo"],
               "native fixture must retain quadratic and cubic commands", before["paths"])
     path = h.begin(acc, row, fixture, out, "p4-dx-curve-edited.docx")
-    docx_curve_select_shape(acc)
-    acc.dom_click(".object-path-mode")
+    docx_curve_enter_path_mode(acc)
     h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 7,
               "expected move, quadratic, and cubic control handles")
     acc.d.js("""
       window.docxCurvePointers=[];
+      window.docxCurveKeys=[];
       for (const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
         if (e.target.matches('.object-path-point'))
           docxCurvePointers.push({type,testid:e.target.dataset.testid,trusted:e.isTrusted});
+      },true);
+      addEventListener('keydown',e=>{
+        if (e.target.closest('.object-path-coordinates')) docxCurveKeys.push({key:e.key,trusted:e.isTrusted});
       },true);
     """)
 
     control_updates = []
     for index, (testid, command_type, point_index) in enumerate((
         ("docx-path-point-0-1-0", "quadBezTo", 0),
-        ("docx-path-point-1-1-0", "cubicBezTo", 0),
+        ("docx-path-point-1-1-1", "cubicBezTo", 1),
     ), 1):
         original = docx_curve_handle(acc, testid)
         expected_original = [
             int(before["paths"][index-1]["commands"][1]["points"][point_index][axis]) for axis in ("x", "y")
         ]
         h.require(original == expected_original, "selected handle did not match the source control point", [original, expected_original])
-        docx_curve_drag(acc, testid, 12, 9)
+        moved = [original[0] + 20_000, original[1] + 10_000]
+        docx_curve_set_coordinates(acc, moved)
         h.revision(acc, "docx", index * 3 - 2)
-        moved = docx_curve_handle(acc, testid)
-        h.require(moved != original and moved[0] > original[0] and moved[1] > original[1],
-                  f"{command_type} control point did not move", [original, moved])
+        actual = docx_curve_handle(acc, testid)
+        h.require(actual == moved, f"{command_type} control point did not update through its coordinate editor", [moved, actual])
         events = acc.d.js("return window.docxCurvePointers")
-        h.require(events[-2:] == [
-            {"type": "pointerdown", "testid": testid, "trusted": True},
-            {"type": "pointerup", "testid": testid, "trusted": True},
-        ], "control point drag was not a trusted native pointer gesture", events)
+        h.require(any(e == {"type": "pointerdown", "testid": testid, "trusted": True} for e in events)
+                  and any(e == {"type": "pointerup", "testid": testid, "trusted": True} for e in events),
+                  "control point was not selected with trusted native pointer input", events)
+        keys = acc.d.js("return window.docxCurveKeys")
+        h.require(keys and all(event["trusted"] for event in keys), "coordinate edits did not use trusted native keyboard input", keys)
         acc.key("ctrl+z")
-        h.revision(acc, index * 3 - 1)
+        h.revision(acc, "docx", index * 3 - 1)
+        docx_curve_enter_path_mode(acc)
         restored = docx_curve_handle(acc, testid)
         h.require(restored == original, "Undo did not restore exact source control point", [restored, original])
         acc.key("ctrl+y")
-        h.revision(acc, index * 3)
+        h.revision(acc, "docx", index * 3)
+        docx_curve_enter_path_mode(acc)
         redone = docx_curve_handle(acc, testid)
         h.require(redone == moved, "Redo did not restore exact edited control point", [redone, moved])
         control_updates.append({"command": command_type, "testid": testid, "before": original, "after": moved})
@@ -170,7 +185,7 @@ def docx_curve_case(acc, row, fixtures, out):
     })
     expected_ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
     quad = expected_geometry.find("a:pathLst/a:path[1]/a:quadBezTo/a:pt[1]", expected_ns)
-    cubic = expected_geometry.find("a:pathLst/a:path[2]/a:cubicBezTo/a:pt[1]", expected_ns)
+    cubic = expected_geometry.find("a:pathLst/a:path[2]/a:cubicBezTo/a:pt[2]", expected_ns)
     for target, update in zip((quad, cubic), control_updates, strict=True):
         target.set("x", str(update["after"][0]))
         target.set("y", str(update["after"][1]))
@@ -181,9 +196,8 @@ def docx_curve_case(acc, row, fixtures, out):
     row["savedDrawingMl"] = after["paths"]
     row["controlUpdates"] = control_updates
     row["unchangedPackageParts"] = len(before["parts"])
-    reopen(acc, path, row)
-    docx_curve_select_shape(acc)
-    acc.dom_click(".object-path-mode")
+    h.reopen(acc, path, row)
+    docx_curve_enter_path_mode(acc)
     for update in control_updates:
         actual = docx_curve_handle(acc, update["testid"])
         h.require(actual == update["after"], "saved control point did not reopen in the native editor", [update, actual])

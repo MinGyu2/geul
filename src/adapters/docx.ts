@@ -1,5 +1,5 @@
 import { parseGraphicProperties } from "../commands/graphicProperties";
-import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type MutatingObjectOperation, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape, type ShapeProperties } from "../commands/objectSelection";
+import { BASIC_SHAPES, MUTATING_OBJECT_OPERATIONS, OBJECT_KINDS, PICTURE_WRAPS, type DrawingMlShapePath, type MutatingObjectOperation, type ObjectEdit, type ObjectHit, type PictureProperties, type BasicShape, type ShapeProperties } from "../commands/objectSelection";
 // WordCraft(DOCX) 세션 백엔드 클라이언트(T008, W-A). Tauri 명령 docx_load·docx_view·docx_edit·docx_render·docx_roundtrip을
 // 부른다(Rust `src-tauri/src/adapters/wordcraft/`와 직렬화 형식이 같아야 한다).
 //
@@ -644,6 +644,53 @@ function parsePictureView(raw: unknown): PictureProperties | null {
   return { widthPt, heightPt, wrap, crop: crop as [number, number, number, number], ...(typeof description === "string" ? { description } : {}) };
 }
 
+const DRAWINGML_PATH_COMMANDS = ["moveTo", "lnTo", "quadBezTo", "cubicBezTo", "close"] as const;
+const MAX_DRAWINGML_PATHS = 256;
+const MAX_DRAWINGML_POINTS = 5_000;
+const MAX_DRAWINGML_COORDINATE = 1_000_000_000_000;
+
+function parseDrawingMlPaths(raw: unknown): DrawingMlShapePath[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_DRAWINGML_PATHS) return null;
+  const paths: DrawingMlShapePath[] = [];
+  let segmentCount = 0, pointCount = 0;
+  for (const path of raw) {
+    if (!isRecord(path) || !hasExactly(path, ["viewportWidth", "viewportHeight", "segments"])) return null;
+    const { viewportWidth, viewportHeight, segments } = path;
+    if (!Number.isSafeInteger(viewportWidth) || !Number.isSafeInteger(viewportHeight)
+      || (viewportWidth as number) < 1 || (viewportHeight as number) < 1
+      || (viewportWidth as number) > MAX_DRAWINGML_COORDINATE || (viewportHeight as number) > MAX_DRAWINGML_COORDINATE
+      || !Array.isArray(segments) || segments.length === 0) return null;
+    segmentCount += segments.length;
+    if (segmentCount > MAX_DRAWINGML_POINTS) return null;
+    const parsedSegments: DrawingMlShapePath["segments"][number][] = [];
+    for (const segment of segments) {
+      if (!isRecord(segment) || !hasExactly(segment, ["command", "points"])) return null;
+      const command = DRAWINGML_PATH_COMMANDS.find((name) => name === segment.command);
+      if (!command || !Array.isArray(segment.points)) return null;
+      const pointLimit = command === "moveTo" || command === "lnTo" ? 1
+        : command === "quadBezTo" ? 2 : command === "cubicBezTo" ? 3 : 0;
+      if (segment.points.length !== pointLimit) return null;
+      const parsedPoints: DrawingMlShapePath["segments"][number]["points"][number][] = [];
+      for (const [index, point] of segment.points.entries()) {
+        if (!isRecord(point) || !hasExactly(point, ["x", "y", "control"])) return null;
+        const { x, y, control } = point;
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)
+          || (x as number) < 0 || (y as number) < 0
+          || (x as number) > (viewportWidth as number) || (y as number) > (viewportHeight as number)
+          || typeof control !== "boolean") return null;
+        const isControl = command === "quadBezTo" && index === 0 || command === "cubicBezTo" && index < 2;
+        if (control !== isControl) return null;
+        parsedPoints.push({ x: x as number, y: y as number, control });
+      }
+      pointCount += parsedPoints.length;
+      if (pointCount > MAX_DRAWINGML_POINTS) return null;
+      parsedSegments.push({ command, points: parsedPoints });
+    }
+    paths.push({ viewportWidth: viewportWidth as number, viewportHeight: viewportHeight as number, segments: parsedSegments });
+  }
+  return paths;
+}
+
 function parseDocxBaseView(value: unknown): DocxView | null {
   if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["object", "selectionText", "paragraphStyle", "clipboardTextAvailable", "clipboardTableCellsAvailable", "imageInsertionAllowed", "drawingInsertionAllowed", "textBoxEditing", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
@@ -671,7 +718,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : []), ...("convertShape" in raw ? ["convertShape"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : []), ...("convertShape" in raw ? ["convertShape"] : []), ...("drawingMlPaths" in raw ? ["drawingMlPaths"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -700,6 +747,12 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       if (!shape || (kind !== "shape" && kind !== "textBox")) return null;
       object.shape = shape;
     }
+    if ("drawingMlPaths" in raw) {
+      const drawingMlPaths = parseDrawingMlPaths(raw.drawingMlPaths);
+      if (kind !== "shape" || !drawingMlPaths) return null;
+      object.drawingMlPaths = drawingMlPaths;
+    }
+    if (operations.includes("pathPoint") && !object.drawingMlPaths) return null;
     if ("clipboardShape" in raw) {
       const shapeView = raw.clipboardShape;
       if (kind !== "shape" || !isRecord(shapeView) || !hasExactly(shapeView, ["shape", "cutAllowed"])

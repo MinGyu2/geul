@@ -6278,6 +6278,12 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
     let original = io::save_bytes("fixture.docx", &seed.doc).unwrap();
 
     let mut model = DocxModel::open(&original).unwrap();
+    assert!(model.render_png(0, 1.0).is_some(), "a document with editable DrawingML Bézier paths renders");
+    if let Some(path) = std::env::var_os("GEUL_STAGE3_DOCX_CURVE_FIXTURE") {
+        let bytes = std::fs::read(path).expect("generated Native DOCX fixture");
+        let mut parsed = DocxModel::open(&bytes).expect("generated Native DOCX fixture parses in WordCraft");
+        assert!(parsed.render_png(0, 1.0).is_some(), "generated quadratic/cubic fixture renders");
+    }
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
     let hit = reader.layout().find_object(0, |_| true).unwrap();
     let select = DocxOp::Pointer {

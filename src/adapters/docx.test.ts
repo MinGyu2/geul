@@ -98,6 +98,31 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxState({ session: { ...session, format: "hwp", engine: "rhwp" }, view }, 3)).toBeNull();
   });
 
+  it("accepts bounded editable DrawingML paths and rejects malformed path data", () => {
+    const drawingMlPaths = [{ viewportWidth: 1000, viewportHeight: 500, segments: [
+      { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+      { command: "quadBezTo", points: [{ x: 100, y: 100, control: true }, { x: 200, y: 200, control: false }] },
+      { command: "close", points: [] },
+    ] }];
+    const originalPath = drawingMlPaths[0]!;
+    const shape = {
+      kind: "shape", position: "body:0:0", frame: { page: 0, x: 72, y: 72, width: 100, height: 50 }, epoch: 1,
+      operations: ["pathPoint"], shape: { fill: null, outline: "112233", outlineWidth: 1, rotation: 0,
+        flipH: false, flipV: false, widthPt: 100, heightPt: 50 }, drawingMlPaths,
+    };
+    const selected = { ...view, caret: null, object: shape };
+    expect(parseDocxView(selected)?.object?.drawingMlPaths).toEqual(drawingMlPaths);
+    expect(parseDocxView({ ...selected, object: { ...shape, drawingMlPaths: undefined } })).toBeNull();
+    expect(parseDocxView({ ...selected, object: { ...shape, drawingMlPaths: [{ ...originalPath, extra: true }] } })).toBeNull();
+    expect(parseDocxView({ ...selected, object: { ...shape, drawingMlPaths: [{ ...originalPath, viewportWidth: 0 }] } })).toBeNull();
+    expect(parseDocxView({ ...selected, object: { ...shape, drawingMlPaths: [{ ...originalPath, segments: [
+      ...originalPath.segments.slice(0, 1), { command: "arcTo", points: [] },
+    ] }] } })).toBeNull();
+    expect(parseDocxView({ ...selected, object: { ...shape, drawingMlPaths: [{ ...originalPath, segments: [
+      { command: "quadBezTo", points: [{ x: 1001, y: 100, control: true }, { x: 200, y: 200, control: false }] },
+    ] }] } })).toBeNull();
+  });
+
   it("편집 응답: 실행 수 + 거부 수 = 보낸 연산 수, 거부 위치는 범위 안", () => {
     expect(parseDocxEdited({ session, view, applied: 2, rejected: [1] }, 3, 3)?.rejected).toEqual([1]);
     expect(parseDocxEdited({ session, view, applied: 3, rejected: [] }, 3, 3)?.applied).toBe(3);
