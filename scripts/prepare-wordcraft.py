@@ -23,7 +23,8 @@ MARGINS_PIN = "34d85b9a42153e161d9327a6e0422dfe82c24cc8"
 HEADERS_PIN = "f42cd16c06d59c1e951c2475ec824f593887650b"
 TABLE_BOUNDS_PIN = "b2c974369dd02d322a5498db484bcf96906dad15"
 DOCX_BEZIER_PIN = "3ce76d137b6ac0c0e0dcabd44270d9858c7264b5"
-PIN = DOCX_BEZIER_PIN
+DOCX_PATH_PIN = "656ae2b443004e589675070c0cd092587a1dd89c"
+PIN = DOCX_PATH_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -37,6 +38,7 @@ STEPS = [
     (MARGINS_PIN, HEADERS_PIN, "patches/wordcraft/docx-table-headers-pagination.patch", "patches/wordcraft/docx-table-headers-pagination.commit"),
     (HEADERS_PIN, TABLE_BOUNDS_PIN, "patches/wordcraft/docx-table-clipboard-bounds.patch", "patches/wordcraft/docx-table-clipboard-bounds.commit"),
     (TABLE_BOUNDS_PIN, DOCX_BEZIER_PIN, "patches/wordcraft/docx-drawingml-bezier.patch.b64", "patches/wordcraft/docx-drawingml-bezier.commit"),
+    (DOCX_BEZIER_PIN, DOCX_PATH_PIN, "patches/wordcraft/docx-path-vertices.patch.b64", "patches/wordcraft/docx-path-vertices.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]
