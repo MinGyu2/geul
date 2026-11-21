@@ -1494,9 +1494,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private joinOwnedTextBoxParagraphs(from: DocPosition, to: DocPosition): boolean {
     const { doc, text } = this;
     const box = from.cell;
+    const first = paragraphOf(from), last = paragraphOf(to);
     if (this.objectSelection || !box?.textBox || !to.cell?.textBox || !doc?.canJoinTextBoxParagraphs
       || !doc.getShapeProperties || !text || this.imeUnsettled || this.sessions.get(this.sessionId)?.format !== "hwpx"
-      || !sameContext(from, to) || paragraphOf(to) !== paragraphOf(from) + 1
+      || !sameContext(from, to) || last <= first || last >= 64
       || !this.ownsPosition(from) || !this.ownsPosition(to)) return false;
     const address = [from.section, box.parentParagraph, box.control] as const;
     const left = text.textBoxParagraph(from), right = text.textBoxParagraph(to);
@@ -1507,19 +1508,23 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (expectedLength < 1 || expectedLength > 65_536) return false;
     let count: number, geometry: string;
     try {
-      if (!doc.canJoinTextBoxParagraphs(...address, paragraphOf(from))) return false;
+      // Every paragraph removed by this range must pass the same engine proof,
+      // including paragraphs the selection covers in full.
+      for (let paragraph = first; paragraph < last; paragraph += 1) {
+        if (!doc.canJoinTextBoxParagraphs(...address, paragraph)) return false;
+      }
       count = text.paragraphCount(from);
       geometry = doc.getShapeProperties(...address);
     } catch { return false; }
     const expectedText = Array.from(left.text).slice(0, from.offset).join("")
       + Array.from(right.text).slice(to.offset).join("");
     return this.mutate(() => {
-      text.joinTextBoxParagraphs(from, to, left.styles.length);
+      text.joinTextBoxParagraphs(from, to);
       const joined = text.textBoxParagraph(from);
       if (!joined || joined.properties !== left.properties || joined.text !== expectedText
         || joined.styles.length !== expectedLength
         || joined.styles.some((style, i) => style !== (i < from.offset ? left.styles[i] : right.styles[i - from.offset + to.offset]))
-        || text.paragraphCount(from) !== count - 1 || doc.getShapeProperties!(...address) !== geometry
+        || text.paragraphCount(from) !== count - (last - first) || doc.getShapeProperties!(...address) !== geometry
         || !this.ownsPosition(from)) throw new Error("text box join did not preserve content or ownership");
       return from;
     }, true, "other", null, true, true);

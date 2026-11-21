@@ -189,10 +189,11 @@ def textbox(acc, row, fixtures, out):
     h.require(h.core_shapes(path)["frames"][0]["props"] == after["shape"], "published textbox did not reopen")
 
 
-def textbox_join(acc, row, fixtures, out):
-    fixture = fixtures / "a-p5-textbox-join-original.hwpx"
+def textbox_join(acc, row, fixtures, out, span=2):
+    name = "a-p5-textbox-join" if span == 2 else "a-p5-textbox-range"
+    fixture = fixtures / f"{name}-original.hwpx"
     before = row["before"] = inspect_box(fixture)
-    path = h.begin(acc, row, fixture, out, "a-p5-textbox-join-published.hwpx")
+    path = h.begin(acc, row, fixture, out, f"{name}-published.hwpx")
     positions = h.inspect_rhwp(fixture, """
       const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
       const addr=[0,owner.para,owner.controlIndex,0];
@@ -213,32 +214,36 @@ def textbox_join(acc, row, fixtures, out):
                            {"type":"pointerDown","button":0},{"type":"pointerUp","button":0},
                            {"type":"pause","duration":40},{"type":"pointerDown","button":0},{"type":"pointerUp","button":0}]}])
 
-    place(positions[0])
-    h.require(acc.status("hwpx")["caret"].endswith("/0/2") and ":0@textbox/" in acc.status("hwpx")["caret"],
-              "did not own the right textbox paragraph boundary", acc.status("hwpx"))
-    acc.key("BackSpace")
-    h.revision(acc, "hwpx", 1)
-    acc.text_is("hwpx", "Bold plain")
-    acc.key("ctrl+z")
-    h.revision(acc, "hwpx", 2)
+    revision = 0
+    if span == 2:
+        place(positions[0])
+        h.require(acc.status("hwpx")["caret"].endswith("/0/2") and ":0@textbox/" in acc.status("hwpx")["caret"],
+                  "did not own the right textbox paragraph boundary", acc.status("hwpx"))
+        acc.key("BackSpace")
+        h.revision(acc, "hwpx", 1)
+        acc.text_is("hwpx", "Bold plain")
+        acc.key("ctrl+z")
+        h.revision(acc, "hwpx", 2)
+        revision = 2
     place(positions[1])
-    for _ in range(6):
+    for _ in range(6 + sum(1 + len(p["text"]) for p in before["paragraphs"][2:span])):
         acc.key("shift+Right")
-    h.require(acc.status("hwpx")["selection"] and acc.status("hwpx")["caret"].endswith("/0/2")
+    h.require(acc.status("hwpx")["selection"] and acc.status("hwpx")["caret"].endswith(f"/0/{span}")
               and ":2@textbox/" in acc.status("hwpx")["caret"], "did not make a cross-paragraph selection", acc.status("hwpx"))
     acc.key("Delete")
-    h.revision(acc, "hwpx", 3)
+    h.revision(acc, "hwpx", revision + 1)
     acc.text_is("hwpx", "Boain")
     acc.key("ctrl+z")
-    h.revision(acc, "hwpx", 4)
+    h.revision(acc, "hwpx", revision + 2)
+    acc.text_is("hwpx", "plain")
     acc.key("ctrl+y")
-    h.revision(acc, "hwpx", 5)
+    h.revision(acc, "hwpx", revision + 3)
     acc.text_is("hwpx", "Boain")
     h.publish(acc, "hwpx", row)
 
     after = row["after"] = inspect_box(path)
     old = before["paragraphs"]
-    expected = [old[0], {**old[1], "text":"Boain", "runs":[[0,2,1],[2,5,2]]}, old[3]]
+    expected = [old[0], {**old[1], "text":"Boain", "runs":[[0,2,1],[2,5,2]]}, old[span + 1]]
     h.require(after["paragraphs"] == expected and after["shape"] == before["shape"] and after["body"] == before["body"],
               "text, retained formatting or owner differs", after)
     with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
@@ -247,7 +252,7 @@ def textbox_join(acc, row, fixtures, out):
                                       if part != section and not part.startswith("Preview/")}
         h.require(unrelated(original) == unrelated(published), "unrelated HWPX parts changed")
         roots = [ET.fromstring(package.read(section)) for package in (original,published)]
-        for root,count in zip(roots,(2,1),strict=True):
+        for root,count in zip(roots,(span,1),strict=True):
             sub = root.find(".//{*}drawText/{*}subList")
             for para in sub.findall("{*}p")[1:1+count]:
                 sub.remove(para)
@@ -256,11 +261,13 @@ def textbox_join(acc, row, fixtures, out):
                     para.remove(layout)
         h.require(ET.tostring(roots[0]) == ET.tostring(roots[1]), "unrelated section XML changed")
     h.reopen(acc, path, row)
-    h.require(inspect_box(path)["paragraphs"] == expected, "reopened file no longer matches")
+    place(positions[1])
+    acc.text_is("hwpx", "Boain")
 
 
 
-h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join}
+h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
+           "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
 
 if __name__ == "__main__":
     sys.exit(h.main())

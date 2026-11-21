@@ -269,7 +269,7 @@ print(json.dumps(dict(section=ET.tostring(root, encoding="unicode"), points=poin
 `], { input: bytes, encoding: "utf8" }));
 }
 
-function mixedTextBoxFixture(splitForJoin = false): { bytes: Uint8Array; control: number } {
+function mixedTextBoxFixture(joinRange?: 2 | 3 | "differentMiddle"): { bytes: Uint8Array; control: number } {
   const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
   try {
     const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
@@ -287,7 +287,12 @@ function mixedTextBoxFixture(splitForJoin = false): { bytes: Uint8Array; control
     fixture.applyCharFormatInCell!(...address, 1, 5, 10, '{"italic":true}');
     fixture.splitParagraphInCell(...address, 1, 10);
     fixture.insertTextInCell(...address, 2, 0, "Trailing paragraph");
-    if (splitForJoin) fixture.splitParagraphInCell(...address, 1, 5);
+    if (joinRange) fixture.splitParagraphInCell(...address, 1, 5);
+    if (joinRange === 3 || joinRange === "differentMiddle") {
+      fixture.splitParagraphInCell(...address, 2, 0);
+      fixture.insertTextInCell(...address, 2, 0, "middle");
+      if (joinRange === "differentMiddle") fixture.applyParaFormatInCell!(...address, 2, '{"alignment":"right"}');
+    }
     return { bytes: fixture.exportHwpx(), control };
   } finally { fixture.free(); }
 }
@@ -2868,8 +2873,8 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
-  it("Stage 3-A joins compatible HWPX text box paragraphs and deletes an owned cross-paragraph selection", async () => {
-    const { bytes, control } = mixedTextBoxFixture(true);
+  it.each([2, 3] as const)("Stage 3-A deletes an owned selection spanning %i compatible HWPX text box paragraphs", async span => {
+    const { bytes, control } = mixedTextBoxFixture(span);
     const { editor, doc, confirm } = await setup("hwpx", bytes);
     const address = [0, 0, control, 0] as const;
     const point = (paragraph: number, offset: number, extend = false) => {
@@ -2884,34 +2889,41 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     });
     try {
       const before = paragraphs(doc);
-      expect(before.map(p => p.text)).toEqual(["First paragraph", "Bold ", "plain", "Trailing paragraph"]);
+      expect(before.map(p => p.text)).toEqual([
+        "First paragraph", "Bold ", ...(span === 3 ? ["middle"] : []), "plain", "Trailing paragraph",
+      ]);
       const shape = doc.getShapeProperties!(0, 0, control);
       const untouched = doc.exportHwpx();
       point(1, 0);
       expect(editor.backspace()).toBe(false); // Different paragraph format on the preceding paragraph.
+      point(0, 2);
+      point(span, 2, true);
+      expect(editor.deleteForward()).toBe(false); // An incompatible paragraph anywhere in the range.
       expect(editor.localRevision).toBe(0);
       expect(editor.hasUnpreservedChanges).toBe(false);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
       expect(doc.exportHwpx()).toEqual(untouched);
 
-      point(2, 0);
-      expect(editor.backspace()).toBe(true);
-      await confirm();
-      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 5 });
-      expect(paragraphs(doc)).toEqual([
-        before[0], { ...before[1], text: "Bold plain", runs: [[0, 4, 1], [4, 5, 0], [5, 10, 2]] }, before[3],
-      ]);
-      expect(editor.undo()).toBe(true);
-      await confirm();
-      expect(paragraphs(doc)).toEqual(before);
+      if (span === 2) {
+        point(2, 0);
+        expect(editor.backspace()).toBe(true);
+        await confirm();
+        expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 5 });
+        expect(paragraphs(doc)).toEqual([
+          before[0], { ...before[1], text: "Bold plain", runs: [[0, 4, 1], [4, 5, 0], [5, 10, 2]] }, before[3],
+        ]);
+        expect(editor.undo()).toBe(true);
+        await confirm();
+        expect(paragraphs(doc)).toEqual(before);
+      }
 
       point(1, 2);
-      point(2, 2, true);
+      point(span, 2, true);
       expect(editor.typeText("blocked")).toBe(false);
       expect(editor.deleteForward()).toBe(true);
       await confirm();
       expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 2 });
-      const after = [before[0], { ...before[1], text: "Boain", runs: [[0, 2, 1], [2, 5, 2]] }, before[3]];
+      const after = [before[0], { ...before[1], text: "Boain", runs: [[0, 2, 1], [2, 5, 2]] }, before[span + 1]];
       expect(paragraphs(doc)).toEqual(after);
       expect(editor.undo()).toBe(true);
       await confirm();
@@ -2930,11 +2942,30 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
           expect(reopened.getShapeProperties!(0, 0, control)).toBe(shape);
         } finally { reopened.free(); }
         if (out) {
-          writeFileSync(resolve(out, "a-p5-textbox-join-original.hwpx"), bytes);
-          writeFileSync(resolve(out, "a-p5-textbox-join-edited.hwpx"), output);
-          writeFileSync(resolve(out, "a-p5-textbox-join-report.json"), report);
+          const name = span === 2 ? "a-p5-textbox-join" : "a-p5-textbox-range";
+          writeFileSync(resolve(out, `${name}-original.hwpx`), bytes);
+          writeFileSync(resolve(out, `${name}-edited.hwpx`), output);
+          writeFileSync(resolve(out, `${name}-report.json`), report);
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A refuses a fully selected incompatible HWPX text box paragraph", async () => {
+    const { bytes, control } = mixedTextBoxFixture("differentMiddle");
+    const { editor, doc } = await setup("hwpx", bytes);
+    try {
+      const start = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 1, 2));
+      const end = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 3, 2));
+      const before = doc.exportHwpx();
+      expect(editor.pointAt(start.pageIndex, start.x + 0.1, start.y + start.height / 2, false)).toBe(true);
+      expect(editor.pointAt(end.pageIndex, end.x + 0.1, end.y + end.height / 2, true)).toBe(true);
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 3 }, offset: 2 });
+      expect(editor.deleteForward()).toBe(false);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(before);
     } finally { editor.dispose(); }
   });
 

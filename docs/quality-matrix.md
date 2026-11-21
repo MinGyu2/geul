@@ -398,7 +398,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 **Stage 3-A P5 문서 이야기와 복합 글상자 (2026-11-20) — PARTIAL_SUPPORT.** DOCX의 머리말·꼬리말·각주·미주에서 최상위 인라인 내장 그림의 대체 설명을 수정할 수 있다. HWPX의 지원 본문 글상자에서는 혼합 서식 문단 내부를 Enter로 분할할 수 있다. 네 DOCX 이야기와 HWPX 글상자를 Linux X11에서 각각 편집·Undo/Redo·게시하고, 별도 XML/엔진으로 검사한 뒤 앱에서 다시 열었다. 이야기 개체의 이동·크기·삭제, 다른 형식의 이야기 개체와 중첩 컨트롤은 범위 밖이다. [P5 수용 기록](architecture/stage3-a-p5-nested-story-acceptance.json)
 
-**P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. HWP5, 다른 문단 서식, 중첩 제어, 세 문단 이상에 걸친 범위 및 붙여넣기·IME 교체는 범위 밖이다. [P5.5 수용 기록](architecture/stage3-a-p5-textbox-join-acceptance.json)
+**P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. 같은 문단 모양·스타일의 일반 문단 세 개 이상에 걸친 키보드 삭제도 지원한다(글상자 최대 64문단). Linux X11에서 세 문단 선택과 Delete, Undo/Redo, 동기 게시, 독립 XML·RHWP 검사와 앱 재열기를 확인했다. HWP5, 다른 문단 서식과 중첩 제어, 여러 문단의 붙여넣기·IME 교체는 제외한다. [P5.5 수락 기록](architecture/stage3-a-p5-textbox-join-acceptance.json), [P5-TB-RANGE 수락 기록](architecture/stage3-a-p5-textbox-range-acceptance.json)
 
 
 **Stage 3-A P6 고급 개체 구조 (2026-11-20) — PARTIAL_SUPPORT.**
@@ -413,3 +413,5 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 | P6.4 SmartArt | 기존 DOCX 모델의 항목·단계·지원 레이아웃 편집 | 집중 WordCraft 재검증 PASS, 기존 X11 수용 재사용. 일반 다이어그램 편집, 노드별 스타일, 외부·공유 파트 편집은 남아 있다. |
 
 초기 P6 네 경로의 Linux X11 실제 조작, Undo/Redo, 안전 저장, 독립 저장본 검사 및 앱 재열기가 PASS했다. 이 수용 실행의 RHWP Release는 `5ca8f50d…`였다. 자세한 형식 조합, 실행 및 아티팩트는 [변환 조합](architecture/command-registry.md#stage-3-a-p6-구조-전송과-변환)과 [P6 수용 기록](architecture/stage3-a-p6-advanced-structure-acceptance.json)에 있다. Stage 3-A 및 Stage 3 전체 상태는 **PARTIALLY COMPLETED**다.
+
+최신 누락 기능, 안전 차단과 플랫폼 수락 의무는 [Stage 3-A 현행 인벤토리](architecture/stage3-a-current-inventory.md)에서 관리한다.

@@ -1315,14 +1315,10 @@ export class RhwpText {
     else this.doc.mergeParagraph(at.section, paragraph);
   }
 
-  joinTextBoxParagraphs(from: DocPosition, to: DocPosition, leftLength: number): void {
+  joinTextBoxParagraphs(from: DocPosition, to: DocPosition): void {
     const box = from.cell!;
-    const address = [from.section, box.parentParagraph, box.control, box.cell] as const;
-    if (to.offset > 0) this.nestedResult(this.doc.deleteTextInCell(...address, paragraphOf(to), 0, to.offset));
-    if (from.offset < leftLength) {
-      this.nestedResult(this.doc.deleteTextInCell(...address, paragraphOf(from), from.offset, leftLength - from.offset));
-    }
-    this.nestedResult(this.doc.mergeParagraphInCell(...address, paragraphOf(to)));
+    this.nestedResult(this.doc.deleteRangeInCell(from.section, box.parentParagraph, box.control, box.cell,
+      paragraphOf(from), from.offset, paragraphOf(to), to.offset));
   }
 
   /** 표의 셀 수(병합 셀 포함한 실제 셀 개수). */
