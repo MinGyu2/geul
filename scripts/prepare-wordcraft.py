@@ -4,6 +4,7 @@
 No remote writes, dirty source patches, local alternates, or replacement revisions.
 The ordinary external-integrity checks remain authoritative after preparation.
 """
+import base64
 import os
 from pathlib import Path
 import subprocess
@@ -20,7 +21,9 @@ DIMENSIONS_PIN = "cae8c33058e620c02704a2414600b9cb7ecf0867"
 CLIPBOARD_PIN = "76132b73fbe7b774f2fc3742634ee95e7dbb65ed"
 MARGINS_PIN = "34d85b9a42153e161d9327a6e0422dfe82c24cc8"
 HEADERS_PIN = "f42cd16c06d59c1e951c2475ec824f593887650b"
-PIN = "b2c974369dd02d322a5498db484bcf96906dad15"
+TABLE_BOUNDS_PIN = "b2c974369dd02d322a5498db484bcf96906dad15"
+DOCX_BEZIER_PIN = "3ce76d137b6ac0c0e0dcabd44270d9858c7264b5"
+PIN = DOCX_BEZIER_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -32,7 +35,8 @@ STEPS = [
     (DIMENSIONS_PIN, CLIPBOARD_PIN, "patches/wordcraft/docx-table-clipboard.patch", "patches/wordcraft/docx-table-clipboard.commit"),
     (CLIPBOARD_PIN, MARGINS_PIN, "patches/wordcraft/docx-table-margins-positioning.patch", "patches/wordcraft/docx-table-margins-positioning.commit"),
     (MARGINS_PIN, HEADERS_PIN, "patches/wordcraft/docx-table-headers-pagination.patch", "patches/wordcraft/docx-table-headers-pagination.commit"),
-    (HEADERS_PIN, PIN, "patches/wordcraft/docx-table-clipboard-bounds.patch", "patches/wordcraft/docx-table-clipboard-bounds.commit"),
+    (HEADERS_PIN, TABLE_BOUNDS_PIN, "patches/wordcraft/docx-table-clipboard-bounds.patch", "patches/wordcraft/docx-table-clipboard-bounds.commit"),
+    (TABLE_BOUNDS_PIN, DOCX_BEZIER_PIN, "patches/wordcraft/docx-drawingml-bezier.patch.b64", "patches/wordcraft/docx-drawingml-bezier.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]
@@ -60,7 +64,14 @@ def reconstruct(repo):
         with tempfile.TemporaryDirectory(prefix="geul-wordcraft-index-") as folder:
             env = {**os.environ, "GIT_INDEX_FILE": str(Path(folder) / "index")}
             git(repo, "read-tree", parent, env=env)
-            git(repo, "apply", "--cached", "--whitespace=error", str(ROOT / patch_rel), env=env)
+            patch_path = ROOT / patch_rel
+            if patch_path.name.endswith(".patch.b64"):
+                # Preserve exact upstream whitespace while keeping the patch artifact itself clean.
+                encoded = b"".join(patch_path.read_bytes().splitlines())
+                patch_bytes = base64.b64decode(encoded, validate=True)
+                patch_path = Path(folder) / "decoded.patch"
+                patch_path.write_bytes(patch_bytes)
+            git(repo, "apply", "--cached", "--whitespace=error", str(patch_path), env=env)
             tree = git(repo, "write-tree", env=env).strip()
         require(headers[0] == b"tree " + tree, f"WordCraft patched tree identity mismatch ({patch_rel})")
         actual = git(repo, "hash-object", "-w", "-t", "commit", "--stdin", input=commit).decode().strip()
