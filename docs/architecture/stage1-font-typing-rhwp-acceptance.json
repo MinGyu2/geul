@@ -3,6 +3,7 @@
   "issue": "S1-FONT-TYPING",
   "sourceHead": "123ce40d8dbe6151bfcd722597bd6b1e43a9be4e",
   "implementationCommit": "938d6638739b3d13d79fc436d0f16880e707e7e2",
+  "matchingSourceCommit": "0379a837a2933bb16556cc5e08a501c6cf16893f",
   "verificationBuildSha256": "b7e366162de885bdf04f435e57d96985c9a829cace3a6eba813962527a6ef9da",
   "buildChecks": {
     "privacyStatus": "PASS",

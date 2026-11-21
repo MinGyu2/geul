@@ -2,14 +2,14 @@
 
 업데이트: 2026-11-22 (Asia/Seoul)
 기준 저장소 시작 HEAD: `5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff`
-현재 기록 기준 HEAD: `123ce40d8dbe6151bfcd722597bd6b1e43a9be4e` 및 아래 P0 보완 작업 트리
+현재 기록 기준 HEAD: `0379a837a2933bb16556cc5e08a501c6cf16893f`
 범위: P0 회귀 1 + P4 9 + P5 13 + P6 16 = **39개** (A 24, B 14, 회귀 1). 이 원장은 사용자 지정 ID를 모두 유지한다. 기존 [현행 인벤토리](stage3-a-current-inventory.md)와 [품질 매트릭스](../quality-matrix.md)는 관련 역사·구현 정보를 계속 보존한다.
 
 `IMPLEMENTED_VERIFIED`는 명시된 기능과 해당 저장/Undo/Redo/재열기 조건을 실제로 확인한 경우에만 사용한다. `IN_PROGRESS`는 증거가 일부 있어도 요구사항의 일부가 빠져 있음을 뜻한다. `OPEN`은 이 요구사항 자체에 대한 완료 증명이 아직 없다는 뜻이며, 현재 코드에 관련 기능이 전혀 없다고 단정하지 않는다. Native 수락과 개발 구현은 별도로 기록한다.
 
 | ID | 범주 | 추적할 기능·안전 범위 | 구현 상태 | 기능·보존 증거 | Native | 커밋 집합 | 남은 경계 / 다음 확인 |
 |---|---|---|---|---|---|---|---|
-| S1-FONT-TYPING | 회귀 | DOCX/HWP/HWPX collapsed-caret 다음 입력 크기, IME, 선택 교체, 이동, Undo/Redo, T009 | IMPLEMENTED_VERIFIED | DOCX 기존 X11/IBus PASS. RHWP 선택 교체에서 첫 선택 문자 전체 모양 상속; 빈 취소의 페이지 레이아웃 rollback과 선행 입력 Undo 경계. Release WASM 5/5, RHWP 세션 22/22, typecheck PASS. [Stage 1 상세](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21--22), [RHWP Native·저장 증거](stage1-font-typing-rhwp-acceptance.json) | Linux X11/Xvfb + 실제 IBus Hangul DOCX run7, HWP run18, HWPX run18 PASS. Wayland/Windows/macOS NOT RUN | 기존 구현 `938d6638739b3d13d79fc436d0f16880e707e7e2`; RHWP 회귀 보강 커밋 예정 | Microsoft Word/한컴 재열기 NOT RUN; RHWP 보강 커밋 후 이 원장에 hash 추가 |
+| S1-FONT-TYPING | 회귀 | DOCX/HWP/HWPX collapsed-caret 다음 입력 크기, IME, 선택 교체, 이동, Undo/Redo, T009 | IMPLEMENTED_VERIFIED | DOCX 기존 X11/IBus PASS. RHWP 선택 교체에서 첫 선택 문자 전체 모양 상속; 빈 취소의 페이지 레이아웃 rollback과 선행 입력 Undo 경계. Release WASM 5/5, RHWP 세션 22/22, typecheck PASS. [Stage 1 상세](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21--22), [RHWP Native·저장 증거](stage1-font-typing-rhwp-acceptance.json) | Linux X11/Xvfb + 실제 IBus Hangul DOCX run7, HWP run18, HWPX run18 PASS. Wayland/Windows/macOS NOT RUN | `938d6638739b3d13d79fc436d0f16880e707e7e2` (기본 구현), `0379a837a2933bb16556cc5e08a501c6cf16893f` (RHWP 수정·수락) | Microsoft Word/한컴 재열기 NOT RUN |
 | P4-HX-CURVE | A | HWPX 원본 Bezier segment 종류·control point·순서·좌표·폐합·경로 metadata 보존 편집 | IN_PROGRESS / PARTIAL | 45번째 RHWP patch와 Release WASM endpoint acceptance, HWPX T009 `save_check` safe. 모델은 연결된 line/curve endpoint 편집만 입증. | 실제 Native 미실행 | 없음 (미완료) | HWPML 3.0 SEGMENT 자료가 endpoint만 명시하고 cubic control point 의미는 입증되지 않음. control-point 요구를 해결·명시 경계화하고 Native 증명 후 처리 |
 | P4-DX-CURVE | A | DOCX quadratic/cubic 명령과 control point 편집; DrawingML·viewport·OPC 보존 | OPEN | 이 요구사항에 대한 회귀·구조 증거 미수집 | NOT RUN | — | segment identity, path attrs, relationships, Undo/Redo 및 independent reopen 확인 |
 | P4-DX-PATH | A | DOCX freeform vertex 삽입·삭제·좌표 편집, open/closed path | OPEN | 이 요구사항에 대한 회귀·구조 증거 미수집 | NOT RUN | — | path command order와 envelope·viewport를 저장/reopen에서 확인 |
@@ -51,7 +51,7 @@
 
 ## 상태 요약
 
-- 완료한 ID: 1/39 (`S1-FONT-TYPING`; 원래 구현 commit은 있음. RHWP 보완은 verified 후 별도 로컬 commit 예정).
+- 완료한 ID: 1/39 (`S1-FONT-TYPING`; 구현·RHWP 보완 각각 로컬 commit 기록).
 - 진행 중이지만 완료 주장하지 않는 ID: 1/39 (`P4-HX-CURVE`; endpoint subset만 증명, cubic control point와 Native 경계 미해결).
 - 이 원장에서 요구사항별 검토·수락이 끝나지 않은 ID: 37/39. 이는 코드 기능 부재의 단정이 아니라 사용자 지정 acceptance와 대조할 증거가 아직 없다는 뜻이다.
 - Git 원칙: 각 완료 항목은 자체 ID가 있는 별도 로컬 commit으로 기록. Push 금지. Submodule gitlink 및 ordered RHWP patch series는 이 항목에서 실제 변경할 때 별도 commit set으로 남긴다.

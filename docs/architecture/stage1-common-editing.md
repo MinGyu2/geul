@@ -460,6 +460,6 @@ RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모�
 | 저장된 HWP/HWPX | Release WASM으로 실제 CFB/ZIP을 독립 열어 기존 19자 각각 1000(10pt), 새 `한글 ABC` 6자 각각 2400(24pt)을 검사했다. 엔진 SVG의 보이는 5개 글리프는 32px이며 새 Native session 끝 caret은 24pt다. |
 | Release 앱 / TypeScript | `npm run typecheck` PASS. 앱 `b7e366162de885bdf04f435e57d96985c9a829cace3a6eba813962527a6ef9da`; `privacyStatus`·`runtimePathStatus` PASS, 이식성은 Nix store 의존성 때문에 NOT VERIFIED. |
 
-이 수락은 DOCX·HWP·HWPX 각각 Linux X11/Xvfb의 실제 입력기 경로를 포함한다. Wayland, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. RHWP 상세 보고서의 saved file·Native 원시 결과는 무시 경로 `target/s1-font-typing/`에 보존했다. 원 구현 커밋은 `938d6638739b3d13d79fc436d0f16880e707e7e2`이다.
+이 수락은 DOCX·HWP·HWPX 각각 Linux X11/Xvfb의 실제 입력기 경로를 포함한다. Wayland, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. RHWP 상세 보고서의 saved file·Native 원시 결과는 무시 경로 `target/s1-font-typing/`에 보존했다. 기본 구현 커밋은 `938d6638739b3d13d79fc436d0f16880e707e7e2`, RHWP 선택 교체·취소 보완 및 수락 커밋은 `0379a837a2933bb16556cc5e08a501c6cf16893f`이다.
 
 
