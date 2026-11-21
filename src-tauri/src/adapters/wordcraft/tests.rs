@@ -6189,6 +6189,169 @@ fn stage3_docx_shape_fill_outline_rotation_layer_roundtrip() {
 }
 
 #[test]
+fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_history() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::freeform::{
+        DrawingMlGeometry, DrawingMlPath, DrawingMlPathCommand as Command, FreePath, Freeform,
+    };
+    use wordcraft_engine::doc::para::{Float, ShapeKind};
+    use wordcraft_engine::doc::props::{CharProps, Rgb};
+    use wordcraft_engine::doc::{InlineObject, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut seed = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    let body_end = seed.doc.end_of(StoryRef::Body);
+    seed.run("caret.set", &json!({"pos": body_end})).unwrap();
+    seed.run("text.newParagraph", &json!({})).unwrap();
+    let geometry_xml = r#"<a:custGeom><a:avLst/><a:gdLst><a:gd name="g1" fmla="val 4"/></a:gdLst><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst><a:path w="1270000" h="635000" fill="norm" stroke="1"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:quadBezTo><a:pt x="127000" y="63500"/><a:pt x="254000" y="127000"/></a:quadBezTo><a:close/></a:path><a:path w="2540000" h="1270000" fill="none" extrusionOk="1"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:cubicBezTo><a:pt x="254000" y="0"/><a:pt x="508000" y="127000"/><a:pt x="762000" y="381000"/></a:cubicBezTo></a:path></a:pathLst></a:custGeom>"#;
+    let geometry = DrawingMlGeometry {
+        before_paths_xml: vec![
+            "<a:avLst/>".into(),
+            r#"<a:gdLst><a:gd name="g1" fmla="val 4"/></a:gdLst>"#.into(),
+            "<a:ahLst/>".into(),
+            "<a:cxnLst/>".into(),
+            r#"<a:rect l="0" t="0" r="r" b="b"/>"#.into(),
+        ],
+        paths: vec![
+            DrawingMlPath {
+                viewport: [1_270_000, 635_000],
+                attrs: vec![
+                    ("w".into(), "1270000".into()),
+                    ("h".into(), "635000".into()),
+                    ("fill".into(), "norm".into()),
+                    ("stroke".into(), "1".into()),
+                ],
+                commands: Some(vec![
+                    Command::MoveTo { point: [0, 0] },
+                    Command::QuadraticTo { control: [127_000, 63_500], end: [254_000, 127_000] },
+                    Command::Close,
+                ]),
+                source_xml: r#"<a:path w="1270000" h="635000" fill="norm" stroke="1"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:quadBezTo><a:pt x="127000" y="63500"/><a:pt x="254000" y="127000"/></a:quadBezTo><a:close/></a:path>"#.into(),
+                render_path_indexes: vec![0],
+                ..Default::default()
+            },
+            DrawingMlPath {
+                viewport: [2_540_000, 1_270_000],
+                attrs: vec![
+                    ("w".into(), "2540000".into()),
+                    ("h".into(), "1270000".into()),
+                    ("fill".into(), "none".into()),
+                    ("extrusionOk".into(), "1".into()),
+                ],
+                commands: Some(vec![
+                    Command::MoveTo { point: [0, 0] },
+                    Command::CubicTo { control1: [254_000, 0], control2: [508_000, 127_000], end: [762_000, 381_000] },
+                ]),
+                source_xml: r#"<a:path w="2540000" h="1270000" fill="none" extrusionOk="1"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:cubicBezTo><a:pt x="254000" y="0"/><a:pt x="508000" y="127000"/><a:pt x="762000" y="381000"/></a:cubicBezTo></a:path>"#.into(),
+                render_path_indexes: vec![1],
+                ..Default::default()
+            },
+        ],
+        source_xml: geometry_xml.into(),
+        editable: true,
+        ..Default::default()
+    };
+    let mut freeform = Freeform {
+        w: 100.0,
+        h: 50.0,
+        paths: vec![FreePath { pts: Vec::new(), closed: false }, FreePath { pts: Vec::new(), closed: false }],
+        drawingml: Some(geometry),
+        ..Default::default()
+    };
+    freeform.refresh_drawingml_render_points();
+    let object = InlineObject::Shape {
+        kind: ShapeKind::Freeform,
+        w: 100.0,
+        h: 50.0,
+        fill: Some(Rgb(0x11, 0x22, 0x33)),
+        stroke: Some(Rgb(0x44, 0x55, 0x66)),
+        stroke_width: 1.0,
+        float: Float::default(),
+        story: None,
+        freeform: Some(std::sync::Arc::new(freeform)),
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let at = seed.sel.focus.clone();
+    seed.doc.insert_object(&at, object, &CharProps::default()).unwrap();
+    let original = io::save_bytes("fixture.docx", &seed.doc).unwrap();
+
+    let mut model = DocxModel::open(&original).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let hit = reader.layout().find_object(0, |_| true).unwrap();
+    let select = DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    assert_eq!(model.apply(&[select.clone()]).rejected, Vec::<usize>::new());
+
+    let state = |model: &mut DocxModel| {
+        let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (object["position"].as_str().unwrap().to_owned(), object["epoch"].as_u64().unwrap(), object)
+    };
+    let (position, epoch, selected) = state(&mut model);
+    assert!(selected["operations"].as_array().unwrap().iter().any(|op| op == "pathPoint"));
+    assert_eq!(selected["drawingMlPaths"][0]["segments"][1]["command"], "quadBezTo");
+    assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["command"], "cubicBezTo");
+    assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["points"][0]["x"], 254000);
+    let baseline = model.export().unwrap();
+    let history = serde_json::to_value(model.view()).unwrap()["history"].clone();
+    let mut direct = DocxModel::open(&original).unwrap();
+    direct.apply(&[select]);
+    let selected_start = hit.pos();
+    let selected_end = wordcraft_engine::doc::Pos {
+        off: selected_start.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+        ..selected_start.clone()
+    };
+    let direct_select = direct.run_engine("select.range", json!({"anchor": selected_start, "focus": selected_end}));
+    let direct_ok = direct.run_engine("shape.pathPoint", json!({"path": 1, "segment": 1, "point": 0, "x": 300_000, "y": 100_000}));
+    let direct_bytes = direct.export().unwrap();
+    let direct_same = direct.same_as(&direct_bytes);
+    let direct_gate = service::check_saved(crate::document::Format::Docx, &original, &direct_bytes, None, direct_same);
+    assert!(direct_select && direct_ok, "the engine path-point command selects and edits this freeform");
+    assert!(direct_same && direct_gate.is_safe(), "the direct engine edit passes T009: {direct_gate:?}");
+    let rejected = model.apply(&[DocxOp::ObjectEdit {
+        position: position.clone(),
+        epoch,
+        edit: ObjectEdit::DocxPathPoint { path: 1, segment: 1, point: 0, x: 2_540_001, y: 100_000 },
+    }]);
+    assert_eq!(rejected.rejected, vec![0], "coordinates outside the path viewport fail closed");
+    assert_eq!(model.export().unwrap(), baseline);
+    assert_eq!(serde_json::to_value(model.view()).unwrap()["history"], history);
+
+    let edit = model.apply(&[DocxOp::ObjectEdit {
+        position,
+        epoch,
+        edit: ObjectEdit::DocxPathPoint { path: 1, segment: 1, point: 0, x: 300_000, y: 100_000 },
+    }]);
+    assert_eq!((edit.changed, edit.rejected), (1, Vec::new()));
+    let after = model.export().unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &original, &after, None, model.same_as(&after));
+    assert!(gate.is_safe(), "{gate:?}");
+
+    let reopened = io::open_bytes("fixture.docx", &after).unwrap();
+    let reopened_freeform = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects).find_map(|object| match object {
+        InlineObject::Shape { kind: ShapeKind::Freeform, freeform: Some(freeform), .. } => Some(freeform),
+        _ => None,
+    }).expect("independent saved file contains its editable custom geometry");
+    let reopened_geometry = reopened_freeform.drawingml.as_ref().unwrap();
+    assert_eq!(reopened_geometry.paths[0].commands.as_ref().unwrap()[1], Command::QuadraticTo { control: [127_000, 63_500], end: [254_000, 127_000] });
+    assert_eq!(reopened_geometry.paths[1].commands.as_ref().unwrap()[1], Command::CubicTo { control1: [300_000, 100_000], control2: [508_000, 127_000], end: [762_000, 381_000] });
+    assert_eq!(reopened_geometry.paths[0].attrs, vec![("w".into(), "1270000".into()), ("h".into(), "635000".into()), ("fill".into(), "norm".into()), ("stroke".into(), "1".into())]);
+
+    assert!(model.apply(&[DocxOp::Undo {}]).rejected.is_empty());
+    assert_eq!(model.export().unwrap(), baseline, "undo restores the complete original custom geometry");
+    assert!(model.apply(&[DocxOp::Redo {}]).rejected.is_empty());
+    assert_eq!(model.export().unwrap(), after, "redo restores the accepted serialized edit");
+}
+
+#[test]
 fn stage3_docx_picture_in_table_cell_admits_only_in_place_edits() {
     use super::engine::ObjectEdit;
     use crate::services::save::service;
@@ -7563,6 +7726,7 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
             pts: vec![[0.0, 0.0], [120.0, 40.0], [30.0, 80.0]],
             closed: true,
         }],
+        drawingml: None,
         alpha: 1.0,
         ink: None,
         order: None,

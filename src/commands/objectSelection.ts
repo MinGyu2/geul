@@ -45,6 +45,16 @@ export interface ShapePath {
   points: readonly { x: number; y: number; control: boolean }[];
 }
 
+/** DrawingML custom geometry retained in its original integer coordinate space. */
+export interface DrawingMlShapePath {
+  viewportWidth: number;
+  viewportHeight: number;
+  segments: readonly {
+    command: "moveTo" | "lnTo" | "quadBezTo" | "cubicBezTo" | "close";
+    points: readonly { x: number; y: number; control: boolean }[];
+  }[];
+}
+
 export interface GroupChildFill {
   index: number;
   kind: "rectangle" | "ellipse";
@@ -84,6 +94,7 @@ export interface ObjectHit {
   graphic?: GraphicProperties;
   shape?: ShapeProperties;
   shapePath?: ShapePath;
+  drawingMlPaths?: readonly DrawingMlShapePath[];
   collinearVertexRemoval?: true;
   curveTerminalLine?: { append: boolean; remove: boolean };
   curveLineStructure?: true;
@@ -144,6 +155,7 @@ export type ObjectEdit =
   | { kind: "smartArtItems"; items: { text: string; level: number }[] }
   | { kind: "smartArtLayout"; layout: typeof SMART_ART_LAYOUTS[number] }
   | { kind: "pathPoint"; index: number; x: number; y: number }
+  | { kind: "docxPathPoint"; path: number; segment: number; point: number; x: number; y: number }
   | { kind: "pathVertex"; action: "insert"; index: number; x: number; y: number }
   | { kind: "pathVertex"; action: "remove"; index: number }
   | { kind: "pathSegment"; action: "append"; x: number; y: number }
@@ -184,6 +196,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "smartArtItems": case "smartArtLayout": return "smartArt";
     case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape":
     case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
+    case "docxPathPoint": return "pathPoint";
     case "groupChildMove": case "groupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
@@ -212,6 +225,10 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   const integer = (n: unknown, max: number) => finite(n, max) && Number.isSafeInteger(n) && n >= 0;
   if (value.kind === "pathPoint") return keys === "index,kind,x,y" && integer(value.index, 256)
     && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
+  if (value.kind === "docxPathPoint") return keys === "kind,path,point,segment,x,y"
+    && integer(value.path, 255) && integer(value.segment, 4_999) && integer(value.point, 2)
+    && Number.isSafeInteger(value.x) && Math.abs(value.x as number) <= 1_000_000_000_000
+    && Number.isSafeInteger(value.y) && Math.abs(value.y as number) <= 1_000_000_000_000;
   if (value.kind === "pathVertex") return integer(value.index, 255) && (
     (value.action === "remove" && keys === "action,index,kind")
     || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
@@ -289,6 +306,11 @@ export function objectEditMatches(request: ObjectEditRequest, selection: ObjectS
   if ((edit.kind === "groupChildMove" || edit.kind === "groupChildResize") && !selection.groupChildren?.children.some(child =>
     child.index === edit.index && child.id === edit.id && child.instId === edit.instId
     && (edit.kind === "groupChildMove" ? child.canMove : child.canResize))) return false;
+  if (edit.kind === "docxPathPoint") {
+    const path = selection.drawingMlPaths?.[edit.path];
+    const point = path?.segments[edit.segment]?.points[edit.point];
+    if (!path || !point || edit.x < 0 || edit.x > path.viewportWidth || edit.y < 0 || edit.y > path.viewportHeight) return false;
+  }
   if (edit.kind === "bounds" && edit.x !== undefined && (edit.width !== undefined || edit.height !== undefined)
     && !supportsAnchoredResize(selection)) return false;
   const operation = request.edit.kind === "position" && selection.address.engine === "rhwp"

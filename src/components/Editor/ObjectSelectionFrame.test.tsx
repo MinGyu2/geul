@@ -100,6 +100,28 @@ describe("object edit requests", () => {
       { kind: "pathVertex", action: "insert", index: 2, x: 20.5, y: 30 },
     ]) expect(validObjectEdit(edit)).toBe(false);
   });
+  it("validates DrawingML path control requests against the current selected geometry", () => {
+    const selected = selection({
+      kind: "shape",
+      operations: ["deselect", "pathPoint"],
+      drawingMlPaths: [{ viewportWidth: 1000, viewportHeight: 800, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "cubicBezTo", points: [
+          { x: 200, y: 100, control: true },
+          { x: 400, y: 300, control: true },
+          { x: 800, y: 700, control: false },
+        ] },
+      ] }],
+    });
+    const request = objectEditRequest(selected, { kind: "docxPathPoint", path: 0, segment: 1, point: 0, x: 250, y: 150 });
+    expect(validObjectEdit(request.edit)).toBe(true);
+    expect(objectEditMatches(request, selected)).toBe(true);
+    expect(objectEditMatches(objectEditRequest(selected, { kind: "docxPathPoint", path: 0, segment: 2, point: 0, x: 250, y: 150 }), selected)).toBe(false);
+    const outside = objectEditRequest(selected, { kind: "docxPathPoint", path: 0, segment: 1, point: 0, x: -1, y: 150 });
+    expect(validObjectEdit(outside.edit)).toBe(true);
+    expect(objectEditMatches(outside, selected)).toBe(false);
+    expect(validObjectEdit({ kind: "docxPathPoint", path: 0, segment: 1, point: 3, x: 250, y: 150 })).toBe(false);
+  });
   it("binds a request to the selection identity and its allowed operations", () => {
     const selected = selection({ operations: ["deselect", "resize"] });
     const resize = objectEditRequest(selected, { kind: "bounds", width: 50, height: 25 });
@@ -123,6 +145,29 @@ describe("object edit requests", () => {
 
 describe("ObjectSelectionFrame", () => {
   const rhwp = { engine: "rhwp", path: [0, 0, 2] } as const;
+
+  it("edits a DOCX Bezier control point in its original viewport coordinates", () => {
+    const selected = selection({
+      kind: "shape",
+      address: { engine: "wordcraft", position: "body:1:0" },
+      operations: ["deselect", "pathPoint"],
+      drawingMlPaths: [{ viewportWidth: 1000, viewportHeight: 800, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "cubicBezTo", points: [
+          { x: 200, y: 100, control: true },
+          { x: 400, y: 300, control: true },
+          { x: 800, y: 700, control: false },
+        ] },
+      ] }],
+    });
+    const { onEdit, pageDown } = frame({ selection: selected });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+    drag(screen.getByTestId("docx-path-point-0-1-0"), [20, 10], [36, 26]);
+
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "docxPathPoint", path: 0, segment: 1, point: 0, x: 300, y: 260 }, 7);
+    expect(pageDown).not.toHaveBeenCalled();
+  });
 
   it.each(["picture", "shape", "group"] as const)("does not offer uncommittable leading-edge resizing for a movable RHWP %s", kind => {
     const selected = selection({ kind, address: rhwp });

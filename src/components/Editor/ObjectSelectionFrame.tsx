@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { OBJECT_SIDE_LIMITS, supportsAnchoredResize, type ObjectEdit, type ObjectFrame, type ObjectSelection } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
 import { ShapePointEditor } from "./ShapePointEditor";
+import { DrawingMlPathEditor } from "./DrawingMlPathEditor";
 import { GroupChildEditor } from "./GroupChildEditor";
 
 export const RESIZE_HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -82,12 +83,16 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
   const drag = useRef<Drag | null>(null);
   const pathOwner = selection.address.engine === "rhwp" && selection.shapePath && selection.operations.includes("pathPoint")
     ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.path.join(".")}` : null;
+  const drawingMlPathOwner = selection.address.engine === "wordcraft" && selection.drawingMlPaths?.length
+    && selection.operations.includes("pathPoint")
+    ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.position}` : null;
+  const activePathOwner = pathOwner ?? drawingMlPathOwner;
   const groupChildOwner = selection.address.engine === "rhwp" && selection.groupChildren
     && selection.operations.includes("groupChildGeometry")
     ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.path.join(".")}` : null;
   const [pathMode, setPathMode] = useState<string | null>(null);
   const [groupChildMode, setGroupChildMode] = useState<string | null>(null);
-  const editingPath = !!pathOwner && pathOwner === pathMode;
+  const editingPath = !!activePathOwner && activePathOwner === pathMode;
   const editingGroupChildren = !!groupChildOwner && groupChildOwner === groupChildMode;
   const editingSubmode = editingPath || editingGroupChildren;
   const canMove = !editingSubmode && Boolean(onEdit) && selection.operations.includes("move");
@@ -167,8 +172,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
     <div className="object-selection-frame" data-object-kind={selection.kind} data-dragging={preview ? "true" : undefined}
       style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale }}>
       <span role="status" className="object-selection-frame__label">{t(label, { kind })}</span>
-      {pathOwner && onEdit && <button type="button" className="object-path-mode" aria-pressed={editingPath}
-        onMouseDown={event => event.stopPropagation()} onClick={() => setPathMode(editingPath ? null : pathOwner)}>
+      {activePathOwner && onEdit && <button type="button" className="object-path-mode" aria-pressed={editingPath}
+        onMouseDown={event => event.stopPropagation()} onClick={() => setPathMode(editingPath ? null : activePathOwner)}>
         {t(editingPath ? "editor.object.path.done" : "editor.object.path.edit")}
       </button>}
       {groupChildOwner && onEdit && <button type="button" className="object-group-child-mode" aria-pressed={editingGroupChildren}
@@ -182,6 +187,9 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
           curveTerminalLine={selection.curveTerminalLine}
           curveLineStructure={selection.curveLineStructure}
           onEdit={edit => onEdit(edit, selection.epoch)} />}
+      {editingPath && selection.drawingMlPaths && onEdit &&
+        <DrawingMlPathEditor paths={selection.drawingMlPaths} owner={owner} width={selection.frame.width * scale}
+          height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingGroupChildren && selection.groupChildren && onEdit &&
         <GroupChildEditor group={selection.groupChildren} owner={owner} width={selection.frame.width * scale}
           height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}

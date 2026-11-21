@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """P4 Linux X11 editor acceptance using published files and independent inspection."""
 
+from copy import deepcopy
 import importlib.util
 import math
 from pathlib import Path
@@ -32,6 +33,160 @@ def inspect(path):
         }));
       console.log(JSON.stringify({frames,body,controls}));
     """)
+
+
+def inspect_docx_curve(path):
+    ns = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+    }
+    with zipfile.ZipFile(path) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+        rels = package.read("word/_rels/document.xml.rels")
+        parts = {name: package.read(name) for name in package.namelist() if name != "word/document.xml"}
+    shapes = root.findall(".//wps:wsp", ns)
+    h.require(len(shapes) == 1, "fixture must contain one DrawingML shape", len(shapes))
+    geometry = shapes[0].find("./wps:spPr/a:custGeom", ns)
+    h.require(geometry is not None, "fixture lost custom geometry")
+    path_list = geometry.find("a:pathLst", ns)
+    paths = []
+    for path_node in path_list:
+        commands = []
+        for command in path_node:
+            commands.append({
+                "type": command.tag.rsplit("}", 1)[-1],
+                "points": [dict(point.attrib) for point in command.findall("a:pt", ns)],
+            })
+        paths.append({"attrs": dict(path_node.attrib), "commands": commands})
+    return {
+        "xml": root,
+        "geometry": geometry,
+        "paths": paths,
+        "relationshipsSha256": __import__("hashlib").sha256(rels).hexdigest(),
+        "relationships": rels,
+        "parts": parts,
+    }
+
+
+def docx_curve_click(acc, x_fraction, y_fraction):
+    x, y = acc.d.js("""
+      const c=document.querySelector('.docx-page canvas'), s=document.querySelector('.editor__scroll');
+      const v=s.getBoundingClientRect(), r=c.getBoundingClientRect();
+      s.scrollTop += r.top+r.height*arguments[1]-(v.top+v.height*.45);
+      const n=c.getBoundingClientRect();
+      return [n.left+n.width*arguments[0],n.top+n.height*arguments[1]];
+    """, x_fraction, y_fraction)
+    h.p4.rhwp_poc.click(acc.d, x, y)
+
+
+def docx_curve_select_shape(acc):
+    # The fixture's inline shape starts at the first body margin and is 100 pt wide.
+    # Scan a small interior grid with real native pointer clicks to avoid selecting text.
+    for y in (0.145, 0.155, 0.165, 0.175):
+        for x in (0.17, 0.20, 0.23, 0.26):
+            docx_curve_click(acc, x, y)
+            if acc.d.exists(".object-path-mode"):
+                return
+    h.require(False, "native pointer could not select the DrawingML shape")
+
+
+def docx_curve_handle(acc, testid):
+    selector = f'[data-testid="{testid}"]'
+    h.require(acc.d.exists(selector), "DrawingML control handle missing", testid)
+    acc.dom_click(selector)
+    return acc.d.js("""
+      const e=document.querySelector('[data-testid="docx-path-coordinates"]');
+      if (!e) return null;
+      return [...e.querySelectorAll('input')].map(input=>Number(input.value));
+    """)
+
+
+def docx_curve_drag(acc, testid, dx, dy):
+    selector = f'[data-testid="{testid}"]'
+    h.require(acc.d.exists(selector), "DrawingML drag handle missing", testid)
+    x, y = acc.d.js("""
+      const r=document.querySelector(arguments[0]).getBoundingClientRect();
+      return [r.left+r.width/2,r.top+r.height/2];
+    """, selector)
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x*sx,y*sy), ((x+dx)*sx,(y+dy)*sy))
+
+
+def docx_curve_case(acc, row, fixtures, out):
+    fixture = fixtures / "bezier.docx"
+    before = inspect_docx_curve(fixture)
+    h.require([item["commands"][1]["type"] for item in before["paths"]] == ["quadBezTo", "cubicBezTo"],
+              "native fixture must retain quadratic and cubic commands", before["paths"])
+    path = h.begin(acc, row, fixture, out, "p4-dx-curve-edited.docx")
+    docx_curve_select_shape(acc)
+    acc.dom_click(".object-path-mode")
+    h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 7,
+              "expected move, quadratic, and cubic control handles")
+    acc.d.js("""
+      window.docxCurvePointers=[];
+      for (const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        if (e.target.matches('.object-path-point'))
+          docxCurvePointers.push({type,testid:e.target.dataset.testid,trusted:e.isTrusted});
+      },true);
+    """)
+
+    control_updates = []
+    for index, (testid, command_type, point_index) in enumerate((
+        ("docx-path-point-0-1-0", "quadBezTo", 0),
+        ("docx-path-point-1-1-0", "cubicBezTo", 0),
+    ), 1):
+        original = docx_curve_handle(acc, testid)
+        expected_original = [
+            int(before["paths"][index-1]["commands"][1]["points"][point_index][axis]) for axis in ("x", "y")
+        ]
+        h.require(original == expected_original, "selected handle did not match the source control point", [original, expected_original])
+        docx_curve_drag(acc, testid, 12, 9)
+        h.revision(acc, "docx", index * 3 - 2)
+        moved = docx_curve_handle(acc, testid)
+        h.require(moved != original and moved[0] > original[0] and moved[1] > original[1],
+                  f"{command_type} control point did not move", [original, moved])
+        events = acc.d.js("return window.docxCurvePointers")
+        h.require(events[-2:] == [
+            {"type": "pointerdown", "testid": testid, "trusted": True},
+            {"type": "pointerup", "testid": testid, "trusted": True},
+        ], "control point drag was not a trusted native pointer gesture", events)
+        acc.key("ctrl+z")
+        h.revision(acc, index * 3 - 1)
+        restored = docx_curve_handle(acc, testid)
+        h.require(restored == original, "Undo did not restore exact source control point", [restored, original])
+        acc.key("ctrl+y")
+        h.revision(acc, index * 3)
+        redone = docx_curve_handle(acc, testid)
+        h.require(redone == moved, "Redo did not restore exact edited control point", [redone, moved])
+        control_updates.append({"command": command_type, "testid": testid, "before": original, "after": moved})
+
+    h.publish(acc, "docx", row)
+    after = inspect_docx_curve(path)
+    expected_root = deepcopy(before["xml"])
+    expected_geometry = expected_root.find(".//wps:wsp/wps:spPr/a:custGeom", {
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    })
+    expected_ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+    quad = expected_geometry.find("a:pathLst/a:path[1]/a:quadBezTo/a:pt[1]", expected_ns)
+    cubic = expected_geometry.find("a:pathLst/a:path[2]/a:cubicBezTo/a:pt[1]", expected_ns)
+    for target, update in zip((quad, cubic), control_updates, strict=True):
+        target.set("x", str(update["after"][0]))
+        target.set("y", str(update["after"][1]))
+    h.require(ET.tostring(expected_root) == ET.tostring(after["xml"]),
+              "saved DOCX changed unrelated story content or DrawingML structure")
+    h.require(before["relationships"] == after["relationships"], "DOCX OPC relationships changed")
+    h.require(before["parts"] == after["parts"], "unrelated DOCX package part changed")
+    row["savedDrawingMl"] = after["paths"]
+    row["controlUpdates"] = control_updates
+    row["unchangedPackageParts"] = len(before["parts"])
+    reopen(acc, path, row)
+    docx_curve_select_shape(acc)
+    acc.dom_click(".object-path-mode")
+    for update in control_updates:
+        actual = docx_curve_handle(acc, update["testid"])
+        h.require(actual == update["after"], "saved control point did not reopen in the native editor", [update, actual])
 
 
 def points_case(acc, row, fixtures, out, kind, fmt):
@@ -788,6 +943,7 @@ def group_child_capture_case(acc, row, fixtures, out):
 
 
 h.CASES = {
+    "P4-DX-CURVE": docx_curve_case,
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),

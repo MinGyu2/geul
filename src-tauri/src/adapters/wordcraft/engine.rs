@@ -710,6 +710,14 @@ pub enum ObjectEdit {
     SmartArtLayout {
         layout: String,
     },
+    /// One DrawingML move/line/Bézier point, in the path's original integer EMU coordinates.
+    DocxPathPoint {
+        path: usize,
+        segment: usize,
+        point: usize,
+        x: i64,
+        y: i64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -875,6 +883,13 @@ impl ObjectEdit {
                         .all(|i| i.level <= 7 && !i.text.is_empty() && valid_graphic_text(&i.text))
             }
             Self::SmartArtLayout { layout } => SMART_ART_LAYOUTS.contains(&layout.as_str()),
+            Self::DocxPathPoint { path, segment, point, x, y } => {
+                *path < wordcraft_engine::doc::freeform::MAX_PATHS
+                    && *segment < wordcraft_engine::doc::freeform::MAX_POINTS
+                    && *point < 3
+                    && (-1_000_000_000_000..=1_000_000_000_000).contains(x)
+                    && (-1_000_000_000_000..=1_000_000_000_000).contains(y)
+            }
             Self::AltText { text } => valid_object_alt_text(text),
         }
     }
@@ -894,6 +909,7 @@ impl ObjectEdit {
             Self::Layer { .. } => "zOrder",
             Self::ChartTitle { .. } | Self::ChartType { .. } | Self::ChartData { .. } => "chart",
             Self::SmartArtItems { .. } | Self::SmartArtLayout { .. } => "smartArt",
+            Self::DocxPathPoint { .. } => "pathPoint",
         }
     }
 }
@@ -1140,6 +1156,31 @@ pub struct ObjectView {
     convert_shape: Option<BasicShape>,
     #[serde(skip_serializing_if = "Option::is_none")]
     shape: Option<ShapeView>,
+    #[serde(rename = "drawingMlPaths", skip_serializing_if = "Option::is_none")]
+    drawing_ml_paths: Option<Vec<DocxPathView>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocxPathView {
+    viewport_width: i64,
+    viewport_height: i64,
+    segments: Vec<DocxPathSegmentView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocxPathSegmentView {
+    command: &'static str,
+    points: Vec<DocxPathPointView>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocxPathPointView {
+    x: i64,
+    y: i64,
+    control: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -2467,6 +2508,12 @@ impl DocxModel {
         if matches!(self.object_kind(pos), Some("shape" | "textBox")) {
             ops.extend(["fill", "outline"]);
         }
+        let top_level = pos.story == StoryRef::Body && pos.path.0.len() == 1;
+        let transform_safe = matches!(object, InlineObject::Shape { float, .. }
+            if float.rot == 0.0 && !float.flip_h && !float.flip_v);
+        if top_level && transform_safe && self.drawingml_paths(pos).is_some() {
+            ops.push("pathPoint");
+        }
         if self.conversion_target(pos).is_some() {
             ops.push("convertShape");
         }
@@ -2475,6 +2522,76 @@ impl DocxModel {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
+    }
+
+    /// Original integer DrawingML commands whose points map directly through the selected frame.
+    /// Transformed shapes and paths with unsupported metadata or coordinates stay read-only here.
+    fn drawingml_paths(&self, pos: &Pos) -> Option<Vec<DocxPathView>> {
+        use wordcraft_engine::doc::freeform::DrawingMlPathCommand as Command;
+        let InlineObject::Shape {
+            kind: wordcraft_engine::doc::para::ShapeKind::Freeform,
+            freeform: Some(freeform),
+            float,
+            ..
+        } = self.object_at(pos)? else {
+            return None;
+        };
+        if float.rot != 0.0 || float.flip_h || float.flip_v {
+            return None;
+        }
+        let geometry = freeform.drawingml.as_ref()?;
+        if !geometry.editable
+            || geometry.paths.is_empty()
+            || geometry.paths.len() > wordcraft_engine::doc::freeform::MAX_PATHS
+        {
+            return None;
+        }
+        let mut views = Vec::with_capacity(geometry.paths.len());
+        let mut total_commands = 0usize;
+        let mut total_points = 0usize;
+        for path in &geometry.paths {
+            let [viewport_width, viewport_height] = path.viewport;
+            if !(1..=1_000_000_000_000).contains(&viewport_width)
+                || !(1..=1_000_000_000_000).contains(&viewport_height)
+            {
+                return None;
+            }
+            let commands = path.commands.as_ref()?;
+            if commands.is_empty() || commands.len() > wordcraft_engine::doc::freeform::MAX_POINTS {
+                return None;
+            }
+            total_commands = total_commands.saturating_add(commands.len());
+            if total_commands > wordcraft_engine::doc::freeform::MAX_POINTS {
+                return None;
+            }
+            let mut segments = Vec::with_capacity(commands.len());
+            for command in commands {
+                let (name, points, controls): (&'static str, Vec<[i64; 2]>, &[usize]) = match command {
+                    Command::MoveTo { point } => ("moveTo", vec![*point], &[]),
+                    Command::LineTo { point } => ("lnTo", vec![*point], &[]),
+                    Command::QuadraticTo { control, end } => ("quadBezTo", vec![*control, *end], &[0]),
+                    Command::CubicTo { control1, control2, end } => ("cubicBezTo", vec![*control1, *control2, *end], &[0, 1]),
+                    Command::Close => ("close", Vec::new(), &[]),
+                };
+                if points.iter().any(|[x, y]| *x < 0 || *x > viewport_width || *y < 0 || *y > viewport_height) {
+                    return None;
+                }
+                total_points = total_points.saturating_add(points.len());
+                if total_points > wordcraft_engine::doc::freeform::MAX_POINTS {
+                    return None;
+                }
+                segments.push(DocxPathSegmentView {
+                    command: name,
+                    points: points.into_iter().enumerate().map(|(index, [x, y])| DocxPathPointView {
+                        x,
+                        y,
+                        control: controls.contains(&index),
+                    }).collect(),
+                });
+            }
+            views.push(DocxPathView { viewport_width, viewport_height, segments });
+        }
+        Some(views)
     }
 
     fn conversion_target(&self, pos: &Pos) -> Option<BasicShape> {
@@ -2938,6 +3055,23 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
+        if let ObjectEdit::DocxPathPoint { path, segment, point, x, y } = edit {
+            let paths = self.drawingml_paths(&pos).ok_or(Rejected)?;
+            let target = paths
+                .get(*path)
+                .and_then(|path| path.segments.get(*segment))
+                .and_then(|segment| segment.points.get(*point))
+                .ok_or(Rejected)?;
+            let viewport = paths.get(*path).ok_or(Rejected)?;
+            if *x < 0
+                || *x > viewport.viewport_width
+                || *y < 0
+                || *y > viewport.viewport_height
+                || (target.x == *x && target.y == *y)
+            {
+                return Err(Rejected);
+            }
+        }
         let before = self.export().ok_or(Rejected)?;
         let end = Pos {
             off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
@@ -3062,6 +3196,10 @@ impl DocxModel {
                     model.run("smartArt.layout", json!({ "layout": layout }))?,
                     Some(pos.clone()),
                 ),
+                ObjectEdit::DocxPathPoint { path, segment, point, x, y } => (
+                    model.run("shape.pathPoint", json!({ "path": path, "segment": segment, "point": point, "x": x, "y": y }))?,
+                    Some(pos.clone()),
+                ),
                 ObjectEdit::Layer { front } => (
                     model.run(
                         if *front {
@@ -3078,7 +3216,8 @@ impl DocxModel {
                 return Err(Rejected);
             }
             if let Some(at) = at.as_ref().filter(|at| {
-                !matches!(edit, ObjectEdit::AltText { .. }) || !model.story_inline_picture(at)
+                !matches!(edit, ObjectEdit::DocxPathPoint { .. })
+                    && (!matches!(edit, ObjectEdit::AltText { .. }) || !model.story_inline_picture(at))
             }) {
                 model.snap_to_emu(at)?;
             }
@@ -3217,6 +3356,7 @@ impl DocxModel {
                     }),
                     _ => None,
                 },
+                drawing_ml_paths: self.drawingml_paths(pos),
             })
         });
         if object.is_none() {
