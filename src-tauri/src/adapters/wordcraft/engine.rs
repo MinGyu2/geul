@@ -1343,6 +1343,7 @@ pub struct DocxModel {
     /// (they are added just before the paste command, outside its undo snapshot).
     pasted_media: Vec<String>,
     object_epoch: u64,
+    story_picture_resize: bool,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
@@ -1467,6 +1468,7 @@ impl DocxModel {
             reselect: None,
             pasted_media: Vec::new(),
             object_epoch: 0,
+            story_picture_resize: false,
             created_shapes: Vec::new(),
             marks: Vec::new(),
             last_insert: None,
@@ -1480,6 +1482,12 @@ impl DocxModel {
         let valid = |side: f32| side.is_finite() && side > 0.0 && side <= MAX_PAGE_SIDE_PT;
         if layout.pages.is_empty() || !layout.pages.iter().all(|p| valid(p.w) && valid(p.h)) {
             return Err(EngineStage::Render);
+        }
+        let count = model.sizable_story_picture_count();
+        if count != 0 {
+            model.story_picture_resize = model.export().is_some_and(|export| {
+                crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count)
+            });
         }
         Ok(model)
     }
@@ -2253,20 +2261,52 @@ impl DocxModel {
         self.session.doc.para_at(pos)?.object_at(pos.off)
     }
 
-    fn story_inline_picture(&self, pos: &Pos) -> bool {
-        use wordcraft_engine::doc::{para::Wrap, PartKind};
-        let StoryRef::Part(id) = pos.story else { return false };
+    fn linked_picture_story(&self, story: StoryRef) -> bool {
+        use wordcraft_engine::doc::PartKind;
+        let StoryRef::Part(id) = story else { return false };
         let doc = &self.session.doc;
-        pos.path.0.len() == 1
-            && doc.parts.get(&id).is_some_and(|part| {
-                matches!(part.kind, PartKind::Header | PartKind::Footer)
-                    || (matches!(part.kind, PartKind::Footnote | PartKind::Endnote)
-                        && doc.counted_stories().contains(&pos.story))
+        doc.parts.get(&id).is_some_and(|part| {
+            matches!(part.kind, PartKind::Header | PartKind::Footer)
+                || (matches!(part.kind, PartKind::Footnote | PartKind::Endnote)
+                    && doc.counted_stories().contains(&story))
+        })
+    }
+
+    fn embedded_inline_picture(&self, object: Option<&InlineObject>) -> bool {
+        use wordcraft_engine::doc::para::Wrap;
+        matches!(object, Some(InlineObject::Image { ole: None, media, float, w, h, .. })
+            if float.wrap == Wrap::Inline && self.session.doc.media.contains_key(media)
+                && w.is_finite() && *w > 0.0 && h.is_finite() && *h > 0.0)
+    }
+
+    fn story_inline_picture(&self, pos: &Pos) -> bool {
+        pos.path.0.len() == 1 && self.linked_picture_story(pos.story)
+            && self.embedded_inline_picture(self.object_at(pos))
+    }
+
+    fn plain_picture_size(object: Option<&InlineObject>) -> bool {
+        matches!(object, Some(InlineObject::Image { float, w, h, .. })
+            if float.spin().is_identity() && [w, h].into_iter()
+                .all(|size| (MIN_OBJECT_SIDE_PT..=MAX_OBJECT_SIDE_PT).contains(size)))
+    }
+
+    fn sizable_story_picture_count(&self) -> usize {
+        use wordcraft_engine::doc::Block;
+        if self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes {
+            return 0;
+        }
+        self.session.doc.parts.iter()
+            .filter(|(id, _)| self.linked_picture_story(StoryRef::Part(**id)))
+            .flat_map(|(_, part)| &part.blocks)
+            .filter_map(|block| match block.as_ref() {
+                Block::Para(para) => Some(para),
+                _ => None,
             })
-            && matches!(self.object_at(pos),
-                Some(InlineObject::Image { ole: None, media, float, w, h, .. })
-                    if float.wrap == Wrap::Inline && doc.media.contains_key(media)
-                        && w.is_finite() && *w > 0.0 && h.is_finite() && *h > 0.0)
+            .map(|para| para.object_offsets().into_iter().filter(|&off| {
+                let object = para.object_at(off);
+                self.embedded_inline_picture(object) && Self::plain_picture_size(object)
+            }).count())
+            .sum()
     }
 
     fn object_kind(&self, pos: &Pos) -> Option<&'static str> {
@@ -2333,8 +2373,8 @@ impl DocxModel {
         })
     }
 
-    /// Which mutations the object at `pos` admits. Secondary stories only expose
-    /// inline picture descriptions with a separate T009 proof. Charts and SmartArt
+    /// Which mutations the object at `pos` admits. Secondary stories expose
+    /// inline picture properties with a separate T009 proof. Charts and SmartArt
     /// are written to their own parts, so their geometry stays frozen.
     fn object_operations(&self, pos: &Pos) -> Vec<&'static str> {
         let doc = &self.session.doc;
@@ -2342,7 +2382,14 @@ impl DocxModel {
             return Vec::new();
         }
         if !self.body_hosted_story(pos.story) {
-            return if self.story_inline_picture(pos) { vec!["altText"] } else { Vec::new() };
+            if !self.story_inline_picture(pos) {
+                return Vec::new();
+            }
+            return if self.story_picture_resize && Self::plain_picture_size(self.object_at(pos)) {
+                vec!["resize", "altText"]
+            } else {
+                vec!["altText"]
+            };
         }
         let Some(object) = self.object_at(pos) else {
             return Vec::new();
@@ -3003,7 +3050,9 @@ impl DocxModel {
             if !changed {
                 return Err(Rejected);
             }
-            if let Some(at) = at.as_ref().filter(|at| !model.story_inline_picture(at)) {
+            if let Some(at) = at.as_ref().filter(|at| {
+                !matches!(edit, ObjectEdit::AltText { .. }) || !model.story_inline_picture(at)
+            }) {
                 model.snap_to_emu(at)?;
             }
             let mut after = model.export().ok_or(Rejected)?;

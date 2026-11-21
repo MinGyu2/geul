@@ -16,11 +16,14 @@ spec.loader.exec_module(h)
 DESCRIPTION = '[aria-labelledby=properties-selection] .object-tools input[maxlength="1024"]'
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 PIC = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
+A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+SIZE_FORM = "[aria-labelledby=properties-selection] .object-tools form:has(input[max='4000'])"
+WIDTH = SIZE_FORM + " label:first-of-type input"
 
 
-def stories(acc, row, fixtures, out):
+def stories(acc, row, fixtures, out, resize=False):
     fixture = fixtures / "a-p5-story-original.docx"
-    path = h.begin(acc, row, fixture, out, "a-p5-story-edited.docx")
+    path = h.begin(acc, row, fixture, out, "a-p5-story-resized.docx" if resize else "a-p5-story-edited.docx")
     layout = json.loads((fixtures / "a-p5-story-layout.json").read_text())
     row["targets"] = []
     picture_order = ("header", "body", "endnote", "footnote", "footer")
@@ -68,25 +71,41 @@ def stories(acc, row, fixtures, out):
 
     next_revision = 0
     row["storyRevisions"] = {}
+    def size_is(points):
+        acc.wait("return +document.querySelector(arguments[0])?.value === arguments[1]", WIDTH, points)
+
     for name in layout:
         select_at(name, name)
-        h.require(not acc.d.exists("[data-testid='object-move'], [data-handle]"), "story geometry advertised")
-        acc.dom_click(DESCRIPTION)
-        acc.key("End")
-        acc.type(" 35")
-        expected = f"{name} 35"
-        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", DESCRIPTION, expected)
-        acc.dom_click("[aria-labelledby=properties-selection] .object-tools form button[type=submit]")
+        h.require(not acc.d.exists("[data-testid='object-move']"), "story movement advertised")
+        if resize:
+            size_is(28)
+            h.p6.gso.replace(acc, WIDTH, "35")
+            acc.dom_click(SIZE_FORM + " button[type=submit]")
+            expected = name
+        else:
+            acc.dom_click(DESCRIPTION)
+            acc.key("End")
+            acc.type(" 35")
+            expected = f"{name} 35"
+            acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", DESCRIPTION, expected)
+            acc.dom_click("[aria-labelledby=properties-selection] .object-tools form:has(input[maxlength='1024']) button[type=submit]")
         next_revision += 1
         h.revision(acc, "docx", next_revision)
+        if resize:
+            select_at(name, name)
+            size_is(35)
         acc.key("ctrl+z")
         next_revision += 1
         h.revision(acc, "docx", next_revision)
         select_at(name, name)
+        if resize:
+            size_is(28)
         acc.key("ctrl+y")
         next_revision += 1
         h.revision(acc, "docx", next_revision)
         select_at(name, expected)
+        if resize:
+            size_is(35)
         row["storyRevisions"][name] = next_revision
     h.publish(acc, "docx", row)
     with zipfile.ZipFile(fixture) as before, zipfile.ZipFile(path) as after:
@@ -98,16 +117,27 @@ def stories(acc, row, fixtures, out):
                 continue
             name = owned[part]
             old, new = [ET.fromstring(package.read(part)) for package in (before, after)]
-            for tag in (f"{WP}docPr", f"{PIC}cNvPr"):
-                node = old.find(f".//{tag}")
-                h.require(node is not None and node.get("descr") == name, "wrong original owner or description", part)
-                node.set("descr", f"{name} 35")
+            if resize:
+                paths = (f".//{WP}inline/{WP}extent", f".//{PIC}spPr/{A}xfrm/{A}ext")
+                for extent in paths:
+                    node = old.find(extent)
+                    h.require(node is not None and node.attrib == {"cx":"355600", "cy":"279400"},
+                              "unexpected original picture dimensions", part)
+                    node.set("cx", "444500")
+                    node.set("cy", "349250")
+            else:
+                for tag in (f"{WP}docPr", f"{PIC}cNvPr"):
+                    node = old.find(f".//{tag}")
+                    h.require(node is not None and node.get("descr") == name, "wrong original owner or description", part)
+                    node.set("descr", f"{name} 35")
             h.require(ET.tostring(old) == ET.tostring(new), "unrelated story XML changed", part)
         row["unchangedResources"] = [name for name in before.namelist() if name.startswith("word/media/")]
         h.require(row["unchangedResources"], "missing picture resources")
     h.reopen(acc, path, row)
     for name in layout:
-        select_at(name, f"{name} 35")
+        select_at(name, name if resize else f"{name} 35")
+        if resize:
+            size_is(35)
 
 
 def inspect_box(path):
@@ -267,6 +297,7 @@ def textbox_join(acc, row, fixtures, out, span=2):
 
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
+           "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
 
 if __name__ == "__main__":

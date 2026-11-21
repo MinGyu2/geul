@@ -368,7 +368,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 - Stage 3-B는 SAFE Section0의 소유된 비잠금 캡션 포함 본문 그림·기본 도형 삭제(B2.1)와 자식·공유 리소스 보존이 증명된 비잠금 평면 그룹 삭제(B2.2)를 수용했다. 캡션 포함 글상자, 잠금·중첩·미소유 개체와 안전한 저장을 증명할 수 없는 삭제는 거부한다. 크기 보호가 적용되는 크기 변경과 소유 불명·공유 OLE 변경도 거부한다.
 - 동일 문서 HWP5 구조 클립보드(B3.1)와 제한된 HWPX 교차 문서 휴대용 클립보드(B3.2)는 각각 소유권과 보존 계약을 충족할 때 지원한다. Stage 3-A P6가 수용한 폐합 HWPX 다각형의 교차 문서 전송과 HWPX → DOCX 자유형 변환은 아래 P6 표에 명시한다. 교차 문서 HWP5, 나머지 교차 형식, 미지원 개체·서식·중첩 컨트롤·리소스 소유권 및 예약 표식의 평문 폴백은 거부한다. [B3.2 속성 보존 검증](architecture/stage3-b-portable-property-safety-2026-11-20.json)
-- Stage 3-A는 아래 P4–P6의 범위에서 지원한다. DOCX 별도 이야기의 그림 대체 설명 외 개체 연산, HWP/HWPX 별도 이야기 개체, 글상자 안 중첩 제어의 소유권과 저장 증명, 차트·SmartArt 구조 클립보드는 남아 있다. HWP/HWPX 캡션의 편집·IBus 조합·저장·재열기 및 잠긴 도형의 캡션 진입 거부는 해당 Linux X11 fixture 범위에서 검증됐다. Wayland·Windows·macOS와 기존 수용 범위 밖 UI 경로는 NOT RUN이다.
+- Stage 3-A는 아래 P4–P6의 범위에서 지원한다. DOCX 별도 이야기의 그림 대체 설명·지원 크기 조정 외 개체 연산, HWP/HWPX 별도 이야기 개체, 글상자 안 중첩 제어의 소유권과 저장 증명, 차트·SmartArt 구조 클립보드는 남아 있다. HWP/HWPX 캡션의 편집·IBus 조합·저장·재열기 및 잠긴 도형의 캡션 진입 거부는 해당 Linux X11 fixture 범위에서 검증됐다. 플랫폼별 수락 범위는 [현행 인벤토리](architecture/stage3-a-current-inventory.md)에 기록한다.
 
 **Stage 3-C Linux X11 Native 수용 (2026-11-20) — COMPLETED, 13/13.** C01–C13의 형식별 실제 GUI 동작, Undo/Redo, 발행 저장 및 독립 재열기, 거부 불변식과 세션 정리를 [집계 실행 기록](architecture/stage3-c-native-acceptance-2026-11-20.json)에 남겼다. C01·C09의 RHWP 드래그 단위 변환과 C09의 기존 그룹 배치 명령 UI 연결을 수정했다. C11은 당시 HWPX 교차 문서 붙여넣기를 의도적으로 거부해 PASS했다. Historical behavior at the time; superseded within the documented Stage 3-B supported subset. C12는 HWP·HWPX의 검증된 빈 미리보기 fixture에 한정한다. 비어 있지 않은 미리보기와 증명되지 않은 패키지 구조는 보존 검사에서 계속 거부한다. Stage 3 전체는 **PARTIALLY COMPLETED**이며 A/B와 Wayland·Windows·macOS의 상태는 별도다. 기존 P6·캡션 기록의 범위와 출처는 그대로 유지한다.
 
@@ -396,7 +396,9 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 기존 Linux X11 및 Undo/Redo는 [P4 수용 기록](architecture/stage3-a-p4-object-geometry-acceptance.json)에 있다. 구현 전 상태는 [초기 감사](architecture/stage3-a-initial-audit.md)에 보존한다.
 
-**Stage 3-A P5 문서 이야기와 복합 글상자 (2026-11-20) — PARTIAL_SUPPORT.** DOCX의 머리말·꼬리말·각주·미주에서 최상위 인라인 내장 그림의 대체 설명을 수정할 수 있다. HWPX의 지원 본문 글상자에서는 혼합 서식 문단 내부를 Enter로 분할할 수 있다. 네 DOCX 이야기와 HWPX 글상자를 Linux X11에서 각각 편집·Undo/Redo·게시하고, 별도 XML/엔진으로 검사한 뒤 앱에서 다시 열었다. 이야기 개체의 이동·크기·삭제, 다른 형식의 이야기 개체와 중첩 컨트롤은 범위 밖이다. [P5 수용 기록](architecture/stage3-a-p5-nested-story-acceptance.json)
+**Stage 3-A P5 문서 이야기와 복합 글상자 (2026-11-20) — PARTIAL_SUPPORT.** DOCX의 머리말·꼬리말·각주·미주에서 최상위 인라인 내장 그림의 대체 설명을 수정할 수 있다. HWPX의 지원 본문 글상자에서는 혼합 서식 문단 내부를 Enter로 분할할 수 있다. 네 DOCX 이야기와 HWPX 글상자를 Linux X11에서 각각 편집·Undo/Redo·게시하고, 별도 XML/엔진으로 검사한 뒤 앱에서 다시 열었다. 이야기 개체 이동·삭제, 다른 형식의 이야기 개체와 중첩 컨트롤은 제외한다. [P5 수용 기록](architecture/stage3-a-p5-nested-story-acceptance.json)
+
+**P5 DOCX 이야기 그림 크기 조정.** 원본 XML 왕복, 별도 OPC 관계 및 두 저장 치수가 확인되는 머리말·꼬리말·각주·미주의 최상위 내장 인라인 그림을 제자리에서 조정한다. Linux X11에서 네 이야기의 실제 편집·Undo/Redo·게시와 독립 OPC 검사·앱 재열기 PASS다. [크기 조정 수락](architecture/stage3-a-p5-story-size-acceptance.json)
 
 **P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. 같은 문단 모양·스타일의 일반 문단 세 개 이상에 걸친 키보드 삭제도 지원한다(글상자 최대 64문단). Linux X11에서 세 문단 선택과 Delete, Undo/Redo, 동기 게시, 독립 XML·RHWP 검사와 앱 재열기를 확인했다. HWP5, 다른 문단 서식과 중첩 제어, 여러 문단의 붙여넣기·IME 교체는 제외한다. [P5.5 수락 기록](architecture/stage3-a-p5-textbox-join-acceptance.json), [P5-TB-RANGE 수락 기록](architecture/stage3-a-p5-textbox-range-acceptance.json)
 

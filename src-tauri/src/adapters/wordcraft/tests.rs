@@ -8059,7 +8059,7 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let selected = serde_json::to_value(model.view()).unwrap();
         let selected = &selected["object"];
         assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
-        assert_eq!(selected["operations"], json!(["altText"]));
+        assert_eq!(selected["operations"], json!(["resize", "altText"]));
         assert_eq!(selected["picture"]["description"], label);
 
         let position = selected["position"].as_str().unwrap().to_owned();
@@ -8120,6 +8120,49 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         assert_eq!(xml.matches(&descr).count(), 2);
         *part_bytes = xml.replacen(&descr, "descr=\"unpaired\"", 1).into_bytes();
         assert!(package::compare_saved_docx(&left, &right).iter().any(|f| f.part.as_deref() == Some(part)));
+
+        let mut model = DocxModel::open(&after).unwrap();
+        assert!(model.apply(&[click]).rejected.is_empty());
+        let view = serde_json::to_value(model.view()).unwrap();
+        let object = &view["object"];
+        let resize = |edit| DocxOp::ObjectEdit {
+            position: object["position"].as_str().unwrap().into(),
+            epoch: object["epoch"].as_u64().unwrap(),
+            edit,
+        };
+        let moved = resize(ObjectEdit::Bounds {
+            x: Some(20.0), y: Some(30.0), width: Some(35.0), height: Some(27.5),
+        });
+        assert_eq!(model.apply(&[moved]).rejected, vec![0]);
+        assert_eq!(model.export().unwrap(), after);
+        assert!(!model.view().history.undo);
+        let size = resize(ObjectEdit::Bounds {
+            x: None, y: None, width: Some(35.0), height: Some(27.5),
+        });
+        assert_eq!(model.apply(&[size]).changed, 1, "{label} resize refused");
+        let resized = model.export().unwrap();
+        assert!(model.same_as(&resized));
+        assert!(service::check_saved(Format::Docx, &original, &resized, None, true).is_safe());
+        let before_size = package::open(&after, package::Side::Original).unwrap();
+        let mut after_size = package::open(&resized, package::Side::Output).unwrap();
+        assert_eq!(before_size.parts.keys().collect::<Vec<_>>(), after_size.parts.keys().collect::<Vec<_>>());
+        let from = "cx=\"355600\" cy=\"279400\"";
+        let to = "cx=\"444500\" cy=\"349250\"";
+        let before_xml = std::str::from_utf8(before_size.get(part).unwrap()).unwrap();
+        assert_eq!(before_xml.matches(from).count(), 2);
+        let target = before_xml.replace(from, to);
+        assert_eq!(after_size.get(part), Some(target.as_bytes()));
+        for name in before_size.parts.keys().filter(|n| n.as_str() != part) {
+            assert_eq!(before_size.get(name), after_size.get(name));
+        }
+        let (_, part_bytes) = after_size.parts.get_mut(part).unwrap();
+        *part_bytes = target.replacen(to, from, 1).into_bytes();
+        assert!(package::compare_saved_docx(&before_size, &after_size).iter().any(|f| f.part.as_deref() == Some(part)));
+        assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["picture"]["widthPt"], 35.0);
+        assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), after);
+        assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), resized);
     }
     if let Some(out) = std::env::var_os("GEUL_STAGE3A_STORY_OUT") {
         let out = std::path::PathBuf::from(out);

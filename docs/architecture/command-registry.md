@@ -1103,7 +1103,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 (|d|≤288pt), `{kind:"delete"}`. `objectEditMatches`가 선택 정체성과 `operations`(move·resize·delete)를 함께
 확인한다. 가용성은 편집 가능·대기 편집 없음·조합 중 아님·저장 중 아님·선택의 변경 연산 존재.
 
-- WordCraft: `DocxOp::ObjectEdit {position, epoch, edit}`. P1 당시의 대상은 본문 이야기의 그림·도형·글상자·그룹이었다. 이후 인라인 그림 대체 설명을 지원하는 별도 이야기의 범위는 [Stage 3-A P5](#stage-3-a-p5-이야기-그림과-글상자-문단)에 있다. 최상위 `InlineObject::Group`은 `move`·`resize`·`wrap`·`altText`·`delete`와 `rotate`·`zOrder` 및 `ShapeView` 프로젝션을 지원한다. `ShapeKind::Freeform`은 크기 조정 시 경로 좌표를 비례 변환한다. 이동은
+- WordCraft: `DocxOp::ObjectEdit {position, epoch, edit}`. P1 당시의 대상은 본문 이야기의 그림·도형·글상자·그룹이었다. 이후 인라인 그림 설명과 지원하는 크기 조정의 별도 이야기 범위는 [Stage 3-A P5](#stage-3-a-p5-이야기-그림과-글상자-문단)에 있다. 최상위 `InlineObject::Group`은 `move`·`resize`·`wrap`·`altText`·`delete`와 `rotate`·`zOrder` 및 `ShapeView` 프로젝션을 지원한다. `ShapeKind::Freeform`은 크기 조정 시 경로 좌표를 비례 변환한다. 이동은
   최상위 문단에서만, 이동·삭제는 다른 story에 그림이 없을 때만(그림 ID 재번호 방지). 엔진 명령 뒤
   위치·크기를 EMU 격자에 맞추고(재열기 동일성), 편집 전 내보내기 대비 `check_saved` + `same_as`가
   안전해야 커밋한다. 삭제는 그 그림만 쓰던 미디어를 모델에서 정리한다. 성공한 이동·크기는 새 선택 번호로
@@ -1232,7 +1232,7 @@ DOCX 기본 인라인 사각형·타원·선의 종류, 치수, 채움과 윤곽
 
 ## Stage 3-A P5 이야기 그림과 글상자 문단
 
-WordCraft의 `object.edit/altText`는 별도 `StoryRef::Part`에서 머리말·꼬리말·각주·미주 본문 문단의 인라인 내장 그림을 수정할 수 있다. 기존 WordCraft 선택 주소에 이야기 ID와 문단 경로가 들어간다. 활성 머리말·꼬리말은 본문 클릭 우선순위를 유지한 채 여백 안에서 적중할 수 있다. 각주·미주는 참조된 모델에서만 권한을 얻는다. 부유 그림, 그룹·OLE·중첩 개체와 위치·크기 편집은 이 경로에서 거부된다.
+WordCraft의 `object.edit/altText`는 별도 `StoryRef::Part`에서 머리말·꼬리말·각주·미주 본문 문단의 인라인 내장 그림을 수정할 수 있다. 기존 WordCraft 선택 주소에 이야기 ID와 문단 경로가 들어간다. 활성 머리말·꼬리말은 본문 클릭 우선순위를 유지한 채 여백 안에서 적중할 수 있다. 각주·미주는 참조된 모델에서만 권한을 얻는다. 같은 `StoryRef::Part` 주소의 `object.edit/bounds`는 원본 이야기 XML과 소유 리소스 및 두 치수가 일치하는 내장 인라인 그림에서 제자리 크기 조정만 허용한다. 부유 그림, 회전·반전 그림의 크기 조정, 그룹·OLE·중첩 개체와 이동·삭제는 거부한다. [크기 조정 수락](stage3-a-p5-story-size-acceptance.json)
 
 RHWP의 HWPX 본문 글상자에서 선택·조합이 없고 지원 문단 내부에 캐럿이 있을 때 Enter로 문단을 분할한다. 소유자 확인, 64문단 상한, 연속 문자 서식 범위, 분할 전후 문자·문단 서식과 외곽 속성을 검사한다. 기존 본문·표·캡션의 Enter 동작은 각각의 편집 경로를 사용한다. [P5 수용 기록](stage3-a-p5-nested-story-acceptance.json)
 

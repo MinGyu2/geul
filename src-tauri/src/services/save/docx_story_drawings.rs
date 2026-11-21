@@ -1,10 +1,10 @@
-//! T009 description-only edits in linked DOCX header, footer and note parts.
+//! T009 embedded inline picture edits in linked DOCX header, footer and note parts.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::document::xml::{self, Atom, Canonical};
 
-use super::package::{resolve, Package};
+use super::package::{self, resolve, Package, Side};
 
 const DOCUMENT_RELS: &str = "word/_rels/document.xml.rels";
 const DOCUMENT_XML: &str = "word/document.xml";
@@ -13,20 +13,16 @@ const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessin
 const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
-/// Exempt only linked story parts whose canonical XML agrees after masking
-/// descriptions of embedded inline pictures. IDs, note boundaries, drawing
-/// geometry and extents, relationship references, and all other events remain.
-pub(super) fn description_edits(original: &Package, output: &Package) -> BTreeSet<String> {
-    let Some(rels) = original.get(DOCUMENT_RELS) else {
-        return BTreeSet::new();
-    };
+type Stories = Vec<(String, &'static str, Option<&'static str>)>;
+
+fn linked_stories(original: &Package, output: &Package) -> Option<Stories> {
+    let rels = original.get(DOCUMENT_RELS)?;
     if rels.len() > 2 * 1024 * 1024 || output.get(DOCUMENT_RELS) != Some(rels) {
-        return BTreeSet::new();
+        return None;
     }
-    let Ok(relationships) = xml::relationships(rels) else {
-        return BTreeSet::new();
-    };
+    let relationships = xml::relationships(rels).ok()?;
     let bindings = relationships
         .into_iter()
         .fold(BTreeMap::new(), |mut bindings, relation| {
@@ -41,7 +37,7 @@ pub(super) fn description_edits(original: &Package, output: &Package) -> BTreeSe
             }
             bindings
         });
-    let parts: BTreeSet<_> = bindings
+    Some(bindings
         .into_iter()
         .filter_map(|(name, kind)| {
             let kind = kind?;
@@ -52,11 +48,83 @@ pub(super) fn description_edits(original: &Package, output: &Package) -> BTreeSe
                 "endnotes" => ("endnotes", Some("endnote")),
                 _ => return None,
             };
+            Some((name, root, note))
+        })
+        .collect())
+}
+
+fn owned_images(original: &Package, output: &Package, part: &str) -> Option<BTreeSet<String>> {
+    let (dir, file) = part.rsplit_once('/')?;
+    let rels_name = format!("{dir}/_rels/{file}.rels");
+    let rels = original.get(&rels_name)?;
+    if rels.len() > 2 * 1024 * 1024 || output.get(&rels_name) != Some(rels) {
+        return None;
+    }
+    let relationships = xml::relationships(rels).ok()?;
+    let mut ids = Vec::with_capacity(relationships.len());
+    xml::visit_element_starts(rels, |el| {
+        if el.name == "Relationship" {
+            let (_, _, value) = el.attributes.iter()
+                .find(|(ns, key, _)| ns.is_none() && key == "Id").ok_or(xml::Invalid)?;
+            ids.push(value.to_string());
+        }
+        Ok(())
+    }).ok()?;
+    if ids.len() != relationships.len() {
+        return None;
+    }
+    Some(ids.into_iter().zip(relationships).filter_map(|(id, rel)| {
+        if rel.external || rel.kind != IMAGE_REL {
+            return None;
+        }
+        let target = resolve(&rels_name, &rel.target)?;
+        (original.get(&target)? == output.get(&target)?).then_some(id)
+    }).collect())
+}
+
+/// Prove that WordCraft's initial serialization preserves the source XML of the
+/// actual stories and that every eligible model picture has paired source sizes.
+pub(crate) fn resize_source_supported(source: &[u8], export: &[u8], count: usize) -> bool {
+    let (Ok(original), Ok(output)) = (package::open(source, Side::Original), package::open(export, Side::Output)) else {
+        return false;
+    };
+    let Some(stories) = linked_stories(&original, &output) else {
+        return false;
+    };
+    let mut proved = 0;
+    for (part, root, note) in stories {
+        let (Some(before), Some(after)) = (original.get(&part), output.get(&part)) else {
+            return false;
+        };
+        // WordCraft's writer has one model size. Do not let its initial export
+        // erase disagreement or other unknown story XML before the edit gate.
+        if before != after {
+            return false;
+        }
+        let images = owned_images(&original, &output, &part).unwrap_or_default();
+        let Some((_, sizes)) = masked(before, root, note, &images) else {
+            return false;
+        };
+        proved += sizes;
+    }
+    proved == count && same_story_references(&original, &output)
+}
+
+/// Exempt only linked story XML with matching picture descriptions or paired
+/// embedded picture extents masked. All other XML events stay in the comparison.
+pub(super) fn inline_picture_edits(original: &Package, output: &Package) -> BTreeSet<String> {
+    let Some(stories) = linked_stories(original, output) else {
+        return BTreeSet::new();
+    };
+    let parts: BTreeSet<_> = stories
+        .into_iter()
+        .filter_map(|(name, root, note)| {
             let (before, after) = (original.get(&name)?, output.get(&name)?);
             if before == after {
                 return None;
             }
-            let (before, after) = (masked(before, root, note)?, masked(after, root, note)?);
+            let images = owned_images(original, output, &name).unwrap_or_default();
+            let ((before, _), (after, _)) = (masked(before, root, note, &images)?, masked(after, root, note, &images)?);
             (before == after).then_some(name)
         })
         .collect();
@@ -110,7 +178,7 @@ fn matches_path(stack: &[Element], path: &[(&str, &str)]) -> bool {
             })
 }
 
-fn masked(bytes: &[u8], root: &str, note: Option<&str>) -> Option<Vec<Canonical>> {
+fn masked(bytes: &[u8], root: &str, note: Option<&str>, owned_images: &BTreeSet<String>) -> Option<(Vec<Canonical>, usize)> {
     let (mut events, _) = xml::canonical_with_payload_limit(bytes, Some(8 * 1024 * 1024)).ok()?;
     let mut scope = vec![(WORD, root)];
     if let Some(note) = note {
@@ -122,12 +190,24 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>) -> Option<Vec<Canonical>
     picture.extend([(A, "graphic"), (A, "graphicData"), (PIC, "pic")]);
     let mut blip = picture.clone();
     blip.extend([(PIC, "blipFill"), (A, "blip")]);
+    let mut xfrm = picture.clone();
+    xfrm.extend([(PIC, "spPr"), (A, "xfrm")]);
+    let mut inner_size = xfrm.clone();
+    inner_size.push((A, "ext"));
+    let mut outer_size = scope.clone();
+    outer_size.push((WP, "extent"));
     picture.extend([(PIC, "nvPicPr"), (PIC, "cNvPr")]);
     let mut stack = Vec::new();
     let mut descriptions = Vec::new();
+    let mut sizes = Vec::new();
     let mut props = None;
     let mut picture_props = None;
     let mut embedded = false;
+    let mut blip_seen = false;
+    let mut owned = false;
+    let mut transformed = false;
+    let mut outer_extent = None;
+    let mut inner_extent = None;
     let mut normal_note = note.is_none();
     for (index, event) in events.iter().enumerate() {
         match event {
@@ -169,16 +249,42 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>) -> Option<Vec<Canonical>
                 if matches_path(&stack, &picture) && picture_props.replace(index).is_some() {
                     return None;
                 }
+                if matches_path(&stack, &outer_size) && outer_extent.replace(index).is_some() {
+                    return None;
+                }
+                if matches_path(&stack, &inner_size) && inner_extent.replace(index).is_some() {
+                    return None;
+                }
+                if matches_path(&stack, &xfrm) {
+                    transformed |= attributes.iter().any(|(ns, key, value)| {
+                        ns.is_some() || !matches!(key.as_str(), "rot" | "flipH" | "flipV") || value != "0"
+                    });
+                }
                 if matches_path(&stack, &blip) {
+                    transformed |= blip_seen;
+                    blip_seen = true;
                     embedded = attributes.iter().any(|(ns, key, value)| {
                         ns.as_deref() == Some(REL) && key == "embed" && !value.is_empty()
                     }) && !attributes
                         .iter()
                         .any(|(ns, key, _)| ns.as_deref() == Some(REL) && key == "link");
+                    owned = embedded && attributes.iter().any(|(ns, key, value)| {
+                        ns.as_deref() == Some(REL) && key == "embed" && owned_images.contains(value.as_str())
+                    });
                 }
             }
             Canonical::End => {
                 if matches_path(&stack, &scope) {
+                    let frame = outer_extent.take().zip(inner_extent.take());
+                    if owned && !transformed && props.is_some() && picture_props.is_some() {
+                        if let Some((outer, inner)) = frame {
+                            if let Some(size) = extent(&events[outer]) {
+                                if extent(&events[inner]) == Some(size) {
+                                    sizes.extend([outer, inner]);
+                                }
+                            }
+                        }
+                    }
                     if let (Some(outer), Some(inner), true) =
                         (props.take(), picture_props.take(), embedded)
                     {
@@ -190,6 +296,9 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>) -> Option<Vec<Canonical>
                         }
                     }
                     embedded = false;
+                    blip_seen = false;
+                    owned = false;
+                    transformed = false;
                 }
                 stack.pop()?;
             }
@@ -202,7 +311,31 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>) -> Option<Vec<Canonical>
         };
         attributes.retain(|(ns, key, _)| ns.is_some() || key != "descr");
     }
-    Some(events)
+    let count = sizes.len() / 2;
+    for index in sizes {
+        let Canonical::Start { attributes, .. } = &mut events[index] else {
+            return None;
+        };
+        attributes.clear(); // extent() admitted exactly the paired cx/cy values.
+    }
+    Some((events, count))
+}
+
+fn extent(event: &Canonical) -> Option<[u32; 2]> {
+    let Canonical::Start { attributes, .. } = event else {
+        return None;
+    };
+    let [(None, cx, width), (None, cy, height)] = attributes.as_slice() else {
+        return None;
+    };
+    if cx != "cx" || cy != "cy" {
+        return None;
+    }
+    let parse = |value: &Atom| {
+        let size = value.parse::<u32>().ok()?;
+        ((25_400..=50_800_000).contains(&size) && value.as_str() == size.to_string()).then_some(size)
+    };
+    Some([parse(width)?, parse(height)?])
 }
 
 fn description(event: &Canonical) -> Option<&Atom> {

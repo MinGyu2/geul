@@ -2047,9 +2047,11 @@ HWP5 `prove_evolved_gso`는 기존 정상 본문 곡선의 태그 83에서 좌�
 
 HWPX에서는 본문 다각형의 편집점 및 평면 그룹의 단색 자식 목록을 독립 엔진 재열기로 비교한다. Linux X11 게시본을 XML/CFB로 따로 검사해 대상 좌표·색 외의 섹션 구조, 리소스, 변환, 형제, 식별자가 유지됨을 확인했다. 기존 RHWP 구조 클립보드 및 그룹 삭제 증명과 미리보기·복구 규칙을 적용한다. [P4 수용 기록](stage3-a-p4-object-geometry-acceptance.json)
 
-### Stage 3-A P5 이야기 그림 설명과 글상자 분할
+### Stage 3-A P5 이야기 그림과 글상자 분할
 
-`docx_story_drawings::description_edits`는 본문에 연결된 머리말·꼬리말·각주·미주 부분에서 정규 인라인 그림의 `wp:docPr@descr`와 `pic:cNvPr@descr`가 같은 값으로 함께 변경된 경우를 판정한다. 두 설명을 제외한 정규 XML 사건, 본문 이야기 참조, 본문 관계, 별도 그림 관계 및 리소스는 기존 보존 규칙을 통과해야 한다. 두 설명이 불일치하거나 그림·노트 구조 자체가 바뀐 경우 거부한다.
+`docx_story_drawings::inline_picture_edits`는 본문에 연결된 머리말·꼬리말·각주·미주 부분에서 정규 인라인 그림의 `wp:docPr@descr`와 `pic:cNvPr@descr`가 같은 값으로 함께 변경된 경우를 판정한다. 두 설명을 제외한 정규 XML 사건, 본문 이야기 참조, 본문 관계, 별도 그림 관계 및 리소스는 기존 보존 규칙을 통과해야 한다. 두 설명이 불일치하거나 그림·노트 구조 자체가 바뀐 경우 거부한다.
+
+크기 조정은 초기 원본 이야기 XML 왕복과 그림 관계를 먼저 확인한 문서에서 활성화한다. T009는 동일한 그림의 `wp:extent`와 `pic:spPr/a:xfrm/a:ext`가 한 쌍으로 일치하고, 해당 이야기의 `r:embed` 관계 및 미디어 바이트가 유지되는 경우에 두 치수만 비교에서 제외한다. 한쪽 치수만 바뀌거나 치수 밖의 XML·리소스가 달라지면 거부한다. [크기 조정 수락](stage3-a-p5-story-size-acceptance.json)
 
 HWPX 글상자 분할은 한 Undo 단계 안에서 글자 순서와 HWPUNIT 외곽 속성, 문자 모양 및 언어 슬롯과 문단 서식의 분할 전후 일치를 확인한다. X11 게시본에서 분할 문단의 혼합 서식, 뒤따르는 문단 ID, 여백과 세로 정렬이 보존됨을 독립 엔진과 XML로 검사했다. [P5 수용 기록](stage3-a-p5-nested-story-acceptance.json)
 

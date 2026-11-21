@@ -1,0 +1,85 @@
+{
+  "date": "2026-11-21",
+  "baselineHead": "fb7202408b1cca8cd63820b9c1dafbe869dff166",
+  "features": [
+    "P5-DX-HDR-SIZE",
+    "P5-DX-FTR-SIZE",
+    "P5-DX-FN-SIZE",
+    "P5-DX-EN-SIZE"
+  ],
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "Top-level inline embedded pictures in linked headers and footers and in referenced normal footnotes and endnotes. The original story XML must match the unedited WordCraft serialization; each eligible picture has synchronized, in-range source extents, a story-owned internal image relationship and unchanged image bytes. Resize preserves the story, run, placement, crop, relationship and drawing identity.",
+  "refused": "Movement, anchoring changes, deletion, OLE/external/nested objects, unsupported transforms and dimensions, unmatched dimensions or lossy initial source serialization, and stale or wrong-owner selections.",
+  "wordcraftRevision": "b2c974369dd02d322a5498db484bcf96906dad15",
+  "rhwpGeneration": "96fd98d23e8483ad5cd2b34c54f52a4a71dd175c1d2f879ac49fae34774d9325",
+  "checks": {
+    "typecheck": "PASS in protected Tauri build",
+    "wordcraftFocused": "PASS, four OPC stories and prior alt-text path",
+    "t009": "PASS, combined resize/description export; a one-sided extent fault refused in each story",
+    "gitDiffCheck": "PASS"
+  },
+  "nativeX11": {
+    "appSha256": "21891b7d8aacd43e8692597b15a76de6fc5830bbfca636278c891c67c727df76",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "build": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+    "acceptance": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p5.py --out <out> --fixtures <fixtures> --cases P5-DX-STORY-SIZE P5.1 --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "cases": {
+      "P5-DX-STORY-SIZE": {
+        "status": "PASS",
+        "fixtureSha256": "620bb60cd0b9e56f85e492e02050a3fe4920d9788850b8ed8f7fe4408f87450b",
+        "publishedSha256": "b9cb464f7a462028aa5bf96ca90b3e22bce2dcc9088d43546fd66d924bceb503",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "docx-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "12"
+        },
+        "storyRevisions": {
+          "endnote": 3,
+          "footer": 6,
+          "footnote": 9,
+          "header": 12
+        },
+        "unchangedResources": [
+          "word/media/image1.png"
+        ]
+      },
+      "P5.1": {
+        "status": "PASS",
+        "fixtureSha256": "620bb60cd0b9e56f85e492e02050a3fe4920d9788850b8ed8f7fe4408f87450b",
+        "publishedSha256": "78f512e34ef9f29122b846304717253e9ebfaae36f470c294baeef0ee99c3db0",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "docx-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "12"
+        },
+        "storyRevisions": {
+          "endnote": 3,
+          "footer": 6,
+          "footnote": 9,
+          "header": 12
+        },
+        "unchangedResources": [
+          "word/media/image1.png"
+        ]
+      }
+    },
+    "independentReopen": "Both extents changed per selected inline picture from 355600\u00d7279400 to 444500\u00d7349250 EMU. Body, note references, other part contents, relationships and the shared embedded image retained. The app reopens and reselects all four pictures with the expected widths.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "exit": 0
+    }
+  },
+  "rawEvidence": "target/stage3a-docx-story-size/native-result/"
+}
