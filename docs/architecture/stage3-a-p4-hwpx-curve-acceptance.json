@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-HX-CURVE",
+  "originalCategory": "A",
+  "implementationStatus": "PARTIAL_BLOCKED_BY_FORMAT_CONTRACT",
+  "implementedSubset": [
+    "Parse and retain original HWPX hp:seg attributes, type identity, ordering, and lexical coordinate strings.",
+    "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
+    "Move a shared endpoint in both adjacent segment records; keep a closed path closed.",
+    "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types."
+  ],
+  "unresolvedRequirements": [
+    "No explicit Bezier control-point coordinates or editing API are defined by the cited HWPML 3.0 Revision 1.2 SEGMENT entry.",
+    "Curve segment insertion/deletion and complete Bezier control-point editing remain unsupported and unaccepted.",
+    "The exact extension contract or compatible source-document evidence required to support these fields is not available."
+  ],
+  "formatEvidence": {
+    "source": "Hancom HWPML 3.0 Revision 1.2, section 5.6.6, table 140 SEGMENT",
+    "url": "https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D3.0_HWPML_revision1.2.pdf",
+    "accessed": "2026-11-22",
+    "finding": "The published SEGMENT entry defines Line/Curve type, x1/y1 start coordinates, and x2/y2 end coordinates; it does not define Bezier control-point coordinates. This is a format-contract gap, not proof that proprietary extensions do not exist."
+  },
+  "releaseWasm": {
+    "generation": "d89b0ccfc6f7eca581911ced6707b5a218958822095e06c1273be5449bbb52d3",
+    "patchSeriesCount": 45,
+    "lastPatch": "patches/rhwp/stage3a-hwpx-curve-segments.patch",
+    "lastPatchSha256": "cacb17c9d568f61788441cd5eb47e8f782de13168eb6ebfd21ec34f39fb598f7",
+    "command": "GEUL_STAGE3_OUT=target/p4-hx-curve/wasm-final node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage3-shapes.wasm.test.ts -t 'preserves HWPX curve segment identity|Stage 3-A edits a closed HWPX polygon point|Stage 3-A inserts on the closing HWPX edge|edits hwp polygon and curve outer geometry'",
+    "result": "PASS: 4 passed, 70 skipped. The first run lacked the output directory and failed with ENOENT while writing artifacts; the same command passed after creating the directory.",
+    "assertions": [
+      "Mixed LINE/CURVE source identity and unknown segment metadata survive edits.",
+      "Shared endpoint edits keep segment order and closed-path geometry consistent.",
+      "Undo/Redo, zero-loss Release export report, independent HWPX reopen, and unrelated OPC part byte equality pass.",
+      "Unknown SPLINE type remains round-trippable but is not exposed as editable."
+    ],
+    "wasmSha256": "3346eb05f40f10dfebe0de49fabd8d2595c2b40f0e03d5c295b7f7fabca05ef8"
+  },
+  "native": {
+    "status": "PASS_FOR_IMPLEMENTED_ENDPOINT_SUBSET",
+    "environment": "Linux X11/Xvfb, test-owned private X11 and Tauri WebDriver session",
+    "appSha256": "27b5ce15c3206d7bf091591d23c562e4150bda62f6a98dc71b5240aab4764a81",
+    "rhwpGeneration": "d89b0ccfc6f7eca581911ced6707b5a218958822095e06c1273be5449bbb52d3",
+    "fixtureSha256": "a814700021b3176f45555526d86ddd1954dceaf11e5bb9cc38939ba6fcc0a297",
+    "publishedFileSha256": "f27b8d7d90e4d8ffb23f4f8b4ad5625a82d6b6adba1cb147e6a6794b5bcf280f",
+    "resultFile": "target/p4-hx-curve/native4/result.json",
+    "caseStatus": "PASS",
+    "checks": [
+      "Trusted pointer drag changes the selected connected endpoint in local integer coordinates.",
+      "Undo and Redo restore the exact original and edited point.",
+      "Unrelated body text and controls remain equal; section XML differs only by intended segment endpoint coordinates and all other OPC parts remain source-preserved by the Release WASM evidence.",
+      "The T009 save gate reports state=saved, synced=true, changedSince=false, with no findings.",
+      "The published file opens in a fresh Native session with dirty=false and unpreserved=false."
+    ],
+    "earlierRun": "Before whitespace-only unified-patch formatting, one Native attempt failed closed at T009 with partChanged:Contents/section0.xml and saved nothing; same-generation rerun passed. After the patch representation changed, an intermediate invocation used the generic C-suite runner and was rejected before app launch. The current d89b0ccf X11 run used the P4-specific runner and passed without changing safety guards.",
+    "otherPlatforms": "Wayland, Windows, and macOS NOT RUN; complete Bezier acceptance remains unresolved.",
+    "cleanupFile": "target/p4-hx-curve/native-session5/cleanup.json"
+  },
+  "commit": {
+    "status": "PARTIAL_IMPLEMENTATION_COMMIT_PENDING",
+    "sha": null
+  },
+  "tauriRelease": {
+    "appSha256": "27b5ce15c3206d7bf091591d23c562e4150bda62f6a98dc71b5240aab4764a81",
+    "privacyStatus": "PASS",
+    "runtimePathStatus": "PASS",
+    "portabilityStatus": "NOT_VERIFIED",
+    "reason": "Nix store runtime dependencies; Debian/Ubuntu portability is not established."
+  }
+}

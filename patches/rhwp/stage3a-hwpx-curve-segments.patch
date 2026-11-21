@@ -1,0 +1,346 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -8,7 +8,8 @@
+ use crate::model::event::DocumentEvent;
+ use crate::model::paragraph::Paragraph;
+ use crate::model::shape::{
+-    Caption, CaptionDirection, CaptionVertAlign, RectangleShape, ShapeObject, SourceHwpRectGeometry,
++    Caption, CaptionDirection, CaptionVertAlign, HwpxCurveSegment, RectangleShape, ShapeObject,
++    SourceHwpRectGeometry,
+ };
+-
++
+ fn geul_bad_shape_edit() -> HwpError {
+@@ -33,6 +34,46 @@
+-
++
+ fn geul_same_point(a: &crate::model::Point, b: &crate::model::Point) -> bool {
+     a.x == b.x && a.y == b.y
++}
++
++/// Return the shared node chain only for connected, fully described HWPX
++/// segments whose original command identities are understood by the editor.
++/// Unknown command types remain round-trippable but fail closed for editing.
++fn geul_hwpx_curve_points(segments: &[HwpxCurveSegment]) -> Option<Vec<crate::model::Point>> {
++    if !(2..=256).contains(&segments.len()) {
++        return None;
++    }
++    let mut points = Vec::with_capacity(segments.len() + 1);
++    for (index, segment) in segments.iter().enumerate() {
++        let attribute = |name: &str| {
++            let mut values = segment.attributes.iter().filter(|(key, _)| key == name);
++            let value = values.next()?.1.as_str();
++            values.next().is_none().then_some(value)
++        };
++        let x1 = attribute("x1")?.parse::<i32>().ok()?;
++        let y1 = attribute("y1")?.parse::<i32>().ok()?;
++        let x2 = attribute("x2")?.parse::<i32>().ok()?;
++        let y2 = attribute("y2")?.parse::<i32>().ok()?;
++        if !matches!(attribute("type"), Some("LINE" | "CURVE"))
++            || (!segment.coordinates_edited && (x1 != segment.start.x || y1 != segment.start.y
++                || x2 != segment.end.x || y2 != segment.end.y))
++            || (index > 0 && !geul_same_point(&segments[index - 1].end, &segment.start))
++        {
++            return None;
++        }
++        if index == 0 {
++            points.push(segment.start);
++        }
++        points.push(segment.end);
++    }
++    Some(points)
++}
++
++fn geul_hwpx_curve_matches(segments: &[HwpxCurveSegment], points: &[crate::model::Point]) -> bool {
++    geul_hwpx_curve_points(segments).is_some_and(|derived| {
++        derived.len() == points.len()
++            && derived.iter().zip(points).all(|(a, b)| geul_same_point(a, b))
++    })
+ }
+-
++
+ fn geul_polygon_valid(points: &[crate::model::Point]) -> bool {
+@@ -801,6 +842,11 @@
+             }
+             ShapeObject::Curve(c) if self.source_format == FileFormat::Hwp =>
+                 ("curve", &c.points, geul_cubic_handles(&c.points, &c.segment_types)?),
++            ShapeObject::Curve(c) if self.source_format == FileFormat::Hwpx
++                && geul_hwpx_curve_matches(&c.hwpx_segments, &c.points) =>
++            {
++                ("curve", &c.points, vec![false; c.points.len()])
++            }
+             _ => return None,
+         };
+         if !points.iter().all(|p| (0..=attr.original_width as i32).contains(&p.x)
+@@ -808,14 +854,36 @@
+         {
+             return None;
+         }
+-        let closed = kind == "polygon" && geul_same_point(&points[0], points.last()?);
+-        Some(serde_json::json!({
++        let hwpx_segments = match shape {
++            ShapeObject::Curve(curve) if self.source_format == FileFormat::Hwpx => Some(&curve.hwpx_segments),
++            _ => None,
++        };
++        let closed = (kind == "polygon" || hwpx_segments.is_some())
++            && geul_same_point(&points[0], points.last()?);
++        let mut path = serde_json::json!({
+             "kind": kind, "width": attr.original_width, "height": attr.original_height,
+             "closed": closed,
+             "points": points.iter().zip(handles).map(|(point, handle)| serde_json::json!({
+                 "x": point.x, "y": point.y, "control": handle
+             })).collect::<Vec<_>>(),
+-        }))
++        });
++        if let Some(segments) = hwpx_segments {
++            path["segments"] = serde_json::json!(segments.iter().map(|segment| {
++                segment.attributes.iter().map(|(name, original)| {
++                    let value = if segment.coordinates_edited {
++                        match name.as_str() {
++                            "x1" => segment.start.x.to_string(),
++                            "y1" => segment.start.y.to_string(),
++                            "x2" => segment.end.x.to_string(),
++                            "y2" => segment.end.y.to_string(),
++                            _ => original.clone(),
++                        }
++                    } else { original.clone() };
++                    (name.clone(), value)
++                }).collect::<Vec<_>>()
++            }).collect::<Vec<_>>());
++        }
++        Some(path)
+     }
+-
++
+     /// Only polygons whose placement, style, and component matrix the
+@@ -866,6 +934,7 @@
+         use crate::model::Point;
+         let path = self.editable_shape_path(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
+         let hwp5 = self.source_format == crate::parser::FileFormat::Hwp;
++        let hwpx = self.source_format == crate::parser::FileFormat::Hwpx;
+         let shape = self.resolve_shape_control_mut(sec, para, ctrl)?;
+         let attr = shape.shape_attr();
+         if !(0..=attr.original_width as i32).contains(&x) || !(0..=attr.original_height as i32).contains(&y) {
+@@ -899,10 +968,40 @@
+                 p.points = points;
+             }
+             ShapeObject::Curve(c) => {
+-                let points = accepted_points(&c.points)
+-                    .filter(|pts| geul_cubic_handles(pts, &c.segment_types).is_some())
+-                    .ok_or_else(geul_bad_shape_edit)?;
+-                c.points = points;
++                let points = accepted_points(&c.points).ok_or_else(geul_bad_shape_edit)?;
++                if hwp5 {
++                    if geul_cubic_handles(&points, &c.segment_types).is_none() {
++                        return Err(geul_bad_shape_edit());
++                    }
++                    c.points = points;
++                } else if hwpx {
++                    let segments = &mut c.hwpx_segments;
++                    if !geul_hwpx_curve_matches(segments, &c.points) {
++                        return Err(geul_bad_shape_edit());
++                    }
++                    let moved = Point { x, y };
++                    if index == 0 {
++                        segments[0].start = moved;
++                        segments[0].coordinates_edited = true;
++                        if closed {
++                            let last = segments.last_mut().ok_or_else(geul_bad_shape_edit)?;
++                            last.end = moved;
++                            last.coordinates_edited = true;
++                        }
++                    } else {
++                        let previous = segments.get_mut(index - 1).ok_or_else(geul_bad_shape_edit)?;
++                        previous.end = moved;
++                        previous.coordinates_edited = true;
++                        if index < segments.len() {
++                            let next = segments.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++                            next.start = moved;
++                            next.coordinates_edited = true;
++                        }
++                    }
++                    c.points = points;
++                } else {
++                    return Err(geul_bad_shape_edit());
++                }
+             }
+             _ => return Err(geul_bad_shape_edit()),
+         }
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -734,6 +734,19 @@
+ }
+-
++
+ /// 곡선 개체 (HWPTAG_SHAPE_COMPONENT_CURVE)
++/// An HWPX `<hp:seg>` is an endpoint-to-endpoint segment, not an HWP5 cubic
++/// command. Keep its source attributes separately so a HWPX roundtrip never
++/// invents HWP5 control points or changes the original segment type.
++#[derive(Debug, Default, Clone, serde::Serialize)]
++pub struct HwpxCurveSegment {
++    pub start: Point,
++    pub end: Point,
++    pub attributes: Vec<(String, String)>,
++    /// Mark only when an endpoint was explicitly edited. Otherwise the
++    /// attribute spelling and lexical coordinate values remain untouched.
++    pub coordinates_edited: bool,
++}
++
+ #[derive(Debug, Default, Clone, serde::Serialize)]
+ pub struct CurveShape {
+     /// 공통 속성
+@@ -744,6 +757,8 @@
+     pub points: Vec<Point>,
+     /// 세그먼트 타입 목록 (0: line, 1: curve)
+     pub segment_types: Vec<u8>,
++    /// Original HWPX `<hp:seg>` records. Empty for HWP5/HWP3 curves.
++    pub hwpx_segments: Vec<HwpxCurveSegment>,
+ }
+-
++
+ /// 묶음 개체 (HWPTAG_SHAPE_COMPONENT_CONTAINER)
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -27,6 +27,7 @@
+ };
+ use crate::model::shape::{
+     ArcShape, CommonObjAttr, ConnectorControlPoint, ConnectorData, CurveShape, DrawingObjAttr,
++    HwpxCurveSegment,
+     EllipseShape, GroupShape, HorzAlign, HorzRelTo, LineShape, LinkLineType, PolygonShape,
+     RectangleShape, ShapeComponentAttr, ShapeObject, SizeCriterion, TextBox, TextWrap, VertAlign,
+     VertRelTo,
+@@ -4871,6 +4872,7 @@
+     // [Task #1067] polygon / curve 의 가변 꼭짓점 `<hc:pt x=... y=.../>` 누적.
+     // 기존 pt0/pt1/pt2/pt3 (rect 의 4 꼭짓점) 와 별개.
+     let mut polygon_points: Vec<crate::model::Point> = Vec::new();
++    let mut hwpx_curve_segments: Vec<HwpxCurveSegment> = Vec::new();
+     // [Task #1598] ellipse / arc 전용 지오메트리 (`<hc:center>`/`<hc:ax1>`/...).
+     // 미적재 시 한글이 타원/호를 다르게 렌더 → 누적 레이아웃 변동 → 페이지 붕괴(#1589 잔여).
+     let mut e_center = crate::model::Point::default();
+@@ -5041,7 +5043,14 @@
+                         let mut y1: i32 = 0;
+                         let mut x2: i32 = 0;
+                         let mut y2: i32 = 0;
++                        let mut attributes = Vec::new();
+                         for attr in ce.attributes().flatten() {
++                            let name = attr.key.as_ref().to_string();
++                            let value = attr
++                                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
++                                .map_err(|error| HwpxError::XmlError(error.to_string()))?
++                                .into_owned();
++                            attributes.push((name, value));
+                             match attr.key.as_ref().as_bytes() {
+                                 b"x1" => x1 = parse_i32(&attr),
+                                 b"y1" => y1 = parse_i32(&attr),
+@@ -5054,6 +5063,14 @@
+                             polygon_points.push(crate::model::Point { x: x1, y: y1 });
+                         }
+                         polygon_points.push(crate::model::Point { x: x2, y: y2 });
++                        if shape_type == b"curve" {
++                            hwpx_curve_segments.push(HwpxCurveSegment {
++                                start: crate::model::Point { x: x1, y: y1 },
++                                end: crate::model::Point { x: x2, y: y2 },
++                                attributes,
++                                coordinates_edited: false,
++                            });
++                        }
+                     }
+                     b"startPt" => {
+                         for attr in ce.attributes().flatten() {
+@@ -5241,6 +5258,7 @@
+             // 베지어 제어점 2개를 담지 않는다. 그대로 옮기면 renderer가 세 점씩 소비하므로
+             // 비워서 기존의 LineTo 체인 렌더 계약을 유지한다(#1200, #4676).
+             segment_types: Vec::new(),
++            hwpx_segments: hwpx_curve_segments,
+         }),
+         _ => ShapeObject::Rectangle(RectangleShape {
+             common,
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -3293,6 +3293,9 @@
+         // [#4676] curve 는 점을 `<hp:seg>` 체인으로 방출한다 — `<hc:pt>` 나열은 한글이
+         // 열다 죽는다(RPC 0x800706BE). 한컴 원본 실측: hp:curve 는 seg 만 쓰고 hc:pt 는
+         // 한 번도 쓰지 않는다. seg 는 이웃한 두 점을 잇는 구간이므로 점 N 개 → seg N-1 개.
++        ShapeObject::Curve(cv) if !cv.hwpx_segments.is_empty() => {
++            hwpx_curve_segments_xml(&cv.hwpx_segments)
++        }
+         ShapeObject::Curve(cv) => curve_segs_xml(&cv.points, &cv.segment_types),
+         _ => String::new(),
+     };
+@@ -3340,6 +3343,37 @@
+                 r#"<hp:seg type="{}" x1="{}" y1="{}" x2="{}" y2="{}"/>"#,
+                 kind, w[0].x, w[0].y, w[1].x, w[1].y
+             )
++        })
++        .collect()
++}
++
++/// Serialize original HWPX segment records without translating their type or
++/// unrelated attributes through the HWP5 cubic command model.
++fn hwpx_curve_segments_xml(segments: &[crate::model::shape::HwpxCurveSegment]) -> String {
++    segments
++        .iter()
++        .map(|segment| {
++            let mut xml = String::from("<hp:seg");
++            for (name, original) in &segment.attributes {
++                let value = if segment.coordinates_edited {
++                    match name.as_str() {
++                        "x1" => segment.start.x.to_string(),
++                        "y1" => segment.start.y.to_string(),
++                        "x2" => segment.end.x.to_string(),
++                        "y2" => segment.end.y.to_string(),
++                        _ => original.clone(),
++                    }
++                } else {
++                    original.clone()
++                };
++                xml.push(' ');
++                xml.push_str(name);
++                xml.push_str("=\"");
++                xml.push_str(&xml_escape(&value));
++                xml.push('"');
++            }
++            xml.push_str("/>");
++            xml
+         })
+         .collect()
+ }
+@@ -4730,6 +4764,7 @@
+                 Point { x: 900, y: 250 },
+             ],
+             segment_types: vec![1, 0],
++            hwpx_segments: Vec::new(),
+         };
+         let mut ctx = SerializeContext::default();
+         let xml = render_shape(&ShapeObject::Curve(curve), &mut ctx);
+@@ -4769,9 +4804,9 @@
+         <hp:orgSz width="100" height="100"/>
+         <hp:curSz width="100" height="100"/>
+         <hp:lineShape color="#000000" width="113" style="SOLID"/>
+-        <hp:seg type="CURVE" x1="0" y1="0" x2="10" y2="20"/>
+-        <hp:seg type="CURVE" x1="10" y1="20" x2="40" y2="30"/>
+-        <hp:seg type="CURVE" x1="40" y1="30" x2="90" y2="80"/>
++        <hp:seg type="CURVE" x1="0" y1="0" x2="10" y2="20" marker="first &amp; original"/>
++        <hp:seg type="LINE" x1="10" y1="20" x2="40" y2="30" marker="middle"/>
++        <hp:seg type="CURVE" x1="40" y1="30" x2="90" y2="80" marker="last"/>
+       </hp:curve>
+     </hp:run>
+   </hp:p>
+@@ -4812,6 +4847,16 @@
+             "HWPX CURVE를 HWP5 Bezier 타입으로 재도입하면 안 됨: {:?}",
+             curve.segment_types
+         );
++        assert_eq!(curve.hwpx_segments.len(), 3);
++        assert_eq!(
++            curve.hwpx_segments.iter().map(|segment| {
++                segment.attributes.iter().find(|(name, _)| name == "type").unwrap().1.as_str()
++            }).collect::<Vec<_>>(),
++            vec!["CURVE", "LINE", "CURVE"],
++            "원본 HWPX segment type을 별도 보존"
++        );
++        assert!(xml.contains(r#"marker="first &amp; original""#), "알 수 없는 segment 속성 보존: {xml}");
++        assert!(xml.contains(r#"type="LINE" x1="10" y1="20" x2="40" y2="30" marker="middle""#), "LINE segment 식별·순서 보존: {xml}");
+     }
+-
++
+     /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상

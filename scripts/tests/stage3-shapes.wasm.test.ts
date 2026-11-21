@@ -233,6 +233,64 @@ function polygonFixture(format: "hwp" | "hwpx" = "hwpx"): { bytes: Uint8Array; i
   } finally { doc.free(); }
 }
 
+function curveFixture(firstType = "CURVE"): { bytes: Uint8Array; index: number } {
+  const polygon = polygonFixture("hwpx");
+  const bytes = execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                def convert(match):
+                    shape = match[0].decode("utf-8")
+                    points = re.findall(r'<hc:pt x="(-?\\d+)" y="(-?\\d+)"\\s*/>', shape)
+                    assert len(points) == 4 and points[0] == points[-1]
+                    segments = []
+                    for i, (start, end) in enumerate(zip(points, points[1:])):
+                        kind = sys.argv[1] if i == 0 else ("LINE", "CURVE")[i - 1]
+                        marker = ' marker="preserve &amp; me"' if i == 0 else ""
+                        segments.append(f'<hp:seg type="{kind}" x1="{start[0]}" y1="{start[1]}" x2="{end[0]}" y2="{end[1]}"{marker}/>' )
+                    shape = re.sub(r'<hp:polygon\\b', '<hp:curve', shape, count=1)
+                    shape = shape.replace("</hp:polygon>", "</hp:curve>")
+                    shape = re.sub(r'<hc:pt\\b[^>]*/>', "", shape)
+                    size = "<hp:sz"
+                    assert shape.count(size) == 1
+                    return shape.replace(size, "".join(segments) + size, 1).encode("utf-8")
+                data, count = re.subn(rb'<hp:polygon\\b.*?</hp:polygon>', convert, data, flags=re.S)
+                assert count == 1
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`, firstType], { input: polygon.bytes });
+  return { bytes, index: polygon.index };
+}
+
+function curveSegments(bytes: Uint8Array): Record<string, string>[] {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as doc:
+    root = ET.fromstring(doc.read("Contents/section0.xml"))
+curve = root.find(".//{*}curve")
+assert curve is not None
+print(json.dumps([dict(segment.attrib) for segment in curve.findall("{*}seg")]))
+`], { input: bytes, encoding: "utf8" }));
+}
+
+function unchangedHwpxParts(original: Uint8Array, output: Uint8Array): boolean {
+  return execFileSync("python3", ["-c", `
+import base64, io, json, sys, zipfile
+left, right = (base64.b64decode(value) for value in json.load(sys.stdin))
+with zipfile.ZipFile(io.BytesIO(left)) as a, zipfile.ZipFile(io.BytesIO(right)) as b:
+    names_a = {name for name in a.namelist() if name != "Contents/section0.xml" and not name.startswith("Preview/")}
+    names_b = {name for name in b.namelist() if name != "Contents/section0.xml" and not name.startswith("Preview/")}
+    assert names_a == names_b
+    assert all(a.read(name) == b.read(name) for name in names_a)
+print("true")
+`], { input: JSON.stringify([Buffer.from(original).toString("base64"), Buffer.from(output).toString("base64")]), encoding: "utf8" }).trim() === "true";
+}
+
 function withPolygonTransform(bytes: Uint8Array, original: string, replacement: string): Uint8Array {
   return execFileSync("python3", ["-c", `
 import io, re, sys, zipfile
@@ -665,6 +723,85 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(pick(shapes(doc)[0]!).operations).not.toContain("pathPoint");
       expect(() => doc.moveShapePathPoint!(0, 0, index, 0, 2801, 1602)).toThrow();
     } finally { editor.dispose(); }
+  });
+
+  it("preserves HWPX curve segment identity and edits connected endpoints losslessly", async () => {
+    const { bytes, index } = curveFixture();
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const frame = shapes(doc).find(shape => shape.controlIdx === index)!;
+      const selected = pick(frame);
+      expect(selected.operations).toContain("pathPoint");
+      const initial = selected.shapePath!;
+      expect(initial).toMatchObject({ kind: "curve", closed: true, width: 10800, height: 7200 });
+      expect(initial.points).toEqual([
+        { x: 1600, y: 1300, control: false }, { x: 9700, y: 700, control: false },
+        { x: 6400, y: 6500, control: false }, { x: 1600, y: 1300, control: false },
+      ]);
+      const originalSegments = curveSegments(bytes);
+      expect(originalSegments.map(segment => segment.type)).toEqual(["CURVE", "LINE", "CURVE"]);
+      expect(originalSegments[0]).toMatchObject({ marker: "preserve & me" });
+      const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      expect(read().segments.map((attributes: [string, string][]) => Object.fromEntries(attributes)))
+        .toEqual(originalSegments);
+      const beforeProperties = doc.getShapeProperties!(0, 0, index);
+      const untouched = doc.exportHwpx();
+      if (out) writeFileSync(resolve(out, "a-p4-hwpx-curve-unedited.hwpx"), untouched);
+      expect(edit({ kind: "pathPoint", index: 3, x: 1800, y: 1400 })).toBe(false);
+      expect(edit({ kind: "pathPoint", index: 1, x: 10801, y: 1400 })).toBe(false);
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+
+      const moved = { kind: "pathPoint", index: 1, x: 5100, y: 1800 } as const;
+      expect(editor.execute("object.edit", objectEditRequest(selected, moved)).accepted).toBe(true);
+      await confirm();
+      const expectedPoints = initial.points.map((point, pointIndex) => pointIndex === 1
+        ? { ...point, x: 5100, y: 1800 } : point);
+      const expectedSegments = originalSegments.map(segment => ({ ...segment }));
+      expectedSegments[0]!.x2 = "5100";
+      expectedSegments[0]!.y2 = "1800";
+      expectedSegments[1]!.x1 = "5100";
+      expectedSegments[1]!.y1 = "1800";
+      expect(read()).toMatchObject({ points: expectedPoints, closed: true });
+      const editedBytes = doc.exportHwpx();
+      expect(curveSegments(editedBytes)).toEqual(expectedSegments);
+      expect(unchangedHwpxParts(bytes, editedBytes)).toBe(true);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read().segments.map((attributes: [string, string][]) => Object.fromEntries(attributes)))
+        .toEqual(originalSegments);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read().segments.map((attributes: [string, string][]) => Object.fromEntries(attributes)))
+        .toEqual(expectedSegments);
+
+      const saved = doc.exportHwpxWithReport();
+      try {
+        const output = saved.takeBytes();
+        expectReopenEvidence(doc, output, saved.contentLoss());
+        expect(curveSegments(output)).toEqual(expectedSegments);
+        expect(unchangedHwpxParts(bytes, output)).toBe(true);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(reopened.getEditableShapePath!(0, 0, index)).toBe(doc.getEditableShapePath!(0, 0, index)); }
+        finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-report.json"), saved.contentLoss());
+        }
+      } finally { saved.free(); }
+    } finally { editor.dispose(); }
+
+    const unsupported = curveFixture("SPLINE");
+    const sourceDoc = new engine.HwpDocument(unsupported.bytes) as RhwpDocument;
+    try {
+      expect(sourceDoc.getEditableShapePath!(0, 0, unsupported.index)).toBe("null");
+      expect(curveSegments(sourceDoc.exportHwpx())[0]?.type).toBe("SPLINE");
+    } finally { sourceDoc.free(); }
   });
 
   it("Stage 3-A inserts on the closing HWPX edge and removes the first vertex", async () => {

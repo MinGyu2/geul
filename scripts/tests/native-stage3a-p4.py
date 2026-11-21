@@ -91,7 +91,7 @@ def points_case(acc, row, fixtures, out, kind, fmt):
     h.require(ui_point() == moved, "Redo did not restore exact point")
 
     # A precise single-unit move exercises stored integer precision.
-    endpoint_index = 3 if kind == "curve" else point_index
+    endpoint_index = ((len(model["points"]) - 2) if model["closed"] else 3) if kind == "curve" else point_index
     endpoint = f"{POINT}:nth-of-type({endpoint_index + 2})"
     acc.dom_click(endpoint)
     exact = ui_point()
@@ -109,8 +109,22 @@ def points_case(acc, row, fixtures, out, kind, fmt):
     expected[endpoint_index].update(x=exact[0],y=exact[1])
     if model["closed"]:
         expected[-1] = expected[0]
+    expected_segments = None
+    if fmt == "hwpx" and kind == "curve":
+        expected_segments = [[pair.copy() for pair in segment] for segment in model["segments"]]
+        for index, attributes in enumerate(expected_segments):
+            coordinates = {
+                "x1": expected[index]["x"], "y1": expected[index]["y"],
+                "x2": expected[index + 1]["x"], "y2": expected[index + 1]["y"],
+            }
+            for pair in attributes:
+                if pair[0] in coordinates:
+                    pair[1] = str(coordinates[pair[0]])
     after = row["after"] = inspect(path)
-    want = {**target, "path": {**model,"points": expected}}
+    expected_path = {**model,"points": expected}
+    if expected_segments is not None:
+        expected_path["segments"] = expected_segments
+    want = {**target, "path": expected_path}
     h.require(after == {**before, "frames":[want if item == target else item for item in before["frames"]]},
               "independent engine changed unrelated content or geometry", after)
     if fmt == "hwp" and kind == "polygon":
@@ -129,6 +143,19 @@ def points_case(acc, row, fixtures, out, kind, fmt):
         h.require(old_payload[tail:] == new_payload[tail:] == bytes([1,0,0,0,0,0,0,0]), "stored segment commands changed")
         h.require(list(struct.iter_unpack("<ii",new_payload[4:tail])) == [(p["x"],p["y"]) for p in expected],
                   "raw HWP geometry differs")
+    elif fmt == "hwpx" and kind == "curve":
+        old, new = section_pair(fixture, path)
+        old_segments = old.findall(".//{*}curve/{*}seg")
+        new_segments = new.findall(".//{*}curve/{*}seg")
+        h.require(len(old_segments) == len(new_segments) == len(expected_segments),
+                  "HWPX curve segment count changed")
+        for index, segment in enumerate(old_segments):
+            segment.attrib.update(
+                x1=str(expected[index]["x"]), y1=str(expected[index]["y"]),
+                x2=str(expected[index + 1]["x"]), y2=str(expected[index + 1]["y"]),
+            )
+        h.require(ET.tostring(old) == ET.tostring(new),
+                  "HWPX curve segment types, metadata, or unrelated XML changed")
     else:
         old, new = section_pair(fixture, path)
         vertices = old.findall(".//{*}polygon/{*}pt")
@@ -762,6 +789,7 @@ def group_child_capture_case(acc, row, fixtures, out):
 
 h.CASES = {
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
+    "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
     "P4.3": group_case,
     "P4.4": polygon_vertices_case,

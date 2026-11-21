@@ -61,7 +61,7 @@
 
 | 기능 ID | 형식 | 현재 모델 | 누락 API 또는 동작 | 현재 안전 차단 | 필요한 UI | 필요한 직렬화 | 필요한 T009·저장 증명 | 필요한 Native 수락 | 의존성 | 상태 | 커밋 SHA |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| P4-HX-CURVE | HWPX | 곡선의 점 체인, 원본 seg 타입 유실 | 유형별 원본 경로와 제어점·구간 API | 경로 표현과 연결·폐합의 무손실 왕복 없음 | 점 핸들·정밀 좌표·구간 추가/삭제 | `seg` 종류·점 순서·폐합·변환 | 구간 XML과 그룹 밖 리소스 비교 | X11 경로 편집·재열기 | RHWP의 parser·모델·writer | A UNIMPLEMENTED | — |
+| P4-HX-CURVE | HWPX | 연결된 `LINE`/`CURVE` endpoint 체인과 원본 `seg` 속성 | 명시적 Bezier 제어점 의미, 안전한 구간 추가·삭제 | 미지원 segment/연결 불량은 거부; 스키마에 정의되지 않은 제어점은 편집 불가 | 점 핸들·정밀 좌표 | 원본 속성·segment 순서·폐합·좌표 보존 | section XML 및 다른 OPC part 바이트 대조 | X11 endpoint 편집·Undo/Redo·저장·재열기 PASS; 전체 Bezier 수락 미완료 | RHWP parser·모델·writer; 제어점 format contract | A PARTIAL / BLOCKED_BY_FORMAT_CONTRACT | 부분 구현 커밋은 39-item ledger 참조 |
 | P4-DX-CURVE | DOCX | WordCraft `FreePath`의 샘플링 점 | quadratic/cubic 명령·제어점 편집 | 원본 DrawingML 명령 및 경로별 속성 유실 | 제어점 핸들·좌표 | 정확한 `quadBezTo`·`cubicBezTo` | OPC 안의 명령 순서·좌표·속성·관계 대조 | X11 두 곡선 종류 편집·재열기 | WordCraft 파서·모델·writer | A UNIMPLEMENTED | — |
 | P4-DX-PATH | DOCX | f32 직선 자유형과 외곽 크기 | 꼭짓점·구간 편집 | 원본 좌표와 경로 속성의 정확한 대응 미증명 | 꼭짓점·구간 도구 | path별 뷰포트, 좌표와 명령 | 좌표·경로 ID·OPC 대조 | X11 직선·폐합 경로 편집 | P4-DX-CURVE와 원본 DrawingML 모델 | A PARTIALLY_IMPLEMENTED | — |
 | P4-H5-SEG | HWP5 | 순서 있는 cubic/직선, 기존 점·직선 편집 | cubic 삽입·삭제 및 비공선 내부 편집 | 기존 cubic과 명령·패딩에 대한 구조 변경 증명 없음 | 구간 선택·편집 | 태그 83 명령·좌표·패딩 유지 | 기존 구간과 새 인코딩의 독립 CFB 검증 | X11 구간 변경·Undo/Redo·재열기 | RHWP 곡선 API와 HWP5 T009 | A PARTIALLY_IMPLEMENTED | — |
