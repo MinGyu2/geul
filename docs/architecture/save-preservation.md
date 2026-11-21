@@ -2065,6 +2065,8 @@ HWPX 휴대용 다각형은 원본 로컬 변환·크기·배치·테두리 조�
 
 DOCX 프리셋 변경은 기존 InlineObject의 종류에만 적용한다. HWPX에서 DOCX로 옮길 때는 닫힌 정수 좌표를 WordCraft Freeform의 직선 경로로 구성하며 T009와 엔진 재열기를 통과한 뒤에만 확정한다. 캡션 배치 변경에는 B3의 소유 `atno` 및 문자 서식 증명을 재사용한다. HWP5 교차 문서 구조 추가와 모르는 다이어그램의 패키지 재작성은 기존 거부 범위를 유지한다. [P6 수용 기록](stage3-a-p6-advanced-structure-acceptance.json)
 
+DOCX `roundRect`에서 `rect`로 바꿀 때는 최초 입력의 `word/document.xml`과 WordCraft 초기 출력의 정규 XML을 대조한다. 판독기가 비슷한 프리셋이나 사용자 조정값을 정규화한 경우 권한을 부여하지 않는다. 변환은 기존 개체 이력, 독립 재열기 모델 비교와 T009를 통과해야 확정된다. 실제 출력에서 프리셋 이름만 달라지고 나머지 OPC 항목은 바이트 단위로 일치했다. [검증 기록](stage3-a-p6-round-rect-acceptance.json)
+
 ## Stage 3-A P4.4 HWPX 다각형 꼭짓점
 
 지원하는 HWPX 본문 단순 폐합 다각형에서 점 목록의 길이를 바꾼다. 일반 HWPX T009와 독립 재열기 검사를 적용한다. 기존 점의 순서와 새 폐합점, 부모·배치·로컬 행렬·채우기·윤곽 및 다른 ZIP 부분은 독립 XML/패키지 비교로 확인했다. HWP5 폴리곤 및 곡선의 리프 길이 변경에는 별도 레코드 검증이 필요하다. [P4.4 수용 기록](stage3-a-p4-polygon-vertices-acceptance.json)

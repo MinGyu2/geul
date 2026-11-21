@@ -1344,6 +1344,7 @@ pub struct DocxModel {
     pasted_media: Vec<String>,
     object_epoch: u64,
     story_picture_resize: bool,
+    rounded_rectangle_conversion: bool,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
@@ -1469,6 +1470,7 @@ impl DocxModel {
             pasted_media: Vec::new(),
             object_epoch: 0,
             story_picture_resize: false,
+            rounded_rectangle_conversion: false,
             created_shapes: Vec::new(),
             marks: Vec::new(),
             last_insert: None,
@@ -1484,10 +1486,18 @@ impl DocxModel {
             return Err(EngineStage::Render);
         }
         let count = model.sizable_story_picture_count();
-        if count != 0 {
-            model.story_picture_resize = model.export().is_some_and(|export| {
-                crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count)
-            });
+        let has_rounded_rectangle = model.session.doc.body.iter().filter_map(|block| block.as_para()).any(|para| {
+            para.objects.iter().any(|object| matches!(object, InlineObject::Shape {
+                kind: wordcraft_engine::doc::para::ShapeKind::RoundedRectangle, ..
+            }))
+        });
+        if count != 0 || has_rounded_rectangle {
+            if let Some(export) = model.export() {
+                model.story_picture_resize = count != 0
+                    && crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count);
+                model.rounded_rectangle_conversion = has_rounded_rectangle
+                    && crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
+            }
         }
         Ok(model)
     }
@@ -2462,6 +2472,7 @@ impl DocxModel {
         match kind {
             ShapeKind::Rectangle => Some(BasicShape::Ellipse),
             ShapeKind::Ellipse => Some(BasicShape::Rectangle),
+            ShapeKind::RoundedRectangle if self.rounded_rectangle_conversion => Some(BasicShape::Rectangle),
             _ => None,
         }
     }

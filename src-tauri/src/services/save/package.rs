@@ -29,6 +29,23 @@ const LIMITS: ZipLimits = ZipLimits {
 const MAX_PART_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
 
+/// The loaded DOCX body must round-trip before enabling an operation on a
+/// DrawingML preset that the reader can also produce by approximating others.
+pub(crate) fn docx_body_source_roundtrips(source: &[u8], export: &[u8]) -> bool {
+    fn body(bytes: &[u8]) -> Option<Vec<u8>> {
+        let mut reader = Cursor::new(bytes);
+        let archive = zip::read_directory(&mut reader, bytes.len() as u64, &LIMITS).ok()?;
+        let mut matches = archive.entries().iter().filter(|entry| entry.name() == b"word/document.xml");
+        let entry = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        archive.read(&mut reader, entry, MAX_PART_BYTES).ok()
+    }
+    let (Some(source), Some(export)) = (body(source), body(export)) else { return false };
+    xml::canonical_equal(&source, &export) == Ok(true)
+}
+
 /// 읽어 둔 패키지: 항목 이름(중앙 디렉터리 순서)과 압축을 푼 내용, 압축 방식.
 pub struct Package {
     pub order: Vec<String>,

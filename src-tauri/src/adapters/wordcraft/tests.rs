@@ -8173,6 +8173,100 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
 }
 
 #[test]
+fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use super::engine::{BasicShape, ObjectEdit};
+    use wordcraft_engine::doc::para::ShapeKind;
+    use wordcraft_engine::{io, Session};
+
+    const MAIN: &str = "word/document.xml";
+    const RECT: &str = "prst=\"rect\"><a:avLst/>";
+    const ROUND: &str = "prst=\"roundRect\"><a:avLst/>";
+    let mut seed = model();
+    seed.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph,
+        DocxOp::Shape { kind: BasicShape::Rectangle }]);
+    let seed = seed.export().unwrap();
+    let package = package::open(&seed, package::Side::Original).unwrap();
+    let body = std::str::from_utf8(package.get(MAIN).unwrap()).unwrap();
+    assert_eq!(body.matches(RECT).count(), 1);
+    let fixture = |geometry: &str| {
+        let xml = body.replacen(RECT, geometry, 1);
+        let entries = package.order.iter().map(|name| {
+            let bytes = if name == MAIN { xml.as_bytes() } else { package.get(name).unwrap() };
+            entry(name, bytes)
+        }).collect::<Vec<_>>();
+        zip(&entries, false)
+    };
+    let source = fixture(ROUND);
+    let reader = io::open_bytes("rounded.docx", &source).unwrap();
+    let mut reader = Session::new(reader);
+    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let select = DocxOp::Pointer {
+        page: hit.page as u32, x: hit.rect.x + hit.rect.w / 2.0, y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false, before_insert: false, drag: false, select_object: true,
+    };
+    let selection = |model: &mut DocxModel| serde_json::to_value(model.view()).unwrap()["object"].clone();
+    let request = |object: &serde_json::Value, position: &str| DocxOp::ObjectEdit {
+        position: position.into(), epoch: object["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+    };
+    for unsupported in [
+        "prst=\"round1Rect\"><a:avLst/>",
+        "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
+    ] {
+        let mut rejected = DocxModel::open(&fixture(unsupported)).unwrap();
+        rejected.apply(&[select.clone()]);
+        let object = selection(&mut rejected);
+        assert_eq!(object["kind"], "shape");
+        assert!(object["convertShape"].is_null());
+        let before = rejected.export().unwrap();
+        assert_eq!(rejected.apply(&[request(&object, object["position"].as_str().unwrap())]).rejected, vec![0]);
+        assert_eq!(rejected.export().unwrap(), before);
+        assert_eq!(rejected.apply(&[DocxOp::Undo {}]).changed, 0);
+    }
+    let mut model = DocxModel::open(&source).unwrap();
+    model.apply(&[select.clone()]);
+    let object = selection(&mut model);
+    assert_eq!(object["convertShape"], "rectangle");
+    let before = model.export().unwrap();
+    assert_eq!(model.apply(&[request(&object, "part0:0:0")]).rejected, vec![0]);
+    assert_eq!(model.export().unwrap(), before);
+    let edit = request(&object, object["position"].as_str().unwrap());
+    assert_eq!(model.apply(&[edit.clone()]).changed, 1);
+    assert_eq!(model.apply(&[edit]).rejected, vec![0]);
+    let after = model.export().unwrap();
+    assert!(model.same_as(&after));
+    assert!(service::check_saved(Format::Docx, &source, &after, None, true).is_safe());
+    let original = package::open(&source, package::Side::Original).unwrap();
+    let saved = package::open(&after, package::Side::Output).unwrap();
+    assert_eq!(original.parts.keys().collect::<Vec<_>>(), saved.parts.keys().collect::<Vec<_>>());
+    for name in original.parts.keys().filter(|name| name.as_str() != MAIN) {
+        assert_eq!(original.get(name), saved.get(name), "unrelated OPC part {name}");
+    }
+    assert_eq!(saved.get(MAIN), Some(body.as_bytes()));
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), before);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), after);
+    let reopened = io::open_bytes("rect.docx", &after).unwrap();
+    assert!(reopened.body.iter().filter_map(|block| block.as_para()).any(|para| {
+        para.objects.iter().any(|object| matches!(object, wordcraft_engine::doc::InlineObject::Shape {
+            kind: ShapeKind::Rectangle, ..
+        }))
+    }));
+    let mut reopened_model = DocxModel::open(&after).unwrap();
+    reopened_model.apply(&[select]);
+    assert_eq!(selection(&mut reopened_model)["convertShape"], "ellipse");
+    if let Some(directory) = std::env::var_os("GEUL_STAGE3_OUT") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("a-p6-round-rect-original.docx"), &source).unwrap();
+        std::fs::write(directory.join("a-p6-round-rect-edited.docx"), &after).unwrap();
+    }
+}
+
+#[test]
 fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
     use crate::document::Format;
     use crate::services::save::{package, service};

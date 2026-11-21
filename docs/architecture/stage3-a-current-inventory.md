@@ -65,7 +65,8 @@
 | P6-HX-GROUP | HWPX → HWPX 평면 그룹 | 그룹 모델 / 동일 세션 복제 | portable 그룹 생성 없음 | 자식 순서·변환·새 ID·공유 리소스 검증 | 동일 문서만 | A PARTIALLY_IMPLEMENTED |
 | P6-HX-CURVE | HWPX → HWPX 곡선 | 모델 경계에 segment 손실 / 동일 세션 복제 | portable 곡선 없음 | P4-HX-CURVE와 정확한 타입·서식·대상 ID 매핑 | 지원 범위 없음 | A UNIMPLEMENTED |
 | P6-HX-TYPE | HWPX/HWP5 개체 유형 변경 | 개별 도형 모델 / 타입 변경 API 없음 | 없음 | 대상 타입별 HWP/HWPX 구조와 부적합 속성 거부 | 없음 | A UNIMPLEMENTED |
-| P6-DX-TYPE | 추가 DOCX 도형 변환 | 기본 preset / `shape.change` 일부 | 사각형·타원만 | per-type stroke·fill·transform·outline 매핑 | 기존 프리셋만 | B BLOCKED_BY_SAFETY |
+| P6-DX-TYPE (`roundRect` → `rect`) | DOCX 본문 표준 인라인 기본 둥근 사각형 | 기존 `shape.change`와 원본 XML 왕복 게이트 | 속성 창의 사각형으로 변경 | 조정 없는 정확한 프리셋, 원래 외곽·서식·관계 및 패키지 보존 | Rust·T009·OPC·재열기 PASS / Native 대기 | C IMPLEMENTED_UNVERIFIED. [검증 기록](stage3-a-p6-round-rect-acceptance.json) |
+| P6-DX-TYPE (나머지) | 추가 DOCX 도형 변환 | 기본 프리셋 / `shape.change` 일부 | 사각형·타원 및 지원 둥근 사각형 원본 | 연결·부유 구조, 사용자 조정, 효과 및 각 대상 프리셋별 지원 서식 매핑 | 기존 지원 조합만 | B BLOCKED_BY_SAFETY |
 | P6-DX-HX | DOCX → HWPX 개체 | WordCraft 포맷 개체, RHWP 대상 생성 API / 가교 매핑 없음 | 교차 형식 붙여넣기 거부 | DrawingML 프리셋·구간, EMU와 HWPUNIT, 서식·캡션 및 관계 자원 매핑 | 없음 | A UNIMPLEMENTED |
 | P6-DX-H5 | DOCX → HWP5 개체 | 각 엔진 모델 / HWP5 매핑 부재 | 없음 | DrawingML 속성, HWP5 DocInfo·BinData 및 writer/T009 | 없음 | A UNIMPLEMENTED |
 | P6-H5-DX | HWP5 → DOCX 개체 | 각 엔진 모델 / HWP5 payload 및 DrawingML 매핑 부재 | 없음 | HWPUNIT→EMU, 소스 CFB 음영·선·미디어와 편집 가능한 대상 | 없음 | A UNIMPLEMENTED |

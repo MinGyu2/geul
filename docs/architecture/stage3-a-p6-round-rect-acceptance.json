@@ -1,0 +1,34 @@
+{
+  "baselineHead": "59e27f60593439cfaac1eae1b9455c889663e93e",
+  "feature": "P6-DX-TYPE (roundRect to rect)",
+  "status": "IMPLEMENTED_UNVERIFIED",
+  "wordcraftCommit": "b2c974369dd02d322a5498db484bcf96906dad15",
+  "rhwpRelease": {
+    "generation": "b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c",
+    "artifacts": {
+      "rhwp.js": "723da472c5d670baba1726f6df8a1da9f3a83541751e69c5c132d41956fd659e",
+      "rhwp_bg.wasm": "4ac219821407295e722e7a4be56dafbae7539b78c102d4bdaff5d643ed0b4935"
+    }
+  },
+  "supported": "The exact default DrawingML roundRect preset in an owned top-level body inline shape whose original body XML round-trips losslessly. The existing Properties action changes that preset to rect.",
+  "refused": "Preset approximations including round1Rect, custom adjustment values, unsupported effects or extra drawing features, text-bearing or floating objects, non-body ownership and stale selection.",
+  "checks": {
+    "rust": "npm run rust -- test --lib stage3a_p6_docx_converts — 2 PASS, including existing rectangle/ellipse and HWPX polygon import",
+    "storyRegression": "stage3a_edits_docx_story_picture_descriptions_without_moving_owners — PASS",
+    "t009": "Actual DOCX output passed service::check_saved with independent WordCraft reopen. Both invalid sources were refused without document or history changes.",
+    "independentOpc": "Python zipfile and ElementTree verified identical member names and bytes outside word/document.xml. Substituting roundRect with rect gives byte-identical document.xml. Drawing id and frame extents were preserved.",
+    "history": "One Undo reverted the preset and one Redo restored it. Stale and wrong-owner commands were rejected.",
+    "reopen": "Independent WordCraft read the rectangle and exposed the existing rectangle-to-ellipse action when the reopened shape was selected."
+  },
+  "outputs": {
+    "original": "b4e3393e7b8aa3052f38dd72020e93aa53cc1c416eae5af7fa173afeae621541",
+    "edited": "5cd0386f7472e57aa6bd41dd14094fe45c86777abad8de279fd632637db8510d"
+  },
+  "native": {
+    "linuxX11": "NOT RUN",
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN — environment unavailable",
+    "macOS": "NOT RUN — environment unavailable"
+  },
+  "evidence": "target/stage3a-p6-round-rect/"
+}

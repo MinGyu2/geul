@@ -411,7 +411,7 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
 | P6.1 구조 클립보드 | HWPX 본문 폐합 다각형을 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, 경로·속성, 원본과 대상 형제 보존. HWP5 교차 문서 리소스 매핑, 그룹·중첩·곡선은 남아 있다. |
-| P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경 | 형상 프리셋만 변경. 다른 도형 종류와 RHWP 유형 변환은 남아 있다. |
+| P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경. 원본 본문 XML 왕복이 일치하는 기본 `roundRect`에서 `rect`로 변환 | 둥근 사각형 변환은 집중 Rust·T009·독립 OPC 검사·재열기 PASS, Native 수락 대기. 사용자 조정·비슷한 프리셋 정규화는 거부한다. [검증 기록](architecture/stage3-a-p6-round-rect-acceptance.json) |
 | P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
 | P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 지원 열 기준 부유 그림에 좌우 위치와 위·가운데·아래 세로 정렬을 제공한다. Linux X11 실제 속성 편집, 각각 Undo/Redo, 안전 게시, 독립 XML/배치 검사와 앱 재열기 PASS다. 인라인 그림의 좌우 배치, 그룹 캡션, DOCX/HWP5 위치 변경은 남아 있다. [좌우 배치·정렬 수락](architecture/stage3-a-p6-caption-lateral-acceptance.json) |
 | P6.7 캡션 간격 | HWPX 본문 그림의 기존 위·아래 캡션에서 간격 0–327.67pt | Linux X11 속성 입력·Undo/Redo·게시·앱 재열기 PASS. 독립 XML에서 `gap`만 바뀌고 번호·서식·이미지 바이트는 보존됐다. [수용 기록](architecture/stage3-a-p6-caption-spacing-acceptance.json) |
