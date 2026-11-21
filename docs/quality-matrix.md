@@ -401,8 +401,10 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 **P5 DOCX 이야기 그림 크기 조정.** 원본 XML 왕복, 별도 OPC 관계 및 두 저장 치수가 확인되는 머리말·꼬리말·각주·미주의 최상위 내장 인라인 그림을 제자리에서 조정한다. Linux X11에서 네 이야기의 실제 편집·Undo/Redo·게시와 독립 OPC 검사·앱 재열기 PASS다. [크기 조정 수락](architecture/stage3-a-p5-story-size-acceptance.json)
 
-**P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. 같은 문단 모양·스타일의 일반 문단 세 개 이상에 걸친 키보드 삭제도 지원한다(글상자 최대 64문단). Linux X11에서 세 문단 선택과 Delete, Undo/Redo, 동기 게시, 독립 XML·RHWP 검사와 앱 재열기를 확인했다. HWP5, 다른 문단 서식과 중첩 제어, 여러 문단의 붙여넣기·IME 교체는 제외한다. [P5.5 수락 기록](architecture/stage3-a-p5-textbox-join-acceptance.json), [P5-TB-RANGE 수락 기록](architecture/stage3-a-p5-textbox-range-acceptance.json)
+**P5.5 글상자 문단 병합·범위 삭제.** 같은 문단 모양·스타일의 HWPX 본문 글상자 인접 문단 두 개에서 Backspace/Delete로 경계를 없애거나 선택 범위를 지울 수 있다. Linux X11 실제 키 입력·Undo/Redo·게시, 독립 XML과 앱 재열기를 확인했다. 같은 문단 모양·스타일의 일반 문단 세 개 이상에 걸친 키보드 삭제도 지원한다(글상자 최대 64문단). Linux X11에서 세 문단 선택과 Delete, Undo/Redo, 동기 게시, 독립 XML·RHWP 검사와 앱 재열기를 확인했다. HWP5와 다른 문단 서식, 중첩 제어, 다문단 IME 교체는 제외한다. [P5.5 수락 기록](architecture/stage3-a-p5-textbox-join-acceptance.json), [P5-TB-RANGE 수락 기록](architecture/stage3-a-p5-textbox-range-acceptance.json)
 
+
+**P5-TB-REPLACE HWPX 글상자 붙여넣기.** 같은 모양과 스타일의 본문 글상자 다문단 선택을 평문 클립보드로 교체한다. 앞뒤의 문자 서식과 글상자 범위를 유지하며 삽입 실패 시 삭제도 되돌린다. Release WASM, T009, 독립 XML 및 RHWP 재열기 PASS. Native 수락 대기. [검증 기록](architecture/stage3-a-p5-textbox-paste-acceptance.json)
 
 **Stage 3-A P6 고급 개체 구조 (2026-11-20) — PARTIAL_SUPPORT.**
 

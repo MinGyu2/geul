@@ -1,0 +1,35 @@
+{
+  "baselineHead": "5816bdc573b8bfbcac958a70425b888fae4628b4",
+  "feature": "P5-TB-REPLACE (HWPX plain clipboard subset)",
+  "status": "IMPLEMENTED_UNVERIFIED",
+  "supported": "Plain clipboard text, including multiple nonempty resulting paragraphs, replaces a selection spanning compatible paragraphs within one owned HWPX body textbox. The new paragraphs inherit the starting paragraph shape and style.",
+  "refused": "Stale clipboard owner or selection, incompatible paragraph shapes or styles, fields and nested controls, IME replacement across paragraphs, HWP5, tabs, blank result paragraphs, and resulting textbox count above 64.",
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "b97b5a0278e3e097aeeb1bc5688639ff97e2a7d23571795e4aaca86105ccf83c",
+    "artifacts": {
+      "rhwp.js": "723da472c5d670baba1726f6df8a1da9f3a83541751e69c5c132d41956fd659e",
+      "rhwp_bg.wasm": "4ac219821407295e722e7a4be56dafbae7539b78c102d4bdaff5d643ed0b4935"
+    }
+  },
+  "checks": {
+    "typescript": "npm run typecheck — PASS",
+    "frontend": "npm test -- src/commands/clipboard.test.ts — 44 PASS",
+    "releaseWasm": "npm test -- --config scripts/tests/vitest.config.ts scripts/tests/stage3-shapes.wasm.test.ts -t <clipboard replacement, range deletion, incompatible range and IME regression> — 5 PASS",
+    "transaction": "Rejected a stale clipboard read, invalid multiline payloads and an incompatible middle paragraph. Injected failure after the join and first insertion restored the bytes, selection, dirty state and history. The successful CRLF paste was one Undo/Redo step.",
+    "saveCheck": "save_check saved hwpx <original> <edited> <report> true — safe, zero findings",
+    "independentXml": "Confirmed paragraph IDs, paraPrIDRef, styleIDRef and both retained charPrIDRefs. The following paragraph only reflowed vertically. Body and textbox geometry XML and non-preview package entries outside the section were unchanged.",
+    "reopen": "Independent RHWP reopened the exported HWPX with the same paragraph contents, runs, style and geometry."
+  },
+  "outputs": {
+    "original": "e99448f289e09adcfdb4ec7e7555f3d1de4066feba6e436936be77c72c409340",
+    "edited": "773e50867b18e93953bb8926766b185a5b31d0977d1b95e8fae4aee3a22dca19"
+  },
+  "native": {
+    "linuxX11": "NOT RUN",
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN — environment unavailable",
+    "macOS": "NOT RUN — environment unavailable"
+  },
+  "evidence": "target/stage3a-p5-textbox-paste/"
+}

@@ -48,7 +48,8 @@
 | P5-H5-TB | HWP5 글상자 분할·병합 | 문단 모델, 본문 편집 API / 글상자 경로 HWPX 한정 | 단일 평문 문단 편집까지 | LIST_HEADER·제어 레벨·shape ID와 T009 증명 | 구조 변경 수락 없음 | B BLOCKED_BY_SAFETY |
 | P5-TB-RANGE | HWPX 글상자 세 문단 이상, 동일 문단 모양·스타일 | 모든 인접 쌍 검증 / `deleteRangeInCell` | Delete/Backspace | 중간 문단 소유 검증, 남은 run/언어·외곽 보존, T009 | PASS / X11 PASS | B 활성화, IMPLEMENTED_VERIFIED `2b25b915`. [수락 기록](stage3-a-p5-textbox-range-acceptance.json) |
 | P5-TB-MIX | HWPX 글상자 서로 다른 문단 서식 | 범위 삭제 API / 인접 proof의 서식 일치 요구 | 거부 | 문단 서식 승계 규칙과 저장·재열기 증명이 필요 | 음성 PASS / 해당 없음 | B BLOCKED_BY_SAFETY |
-| P5-TB-REPLACE | HWP5/HWPX 글상자 클립보드·IME 범위 교체 | 기존 텍스트 조합/붙여넣기, 인접 삭제 | 교차 문단 교체 제한 | 선택 세대, 삭제와 삽입 단일 이력, stale preedit 거부 | 일반 글상자 IME와 P5.5만 | B BLOCKED_BY_SAFETY |
+| P5-TB-REPLACE (클립보드) | HWPX 본문 글상자의 동일 문단 모양·스타일 선택 | 기존 범위 삭제·문단 분할 / 단일 스냅숏 복구 | 평문 붙여넣기 | 선택 세대, 남은 문자·문단 서식·소유권 보존, 삽입 실패 시 복구 | Release WASM·T009·독립 XML·재열기 PASS / Native 대기 | C IMPLEMENTED_UNVERIFIED. [검증 기록](stage3-a-p5-textbox-paste-acceptance.json) |
+| P5-TB-REPLACE (나머지) | HWP5 글상자 및 HWPX 글상자의 다문단 IME | 기존 단일 문단 IME 및 HWPX 삭제·평문 교체 기반 | 교차 문단 IME·HWP5 교체 제한 | 폐기된 preedit의 실제 owner·취소와 이력 복구, HWP5 문단 레코드·리소스 보존 | 일반 글상자 IME 및 기존 P5.5만 | B BLOCKED_BY_SAFETY |
 | P5-TB-CONTROL | HWP5/HWPX 및 DOCX 글상자 중첩 개체 | RHWP 모델 내 중첩; WordCraft 일부 글상자+그림을 그림으로 읽음 | 중첩 소유 편집 없음 | 실제 경로 바인딩과 HWP/HWPX 레코드, DOCX 타입 손실 해결 | 없음 | A UNIMPLEMENTED |
 
 ## P6 구조, 변환, 캡션과 SmartArt

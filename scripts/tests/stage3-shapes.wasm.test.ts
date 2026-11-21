@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -3118,6 +3118,95 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("Stage 3-A replaces a compatible HWPX text box range with clipboard paragraphs atomically", async () => {
+    const { bytes, control } = mixedTextBoxFixture(3);
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const address = [0, 0, control, 0] as const;
+    const point = (paragraph: number, offset: number, extend = false) => {
+      const cursor = JSON.parse(doc.getCursorRectInCell(...address, paragraph, offset));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 0.1, cursor.y + cursor.height / 2, extend)).toBe(true);
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: paragraph }, offset });
+    };
+    const select = () => { point(1, 2); point(3, 2, true); };
+    const read = (file: RhwpDocument) => Array.from({ length: file.getCellParagraphCount(...address) }, (_, p) => {
+      const n = file.getCellParagraphLength(...address, p);
+      return { text: file.getTextInCell(...address, p, 0, n), props: file.getCellParaPropertiesAt!(...address, p),
+        runs: JSON.parse(file.getFormattingRuns!(...address, p, 0, n)).fontRuns };
+    });
+    const paste = (payload: string) => editor.executeClipboard("edit.paste", () => true,
+      { readText: async () => payload, writeText: async () => undefined });
+    try {
+      const before = read(doc);
+      const original = doc.exportHwpx();
+      const shape = doc.getShapeProperties!(0, 0, control);
+      select();
+      expect(documentCommandState("edit.paste", editor.snapshot()).available).toBe(true);
+      let deliver!: (text: string) => void;
+      const stale = editor.executeClipboard("edit.paste", () => true, {
+        readText: () => new Promise(resolve => { deliver = resolve; }), writeText: async () => undefined,
+      });
+      point(1, 1);
+      deliver("stale");
+      expect(await stale).toBe(false);
+      select();
+      expect(await paste("first\n\nthird")).toBe(false);
+      expect(await paste("tab\trefused")).toBe(false);
+      let interrupted: string[] | undefined;
+      const failure = vi.spyOn(doc, "splitParagraphInCell").mockImplementationOnce(() => {
+        interrupted = read(doc).map(p => p.text);
+        throw new Error("injected failure after deletion and insertion");
+      });
+      try {
+        expect(await paste("새\nnext")).toBe(false);
+        expect(failure).toHaveBeenCalledOnce();
+        expect(interrupted).toEqual(["First paragraph", "Bo새ain", "Trailing paragraph"]);
+      } finally { failure.mockRestore(); }
+      expect(read(doc)).toEqual(before);
+      expect(doc.exportHwpx()).toEqual(original);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(editor.hasSelection).toBe(true);
+
+      expect(await paste("새\r\nnext")).toBe(true);
+      await confirm();
+      const after = read(doc);
+      expect(after.map(p => p.text)).toEqual(["First paragraph", "Bo새", "nextain", "Trailing paragraph"]);
+      expect(after[0]).toEqual(before[0]);
+      expect(after[3]).toEqual(before[4]);
+      expect(after.slice(1, 3).map(p => p.props)).toEqual([before[1]!.props, before[1]!.props]);
+      const styleAt = (p: typeof before[number], offset: number) => p.runs
+        .find(([start, end]: number[]) => start! <= offset && offset < end!)?.slice(2);
+      expect([0, 1].map(i => styleAt(after[1]!, i))).toEqual([0, 1].map(i => styleAt(before[1]!, i)));
+      expect([4, 5, 6].map(i => styleAt(after[2]!, i))).toEqual([2, 3, 4].map(i => styleAt(before[3]!, i)));
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 2 }, offset: 4 });
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read(doc)).toEqual(before);
+      expect(editor.snapshot().history?.undo).toBe(false);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read(doc)).toEqual(after);
+      expect(doc.getShapeProperties!(0, 0, control)).toBe(shape);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(read(reopened)).toEqual(after);
+          expect(reopened.getShapeProperties!(0, 0, control)).toBe(shape);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p5-textbox-paste-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p5-textbox-paste-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p5-textbox-paste-report.json"), report);
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
   it("Stage 3-A refuses a fully selected incompatible HWPX text box paragraph", async () => {
     const { bytes, control } = mixedTextBoxFixture("differentMiddle");
     const { editor, doc } = await setup("hwpx", bytes);
@@ -3129,6 +3218,9 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       expect(editor.pointAt(end.pageIndex, end.x + 0.1, end.y + end.height / 2, true)).toBe(true);
       expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 3 }, offset: 2 });
       expect(editor.deleteForward()).toBe(false);
+      expect(await editor.executeClipboard("edit.paste", () => true, {
+        readText: async () => "replacement", writeText: async () => undefined,
+      })).toBe(false);
       expect(editor.localRevision).toBe(0);
       expect(editor.hasUnpreservedChanges).toBe(false);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });

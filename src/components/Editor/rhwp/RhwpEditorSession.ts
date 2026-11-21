@@ -1404,7 +1404,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private deleteByKeySelection(): boolean {
     const [from, to] = this.ordered();
     if (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to)) {
-      return this.joinOwnedTextBoxParagraphs(from, to);
+      return this.replaceOwnedTextBoxRange(from, to);
     }
     return this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw());
   }
@@ -1426,7 +1426,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const paragraph = paragraphOf(at);
     if (paragraph === 0) return false; // 문맥의 처음: 바꿀 것이 없음(변경 아님)
     const previousEnd = withParagraph(at, paragraph - 1, text.paragraphLength(withParagraph(at, paragraph - 1, 0)));
-    if (at.cell?.textBox) return this.joinOwnedTextBoxParagraphs(previousEnd, at);
+    if (at.cell?.textBox) return this.replaceOwnedTextBoxRange(previousEnd, at);
     if (!text.canDeleteRange(previousEnd, at)) return false;
     return this.mutate(() => {
       const previous = withParagraph(at, paragraph - 1, 0);
@@ -1454,7 +1454,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const paragraph = paragraphOf(at);
     if (paragraph + 1 >= text.paragraphCount(at)) return false;
     const nextStart = withParagraph(at, paragraph + 1, 0);
-    if (at.cell?.textBox) return this.joinOwnedTextBoxParagraphs(at, nextStart);
+    if (at.cell?.textBox) return this.replaceOwnedTextBoxRange(at, nextStart);
     if (!text.canDeleteRange(at, nextStart)) return false;
     return this.mutate(() => {
       text.mergeIntoPrevious(at, paragraph + 1);
@@ -1491,7 +1491,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     });
   }
 
-  private joinOwnedTextBoxParagraphs(from: DocPosition, to: DocPosition): boolean {
+  private replaceOwnedTextBoxRange(from: DocPosition, to: DocPosition, replacement?: readonly string[]): boolean {
     const { doc, text } = this;
     const box = from.cell;
     const first = paragraphOf(from), last = paragraphOf(to);
@@ -1504,8 +1504,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!left || !right || left.properties !== right.properties
       || !Number.isSafeInteger(from.offset) || from.offset < 0 || from.offset > left.styles.length
       || !Number.isSafeInteger(to.offset) || to.offset < 0 || to.offset > right.styles.length) return false;
-    const expectedLength = from.offset + right.styles.length - to.offset;
-    if (expectedLength < 1 || expectedLength > 65_536) return false;
+    const retainedLength = from.offset + right.styles.length - to.offset;
+    if (retainedLength < 1 || retainedLength > 65_536) return false;
+    const lines = replacement ?? [""];
+    const expected = [...lines];
+    const prefix = Array.from(left.text).slice(0, from.offset).join("");
+    const suffix = Array.from(right.text).slice(to.offset).join("");
+    expected[0] = prefix + expected[0];
+    const tail = expected.length - 1;
+    expected[tail] += suffix;
+    if (expected.some(line => !line.length)
+      || retainedLength + lines.reduce((sum, line) => sum + charCount(line), 0) > 65_536) return false;
     let count: number, geometry: string;
     try {
       // Every paragraph removed by this range must pass the same engine proof,
@@ -1516,17 +1525,33 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       count = text.paragraphCount(from);
       geometry = doc.getShapeProperties(...address);
     } catch { return false; }
-    const expectedText = Array.from(left.text).slice(0, from.offset).join("")
-      + Array.from(right.text).slice(to.offset).join("");
+    const resultCount = count - (last - first) + tail;
+    if (resultCount > 64) return false;
+    // One recoverable snapshot covers the join, all insertions and the resulting paragraph splits.
     return this.mutate(() => {
       text.joinTextBoxParagraphs(from, to);
-      const joined = text.textBoxParagraph(from);
-      if (!joined || joined.properties !== left.properties || joined.text !== expectedText
-        || joined.styles.length !== expectedLength
-        || joined.styles.some((style, i) => style !== (i < from.offset ? left.styles[i] : right.styles[i - from.offset + to.offset]))
-        || text.paragraphCount(from) !== count - (last - first) || doc.getShapeProperties!(...address) !== geometry
-        || !this.ownsPosition(from)) throw new Error("text box join did not preserve content or ownership");
-      return from;
+      let at = from;
+      for (const [i, line] of lines.entries()) {
+        if (line) {
+          this.insertText(at, line);
+          at = { ...at, offset: at.offset + charCount(line) };
+        }
+        if (i < tail) at = this.splitText(at);
+      }
+      const paragraphs = expected.map((line, i) => {
+        const paragraph = text.textBoxParagraph(withParagraph(from, first + i, 0));
+        if (!paragraph || paragraph.text !== line || paragraph.properties !== left.properties) {
+          throw new Error("text box edit changed text or paragraph formatting");
+        }
+        return paragraph;
+      });
+      const headStyles = paragraphs[0]!.styles.subarray(0, from.offset);
+      const tailStyles = paragraphs[tail]!.styles.subarray(paragraphs[tail]!.styles.length - (right.styles.length - to.offset));
+      if (headStyles.some((style, i) => style !== left.styles[i])
+        || tailStyles.some((style, i) => style !== right.styles[i + to.offset])
+        || text.paragraphCount(from) !== resultCount || doc.getShapeProperties!(...address) !== geometry
+        || !this.ownsPosition(at)) throw new Error("text box edit changed character formatting or ownership");
+      return at;
     }, true, "other", null, true, true);
   }
 
@@ -3372,7 +3397,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return runClipboard(this, command, {
       read: async () => this.text?.selectedText(this.anchor, this.caret) ?? null,
       remove: () => this.hasSelection && this.canDeleteSelection() && this.mutate(() => this.deleteSelectionRaw()),
-      insert: text => this.typeText(text),
+      insert: text => {
+        const [from, to] = this.ordered();
+        if (!from.cell?.textBox || paragraphOf(from) === paragraphOf(to)) return this.typeText(text);
+        if (!validClipboardText(text) || /[\t\u2028]/u.test(text)) return false;
+        const lines = text.replace(/\r\n?|\u2029/g, "\n").split("\n", 65);
+        return lines.length <= 64 && this.replaceOwnedTextBoxRange(from, to, lines);
+      },
       readStructured: async () => {
         if (this.objectSelection) {
           const object = this.readStructuredObject();
