@@ -2,7 +2,7 @@
 
 업데이트: 2026-11-22 (Asia/Seoul)
 기준 저장소 시작 HEAD: `5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff`
-현재 기록 기준 HEAD: `2e88f16cc722d3ddb75ed9f08b9f548e905abfc0` (P4-HX-CURVE 부분 구현 기록은 다음 로컬 커밋에서 갱신)
+현재 기록 기준 HEAD: `fee5efa43d55c68a8962164a8c2a557c8aeec323`
 범위: P0 회귀 1 + P4 9 + P5 13 + P6 16 = **39개** (A 24, B 14, 회귀 1). 이 원장은 사용자 지정 ID를 모두 유지한다. 기존 [현행 인벤토리](stage3-a-current-inventory.md)와 [품질 매트릭스](../quality-matrix.md)는 관련 역사·구현 정보를 계속 보존한다.
 
 `IMPLEMENTED_VERIFIED`는 명시된 기능과 해당 저장/Undo/Redo/재열기 조건을 실제로 확인한 경우에만 사용한다. `IN_PROGRESS`는 증거가 일부 있어도 요구사항의 일부가 빠져 있음을 뜻한다. `OPEN`은 이 요구사항 자체에 대한 완료 증명이 아직 없다는 뜻이며, 현재 코드에 관련 기능이 전혀 없다고 단정하지 않는다. Native 수락과 개발 구현은 별도로 기록한다.
@@ -10,7 +10,7 @@
 | ID | 범주 | 추적할 기능·안전 범위 | 구현 상태 | 기능·보존 증거 | Native | 커밋 집합 | 남은 경계 / 다음 확인 |
 |---|---|---|---|---|---|---|---|
 | S1-FONT-TYPING | 회귀 | DOCX/HWP/HWPX collapsed-caret 다음 입력 크기, IME, 선택 교체, 이동, Undo/Redo, T009 | IMPLEMENTED_VERIFIED | DOCX 기존 X11/IBus PASS. RHWP 선택 교체에서 첫 선택 문자 전체 모양 상속; 빈 취소의 페이지 레이아웃 rollback과 선행 입력 Undo 경계. Release WASM 5/5, RHWP 세션 22/22, typecheck PASS. [Stage 1 상세](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21--22), [RHWP Native·저장 증거](stage1-font-typing-rhwp-acceptance.json) | Linux X11/Xvfb + 실제 IBus Hangul DOCX run7, HWP run18, HWPX run18 PASS. Wayland/Windows/macOS NOT RUN | `938d6638739b3d13d79fc436d0f16880e707e7e2` (기본 구현), `123ce40d8dbe6151bfcd722597bd6b1e43a9be4e` (초기 수락·인벤토리), `0379a837a2933bb16556cc5e08a501c6cf16893f` (RHWP 수정·수락), `2e88f16cc722d3ddb75ed9f08b9f548e905abfc0` (39-ID ledger hash 기록) | Microsoft Word/한컴 재열기 NOT RUN |
-| P4-HX-CURVE | A | HWPX 원본 Bezier segment 종류·control point·순서·좌표·폐합·경로 metadata 보존 편집 | PARTIAL / BLOCKED_BY_FORMAT_CONTRACT | 알려진 연결 `LINE`/`CURVE` endpoint 편집, 원본 속성/순서/폐합 왕복; Undo/Redo, Release WASM, T009 저장 및 재열기 PASS. [수락 기록](stage3-a-p4-hwpx-curve-acceptance.json) | Linux X11 endpoint 편집·정밀 좌표·Undo/Redo·게시·독립 검사·앱 재열기 PASS; 전체 Bezier 미수락 | 부분 구현 커밋 해시 기록 예정 | 공식 HWPML 3.0 rev1.2 SEGMENT 표는 타입·시작점·끝점만 규정하고 명시 제어점 계약을 제공하지 않음. 정확한 제어점 XML contract/실제 호환 샘플이 필요하며 그 전에는 제어점·구간 구조 편집을 계속 fail-closed로 둠 |
+| P4-HX-CURVE | A | HWPX 원본 Bezier segment 종류·control point·순서·좌표·폐합·경로 metadata 보존 편집 | PARTIAL / BLOCKED_BY_FORMAT_CONTRACT | 알려진 연결 `LINE`/`CURVE` endpoint 편집, 원본 속성/순서/폐합 왕복; Undo/Redo, Release WASM, T009 저장 및 재열기 PASS. [수락 기록](stage3-a-p4-hwpx-curve-acceptance.json) | Linux X11 endpoint 편집·정밀 좌표·Undo/Redo·게시·독립 검사·앱 재열기 PASS; 전체 Bezier 미수락 | `fee5efa43d55c68a8962164a8c2a557c8aeec323` (endpoint 부분 구현; 전체 요구사항 미완료) | 공식 HWPML 3.0 rev1.2 SEGMENT 표는 타입·시작점·끝점만 규정하고 명시 제어점 계약을 제공하지 않음. 정확한 제어점 XML contract/실제 호환 샘플이 필요하며 그 전에는 제어점·구간 구조 편집을 계속 fail-closed로 둠 |
 | P4-DX-CURVE | A | DOCX quadratic/cubic 명령과 control point 편집; DrawingML·viewport·OPC 보존 | OPEN | 이 요구사항에 대한 회귀·구조 증거 미수집 | NOT RUN | — | segment identity, path attrs, relationships, Undo/Redo 및 independent reopen 확인 |
 | P4-DX-PATH | A | DOCX freeform vertex 삽입·삭제·좌표 편집, open/closed path | OPEN | 이 요구사항에 대한 회귀·구조 증거 미수집 | NOT RUN | — | path command order와 envelope·viewport를 저장/reopen에서 확인 |
 | P4-H5-SEG | A | HWP5 cubic 구간 추가/삭제와 지원 비공선 내부 구간 편집 | OPEN | 관련 HWP5 endpoint/line 기능의 역사 기록은 있으나 이 ID의 cubic 내부 지원·보존 요구를 대조하지 않음 | NOT RUN | — | 원본 segment identity·padding·인접 레코드의 CFB/T009 검증 |

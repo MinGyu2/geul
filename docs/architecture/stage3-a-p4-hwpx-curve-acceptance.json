@@ -56,8 +56,9 @@
     "cleanupFile": "target/p4-hx-curve/native-session5/cleanup.json"
   },
   "commit": {
-    "status": "PARTIAL_IMPLEMENTATION_COMMIT_PENDING",
-    "sha": null
+    "status": "PARTIAL_IMPLEMENTATION_COMMITTED_UNRESOLVED",
+    "sha": "fee5efa43d55c68a8962164a8c2a557c8aeec323",
+    "subject": "feat(stage3a-p4): preserve HWPX curve endpoints (partial) [P4-HX-CURVE]"
   },
   "tauriRelease": {
     "appSha256": "27b5ce15c3206d7bf091591d23c562e4150bda62f6a98dc71b5240aab4764a81",
