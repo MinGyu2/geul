@@ -53,5 +53,6 @@
     "Windows and macOS Native acceptance; those hosts are unavailable.",
     "External Microsoft Office/other HWP application interoperability reopen."
   ],
-  "evidence": "target/p4-h5-seg-work/"
+  "evidence": "target/p4-h5-seg-work/",
+  "implementationCommit": "06b0b4157f68477a7940c123d6550db88c294b3b"
 }
