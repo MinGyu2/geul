@@ -8,11 +8,13 @@
 
 > **현 실행 추적:** 사용자가 지정한 historical audit baseline은 `5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff`이며 실제 시작 HEAD로 확인했다. 아래의 기존 Stage 3-A 기준과 완료 기록은 역사적 근거로 보존한다. 이번 범위는 P0 회귀 1개와 아래 P4/P5/P6의 정확한 38개 ID(24 A, 14 B), 합계 39개다. 각 구현/안전 상태는 기존 상세 행에서 갱신하며 해결 항목은 별도 커밋과 수락 증거를 기록한다.
 
+사용자가 지정한 39개 ID의 현재 상태·필수 기능·보존/Native 증거·커밋 집합은 [39개 항목 원장](stage3-a-39-item-ledger.md)에 정확한 ID로 별도 추적한다. 이 파일의 과거 기능명과 A/B 행은 기존 감사 근거로 유지하며 요청 범위를 대체하지 않는다.
+
 ## P0 Stage 1 회귀
 
 | ID | 범주 | 구현·보존 상태 | 변경 영역 | 증거 | Native | 로컬 커밋 | 남은 경계 |
 |---|---|---|---|---|---|---|---|
-| S1-FONT-TYPING | 회귀 | IMPLEMENTED_VERIFIED — collapsed caret의 같은 위치 focus-return이 pending 서식을 유지하고 deliberate navigation은 기존 정책을 따른다. selection replacement, Undo/Redo, T009 및 실제 reopen도 확인 | WordCraft pointer routing, DOCX IME overlay, RHWP format-specific Release WASM regression, Native acceptance harness | [Stage 1 §11](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21); `stage1_docx_` 13/13; Stage1 format WASM 28 passed/1 skipped; DOCX UI 13/13; typecheck PASS; [Native 보고서](stage1-font-typing-acceptance.json) | Linux X11/Xvfb + trusted IBus Hangul DOCX run7 PASS; HWP/HWPX per-format native GUI, Windows/macOS NOT RUN | `938d6638739b3d13d79fc436d0f16880e707e7e2` | 외부 Microsoft Word/한컴오피스 재열기 NOT RUN |
+| S1-FONT-TYPING | 회귀 | IMPLEMENTED_VERIFIED — collapsed caret의 focus-return·IME preedit/commit·반복 입력은 24pt를 유지하고, 실제 다른 caret 이동은 기존 정책대로 pending 서식을 폐기한다. HWP/HWPX 선택 교체는 첫 선택 글자의 전체 모양을 상속하고, 빈 IME 취소는 페이지 레이아웃까지 복원하며 앞선 입력의 Undo 이력을 보존한다. | WordCraft pointer routing·DOCX IME overlay, RHWP format-specific selected replacement/history rollback, 실제 HWP/HWPX Native 수락 harness | [Stage 1 §11](stage1-common-editing.md#11-p0--s1-font-typing-collapsed-caret-서식-유지-2026-11-21--22); RHWP 세션 22/22; targeted Release WASM 5/5; typecheck PASS; [DOCX Native 보고서](stage1-font-typing-acceptance.json); [HWP/HWPX Native·저장 검사](stage1-font-typing-rhwp-acceptance.json) | Linux X11/Xvfb + trusted IBus Hangul DOCX run7, HWP run18, HWPX run18 PASS. Wayland·Windows/macOS NOT RUN | 구현 `938d6638739b3d13d79fc436d0f16880e707e7e2`; RHWP 보완 commit은 후속 기록 참조 | 외부 Microsoft Word/한컴오피스 재열기 NOT RUN |
 
 ## P4 기하와 그룹
 

@@ -1,0 +1,287 @@
+{
+  "status": "PASS",
+  "issue": "S1-FONT-TYPING",
+  "sourceHead": "123ce40d8dbe6151bfcd722597bd6b1e43a9be4e",
+  "implementationCommit": "938d6638739b3d13d79fc436d0f16880e707e7e2",
+  "verificationBuildSha256": "b7e366162de885bdf04f435e57d96985c9a829cace3a6eba813962527a6ef9da",
+  "buildChecks": {
+    "privacyStatus": "PASS",
+    "runtimePathStatus": "PASS",
+    "portabilityStatus": "NOT VERIFIED"
+  },
+  "environment": {
+    "display": "Linux X11/Xvfb",
+    "input": "trusted xdotool key events",
+    "ime": "private IBus Hangul",
+    "syntheticComposition": false
+  },
+  "nativeHarnessSha256": "53a4269d5661223e5f343370f6e2bb6c07e66fb51d32945b74a103887fbd595d",
+  "savedFileInspectorSha256": "0f62ed7a8494698ad298cb75098c6f8ed01c67f5d25b5e9b993d5d1cf1cca758",
+  "releaseEngine": {
+    "engine": "RHWP",
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "633c2ee524aec9f281abf0fa85b552de6c26a70f2c46d6e7405ce63c580c0692",
+    "wasmSha256": "3657e8547bd8d9d568dadc1a892269ea5669819901031524e40b9f90ed68b879"
+  },
+  "tests": {
+    "stage1FormatWasm": "5 PASS (selection replacement HWP/HWPX, HWP layout rollback, HWP/HWPX pending-format IME cancellation)",
+    "rhwpEditorSession": "22 PASS",
+    "typecheck": "PASS"
+  },
+  "formats": {
+    "hwp": {
+      "status": "PASS",
+      "nativeReport": "target/s1-font-typing/native-rhwp-hwp18/result.json",
+      "nativeReportSha256": "1753491d11ac9ab70a68d84eb5762cc9e1fb3770f4b396e5b89fc92a1516a103",
+      "fixtureSha256": "fa8fdc842be7032588e9354ce854f0d680973c76b996e9ec07216a72e723d109",
+      "focusReturn": {
+        "sameCaret": true,
+        "effectiveFontSizePt": 24
+      },
+      "deliberateNavigation": {
+        "movedTo": "0:0:18",
+        "returnedTo": "0:0:19",
+        "stalePendingRevived": false
+      },
+      "composition": {
+        "nativeImeStatus": "PASS",
+        "input": "한글 ABC",
+        "trustedInputPath": "X11 xdotool → private IBus Hangul → WebKitGTK",
+        "effectiveFontSizePt": 24,
+        "preeditGlyphHeightRatioTo10PtReference": 2.333,
+        "cancelled": {
+          "compositionStarted": true,
+          "emptyCompositionEnded": true,
+          "documentRevisionUnchanged": true,
+          "pendingFontSizePt": 24
+        },
+        "fullPageCanvasHashEqual": true,
+        "canvasMatchesOpenedDocument": true,
+        "changedPixelsNearInsertion": {
+          "changedPixels": 0,
+          "changedBounds": null,
+          "region": "composition glyph area at insertion caret"
+        }
+      },
+      "selectionReplacement": {
+        "selectedCharacters": 6,
+        "replacement": "X",
+        "undoRedoUndoRestoredAcceptanceCanvas": true
+      },
+      "history": {
+        "undoChangedCommittedInput": true,
+        "redoRestoredCommittedCanvas": true,
+        "effectiveFontSizePt": 24,
+        "caret": "0:0:25",
+        "replacementSelectionRestoredByInputUndoRedo": true
+      },
+      "save": {
+        "state": "saved",
+        "synced": "true",
+        "changedSince": "false",
+        "revision": "12"
+      },
+      "savedFile": {
+        "sha256": "bc9808104571e56e2997a58a55a87d90b6fc3d5b811af77e4038b9baec719c9e",
+        "independentInspection": "PASS",
+        "format": "hwp",
+        "originalCharacterSizes100thPt": [
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000
+        ],
+        "insertedCharacterSizes100thPt": [
+          2400,
+          2400,
+          2400,
+          2400,
+          2400,
+          2400
+        ],
+        "renderedSampleGlyphs": [
+          {
+            "text": "한",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "글",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "A",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "B",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "C",
+            "fontSizePx": 32.0
+          }
+        ]
+      },
+      "freshSessionReopen": {
+        "status": "PASS",
+        "freshSession": true,
+        "revision": 0,
+        "dirty": false,
+        "caret": "0:0:25",
+        "effectiveFontSizePt": 24,
+        "canvas": {
+          "width": 794,
+          "height": 1123,
+          "painted": true
+        }
+      },
+      "teardownComplete": true
+    },
+    "hwpx": {
+      "status": "PASS",
+      "nativeReport": "target/s1-font-typing/native-rhwp-hwpx18/result.json",
+      "nativeReportSha256": "2c31d5a65f7a1007c74ad853cdce4ea472b4b616b83743c3bab1a59623be21db",
+      "fixtureSha256": "b6c89683a646293a887ea770e4afdbea0a264f42dc5948c5f2ac9bd16f5e5efd",
+      "focusReturn": {
+        "sameCaret": true,
+        "effectiveFontSizePt": 24
+      },
+      "deliberateNavigation": {
+        "movedTo": "0:0:18",
+        "returnedTo": "0:0:19",
+        "stalePendingRevived": false
+      },
+      "composition": {
+        "nativeImeStatus": "PASS",
+        "input": "한글 ABC",
+        "trustedInputPath": "X11 xdotool → private IBus Hangul → WebKitGTK",
+        "effectiveFontSizePt": 24,
+        "preeditGlyphHeightRatioTo10PtReference": 2.333,
+        "cancelled": {
+          "compositionStarted": true,
+          "emptyCompositionEnded": true,
+          "documentRevisionUnchanged": true,
+          "pendingFontSizePt": 24
+        },
+        "fullPageCanvasHashEqual": true,
+        "canvasMatchesOpenedDocument": true,
+        "changedPixelsNearInsertion": {
+          "changedPixels": 0,
+          "changedBounds": null,
+          "region": "composition glyph area at insertion caret"
+        }
+      },
+      "selectionReplacement": {
+        "selectedCharacters": 6,
+        "replacement": "X",
+        "undoRedoUndoRestoredAcceptanceCanvas": true
+      },
+      "history": {
+        "undoChangedCommittedInput": true,
+        "redoRestoredCommittedCanvas": true,
+        "effectiveFontSizePt": 24,
+        "caret": "0:0:25",
+        "replacementSelectionRestoredByInputUndoRedo": true
+      },
+      "save": {
+        "state": "saved",
+        "synced": "true",
+        "changedSince": "false",
+        "revision": "12"
+      },
+      "savedFile": {
+        "sha256": "6a65bdc01c2276a0a317a296041f9cfd1704cba20f9cd5ca88d7e9abe5f5e519",
+        "independentInspection": "PASS",
+        "format": "hwpx",
+        "originalCharacterSizes100thPt": [
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000,
+          1000
+        ],
+        "insertedCharacterSizes100thPt": [
+          2400,
+          2400,
+          2400,
+          2400,
+          2400,
+          2400
+        ],
+        "renderedSampleGlyphs": [
+          {
+            "text": "한",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "글",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "A",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "B",
+            "fontSizePx": 32.0
+          },
+          {
+            "text": "C",
+            "fontSizePx": 32.0
+          }
+        ]
+      },
+      "freshSessionReopen": {
+        "status": "PASS",
+        "freshSession": true,
+        "revision": 0,
+        "dirty": false,
+        "caret": "0:0:25",
+        "effectiveFontSizePt": 24,
+        "canvas": {
+          "width": 794,
+          "height": 1123,
+          "painted": true
+        }
+      },
+      "teardownComplete": true
+    }
+  },
+  "limitations": {
+    "wayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macos": "NOT RUN",
+    "microsoftWordAndHancomReopen": "NOT RUN",
+    "portability": "Nix store runtime dependencies; Debian/Ubuntu portability not established"
+  },
+  "docxNativeEvidence": "stage1-font-typing-acceptance.json (Linux X11/Xvfb + trusted IBus Hangul, PASS)"
+}

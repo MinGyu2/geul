@@ -4,7 +4,7 @@
 Stage 1 전체 범위 중 아래 표의 **지원** 항목만 제품 일반 빌드에서 활성화했다. 나머지는 레지스트리에서 `unsupported`이며 실행되지 않는다.
 이 문서는 Stage 1 구현·활성화·focused 검증 기록이며 T014/T015/T016 수용, native GUI 수용, 외부 Office/한컴 호환을 뜻하지 않는다.
 
-> **현행 상태 안내:** 1절 표와 4절 제한은 2026-11-16 당시 기록이다. RHWP 다음 입력 서식은 2026-11-17의 5.1절에서 지원으로 바뀌었고, collapsed caret에서 포커스 복귀 후 서식이 사라지던 회귀는 2026-11-21의 11절에서 수정·검증했다. 최신 상태는 해당 갱신 절을 따른다.
+> **현행 상태 안내:** 1절 표와 4절 제한은 2026-11-16 당시 기록이다. RHWP 다음 입력 서식은 2026-11-17의 5.1절에서 지원으로 바뀌었고, collapsed caret에서 포커스 복귀 후 서식이 사라지던 회귀와 HWP/HWPX 선택 교체·조합 취소 경계는 2026-11-21–22의 11절에서 수정·검증했다. 최신 상태는 해당 갱신 절을 따른다.
 
 ## 1. 형식별 지원 범위
 
@@ -436,14 +436,16 @@ RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모�
 주의 사항(제외 범위): 외부 Microsoft Word/한컴오피스 직접 재열기, 크로스 앱 구조 MIME 상호운용 및 Windows/macOS·Wayland 수용은 NOT RUN이다.
 
 
-## 11. P0 — S1-FONT-TYPING collapsed-caret 서식 유지 (2026-11-21)
+## 11. P0 — S1-FONT-TYPING collapsed-caret 서식 유지 (2026-11-21–22)
 
 ### 재현과 수정
 
 - DOCX 회귀를 WordCraft 실제 엔진 IPC 경로에서 재현했다. 기존 10pt 문장을 선택한 뒤 collapsed caret에 24pt를 지정하고 같은 caret 위치로 돌아오는 포인터 입력이 `caret.set`을 호출해 pending next-input formatting을 지웠다. 선택 교체와 실제 다른 위치로 이동은 구분해 확인했다.
 - `src-tauri/src/adapters/wordcraft/engine.rs`는 collapsed selection의 비확장 포인터 적중이 현재 실제 caret과 같을 때만 caret 재설정을 생략한다. 다른 위치로 이동하는 기존 navigation 정책과 안전 검사는 유지한다.
 - `DocxSurface.tsx`의 composition overlay 크기는 WordCraft view의 effective `chars.size`를 우선 사용하고 값이 없는 경우에만 기존 caret-height 추정을 사용한다.
-- RHWP는 공유 구현으로 바꾸지 않았다. HWP/HWPX Release WASM에서 `pointAt` 이후 pending 글자 크기·색·강조·아래첨자, 취소된 composition, Hangul/Latin 입력을 형식별 문서로 검증했다.
+- RHWP는 공유 구현으로 바꾸지 않았다. 실제 저장 전 HWP 복구 검사에서 선택된 24pt 문자를 `X`로 교체하면 새 글자가 10pt로 내려가는 결함을 재현했다. `RhwpEditorSession.replaceSelectedText`는 같은 문단 선택의 첫 글자 뒤에 삽입한 뒤 선택 원문을 삭제해 엔진이 전체 문자 모양(글꼴·크기·색·강조·첨자 등)을 상속하게 한다.
+- 실제 HWP 조합 취소는 문서 revision을 바꾸지 않아도 뒤 표의 배치를 이동시켰다. RHWP는 조합 시작 때 Undo 경계를 두고, 선택이 없는 빈 조합만 해당 조합의 엔진 기록을 rollback해 페이지 배치까지 복구한다. 직전 정상 입력은 별도 Undo/Redo 단계로 남고 pending 24pt는 유지된다. 선택을 지운 뒤 취소하는 경우는 기존 편집 정책을 따른다.
+- HWP/HWPX Release WASM 회귀는 선택 교체 후 Undo/Redo·내보내기·독립 재열기를 확인한다. 추가 HWP 증명은 취소 전후 전체 페이지 SVG와 히스토리 보존을 확인한다.
 
 ### 수락 및 보존 증거
 
@@ -451,11 +453,13 @@ RHWP `cargo test --lib`는 기준(`862b56a`)에서도 관련 없는 시험 모�
 |---|---|
 | DOCX Rust 회귀·T009 | `GEUL_SANDBOX=userns-root-bwrap npm run rust -- test --lib stage1_docx_` — 13/13 PASS. 포커스 복귀, 반복 입력·문단/선택·의도적 이동, 글꼴·색·강조·위/아래 첨자, Undo/Redo, T009 저장, WordCraft 독립 재열기를 확인했다. |
 | DOCX 화면 모델·렌더 | `npx vitest run src/components/Editor/wordcraft/DocxSurface.test.tsx` — 13/13 PASS; IME overlay 24pt. 엔진 렌더 페이지도 10pt/24pt caret geometry와 PNG 차이를 확인했다. |
-| HWP/HWPX Release WASM·저장 | `scripts/tests/stage1-format.wasm.test.ts` — 두 실제 형식 PASS. pending 서식, 취소, 반복 입력, T009 게시와 독립 WASM 재열기를 확인했다. |
-| Linux X11 Native DOCX·IBus | `scripts/tests/native-ibus-session.py --hangul-initial-mode hangul -- ... native-stage1-font-typing.py` — PASS. XTEST를 통한 trusted IBus Hangul composition, 포커스 복귀, `한글 ABC`, Undo/Redo, T009 `saved`/synced, 새 WordCraft session 재열기를 확인했다. [추적 가능한 실행 보고서](stage1-font-typing-acceptance.json). |
+| RHWP 세션·Release WASM | `RhwpEditorSession.test.ts` 22/22 PASS. Release WASM 집중 회귀 5/5 PASS: HWP/HWPX 선택 교체·Undo/Redo·내보내기/독립 재열기, HWP 취소 후 전체 페이지 SVG 및 직전 Undo/Redo, 기존 HWP/HWPX pending 서식 취소. |
+| Linux X11 Native DOCX·IBus | `scripts/tests/native-ibus-session.py --hangul-initial-mode hangul -- ... native-stage1-font-typing.py` — PASS. trusted IBus Hangul composition, 포커스 복귀, `한글 ABC`, Undo/Redo, T009 `saved`/synced, 새 WordCraft session 재열기를 확인했다. [추적 가능한 실행 보고서](stage1-font-typing-acceptance.json). |
+| Linux X11 Native HWP·HWPX/IBus | HWP와 HWPX 각각 `native-stage1-rhwp-font-typing.py` run18 PASS. 실제 조합 취소 후 revision/pending 24pt/전체 페이지 이미지 복원, 실제 `한글 ABC` 조합·라틴 입력, 선택 교체·Undo/Redo, 저장 후 독립 구조 검사와 새 Native session 재열기를 확인했다. [RHWP Native 상세 보고서](stage1-font-typing-rhwp-acceptance.json). |
 | 저장된 DrawingML | Native 출력의 `word/document.xml`에서 기존 문자열은 `w:sz=20`(10pt), 입력 문자열은 별도 run의 `w:sz=48`(24pt). ZIP 무결성 PASS; 재열기 모델 끝 caret도 24pt. |
-| TypeScript / UI | `npm run typecheck` 및 대상 Vitest PASS. |
+| 저장된 HWP/HWPX | Release WASM으로 실제 CFB/ZIP을 독립 열어 기존 19자 각각 1000(10pt), 새 `한글 ABC` 6자 각각 2400(24pt)을 검사했다. 엔진 SVG의 보이는 5개 글리프는 32px이며 새 Native session 끝 caret은 24pt다. |
+| Release 앱 / TypeScript | `npm run typecheck` PASS. 앱 `b7e366162de885bdf04f435e57d96985c9a829cace3a6eba813962527a6ef9da`; `privacyStatus`·`runtimePathStatus` PASS, 이식성은 Nix store 의존성 때문에 NOT VERIFIED. |
 
-이 수락은 DOCX Linux X11 실제 IME 입력을 포함한다. HWP/HWPX의 이 회귀에 대한 Native GUI 직접 입력, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. HWP/HWPX는 Release WASM 실제 문서·저장 경로로 확인했으며 포맷별로 다른 엔진 경계를 유지한다. 구현 커밋은 `938d6638739b3d13d79fc436d0f16880e707e7e2`이다.
+이 수락은 DOCX·HWP·HWPX 각각 Linux X11/Xvfb의 실제 입력기 경로를 포함한다. Wayland, Windows/macOS, Microsoft Word/한컴오피스 상호운용은 **NOT RUN**이다. RHWP 상세 보고서의 saved file·Native 원시 결과는 무시 경로 `target/s1-font-typing/`에 보존했다. 원 구현 커밋은 `938d6638739b3d13d79fc436d0f16880e707e7e2`이다.
 
 

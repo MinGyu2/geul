@@ -429,8 +429,10 @@ describe.skipIf(phase !== "generate")("Stage 1 mixed script state and caret next
         expect(editor.pointAt(pendingCaret!.page, pendingCaret!.x, pendingCaret!.y + pendingCaret!.height / 2, false)).toBe(true);
         expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2000, textColor: "#0070C0", shadeColor: "#FFFF00", subscript: true });
         // Cancelling an in-progress IME composition leaves the same pending values available.
+        const canvasBeforeCancel = doc.renderPageSvgWithProfile(0, "screen");
         editor.beginComposition(); editor.updateComposition("ㄱ"); editor.endComposition(""); await settle();
         expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2000, textColor: "#0070C0", shadeColor: "#FFFF00", subscript: true });
+        expect(doc.renderPageSvgWithProfile(0, "screen")).toBe(canvasBeforeCancel);
         expect(editor.typeText("가b")).toBe(true); await settle();
         const typed = properties(doc, 1, end);
         expect([typed.fontSize, typed.textColor, typed.shadeColor, typed.subscript]).toEqual([2000, "#0070c0", "#ffff00", true]);
@@ -456,6 +458,79 @@ describe.skipIf(phase !== "generate")("Stage 1 mixed script state and caret next
       } finally { editor.dispose(); }
     });
   }
+});
+
+describe.skipIf(phase !== "generate")("S1-FONT-TYPING selected-range replacement, actual Release WASM", () => {
+  for (const format of ["hwpx", "hwp"] as const) {
+    it(`${format}: replacement inherits the first selected character style and survives Undo/Redo and reopen`, async () => {
+      const { editor, doc, settle } = await open(format);
+      const originalText = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+      expect(originalText).toBe("한글 Mixed text 끝 end");
+      try {
+        editor.anchor = body(0, 0);
+        editor.caret = body(2, 0);
+        expect(editor.hasSelection).toBe(true);
+        expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 24 }).accepted).toBe(true);
+        await settle();
+        expect([properties(doc, 0, 0).fontSize, properties(doc, 0, 1).fontSize]).toEqual([2400, 2400]);
+
+        expect(editor.typeText("X")).toBe(true);
+        await settle();
+        expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe("X Mixed text 끝 end");
+        expect(properties(doc, 0, 0).fontSize).toBe(2400);
+
+        expect(editor.undo()).toBe(true);
+        await settle();
+        expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe(originalText);
+        expect([properties(doc, 0, 0).fontSize, properties(doc, 0, 1).fontSize]).toEqual([2400, 2400]);
+        expect(editor.redo()).toBe(true);
+        await settle();
+        expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe("X Mixed text 끝 end");
+        expect(properties(doc, 0, 0).fontSize).toBe(2400);
+
+        if (format === "hwp") doc.rebuildLayout!();
+        const output = exported(doc, format);
+        expect(JSON.parse(output.loss)).toMatchObject({ count: 0 });
+        const savedPath = join(out, `s1-font-typing-selection-replacement.${format}`);
+        writeFileSync(savedPath, output.bytes);
+        const reopened = new engine.HwpDocument(readFileSync(savedPath)) as Doc;
+        try {
+          expect(model(reopened)).toEqual(model(doc));
+          expect(properties(reopened, 0, 0).fontSize).toBe(2400);
+          expect(reopened.getTextRange(0, 0, 0, reopened.getParagraphLength(0, 0))).toBe("X Mixed text 끝 end");
+        } finally { reopened.free(); }
+      } finally { editor.dispose(); }
+    });
+  }
+});
+
+describe.skipIf(phase !== "generate")("S1-FONT-TYPING cancelled HWP composition layout, actual Release WASM", () => {
+  it("HWP restores the original page layout while keeping pending next-input formatting", async () => {
+    const { editor, doc, settle } = await open("hwp");
+    try {
+      const length = doc.getParagraphLength(0, 0);
+      const originalText = doc.getTextRange(0, 0, 0, length);
+      editor.anchor = editor.caret = body(length, 0);
+      expect(editor.typeText("x")).toBe(true);
+      await settle();
+      const textBeforeCancel = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+      editor.anchor = editor.caret = body(length + 1, 0);
+      expect(editor.execute("format.fontSize", { command: "format.fontSize", size: 24 }).accepted).toBe(true);
+      const originalSvg = doc.renderPageSvgWithProfile(0, "screen");
+
+      editor.beginComposition(); editor.updateComposition("ㅎ"); editor.endComposition(""); await settle();
+      expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe(textBeforeCancel);
+      expect(editor.pendingCharState?.props).toMatchObject({ fontSize: 2400 });
+      expect(doc.renderPageSvgWithProfile(0, "screen")).toBe(originalSvg);
+
+      expect(editor.undo()).toBe(true);
+      await settle();
+      expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe(originalText);
+      expect(editor.redo()).toBe(true);
+      await settle();
+      expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe(textBeforeCancel);
+    } finally { editor.dispose(); }
+  });
 });
 
 describe.skipIf(phase !== "generate")("P1-A continuous next-input formatting beyond 64 insertions, actual Release WASM", () => {

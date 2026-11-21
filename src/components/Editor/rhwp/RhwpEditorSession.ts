@@ -190,6 +190,8 @@ interface Composition {
   text: string;
   /** 조합을 시작하며 선택을 지웠다(성공). */
   deletedSelection: boolean;
+  /** 취소한 빈 조합은 저장·Undo 상태도 시작 전 값으로 복원한다. */
+  modifiedBefore: boolean;
 }
 
 /** 백엔드에 보낸 failed 전이 하나(markFailed). 다시 불러오기가 그 결과를 확인한다. */
@@ -1373,6 +1375,26 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return from;
   }
 
+  /** Replace a single-paragraph text selection while inheriting the first selected character's complete engine style. */
+  private replaceSelectedText(text: string): DocPosition {
+    const [from, to] = this.ordered();
+    const length = to.offset - from.offset;
+    const afterFirst = { ...from, offset: from.offset + 1 };
+    if (sameContext(from, to) && paragraphOf(from) === paragraphOf(to) && length > 0
+      && this.text!.canInsertText(afterFirst)) {
+      // RHWP inserts with the character immediately before the insertion point's style. Insert inside the selection,
+      // after its first character, then remove that original character and the rest of the selected range. This keeps
+      // replacement text's font, size, color, highlight, script, and other shape properties without copying a lossy subset.
+      this.insertText(afterFirst, text);
+      this.text!.delete(from, 1);
+      if (length > 1) this.text!.delete({ ...from, offset: from.offset + charCount(text) }, length - 1);
+      return { ...from, offset: from.offset + charCount(text) };
+    }
+    const at = this.deleteSelectionRaw();
+    this.insertText(at, text);
+    return { ...at, offset: at.offset + charCount(text) };
+  }
+
   typeText(text: string): boolean {
     if (!text || this.composition || !validClipboardText(text) || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return false;
     text = text.replace(/\r\n?|\u2029/g, "\n");
@@ -1395,7 +1417,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     });
     const start = this.hasSelection ? null : RhwpEditorSession.positionKey(this.caret);
     return this.mutate(() => {
-      const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
+      if (this.hasSelection) return this.replaceSelectedText(text);
+      const at = this.caret;
       this.insertText(at, text);
       return { ...at, offset: at.offset + charCount(text) };
     }, true, "typing", start);
@@ -1591,17 +1614,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   beginComposition(): void {
     if (this.objectSelection || !this.editable || this.composition || !this.canDeleteSelection() || !this.text?.canInsertText(this.caret)) return;
+    // A native composition is its own transaction. In particular, its rollback snapshot must not undo a preceding
+    // ordinary typing group when an empty composition is cancelled.
+    this.history?.boundary();
     this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
     if (!this.hasSelection) {
-      this.composition = { anchor: this.caret, text: "", deletedSelection: false };
+      this.composition = { anchor: this.caret, text: "", deletedSelection: false, modifiedBefore: this.modified };
       if (this.pendingFor(this.caret)) this.pendingChars!.origin = RhwpEditorSession.positionKey(this.caret);
       return;
     }
     this.mutate(() => {
+      const modifiedBefore = this.modified;
       const at = this.deleteSelectionRaw();
-      this.composition = { anchor: at, text: "", deletedSelection: true };
+      this.composition = { anchor: at, text: "", deletedSelection: true, modifiedBefore };
       return at;
     }, false, "typing", null); // 선택 바꾸기는 새 단계(before = 지우기 전)
   }
@@ -1655,6 +1682,36 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.settleProvisional();
     const composition = this.composition;
     if (!composition) return;
+    if (composition.text === "" && !composition.deletedSelection && this.history?.transactionOpen) {
+      // HWP layout caches can retain temporary IME line metrics after deleteText restores the same characters.
+      // Restore the composition's owned engine snapshot so cancellation also restores unrelated page geometry.
+      try {
+        this.history.rollback();
+        this.text?.reconcilePublishedCharShapes();
+      } catch (error) {
+        this.historyFailure(error);
+        if (this.status.kind === "ready") {
+          this.composition = null;
+          this.pendingChars = null;
+          this.uncertain = true;
+          this.lastRoundTrip = null;
+          this.modelVersion += 1;
+          this.failEditing();
+        }
+        return;
+      }
+      this.modified = composition.modifiedBefore;
+      this.composition = null;
+      this.modelVersion += 1;
+      this.lastRoundTrip = null;
+      try { this.pages = readPages(this.doc!); }
+      catch {
+        this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+        return;
+      }
+      this.closePendingOrigin();
+      return;
+    }
     this.composition = null;
     this.closePendingOrigin();
     if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
