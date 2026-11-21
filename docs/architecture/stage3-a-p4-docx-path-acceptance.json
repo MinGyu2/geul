@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-DX-PATH",
+  "originalCategory": "A",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
+  "supportedRange": [
+    "DOCX body top-level freeforms with a safely editable original DrawingML path model and no shape rotation or flips.",
+    "Insert an integer lattice point on an existing straight lnTo edge or the closing edge before close; remove an existing lnTo vertex while retaining at least two vertices for an open subpath and three for a closed subpath.",
+    "Preserve source path command identity and order, close semantics, path attributes, viewport, and all untouched XML and OPC parts."
+  ],
+  "safetyBoundary": [
+    "Only paths accepted by the existing safe DrawingML model expose vertex operations; transformed shapes, Ink paths, unsupported source metadata, and malformed paths fail closed.",
+    "Insertion is limited to existing straight line edges and integer coordinates inside the path viewport; curve subdivision and transformed-path editing are outside this issue.",
+    "Deletion is limited to lnTo commands and is rejected when it would leave fewer than two open or three closed vertices."
+  ],
+  "changedComponents": [
+    "external/wordcraft/crates/doc/src/freeform.rs: safe DrawingML line-vertex mutation while retaining source command records.",
+    "external/wordcraft/crates/engine/src/cmd/objects.rs: pathVertex command validation, mutation, and Undo/Redo history.",
+    "src-tauri/src/adapters/wordcraft/engine.rs and tests.rs: bounded operation routing, ownership checks, T009 and history regression.",
+    "src/commands/objectSelection.ts, src/components/Editor/DrawingMlPathEditor.tsx, and ObjectSelectionFrame.tsx: strict request validation and insertion/deletion controls.",
+    "scripts/tests/native-stage3a-p4.py and native-stage3-c.py: trusted-pointer X11 acceptance for open and closed DOCX paths."
+  ],
+  "sourceCommits": [
+    {"repository": "external/wordcraft", "sha": "656ae2b443004e589675070c0cd092587a1dd89c", "subject": "P4-DX-PATH safe line-vertex editing source"},
+    {"repository": "external/wordcraft", "sha": "15b7fd7c6bbdc8e10343cb867c5cc5a9caf8637f", "subject": "P4-DX-PATH closed-path roundtrip correction"},
+    {"repository": "geul", "sha": "574a4f6656b67110b358e0b1958320704bd6f91b", "subject": "P4-DX-PATH WordCraft patch-series integration"},
+    {"repository": "geul", "sha": "5b37e9810b86a414b655e3358ac89c850a8c99e0", "subject": "P4-DX-PATH closed-path serialization roundtrip integration"}
+  ],
+  "focusedVerification": {
+    "wordcraftParser": {"result": "PASS", "test": "freeform::tests::drawingml_line_vertex_insert_remove_preserves_open_and_closed_commands", "checks": ["Open insertion and closed deletion preserve exact DrawingML command order and close behavior.", "Unaffected source records and coordinates remain unchanged."]},
+    "wordcraftEngine": {"result": "PASS", "test": "cmd::objects::tests::docx_path_vertex_insert_remove_preserve_open_closed_structure_and_history", "checks": ["Undo restores the original bytes and Redo restores edited bytes.", "Unsafe closed-path deletion is rejected without changing export."]},
+    "geulRustT009": {"result": "PASS", "test": "stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history", "checks": ["Open insertion and closed deletion pass the save-preservation gate.", "Undo/Redo, viewport validation, and closed-path minimum-vertex rejection are checked against serialized output."]},
+    "frontend": {"result": "PASS", "checks": ["npm run typecheck", "npm exec vitest -- run src/components/Editor/ObjectSelectionFrame.test.tsx: 29/29 passed.", "UI coverage checks straight-edge insertion, open/closed minimums, and request bounds."]},
+    "nativeHarness": {"result": "PASS", "checks": ["python3 -m py_compile scripts/tests/native-stage3a-p4.py scripts/tests/native-stage3-c.py", "git diff --check"]}
+  },
+  "releaseBuild": {
+    "result": "PASS",
+    "commands": [
+      "npm run build",
+      "python3 scripts/cargo-geul.py build --release --features tauri/custom-protocol"
+    ],
+    "appSha256": "7a19529a667499d41507ca01134962782d58a06940180b211348d459748085bf"
+  },
+  "native": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb with a private IBus Hangul session and the Tauri WebDriver; this is X11 evidence, not Wayland evidence.",
+    "appSha256": "7a19529a667499d41507ca01134962782d58a06940180b211348d459748085bf",
+    "resultFile": "target/stage3a-p4-docx-path/native-run-x11-accept3/result.json",
+    "documents": [
+      {"kind": "open", "fixture": "open.docx", "fixtureSha256": "bc141d613c26250efc9d6b5edaca45bc328992107fbb27aa498cf132c6776cbc", "publishedFile": "target/stage3a-p4-docx-path/native-run-x11-accept3/p4-dx-path-open-edited.docx", "publishedFileSha256": "e52e6d4d06b840236c289057c9ca766c056f7f9c6b3bc71b290331e156dee45d", "savedCommands": ["moveTo(0,0)", "lnTo(50,0)", "lnTo(100,0)", "lnTo(200,0)"], "checks": ["Trusted native pointer selected the source vertex; inserted exact integer point (50,0).", "Undo and Redo restored the original and edited vertex lists.", "T009 save reported saved, synced=true, changedSince=false, no findings; a fresh app session reopened the path cleanly.", "Only word/document.xml changed, matching the expected lnTo insertion; relationships and the other 8 OPC parts were byte-identical."]},
+      {"kind": "closed", "fixture": "closed.docx", "fixtureSha256": "f6eae624dc900563e7e7adafea627603df7145e5c01340e10ceba0a5f5290ddf", "publishedFile": "target/stage3a-p4-docx-path/native-run-x11-accept3/p4-dx-path-closed-edited.docx", "publishedFileSha256": "4ee61286fde82533c66197696bcc3a4e7a0e60b6bb25adac7a92110a4f0f95a3", "savedCommands": ["moveTo(0,0)", "lnTo(100,100)", "lnTo(0,100)", "close"], "checks": ["Trusted native pointer selected and removed the intended line vertex.", "Undo and Redo restored the original and edited lists; deletion below three closed vertices was disabled.", "T009 save reported saved, synced=true, changedSince=false, no findings; a fresh app session reopened the path cleanly.", "Only word/document.xml changed, matching the expected lnTo deletion; relationships and the other 8 OPC parts were byte-identical."]}
+    ],
+    "cleanup": {"file": "target/stage3a-p4-docx-path/native-session-x11-accept3/cleanup.json", "complete": true, "proven": true, "filesystemProven": true, "survivors": []},
+    "otherPlatforms": "Wayland, Windows, macOS, and external Microsoft Word reopening NOT RUN."
+  },
+  "independentPackageInspection": {"result": "PASS", "checks": ["Both output package part sets match their fixtures.", "Each full word/document.xml matches the expected single vertex operation.", "word/_rels/document.xml.rels and the other 8 OPC parts are byte-identical."]},
+  "acceptanceDecision": "P4-DX-PATH is implemented and accepted for the supported straight-line, open/closed path range above. Curve subdivision, Ink, malformed/unsupported paths, and transformed paths remain fail-closed; transformed-path editing remains in P4-PATH-XFM."
+}

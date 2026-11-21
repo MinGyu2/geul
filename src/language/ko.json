@@ -802,6 +802,8 @@
   "editor.object.docxPath.point": "DOCX 경로 {path}, 구간 {segment}, 점 {point}",
   "editor.object.docxPath.x": "X (EMU)",
   "editor.object.docxPath.y": "Y (EMU)",
+  "editor.object.docxPath.insertVertex": "다음 직선에 꼭짓점 삽입",
+  "editor.object.docxPath.removeVertex": "선택한 꼭짓점 삭제",
   "editor.object.groupChild.edit": "묶음 안 도형 편집",
   "editor.object.groupChild.done": "도형 편집 종료",
   "editor.object.groupChild.width": "너비 (HWPUNIT)",

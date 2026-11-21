@@ -718,6 +718,14 @@ pub enum ObjectEdit {
         x: i64,
         y: i64,
     },
+    /// Insert or remove a source DrawingML line vertex without rewriting neighboring commands.
+    DocxPathVertex {
+        path: usize,
+        segment: usize,
+        action: DocxPathVertexAction,
+        x: Option<i64>,
+        y: Option<i64>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -780,6 +788,13 @@ pub enum PositionPreset {
     BottomLeft,
     BottomCenter,
     BottomRight,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DocxPathVertexAction {
+    Insert,
+    Remove,
 }
 
 impl PositionPreset {
@@ -890,6 +905,15 @@ impl ObjectEdit {
                     && (-1_000_000_000_000..=1_000_000_000_000).contains(x)
                     && (-1_000_000_000_000..=1_000_000_000_000).contains(y)
             }
+            Self::DocxPathVertex { path, segment, action, x, y } => {
+                *path < wordcraft_engine::doc::freeform::MAX_PATHS
+                    && *segment < wordcraft_engine::doc::freeform::MAX_POINTS
+                    && match action {
+                        DocxPathVertexAction::Insert => (*x).zip(*y).is_some_and(|(x, y)|
+                            (0..=1_000_000_000_000).contains(&x) && (0..=1_000_000_000_000).contains(&y)),
+                        DocxPathVertexAction::Remove => x.is_none() && y.is_none(),
+                    }
+            }
             Self::AltText { text } => valid_object_alt_text(text),
         }
     }
@@ -910,6 +934,7 @@ impl ObjectEdit {
             Self::ChartTitle { .. } | Self::ChartType { .. } | Self::ChartData { .. } => "chart",
             Self::SmartArtItems { .. } | Self::SmartArtLayout { .. } => "smartArt",
             Self::DocxPathPoint { .. } => "pathPoint",
+            Self::DocxPathVertex { .. } => "pathVertex",
         }
     }
 }
@@ -2513,6 +2538,11 @@ impl DocxModel {
             if float.rot == 0.0 && !float.flip_h && !float.flip_v);
         if top_level && transform_safe && self.drawingml_paths(pos).is_some() {
             ops.push("pathPoint");
+            if let InlineObject::Shape { freeform: Some(freeform), .. } = object {
+                if freeform.can_edit_drawingml_vertices() {
+                    ops.push("pathVertex");
+                }
+            }
         }
         if self.conversion_target(pos).is_some() {
             ops.push("convertShape");
@@ -2536,7 +2566,7 @@ impl DocxModel {
         } = self.object_at(pos)? else {
             return None;
         };
-        if float.rot != 0.0 || float.flip_h || float.flip_v {
+        if freeform.ink.is_some() || float.rot != 0.0 || float.flip_h || float.flip_v {
             return None;
         }
         let geometry = freeform.drawingml.as_ref()?;
@@ -3072,6 +3102,27 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
+        if let ObjectEdit::DocxPathVertex { path, segment, action, x, y } = edit {
+            let paths = self.drawingml_paths(&pos).ok_or(Rejected)?;
+            let source = paths.get(*path).ok_or(Rejected)?;
+            let target = source.segments.get(*segment).ok_or(Rejected)?;
+            match action {
+                DocxPathVertexAction::Insert => {
+                    if !matches!(target.command, "lnTo" | "close") {
+                        return Err(Rejected);
+                    }
+                    let (Some(x), Some(y)) = (x, y) else { return Err(Rejected) };
+                    if *x < 0 || *x > source.viewport_width || *y < 0 || *y > source.viewport_height {
+                        return Err(Rejected);
+                    }
+                }
+                DocxPathVertexAction::Remove => {
+                    if target.command != "lnTo" || x.is_some() || y.is_some() {
+                        return Err(Rejected);
+                    }
+                }
+            }
+        }
         let before = self.export().ok_or(Rejected)?;
         let end = Pos {
             off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
@@ -3200,6 +3251,14 @@ impl DocxModel {
                     model.run("shape.pathPoint", json!({ "path": path, "segment": segment, "point": point, "x": x, "y": y }))?,
                     Some(pos.clone()),
                 ),
+                ObjectEdit::DocxPathVertex { path, segment, action, x, y } => {
+                    let mut params = json!({ "path": path, "segment": segment, "action": action });
+                    if let (Some(x), Some(y)) = (x, y) {
+                        params["x"] = json!(x);
+                        params["y"] = json!(y);
+                    }
+                    (model.run("shape.pathVertex", params)?, Some(pos.clone()))
+                }
                 ObjectEdit::Layer { front } => (
                     model.run(
                         if *front {
@@ -3216,7 +3275,7 @@ impl DocxModel {
                 return Err(Rejected);
             }
             if let Some(at) = at.as_ref().filter(|at| {
-                !matches!(edit, ObjectEdit::DocxPathPoint { .. })
+                !matches!(edit, ObjectEdit::DocxPathPoint { .. } | ObjectEdit::DocxPathVertex { .. })
                     && (!matches!(edit, ObjectEdit::AltText { .. }) || !model.story_inline_picture(at))
             }) {
                 model.snap_to_emu(at)?;

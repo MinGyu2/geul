@@ -11,6 +11,7 @@ interface EditPoint {
   viewportWidth: number;
   viewportHeight: number;
   control: boolean;
+  command: DrawingMlShapePath["segments"][number]["command"];
 }
 
 interface Drag {
@@ -22,19 +23,20 @@ interface Drag {
   point: EditPoint;
 }
 
-export function DrawingMlPathEditor({ paths, owner, width, height, onEdit }: {
+export function DrawingMlPathEditor({ paths, owner, width, height, editVertices = false, onEdit }: {
   paths: readonly DrawingMlShapePath[];
   owner: string;
   width: number;
   height: number;
-  onEdit: (edit: Extract<ObjectEdit, { kind: "docxPathPoint" }>) => void;
+  editVertices?: boolean;
+  onEdit: (edit: Extract<ObjectEdit, { kind: "docxPathPoint" | "docxPathVertex" }>) => void;
 }) {
   const { t } = useTranslation();
   const points: EditPoint[] = paths.flatMap((path, pathIndex) => path.segments.flatMap((segment, segmentIndex) =>
     segment.points.map((point, pointIndex) => ({
       path: pathIndex, segment: segmentIndex, point: pointIndex,
       x: point.x, y: point.y, viewportWidth: path.viewportWidth, viewportHeight: path.viewportHeight,
-      control: point.control,
+      control: point.control, command: segment.command,
     }))));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [draft, setDraft] = useState<{ owner: string; index: number; x: string; y: string }>();
@@ -48,6 +50,13 @@ export function DrawingMlPathEditor({ paths, owner, width, height, onEdit }: {
   const valid = selected && rawX !== "" && rawY !== "" && Number.isSafeInteger(x) && Number.isSafeInteger(y)
     && x >= 0 && x <= selected.viewportWidth && y >= 0 && y <= selected.viewportHeight
     && (x !== selected.x || y !== selected.y);
+  const selectedPath = selected ? paths[selected.path] : undefined;
+  const following = selected && selectedPath ? selectedPath.segments[selected.segment + 1] : undefined;
+  const insertion = selected && !selected.control && selectedPath && following
+    ? insertionPoint(selected, following, selectedPath)
+    : null;
+  const canRemove = selected && !selected.control && selected.command === "lnTo" && selectedPath
+    && canRemoveVertex(selectedPath.segments, selected.segment);
 
   function target(event: PointerEvent<HTMLButtonElement>, current: Drag) {
     const { point } = current;
@@ -107,6 +116,50 @@ export function DrawingMlPathEditor({ paths, owner, width, height, onEdit }: {
       <label>{t("editor.object.docxPath.y")} <input aria-label={t("editor.object.docxPath.y")} type="number" min={0} max={selected.viewportHeight} step={1}
         value={rawY} onChange={event => setDraft({ owner, index: selectedIndex, x: rawX, y: event.target.value })} /></label>
       <button type="submit" disabled={!valid}>{t("editor.object.path.apply")}</button>
+      {editVertices && <>
+        <button type="button" data-testid="docx-path-insert-vertex" disabled={!insertion || !onEdit}
+          onClick={() => insertion && onEdit({ kind: "docxPathVertex", path: selected.path, segment: selected.segment + 1, action: "insert", ...insertion })}>
+          {t("editor.object.docxPath.insertVertex")}
+        </button>
+        <button type="button" data-testid="docx-path-remove-vertex" disabled={!canRemove || !onEdit}
+          onClick={() => canRemove && onEdit({ kind: "docxPathVertex", path: selected.path, segment: selected.segment, action: "remove" })}>
+          {t("editor.object.docxPath.removeVertex")}
+        </button>
+      </>}
     </form>}
   </>;
+}
+
+function insertionPoint(start: EditPoint, following: DrawingMlShapePath["segments"][number], path: DrawingMlShapePath): { x: number; y: number } | null {
+  let end: { x: number; y: number } | undefined;
+  if (following.command === "lnTo") end = following.points[0];
+  else if (following.command === "close") {
+    for (let index = start.segment; index >= 0; index--) {
+      const moveTo = path.segments[index];
+      if (moveTo?.command === "moveTo") { end = moveTo.points[0]; break; }
+    }
+  } else return null;
+  if (!end) return null;
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const steps = gcd(Math.abs(dx), Math.abs(dy));
+  if (steps < 2) return null;
+  const step = Math.floor(steps / 2);
+  const x = start.x + dx / steps * step, y = start.y + dy / steps * step;
+  return x >= 0 && x <= path.viewportWidth && y >= 0 && y <= path.viewportHeight ? { x, y } : null;
+}
+
+function gcd(a: number, b: number): number {
+  while (b !== 0) [a, b] = [b, a % b];
+  return a;
+}
+
+function canRemoveVertex(segments: DrawingMlShapePath["segments"], selected: number): boolean {
+  let start = selected;
+  while (start >= 0 && segments[start]?.command !== "moveTo") start--;
+  if (start < 0) return false;
+  let end = selected + 1;
+  while (end < segments.length && segments[end]?.command !== "close" && segments[end]?.command !== "moveTo") end++;
+  const closed = segments[end]?.command === "close";
+  const vertices = segments.slice(start, end).filter(segment => segment.command !== "close").length;
+  return vertices > (closed ? 3 : 2);
 }

@@ -1066,7 +1066,7 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.fixtures, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("docx" if case in {"C03", "P4-DX-CURVE"} else "hwpx")
+                        row["failureAppState"] = acc.status("docx" if case in {"C03", "P4-DX-CURVE", "P4-DX-PATH"} else "hwpx")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

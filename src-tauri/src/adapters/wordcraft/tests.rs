@@ -6358,6 +6358,134 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
 }
 
 #[test]
+fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
+    use super::engine::{DocxPathVertexAction, ObjectEdit};
+    use crate::services::save::service;
+    use wordcraft_engine::doc::freeform::DrawingMlPathCommand as Command;
+    use wordcraft_engine::doc::InlineObject;
+    use wordcraft_engine::{io, Session};
+
+    let fixture_dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_DOCX_PATH_FIXTURES").expect("generated DOCX line-path fixtures"));
+    let select = |model: &mut DocxModel, bytes: &[u8]| {
+        let mut reader = Session::new(io::open_bytes("path.docx", bytes).unwrap());
+        let hit = reader.layout().find_object(0, |_| true).unwrap();
+        let result = model.apply(&[DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        }]);
+        assert!(result.rejected.is_empty());
+        let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        (object["position"].as_str().unwrap().to_owned(), object["epoch"].as_u64().unwrap(), object)
+    };
+    let saved_freeform = |bytes: &[u8]| {
+        let document = io::open_bytes("path.docx", bytes).unwrap();
+        document.body.iter().filter_map(|block| block.as_para()).flat_map(|paragraph| &paragraph.objects).find_map(|object| match object {
+            InlineObject::Shape { kind: wordcraft_engine::doc::para::ShapeKind::Freeform, freeform: Some(freeform), .. } => Some(freeform.clone()),
+            _ => None,
+        }).expect("saved document contains the editable freeform")
+    };
+
+    let open_bytes = std::fs::read(fixture_dir.join("open.docx")).expect("open-path fixture");
+    let mut open_model = DocxModel::open(&open_bytes).unwrap();
+    assert!(open_model.render_png(0, 1.0).is_some());
+    let (position, epoch, selected) = select(&mut open_model, &open_bytes);
+    assert!(selected["operations"].as_array().unwrap().iter().any(|operation| operation == "pathVertex"));
+    let open_baseline = open_model.export().unwrap();
+    let edit = open_model.apply(&[DocxOp::ObjectEdit {
+        position: position.clone(), epoch,
+        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Insert, x: Some(50), y: Some(0) },
+    }]);
+    assert_eq!((edit.changed, edit.rejected), (1, Vec::new()));
+    let open_inserted = open_model.export().unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &open_bytes, &open_inserted, None, open_model.same_as(&open_inserted));
+    assert!(gate.is_safe(), "{gate:?}");
+    let reopened = DocxModel::open(&open_inserted).unwrap();
+    let commands = reopened.diagnostic_document().body.iter().filter_map(|block| block.as_para()).flat_map(|paragraph| &paragraph.objects).find_map(|object| match object {
+        InlineObject::Shape { freeform: Some(freeform), .. } => Some(&freeform.drawingml.as_ref().unwrap().paths[0].commands),
+        _ => None,
+    }).unwrap().as_ref().unwrap();
+    assert_eq!(commands, &[
+        Command::MoveTo { point: [0, 0] },
+        Command::LineTo { point: [50, 0] },
+        Command::LineTo { point: [100, 0] },
+        Command::LineTo { point: [200, 0] },
+    ]);
+    assert_eq!(open_model.apply(&[DocxOp::Undo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(open_model.export().unwrap(), open_baseline);
+    assert_eq!(open_model.apply(&[DocxOp::Redo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(open_model.export().unwrap(), open_inserted);
+    let open_history_after_redo = serde_json::to_value(open_model.view()).unwrap()["history"].clone();
+    let (position, current_epoch, _) = select(&mut open_model, &open_inserted);
+    let rejected = open_model.apply(&[DocxOp::ObjectEdit {
+        position,
+        epoch: current_epoch,
+        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Insert, x: Some(75), y: Some(1) },
+    }]);
+    assert_eq!(rejected.rejected, vec![0], "a non-collinear insertion is rejected before serialization");
+    assert_eq!(open_model.export().unwrap(), open_inserted);
+    assert_eq!(serde_json::to_value(open_model.view()).unwrap()["history"], open_history_after_redo);
+
+    let closed_bytes = std::fs::read(fixture_dir.join("closed.docx")).expect("closed-path fixture");
+    let mut direct = Session::new(io::open_bytes("path.docx", &closed_bytes).unwrap());
+    direct.run("select.objects", &json!({"index": 0})).unwrap();
+    direct.run("shape.pathVertex", &json!({"path": 0, "segment": 1, "action": "remove"})).unwrap();
+    let direct_output = io::save_bytes("path.docx", &direct.doc).unwrap();
+    let direct_reopened = io::open_bytes("path.docx", &direct_output).unwrap();
+    let direct_same = wordcraft_engine::doc::roundtrip::compare_roundtrip(
+        &direct.doc,
+        &direct_reopened,
+        &wordcraft_engine::doc::roundtrip::RoundTripLimits::default(),
+    );
+    let direct_equal = matches!(direct_same, Ok(wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_)));
+    let direct_gate = service::check_saved(
+        crate::document::Format::Docx,
+        &closed_bytes,
+        &direct_output,
+        None,
+        direct_equal,
+    );
+    assert!(direct_equal, "direct WordCraft path removal roundtrip: {direct_same:?}");
+    assert!(direct_gate.is_safe(), "direct WordCraft path removal T009: {direct_gate:?}");
+    let mut closed_model = DocxModel::open(&closed_bytes).unwrap();
+    let (position, epoch, selected) = select(&mut closed_model, &closed_bytes);
+    assert!(selected["operations"].as_array().unwrap().iter().any(|operation| operation == "pathVertex"));
+    let closed_baseline = closed_model.export().unwrap();
+    let remove = closed_model.apply(&[DocxOp::ObjectEdit {
+        position: position.clone(), epoch,
+        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Remove, x: None, y: None },
+    }]);
+    assert_eq!((remove.changed, remove.rejected), (1, Vec::new()), "selected closed-path shape: {selected:?}");
+    let closed_removed = closed_model.export().unwrap();
+    let gate = service::check_saved(crate::document::Format::Docx, &closed_bytes, &closed_removed, None, closed_model.same_as(&closed_removed));
+    assert!(gate.is_safe(), "{gate:?}");
+    let reopened_freeform = saved_freeform(&closed_removed);
+    let commands = reopened_freeform.drawingml.as_ref().unwrap().paths[0].commands.as_ref().unwrap();
+    assert_eq!(commands, &[
+        Command::MoveTo { point: [0, 0] },
+        Command::LineTo { point: [100, 100] },
+        Command::LineTo { point: [0, 100] },
+        Command::Close,
+    ]);
+    assert_eq!(closed_model.apply(&[DocxOp::Undo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(closed_model.export().unwrap(), closed_baseline);
+    assert_eq!(closed_model.apply(&[DocxOp::Redo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(closed_model.export().unwrap(), closed_removed);
+    let (position, current_epoch, _) = select(&mut closed_model, &closed_removed);
+    let rejected = closed_model.apply(&[DocxOp::ObjectEdit {
+        position,
+        epoch: current_epoch,
+        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Remove, x: None, y: None },
+    }]);
+    assert_eq!(rejected.rejected, vec![0], "a closed path retains at least three vertices");
+    assert_eq!(closed_model.export().unwrap(), closed_removed);
+}
+
+#[test]
 fn stage3_docx_picture_in_table_cell_admits_only_in_place_edits() {
     use super::engine::ObjectEdit;
     use crate::services::save::service;

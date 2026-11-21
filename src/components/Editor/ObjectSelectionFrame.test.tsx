@@ -122,6 +122,24 @@ describe("object edit requests", () => {
     expect(objectEditMatches(outside, selected)).toBe(false);
     expect(validObjectEdit({ kind: "docxPathPoint", path: 0, segment: 1, point: 3, x: 250, y: 150 })).toBe(false);
   });
+  it("validates DrawingML vertex edits against the selected command and viewport", () => {
+    const selected = selection({
+      kind: "shape", operations: ["deselect", "pathPoint", "pathVertex"],
+      drawingMlPaths: [{ viewportWidth: 200, viewportHeight: 200, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 100, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 200, y: 0, control: false }] },
+        { command: "close", points: [] },
+      ] }],
+    });
+    const insert = objectEditRequest(selected, { kind: "docxPathVertex", path: 0, segment: 1, action: "insert", x: 50, y: 0 });
+    expect(validObjectEdit(insert.edit)).toBe(true);
+    expect(objectEditMatches(insert, selected)).toBe(true);
+    expect(objectEditMatches(objectEditRequest(selected, { kind: "docxPathVertex", path: 0, segment: 0, action: "insert", x: 50, y: 0 }), selected)).toBe(false);
+    expect(objectEditMatches(objectEditRequest(selected, { kind: "docxPathVertex", path: 0, segment: 3, action: "remove" }), selected)).toBe(false);
+    expect(objectEditMatches(objectEditRequest(selected, { kind: "docxPathVertex", path: 0, segment: 1, action: "insert", x: 201, y: 0 }), selected)).toBe(false);
+    expect(validObjectEdit({ kind: "docxPathVertex", path: 0, segment: 1, action: "remove", x: 50 })).toBe(false);
+  });
   it("binds a request to the selection identity and its allowed operations", () => {
     const selected = selection({ operations: ["deselect", "resize"] });
     const resize = objectEditRequest(selected, { kind: "bounds", width: 50, height: 25 });
@@ -167,6 +185,66 @@ describe("ObjectSelectionFrame", () => {
 
     expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "docxPathPoint", path: 0, segment: 1, point: 0, x: 300, y: 260 }, 7);
     expect(pageDown).not.toHaveBeenCalled();
+  });
+
+  it("inserts and removes DOCX vertices on an open straight path", () => {
+    const selected = selection({
+      kind: "shape", operations: ["deselect", "pathPoint", "pathVertex"],
+      drawingMlPaths: [{ viewportWidth: 200, viewportHeight: 200, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 100, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 200, y: 0, control: false }] },
+      ] }],
+    });
+    const { onEdit } = frame({ selection: selected });
+    fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+    fireEvent.click(screen.getByTestId("docx-path-insert-vertex"));
+    fireEvent.click(screen.getByTestId("docx-path-point-0-1-0"));
+    fireEvent.click(screen.getByTestId("docx-path-remove-vertex"));
+    expect(onEdit.mock.calls).toEqual([
+      [{ kind: "docxPathVertex", path: 0, segment: 1, action: "insert", x: 50, y: 0 }, 7],
+      [{ kind: "docxPathVertex", path: 0, segment: 1, action: "remove" }, 7],
+    ]);
+  });
+
+  it("inserts on a DOCX closed path's closing edge and retains a deletable vertex", () => {
+    const selected = selection({
+      kind: "shape", operations: ["deselect", "pathPoint", "pathVertex"],
+      drawingMlPaths: [{ viewportWidth: 200, viewportHeight: 200, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 100, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 100, y: 100, control: false }] },
+        { command: "lnTo", points: [{ x: 0, y: 100, control: false }] },
+        { command: "close", points: [] },
+      ] }],
+    });
+    const { onEdit } = frame({ selection: selected });
+    fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+    fireEvent.click(screen.getByTestId("docx-path-point-0-3-0"));
+    fireEvent.click(screen.getByTestId("docx-path-insert-vertex"));
+    fireEvent.click(screen.getByTestId("docx-path-point-0-1-0"));
+    fireEvent.click(screen.getByTestId("docx-path-remove-vertex"));
+    expect(onEdit.mock.calls).toEqual([
+      [{ kind: "docxPathVertex", path: 0, segment: 4, action: "insert", x: 0, y: 50 }, 7],
+      [{ kind: "docxPathVertex", path: 0, segment: 1, action: "remove" }, 7],
+    ]);
+  });
+
+  it("does not offer deletion for the last three vertices of a closed DOCX path", () => {
+    const selected = selection({
+      kind: "shape", operations: ["deselect", "pathPoint", "pathVertex"],
+      drawingMlPaths: [{ viewportWidth: 200, viewportHeight: 200, segments: [
+        { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 100, y: 0, control: false }] },
+        { command: "lnTo", points: [{ x: 0, y: 100, control: false }] },
+        { command: "close", points: [] },
+      ] }],
+    });
+    const { onEdit } = frame({ selection: selected });
+    fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+    fireEvent.click(screen.getByTestId("docx-path-point-0-1-0"));
+    expect(screen.getByTestId("docx-path-remove-vertex")).toBeDisabled();
+    expect(onEdit).not.toHaveBeenCalled();
   });
 
   it.each(["picture", "shape", "group"] as const)("does not offer uncommittable leading-edge resizing for a movable RHWP %s", kind => {

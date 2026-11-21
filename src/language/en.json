@@ -802,6 +802,8 @@
   "editor.object.docxPath.point": "DOCX path {path}, segment {segment}, point {point}",
   "editor.object.docxPath.x": "X (EMU)",
   "editor.object.docxPath.y": "Y (EMU)",
+  "editor.object.docxPath.insertVertex": "Insert vertex on next line",
+  "editor.object.docxPath.removeVertex": "Remove selected vertex",
   "editor.object.groupChild.edit": "Edit group children",
   "editor.object.groupChild.done": "Finish child editing",
   "editor.object.groupChild.width": "Width (HWPUNIT)",

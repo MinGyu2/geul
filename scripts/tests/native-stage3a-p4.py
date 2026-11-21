@@ -203,6 +203,122 @@ def docx_curve_case(acc, row, fixtures, out):
         h.require(actual == update["after"], "saved control point did not reopen in the native editor", [update, actual])
 
 
+def docx_path_vertex_case(acc, row, fixtures, out):
+    ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+    cases = (
+        ("open", "insert", ["moveTo", "lnTo", "lnTo"]),
+        ("closed", "remove", ["moveTo", "lnTo", "lnTo", "lnTo", "close"]),
+    )
+    previous = None
+    for index, (kind, action, expected_types) in enumerate(cases):
+        result = row.setdefault("documents", {})[kind] = {}
+        fixture = fixtures / f"{kind}.docx"
+        before = inspect_docx_curve(fixture)
+        h.require(len(before["paths"]) == 1 and
+                  [command["type"] for command in before["paths"][0]["commands"]] == expected_types,
+                  f"{kind} path fixture command sequence changed", before["paths"])
+        if previous is not None:
+            h.require(h.p4.rhwp_poc.close_tab(acc.d, previous.name), "previous saved DOCX tab did not close", previous.name)
+        path = h.begin(acc, result, fixture, out, f"p4-dx-path-{kind}-edited.docx")
+        docx_curve_enter_path_mode(acc)
+        acc.d.js("""
+          window.docxPathPointers=[];
+          for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+            const point=e.target.closest('.object-path-point');
+            if(point) docxPathPointers.push({type,testid:point.dataset.testid,trusted:e.isTrusted});
+          },true);
+        """)
+
+        if action == "insert":
+            h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 3,
+                      "open path should expose three original vertices")
+            h.require(docx_curve_handle(acc, "docx-path-point-0-0-0") == [0, 0], "open path start vertex selection")
+            events = acc.d.js("return window.docxPathPointers")
+            h.require(any(e == {"type": "pointerdown", "testid": "docx-path-point-0-0-0", "trusted": True} for e in events)
+                      and any(e == {"type": "pointerup", "testid": "docx-path-point-0-0-0", "trusted": True} for e in events),
+                      "open path vertex was not selected by trusted native pointer input", events)
+            acc.dom_click('[data-testid="docx-path-insert-vertex"]')
+            result["insert"] = h.revision(acc, "docx", 1)
+            docx_curve_enter_path_mode(acc)
+            h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 4,
+                      "inserted open path did not expose four vertices")
+            inserted = docx_curve_handle(acc, "docx-path-point-0-1-0")
+            h.require(inserted == [50, 0], "inserted vertex is not the exact edge midpoint", inserted)
+            acc.key("ctrl+z")
+            result["undo"] = h.revision(acc, "docx", 2)
+            docx_curve_enter_path_mode(acc)
+            h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 3,
+                      "Undo did not remove the inserted open-path vertex")
+            h.require(docx_curve_handle(acc, "docx-path-point-0-1-0") == [100, 0], "Undo did not restore original open-path coordinates")
+            acc.key("ctrl+y")
+            result["redo"] = h.revision(acc, "docx", 3)
+            docx_curve_enter_path_mode(acc)
+            h.require(docx_curve_handle(acc, "docx-path-point-0-1-0") == inserted, "Redo did not restore the exact inserted vertex")
+            expected_root = deepcopy(before["xml"])
+            drawing_path = expected_root.find(".//wps:wsp/wps:spPr/a:custGeom/a:pathLst/a:path", {
+                "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape", **ns,
+            })
+            vertex = ET.Element("{" + ns["a"] + "}lnTo")
+            ET.SubElement(vertex, "{" + ns["a"] + "}pt", {"x": "50", "y": "0"})
+            drawing_path.insert(1, vertex)
+            result["insertedCoordinates"] = inserted
+        else:
+            h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 4,
+                      "closed path should expose four original vertices")
+            original = docx_curve_handle(acc, "docx-path-point-0-1-0")
+            h.require(original == [100, 0], "closed path deletion target did not match its source vertex", original)
+            events = acc.d.js("return window.docxPathPointers")
+            h.require(any(e == {"type": "pointerdown", "testid": "docx-path-point-0-1-0", "trusted": True} for e in events)
+                      and any(e == {"type": "pointerup", "testid": "docx-path-point-0-1-0", "trusted": True} for e in events),
+                      "closed path vertex was not selected by trusted native pointer input", events)
+            acc.dom_click('[data-testid="docx-path-remove-vertex"]')
+            result["remove"] = h.revision(acc, "docx", 1)
+            docx_curve_enter_path_mode(acc)
+            h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == 3,
+                      "closed path deletion did not retain exactly three vertices")
+            remaining = docx_curve_handle(acc, "docx-path-point-0-1-0")
+            h.require(remaining == [100, 100], "closed path deletion removed the wrong vertex", remaining)
+            acc.key("ctrl+z")
+            result["undo"] = h.revision(acc, "docx", 2)
+            docx_curve_enter_path_mode(acc)
+            h.require(docx_curve_handle(acc, "docx-path-point-0-1-0") == original, "Undo did not restore deleted closed-path vertex")
+            acc.key("ctrl+y")
+            result["redo"] = h.revision(acc, "docx", 3)
+            docx_curve_enter_path_mode(acc)
+            h.require(docx_curve_handle(acc, "docx-path-point-0-1-0") == remaining, "Redo did not restore closed-path deletion")
+            acc.dom_click("[data-testid='docx-path-point-0-1-0']")
+            remove_button = acc.d.js("return document.querySelector('[data-testid=docx-path-remove-vertex]')?.disabled")
+            h.require(remove_button is True, "three-vertex closed path still offered an unsafe deletion")
+            expected_root = deepcopy(before["xml"])
+            drawing_path = expected_root.find(".//wps:wsp/wps:spPr/a:custGeom/a:pathLst/a:path", {
+                "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape", **ns,
+            })
+            drawing_path.remove(list(drawing_path)[1])
+            result["remainingCoordinates"] = remaining
+
+        h.publish(acc, "docx", result)
+        after = inspect_docx_curve(path)
+        h.require(ET.tostring(expected_root) == ET.tostring(after["xml"]),
+                  f"saved {kind} vertex edit changed unrelated DrawingML or document XML")
+        h.require(before["relationships"] == after["relationships"], f"{kind} edit changed DOCX relationships")
+        h.require(before["parts"] == after["parts"], f"{kind} edit changed another DOCX package part")
+        actual_types = [command["type"] for command in after["paths"][0]["commands"]]
+        h.require(actual_types == (expected_types[:1] + ["lnTo"] + expected_types[1:] if action == "insert" else expected_types[:1] + expected_types[2:]),
+                  f"saved {kind} path command identity changed", actual_types)
+        if kind == "closed":
+            h.require(actual_types[-1] == "close", "closed path lost its Close command", actual_types)
+        result["savedPaths"] = after["paths"]
+        result["unchangedPackageParts"] = len(before["parts"])
+        h.reopen(acc, path, result)
+        docx_curve_enter_path_mode(acc)
+        h.require(acc.d.js("return document.querySelectorAll('[data-testid^=docx-path-point-]').length") == (4 if action == "insert" else 3),
+                  f"saved {kind} path did not independently reopen with the expected vertices")
+        reopened = docx_curve_handle(acc, "docx-path-point-0-1-0")
+        h.require(reopened == (result["insertedCoordinates"] if action == "insert" else result["remainingCoordinates"]),
+                  f"saved {kind} vertex edit did not reopen in the native editor", reopened)
+        previous = path
+
+
 def points_case(acc, row, fixtures, out, kind, fmt):
     label = "hwp5-polygon" if (kind, fmt) == ("polygon", "hwp") else kind
     fixture = fixtures / f"a-p4-{label}-original.{fmt}"
@@ -958,6 +1074,7 @@ def group_child_capture_case(acc, row, fixtures, out):
 
 h.CASES = {
     "P4-DX-CURVE": docx_curve_case,
+    "P4-DX-PATH": docx_path_vertex_case,
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),

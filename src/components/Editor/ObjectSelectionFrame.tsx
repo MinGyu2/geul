@@ -189,7 +189,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingPath && selection.drawingMlPaths && onEdit &&
         <DrawingMlPathEditor paths={selection.drawingMlPaths} owner={owner} width={selection.frame.width * scale}
-          height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}
+          height={selection.frame.height * scale} editVertices={selection.operations.includes("pathVertex")}
+          onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingGroupChildren && selection.groupChildren && onEdit &&
         <GroupChildEditor group={selection.groupChildren} owner={owner} width={selection.frame.width * scale}
           height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}

@@ -156,6 +156,8 @@ export type ObjectEdit =
   | { kind: "smartArtLayout"; layout: typeof SMART_ART_LAYOUTS[number] }
   | { kind: "pathPoint"; index: number; x: number; y: number }
   | { kind: "docxPathPoint"; path: number; segment: number; point: number; x: number; y: number }
+  | { kind: "docxPathVertex"; path: number; segment: number; action: "insert"; x: number; y: number }
+  | { kind: "docxPathVertex"; path: number; segment: number; action: "remove" }
   | { kind: "pathVertex"; action: "insert"; index: number; x: number; y: number }
   | { kind: "pathVertex"; action: "remove"; index: number }
   | { kind: "pathSegment"; action: "append"; x: number; y: number }
@@ -197,6 +199,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape":
     case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
     case "docxPathPoint": return "pathPoint";
+    case "docxPathVertex": return "pathVertex";
     case "groupChildMove": case "groupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
@@ -229,6 +232,10 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && integer(value.path, 255) && integer(value.segment, 4_999) && integer(value.point, 2)
     && Number.isSafeInteger(value.x) && Math.abs(value.x as number) <= 1_000_000_000_000
     && Number.isSafeInteger(value.y) && Math.abs(value.y as number) <= 1_000_000_000_000;
+  if (value.kind === "docxPathVertex") return integer(value.path, 255) && integer(value.segment, 4_999) && (
+    (value.action === "remove" && keys === "action,kind,path,segment")
+    || (value.action === "insert" && keys === "action,kind,path,segment,x,y"
+      && integer(value.x, 1_000_000_000_000) && integer(value.y, 1_000_000_000_000)));
   if (value.kind === "pathVertex") return integer(value.index, 255) && (
     (value.action === "remove" && keys === "action,index,kind")
     || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
@@ -310,6 +317,14 @@ export function objectEditMatches(request: ObjectEditRequest, selection: ObjectS
     const path = selection.drawingMlPaths?.[edit.path];
     const point = path?.segments[edit.segment]?.points[edit.point];
     if (!path || !point || edit.x < 0 || edit.x > path.viewportWidth || edit.y < 0 || edit.y > path.viewportHeight) return false;
+  }
+  if (edit.kind === "docxPathVertex") {
+    const path = selection.drawingMlPaths?.[edit.path];
+    const segment = path?.segments[edit.segment];
+    if (!path || !segment) return false;
+    if (edit.action === "insert" && ((segment.command !== "lnTo" && segment.command !== "close")
+      || edit.x > path.viewportWidth || edit.y > path.viewportHeight)) return false;
+    if (edit.action === "remove" && segment.command !== "lnTo") return false;
   }
   if (edit.kind === "bounds" && edit.x !== undefined && (edit.width !== undefined || edit.height !== undefined)
     && !supportsAnchoredResize(selection)) return false;
