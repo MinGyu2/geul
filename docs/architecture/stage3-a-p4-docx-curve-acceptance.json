@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-DX-CURVE",
+  "originalCategory": "A",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
+  "supportedRange": [
+    "DOCX body top-level editable freeform paths with a safe original DrawingML geometry model.",
+    "Move, line, quadratic Bezier, cubic Bezier, and close command identity with integer coordinates and path-specific viewports.",
+    "Control-point edits for quadratic and cubic commands when the shape has no rotation or flips and every edited coordinate is inside its path viewport."
+  ],
+  "safetyBoundary": [
+    "The operation is exposed only for body top-level freeforms with safe source metadata and an unrotated, unflipped frame.",
+    "Out-of-viewport coordinates, unsupported DrawingML path structures, and unsupported source metadata fail closed.",
+    "Path insertion/deletion is tracked separately as P4-DX-PATH; transformed-path editing is tracked as P4-PATH-XFM."
+  ],
+  "changedComponents": [
+    "external/wordcraft/crates/doc/src/freeform.rs: typed path commands, exact source coordinates and control-point mutation.",
+    "external/wordcraft/crates/docx/src/read/freeform.rs and crates/docx/src/write/story.rs: DrawingML path parsing and lossless edited-path serialization.",
+    "external/wordcraft/crates/layout/src/display.rs: quadratic/cubic rendering.",
+    "external/wordcraft/crates/engine/src/cmd/objects.rs: path point mutation and history behavior.",
+    "src-tauri/src/adapters/wordcraft/engine.rs: bounded path view, ownership/transform/viewport validation, T009-backed mutation routing.",
+    "src/adapters/docx.ts and src/components/Editor/DrawingMlPathEditor.tsx: strict IPC view parsing and point editing UI."
+  ],
+  "sourceCommits": [
+    {
+      "repository": "external/wordcraft",
+      "sha": "0b9a5f20507a7201bdde7750f9ffa61887a0c43d",
+      "subject": "feat(docx): preserve editable DrawingML Bezier paths [P4-DX-CURVE]"
+    },
+    {
+      "repository": "geul",
+      "sha": "7976452fd87a69e12ab0b6fd9ce2deea3691b35c",
+      "subject": "feat(stage3-p4): edit DOCX Bezier path control points [P4-DX-CURVE]"
+    },
+    {
+      "repository": "geul",
+      "sha": "4050b8960fda0ba868aed4be0aa4467da17341d8",
+      "subject": "fix(stage3-p4): validate DOCX Bezier path views [P4-DX-CURVE]"
+    }
+  ],
+  "focusedVerification": {
+    "wordcraft": {
+      "result": "PASS",
+      "checks": [
+        "DOCX quadratic/cubic source commands, control points, path attributes and viewport survive parse/serialize.",
+        "Edited paths preserve command identity and coordinates; unaffected source paths use their original XML.",
+        "Bezier rendering and pathPoint Undo/Redo behavior pass focused tests."
+      ]
+    },
+    "geulRustT009": {
+      "result": "PASS",
+      "test": "stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_history",
+      "checks": [
+        "The generated quadratic/cubic DOCX fixture parses and renders in WordCraft.",
+        "Supported path-point edits pass the DOCX save-preservation gate; out-of-viewport input is rejected without changing export bytes or history.",
+        "An independently reopened saved model retains exact quadratic/cubic command identities and coordinates; Undo restores source bytes and Redo restores edited bytes."
+      ]
+    },
+    "frontend": {
+      "result": "PASS",
+      "checks": [
+        "npm run typecheck",
+        "npm exec vitest run src/adapters/docx.test.ts src/components/Editor/ObjectSelectionFrame.test.tsx",
+        "Strict adapter parsing accepts bounded typed paths and rejects malformed commands, coordinates, viewports, and missing shape path data."
+      ]
+    },
+    "tauriRelease": {
+      "result": "PASS",
+      "command": "npm run tauri -- build",
+      "appSha256": "ec4c1c5f499ff8f8409aaa6dafcdfca74ec652b09e582054e8a6a0fa47d18a49",
+      "privacyStatus": "PASS",
+      "runtimePathStatus": "PASS",
+      "portabilityStatus": "NOT VERIFIED"
+    }
+  },
+  "native": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb with a test-owned private IBus 1.5.33 Hangul session and the Tauri WebDriver; this is X11 evidence, not Wayland evidence.",
+    "appSha256": "ec4c1c5f499ff8f8409aaa6dafcdfca74ec652b09e582054e8a6a0fa47d18a49",
+    "fixture": "target/stage3a-p4-docx-curve/fixtures/bezier.docx",
+    "fixtureSha256": "b572bc49d0a585941b1997eb95ebdec18aee78ddc4bcfaf47403f41d6c6d7e70",
+    "resultFile": "target/stage3a-p4-docx-curve/native-run-9/result.json",
+    "publishedFile": "target/stage3a-p4-docx-curve/native-run-9/p4-dx-curve-edited.docx",
+    "publishedFileSha256": "6e6fe509e88c8606b954deda44dab0bf1f1fcb21b358f11f577b14d83e513f50",
+    "checks": [
+      "Trusted native pointer input selected both quadratic and cubic control handles; trusted native keyboard input changed the displayed integer coordinates.",
+      "Undo and Redo restored exact before/after coordinates for both curve commands.",
+      "Independent DOCX inspection confirmed the saved quadratic control point changed from [127000, 63500] to [147000, 73500] and the cubic second control point changed from [508000, 127000] to [528000, 137000].",
+      "The saved word/document.xml matched the original XML after applying only those two point-coordinate changes; document relationships and all other 8 package parts were byte-identical.",
+      "T009 save reported state=saved, synced=true, changedSince=false, with no findings; a fresh app session reopened the file and reported both edited coordinates, dirty=false and unpreserved=false.",
+      "The test-owned Native launcher removed its X11/IBus/session resources and all test processes; no surviving test process was reported.",
+      "Launcher cleanup evidence: target/stage3a-p4-docx-curve/native-session-9/cleanup.json (complete=true, proven=true, filesystemProven=true, survivors=[])."
+    ],
+    "otherPlatforms": "Wayland, Windows, macOS and external Microsoft Word reopening NOT RUN."
+  },
+  "acceptanceDecision": "The P4-DX-CURVE supported range above is implemented and accepted. This does not complete P4-DX-PATH or P4-PATH-XFM."
+}

@@ -57,13 +57,13 @@
 
 ## 남은 구현과 안전 증명
 
-### P4 남은 기능
+### P4 A/B 기능과 안전 증명의 현재 상태
 
 | 기능 ID | 형식 | 현재 모델 | 누락 API 또는 동작 | 현재 안전 차단 | 필요한 UI | 필요한 직렬화 | 필요한 T009·저장 증명 | 필요한 Native 수락 | 의존성 | 상태 | 커밋 SHA |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | P4-HX-CURVE | HWPX | 연결된 `LINE`/`CURVE` endpoint 체인과 원본 `seg` 속성 | 명시적 Bezier 제어점 의미, 안전한 구간 추가·삭제 | 미지원 segment/연결 불량은 거부; 스키마에 정의되지 않은 제어점은 편집 불가 | 점 핸들·정밀 좌표 | 원본 속성·segment 순서·폐합·좌표 보존 | section XML 및 다른 OPC part 바이트 대조 | X11 endpoint 편집·Undo/Redo·저장·재열기 PASS; 전체 Bezier 수락 미완료 | RHWP parser·모델·writer; 제어점 format contract | A PARTIAL / BLOCKED_BY_FORMAT_CONTRACT | `fee5efa43d55c68a8962164a8c2a557c8aeec323` (부분 구현; 미완료) |
-| P4-DX-CURVE | DOCX | WordCraft `FreePath`의 샘플링 점 | quadratic/cubic 명령·제어점 편집 | 원본 DrawingML 명령 및 경로별 속성 유실 | 제어점 핸들·좌표 | 정확한 `quadBezTo`·`cubicBezTo` | OPC 안의 명령 순서·좌표·속성·관계 대조 | X11 두 곡선 종류 편집·재열기 | WordCraft 파서·모델·writer | A UNIMPLEMENTED | — |
-| P4-DX-PATH | DOCX | f32 직선 자유형과 외곽 크기 | 꼭짓점·구간 편집 | 원본 좌표와 경로 속성의 정확한 대응 미증명 | 꼭짓점·구간 도구 | path별 뷰포트, 좌표와 명령 | 좌표·경로 ID·OPC 대조 | X11 직선·폐합 경로 편집 | P4-DX-CURVE와 원본 DrawingML 모델 | A PARTIALLY_IMPLEMENTED | — |
+| P4-DX-CURVE | DOCX 본문 최상위 자유형 | WordCraft typed DrawingML 명령·정수 제어점·path별 viewport/원본 metadata | `shape.pathPoint`, quadratic/cubic 제어점 핸들·좌표 입력 | 바뀐 path만 원본 `quadBezTo`/`cubicBezTo` identity로 쓰기; 다른 XML·관계·OPC parts 고정 | 집중 WordCraft/Rust T009·TypeScript PASS / Native X11 PASS | 정확 좌표·Undo/Redo·저장 gate, 다른 8 ZIP parts와 관계 불변, 새 DOCX 앱 재열기에서 좌표 일치. [수락 기록](stage3-a-p4-docx-curve-acceptance.json) | WordCraft `0b9a5f2`; geul feature `7976452`; IPC parser/회귀 `4050b896` | A IMPLEMENTED_VERIFIED. 회전·반전 있는 path, 미지원 metadata 및 삽입·삭제는 fail-closed; 후자는 P4-DX-PATH, 변환은 P4-PATH-XFM |
+| P4-DX-PATH | DOCX | P4-DX-CURVE에서 추가된 typed DrawingML 경로 모델 | 꼭짓점·구간 삽입·삭제 | 원본 좌표·명령 순서·열림/폐합·속성의 정확한 구조 편집 증거 없음 | 꼭짓점·구간 도구 | path별 뷰포트, 좌표와 명령 | 좌표·경로 ID·OPC 대조 | X11 직선·폐합 경로 편집 | P4-DX-CURVE 모델 완료; 자체 삽입·삭제 수락 필요 | A PARTIALLY_IMPLEMENTED | — |
 | P4-H5-SEG | HWP5 | 순서 있는 cubic/직선, 기존 점·직선 편집 | cubic 삽입·삭제 및 비공선 내부 편집 | 기존 cubic과 명령·패딩에 대한 구조 변경 증명 없음 | 구간 선택·편집 | 태그 83 명령·좌표·패딩 유지 | 기존 구간과 새 인코딩의 독립 CFB 검증 | X11 구간 변경·Undo/Redo·재열기 | RHWP 곡선 API와 HWP5 T009 | A PARTIALLY_IMPLEMENTED | — |
 | P4-H5-GROUP | HWP5 | 재귀 SC_CONTAINER와 자식 잎 | 소유 자식 위치·크기·서식 API | 자식 잎을 변경하면서 원본 레코드와 소유를 지키는 증명 없음 | 자식 선택·조작 | 자식 leaf, 부모와 형제 보존 | CFB 부모·자식 순서와 컴포넌트·리소스 | X11 자식 변경·재열기 | RHWP 자식 주소, HWP5 T009 | A PARTIALLY_IMPLEMENTED | — |
 | P4-DX-GROUP | DOCX | WordCraft `GroupChild` | 자식 선택·변경 경로 | 중첩을 평탄화하면서 실제 자식 소유·구조 유실 | 자식 선택·조작 | 그룹 트리, 로컬 변환, 관계 | 원래 자식과 형제·OPC 리소스 비교 | X11 직속 및 지원 중첩 조작 | WordCraft 그룹 판독·기록 | A PARTIALLY_IMPLEMENTED | — |
@@ -122,7 +122,7 @@
 
 | 플랫폼 | 결과와 전제 | 남은 실행 및 증거 |
 |---|---|---|
-| Linux X11 | 이 작업의 HWP5 다각형 점 이동·변 분할/병합, HWPX 글상자 클립보드, DOCX 프리셋 변환 등 4건 PASS. 격리 Xvfb와 GDK X11에서 실제 조작, 게시, 독립 파일 검사, 재열기. [Native 수락 기록](stage3-a-native-p4-p5-p6-acceptance.json) | 앞의 A/B 기능마다 지원 구현 후 실제 조작 수락이 필요하다. |
+| Linux X11 | 이 작업의 HWP5 다각형 점 이동·변 분할/병합, HWPX 글상자 클립보드, DOCX 프리셋 변환 등 기존 4건과 P4-DX-CURVE PASS. 격리 Xvfb에서 trusted 포인터·키보드 편집, 게시, 독립 DOCX XML/OPC 검사 및 새 앱 세션 재열기. [Bezier 수락 기록](stage3-a-p4-docx-curve-acceptance.json), [이전 Native 수락](stage3-a-native-p4-p5-p6-acceptance.json) | 나머지 A/B 기능마다 지원 구현 후 실제 조작 수락이 필요하다. |
 | Linux Wayland | HWP5 내부 직선·다각형 점, HWPX 다문단 삭제·오른쪽/아래 캡션, DOCX 프리셋 변환 등 5건 PASS. 앱 `GDK_BACKEND=wayland`, 앱에 `DISPLAY` 없음, Weston 프로토콜과 신뢰된 입력 확인. [이번 수락](stage3-a-native-p4-p5-p6-acceptance.json) [기존 왼쪽 캡션](stage3-a-wayland-caption-acceptance.json) [기존 네 DOCX 이야기](stage3-a-wayland-story-size-acceptance.json) | C NOT RUN — HWP5 다각형 변 분할·병합, HWPX 글상자 클립보드와 수락하지 않은 다른 캡션 조합. |
 | Windows | NOT RUN — environment unavailable. 지원 Windows 호스트·GUI 세션 부재. | 지원 Windows 호스트의 [릴리스 절차](../release-checklist.md)에 따라 네이티브 의존성과 Release WASM을 준비하고 `npm run tauri -- build --no-bundle`로 Tauri Release를 만들고 생성된 앱을 실행한다. DOCX/HWP/HWPX 열기 대화상자, 편집, Undo/Redo, 저장·재열기와 native path·패키징을 기록한다. |
 | macOS | NOT RUN — environment unavailable. 지원 macOS 호스트·GUI 세션 부재. | 지원 macOS 호스트의 [릴리스 절차](../release-checklist.md)에 따라 네이티브 의존성과 Release WASM을 준비하고 `npm run tauri -- build --no-bundle`로 Tauri Release를 만들고 생성된 앱을 실행한다. 실제 개체 선택, 대표 편집, 파일 대화상자, Undo/Redo와 저장·재열기, 번들 리소스와 입력을 기록한다. |

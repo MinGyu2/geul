@@ -390,13 +390,14 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 
 **Stage 3-B B3.2 개체 속성 보존 후속 (2026-11-20).** 글상자의 세로 정렬과 네 내부 여백, 무테두리 그림과 실제 자르기 좌표를 확인한다. Linux X11 B3-2에서 Bottom 글상자와 자르기한 PNG를 게시·독립 검사·재열기했고 원본 바이트와 대상 본문을 보존했다. [속성 감사와 실행 기록](architecture/stage3-b-portable-property-safety-2026-11-20.json)
 
-**Stage 3-A P4 고급 기하 및 그룹 자식 편집 (2026-11-20) — PARTIAL_SUPPORT.**
+**Stage 3-A P4 고급 기하 및 그룹 자식 편집 (2026-11-20–22) — PARTIAL_SUPPORT.**
 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
 | P4.1 다각형 | HWPX의 본문 비잠금·크기 비보호 다각형에서 정수 꼭짓점 드래그와 좌표 입력 | Release WASM과 Linux X11 게시·독립 XML 검사·앱 재열기 PASS. 폐합 유지. 회전·반전·캡션·중첩은 이 수용 범위 밖이다. |
 | P4.2 Bézier | HWP5의 SAFE 본문 open cubic 및 직선 혼합 경로에서 제어점·공유 끝점 이동 | Release WASM, 집중 T009, Linux X11 게시·독립 CFB 검사·앱 재열기 PASS. 구간 종류·패딩 유지. 폐곡선·이차 및 HWPX/DOCX의 무손실 곡선 구간 모델은 남아 있다. |
 | P4-HX-CURVE | HWPX 본문에서 연결된 `LINE`/`CURVE` 구간의 정수 endpoint 편집 | 원본 segment 속성·순서·폐합, shared endpoint, Undo/Redo, Release WASM 저장/재열기 및 Linux X11 실제 포인터·T009 게시·앱 재열기 PASS. 변경한 `section0.xml` 이외 OPC part 바이트 동일, 알 수 없는 `SPLINE`은 편집 거부. 명시 Bezier 제어점 좌표는 공식 HWPML SEGMENT 정의에 없어 전체 요청은 미완료/차단 상태다. [부분 수락 기록](architecture/stage3-a-p4-hwpx-curve-acceptance.json) |
+| P4-DX-CURVE | DOCX 본문 최상위 자유형의 원본 quadratic/cubic 제어점 편집 | WordCraft typed DrawingML parser/model/render/writer와 geul 좌표 UI가 `quadBezTo`/`cubicBezTo` identity, 정수 좌표, path viewport 및 metadata를 유지한다. Rust/T009·TypeScript 및 Native X11 PASS. 신뢰된 포인터/키보드 입력으로 두 제어점을 편집하고 Undo/Redo; 저장 `word/document.xml`은 해당 두 점 외 동일, 관계 및 다른 8개 package parts 동일, T009 saved/synced이며 새 앱 세션에서 재열기 좌표가 일치한다. [수락 기록](architecture/stage3-a-p4-docx-curve-acceptance.json). 지원 밖 변환/metadata는 fail-closed; 구간 삽입·삭제는 P4-DX-PATH, 변환 경로는 P4-PATH-XFM에 남는다. 구현 커밋 WordCraft `0b9a5f2`, geul `7976452`, IPC parser/회귀 `4050b896`. |
 | P4.3 그룹 자식 | HWPX의 비잠금·비보호 평면 사각형·타원 그룹에서 지정 자식의 단색 배경 변경(`groupChildFill`) 및 위치·왼쪽/위 기준 크기 편집(`groupChildMove`/`groupChildResize`) | Release WASM(`972f25b9...`, P1–P4·N1–N12·T1–T8·E1–E7 포함 그룹 테스트 10 통과)·`save_check` safe·UI 22 통과(U1–U8 포함)·기존 Linux X11 Native(`P4.3`/`P4.6` PASS, `0b8a2e4`). [P4.6-1 그룹 기하 교정](architecture/stage3-a-p4-group-geometry-acceptance.json), [P4.6-2 그룹 자식 기하 편집 수용 기록](architecture/stage3-a-p4-group-child-edit-acceptance.json), [P4.6 안전화 후속 기록](architecture/stage3-a-p4-group-child-safety-stabilization.json). 홀수 타원의 변경되지 않은 축과 자식 식별자 왕복 보존, 절단 버퍼 거부, Linux X11 Release의 실제 핸들 밖 포인터 캡처·해제 및 저장을 추가 검증했다. [P4.6 최종 경계 검증](architecture/stage3-a-p4-group-child-boundary-verification.json). 상쇄 복합/비유한/손상 `raw_rendering`, 오버플로/비정규 타원 크기조절(비정규 끝점은 이동만 보존·크기조절 거부), 중첩 그룹·회전/반전/배율/전단·캡션·글상자 자식 및 HWP5/DOCX 자식 기하 편집은 거부하며 범위 밖이다. |
 | P4.4 다각형 구조 | 검증된 HWPX 본문 단순 폐합 다각형의 변에 정수 꼭짓점 추가·기존 꼭짓점 삭제 | Release WASM, 추가·삭제 각각 T009, Linux X11 실제 클릭·Undo/Redo·게시·독립 XML·앱 재열기 PASS. 교차·퇴화·열린 경로와 HWP5/DOCX는 제외. [수용 기록](architecture/stage3-a-p4-polygon-vertices-acceptance.json) |
 | P4-H5-POLY HWP5 다각형 | SAFE Section0의 본문 단순 폐합에서 정수 점 이동, 공선 변 분할·병합 | Release WASM·T009·독립 CFB 검사·RHWP 재열기 PASS. X11 점 이동·변 분할/병합 및 Wayland 점 이동 PASS. 회전·반전·비영 오프셋, 비공선 모서리 삭제, 모서리 이동과 꼭짓점 수 변경을 함께 담은 게시는 제외한다. [검증 기록](architecture/stage3-a-p4-hwp5-polygon-acceptance.json) |
