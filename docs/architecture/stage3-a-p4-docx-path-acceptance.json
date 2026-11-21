@@ -24,7 +24,8 @@
     {"repository": "external/wordcraft", "sha": "656ae2b443004e589675070c0cd092587a1dd89c", "subject": "P4-DX-PATH safe line-vertex editing source"},
     {"repository": "external/wordcraft", "sha": "15b7fd7c6bbdc8e10343cb867c5cc5a9caf8637f", "subject": "P4-DX-PATH closed-path roundtrip correction"},
     {"repository": "geul", "sha": "574a4f6656b67110b358e0b1958320704bd6f91b", "subject": "P4-DX-PATH WordCraft patch-series integration"},
-    {"repository": "geul", "sha": "5b37e9810b86a414b655e3358ac89c850a8c99e0", "subject": "P4-DX-PATH closed-path serialization roundtrip integration"}
+    {"repository": "geul", "sha": "5b37e9810b86a414b655e3358ac89c850a8c99e0", "subject": "P4-DX-PATH closed-path serialization roundtrip integration"},
+    {"repository": "geul", "sha": "3b7ae7b7f352c38dc078c8592254bdce0ba82cad", "subject": "feat(stage3-p4): edit DOCX freeform vertices [P4-DX-PATH]"}
   ],
   "focusedVerification": {
     "wordcraftParser": {"result": "PASS", "test": "freeform::tests::drawingml_line_vertex_insert_remove_preserves_open_and_closed_commands", "checks": ["Open insertion and closed deletion preserve exact DrawingML command order and close behavior.", "Unaffected source records and coordinates remain unchanged."]},
