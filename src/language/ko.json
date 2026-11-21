@@ -796,6 +796,8 @@
   "editor.object.path.removeVertex": "꼭짓점 삭제",
   "editor.object.path.appendLine": "입력 좌표까지 직선 추가",
   "editor.object.path.removeLine": "끝 직선 삭제",
+  "editor.object.path.splitLine": "다음 직선 구간 나누기",
+  "editor.object.path.joinLines": "인접 직선 구간 합치기",
   "editor.object.groupChild.edit": "묶음 안 도형 편집",
   "editor.object.groupChild.done": "도형 편집 종료",
   "editor.object.groupChild.width": "너비 (HWPUNIT)",

@@ -54,6 +54,7 @@ export interface RhwpDocument {
   editPolygonVertex?(section: number, paragraph: number, control: number, index: number, insert: boolean, x: number, y: number): void;
   getCurveTerminalLineEdits?(section: number, paragraph: number, control: number): string;
   editCurveTerminalLine?(section: number, paragraph: number, control: number, append: boolean, x: number, y: number): void;
+  editCurveInteriorLine?(section: number, paragraph: number, control: number, index: number, insert: boolean, x: number, y: number): void;
   getEditableGroupFills?(section: number, paragraph: number, control: number): string;
   setGroupChildFill?(section: number, paragraph: number, control: number, index: number, color: number): void;
   getEditableGroupChildren?(section: number, paragraph: number, control: number): string;

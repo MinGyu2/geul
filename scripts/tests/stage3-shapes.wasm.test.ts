@@ -863,6 +863,65 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
+  it.skipIf(!process.env.GEUL_STAGE3_CUBIC_INTERIOR)("Stage 3-A splits and joins HWP5 straight segments between cubics", async () => {
+    const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC_INTERIOR!));
+    const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      const frame = shapes(doc).find(f => doc.getCurveTerminalLineEdits!(0, 0, f.controlIdx) !== "null")!;
+      const address = [0, 0, frame.controlIdx] as const;
+      const selection = pick(frame);
+      const initial = selection.shapePath!;
+      const shape = doc.getShapeProperties!(...address);
+      const baseline = doc.exportHwp();
+      const read = () => JSON.parse(doc.getEditableShapePath!(...address));
+      expect(selection.curveLineStructure).toBe(true);
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 3, x: 9050, y: 5001 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 2500, y: 1000 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "joinLines", index: 3 })).toBe(false);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwp()).toEqual(baseline);
+
+      const split = objectEditRequest(editor.objectSelection!, { kind: "pathSegment", action: "splitLine", index: 3, x: 9050, y: 5000 });
+      expect(editor.execute("object.edit", split).accepted).toBe(true);
+      await confirm();
+      expect(editor.execute("object.edit", split).accepted).toBe(false);
+      const next = { ...initial, points: [...initial.points.slice(0, 4), { x: 9050, y: 5000, control: false }, ...initial.points.slice(4)] };
+      expect(read()).toEqual(next);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(initial);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(read()).toEqual(next);
+
+      function verifyOutput(filename: string, expected: unknown) {
+        const exported = doc.exportHwpWithReport();
+        try {
+          const output = exported.takeBytes();
+          expectReopenEvidence(doc, output, exported.contentLoss());
+          const reopened = new engine.HwpDocument(output) as RhwpDocument;
+          try {
+            expect(JSON.parse(reopened.getEditableShapePath!(...address))).toEqual(expected);
+            expect(reopened.getShapeProperties!(...address)).toBe(shape);
+          } finally { reopened.free(); }
+          if (out) writeFileSync(resolve(out, filename), output);
+        } finally { exported.free(); }
+      }
+      verifyOutput("a-p4-curve-interior-split.hwp", next);
+      pick(frame);
+      expect(edit({ kind: "pathSegment", action: "joinLines", index: 4 })).toBe(true);
+      await confirm();
+      expect(read()).toEqual(initial);
+      verifyOutput("a-p4-curve-interior-joined.hwp", initial);
+    } finally { editor.dispose(); }
+  });
+
   it.skipIf(!process.env.GEUL_STAGE3_CUBIC_UNMODELED)("Stage 3-A refuses HWP5 line segment edits with unmodeled curve padding", async () => {
     const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC_UNMODELED!));
     const { editor, doc, pick, edit, take } = await setup("hwp", bytes);

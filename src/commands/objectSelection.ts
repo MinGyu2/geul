@@ -85,6 +85,7 @@ export interface ObjectHit {
   shape?: ShapeProperties;
   shapePath?: ShapePath;
   curveTerminalLine?: { append: boolean; remove: boolean };
+  curveLineStructure?: true;
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;
   convertShape?: "rectangle" | "ellipse";
@@ -146,6 +147,8 @@ export type ObjectEdit =
   | { kind: "pathVertex"; action: "remove"; index: number }
   | { kind: "pathSegment"; action: "append"; x: number; y: number }
   | { kind: "pathSegment"; action: "remove" }
+  | { kind: "pathSegment"; action: "splitLine"; index: number; x: number; y: number }
+  | { kind: "pathSegment"; action: "joinLines"; index: number }
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
@@ -212,7 +215,10 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     (value.action === "remove" && keys === "action,index,kind")
     || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
   if (value.kind === "pathSegment") return (value.action === "remove" && keys === "action,kind")
-    || (value.action === "append" && keys === "action,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000));
+    || (value.action === "joinLines" && keys === "action,index,kind" && integer(value.index, 255))
+    || (((value.action === "append" && keys === "action,kind,x,y")
+      || (value.action === "splitLine" && keys === "action,index,kind,x,y" && integer(value.index, 255)))
+      && integer(value.x, 2_000_000) && integer(value.y, 2_000_000));
   if (value.kind === "groupChildFill") return keys === "color,index,kind" && integer(value.index, 127)
     && typeof value.color === "string" && color(value.color);
   const u32 = (n: unknown) => integer(n, 0xffff_ffff);

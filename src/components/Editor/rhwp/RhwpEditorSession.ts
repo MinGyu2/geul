@@ -1903,7 +1903,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (shapePath) operations.push("pathPoint");
           const curveTerminalLine = format === "hwp" && shapePath?.kind === "curve" && shapeAddress
             ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
-          if (curveTerminalLine?.append || curveTerminalLine?.remove) operations.push("pathSegment");
+          const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
+          if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure) operations.push("pathSegment");
           if (format === "hwpx" && shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
@@ -1971,6 +1972,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(groupWrap ? { groupWrap } : {}),
               ...(shapePath ? { shapePath } : {}),
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
+              ...(curveLineStructure ? { curveLineStructure: true } : {}),
               ...(captionSide ? { captionSide } : {}),
               ...(captionLateral ? { captionLateral: true } : {}),
               ...(captionSpacing !== undefined ? { captionSpacing } : {}),
@@ -4848,18 +4850,30 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const path = selected.shapePath;
       const available = inspectRhwpCurveTerminalLine(doc, address);
       if (this.sessions.get(this.sessionId)?.format !== "hwp" || path?.kind !== "curve" || path.closed
-        || !doc.editCurveTerminalLine || !available?.[edit.action]
+        || !available
         || available.append !== selected.curveTerminalLine?.append || available.remove !== selected.curveTerminalLine?.remove) return false;
       const points = path.points.slice();
       if (edit.action === "append") {
         const start = points[0]!, end = points[points.length - 1]!;
-        if (edit.x > path.width || edit.y > path.height
+        if (!doc.editCurveTerminalLine || !available.append || edit.x > path.width || edit.y > path.height
           || [start, end].some(point => point.x === edit.x && point.y === edit.y)) return false;
         points.push({ x: edit.x, y: edit.y, control: false });
         apply = () => doc.editCurveTerminalLine!(...address, true, edit.x, edit.y);
-      } else {
+      } else if (edit.action === "remove") {
+        if (!doc.editCurveTerminalLine || !available.remove) return false;
         points.pop();
         apply = () => doc.editCurveTerminalLine!(...address, false, 0, 0);
+      } else {
+        if (!selected.curveLineStructure || !doc.editCurveInteriorLine || edit.index >= points.length - 1) return false;
+        if (edit.action === "splitLine") {
+          if (points.length >= 257 || edit.x > path.width || edit.y > path.height) return false;
+          points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
+          apply = () => doc.editCurveInteriorLine!(...address, edit.index, true, edit.x, edit.y);
+        } else {
+          if (edit.index === 0) return false;
+          points.splice(edit.index, 1);
+          apply = () => doc.editCurveInteriorLine!(...address, edit.index, false, 0, 0);
+        }
       }
       const curveTerminalLine = { append: points.length < 257, remove: points.at(-2)!.control === false };
       refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine };

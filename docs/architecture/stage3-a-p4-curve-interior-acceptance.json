@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-21",
+  "baselineHead": "bac5156738227aadb6158f9386f1cfef04965580",
+  "feature": "P4-H5-SEG-LINE HWP5 interior straight-line split and join",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "A SAFE HWP5 top-level open cubic path with known SC_CURVE and source identity transforms. Split a straight segment at an exact interior integer coordinate, or remove the shared interior point between two consecutive collinear lines. The UI chooses the exact integral point nearest the midpoint when one exists.",
+  "refused": "Cubic control points as line endpoints, endpoint removal, reversing or noncollinear turns, noninteger/degenerate splits, stale selections, unknown segment/padding, altered pre-existing cubic points in a structural export, and unsupported owner or transform.",
+  "release": {
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "96fd98d23e8483ad5cd2b34c54f52a4a71dd175c1d2f879ac49fae34774d9325",
+    "artifacts": {
+      "rhwp.js": "723da472c5d670baba1726f6df8a1da9f3a83541751e69c5c132d41956fd659e",
+      "rhwp_bg.wasm": "24abe13fd273a9ba7e0588f030cccfd6482b363be8f2a16499b1818c2e715c80"
+    },
+    "sourceTreeSha256": "fea7de4026b62b2a602662557c981f304b1b5188b717951b5c51cd49e93700ba",
+    "appendedPatch": {
+      "name": "stage3a-curve-interior-line.patch",
+      "sha256": "bc974becba60be3cca11f6d4af63ea8612d6b5c51ba50febd69c6dd548d4c02e"
+    }
+  },
+  "checks": {
+    "typecheck": "PASS",
+    "rhwpProfiles": "3 PASS",
+    "rustProof": "1 PASS (preserved cubics and turns, composed with collinear terminal extension)",
+    "focusReleaseWasm": "3 PASS (split/join and preserved terminal/padding cases)",
+    "t009": "2 PASS (interior and terminal actual Release-WASM exports)",
+    "gitDiffCheck": "PASS"
+  },
+  "nativeX11": {
+    "appSha256": "34d12df2052465f3c122d4a2d35750e6656dd996a1eb126384963d94e33e0b69",
+    "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+    "releaseBuild": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+    "acceptance": "python3 scripts/tests/native-ibus-session.py --out <session> -- python3 scripts/tests/native-stage3a-p4.py --out <out> --fixtures <fixtures> --cases P4-H5-SEG-LINE P4.5 --xdotool @XDOTOOL@ --ibus @IBUS@",
+    "cases": {
+      "P4-H5-SEG-LINE": {
+        "status": "PASS",
+        "fixtureSha256": "b33767b964bb3331c71416d0c3c29c6c332521a9703ec0412ede8b31bd04930f",
+        "publishedSha256": "f3875edecd3a93e1739b93e3e3424edeb947b4eb36df654e2512efb93b353ff8",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "3"
+        },
+        "split": {
+          "publishedSha256": "43e9e25547805aad34660e2a5e8294d4d6bface3df5bf2d528dede6daed4af90",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "3"
+          }
+        }
+      },
+      "P4.5": {
+        "status": "PASS",
+        "fixtureSha256": "1b6874c2bb294f585d92a678ca5e1e6f799caaae352fa7dfb837c17b41775917",
+        "publishedSha256": "03dcd57fe0941c3b944f4fef9623b9b93caefddd01b4c02359bc2fc0efd1a968",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "4"
+        },
+        "append": {
+          "publishedSha256": "62d7c90655f856efd9a61624d57a46b6af394b3afd6125396985f406f6d34bbf",
+          "save": {
+            "findings": "",
+            "error": "",
+            "testid": "rhwp-save-result",
+            "changedSince": "false",
+            "synced": "true",
+            "outcome": "",
+            "state": "saved",
+            "revision": "1"
+          }
+        }
+      }
+    },
+    "independentReopen": "Two independent publications. CFB Section0 differed only at the chosen SC_CURVE; original and rejoined sequence [cubic,line,cubic], split sequence [cubic,line,line,cubic], exact points and zero padding. Unrelated streams and model projections retained. App selection and point counts confirmed after each reopen.",
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "exit": 0
+    }
+  },
+  "correctedVerification": "The first Native run placed a preserved P4.5 assertion at the end of the new case. It queried a terminal control from the wrong selected point after publication/reopen. Restored the assertion to the terminal case and reran both with the same Release app, exit 0. The first engine build stopped on the source guard after patch-only whitespace correction. The two reapplied source files and whole prepared tree matched byte-for-byte before resealing and verified publication.",
+  "artifactRetention": "Archived the stopped, unselected previous generation 2246172b41362c99c094969f4840dd3508df8a668e9dff1578e9c6fedc16cd6f with verified hashes under target/stage3a-curve-interior/archived-generations/. The starting active 304cf9cf... generation remains available.",
+  "rawEvidence": "target/stage3a-curve-interior/native-result2/"
+}

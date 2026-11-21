@@ -796,6 +796,8 @@
   "editor.object.path.removeVertex": "Remove vertex",
   "editor.object.path.appendLine": "Append line to coordinates",
   "editor.object.path.removeLine": "Remove final line",
+  "editor.object.path.splitLine": "Split next straight segment",
+  "editor.object.path.joinLines": "Join adjacent straight segments",
   "editor.object.groupChild.edit": "Edit group children",
   "editor.object.groupChild.done": "Finish child editing",
   "editor.object.groupChild.width": "Width (HWPUNIT)",

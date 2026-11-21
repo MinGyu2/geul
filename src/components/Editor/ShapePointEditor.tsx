@@ -20,13 +20,14 @@ function edgeInteriorPoint(a: ShapePath["points"][number], b: ShapePath["points"
   return { x: a.x + dx / steps * step, y: a.y + dy / steps * step };
 }
 
-export function ShapePointEditor({ path, owner, width, height, editVertices, curveTerminalLine, onEdit }: {
+export function ShapePointEditor({ path, owner, width, height, editVertices, curveTerminalLine, curveLineStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
   height: number;
   editVertices: boolean;
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
+  curveLineStructure: ObjectSelection["curveLineStructure"];
   onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
 }) {
   const { t } = useTranslation();
@@ -39,6 +40,12 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, cur
   const selected = points[index]!;
   const newVertex = editVertices && points.length < 256
     ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined;
+  const previous = points[index - 1], next = points[index + 1];
+  const split = curveLineStructure && points.length < 257 && !selected.control && next && !next.control
+    ? edgeInteriorPoint(selected, next) : undefined;
+  const canJoin = curveLineStructure && previous && next && !previous.control && !selected.control && !next.control
+    && (selected.x - previous.x) * (next.y - previous.y) === (selected.y - previous.y) * (next.x - previous.x)
+    && (selected.x - previous.x) * (next.x - selected.x) + (selected.y - previous.y) * (next.y - selected.y) > 0;
   const activeDraft = draft?.owner === owner && draft.index === index ? draft : null;
   const rawX = activeDraft?.x ?? String(selected.x), rawY = activeDraft?.y ?? String(selected.y);
   const x = Number(rawX), y = Number(rawY);
@@ -116,6 +123,16 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, cur
           onClick={() => onEdit({ kind: "pathSegment", action: "remove" })}>
           {t("editor.object.path.removeLine")}
         </button>
+      </div>}
+      {(split || canJoin) && <div className="object-path-vertex-actions">
+        {split && <button type="button" className="object-path-split-line"
+          onClick={() => onEdit({ kind: "pathSegment", action: "splitLine", index, ...split })}>
+          {t("editor.object.path.splitLine")}
+        </button>}
+        {canJoin && <button type="button" className="object-path-join-lines"
+          onClick={() => onEdit({ kind: "pathSegment", action: "joinLines", index })}>
+          {t("editor.object.path.joinLines")}
+        </button>}
       </div>}
     </form>
   </>;

@@ -4,6 +4,7 @@
 import importlib.util
 import math
 from pathlib import Path
+import shutil
 import struct
 import sys
 from xml.etree import ElementTree as ET
@@ -220,6 +221,30 @@ def polygon_vertices_case(acc, row, fixtures, out):
     count(4)
 
 
+def inspect_saved_curve(fixture, path, before, target, expected, commands):
+    want = {**target, "path": {**target["path"], "points": expected}}
+    model = inspect(path)
+    h.require(model == {**before, "frames": [want if item == target else item for item in before["frames"]]},
+              "independent curve projection differs", model)
+    gso = h.p6.gso
+    streams = [gso.cfb_streams(item.read_bytes()) for item in (fixture, path)]
+    ignored = {"BodyText/Section0", "PrvText", "PrvImage"}
+    h.require({k: v for k, v in streams[0].items() if k not in ignored}
+              == {k: v for k, v in streams[1].items() if k not in ignored}, "unrelated HWP streams changed")
+    old, new = [gso.records(gso.unpacked(stream, "BodyText/Section0")) for stream in streams]
+    changes = [(a, b) for a, b in zip(old, new, strict=True) if a != b]
+    h.require(len(changes) == 1 and changes[0][0][:2] == changes[0][1][:2] == (83, 3),
+              "non-curve records changed", changes)
+    payload = changes[0][1][2]
+    count = struct.unpack_from("<I", payload)[0]
+    end = 4 + count * 8
+    h.require(count == len(expected)
+              and list(struct.iter_unpack("<ii", payload[4:end])) == [(p["x"], p["y"]) for p in expected]
+              and payload[end:] == bytes(commands) + bytes(count - 1 - len(commands) + 4),
+              "curve record count, points, segment bytes or four-byte padding differs")
+    return h.digest(path)
+
+
 def curve_terminal_line_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-curve-original.hwp"
     before = row["before"] = inspect(fixture)
@@ -235,29 +260,6 @@ def curve_terminal_line_case(acc, row, fixtures, out):
         h.require(acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT) == length, "wrong curve point count")
         acc.dom_click(f"{POINT}:nth-of-type({length + 1})")
 
-    def inspect_saved(expected, commands):
-        want = {**target, "path": {**target["path"], "points": expected}}
-        model = inspect(path)
-        h.require(model == {**before,"frames":[want if item == target else item for item in before["frames"]]},
-                  "independent curve projection differs", model)
-        gso = h.p6.gso
-        streams = [gso.cfb_streams(item.read_bytes()) for item in (fixture, path)]
-        ignored = {"BodyText/Section0","PrvText","PrvImage"}
-        h.require({k:v for k,v in streams[0].items() if k not in ignored}
-                  == {k:v for k,v in streams[1].items() if k not in ignored}, "unrelated HWP streams changed")
-        old, new = [gso.records(gso.unpacked(stream,"BodyText/Section0")) for stream in streams]
-        changes = [(a,b) for a,b in zip(old,new,strict=True) if a != b]
-        h.require(len(changes) == 1 and changes[0][0][:2] == changes[0][1][:2] == (83,3),
-                  "non-curve records changed", changes)
-        payload = changes[0][1][2]
-        count = struct.unpack_from("<I",payload)[0]
-        end = 4 + count*8
-        h.require(count == len(expected)
-                  and list(struct.iter_unpack("<ii",payload[4:end])) == [(p["x"],p["y"]) for p in expected]
-                  and payload[end:] == bytes(commands) + bytes(count-1-len(commands)+4),
-                  "curve record count, points, segment bytes or four-byte padding differs")
-        return h.digest(path)
-
     select_end(5)
     h.p6.gso.replace(acc, COORDS + " label:first-of-type input", 10600)
     h.p6.gso.replace(acc, COORDS + " label:nth-of-type(2) input", 5500)
@@ -266,7 +268,7 @@ def curve_terminal_line_case(acc, row, fixtures, out):
     acc.key("Escape")
     append_row = row["append"] = {}
     h.publish(acc, "hwp", append_row)
-    append_row["publishedSha256"] = inspect_saved(appended, [1,0,0])
+    append_row["publishedSha256"] = inspect_saved_curve(fixture, path, before, target, appended, [1, 0, 0])
     h.reopen(acc, path, append_row)
 
     select_end(6)
@@ -286,11 +288,72 @@ def curve_terminal_line_case(acc, row, fixtures, out):
     select_end(4)
     acc.key("Escape")
     h.publish(acc, "hwp", row)
-    row["publishedSha256"] = inspect_saved(removed, [1])
+    row["publishedSha256"] = inspect_saved_curve(fixture, path, before, target, removed, [1])
     h.reopen(acc, path, row)
     select_end(4)
     h.require(acc.d.js("return document.querySelector('.object-path-remove-line').disabled"),
               "reopened endpoint still offers an invalid removal")
+
+
+def curve_interior_line_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-curve-interior-original.hwp"
+    before = row["before"] = inspect(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "curve")
+    path = h.begin(acc, row, fixture, out, "a-p4-interior-line.hwp")
+    points = target["path"]["points"]
+    split = [*points[:4], {"x": 9050, "y": 5000, "control": False}, *points[4:]]
+    split_button, join_button = ".object-path-split-line", ".object-path-join-lines"
+
+    def count(expected):
+        h.require(acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT) == expected,
+                  "wrong curve point count", expected)
+
+    def enter(expected):
+        h.select_object(acc, target, "shape")
+        acc.dom_click(".object-path-mode")
+        count(expected)
+
+    def select_point(index):
+        acc.dom_click(f"{POINT}:nth-of-type({index + 2})")
+
+    enter(8)
+    h.require(not acc.d.exists(split_button), "split offered for a cubic")
+    select_point(3)
+    acc.dom_click(split_button)
+    h.revision(acc, "hwp", 1)
+    count(9)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    enter(8)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    enter(9)
+    select_point(4)
+    h.require(acc.d.exists(join_button), "inserted point is not an interior line vertex")
+    acc.key("Escape")
+    split_row = row["split"] = {}
+    h.publish(acc, "hwp", split_row)
+    split_row["publishedSha256"] = inspect_saved_curve(fixture, path, before, target, split, [1, 0, 0, 1])
+    split_file = out / "a-p4-interior-line-split.hwp"
+    shutil.copyfile(path, split_file)
+    h.reopen(acc, path, split_row)
+
+    enter(9)
+    select_point(4)
+    acc.dom_click(join_button)
+    h.revision(acc, "hwp", 1)
+    count(8)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    enter(9)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    enter(8)
+    acc.key("Escape")
+    h.publish(acc, "hwp", row)
+    row["publishedSha256"] = inspect_saved_curve(split_file, path, before, target, points, [1, 0, 1])
+    h.reopen(acc, path, row)
+    enter(8)
 
 
 def group_case(acc, row, fixtures, out):
@@ -604,6 +667,7 @@ h.CASES = {
     "P4.3": group_case,
     "P4.4": polygon_vertices_case,
     "P4.5": curve_terminal_line_case,
+    "P4-H5-SEG-LINE": curve_interior_line_case,
     "P4.6": group_child_edit_case,
     "P4.6-capture": group_child_capture_case,
 }

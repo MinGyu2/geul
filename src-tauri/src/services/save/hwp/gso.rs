@@ -1781,17 +1781,86 @@ fn prove_cubic_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) ->
     let (Some(old), Some(new)) = (parse_cubic_leaf(old, width, height), parse_cubic_leaf(new, width, height)) else {
         return false;
     };
-    if old.point_bytes.len() == new.point_bytes.len() {
-        return old.used_commands == new.used_commands;
+    if old.point_bytes.len() == new.point_bytes.len() && old.used_commands == new.used_commands {
+        return true;
     }
-    let (short, long) = if old.point_bytes.len() < new.point_bytes.len() { (old, new) } else { (new, old) };
-    // The entire existing path prefix is byte-identical. Each added or removed
-    // terminal LINE consumes exactly one point and one command byte.
-    long.point_bytes.starts_with(short.point_bytes)
-        && long.used_commands.strip_prefix(short.used_commands).is_some_and(|added| {
-            added.len() * 8 == long.point_bytes.len() - short.point_bytes.len()
-                && added.iter().all(|command| *command == 0)
-        })
+    let (old_start, old) = canonical_cubic_path(old);
+    let (new_start, new) = canonical_cubic_path(new);
+    old_start == new_start
+        && (extends_curve_with_lines(old_start, &old, &new)
+            || extends_curve_with_lines(old_start, &new, &old))
+}
+
+type CurvePoint = [i64; 2];
+
+#[derive(PartialEq, Eq)]
+enum CurveStep {
+    Line(CurvePoint),
+    Cubic([CurvePoint; 3]),
+}
+
+impl CurveStep {
+    fn end(&self) -> CurvePoint {
+        match self {
+            Self::Line(end) | Self::Cubic([_, _, end]) => *end,
+        }
+    }
+}
+
+fn strictly_between(a: CurvePoint, p: CurvePoint, b: CurvePoint) -> bool {
+    let [dx, dy] = [p[0] - a[0], p[1] - a[1]];
+    let [ex, ey] = [b[0] - p[0], b[1] - p[1]];
+    dx * ey == dy * ex && dx * ex + dy * ey > 0
+}
+
+/// Remove only redundant points on same-direction straight runs. The input
+/// parser already proved every step's point arity and bounded coordinates.
+fn canonical_cubic_path(leaf: CubicLeaf<'_>) -> (CurvePoint, Vec<CurveStep>) {
+    let mut points = leaf.point_bytes.chunks_exact(8).map(|bytes| {
+        let x = i32::from_le_bytes(bytes[..4].try_into().unwrap());
+        let y = i32::from_le_bytes(bytes[4..].try_into().unwrap());
+        [i64::from(x), i64::from(y)]
+    });
+    let start = points.next().unwrap();
+    let mut current = start;
+    let mut line_start = start;
+    let mut steps = Vec::with_capacity(leaf.used_commands.len());
+    for &command in leaf.used_commands {
+        let point = points.next().unwrap();
+        if command == 0 {
+            match steps.last_mut() {
+                Some(CurveStep::Line(previous)) if strictly_between(line_start, *previous, point) => {
+                    *previous = point;
+                }
+                _ => {
+                    line_start = current;
+                    steps.push(CurveStep::Line(point));
+                }
+            }
+            current = point;
+        } else {
+            let control = points.next().unwrap();
+            current = points.next().unwrap();
+            steps.push(CurveStep::Cubic([point, control, current]));
+        }
+    }
+    (start, steps)
+}
+
+fn extends_curve_with_lines(start: CurvePoint, short: &[CurveStep], long: &[CurveStep]) -> bool {
+    if let Some(suffix) = long.strip_prefix(short) {
+        return suffix.iter().all(|step| matches!(step, CurveStep::Line(_)));
+    }
+    // A collinear append can extend the final line past the shortened path's
+    // endpoint. Every preceding segment still has to match exactly.
+    let Some((CurveStep::Line(old_end), prefix)) = short.split_last() else {
+        return false;
+    };
+    let Some([CurveStep::Line(new_end), suffix @ ..]) = long.strip_prefix(prefix) else {
+        return false;
+    };
+    strictly_between(prefix.last().map_or(start, CurveStep::end), *old_end, *new_end)
+        && suffix.iter().all(|step| matches!(step, CurveStep::Line(_)))
 }
 
 #[cfg(test)]
@@ -2510,13 +2579,8 @@ mod tests {
     fn prepare_stage3a_hwp_curve_fixture() {
         let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         let original = std::fs::read(directory.join("p3-poly-curve-original.hwp")).unwrap();
-        let mut path = 5u32.to_le_bytes().to_vec();
-        for (x, y) in [(0i32, 2000i32), (2500, 1000), (4300, 6300), (8100, 5800), (10000, 4200)] {
-            path.extend(x.to_le_bytes());
-            path.extend(y.to_le_bytes());
-        }
-        path.extend([1, 0, 0, 0]); // cubic, line, unused slots
-        path.extend([0; 4]); // padding
+        let points = [(0, 2000), (2500, 1000), (4300, 6300), (8100, 5800), (10000, 4200)];
+        let path = cubic_fixture_leaf(&points, &[1, 0]);
         let candidate = mutate_body_record(
             &original, |tag, level, _| tag == super::TAG_CURVE && level == 3, |_| path,
         );
@@ -2533,6 +2597,55 @@ mod tests {
             },
         );
         std::fs::write(directory.join("a-p4-curve-unmodeled.hwp"), unmodeled_padding).unwrap();
+
+        let mut points = points.to_vec();
+        points.extend([(10200, 2800), (9900, 1100), (8400, 900)]);
+        let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
+        let interior = mutate_body_record(&original, curve, |_| cubic_fixture_leaf(&points, &[1, 0, 1]));
+        std::fs::write(directory.join("a-p4-curve-interior-original.hwp"), interior).unwrap();
+    }
+
+    fn cubic_fixture_leaf(points: &[(i32, i32)], commands: &[u8]) -> Vec<u8> {
+        let count = points.len();
+        let mut leaf = (count as u32).to_le_bytes().to_vec();
+        for (x, y) in points {
+            leaf.extend(x.to_le_bytes());
+            leaf.extend(y.to_le_bytes());
+        }
+        leaf.extend(commands);
+        leaf.resize(4 + 8 * count + count - 1 + 4, 0);
+        leaf
+    }
+
+    #[test]
+    fn stage3a_interior_line_proof_preserves_cubics_and_turns() {
+        let prefix = [(100, 100), (200, 200), (300, 300), (400, 400)];
+        let leaf = |tail: &[(i32, i32)], commands: &[u8]| {
+            cubic_fixture_leaf(&[prefix.as_slice(), tail].concat(), commands)
+        };
+        let old = leaf(&[(600, 400), (650, 350), (600, 200), (550, 100), (500, 100)], &[1, 0, 1, 0]);
+        let edited = leaf(&[(500, 400), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)], &[1, 0, 0, 1, 0]);
+        assert!(super::prove_cubic_leaf_edit(&old, &edited, 2000, 2000));
+        for tail in [
+            [(500, 401), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)],
+            [(620, 400), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)],
+            [(500, 400), (600, 400), (651, 350), (600, 200), (550, 100), (440, 100)],
+        ] {
+            assert!(!super::prove_cubic_leaf_edit(&old, &leaf(&tail, &[1, 0, 0, 1, 0]), 2000, 2000));
+        }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 interior line split and join fixtures"]
+    fn release_stage3a_hwp_cubic_interior_line_reopens() {
+        let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |filename| std::fs::read(directory.join(filename)).unwrap();
+        let source = read("a-p4-curve-interior-original.hwp");
+        let split = read("a-p4-curve-interior-split.hwp");
+        let joined = read("a-p4-curve-interior-joined.hwp");
+        assert_eq!(check_with_preview_refresh(&source, &split), vec![]);
+        assert_eq!(check_with_preview_refresh(&split, &joined), vec![]);
+        assert_eq!(check_with_preview_refresh(&source, &joined), vec![]);
     }
 
     fn mutate_p4_cubic_component(bytes: &[u8], offset: usize, replacement: &[u8]) -> Vec<u8> {
