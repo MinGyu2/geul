@@ -8,7 +8,7 @@
   "refused": "다른 note/body로 이동, note 밖 page fallback, shape 이동, dangling/orphan note ID, 다른 story의 paragraph/media owner, 지원되지 않는 serialization은 변이 없이 거부한다.",
   "wordcraftSourceCommit": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
   "wordcraftCommitMessage": "feat(docx): move pictures within owned notes [P5-DX-NOTE-MOVE]",
-  "parentIntegration": "현재 worktree에 geul adapter/T009/OPC proof·regression harness 및 ordered patch/gitlink 변경이 있다. 부분 통합 커밋 후에도 Release·Native 수락 전까지 항목은 IN_PROGRESS다.",
+  "parentIntegration": "WordCraft 엔진 source와 geul adapter/T009/OPC proof·regression harness, Native harness 및 재현 가능한 ordered patch/gitlink를 부분 통합 커밋했다. 커밋은 WIP이며 Release·Native acceptance 전까지 IN_PROGRESS다.",
   "previousGitlink": "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f",
   "wordcraftPin": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
   "checks": {
@@ -32,5 +32,8 @@
     "Linux X11 Native에서 실제 footnote/endnote 그림 이동, Undo/Redo, T009 저장, 독립 OPC 검사 및 새 앱 재열기를 수락한다."
   ],
   "nativeX11Evidence": "NOT RUN",
-  "push": "NOT PERFORMED"
+  "push": "NOT PERFORMED",
+  "geulCurrentHead": "594f38590ec9c581afc36b827c7ee6145dd8169c",
+  "rootIntegrationCommit": "594f38590ec9c581afc36b827c7ee6145dd8169c",
+  "securityExceptionCommit": "e41e24968a4c1ceae54a249649861f03e2f3792c"
 }
