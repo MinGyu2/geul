@@ -83,7 +83,7 @@ fn owned_images(original: &Package, output: &Package, part: &str) -> Option<BTre
 }
 
 /// Prove that WordCraft's initial serialization preserves the source XML of the
-/// actual stories and that every eligible model picture has paired source sizes.
+/// actual stories and that every eligible model picture has valid frame/shape extents.
 pub(crate) fn resize_source_supported(source: &[u8], export: &[u8], count: usize) -> bool {
     let (Ok(original), Ok(output)) = (package::open(source, Side::Original), package::open(export, Side::Output)) else {
         return false;
@@ -105,7 +105,7 @@ pub(crate) fn resize_source_supported(source: &[u8], export: &[u8], count: usize
         let Some((_, sizes)) = masked(before, root, note, &images) else {
             return false;
         };
-        proved += sizes;
+        proved += sizes.len();
     }
     proved == count && same_story_references(&original, &output)
 }
@@ -124,8 +124,9 @@ pub(super) fn inline_picture_edits(original: &Package, output: &Package) -> BTre
                 return None;
             }
             let images = owned_images(original, output, &name).unwrap_or_default();
-            let ((before, _), (after, _)) = (masked(before, root, note, &images)?, masked(after, root, note, &images)?);
-            (before == after).then_some(name)
+            let ((before, before_sizes), (after, after_sizes)) =
+                (masked(before, root, note, &images)?, masked(after, root, note, &images)?);
+            (before == after && resized_extents_supported(&before_sizes, &after_sizes)).then_some(name)
         })
         .collect();
     if !parts.is_empty() && !same_story_references(original, output) {
@@ -1242,7 +1243,35 @@ fn matches_path(stack: &[Element], path: &[(&str, &str)]) -> bool {
             })
 }
 
-fn masked(bytes: &[u8], root: &str, note: Option<&str>, owned_images: &BTreeSet<String>) -> Option<(Vec<Canonical>, usize)> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MaskedPictureExtents {
+    frame: [u32; 2],
+    shape: [u32; 2],
+    nodes: [usize; 2],
+}
+
+fn resized_extents_supported(before: &[MaskedPictureExtents], after: &[MaskedPictureExtents]) -> bool {
+    before.len() == after.len()
+        && before.iter().zip(after).all(|(old, new)| {
+            (0..2).all(|axis| {
+                let source_frame = u128::from(old.frame[axis]);
+                let Some(numerator) = u128::from(old.shape[axis]).checked_mul(u128::from(new.frame[axis])) else {
+                    return false;
+                };
+                let Some(rounded) = numerator.checked_add(source_frame / 2) else {
+                    return false;
+                };
+                source_frame != 0 && u128::from(new.shape[axis]) == rounded / source_frame
+            })
+        })
+}
+
+fn masked(
+    bytes: &[u8],
+    root: &str,
+    note: Option<&str>,
+    owned_images: &BTreeSet<String>,
+) -> Option<(Vec<Canonical>, Vec<MaskedPictureExtents>)> {
     let (mut events, _) = xml::canonical_with_payload_limit(bytes, Some(8 * 1024 * 1024)).ok()?;
     let mut scope = vec![(WORD, root)];
     if let Some(note) = note {
@@ -1342,11 +1371,13 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>, owned_images: &BTreeSet<
                     let frame = outer_extent.take().zip(inner_extent.take());
                     if owned && !transformed && props.is_some() && picture_props.is_some() {
                         if let Some((outer, inner)) = frame {
-                            if let Some(size) = extent(&events[outer]) {
-                                if extent(&events[inner]) == Some(size) {
-                                    sizes.extend([outer, inner]);
-                                }
-                            }
+                            let frame = extent(&events[outer])?;
+                            let shape = extent(&events[inner])?;
+                            sizes.push(MaskedPictureExtents {
+                                frame,
+                                shape,
+                                nodes: [outer, inner],
+                            });
                         }
                     }
                     if let (Some(outer), Some(inner), true) =
@@ -1375,14 +1406,15 @@ fn masked(bytes: &[u8], root: &str, note: Option<&str>, owned_images: &BTreeSet<
         };
         attributes.retain(|(ns, key, _)| ns.is_some() || key != "descr");
     }
-    let count = sizes.len() / 2;
-    for index in sizes {
-        let Canonical::Start { attributes, .. } = &mut events[index] else {
-            return None;
-        };
-        attributes.clear(); // extent() admitted exactly the paired cx/cy values.
+    for picture in &sizes {
+        for index in picture.nodes {
+            let Canonical::Start { attributes, .. } = &mut events[index] else {
+                return None;
+            };
+            attributes.clear(); // extent() admitted exactly the paired cx/cy values.
+        }
     }
-    Some((events, count))
+    Some((events, sizes))
 }
 
 fn extent(event: &Canonical) -> Option<[u32; 2]> {

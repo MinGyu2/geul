@@ -29,7 +29,8 @@ DOCX_GROUP_PIN = "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f"
 P5_NOTE_MOVE_PIN = "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f"
 CI_GATES_PIN = "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728"
 STORY_PICTURE_IDS_PIN = "d945a5bcac9f9e8f2cfe4cea39a055a8fbf6fb8c"
-PIN = STORY_PICTURE_IDS_PIN
+NONCANONICAL_STORY_PICTURE_EXTENTS_PIN = "ce77006df77470f044a4f31257b5fec8d58640fc"
+PIN = NONCANONICAL_STORY_PICTURE_EXTENTS_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -49,6 +50,7 @@ STEPS = [
     (DOCX_GROUP_PIN, P5_NOTE_MOVE_PIN, "patches/wordcraft/docx-note-picture-move.patch.b64", "patches/wordcraft/docx-note-picture-move.commit"),
     (P5_NOTE_MOVE_PIN, CI_GATES_PIN, "patches/wordcraft/wordcraft-ci-gates.patch.b64", "patches/wordcraft/wordcraft-ci-gates.commit"),
     (CI_GATES_PIN, STORY_PICTURE_IDS_PIN, "patches/wordcraft/docx-story-picture-ids.patch.b64", "patches/wordcraft/docx-story-picture-ids.commit"),
+    (STORY_PICTURE_IDS_PIN, NONCANONICAL_STORY_PICTURE_EXTENTS_PIN, "patches/wordcraft/docx-noncanonical-story-picture-extents.patch.b64", "patches/wordcraft/docx-noncanonical-story-picture-extents.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

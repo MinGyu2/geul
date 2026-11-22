@@ -146,6 +146,93 @@ def stories(acc, row, fixtures, out, resize=False):
             size_is(35)
 
 
+def resize_noncanonical_story_picture(acc, row, fixtures, out):
+    source_fixture = fixtures / "a-p5-story-original.docx"
+    fixture = out / "a-p5-story-noncanonical-source.docx"
+    with zipfile.ZipFile(source_fixture) as source, zipfile.ZipFile(fixture, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/header1.xml":
+                xml = data.decode("utf-8")
+                canonical = '<a:ext cx="355600" cy="279400"/>'
+                h.require(xml.count(canonical) == 1, "expected one canonical header shape extent", xml.count(canonical))
+                data = xml.replace(canonical, '<a:ext cx="711200" cy="558800"/>').encode("utf-8")
+            target.writestr(item, data)
+
+    path = h.begin(acc, row, fixture, out, "a-p5-story-noncanonical-edited.docx")
+    layout = json.loads((fixtures / "a-p5-story-layout.json").read_text())
+    order = ("header", "body", "endnote", "footnote", "footer")
+    point, before_frame, selection = select_story_note(acc, layout, order, "header")
+    h.require(selection["objectKind"] == "picture" and selection["moveHandle"],
+              "noncanonical resize did not select the owned header picture", selection)
+    h.require(before_frame["width"] > 0 and before_frame["height"] > 0,
+              "noncanonical source frame has invalid rendered dimensions", before_frame)
+    acc.wait("return +document.querySelector(arguments[0])?.value === 28", WIDTH, timeout=10)
+    h.p6.gso.replace(acc, WIDTH, "35")
+    acc.dom_click(SIZE_FORM + " button[type=submit]")
+    h.revision(acc, "docx", 1)
+    point, resized_frame, selection = select_story_note(acc, layout, order, "header")
+    acc.wait("return +document.querySelector(arguments[0])?.value === 35", WIDTH, timeout=10)
+    h.require(abs(resized_frame["width"] / before_frame["width"] - 1.25) <= 0.05
+              and abs(resized_frame["height"] / before_frame["height"] - 1.25) <= 0.05,
+              "resized noncanonical frame did not scale proportionally", [before_frame, resized_frame])
+    acc.key("ctrl+z")
+    h.revision(acc, "docx", 2)
+    _, undo_frame, _ = select_story_note(acc, layout, order, "header")
+    acc.wait("return +document.querySelector(arguments[0])?.value === 28", WIDTH, timeout=10)
+    h.require(undo_frame == before_frame, "Undo did not restore noncanonical picture geometry", undo_frame)
+    acc.key("ctrl+y")
+    h.revision(acc, "docx", 3)
+    _, redo_frame, _ = select_story_note(acc, layout, order, "header")
+    acc.wait("return +document.querySelector(arguments[0])?.value === 35", WIDTH, timeout=10)
+    h.require(redo_frame == resized_frame, "Redo did not restore noncanonical picture geometry", redo_frame)
+    row["selection"] = selection
+    row["target"] = {"story": "header", "point": point}
+    row["geometry"] = {"before": before_frame, "after": resized_frame,
+                       "undo": undo_frame, "redo": redo_frame}
+    h.publish(acc, "docx", row)
+
+    with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
+        h.require(set(original.namelist()) == set(published.namelist()), "noncanonical resize changed OPC inventory")
+        for part in original.namelist():
+            if part != "word/header1.xml":
+                h.require(original.read(part) == published.read(part), "noncanonical resize changed unrelated OPC part", part)
+        old, new = [ET.fromstring(package.read("word/header1.xml")) for package in (original, published)]
+        frame_path = f".//{WP}inline/{WP}extent"
+        shape_path = f".//{PIC}spPr/{A}xfrm/{A}ext"
+        old_frame, old_shape = old.find(frame_path), old.find(shape_path)
+        new_frame, new_shape = new.find(frame_path), new.find(shape_path)
+        h.require(old_frame is not None and old_frame.attrib == {"cx": "355600", "cy": "279400"},
+                  "unexpected source frame extent", old_frame.attrib if old_frame is not None else None)
+        h.require(old_shape is not None and old_shape.attrib == {"cx": "711200", "cy": "558800"},
+                  "unexpected noncanonical source shape extent", old_shape.attrib if old_shape is not None else None)
+        h.require(new_frame is not None and new_frame.attrib == {"cx": "444500", "cy": "349250"},
+                  "saved frame extent is wrong", new_frame.attrib if new_frame is not None else None)
+        h.require(new_shape is not None and new_shape.attrib == {"cx": "889000", "cy": "698500"},
+                  "saved shape extent did not retain the source ratio", new_shape.attrib if new_shape is not None else None)
+        new_frame.attrib = old_frame.attrib.copy()
+        new_shape.attrib = old_shape.attrib.copy()
+        h.require(ET.tostring(old) == ET.tostring(new),
+                  "saved header XML changed beyond the two owned picture extents")
+        row["serializedExtents"] = {"beforeFrame": old_frame.attrib, "beforeShape": old_shape.attrib,
+                                    "afterFrame": {"cx": "444500", "cy": "349250"},
+                                    "afterShape": {"cx": "889000", "cy": "698500"}}
+        row["unchangedRelationshipsAndMedia"] = all(
+            original.read(part) == published.read(part) for part in original.namelist()
+            if part.endswith(".rels") or part.startswith("word/media/"))
+        h.require(row["unchangedRelationshipsAndMedia"], "noncanonical resize changed resources or relationships")
+
+    h.reopen(acc, path, row)
+    _, reopened_frame, reopened_selection = select_story_note(acc, layout, order, "header")
+    acc.wait("return +document.querySelector(arguments[0])?.value === 35", WIDTH, timeout=10)
+    h.require(reopened_selection["objectKind"] == "picture" and reopened_selection["moveHandle"],
+              "reopened picture lost its header owner", reopened_selection)
+    h.require(all(abs(reopened_frame[key] - resized_frame[key]) <= 1.5
+                  for key in ("left", "top", "width", "height")),
+              "saved noncanonical picture reopened at a different frame", [resized_frame, reopened_frame])
+    row["reopenedFrame"] = reopened_frame
+
+
 def story_picture_points(acc, page):
     return acc.d.js("""
       const c=document.querySelectorAll('.docx-page canvas')[arguments[0]];
@@ -830,6 +917,7 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-HF-MOVE-FRESH-REOPEN": header_footer_move_fresh_reopen,
            "P5-DX-DELETE": delete_docx_story_pictures,
            "P5-DX-DELETE-FRESH-REOPEN": delete_docx_story_pictures_fresh_reopen,
+           "P5-DX-SIZE-NONCANON": resize_noncanonical_story_picture,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}

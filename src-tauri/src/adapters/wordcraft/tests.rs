@@ -7536,6 +7536,7 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
                 y: 20.0,
                 obj: InlineObject::Image {
                     media: child_media_key.clone(),
+                    source_extents: None,
                     docpr_id: None,
                     picture_id: None,
                     w: 60.0,
@@ -8712,6 +8713,121 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
         std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
     }
+}
+
+#[test]
+fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
+    use super::engine::ObjectEdit;
+    use crate::document::Format;
+    use crate::document::testutil::{entry, zip};
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::{para_block, props::CharProps, Paragraph, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("insert.picture", &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) })).unwrap();
+    source.run("picture.size", &json!({ "width": 28, "height": 22 })).unwrap();
+    let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
+    let props = CharProps::default();
+    let mut story_ids = Vec::new();
+    for (kind, label) in [(PartKind::Header, "header"), (PartKind::Footer, "footer")] {
+        let id = source.doc.add_part(kind, Vec::new());
+        let mut para = Paragraph::with_text(&format!("{label} "), props.clone());
+        let mut story_picture = picture.clone();
+        story_picture.set_alt_text(label);
+        para.insert_object(para.len(), story_picture, &props).unwrap();
+        source.doc.set_story(StoryRef::Part(id), vec![para_block(para)]).unwrap();
+        match kind {
+            PartKind::Header => source.doc.last_section.headers.default = Some(id),
+            PartKind::Footer => source.doc.last_section.footers.default = Some(id),
+            _ => unreachable!(),
+        }
+        story_ids.push((kind, id, label));
+    }
+    let draft = io::save_bytes("story.docx", &source.doc).unwrap();
+    let canonical = io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
+    let source_package = package::open(&canonical, package::Side::Original).unwrap();
+    let mut entries = Vec::new();
+    for name in &source_package.order {
+        let mut data = source_package.get(name).unwrap().to_vec();
+        if name == "word/header1.xml" {
+            let xml = std::str::from_utf8(&data).unwrap();
+            let original = r#"<a:ext cx="355600" cy="279400"/>"#;
+            assert_eq!(xml.matches(original).count(), 1, "expected one header picture transform extent");
+            data = xml.replace(original, r#"<a:ext cx="711200" cy="558800"/>"#).into_bytes();
+        }
+        entries.push(entry(name, &data));
+    }
+    let noncanonical = zip(&entries, false);
+    let original_package = package::open(&noncanonical, package::Side::Original).unwrap();
+    let original_header = std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
+    assert!(original_header.contains(r#"<wp:extent cx="355600" cy="279400"/>"#));
+    assert!(original_header.contains(r#"<a:ext cx="711200" cy="558800"/>"#));
+    let original_footer = original_package.get("word/footer1.xml").unwrap().to_vec();
+
+    let mut view_session = Session::new(io::open_bytes("story.docx", &noncanonical).unwrap());
+    let layout = view_session.layout();
+    let (_, header_id, _) = story_ids.iter().find(|(kind, _, _)| *kind == PartKind::Header).unwrap();
+    let header_hit = layout.find_object(0, |object| object.story == StoryRef::Part(*header_id)).unwrap();
+    let mut model = DocxModel::open(&noncanonical).unwrap();
+    let click = DocxOp::Pointer {
+        page: header_hit.page as u32,
+        x: header_hit.rect.x + header_hit.rect.w / 2.0,
+        y: header_hit.rect.y + header_hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let initial_export = model.export().unwrap();
+    assert!(crate::services::save::docx_story_drawings::resize_source_supported(&noncanonical, &initial_export, 2));
+    let initial_package = package::open(&initial_export, package::Side::Output).unwrap();
+    assert_eq!(original_package.get("word/header1.xml"), initial_package.get("word/header1.xml"));
+    assert_eq!(original_package.get("word/footer1.xml"), initial_package.get("word/footer1.xml"));
+    assert_eq!(model.apply(&[click]).changed, 0);
+    let selected = serde_json::to_value(model.view()).unwrap();
+    assert!(selected["object"]["operations"].as_array().unwrap().contains(&json!("resize")),
+        "a noncanonical header extent pair should keep resize available");
+    let before = model.export().unwrap();
+    let edit = DocxOp::ObjectEdit {
+        position: selected["object"]["position"].as_str().unwrap().into(),
+        epoch: selected["object"]["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(35.0), height: Some(27.5) },
+    };
+    assert_eq!(model.apply(&[edit]).changed, 1, "noncanonical owned picture resize refused");
+    let resized = model.export().unwrap();
+    assert!(model.same_as(&resized));
+    let reopened = DocxModel::open(&resized).unwrap();
+    assert!(reopened.same_as(&resized), "a fresh model must accept the saved story-picture transform");
+    assert!(service::check_saved(Format::Docx, &noncanonical, &resized, None, true).is_safe());
+    let after_package = package::open(&resized, package::Side::Output).unwrap();
+    let before_xml = std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
+    let expected = before_xml
+        .replace(r#"<wp:extent cx="355600" cy="279400"/>"#, r#"<wp:extent cx="444500" cy="349250"/>"#)
+        .replace(r#"<a:ext cx="711200" cy="558800"/>"#, r#"<a:ext cx="889000" cy="698500"/>"#);
+    assert_eq!(after_package.get("word/header1.xml"), Some(expected.as_bytes()));
+    assert_eq!(after_package.get("word/footer1.xml"), Some(original_footer.as_slice()));
+    for name in original_package.parts.keys().filter(|name| name.as_str() != "word/header1.xml") {
+        assert_eq!(original_package.get(name), after_package.get(name), "unrelated part changed: {name}");
+    }
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), before);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), resized);
+
+    let mut unauthorized = package::open(&resized, package::Side::Output).unwrap();
+    let (_, header) = unauthorized.parts.get_mut("word/header1.xml").unwrap();
+    let xml = std::str::from_utf8(header).unwrap();
+    let wrong_inner = xml.replace(r#"<a:ext cx="889000" cy="698500"/>"#, r#"<a:ext cx="889001" cy="698500"/>"#);
+    assert_ne!(wrong_inner, xml);
+    *header = wrong_inner.into_bytes();
+    let unauthorized_entries: Vec<_> = unauthorized.order.iter().map(|name| {
+        entry(name, unauthorized.get(name).unwrap())
+    }).collect();
+    assert!(!service::check_saved(Format::Docx, &noncanonical, &zip(&unauthorized_entries, false), None, true).is_safe(),
+        "a changed inner extent with no corresponding size transform must be rejected");
 }
 
 #[test]

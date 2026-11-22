@@ -1,0 +1,6 @@
+tree 4aad6b8e958f20f0cabd1110701fe8d4de055e78
+parent d945a5bcac9f9e8f2cfe4cea39a055a8fbf6fb8c
+author Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795382106 +0900
+committer Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795382106 +0900
+
+feat(stage3-p5): preserve noncanonical picture extents [P5-DX-SIZE-NONCANON]
