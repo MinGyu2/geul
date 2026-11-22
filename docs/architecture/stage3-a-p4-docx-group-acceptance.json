@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-DX-GROUP",
+  "originalCategory": "A",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
+  "supportedRange": [
+    "DOCX 본문 최상위의 지원 가능한 그룹에서 직접 자식을 선택하고 이동하거나 크기를 변경한다.",
+    "Native fixture는 nested group 자식의 위치와 크기 변경, nested rectangle와 picture relationship, 바깥 sibling ellipse 및 원래 자식 계층을 확인한다.",
+    "자식 주소는 그룹 owner position/epoch와 child index/id/instId를 결합하며, 저장 후 DrawingML 계층과 local coordinates를 보존한다."
+  ],
+  "safetyBoundary": [
+    "변경은 보호되지 않고 tracked changes가 없는 본문 최상위 그룹에 한한다.",
+    "원본 group canvas가 없고, owner frame 크기와 child coordinate extent가 일치하는 local axes를 요구한다. 그룹 또는 편집할 자식에 회전·반전·hidden 상태나 지원되지 않는 변환이 있거나 축 배율이 다르면 편집을 제공하지 않는다.",
+    "프레임과 자식 geometry는 유한하고 범위가 제한된 정수 EMU 좌표로 표현 가능해야 하며, 자식 rect는 그룹 부모 범위 안에 있어야 한다. 미지원 원본 group member와 malformed/out-of-frame 요청은 변이 없이 거부한다.",
+    "TypeScript IPC parser는 exact-key bounded groupChildren payload를 검사하며, groupChildGeometry operation이 있을 때 payload 누락·중복/역순 index·범위 초과 좌표·알 수 없는 필드를 fail-closed로 거부한다."
+  ],
+  "changedComponents": [
+    "external/wordcraft: DOCX GroupChild 계층을 판독·기록하고, 지원되는 직접 자식의 geometry 편집을 수행하는 모델·writer·engine 경로.",
+    "src-tauri/src/adapters/wordcraft/engine.rs 및 tests.rs: 그룹 child 주소/operation 라우팅, T009 보존·Undo/Redo와 미지원 구조의 원자적 거부 회귀.",
+    "src/adapters/docx.ts 및 docx.test.ts: strict DOCX view parser에서 group shape와 bounded groupChildren 응답을 허용하고 malformed payload 회귀를 검사.",
+    "scripts/tests/native-stage3a-p4.py: 실제 DOCX group fixture의 저장 geometry, 관계 및 nested/sibling preset 도형을 독립 검사."
+  ],
+  "sourceCommits": [
+    {
+      "repository": "external/wordcraft",
+      "sha": "0a8dbc11ff2c2f596c7f8b54c22e87d82be7fa46",
+      "subject": "feat(docx): edit nested group children [P4-DX-GROUP]"
+    },
+    {
+      "repository": "geul",
+      "sha": "231cac65ca0a18f3881cd51730ddc182b721c72e",
+      "subject": "security(fixtures): review DOCX group test image [P4-DX-GROUP]"
+    },
+    {
+      "repository": "geul",
+      "sha": "504d8de5380941cb9ed09c4f082435ea110d3c5e",
+      "subject": "feat(stage3a-p4): enable DOCX group child editing [P4-DX-GROUP]"
+    },
+    {
+      "repository": "geul",
+      "sha": "74165f8fd1a521ebf12fb14d0f667cead94420ff",
+      "subject": "fix(stage3-p4): parse DOCX group selection [P4-DX-GROUP]"
+    }
+  ],
+  "focusedVerification": {
+    "frontend": {
+      "result": "PASS",
+      "checks": [
+        "npm exec vitest -- run src/adapters/docx.test.ts — 15/15 passed.",
+        "npm run typecheck — passed.",
+        "Strict parser regression accepts the engine group response and rejects malformed group child payloads."
+      ]
+    },
+    "geulT009AndHistory": {
+      "result": "PASS",
+      "test": "stage3_docx_group_child_geometry_t009_preserves_nested_resources",
+      "checks": [
+        "Group child move/resize, Undo/Redo, exact owner/child addressing and independent reopen were checked.",
+        "Unknown source members and scaled group coordinate axes are rejected atomically without changing the exported document.",
+        "Nested group, picture media relationship, sibling, and unrelated OPC package content are preserved."
+      ]
+    },
+    "releaseBuild": {
+      "result": "PASS",
+      "command": "npm run tauri -- build --no-bundle",
+      "appPath": "src-tauri/target/release/geul",
+      "appSha256": "02676f44bc78a900d64f1badb4da57402fceeccde3acd84819a8d063e8ff289c"
+    },
+    "nativeHarness": {
+      "result": "PASS",
+      "checks": [
+        "python3 -m py_compile scripts/tests/native-stage3a-p4.py",
+        "git diff --check"
+      ]
+    }
+  },
+  "native": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb와 private IBus Hangul session에서 Tauri Native app을 실제로 조작했다. X11 증거이며 Wayland 증거는 아니다.",
+    "appSha256": "02676f44bc78a900d64f1badb4da57402fceeccde3acd84819a8d063e8ff289c",
+    "resultFile": "target/stage3a-p4-docx-group/native-run-x11-5/result.json",
+    "case": "P4-DX-GROUP",
+    "fixture": {
+      "path": "scripts/tests/fixtures/stage3a-p4-dx-group.docx",
+      "sha256": "c212ed4ad805610abfe583d47cce0ff870f1331b98f3bc891e99e9950a81fa5b"
+    },
+    "publishedFile": {
+      "path": "target/stage3a-p4-docx-group/native-run-x11-5/p4-dx-group-edited.docx",
+      "sha256": "d2dcc97b0dbbb72234c0f2166f853c199945bdc194c8759f0a560f959a6ba788"
+    },
+    "checks": [
+      "Trusted native pointer/keyboard input selected the group and edited a nested group child: (x,y,w,h) from (10,10,80,60) to (20,15,70,50). Move and resize each passed Undo/Redo.",
+      "T009 Save reported state=saved, synced=true, changedSince=false, and empty findings.",
+      "Saved and independently reopened DrawingML retains the outer/nested group hierarchy, nested rectangle rect/336699, nested picture at relationship rId1, and sibling ellipse ellipse/CC8844.",
+      "The expected group geometry changes are reflected in word/document.xml; the relationship part and other 9 OPC parts are byte-identical.",
+      "A fresh app process reopened the saved document in ready/clean state and retained the group tree and geometry."
+    ],
+    "savedGroupTree": [
+      {
+        "kind": "group",
+        "x": 20.0,
+        "y": 15.0,
+        "width": 70.0,
+        "height": 50.0,
+        "children": [
+          {
+            "kind": "shape",
+            "x": 5.0,
+            "y": 6.0,
+            "width": 22.0,
+            "height": 18.0,
+            "preset": "rect",
+            "fill": "336699"
+          },
+          {
+            "kind": "picture",
+            "x": 42.0,
+            "y": 20.0,
+            "width": 30.0,
+            "height": 20.0,
+            "relationship": "rId1"
+          }
+        ]
+      },
+      {
+        "kind": "shape",
+        "x": 120.0,
+        "y": 35.0,
+        "width": 42.0,
+        "height": 32.0,
+        "preset": "ellipse",
+        "fill": "CC8844"
+      }
+    ],
+    "independentPackageInspection": {
+      "result": "PASS",
+      "unchangedPackageParts": 9,
+      "relationshipsUnchanged": true,
+      "serializedShapes": [
+        {
+          "preset": "rect",
+          "fill": "336699"
+        },
+        {
+          "preset": "ellipse",
+          "fill": "CC8844"
+        }
+      ]
+    },
+    "cleanup": {
+      "file": "target/stage3a-p4-docx-group/launcher-native-x11-5/cleanup.json",
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": []
+    },
+    "otherPlatforms": "Wayland, Windows, macOS 및 외부 Microsoft Office 재열기는 NOT RUN."
+  },
+  "acceptanceDecision": "P4-DX-GROUP은 문서화한 제한 범위에서 IMPLEMENTED_VERIFIED이며 Linux X11 Native acceptance를 통과했다. 일반화된 회전·반전·배율 group child geometry와 나머지 플랫폼/외부 편집기 호환성은 이 증거 범위에 포함하지 않는다."
+}
