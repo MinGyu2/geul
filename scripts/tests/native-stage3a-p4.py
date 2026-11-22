@@ -267,6 +267,7 @@ def docx_group_case(acc, row, fixtures, out):
     ns = {
         "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
         "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
     }
     expected_group = expected_xml.find(".//wpg:wgp", ns)
     expected_nested = expected_group.find("./wpg:grpSp", ns)
@@ -287,30 +288,20 @@ def docx_group_case(acc, row, fixtures, out):
     h.require(reopened_tree == expected_tree, "independent reopened package lost nested group hierarchy or picture relationship")
     with zipfile.ZipFile(path) as package:
         root = ET.fromstring(package.read("word/document.xml"))
-        rels = package.read("word/_rels/document.xml.rels")
-        parts = {name: package.read(name) for name in package.namelist() if name != "word/document.xml"}
     shapes = root.findall(".//wps:wsp", ns)
-    h.require(len(shapes) == 1, "fixture must contain one DrawingML shape", len(shapes))
-    geometry = shapes[0].find("./wps:spPr/a:custGeom", ns)
-    h.require(geometry is not None, "fixture lost custom geometry")
-    path_list = geometry.find("a:pathLst", ns)
-    paths = []
-    for path_node in path_list:
-        commands = []
-        for command in path_node:
-            commands.append({
-                "type": command.tag.rsplit("}", 1)[-1],
-                "points": [dict(point.attrib) for point in command.findall("a:pt", ns)],
-            })
-        paths.append({"attrs": dict(path_node.attrib), "commands": commands})
-    return {
-        "xml": root,
-        "geometry": geometry,
-        "paths": paths,
-        "relationshipsSha256": __import__("hashlib").sha256(rels).hexdigest(),
-        "relationships": rels,
-        "parts": parts,
-    }
+    h.require(len(shapes) == 2, "fixture must retain its nested and sibling DrawingML shapes", len(shapes))
+    serialized_shapes = []
+    for shape in shapes:
+        geometry = shape.find("./wps:spPr/a:prstGeom", ns)
+        fill = shape.find("./wps:spPr/a:solidFill/a:srgbClr", ns)
+        serialized_shapes.append({
+            "preset": geometry.get("prst") if geometry is not None else None,
+            "fill": fill.get("val") if fill is not None else None,
+        })
+    h.require(serialized_shapes == [{"preset": "rect", "fill": "336699"},
+                                    {"preset": "ellipse", "fill": "CC8844"}],
+              "saved group child and sibling preset/fill changed", serialized_shapes)
+    row["serializedShapes"] = serialized_shapes
 
 
 def docx_curve_click(acc, x_fraction, y_fraction):

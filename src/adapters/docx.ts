@@ -644,6 +644,53 @@ function parsePictureView(raw: unknown): PictureProperties | null {
   return { widthPt, heightPt, wrap, crop: crop as [number, number, number, number], ...(typeof description === "string" ? { description } : {}) };
 }
 
+const MAX_DOCX_GROUP_CHILDREN = 1000;
+const MAX_DOCX_GROUP_COORDINATE_PT = 14_400;
+const MAX_DOCX_GROUP_ID = 0xffff_ffff;
+
+function parseGroupChildren(raw: unknown): NonNullable<ObjectHit["groupChildren"]> | null {
+  if (!isRecord(raw) || !hasExactly(raw, ["parentId", "width", "height", "children"])) return null;
+  const { parentId, width, height, children } = raw;
+  const isU32 = (value: unknown): value is number => isCount(value) && value <= MAX_DOCX_GROUP_ID;
+  const isGroupExtent = (value: unknown): value is number => isPositive(value) && value <= MAX_DOCX_GROUP_COORDINATE_PT;
+  if (!isU32(parentId) || !isGroupExtent(width) || !isGroupExtent(height)
+    || !Array.isArray(children) || children.length > MAX_DOCX_GROUP_CHILDREN) return null;
+
+  const parsed: NonNullable<ObjectHit["groupChildren"]>["children"][number][] = [];
+  let previousIndex = -1;
+  for (const child of children) {
+    if (!isRecord(child) || !hasExactly(child, [
+      "index", "kind", "id", "instId", "x", "y", "width", "height", "sizeProtect", "locked", "canMove", "canResize",
+    ])) return null;
+    const { index, kind, id, instId, x, y, width: childWidth, height: childHeight,
+      sizeProtect, locked, canMove, canResize } = child;
+    if (!isCount(index) || index >= MAX_DOCX_GROUP_CHILDREN || index <= previousIndex
+      || !isU32(id) || !isU32(instId)
+      || ![x, y].every((coordinate) => typeof coordinate === "number" && Number.isFinite(coordinate)
+        && coordinate >= 0 && coordinate <= MAX_DOCX_GROUP_COORDINATE_PT)
+      || !isGroupExtent(childWidth) || !isGroupExtent(childHeight)
+      || (x as number) + childWidth > width + 0.001 || (y as number) + childHeight > height + 0.001
+      || ![sizeProtect, locked, canMove, canResize].every((flag) => typeof flag === "boolean")
+      || !["rectangle", "ellipse", "picture", "group", "shape", "textBox"].includes(String(kind))) return null;
+    previousIndex = index;
+    parsed.push({
+      index,
+      kind: kind as NonNullable<ObjectHit["groupChildren"]>["children"][number]["kind"],
+      id,
+      instId,
+      x: x as number,
+      y: y as number,
+      width: childWidth,
+      height: childHeight,
+      sizeProtect: sizeProtect as boolean,
+      locked: locked as boolean,
+      canMove: canMove as boolean,
+      canResize: canResize as boolean,
+    });
+  }
+  return { parentId, width, height, children: parsed };
+}
+
 const DRAWINGML_PATH_COMMANDS = ["moveTo", "lnTo", "quadBezTo", "cubicBezTo", "close"] as const;
 const MAX_DRAWINGML_PATHS = 256;
 const MAX_DRAWINGML_POINTS = 5_000;
@@ -718,7 +765,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
   let object: DocxView["object"];
   if (Object.prototype.hasOwnProperty.call(value, "object")) {
     const raw = value.object;
-    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : []), ...("convertShape" in raw ? ["convertShape"] : []), ...("drawingMlPaths" in raw ? ["drawingMlPaths"] : [])])) return null;
+    if (!isRecord(raw) || !hasExactly(raw, ["kind", "position", "frame", "epoch", "operations", ...("picture" in raw ? ["picture"] : []), ...("graphic" in raw ? ["graphic"] : []), ...("clipboardShape" in raw ? ["clipboardShape"] : []), ...("shape" in raw ? ["shape"] : []), ...("convertShape" in raw ? ["convertShape"] : []), ...("drawingMlPaths" in raw ? ["drawingMlPaths"] : []), ...("groupChildren" in raw ? ["groupChildren"] : [])])) return null;
     const kind = OBJECT_KINDS.find((kind) => kind === raw.kind);
     const frame = parseRect(raw.frame);
     if (!kind || !frame || frame.page >= pageCount || !isCount(raw.epoch) || raw.epoch === 0
@@ -744,7 +791,7 @@ function parseDocxBaseView(value: unknown): DocxView | null {
     }
     if ("shape" in raw) {
       const shape = parseShapeView(raw.shape);
-      if (!shape || (kind !== "shape" && kind !== "textBox")) return null;
+      if (!shape || (kind !== "shape" && kind !== "textBox" && kind !== "group")) return null;
       object.shape = shape;
     }
     if ("drawingMlPaths" in raw) {
@@ -752,6 +799,12 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       if (kind !== "shape" || !drawingMlPaths) return null;
       object.drawingMlPaths = drawingMlPaths;
     }
+    if ("groupChildren" in raw) {
+      const groupChildren = parseGroupChildren(raw.groupChildren);
+      if (kind !== "group" || !groupChildren) return null;
+      object.groupChildren = groupChildren;
+    }
+    if (operations.includes("groupChildGeometry") && !object.groupChildren) return null;
     if (operations.includes("pathPoint") && !object.drawingMlPaths) return null;
     if ("clipboardShape" in raw) {
       const shapeView = raw.clipboardShape;
