@@ -1,0 +1,1156 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -282,6 +282,10 @@
+     locked: bool,
+     can_move: bool,
+     can_resize: bool,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    path: Option<Vec<GeulGroupAddressStep>>,
++    #[serde(skip)]
++    address_path: Vec<GeulGroupAddressStep>,
+     #[serde(skip)]
+     local_width: u32,
+     #[serde(skip)]
+@@ -290,6 +294,14 @@
+     scale_x: f64,
+     #[serde(skip)]
+     scale_y: f64,
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
++#[serde(rename_all = "camelCase", deny_unknown_fields)]
++struct GeulGroupAddressStep {
++    index: usize,
++    id: u32,
++    inst_id: u32,
+ }
+
+ #[derive(serde::Serialize)]
+@@ -655,6 +667,12 @@
+     child: &ShapeObject,
+     gw: u32,
+     gh: u32,
++    local_parent_width: u32,
++    local_parent_height: u32,
++    parent_x: i32,
++    parent_y: i32,
++    expected_group_level: u16,
++    address_path: Vec<GeulGroupAddressStep>,
+     hwp5: bool,
+ ) -> Option<GeulGroupChildState> {
+     let kind = match child {
+@@ -665,7 +683,11 @@
+     let common = child.common();
+     let drawing = child.drawing()?;
+     let sa = child.shape_attr();
+-    if sa.hwpx_group_child_source_ids.as_ref().is_some_and(|source| source.invalid) {
++    if sa
++        .hwpx_group_child_source_ids
++        .as_ref()
++        .is_some_and(|source| source.invalid)
++    {
+         return None;
+     }
+     let id = if hwp5 { sa.ctrl_id } else { common.instance_id };
+@@ -676,23 +698,45 @@
+         geul_exact_hwpx_size(common, sa)
+     };
+     let (local_width, local_height) = exact_size?;
+-    let (x, y, width, height, scale_x, scale_y) = if hwp5 {
++    let (local_x, local_y, width, height, scale_x, scale_y) = if hwp5 {
+         if !geul_flat_hwpx_identity(sa, false) {
+             return None;
+         }
+-        (sa.offset_x, sa.offset_y, local_width, local_height, 1.0, 1.0)
++        (
++            sa.offset_x,
++            sa.offset_y,
++            local_width,
++            local_height,
++            1.0,
++            1.0,
++        )
+     } else {
+         let transform = geul_hwpx_group_child_transform(sa, local_width, local_height)?;
+-        (transform.x, transform.y, transform.width, transform.height, transform.scale_x, transform.scale_y)
++        (
++            transform.x,
++            transform.y,
++            transform.width,
++            transform.height,
++            transform.scale_x,
++            transform.scale_y,
++        )
+     };
+-    let (geom_move_ok, geom_resize_ok) = geul_group_child_geom_support(child, local_width, local_height);
++    let x = parent_x.checked_add(local_x)?;
++    let y = parent_y.checked_add(local_y)?;
++    let (geom_move_ok, geom_resize_ok) =
++        geul_group_child_geom_support(child, local_width, local_height);
+     let structurally_valid = (id != 0 || inst_id != 0)
+         && !(id == 0 && inst_id == 0)
+-        && sa.group_level == 1
++        && sa.group_level == expected_group_level
+         && drawing.caption.is_none()
+         && drawing.text_box.is_none()
+         && geom_move_ok
+-        && x >= 0 && y >= 0
++        && local_x >= 0
++        && local_y >= 0
++        && i64::from(local_x) + i64::from(width) <= i64::from(local_parent_width)
++        && i64::from(local_y) + i64::from(height) <= i64::from(local_parent_height)
++        && x >= 0
++        && y >= 0
+         && i64::from(x) + i64::from(width) <= i64::from(gw)
+         && i64::from(y) + i64::from(height) <= i64::from(gh);
+     let can_move = structurally_valid && !common.locked;
+@@ -710,11 +754,264 @@
+         locked: common.locked,
+         can_move,
+         can_resize,
++        path: (address_path.len() > 1).then(|| address_path.clone()),
++        address_path,
+         local_width,
+         local_height,
+         scale_x,
+         scale_y,
+     })
++}
++
++const MAX_GEUL_GROUP_NESTED_DEPTH: usize = 64;
++const MAX_GEUL_GROUP_NESTED_NODES: usize = 256;
++
++fn geul_group_address_step(index: usize, child: &ShapeObject) -> Option<GeulGroupAddressStep> {
++    match child {
++        ShapeObject::Group(group) => Some(GeulGroupAddressStep {
++            index,
++            id: group.common.instance_id,
++            inst_id: group.hwpx_inst_id.unwrap_or(group.common.instance_id),
++        }),
++        ShapeObject::Rectangle(_) | ShapeObject::Ellipse(_) => {
++            let drawing = child.drawing()?;
++            Some(GeulGroupAddressStep {
++                index,
++                id: child.common().instance_id,
++                inst_id: drawing.inst_id,
++            })
++        }
++        _ => None,
++    }
++}
++
++fn geul_group_child_frame_transform(
++    child: &ShapeObject,
++    parent_width: u32,
++    parent_height: u32,
++    expected_group_level: u16,
++) -> Option<GeulHwpxGroupChildTransform> {
++    let ShapeObject::Group(group) = child else {
++        return None;
++    };
++    if group.caption.is_some()
++        || group.common.locked
++        || group.common.size_protect
++        || group.shape_attr.group_level != expected_group_level
++    {
++        return None;
++    }
++    let (width, height) = geul_exact_hwpx_size(&group.common, &group.shape_attr)?;
++    let transform = geul_hwpx_group_child_transform(&group.shape_attr, width, height)?;
++    if transform.scale_x != 1.0
++        || transform.scale_y != 1.0
++        || i64::from(transform.x) + i64::from(transform.width) > i64::from(parent_width)
++        || i64::from(transform.y) + i64::from(transform.height) > i64::from(parent_height)
++        || transform.x < 0
++        || transform.y < 0
++    {
++        return None;
++    }
++    Some(transform)
++}
++
++/// Nested groups are editable only when each stored child matrix addresses a
++/// local, bounded frame. Imported groups with already-composed/global child
++/// coordinates, unsupported members, or transformed parent frames stay closed.
++fn geul_nested_group_children_are_local(
++    group: &crate::model::shape::GroupShape,
++    expected_group_level: u16,
++    depth: usize,
++    visited: &mut usize,
++) -> Option<()> {
++    if depth >= MAX_GEUL_GROUP_NESTED_DEPTH
++        || group.caption.is_some()
++        || group.common.locked
++        || group.common.size_protect
++        || group.children.is_empty()
++        || group.children.len() > 128
++    {
++        return None;
++    }
++    let (width, height) = geul_exact_hwpx_size(&group.common, &group.shape_attr)?;
++    for child in &group.children {
++        *visited = visited.checked_add(1)?;
++        if *visited > MAX_GEUL_GROUP_NESTED_NODES
++            || child.shape_attr().group_level != expected_group_level
++        {
++            return None;
++        }
++        match child {
++            ShapeObject::Group(nested) => {
++                let transform =
++                    geul_group_child_frame_transform(child, width, height, expected_group_level)?;
++                if transform.width == 0 || transform.height == 0 {
++                    return None;
++                }
++                geul_nested_group_children_are_local(
++                    nested,
++                    expected_group_level.checked_add(1)?,
++                    depth + 1,
++                    visited,
++                )?;
++            }
++            ShapeObject::Rectangle(_) | ShapeObject::Ellipse(_) => {
++                let (local_width, local_height) =
++                    geul_exact_hwpx_size(child.common(), child.shape_attr())?;
++                let transform =
++                    geul_hwpx_group_child_transform(child.shape_attr(), local_width, local_height)?;
++                let (move_ok, _) = geul_group_child_geom_support(child, local_width, local_height);
++                if !move_ok
++                    || transform.x < 0
++                    || transform.y < 0
++                    || i64::from(transform.x) + i64::from(transform.width) > i64::from(width)
++                    || i64::from(transform.y) + i64::from(transform.height) > i64::from(height)
++                {
++                    return None;
++                }
++            }
++            _ => return None,
++        }
++    }
++    Some(())
++}
++
++fn geul_collect_nested_group_children(
++    group: &crate::model::shape::GroupShape,
++    root_width: u32,
++    root_height: u32,
++    local_parent_width: u32,
++    local_parent_height: u32,
++    parent_x: i32,
++    parent_y: i32,
++    expected_group_level: u16,
++    path_prefix: &[GeulGroupAddressStep],
++    hwp5: bool,
++    visited: &mut usize,
++    seen: &mut std::collections::HashSet<(u32, u32)>,
++    out: &mut Vec<GeulGroupChildState>,
++) -> Option<()> {
++    for (child_index, child) in group.children.iter().enumerate() {
++        *visited = visited.checked_add(1)?;
++        if *visited > MAX_GEUL_GROUP_NESTED_NODES {
++            return None;
++        }
++        let step = geul_group_address_step(child_index, child)?;
++        let mut path = path_prefix.to_vec();
++        path.push(step);
++        if path.len() > MAX_GEUL_GROUP_NESTED_DEPTH {
++            return None;
++        }
++        match child {
++            ShapeObject::Group(nested) => {
++                let transform = geul_group_child_frame_transform(
++                    child,
++                    local_parent_width,
++                    local_parent_height,
++                    expected_group_level,
++                )?;
++                let next_x = parent_x.checked_add(transform.x)?;
++                let next_y = parent_y.checked_add(transform.y)?;
++                let (nested_width, nested_height) =
++                    geul_exact_hwpx_size(&nested.common, &nested.shape_attr)?;
++                geul_collect_nested_group_children(
++                    nested,
++                    root_width,
++                    root_height,
++                    nested_width,
++                    nested_height,
++                    next_x,
++                    next_y,
++                    expected_group_level.checked_add(1)?,
++                    &path,
++                    hwp5,
++                    visited,
++                    seen,
++                    out,
++                )?;
++            }
++            ShapeObject::Rectangle(_) | ShapeObject::Ellipse(_) => {
++                let state = geul_group_child_state(
++                    out.len(),
++                    child,
++                    root_width,
++                    root_height,
++                    local_parent_width,
++                    local_parent_height,
++                    parent_x,
++                    parent_y,
++                    expected_group_level,
++                    path,
++                    hwp5,
++                )?;
++                if !seen.insert((state.id, state.inst_id)) {
++                    return None;
++                }
++                out.push(state);
++            }
++            _ => return None,
++        }
++    }
++    Some(())
++}
++
++fn geul_group_path_parent_frame(
++    root: &crate::model::shape::GroupShape,
++    path: &[GeulGroupAddressStep],
++) -> Option<(i32, i32, u32, u32)> {
++    if path.len() < 2 || path.len() > MAX_GEUL_GROUP_NESTED_DEPTH {
++        return None;
++    }
++    let mut group = root;
++    let mut x = 0i32;
++    let mut y = 0i32;
++    for (depth, step) in path[..path.len() - 1].iter().enumerate() {
++        let child = group.children.get(step.index)?;
++        let actual = geul_group_address_step(step.index, child)?;
++        if actual != *step {
++            return None;
++        }
++        let ShapeObject::Group(nested) = child else {
++            return None;
++        };
++        let (parent_width, parent_height) = if depth == 0 {
++            geul_exact_hwpx_size(&root.common, &root.shape_attr)?
++        } else {
++            geul_exact_hwpx_size(&group.common, &group.shape_attr)?
++        };
++        let group_level = u16::try_from(depth + 1).ok()?;
++        let transform =
++            geul_group_child_frame_transform(child, parent_width, parent_height, group_level)?;
++        x = x.checked_add(transform.x)?;
++        y = y.checked_add(transform.y)?;
++        group = nested;
++    }
++    let (width, height) = geul_exact_hwpx_size(&group.common, &group.shape_attr)?;
++    Some((x, y, width, height))
++}
++
++fn geul_nested_group_path_target_mut<'a>(
++    root: &'a mut crate::model::shape::GroupShape,
++    path: &[GeulGroupAddressStep],
++) -> Option<&'a mut ShapeObject> {
++    if path.len() < 2 || path.len() > MAX_GEUL_GROUP_NESTED_DEPTH {
++        return None;
++    }
++    let mut group = root;
++    for step in &path[..path.len() - 1] {
++        let child = group.children.get_mut(step.index)?;
++        let actual = geul_group_address_step(step.index, child)?;
++        if actual != *step {
++            return None;
++        }
++        let ShapeObject::Group(nested) = child else {
++            return None;
++        };
++        group = nested;
++    }
++    let leaf = path.last()?;
++    let child = group.children.get_mut(leaf.index)?;
++    (geul_group_address_step(leaf.index, child)? == *leaf).then_some(child)
+ }
+
+ const MAX_RECT_DIM_HU: u32 = 2_000_000;
+@@ -1583,10 +1880,16 @@
+         x: i32,
+         y: i32,
+     ) -> Result<(), HwpError> {
+-        let state = self.inspect_editable_group_children(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let state = self
++            .inspect_editable_group_children(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?;
+         let target = state.children.get(index).ok_or_else(geul_bad_shape_edit)?;
+-        if !target.can_move || target.id != expected_id || target.inst_id != expected_inst_id
+-            || x < 0 || y < 0
++        if !target.can_move
++            || target.path.is_some()
++            || target.id != expected_id
++            || target.inst_id != expected_inst_id
++            || x < 0
++            || y < 0
+             || i64::from(x) + i64::from(target.width) > i64::from(state.width)
+             || i64::from(y) + i64::from(target.height) > i64::from(state.height)
+             || (x == target.x && y == target.y)
+@@ -1594,15 +1897,34 @@
+             return Err(geul_bad_shape_edit());
+         }
+         let hwp5 = self.source_format == crate::parser::FileFormat::Hwp;
++        let child_index = if hwp5 {
++            index
++        } else {
++            target
++                .address_path
++                .first()
++                .map(|step| step.index)
++                .ok_or_else(geul_bad_shape_edit)?
++        };
+         let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
+             return Err(geul_bad_shape_edit());
+         };
+-        let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++        let child = group
++            .children
++            .get_mut(child_index)
++            .ok_or_else(geul_bad_shape_edit)?;
+         let (render_tx, render_ty) = if hwp5 {
+             (x, y)
+         } else {
+-            geul_group_child_transform_translation(x, y, target.width, target.height, target.scale_x, target.scale_y)
+-                .ok_or_else(geul_bad_shape_edit)?
++            geul_group_child_transform_translation(
++                x,
++                y,
++                target.width,
++                target.height,
++                target.scale_x,
++                target.scale_y,
++            )
++            .ok_or_else(geul_bad_shape_edit)?
+         };
+         {
+             let sa = child.shape_attr_mut();
+@@ -1640,10 +1962,16 @@
+         width: i32,
+         height: i32,
+     ) -> Result<(), HwpError> {
+-        let state = self.inspect_editable_group_children(sec, para, ctrl).ok_or_else(geul_bad_shape_edit)?;
++        let state = self
++            .inspect_editable_group_children(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?;
+         let target = state.children.get(index).ok_or_else(geul_bad_shape_edit)?;
+-        if !target.can_resize || target.id != expected_id || target.inst_id != expected_inst_id
+-            || width < 1 || height < 1
++        if !target.can_resize
++            || target.path.is_some()
++            || target.id != expected_id
++            || target.inst_id != expected_inst_id
++            || width < 1
++            || height < 1
+         {
+             return Err(geul_bad_shape_edit());
+         }
+@@ -1656,12 +1984,23 @@
+             return Err(geul_bad_shape_edit());
+         }
+         let hwp5 = self.source_format == crate::parser::FileFormat::Hwp;
++        let child_index = if hwp5 {
++            index
++        } else {
++            target
++                .address_path
++                .first()
++                .map(|step| step.index)
++                .ok_or_else(geul_bad_shape_edit)?
++        };
+         let (new_w, new_h) = if hwp5 {
+             (displayed_width, displayed_height)
+         } else {
+             (
+-                geul_group_local_dimension(displayed_width, target.scale_x).ok_or_else(geul_bad_shape_edit)?,
+-                geul_group_local_dimension(displayed_height, target.scale_y).ok_or_else(geul_bad_shape_edit)?,
++                geul_group_local_dimension(displayed_width, target.scale_x)
++                    .ok_or_else(geul_bad_shape_edit)?,
++                geul_group_local_dimension(displayed_height, target.scale_y)
++                    .ok_or_else(geul_bad_shape_edit)?,
+             )
+         };
+         if new_w == target.local_width && new_h == target.local_height {
+@@ -1670,15 +2009,25 @@
+         let (render_tx, render_ty) = if hwp5 {
+             (target.x, target.y)
+         } else {
+-            geul_group_child_transform_translation(target.x, target.y, displayed_width, displayed_height, target.scale_x, target.scale_y)
+-                .ok_or_else(geul_bad_shape_edit)?
++            geul_group_child_transform_translation(
++                target.x,
++                target.y,
++                displayed_width,
++                displayed_height,
++                target.scale_x,
++                target.scale_y,
++            )
++            .ok_or_else(geul_bad_shape_edit)?
+         };
+         let local_width_i32 = i32::try_from(new_w).map_err(|_| geul_bad_shape_edit())?;
+         let local_height_i32 = i32::try_from(new_h).map_err(|_| geul_bad_shape_edit())?;
+         let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
+             return Err(geul_bad_shape_edit());
+         };
+-        let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
++        let child = group
++            .children
++            .get_mut(child_index)
++            .ok_or_else(geul_bad_shape_edit)?;
+         let is_ellipse = matches!(child, ShapeObject::Ellipse(_));
+         let width_changed = new_w != target.local_width;
+         let height_changed = new_h != target.local_height;
+@@ -1723,12 +2072,29 @@
+             ShapeObject::Ellipse(ellipse) => {
+                 // Both integer halves of an odd source dimension are valid.
+                 // Keep the imported coordinate on an untouched axis.
+-                let cx = if width_changed { local_width_i32 / 2 } else { ellipse.center.x };
+-                let cy = if height_changed { local_height_i32 / 2 } else { ellipse.center.y };
++                let cx = if width_changed {
++                    local_width_i32 / 2
++                } else {
++                    ellipse.center.x
++                };
++                let cy = if height_changed {
++                    local_height_i32 / 2
++                } else {
++                    ellipse.center.y
++                };
+                 ellipse.center = crate::model::Point { x: cx, y: cy };
+-                ellipse.axis1 = crate::model::Point { x: local_width_i32, y: cy };
+-                ellipse.axis2 = crate::model::Point { x: cx, y: local_height_i32 };
+-                let p = crate::model::Point { x: local_width_i32, y: cy };
++                ellipse.axis1 = crate::model::Point {
++                    x: local_width_i32,
++                    y: cy,
++                };
++                ellipse.axis2 = crate::model::Point {
++                    x: cx,
++                    y: local_height_i32,
++                };
++                let p = crate::model::Point {
++                    x: local_width_i32,
++                    y: cy,
++                };
+                 ellipse.start1 = p;
+                 ellipse.end1 = p;
+                 ellipse.start2 = p;
+@@ -1740,7 +2106,239 @@
+         Ok(())
+     }
+
+-    fn inspect_editable_group_children(&self, sec: usize, para: usize, ctrl: usize) -> Option<GeulEditableGroupChildren> {
++    pub fn move_nested_group_child(
++        &mut self,
++        sec: usize,
++        para: usize,
++        ctrl: usize,
++        flat_index: usize,
++        expected_id: u32,
++        expected_inst_id: u32,
++        path_json: &str,
++        x: i32,
++        y: i32,
++    ) -> Result<(), HwpError> {
++        if path_json.len() > 4096 {
++            return Err(geul_bad_shape_edit());
++        }
++        let path: Vec<GeulGroupAddressStep> =
++            serde_json::from_str(path_json).map_err(|_| geul_bad_shape_edit())?;
++        let state = self
++            .inspect_editable_group_children(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?;
++        let target = state
++            .children
++            .get(flat_index)
++            .ok_or_else(geul_bad_shape_edit)?;
++        if target.path.as_deref() != Some(path.as_slice())
++            || !target.can_move
++            || target.id != expected_id
++            || target.inst_id != expected_inst_id
++            || x < 0
++            || y < 0
++            || i64::from(x) + i64::from(target.width) > i64::from(state.width)
++            || i64::from(y) + i64::from(target.height) > i64::from(state.height)
++            || (x == target.x && y == target.y)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Group(root) = self
++            .advanced_body_shape(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?
++        else {
++            return Err(geul_bad_shape_edit());
++        };
++        let (parent_x, parent_y, parent_width, parent_height) =
++            geul_group_path_parent_frame(root, &path).ok_or_else(geul_bad_shape_edit)?;
++        let local_x = x.checked_sub(parent_x).ok_or_else(geul_bad_shape_edit)?;
++        let local_y = y.checked_sub(parent_y).ok_or_else(geul_bad_shape_edit)?;
++        if local_x < 0
++            || local_y < 0
++            || i64::from(local_x) + i64::from(target.width) > i64::from(parent_width)
++            || i64::from(local_y) + i64::from(target.height) > i64::from(parent_height)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let (render_tx, render_ty) = geul_group_child_transform_translation(
++            local_x,
++            local_y,
++            target.width,
++            target.height,
++            target.scale_x,
++            target.scale_y,
++        )
++        .ok_or_else(geul_bad_shape_edit)?;
++        let ShapeObject::Group(root) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        let child =
++            geul_nested_group_path_target_mut(root, &path).ok_or_else(geul_bad_shape_edit)?;
++        {
++            let sa = child.shape_attr_mut();
++            if !geul_write_hwpx_group_child_translation(sa, render_tx, render_ty) {
++                return Err(geul_bad_shape_edit());
++            }
++            sa.offset_x = local_x;
++            sa.offset_y = local_y;
++        }
++        let common = child.common_mut();
++        common.horizontal_offset = local_x as u32;
++        common.vertical_offset = local_y as u32;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    pub fn resize_nested_group_child(
++        &mut self,
++        sec: usize,
++        para: usize,
++        ctrl: usize,
++        flat_index: usize,
++        expected_id: u32,
++        expected_inst_id: u32,
++        path_json: &str,
++        width: i32,
++        height: i32,
++    ) -> Result<(), HwpError> {
++        if path_json.len() > 4096 {
++            return Err(geul_bad_shape_edit());
++        }
++        let path: Vec<GeulGroupAddressStep> =
++            serde_json::from_str(path_json).map_err(|_| geul_bad_shape_edit())?;
++        let state = self
++            .inspect_editable_group_children(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?;
++        let target = state
++            .children
++            .get(flat_index)
++            .ok_or_else(geul_bad_shape_edit)?;
++        if target.path.as_deref() != Some(path.as_slice())
++            || !target.can_resize
++            || target.id != expected_id
++            || target.inst_id != expected_inst_id
++            || width < 1
++            || height < 1
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let displayed_width = width as u32;
++        let displayed_height = height as u32;
++        if i64::from(target.x) + i64::from(displayed_width) > i64::from(state.width)
++            || i64::from(target.y) + i64::from(displayed_height) > i64::from(state.height)
++            || (displayed_width == target.width && displayed_height == target.height)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let (new_width, new_height) = (
++            geul_group_local_dimension(displayed_width, target.scale_x)
++                .ok_or_else(geul_bad_shape_edit)?,
++            geul_group_local_dimension(displayed_height, target.scale_y)
++                .ok_or_else(geul_bad_shape_edit)?,
++        );
++        if new_width == target.local_width && new_height == target.local_height {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Group(root) = self
++            .advanced_body_shape(sec, para, ctrl)
++            .ok_or_else(geul_bad_shape_edit)?
++        else {
++            return Err(geul_bad_shape_edit());
++        };
++        let (parent_x, parent_y, parent_width, parent_height) =
++            geul_group_path_parent_frame(root, &path).ok_or_else(geul_bad_shape_edit)?;
++        let local_x = target
++            .x
++            .checked_sub(parent_x)
++            .ok_or_else(geul_bad_shape_edit)?;
++        let local_y = target
++            .y
++            .checked_sub(parent_y)
++            .ok_or_else(geul_bad_shape_edit)?;
++        if local_x < 0
++            || local_y < 0
++            || i64::from(local_x) + i64::from(displayed_width) > i64::from(parent_width)
++            || i64::from(local_y) + i64::from(displayed_height) > i64::from(parent_height)
++        {
++            return Err(geul_bad_shape_edit());
++        }
++        let local_width = i32::try_from(new_width).map_err(|_| geul_bad_shape_edit())?;
++        let local_height = i32::try_from(new_height).map_err(|_| geul_bad_shape_edit())?;
++        let ShapeObject::Group(root) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        let child =
++            geul_nested_group_path_target_mut(root, &path).ok_or_else(geul_bad_shape_edit)?;
++        let is_ellipse = matches!(child, ShapeObject::Ellipse(_));
++        let width_changed = new_width != target.local_width;
++        let height_changed = new_height != target.local_height;
++        {
++            let sa = child.shape_attr_mut();
++            sa.original_width = new_width;
++            sa.original_height = new_height;
++            sa.current_width = new_width;
++            sa.current_height = new_height;
++            sa.original_width_was_zero = false;
++            sa.original_height_was_zero = false;
++            sa.current_width_was_zero = false;
++            sa.current_height_was_zero = false;
++            if width_changed || !is_ellipse {
++                sa.rotation_center.x = local_width / 2;
++            }
++            if height_changed || !is_ellipse {
++                sa.rotation_center.y = local_height / 2;
++            }
++        }
++        {
++            let common = child.common_mut();
++            common.width = new_width;
++            common.height = new_height;
++        }
++        match child {
++            ShapeObject::Rectangle(rect) => {
++                rect.x_coords = [0, local_width, local_width, 0];
++                rect.y_coords = [0, 0, local_height, local_height];
++            }
++            ShapeObject::Ellipse(ellipse) => {
++                let cx = if width_changed {
++                    local_width / 2
++                } else {
++                    ellipse.center.x
++                };
++                let cy = if height_changed {
++                    local_height / 2
++                } else {
++                    ellipse.center.y
++                };
++                ellipse.center = crate::model::Point { x: cx, y: cy };
++                ellipse.axis1 = crate::model::Point {
++                    x: local_width,
++                    y: cy,
++                };
++                ellipse.axis2 = crate::model::Point {
++                    x: cx,
++                    y: local_height,
++                };
++                let p = crate::model::Point {
++                    x: local_width,
++                    y: cy,
++                };
++                ellipse.start1 = p;
++                ellipse.end1 = p;
++                ellipse.start2 = p;
++                ellipse.end2 = p;
++            }
++            _ => return Err(geul_bad_shape_edit()),
++        }
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    fn inspect_editable_group_children(
++        &self,
++        sec: usize,
++        para: usize,
++        ctrl: usize,
++    ) -> Option<GeulEditableGroupChildren> {
+         use crate::parser::FileFormat;
+         let hwp5 = self.source_format == FileFormat::Hwp;
+         if !hwp5 && self.source_format != FileFormat::Hwpx {
+@@ -1749,36 +2347,80 @@
+         let ShapeObject::Group(group) = self.advanced_body_shape(sec, para, ctrl)? else {
+             return None;
+         };
+-        if group.caption.is_some() || group.common.size_protect || group.shape_attr.group_level != 0
+-            || group.children.is_empty() || group.children.len() > 128
++        if group.caption.is_some()
++            || group.common.locked
++            || group.common.size_protect
++            || group.shape_attr.group_level != 0
++            || group.children.is_empty()
++            || group.children.len() > 128
+             || !geul_flat_hwpx_identity(&group.shape_attr, true)
+         {
+             return None;
+         }
+-        if hwp5 && (group.shape_attr.ctrl_id != crate::parser::tags::SHAPE_CONTAINER_ID
+-            || !group.shape_attr.is_two_ctrl_id)
++        if hwp5
++            && (group.shape_attr.ctrl_id != crate::parser::tags::SHAPE_CONTAINER_ID
++                || !group.shape_attr.is_two_ctrl_id)
+         {
+             return None;
+         }
+         if hwp5 {
+             let source_ids = group.hwp5_child_ctrl_ids.as_ref()?;
+             if source_ids.len() != group.children.len()
+-                || source_ids.iter().zip(&group.children).any(|(source_id, child)| {
+-                    *source_id != child.shape_attr().ctrl_id
+-                })
++                || source_ids
++                    .iter()
++                    .zip(&group.children)
++                    .any(|(source_id, child)| *source_id != child.shape_attr().ctrl_id)
+             {
+                 return None;
+             }
+         }
+         let (gw, gh) = geul_exact_hwpx_size(&group.common, &group.shape_attr)?;
++        if !hwp5 {
++            let mut validated_nodes = 0;
++            geul_nested_group_children_are_local(group, 1, 0, &mut validated_nodes)?;
++        }
+         let mut seen = std::collections::HashSet::with_capacity(group.children.len());
+         let mut children = Vec::with_capacity(group.children.len());
+-        for (index, child) in group.children.iter().enumerate() {
+-            let state = geul_group_child_state(index, child, gw, gh, hwp5)?;
+-            if !seen.insert((state.id, state.inst_id)) {
+-                return None;
+-            }
+-            children.push(state);
++        if hwp5 {
++            for (index, child) in group.children.iter().enumerate() {
++                let state = geul_group_child_state(
++                    index,
++                    child,
++                    gw,
++                    gh,
++                    gw,
++                    gh,
++                    0,
++                    0,
++                    1,
++                    Vec::new(),
++                    true,
++                )?;
++                if !seen.insert((state.id, state.inst_id)) {
++                    return None;
++                }
++                children.push(state);
++            }
++        } else {
++            let mut visited = 0;
++            geul_collect_nested_group_children(
++                group,
++                gw,
++                gh,
++                gw,
++                gh,
++                0,
++                0,
++                1,
++                &[],
++                false,
++                &mut visited,
++                &mut seen,
++                &mut children,
++            )?;
++        }
++        if children.is_empty() || children.len() > 128 {
++            return None;
+         }
+         if !children.iter().any(|c| c.can_move || c.can_resize) {
+             return None;
+@@ -3510,6 +4152,17 @@
+     }
+
+     // ─── 개체 묶기/풀기 API ──────────────────────────────
++    fn increment_nested_group_levels(children: &mut [ShapeObject]) -> Option<()> {
++        for child in children {
++            let level = child.shape_attr().group_level.checked_add(1)?;
++            child.shape_attr_mut().group_level = level;
++            if let ShapeObject::Group(group) = child {
++                Self::increment_nested_group_levels(&mut group.children)?;
++            }
++        }
++        Some(())
++    }
++
+     /// 선택된 개체들을 GroupShape로 묶는다.
+     /// targets: [(para_idx, control_idx), ...] — 같은 구역 내 Shape 또는 Picture
+     /// 반환: JSON `{"ok":true, "paraIdx":N, "controlIdx":N}`
+@@ -3595,6 +4248,13 @@
+
+         // 2) 자식 개체의 offset/render 좌표를 그룹 로컬 좌표로 변환
+         for child in &mut children {
++            if self.source_format == crate::parser::FileFormat::Hwpx {
++                if let ShapeObject::Group(group) = child {
++                    Self::increment_nested_group_levels(&mut group.children).ok_or_else(|| {
++                        HwpError::RenderError("중첩 그룹 레벨이 표현 범위를 초과합니다".to_string())
++                    })?;
++                }
++            }
+             // 그룹 내 로컬 좌표 계산
+             let new_horz = ((child.common().horizontal_offset as i32 - group_min_x).max(0)) as u32;
+             let new_vert = ((child.common().vertical_offset as i32 - group_min_y).max(0)) as u32;
+@@ -3694,6 +4354,7 @@
+                 ..Default::default()
+             },
+             hwp5_child_ctrl_ids,
++            hwpx_inst_id: None,
+             children,
+             caption: None,
+         };
+@@ -4643,6 +5304,7 @@
+                 shape_attr: child_a.shape_attr().clone(),
+                 children: vec![child_a, child_b],
+                 hwp5_child_ctrl_ids: None,
++                hwpx_inst_id: None,
+                 caption: None,
+             };
+             group_ctrl_idx = ctrl_indices[1];
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -778,6 +778,9 @@
+     /// Imported HWP5 container child-ID table, retained for ownership checks only.
+     #[serde(skip)]
+     pub hwp5_child_ctrl_ids: Option<Vec<u32>>,
++    /// Original HWPX container `instid`; `common.instance_id` stores `id`.
++    #[serde(skip)]
++    pub hwpx_inst_id: Option<u32>,
+     /// 캡션
+     pub caption: Option<Caption>,
+ }
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -5371,7 +5371,7 @@
+     let mut has_pos = false;
+     let mut children = Vec::new();
+
+-    parse_object_element_attrs(e, &mut common, &mut shape_attr);
++    let object_ids = parse_object_element_attrs(e, &mut common, &mut shape_attr);
+
+     let mut caption: Option<crate::model::shape::Caption> = None;
+     let mut buf = Vec::new();
+@@ -5467,6 +5467,7 @@
+         shape_attr,
+         children,
+         hwp5_child_ctrl_ids: None,
++        hwpx_inst_id: object_ids.instid,
+         caption,
+     };
+
+--- a/src/renderer/layout/shape_layout.rs
++++ b/src/renderer/layout/shape_layout.rs
+@@ -44,6 +44,66 @@
+         if flip_x { -scale.0 } else { scale.0 },
+         if flip_y { -scale.1 } else { scale.1 },
+     )
++}
++
++/// Detect the canonical nested-container form whose child coordinates are
++/// local to each container. HWPX files that store already-composed coordinates
++/// continue through the existing top-level coordinate path.
++fn nested_group_children_are_local(group: &crate::model::shape::GroupShape, depth: usize) -> bool {
++    if depth >= 64
++        || group.children.is_empty()
++        || group.shape_attr.rotation_angle != 0
++        || group.shape_attr.horz_flip
++        || group.shape_attr.vert_flip
++        || group.shape_attr.flip & 3 != 0
++        || group.shape_attr.render_sx != 1.0
++        || group.shape_attr.render_sy != 1.0
++        || group.shape_attr.render_b != 0.0
++        || group.shape_attr.render_c != 0.0
++        || group.shape_attr.original_width == 0
++        || group.shape_attr.original_height == 0
++    {
++        return false;
++    }
++    let width = f64::from(group.shape_attr.original_width);
++    let height = f64::from(group.shape_attr.original_height);
++    group.children.iter().all(|child| {
++        let sa = child.shape_attr();
++        if !sa.render_tx.is_finite()
++            || !sa.render_ty.is_finite()
++            || !sa.render_sx.is_finite()
++            || !sa.render_sy.is_finite()
++            || !sa.render_b.is_finite()
++            || !sa.render_c.is_finite()
++            || sa.render_sx <= 0.0
++            || sa.render_sy <= 0.0
++            || sa.render_b != 0.0
++            || sa.render_c != 0.0
++            || sa.horz_flip
++            || sa.vert_flip
++            || sa.flip & 3 != 0
++        {
++            return false;
++        }
++        let child_width = f64::from(sa.original_width) * sa.render_sx;
++        let child_height = f64::from(sa.original_height) * sa.render_sy;
++        if !child_width.is_finite()
++            || !child_height.is_finite()
++            || child_width < 1.0
++            || child_height < 1.0
++            || sa.render_tx < 0.0
++            || sa.render_ty < 0.0
++            || sa.render_tx + child_width > width
++            || sa.render_ty + child_height > height
++        {
++            return false;
++        }
++        match child {
++            ShapeObject::Group(nested) => nested_group_children_are_local(nested, depth + 1),
++            ShapeObject::Rectangle(_) | ShapeObject::Ellipse(_) => true,
++            _ => false,
++        }
++    })
+ }
+
+ /// 글상자에 공백이 아닌 실제 텍스트가 한 글자라도 있는지.
+@@ -2112,13 +2172,19 @@
+             ShapeObject::Group(group) => {
+                 // 묶음 개체: Group 컨테이너 노드로 감싸서 hittest 시 하나의 개체로 선택되도록 함
+                 let group_id = tree.next_id();
+-                let group_origin = inherited_group_origin.unwrap_or({
+-                    if group.shape_attr.group_level == 0 {
+-                        (base_x, base_y)
+-                    } else {
+-                        (0.0, 0.0)
+-                    }
+-                });
++                let group_origin = if inherited_group_origin.is_some()
++                    && nested_group_children_are_local(group, 0)
++                {
++                    (base_x, base_y)
++                } else {
++                    inherited_group_origin.unwrap_or({
++                        if group.shape_attr.group_level == 0 {
++                            (base_x, base_y)
++                        } else {
++                            (0.0, 0.0)
++                        }
++                    })
++                };
+                 let mut group_node = RenderNode::new(
+                     group_id,
+                     RenderNodeType::Group(GroupNode {
+--- a/src/serializer/control/tests.rs
++++ b/src/serializer/control/tests.rs
+@@ -688,6 +688,8 @@
+             ..Default::default()
+         },
+         children: vec![ShapeObject::Picture(Box::new(pic))],
++        hwp5_child_ctrl_ids: None,
++        hwpx_inst_id: None,
+         caption: None,
+     };
+
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -3187,7 +3187,7 @@
+     }
+     if let ShapeObject::Group(g) = shape {
+         let mut xml = match writer_to_string(|w| {
+-            super::shape::write_container_open(w, &g.common, &g.shape_attr)
++            super::shape::write_container_open(w, &g.common, &g.shape_attr, g.hwpx_inst_id)
+         }) {
+             Ok(xml) => xml,
+             Err(e) => {
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -292,8 +292,10 @@
+     w: &mut Writer<W>,
+     common: &CommonObjAttr,
+     sa: &ShapeComponentAttr,
++    source_inst_id: Option<u32>,
+ ) -> Result<(), SerializeError> {
+     let id_str = common.instance_id.to_string();
++    let inst_id_str = source_inst_id.unwrap_or(common.instance_id).to_string();
+     let z_order = common.z_order.to_string();
+     let tw = text_wrap_str(common.text_wrap);
+     let tf = text_flow_str(common.text_flow);
+@@ -316,7 +318,7 @@
+             ("dropcapstyle", "None"),
+             ("href", ""),
+             ("groupLevel", &group_level),
+-            ("instid", &id_str),
++            ("instid", &inst_id_str),
+         ],
+     )?;
+
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4808,6 +4808,60 @@
+             index as usize,
+             expected_id,
+             expected_inst_id,
++            width,
++            height,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = moveNestedGroupChild)]
++    pub fn move_nested_group_child_wasm(
++        &mut self,
++        sec: u32,
++        para: u32,
++        ctrl: u32,
++        flat_index: u32,
++        expected_id: u32,
++        expected_inst_id: u32,
++        path_json: &str,
++        x: i32,
++        y: i32,
++    ) -> Result<(), JsValue> {
++        self.move_nested_group_child(
++            sec as usize,
++            para as usize,
++            ctrl as usize,
++            flat_index as usize,
++            expected_id,
++            expected_inst_id,
++            path_json,
++            x,
++            y,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = resizeNestedGroupChild)]
++    pub fn resize_nested_group_child_wasm(
++        &mut self,
++        sec: u32,
++        para: u32,
++        ctrl: u32,
++        flat_index: u32,
++        expected_id: u32,
++        expected_inst_id: u32,
++        path_json: &str,
++        width: i32,
++        height: i32,
++    ) -> Result<(), JsValue> {
++        self.resize_nested_group_child(
++            sec as usize,
++            para as usize,
++            ctrl as usize,
++            flat_index as usize,
++            expected_id,
++            expected_inst_id,
++            path_json,
+             width,
+             height,
+         )

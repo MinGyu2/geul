@@ -91,6 +91,232 @@ async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
 const groupFrame = (doc: RhwpDocument) =>
   (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).find(c => c.type === "group")!;
 
+function assignNestedContainerIds(bytes: Uint8Array) {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as dst:
+        for entry in src.infolist():
+            data = src.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                xml = data.decode("utf-8")
+                tags = list(re.finditer(r'<hp:container\\b[^>]*>', xml))
+                assert len(tags) == 2, len(tags)
+                for match, (ident, instid) in reversed(list(zip(tags, [(9001, 9101), (7001, 8001)]))):
+                    tag = re.sub(r'\\bid="[^"]*"', f'id="{ident}"', match.group(), count=1)
+                    tag, count = re.subn(r'\\binstid="[^"]*"', f'instid="{instid}"', tag, count=1)
+                    assert count == 1
+                    xml = xml[:match.start()] + tag + xml[match.end():]
+                data = xml.encode("utf-8")
+            dst.writestr(entry, data)
+    sys.stdout.buffer.write(out.getvalue())
+`], { input: bytes });
+}
+
+function inspectNestedContainerTree(bytes: Uint8Array) {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    root = ET.fromstring(zf.read("Contents/section0.xml"))
+container = root.find(".//{*}container")
+def tree(node):
+    return {
+        "tag": node.tag.split("}")[-1],
+        "attrs": dict(sorted(node.attrib.items())),
+        "text": (node.text or "").strip(),
+        "children": [tree(child) for child in node],
+    }
+print(json.dumps(tree(container)))
+`], { input: bytes, encoding: "utf8" }));
+}
+
+const xmlChild = (node: { children: { tag: string; attrs: Record<string, string>; children: unknown[] }[] }, tag: string) =>
+  node.children.find(child => child.tag === tag)!;
+const px = (hu: number) => hu * 96 / 7200;
+
+it("Stage 3-A P4-HX-NEST addresses, edits, saves, and reopens nested HWPX group descendants", async () => {
+  type GroupFactory = RhwpDocument & { groupShapes(json: string): string };
+  const created = new engine.HwpDocument(source("hwpx")) as GroupFactory;
+  let nestedBytes: Uint8Array;
+  try {
+    const make = (x: number, y: number, width: number, height: number, color: number) => {
+      const result = JSON.parse(created.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2, shapeType: "rectangle", width, height,
+        treatAsChar: false, textWrap: "Square", horzOffset: x, vertOffset: y,
+      })));
+      created.setShapeProperties!(0, 0, result.controlIdx, JSON.stringify({ fillType: "solid", fillBgColor: color }));
+      return result as { controlIdx: number };
+    };
+    const red = make(1500, 500, 1200, 800, 0x00ff0000);
+    const green = make(3000, 500, 1200, 800, 0x0000ff00);
+    const inner = JSON.parse(created.groupShapes(JSON.stringify({ sectionIdx: 0, targets: [
+      { paraIdx: 0, controlIdx: red.controlIdx }, { paraIdx: 0, controlIdx: green.controlIdx },
+    ] })));
+    expect(inner.ok).toBe(true);
+    const blue = make(100, 500, 600, 600, 0x000000ff);
+    const controls = JSON.parse(created.getPageControlLayout!(0)).controls as Frame[];
+    const innerFrame = controls.find(c => c.type === "group")!;
+    const blueFrame = controls.find(c => c.type === "shape")!;
+    const outer = JSON.parse(created.groupShapes(JSON.stringify({ sectionIdx: 0, targets: [
+      { paraIdx: innerFrame.stableIndex[1], controlIdx: innerFrame.stableIndex[2] },
+      { paraIdx: blueFrame.stableIndex[1], controlIdx: blueFrame.stableIndex[2] },
+    ] })));
+    expect(outer.ok).toBe(true);
+    nestedBytes = assignNestedContainerIds(created.exportHwpx());
+  } finally { created.free(); }
+
+  const originalBytes = Buffer.from(nestedBytes);
+  const originalTree = inspectNestedContainerTree(nestedBytes);
+  const originalInner = xmlChild(originalTree, "container");
+  const originalInnerRects = originalInner.children.filter(child => child.tag === "rect");
+  const originalRed = originalInnerRects[0]!;
+  const originalGreen = originalInnerRects[1]!;
+  const originalBlue = originalTree.children.find(child => child.tag === "rect")!;
+  expect(originalTree.attrs).toMatchObject({ id: "9001", instid: "9101", groupLevel: "0" });
+  expect(originalInner.attrs).toMatchObject({ id: "7001", instid: "8001", groupLevel: "1" });
+  expect(originalInner.children.filter(child => child.tag === "rect")).toHaveLength(2);
+  expect(originalInner.children.filter(child => child.tag === "rect").map(child => child.attrs.groupLevel)).toEqual(["2", "2"]);
+  expect(originalTree.children.find(child => child.tag === "rect")!.attrs.groupLevel).toBe("1");
+  if (out) {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(resolve(out, "a-p4-hx-nest-original.hwpx"), nestedBytes);
+    const fixtures = resolve(out, "fixtures");
+    mkdirSync(fixtures, { recursive: true });
+    writeFileSync(resolve(fixtures, "a-p4-hx-nest-original.hwpx"), nestedBytes);
+  }
+
+  const { editor, doc, pick, edit, confirm } = await setup("hwpx", nestedBytes);
+  try {
+    const frame = groupFrame(doc);
+    const selected = pick(frame);
+    expect(selected.groupChildren).toBeDefined();
+    const group = selected.groupChildren!;
+    expect(group.children).toHaveLength(3);
+    const [red, green, blue] = group.children;
+    expect(red).toMatchObject({ kind: "rectangle", x: 1400, y: 0, width: 1200, height: 800, canMove: true, canResize: true });
+    expect(red.path).toEqual([
+      { index: 0, id: 7001, instId: 8001 },
+      { index: 0, id: red.id, instId: red.instId },
+    ]);
+    expect(green).toMatchObject({ kind: "rectangle", x: 2900, y: 0, width: 1200, height: 800, canMove: true, canResize: true });
+    expect(green.path).toEqual([
+      { index: 0, id: 7001, instId: 8001 },
+      { index: 1, id: green.id, instId: green.instId },
+    ]);
+    expect(blue).toMatchObject({ kind: "rectangle", x: 0, y: 0, width: 600, height: 600, canMove: true, canResize: true });
+    expect(blue.path).toBeUndefined();
+
+    const svgRect = (color: string) => {
+      const match = new RegExp(`<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="${color}"`).exec(
+        (doc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0),
+      );
+      expect(match, `SVG rectangle ${color}`).not.toBeNull();
+      return match!.slice(1, 5).map(Number);
+    };
+    expect(svgRect("#0000ff")).toEqual([
+      expect.closeTo(px(1500), 6), expect.closeTo(px(500), 6), expect.closeTo(px(1200), 6), expect.closeTo(px(800), 6),
+    ]);
+
+    const stalePath = JSON.parse(JSON.stringify(red.path));
+    stalePath[0].instId += 1;
+    const beforeStale = Buffer.from(doc.exportHwpx());
+    expect(() => doc.moveNestedGroupChild!(0, 0, frame.controlIdx, red.index, red.id, red.instId,
+      JSON.stringify(stalePath), 1700, 100)).toThrow();
+    expect(Buffer.from(doc.exportHwpx())).toEqual(beforeStale);
+    expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+
+    expect(edit({ kind: "nestedGroupChildMove", index: red.index, id: red.id, instId: red.instId,
+      path: red.path!, x: 1600, y: 0 })).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0])
+      .toMatchObject({ x: 1600, y: 0, width: 1200, height: 800 });
+    expect(svgRect("#0000ff")).toEqual([
+      expect.closeTo(px(1700), 6), expect.closeTo(px(500), 6), expect.closeTo(px(1200), 6), expect.closeTo(px(800), 6),
+    ]);
+    expect(editor.undo()).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0])
+      .toMatchObject({ x: 1400, y: 0, width: 1200, height: 800 });
+    expect(editor.redo()).toBe(true);
+    await confirm();
+
+    pick(frame);
+    const currentRed = editor.objectSelection!.groupChildren!.children[0]!;
+    expect(edit({ kind: "nestedGroupChildResize", index: currentRed.index, id: currentRed.id, instId: currentRed.instId,
+      path: currentRed.path!, width: 1000, height: 700 })).toBe(true);
+    await confirm();
+    const finalChildren = JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx));
+    expect(finalChildren.children[0]).toMatchObject({ x: 1600, y: 0, width: 1000, height: 700 });
+    expect(finalChildren.children[1]).toMatchObject({ x: 2900, y: 0, width: 1200, height: 800 });
+    expect(finalChildren.children[2]).toMatchObject({ x: 0, y: 0, width: 600, height: 600 });
+    expect(svgRect("#0000ff")).toEqual([
+      expect.closeTo(px(1700), 6), expect.closeTo(px(500), 6), expect.closeTo(px(1000), 6), expect.closeTo(px(700), 6),
+    ]);
+    expect(editor.undo()).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0])
+      .toMatchObject({ x: 1600, y: 0, width: 1200, height: 800 });
+    expect(editor.redo()).toBe(true);
+    await confirm();
+
+    const exported = doc.exportHwpxWithReport();
+    try {
+      const saved = exported.takeBytes();
+      expectReopenEvidence(doc, saved, exported.contentLoss());
+      const savedTree = inspectNestedContainerTree(saved);
+      const savedInner = xmlChild(savedTree, "container");
+      const savedRects = savedInner.children.filter(child => child.tag === "rect");
+      expect(savedTree.attrs).toMatchObject({ id: "9001", instid: "9101" });
+      expect(savedInner.attrs).toMatchObject({ id: "7001", instid: "8001" });
+      const savedRed = savedRects.find(child => child.attrs.id === String(red.id))!;
+      const savedGreen = savedRects.find(child => child.attrs.id === String(green.id))!;
+      const savedBlue = savedTree.children.find(child => child.tag === "rect")!;
+      const leafOffset = xmlChild(savedRed, "offset");
+      const leafOrgSize = xmlChild(savedRed, "orgSz");
+      const leafCurSize = xmlChild(savedRed, "curSz");
+      const leafSize = xmlChild(savedRed, "sz");
+      expect(leafOffset.attrs).toMatchObject({ x: "200", y: "0" });
+      expect(leafOrgSize.attrs).toMatchObject({ width: "1000", height: "700" });
+      expect(leafCurSize.attrs).toMatchObject({ width: "1000", height: "700" });
+      expect(leafSize.attrs).toMatchObject({ width: "1000", height: "700" });
+      const savedMatrices = xmlChild(savedRed, "renderingInfo").children;
+      const savedTranslation = savedMatrices.find(matrix => matrix.tag === "transMatrix")!;
+      const savedScale = savedMatrices.find(matrix => matrix.tag === "scaMatrix")!;
+      expect(savedTranslation.attrs).toMatchObject({ e1: "1", e2: "0", e3: "200", e4: "0", e5: "1", e6: "0" });
+      expect(savedScale.attrs).toMatchObject({ e1: "1", e2: "0", e4: "0", e5: "1", e6: "0" });
+      expect(xmlChild(savedRed, "fillBrush")).toEqual(xmlChild(originalRed, "fillBrush"));
+      expect(savedGreen).toEqual(originalGreen);
+      expect(savedBlue).toEqual(originalBlue);
+      const beforeParts = JSON.parse(execFileSync("python3", ["-c", `
+import hashlib, io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    print(json.dumps({name: hashlib.sha256(zf.read(name)).hexdigest() for name in zf.namelist()}))
+`], { input: originalBytes, encoding: "utf8" }));
+      const afterParts = JSON.parse(execFileSync("python3", ["-c", `
+import hashlib, io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    print(json.dumps({name: hashlib.sha256(zf.read(name)).hexdigest() for name in zf.namelist()}))
+`], { input: saved, encoding: "utf8" }));
+      expect(Object.keys(afterParts).sort()).toEqual(Object.keys(beforeParts).sort());
+      for (const [name, hash] of Object.entries(beforeParts)) {
+        if (name !== "Contents/section0.xml") expect(afterParts[name]).toBe(hash);
+      }
+      const reopened = new engine.HwpDocument(saved) as RhwpDocument & { renderPageSvg(page: number): string };
+      try {
+        expect(JSON.parse(reopened.getEditableGroupChildren!(0, 0, frame.controlIdx)).children).toEqual(finalChildren.children);
+        expect(reopened.renderPageSvg(0)).toContain(`fill="#0000ff"`);
+        const reopenedRect = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="#0000ff"/.exec(reopened.renderPageSvg(0));
+        expect(reopenedRect?.slice(1, 5).map(Number)).toEqual([
+          expect.closeTo(px(1700), 6), expect.closeTo(px(500), 6), expect.closeTo(px(1000), 6), expect.closeTo(px(700), 6),
+        ]);
+      } finally { reopened.free(); }
+      expect(Buffer.from(nestedBytes)).toEqual(originalBytes);
+    } finally { exported.free(); }
+  } finally { editor.dispose(); }
+});
+
 function patchGroupFixture(change: string, fixture = readFileSync(resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx"))) {
   return execFileSync("python3", ["-c", `
 import io, re, sys, zipfile

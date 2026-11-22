@@ -61,6 +61,12 @@ export interface GroupChildFill {
   color: string;
 }
 
+export interface GroupChildPathStep {
+  index: number;
+  id: number;
+  instId: number;
+}
+
 export interface GroupChildGeometry {
   index: number;
   kind: "rectangle" | "ellipse" | "picture" | "group" | "shape" | "textBox";
@@ -74,6 +80,8 @@ export interface GroupChildGeometry {
   locked: boolean;
   canMove: boolean;
   canResize: boolean;
+  /** Stable nested HWPX group-child chain. Omitted for direct children. */
+  path?: readonly GroupChildPathStep[];
 }
 
 export interface EditableGroupChildren {
@@ -170,6 +178,8 @@ export type ObjectEdit =
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
+  | { kind: "nestedGroupChildMove"; index: number; id: number; instId: number; path: readonly GroupChildPathStep[]; x: number; y: number }
+  | { kind: "nestedGroupChildResize"; index: number; id: number; instId: number; path: readonly GroupChildPathStep[]; width: number; height: number }
   | { kind: "docxGroupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "docxGroupChildResize"; index: number; id: number; instId: number; width: number; height: number }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
@@ -205,7 +215,8 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
     case "docxPathPoint": return "pathPoint";
     case "docxPathVertex": return "pathVertex";
-    case "groupChildMove": case "groupChildResize": case "docxGroupChildMove": case "docxGroupChildResize": return "groupChildGeometry";
+    case "groupChildMove": case "groupChildResize": case "nestedGroupChildMove": case "nestedGroupChildResize":
+    case "docxGroupChildMove": case "docxGroupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -262,6 +273,19 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
   if (value.kind === "groupChildResize") return keys === "height,id,index,instId,kind,width"
     && integer(value.index, 127) && u32(value.id) && u32(value.instId)
+    && integer(value.width, 2_000_000) && (value.width as number) >= 1
+    && integer(value.height, 2_000_000) && (value.height as number) >= 1;
+  const validGroupPath = (path: unknown, id: unknown, instId: unknown) => Array.isArray(path) && path.length >= 2 && path.length <= 64
+    && path.every(step => !!step && typeof step === "object" && !Array.isArray(step)
+      && Object.keys(step).sort().join(",") === "id,index,instId"
+      && integer((step as GroupChildPathStep).index, 127)
+      && u32((step as GroupChildPathStep).id) && u32((step as GroupChildPathStep).instId))
+    && (path.at(-1) as GroupChildPathStep).id === id && (path.at(-1) as GroupChildPathStep).instId === instId;
+  if (value.kind === "nestedGroupChildMove") return keys === "id,index,instId,kind,path,x,y"
+    && integer(value.index, 127) && u32(value.id) && u32(value.instId) && validGroupPath(value.path, value.id, value.instId)
+    && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
+  if (value.kind === "nestedGroupChildResize") return keys === "height,id,index,instId,kind,path,width"
+    && integer(value.index, 127) && u32(value.id) && u32(value.instId) && validGroupPath(value.path, value.id, value.instId)
     && integer(value.width, 2_000_000) && (value.width as number) >= 1
     && integer(value.height, 2_000_000) && (value.height as number) >= 1;
   if (value.kind === "docxGroupChildMove") return keys === "id,index,instId,kind,x,y"
@@ -329,6 +353,16 @@ export function objectEditMatches(request: ObjectEditRequest, selection: ObjectS
   if ((edit.kind === "groupChildMove" || edit.kind === "groupChildResize") && !selection.groupChildren?.children.some(child =>
     child.index === edit.index && child.id === edit.id && child.instId === edit.instId
     && (edit.kind === "groupChildMove" ? child.canMove : child.canResize))) return false;
+  if (edit.kind === "nestedGroupChildMove" || edit.kind === "nestedGroupChildResize") {
+    const child = selection.groupChildren?.children.find(item => item.index === edit.index && item.id === edit.id && item.instId === edit.instId);
+    if (!child?.path || JSON.stringify(child.path) !== JSON.stringify(edit.path)
+      || !(edit.kind === "nestedGroupChildMove" ? child.canMove : child.canResize)) return false;
+    const group = selection.groupChildren!;
+    if (edit.kind === "nestedGroupChildMove"
+      && (edit.x === child.x && edit.y === child.y || edit.x + child.width > group.width || edit.y + child.height > group.height)) return false;
+    if (edit.kind === "nestedGroupChildResize"
+      && (edit.width === child.width && edit.height === child.height || child.x + edit.width > group.width || child.y + edit.height > group.height)) return false;
+  }
   if (edit.kind === "docxGroupChildMove" || edit.kind === "docxGroupChildResize") {
     const group = selection.groupChildren;
     const child = group?.children.find(c => c.index === edit.index && c.id === edit.id && c.instId === edit.instId);

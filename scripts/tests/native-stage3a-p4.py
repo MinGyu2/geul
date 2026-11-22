@@ -1302,6 +1302,139 @@ def group_child_edit_case(acc, row, fixtures, out):
     h.require(ui_vals() == [5200, 200, 4600, 3200], "reopened ellipse differs")
 
 
+def nested_group_edit_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-hx-nest-original.hwpx"
+    before = row["before"] = inspect(fixture)
+    target = next(frame for frame in before["frames"] if frame["groupChildren"])
+    group = target["groupChildren"]
+    red, green, blue = group["children"]
+    h.require(len(group["children"]) == 3 and len(red.get("path", [])) == 2,
+              "fixture does not expose a nested leaf and direct sibling", group)
+    h.require([red[key] for key in ("x", "y", "width", "height")] == [1400, 0, 1200, 800],
+              "fixture nested leaf has unexpected local bounds", red)
+    path = h.begin(acc, row, fixture, out, "a-p4-hx-nest-edited.hwpx")
+    CHILD = ".object-group-child"
+    COORDS = ".object-group-child-coordinates"
+
+    acc.d.js("""
+      window.hxNestPointer=[];
+      window.hxNestKeys=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        if(e.target.closest('.object-group-child')) window.hxNestPointer.push({type,trusted:e.isTrusted});
+      },true);
+      addEventListener('keydown',e=>{
+        if(e.target.closest('.object-group-child-coordinates')) window.hxNestKeys.push({key:e.key,trusted:e.isTrusted});
+      },true);
+    """)
+
+    def enter_child(index=0):
+        h.select_object(acc, target, "group")
+        if acc.d.js("return document.querySelector('.object-group-child-mode')?.getAttribute('aria-pressed')!=='true'"):
+            acc.dom_click(".object-group-child-mode")
+        state = acc.d.js("""
+          const mode=document.querySelector('.object-group-child-mode');
+          return {pressed:mode?.getAttribute('aria-pressed'),children:document.querySelectorAll(arguments[0]).length,
+            selected:document.querySelector('.object-selection-frame')?.dataset.objectKind,
+            frames:[...document.querySelectorAll('.object-selection-frame')].length,
+            panel:document.querySelector('[aria-labelledby=properties-selection]')?.innerText.slice(0,400)};
+        """, CHILD)
+        row["lastChildModeState"] = state
+        h.require(state["pressed"] == "true" and state["children"] == 3,
+                  "nested group child mode did not expose all descendants", state)
+        acc.dom_click(f"{CHILD}[data-index='{index}']")
+
+    def values():
+        return acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>Number(e.value))", COORDS)
+
+    def replace(field, value):
+        selector = f"{COORDS} label:nth-of-type({field}) input"
+        h.p6.gso.replace(acc, selector, value)
+        acc.wait("return Number(document.querySelector(arguments[0])?.value)===arguments[1]", selector, value)
+
+    enter_child()
+    h.require(values() == [1400, 0, 1200, 800], "nested leaf initial coordinates differ", values())
+    replace(1, 1600)
+    acc.dom_click(".object-group-child-apply-move")
+    h.revision(acc, "hwpx", 1)
+    enter_child()
+    h.require(values() == [1600, 0, 1200, 800], "nested leaf move did not update its local coordinates", values())
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    enter_child()
+    h.require(values() == [1400, 0, 1200, 800], "nested move Undo differs", values())
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    enter_child()
+    h.require(values() == [1600, 0, 1200, 800], "nested move Redo differs", values())
+
+    replace(3, 1000)
+    replace(4, 700)
+    acc.dom_click(".object-group-child-apply-resize")
+    h.revision(acc, "hwpx", 4)
+    enter_child()
+    h.require(values() == [1600, 0, 1000, 700], "nested leaf resize did not update its coordinates", values())
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 5)
+    enter_child()
+    h.require(values() == [1600, 0, 1200, 800], "nested resize Undo differs", values())
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 6)
+    enter_child()
+    h.require(values() == [1600, 0, 1000, 700], "nested resize Redo differs", values())
+    acc.key("Escape")
+    h.require(not acc.d.exists(CHILD), "Escape did not leave nested child editing")
+
+    row["trustedPointer"] = acc.d.js("return window.hxNestPointer")
+    row["trustedKeys"] = acc.d.js("return window.hxNestKeys")
+    h.require(row["trustedPointer"] and all(event["trusted"] for event in row["trustedPointer"]),
+              "nested child actions did not use trusted native pointer events", row["trustedPointer"])
+    h.require(row["trustedKeys"] and all(event["trusted"] for event in row["trustedKeys"]),
+              "nested child coordinates did not use trusted native keyboard events", row["trustedKeys"])
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = inspect(path)
+    want_group = {**group, "children": [
+        {**red, "x": 1600, "y": 0, "width": 1000, "height": 700}, green, blue,
+    ]}
+    want = {**target, "groupChildren": want_group}
+    h.require(after == {**before, "frames": [want if item == target else item for item in before["frames"]]},
+              "saved nested edit changed another object or group owner", after)
+
+    old, new = section_pair(fixture, path)
+    old_root, new_root = old.find(".//{*}container"), new.find(".//{*}container")
+    old_inner = old_root.find("{*}container") if old_root is not None else None
+    new_inner = new_root.find("{*}container") if new_root is not None else None
+    h.require(old_root is not None and old_inner is not None and new_root is not None and new_inner is not None,
+              "nested container tree was not serialized")
+    h.require(new_root.attrib == old_root.attrib and new_inner.attrib == old_inner.attrib,
+              "container identity or hierarchy metadata changed")
+    h.require(new_inner.attrib.get("id") == "7001" and new_inner.attrib.get("instid") == "8001"
+              and new_inner.attrib.get("groupLevel") == "1", "inner group identity or level changed", new_inner.attrib)
+    h.require(new_root.attrib.get("id") == "9001" and new_root.attrib.get("instid") == "9101"
+              and new_root.attrib.get("groupLevel") == "0", "outer group identity or level changed", new_root.attrib)
+    new_red = next(child for child in list(new_inner) if child.tag.endswith("rect") and child.get("id") == str(red["id"]))
+    new_green = next(child for child in list(new_inner) if child.tag.endswith("rect") and child.get("id") == str(green["id"]))
+    new_blue = next(child for child in list(new_root) if child.tag.endswith("rect") and child.get("id") == str(blue["id"]))
+    old_red = next(child for child in list(old_inner) if child.tag.endswith("rect") and child.get("id") == str(red["id"]))
+    old_green = next(child for child in list(old_inner) if child.tag.endswith("rect") and child.get("id") == str(green["id"]))
+    old_blue = next(child for child in list(old_root) if child.tag.endswith("rect") and child.get("id") == str(blue["id"]))
+    h.require(ET.tostring(new_green) == ET.tostring(old_green) and ET.tostring(new_blue) == ET.tostring(old_blue),
+              "unrelated nested or direct sibling geometry changed")
+    offset = new_red.find("{*}offset")
+    h.require(offset is not None and offset.attrib == {"x": "200", "y": "0"}, "nested local offset differs", offset.attrib if offset is not None else None)
+    for name in ("orgSz", "curSz", "sz"):
+        old_size = old_red.find("{*}" + name)
+        size = new_red.find("{*}" + name)
+        expected_size = {**old_size.attrib, "width": "1000", "height": "700"} if old_size is not None else None
+        h.require(size is not None and expected_size is not None and size.attrib == expected_size,
+                  "saved nested dimensions or size metadata differ", {"name": name, "expected": expected_size,
+                  "attrs": size.attrib if size is not None else None})
+    row["unchangedPackageEntries"] = True
+    h.reopen(acc, path, row)
+    enter_child()
+    h.require(values() == [1600, 0, 1000, 700], "reopened nested leaf geometry differs", values())
+
+
 def group_transform_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-group-transform-original.hwpx"
     before = row["before"] = inspect(fixture)
@@ -1723,6 +1856,7 @@ h.CASES = {
     "P4-H5-POLY-EDGES": hwp5_polygon_edges,
     "P4.6": group_child_edit_case,
     "P4-GROUP-XFM": group_transform_case,
+    "P4-HX-NEST": nested_group_edit_case,
     "P4-H5-GROUP": hwp5_group_child_edit_case,
     "P4.6-capture": group_child_capture_case,
 }

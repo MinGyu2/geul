@@ -1,4 +1,4 @@
-import type { EditableGroupChildren, GroupChildFill, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
+import type { EditableGroupChildren, GroupChildFill, GroupChildPathStep, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
 import type { RhwpDocument } from "./rhwpModule";
 
 /** HWP colors are 0x00BBGGRR. */
@@ -154,6 +154,17 @@ export function inspectRhwpGroupChildren(doc: RhwpDocument, address: readonly [n
     const parsed = children.map((raw, i) => {
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
       const c = raw as Record<string, unknown>;
+      const baseKeys = "canMove,canResize,height,id,index,instId,kind,locked,sizeProtect,width,x,y";
+      const pathKeys = "canMove,canResize,height,id,index,instId,kind,locked,path,sizeProtect,width,x,y";
+      const rawPath = c.path;
+      const validPath = rawPath === undefined || (Array.isArray(rawPath) && rawPath.length >= 2 && rawPath.length <= 64
+        && rawPath.every(step => !!step && typeof step === "object" && !Array.isArray(step)
+          && Object.keys(step).sort().join(",") === "id,index,instId"
+          && u32((step as Record<string, unknown>).index) && within((step as Record<string, unknown>).index, 127)
+          && u32((step as Record<string, unknown>).id) && u32((step as Record<string, unknown>).instId))
+        && (rawPath.at(-1) as GroupChildPathStep).id === c.id
+        && (rawPath.at(-1) as GroupChildPathStep).instId === c.instId);
+      if (Object.keys(c).sort().join(",") !== (rawPath === undefined ? baseKeys : pathKeys) || !validPath) return null;
       if (c.index !== i || (c.kind !== "rectangle" && c.kind !== "ellipse") || !u32(c.id) || !u32(c.instId)
         || !within(c.x, width) || !within(c.y, height) || !within(c.width, width) || c.width === 0
         || !within(c.height, height) || c.height === 0 || (c.x as number) + (c.width as number) > width
@@ -176,6 +187,7 @@ export function inspectRhwpGroupChildren(doc: RhwpDocument, address: readonly [n
         locked: c.locked as boolean,
         canMove: c.canMove as boolean,
         canResize: c.canResize as boolean,
+        ...(rawPath ? { path: rawPath as GroupChildPathStep[] } : {}),
       };
     });
     if (parsed.some(item => !item) || !parsed.some(item => item!.canMove || item!.canResize)) return undefined;

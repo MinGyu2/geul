@@ -137,13 +137,17 @@ export function GroupChildEditor({ group, owner, width, height, docx = false, on
   function moveEdit(child: GroupChildGeometry, x: number, y: number): ObjectEdit {
     return docx
       ? { kind: "docxGroupChildMove", index: child.index, id: child.id, instId: child.instId, x, y }
-      : { kind: "groupChildMove", index: child.index, id: child.id, instId: child.instId, x, y };
+      : child.path
+        ? { kind: "nestedGroupChildMove", index: child.index, id: child.id, instId: child.instId, path: child.path, x, y }
+        : { kind: "groupChildMove", index: child.index, id: child.id, instId: child.instId, x, y };
   }
 
   function resizeEdit(child: GroupChildGeometry, width: number, height: number): ObjectEdit {
     return docx
       ? { kind: "docxGroupChildResize", index: child.index, id: child.id, instId: child.instId, width, height }
-      : { kind: "groupChildResize", index: child.index, id: child.id, instId: child.instId, width, height };
+      : child.path
+        ? { kind: "nestedGroupChildResize", index: child.index, id: child.id, instId: child.instId, path: child.path, width, height }
+        : { kind: "groupChildResize", index: child.index, id: child.id, instId: child.instId, width, height };
   }
 
   return <>
@@ -152,7 +156,7 @@ export function GroupChildEditor({ group, owner, width, height, docx = false, on
       const isSelected = child.index === index;
       return <button
         type="button"
-        key={`${child.id}:${child.instId}`}
+        key={child.path ? child.path.map(step => `${step.index}:${step.id}:${step.instId}`).join("/") : `${child.id}:${child.instId}`}
         className="object-group-child"
         data-kind={child.kind}
         data-index={child.index}

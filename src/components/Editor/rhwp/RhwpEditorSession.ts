@@ -4740,7 +4740,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** Stage 3 `object.edit` on the selected HWPX/HWP body picture (or shape / chart): one verified engine call, one history step. */
   private editObject(request: ObjectEditRequest): boolean {
     if (request.edit.kind === "pathPoint" || request.edit.kind === "pathVertex" || request.edit.kind === "pathSegment"
-      || request.edit.kind === "groupChildFill" || request.edit.kind === "groupChildMove" || request.edit.kind === "groupChildResize") {
+      || request.edit.kind === "groupChildFill" || request.edit.kind === "groupChildMove" || request.edit.kind === "groupChildResize"
+      || request.edit.kind === "nestedGroupChildMove" || request.edit.kind === "nestedGroupChildResize") {
       return this.editAdvancedShape(request);
     }
     if (request.edit.kind === "captionSide" || request.edit.kind === "captionSpacing" || request.edit.kind === "captionVerticalAlign") {
@@ -4905,7 +4906,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || !objectEditMatches(request, selected)) return false;
     const { edit } = request;
     const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex" || edit.kind === "pathSegment";
-    const groupChildGeomEdit = edit.kind === "groupChildMove" || edit.kind === "groupChildResize";
+    const groupChildGeomEdit = edit.kind === "groupChildMove" || edit.kind === "groupChildResize"
+      || edit.kind === "nestedGroupChildMove" || edit.kind === "nestedGroupChildResize";
     if (!pathEdit && edit.kind !== "groupChildFill" && !groupChildGeomEdit) return false;
     const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
     const format = this.sessions.get(this.sessionId)?.format;
@@ -5003,13 +5005,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (!children || !child || !doc.setGroupChildFill || child.color === color) return false;
       refreshed = { operations: selected.operations, groupChildFills: children.map(item => item === child ? { ...item, color } : item) };
       apply = () => doc.setGroupChildFill!(...address, edit.index, hexToBgr(color));
-    } else if (edit.kind === "groupChildMove") {
+    } else if (edit.kind === "groupChildMove" || edit.kind === "nestedGroupChildMove") {
       const group = selected.groupChildren;
       const child = group?.children[edit.index];
       if (!group || !child || child.index !== edit.index || child.id !== edit.id || child.instId !== edit.instId
-        || !child.canMove || !doc.moveGroupChild || edit.x < 0 || edit.y < 0
+        || !child.canMove || edit.x < 0 || edit.y < 0
         || edit.x + child.width > group.width || edit.y + child.height > group.height
         || (edit.x === child.x && edit.y === child.y)) return false;
+      const nested = edit.kind === "nestedGroupChildMove";
+      if (nested
+        ? !child.path || JSON.stringify(child.path) !== JSON.stringify(edit.path) || !doc.moveNestedGroupChild
+        : child.path !== undefined || !doc.moveGroupChild) return false;
       refreshed = {
         operations: selected.operations,
         groupChildren: {
@@ -5017,14 +5023,23 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           children: group.children.map(item => item === child ? { ...item, x: edit.x, y: edit.y } : item),
         },
       };
-      apply = () => doc.moveGroupChild!(...address, edit.index, edit.id, edit.instId, edit.x, edit.y);
-    } else {
+      if (nested) {
+        const pathJson = JSON.stringify(edit.path);
+        apply = () => doc.moveNestedGroupChild!(...address, edit.index, edit.id, edit.instId, pathJson, edit.x, edit.y);
+      } else {
+        apply = () => doc.moveGroupChild!(...address, edit.index, edit.id, edit.instId, edit.x, edit.y);
+      }
+    } else if (edit.kind === "groupChildResize" || edit.kind === "nestedGroupChildResize") {
       const group = selected.groupChildren;
       const child = group?.children[edit.index];
       if (!group || !child || child.index !== edit.index || child.id !== edit.id || child.instId !== edit.instId
-        || !child.canResize || !doc.resizeGroupChild || edit.width < 1 || edit.height < 1
+        || !child.canResize || edit.width < 1 || edit.height < 1
         || child.x + edit.width > group.width || child.y + edit.height > group.height
         || (edit.width === child.width && edit.height === child.height)) return false;
+      const nested = edit.kind === "nestedGroupChildResize";
+      if (nested
+        ? !child.path || JSON.stringify(child.path) !== JSON.stringify(edit.path) || !doc.resizeNestedGroupChild
+        : child.path !== undefined || !doc.resizeGroupChild) return false;
       refreshed = {
         operations: selected.operations,
         groupChildren: {
@@ -5032,7 +5047,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           children: group.children.map(item => item === child ? { ...item, width: edit.width, height: edit.height } : item),
         },
       };
-      apply = () => doc.resizeGroupChild!(...address, edit.index, edit.id, edit.instId, edit.width, edit.height);
+      if (nested) {
+        const pathJson = JSON.stringify(edit.path);
+        apply = () => doc.resizeNestedGroupChild!(...address, edit.index, edit.id, edit.instId, pathJson, edit.width, edit.height);
+      } else {
+        apply = () => doc.resizeGroupChild!(...address, edit.index, edit.id, edit.instId, edit.width, edit.height);
+      }
+    } else {
+      return false;
     }
     let before: string;
     try { before = doc.getShapeProperties(...address); } catch { return false; }

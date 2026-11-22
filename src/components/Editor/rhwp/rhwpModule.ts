@@ -68,6 +68,14 @@ export interface RhwpDocument {
     section: number, paragraph: number, control: number,
     index: number, expectedId: number, expectedInstId: number, width: number, height: number,
   ): void;
+  moveNestedGroupChild?(
+    section: number, paragraph: number, control: number,
+    flatIndex: number, expectedId: number, expectedInstId: number, pathJson: string, x: number, y: number,
+  ): void;
+  resizeNestedGroupChild?(
+    section: number, paragraph: number, control: number,
+    flatIndex: number, expectedId: number, expectedInstId: number, pathJson: string, width: number, height: number,
+  ): void;
   setShapeProperties?(section: number, paragraph: number, control: number, properties: string): string;
   deleteShapeControl?(section: number, paragraph: number, control: number): string;
   changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;
