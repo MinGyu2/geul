@@ -211,6 +211,17 @@ def select_story_note(acc, layout, order, name, require_move=True, page_override
     return point, h.frame(acc), selected
 
 
+def body_picture_target(fixture, layout):
+    story_pages={story["page"] for story in layout.values()}
+    h.require(len(story_pages)==1,"body picture page is ambiguous in the story fixture",sorted(story_pages))
+    with zipfile.ZipFile(fixture) as package:
+        document=ET.fromstring(package.read("word/document.xml"))
+    body_doc_prs=list(document.iter(WP+"docPr"))
+    h.require(len(body_doc_prs)==1 and bool(body_doc_prs[0].get("descr")),
+              "source document does not have exactly one described body drawing",body_doc_prs)
+    return story_pages.pop(),body_doc_prs[0].get("descr")
+
+
 def note_move(acc, row, fixtures, out):
     fixture = fixtures / "a-p5-story-original.docx"
     path = h.begin(acc, row, fixture, out, "a-p5-note-move.docx")
@@ -534,15 +545,7 @@ def delete_docx_story_pictures(acc, row, fixtures, out):
     remaining_order=tuple(item for item in order if item not in removed)
     h.require(remaining_order==("body",),"story deletion removed an unrelated drawing",remaining_order)
     # The body picture has no linked-story layout entry; derive its shared page from the fixture stories.
-    story_pages={story["page"] for story in layout.values()}
-    h.require(len(story_pages)==1,"body picture page is ambiguous in the story fixture",sorted(story_pages))
-    body_page=story_pages.pop()
-    with zipfile.ZipFile(fixture) as original:
-        document=ET.fromstring(original.read("word/document.xml"))
-    body_doc_prs=list(document.iter(WP+"docPr"))
-    h.require(len(body_doc_prs)==1 and bool(body_doc_prs[0].get("descr")),
-              "source document does not have exactly one described body drawing",body_doc_prs)
-    body_description=body_doc_prs[0].get("descr")
+    body_page,body_description=body_picture_target(fixture,layout)
     _,body_frame,body_selection=select_story_note(acc,layout,remaining_order,"body",require_move=False,
                                                    page_override=body_page,
                                                    expected_description=body_description)
@@ -602,7 +605,9 @@ def delete_docx_story_pictures(acc, row, fixtures, out):
             h.require(ET.tostring(old)==ET.tostring(new),"saved story contains changes beyond the deleted picture run",part)
         row["publishedSha256"]=h.digest(path)
     h.reopen(acc,path,row)
-    _,reopened_frame,reopened_selection=select_story_note(acc,layout,("body",),"body",require_move=False)
+    _,reopened_frame,reopened_selection=select_story_note(acc,layout,("body",),"body",require_move=False,
+                                                           page_override=body_page,
+                                                           expected_description=body_description)
     h.require(all(abs(reopened_frame[key]-body_frame[key])<=1.5 for key in ("left","top","width","height")),
               "body picture moved after deleting other stories",[body_frame,reopened_frame])
     row["sameSessionReopen"]={"bodyFrame":reopened_frame,"selection":reopened_selection,
@@ -621,9 +626,12 @@ def delete_docx_story_pictures_fresh_reopen(acc,row,fixtures,out):
     h.require(row["initialSession"]["dirty"]=="false" and row["initialSession"]["unpreserved"]=="false",
               "saved DOCX was dirty or unpreserved when reopened independently",row["initialSession"])
     layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
-    points=story_picture_points(acc,layout["body"]["page"])
+    body_page,body_description=body_picture_target(fixtures/"a-p5-story-original.docx",layout)
+    points=story_picture_points(acc,body_page)
     h.require(len(points)==1,"fresh app did not render exactly the retained body picture",points)
-    _,frame,selection=select_story_note(acc,layout,("body",),"body",require_move=False)
+    _,frame,selection=select_story_note(acc,layout,("body",),"body",require_move=False,
+                                         page_override=body_page,
+                                         expected_description=body_description)
     h.require(not selection["moveHandle"],"freshly reopened body picture has a foreign-story move handle")
     row["remainingBodyPicture"]={"frame":frame,"selection":selection}
     row["readOnlyFreshProcessOpen"]=True
