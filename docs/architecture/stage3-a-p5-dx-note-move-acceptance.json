@@ -1,17 +1,54 @@
 {
-  "date": "2026-11-22",
+  "date": "2026-11-23",
   "feature": "P5-DX-NOTE-MOVE",
   "category": "A",
-  "status": "IN_PROGRESS",
-  "acceptance": "NOT_ACCEPTED",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
   "supported": "참조가 살아 있는 footnote/endnote ID에 소유된 그림을 같은 note story의 paragraph 사이에서만 이동한다. note type·ID·paragraph·media owner를 확인하고 character properties와 지원되는 paragraph anchor 의미를 유지한다.",
   "refused": "다른 note/body로 이동, note 밖 page fallback, shape 이동, dangling/orphan note ID, 다른 story의 paragraph/media owner, 지원되지 않는 serialization은 변이 없이 거부한다.",
   "wordcraftSourceCommit": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
   "wordcraftCommitMessage": "feat(docx): move pictures within owned notes [P5-DX-NOTE-MOVE]",
-  "parentIntegration": "WordCraft 엔진 source와 geul adapter/T009/OPC proof·regression harness, Native harness 및 재현 가능한 ordered patch/gitlink를 부분 통합 커밋했다. 커밋은 WIP이며 Release·Native acceptance 전까지 IN_PROGRESS다.",
+  "parentIntegration": "WordCraft 소스·geul adapter·T009 multi-note proof·Native harness가 재현 가능한 gitlink로 고정됐다. 보호 Release와 Linux X11 composite 및 별도 앱 세션 acceptance 모두 통과했다.",
   "previousGitlink": "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f",
-  "wordcraftPin": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
+  "wordcraftPin": "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728",
   "checks": {
+    "wordcraftFocusedEngine": "PASS 1/1 on current WordCraft feature tree: note ownership, movement, Undo/Redo, invalid/orphan identity and unsupported object rejection.",
+    "wordcraftFocusedClippy": "PASS: included without suppressions in the final `cargo xtask ci` Clippy step.",
+    "geulT009Integration": "PASS 1/1: composite footnote+endnote mutation is proved independently per note part; Undo/Redo, note IDs, paragraph/run properties, drawing/media identity, unrelated OPC parts and save/reopen are checked; unauthorized text change is rejected.",
+    "geulStoryOwnershipRegression": "PASS 1/1: existing story picture ownership regression.",
+    "reproducibleWordcraftChain": "PASS 1/1: sanitized ordered patch metadata reconstructs exact reviewed WordCraft pin c2338a2b5e5dd7f9fd0439940f1df2ff5b467728 from the public base.",
+    "wordcraftXtaskCi": "PASS exit 0 on the exact current WordCraft pin: fmt, Clippy, workspace tests, assets (54 files), layers (20 crates), WASM (16 packages). Log `target/p5-note-x11-run-20261122-01/wordcraft-ci-current.log`, SHA-256 `1cc47104e20c08c11429e16d478a748ff79ae001d4a785f2f52be644d4f278d2`.",
+    "wordcraftWorkspaceClippy": "PASS as part of `cargo xtask ci`; no lint suppressions.",
+    "wordcraftWorkspaceTests": "PASS as part of `cargo xtask ci`; `wordcraft-ui-egui` 388 passed, 2 ignored; earlier baseline UI locale failure was repaired and is no longer present.",
+    "wordcraftAssets": "PASS: 54 files.",
+    "wordcraftLayers": "PASS: 20 crates; no layering violations.",
+    "wordcraftWasm": "PASS: 16 packages; existing warning-only cfg-specific unused items recorded.",
+    "tauriReleaseBuild": "PASS: `python3 scripts/tauri-geul.py build --no-bundle`; compiled the pinned WordCraft engine and geul adapter. App SHA-256 afa3b4452f0993ff48f9f73d8dd44c357a8351c652aed9d7427eeaa8890e6de2, x86_64, 63,168,848 bytes. Privacy scan and runtime path PASS; Debian/Ubuntu portability NOT VERIFIED.",
+    "nativeX11Composite": "PASS: current harness run07, actual Linux X11/Xvfb Tauri app. Both note pictures moved via trusted pointer input; Undo/Redo geometry, safe save, independent OPC inspection, same-session reopen and cleanup all PASS.",
+    "nativeX11FreshProcess": "PASS: run06 opened the run05 saved DOCX in a distinct app process (PID 278807 vs 278197), clean at revision 0, with note descriptions and rendered geometry matching the saved output.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN."
+  },
+  "commitGateException": "사용자가 전체 WordCraft CI 실패를 기록하고 이 항목의 WordCraft source commit을 진행하도록 명시 승인했다. engine source file 하나만 포함하는 commit을 만들었다.",
+  "remaining": [
+    "Microsoft Word/한컴 등 외부 편집기 상호운용은 NOT RUN.",
+    "Wayland, Windows, macOS Native acceptance는 NOT RUN; 이번 수락 범위는 Linux X11/Xvfb다.",
+    "Debian/Ubuntu release portability는 NOT VERIFIED; tested release runtime references Nix store paths."
+  ],
+  "nativeX11Evidence": "PASS: run07 composite + run06 fresh app process; detailed result and cleanup paths are recorded under nativeEvidence.",
+  "push": "NOT PERFORMED",
+  "geulCurrentHead": "f25fb69984abf2426cb586dee26559245907b409",
+  "rootIntegrationCommit": "f25fb69984abf2426cb586dee26559245907b409",
+  "securityExceptionCommit": "e41e24968a4c1ceae54a249649861f03e2f3792c",
+  "wordcraftCurrentPin": "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728",
+  "wordcraftGateRepairCommit": "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728",
+  "geulFeatureCommit": "f25fb69984abf2426cb586dee26559245907b409",
+  "geulMaintenanceCommit": "264b14b0ec0d3179271f5f7e3c57f9a745a9dae8",
+  "geulPriorIntegration": "594f38590ec9c581afc36b827c7ee6145dd8169c",
+  "geulCurrentHeadAtAcceptance": "f25fb69984abf2426cb586dee26559245907b409",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "historicalCommitGateException": "초기 WordCraft feature commit은 전체 CI 복구 전 사용자 명시 승인으로 source-only 기록됐다. 최종 acceptance 전 재현 가능한 sanitised pin c2338a2b5e5dd7f9fd0439940f1df2ff5b467728에서 전체 mandatory `cargo xtask ci`를 다시 실행해 PASS를 확보했다.",
+  "historicalPreRepairChecks": {
     "wordcraftFocusedEngine": "PASS 1/1: 각주/미주 소유권, 같은 note 문단 이동, character properties, Undo/Redo, 잘못된 note/orphan 및 비그림 거부.",
     "wordcraftFocusedClippy": "PASS: 지정한 두 기존 table lint class만 명령행에서 억제. 전체 workspace clippy는 아래 baseline 실패 참조.",
     "geulT009Integration": "PASS 1/1: note identity·owner, OPC 관계/media/body 보존, Undo/Redo, 저장 구조·재열기, 결합 resize+move 및 안전하지 않은 wrap 거부.",
@@ -26,14 +63,253 @@
     "tauriReleaseBuild": "NOT RUN on the current diff. The earlier guarded build stopped before compilation because WordCraft source/gitlink were locally changed; the updated parent gitlink must be committed before a clean Release build can run.",
     "nativeX11": "NOT RUN: 실제 앱 Release 및 X11 수락 미실행."
   },
-  "commitGateException": "사용자가 전체 WordCraft CI 실패를 기록하고 이 항목의 WordCraft source commit을 진행하도록 명시 승인했다. engine source file 하나만 포함하는 commit을 만들었다.",
-  "remaining": [
-    "보호된 clean Release build에서 엔진과 geul adapter/T009 serialization 경로를 검증한다.",
-    "Linux X11 Native에서 실제 footnote/endnote 그림 이동, Undo/Redo, T009 저장, 독립 OPC 검사 및 새 앱 재열기를 수락한다."
-  ],
-  "nativeX11Evidence": "NOT RUN",
-  "push": "NOT PERFORMED",
-  "geulCurrentHead": "594f38590ec9c581afc36b827c7ee6145dd8169c",
-  "rootIntegrationCommit": "594f38590ec9c581afc36b827c7ee6145dd8169c",
-  "securityExceptionCommit": "e41e24968a4c1ceae54a249649861f03e2f3792c"
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb; private test-owned X11, D-Bus and IBus Hangul; actual Tauri/WordCraft app, trusted native pointer events.",
+    "appSha256": "afa3b4452f0993ff48f9f73d8dd44c357a8351c652aed9d7427eeaa8890e6de2",
+    "fixtureSha256": "f896dd34e55a90e04109acd5f27b52f5c2d5b7e03457869d55d4f4d7e0e227ca",
+    "publishedSha256": "f35703f23c3bc3bc0758c4158a9a3c6d53ac15533de2edb2a327df8a0c368cd3",
+    "compositeRun": {
+      "case": "P5-DX-NOTE-MOVE",
+      "pid": 279183,
+      "resultFile": "target/p5-note-x11-run-20261123-07/result.json",
+      "cleanupFile": "target/p5-note-x11-session-20261123-07/cleanup.json",
+      "cleanup": "PASS exit 0, complete/proven, no surviving test processes.",
+      "save": {
+        "findings": "",
+        "error": "",
+        "testid": "docx-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "6"
+      },
+      "unchangedRelationshipsAndMedia": true,
+      "serializedNotes": {
+        "footnote": {
+          "noteId": "1",
+          "docPrId": "7",
+          "description": "footnote",
+          "pictureId": "8",
+          "embed": "rId1",
+          "runProps": null,
+          "kind": "anchor",
+          "text": [
+            "footnote text "
+          ],
+          "horizontal": [
+            "column",
+            "1256284"
+          ],
+          "vertical": [
+            "paragraph",
+            "-15180"
+          ]
+        },
+        "endnote": {
+          "noteId": "1",
+          "docPrId": "9",
+          "description": "endnote",
+          "pictureId": "10",
+          "embed": "rId1",
+          "runProps": null,
+          "kind": "anchor",
+          "text": [
+            "endnote text "
+          ],
+          "horizontal": [
+            "column",
+            "1208024"
+          ],
+          "vertical": [
+            "paragraph",
+            "95259"
+          ]
+        }
+      },
+      "moves": {
+        "footnote": {
+          "before": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 916.226533,
+            "left": 211.898053
+          },
+          "after": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 926.226667,
+            "left": 227.893333
+          },
+          "undoFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 916.226533,
+            "left": 211.898053
+          },
+          "redoFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 926.226667,
+            "left": 227.893333
+          },
+          "pointers": [
+            {
+              "type": "pointerdown",
+              "trusted": true
+            },
+            {
+              "type": "pointerup",
+              "trusted": true
+            }
+          ],
+          "revision": 3,
+          "reopenedFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 926.226667,
+            "left": 227.893333
+          }
+        },
+        "endnote": {
+          "before": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 326.705693,
+            "left": 206.826947
+          },
+          "after": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 336.706627,
+            "left": 222.826667
+          },
+          "undoFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 326.705693,
+            "left": 206.826947
+          },
+          "redoFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 336.706627,
+            "left": 222.826667
+          },
+          "pointers": [
+            {
+              "type": "pointerdown",
+              "trusted": true
+            },
+            {
+              "type": "pointerup",
+              "trusted": true
+            }
+          ],
+          "revision": 6,
+          "reopenedFrame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 336.706627,
+            "left": 222.826667
+          }
+        }
+      },
+      "unrelatedOpcPartsByteIdentical": true,
+      "freshInAppReopenClean": true
+    },
+    "freshProcessRun": {
+      "case": "P5-DX-NOTE-MOVE-FRESH-REOPEN",
+      "pid": 278807,
+      "previousAppPid": 278197,
+      "resultFile": "target/p5-note-x11-run-20261123-06/result.json",
+      "cleanupFile": "target/p5-note-x11-session-20261123-06/cleanup.json",
+      "cleanup": "PASS exit 0, complete/proven, no surviving test processes.",
+      "savedPackageSha256": "f35703f23c3bc3bc0758c4158a9a3c6d53ac15533de2edb2a327df8a0c368cd3",
+      "revision": "0",
+      "dirty": "false",
+      "unpreserved": "false",
+      "readOnlyOpen": true,
+      "moves": {
+        "footnote": {
+          "expected": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 926.226667,
+            "left": 227.893333
+          },
+          "frame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 926.226667,
+            "left": 227.893333
+          },
+          "selection": {
+            "revision": "0",
+            "clickInsideFrame": true,
+            "point": [
+              0,
+              246,
+              940.5
+            ],
+            "descriptionDisplay": "footnote",
+            "descriptionEditor": null,
+            "objectKind": "picture",
+            "moveHandle": true,
+            "expected": "footnote",
+            "frame": {
+              "width": 37.333333,
+              "height": 29.333333,
+              "top": 926.226667,
+              "left": 227.893333
+            }
+          },
+          "hitPoint": [
+            0,
+            246,
+            940.5
+          ]
+        },
+        "endnote": {
+          "expected": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 336.706627,
+            "left": 222.826667
+          },
+          "frame": {
+            "width": 37.333333,
+            "height": 29.333333,
+            "top": 336.706627,
+            "left": 222.826667
+          },
+          "selection": {
+            "revision": "0",
+            "clickInsideFrame": true,
+            "point": [
+              0,
+              241,
+              351
+            ],
+            "descriptionDisplay": "endnote",
+            "descriptionEditor": null,
+            "objectKind": "picture",
+            "moveHandle": true,
+            "expected": "endnote",
+            "frame": {
+              "width": 37.333333,
+              "height": 29.333333,
+              "top": 336.706627,
+              "left": 222.826667
+            }
+          },
+          "hitPoint": [
+            0,
+            241,
+            351
+          ]
+        }
+      }
+    }
+  }
 }

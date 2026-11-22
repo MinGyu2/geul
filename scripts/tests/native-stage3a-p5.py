@@ -145,6 +145,62 @@ def stories(acc, row, fixtures, out, resize=False):
             size_is(35)
 
 
+def select_story_note(acc, layout, order, name):
+    where = layout[name]
+    acc.wait("""
+      const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
+      return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
+        canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
+    """, where["page"])
+    points = acc.d.js("""
+      const page=arguments[0], c=document.querySelectorAll('.docx-page canvas')[page];
+      const sx=c.width/c.clientWidth, sy=c.height/c.clientHeight, data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+      const points=[]; let count=0, sumX=0, sumY=0;
+      for(let y=0;y<=c.height;y++) { let row=0,rowX=0;
+        if(y<c.height) for(let x=0;x<c.width;x++) { const i=(y*c.width+x)*4;
+          const opaque=data[i]===140&&data[i+1]===90&&data[i+2]===40;
+          const dimmed=Math.abs(data[i]-203)<=2&&Math.abs(data[i+1]-181)<=2&&Math.abs(data[i+2]-158)<=2;
+          if(!opaque&&!dimmed) continue; row++; rowX+=x;
+        }
+        if(row>5){count+=row;sumX+=rowX;sumY+=y*row}
+        else if(count>0){if(count>100)points.push([page,sumX/count/sx,sumY/count/sy]);count=0;sumX=0;sumY=0}
+      }
+      return points;
+    """, where["page"])
+    h.require(len(points)==len(order), "note fixture picture scan differs", points)
+    point=points[order.index(name)]
+    x,y=acc.d.js("""
+      const [page,x,y]=arguments[0],c=document.querySelectorAll('.docx-page canvas')[page];
+      const s=document.querySelector('.editor__scroll'),r=c.getBoundingClientRect(),v=s.getBoundingClientRect(),k=r.width/c.clientWidth;
+      s.scrollTop+=r.top+y*k-(v.top+v.height/2);const n=c.getBoundingClientRect();return [n.left+x*k,n.top+y*k];
+    """,point)
+    h.p4.rhwp_poc.click(acc.d,x,y)
+    try:
+        acc.wait("return !!document.querySelector('[data-testid=object-move]')", timeout=5)
+    except Exception:
+        pass
+    selected=acc.d.js("""
+      const input=document.querySelector(arguments[0]);
+      const section=document.querySelector('[aria-labelledby=properties-selection]');
+      const descriptionLabel=[...section.querySelectorAll('dt')]
+        .find(node=>['설명','Description'].includes(node.textContent.trim()));
+      const frame=document.querySelector('.object-selection-frame');
+      const status=document.querySelector('[data-testid=docx-status]');
+      const box=frame&&Object.fromEntries(['left','top','width','height'].map(k=>[k,parseFloat(frame.style[k])]));
+      const point=arguments[2];
+      return {descriptionEditor:input?.value??null,
+        descriptionDisplay:descriptionLabel?.nextElementSibling?.textContent.trim()??null,
+        objectKind:frame?.dataset.objectKind??null, frame:box,
+        clickInsideFrame:!!box&&point[1]>=box.left&&point[1]<=box.left+box.width&&point[2]>=box.top&&point[2]<=box.top+box.height,
+        moveHandle:!!document.querySelector('[data-testid=object-move]'),
+        revision:status?.dataset.revision??null, point, expected:arguments[1]};
+    """,DESCRIPTION,name,point)
+    owner_verified=selected["descriptionEditor"]==name or selected["descriptionDisplay"]==name
+    h.require(selected["objectKind"]=="picture" and selected["moveHandle"] and selected["clickInsideFrame"] and owner_verified,
+              "native hit test selected the wrong note picture or owner",selected)
+    return point, h.frame(acc), selected
+
+
 def note_move(acc, row, fixtures, out):
     fixture = fixtures / "a-p5-story-original.docx"
     path = h.begin(acc, row, fixture, out, "a-p5-note-move.docx")
@@ -152,36 +208,7 @@ def note_move(acc, row, fixtures, out):
     order = ("header", "body", "endnote", "footnote", "footer")
 
     def select_note(name):
-        where = layout[name]
-        acc.wait("""
-          const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
-          return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
-            canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
-        """, where["page"])
-        points = acc.d.js("""
-          const page=arguments[0], c=document.querySelectorAll('.docx-page canvas')[page];
-          const sx=c.width/c.clientWidth, sy=c.height/c.clientHeight, data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-          const points=[]; let count=0, sumX=0, sumY=0;
-          for(let y=0;y<=c.height;y++) { let row=0,rowX=0;
-            if(y<c.height) for(let x=0;x<c.width;x++) { const i=(y*c.width+x)*4;
-              const opaque=data[i]===140&&data[i+1]===90&&data[i+2]===40;
-              const dimmed=Math.abs(data[i]-203)<=2&&Math.abs(data[i+1]-181)<=2&&Math.abs(data[i+2]-158)<=2;
-              if(!opaque&&!dimmed) continue; row++; rowX+=x;
-            }
-            if(row>5){count+=row;sumX+=rowX;sumY+=y*row}
-            else if(count>0){if(count>100)points.push([page,sumX/count/sx,sumY/count/sy]);count=0;sumX=0;sumY=0}
-          }
-          return points;
-        """, where["page"])
-        h.require(len(points)==len(order), "note fixture picture scan differs", points)
-        point=points[order.index(name)]
-        x,y=acc.d.js("""
-          const [page,x,y]=arguments[0],c=document.querySelectorAll('.docx-page canvas')[page];
-          const s=document.querySelector('.editor__scroll'),r=c.getBoundingClientRect(),v=s.getBoundingClientRect(),k=r.width/c.clientWidth;
-          s.scrollTop+=r.top+y*k-(v.top+v.height/2);const n=c.getBoundingClientRect();return [n.left+x*k,n.top+y*k];
-        """,point)
-        h.p4.rhwp_poc.click(acc.d,x,y)
-        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", DESCRIPTION, name, timeout=10)
+        return select_story_note(acc, layout, order, name)
 
     acc.d.js("""
       window.noteMovePointers=[];
@@ -207,10 +234,18 @@ def note_move(acc, row, fixtures, out):
         h.require(abs(after["left"]-before["left"])>2 or abs(after["top"]-before["top"])>2,
                   "native drag did not move the selected note picture",[before,after])
         acc.key("ctrl+z"); revision_number+=1; h.revision(acc,"docx",revision_number)
-        h.require(h.frame(acc)==before,"note picture Undo did not restore geometry",h.frame(acc))
+        # Undo restores the text caret and can clear object selection. Reselect the
+        # same story-owned picture before inspecting its frame; the native click also
+        # proves the restored picture remains hit-testable at its original position.
+        select_note(name)
+        undo_frame=h.frame(acc)
+        h.require(undo_frame==before,"note picture Undo did not restore geometry",undo_frame)
         acc.key("ctrl+y"); revision_number+=1; h.revision(acc,"docx",revision_number)
-        h.require(h.frame(acc)==after,"note picture Redo did not restore movement",h.frame(acc))
-        row["moves"][name]={"before":before,"after":after,"pointers":pointers[-2:],"revision":revision_number}
+        select_note(name)
+        redo_frame=h.frame(acc)
+        h.require(redo_frame==after,"note picture Redo did not restore movement",redo_frame)
+        row["moves"][name]={"before":before,"after":after,"undoFrame":undo_frame,"redoFrame":redo_frame,
+                             "pointers":pointers[-2:],"revision":revision_number}
 
     h.publish(acc,"docx",row)
     with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
@@ -270,6 +305,29 @@ def note_move(acc, row, fixtures, out):
                       for key in ("left", "top", "width", "height")),
                   "saved note picture reopened at a different rendered position", [name, expected_frame, reopened_frame])
         row["moves"][name]["reopenedFrame"] = reopened_frame
+
+
+def note_move_fresh_reopen(acc, row, fixtures, out):
+    fixture=fixtures/"a-p5-story-original.docx"
+    expected=json.loads((fixtures/"a-p5-note-move-expected.json").read_text())
+    path=h.begin(acc,row,fixture,out,"a-p5-note-move-fresh-probe.docx")
+    row["expectedSavedSha256"]=expected["publishedSha256"]
+    row["savedSha256"]=h.digest(path)
+    h.require(row["savedSha256"]==expected["publishedSha256"],"fresh-session input differs from accepted saved package",row)
+    h.require(row["processAppSha256"]==expected["appSha256"],"fresh session used a different application binary",row)
+    h.require(row["appPid"]!=expected["appPid"],"fresh-session verification reused the original app process",row)
+    h.require(row["initialSession"]["dirty"]=="false" and row["initialSession"]["unpreserved"]=="false",
+              "saved package was dirty or unpreserved on independent open",row["initialSession"])
+    layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
+    order=("header","body","endnote","footnote","footer")
+    row["moves"]={}
+    for name in ("footnote","endnote"):
+        point,frame,selection=select_story_note(acc,layout,order,name)
+        wanted=expected["moves"][name]["after"]
+        h.require(all(abs(frame[key]-wanted[key])<=1.5 for key in ("left","top","width","height")),
+                  "independent app rendered a moved note picture at a different position",[name,wanted,frame])
+        row["moves"][name]={"expected":wanted,"frame":frame,"selection":selection,"hitPoint":point}
+    row["readOnlyOpen"]=True
 
 
 def inspect_box(path):
@@ -460,6 +518,7 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False):
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-NOTE-MOVE": note_move,
+           "P5-DX-NOTE-MOVE-FRESH-REOPEN": note_move_fresh_reopen,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
