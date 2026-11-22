@@ -1460,6 +1460,7 @@ pub struct DocxModel {
     pasted_media: Vec<String>,
     object_epoch: u64,
     story_picture_resize: bool,
+    story_picture_move: bool,
     rounded_rectangle_conversion: bool,
     /// Group-child edits rewrite the owning DrawingML body tree. Expose them only when the
     /// opened body's semantic XML was already preserved exactly by this reader/writer pair.
@@ -1589,6 +1590,7 @@ impl DocxModel {
             pasted_media: Vec::new(),
             object_epoch: 0,
             story_picture_resize: false,
+            story_picture_move: false,
             rounded_rectangle_conversion: false,
             group_body_roundtrips: false,
             created_shapes: Vec::new(),
@@ -1606,15 +1608,18 @@ impl DocxModel {
             return Err(EngineStage::Render);
         }
         let count = model.sizable_story_picture_count();
+        let (note_picture_count, _) = model.note_story_picture_counts();
         let has_rounded_rectangle = model.session.doc.body.iter().filter_map(|block| block.as_para()).any(|para| {
             para.objects.iter().any(|object| matches!(object, InlineObject::Shape {
                 kind: wordcraft_engine::doc::para::ShapeKind::RoundedRectangle, ..
             }))
         });
-        if count != 0 || has_rounded_rectangle {
+        if count != 0 || note_picture_count != 0 || has_rounded_rectangle {
             if let Some(export) = model.export() {
                 model.story_picture_resize = count != 0
                     && crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count);
+                model.story_picture_move = note_picture_count != 0
+                    && crate::services::save::docx_story_drawings::move_source_supported(bytes, &export, note_picture_count);
                 model.rounded_rectangle_conversion = has_rounded_rectangle
                     && crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
             }
@@ -2458,6 +2463,106 @@ impl DocxModel {
             .sum()
     }
 
+    fn note_story_picture_counts(&self) -> (usize, usize) {
+        use wordcraft_engine::doc::PartKind;
+        let counted = self.session.doc.counted_stories();
+        let mut all = 0usize;
+        let mut movable = 0usize;
+        for (id, part) in &self.session.doc.parts {
+            if !matches!(part.kind, PartKind::Footnote | PartKind::Endnote) {
+                continue;
+            }
+            let story = StoryRef::Part(*id);
+            if !counted.contains(&story) {
+                continue;
+            }
+            for path in self.session.doc.para_paths(story) {
+                let Some(para) = self.session.doc.para(story, &path) else {
+                    continue;
+                };
+                for off in para.object_offsets() {
+                    if !matches!(
+                        para.object_at(off),
+                        Some(InlineObject::Image { ole: None, .. })
+                    ) {
+                        continue;
+                    }
+                    all = all.saturating_add(1);
+                    let pos = Pos {
+                        story,
+                        path: path.clone(),
+                        off,
+                    };
+                    movable += usize::from(self.movable_note_picture(&pos));
+                }
+            }
+        }
+        (all, movable)
+    }
+
+    fn movable_note_picture(&self, pos: &Pos) -> bool {
+        use wordcraft_engine::doc::{
+            para::{Anchor, Wrap, WrapText},
+            PartKind,
+        };
+        if pos.path.depth() != 0 || !self.linked_picture_story(pos.story) {
+            return false;
+        }
+        let StoryRef::Part(id) = pos.story else {
+            return false;
+        };
+        if !self
+            .session
+            .doc
+            .parts
+            .get(&id)
+            .is_some_and(|part| matches!(part.kind, PartKind::Footnote | PartKind::Endnote))
+        {
+            return false;
+        }
+        let Some(InlineObject::Image {
+            media,
+            w,
+            h,
+            ole: None,
+            float,
+            ..
+        }) = self.object_at(pos)
+        else {
+            return false;
+        };
+        let frame_ok = w.is_finite()
+            && h.is_finite()
+            && *w > 0.0
+            && *h > 0.0
+            && *w <= 14_400.0
+            && *h <= 14_400.0;
+        let placement_ok = float.dist == 0.0
+            && float.dist_top == 0.0
+            && float.dist_bottom == 0.0
+            && float.wrap_text == WrapText::BothSides
+            && float.wrap_polygon.is_none()
+            && match float.wrap {
+                Wrap::Inline => float.x.is_finite() && float.y.is_finite(),
+                Wrap::Square => {
+                    float.h_rel == Anchor::Column
+                        && float.v_rel == Anchor::Paragraph
+                        && float.h_align.is_none()
+                        && float.v_align.is_none()
+                        && float.x.is_finite()
+                        && float.y.is_finite()
+                        && (-4_000.0..=4_000.0).contains(&float.x)
+                        && (-4_000.0..=4_000.0).contains(&float.y)
+                }
+                _ => false,
+            };
+        frame_ok
+            && placement_ok
+            && !float.hidden
+            && float.spin().is_identity()
+            && self.session.doc.media.contains_key(media)
+    }
+
     fn object_kind(&self, pos: &Pos) -> Option<&'static str> {
         use wordcraft_engine::doc::graphic::GraphicKind;
         match self.object_at(pos)? {
@@ -2532,13 +2637,21 @@ impl DocxModel {
         }
         if !self.body_hosted_story(pos.story) {
             if !self.story_inline_picture(pos) {
-                return Vec::new();
+                return if self.story_picture_move && self.movable_note_picture(pos) {
+                    vec!["move"]
+                } else {
+                    Vec::new()
+                };
             }
-            return if self.story_picture_resize && Self::plain_picture_size(self.object_at(pos)) {
+            let mut operations = if self.story_picture_resize && Self::plain_picture_size(self.object_at(pos)) {
                 vec!["resize", "altText"]
             } else {
                 vec!["altText"]
             };
+            if self.story_picture_move && self.movable_note_picture(pos) {
+                operations.insert(0, "move");
+            }
+            return operations;
         }
         let Some(object) = self.object_at(pos) else {
             return Vec::new();
@@ -3208,6 +3321,15 @@ impl DocxModel {
         {
             return Err(Rejected);
         }
+        let note_story = matches!(pos.story, StoryRef::Part(id)
+            if self.session.doc.parts.get(&id).is_some_and(|part|
+                matches!(part.kind, wordcraft_engine::doc::PartKind::Footnote | wordcraft_engine::doc::PartKind::Endnote)));
+        let note_move = note_story && edit.operation() == "move";
+        if note_move && (!self.story_picture_move || !self.movable_note_picture(&pos)
+            || !matches!(edit, ObjectEdit::Bounds { x: Some(_), y: Some(_), width: None, height: None }))
+        {
+            return Err(Rejected);
+        }
         if let ObjectEdit::ConvertShape { to } = edit {
             if self.conversion_target(&pos) != Some(*to) {
                 return Err(Rejected);
@@ -3319,6 +3441,7 @@ impl DocxModel {
                         || a.path != b.path
                         || b.off != a.off + wordcraft_engine::doc::para::OBJ.len_utf8()
                         || model.object_kind(&a).is_none()
+                        || (note_move && (a.story != pos.story || a.path.depth() != 0))
                     {
                         return Err(Rejected);
                     }

@@ -26,7 +26,8 @@ DOCX_BEZIER_PIN = "3ce76d137b6ac0c0e0dcabd44270d9858c7264b5"
 DOCX_PATH_PIN = "656ae2b443004e589675070c0cd092587a1dd89c"
 DOCX_PATH_CLOSE_PIN = "15b7fd7c6bbdc8e10343cb867c5cc5a9caf8637f"
 DOCX_GROUP_PIN = "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f"
-PIN = DOCX_GROUP_PIN
+P5_NOTE_MOVE_PIN = "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f"
+PIN = P5_NOTE_MOVE_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -43,6 +44,7 @@ STEPS = [
     (DOCX_BEZIER_PIN, DOCX_PATH_PIN, "patches/wordcraft/docx-path-vertices.patch.b64", "patches/wordcraft/docx-path-vertices.commit"),
     (DOCX_PATH_PIN, DOCX_PATH_CLOSE_PIN, "patches/wordcraft/docx-path-close.patch.b64", "patches/wordcraft/docx-path-close.commit"),
     (DOCX_PATH_CLOSE_PIN, DOCX_GROUP_PIN, "patches/wordcraft/docx-group-children.patch.b64", "patches/wordcraft/docx-group-children.commit"),
+    (DOCX_GROUP_PIN, P5_NOTE_MOVE_PIN, "patches/wordcraft/docx-note-picture-move.patch.b64", "patches/wordcraft/docx-note-picture-move.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]

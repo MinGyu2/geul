@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-22",
+  "feature": "P5-DX-NOTE-MOVE",
+  "category": "A",
+  "status": "IN_PROGRESS",
+  "acceptance": "NOT_ACCEPTED",
+  "supported": "참조가 살아 있는 footnote/endnote ID에 소유된 그림을 같은 note story의 paragraph 사이에서만 이동한다. note type·ID·paragraph·media owner를 확인하고 character properties와 지원되는 paragraph anchor 의미를 유지한다.",
+  "refused": "다른 note/body로 이동, note 밖 page fallback, shape 이동, dangling/orphan note ID, 다른 story의 paragraph/media owner, 지원되지 않는 serialization은 변이 없이 거부한다.",
+  "wordcraftSourceCommit": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
+  "wordcraftCommitMessage": "feat(docx): move pictures within owned notes [P5-DX-NOTE-MOVE]",
+  "parentIntegration": "현재 worktree에 geul adapter/T009/OPC proof·regression harness 및 ordered patch/gitlink 변경이 있다. 부분 통합 커밋 후에도 Release·Native 수락 전까지 항목은 IN_PROGRESS다.",
+  "previousGitlink": "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f",
+  "wordcraftPin": "fc6d86dec8494b6abf35eb128ae5c4987c68bd6f",
+  "checks": {
+    "wordcraftFocusedEngine": "PASS 1/1: 각주/미주 소유권, 같은 note 문단 이동, character properties, Undo/Redo, 잘못된 note/orphan 및 비그림 거부.",
+    "wordcraftFocusedClippy": "PASS: 지정한 두 기존 table lint class만 명령행에서 억제. 전체 workspace clippy는 아래 baseline 실패 참조.",
+    "geulT009Integration": "PASS 1/1: note identity·owner, OPC 관계/media/body 보존, Undo/Redo, 저장 구조·재열기, 결합 resize+move 및 안전하지 않은 wrap 거부.",
+    "geulStoryOwnershipRegression": "PASS 1/1: 기존 story picture owner 회귀.",
+    "reproducibleWordcraftChain": "PASS: 새 ordered patch와 exact commit metadata로 public base에서 pin을 재구성하고 fresh checkout의 cargo check를 통과했다. 첫 verifier 실행은 기존 patch hash 약식/전체 출력 형식 차이로 실패했으며 비교기를 양식 호환으로 수정한 뒤 재실행 1/1 PASS.",
+    "wordcraftXtaskCi": "FAIL: fmt 첫 gate에서 6개 파일 52개 format hunks 발견되어 이후 xtask 단계는 건너뜀.",
+    "wordcraftWorkspaceClippy": "FAIL: 수정하지 않은 crates/doc/src/freeform.rs 및 crates/doc/src/table.rs에서 기존 lint 3건.",
+    "wordcraftWorkspaceTests": "FAIL: 387 passed, 1 failed, 2 ignored. 유일한 실패는 wordcraft-ui-egui::i18n::tests::every_tab_and_command_is_translated이며 기존 미번역 cell/freeform/group-child label을 보고함.",
+    "wordcraftAssets": "PASS: 54개 파일 attribution 검사.",
+    "wordcraftLayers": "PASS: 20개 crate, layering violation 없음.",
+    "wordcraftWasm": "PASS: 16개 package; 기존 unused-mut/dead-code warning 기록.",
+    "tauriReleaseBuild": "NOT RUN on the current diff. The earlier guarded build stopped before compilation because WordCraft source/gitlink were locally changed; the updated parent gitlink must be committed before a clean Release build can run.",
+    "nativeX11": "NOT RUN: 실제 앱 Release 및 X11 수락 미실행."
+  },
+  "commitGateException": "사용자가 전체 WordCraft CI 실패를 기록하고 이 항목의 WordCraft source commit을 진행하도록 명시 승인했다. engine source file 하나만 포함하는 commit을 만들었다.",
+  "remaining": [
+    "보호된 clean Release build에서 엔진과 geul adapter/T009 serialization 경로를 검증한다.",
+    "Linux X11 Native에서 실제 footnote/endnote 그림 이동, Undo/Redo, T009 저장, 독립 OPC 검사 및 새 앱 재열기를 수락한다."
+  ],
+  "nativeX11Evidence": "NOT RUN",
+  "push": "NOT PERFORMED"
+}

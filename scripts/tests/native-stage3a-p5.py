@@ -17,6 +17,8 @@ DESCRIPTION = '[aria-labelledby=properties-selection] .object-tools input[maxlen
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
 PIC = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 SIZE_FORM = "[aria-labelledby=properties-selection] .object-tools form:has(input[max='4000'])"
 WIDTH = SIZE_FORM + " label:first-of-type input"
 
@@ -76,7 +78,10 @@ def stories(acc, row, fixtures, out, resize=False):
 
     for name in layout:
         select_at(name, name)
-        h.require(not acc.d.exists("[data-testid='object-move']"), "story movement advertised")
+        if name in ("footnote", "endnote"):
+            h.require(acc.d.exists("[data-testid='object-move']"), "owned note movement unavailable")
+        else:
+            h.require(not acc.d.exists("[data-testid='object-move']"), "header/footer/body movement unexpectedly enabled")
         if resize:
             size_is(28)
             h.p6.gso.replace(acc, WIDTH, "35")
@@ -138,6 +143,133 @@ def stories(acc, row, fixtures, out, resize=False):
         select_at(name, name if resize else f"{name} 35")
         if resize:
             size_is(35)
+
+
+def note_move(acc, row, fixtures, out):
+    fixture = fixtures / "a-p5-story-original.docx"
+    path = h.begin(acc, row, fixture, out, "a-p5-note-move.docx")
+    layout = json.loads((fixtures / "a-p5-story-layout.json").read_text())
+    order = ("header", "body", "endnote", "footnote", "footer")
+
+    def select_note(name):
+        where = layout[name]
+        acc.wait("""
+          const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
+          return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
+            canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
+        """, where["page"])
+        points = acc.d.js("""
+          const page=arguments[0], c=document.querySelectorAll('.docx-page canvas')[page];
+          const sx=c.width/c.clientWidth, sy=c.height/c.clientHeight, data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+          const points=[]; let count=0, sumX=0, sumY=0;
+          for(let y=0;y<=c.height;y++) { let row=0,rowX=0;
+            if(y<c.height) for(let x=0;x<c.width;x++) { const i=(y*c.width+x)*4;
+              const opaque=data[i]===140&&data[i+1]===90&&data[i+2]===40;
+              const dimmed=Math.abs(data[i]-203)<=2&&Math.abs(data[i+1]-181)<=2&&Math.abs(data[i+2]-158)<=2;
+              if(!opaque&&!dimmed) continue; row++; rowX+=x;
+            }
+            if(row>5){count+=row;sumX+=rowX;sumY+=y*row}
+            else if(count>0){if(count>100)points.push([page,sumX/count/sx,sumY/count/sy]);count=0;sumX=0;sumY=0}
+          }
+          return points;
+        """, where["page"])
+        h.require(len(points)==len(order), "note fixture picture scan differs", points)
+        point=points[order.index(name)]
+        x,y=acc.d.js("""
+          const [page,x,y]=arguments[0],c=document.querySelectorAll('.docx-page canvas')[page];
+          const s=document.querySelector('.editor__scroll'),r=c.getBoundingClientRect(),v=s.getBoundingClientRect(),k=r.width/c.clientWidth;
+          s.scrollTop+=r.top+y*k-(v.top+v.height/2);const n=c.getBoundingClientRect();return [n.left+x*k,n.top+y*k];
+        """,point)
+        h.p4.rhwp_poc.click(acc.d,x,y)
+        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", DESCRIPTION, name, timeout=10)
+
+    acc.d.js("""
+      window.noteMovePointers=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        if(e.target.matches('[data-testid=object-move]')) noteMovePointers.push({type,trusted:e.isTrusted});
+      },true);
+    """)
+    revision_number=0
+    row["moves"]={}
+    for name in ("footnote", "endnote"):
+        select_note(name)
+        h.require(acc.d.exists("[data-testid=object-move]"), "owned note has no move handle", name)
+        before=h.frame(acc)
+        x,y=acc.d.js("""const r=document.querySelector('[data-testid=object-move]').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]""")
+        sx,sy=acc.d.pointer_scale
+        h.p4.rhwp_poc.drag(acc.d,(x*sx,y*sy),((x+16)*sx,(y+10)*sy))
+        pointers=acc.d.js("return window.noteMovePointers.slice()")
+        h.require([(event["type"],event["trusted"]) for event in pointers[-2:]]==[("pointerdown",True),("pointerup",True)],
+                  "note movement did not use trusted native pointer input",pointers)
+        revision_number+=1
+        h.revision(acc,"docx",revision_number)
+        after=h.frame(acc)
+        h.require(abs(after["left"]-before["left"])>2 or abs(after["top"]-before["top"])>2,
+                  "native drag did not move the selected note picture",[before,after])
+        acc.key("ctrl+z"); revision_number+=1; h.revision(acc,"docx",revision_number)
+        h.require(h.frame(acc)==before,"note picture Undo did not restore geometry",h.frame(acc))
+        acc.key("ctrl+y"); revision_number+=1; h.revision(acc,"docx",revision_number)
+        h.require(h.frame(acc)==after,"note picture Redo did not restore movement",h.frame(acc))
+        row["moves"][name]={"before":before,"after":after,"pointers":pointers[-2:],"revision":revision_number}
+
+    h.publish(acc,"docx",row)
+    with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
+        h.require(set(original.namelist())==set(published.namelist()),"note movement changed OPC inventory")
+        changed={"word/footnotes.xml","word/endnotes.xml"}
+        for part in original.namelist():
+            if part not in changed:
+                h.require(original.read(part)==published.read(part),"note movement changed unrelated OPC part",part)
+        row["unchangedRelationshipsAndMedia"] = all(
+            original.read(part)==published.read(part) for part in original.namelist()
+            if part.endswith(".rels") or part.startswith("word/media/")
+        )
+        h.require(row["unchangedRelationshipsAndMedia"],"note movement changed relationships or media")
+        row["serializedNotes"]={}
+        for label,part,tag in (("footnote","word/footnotes.xml","footnote"),("endnote","word/endnotes.xml","endnote")):
+            old,new=[ET.fromstring(package.read(part)) for package in (original,published)]
+            def inspect(root):
+                notes=root.findall(f".//{W}{tag}")
+                found=[]
+                for note in notes:
+                    docpr=next((node for node in note.iter(WP+"docPr") if node.get("descr")==label),None)
+                    if docpr is None: continue
+                    picture=next((node for node in note.iter(PIC+"cNvPr") if node.get("descr")==label),None)
+                    blip=next((node for node in note.iter(A+"blip") if node.get(REL+"embed")),None)
+                    run=next((node for node in note.iter(W+"r") if any(child is not None for child in [node.find(W+"drawing")])),None)
+                    rpr=run.find(W+"rPr") if run is not None else None
+                    positions=[node for node in note.iter(WP+"inline") if docpr in list(node.iter(WP+"docPr"))]
+                    anchor=next((node for node in note.iter(WP+"anchor") if docpr in list(node.iter(WP+"docPr"))),None)
+                    kind="inline" if positions else "anchor" if anchor is not None else "missing"
+                    horizontal=anchor.find(WP+"positionH") if anchor is not None else None
+                    vertical=anchor.find(WP+"positionV") if anchor is not None else None
+                    text=["".join(t.text or "" for t in para.iter(W+"t")) for para in note.iter(W+"p")]
+                    found.append({"noteId":note.get(W+"id"),"docPrId":docpr.get("id"),"description":docpr.get("descr"),
+                      "pictureId":picture.get("id") if picture is not None else None,"embed":blip.get(REL+"embed") if blip is not None else None,
+                      "runProps":ET.tostring(rpr) if rpr is not None else None,"kind":kind,"text":text,
+                      "horizontal":(horizontal.get("relativeFrom"), horizontal.findtext(WP+"posOffset")) if horizontal is not None else None,
+                      "vertical":(vertical.get("relativeFrom"), vertical.findtext(WP+"posOffset")) if vertical is not None else None})
+                return found
+            old_items,new_items=inspect(old),inspect(new)
+            h.require(len(old_items)==len(new_items)==1,"note drawing identity is ambiguous",[label,old_items,new_items])
+            before_item,after_item=old_items[0],new_items[0]
+            h.require(before_item["kind"]=="inline" and after_item["kind"]=="anchor","picture placement was not serialized as a move",[before_item,after_item])
+            h.require(after_item["horizontal"][0]=="column" and after_item["vertical"][0]=="paragraph"
+                      and after_item["horizontal"][1] is not None and after_item["vertical"][1] is not None,
+                      "saved note anchor has unsupported coordinate mapping",after_item)
+            for key in ("noteId","docPrId","description","pictureId","embed","runProps","text"):
+                h.require(before_item[key]==after_item[key],"note identity, text, media or run formatting changed",[label,key,before_item[key],after_item[key]])
+            row["serializedNotes"][label]=after_item
+
+    h.reopen(acc,path,row)
+    for name in ("footnote","endnote"):
+        select_note(name)
+        h.require(acc.d.exists("[data-testid=object-move]"),"reopened note picture lost move capability",name)
+        reopened_frame = h.frame(acc)
+        expected_frame = row["moves"][name]["after"]
+        h.require(all(abs(reopened_frame[key] - expected_frame[key]) <= 1.5
+                      for key in ("left", "top", "width", "height")),
+                  "saved note picture reopened at a different rendered position", [name, expected_frame, reopened_frame])
+        row["moves"][name]["reopenedFrame"] = reopened_frame
 
 
 def inspect_box(path):
@@ -327,6 +459,7 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False):
 
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
+           "P5-DX-NOTE-MOVE": note_move,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}

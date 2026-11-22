@@ -8580,7 +8580,7 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
     let mut baseline = Session::new(io::open_bytes("story.docx", &original).unwrap());
     let layout = baseline.layout();
     let mut positions = serde_json::Map::new();
-    for (kind, label, _, part) in stories {
+    for (kind, label, note, part) in stories {
         let id = *baseline.doc.parts.iter().find(|(_, p)| p.kind == kind).unwrap().0;
         let story = StoryRef::Part(id);
         let hit = layout.find_object(0, |object| object.story == story).unwrap_or_else(|| panic!("missing displayed {label} picture"));
@@ -8593,7 +8593,12 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let selected = serde_json::to_value(model.view()).unwrap();
         let selected = &selected["object"];
         assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
-        assert_eq!(selected["operations"], json!(["resize", "altText"]));
+        let expected_operations = if note.is_some() {
+            json!(["move", "resize", "altText"])
+        } else {
+            json!(["resize", "altText"])
+        };
+        assert_eq!(selected["operations"], expected_operations);
         assert_eq!(selected["picture"]["description"], label);
 
         let position = selected["position"].as_str().unwrap().to_owned();
@@ -8703,6 +8708,283 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         std::fs::create_dir_all(&out).unwrap();
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
         std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn stage3a_moves_docx_pictures_within_owned_notes() {
+    use super::engine::ObjectEdit;
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::{
+        para::NoteKind, para_block, props::CharProps, InlineObject, Paragraph, PartKind, Path,
+        StoryRef,
+    };
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) }),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({ "width": 28, "height": 22 }))
+        .unwrap();
+    let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
+    let stories = [
+        (
+            PartKind::Footnote,
+            NoteKind::Footnote,
+            "footnote",
+            "word/footnotes.xml",
+        ),
+        (
+            PartKind::Endnote,
+            NoteKind::Endnote,
+            "endnote",
+            "word/endnotes.xml",
+        ),
+    ];
+    for (part_kind, note_kind, label, _) in stories {
+        let id = source.doc.add_part(part_kind, Vec::new());
+        let marker = InlineObject::NoteRef {
+            kind: note_kind,
+            id,
+            custom: String::new(),
+        };
+        let body_end = source.doc.end_of(StoryRef::Body);
+        source
+            .doc
+            .insert_object(&body_end, marker, &CharProps::default())
+            .unwrap();
+        let mut first = Paragraph::with_text(&format!("{label} source "), CharProps::default());
+        let picture_props = CharProps {
+            size: Some(24.0),
+            italic: Some(true),
+            ..CharProps::default()
+        };
+        first
+            .insert_object(first.len(), picture.clone(), &picture_props)
+            .unwrap();
+        let second = Paragraph::with_text(
+            &format!("{label} destination paragraph"),
+            CharProps::default(),
+        );
+        source
+            .doc
+            .set_story(
+                StoryRef::Part(id),
+                vec![para_block(first), para_block(second)],
+            )
+            .unwrap();
+    }
+    let draft = io::save_bytes("note-move.docx", &source.doc).unwrap();
+    let original = io::save_bytes(
+        "note-move.docx",
+        &io::open_bytes("note-move.docx", &draft).unwrap(),
+    )
+    .unwrap();
+    let mut baseline = Session::new(io::open_bytes("note-move.docx", &original).unwrap());
+    let layout = baseline.layout();
+
+    for (part_kind, _, label, part) in stories {
+        let id = *baseline
+            .doc
+            .parts
+            .iter()
+            .find(|(_, data)| data.kind == part_kind)
+            .unwrap()
+            .0;
+        let story = StoryRef::Part(id);
+        let hit = layout
+            .find_object(0, |object| object.story == story)
+            .expect("note picture is laid out in its owning note");
+        let destination = layout
+            .pages
+            .iter()
+            .enumerate()
+            .find_map(|(page, placed)| {
+                placed.items.iter().find_map(|item| match item {
+                    wordcraft_engine::layout::Placed::Lines {
+                        story: owner,
+                        path,
+                        l0: 0,
+                        x,
+                        y,
+                        ..
+                    } if *owner == story && *path == Path::top(1) => Some((page, *x, *y)),
+                    _ => None,
+                })
+            })
+            .expect("second note paragraph is laid out");
+        let click = DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
+        let mut model = DocxModel::open(&original).unwrap();
+        assert_eq!(model.apply(&[click]).changed, 0);
+        let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        assert_eq!(
+            object["position"].as_str().unwrap().split(':').next(),
+            Some(format!("part{id}").as_str())
+        );
+        assert!(
+            object["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|operation| operation == "move"),
+            "{label}: {:#}",
+            object["operations"]
+        );
+        let position = object["position"].as_str().unwrap().to_owned();
+        let epoch = object["epoch"].as_u64().unwrap();
+        let before = model.export().unwrap();
+        let left = package::open(&before, package::Side::Original).unwrap();
+        let invalid = DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(destination.1),
+                y: Some(destination.2),
+                width: Some(30.0),
+                height: None,
+            },
+        };
+        assert_eq!(
+            model.apply(&[invalid]).rejected,
+            vec![0],
+            "move and resize cannot be combined for a note picture"
+        );
+        assert_eq!(model.export().unwrap(), before);
+        assert!(!model.view().history.undo);
+
+        let move_picture = DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(destination.1),
+                y: Some(destination.2),
+                width: None,
+                height: None,
+            },
+        };
+        assert_eq!(
+            model.apply(&[move_picture]).changed,
+            1,
+            "{label} move rejected"
+        );
+        let after = model.export().unwrap();
+        assert!(model.same_as(&after));
+        assert!(
+            service::check_saved(Format::Docx, &before, &after, None, true).is_safe(),
+            "{label} T009 rejection"
+        );
+        let right = package::open(&after, package::Side::Output).unwrap();
+        assert_eq!(
+            left.parts.keys().collect::<Vec<_>>(),
+            right.parts.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            left.get("word/document.xml"),
+            right.get("word/document.xml"),
+            "note references and body drawings stay byte-identical"
+        );
+        assert_eq!(
+            left.get("word/_rels/document.xml.rels"),
+            right.get("word/_rels/document.xml.rels")
+        );
+        assert!(
+            left.get(part) != right.get(part),
+            "only the note story contains the movement"
+        );
+        for name in left.parts.keys().filter(|name| name.as_str() != part) {
+            assert_eq!(
+                left.get(name),
+                right.get(name),
+                "unrelated OPC part changed: {name}"
+            );
+        }
+
+        let reopened = io::open_bytes("note-move.docx", &after).unwrap();
+        let moved = reopened.parts.get(&id).expect("same note id reopens");
+        let second = match moved.blocks[1].as_ref() {
+            wordcraft_engine::doc::Block::Para(para) => para,
+            _ => panic!("note target paragraph changed shape"),
+        };
+        let moved_off = second
+            .object_offsets()
+            .into_iter()
+            .find(|&off| matches!(second.object_at(off), Some(InlineObject::Image { .. })))
+            .expect("picture is in the selected note's second paragraph");
+        assert_eq!(second.props_of_char(moved_off).size, Some(24.0));
+        assert_eq!(second.props_of_char(moved_off).italic, Some(true));
+        assert!(
+            matches!(second.object_at(moved_off), Some(InlineObject::Image { float, .. })
+            if float.wrap == wordcraft_engine::doc::para::Wrap::Square)
+        );
+        assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), before);
+        assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), after);
+
+        let mut reopened_reader = Session::new(io::open_bytes("note-move.docx", &after).unwrap());
+        let reopened_hit = reopened_reader.layout().find_object(0, |object| object.story == story)
+            .expect("saved note picture reopens in the same story");
+        let reopened_click = DocxOp::Pointer { page: reopened_hit.page as u32,
+            x: reopened_hit.rect.x + reopened_hit.rect.w / 2.0,
+            y: reopened_hit.rect.y + reopened_hit.rect.h / 2.0,
+            extend: false, before_insert: false, drag: false, select_object: true };
+        let mut reopened_model = DocxModel::open(&after).unwrap();
+        assert_eq!(reopened_model.apply(&[reopened_click]).changed, 0);
+        let reopened_object = serde_json::to_value(reopened_model.view()).unwrap()["object"].clone();
+        assert!(reopened_object["operations"].as_array().unwrap().iter().any(|operation| operation == "move"),
+            "saved square anchor remains safely movable");
+        let reopened_position = reopened_object["position"].as_str().unwrap().to_owned();
+        let reopened_epoch = reopened_object["epoch"].as_u64().unwrap();
+        let nudge = DocxOp::ObjectEdit { position: reopened_position, epoch: reopened_epoch,
+            edit: ObjectEdit::Bounds { x: Some(reopened_hit.rect.x + 5.0), y: Some(reopened_hit.rect.y + 5.0), width: None, height: None } };
+        assert_eq!(reopened_model.apply(&[nudge]).changed, 1, "a saved note anchor can move again");
+        let moved_again = reopened_model.export().unwrap();
+        assert!(reopened_model.same_as(&moved_again));
+        assert!(service::check_saved(Format::Docx, &after, &moved_again, None, true).is_safe());
+
+        let mut collateral = package::open(&after, package::Side::Output).unwrap();
+        let (_, bytes) = collateral.parts.get_mut(part).unwrap();
+        let xml = std::str::from_utf8(bytes).unwrap();
+        let source_text = format!("{label} destination paragraph");
+        let changed_text = format!("{label} altered paragraph");
+        assert!(xml.contains(&source_text));
+        *bytes = xml.replacen(&source_text, &changed_text, 1).into_bytes();
+        assert!(
+            package::compare_saved_docx(&left, &collateral)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(part)),
+            "T009 rejects a move combined with unrelated note-text mutation"
+        );
+
+        let mut unsafe_wrap = package::open(&after, package::Side::Output).unwrap();
+        let (_, bytes) = unsafe_wrap.parts.get_mut(part).unwrap();
+        let xml = std::str::from_utf8(bytes).unwrap();
+        assert!(xml.contains("wrapText=\"bothSides\""));
+        *bytes = xml
+            .replacen("wrapText=\"bothSides\"", "wrapText=\"left\"", 1)
+            .into_bytes();
+        assert!(
+            package::compare_saved_docx(&left, &unsafe_wrap)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(part)),
+            "T009 rejects an unsupported note picture wrap change"
+        );
     }
 }
 
