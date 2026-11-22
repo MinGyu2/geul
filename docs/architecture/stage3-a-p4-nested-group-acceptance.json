@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-HX-NEST",
+  "originalCategory": "A",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
+  "date": "2026-11-22",
+  "scope": "HWPX 본문 중첩 그룹 자식 주소 지정·이동·크기 변경",
+  "baselineReproduction": "안쪽 group과 직접 형제 도형이 있는 바깥 group을 생성했다. 수정 전에는 renderer가 중첩 잎을 바깥 프레임의 잘못된 좌표에 그렸고 선택 모델에 안정된 자식 경로가 없었다. 중첩 이동 요청도 일반 group 분기로 빠져 거부됐다.",
+  "supportedRange": [
+    "재귀 깊이·자식 수가 제한된 canonical local-coordinate HWPX container tree와 정확한 정수 local translation.",
+    "각 경로 단계의 index/id/instId가 고유한 중첩 Rectangle/Ellipse 잎. 원본 container id와 instid를 서로 구분해 보존한다.",
+    "표시 좌표에는 부모의 translation을 합성하고, 직렬화할 때 주소된 부모의 로컬 좌표로 변환한다."
+  ],
+  "safetyBoundary": [
+    "안전하게 편집 가능한 container 안의 지원 Rectangle/Ellipse 잎만 노출한다.",
+    "비정규 배율·회전·반전·전단 또는 지원하지 않는 변환이 있는 중첩 container 프레임은 fail-closed로 유지한다.",
+    "형식 오류·크기 초과·오래된 주소, ID 불일치, 중복 식별자와 부모 범위 밖 기하는 변이 전에 거부한다.",
+    "변이 전후에 원래 owner snapshot을 검증한다. 거부 시 문서 바이트와 Undo/Redo 이력은 바뀌지 않는다."
+  ],
+  "changes": [
+    "patches/rhwp/stage3a-nested-group-editing.patch와 scripts/rhwp-patches.py의 순서 적용 등록.",
+    "RHWP의 제한된 재귀 group 검사, 안정 index/id/instId 경로 API, 중첩 이동·크기 변경, 원본 instid 보존, serializer groupLevel 처리와 renderer 로컬 좌표 처리.",
+    "src/commands/objectSelection.ts, src/components/Editor/GroupChildEditor.tsx, src/components/Editor/rhwp/RhwpEditorSession.ts, src/components/Editor/rhwp/rhwpModule.ts, src/components/Editor/rhwp/shapeProperties.ts.",
+    "scripts/tests/stage3-shapes.wasm.test.ts와 scripts/tests/native-stage3a-p4.py."
+  ],
+  "engineIntegration": {
+    "rhwpRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patch": {
+      "name": "stage3a-nested-group-editing.patch",
+      "sha256": "5f78cc9a2b5f1160191fe0f7993d2bfe4741569c51bce842bc16ab080e116b04"
+    },
+    "orderedPatchCount": 49,
+    "releaseBuild": "PASS",
+    "publicPublication": "NOT PUBLISHED — 기존 6세대 보존 한도가 갱신을 거부해 공개 selector와 파일은 그대로 유지됐다.",
+    "sourceTreeSha256": "46ebf1f5723f051efe4b79c4b362167218835d140f6586abe522e750afcc5ff7",
+    "localGeneration": "030e51455535fc0d45294e6937e0328028c1dc557d7519a0e6d2087272b2533a",
+    "artifacts": {
+      "rhwp.js": "0d5300276a71ea01db94ffbf8a4aa45e3b285dddbe0c053f82e28b093df8f986",
+      "rhwp_bg.wasm": "bc64940da830c399b80e194de359c0785626a3cdaeb81fc88aac5168eac29ab6"
+    }
+  },
+  "focusedVerification": {
+    "vitest": {
+      "result": "PASS",
+      "passed": 2,
+      "skipped": 76,
+      "cases": [
+        "P4-HX-NEST",
+        "P4-GROUP-XFM"
+      ],
+      "releaseGeneration": "030e51455535fc0d45294e6937e0328028c1dc557d7519a0e6d2087272b2533a"
+    },
+    "typescript": {
+      "result": "PASS",
+      "command": "npm run typecheck"
+    },
+    "rhwpScratchCargo": {
+      "result": "PASS",
+      "command": "cargo check --package rhwp --lib --offline"
+    },
+    "officialRhwpReleaseWasm": {
+      "result": "PASS",
+      "command": "python3 scripts/build-rhwp-wasm.py",
+      "notes": "Release compile과 bindgen은 통과했으나 보존 한도가 publication을 거부했다."
+    },
+    "tauriRelease": {
+      "result": "PASS",
+      "command": "npm run tauri -- build",
+      "appSha256": "721e88029d0054d43c272403a7c0f8989b05bcf163ccdf7f297835c017b52f5f",
+      "runtimePath": "PASS",
+      "privacy": "PASS",
+      "portability": "NOT VERIFIED"
+    },
+    "harness": {
+      "result": "PASS",
+      "checks": [
+        "python3 -m py_compile scripts/rhwp-patches.py scripts/tests/native-stage3a-p4.py",
+        "git diff --check",
+        "git diff --cached --check"
+      ]
+    }
+  },
+  "wasmAcceptance": {
+    "result": "PASS",
+    "checks": [
+      "초기 flattened child index와 2단계 id/instId 경로가 일치하고 별도 outer/inner container 식별자를 유지한다.",
+      "중첩 렌더 좌표가 선택된 group 프레임과 일치하고 요청한 잎만 이동·크기 변경된다.",
+      "이동 및 크기 변경 각각의 Undo/Redo에서 해당 좌표와 치수가 복원된다.",
+      "오래된 id/instId 경로는 문서 바이트나 이력의 변경 없이 거부된다.",
+      "저장 XML은 outer/inner ID와 groupLevel, 대상 중첩 잎의 로컬 오프셋·치수를 보존하고 안쪽/직접 형제는 그대로 둔다.",
+      "비대상 HWPX package entry 바이트가 동일하다. 원본 입력은 바뀌지 않으며 독립 RHWP 재열기로 모델·렌더 기하가 복원된다."
+    ]
+  },
+  "native": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb와 private D-Bus 및 IBus Hangul 세션. 이 결과는 X11 증거이며 Wayland 증거가 아니다.",
+    "appSha256": "721e88029d0054d43c272403a7c0f8989b05bcf163ccdf7f297835c017b52f5f",
+    "rhwpGeneration": "030e51455535fc0d45294e6937e0328028c1dc557d7519a0e6d2087272b2533a",
+    "case": "P4-HX-NEST",
+    "resultFile": "target/p4-hx-nest-work/native-run-normalized/result.json",
+    "fixture": {
+      "path": "target/stage3a-p4/fixtures/a-p4-hx-nest-original.hwpx",
+      "sha256": "649a2899d8ad990bbb4da4044a4fe5f48c94c9ff4484a692909b729b103d02db"
+    },
+    "savedFile": {
+      "path": "target/p4-hx-nest-work/native-run-normalized/a-p4-hx-nest-edited.hwpx",
+      "sha256": "f8c127ab7c19696468e233dafee01b6ee363cda9c347149dfcd02a51d044bb0d"
+    },
+    "checks": [
+      "신뢰된 포인터 입력 18/18, 신뢰된 키보드 입력 17/17.",
+      "중첩 자식 이동과 크기 변경 각각 Undo와 Redo 통과.",
+      "T009 결과: saved, synced=true, changedSince=false, findings 비어 있음.",
+      "저장한 outer/inner container id·instid·groupLevel, 중첩 잎의 좌표·치수, 미변경 안쪽/직접 형제와 Preview 외 다른 package entry를 검사했다.",
+      "새 앱 프로세스로 다시 연 문서는 ready·clean이며 편집한 자식 좌표를 보존했다.",
+      "Native driver cleanup 완료, 남은 프로세스 없음."
+    ],
+    "otherPlatforms": "NOT RUN: Linux Wayland, Windows, macOS 및 외부 HWP 앱."
+  },
+  "commitSet": [
+    {
+      "repository": "geul",
+      "sha": "4b337fc114a6822378287f9393a5a686b0c837d1",
+      "subject": "feat(stage3-p4): edit nested HWPX group children [P4-HX-NEST]"
+    }
+  ],
+  "remainingLimitations": [
+    "기존 generation 보존 한도가 RHWP 공개 generation 발행을 거부했다.",
+    "관측한 Nix runtime 경로 바깥의 Release 실행 이식성은 확인하지 않았다.",
+    "외부 HWP 편집기와의 상호운용은 검사하지 않았다."
+  ],
+  "ledger": "stage3-a-39-item-ledger.md"
+}
