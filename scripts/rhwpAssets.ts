@@ -54,7 +54,7 @@ export function rhwpGenerationPlugin(): Plugin {
     configResolved(config) {
       publicDir = config.publicDir;
       build = config.command === "build";
-      source = join(publicDir, "rhwp");
+      source = resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS ?? join(publicDir, "rhwp"));
       output = resolve(config.root, config.build.outDir);
       frontendOnly = config.mode === "frontend-only";
       const explicit = process.env.GEUL_RHWP_PROFILE;

@@ -21,7 +21,7 @@ import { objectEditRequest, type ObjectEdit } from "../../src/commands/objectSel
 import { clearStructuredClipboard } from "../../src/commands/tableClipboard";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
 
-const artifacts = resolve("public/rhwp");
+const artifacts = resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS ?? "public/rhwp");
 const identity = await readRhwpGeneration(artifacts, "release");
 const folder = resolve(artifacts, "generations", identity.generation);
 const engine = createRequire(import.meta.url)(resolve(folder, "rhwp.js"));
@@ -107,6 +107,240 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     sys.stdout.buffer.write(out.getvalue())
 `, change], { input: fixture });
 }
+
+
+it("Stage 3-A P4-GROUP-XFM edits exact scaled HWPX group-child geometry", async () => {
+  type GroupFactory = RhwpDocument & { groupShapes(json: string): string };
+  const created = new engine.HwpDocument(source("hwpx")) as GroupFactory;
+  let groupedBytes: Uint8Array;
+  try {
+    const targets = ["rectangle", "ellipse"].map((shapeType, i) => {
+      const { controlIdx } = JSON.parse(created.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 2 + i, shapeType, width: 5200, height: 4100,
+        treatAsChar: false, textWrap: "Square", horzOffset: i * 6500, vertOffset: i * 800,
+      })));
+      created.setShapeProperties!(0, 0, controlIdx, JSON.stringify({ fillType: "solid", fillBgColor: i ? 0x601234 : 0x348951 }));
+      return { paraIdx: 0, controlIdx };
+    });
+    const grouped = JSON.parse(created.groupShapes(JSON.stringify({ sectionIdx: 0, targets })));
+    expect(grouped.ok).toBe(true);
+    created.setShapeProperties!(0, 0, grouped.controlIdx, '{"textWrap":"Square","horzOffset":500,"vertOffset":500}');
+    groupedBytes = created.exportHwpx();
+  } finally { created.free(); }
+
+  const transformedBytes = patchGroupFixture(`
+rect_start = xml.index('<hp:rect ')
+rect_end = xml.index('</hp:rect>', rect_start) + len('</hp:rect>')
+rect = xml[rect_start:rect_end]
+rect, count = re.subn(
+    r'<hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>',
+    '<hc:scaMatrix e1="0.5" e2="0" e3="0" e4="0" e5="0.5" e6="0"/>',
+    rect, count=1,
+)
+assert count == 1
+rect, count = re.subn(
+    r'<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>',
+    '<hc:transMatrix e1="1" e2="0" e3="200" e4="0" e5="1" e6="100"/>',
+    rect, count=1,
+)
+assert count == 1
+xml = xml[:rect_start] + rect + xml[rect_end:]
+`, groupedBytes);
+  const sourceSnapshot = Buffer.from(transformedBytes);
+  if (out) {
+    mkdirSync(out, { recursive: true });
+    writeFileSync(resolve(out, "a-p4-group-transform-original.hwpx"), transformedBytes);
+  }
+  const inspect = (bytes: Uint8Array) => JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    root = ET.fromstring(zf.read("Contents/section0.xml"))
+group = root.find(".//{*}container")
+def item(tag):
+    el = group.find("{*}" + tag)
+    def tree(node):
+        return {
+            "tag": node.tag.split("}")[-1],
+            "attrs": dict(sorted(node.attrib.items())),
+            "text": (node.text or "").strip(),
+            "children": [tree(child) for child in node],
+        }
+    return {
+        "id": el.attrib.get("id"),
+        "instId": el.attrib.get("instid"),
+        "offset": dict(el.find("{*}offset").attrib),
+        "orgSz": dict(el.find("{*}orgSz").attrib),
+        "curSz": dict(el.find("{*}curSz").attrib),
+        "size": dict(el.find("{*}sz").attrib),
+        "matrices": [(m.tag.split("}")[-1], dict(m.attrib)) for m in el.find("{*}renderingInfo")],
+        "tree": tree(el),
+    }
+print(json.dumps({"groupSize": dict(group.find("{*}orgSz").attrib), "rect": item("rect"), "ellipse": item("ellipse")}))
+`], { input: bytes, encoding: "utf8" }));
+  const partHashes = (bytes: Uint8Array) => JSON.parse(execFileSync("python3", ["-c", `
+import hashlib, io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as zf:
+    print(json.dumps({name: hashlib.sha256(zf.read(name)).hexdigest() for name in zf.namelist()}))
+`], { input: bytes, encoding: "utf8" }));
+  const original = inspect(transformedBytes);
+  expect(original.rect.matrices.find(([name]: [string]) => name === "scaMatrix")[1]).toMatchObject({ e1: "0.5", e5: "0.5" });
+  expect(original.rect.matrices.find(([name]: [string]) => name === "transMatrix")[1]).toMatchObject({ e3: "200", e6: "100" });
+
+  const { editor, doc, pick, edit, confirm } = await setup("hwpx", transformedBytes);
+  try {
+    const frame = groupFrame(doc);
+    const selected = pick(frame);
+    expect(selected.groupChildren).toBeDefined();
+    const group = selected.groupChildren!;
+    expect(group).toMatchObject({ width: 11700, height: 4900 });
+    const rect = group.children[0]!;
+    const ellipse = group.children[1]!;
+    expect(rect).toMatchObject({ x: 200, y: 100, width: 2600, height: 2050, canMove: true, canResize: true });
+    expect(ellipse).toMatchObject({ x: 6500, y: 800, width: 5200, height: 4100, canMove: true, canResize: true });
+
+    const svgRect = () => {
+      const match = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="#518934"/.exec(
+        (doc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0),
+      );
+      expect(match).not.toBeNull();
+      return match!.slice(1, 5).map(Number);
+    };
+    const px = (hu: number) => hu * 96 / 7200;
+    expect(svgRect()).toEqual([expect.closeTo(px(700), 6), expect.closeTo(px(600), 6), expect.closeTo(px(2600), 6), expect.closeTo(px(2050), 6)]);
+
+    expect(edit({ kind: "groupChildMove", index: rect.index, id: rect.id, instId: rect.instId, x: 400, y: 300 })).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0]).toMatchObject({ x: 400, y: 300, width: 2600, height: 2050 });
+    expect(svgRect()).toEqual([expect.closeTo(px(900), 6), expect.closeTo(px(800), 6), expect.closeTo(px(2600), 6), expect.closeTo(px(2050), 6)]);
+    expect(editor.undo()).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0]).toMatchObject({ x: 200, y: 100, width: 2600, height: 2050 });
+    expect(editor.redo()).toBe(true);
+    await confirm();
+
+    // Undo/Redo intentionally invalidates the object selection epoch.
+    pick(frame);
+    expect(edit({ kind: "groupChildResize", index: rect.index, id: rect.id, instId: rect.instId, width: 3000, height: 2500 })).toBe(true);
+    await confirm();
+    const finalChildren = JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx));
+    expect(finalChildren.children[0]).toMatchObject({ x: 400, y: 300, width: 3000, height: 2500, canMove: true, canResize: true });
+    expect(finalChildren.children[1]).toEqual(ellipse);
+    expect(svgRect()).toEqual([expect.closeTo(px(900), 6), expect.closeTo(px(800), 6), expect.closeTo(px(3000), 6), expect.closeTo(px(2500), 6)]);
+    expect(editor.undo()).toBe(true);
+    await confirm();
+    expect(JSON.parse(doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[0]).toMatchObject({ x: 400, y: 300, width: 2600, height: 2050 });
+    expect(editor.redo()).toBe(true);
+    await confirm();
+
+    const exported = doc.exportHwpxWithReport();
+    try {
+      const output = exported.takeBytes();
+      expectReopenEvidence(doc, output, exported.contentLoss());
+      const after = inspect(output);
+      expect(after.groupSize).toEqual(original.groupSize);
+      expect(after.rect).toMatchObject({
+        id: original.rect.id,
+        offset: { x: "400", y: "300" },
+        orgSz: { width: "6000", height: "5000" },
+        curSz: { width: "6000", height: "5000" },
+        size: { width: "6000", height: "5000" },
+      });
+      expect(after.rect.matrices).toEqual(original.rect.matrices.map(([name, attrs]: [string, Record<string, string>]) => name === "transMatrix"
+        ? [name, { ...attrs, e3: "400", e6: "300" }] : name === "scaMatrix" ? [name, { ...attrs, e1: "0.5", e5: "0.5" }] : [name, attrs]));
+      expect(after.ellipse).toEqual(original.ellipse);
+      const beforeParts = partHashes(transformedBytes);
+      const afterParts = partHashes(output);
+      expect(Object.keys(afterParts).sort()).toEqual(Object.keys(beforeParts).sort());
+      for (const [name, hash] of Object.entries(beforeParts)) {
+        if (name !== "Contents/section0.xml") expect(afterParts[name]).toBe(hash);
+      }
+      const reopened = new engine.HwpDocument(output) as RhwpDocument & { renderPageSvg(page: number): string };
+      try {
+        expect(JSON.parse(reopened.getEditableGroupChildren!(0, 0, frame.controlIdx)).children).toEqual(finalChildren.children);
+        const reopenedRect = /<rect x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)" fill="#518934"/.exec(reopened.renderPageSvg(0));
+        expect(reopenedRect?.slice(1, 5).map(Number)).toEqual([expect.closeTo(px(900), 6), expect.closeTo(px(800), 6), expect.closeTo(px(3000), 6), expect.closeTo(px(2500), 6)]);
+      } finally { reopened.free(); }
+      expect(Buffer.from(transformedBytes)).toEqual(sourceSnapshot);
+    } finally { exported.free(); }
+  } finally { editor.dispose(); }
+
+  // The generated sibling carries two identity transform pairs. Moving it must
+  // retain both pairs while updating only the source translation matrix.
+  const identityRun = await setup("hwpx", transformedBytes);
+  try {
+    const frame = groupFrame(identityRun.doc);
+    const selected = identityRun.pick(frame);
+    const child = selected.groupChildren!.children[1]!;
+    expect(child).toMatchObject({ x: 6500, y: 800, width: 5200, height: 4100, canMove: true, canResize: true });
+    const chainBefore = inspect(transformedBytes);
+    expect(chainBefore.ellipse.matrices.filter(([name]: [string]) => name === "scaMatrix")).toHaveLength(2);
+    expect(identityRun.edit({ kind: "groupChildMove", index: child.index, id: child.id, instId: child.instId, x: 5200, y: 200 })).toBe(true);
+    await identityRun.confirm();
+    expect(JSON.parse(identityRun.doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[1])
+      .toMatchObject({ x: 5200, y: 200, width: 5200, height: 4100 });
+    expect(identityRun.editor.undo()).toBe(true);
+    await identityRun.confirm();
+    expect(JSON.parse(identityRun.doc.getEditableGroupChildren!(0, 0, frame.controlIdx)).children[1])
+      .toMatchObject({ x: 6500, y: 800, width: 5200, height: 4100 });
+    expect(identityRun.editor.redo()).toBe(true);
+    await identityRun.confirm();
+
+    const chainExport = identityRun.doc.exportHwpxWithReport();
+    try {
+      const output = chainExport.takeBytes();
+      expectReopenEvidence(identityRun.doc, output, chainExport.contentLoss());
+      const chainAfter = inspect(output);
+      expect(chainAfter.rect).toEqual(chainBefore.rect);
+      expect(chainAfter.ellipse.offset).toEqual({ x: "5200", y: "200" });
+      expect(chainAfter.ellipse.matrices).toEqual(chainBefore.ellipse.matrices.map(([name, attrs]: [string, Record<string, string>]) => name === "transMatrix"
+        ? [name, { ...attrs, e3: "5200", e6: "200" }] : [name, attrs]));
+      const expectedTree = JSON.parse(JSON.stringify(chainBefore.ellipse.tree));
+      const updateTree = (node: { tag: string; attrs: Record<string, string>; children: unknown[] }, tag: string, attrs: Record<string, string>) => {
+        if (node.tag === tag) {
+          Object.assign(node.attrs, attrs);
+          return true;
+        }
+        return node.children.some(child => updateTree(child as typeof node, tag, attrs));
+      };
+      expect(updateTree(expectedTree, "offset", { x: "5200", y: "200" })).toBe(true);
+      expect(updateTree(expectedTree, "pos", { horzOffset: "5200", vertOffset: "200" })).toBe(true);
+      expect(updateTree(expectedTree, "transMatrix", { e3: "5200", e6: "200" })).toBe(true);
+      expect(chainAfter.ellipse.tree).toEqual(expectedTree);
+      const beforeParts = partHashes(transformedBytes);
+      const afterParts = partHashes(output);
+      for (const [name, hash] of Object.entries(beforeParts)) {
+        if (name !== "Contents/section0.xml") expect(afterParts[name]).toBe(hash);
+      }
+    } finally { chainExport.free(); }
+  } finally { identityRun.editor.dispose(); }
+
+  const shearedBytes = patchGroupFixture(`
+rect_start = xml.index('<hp:rect ')
+rect_end = xml.index('</hp:rect>', rect_start) + len('</hp:rect>')
+rect = xml[rect_start:rect_end]
+rect, count = re.subn(
+    r'<hc:scaMatrix e1="0.5" e2="0" e3="0" e4="0" e5="0.5" e6="0"/>',
+    '<hc:scaMatrix e1="0.5" e2="0.125" e3="0" e4="0" e5="0.5" e6="0"/>',
+    rect, count=1,
+)
+assert count == 1
+xml = xml[:rect_start] + rect + xml[rect_end:]
+`, transformedBytes);
+  const unsupported = await setup("hwpx", shearedBytes);
+  try {
+    const frame = groupFrame(unsupported.doc);
+    const selected = unsupported.pick(frame);
+    expect(selected.groupChildren).toBeUndefined();
+    expect(JSON.parse(unsupported.doc.getEditableGroupChildren!(0, 0, frame.controlIdx))).toBeNull();
+    const before = inspect(unsupported.doc.exportHwpx());
+    expect(unsupported.edit({
+      kind: "groupChildMove", index: 0, id: Number(original.rect.id), instId: Number(original.rect.instId), x: 500, y: 350,
+    })).toBe(false);
+    expect(JSON.parse(unsupported.doc.getEditableGroupChildren!(0, 0, frame.controlIdx))).toBeNull();
+    expect(inspect(unsupported.doc.exportHwpx())).toEqual(before);
+  } finally { unsupported.editor.dispose(); }
+});
 
 type GroupChildIds = readonly [string | number | null, string | number | null];
 
@@ -1369,17 +1603,30 @@ print(json.dumps({
 
     // G3 & G5: Identity renderingInfo with nonzero <hp:offset> preserves child placement without double-apply, and survives no-op save/reopen.
     const identityMatrixHwpx = execFileSync("python3", ["-c", `
-import io, sys, zipfile
+import io, re, sys, zipfile
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as dst:
         for entry in src.infolist():
             data = src.read(entry)
             if entry.filename == "Contents/section0.xml":
-                data = data.replace(b'e3="6500" e4="0" e5="1" e6="800"', b'e3="0" e4="0" e5="1" e6="0"', 1)
+                identity = (
+                    b'<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+                    b'<hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+                    b'<hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+                )
+                data, count = re.subn(
+                    rb'(<hp:(?:rect|ellipse)\\b[^>]*>.*?<hp:renderingInfo>).*?(</hp:renderingInfo>)',
+                    lambda m: m.group(1) + identity + m.group(2), data, flags=re.S,
+                )
+                assert count == 2, f"expected two direct group-child renderingInfo blocks, got {count}"
             dst.writestr(entry, data)
     sys.stdout.buffer.write(out.getvalue())
 `], { input: generatedBytes });
+    if (out) {
+      mkdirSync(out, { recursive: true });
+      writeFileSync(resolve(out, "a-p4-group-original.hwpx"), identityMatrixHwpx);
+    }
     const legacyFixtures: Uint8Array[] = [identityMatrixHwpx];
     const recordedFixture = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
     if (existsSync(recordedFixture)) legacyFixtures.push(new Uint8Array(readFileSync(recordedFixture)));

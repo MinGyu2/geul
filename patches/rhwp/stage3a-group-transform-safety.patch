@@ -1,0 +1,459 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -282,6 +282,14 @@
+     locked: bool,
+     can_move: bool,
+     can_resize: bool,
++    #[serde(skip)]
++    local_width: u32,
++    #[serde(skip)]
++    local_height: u32,
++    #[serde(skip)]
++    scale_x: f64,
++    #[serde(skip)]
++    scale_y: f64,
+ }
+
+ #[derive(serde::Serialize)]
+@@ -317,6 +325,158 @@
+         return None;
+     }
+     Some(value as i32)
++}
++
++#[derive(Clone, Copy)]
++struct GeulHwpxGroupChildTransform {
++    x: i32,
++    y: i32,
++    width: u32,
++    height: u32,
++    scale_x: f64,
++    scale_y: f64,
++}
++
++fn geul_group_scale_supported(value: f64) -> bool {
++    value == 0.5 || value == 1.0 || value == 2.0
++}
++
++fn geul_scaled_dimension(local: u32, scale: f64) -> Option<u32> {
++    let displayed = f64::from(local) * scale.abs();
++    if !displayed.is_finite() || displayed.fract() != 0.0 || displayed < 1.0 || displayed > f64::from(MAX_RECT_DIM_HU) {
++        return None;
++    }
++    Some(displayed as u32)
++}
++
++fn geul_hwpx_group_child_transform(
++    sa: &crate::model::shape::ShapeComponentAttr,
++    local_width: u32,
++    local_height: u32,
++) -> Option<GeulHwpxGroupChildTransform> {
++    if sa.rotation_angle != 0 || sa.horz_flip || sa.vert_flip || (sa.flip & 3) != 0
++        || !sa.render_sx.is_finite() || !sa.render_sy.is_finite()
++        || !sa.render_b.is_finite() || !sa.render_c.is_finite()
++        || sa.render_b != 0.0 || sa.render_c != 0.0
++        || !geul_group_scale_supported(sa.render_sx) || !geul_group_scale_supported(sa.render_sy)
++    {
++        return None;
++    }
++
++    // Accept identity matrix chains for existing group children, or one
++    // canonical HWPX scale pair for a transformed child. Rotation, shear,
++    // scale/rotation matrix offsets, composite scale chains, and malformed raw
++    // data stay fail-closed. The separate transMatrix translation remains editable.
++    if !sa.raw_rendering.is_empty() {
++        let (count_bytes, rest) = sa.raw_rendering.split_at_checked(2)?;
++        let count = u16::from_le_bytes([count_bytes[0], count_bytes[1]]) as usize;
++        if count > 64 || count.checked_mul(96).and_then(|n| n.checked_add(48)) != Some(rest.len()) {
++            return None;
++        }
++        let trans = geul_read_matrix_f64_le(&rest[..48])?;
++        if trans[0] != 1.0 || trans[1] != 0.0 || trans[3] != 0.0 || trans[4] != 1.0 {
++            return None;
++        }
++        let mut composite_scale = (1.0, 1.0);
++        for (index, pair) in rest[48..].chunks_exact(96).enumerate() {
++            let scale = geul_read_matrix_f64_le(&pair[..48])?;
++            let rotation = geul_read_matrix_f64_le(&pair[48..])?;
++            if !geul_is_exact_identity_matrix(&rotation) {
++                return None;
++            }
++            if !geul_is_exact_identity_matrix(&scale) {
++                if count != 1 || index != 0
++                    || scale[1] != 0.0 || scale[2] != 0.0 || scale[3] != 0.0 || scale[5] != 0.0
++                    || !geul_group_scale_supported(scale[0]) || !geul_group_scale_supported(scale[4])
++                {
++                    return None;
++                }
++                composite_scale = (scale[0], scale[4]);
++            }
++        }
++        if composite_scale.0 != sa.render_sx || composite_scale.1 != sa.render_sy {
++            return None;
++        }
++        let raw_tx = geul_finite_hwpx_int(trans[2], MAX_RECT_DIM_HU)?;
++        let raw_ty = geul_finite_hwpx_int(trans[5], MAX_RECT_DIM_HU)?;
++        // The HWPX parser promotes <offset> to the modeled translation only for
++        // identity matrices. Preserve that established identity-child behavior.
++        let identity_offset_translation = sa.render_sx == 1.0 && sa.render_sy == 1.0
++            && raw_tx == 0 && raw_ty == 0 && sa.render_tx == f64::from(sa.offset_x)
++            && sa.render_ty == f64::from(sa.offset_y);
++        if !identity_offset_translation
++            && (sa.render_tx != f64::from(raw_tx) || sa.render_ty != f64::from(raw_ty))
++        {
++            return None;
++        }
++    } else if sa.render_sx != 1.0 || sa.render_sy != 1.0
++        || sa.render_tx != f64::from(sa.offset_x) || sa.render_ty != f64::from(sa.offset_y)
++    {
++        // An absent source matrix can only represent the existing identity case.
++        return None;
++    }
++
++    let tx = geul_finite_hwpx_int(sa.render_tx, MAX_RECT_DIM_HU)?;
++    let ty = geul_finite_hwpx_int(sa.render_ty, MAX_RECT_DIM_HU)?;
++    let origin_x = f64::from(tx);
++    let origin_y = f64::from(ty);
++    let end_x = origin_x + f64::from(local_width) * sa.render_sx;
++    let end_y = origin_y + f64::from(local_height) * sa.render_sy;
++    let left = geul_finite_hwpx_int(origin_x.min(end_x), MAX_RECT_DIM_HU)?;
++    let top = geul_finite_hwpx_int(origin_y.min(end_y), MAX_RECT_DIM_HU)?;
++    let right = geul_finite_hwpx_int(origin_x.max(end_x), MAX_RECT_DIM_HU)?;
++    let bottom = geul_finite_hwpx_int(origin_y.max(end_y), MAX_RECT_DIM_HU)?;
++    let width = u32::try_from(right.checked_sub(left)?).ok()?;
++    let height = u32::try_from(bottom.checked_sub(top)?).ok()?;
++    if width != geul_scaled_dimension(local_width, sa.render_sx)?
++        || height != geul_scaled_dimension(local_height, sa.render_sy)?
++        || !((sa.offset_x == left && sa.offset_y == top) || (sa.offset_x == 0 && sa.offset_y == 0))
++    {
++        return None;
++    }
++    Some(GeulHwpxGroupChildTransform {
++        x: left,
++        y: top,
++        width,
++        height,
++        scale_x: sa.render_sx,
++        scale_y: sa.render_sy,
++    })
++}
++
++fn geul_group_local_dimension(displayed: u32, scale: f64) -> Option<u32> {
++    if !geul_group_scale_supported(scale) {
++        return None;
++    }
++    let local = f64::from(displayed) / scale.abs();
++    if !local.is_finite() || local.fract() != 0.0 || local < 1.0 || local > f64::from(MAX_RECT_DIM_HU) {
++        return None;
++    }
++    Some(local as u32)
++}
++
++fn geul_group_child_transform_translation(x: i32, y: i32, width: u32, height: u32, sx: f64, sy: f64) -> Option<(i32, i32)> {
++    if width == 0 || height == 0 || !geul_group_scale_supported(sx) || !geul_group_scale_supported(sy) {
++        return None;
++    }
++    (u32::try_from(x).ok()? <= MAX_RECT_DIM_HU && u32::try_from(y).ok()? <= MAX_RECT_DIM_HU).then_some((x, y))
++}
++
++fn geul_write_hwpx_group_child_translation(sa: &mut crate::model::shape::ShapeComponentAttr, tx: i32, ty: i32) -> bool {
++    if !sa.raw_rendering.is_empty() {
++        let Some((count_bytes, rest)) = sa.raw_rendering.split_at_checked(2) else {
++            return false;
++        };
++        let count = u16::from_le_bytes([count_bytes[0], count_bytes[1]]) as usize;
++        if count > 64 || count.checked_mul(96).and_then(|size| size.checked_add(48)) != Some(rest.len()) {
++            return false;
++        }
++        sa.raw_rendering[18..26].copy_from_slice(&f64::from(tx).to_le_bytes());
++        sa.raw_rendering[42..50].copy_from_slice(&f64::from(ty).to_le_bytes());
++    }
++    sa.render_tx = f64::from(tx);
++    sa.render_ty = f64::from(ty);
++    true
+ }
+
+ fn geul_flat_hwpx_identity(sa: &crate::model::shape::ShapeComponentAttr, require_zero_offset: bool) -> bool {
+@@ -510,24 +670,31 @@
+     }
+     let id = if hwp5 { sa.ctrl_id } else { common.instance_id };
+     let inst_id = drawing.inst_id;
+-    let (x, y) = (sa.offset_x, sa.offset_y);
+     let exact_size = if hwp5 {
+         geul_hwp5_group_child_size(child)
+     } else {
+         geul_exact_hwpx_size(common, sa)
+     };
+-    let (w, h) = exact_size?;
+-    let (geom_move_ok, geom_resize_ok) = geul_group_child_geom_support(child, w, h);
++    let (local_width, local_height) = exact_size?;
++    let (x, y, width, height, scale_x, scale_y) = if hwp5 {
++        if !geul_flat_hwpx_identity(sa, false) {
++            return None;
++        }
++        (sa.offset_x, sa.offset_y, local_width, local_height, 1.0, 1.0)
++    } else {
++        let transform = geul_hwpx_group_child_transform(sa, local_width, local_height)?;
++        (transform.x, transform.y, transform.width, transform.height, transform.scale_x, transform.scale_y)
++    };
++    let (geom_move_ok, geom_resize_ok) = geul_group_child_geom_support(child, local_width, local_height);
+     let structurally_valid = (id != 0 || inst_id != 0)
+         && !(id == 0 && inst_id == 0)
+         && sa.group_level == 1
+         && drawing.caption.is_none()
+         && drawing.text_box.is_none()
+-        && geul_flat_hwpx_identity(sa, false)
+         && geom_move_ok
+         && x >= 0 && y >= 0
+-        && i64::from(x) + i64::from(w) <= i64::from(gw)
+-        && i64::from(y) + i64::from(h) <= i64::from(gh);
++        && i64::from(x) + i64::from(width) <= i64::from(gw)
++        && i64::from(y) + i64::from(height) <= i64::from(gh);
+     let can_move = structurally_valid && !common.locked;
+     let can_resize = can_move && geom_resize_ok && !common.size_protect;
+     Some(GeulGroupChildState {
+@@ -537,12 +704,16 @@
+         inst_id,
+         x,
+         y,
+-        width: w,
+-        height: h,
++        width,
++        height,
+         size_protect: common.size_protect,
+         locked: common.locked,
+         can_move,
+         can_resize,
++        local_width,
++        local_height,
++        scale_x,
++        scale_y,
+     })
+ }
+
+@@ -1427,26 +1598,29 @@
+             return Err(geul_bad_shape_edit());
+         };
+         let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
+-        if hwp5 {
+-            let sa = child.shape_attr();
+-            if sa.raw_rendering.len() != 2 + 48 + 2 * 96
+-                || u16::from_le_bytes([sa.raw_rendering[0], sa.raw_rendering[1]]) != 2
+-            {
+-                return Err(geul_bad_shape_edit());
+-            }
+-        }
++        let (render_tx, render_ty) = if hwp5 {
++            (x, y)
++        } else {
++            geul_group_child_transform_translation(x, y, target.width, target.height, target.scale_x, target.scale_y)
++                .ok_or_else(geul_bad_shape_edit)?
++        };
+         {
+             let sa = child.shape_attr_mut();
++            if hwp5 {
++                if sa.raw_rendering.len() != 2 + 48 + 2 * 96
++                    || u16::from_le_bytes([sa.raw_rendering[0], sa.raw_rendering[1]]) != 2
++                {
++                    return Err(geul_bad_shape_edit());
++                }
++                sa.render_tx = f64::from(render_tx);
++                sa.render_ty = f64::from(render_ty);
++                sa.raw_rendering[18..26].copy_from_slice(&f64::from(render_tx).to_le_bytes());
++                sa.raw_rendering[42..50].copy_from_slice(&f64::from(render_ty).to_le_bytes());
++            } else if !geul_write_hwpx_group_child_translation(sa, render_tx, render_ty) {
++                return Err(geul_bad_shape_edit());
++            }
+             sa.offset_x = x;
+             sa.offset_y = y;
+-            sa.render_tx = f64::from(x);
+-            sa.render_ty = f64::from(y);
+-            if hwp5 {
+-                sa.raw_rendering[18..26].copy_from_slice(&f64::from(x).to_le_bytes());
+-                sa.raw_rendering[42..50].copy_from_slice(&f64::from(y).to_le_bytes());
+-            } else {
+-                sa.raw_rendering.clear();
+-            }
+         }
+         let common = child.common_mut();
+         common.horizontal_offset = x as u32;
+@@ -1473,24 +1647,50 @@
+         {
+             return Err(geul_bad_shape_edit());
+         }
+-        let new_w = width as u32;
+-        let new_h = height as u32;
+-        if i64::from(target.x) + i64::from(new_w) > i64::from(state.width)
+-            || i64::from(target.y) + i64::from(new_h) > i64::from(state.height)
+-            || (new_w == target.width && new_h == target.height)
++        let displayed_width = width as u32;
++        let displayed_height = height as u32;
++        if i64::from(target.x) + i64::from(displayed_width) > i64::from(state.width)
++            || i64::from(target.y) + i64::from(displayed_height) > i64::from(state.height)
++            || (displayed_width == target.width && displayed_height == target.height)
+         {
+             return Err(geul_bad_shape_edit());
+         }
+         let hwp5 = self.source_format == crate::parser::FileFormat::Hwp;
++        let (new_w, new_h) = if hwp5 {
++            (displayed_width, displayed_height)
++        } else {
++            (
++                geul_group_local_dimension(displayed_width, target.scale_x).ok_or_else(geul_bad_shape_edit)?,
++                geul_group_local_dimension(displayed_height, target.scale_y).ok_or_else(geul_bad_shape_edit)?,
++            )
++        };
++        if new_w == target.local_width && new_h == target.local_height {
++            return Err(geul_bad_shape_edit());
++        }
++        let (render_tx, render_ty) = if hwp5 {
++            (target.x, target.y)
++        } else {
++            geul_group_child_transform_translation(target.x, target.y, displayed_width, displayed_height, target.scale_x, target.scale_y)
++                .ok_or_else(geul_bad_shape_edit)?
++        };
++        let local_width_i32 = i32::try_from(new_w).map_err(|_| geul_bad_shape_edit())?;
++        let local_height_i32 = i32::try_from(new_h).map_err(|_| geul_bad_shape_edit())?;
+         let ShapeObject::Group(group) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
+             return Err(geul_bad_shape_edit());
+         };
+         let child = group.children.get_mut(index).ok_or_else(geul_bad_shape_edit)?;
+         let is_ellipse = matches!(child, ShapeObject::Ellipse(_));
+-        let width_changed = new_w != target.width;
+-        let height_changed = new_h != target.height;
++        let width_changed = new_w != target.local_width;
++        let height_changed = new_h != target.local_height;
+         {
+             let sa = child.shape_attr_mut();
++            if !hwp5 && !geul_write_hwpx_group_child_translation(sa, render_tx, render_ty) {
++                return Err(geul_bad_shape_edit());
++            }
++            if hwp5 {
++                sa.render_tx = f64::from(render_tx);
++                sa.render_ty = f64::from(render_ty);
++            }
+             sa.original_width = new_w;
+             sa.original_height = new_h;
+             sa.current_width = new_w;
+@@ -1500,38 +1700,35 @@
+             sa.current_width_was_zero = false;
+             sa.current_height_was_zero = false;
+             if !hwp5 && (width_changed || !is_ellipse) {
+-                sa.rotation_center.x = width / 2;
++                sa.rotation_center.x = local_width_i32 / 2;
+             }
+             if !hwp5 && (height_changed || !is_ellipse) {
+-                sa.rotation_center.y = height / 2;
+-            }
+-            if !hwp5 {
+-                sa.render_sx = 1.0;
+-                sa.render_sy = 1.0;
+-                sa.render_b = 0.0;
+-                sa.render_c = 0.0;
+-                sa.raw_rendering.clear();
+-            }
++                sa.rotation_center.y = local_height_i32 / 2;
++            }
++            sa.offset_x = target.x;
++            sa.offset_y = target.y;
+         }
+         {
+             let common = child.common_mut();
+             common.width = new_w;
+             common.height = new_h;
++            common.horizontal_offset = target.x as u32;
++            common.vertical_offset = target.y as u32;
+         }
+         match child {
+             ShapeObject::Rectangle(rect) => {
+-                rect.x_coords = [0, width, width, 0];
+-                rect.y_coords = [0, 0, height, height];
++                rect.x_coords = [0, local_width_i32, local_width_i32, 0];
++                rect.y_coords = [0, 0, local_height_i32, local_height_i32];
+             }
+             ShapeObject::Ellipse(ellipse) => {
+                 // Both integer halves of an odd source dimension are valid.
+                 // Keep the imported coordinate on an untouched axis.
+-                let cx = if width_changed { width / 2 } else { ellipse.center.x };
+-                let cy = if height_changed { height / 2 } else { ellipse.center.y };
++                let cx = if width_changed { local_width_i32 / 2 } else { ellipse.center.x };
++                let cy = if height_changed { local_height_i32 / 2 } else { ellipse.center.y };
+                 ellipse.center = crate::model::Point { x: cx, y: cy };
+-                ellipse.axis1 = crate::model::Point { x: width, y: cy };
+-                ellipse.axis2 = crate::model::Point { x: cx, y: height };
+-                let p = crate::model::Point { x: width, y: cy };
++                ellipse.axis1 = crate::model::Point { x: local_width_i32, y: cy };
++                ellipse.axis2 = crate::model::Point { x: cx, y: local_height_i32 };
++                let p = crate::model::Point { x: local_width_i32, y: cy };
+                 ellipse.start1 = p;
+                 ellipse.end1 = p;
+                 ellipse.start2 = p;
+@@ -4743,4 +4940,68 @@
+         extreme.center = crate::model::Point { x: i32::MIN + 1, y: i32::MAX };
+         assert_eq!(geul_group_child_geom_support(&ShapeObject::Ellipse(extreme), 2, 2), (false, false));
+     }
++
++    #[test]
++    fn geul_hwpx_group_transform_supports_exact_scale_and_rejects_unsafe_matrices() {
++        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
++        let pack = |trans: [f64; 6], scale: [f64; 6], rotation: [f64; 6]| {
++            let mut raw = Vec::with_capacity(2 + 48 + 96);
++            raw.extend_from_slice(&1_u16.to_le_bytes());
++            for value in trans.into_iter().chain(scale).chain(rotation) {
++                raw.extend_from_slice(&value.to_le_bytes());
++            }
++            raw
++        };
++        let mut sa = crate::model::shape::ShapeComponentAttr::default();
++        sa.render_tx = 200.0;
++        sa.render_ty = 100.0;
++        sa.render_sx = 0.5;
++        sa.render_sy = 0.5;
++        sa.raw_rendering = pack([1.0, 0.0, 200.0, 0.0, 1.0, 100.0], [0.5, 0.0, 0.0, 0.0, 0.5, 0.0], identity);
++        let transform = geul_hwpx_group_child_transform(&sa, 5200, 4100).unwrap();
++        assert_eq!((transform.x, transform.y, transform.width, transform.height), (200, 100, 2600, 2050));
++        assert_eq!(geul_group_local_dimension(3000, transform.scale_x), Some(6000));
++        assert_eq!(geul_group_local_dimension(3001, 2.0), None);
++        assert_eq!(geul_group_child_transform_translation(400, 300, 3000, 2500, 0.5, 0.5), Some((400, 300)));
++        assert_eq!(geul_scaled_dimension(101, 0.5), None);
++
++        let mut identity_chain = crate::model::shape::ShapeComponentAttr::default();
++        identity_chain.offset_x = 6500;
++        identity_chain.offset_y = 800;
++        identity_chain.render_tx = 6500.0;
++        identity_chain.render_ty = 800.0;
++        identity_chain.raw_rendering = pack([1.0, 0.0, 6500.0, 0.0, 1.0, 800.0], identity, identity);
++        let identity_pair = identity_chain.raw_rendering[50..].to_vec();
++        identity_chain.raw_rendering.extend_from_slice(&identity_pair);
++        let sibling = geul_hwpx_group_child_transform(&identity_chain, 5200, 4100).unwrap();
++        assert_eq!((sibling.x, sibling.y, sibling.width, sibling.height), (6500, 800, 5200, 4100));
++        let identity_chain_original = identity_chain.raw_rendering.clone();
++        assert!(geul_write_hwpx_group_child_translation(&mut identity_chain, 5200, 200));
++        assert_eq!(&identity_chain.raw_rendering[18..26], &5200.0_f64.to_le_bytes());
++        assert_eq!(&identity_chain.raw_rendering[42..50], &200.0_f64.to_le_bytes());
++        assert_eq!(&identity_chain.raw_rendering[50..], &identity_chain_original[50..]);
++
++        let original = sa.raw_rendering.clone();
++        assert!(geul_write_hwpx_group_child_translation(&mut sa, 400, 300));
++        assert_eq!(&sa.raw_rendering[18..26], &400.0_f64.to_le_bytes());
++        assert_eq!(&sa.raw_rendering[42..50], &300.0_f64.to_le_bytes());
++        assert_eq!(&sa.raw_rendering[50..], &original[50..]);
++
++        let mut unsafe_sa = sa.clone();
++        unsafe_sa.render_b = 0.25;
++        assert!(geul_hwpx_group_child_transform(&unsafe_sa, 5200, 4100).is_none());
++        unsafe_sa = sa.clone();
++        unsafe_sa.render_sx = 0.3;
++        assert!(geul_hwpx_group_child_transform(&unsafe_sa, 5200, 4100).is_none());
++        unsafe_sa = sa.clone();
++        unsafe_sa.raw_rendering[2 + 48 + 8..2 + 48 + 16].copy_from_slice(&0.25_f64.to_le_bytes());
++        assert!(geul_hwpx_group_child_transform(&unsafe_sa, 5200, 4100).is_none());
++        unsafe_sa = sa.clone();
++        unsafe_sa.raw_rendering[0..2].copy_from_slice(&2_u16.to_le_bytes());
++        unsafe_sa.raw_rendering.extend_from_slice(&original[50..]);
++        assert!(geul_hwpx_group_child_transform(&unsafe_sa, 5200, 4100).is_none());
++        unsafe_sa = sa;
++        unsafe_sa.raw_rendering[18..26].copy_from_slice(&400.5_f64.to_le_bytes());
++        assert!(geul_hwpx_group_child_transform(&unsafe_sa, 5200, 4100).is_none());
++    }
+ }

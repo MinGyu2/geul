@@ -26,7 +26,7 @@ ART = TOOLS + " .smart-art-tools"
 SHAPE = TOOLS + " .shape-tools"
 ORACLE = """
 const fs = require('fs'), path = require('path');
-const assets = path.resolve('public/rhwp');
+const assets = path.resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS || 'public/rhwp');
 const release = JSON.parse(fs.readFileSync(path.join(assets, 'RELEASE.json')));
 const folder = path.join(assets, 'generations', release.generation);
 const rhwp = require(path.join(folder, 'rhwp.js'));

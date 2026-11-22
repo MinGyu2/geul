@@ -1302,6 +1302,89 @@ def group_child_edit_case(acc, row, fixtures, out):
     h.require(ui_vals() == [5200, 200, 4600, 3200], "reopened ellipse differs")
 
 
+def group_transform_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-group-transform-original.hwpx"
+    before = row["before"] = inspect(fixture)
+    target = next(frame for frame in before["frames"] if frame["groupChildren"])
+    group = target["groupChildren"]
+    rect, sibling = group["children"]
+    h.require([rect[key] for key in ("x", "y", "width", "height")] == [200, 100, 2600, 2050],
+              "fixture did not expose the expected transformed display bounds", rect)
+    path = h.begin(acc, row, fixture, out, "a-p4-group-transform-edited.hwpx")
+    CHILD = ".object-group-child"
+    COORDS = ".object-group-child-coordinates"
+
+    def enter_mode():
+        h.select_object(acc, target, "group")
+        acc.dom_click(".object-group-child-mode")
+        acc.wait("return document.querySelectorAll(arguments[0]).length===2", CHILD)
+        acc.dom_click(f"{CHILD}[data-index='0']")
+
+    def ui_values():
+        return acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
+
+    enter_mode()
+    h.require(ui_values() == [200, 100, 2600, 2050], "scaled child displayed incorrect edit bounds", ui_values())
+
+    # Move in display coordinates; the engine must update only the original translation matrix.
+    h.p6.gso.replace(acc, f"{COORDS} label:nth-of-type(1) input", 400)
+    h.p6.gso.replace(acc, f"{COORDS} label:nth-of-type(2) input", 300)
+    acc.dom_click(".object-group-child-apply-move")
+    h.revision(acc, "hwpx", 1)
+    h.require(ui_values() == [400, 300, 2600, 2050], "scaled child move did not use displayed coordinates", ui_values())
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    enter_mode()
+    h.require(ui_values() == [200, 100, 2600, 2050], "Undo did not restore transformed child position", ui_values())
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    enter_mode()
+    h.require(ui_values() == [400, 300, 2600, 2050], "Redo did not restore transformed child position", ui_values())
+
+    # Resize in display coordinates and verify inverse mapping to the local rectangle dimensions.
+    h.p6.gso.replace(acc, f"{COORDS} label:nth-of-type(3) input", 3000)
+    h.p6.gso.replace(acc, f"{COORDS} label:nth-of-type(4) input", 2500)
+    acc.dom_click(".object-group-child-apply-resize")
+    h.revision(acc, "hwpx", 4)
+    h.require(ui_values() == [400, 300, 3000, 2500], "scaled child resize did not use displayed coordinates", ui_values())
+
+    acc.key("Escape")
+    h.require(not acc.d.exists(CHILD), "Escape did not exit transformed group child editing")
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = inspect(path)
+    want_group = {**group, "children": [
+        {**rect, "x": 400, "y": 300, "width": 3000, "height": 2500}, sibling,
+    ]}
+    expected_target = {**target, "groupChildren": want_group}
+    h.require(after == {**before, "frames": [expected_target if item == target else item for item in before["frames"]]},
+              "saved transformed child owner, geometry, sibling, or surrounding document changed", after)
+
+    old, new = section_pair(fixture, path)
+    old_group, new_group = old.find(".//{*}container"), new.find(".//{*}container")
+    h.require(old_group is not None and new_group is not None and old_group.attrib == new_group.attrib,
+              "parent group attributes changed")
+    old_rect, new_rect = old_group.find("{*}rect"), new_group.find("{*}rect")
+    h.require(old_rect is not None and new_rect is not None, "transformed rectangle disappeared")
+    old_rect.find("{*}offset").attrib.update(x="400", y="300")
+    for name in ("orgSz", "curSz", "sz"):
+        old_rect.find("{*}" + name).attrib.update(width="6000", height="5000")
+    old_rect.find("{*}rotationInfo").attrib.update(centerX="3000", centerY="2500")
+    old_points = [old_rect.find("{*}pt" + str(index)) for index in range(4)]
+    h.require(all(point is not None for point in old_points), "unexpected rectangle point representation")
+    for point, (x, y) in zip(old_points, ((0, 0), (6000, 0), (6000, 5000), (0, 5000)), strict=True):
+        point.attrib.update(x=str(x), y=str(y))
+    old_rect.find("{*}sz").attrib.update(width="6000", height="5000")
+    old_rect.find("{*}pos").attrib.update(horzOffset="400", vertOffset="300")
+    old_translation = old_rect.find("{*}renderingInfo/{*}transMatrix")
+    new_translation = new_rect.find("{*}renderingInfo/{*}transMatrix")
+    h.require(old_translation is not None and new_translation is not None, "translation matrix disappeared")
+    old_translation.attrib.update(e3="400", e6="300")
+    h.require(ET.tostring(old) == ET.tostring(new),
+              "saved XML changed transform semantics, segment data, sibling, or unrelated section structure")
+    h.reopen(acc, path, row)
+
+
 def group_child_capture_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-group-original.hwpx"
     before = inspect(fixture)
@@ -1639,6 +1722,7 @@ h.CASES = {
     "P4-H5-POLY-POINT": lambda *args: points_case(*args, "polygon", "hwp"),
     "P4-H5-POLY-EDGES": hwp5_polygon_edges,
     "P4.6": group_child_edit_case,
+    "P4-GROUP-XFM": group_transform_case,
     "P4-H5-GROUP": hwp5_group_child_edit_case,
     "P4.6-capture": group_child_capture_case,
 }

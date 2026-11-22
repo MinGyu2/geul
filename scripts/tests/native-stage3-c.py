@@ -62,7 +62,8 @@ def begin(acc, row, fixture, out, filename):
     """)
     if path.suffix != ".docx":
         row["activeGeneration"] = acc.async_js("return (await (await fetch('rhwp/BUILD.json')).json()).generation")["value"]
-        require(row["activeGeneration"] == json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())["generation"], "app and oracle engine differ")
+        engine_root = Path(os.environ.get("GEUL_RHWP_TEST_ARTIFACTS", ROOT / "public/rhwp"))
+        require(row["activeGeneration"] == json.loads((engine_root / "RELEASE.json").read_text())["generation"], "app and oracle engine differ")
     return path
 
 
@@ -1043,8 +1044,9 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     app = args.app.resolve()
     p4.smoke.APP = str(app)
-    release = json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())
-    generation = ROOT / "public/rhwp/generations" / release["generation"]
+    engine_root = Path(os.environ.get("GEUL_RHWP_TEST_ARTIFACTS", ROOT / "public/rhwp"))
+    release = json.loads((engine_root / "RELEASE.json").read_text())
+    generation = engine_root / "generations" / release["generation"]
     require(all(digest(generation / name) == sha for name, sha in release["artifacts"].items()),
             "release artifact does not match its manifest")
     report = {"appSha256": digest(app), "os": platform.platform(), "rhwp": release["generation"], "cases": {}}
