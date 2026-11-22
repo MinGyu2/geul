@@ -1,0 +1,6 @@
+tree 628f8a1a68c5cfb6532ab64c357c8bcc9bec6c99
+parent fc6d86dec8494b6abf35eb128ae5c4987c68bd6f
+author Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795358509 +0900
+committer Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795358509 +0900
+
+chore: repair WordCraft acceptance gates [P5-DX-NOTE-MOVE]
