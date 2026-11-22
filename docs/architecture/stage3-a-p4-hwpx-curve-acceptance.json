@@ -10,15 +10,66 @@
     "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types."
   ],
   "unresolvedRequirements": [
-    "No explicit Bezier control-point coordinates or editing API are defined by the cited HWPML 3.0 Revision 1.2 SEGMENT entry.",
-    "Curve segment insertion/deletion and complete Bezier control-point editing remain unsupported and unaccepted.",
-    "The exact extension contract or compatible source-document evidence required to support these fields is not available."
+    "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
+    "Bezier control-point editing therefore has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
+    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. Any narrower LINE-only split/merge extension remains unimplemented and must preserve original segment metadata."
   ],
   "formatEvidence": {
     "source": "Hancom HWPML 3.0 Revision 1.2, section 5.6.6, table 140 SEGMENT",
     "url": "https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D3.0_HWPML_revision1.2.pdf",
     "accessed": "2026-11-22",
-    "finding": "The published SEGMENT entry defines Line/Curve type, x1/y1 start coordinates, and x2/y2 end coordinates; it does not define Bezier control-point coordinates. This is a format-contract gap, not proof that proprietary extensions do not exist."
+    "finding": "The 2012 HWPML table defines only Line/Curve type and endpoint coordinates; this historical reference is not used as the sole evidence for the current format. It does not prove that proprietary extensions do not exist."
+  },
+  "currentOfficialStandard": {
+    "source": "e나라표준인증 KS X 6101:2024 machine-readable standard, revision 03, active; operation date 2024-10-30; Annex E ParaList XML Schema, CurveType",
+    "viewerUrl": "https://www.standard.go.kr/KSCI/api/std/viewMachine.do?reformNo=03&tmprKsNo=KSX6101&formType=STD",
+    "dataEndpoint": "https://www.standard.go.kr/KSCI/api/std/viewMachineNextPage.do?format=json (POST tmprKsNo=KSX6101, reformNo=03, formType=STD)",
+    "accessed": "2026-11-23",
+    "schemaFinding": "CurveType contains an unbounded sequence of seg elements. Each seg defines type (LINE or CURVE), x1, y1, x2, and y2 integer attributes only. It has no control-point attributes/elements or wildcard. ConnectLineType separately defines controlPoints/point; that applies to connectors, not CurveType.",
+    "conclusion": "The supported current schema does not provide an editable Bezier control-point serialization contract. Keep those mutations fail-closed unless a compatible authentic extension/sample establishes one."
+  },
+  "rhwpModelReview": {
+    "files": [
+      "external/rhwp/src/parser/hwpx/section.rs",
+      "external/rhwp/src/model/shape.rs (CurveShape)",
+      "external/rhwp/src/serializer/hwpx/section.rs"
+    ],
+    "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The geul partial edit path retains original hp:seg lexical metadata for supported endpoint edits; unknown source metadata/types are not promoted into a guessed control-point model."
+  },
+  "sampleCorpusAudit": {
+    "source": "Repository RHWP sample corpus under external/rhwp/samples/**/*.hwpx; aggregate counts are observational and may include synthetic regression fixtures.",
+    "candidateFiles": 579,
+    "invalidOrUnreadableContainersOrSections": 7,
+    "curveObjects": 337,
+    "segments": 1504,
+    "segmentTypes": {
+      "CURVE": 1486,
+      "LINE": 18
+    },
+    "attributesObserved": [
+      "type",
+      "x1",
+      "y1",
+      "x2",
+      "y2"
+    ],
+    "additionalSegmentAttributes": 0,
+    "segmentChildElements": 0,
+    "representativeMaintainedSample": {
+      "path": "external/rhwp/samples/3-09월_교육_통합_2022.hwpx",
+      "sha256": "b3ed3d5c4f0f95f9a8990b17720da3bef566b5a36174153aa3def28fd46e6029",
+      "curveObjects": 1,
+      "segments": 417,
+      "segmentAttributes": [
+        "type",
+        "x1",
+        "y1",
+        "x2",
+        "y2"
+      ],
+      "additionalControlPointData": 0
+    },
+    "conclusion": "The inspected compatible examples agree with the current schema, but the sample corpus cannot prove that no proprietary extension exists anywhere."
   },
   "releaseWasm": {
     "generation": "d89b0ccfc6f7eca581911ced6707b5a218958822095e06c1273be5449bbb52d3",
