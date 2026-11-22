@@ -87,7 +87,7 @@
 | P5-TB-MIX | HWPX | 범위 삭제·붙여넣기 API | 서로 다른 서식 문단 선택 | 문단 모양·스타일이 다를 때 상속 규칙 및 증명 없음 | 혼합 문단 선택·편집 | 지원 단락 서식과 문자 run | 원본 para/style ID·새 상속의 독립 XML 검사 | X11 혼합 문단 교체 | RHWP 문단 모델·P5-TB-REPLACE | B BLOCKED_BY_SAFETY | — |
 | P5-TB-REPLACE (나머지) | HWP5/HWPX | 단일 문단 IME 및 HWPX 평문 교체 | 교차 문단 IME·HWP5 교체 | 취소·지연 preedit의 소유 검증, HWP5 원본 문단 레코드 보존 미증명 | IME 및 HWP5 붙여넣기 | 동일 트랜잭션과 HWP5 문단 참조 | stale 거부와 독립 CFB/XML | X11 실제 IME 취소·확정과 세션 이동 | P5-H5-TB·IME 트랜잭션 | B BLOCKED_BY_SAFETY | — |
 | P5-TB-CONTROL | HWP5/HWPX/DOCX | RHWP 중첩 개체, WordCraft의 일부 그림 오분류 | 실제 소속 개체 경로·편집 | 중첩 구문 소유 및 이야기 타입 유실 | 글상자 안 개체 적중·속성 | 글상자·그림·자원 참조 | CFB/OPC 통제 및 소유 ID 대조 | X11 중첩 개체 편집 | 각 엔진의 중첩 reader/writer | A UNIMPLEMENTED | — |
-| P5-DX-SIZE-NONCANON | DOCX 별도 이야기 | 이미지 모델의 단일 크기, 원본 XML 비교 | 안전부위만 개별 허용 | 두 치수 불일치와 공유 writer의 초기 봉투 변경 | 정규 개체만 가용 표시 | 원본 XML의 미변경 객체·관계·치수 | 원본/조정된 두 extent, 다른 part 바이트 비교 | X11 비정규 그림과 안전 그림 공존 | WordCraft story writer·T009 | B BLOCKED_BY_SAFETY | — |
+| P5-DX-SIZE-NONCANON | DOCX 연결 header/footer/footnote/endnote | 원본 불일치 frame/shape의 정확한 정수 EMU metadata | 소유 story의 top-level inline 그림 `picture.size` | T009는 초기 XML envelope·story/owner를 고정하고 각 축의 exact proportional extent만 허용 | 크기 변경·Undo/Redo; 지원 밖 소스 envelope는 fail-closed | drawing IDs, 관계·media ownership 보존 | frame/shape 두 extent만 조정, 나머지 header XML 및 다른 OPC part byte-identical; 1-EMU 무단 변경 거부 | Linux X11 실제 header 비정규 그림 resize/save/same-session reopen PASS | WordCraft reader/writer·geul T009·ordered patch/gitlink | B IMPLEMENTED_VERIFIED. [수락 기록](stage3-a-p5-dx-size-noncanonical-acceptance.json) | WordCraft `ce77006df77470f044a4f31257b5fec8d58640fc`; geul `9f8a007f4b7e7dd580f9553304792c39c8502366` |
 
 ### P6 남은 기능
 

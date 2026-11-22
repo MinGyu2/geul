@@ -1,0 +1,100 @@
+{
+  "issueId": "P5-DX-SIZE-NONCANON",
+  "date": "2026-11-23",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Safely resize noncanonical DOCX story pictures while preserving the source XML envelope, DrawingML frame/shape extents, ownership, relationships, resources, and unrelated OPC parts.",
+  "supportedScope": "Standalone top-level wp:inline embedded pictures in linked headers, footers, footnotes, and endnotes. The exact positive source wp:extent and a:xfrm/a:ext EMUs are retained as nonserialized format metadata. An unchanged picture writes the original exact values; a resize scales each inner axis from its source frame ratio using checked integer rounding. Group children, non-inline placements, unsupported/transformed picture envelopes, malformed or out-of-range extents, and source packages whose initial WordCraft serialization is not provably unchanged remain fail-closed.",
+  "commits": {
+    "wordcraftSource": "ce77006df77470f044a4f31257b5fec8d58640fc",
+    "wordcraftTree": "4aad6b8e958f20f0cabd1110701fe8d4de055e78",
+    "geulImplementationAndHarness": "9f8a007f4b7e7dd580f9553304792c39c8502366"
+  },
+  "verification": {
+    "wordcraftCi": {
+      "status": "PASS",
+      "sourceTree": "4aad6b8e958f20f0cabd1110701fe8d4de055e78",
+      "gates": ["fmt", "clippy", "workspace tests", "assets", "layers", "wasm"],
+      "result": "6/6"
+    },
+    "wordcraftReconstruction": {
+      "status": "PASS",
+      "command": "python3 -m unittest scripts/tests/test_wordcraft_reproduction.py",
+      "details": "Fresh public base reconstructed the exact sanitized commit, verified the ordered full-index patch chain and a clean submodule, and independently cargo-checked wordcraft-fonts."
+    },
+    "focusedGeul": {
+      "status": "PASS",
+      "command": "cargo test --manifest-path src-tauri/Cargo.toml stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly -- --nocapture",
+      "result": "1 passed",
+      "coverage": "Initial source-envelope preservation, offered resize, exact proportional dual extents, T009 save check, fresh model reopen, unrelated OPC/header/footer preservation, Undo/Redo, and rejection of an unauthorized one-EMU inner-extent mutation."
+    },
+    "nativeHarnessSyntax": "PASS: python3 -m py_compile scripts/tests/native-stage3a-p5.py scripts/tests/native-stage3-c.py",
+    "guardedRelease": {
+      "status": "PASS",
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED",
+      "app": "src-tauri/target/release/geul",
+      "appSha256": "56f641c4d5a887726d6a163e43f3390bfa1f9bbe6394ede56808334909e451c0",
+      "sizeBytes": 63290072,
+      "architecture": "x86_64"
+    },
+    "nativeX11": {
+      "status": "PASS",
+      "os": "Linux-7.2.14-arch1-1-x86_64-with-glibc2.44",
+      "command": "PATH=/nix/store/mhq9kk703lrphqxjqzphva99f1qa5s0c-webkitgtk-2.54.1+abi=4.1/bin:$PATH python3 scripts/tests/native-ibus-session.py --out target/p5-dx-size-noncanon-x11-session-01 -- python3 scripts/tests/native-stage3a-p5.py --out target/p5-dx-size-noncanon-x11-run-01 --fixtures target/p5-dx-hf-move-fixtures --app src-tauri/target/release/geul --driver /tmp/geul-tauri-driver-target/debug/tauri-driver --cases P5-DX-SIZE-NONCANON --xdotool @XDOTOOL@ --ibus @IBUS@",
+      "appSha256": "56f641c4d5a887726d6a163e43f3390bfa1f9bbe6394ede56808334909e451c0",
+      "processAppSha256": "56f641c4d5a887726d6a163e43f3390bfa1f9bbe6394ede56808334909e451c0",
+      "appPid": 824895,
+      "fixture": "a-p5-story-noncanonical-source.docx",
+      "fixtureSha256": "4a34a1f8a67dd5012e0478a382eb5da2473f8ad457d2c94c648c6d007ebd7363",
+      "published": "a-p5-story-noncanonical-edited.docx",
+      "publishedSha256": "e568fdbd3842a6702285c914cfe9cfabd1d48511745ad81910592886048b541a",
+      "trustedSelection": {
+        "story": "header",
+        "objectKind": "picture",
+        "description": "header",
+        "clickInsideFrame": true,
+        "moveHandle": true
+      },
+      "geometry": {
+        "before": {"width": 37.333333, "height": 29.333333, "top": 48, "left": 194.117187},
+        "after": {"width": 46.666667, "height": 36.666667, "top": 48, "left": 194.117187},
+        "undo": {"width": 37.333333, "height": 29.333333, "top": 48, "left": 194.117187},
+        "redo": {"width": 46.666667, "height": 36.666667, "top": 48, "left": 194.117187}
+      },
+      "savedExtents": {
+        "frameBefore": {"cx": "355600", "cy": "279400"},
+        "shapeBefore": {"cx": "711200", "cy": "558800"},
+        "frameAfter": {"cx": "444500", "cy": "349250"},
+        "shapeAfter": {"cx": "889000", "cy": "698500"}
+      },
+      "save": {"state": "saved", "synced": true, "changedSince": false, "findings": ""},
+      "opc": {
+        "headerChangedOnlyAtTheTwoOwnedExtents": true,
+        "allOtherPartsByteIdentical": true,
+        "relationshipsAndMediaByteIdentical": true
+      },
+      "sameSessionCloseReopen": {
+        "status": "PASS",
+        "clean": true,
+        "preserved": true,
+        "headerOwnerAndGeometryRetained": true
+      },
+      "freshProcessReopen": "NOT RUN; this acceptance closes and reopens the saved document in the same Release app process.",
+      "cleanup": {
+        "status": "PASS",
+        "sessionExit": 0,
+        "complete": true,
+        "proven": true,
+        "filesystemProven": true,
+        "survivors": []
+      },
+      "rawEvidence": [
+        "target/p5-dx-size-noncanon-x11-run-01/result.json",
+        "target/p5-dx-size-noncanon-x11-session-01/cleanup.json"
+      ]
+    }
+  },
+  "notRun": ["Wayland", "Windows", "macOS", "external Office interoperability", "portable non-Nix runtime"]
+}
