@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "issueId": "P4-GROUP-XFM",
+  "originalCategory": "B",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
+  "codeCommit": "c3c4e5934639859c5de0e5568314d96a3d9f7fb9",
+  "supportedRange": [
+    "HWPX 본문 group의 직접 Rectangle/Ellipse 자식을 owner 및 child identity로 선택하고 이동하거나 크기를 변경한다.",
+    "지원하는 합성 변환은 최대 64개 identity matrix 또는 한 쌍의 canonical positive diagonal scale matrix이며 scale은 정확히 0.5, 1, 2 중 하나다.",
+    "좌표는 유한하고 범위가 제한된 정수 translation으로 표현하며 resize 역변환은 정수 정밀도로 정확해야 한다.",
+    "검증된 fixture에서 저장 후 resize된 local rectangle 크기는 6000×5000이고, 이동은 translation만 갱신한다. sibling과 관련 없는 package parts는 보존된다."
+  ],
+  "safetyBoundary": [
+    "회전, 반전, shear, 지원되지 않는 행렬 체인, 비유한 값, 범위 초과 translation, 비정수 역변환, 지원하지 않는 object type과 손상된 owner/child address는 변이 전에 fail-closed로 거부한다.",
+    "새 비항등 변환 범위는 HWPX만 해당한다. HWP5와 DOCX는 이전에 검증된 identity-transform 지원 범위에 한정된다.",
+    "HWP5/DOCX 비항등 변환, Wayland/Windows/macOS, 외부 Office interoperability 및 Release portability는 검증되지 않았다."
+  ],
+  "sourceIdentity": {
+    "rhwpPinnedSubmodule": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "orderedPatchSha256": "153622fa53a530aacba4ab5fa9ac5e8e9f23a7afc9a31dbb9e6748de256be64c",
+    "releaseWasmGeneration": "4484cc6839caa4c41af49532387a640ec0567f983954f6aca7755d905af82c89",
+    "wasmSha256": "5289d7b150d38b53d19b1e464a6f3b0970bd2bb0f23f3c37bb97ceaf4eb9ce61",
+    "javascriptSha256": "fe3942733de35ff18566b529e0a0a26589e4bd40a7f0990cb2e7bce7957cb334",
+    "applicationSha256": "ff97c92318189a9065ec698a3d51ffca1f41f3e8167b81fbf3dda577b82e1f06"
+  },
+  "focusedVerification": {
+    "releaseBuildAndWasmBindgen": {
+      "result": "PASS",
+      "notes": [
+        "RHWP Release compile 및 WASM generation/bindgen 성공.",
+        "공식 공개 게시 요청은 6-generation retention guard에서 거부됐으며 공개 artifact는 변경되지 않음.",
+        "로컬 immutable artifact identity/hash 검증 성공."
+      ]
+    },
+    "scratchCargoCheck": {
+      "result": "PASS",
+      "command": "cargo check --package rhwp --lib --offline"
+    },
+    "rhwpFocusedCargoTests": {
+      "result": "NOT RUN",
+      "notes": [
+        "pinned test source에 DocumentCore::from_hwp_bytes/from_hwpx_bytes 누락 및 GroupShape/Picture initializer 오류가 있어 테스트 컴파일 단계에서 막힘.",
+        "신규 Rust unit test는 실행되지 않음."
+      ]
+    },
+    "vitest": {
+      "result": "PASS",
+      "summary": "P4-GROUP-XFM 및 기존 flat-group move/resize 2 passed, 75 skipped."
+    },
+    "tauriReleaseAndPathCheck": {
+      "result": "PASS"
+    },
+    "t009AndIndependentReopen": {
+      "result": "PASS",
+      "checks": [
+        "T009 saved/synced=true/changedSince=false 및 빈 findings.",
+        "독립 HWPX XML/package 검사와 새 세션 재열기 성공.",
+        "적용 변환에서 형제와 다른 package parts 불변; Undo/Redo 성공."
+      ]
+    }
+  },
+  "native": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb 및 private IBus Hangul. 실제 Tauri Native app 상호작용이며 Wayland 증거가 아니다.",
+    "resultFile": "target/p4-group-xfm-work/native-run-v8/result.json",
+    "checks": [
+      "그룹 자식 선택, 이동 및 resize를 실제 UI로 수행하고 Undo/Redo 확인.",
+      "scale resize 결과 local geometry 6000×5000 및 이동 시 translation만 변경됨을 저장 XML에서 확인.",
+      "sibling object와 무관한 package parts의 보존, T009 상태 및 앱 재열기를 확인.",
+      "driver cleanup 완료 및 잔존 프로세스 없음."
+    ]
+  },
+  "publication": {
+    "publicRelease": "NOT PUBLISHED",
+    "reason": "공식 게시 도구의 6-generation retention guard가 게시를 거부함.",
+    "publicArtifactsChanged": false,
+    "localArtifactIdentityAndHashVerification": "PASS"
+  },
+  "acceptance": {
+    "development": "IMPLEMENTED_VERIFIED for the explicit HWPX support range",
+    "nativePlatformsNotRun": [
+      "Wayland",
+      "Windows",
+      "macOS"
+    ],
+    "externalOffice": "NOT RUN",
+    "releasePortability": "NOT VERIFIED"
+  }
+}

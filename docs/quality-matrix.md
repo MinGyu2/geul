@@ -458,3 +458,13 @@ Wayland/Windows/macOS와 외부 한컴/Office 재열기, RHWP 전체 upstream te
 편집은 보호되지 않고 tracked changes가 없는 본문 최상위 그룹, 원본 canvas 없는 항등 local axes와 일치하는 group/frame extent, 지원되는 단순 child transform 및 유한한 부모 내부 정수 EMU 좌표로 제한된다. 회전·반전·hidden·scaled axes, 잘못된 위치·크기, 미지원 원본 group member는 편집 가능 응답에서 제외하거나 변이 전 거부한다. frontend IPC parser는 exact-key bounded `groupChildren` payload를 요구한다. WordCraft `0a8dbc1`, geul fixture provenance `231cac6`, core integration `504d8de`, strict IPC regression 및 Native checker `74165f8`에서 구현됐다.
 
 Linux X11/Xvfb + private IBus Hangul Native run은 PASS이며 cleanup manifest가 complete/proven/filesystemProven이고 survivor가 없음을 확인했다. Wayland, Windows, macOS 및 외부 Microsoft Office 재열기는 NOT RUN이다. 이 항목의 수락은 회전·배율 변환 그룹의 자식 편집을 뜻하지 않으며, 전체 P4/Stage 3-A는 다른 미완료 요구사항이 있어 계속 PARTIAL이다.
+
+### P4-GROUP-XFM HWPX 변환 그룹 자식 안전 편집 (2026-11-22)
+
+**CURRENT PASS — 명시한 HWPX 지원 범위.** geul/RHWP는 본문 그룹의 직접 Rectangle/Ellipse 자식에 대해 owner/child 주소를 검증하고, 양수 대각 scale 0.5/1/2의 좌표 역변환과 exact integer inverse resize를 지원한다. 변환 체인은 최대 64개의 항등행렬 또는 하나의 canonical scale pair로 제한한다. finite bounded integer translation은 보존하며 지원 범위 밖 행렬·객체는 변이 전에 fail-closed로 거부한다. 이동은 translation만 갱신하고 resize는 검증된 scale inverse를 적용한다.
+
+Release compile 및 WASM 생성·bindgen PASS. 공식 공개 게시 시도는 6-generation retention guard에 의해 거부됐으며 공개 artifact는 변경되지 않았다. 로컬 immutable artifact identity/hash 검증 PASS. Scratch `cargo check --package rhwp --lib --offline` PASS. RHWP focused Cargo tests는 pinned test source의 기존 compile 오류(`DocumentCore::from_hwp_bytes/from_hwpx_bytes` 부재, `GroupShape`/`Picture` initializer 누락) 때문에 실행되지 않아 새 Rust unit test는 NOT RUN이다. Vitest focused group-transform 및 기존 flat-group move/resize는 2 PASS, 75 skipped다.
+
+Linux X11/Xvfb + private IBus Hangul Native run-v8는 실제 그룹 자식 선택·이동·resize, Undo/Redo, T009 saved/synced/`changedSince=false`/빈 findings, 독립 XML/package 검사와 새 세션 재열기를 PASS했다. scale resize의 local size 6000×5000, 위치 변경 시 translation만 갱신, sibling과 다른 package parts의 불변성을 확인했다. 앱 SHA-256 `ff97c92318189a9065ec698a3d51ffca1f41f3e8167b81fbf3dda577b82e1f06`; Release generation `4484cc6839caa4c41af49532387a640ec0567f983954f6aca7755d905af82c89`, WASM `5289d7b150d38b53d19b1e464a6f3b0970bd2bb0f23f3c37bb97ceaf4eb9ce61`, JS `fe3942733de35ff18566b529e0a0a26589e4bd40a7f0990cb2e7bce7957cb334`. RHWP pin은 `1a76570e833917d15817415a53c09ad61ab3203f`로 유지했고 ordered patch SHA-256은 `153622fa53a530aacba4ab5fa9ac5e8e9f23a7afc9a31dbb9e6748de256be64c`다. geul 구현 커밋은 `c3c4e5934639859c5de0e5568314d96a3d9f7fb9`다. 상세 evidence 및 정확한 경계는 [P4-GROUP-XFM 수락 기록](architecture/stage3-a-p4-group-transform-acceptance.json)을 따른다.
+
+HWP5/DOCX에서 새 비항등 변환 지원을 주장하지 않는다. Wayland, Windows, macOS, 외부 Office 및 Release portability는 NOT RUN/UNVERIFIED다. 전체 P4/Stage 3-A는 다른 미완료 요구사항이 있어 PARTIAL이다.
