@@ -45,6 +45,53 @@ def inspect_docx_curve(path):
         "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
         "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
         "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    }
+    with zipfile.ZipFile(path) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+        rels = package.read("word/_rels/document.xml.rels")
+        parts = {name: package.read(name) for name in package.namelist() if name != "word/document.xml"}
+    shapes = root.findall(".//wps:wsp", ns)
+    h.require(len(shapes) == 1, "fixture must contain one DrawingML shape", len(shapes))
+    geometry = shapes[0].find("./wps:spPr/a:custGeom", ns)
+    h.require(geometry is not None, "fixture lost custom geometry")
+    path_list = geometry.find("a:pathLst", ns)
+    paths = []
+    for path_node in path_list:
+        commands = []
+        for command in path_node:
+            commands.append({
+                "type": command.tag.rsplit("}", 1)[-1],
+                "points": [dict(point.attrib) for point in command.findall("a:pt", ns)],
+            })
+        paths.append({"attrs": dict(path_node.attrib), "commands": commands})
+    transform = shapes[0].find("./wps:spPr/a:xfrm", ns)
+    transform_offset = transform.find("a:off", ns) if transform is not None else None
+    transform_extent = transform.find("a:ext", ns) if transform is not None else None
+    anchor = root.find(".//wp:anchor", ns)
+    anchor_offsets = {}
+    if anchor is not None:
+        for axis, element in (("horizontal", "positionH"), ("vertical", "positionV")):
+            position = anchor.find(f"wp:{element}", ns)
+            offset = position.find("wp:posOffset", ns) if position is not None else None
+            if position is not None and offset is not None:
+                anchor_offsets[axis] = {
+                    "relativeFrom": position.get("relativeFrom"),
+                    "value": offset.text,
+                }
+    return {
+        "xml": root,
+        "geometry": geometry,
+        "paths": paths,
+        "transform": dict(transform.attrib) if transform is not None else {},
+        "transformFrame": {
+            "offset": dict(transform_offset.attrib) if transform_offset is not None else {},
+            "extent": dict(transform_extent.attrib) if transform_extent is not None else {},
+        },
+        "anchorOffsets": anchor_offsets,
+        "relationshipsSha256": hashlib.sha256(rels).hexdigest(),
+        "relationships": rels,
+        "parts": parts,
     }
 
 
@@ -552,6 +599,280 @@ def docx_path_vertex_case(acc, row, fixtures, out):
         h.require(reopened == (result["insertedCoordinates"] if action == "insert" else result["remainingCoordinates"]),
                   f"saved {kind} vertex edit did not reopen in the native editor", reopened)
         previous = path
+
+
+def docx_path_transform_fixture(source, out):
+    fixture = out / "p4-path-transform-docx-fixture.docx"
+    with zipfile.ZipFile(source) as before, zipfile.ZipFile(fixture, "w") as after:
+        for item in before.infolist():
+            data = before.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ET.fromstring(data)
+                ns = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+                anchor = root.find(f".//{{{ns}}}inline")
+                h.require(anchor is not None, "DOCX Bezier fixture is not an inline drawing")
+                anchor.tag = f"{{{ns}}}anchor"
+                anchor.attrib.update({
+                    "distT": "0", "distB": "0", "distL": "0", "distR": "0",
+                    "simplePos": "0", "relativeHeight": "251658241", "behindDoc": "0",
+                    "locked": "0", "layoutInCell": "1", "allowOverlap": "1",
+                })
+                simple = ET.Element(f"{{{ns}}}simplePos", {"x": "0", "y": "0"})
+                horizontal = ET.Element(f"{{{ns}}}positionH", {"relativeFrom": "margin"})
+                ET.SubElement(horizontal, f"{{{ns}}}posOffset").text = "127000"
+                vertical = ET.Element(f"{{{ns}}}positionV", {"relativeFrom": "margin"})
+                ET.SubElement(vertical, f"{{{ns}}}posOffset").text = "63500"
+                anchor.insert(0, simple)
+                anchor.insert(1, horizontal)
+                anchor.insert(2, vertical)
+                effect = anchor.find(f"{{{ns}}}effectExtent")
+                h.require(effect is not None, "DOCX drawing is missing effectExtent")
+                # WordCraft's exact rotated overhang for this 100 × 50 pt, 30° frame.
+                effect.attrib.update(l="73676", r="73676", t="274963", b="274963")
+                children = list(anchor)
+                doc_pr = next(i for i, child in enumerate(children) if child.tag == f"{{{ns}}}docPr")
+                anchor.insert(doc_pr, ET.Element(f"{{{ns}}}wrapSquare", {"wrapText": "bothSides"}))
+                transform = root.find(".//{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}xfrm")
+                h.require(transform is not None, "DOCX freeform transform is missing")
+                transform.set("rot", "1800000")  # 30 degrees in DrawingML units.
+                transform.set("flipH", "1")
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            after.writestr(item, data)
+    return fixture
+
+
+def docx_path_transform_case(acc, row, fixtures, out):
+    source = fixtures / "bezier.docx"
+    h.require(source.is_file(), "tracked DrawingML Bezier fixture is missing", str(source))
+    fixture = docx_path_transform_fixture(source, out)
+    before = inspect_docx_curve(fixture)
+    h.require(before["transform"].get("rot") == "1800000"
+              and before["transform"].get("flipH") == "1",
+              "native fixture must have a modeled 30-degree horizontal reflection", before["transform"])
+    h.require(before["anchorOffsets"] == {
+        "horizontal": {"relativeFrom": "margin", "value": "127000"},
+        "vertical": {"relativeFrom": "margin", "value": "63500"},
+    }, "native DOCX fixture must retain nonzero page placement offsets", before["anchorOffsets"])
+    path_index, segment_index, point_index = 1, 1, 0
+    point = before["paths"][path_index]["commands"][segment_index]["points"][point_index]
+    viewport = before["paths"][path_index]["attrs"]
+    viewport_width, viewport_height = int(viewport["w"]), int(viewport["h"])
+    shape_xfrm = before["xml"].find(".//{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}spPr/{http://schemas.openxmlformats.org/drawingml/2006/main}xfrm")
+    extent = shape_xfrm.find("{http://schemas.openxmlformats.org/drawingml/2006/main}ext")
+    width_pt, height_pt = int(extent.get("cx")) / 12_700, int(extent.get("cy")) / 12_700
+    path = h.begin(acc, row, fixture, out, "p4-path-transform-docx-edited.docx")
+    docx_curve_enter_path_mode(acc)
+    selector = f'[data-testid="docx-path-point-{path_index}-{segment_index}-{point_index}"]'
+    h.require(acc.d.exists(selector), "transformed DrawingML control handle is missing", selector)
+    acc.d.js("""
+      window.p4PathTransformPointers=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        if(e.target.matches('.object-path-point'))
+          p4PathTransformPointers.push({type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      },true);
+    """)
+    x, y = acc.d.js("""
+      const e=document.querySelector(arguments[0]), r=e.getBoundingClientRect();
+      return [r.left+r.width/2,r.top+r.height/2];
+    """, selector)
+    overlay_width = acc.d.js("return parseFloat(document.querySelector('.object-path-points').style.width)")
+    scale = overlay_width / width_pt
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x*sx, y*sy), ((x+4)*sx, (y+2)*sy))
+    h.revision(acc, "docx", 1)
+    events = row["trustedPointer"] = acc.d.js("return window.p4PathTransformPointers")
+    h.require(len(events) == 2 and all(event["trusted"] for event in events),
+              "transformed DrawingML handle did not receive trusted pointer input", events)
+    rotation = math.radians(30)
+    dx, dy = events[1]["x"] - events[0]["x"], events[1]["y"] - events[0]["y"]
+    mapped = [
+        math.floor(int(point["x"]) + (-math.cos(rotation)*dx - math.sin(rotation)*dy) / scale * viewport_width / width_pt + 0.5),
+        math.floor(int(point["y"]) + (-math.sin(rotation)*dx + math.cos(rotation)*dy) / scale * viewport_height / height_pt + 0.5),
+    ]
+    mapped = [min(viewport_width, max(0, mapped[0])), min(viewport_height, max(0, mapped[1]))]
+    coords = lambda: acc.d.js("return [...document.querySelectorAll('[data-testid=docx-path-coordinates] input')].map(e=>Number(e.value))")
+    h.require(coords() == mapped, "DrawingML handle delta did not map through the inverse rotation/reflection", {"actual": coords(), "expected": mapped})
+    acc.key("ctrl+z")
+    row["undo"] = h.revision(acc, "docx", 2)
+    docx_curve_enter_path_mode(acc)
+    h.require(docx_curve_handle(acc, f"docx-path-point-{path_index}-{segment_index}-{point_index}")
+              == [int(point["x"]), int(point["y"])], "Undo did not restore transformed path control point")
+    acc.key("ctrl+y")
+    row["redo"] = h.revision(acc, "docx", 3)
+    docx_curve_enter_path_mode(acc)
+    h.require(docx_curve_handle(acc, f"docx-path-point-{path_index}-{segment_index}-{point_index}") == mapped,
+              "Redo did not restore transformed path control point")
+    h.publish(acc, "docx", row)
+
+    expected = deepcopy(before["xml"])
+    expected_path = expected.find(".//{http://schemas.openxmlformats.org/drawingml/2006/main}custGeom/{http://schemas.openxmlformats.org/drawingml/2006/main}pathLst")
+    expected_path = list(expected_path)[path_index]
+    expected_segment = list(expected_path)[segment_index]
+    expected_point = list(expected_segment)[point_index]
+    h.require(expected_point is not None, "expected DrawingML control point disappeared")
+    expected_point.set("x", str(mapped[0]))
+    expected_point.set("y", str(mapped[1]))
+    after = inspect_docx_curve(path)
+    h.require(ET.tostring(expected) == ET.tostring(after["xml"]),
+              "saved transformed DOCX changed XML outside the selected control point")
+    h.require(before["transform"] == after["transform"], "saved transformed DOCX changed rotation or flips")
+    h.require(before["transformFrame"] == after["transformFrame"],
+              "saved transformed DOCX changed shape-local offsets or extents")
+    h.require(before["anchorOffsets"] == after["anchorOffsets"],
+              "saved transformed DOCX changed its nonzero page placement offsets")
+    h.require(before["relationships"] == after["relationships"], "saved transformed DOCX changed OPC relationships")
+    h.require(before["parts"] == after["parts"], "saved transformed DOCX changed another package part")
+    row["savedTransform"] = after["transform"]
+    row["savedControl"] = mapped
+    row["unchangedPackageParts"] = len(before["parts"])
+    h.reopen(acc, path, row)
+    docx_curve_enter_path_mode(acc)
+    h.require(docx_curve_handle(acc, f"docx-path-point-{path_index}-{segment_index}-{point_index}") == mapped,
+              "saved transformed DOCX path did not reopen at the edited source coordinates")
+
+
+def rhwp_path_transform_case(acc, row, fixtures, out, fmt):
+    label = "hwpx" if fmt == "hwpx" else "h5"
+    # WebKitWebDriver occasionally resets a read-only HTTP response while the
+    # editor swaps the selected path or reopens the saved package. Retry only
+    # pure DOM reads after this diagnosed transient; never replay input or edits.
+    original_wait = acc.wait
+
+    def retry_remote_read(operation):
+        try:
+            return operation()
+        except h.p4.smoke.DriverLost as error:
+            if "Remote end closed connection without response" not in str(error):
+                raise
+            row.setdefault("transientWebDriverReadRetries", []).append({
+                "reason": "RemoteDisconnected", "operation": "read-only",
+            })
+            return operation()
+
+    def wait(script, *args, timeout=30):
+        return retry_remote_read(lambda: original_wait(script, *args, timeout=timeout))
+
+    acc.wait = wait
+    fixture = fixtures / f"a-p4-path-transform-{label}-original.{fmt}"
+    h.require(fixture.is_file(), "transformed RHWP native fixture is missing", str(fixture))
+    before = row["before"] = inspect(fixture)
+    target = next((frame for frame in before["frames"]
+                   if frame["path"] and frame["props"]["rotationAngle"] == 30
+                   and frame["props"]["horzFlip"] and frame["props"]["horzOffset"] > 0), None)
+    h.require(target is not None, "fixture must have a rotated, flipped path with a nonzero placement offset")
+    model = target["path"]
+    point_index = 1 if fmt == "hwpx" else next(
+        index for index, point in enumerate(model["points"]) if point.get("control"))
+    point = model["points"][point_index]
+    path = h.begin(acc, row, fixture, out, f"p4-path-transform-{label}-edited.{fmt}")
+
+    def select():
+        h.select_object(acc, target, "shape")
+        acc.dom_click(".object-path-mode")
+
+    select()
+    point_count = acc.d.js("return document.querySelectorAll(arguments[0]).length", POINT)
+    h.require(point_count == len(model["points"]) - int(model["closed"]),
+              "transformed path handle count differs from its source path")
+    point_selector = f"{POINT}:nth-of-type({point_index + 1})"
+    acc.d.js("""
+      window.p4PathTransformPointers=[];
+      for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+        if(e.target.classList.contains('object-path-point'))
+          window.p4PathTransformPointers.push({type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      },true);
+    """)
+    x, y = acc.d.js("""
+      const e=document.querySelector(arguments[0]), r=e.getBoundingClientRect();
+      return [r.x+r.width/2,r.y+r.height/2];
+    """, point_selector)
+    overlay_width = acc.d.js("return parseFloat(document.querySelector('.object-path-points').style.width)")
+    width_pt = target["props"]["width"] / 75
+    height_pt = target["props"]["height"] / 75
+    scale = overlay_width / width_pt
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x*sx, y*sy), ((x+13)*sx, (y+9)*sy))
+    h.revision(acc, fmt, 1)
+    events = row["trustedPointer"] = acc.d.js("return window.p4PathTransformPointers")
+    h.require(len(events) == 2 and all(event["trusted"] for event in events),
+              "transformed RHWP handle did not receive trusted pointer input", events)
+    rotation = math.radians(target["props"]["rotationAngle"])
+    flip_x = -1 if target["props"]["horzFlip"] else 1
+    flip_y = -1 if target["props"]["vertFlip"] else 1
+    dx, dy = events[1]["x"] - events[0]["x"], events[1]["y"] - events[0]["y"]
+    expected = [
+        math.floor(point["x"] + (math.cos(rotation)*flip_x*dx + math.sin(rotation)*flip_x*dy)
+                   / scale * model["width"] / width_pt + 0.5),
+        math.floor(point["y"] + (-math.sin(rotation)*flip_y*dx + math.cos(rotation)*flip_y*dy)
+                   / scale * model["height"] / height_pt + 0.5),
+    ]
+    expected = [min(model["width"], max(0, expected[0])), min(model["height"], max(0, expected[1]))]
+    coords = lambda: retry_remote_read(lambda: acc.d.js(
+        "return [...document.querySelectorAll(arguments[0]+' input')].map(e=>Number(e.value))", COORDS))
+    h.require(coords() == expected, "transformed RHWP handle delta did not map to source coordinates", {"actual": coords(), "expected": expected})
+    acc.key("ctrl+z")
+    row["undo"] = h.revision(acc, fmt, 2)
+    select()
+    acc.dom_click(point_selector)
+    h.require(coords() == [point["x"], point["y"]], "Undo did not restore transformed RHWP path point")
+    acc.key("ctrl+y")
+    row["redo"] = h.revision(acc, fmt, 3)
+    select()
+    acc.dom_click(point_selector)
+    h.require(coords() == expected, "Redo did not restore transformed RHWP path point")
+    h.publish(acc, fmt, row)
+    after = row["after"] = inspect(path)
+    want_path = {**model, "points": [dict(item) for item in model["points"]]}
+    want_path["points"][point_index].update(x=expected[0], y=expected[1])
+    if model["closed"]:
+        want_path["points"][-1] = dict(want_path["points"][0])
+    want = {**target, "path": want_path}
+    h.require(after == {**before, "frames": [want if item == target else item for item in before["frames"]]},
+              "independent RHWP engine changed unrelated shapes or geometry", after)
+    if fmt == "hwpx":
+        old, new = section_pair(fixture, path)
+        vertices = old.findall(".//{*}polygon/{*}pt")
+        h.require(len(vertices) == len(want_path["points"]), "saved transformed HWPX polygon point count changed")
+        for vertex, value in zip(vertices, want_path["points"], strict=True):
+            vertex.attrib.update(x=str(value["x"]), y=str(value["y"]))
+        h.require(ET.tostring(old) == ET.tostring(new),
+                  "saved transformed HWPX changed rotation, flips, offsets, metadata, or unrelated XML")
+        row["unchangedPackageParts"] = "all outside Contents/section0.xml"
+    else:
+        old_streams, new_streams = [hwp_records.cfb_streams(item.read_bytes()) for item in (fixture, path)]
+        h.require(old_streams.keys() == new_streams.keys(), "HWP5 stream ownership changed")
+        old_body = hwp_records.unpacked(old_streams, "BodyText/Section0")
+        new_body = hwp_records.unpacked(new_streams, "BodyText/Section0")
+        changes = hwp_records.diff_stream(old_body, new_body)["changes"]
+        h.require(len(changes) == 1 and changes[0]["op"] == "replace",
+                  "saved transformed HWP5 changed more than one body record", changes)
+        change = changes[0]
+        h.require(len(change["original"]) == len(change["output"]) == 1
+                  and change["original"][0]["index"] == change["output"][0]["index"]
+                  and all(item["tag"] == 83 and item["level"] == 3 and item["len"] == 79
+                          for item in (change["original"][0], change["output"][0])),
+                  "HWP5 transformed-path edit changed the cubic leaf identity or length", change)
+        preview_streams = {"BodyText/Section0", "PrvText", "PrvImage"}
+        h.require({key: value for key, value in old_streams.items() if key not in preview_streams}
+                  == {key: value for key, value in new_streams.items() if key not in preview_streams},
+                  "HWP5 transformed-path edit changed unrelated CFB streams")
+        old_records = hwp_records.records(old_body)
+        new_records = hwp_records.records(new_body)
+        h.require(len(old_records) == len(new_records), "HWP5 transformed-path edit changed record count")
+        index = change["original"][0]["index"]
+        h.require(all(old == new for i, (old, new) in enumerate(zip(old_records, new_records, strict=True)) if i != index),
+                  "HWP5 transformed-path edit changed an adjacent record")
+        tail = 4 + len(model["points"]) * 8
+        h.require(old_records[index][:2] == new_records[index][:2] == (83, 3)
+                  and old_records[index][2][tail:] == new_records[index][2][tail:],
+                  "HWP5 transformed-path edit changed cubic commands or record padding")
+        row["recordProof"] = change
+    row["savedTransform"] = {key: target["props"][key] for key in
+                              ("rotationAngle", "horzFlip", "vertFlip", "horzOffset", "vertOffset")}
+    h.reopen(acc, path, row)
+    select()
+    acc.dom_click(point_selector)
+    h.require(coords() == expected, "saved transformed RHWP path did not reopen at the edited source coordinate")
 
 
 def points_case(acc, row, fixtures, out, kind, fmt):
@@ -1844,6 +2165,9 @@ h.CASES = {
     "P4-DX-GROUP": docx_group_case,
     "P4-DX-CURVE": docx_curve_case,
     "P4-DX-PATH": docx_path_vertex_case,
+    "P4-PATH-XFM-DOCX": docx_path_transform_case,
+    "P4-PATH-XFM-HWPX": lambda *args: rhwp_path_transform_case(*args, "hwpx"),
+    "P4-PATH-XFM-HWP5": lambda *args: rhwp_path_transform_case(*args, "hwp"),
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),

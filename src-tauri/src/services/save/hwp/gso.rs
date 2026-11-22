@@ -2080,24 +2080,48 @@ pub(super) fn prove_evolved_gso(
             preserved(old_vertices == new_vertices, BODY)?;
         }
     } else if matches!(leaf_tag, TAG_CURVE | TAG_POLYGON) && old_last.2 != new_last.2 {
-        // The point editor keeps the frame, transform and every other record
-        // byte fixed. In particular a path edit cannot hide a caption change
-        // or any change to the existing segment kinds or their padding.
+        // A path edit keeps the complete owner subtree except its path leaf
+        // byte-identical. Permit only the modeled reversible HWP5 transform:
+        // bounded integer translation, modeled flip/rotation fields, and the
+        // one-pair identity rendering matrices. Any upper flip bits remain in
+        // the byte-identical owner subtree. The
+        // frontend applies the inverse transform to pointer deltas; this proof
+        // establishes that no unmodeled affine state changed or was discarded.
+        let component_offset = [
+            i32::from_le_bytes(old_sc[attr_at..attr_at + 4].try_into().unwrap()),
+            i32::from_le_bytes(old_sc[attr_at + 4..attr_at + 8].try_into().unwrap()),
+        ];
+        let rotation_center = [
+            i32::from_le_bytes(old_sc[attr_at + 34..attr_at + 38].try_into().unwrap()),
+            i32::from_le_bytes(old_sc[attr_at + 38..attr_at + 42].try_into().unwrap()),
+        ];
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let modeled_transform = (-MAX_OFFSET_HU..=MAX_OFFSET_HU)
+            .contains(&component_offset[0])
+            && (-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&component_offset[1])
+            && (-MAX_OFFSET_HU..=MAX_OFFSET_HU)
+                .contains(&i32::from_le_bytes(old[0].2[8..12].try_into().unwrap()))
+            && (-MAX_OFFSET_HU..=MAX_OFFSET_HU)
+                .contains(&i32::from_le_bytes(old[0].2[12..16].try_into().unwrap()))
+            && word(old_sc, attr_at + 10).is_ok_and(|version| version == 1)
+            && (-360..=360).contains(&old_rot)
+            && (old_rot.rem_euclid(360) == 0
+                || (i64::from(rotation_center[0]) * 2 == orig_w as i64
+                    && i64::from(rotation_center[1]) * 2 == orig_h as i64))
+            && old_w == orig_w
+            && old_h_dim == orig_h
+            && old_cw == orig_w
+            && old_ch == orig_h
+            && parse_rendering_matrices(&old_sc[r_at..old_r_end])
+                .is_some_and(|matrices| matrices.into_iter().all(|matrix| matrix == identity));
         preserved(
             !has_caption
                 && old_mid.is_empty()
                 && old[..old.len() - 1] == new[..new.len() - 1]
                 && dword(old[0].2, 4)? as u32 & ATTR_SIZE_PROTECT == 0
-                && old_flip & 3 == 0
-                && old_rot == 0
-                && old_sc[r_at + 2..old_r_end].chunks_exact(48).all(|matrix| {
-                    matrix.chunks_exact(8).enumerate().all(|(index, bytes)| {
-                        f64::from_le_bytes(bytes.try_into().unwrap())
-                            == if index == 0 || index == 4 { 1.0 } else { 0.0 }
-                    })
-                })
                 && (1..=2_000_000).contains(&orig_w)
                 && (1..=2_000_000).contains(&orig_h)
+                && modeled_transform
                 && if leaf_tag == TAG_CURVE {
                     prove_cubic_leaf_edit(old_last.2, new_last.2, orig_w, orig_h)
                 } else {
@@ -3215,29 +3239,52 @@ mod tests {
     #[ignore = "Release-WASM HWP5 editable cubic path and published fixture"]
     fn release_stage3a_hwp_cubic_preserves_segment_structure() {
         let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
-        let original = std::fs::read(directory.join("a-p4-curve-original.hwp")).unwrap();
-        let output = std::fs::read(directory.join("a-p4-curve-edited.hwp")).unwrap();
+        let original = std::fs::read(directory.join("a-p4-path-transform-h5-original.hwp")).unwrap();
+        let output = std::fs::read(directory.join("a-p4-path-transform-h5-edited.hwp")).unwrap();
         assert_eq!(check_with_preview_refresh(&original, &output), vec![]);
         let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
-        for offset in [0, 44, 46, 48] {
+        for (offset, value) in [(0, 9), (68, 2), (75, 1)] {
             let tampered = mutate_body_record(&output, curve, |data| {
                 let mut bytes = data.to_vec();
-                bytes[offset] ^= 1;
+                bytes[offset] = value;
                 bytes
             });
             assert!(check_with_preview_refresh(&original, &tampered)
                 .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
-        // Even identical transformed components cannot authorize a point-only edit.
+        // The accepted fixture carries a centered 30-degree rotation, modeled
+        // horizontal flip, and nonzero owner/component offsets. Rendering
+        // matrices are still identity and identical around the single leaf edit.
+        // A nonidentity matrix, unsupported component offset, or changed owner
+        // transform remains refused.
         let translation = 9000.0f64.to_le_bytes();
         let translated_original = mutate_p4_cubic_component(&original, 68, &translation);
         let translated_output = mutate_p4_cubic_component(&output, 68, &translation);
         assert!(check_with_preview_refresh(&translated_original, &translated_output)
             .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
-        // Component offset_x and the translation matrix's tx are outside the leaf.
-        for (offset, replacement) in [(8, &15001i32.to_le_bytes()[..]), (68, &9000.0f64.to_le_bytes()[..])] {
+        let oversized_original = mutate_p4_cubic_component(&original, 8, &2000001i32.to_le_bytes());
+        let oversized_output = mutate_p4_cubic_component(&output, 8, &2000001i32.to_le_bytes());
+        assert!(check_with_preview_refresh(&oversized_original, &oversized_output)
+            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        let both_flips_original = mutate_p4_cubic_component(&original, 36, &3u32.to_le_bytes());
+        let both_flips_output = mutate_p4_cubic_component(&output, 36, &3u32.to_le_bytes());
+        assert_eq!(check_with_preview_refresh(&both_flips_original, &both_flips_output), vec![]);
+        for (offset, replacement) in [
+            (8, &15001i32.to_le_bytes()[..]),
+            (36, &524293u32.to_le_bytes()[..]),
+            (40, &31i16.to_le_bytes()[..]),
+        ] {
             let tampered = mutate_p4_cubic_component(&output, offset, replacement);
             assert!(check_with_preview_refresh(&original, &tampered)
+                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        }
+        for (offset, replacement) in [
+            (40, &361i16.to_le_bytes()[..]),
+            (42, &5401i32.to_le_bytes()[..]),
+        ] {
+            let unsupported_original = mutate_p4_cubic_component(&original, offset, replacement);
+            let unsupported_output = mutate_p4_cubic_component(&output, offset, replacement);
+            assert!(check_with_preview_refresh(&unsupported_original, &unsupported_output)
                 .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
     }

@@ -182,7 +182,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
       </button>}
       {editingPath && selection.shapePath && onEdit &&
         <ShapePointEditor path={selection.shapePath} owner={owner} width={selection.frame.width * scale}
-          height={selection.frame.height * scale} editVertices={selection.operations.includes("pathVertex")}
+          height={selection.frame.height * scale} scale={scale} {...(selection.shape ? { shape: selection.shape } : {})}
+          editVertices={selection.operations.includes("pathVertex")}
           collinearVertexRemoval={selection.collinearVertexRemoval}
           curveTerminalLine={selection.curveTerminalLine}
           curveLineStructure={selection.curveLineStructure}
@@ -190,7 +191,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingPath && selection.drawingMlPaths && onEdit &&
         <DrawingMlPathEditor paths={selection.drawingMlPaths} owner={owner} width={selection.frame.width * scale}
-          height={selection.frame.height * scale} editVertices={selection.operations.includes("pathVertex")}
+          height={selection.frame.height * scale} scale={scale} {...(selection.shape ? { shape: selection.shape } : {})}
+          editVertices={selection.operations.includes("pathVertex")}
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingGroupChildren && selection.groupChildren && onEdit &&
         <GroupChildEditor group={selection.groupChildren} owner={owner} width={selection.frame.width * scale}

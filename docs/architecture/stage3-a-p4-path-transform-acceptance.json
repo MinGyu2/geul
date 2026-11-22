@@ -1,0 +1,142 @@
+{
+  "issue": "P4-PATH-XFM",
+  "category": "B",
+  "status": "IMPLEMENTED_VERIFIED",
+  "date": "2026-11-22",
+  "acceptanceScope": {
+    "description": "변환된 path의 화면 handle을 원래 path 정수 좌표로 대응시키고, 지원되는 변환·소유자·serialization 구조를 저장/Undo/Redo/reopen까지 보존한다.",
+    "coordinateMapping": "회전된 visible selection frame 안에 unturned path frame을 중앙 정렬하고, pointer delta에 modeled rotation/reflection 역행렬을 적용한 뒤 path viewport 정수 lattice에 반올림·범위 제한한다.",
+    "supported": {
+      "DOCX": "본문 최상위, WordCraft가 지원하는 custom DrawingML geometry. 유한 rotation -360°..=360°, modeled horizontal/vertical flips 및 path별 viewport의 정수 control point. Ink와 unsupported metadata는 제외.",
+      "HWP5": "Section0 본문의 지원 cubic leaf/tag 83. local_file_version 1, original/current dimensions 동일, bounded owner 및 component offsets, rotation -360..=360(회전 중심이 원본 크기의 정확한 절반), modeled flip bits, identity rendering matrices. HWP5 polygon component offsets는 0만 허용.",
+      "HWPX": "본문의 지원 path model; 실제 Native acceptance는 simple polygon. bounded modeled offsets, rotation -360..=360, centered nontrivial rotation, flips, identity raw rendering matrices. 미확인 segment contract는 P4-HX-CURVE에서 계속 제한."
+    },
+    "failClosed": [
+      "비유한·범위 밖 rotation, 잘못된 rotation center, 비항등·손상·미지원 raw affine/rendering matrices",
+      "unsupported path metadata/Ink, group-child path, 잘못된 owner/session address, 지원되지 않는 shape/segment structure",
+      "변환된 path의 segment/vertex insertion or deletion, HWP5 polygon의 nonzero component offset"
+    ]
+  },
+  "implementation": {
+    "files": [
+      "src/components/Editor/pathEditTransform.ts",
+      "src/components/Editor/ShapePointEditor.tsx",
+      "src/components/Editor/DrawingMlPathEditor.tsx",
+      "src/components/Editor/ObjectSelectionFrame.tsx",
+      "src/styles/app.css",
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src-tauri/src/adapters/wordcraft/tests.rs",
+      "src-tauri/src/services/save/hwp/gso.rs",
+      "patches/rhwp/stage3a-path-transform-safety.patch",
+      "scripts/tests/stage3-shapes.wasm.test.ts",
+      "scripts/tests/native-stage3-c.py",
+      "scripts/tests/native-stage3a-p4.py"
+    ],
+    "rhwp": {
+      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 49,
+      "addedPatch": "patches/rhwp/stage3a-path-transform-safety.patch",
+      "patchSha256": "70a05aadec5ae338d7b36a1b96da814cedb2a90630e94a6258e69b99cd2703d1",
+      "releaseGeneration": "1ed02bea67181e5d9098e5249ed8f740e08fbbfe9aa8a5f7301354ae69164225",
+      "wasmSha256": "2532c1c298325174bb8184c268e2deff0717dd5c9dc5e4d78dd415e047443b6b",
+      "javascriptSha256": "0d5300276a71ea01db94ffbf8a4aa45e3b285dddbe0c053f82e28b093df8f986",
+      "publication": "검증용 immutable local generation을 사용했다. public/rhwp selector/artifacts는 변경하지 않았다."
+    },
+    "geulReleaseAppSha256": "fd28796771bb51d1b7120866f29e0fd936df7c4f181a81ad39f1a864ac701115",
+    "geulCommit": "이 evidence를 포함한 P4-PATH-XFM local commit 및 후속 ledger hash 기록 commit에서 확정"
+  },
+  "focusedChecks": [
+    {
+      "name": "path transform helper tests",
+      "status": "PASS",
+      "result": "4 passed",
+      "evidence": "scripts/tests/path-edit-transform.test.ts"
+    },
+    {
+      "name": "ObjectSelectionFrame UI regression tests",
+      "status": "PASS",
+      "result": "32 passed"
+    },
+    {
+      "name": "npm run typecheck",
+      "status": "PASS"
+    },
+    {
+      "name": "DOCX Rust T009 transformed DrawingML fixture proof",
+      "status": "PASS",
+      "result": "1 passed"
+    },
+    {
+      "name": "Release-WASM transformed HWPX polygon and HWP5 cubic cases",
+      "status": "PASS",
+      "result": "2 passed; 77 unrelated tests skipped by focused selection"
+    },
+    {
+      "name": "Release Rust T009 transformed HWP5 cubic fixture proof",
+      "status": "PASS",
+      "result": "1 passed; includes byte-preserving owner/preview checks and unsupported transform/leaf rejection"
+    },
+    {
+      "name": "ordered 49-patch RHWP Release/WASM generation and Tauri Release build",
+      "status": "PASS",
+      "result": "exact pinned RHWP patch series compiled and was embedded by the Release application"
+    },
+    {
+      "name": "release path/privacy check",
+      "status": "PASS",
+      "limitation": "Release portability remains UNVERIFIED in this Nix runtime."
+    }
+  ],
+  "nativeAcceptance": [
+    {
+      "format": "DOCX",
+      "status": "PASS",
+      "environment": "Linux X11/Xvfb, private IBus session; actual trusted pointer and keyboard events",
+      "appSha256": "fd28796771bb51d1b7120866f29e0fd936df7c4f181a81ad39f1a864ac701115",
+      "result": "target/p4-path-xfm-work/native-out-docx-v8/result.json",
+      "cleanup": "target/p4-path-xfm-work/native-session-docx-v8/cleanup.json",
+      "fixtureSha256": "6a5590b2f50005730457f0b5f1d00557e3a29a4a17e20e107ab775e3281fce65",
+      "savedFileSha256": "2f106c110a2effd84bfc8ff3b1751a1544ac8b0122bea96274297e3fb0762cb0",
+      "proof": "modeled 30° DrawingML rotation + horizontal flip and nonzero anchor offsets; inverse-mapped control-point movement; Undo/Redo; T009 saved/synced; one intended control point changed, DrawingML transforms/anchor offsets and relationships preserved, all other 8 OPC parts byte-identical; reopened in a fresh app session."
+    },
+    {
+      "format": "HWP5",
+      "status": "PASS",
+      "environment": "Linux X11/Xvfb, private IBus session; actual trusted pointer and keyboard events",
+      "appSha256": "fd28796771bb51d1b7120866f29e0fd936df7c4f181a81ad39f1a864ac701115",
+      "rhwpGeneration": "1ed02bea67181e5d9098e5249ed8f740e08fbbfe9aa8a5f7301354ae69164225",
+      "result": "target/p4-path-xfm-work/native-out-v3/result.json",
+      "cleanup": "target/p4-path-xfm-work/native-session-v3/cleanup.json",
+      "fixtureSha256": "3386f1421b8977152ed366fdaadaea9274e579b8a56c15db57b71d381919c397",
+      "savedFileSha256": "6ef84fdef41aad79419da68dc6a06a68ae46456194168c658bb7dc1976ca7d4a",
+      "proof": "30° rotation, modeled horizontal flip and nonzero owner/component offsets; Undo/Redo; T009 saved/synced with no findings; independent record comparison found exactly one tag-83/level-3/79-byte path leaf replacement at the same index (17); adjacent records and non-preview streams preserved, PrvImage refreshed; reopened in a fresh app session."
+    },
+    {
+      "format": "HWPX",
+      "status": "PASS",
+      "environment": "Linux X11/Xvfb, private IBus session; actual trusted pointer and keyboard events",
+      "appSha256": "fd28796771bb51d1b7120866f29e0fd936df7c4f181a81ad39f1a864ac701115",
+      "rhwpGeneration": "1ed02bea67181e5d9098e5249ed8f740e08fbbfe9aa8a5f7301354ae69164225",
+      "result": "target/p4-path-xfm-work/native-out-v6/result.json",
+      "cleanup": "target/p4-path-xfm-work/native-session-v6/cleanup.json",
+      "fixtureSha256": "34111c674ae4f5c5d6ee76da1bea56454a90f85688ef74081a8fe44009e99978",
+      "savedFileSha256": "1629bfb9ad541ebf87b8afdc2aed210f01d610e02c39bb5f98ca5c78f564e286",
+      "proof": "30° rotation, modeled horizontal flip and nonzero object offsets; Undo/Redo; T009 saved/synced with no findings; transformed polygon coordinates and properties inspected in saved HWPX; all package parts except the expected Contents/section0.xml edit remained identical; reopened in a fresh app session."
+    }
+  ],
+  "nativePlatformStatus": {
+    "linuxX11Xvfb": "PASS for DOCX/HWP5/HWPX; this is isolated X11 evidence and does not represent host Wayland.",
+    "wayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macos": "NOT RUN",
+    "externalMicrosoftWordOrHancomReopen": "NOT RUN",
+    "releasePortability": "UNVERIFIED"
+  },
+  "repositoryIntegration": {
+    "branchAtVerification": "master",
+    "headBeforeIssueCommit": "42fffe2eb7271c3edccef247b58e15f0a37333f5",
+    "wordcraftSubmodule": "40dfd6d27b71c0f8ebcc5fd112b5c1b27481a79f; unchanged for this issue",
+    "rhwpSubmodule": "1a76570e833917d15817415a53c09ad61ab3203f; upstream pin unchanged; behavior integrated by ordered parent patch",
+    "push": "NOT PERFORMED"
+  }
+}

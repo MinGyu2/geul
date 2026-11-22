@@ -6,14 +6,14 @@ index 09e90e1..0cc4cf2 100644
      HwpError::RenderError("Unsupported shape edit".into())
  }
 
-+/// Stored matrices are retained on save. The body point overlay only maps through the
-+/// renderer's frame (page origin plus frame extent divided by original extent).
++/// Stored rendering matrices are retained verbatim. The body path editor separately
++/// maps the modeled rotation and flips between display and source coordinates.
 +fn geul_path_has_identity_matrices(raw: &[u8]) -> bool {
 +    let Some((count, matrices)) = raw.split_at_checked(2) else {
 +        return false;
 +    };
 +    let count = u16::from_le_bytes([count[0], count[1]]) as usize;
-+    matrices.len() == 48 + count * 96
++    count == 1 && matrices.len() == 48 + count * 96
 +        && matrices.chunks_exact(48).all(|matrix| {
 +            matrix.chunks_exact(8).enumerate().all(|(index, bytes)| {
 +                let value = f64::from_le_bytes(bytes.try_into().unwrap());
@@ -25,19 +25,31 @@ index 09e90e1..0cc4cf2 100644
  fn geul_same_point(a: &crate::model::Point, b: &crate::model::Point) -> bool {
      a.x == b.x && a.y == b.y
  }
-@@ -491,7 +507,13 @@ impl DocumentCore {
+@@ -491,7 +507,24 @@ impl DocumentCore {
          use crate::parser::FileFormat;
          let shape = self.advanced_body_shape(sec, para, ctrl)?;
          let attr = shape.shape_attr();
 -        if attr.group_level != 0 || attr.rotation_angle.rem_euclid(360) != 0
 +        // The HWP5 component offset is relative to a group. The top-level renderer
 +        // positions a body curve with CommonObjAttr and keeps the component bytes intact.
-+        if attr.group_level != 0 || attr.rotation_angle != 0
++        if attr.group_level != 0 || !(-360..=360).contains(&attr.rotation_angle)
++            || attr.rotate_image
++            || (self.source_format == FileFormat::Hwp
++                && (attr.local_file_version != 1
++                    || !(-2_000_000..=2_000_000).contains(&attr.offset_x)
++                    || !(-2_000_000..=2_000_000).contains(&attr.offset_y)
++                    || attr.current_width != attr.original_width
++                    || attr.current_height != attr.original_height))
++            || (attr.rotation_angle.rem_euclid(360) != 0
++                && (attr.rotation_center.x.saturating_mul(2) != attr.original_width as i32
++                    || attr.rotation_center.y.saturating_mul(2) != attr.original_height as i32))
 +            || (self.source_format == FileFormat::Hwpx
-+                && (attr.hwpx_unproven_path_transform || attr.offset_x != 0 || attr.offset_y != 0))
++                && (attr.hwpx_unproven_path_transform
++                    || !(-2_000_000..=2_000_000).contains(&attr.offset_x)
++                    || !(-2_000_000..=2_000_000).contains(&attr.offset_y)))
 +            || (!(attr.raw_rendering.is_empty() && self.source_format == FileFormat::Hwpx)
 +                && !geul_path_has_identity_matrices(&attr.raw_rendering))
-             || attr.horz_flip || attr.vert_flip || attr.flip & 3 != 0
+-            || attr.horz_flip || attr.vert_flip || attr.flip & 3 != 0
              || attr.original_width_was_zero || attr.original_height_was_zero
              || !(1..=2_000_000).contains(&attr.original_width)
 diff --git a/src/model/shape.rs b/src/model/shape.rs
@@ -181,7 +193,7 @@ index 1ce3f66..afef5df 100644
      let mut x_coords = [0i32; 4];
      let mut y_coords = [0i32; 4];
      // [Task #1067] polygon / curve 의 가변 꼭짓점 `<hc:pt x=... y=.../>` 누적.
-@@ -4849,6 +4876,27 @@ fn parse_shape_object(
+@@ -4849,6 +4876,28 @@ fn parse_shape_object(
                  match local {
                      b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
                      | b"rotationInfo" => {
@@ -201,7 +213,8 @@ index 1ce3f66..afef5df 100644
 +                                        0
 +                                    }
 +                                };
-+                                valid &= attr_str(&attr).parse::<i32>() == Ok(0);
++                                valid &= attr_str(&attr).parse::<i32>()
++                                    .is_ok_and(|value| (-2_000_000..=2_000_000).contains(&value));
 +                            }
 +                            shape_attr.hwpx_unproven_path_transform |= !valid || axes != 3;
 +                            seen_path_offset = true;

@@ -1,6 +1,8 @@
 import { useRef, useState, type PointerEvent } from "react";
 import type { ObjectEdit, ObjectSelection, ShapePath } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
+import type { ShapeProperties } from "../../commands/objectSelection";
+import { pathOverlayGeometry, pathPointFromClientDelta } from "./pathEditTransform";
 
 interface PointDrag {
   owner: string;
@@ -36,11 +38,13 @@ function defaultCubic(path: ShapePath, point: ShapePath["points"][number]) {
   };
 }
 
-export function ShapePointEditor({ path, owner, width, height, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveCubicStructure, onEdit }: {
+export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveCubicStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
   height: number;
+  scale: number;
+  shape?: ShapeProperties;
   editVertices: boolean;
   collinearVertexRemoval: ObjectSelection["collinearVertexRemoval"];
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
@@ -55,6 +59,8 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
   const [preview, setPreview] = useState<{ owner: string; index: number; x: number; y: number }>();
   const drag = useRef<PointDrag | null>(null);
   const points = path.closed ? path.points.slice(0, -1) : path.points;
+  const pathTransform = shape ?? { rotation: 0, flipH: false, flipV: false, widthPt: width / scale, heightPt: height / scale };
+  const overlay = pathOverlayGeometry(width, height, scale, pathTransform);
   const index = Math.min(vertexIndex, points.length - 1);
   const selected = points[index]!;
   const newVertex = editVertices && points.length < 256
@@ -91,8 +97,10 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
 
   function target(event: PointerEvent<HTMLButtonElement>, current: PointDrag) {
     const point = points[current.index]!;
-    const x = Math.round(point.x + (event.clientX - current.clientX) * path.width / width);
-    const y = Math.round(point.y + (event.clientY - current.clientY) * path.height / height);
+    const mapped = pathPointFromClientDelta(point, event.clientX - current.clientX, event.clientY - current.clientY,
+      scale, path.width, path.height, pathTransform);
+    const x = mapped.x;
+    const y = mapped.y;
     return { x: Math.min(path.width, Math.max(0, x)), y: Math.min(path.height, Math.max(0, y)) };
   }
 
@@ -116,6 +124,8 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
   }
 
   return <>
+    <div className="object-path-points" style={{ left: overlay.left, top: overlay.top, width: overlay.width,
+      height: overlay.height, transform: overlay.transform }}>
     {points.map((point, i) => {
       const at = preview?.owner === owner && preview.index === i ? preview : point;
       return <button type="button" key={i} className="object-path-point"
@@ -133,6 +143,7 @@ export function ShapePointEditor({ path, owner, width, height, editVertices, col
         onPointerUp={event => finish(event, true)} onPointerCancel={event => finish(event, false)}
         onLostPointerCapture={event => finish(event, false)} />;
     })}
+    </div>
     <form className="object-path-coordinates" onMouseDown={event => event.stopPropagation()}
       onSubmit={event => { event.preventDefault(); if (valid) onEdit({ kind: "pathPoint", index, x, y }); }}>
       <label>{t("editor.object.path.x")} <input type="number" value={rawX} min={0} max={path.width} step={1}

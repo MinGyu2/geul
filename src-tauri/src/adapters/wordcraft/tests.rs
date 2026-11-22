@@ -6267,7 +6267,7 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
         fill: Some(Rgb(0x11, 0x22, 0x33)),
         stroke: Some(Rgb(0x44, 0x55, 0x66)),
         stroke_width: 1.0,
-        float: Float::default(),
+        float: Float { rot: 30.0, flip_h: true, flip_v: false, ..Float::default() },
         story: None,
         freeform: Some(std::sync::Arc::new(freeform)),
         effects: Default::default(),
@@ -6303,6 +6303,9 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
     };
     let (position, epoch, selected) = state(&mut model);
     assert!(selected["operations"].as_array().unwrap().iter().any(|op| op == "pathPoint"));
+    assert_eq!(selected["shape"]["rotation"], 30.0);
+    assert_eq!(selected["shape"]["flipH"], true);
+    assert_eq!(selected["shape"]["flipV"], false);
     assert_eq!(selected["drawingMlPaths"][0]["segments"][1]["command"], "quadBezTo");
     assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["command"], "cubicBezTo");
     assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["points"][0]["x"], 254000);
@@ -6350,12 +6353,20 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
     assert_eq!(reopened_geometry.paths[0].commands.as_ref().unwrap()[1], Command::QuadraticTo { control: [127_000, 63_500], end: [254_000, 127_000] });
     assert_eq!(reopened_geometry.paths[1].commands.as_ref().unwrap()[1], Command::CubicTo { control1: [300_000, 100_000], control2: [508_000, 127_000], end: [762_000, 381_000] });
     assert_eq!(reopened_geometry.paths[0].attrs, vec![("w".into(), "1270000".into()), ("h".into(), "635000".into()), ("fill".into(), "norm".into()), ("stroke".into(), "1".into())]);
+    let reopened_spin = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects).find_map(|object| match object {
+        InlineObject::Shape { kind: ShapeKind::Freeform, float, .. } => Some(float),
+        _ => None,
+    }).expect("independent saved file preserves freeform rotation and flips");
+    assert_eq!(reopened_spin.rot, 30.0);
+    assert!(reopened_spin.flip_h);
+    assert!(!reopened_spin.flip_v);
 
     assert!(model.apply(&[DocxOp::Undo {}]).rejected.is_empty());
     assert_eq!(model.export().unwrap(), baseline, "undo restores the complete original custom geometry");
     assert!(model.apply(&[DocxOp::Redo {}]).rejected.is_empty());
     assert_eq!(model.export().unwrap(), after, "redo restores the accepted serialized edit");
 }
+
 
 #[test]
 fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {

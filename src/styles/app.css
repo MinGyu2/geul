@@ -1204,6 +1204,16 @@ button {
   pointer-events: auto;
 }
 
+.object-path-points {
+  position: absolute;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.object-path-points .object-path-point {
+  pointer-events: auto;
+}
+
 .object-path-mode {
   right: 0;
   bottom: calc(100% + 6px);

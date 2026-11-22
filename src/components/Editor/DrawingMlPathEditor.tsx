@@ -1,6 +1,8 @@
 import { useRef, useState, type PointerEvent } from "react";
 import type { DrawingMlShapePath, ObjectEdit } from "../../commands/objectSelection";
+import type { ShapeProperties } from "../../commands/objectSelection";
 import { useTranslation } from "../../language/LanguageContext";
+import { pathOverlayGeometry, pathPointFromClientDelta } from "./pathEditTransform";
 
 interface EditPoint {
   path: number;
@@ -23,11 +25,13 @@ interface Drag {
   point: EditPoint;
 }
 
-export function DrawingMlPathEditor({ paths, owner, width, height, editVertices = false, onEdit }: {
+export function DrawingMlPathEditor({ paths, owner, width, height, scale, shape, editVertices = false, onEdit }: {
   paths: readonly DrawingMlShapePath[];
   owner: string;
   width: number;
   height: number;
+  scale: number;
+  shape?: ShapeProperties;
   editVertices?: boolean;
   onEdit: (edit: Extract<ObjectEdit, { kind: "docxPathPoint" | "docxPathVertex" }>) => void;
 }) {
@@ -38,6 +42,8 @@ export function DrawingMlPathEditor({ paths, owner, width, height, editVertices 
       x: point.x, y: point.y, viewportWidth: path.viewportWidth, viewportHeight: path.viewportHeight,
       control: point.control, command: segment.command,
     }))));
+  const pathTransform = shape ?? { rotation: 0, flipH: false, flipV: false, widthPt: width / scale, heightPt: height / scale };
+  const overlay = pathOverlayGeometry(width, height, scale, pathTransform);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [draft, setDraft] = useState<{ owner: string; index: number; x: string; y: string }>();
   const [preview, setPreview] = useState<{ owner: string; index: number; x: number; y: number }>();
@@ -60,9 +66,11 @@ export function DrawingMlPathEditor({ paths, owner, width, height, editVertices 
 
   function target(event: PointerEvent<HTMLButtonElement>, current: Drag) {
     const { point } = current;
+    const mapped = pathPointFromClientDelta(point, event.clientX - current.startX, event.clientY - current.startY,
+      scale, point.viewportWidth, point.viewportHeight, pathTransform);
     return {
-      x: Math.min(point.viewportWidth, Math.max(0, Math.round(point.x + (event.clientX - current.startX) * point.viewportWidth / width))),
-      y: Math.min(point.viewportHeight, Math.max(0, Math.round(point.y + (event.clientY - current.startY) * point.viewportHeight / height))),
+      x: Math.min(point.viewportWidth, Math.max(0, mapped.x)),
+      y: Math.min(point.viewportHeight, Math.max(0, mapped.y)),
     };
   }
 
@@ -86,6 +94,8 @@ export function DrawingMlPathEditor({ paths, owner, width, height, editVertices 
   }
 
   return <>
+    <div className="object-path-points" style={{ left: overlay.left, top: overlay.top, width: overlay.width,
+      height: overlay.height, transform: overlay.transform }}>
     {points.map((point, index) => {
       const at = preview?.owner === owner && preview.index === index ? preview : point;
       const label = t(point.control ? "editor.object.docxPath.control" : "editor.object.docxPath.point", {
@@ -106,6 +116,7 @@ export function DrawingMlPathEditor({ paths, owner, width, height, editVertices 
         onPointerUp={event => finish(event, true)} onPointerCancel={event => finish(event, false)}
         onLostPointerCapture={event => finish(event, false)} />;
     })}
+    </div>
     {selected && <form className="object-path-coordinates" data-testid="docx-path-coordinates" onMouseDown={event => event.stopPropagation()}
       onSubmit={event => {
         event.preventDefault();

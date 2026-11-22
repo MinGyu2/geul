@@ -2593,9 +2593,7 @@ impl DocxModel {
         if top_level && self.editable_group_children(pos).is_some_and(|group| group.children.iter().any(|child| child.can_move || child.can_resize)) {
             ops.push("groupChildGeometry");
         }
-        let transform_safe = matches!(object, InlineObject::Shape { float, .. }
-            if float.rot == 0.0 && !float.flip_h && !float.flip_v);
-        if top_level && transform_safe && self.drawingml_paths(pos).is_some() {
+        if top_level && self.drawingml_paths(pos).is_some() {
             ops.push("pathPoint");
             if let InlineObject::Shape { freeform: Some(freeform), .. } = object {
                 if freeform.can_edit_drawingml_vertices() {
@@ -2684,8 +2682,8 @@ impl DocxModel {
         })
     }
 
-    /// Original integer DrawingML commands whose points map directly through the selected frame.
-    /// Transformed shapes and paths with unsupported metadata or coordinates stay read-only here.
+    /// Original integer DrawingML commands whose selected frame and modeled orthogonal object
+    /// transform can be mapped reversibly to their stored path coordinates.
     fn drawingml_paths(&self, pos: &Pos) -> Option<Vec<DocxPathView>> {
         use wordcraft_engine::doc::freeform::DrawingMlPathCommand as Command;
         let InlineObject::Shape {
@@ -2696,7 +2694,7 @@ impl DocxModel {
         } = self.object_at(pos)? else {
             return None;
         };
-        if freeform.ink.is_some() || float.rot != 0.0 || float.flip_h || float.flip_v {
+        if freeform.ink.is_some() || !float.rot.is_finite() || !(-360.0..=360.0).contains(&float.rot) {
             return None;
         }
         let geometry = freeform.drawingml.as_ref()?;

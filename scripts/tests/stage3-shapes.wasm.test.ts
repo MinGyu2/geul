@@ -3,8 +3,9 @@
 // With GEUL_STAGE3_OUT=<dir>, writes original/edited HWPX bytes and loss reports for `save_check`.
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
@@ -1378,14 +1379,14 @@ describe("Stage 3 shapes on the Release engine", () => {
     ["raw nonuniform scale", 'scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1"', 'scaMatrix e1="2" e2="0" e3="0" e4="0" e5="0.5"'],
     ["raw reflection", 'scaMatrix e1="1"', 'scaMatrix e1="-1"'],
     ["raw skew", 'rotMatrix e1="1" e2="0"', 'rotMatrix e1="1" e2="0.25"'],
-    ["component offset", 'offset x="0" y="0"', 'offset x="2200" y="300"'],
+    ["malformed component offset", 'offset x="0" y="0"', 'offset x="invalid" y="0"'],
+    ["out of range component offset", 'offset x="0" y="0"', 'offset x="2000001" y="0"'],
     ["singular matrix", 'scaMatrix e1="1"', 'scaMatrix e1="0"'],
     ["nonfinite matrix", 'transMatrix e1="1"', 'transMatrix e1="NaN"'],
     ["malformed translation", 'transMatrix e1="1" e2="0" e3="0"', 'transMatrix e1="1" e2="0" e3="invalid"'],
     ["missing matrix value", 'transMatrix e1="1" e2="0"', 'transMatrix e1="1"'],
     ["duplicate matrix value", 'transMatrix e1="1" e2="0"', 'transMatrix e1="1" e2="0" e2="0"'],
     ["duplicate matrix element", '</hp:renderingInfo>', '<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>'],
-    ["explicit rotation", 'rotationInfo angle="0"', 'rotationInfo angle="30"'],
   ])("Stage 3-A refuses HWPX polygon point edits with %s", async (_label, original, replacement) => {
     const { bytes, index } = polygonFixture();
     const { editor, doc, pick, edit } = await setup("hwpx", withPolygonTransform(bytes, original, replacement));
@@ -1410,8 +1411,68 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { editor.dispose(); }
   });
 
-  it.skipIf(!process.env.GEUL_STAGE3_CUBIC)("Stage 3-A edits HWP5 cubic handles and a shared line endpoint", async () => {
-    const bytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC!));
+  it("Stage 3-A maps transformed HWPX path handles to source points and preserves shape metadata", async () => {
+    const fixture = polygonFixture();
+    const bytes = withPolygonTransform(
+      withPolygonTransform(
+        withPolygonTransform(fixture.bytes, 'offset x="0" y="0"', 'offset x="2200" y="300"'),
+        'flip horizontal="0" vertical="0"', 'flip horizontal="1" vertical="0"'),
+      'rotationInfo angle="0"', 'rotationInfo angle="30"');
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const frame = shapes(doc).find(shape => shape.controlIdx === fixture.index)!;
+      const selected = pick(frame);
+      expect(selected.operations).toContain("pathPoint");
+      expect(selected.shape).toMatchObject({ rotation: 30, flipH: true, flipV: false });
+      const path = () => JSON.parse(doc.getEditableShapePath!(0, 0, fixture.index));
+      const original = path();
+      const expected = { ...original, points: original.points.map((point: { x: number; y: number }, index: number) =>
+        index === 1 ? { ...point, x: 5100, y: 1800 } : point) };
+      expect(edit({ kind: "pathPoint", index: 1, x: 5100, y: 1800 })).toBe(true);
+      await confirm();
+      expect(path()).toEqual(expected);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(path()).toEqual(original);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(path()).toEqual(expected);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes();
+        expectReopenEvidence(doc, output, exported.contentLoss());
+        expect(polygonXml(output)).toEqual({ section: polygonXml(bytes).section,
+          points: expected.points.map((point: { x: number; y: number }) => [point.x, point.y]) });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getEditableShapePath!(0, 0, fixture.index))).toEqual(expected);
+          expect(JSON.parse(reopened.getShapeProperties!(0, 0, fixture.index)))
+            .toMatchObject({ rotationAngle: 30, horzFlip: true });
+        } finally { reopened.free(); }
+        expect(unchangedHwpxParts(bytes, output)).toBe(true);
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p4-path-transform-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-path-transform-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-path-transform-report.json"), exported.contentLoss());
+        }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it.skipIf(!process.env.GEUL_STAGE3_CUBIC)("Stage 3-A edits rotated and flipped HWP5 cubic handles with nonzero placement offsets", async () => {
+    const sourceBytes = new Uint8Array(readFileSync(process.env.GEUL_STAGE3_CUBIC!));
+    const sourceDoc = new engine.HwpDocument(sourceBytes) as RhwpDocument;
+    let bytes: Uint8Array;
+    try {
+      const candidate = shapes(sourceDoc).find(frame => JSON.parse(sourceDoc.getEditableShapePath!(0, 0, frame.controlIdx)) !== null)!;
+      const originalProperties = JSON.parse(sourceDoc.getShapeProperties!(0, 0, candidate.controlIdx));
+      expect(JSON.parse(sourceDoc.setShapeProperties!(0, 0, candidate.controlIdx, JSON.stringify({
+        rotationAngle: 30, horzFlip: true, vertFlip: false,
+        horzOffset: originalProperties.horzOffset + 1200, vertOffset: originalProperties.vertOffset + 800,
+      })))).toMatchObject({ ok: true });
+      bytes = sourceDoc.exportHwp();
+    } finally { sourceDoc.free(); }
     const { editor, doc, pick, edit, confirm, take } = await setup("hwp", bytes);
     try {
       take("original").reply(ok(bytes));
@@ -1424,7 +1485,7 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(selection.operations).not.toContain("pathVertex");
       const read = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
       expect(path.kind).toBe("curve");
-      expect(path.points.map(point => point.control)).toEqual([false, true, true, false, false]);
+      expect(path.points.map(point => point.control)).toEqual([false, true, true, false, false, true, true, false]);
       const beforeProperties = doc.getShapeProperties!(0, 0, index);
       expect(edit({ kind: "pathPoint", index: 1, x: 3001, y: 1402 })).toBe(true);
       await confirm();
@@ -1454,7 +1515,39 @@ describe("Stage 3 shapes on the Release engine", () => {
         const reopened = new engine.HwpDocument(output) as RhwpDocument;
         try { expect(JSON.parse(reopened.getEditableShapePath!(0, 0, index))).toEqual(after); }
         finally { reopened.free(); }
+        const proofDir = mkdtempSync(join(tmpdir(), "geul-p4-path-transform-h5-"));
+        try {
+          const originalPath = join(proofDir, "original.hwp"), editedPath = join(proofDir, "edited.hwp");
+          writeFileSync(originalPath, bytes);
+          writeFileSync(editedPath, output);
+          type RecordDiff = {
+            streams: Record<string, {
+              original: string | null;
+              output: string | null;
+              changes?: Array<{
+                op: string;
+                original: Array<{ index: number; tag: number; level: number; len: number }>;
+                output: Array<{ index: number; tag: number; level: number; len: number }>;
+              }>;
+            }>;
+          };
+          const recordDiff = JSON.parse(execFileSync("python3", ["scripts/tests/hwp_record_diff.py", originalPath, editedPath], { encoding: "utf8" })) as RecordDiff;
+          const changedStreams = Object.entries(recordDiff.streams)
+            .filter(([, stream]) => stream.original !== stream.output).map(([name]) => name);
+          expect(changedStreams).toEqual(["BodyText/Section0"]);
+          const changes = recordDiff.streams["BodyText/Section0"]!.changes ?? [];
+          expect(changes).toHaveLength(1);
+          const change = changes[0]!;
+          expect(change.op).toBe("replace");
+          expect(change.original).toHaveLength(1);
+          expect(change.output).toHaveLength(1);
+          expect(change.original[0]).toMatchObject({ tag: 83, level: 3, len: 79, index: change.output[0]!.index });
+          expect(change.output[0]).toMatchObject({ tag: 83, level: 3, len: 79 });
+        } finally { rmSync(proofDir, { recursive: true, force: true }); }
         if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p4-path-transform-h5-original.hwp"), bytes);
+          writeFileSync(resolve(out, "a-p4-path-transform-h5-edited.hwp"), output);
           writeFileSync(resolve(out, "a-p4-curve-edited.hwp"), output);
           writeFileSync(resolve(out, "a-p4-curve-report.json"), exported.contentLoss());
         }
