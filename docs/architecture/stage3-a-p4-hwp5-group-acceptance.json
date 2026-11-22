@@ -50,5 +50,6 @@
     "Wayland for this HWP5 group child feature.",
     "Windows and macOS native acceptance.",
     "External Hancom Office or Microsoft Office reopen interoperability."
-  ]
+  ],
+  "implementationCommit": "c7bb9e55ec0e759bf2787b7db6400aacc0313dbf"
 }
