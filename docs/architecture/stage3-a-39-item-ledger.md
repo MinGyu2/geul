@@ -24,7 +24,7 @@ P4-DX-CURVE 구현·IPC 회귀 보완 포함 기준 HEAD: `4050b8960fda0ba868aed
 | P5-R-FN | A | HWP/HWPX footnote object 실제 소유·주소·편집 | OPEN | 이 요구사항에 대한 증거 미수집 | NOT RUN | — | note ID·번호·control reference·내부 문단 보존 |
 | P5-R-EN | A | HWP/HWPX endnote object 실제 소유·주소·편집 | OPEN | 이 요구사항에 대한 증거 미수집 | NOT RUN | — | body/note type alias 없이 identity·번호·내부 문단 보존 |
 | P5-TB-CONTROL | A | DOCX/HWP/HWPX text box 내부 nested picture/shape 선택·편집 | OPEN | 일부 글상자 텍스트/그룹 이력은 이 nested-object requirement를 증명하지 않음 | NOT RUN | — | 실제 text box story owner와 embedded resource owner 확인 |
-| P5-DX-HF-MOVE | B | DOCX header/footer picture 이동 활성화 안전성 | OPEN | 이 story-specific 이동 경로에 대한 preservation proof 없음 | NOT RUN | — | inline/anchor semantics, part reference, IDs, page association 확인 |
+| P5-DX-HF-MOVE | B | DOCX header/footer 소유 그림의 안전한 이동 | IMPLEMENTED_VERIFIED | 연결된 header/footer의 최상위 그림만 owner part 안에서 이동한다. source/export XML 왕복, 관계·미디어 및 story references를 확인하고 T009는 각 변경 part의 그림 ID·run 속성·story event를 독립 입증한다. 혼합 크기 변경과 무관 텍스트 변경은 원자적으로 거부한다. Undo/Redo, DOCX 저장·OPC 검사·재열기 PASS. [수락 기록](stage3-a-p5-dx-hf-move-acceptance.json) | Linux X11 trusted pointer로 header/footer 이동, Undo/Redo, synced save 및 독립 OPC 검사 PASS(run02); 새 app PID의 fresh-process reopen과 렌더 위치 PASS(run03). Wayland/Windows/macOS·외부 Office NOT RUN | `160ad5afbd64e53a2b5b7d630124ec8bbc5d1951` | 지원 wrap/anchor·최상위 소유 part만 활성화; 나머지 story mutation·삭제는 별도 항목으로 남음 |
 | P5-DX-DELETE | B | DOCX header/footer/footnote/endnote owned picture 삭제 안전성 | OPEN | 다른 이야기나 최상위 그림 삭제 증거는 대체물이 아님 | NOT RUN | — | relationship/shared-media 사용 참조, Undo/Redo, OPC reopen 확인 |
 | P5-R-HDR | B | HWP/HWPX 실제 section/page header owner 식별 및 mutation 활성화 | OPEN | 이 safety gate 해소 증거 없음 | NOT RUN | — | 실제 section/header 선택, 다른 header/body 보호, writer 확인 |
 | P5-R-FTR | B | HWP/HWPX 실제 footer owner 식별 및 mutation 활성화 | OPEN | 이 safety gate 해소 증거 없음 | NOT RUN | — | 다른 footer/header/body로의 alias 차단 및 serializer 확인 |
@@ -51,9 +51,9 @@ P4-DX-CURVE 구현·IPC 회귀 보완 포함 기준 HEAD: `4050b8960fda0ba868aed
 
 ## 상태 요약
 
-- 구현·수락 완료한 ID: 10/39 (`S1-FONT-TYPING`, `P4-DX-CURVE`, `P4-DX-PATH`, `P4-H5-SEG`, `P4-H5-GROUP`, `P4-DX-GROUP`, `P4-GROUP-XFM`, `P4-HX-NEST`, `P4-PATH-XFM`, `P5-DX-NOTE-MOVE`; 각 구현과 수락 증거를 별도 커밋 집합으로 기록. `P4-HX-NEST` 구현 commit `4b337fc114a6822378287f9393a5a686b0c837d1`; P5 composite T009 fix `f25fb69984abf2426cb586dee26559245907b409`).
+- 구현·수락 완료한 ID: 11/39 (`S1-FONT-TYPING`, `P4-DX-CURVE`, `P4-DX-PATH`, `P4-H5-SEG`, `P4-H5-GROUP`, `P4-DX-GROUP`, `P4-GROUP-XFM`, `P4-HX-NEST`, `P4-PATH-XFM`, `P5-DX-NOTE-MOVE`, `P5-DX-HF-MOVE`; 각 구현과 수락 증거를 별도 커밋 집합으로 기록. `P4-HX-NEST` 구현 commit `4b337fc114a6822378287f9393a5a686b0c837d1`; P5-DX-NOTE-MOVE composite T009 fix `f25fb69984abf2426cb586dee26559245907b409`; P5-DX-HF-MOVE `160ad5afbd64e53a2b5b7d630124ec8bbc5d1951`).
 - 완료 주장하지 않는 ID: 1/39 (`P4-HX-CURVE`; endpoint subset은 구현·Native 수락했으나 요청된 Bezier control-point/segment 구조 편집의 format contract가 미해결).
 - `IN_PROGRESS` ID: 0/39.
-- 아직 `OPEN`으로 분류된 ID: 28/39. 부분 구현 1개(`P4-HX-CURVE`)를 포함해 전체 미완료 요구사항은 29/39이며, 미검토 상태는 코드 기능 부재를 뜻하지 않는다.
-- 단계 현황: P0 1/1, P4 8/9 (`P4-HX-CURVE` 부분/형식 계약 미해결), P5 1/13, P6 0/16.
+- 아직 `OPEN`으로 분류된 ID: 27/39. 부분 구현 1개(`P4-HX-CURVE`)를 포함해 전체 미완료 요구사항은 28/39이며, 미검토 상태는 코드 기능 부재를 뜻하지 않는다.
+- 단계 현황: P0 1/1, P4 8/9 (`P4-HX-CURVE` 부분/형식 계약 미해결), P5 2/13, P6 0/16.
 - Git 원칙: 각 완료 항목은 자체 ID가 있는 별도 로컬 commit으로 기록. Push 금지. Submodule gitlink 및 ordered RHWP patch series는 이 항목에서 실제 변경할 때 별도 commit set으로 남긴다.

@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-23",
+  "feature": "P5-DX-HF-MOVE",
+  "category": "B",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "160ad5afbd64e53a2b5b7d630124ec8bbc5d1951",
+  "parentCommit": "3c8ae50f7755a37c202bab3ab8661a983c948c82",
+  "wordcraftPin": "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "supported": "DOCX의 연결된 header/footer story 안 최상위 owned picture를 해당 paragraph/story 안에서 이동한다. linked part/reference, 내장 media relationship, top-level ownership, 지원되는 inline 또는 canonical square-wrap anchor, 유한한 geometry와 identity transform을 요구한다.",
+  "refused": "다른 story/body로의 이동, 중첩·OLE·미디어 소유 불명, 지원되지 않는 wrap/anchor/transform, width/height 변경을 섞은 move, 이동과 무관한 story text/XML 변경은 mutation 없이 거부한다.",
+  "preservation": [
+    "header/footer relationship과 document story references 불변",
+    "각 변경 story part에서 DrawingML picture/docPr ID, description, media relationship, run properties와 정규화된 story events 불변",
+    "그 외 OPC inventory, package parts, relationships와 media 바이트 불변",
+    "Undo/Redo와 DOCX 저장·독립 재열기에서 story ownership 및 배치 유지"
+  ],
+  "checks": {
+    "reproduction": "기능 노출 전 기존 story-picture regression에서 header/footer selection의 move operation 부재를 재현했다.",
+    "focusedRust": "PASS 1/1: stage3a_moves_docx_pictures_within_owned_headers_and_footers. 복합 header+footer T009, undo/redo, invalid mixed resize atomic rejection, part/ID/property preservation, re-open 후 재이동 및 unauthorized text mutation rejection을 포함한다.",
+    "storyRegression": "PASS: stage3a_edits_docx_story_picture_descriptions_without_moving_owners.",
+    "noteMoveRegression": "PASS: stage3a_moves_docx_pictures_within_owned_notes.",
+    "typescriptBuild": "PASS: npm run build.",
+    "nativeHarnessSyntax": "PASS: python3 -m py_compile scripts/tests/native-stage3a-p5.py scripts/tests/native-stage3-c.py.",
+    "diffCheck": "PASS: git diff --check.",
+    "protectedRelease": "PASS: python3 scripts/cargo-geul.py build --release --features tauri/custom-protocol; exact pinned WordCraft engine and geul adapter included. Application SHA-256 717756f389992f9c34e076e73aff60b96b0c8cbcebd953e236ea9c6aff11a74f.",
+    "repositoryRustfmt": "FAIL: cargo fmt --all -- --check reports pre-existing formatting drift across unrelated Rust files. The repository-wide rewrite was not applied; changed code was reviewed and the implementation compiled in the protected Release build and focused Rust test.",
+    "nativeX11Move": "PASS: actual Linux X11/Xvfb Native run02, app PID 330313, trusted pointer moves for header and footer, Undo/Redo, T009 synced save, same-app reopen and independent OPC/XML inspection. Result target/p5-hf-x11-run-20261123-02/result.json; fixture SHA-256 f896dd34e55a90e04109acd5f27b52f5c2d5b7e03457869d55d4f4d7e0e227ca; published DOCX SHA-256 3b2e90963768c45769acc0094e70aa95f556debcd60940ca8ba1f67d4077e62b.",
+    "nativeX11FreshProcess": "PASS: actual fresh Native app PID 330695 independently opened the exact saved DOCX SHA-256 3b2e90963768c45769acc0094e70aa95f556debcd60940ca8ba1f67d4077e62b; expected header/footer rendered geometry and move handles matched. Result target/p5-hf-x11-run-20261123-03/result.json.",
+    "nativeCleanup": "PASS: run02 and run03 cleanup manifests are complete/proven, exit 0, no surviving test processes.",
+    "wordcraftReconstruction": "PASS: exact reproducible WordCraft pin c2338a2b5e5dd7f9fd0439940f1df2ff5b467728; this feature required no WordCraft source or gitlink change. Prior P5-DX-NOTE-MOVE acceptance ran cargo xtask ci on the same pin.",
+    "externalOffice": "NOT RUN",
+    "waylandWindowsMacOS": "NOT RUN"
+  },
+  "remaining": [
+    "DOCX header/footer deletion and non-picture object editing are separate unresolved requirements.",
+    "Wayland, Windows, macOS and external Office interoperability were not tested."
+  ],
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb with private test-owned display/session, Tauri application, actual trusted native pointer events.",
+    "appSha256": "717756f389992f9c34e076e73aff60b96b0c8cbcebd953e236ea9c6aff11a74f",
+    "fixtureSha256": "f896dd34e55a90e04109acd5f27b52f5c2d5b7e03457869d55d4f4d7e0e227ca",
+    "publishedSha256": "3b2e90963768c45769acc0094e70aa95f556debcd60940ca8ba1f67d4077e62b",
+    "moveRun": {
+      "case": "P5-DX-HF-MOVE",
+      "appPid": 330313,
+      "resultFile": "target/p5-hf-x11-run-20261123-02/result.json",
+      "cleanupFile": "target/p5-hf-x11-session-20261123-02/cleanup.json",
+      "status": "PASS",
+      "saveState": "saved; synced=true; changedSince=false",
+      "changedParts": ["word/header1.xml", "word/footer1.xml"],
+      "relationshipsAndMediaUnchanged": true,
+      "undoRedoAndSameAppReopen": "PASS"
+    },
+    "freshProcessRun": {
+      "case": "P5-DX-HF-MOVE-FRESH-REOPEN",
+      "appPid": 330695,
+      "previousAppPid": 330313,
+      "resultFile": "target/p5-hf-x11-run-20261123-03/result.json",
+      "cleanupFile": "target/p5-hf-x11-session-20261123-03/cleanup.json",
+      "status": "PASS",
+      "cleanReadOnlyOpen": true,
+      "headerFooterRenderedGeometryMatchesSaved": true
+    }
+  },
+  "push": "NOT PERFORMED"
+}
