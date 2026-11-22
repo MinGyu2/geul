@@ -1,0 +1,6 @@
+tree 598e940e4dd5b370304aed9c935a3d5978403dcb
+parent c2338a2b5e5dd7f9fd0439940f1df2ff5b467728
+author Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795373607 +0900
+committer Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795373607 +0900
+
+fix(stage3-p5): preserve DrawingML ids for story deletes [P5-DX-DELETE]

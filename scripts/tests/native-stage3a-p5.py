@@ -2,6 +2,7 @@
 """P5 Linux X11 acceptance for owned DOCX pictures and HWPX textbox paragraphs."""
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -145,15 +146,10 @@ def stories(acc, row, fixtures, out, resize=False):
             size_is(35)
 
 
-def select_story_note(acc, layout, order, name):
-    where = layout[name]
-    acc.wait("""
-      const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
-      return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
-        canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
-    """, where["page"])
-    points = acc.d.js("""
-      const page=arguments[0], c=document.querySelectorAll('.docx-page canvas')[page];
+def story_picture_points(acc, page):
+    return acc.d.js("""
+      const c=document.querySelectorAll('.docx-page canvas')[arguments[0]];
+      if(!c?.width) return [];
       const sx=c.width/c.clientWidth, sy=c.height/c.clientHeight, data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
       const points=[]; let count=0, sumX=0, sumY=0;
       for(let y=0;y<=c.height;y++) { let row=0,rowX=0;
@@ -163,10 +159,20 @@ def select_story_note(acc, layout, order, name):
           if(!opaque&&!dimmed) continue; row++; rowX+=x;
         }
         if(row>5){count+=row;sumX+=rowX;sumY+=y*row}
-        else if(count>0){if(count>100)points.push([page,sumX/count/sx,sumY/count/sy]);count=0;sumX=0;sumY=0}
+        else if(count>0){if(count>100)points.push([arguments[0],sumX/count/sx,sumY/count/sy]);count=0;sumX=0;sumY=0}
       }
       return points;
+    """, page)
+
+
+def select_story_note(acc, layout, order, name, require_move=True):
+    where = layout[name]
+    acc.wait("""
+      const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
+      return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
+        canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
     """, where["page"])
+    points = story_picture_points(acc, where["page"])
     h.require(len(points)==len(order), "note fixture picture scan differs", points)
     point=points[order.index(name)]
     x,y=acc.d.js("""
@@ -175,10 +181,11 @@ def select_story_note(acc, layout, order, name):
       s.scrollTop+=r.top+y*k-(v.top+v.height/2);const n=c.getBoundingClientRect();return [n.left+x*k,n.top+y*k];
     """,point)
     h.p4.rhwp_poc.click(acc.d,x,y)
-    try:
-        acc.wait("return !!document.querySelector('[data-testid=object-move]')", timeout=5)
-    except Exception:
-        pass
+    if require_move:
+        try:
+            acc.wait("return !!document.querySelector('[data-testid=object-move]')", timeout=5)
+        except Exception:
+            pass
     selected=acc.d.js("""
       const input=document.querySelector(arguments[0]);
       const section=document.querySelector('[aria-labelledby=properties-selection]');
@@ -196,7 +203,8 @@ def select_story_note(acc, layout, order, name):
         revision:status?.dataset.revision??null, point, expected:arguments[1]};
     """,DESCRIPTION,name,point)
     owner_verified=selected["descriptionEditor"]==name or selected["descriptionDisplay"]==name
-    h.require(selected["objectKind"]=="picture" and selected["moveHandle"] and selected["clickInsideFrame"] and owner_verified,
+    h.require(selected["objectKind"]=="picture" and (not require_move or selected["moveHandle"])
+              and selected["clickInsideFrame"] and owner_verified,
               "native hit test selected the wrong note picture or owner",selected)
     return point, h.frame(acc), selected
 
@@ -464,6 +472,149 @@ def header_footer_move_fresh_reopen(acc,row,fixtures,out):
     row["readOnlyOpen"]=True
 
 
+def delete_docx_story_pictures(acc, row, fixtures, out):
+    fixture=fixtures/"a-p5-story-original.docx"
+    path=h.begin(acc,row,fixture,out,"a-p5-story-delete.docx")
+    layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
+    order=("header","body","endnote","footnote","footer")
+    deletion_order=("header","endnote","footnote","footer")
+    delete_selector="[aria-labelledby=properties-selection] .object-tools > button:last-child"
+    delete_expr="Array.from(document.querySelectorAll(arguments[0])).find(b=>['Delete object','개체 삭제'].includes(b.textContent.trim()))"
+    acc.d.js("""
+      window.storyDeletePointers=[];
+      for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+        const button=e.target.closest('[aria-labelledby=properties-selection] .object-tools > button:last-child');
+        if(button) storyDeletePointers.push({type,trusted:e.isTrusted,text:button.textContent.trim()});
+      },true);
+    """)
+    revision_number=0
+    removed=[]
+    row["deletions"]={}
+    for name in deletion_order:
+        before_order=tuple(item for item in order if item not in removed)
+        _,before_frame,selection=select_story_note(acc,layout,before_order,name)
+        h.require(acc.d.exists(delete_selector),"owned story picture has no delete action",name)
+        button=acc.d.js("return document.querySelector(arguments[0])?.textContent.trim()",delete_selector)
+        h.require(button in ("Delete object","개체 삭제"),"unexpected owned-story delete action",button)
+        acc.dom_click(delete_selector,delete_expr)
+        pointers=acc.d.js("return window.storyDeletePointers.slice()")
+        events=pointers[-2:]
+        h.require([(event["type"],event["trusted"]) for event in events]==[("pointerdown",True),("pointerup",True)],
+                  "story deletion did not use trusted native pointer input",events)
+        revision_number+=1
+        h.revision(acc,"docx",revision_number)
+        after_order=tuple(item for item in before_order if item!=name)
+        page=layout[name]["page"]
+        acc.wait("""
+          const c=document.querySelectorAll('.docx-page canvas')[arguments[0]];
+          const s=document.querySelector('[data-testid=docx-status]');
+          return c?.width>0 && c.parentElement.dataset.revision===s?.dataset.revision;
+        """,page)
+        points=story_picture_points(acc,page)
+        h.require(len(points)==len(after_order),"deleted picture remains in the rendered stories",[name,points,after_order])
+        acc.wait("return !document.querySelector('.object-selection-frame')")
+        acc.key("ctrl+z")
+        revision_number+=1
+        h.revision(acc,"docx",revision_number)
+        _,undo_frame,undo_selection=select_story_note(acc,layout,before_order,name)
+        h.require(undo_frame==before_frame,"story picture Undo did not restore its selection and geometry",undo_frame)
+        h.require(undo_selection["objectKind"]=="picture","Undo restored a different object owner",undo_selection)
+        acc.key("ctrl+y")
+        revision_number+=1
+        h.revision(acc,"docx",revision_number)
+        acc.wait("return !document.querySelector('.object-selection-frame')")
+        points=story_picture_points(acc,page)
+        h.require(len(points)==len(after_order),"story picture Redo did not restore the deletion",[name,points,after_order])
+        row["deletions"][name]={"beforeFrame":before_frame,"undoFrame":undo_frame,
+                                "selectedOwner":selection,"trustedPointerEvents":events,"revision":revision_number}
+        removed.append(name)
+
+    remaining_order=tuple(item for item in order if item not in removed)
+    h.require(remaining_order==("body",),"story deletion removed an unrelated drawing",remaining_order)
+    _,body_frame,body_selection=select_story_note(acc,layout,remaining_order,"body",require_move=False)
+    h.require(not body_selection["moveHandle"],"body picture unexpectedly gained a non-body move handle")
+    row["remainingBodyPicture"]={"frame":body_frame,"selection":body_selection}
+    h.publish(acc,"docx",row)
+
+    changed_story_parts={"word/header1.xml","word/footer1.xml","word/footnotes.xml","word/endnotes.xml"}
+    expected_removed_rels={"word/_rels/header1.xml.rels","word/_rels/footer1.xml.rels",
+                           "word/_rels/footnotes.xml.rels","word/_rels/endnotes.xml.rels"}
+    with zipfile.ZipFile(fixture) as original,zipfile.ZipFile(path) as published:
+        before_names=set(original.namelist()); after_names=set(published.namelist())
+        h.require(after_names==before_names-expected_removed_rels,
+                  "saved story deletion changed an unexpected OPC part inventory",
+                  {"added":sorted(after_names-before_names),"missing":sorted(before_names-after_names)})
+        for rel_part in expected_removed_rels:
+            rel_root=ET.fromstring(original.read(rel_part))
+            relations=list(rel_root)
+            h.require(len(relations)==1 and relations[0].get("Type","").endswith("/image"),
+                      "removed story relationship part was not exclusively owned by its picture",rel_part)
+        for part in original.namelist():
+            if part in changed_story_parts or part in expected_removed_rels or part=="docProps/app.xml":
+                continue
+            h.require(original.read(part)==published.read(part),"story deletion changed unrelated OPC bytes",part)
+        h.require(original.read("word/document.xml")==published.read("word/document.xml"),
+                  "body or note-reference OPC part changed")
+        row["unchangedMedia"]={name:hashlib.sha256(original.read(name)).hexdigest() for name in original.namelist()
+                                if name.startswith("word/media/")}
+        h.require(row["unchangedMedia"] and all(original.read(name)==published.read(name)
+                  for name in row["unchangedMedia"]),"shared picture media changed or disappeared")
+        row["removedRelationshipParts"]=sorted(expected_removed_rels)
+        row["changedStoryParts"]=sorted(changed_story_parts)
+        row["preservedNotes"]={}
+        for label,part,note_tag in (("header","word/header1.xml",None),
+                                    ("footer","word/footer1.xml",None),
+                                    ("footnote","word/footnotes.xml","footnote"),
+                                    ("endnote","word/endnotes.xml","endnote")):
+            old,new=[ET.fromstring(package.read(part)) for package in (original,published)]
+            old_pictures=[node for node in old.iter(WP+"docPr") if node.get("descr")==label]
+            new_pictures=[node for node in new.iter(WP+"docPr") if node.get("descr")==label]
+            h.require(len(old_pictures)==1 and not new_pictures,"deleted drawing identity is still present or ambiguous",
+                      [label,len(old_pictures),len(new_pictures)])
+            def paragraphs(root):
+                return ["".join(node.text or "" for node in para.iter(W+"t")) for para in root.iter(W+"p")]
+            old_text=paragraphs(old); new_text=paragraphs(new)
+            h.require(old_text==new_text,"story paragraph text changed during picture deletion",[label,old_text,new_text])
+            if note_tag:
+                def notes(root):
+                    return [(note.get(W+"id"),paragraphs(note)) for note in root.iter(W+note_tag)]
+                old_notes,new_notes=notes(old),notes(new)
+                h.require(old_notes==new_notes,"note IDs, internal text, or numbering changed",[label,old_notes,new_notes])
+                row["preservedNotes"][label]=old_notes
+            for parent in old.iter():
+                for child in list(parent):
+                    if child.tag==W+"r" and any(node.get("descr")==label for node in child.iter(WP+"docPr")):
+                        parent.remove(child)
+            h.require(ET.tostring(old)==ET.tostring(new),"saved story contains changes beyond the deleted picture run",part)
+        row["publishedSha256"]=h.digest(path)
+    h.reopen(acc,path,row)
+    _,reopened_frame,reopened_selection=select_story_note(acc,layout,("body",),"body",require_move=False)
+    h.require(all(abs(reopened_frame[key]-body_frame[key])<=1.5 for key in ("left","top","width","height")),
+              "body picture moved after deleting other stories",[body_frame,reopened_frame])
+    row["sameSessionReopen"]={"bodyFrame":reopened_frame,"selection":reopened_selection,
+                               "session":row["reopenedSession"]}
+
+
+def delete_docx_story_pictures_fresh_reopen(acc,row,fixtures,out):
+    expected=json.loads((fixtures/"a-p5-delete-expected.json").read_text())
+    fixture=fixtures/"a-p5-delete-saved.docx"
+    path=h.begin(acc,row,fixture,out,"a-p5-delete-fresh-probe.docx")
+    row["expectedSavedSha256"]=expected["publishedSha256"]
+    row["savedSha256"]=h.digest(path)
+    h.require(row["savedSha256"]==expected["publishedSha256"],"fresh-session DOCX differs from accepted save",row)
+    h.require(row["processAppSha256"]==expected["appSha256"],"fresh session used a different application binary",row)
+    h.require(row["appPid"]!=expected["appPid"],"fresh-session verification reused the deleting app process",row)
+    h.require(row["initialSession"]["dirty"]=="false" and row["initialSession"]["unpreserved"]=="false",
+              "saved DOCX was dirty or unpreserved when reopened independently",row["initialSession"])
+    layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
+    points=story_picture_points(acc,layout["body"]["page"])
+    h.require(len(points)==1,"fresh app did not render exactly the retained body picture",points)
+    _,frame,selection=select_story_note(acc,layout,("body",),"body",require_move=False)
+    h.require(not selection["moveHandle"],"freshly reopened body picture has a foreign-story move handle")
+    row["remainingBodyPicture"]={"frame":frame,"selection":selection}
+    row["readOnlyFreshProcessOpen"]=True
+
+
 def inspect_box(path):
     return h.inspect_rhwp(path, """
       const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
@@ -655,6 +806,8 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-HF-MOVE": header_footer_move,
            "P5-DX-NOTE-MOVE-FRESH-REOPEN": note_move_fresh_reopen,
            "P5-DX-HF-MOVE-FRESH-REOPEN": header_footer_move_fresh_reopen,
+           "P5-DX-DELETE": delete_docx_story_pictures,
+           "P5-DX-DELETE-FRESH-REOPEN": delete_docx_story_pictures_fresh_reopen,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}

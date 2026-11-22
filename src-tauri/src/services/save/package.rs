@@ -394,6 +394,9 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     story_drawing_edits.extend(
         super::docx_story_drawings::moved_header_footer_picture_edits(original, output),
     );
+    story_drawing_edits.extend(
+        super::docx_story_drawings::deleted_story_picture_edits(original, output),
+    );
     let media_removed = if added.is_none() && pictures.is_none() {
         authorized_table_media_changes(original, output)
     } else {
@@ -440,6 +443,13 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             || fonts.as_ref().is_some_and(|f| {
                 f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
             })
+    });
+    findings.retain(|finding| {
+        !(finding.code == FindingCode::PartMissing
+            && finding
+                .part
+                .as_deref()
+                .is_some_and(|name| story_drawing_edits.contains(name)))
     });
     if let Some(media) = &media_removed {
         findings.retain(|f| {

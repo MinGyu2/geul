@@ -7536,6 +7536,8 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
                 y: 20.0,
                 obj: InlineObject::Image {
                     media: child_media_key.clone(),
+                    docpr_id: None,
+                    picture_id: None,
                     w: 60.0,
                     h: 40.0,
                     alt: "그룹 그림".into(),
@@ -8595,7 +8597,7 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
         let expected_operations =
             if note.is_some() || matches!(kind, PartKind::Header | PartKind::Footer) {
-                json!(["move", "resize", "altText"])
+                json!(["move", "resize", "delete", "altText"])
             } else {
                 json!(["resize", "altText"])
             };
@@ -8710,6 +8712,271 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
         std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
     }
+}
+
+#[test]
+fn stage3a_deletes_docx_pictures_from_owned_stories() {
+    use super::engine::ObjectEdit;
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::{
+        para::NoteKind, para_block, props::CharProps, table::Table, Block, InlineObject, Paragraph,
+        PartKind, StoryRef,
+    };
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) }),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({ "width": 28, "height": 22 }))
+        .unwrap();
+    let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
+    let stories = [
+        (PartKind::Header, "header", None, "word/header1.xml"),
+        (PartKind::Footer, "footer", None, "word/footer1.xml"),
+        (
+            PartKind::Footnote,
+            "footnote",
+            Some(NoteKind::Footnote),
+            "word/footnotes.xml",
+        ),
+        (
+            PartKind::Endnote,
+            "endnote",
+            Some(NoteKind::Endnote),
+            "word/endnotes.xml",
+        ),
+    ];
+    for (kind, label, note, _) in stories {
+        let id = source.doc.add_part(kind, Vec::new());
+        let mut para = Paragraph::with_text(&format!("{label} text "), CharProps::default());
+        if matches!(kind, PartKind::Footnote | PartKind::Endnote) {
+            let note_kind = note.unwrap();
+            let marker = InlineObject::NoteRef {
+                kind: note_kind,
+                id,
+                custom: String::new(),
+            };
+            para.insert_object(0, marker.clone(), &CharProps::default())
+                .unwrap();
+            let end = source.doc.end_of(StoryRef::Body);
+            source.doc.insert_object(&end, marker, &CharProps::default()).unwrap();
+        }
+        let mut owned_picture = picture.clone();
+        owned_picture.set_alt_text(label);
+        para.insert_object(para.len(), owned_picture, &CharProps::default())
+            .unwrap();
+        let blocks = if kind == PartKind::Footer {
+            let mut table = Table::new(1, 1, 180.0);
+            table.rows[0].cells[0].blocks = vec![para_block(para)];
+            vec![std::sync::Arc::new(Block::Table(table))]
+        } else {
+            vec![para_block(para)]
+        };
+        source.doc.set_story(StoryRef::Part(id), blocks).unwrap();
+        match kind {
+            PartKind::Header => source.doc.last_section.headers.default = Some(id),
+            PartKind::Footer => source.doc.last_section.footers.default = Some(id),
+            _ => {}
+        }
+    }
+    let draft = io::save_bytes("story-delete.docx", &source.doc).unwrap();
+    let original = io::save_bytes(
+        "story-delete.docx",
+        &io::open_bytes("story-delete.docx", &draft).unwrap(),
+    )
+    .unwrap();
+    let original_package = package::open(&original, package::Side::Original).unwrap();
+    let mut model = DocxModel::open(&original).unwrap();
+    let baseline = model.export().unwrap();
+    assert!(model.same_as(&baseline));
+    let mut snapshots = vec![baseline.clone()];
+    let mut changed_parts: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for (kind, label, _, part) in stories {
+        let current = model.export().unwrap();
+        let mut reader = Session::new(io::open_bytes("story-delete.docx", &current).unwrap());
+        let layout = reader.layout();
+        let id = *reader
+            .doc
+            .parts
+            .iter()
+            .find(|(_, part)| part.kind == kind)
+            .unwrap()
+            .0;
+        let story = StoryRef::Part(id);
+        let hit = layout
+            .find_object(0, |object| object.story == story)
+            .unwrap_or_else(|| panic!("missing owned {label} picture"));
+        let click = DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
+        assert_eq!(model.apply(&[click]).changed, 0);
+        let selected = serde_json::to_value(model.view()).unwrap()["object"].clone();
+        assert!(
+            selected["operations"]
+                .as_array()
+                .is_some_and(|operations| operations.iter().any(|operation| operation == "delete")),
+            "{label} picture deletion is unavailable: {:#}",
+            selected["operations"]
+        );
+        let position = selected["position"].as_str().unwrap().to_owned();
+        if kind == PartKind::Footer {
+            assert!(position.starts_with(&format!("part{id}:")));
+            let path = position.split(':').nth(1).unwrap();
+            assert!(path.split('.').count() > 1, "footer fixture picture must be table-owned: {position}");
+        }
+        let epoch = selected["epoch"].as_u64().unwrap();
+        let undo_before_rejection = model.view().history.undo;
+        let wrong_owner = DocxOp::ObjectEdit {
+            position: "body:0:0".into(),
+            epoch,
+            edit: ObjectEdit::Delete {},
+        };
+        let stale = DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch: epoch.saturating_sub(1),
+            edit: ObjectEdit::Delete {},
+        };
+        assert_eq!(model.apply(&[wrong_owner, stale]).rejected, vec![0, 1]);
+        assert_eq!(model.export().unwrap(), current);
+        assert_eq!(model.view().history.undo, undo_before_rejection);
+
+        let deleted = model.apply(&[DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Delete {},
+        }]);
+        assert_eq!(deleted.changed, 1, "{label} picture delete failed");
+        assert!(serde_json::to_value(model.view()).unwrap()["object"].is_null());
+        let after = model.export().unwrap();
+        assert!(model.same_as(&after));
+        assert!(
+            service::check_saved(Format::Docx, &original, &after, None, true).is_safe(),
+            "{label} picture T009 rejection"
+        );
+        let output_package = package::open(&after, package::Side::Output).unwrap();
+        let missing_parts: std::collections::BTreeSet<_> = original_package
+            .parts
+            .keys()
+            .filter(|name| !output_package.parts.contains_key(*name))
+            .map(|name| name.as_str())
+            .collect();
+        let added_parts: std::collections::BTreeSet<_> = output_package
+            .parts
+            .keys()
+            .filter(|name| !original_package.parts.contains_key(*name))
+            .map(|name| name.as_str())
+            .collect();
+        assert!(added_parts.is_empty(), "story deletion added OPC parts: {added_parts:?}");
+        assert!(
+            missing_parts.iter().all(|name| name.ends_with(".rels")
+                && changed_parts.iter().copied().chain(std::iter::once(part)).any(|part| {
+                    let Some((directory, filename)) = part.rsplit_once('/') else {
+                        return false;
+                    };
+                    format!("{directory}/_rels/{filename}.rels") == *name
+                })),
+            "only an empty relationship part for an already deleted story picture may be removed: {missing_parts:?}"
+        );
+        assert_eq!(
+            original_package.get("word/document.xml"),
+            output_package.get("word/document.xml"),
+            "story deletion preserves body content and all note references"
+        );
+        for name in original_package.parts.keys().filter(|name| {
+            name.ends_with(".rels") || name.starts_with("word/media/")
+        }) {
+            if missing_parts.contains(name.as_str()) {
+                continue;
+            }
+            assert_eq!(original_package.get(name), output_package.get(name),
+                "story deletion preserves surviving relationship/media resource {name}");
+        }
+        changed_parts.insert(part);
+        for name in original_package.parts.keys().filter(|name| {
+            !changed_parts.contains(name.as_str())
+                && !missing_parts.contains(name.as_str())
+                && name.as_str() != "docProps/app.xml"
+        }) {
+            assert_eq!(
+                original_package.get(name),
+                output_package.get(name),
+                "unrelated OPC part changed: {name}"
+            );
+        }
+        let reopened = io::open_bytes("story-delete.docx", &after).unwrap();
+        let story = reopened.parts.get(&id).expect("same story owner reopens");
+        assert!(story.blocks.iter().any(|block| block.as_table().is_some()) || kind != PartKind::Footer);
+        let paragraphs = reopened
+            .para_paths(StoryRef::Part(id))
+            .into_iter()
+            .map(|path| reopened.para(StoryRef::Part(id), &path).unwrap())
+            .collect::<Vec<_>>();
+        assert!(paragraphs.iter().any(|para| para.text_without(&[]).contains(&format!("{label} text"))));
+        assert!(paragraphs.iter().all(|para| {
+            para.object_offsets().iter().all(|&off| {
+                !matches!(para.object_at(off), Some(InlineObject::Image { .. }))
+            })
+        }), "deleted {label} picture remains in its owning story");
+        assert!(reopened.media.len() >= 1, "shared body media must remain");
+        snapshots.push(after);
+    }
+
+    assert_eq!(changed_parts.len(), 4);
+    for index in (0..stories.len()).rev() {
+        assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), snapshots[index]);
+    }
+    for snapshot in snapshots.iter().skip(1) {
+        assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert_eq!(model.export().unwrap(), *snapshot);
+    }
+    let final_bytes = snapshots.last().unwrap();
+    assert!(
+        service::check_saved(Format::Docx, &original, final_bytes, None, true).is_safe(),
+        "combined header/footer/footnote/endnote deletion must pass the final T009 save"
+    );
+    let mut unauthorized = package::open(final_bytes, package::Side::Output).unwrap();
+    let (_, bytes) = unauthorized.parts.get_mut("word/footer1.xml").unwrap();
+    let footer = std::str::from_utf8(bytes).unwrap();
+    assert!(footer.contains("footer text"));
+    *bytes = footer
+        .replacen("footer text", "footer altered", 1)
+        .into_bytes();
+    assert!(
+        package::compare_saved_docx(&original_package, &unauthorized)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some("word/footer1.xml")),
+        "T009 must reject unrelated footer text changes combined with deletion"
+    );
+    let mut changed_media = package::open(final_bytes, package::Side::Output).unwrap();
+    let media = changed_media
+        .parts
+        .keys()
+        .find(|name| name.starts_with("word/media/"))
+        .unwrap()
+        .clone();
+    let (_, bytes) = changed_media.parts.get_mut(&media).unwrap();
+    bytes.push(0);
+    assert!(
+        package::compare_saved_docx(&original_package, &changed_media)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(media.as_str())),
+        "T009 must reject mutation of a media resource still shared with the body"
+    );
 }
 
 #[test]

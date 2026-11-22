@@ -1461,6 +1461,7 @@ pub struct DocxModel {
     object_epoch: u64,
     story_picture_resize: bool,
     story_picture_move: bool,
+    story_picture_delete: bool,
     header_footer_picture_move: bool,
     rounded_rectangle_conversion: bool,
     /// Group-child edits rewrite the owning DrawingML body tree. Expose them only when the
@@ -1592,6 +1593,7 @@ impl DocxModel {
             object_epoch: 0,
             story_picture_resize: false,
             story_picture_move: false,
+            story_picture_delete: false,
             header_footer_picture_move: false,
             rounded_rectangle_conversion: false,
             group_body_roundtrips: false,
@@ -1610,6 +1612,7 @@ impl DocxModel {
             return Err(EngineStage::Render);
         }
         let count = model.sizable_story_picture_count();
+        let deletable_story_picture_count = model.deletable_story_picture_count();
         let (note_picture_count, _) = model.note_story_picture_counts();
         let (header_footer_picture_count, movable_header_footer_picture_count) =
             model.header_footer_story_picture_counts();
@@ -1620,6 +1623,7 @@ impl DocxModel {
         });
         if count != 0
             || note_picture_count != 0
+            || deletable_story_picture_count != 0
             || header_footer_picture_count != 0
             || has_rounded_rectangle
         {
@@ -1628,6 +1632,12 @@ impl DocxModel {
                     && crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count);
                 model.story_picture_move = note_picture_count != 0
                     && crate::services::save::docx_story_drawings::move_source_supported(bytes, &export, note_picture_count);
+                model.story_picture_delete = deletable_story_picture_count != 0
+                    && crate::services::save::docx_story_drawings::delete_source_supported(
+                        bytes,
+                        &export,
+                        deletable_story_picture_count,
+                    );
                 model.header_footer_picture_move = header_footer_picture_count != 0
                     && movable_header_footer_picture_count != 0
                     && crate::services::save::docx_story_drawings::header_footer_move_source_supported(
@@ -1842,7 +1852,8 @@ impl DocxModel {
                             let (owner, _) = layout.header_footer_at(*page as usize, *y)?;
                             let hit = layout.object_at_in(*page as usize, *x, *y, 2.0, owner)?;
                             (self.story_inline_picture(&hit.pos())
-                                || self.story_picture_move_allowed(&hit.pos()))
+                                || self.story_picture_move_allowed(&hit.pos())
+                                || self.deletable_story_picture(&hit.pos()))
                                 .then_some(hit)
                         });
                     if let Some(hit) = hit {
@@ -2480,6 +2491,52 @@ impl DocxModel {
             .sum()
     }
 
+    fn deletable_story_picture_count(&self) -> usize {
+        use wordcraft_engine::doc::PartKind;
+        self.session
+            .doc
+            .parts
+            .iter()
+            .filter(|(id, part)| {
+                matches!(part.kind, PartKind::Header | PartKind::Footer | PartKind::Footnote | PartKind::Endnote)
+                    && self.linked_picture_story(StoryRef::Part(**id))
+            })
+            .flat_map(|(id, _)| {
+                self.session
+                    .doc
+                    .para_paths(StoryRef::Part(*id))
+                    .into_iter()
+                    .map(move |path| (StoryRef::Part(*id), path))
+            })
+            .map(|(story, path)| {
+                let Some(para) = self.session.doc.para(story, &path) else {
+                    return 0;
+                };
+                para.object_offsets()
+                    .into_iter()
+                    .map(|off| Pos {
+                        story,
+                        path: path.clone(),
+                        off,
+                    })
+                    .filter(|pos| self.deletable_story_picture(pos))
+                    .count()
+            })
+            .sum()
+    }
+
+    fn deletable_story_picture(&self, pos: &Pos) -> bool {
+        self.linked_picture_story(pos.story)
+            && matches!(
+                self.object_at(pos),
+                Some(InlineObject::Image {
+                    media,
+                    ole: None,
+                    ..
+                }) if self.session.doc.media.contains_key(media)
+            )
+    }
+
     fn note_story_picture_counts(&self) -> (usize, usize) {
         use wordcraft_engine::doc::PartKind;
         let counted = self.session.doc.counted_stories();
@@ -2713,11 +2770,14 @@ impl DocxModel {
         }
         if !self.body_hosted_story(pos.story) {
             if !self.story_inline_picture(pos) {
-                return if self.story_picture_move_allowed(pos) {
-                    vec!["move"]
-                } else {
-                    Vec::new()
-                };
+                let mut operations = Vec::new();
+                if self.story_picture_delete && self.deletable_story_picture(pos) {
+                    operations.push("delete");
+                }
+                if self.story_picture_move_allowed(pos) {
+                    operations.insert(0, "move");
+                }
+                return operations;
             }
             let mut operations =
                 if self.story_picture_resize && Self::plain_picture_size(self.object_at(pos)) {
@@ -2727,6 +2787,10 @@ impl DocxModel {
                 };
             if self.story_picture_move_allowed(pos) {
                 operations.insert(0, "move");
+            }
+            if self.story_picture_delete && self.deletable_story_picture(pos) {
+                let index = usize::from(operations.first() == Some(&"move"));
+                operations.insert(index + usize::from(operations.get(index) == Some(&"resize")), "delete");
             }
             return operations;
         }
@@ -3407,6 +3471,7 @@ impl DocxModel {
                 matches!(part.kind, wordcraft_engine::doc::PartKind::Header | wordcraft_engine::doc::PartKind::Footer)));
         let header_footer_move = header_footer_story && edit.operation() == "move";
         let owned_story_move = note_move || header_footer_move;
+        let owned_story_delete = !self.body_hosted_story(pos.story) && edit.operation() == "delete";
         if owned_story_move
             && (!self.story_picture_move_allowed(&pos)
                 || !matches!(
@@ -3418,6 +3483,11 @@ impl DocxModel {
                         height: None
                     }
                 ))
+        {
+            return Err(Rejected);
+        }
+        if owned_story_delete
+            && (!self.story_picture_delete || !self.deletable_story_picture(&pos))
         {
             return Err(Rejected);
         }
@@ -3499,7 +3569,9 @@ impl DocxModel {
                 ObjectEdit::Delete {} => {
                     let changed = model.run("text.delete", json!({}))?;
                     // Media only the deleted picture used leaves the package (T009 drawing-owned media proof).
-                    table::retain_used_media(&mut model.session.doc);
+                    if !owned_story_delete {
+                        table::retain_used_media(&mut model.session.doc);
+                    }
                     (changed, None)
                 }
                 ObjectEdit::Nudge { dx, dy } => {

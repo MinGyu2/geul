@@ -221,6 +221,53 @@ fn move_source_supported_in(source: &[u8], export: &[u8], count: usize, notes: b
     pictures == count
 }
 
+/// Prove that linked story parts roundtrip without changes and that every deletable model
+/// picture is paired with one unambiguous, owned source drawing and unchanged media relation.
+pub(crate) fn delete_source_supported(source: &[u8], export: &[u8], count: usize) -> bool {
+    if count == 0 {
+        return false;
+    }
+    let (Ok(original), Ok(output)) = (
+        package::open(source, Side::Original),
+        package::open(export, Side::Output),
+    ) else {
+        return false;
+    };
+    let Some(stories) = linked_stories(&original, &output) else {
+        return false;
+    };
+    if original.get(DOCUMENT_XML) != output.get(DOCUMENT_XML)
+        || !same_story_references(&original, &output)
+    {
+        return false;
+    }
+    let mut pictures = 0usize;
+    for (part, root, note) in stories {
+        let (Some(before), Some(after)) = (original.get(&part), output.get(&part)) else {
+            return false;
+        };
+        if before != after {
+            return false;
+        }
+        let Some(images) = owned_images(&original, &output, &part) else {
+            if normalize_story(before, root, note, &BTreeSet::new())
+                .is_some_and(|story| story.pictures.is_empty())
+            {
+                continue;
+            }
+            return false;
+        };
+        let Some(normalized) = normalize_story(before, root, note, &images) else {
+            return false;
+        };
+        pictures = match pictures.checked_add(normalized.pictures.len()) {
+            Some(count) => count,
+            None => return false,
+        };
+    }
+    pictures == count
+}
+
 /// Admit one note-picture placement change in each of the linked footnote and endnote parts.
 /// Each part is proved independently: the target picture, character run properties, drawing body,
 /// note id, relationship, document note references, and every paragraph/run outside that picture
@@ -370,6 +417,157 @@ pub(super) fn moved_header_footer_picture_edits(
         admitted.insert(part);
     }
     admitted
+}
+
+/// Admit deleting one directly owned picture run from each changed linked story part. Media and
+/// every surviving relationship remain byte-identical. A story relationship part may disappear
+/// only when it contained the deleted picture's single image relationship and no other owner.
+pub(super) fn deleted_story_picture_edits(
+    original: &Package,
+    output: &Package,
+) -> BTreeSet<String> {
+    if original.get(DOCUMENT_XML) != output.get(DOCUMENT_XML)
+        || !same_story_references(original, output)
+    {
+        return BTreeSet::new();
+    }
+    let media_parts = |package: &Package| {
+        package
+            .parts
+            .keys()
+            .filter(|name| name.starts_with("word/media/"))
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    };
+    let original_media = media_parts(original);
+    if original_media != media_parts(output)
+        || original_media
+            .iter()
+            .any(|name| original.get(name) != output.get(name))
+    {
+        return BTreeSet::new();
+    }
+    let relationship_parts = |package: &Package| {
+        package
+            .parts
+            .keys()
+            .filter(|name| name.ends_with(".rels"))
+            .cloned()
+            .collect::<BTreeSet<_>>()
+    };
+    let original_relationships = relationship_parts(original);
+    let output_relationships = relationship_parts(output);
+    if !output_relationships.is_subset(&original_relationships)
+        || original_relationships
+            .intersection(&output_relationships)
+            .any(|name| original.get(name) != output.get(name))
+    {
+        return BTreeSet::new();
+    }
+    let mut removed_relationships: BTreeSet<_> = original_relationships
+        .difference(&output_relationships)
+        .cloned()
+        .collect();
+    let Some(stories) = linked_stories(original, output) else {
+        return BTreeSet::new();
+    };
+    let mut admitted = BTreeSet::new();
+    for (part, root, note) in stories {
+        let (Some(before_bytes), Some(after_bytes)) = (original.get(&part), output.get(&part))
+        else {
+            return BTreeSet::new();
+        };
+        if before_bytes == after_bytes {
+            continue;
+        }
+        let Some(before_images) = owned_images(original, original, &part) else {
+            return BTreeSet::new();
+        };
+        let rels_part = relationship_part_name(&part);
+        let relationship_removed = removed_relationships.contains(&rels_part);
+        let after_images = if relationship_removed {
+            BTreeSet::new()
+        } else {
+            let Some(images) = owned_images(original, output, &part) else {
+                return BTreeSet::new();
+            };
+            images
+        };
+        let (Some(before), Some(after)) = (
+            normalize_story(before_bytes, root, note, &before_images),
+            normalize_story(after_bytes, root, note, &after_images),
+        ) else {
+            return BTreeSet::new();
+        };
+        if before.events != after.events || before.pictures.len() != after.pictures.len() + 1 {
+            return BTreeSet::new();
+        }
+        let before: BTreeMap<_, _> = before
+            .pictures
+            .into_iter()
+            .map(|picture| (picture.key.clone(), picture))
+            .collect();
+        let after: BTreeMap<_, _> = after
+            .pictures
+            .into_iter()
+            .map(|picture| (picture.key.clone(), picture))
+            .collect();
+        if before.len() != after.len() + 1 || !after.keys().all(|key| before.contains_key(key)) {
+            return BTreeSet::new();
+        }
+        let mut deleted = before
+            .iter()
+            .filter(|(key, _)| !after.contains_key(*key))
+            .map(|(_, picture)| picture);
+        let Some(deleted_picture) = deleted.next() else {
+            return BTreeSet::new();
+        };
+        if deleted.next().is_some() {
+            return BTreeSet::new();
+        }
+        if relationship_removed {
+            let (Some(rels_bytes), Some(_)) =
+                (original.get(&rels_part), output.get(&part))
+            else {
+                return BTreeSet::new();
+            };
+            let Ok(relationships) = xml::relationships(rels_bytes) else {
+                return BTreeSet::new();
+            };
+            if relationships.len() != 1
+                || before_images.len() != 1
+                || !before_images.contains(&deleted_picture.key.embed_id)
+                || !removed_relationships.remove(&rels_part)
+            {
+                return BTreeSet::new();
+            }
+            admitted.insert(rels_part);
+        }
+        for (key, new) in &after {
+            let Some(old) = before.get(key) else {
+                return BTreeSet::new();
+            };
+            if old.core != new.core
+                || old.run_props != new.run_props
+                || old.placement != new.placement
+            {
+                return BTreeSet::new();
+            }
+        }
+        admitted.insert(part);
+    }
+    if removed_relationships.is_empty() {
+        admitted
+    } else {
+        BTreeSet::new()
+    }
+}
+
+fn relationship_part_name(part: &str) -> String {
+    let Some((directory, filename)) = part.rsplit_once('/') else {
+        return String::new();
+    };
+    format!("{directory}/_rels/{filename}.rels")
 }
 
 fn safe_story_picture_move(before: &PicturePlacement, after: &PicturePlacement) -> bool {
