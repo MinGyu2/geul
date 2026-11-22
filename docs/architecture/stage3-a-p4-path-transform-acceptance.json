@@ -43,7 +43,7 @@
       "publication": "검증용 immutable local generation을 사용했다. public/rhwp selector/artifacts는 변경하지 않았다."
     },
     "geulReleaseAppSha256": "fd28796771bb51d1b7120866f29e0fd936df7c4f181a81ad39f1a864ac701115",
-    "geulCommit": "이 evidence를 포함한 P4-PATH-XFM local commit 및 후속 ledger hash 기록 commit에서 확정"
+    "geulCommit": "d243398271bdd194880a11595a875cc7af9a87ba"
   },
   "focusedChecks": [
     {
