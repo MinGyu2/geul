@@ -7,6 +7,7 @@ interface Props {
   owner: string;
   width: number;
   height: number;
+  docx?: boolean;
   onEdit: (edit: ObjectEdit) => void;
 }
 
@@ -20,8 +21,9 @@ type PreviewState = { owner: string; index: number; x: number; y: number; width:
 
 const CHILD_HANDLES: readonly ChildHandle[] = ["e", "se", "s"];
 const intInput = (raw: string) => /^-?\d+$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+const pointInput = (raw: string) => /^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
 
-export function GroupChildEditor({ group, owner, width, height, onEdit }: Props) {
+export function GroupChildEditor({ group, owner, width, height, docx = false, onEdit }: Props) {
   const { t } = useTranslation();
   const initialIndex = group.children.find(c => c.canMove || c.canResize)?.index ?? 0;
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
@@ -37,39 +39,42 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
   const rawW = currentDraft?.width ?? String(selected.width);
   const rawH = currentDraft?.height ?? String(selected.height);
 
-  const nextX = intInput(rawX);
-  const nextY = intInput(rawY);
-  const nextW = intInput(rawW);
-  const nextH = intInput(rawH);
+  const parse = docx ? pointInput : intInput;
+  const nextX = parse(rawX);
+  const nextY = parse(rawY);
+  const nextW = parse(rawW);
+  const nextH = parse(rawH);
+  const validNumber = (n: number) => docx ? Number.isFinite(n) : Number.isSafeInteger(n);
+  const rounded = (n: number) => docx ? Math.round(n * 100) / 100 : Math.round(n);
 
   const moveValid = selected.canMove
-    && Number.isSafeInteger(nextX) && nextX >= 0 && nextX + selected.width <= group.width
-    && Number.isSafeInteger(nextY) && nextY >= 0 && nextY + selected.height <= group.height
+    && validNumber(nextX) && nextX >= 0 && nextX + selected.width <= group.width + 0.001
+    && validNumber(nextY) && nextY >= 0 && nextY + selected.height <= group.height + 0.001
     && (nextX !== selected.x || nextY !== selected.y);
   const resizeValid = selected.canResize
-    && Number.isSafeInteger(nextW) && nextW >= 1 && selected.x + nextW <= group.width
-    && Number.isSafeInteger(nextH) && nextH >= 1 && selected.y + nextH <= group.height
+    && validNumber(nextW) && nextW > 0 && selected.x + nextW <= group.width + 0.001
+    && validNumber(nextH) && nextH > 0 && selected.y + nextH <= group.height + 0.001
     && (nextW !== selected.width || nextH !== selected.height);
 
   function computeTarget(event: PointerEvent<HTMLElement>, state: DragState): PreviewState {
-    const dx = Math.round((event.clientX - state.clientX) * group.width / width);
-    const dy = Math.round((event.clientY - state.clientY) * group.height / height);
+    const dx = rounded((event.clientX - state.clientX) * group.width / width);
+    const dy = rounded((event.clientY - state.clientY) * group.height / height);
     if (state.kind === "move") {
       const maxX = group.width - state.child.width;
       const maxY = group.height - state.child.height;
       return {
         owner,
         index: state.child.index,
-        x: Math.min(maxX, Math.max(0, state.child.x + dx)),
-        y: Math.min(maxY, Math.max(0, state.child.y + dy)),
+        x: rounded(Math.min(maxX, Math.max(0, state.child.x + dx))),
+        y: rounded(Math.min(maxY, Math.max(0, state.child.y + dy))),
         width: state.child.width,
         height: state.child.height,
       };
     }
     const maxW = group.width - state.child.x;
     const maxH = group.height - state.child.y;
-    const w = state.handle === "s" ? state.child.width : Math.min(maxW, Math.max(1, state.child.width + dx));
-    const h = state.handle === "e" ? state.child.height : Math.min(maxH, Math.max(1, state.child.height + dy));
+    const w = state.handle === "s" ? state.child.width : rounded(Math.min(maxW, Math.max(docx ? 0.01 : 1, state.child.width + dx)));
+    const h = state.handle === "e" ? state.child.height : rounded(Math.min(maxH, Math.max(docx ? 0.01 : 1, state.child.height + dy)));
     return { owner, index: state.child.index, x: state.child.x, y: state.child.y, width: w, height: h };
   }
 
@@ -111,24 +116,10 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
     const next = computeTarget(event, current);
     if (current.kind === "move") {
       if (next.x === current.child.x && next.y === current.child.y) return;
-      onEdit({
-        kind: "groupChildMove",
-        index: current.child.index,
-        id: current.child.id,
-        instId: current.child.instId,
-        x: next.x,
-        y: next.y,
-      });
+      onEdit(moveEdit(current.child, next.x, next.y));
     } else {
       if (next.width === current.child.width && next.height === current.child.height) return;
-      onEdit({
-        kind: "groupChildResize",
-        index: current.child.index,
-        id: current.child.id,
-        instId: current.child.instId,
-        width: next.width,
-        height: next.height,
-      });
+      onEdit(resizeEdit(current.child, next.width, next.height));
     }
   }
 
@@ -141,6 +132,18 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
       width: patch.width ?? rawW,
       height: patch.height ?? rawH,
     });
+  }
+
+  function moveEdit(child: GroupChildGeometry, x: number, y: number): ObjectEdit {
+    return docx
+      ? { kind: "docxGroupChildMove", index: child.index, id: child.id, instId: child.instId, x, y }
+      : { kind: "groupChildMove", index: child.index, id: child.id, instId: child.instId, x, y };
+  }
+
+  function resizeEdit(child: GroupChildGeometry, width: number, height: number): ObjectEdit {
+    return docx
+      ? { kind: "docxGroupChildResize", index: child.index, id: child.id, instId: child.instId, width, height }
+      : { kind: "groupChildResize", index: child.index, id: child.id, instId: child.instId, width, height };
   }
 
   return <>
@@ -213,34 +216,38 @@ export function GroupChildEditor({ group, owner, width, height, onEdit }: Props)
       onSubmit={event => {
         event.preventDefault();
         if (moveValid) {
-          onEdit({ kind: "groupChildMove", index, id: selected.id, instId: selected.instId, x: nextX, y: nextY });
+          onEdit(moveEdit(selected, nextX, nextY));
         } else if (resizeValid) {
-          onEdit({ kind: "groupChildResize", index, id: selected.id, instId: selected.instId, width: nextW, height: nextH });
+          onEdit(resizeEdit(selected, nextW, nextH));
         }
       }}
     >
-      <label>{t("editor.object.path.x")}
-        <input type="number" value={rawX} min={0} max={group.width - selected.width} step={1} disabled={!selected.canMove}
+      <label>{t(docx ? "editor.object.groupChild.x" : "editor.object.path.x")}
+        <input type="number" value={rawX} min={0} max={group.width - selected.width} step={docx ? 0.01 : 1} disabled={!selected.canMove}
           onChange={event => updateDraft({ x: event.target.value })} />
+        {docx && <span>{t("editor.object.groupChild.points")}</span>}
       </label>
-      <label>{t("editor.object.path.y")}
-        <input type="number" value={rawY} min={0} max={group.height - selected.height} step={1} disabled={!selected.canMove}
+      <label>{t(docx ? "editor.object.groupChild.y" : "editor.object.path.y")}
+        <input type="number" value={rawY} min={0} max={group.height - selected.height} step={docx ? 0.01 : 1} disabled={!selected.canMove}
           onChange={event => updateDraft({ y: event.target.value })} />
+        {docx && <span>{t("editor.object.groupChild.points")}</span>}
       </label>
       <button type="button" className="object-group-child-apply-move" disabled={!moveValid}
-        onClick={() => { if (moveValid) onEdit({ kind: "groupChildMove", index, id: selected.id, instId: selected.instId, x: nextX, y: nextY }); }}>
+        onClick={() => { if (moveValid) onEdit(moveEdit(selected, nextX, nextY)); }}>
         {t("editor.object.groupChild.applyMove")}
       </button>
-      <label>{t("editor.object.groupChild.width")}
-        <input type="number" value={rawW} min={1} max={group.width - selected.x} step={1} disabled={!selected.canResize}
+      <label>{t(docx ? "editor.object.groupChild.widthPt" : "editor.object.groupChild.width")}
+        <input type="number" value={rawW} min={docx ? 0.01 : 1} max={group.width - selected.x} step={docx ? 0.01 : 1} disabled={!selected.canResize}
           onChange={event => updateDraft({ width: event.target.value })} />
+        {docx && <span>{t("editor.object.groupChild.points")}</span>}
       </label>
-      <label>{t("editor.object.groupChild.height")}
-        <input type="number" value={rawH} min={1} max={group.height - selected.y} step={1} disabled={!selected.canResize}
+      <label>{t(docx ? "editor.object.groupChild.heightPt" : "editor.object.groupChild.height")}
+        <input type="number" value={rawH} min={docx ? 0.01 : 1} max={group.height - selected.y} step={docx ? 0.01 : 1} disabled={!selected.canResize}
           onChange={event => updateDraft({ height: event.target.value })} />
+        {docx && <span>{t("editor.object.groupChild.points")}</span>}
       </label>
       <button type="button" className="object-group-child-apply-resize" disabled={!resizeValid}
-        onClick={() => { if (resizeValid) onEdit({ kind: "groupChildResize", index, id: selected.id, instId: selected.instId, width: nextW, height: nextH }); }}>
+        onClick={() => { if (resizeValid) onEdit(resizeEdit(selected, nextW, nextH)); }}>
         {t("editor.object.groupChild.applyResize")}
       </button>
     </form>

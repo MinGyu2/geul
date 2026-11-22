@@ -8110,6 +8110,231 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
 }
 
 #[test]
+fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
+    use super::engine::ObjectEdit;
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
+    use wordcraft_engine::doc::props::Rgb;
+    use wordcraft_engine::doc::{CharProps, InlineObject};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    let body_end = source.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    source.run("caret.set", &json!({"pos": body_end})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("insert.picture", &json!({"data": tiny_png_b64(3, 2, [40, 90, 170]), "width": 24.0})).unwrap();
+    let (picture_pos, mut picture) = wordcraft_engine::cmd::objects::selected(&source).expect("inserted picture");
+    source.doc.delete_range(&picture_pos, &wordcraft_engine::doc::Pos {
+        off: picture_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+        ..picture_pos.clone()
+    }).unwrap();
+    let InlineObject::Image { w, h, float, .. } = &mut picture else { panic!("expected image child") };
+    *w = 30.0;
+    *h = 20.0;
+    *float = Float::default();
+
+    let shape = InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 22.0,
+        h: 18.0,
+        fill: Some(Rgb(0x33, 0x66, 0x99)),
+        stroke: Some(Rgb(0x11, 0x22, 0x33)),
+        stroke_width: 1.0,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let nested = InlineObject::Group {
+        w: 80.0,
+        h: 60.0,
+        float: Float::default(),
+        ch_w: 80.0,
+        ch_h: 60.0,
+        canvas: None,
+        children: vec![
+            GroupChild { x: 5.0, y: 6.0, obj: shape },
+            GroupChild { x: 42.0, y: 20.0, obj: picture },
+        ],
+    };
+    let sibling = InlineObject::Shape {
+        kind: ShapeKind::Ellipse,
+        w: 42.0,
+        h: 32.0,
+        fill: Some(Rgb(0xCC, 0x88, 0x44)),
+        stroke: None,
+        stroke_width: 1.0,
+        float: Float::default(),
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let root_group = InlineObject::Group {
+        w: 220.0,
+        h: 130.0,
+        float: Float::default(),
+        ch_w: 220.0,
+        ch_h: 130.0,
+        canvas: None,
+        children: vec![
+            GroupChild { x: 10.0, y: 10.0, obj: nested },
+            GroupChild { x: 120.0, y: 35.0, obj: sibling.clone() },
+        ],
+    };
+    let insert_at = source.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
+    source.doc.insert_object(&insert_at, root_group, &CharProps::default()).unwrap();
+    let generated_bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let native_fixture: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scripts/tests/fixtures/stage3a-p4-dx-group.docx"
+    ));
+    let generated = package::open(&generated_bytes, package::Side::Original).unwrap();
+    let fixture_package = package::open(native_fixture, package::Side::Original).unwrap();
+    assert_eq!(generated.parts.keys().collect::<Vec<_>>(), fixture_package.parts.keys().collect::<Vec<_>>());
+    for name in generated.parts.keys() {
+        assert_eq!(generated.get(name), fixture_package.get(name), "native fixture differs from generated source part: {name}");
+    }
+    let original_bytes = native_fixture.to_vec();
+    let mut model = DocxModel::open(&original_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
+    let layout = reader.layout();
+    let hit = layout.find_object(0, |object| (object.rect.w - 220.0).abs() < 0.5).expect("outer group layout");
+    let select_group = || DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 1.0,
+        y: hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    let selected = model.apply(&[select_group()]);
+    assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "group");
+    assert_eq!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "groupChildGeometry"), true);
+    assert_eq!(view["object"]["groupChildren"]["children"].as_array().unwrap().len(), 2);
+    assert_eq!(view["object"]["groupChildren"]["children"][0]["kind"], "group");
+    assert_eq!(view["object"]["groupChildren"]["children"][1]["kind"], "ellipse");
+
+    let position = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+    let moved = model.apply(&[DocxOp::ObjectEdit {
+        position: position.clone(),
+        epoch,
+        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+    }]);
+    assert_eq!(moved.changed, 1, "{:?}", moved.rejected);
+    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 20.0);
+
+    let undone = model.apply(&[DocxOp::Undo {}]);
+    assert_eq!(undone.changed, 1, "{:?}", undone.rejected);
+    assert_eq!(model.apply(&[select_group()]).applied, 1);
+    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 10.0);
+    let redone = model.apply(&[DocxOp::Redo {}]);
+    assert_eq!(redone.changed, 1, "{:?}", redone.rejected);
+    assert_eq!(model.apply(&[select_group()]).applied, 1);
+    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 20.0);
+
+    let current = serde_json::to_value(model.view()).unwrap();
+    let resize = model.apply(&[DocxOp::ObjectEdit {
+        position: current["object"]["position"].as_str().unwrap().to_owned(),
+        epoch: current["object"]["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::DocxGroupChildResize { index: 0, id: 1, inst_id: 0, width: 70.0, height: 50.0 },
+    }]);
+    assert_eq!(resize.changed, 1, "{:?}", resize.rejected);
+    let edited_bytes = model.export().unwrap();
+    assert!(model.same_as(&edited_bytes), "edited WordCraft model must match independent reopen");
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &original_bytes,
+        &edited_bytes,
+        None,
+        model.same_as(&edited_bytes),
+    ).is_safe());
+
+    let before_package = package::open(&original_bytes, package::Side::Original).unwrap();
+    let after_package = package::open(&edited_bytes, package::Side::Output).unwrap();
+    assert_eq!(before_package.parts.keys().collect::<Vec<_>>(), after_package.parts.keys().collect::<Vec<_>>());
+    for name in before_package.parts.keys() {
+        if name != "word/document.xml" && name != "docProps/app.xml" {
+            assert_eq!(before_package.get(name), after_package.get(name), "unrelated OPC part changed: {name}");
+        }
+    }
+    assert_eq!(before_package.get("word/_rels/document.xml.rels"), after_package.get("word/_rels/document.xml.rels"));
+
+    let reopened = io::open_bytes("fixture.docx", &edited_bytes).unwrap();
+    let persisted = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects)
+        .find(|object| matches!(object, InlineObject::Group { .. })).expect("group after reopen");
+    let InlineObject::Group { children, .. } = persisted else { unreachable!() };
+    assert_eq!(children.len(), 2);
+    assert_eq!((children[1].x, children[1].y), (120.0, 35.0), "unrelated sibling placement remains unchanged");
+    let InlineObject::Shape { kind, w, h, fill, stroke, .. } = &children[1].obj else { panic!("sibling shape changed kind") };
+    assert_eq!((*kind, *w, *h, *fill, *stroke), (ShapeKind::Ellipse, 42.0, 32.0, Some(Rgb(0xCC, 0x88, 0x44)), None));
+    assert_eq!((children[0].x, children[0].y), (20.0, 15.0));
+    let InlineObject::Group { w, h, children: descendants, .. } = &children[0].obj else { panic!("nested group was flattened") };
+    assert_eq!((*w, *h), (70.0, 50.0));
+    assert_eq!(descendants.len(), 2);
+    assert!(matches!(descendants[0].obj, InlineObject::Shape { .. }));
+    let InlineObject::Image { media, .. } = &descendants[1].obj else { panic!("nested picture lost") };
+    assert!(reopened.media.contains_key(media), "nested picture relationship resolves to its media");
+
+    let mut source_package = package::open(&original_bytes, package::Side::Original).unwrap();
+    let body = source_package.parts.get_mut("word/document.xml").unwrap();
+    let xml = std::str::from_utf8(&body.1).unwrap();
+    let at = xml.rfind("</wpg:wgp>").expect("outer group end tag");
+    let mut with_unknown = xml.to_owned();
+    with_unknown.insert_str(at, "<wpg:unsupportedMember/>\n");
+    body.1 = with_unknown.into_bytes();
+    let entries: Vec<_> = source_package.order.iter().map(|name| {
+        crate::document::testutil::entry(name, source_package.get(name).unwrap())
+    }).collect();
+    let unsupported_bytes = zip(&entries, false);
+    let mut guarded = DocxModel::open(&unsupported_bytes).unwrap();
+    let selected = guarded.apply(&[select_group()]);
+    assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
+    let guarded_view = serde_json::to_value(guarded.view()).unwrap();
+    assert!(!guarded_view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "groupChildGeometry"));
+    assert!(guarded_view["object"].get("groupChildren").is_none());
+    let guarded_before = guarded.export().unwrap();
+    let edit = guarded.apply(&[DocxOp::ObjectEdit {
+        position: guarded_view["object"]["position"].as_str().unwrap().to_owned(),
+        epoch: guarded_view["object"]["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+    }]);
+    assert_eq!(edit.changed, 0);
+    assert_eq!(edit.rejected, vec![0]);
+    assert_eq!(guarded.export().unwrap(), guarded_before, "unsupported original member blocks child mutation atomically");
+
+    let mut scaled_package = package::open(&original_bytes, package::Side::Original).unwrap();
+    let body = scaled_package.parts.get_mut("word/document.xml").unwrap();
+    let xml = std::str::from_utf8(&body.1).unwrap();
+    let identity_axes = "<a:chExt cx=\"2794000\" cy=\"1651000\"/>";
+    assert!(xml.contains(identity_axes), "native fixture must use an identity group coordinate space");
+    body.1 = xml.replacen(identity_axes, "<a:chExt cx=\"5588000\" cy=\"1651000\"/>", 1).into_bytes();
+    let entries: Vec<_> = scaled_package.order.iter().map(|name| {
+        crate::document::testutil::entry(name, scaled_package.get(name).unwrap())
+    }).collect();
+    let scaled_bytes = zip(&entries, false);
+    let mut scaled = DocxModel::open(&scaled_bytes).unwrap();
+    let selected = scaled.apply(&[select_group()]);
+    assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
+    let scaled_view = serde_json::to_value(scaled.view()).unwrap();
+    assert!(scaled_view["object"].get("groupChildren").is_none(), "scaled group coordinates stay fail-closed");
+    let scaled_before = scaled.export().unwrap();
+    let edit = scaled.apply(&[DocxOp::ObjectEdit {
+        position: scaled_view["object"]["position"].as_str().unwrap().to_owned(),
+        epoch: scaled_view["object"]["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+    }]);
+    assert_eq!(edit.changed, 0);
+    assert_eq!(edit.rejected, vec![0]);
+    assert_eq!(scaled.export().unwrap(), scaled_before, "scaled group rejection is atomic");
+}
+
+#[test]
 fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() {
     use super::engine::ObjectPayload;
     use crate::services::save::service;

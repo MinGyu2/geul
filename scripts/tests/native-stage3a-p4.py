@@ -16,6 +16,7 @@ entry = Path(__file__).with_name("native-stage3-c.py")
 spec = importlib.util.spec_from_file_location("stage3c", entry)
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
+ROOT = h.ROOT
 record_spec = importlib.util.spec_from_file_location("hwp_record_diff", Path(__file__).with_name("hwp_record_diff.py"))
 hwp_records = importlib.util.module_from_spec(record_spec)
 record_spec.loader.exec_module(hwp_records)
@@ -45,6 +46,245 @@ def inspect_docx_curve(path):
         "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
         "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
     }
+
+
+def inspect_docx_group(path):
+    ns = {
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+    }
+    emu_per_point = 12_700
+    with zipfile.ZipFile(path) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+        relationships = package.read("word/_rels/document.xml.rels")
+        parts = {name: package.read(name) for name in package.namelist() if name != "word/document.xml"}
+
+    def xfrm(node):
+        tag = node.tag.rsplit("}", 1)[-1]
+        if tag in ("wgp", "grpSp"):
+            return node.find("./wpg:grpSpPr/a:xfrm", ns)
+        if tag == "wsp":
+            return node.find("./wps:spPr/a:xfrm", ns)
+        if tag == "pic":
+            return node.find("./pic:spPr/a:xfrm", ns)
+        return None
+
+    def group_children(group):
+        transform = xfrm(group)
+        origin = transform.find("a:chOff", ns) if transform is not None else None
+        origin_x = int(origin.get("x", "0")) if origin is not None else 0
+        origin_y = int(origin.get("y", "0")) if origin is not None else 0
+        children = []
+        for child in list(group):
+            kind = child.tag.rsplit("}", 1)[-1]
+            if kind not in ("wsp", "pic", "grpSp"):
+                continue
+            frame = xfrm(child)
+            if frame is None:
+                raise AssertionError(f"group child has no DrawingML transform: {kind}")
+            offset = frame.find("a:off", ns)
+            extent = frame.find("a:ext", ns)
+            if offset is None or extent is None:
+                raise AssertionError(f"group child has incomplete DrawingML transform: {kind}")
+            ox, oy = int(offset.get("x", "0")), int(offset.get("y", "0"))
+            width, height = int(extent.get("cx", "0")), int(extent.get("cy", "0"))
+            child_kind = {"wsp": "shape", "pic": "picture", "grpSp": "group"}[kind]
+            item = {
+                "kind": child_kind,
+                "x": (ox - origin_x) / emu_per_point,
+                "y": (oy - origin_y) / emu_per_point,
+                "width": width / emu_per_point,
+                "height": height / emu_per_point,
+            }
+            if child_kind == "group":
+                item["children"] = group_children(child)
+            elif child_kind == "shape":
+                geometry = child.find("./wps:spPr/a:prstGeom", ns)
+                item["preset"] = geometry.get("prst") if geometry is not None else None
+                color = child.find("./wps:spPr/a:solidFill/a:srgbClr", ns)
+                item["fill"] = color.get("val") if color is not None else None
+            elif child_kind == "picture":
+                blip = child.find("./pic:blipFill/a:blip", ns)
+                item["relationship"] = blip.get(f"{{{ns['r']}}}embed") if blip is not None else None
+            children.append(item)
+        return children
+
+    groups = root.findall(".//wpg:wgp", ns)
+    if len(groups) != 1:
+        raise AssertionError(f"expected one outer DrawingML group, found {len(groups)}")
+    tree = group_children(groups[0])
+    return {
+        "xml": root,
+        "group": groups[0],
+        "tree": tree,
+        "relationships": relationships,
+        "parts": parts,
+    }
+
+
+def docx_group_click(acc, selector):
+    h.require(acc.d.exists(selector), "DOCX group control is missing", selector)
+    x, y = acc.d.js("""
+      const e=document.querySelector(arguments[0]);
+      if(!e) return [null,null];
+      const r=e.getBoundingClientRect();
+      return [r.left+r.width/2,r.top+r.height/2];
+    """, selector)
+    h.require(x is not None and y is not None, "DOCX group control has no visible hit target", selector)
+    h.p4.rhwp_poc.click(acc.d, x, y)
+
+
+def docx_group_select(acc):
+    if not acc.d.exists(".object-group-child-mode"):
+        for y in (0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65):
+            for x in (0.17, 0.22, 0.27, 0.32, 0.37, 0.42, 0.47):
+                docx_curve_click(acc, x, y)
+                if acc.d.exists(".object-group-child-mode"):
+                    break
+            if acc.d.exists(".object-group-child-mode"):
+                break
+    h.require(acc.d.exists(".object-group-child-mode"), "native pointer could not select the DrawingML group")
+    if acc.d.js("return document.querySelector('.object-group-child-mode')?.getAttribute('aria-pressed')!=='true'"):
+        acc.dom_click(".object-group-child-mode")
+    h.require(acc.d.js("return document.querySelector('.object-group-child-mode')?.getAttribute('aria-pressed')==='true'"),
+              "native direct-child edit mode did not activate")
+    h.require(acc.d.js("return document.querySelectorAll('.object-group-child').length") == 2,
+              "expected both owned direct group children")
+
+
+def docx_group_values(acc):
+    return acc.d.js("""
+      return [...document.querySelectorAll('.object-group-child-coordinates input')]
+        .map(input=>Number(input.value));
+    """)
+
+
+def docx_group_set_values(acc, values):
+    selectors = (
+        ".object-group-child-coordinates label:nth-of-type(1) input",
+        ".object-group-child-coordinates label:nth-of-type(2) input",
+        ".object-group-child-coordinates label:nth-of-type(3) input",
+        ".object-group-child-coordinates label:nth-of-type(4) input",
+    )
+    for selector, value in zip(selectors, values, strict=True):
+        acc.dom_click(selector)
+        acc.key("ctrl+a")
+        acc.type(str(value))
+        acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", selector, str(value))
+
+
+def docx_group_case(acc, row, fixtures, out):
+    fixture = ROOT / "scripts/tests/fixtures/stage3a-p4-dx-group.docx"
+    h.require(fixture.is_file(), "tracked nested-group native fixture is missing", str(fixture))
+    before = inspect_docx_group(fixture)
+    expected_children = before["tree"]
+    h.require([child["kind"] for child in expected_children] == ["group", "shape"],
+              "fixture must retain a nested group before editing", expected_children)
+    nested_before = expected_children[0]
+    h.require((nested_before["x"], nested_before["y"], nested_before["width"], nested_before["height"]) == (10.0, 10.0, 80.0, 60.0),
+              "nested group local transform changed", nested_before)
+    h.require([child["kind"] for child in nested_before["children"]] == ["shape", "picture"],
+              "nested group must retain both its shape and owned picture", nested_before)
+    h.require(expected_children[0]["children"][1]["relationship"], "nested picture relationship is missing")
+    path = h.begin(acc, row, fixture, out, "p4-dx-group-edited.docx")
+
+    acc.d.js("""
+      window.docxGroupPointers=[];
+      window.docxGroupKeys=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        const child=e.target.closest('.object-group-child');
+        if(child) docxGroupPointers.push({type,index:Number(child.dataset.index),trusted:e.isTrusted});
+      },true);
+      addEventListener('keydown',e=>{
+        if(e.target.closest('.object-group-child-coordinates')) docxGroupKeys.push({key:e.key,trusted:e.isTrusted});
+      },true);
+    """)
+
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    initial = docx_group_values(acc)
+    h.require(initial == [10, 10, 80, 60], "selected direct nested-group frame differs from source", initial)
+    docx_group_set_values(acc, [20, 15, 80, 60])
+    docx_group_click(acc, ".object-group-child-apply-move")
+    row["move"] = h.revision(acc, "docx", 1)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    moved = docx_group_values(acc)
+    h.require(moved == [20, 15, 80, 60], "direct group-child movement did not update local coordinates", moved)
+
+    acc.key("ctrl+z")
+    row["undoMove"] = h.revision(acc, "docx", 2)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == initial, "Undo did not restore the nested group frame")
+    acc.key("ctrl+y")
+    row["redoMove"] = h.revision(acc, "docx", 3)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == moved, "Redo did not restore the nested group frame")
+
+    docx_group_set_values(acc, [20, 15, 70, 50])
+    docx_group_click(acc, ".object-group-child-apply-resize")
+    row["resize"] = h.revision(acc, "docx", 4)
+    resized = [20, 15, 70, 50]
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == resized, "direct group-child resize did not update local geometry")
+    acc.key("ctrl+z")
+    row["undoResize"] = h.revision(acc, "docx", 5)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == moved, "Undo did not restore the moved nested group")
+    acc.key("ctrl+y")
+    row["redoResize"] = h.revision(acc, "docx", 6)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == resized, "Redo did not restore the resized nested group")
+
+    pointers = acc.d.js("return window.docxGroupPointers")
+    h.require(any(e == {"type": "pointerdown", "index": 0, "trusted": True} for e in pointers)
+              and any(e == {"type": "pointerup", "index": 0, "trusted": True} for e in pointers),
+              "direct group child was not selected with trusted native X11 pointer input", pointers)
+    keys = acc.d.js("return window.docxGroupKeys")
+    h.require(keys and all(event["trusted"] for event in keys),
+              "group-child coordinates did not use trusted native keyboard input", keys)
+
+    h.publish(acc, "docx", row)
+    after = inspect_docx_group(path)
+    expected_tree = deepcopy(before["tree"])
+    expected_tree[0].update(x=20.0, y=15.0, width=70.0, height=50.0)
+    h.require(after["tree"] == expected_tree,
+              "saved group tree changed nested members, sibling order, or local geometry", after["tree"])
+    h.require(before["relationships"] == after["relationships"], "DOCX group edit changed OPC relationships")
+    h.require(before["parts"] == after["parts"], "DOCX group edit changed package parts outside document.xml")
+    row["savedGroupTree"] = after["tree"]
+    row["unchangedPackageParts"] = len(before["parts"])
+
+    expected_xml = deepcopy(before["xml"])
+    ns = {
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+    }
+    expected_group = expected_xml.find(".//wpg:wgp", ns)
+    expected_nested = expected_group.find("./wpg:grpSp", ns)
+    expected_xfrm = expected_nested.find("./wpg:grpSpPr/a:xfrm", ns)
+    expected_offset = expected_xfrm.find("a:off", ns)
+    expected_extent = expected_xfrm.find("a:ext", ns)
+    expected_offset.set("x", str(int(expected_offset.get("x")) + 127_000))
+    expected_offset.set("y", str(int(expected_offset.get("y")) + 63_500))
+    expected_extent.set("cx", str(70 * 12_700))
+    expected_extent.set("cy", str(50 * 12_700))
+    h.require(ET.tostring(expected_xml) == ET.tostring(after["xml"]),
+              "saved document.xml differs beyond the selected nested-group frame")
+    h.reopen(acc, path, row)
+    docx_group_select(acc)
+    docx_group_click(acc, '.object-group-child[data-index="0"]')
+    h.require(docx_group_values(acc) == resized, "saved nested group did not reopen with edited bounds")
+    reopened_tree = inspect_docx_group(path)["tree"]
+    h.require(reopened_tree == expected_tree, "independent reopened package lost nested group hierarchy or picture relationship")
     with zipfile.ZipFile(path) as package:
         root = ET.fromstring(package.read("word/document.xml"))
         rels = package.read("word/_rels/document.xml.rels")
@@ -1394,6 +1634,7 @@ def hwp5_group_child_edit_case(acc, row, fixtures, out):
 
 
 h.CASES = {
+    "P4-DX-GROUP": docx_group_case,
     "P4-DX-CURVE": docx_curve_case,
     "P4-DX-PATH": docx_path_vertex_case,
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),

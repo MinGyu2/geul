@@ -52,6 +52,8 @@ const MAX_MARKS: usize = 8;
 const MAX_SELECTION_RECTS: usize = 4096;
 /// 쪽 크기 상한(pt). 엔진 배치 결과를 검사한다.
 const MAX_PAGE_SIDE_PT: f32 = 100_000.0;
+/// Group-child geometry is exposed in points, snapped to DrawingML's integer EMU on mutation.
+const DOCX_GROUP_COORD_UNITS_PER_PT: f64 = 12_700.0;
 
 /// 프런트엔드가 보낼 수 있는 편집·이동. 인자는 IPC로 받은 값이므로 `validate`를 통과해야 실행한다.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -726,6 +728,10 @@ pub enum ObjectEdit {
         x: Option<i64>,
         y: Option<i64>,
     },
+    /// Move a direct child of a selected DOCX group in its local point coordinate space.
+    DocxGroupChildMove { index: usize, id: u32, inst_id: u32, x: f32, y: f32 },
+    /// Resize a direct child of a selected DOCX group in its local point coordinate space.
+    DocxGroupChildResize { index: usize, id: u32, inst_id: u32, width: f32, height: f32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -914,6 +920,21 @@ impl ObjectEdit {
                         DocxPathVertexAction::Remove => x.is_none() && y.is_none(),
                     }
             }
+            Self::DocxGroupChildMove { index, id, inst_id, x, y } => {
+                *index < wordcraft_engine::doc::para::MAX_GROUP_CHILDREN
+                    && *id == (*index as u32).saturating_add(1)
+                    && *inst_id == 0
+                    && x.is_finite() && y.is_finite()
+                    && (0.0..=14_400.0).contains(x) && (0.0..=14_400.0).contains(y)
+            }
+            Self::DocxGroupChildResize { index, id, inst_id, width, height } => {
+                *index < wordcraft_engine::doc::para::MAX_GROUP_CHILDREN
+                    && *id == (*index as u32).saturating_add(1)
+                    && *inst_id == 0
+                    && width.is_finite() && height.is_finite()
+                    && (0.0..=14_400.0).contains(width) && (0.0..=14_400.0).contains(height)
+                    && *width > 0.0 && *height > 0.0
+            }
             Self::AltText { text } => valid_object_alt_text(text),
         }
     }
@@ -935,6 +956,7 @@ impl ObjectEdit {
             Self::SmartArtItems { .. } | Self::SmartArtLayout { .. } => "smartArt",
             Self::DocxPathPoint { .. } => "pathPoint",
             Self::DocxPathVertex { .. } => "pathVertex",
+            Self::DocxGroupChildMove { .. } | Self::DocxGroupChildResize { .. } => "groupChildGeometry",
         }
     }
 }
@@ -1183,6 +1205,34 @@ pub struct ObjectView {
     shape: Option<ShapeView>,
     #[serde(rename = "drawingMlPaths", skip_serializing_if = "Option::is_none")]
     drawing_ml_paths: Option<Vec<DocxPathView>>,
+    #[serde(rename = "groupChildren", skip_serializing_if = "Option::is_none")]
+    group_children: Option<EditableGroupChildrenView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EditableGroupChildrenView {
+    parent_id: u32,
+    width: f32,
+    height: f32,
+    children: Vec<GroupChildGeometryView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupChildGeometryView {
+    index: usize,
+    kind: &'static str,
+    id: u32,
+    inst_id: u32,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    size_protect: bool,
+    locked: bool,
+    can_move: bool,
+    can_resize: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1411,6 +1461,9 @@ pub struct DocxModel {
     object_epoch: u64,
     story_picture_resize: bool,
     rounded_rectangle_conversion: bool,
+    /// Group-child edits rewrite the owning DrawingML body tree. Expose them only when the
+    /// opened body's semantic XML was already preserved exactly by this reader/writer pair.
+    group_body_roundtrips: bool,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
@@ -1537,6 +1590,7 @@ impl DocxModel {
             object_epoch: 0,
             story_picture_resize: false,
             rounded_rectangle_conversion: false,
+            group_body_roundtrips: false,
             created_shapes: Vec::new(),
             marks: Vec::new(),
             last_insert: None,
@@ -1564,6 +1618,9 @@ impl DocxModel {
                 model.rounded_rectangle_conversion = has_rounded_rectangle
                     && crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
             }
+        }
+        if let Some(export) = model.export() {
+            model.group_body_roundtrips = crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
         }
         Ok(model)
     }
@@ -2533,7 +2590,9 @@ impl DocxModel {
         if matches!(self.object_kind(pos), Some("shape" | "textBox")) {
             ops.extend(["fill", "outline"]);
         }
-        let top_level = pos.story == StoryRef::Body && pos.path.0.len() == 1;
+        if top_level && self.editable_group_children(pos).is_some_and(|group| group.children.iter().any(|child| child.can_move || child.can_resize)) {
+            ops.push("groupChildGeometry");
+        }
         let transform_safe = matches!(object, InlineObject::Shape { float, .. }
             if float.rot == 0.0 && !float.flip_h && !float.flip_v);
         if top_level && transform_safe && self.drawingml_paths(pos).is_some() {
@@ -2552,6 +2611,77 @@ impl DocxModel {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
+    }
+
+    /// Direct, unturned group members whose local rectangles can be edited without mapping
+    /// through a composite transform. Coordinates are integer EMU so a saved/reopened edit is
+    /// exact. Unsupported or out-of-frame children remain in the model and are not exposed here.
+    fn editable_group_children(&self, pos: &Pos) -> Option<EditableGroupChildrenView> {
+        use wordcraft_engine::doc::para::{GroupChild, ShapeKind};
+        if !self.group_body_roundtrips || pos.story != StoryRef::Body || pos.path.0.len() != 1
+            || self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes
+        {
+            return None;
+        }
+        let InlineObject::Group { w: owner_w, h: owner_h, float, ch_w, ch_h, children, canvas: None, .. } = self.object_at(pos)? else {
+            return None;
+        };
+        if float.hidden || float.rot != 0.0 || float.flip_h || float.flip_v
+            || !ch_w.is_finite() || !ch_h.is_finite() || *ch_w <= 0.0 || *ch_h <= 0.0
+        {
+            return None;
+        }
+        let units = |pt: f32| -> Option<f32> {
+            if !pt.is_finite() || !(0.0..=14_400.0).contains(&pt) { return None; }
+            Some(((f64::from(pt) * DOCX_GROUP_COORD_UNITS_PER_PT).round() / DOCX_GROUP_COORD_UNITS_PER_PT) as f32)
+        };
+        let (owner_width, owner_height, width, height) = (
+            units(*owner_w)?, units(*owner_h)?, units(*ch_w)?, units(*ch_h)?,
+        );
+        if width == 0.0 || height == 0.0 || owner_width != width || owner_height != height {
+            return None;
+        }
+        let mut visible = Vec::new();
+        for (index, GroupChild { x, y, obj }) in children.iter().take(wordcraft_engine::doc::para::MAX_GROUP_CHILDREN).enumerate() {
+            let Some((w, h, child_float)) = obj.frame() else { continue };
+            let (Some(x), Some(y), Some(w), Some(h)) = (units(*x), units(*y), units(w), units(h)) else { continue };
+            if w == 0.0 || h == 0.0 || x + w > width + 0.001 || y + h > height + 0.001 {
+                continue;
+            }
+            let kind = match obj {
+                InlineObject::Image { ole: None, .. } => "picture",
+                InlineObject::Shape { kind: ShapeKind::Rectangle, .. } => "rectangle",
+                InlineObject::Shape { kind: ShapeKind::Ellipse, .. } => "ellipse",
+                InlineObject::Shape { .. } => "shape",
+                InlineObject::Group { .. } => "group",
+                _ => continue,
+            };
+            let simple_transform = !child_float.hidden && child_float.rot == 0.0 && !child_float.flip_h && !child_float.flip_v;
+            let can_edit = simple_transform && matches!(obj,
+                InlineObject::Image { ole: None, .. }
+                    | InlineObject::Shape { .. }
+                    | InlineObject::Group { canvas: None, .. });
+            visible.push(GroupChildGeometryView {
+                index,
+                kind,
+                id: (index as u32).saturating_add(1),
+                inst_id: 0,
+                x,
+                y,
+                width: w,
+                height: h,
+                size_protect: false,
+                locked: false,
+                can_move: can_edit,
+                can_resize: can_edit,
+            });
+        }
+        visible.iter().any(|child| child.can_move || child.can_resize).then_some(EditableGroupChildrenView {
+            parent_id: 0,
+            width,
+            height,
+            children: visible,
+        })
     }
 
     /// Original integer DrawingML commands whose points map directly through the selected frame.
@@ -3123,6 +3253,26 @@ impl DocxModel {
                 }
             }
         }
+        if let ObjectEdit::DocxGroupChildMove { index, id, inst_id, x, y } = edit {
+            let group = self.editable_group_children(&pos).ok_or(Rejected)?;
+            let child = group.children.iter().find(|child| child.index == *index && child.id == *id && child.inst_id == *inst_id && child.can_move).ok_or(Rejected)?;
+            if *x == child.x && *y == child.y
+                || *x + child.width > group.width + 0.001
+                || *y + child.height > group.height + 0.001
+            {
+                return Err(Rejected);
+            }
+        }
+        if let ObjectEdit::DocxGroupChildResize { index, id, inst_id, width, height } = edit {
+            let group = self.editable_group_children(&pos).ok_or(Rejected)?;
+            let child = group.children.iter().find(|child| child.index == *index && child.id == *id && child.inst_id == *inst_id && child.can_resize).ok_or(Rejected)?;
+            if (*width == child.width && *height == child.height)
+                || child.x + *width > group.width + 0.001
+                || child.y + *height > group.height + 0.001
+            {
+                return Err(Rejected);
+            }
+        }
         let before = self.export().ok_or(Rejected)?;
         let end = Pos {
             off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
@@ -3259,6 +3409,26 @@ impl DocxModel {
                     }
                     (model.run("shape.pathVertex", params)?, Some(pos.clone()))
                 }
+                ObjectEdit::DocxGroupChildMove { index, id, inst_id, x, y } => (
+                    model.run("group.childBounds", json!({
+                        "index": index,
+                        "id": id,
+                        "instId": inst_id,
+                        "x": x,
+                        "y": y,
+                    }))?,
+                    Some(pos.clone()),
+                ),
+                ObjectEdit::DocxGroupChildResize { index, id, inst_id, width, height } => (
+                    model.run("group.childBounds", json!({
+                        "index": index,
+                        "id": id,
+                        "instId": inst_id,
+                        "width": width,
+                        "height": height,
+                    }))?,
+                    Some(pos.clone()),
+                ),
                 ObjectEdit::Layer { front } => (
                     model.run(
                         if *front {
@@ -3416,6 +3586,7 @@ impl DocxModel {
                     _ => None,
                 },
                 drawing_ml_paths: self.drawingml_paths(pos),
+                group_children: self.editable_group_children(pos),
             })
         });
         if object.is_none() {

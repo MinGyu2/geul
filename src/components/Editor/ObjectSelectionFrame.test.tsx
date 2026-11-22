@@ -499,6 +499,39 @@ it("edits flat-group child positions and left/top-anchored sizes with ownership 
   expect(screen.getByRole("button", { name: "Edit group children" })).toBeTruthy();
 });
 
+it("edits WordCraft group children in bounded point coordinates", () => {
+  const selected = selection({
+    kind: "group",
+    address: { engine: "wordcraft", position: "body:1:0" },
+    frame: { page: 0, x: 10, y: 20, width: 200, height: 100 },
+    operations: ["deselect", "groupChildGeometry"],
+    groupChildren: {
+      parentId: 0,
+      width: 400,
+      height: 200,
+      children: [{
+        index: 0, kind: "rectangle", id: 1, instId: 0,
+        x: 10.25, y: 20.5, width: 30.75, height: 25.5,
+        sizeProtect: false, locked: false, canMove: true, canResize: true,
+      }],
+    },
+  });
+  const { onEdit } = frame({ selection: selected });
+  expect(validObjectEdit({ kind: "docxGroupChildMove", index: 0, id: 1, instId: 0, x: 20.25, y: 30.5 })).toBe(true);
+  expect(objectEditMatches(objectEditRequest(selected, { kind: "docxGroupChildMove", index: 0, id: 1, instId: 0, x: 20.25, y: 30.5 }), selected)).toBe(true);
+  expect(objectEditMatches(objectEditRequest(selected, { kind: "docxGroupChildMove", index: 0, id: 1, instId: 0, x: 390, y: 180 }), selected)).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit group children" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "X pt" }), { target: { value: "20.25" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Y pt" }), { target: { value: "30.5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Move child" }));
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "docxGroupChildMove", index: 0, id: 1, instId: 0, x: 20.25, y: 30.5 }, 7);
+
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Width pt" }), { target: { value: "40.75" } });
+  fireEvent.click(screen.getByRole("button", { name: "Resize child" }));
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "docxGroupChildResize", index: 0, id: 1, instId: 0, width: 40.75, height: 25.5 }, 7);
+});
+
 it("manages group-child resize and move pointer capture, outside-handle drags, and safe cancellation (U1-U8)", () => {
   const { onEdit } = frame({ selection: selection({
     kind: "group",

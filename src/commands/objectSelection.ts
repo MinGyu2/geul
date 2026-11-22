@@ -63,7 +63,7 @@ export interface GroupChildFill {
 
 export interface GroupChildGeometry {
   index: number;
-  kind: "rectangle" | "ellipse";
+  kind: "rectangle" | "ellipse" | "picture" | "group" | "shape" | "textBox";
   id: number;
   instId: number;
   x: number;
@@ -170,6 +170,8 @@ export type ObjectEdit =
   | { kind: "groupChildFill"; index: number; color: string }
   | { kind: "groupChildMove"; index: number; id: number; instId: number; x: number; y: number }
   | { kind: "groupChildResize"; index: number; id: number; instId: number; width: number; height: number }
+  | { kind: "docxGroupChildMove"; index: number; id: number; instId: number; x: number; y: number }
+  | { kind: "docxGroupChildResize"; index: number; id: number; instId: number; width: number; height: number }
   | { kind: "convertShape"; to: "rectangle" | "ellipse" }
   | { kind: "captionSide"; side: CaptionSide }
   | { kind: "captionSpacing"; spacing: number }
@@ -203,7 +205,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
     case "docxPathPoint": return "pathPoint";
     case "docxPathVertex": return "pathVertex";
-    case "groupChildMove": case "groupChildResize": return "groupChildGeometry";
+    case "groupChildMove": case "groupChildResize": case "docxGroupChildMove": case "docxGroupChildResize": return "groupChildGeometry";
     case "bounds": return edit.x !== undefined ? "move" : "resize";
   }
 }
@@ -262,6 +264,12 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && integer(value.index, 127) && u32(value.id) && u32(value.instId)
     && integer(value.width, 2_000_000) && (value.width as number) >= 1
     && integer(value.height, 2_000_000) && (value.height as number) >= 1;
+  if (value.kind === "docxGroupChildMove") return keys === "id,index,instId,kind,x,y"
+    && integer(value.index, 999) && u32(value.id) && value.id === (value.index as number) + 1 && value.instId === 0
+    && finite(value.x, 14_400) && finite(value.y, 14_400) && (value.x as number) >= 0 && (value.y as number) >= 0;
+  if (value.kind === "docxGroupChildResize") return keys === "height,id,index,instId,kind,width"
+    && integer(value.index, 999) && u32(value.id) && value.id === (value.index as number) + 1 && value.instId === 0
+    && finite(value.width, 14_400) && finite(value.height, 14_400) && (value.width as number) > 0 && (value.height as number) > 0;
   if (value.kind === "convertShape") return keys === "kind,to" && (value.to === "rectangle" || value.to === "ellipse");
   if (value.kind === "captionSide") return keys === "kind,side" && CAPTION_SIDES.some(side => side === value.side);
   if (value.kind === "captionSpacing") return keys === "kind,spacing" && integer(value.spacing, MAX_CAPTION_SPACING_HWPUNIT);
@@ -321,6 +329,16 @@ export function objectEditMatches(request: ObjectEditRequest, selection: ObjectS
   if ((edit.kind === "groupChildMove" || edit.kind === "groupChildResize") && !selection.groupChildren?.children.some(child =>
     child.index === edit.index && child.id === edit.id && child.instId === edit.instId
     && (edit.kind === "groupChildMove" ? child.canMove : child.canResize))) return false;
+  if (edit.kind === "docxGroupChildMove" || edit.kind === "docxGroupChildResize") {
+    const group = selection.groupChildren;
+    const child = group?.children.find(c => c.index === edit.index && c.id === edit.id && c.instId === edit.instId);
+    if (selection.address.engine !== "wordcraft" || !group || !child
+      || !(edit.kind === "docxGroupChildMove" ? child.canMove : child.canResize)) return false;
+    if (edit.kind === "docxGroupChildMove"
+      && (edit.x === child.x && edit.y === child.y || edit.x + child.width > group.width + 0.001 || edit.y + child.height > group.height + 0.001)) return false;
+    if (edit.kind === "docxGroupChildResize"
+      && (edit.width === child.width && edit.height === child.height || child.x + edit.width > group.width + 0.001 || child.y + edit.height > group.height + 0.001)) return false;
+  }
   if (edit.kind === "docxPathPoint") {
     const path = selection.drawingMlPaths?.[edit.path];
     const point = path?.segments[edit.segment]?.points[edit.point];

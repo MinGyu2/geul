@@ -87,9 +87,9 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
     && selection.operations.includes("pathPoint")
     ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.position}` : null;
   const activePathOwner = pathOwner ?? drawingMlPathOwner;
-  const groupChildOwner = selection.address.engine === "rhwp" && selection.groupChildren
-    && selection.operations.includes("groupChildGeometry")
-    ? `${selection.sessionId}:${selection.loadGeneration}:${selection.address.path.join(".")}` : null;
+  const groupChildAddress = selection.address.engine === "rhwp" ? selection.address.path.join(".") : selection.address.position;
+  const groupChildOwner = selection.groupChildren && selection.operations.includes("groupChildGeometry")
+    ? `${selection.sessionId}:${selection.loadGeneration}:${groupChildAddress}` : null;
   const [pathMode, setPathMode] = useState<string | null>(null);
   const [groupChildMode, setGroupChildMode] = useState<string | null>(null);
   const editingPath = !!activePathOwner && activePathOwner === pathMode;
@@ -194,7 +194,8 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingGroupChildren && selection.groupChildren && onEdit &&
         <GroupChildEditor group={selection.groupChildren} owner={owner} width={selection.frame.width * scale}
-          height={selection.frame.height * scale} onEdit={edit => onEdit(edit, selection.epoch)} />}
+          height={selection.frame.height * scale} docx={selection.address.engine === "wordcraft"}
+          onEdit={edit => onEdit(edit, selection.epoch)} />}
       {canMove && (
         <div className="object-selection-frame__body" role="button" aria-label={t("editor.object.move", { kind })}
           data-testid="object-move" onPointerDown={event => start(event, "move")} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel} onMouseDown={swallow} />
