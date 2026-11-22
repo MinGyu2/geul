@@ -168,8 +168,20 @@ struct NormalizedStory {
 }
 
 /// Prove the source and WordCraft's first export preserve every linked story, and that each
-/// note picture can be identified by its actual note owner, DrawingML id, and owned media rel.
+/// targeted story picture can be identified by its story owner, DrawingML id, and owned media rel.
 pub(crate) fn move_source_supported(source: &[u8], export: &[u8], count: usize) -> bool {
+    move_source_supported_in(source, export, count, true)
+}
+
+pub(crate) fn header_footer_move_source_supported(
+    source: &[u8],
+    export: &[u8],
+    count: usize,
+) -> bool {
+    move_source_supported_in(source, export, count, false)
+}
+
+fn move_source_supported_in(source: &[u8], export: &[u8], count: usize, notes: bool) -> bool {
     if count == 0 {
         return false;
     }
@@ -195,7 +207,7 @@ pub(crate) fn move_source_supported(source: &[u8], export: &[u8], count: usize) 
         if before != after {
             return false;
         }
-        if note.is_some() {
+        if note.is_some() == notes {
             let images = owned_images(&original, &output, &part).unwrap_or_default();
             let Some(normalized) = normalize_story(before, root, note, &images) else {
                 return false;
@@ -271,7 +283,7 @@ pub(super) fn moved_note_picture_edits(original: &Package, output: &Package) -> 
                 return BTreeSet::new();
             }
             if old.placement != new.placement {
-                if !safe_note_move(&old.placement, &new.placement) {
+                if !safe_story_picture_move(&old.placement, &new.placement) {
                     return BTreeSet::new();
                 }
                 changed += 1;
@@ -285,11 +297,87 @@ pub(super) fn moved_note_picture_edits(original: &Package, output: &Package) -> 
     admitted
 }
 
-fn safe_note_move(before: &PicturePlacement, after: &PicturePlacement) -> bool {
+/// Admit precisely the supported placement changes in linked DOCX header/footer parts. Each
+/// changed part is proved independently, including the target drawing's stable ids, run
+/// properties, media relationship and all other XML events in that story.
+pub(super) fn moved_header_footer_picture_edits(
+    original: &Package,
+    output: &Package,
+) -> BTreeSet<String> {
+    if original.get(DOCUMENT_XML) != output.get(DOCUMENT_XML)
+        || !same_story_references(original, output)
+    {
+        return BTreeSet::new();
+    }
+    let Some(stories) = linked_stories(original, output) else {
+        return BTreeSet::new();
+    };
+    let mut admitted = BTreeSet::new();
+    for (part, root, note) in stories {
+        if note.is_some() {
+            continue;
+        }
+        let (Some(before_bytes), Some(after_bytes)) = (original.get(&part), output.get(&part))
+        else {
+            return BTreeSet::new();
+        };
+        if before_bytes == after_bytes {
+            continue;
+        }
+        let Some(images) = owned_images(original, output, &part) else {
+            return BTreeSet::new();
+        };
+        let (Some(before), Some(after)) = (
+            normalize_story(before_bytes, root, None, &images),
+            normalize_story(after_bytes, root, None, &images),
+        ) else {
+            return BTreeSet::new();
+        };
+        if before.events != after.events {
+            return BTreeSet::new();
+        }
+        let before: BTreeMap<_, _> = before
+            .pictures
+            .into_iter()
+            .map(|picture| (picture.key.clone(), picture))
+            .collect();
+        let after: BTreeMap<_, _> = after
+            .pictures
+            .into_iter()
+            .map(|picture| (picture.key.clone(), picture))
+            .collect();
+        if before.is_empty() || before.len() != after.len() || before.keys().ne(after.keys()) {
+            return BTreeSet::new();
+        }
+        let mut changed = 0usize;
+        for (key, old) in &before {
+            let Some(new) = after.get(key) else {
+                return BTreeSet::new();
+            };
+            if old.core != new.core || old.run_props != new.run_props {
+                return BTreeSet::new();
+            }
+            if old.placement != new.placement {
+                if !safe_story_picture_move(&old.placement, &new.placement) {
+                    return BTreeSet::new();
+                }
+                changed += 1;
+            }
+        }
+        if changed == 0 {
+            return BTreeSet::new();
+        }
+        admitted.insert(part);
+    }
+    admitted
+}
+
+fn safe_story_picture_move(before: &PicturePlacement, after: &PicturePlacement) -> bool {
     let square_wrap = after.wrap.len() == 2
         && event_start(&after.wrap[0], WP, "wrapSquare")
-        && event_attributes(&after.wrap[0])
-            .is_some_and(|attrs| attrs.len() == 1 && attrs.get("wrapText").is_some_and(|v| v == "bothSides"))
+        && event_attributes(&after.wrap[0]).is_some_and(|attrs| {
+            attrs.len() == 1 && attrs.get("wrapText").is_some_and(|v| v == "bothSides")
+        })
         && after.wrap[1] == Canonical::End;
     if after.mode != "anchor"
         || !square_wrap
@@ -527,8 +615,21 @@ fn normalize_story(
     note: Option<&str>,
     owned: &BTreeSet<String>,
 ) -> Option<NormalizedStory> {
-    let note = note?;
     let (events, _) = xml::canonical_with_payload_limit(bytes, Some(8 * 1024 * 1024)).ok()?;
+    let Some(note) = note else {
+        if !event_start(events.first()?, WORD, root) || events.last()? != &Canonical::End {
+            return None;
+        }
+        let (events, pictures) = normalize_note(&events, 0, owned)?;
+        let mut unique = BTreeSet::new();
+        if pictures
+            .iter()
+            .any(|picture| !unique.insert(picture.key.clone()))
+        {
+            return None;
+        }
+        return Some(NormalizedStory { events, pictures });
+    };
     let mut output = Vec::new();
     let mut pictures = Vec::new();
     let mut stack: Vec<Element> = Vec::new();

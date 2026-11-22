@@ -391,6 +391,9 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     let mut story_drawing_edits =
         super::docx_story_drawings::inline_picture_edits(original, output);
     story_drawing_edits.extend(super::docx_story_drawings::moved_note_picture_edits(original, output));
+    story_drawing_edits.extend(
+        super::docx_story_drawings::moved_header_footer_picture_edits(original, output),
+    );
     let media_removed = if added.is_none() && pictures.is_none() {
         authorized_table_media_changes(original, output)
     } else {

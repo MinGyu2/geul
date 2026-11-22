@@ -8593,11 +8593,12 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let selected = serde_json::to_value(model.view()).unwrap();
         let selected = &selected["object"];
         assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
-        let expected_operations = if note.is_some() {
-            json!(["move", "resize", "altText"])
-        } else {
-            json!(["resize", "altText"])
-        };
+        let expected_operations =
+            if note.is_some() || matches!(kind, PartKind::Header | PartKind::Footer) {
+                json!(["move", "resize", "altText"])
+            } else {
+                json!(["resize", "altText"])
+            };
         assert_eq!(selected["operations"], expected_operations);
         assert_eq!(selected["picture"]["description"], label);
 
@@ -8709,6 +8710,285 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
         std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
     }
+}
+
+#[test]
+fn stage3a_moves_docx_pictures_within_owned_headers_and_footers() {
+    use super::engine::ObjectEdit;
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::{
+        para_block, props::CharProps, InlineObject, Paragraph, PartKind, StoryRef,
+    };
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) }),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({ "width": 28, "height": 22 }))
+        .unwrap();
+    let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
+    let stories = [
+        (PartKind::Header, "header", "word/header1.xml"),
+        (PartKind::Footer, "footer", "word/footer1.xml"),
+    ];
+    for (kind, label, _) in stories {
+        let id = source.doc.add_part(kind, Vec::new());
+        let mut first = Paragraph::with_text(&format!("{label} source "), CharProps::default());
+        let picture_props = CharProps {
+            size: Some(24.0),
+            italic: Some(true),
+            ..CharProps::default()
+        };
+        first
+            .insert_object(first.len(), picture.clone(), &picture_props)
+            .unwrap();
+        let second = Paragraph::with_text(
+            &format!("{label} destination paragraph"),
+            CharProps::default(),
+        );
+        source
+            .doc
+            .set_story(
+                StoryRef::Part(id),
+                vec![para_block(first), para_block(second)],
+            )
+            .unwrap();
+        match kind {
+            PartKind::Header => source.doc.last_section.headers.default = Some(id),
+            PartKind::Footer => source.doc.last_section.footers.default = Some(id),
+            _ => unreachable!(),
+        }
+    }
+    let draft = io::save_bytes("header-footer-move.docx", &source.doc).unwrap();
+    let original = io::save_bytes(
+        "header-footer-move.docx",
+        &io::open_bytes("header-footer-move.docx", &draft).unwrap(),
+    )
+    .unwrap();
+    let original_package = package::open(&original, package::Side::Original).unwrap();
+    let baseline = Session::new(io::open_bytes("header-footer-move.docx", &original).unwrap());
+    let mut composite = DocxModel::open(&original).unwrap();
+    let mut first_move = None;
+
+    for (kind, label, part) in stories {
+        let current = composite.export().unwrap();
+        let mut reader = Session::new(io::open_bytes("header-footer-move.docx", &current).unwrap());
+        let layout = reader.layout();
+        let id = *reader
+            .doc
+            .parts
+            .iter()
+            .find(|(_, data)| data.kind == kind)
+            .unwrap()
+            .0;
+        let story = StoryRef::Part(id);
+        let hit = layout
+            .find_object(0, |object| object.story == story)
+            .expect("header/footer picture is displayed in its owning part");
+        let destination = (hit.page, hit.rect.x + 18.0, hit.rect.y + 12.0);
+        let click = DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
+        assert_eq!(composite.apply(&[click]).changed, 0);
+        let object = serde_json::to_value(composite.view()).unwrap()["object"].clone();
+        assert!(
+            object["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|operation| operation == "move"),
+            "{label}: {:#}",
+            object["operations"]
+        );
+        let position = object["position"].as_str().unwrap().to_owned();
+        let epoch = object["epoch"].as_u64().unwrap();
+        let undo_before_invalid = composite.view().history.undo;
+        let invalid = DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(destination.1),
+                y: Some(destination.2),
+                width: Some(30.0),
+                height: None,
+            },
+        };
+        assert_eq!(composite.apply(&[invalid]).rejected, vec![0]);
+        assert_eq!(composite.export().unwrap(), current);
+        assert_eq!(composite.view().history.undo, undo_before_invalid);
+        let movement = DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(destination.1),
+                y: Some(destination.2),
+                width: None,
+                height: None,
+            },
+        };
+        assert_eq!(
+            composite.apply(&[movement]).changed,
+            1,
+            "{label} movement failed"
+        );
+        if kind == PartKind::Header {
+            first_move = Some(composite.export().unwrap());
+        }
+        assert!(
+            service::check_saved(
+                Format::Docx,
+                &original,
+                &composite.export().unwrap(),
+                None,
+                true,
+            )
+            .is_safe(),
+            "{label} T009 rejection"
+        );
+        let output_package =
+            package::open(&composite.export().unwrap(), package::Side::Output).unwrap();
+        assert_ne!(original_package.get(part), output_package.get(part));
+    }
+
+    let combined = composite.export().unwrap();
+    assert!(composite.same_as(&combined));
+    let after_header = first_move.expect("header movement was applied first");
+    assert_eq!(composite.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), after_header);
+    assert_eq!(composite.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), original);
+    assert_eq!(composite.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), after_header);
+    assert_eq!(composite.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), combined);
+    assert!(
+        service::check_saved(Format::Docx, &original, &combined, None, true).is_safe(),
+        "T009 must independently prove movements in linked header and footer parts"
+    );
+
+    let output_package = package::open(&combined, package::Side::Output).unwrap();
+    assert_eq!(
+        original_package.parts.keys().collect::<Vec<_>>(),
+        output_package.parts.keys().collect::<Vec<_>>(),
+        "header/footer movement cannot change the OPC inventory"
+    );
+    assert_eq!(
+        original_package.get("word/document.xml"),
+        output_package.get("word/document.xml"),
+        "header/footer references and the body stay byte-identical"
+    );
+    for name in original_package
+        .parts
+        .keys()
+        .filter(|name| !stories.iter().any(|(_, _, part)| *part == name.as_str()))
+    {
+        assert_eq!(
+            original_package.get(name),
+            output_package.get(name),
+            "unrelated OPC part changed: {name}"
+        );
+    }
+    for (kind, label, _) in stories {
+        let id = *baseline
+            .doc
+            .parts
+            .iter()
+            .find(|(_, data)| data.kind == kind)
+            .unwrap()
+            .0;
+        let reopened = io::open_bytes("header-footer-move.docx", &combined).unwrap();
+        let story = reopened.parts.get(&id).expect("same owning part reopens");
+        let paragraph = story.blocks[0].as_para().expect("source paragraph remains");
+        let moved_off = paragraph
+            .object_offsets()
+            .into_iter()
+            .find(|&off| matches!(paragraph.object_at(off), Some(InlineObject::Image { .. })))
+            .expect("picture remains in its header/footer owner");
+        assert_eq!(paragraph.props_of_char(moved_off).size, Some(24.0));
+        assert_eq!(paragraph.props_of_char(moved_off).italic, Some(true));
+        assert!(
+            matches!(paragraph.object_at(moved_off), Some(InlineObject::Image { float, .. })
+            if float.wrap == wordcraft_engine::doc::para::Wrap::Square),
+            "{label}"
+        );
+
+        let mut reopened_reader =
+            Session::new(io::open_bytes("header-footer-move.docx", &combined).unwrap());
+        let reopened_hit = reopened_reader
+            .layout()
+            .find_object(0, |object| object.story == StoryRef::Part(id))
+            .expect("saved header/footer picture reopens in its original story");
+        let reopened_click = DocxOp::Pointer {
+            page: reopened_hit.page as u32,
+            x: reopened_hit.rect.x + reopened_hit.rect.w / 2.0,
+            y: reopened_hit.rect.y + reopened_hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
+        let mut reopened_model = DocxModel::open(&combined).unwrap();
+        assert_eq!(reopened_model.apply(&[reopened_click]).changed, 0);
+        let reopened_object =
+            serde_json::to_value(reopened_model.view()).unwrap()["object"].clone();
+        assert!(
+            reopened_object
+                .get("operations")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|operations| operations.iter().any(|operation| operation == "move")),
+            "saved H/F anchor remains movable: {reopened_object:#}"
+        );
+        let nudge = DocxOp::ObjectEdit {
+            position: reopened_object["position"].as_str().unwrap().into(),
+            epoch: reopened_object["epoch"].as_u64().unwrap(),
+            edit: ObjectEdit::Bounds {
+                x: Some(reopened_hit.rect.x + 5.0),
+                y: Some(reopened_hit.rect.y + 5.0),
+                width: None,
+                height: None,
+            },
+        };
+        assert_eq!(
+            reopened_model.apply(&[nudge]).changed,
+            1,
+            "saved H/F anchor can move again"
+        );
+        let moved_again = reopened_model.export().unwrap();
+        assert!(reopened_model.same_as(&moved_again));
+        assert!(service::check_saved(Format::Docx, &combined, &moved_again, None, true).is_safe());
+    }
+
+    let mut unauthorized = package::open(&combined, package::Side::Output).unwrap();
+    let (_, bytes) = unauthorized.parts.get_mut("word/footer1.xml").unwrap();
+    let xml = std::str::from_utf8(bytes).unwrap();
+    assert!(xml.contains("footer destination paragraph"));
+    *bytes = xml
+        .replacen(
+            "footer destination paragraph",
+            "footer altered paragraph",
+            1,
+        )
+        .into_bytes();
+    assert!(
+        package::compare_saved_docx(&original_package, &unauthorized)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some("word/footer1.xml")),
+        "T009 rejects a movement combined with unrelated footer text changes"
+    );
 }
 
 #[test]

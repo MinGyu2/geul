@@ -78,10 +78,10 @@ def stories(acc, row, fixtures, out, resize=False):
 
     for name in layout:
         select_at(name, name)
-        if name in ("footnote", "endnote"):
+        if name in ("header", "footer", "footnote", "endnote"):
             h.require(acc.d.exists("[data-testid='object-move']"), "owned note movement unavailable")
         else:
-            h.require(not acc.d.exists("[data-testid='object-move']"), "header/footer/body movement unexpectedly enabled")
+            h.require(not acc.d.exists("[data-testid='object-move']"), "body movement unexpectedly enabled")
         if resize:
             size_is(28)
             h.p6.gso.replace(acc, WIDTH, "35")
@@ -307,6 +307,117 @@ def note_move(acc, row, fixtures, out):
         row["moves"][name]["reopenedFrame"] = reopened_frame
 
 
+def header_footer_move(acc, row, fixtures, out):
+    fixture=fixtures/"a-p5-story-original.docx"
+    path=h.begin(acc,row,fixture,out,"a-p5-header-footer-move.docx")
+    layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
+    order=("header","body","endnote","footnote","footer")
+
+    def select_owned_picture(name):
+        point,frame,selection=select_story_note(acc,layout,order,name)
+        h.require(acc.d.exists("[data-testid='object-move']"),"header/footer picture has no move handle",name)
+        return point,frame,selection
+
+    acc.d.js("""
+      window.headerFooterMovePointers=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        if(e.target.matches('[data-testid=object-move]')) headerFooterMovePointers.push({type,trusted:e.isTrusted});
+      },true);
+    """)
+    revision_number=0
+    row["moves"]={}
+    for name in ("header","footer"):
+        _,before,_=select_owned_picture(name)
+        x,y=acc.d.js("""const r=document.querySelector('[data-testid=object-move]').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]""")
+        sx,sy=acc.d.pointer_scale
+        h.p4.rhwp_poc.drag(acc.d,(x*sx,y*sy),((x+16)*sx,(y+10)*sy))
+        pointers=acc.d.js("return window.headerFooterMovePointers.slice()")
+        h.require([(event["type"],event["trusted"]) for event in pointers[-2:]]==[("pointerdown",True),("pointerup",True)],
+                  "header/footer movement did not use trusted native pointer input",pointers)
+        revision_number+=1
+        h.revision(acc,"docx",revision_number)
+        _,after,_=select_owned_picture(name)
+        h.require(abs(after["left"]-before["left"])>2 or abs(after["top"]-before["top"])>2,
+                  "native drag did not move the selected header/footer picture",[before,after])
+        acc.key("ctrl+z"); revision_number+=1; h.revision(acc,"docx",revision_number)
+        _,undo_frame,_=select_owned_picture(name)
+        h.require(undo_frame==before,"header/footer picture Undo did not restore geometry",undo_frame)
+        acc.key("ctrl+y"); revision_number+=1; h.revision(acc,"docx",revision_number)
+        _,redo_frame,_=select_owned_picture(name)
+        h.require(redo_frame==after,"header/footer picture Redo did not restore movement",redo_frame)
+        row["moves"][name]={"before":before,"after":after,"undoFrame":undo_frame,"redoFrame":redo_frame,
+                            "pointers":pointers[-2:],"revision":revision_number}
+
+    h.publish(acc,"docx",row)
+    with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(path) as published:
+        h.require(set(original.namelist())==set(published.namelist()),"header/footer movement changed OPC inventory")
+        changed={"word/header1.xml","word/footer1.xml"}
+        for part in original.namelist():
+            if part not in changed:
+                h.require(original.read(part)==published.read(part),"header/footer movement changed unrelated OPC part",part)
+        row["unchangedRelationshipsAndMedia"] = all(
+            original.read(part)==published.read(part) for part in original.namelist()
+            if part.endswith(".rels") or part.startswith("word/media/")
+        )
+        h.require(row["unchangedRelationshipsAndMedia"],"header/footer movement changed relationships or media")
+        row["serializedPictures"]={}
+        for label,part in (("header","word/header1.xml"),("footer","word/footer1.xml")):
+            old,new=[ET.fromstring(package.read(part)) for package in (original,published)]
+            def inspect(root):
+                docpr=next((node for node in root.iter(WP+"docPr") if node.get("descr")==label),None)
+                picture=next((node for node in root.iter(PIC+"cNvPr") if node.get("descr")==label),None)
+                blip=next((node for node in root.iter(A+"blip") if node.get(REL+"embed")),None)
+                run=next((node for node in root.iter(W+"r") if node.find(W+"drawing") is not None
+                          and docpr in list(node.find(W+"drawing").iter(WP+"docPr"))),None)
+                rpr=run.find(W+"rPr") if run is not None else None
+                inline=next((node for node in root.iter(WP+"inline")
+                            if docpr in list(node.iter(WP+"docPr"))),None)
+                anchor=next((node for node in root.iter(WP+"anchor")
+                            if docpr in list(node.iter(WP+"docPr"))),None)
+                mode="inline" if inline is not None else "anchor" if anchor is not None else "missing"
+                horizontal=anchor.find(WP+"positionH") if anchor is not None else None
+                vertical=anchor.find(WP+"positionV") if anchor is not None else None
+                text=["".join(item.text or "" for item in para.iter(W+"t")) for para in root.iter(W+"p")]
+                return {"docPrId":docpr.get("id") if docpr is not None else None,
+                  "description":docpr.get("descr") if docpr is not None else None,
+                  "pictureId":picture.get("id") if picture is not None else None,
+                  "embed":blip.get(REL+"embed") if blip is not None else None,
+                  "runProps":ET.tostring(rpr) if rpr is not None else None,"kind":mode,"text":text,
+                  "horizontal":(horizontal.get("relativeFrom"),horizontal.findtext(WP+"posOffset")) if horizontal is not None else None,
+                  "vertical":(vertical.get("relativeFrom"),vertical.findtext(WP+"posOffset")) if vertical is not None else None}
+            def without_target_placement(root):
+                root=ET.fromstring(ET.tostring(root))
+                drawing=next((node for node in root.iter(W+"drawing")
+                              if any(item.get("descr")==label for item in node.iter(WP+"docPr"))),None)
+                h.require(drawing is not None and len(drawing)==1,
+                          "expected one directly owned picture placement",[label,part])
+                wrapper=drawing[0]
+                h.require(wrapper.tag in (WP+"inline",WP+"anchor"),"unsupported placement wrapper",wrapper.tag)
+                drawing.remove(wrapper)
+                drawing.append(ET.Element(WP+"placement"))
+                return ET.canonicalize(ET.tostring(root,encoding="unicode"))
+            before_item,after_item=inspect(old),inspect(new)
+            h.require(before_item["kind"]=="inline" and after_item["kind"]=="anchor",
+                      "header/footer move did not serialize the supported placement transition",[label,before_item,after_item])
+            h.require(after_item["horizontal"][0]=="column" and after_item["vertical"][0]=="paragraph"
+                      and after_item["horizontal"][1] is not None and after_item["vertical"][1] is not None,
+                      "saved header/footer anchor has unsupported coordinate ownership",after_item)
+            for key in ("docPrId","description","pictureId","embed","runProps","text"):
+                h.require(before_item[key]==after_item[key],"header/footer drawing identity, text, media or run formatting changed",
+                          [label,key,before_item[key],after_item[key]])
+            h.require(without_target_placement(old)==without_target_placement(new),
+                      "unrelated XML in the owning header/footer part changed",part)
+            row["serializedPictures"][label]=after_item
+
+    h.reopen(acc,path,row)
+    for name in ("header","footer"):
+        _,frame,_=select_owned_picture(name)
+        expected=row["moves"][name]["after"]
+        h.require(all(abs(frame[key]-expected[key])<=1.5 for key in ("left","top","width","height")),
+                  "saved header/footer picture reopened at a different rendered position",[name,expected,frame])
+        row["moves"][name]["reopenedFrame"]=frame
+
+
 def note_move_fresh_reopen(acc, row, fixtures, out):
     fixture=fixtures/"a-p5-story-original.docx"
     expected=json.loads((fixtures/"a-p5-note-move-expected.json").read_text())
@@ -326,6 +437,29 @@ def note_move_fresh_reopen(acc, row, fixtures, out):
         wanted=expected["moves"][name]["after"]
         h.require(all(abs(frame[key]-wanted[key])<=1.5 for key in ("left","top","width","height")),
                   "independent app rendered a moved note picture at a different position",[name,wanted,frame])
+        row["moves"][name]={"expected":wanted,"frame":frame,"selection":selection,"hitPoint":point}
+    row["readOnlyOpen"]=True
+
+
+def header_footer_move_fresh_reopen(acc,row,fixtures,out):
+    expected=json.loads((fixtures/"a-p5-hf-move-expected.json").read_text())
+    fixture=fixtures/"a-p5-hf-move-saved.docx"
+    path=h.begin(acc,row,fixture,out,"a-p5-hf-move-fresh-probe.docx")
+    row["expectedSavedSha256"]=expected["publishedSha256"]
+    row["savedSha256"]=h.digest(path)
+    h.require(row["savedSha256"]==expected["publishedSha256"],"fresh-session input differs from accepted saved package",row)
+    h.require(row["processAppSha256"]==expected["appSha256"],"fresh session used a different application binary",row)
+    h.require(row["appPid"]!=expected["appPid"],"fresh-session verification reused the original app process",row)
+    h.require(row["initialSession"]["dirty"]=="false" and row["initialSession"]["unpreserved"]=="false",
+              "saved package was dirty or unpreserved on independent open",row["initialSession"])
+    layout=json.loads((fixtures/"a-p5-story-layout.json").read_text())
+    order=("header","body","endnote","footnote","footer")
+    row["moves"]={}
+    for name in ("header","footer"):
+        point,frame,selection=select_story_note(acc,layout,order,name)
+        wanted=expected["moves"][name]["after"]
+        h.require(all(abs(frame[key]-wanted[key])<=1.5 for key in ("left","top","width","height")),
+                  "independent app rendered moved header/footer picture at a different position",[name,wanted,frame])
         row["moves"][name]={"expected":wanted,"frame":frame,"selection":selection,"hitPoint":point}
     row["readOnlyOpen"]=True
 
@@ -518,7 +652,9 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False):
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-NOTE-MOVE": note_move,
+           "P5-DX-HF-MOVE": header_footer_move,
            "P5-DX-NOTE-MOVE-FRESH-REOPEN": note_move_fresh_reopen,
+           "P5-DX-HF-MOVE-FRESH-REOPEN": header_footer_move_fresh_reopen,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
