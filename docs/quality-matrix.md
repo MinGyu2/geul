@@ -441,3 +441,11 @@ DOCX 도형 끌기·크기 핸들, HWP 그림 선택·크기·설명, 사각형 
 Release WASM의 곡선 회귀 6건, 실제 HWP fixture 삽입·삭제 1건, `release_stage3a_hwp_cubic_segment_reopens` T009 1건, ObjectSelectionFrame UI 31건, TypeScript typecheck, protected Tauri Release build가 PASS다. Linux X11/Xvfb + private IBus Native run11은 제어점·삽입·삭제, 삭제 Undo/Redo, synced save 및 독립 앱 재열기를 확인했다. 독립 CFB 검사는 저장마다 tag 83 level-3 leaf 하나만 바뀌고 좌표·command identity·unused command bytes·4-byte padding과 다른 stream/record가 유지됨을 확인했다. 상세 빌드·해시·출력은 [P4-H5-SEG 수락 기록](architecture/stage3-a-p4-hwp5-cubic-segment-acceptance.json)을 따른다.
 
 Wayland/Windows/macOS, 외부 오피스 재열기와 준비된 RHWP 소스의 전체 upstream Cargo test suite는 NOT RUN/UNVERIFIED이며 PASS로 세지 않는다. 지원 범위 밖 curve record는 계속 fail-closed다.
+
+### P4-H5-GROUP HWP5 그룹 자식 편집 (2026-11-22)
+
+**CURRENT PASS — 명시한 평면 HWP5 범위.** RHWP ordered patch 47은 HWP5 최상위 body-owned `$con` 안의 직접 Rectangle/Ellipse 자식을 `(ctrl_id, inst_id)`와 부모 child-ID 순서로 확인한다. 완전한 원본 컴포넌트/채우기 모델, 고유 ID, 항등 부모·자식 행렬, 양수 치수와 부모 내부 좌표를 요구한다. 자식 이동, 검증 가능한 사각형 크기 변경과 지원 단색 채우기를 API/UI에서 수행한다. 중첩 컨테이너, caption/textbox/resource child, 미지원 채우기/레코드, 변환·회전·반전·잠금·모호한 주소는 fail-closed다.
+
+Release WASM fixture test, synthetic HWP T009 증명, 실제 CFB Release T009 저장 증명과 독립 스트림/레코드 검사가 PASS다. Linux X11/Xvfb + private IBus Native run12는 실제 신뢰된 포인터로 자식 이동·사각형 resize, 타원 채우기 UI 편집, 각 변경의 Undo/Redo, synced save 및 독립 앱 재열기를 확인했다. 저장본은 `BodyText/Section0`과 preview `PrvImage`만 바뀌었고 HWP 레코드 identity/order는 동일하며, 실제 변경 record는 소유 사각형 SC와 잎, 타원 SC뿐이다. 부모 컨테이너·ID 표·형제 잎은 유지됐다. [P4-H5-GROUP 수락 기록](architecture/stage3-a-p4-hwp5-group-acceptance.json).
+
+Wayland/Windows/macOS와 외부 한컴/Office 재열기, RHWP 전체 upstream test suite는 이 이슈에서 수락하지 않았다. Native CFB 결과·Release generation 및 지원 경계는 위 수락 JSON을 따른다.

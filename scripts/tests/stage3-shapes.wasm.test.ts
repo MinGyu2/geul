@@ -1557,6 +1557,175 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     } finally { editor.dispose(); }
   });
 
+  it.skipIf(!process.env.GEUL_STAGE3_HWP5_GROUP || !out)("Stage 3-A P4-H5-GROUP edits owned HWP5 group children with T009 and reopen evidence", async () => {
+    type HwpGroupFactory = RhwpDocument & { groupShapes(json: string): string };
+    const makeFixture = () => {
+      const fixture = engine.HwpDocument.createEmpty() as HwpGroupFactory;
+      try {
+        fixture.createBlankDocument();
+        fixture.insertText(0, 0, 0, "HWP5 group child acceptance");
+        const rect = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "rectangle",
+          width: 5000, height: 4000, treatAsChar: false, textWrap: "Square", horzOffset: 0, vertOffset: 0,
+        }))) as { ok: boolean; controlIdx: number };
+        const ellipse = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+          sectionIdx: 0, paraIdx: 0, charOffset: 1, shapeType: "ellipse",
+          width: 5000, height: 4000, treatAsChar: false, textWrap: "Square", horzOffset: 5900, vertOffset: 0,
+        }))) as { ok: boolean; controlIdx: number };
+        expect(rect.ok && ellipse.ok).toBe(true);
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, rect.controlIdx,
+          JSON.stringify({ fillType: "solid", fillBgColor: 0x00112233 }))).ok).toBe(true);
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, ellipse.controlIdx,
+          JSON.stringify({ fillType: "solid", fillBgColor: 0x00445566 }))).ok).toBe(true);
+        const group = JSON.parse(fixture.groupShapes(JSON.stringify({
+          sectionIdx: 0,
+          targets: [{ paraIdx: 0, controlIdx: rect.controlIdx }, { paraIdx: 0, controlIdx: ellipse.controlIdx }],
+        }))) as { ok: boolean; controlIdx: number };
+        expect(group.ok).toBe(true);
+        expect(JSON.parse(fixture.setShapeProperties!(0, 0, group.controlIdx,
+          '{"textWrap":"Square","horzOffset":800,"vertOffset":900}')).ok).toBe(true);
+        return fixture.exportHwp();
+      } finally { fixture.free(); }
+    };
+    const originalBytes = makeFixture();
+    mkdirSync(out!, { recursive: true });
+    writeFileSync(resolve(out!, "p4-h5-group-original.hwp"), originalBytes);
+
+    const state = (doc: RhwpDocument) => {
+      const frame = (JSON.parse(doc.getPageControlLayout!(0)).controls as (Frame & { stableIndex: [number, number, number] })[])
+        .find(item => item.type === "group");
+      expect(frame, "expected one exported HWP5 group").toBeDefined();
+      const [sec, para, ctrl] = frame!.stableIndex;
+      return { frame: frame!, address: [sec, para, ctrl] as const,
+        value: JSON.parse(doc.getEditableGroupChildren!(sec, para, ctrl)) as {
+          parentId: number; width: number; height: number;
+          children: { index: number; kind: string; id: number; instId: number; x: number; y: number;
+            width: number; height: number; canMove: boolean; canResize: boolean; locked: boolean; sizeProtect: boolean }[];
+        } };
+    };
+    const baseline = new engine.HwpDocument(originalBytes) as RhwpDocument;
+    try {
+      const parsed = state(baseline);
+      expect(parsed.value).toMatchObject({ width: 10900, height: 4000, children: [
+        { index: 0, kind: "rectangle", x: 0, y: 0, width: 5000, height: 4000, canMove: true, canResize: true },
+        { index: 1, kind: "ellipse", x: 5900, y: 0, width: 5000, height: 4000, canMove: true, canResize: true },
+      ] });
+      expect(parsed.value.children[0]!.id).not.toBe(parsed.value.children[1]!.id);
+      expect(parsed.value.children[0]!.instId).not.toBe(parsed.value.children[1]!.instId);
+    } finally { baseline.free(); }
+
+    const session = await setup("hwp", originalBytes);
+    session.take("original").reply(ok(originalBytes));
+    await flush();
+    session.take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+    await flush();
+    const write = (name: string) => {
+      const exported = session.doc.exportHwpWithReport();
+      try {
+        const bytes = exported.takeBytes();
+        expectReopenEvidence(session.doc, bytes, exported.contentLoss());
+        const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+        try {
+          expect(state(reopened).value).toEqual(state(session.doc).value);
+        } finally { reopened.free(); }
+        writeFileSync(resolve(out!, `p4-h5-group-session-${name}.hwp`), bytes);
+      } finally { exported.free(); }
+    };
+    try {
+      const initial = state(session.doc);
+      const selection = session.pick(initial.frame)!;
+      expect(selection.operations).toEqual(expect.arrayContaining(["groupChildGeometry", "groupChildFill"]));
+      expect(selection.groupChildren).toEqual(initial.value);
+
+      const child = initial.value.children[0]!;
+      expect(session.edit({ kind: "groupChildMove", index: child.index, id: child.id, instId: child.instId, x: 100, y: 0 })).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value.children[0]).toMatchObject({ x: 100, y: 0 });
+      write("move");
+      expect(session.editor.undo()).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value).toEqual(initial.value);
+      expect(session.editor.redo()).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value.children[0]).toMatchObject({ x: 100, y: 0 });
+
+      const moved = state(session.doc);
+      session.pick(moved.frame);
+      expect(session.edit({ kind: "groupChildResize", index: child.index, id: child.id, instId: child.instId, width: 4800, height: 3500 })).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value.children[0]).toMatchObject({ width: 4800, height: 3500 });
+      write("resize");
+      expect(session.editor.undo()).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value.children[0]).toMatchObject({ x: 100, y: 0, width: 5000, height: 4000 });
+      expect(session.editor.redo()).toBe(true);
+      await session.confirm();
+      expect(state(session.doc).value.children[0]).toMatchObject({ width: 4800, height: 3500 });
+
+      const resized = state(session.doc);
+      session.pick(resized.frame);
+      const originalFill = JSON.parse(session.doc.getEditableGroupFills!(...resized.address))
+        .find((item: { index: number }) => item.index === 0).color as number;
+      expect(session.edit({ kind: "groupChildFill", index: child.index, color: "00AA55" })).toBe(true);
+      await session.confirm();
+      expect(JSON.parse(session.doc.getEditableGroupFills!(...resized.address))
+        .find((item: { index: number }) => item.index === 0).color).toBe(0x0055AA00);
+      write("fill");
+      expect(session.editor.undo()).toBe(true);
+      await session.confirm();
+      expect(JSON.parse(session.doc.getEditableGroupFills!(...resized.address)).find((item: { index: number }) => item.index === 0).color)
+        .toBe(originalFill);
+      expect(session.editor.redo()).toBe(true);
+      await session.confirm();
+
+      const filled = state(session.doc);
+      session.pick(filled.frame);
+      const sibling = filled.value.children[1]!;
+      expect(session.edit({ kind: "groupChildFill", index: sibling.index, color: "AABB99" })).toBe(true);
+      await session.confirm();
+      write("combined");
+      session.editor.dispose();
+    } catch (error) {
+      session.editor.dispose();
+      throw error;
+    }
+
+    const writeIndependentVariant = (name: string,
+      apply: (doc: RhwpDocument, address: readonly [number, number, number],
+        children: ReturnType<typeof state>["value"]["children"]) => void) => {
+      const doc = new engine.HwpDocument(originalBytes) as RhwpDocument;
+      try {
+        const before = state(doc);
+        apply(doc, before.address, before.value.children);
+        const exported = doc.exportHwpWithReport();
+        try {
+          const bytes = exported.takeBytes();
+          expectReopenEvidence(doc, bytes, exported.contentLoss());
+          const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+          try { expect(state(reopened).value).toEqual(state(doc).value); }
+          finally { reopened.free(); }
+          writeFileSync(resolve(out!, `p4-h5-group-${name}.hwp`), bytes);
+        } finally { exported.free(); }
+      } finally { doc.free(); }
+    };
+    writeIndependentVariant("move", (doc, address, children) => {
+      const child = children[0]!;
+      doc.moveGroupChild!(...address, child.index, child.id, child.instId, 100, 0);
+    });
+    writeIndependentVariant("resize", (doc, address, children) => {
+      const child = children[0]!;
+      doc.resizeGroupChild!(...address, child.index, child.id, child.instId, 4800, 3500);
+    });
+    writeIndependentVariant("fill", (doc, address) => doc.setGroupChildFill!(...address, 0, 0x0055AA00));
+    writeIndependentVariant("combined", (doc, address, children) => {
+      const rect = children[0]!, ellipse = children[1]!;
+      doc.moveGroupChild!(...address, rect.index, rect.id, rect.instId, 100, 0);
+      doc.resizeGroupChild!(...address, rect.index, rect.id, rect.instId, 4800, 3500);
+      doc.setGroupChildFill!(...address, rect.index, 0x0055AA00);
+      doc.setGroupChildFill!(...address, ellipse.index, 0x0099BBAA);
+    });
+  });
+
   it("Stage 3-A P4.6-2 rejects unsupported, protected, transformed, out-of-range, and misowned group child geometry edits (N1-N12)", async () => {
     const fixturePath = resolve("target/stage3a-p4/fixtures/a-p4-group-original.hwpx");
     const fixtureBytes = new Uint8Array(readFileSync(fixturePath));

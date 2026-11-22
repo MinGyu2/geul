@@ -1319,6 +1319,371 @@ fn check_fill(old_fill: &[u8], new_fill: &[u8]) -> Checked<()> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Hwp5GroupChildComponent {
+    ctrl_id: [u8; 4],
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    inst_id: u32,
+    fill_start: usize,
+    tail_start: usize,
+    solid_fill: bool,
+}
+
+fn read_hwp5_matrix(bytes: &[u8]) -> Option<[f64; 6]> {
+    if bytes.len() != 48 {
+        return None;
+    }
+    let mut matrix = [0.0; 6];
+    for (value, chunk) in matrix.iter_mut().zip(bytes.chunks_exact(8)) {
+        *value = f64::from_le_bytes(chunk.try_into().ok()?);
+        if !value.is_finite() {
+            return None;
+        }
+    }
+    Some(matrix)
+}
+
+fn hwp5_identity_matrix(matrix: &[f64; 6], tx: f64, ty: f64) -> bool {
+    matrix == &[1.0, 0.0, tx, 0.0, 1.0, ty]
+}
+
+fn hwp5_identity_rendering(bytes: &[u8], expected_count: usize, tx: f64, ty: f64) -> bool {
+    if bytes.len() != 2 + 48 + expected_count * 96
+        || u16::from_le_bytes([bytes[0], bytes[1]]) as usize != expected_count
+    {
+        return false;
+    }
+    let Some(translation) = read_hwp5_matrix(&bytes[2..50]) else {
+        return false;
+    };
+    if !hwp5_identity_matrix(&translation, tx, ty) {
+        return false;
+    }
+    bytes[50..].chunks_exact(48).all(|raw| {
+        read_hwp5_matrix(raw).is_some_and(|matrix| hwp5_identity_matrix(&matrix, 0.0, 0.0))
+    })
+}
+
+fn parse_hwp5_group_child_component(
+    sc: &[u8],
+    parent_width: usize,
+    parent_height: usize,
+) -> Option<Hwp5GroupChildComponent> {
+    let ctrl_id: [u8; 4] = sc.get(..4)?.try_into().ok()?;
+    if ctrl_id != *SC_RECT && ctrl_id != *SC_ELLIPSE {
+        return None;
+    }
+    if sc.len() < 46 + 242 {
+        return None;
+    }
+    let read_u16 = |at: usize| Some(u16::from_le_bytes(sc.get(at..at + 2)?.try_into().ok()?));
+    let read_u32 = |at: usize| Some(u32::from_le_bytes(sc.get(at..at + 4)?.try_into().ok()?));
+    let read_i32 = |at: usize| Some(i32::from_le_bytes(sc.get(at..at + 4)?.try_into().ok()?));
+    let x = read_i32(4)?;
+    let y = read_i32(8)?;
+    let original_width = read_u32(16)?;
+    let original_height = read_u32(20)?;
+    let current_width = read_u32(24)?;
+    let current_height = read_u32(28)?;
+    let flip = read_u32(32)?;
+    let rotation = i16::from_le_bytes(sc.get(36..38)?.try_into().ok()?);
+    if read_u16(12)? != 1
+        || original_width == 0
+        || original_height == 0
+        || original_width > MAX_DIM_HU as u32
+        || original_height > MAX_DIM_HU as u32
+        || current_width != original_width
+        || current_height != original_height
+        || flip & 3 != 0
+        || rotation != 0
+        || x < 0
+        || y < 0
+        || x as usize + original_width as usize > parent_width
+        || y as usize + original_height as usize > parent_height
+        || !hwp5_identity_rendering(&sc[46..46 + 242], 2, f64::from(x), f64::from(y))
+    {
+        return None;
+    }
+    let rendering_end = 46 + 242;
+    if sc.len() < rendering_end + 13 + 8 + 22 {
+        return None;
+    }
+    let fill_start = rendering_end + 13;
+    let tail_start = sc.len().checked_sub(22)?;
+    if tail_start < fill_start {
+        return None;
+    }
+    let fill = &sc[fill_start..tail_start];
+    let fill_kind = read_u32(fill_start)?;
+    let solid_fill = match fill_kind {
+        0 => fill.len() == 8 && fill.iter().all(|byte| *byte == 0),
+        1 => fill.len() == 21 && fill[7] == 0 && fill[16..20] == [0; 4],
+        _ => false,
+    };
+    if !solid_fill {
+        return None;
+    }
+    let inst_id = read_u32(tail_start + 16)?;
+    if inst_id == 0 || sc[tail_start + 20] != 0 {
+        return None;
+    }
+    Some(Hwp5GroupChildComponent {
+        ctrl_id,
+        x,
+        y,
+        width: original_width,
+        height: original_height,
+        inst_id,
+        fill_start,
+        tail_start,
+        solid_fill: fill_kind == 1,
+    })
+}
+
+fn hwp5_group_child_leaf_supported(tag: u16, leaf: &[u8], width: u32, height: u32, resize: bool) -> bool {
+    match tag {
+        TAG_RECTANGLE => {
+            if leaf.len() != 33 || leaf[0] > 100 {
+                return false;
+            }
+            let Some((xs, ys)) = parse_rectangle_vertices(&leaf[1..]) else {
+                return false;
+            };
+            let (Ok(w), Ok(h)) = (i32::try_from(width), i32::try_from(height)) else {
+                return false;
+            };
+            xs == [0, w, w, 0] && ys == [0, 0, h, h]
+        }
+        TAG_ELLIPSE => {
+            if leaf.len() != 60 || dword(leaf, 0) != Ok(0) {
+                return false;
+            }
+            let point = |at: usize| -> Option<(i64, i64)> {
+                Some((
+                    i64::from(i32::from_le_bytes(leaf.get(at..at + 4)?.try_into().ok()?)),
+                    i64::from(i32::from_le_bytes(leaf.get(at + 4..at + 8)?.try_into().ok()?)),
+                ))
+            };
+            let (w, h) = (i64::from(width), i64::from(height));
+            let Some(center) = point(4) else { return false };
+            let Some(axis1) = point(12) else { return false };
+            let Some(axis2) = point(20) else { return false };
+            let half_x = (w / 2, (w + 1) / 2);
+            let half_y = (h / 2, (h + 1) / 2);
+            let axes = (half_x.0..=half_x.1).contains(&center.0)
+                && (half_y.0..=half_y.1).contains(&center.1)
+                && axis1 == (w, center.1)
+                && axis2 == (center.0, h);
+            if !axes || !resize {
+                return axes;
+            }
+            let endpoint = (w, center.1);
+            (0..4).all(|index| point(28 + index * 8) == Some(endpoint))
+        }
+        _ => false,
+    }
+}
+
+fn same_except_hwp5_component_ranges(old: &[u8], new: &[u8], ranges: &[(usize, usize)]) -> bool {
+    if old.len() != new.len() {
+        return false;
+    }
+    let mut normalized = old.to_vec();
+    for &(start, end) in ranges {
+        if start > end || end > old.len() {
+            return false;
+        }
+        normalized[start..end].copy_from_slice(&new[start..end]);
+    }
+    normalized == new
+}
+
+fn hwp5_group_child_change_is_safe(
+    old_sc: &[u8],
+    new_sc: &[u8],
+    old_leaf: &[u8],
+    new_leaf: &[u8],
+    old: Hwp5GroupChildComponent,
+    new: Hwp5GroupChildComponent,
+) -> bool {
+    if old.ctrl_id != new.ctrl_id || old.inst_id != new.inst_id
+        || old_sc.len() != new_sc.len()
+        || old.fill_start != new.fill_start
+        || old.tail_start != new.tail_start
+        || old_sc[old.tail_start..] != new_sc[new.tail_start..]
+        || old_sc[288..301] != new_sc[288..301]
+    {
+        return false;
+    }
+    let old_fill = &old_sc[old.fill_start..old.tail_start];
+    let new_fill = &new_sc[new.fill_start..new.tail_start];
+    let offset_changed = (old.x, old.y) != (new.x, new.y);
+    let size_changed = (old.width, old.height) != (new.width, new.height);
+    if size_changed {
+        if !hwp5_group_child_leaf_supported(
+            if old.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE },
+            old_leaf,
+            old.width,
+            old.height,
+            true,
+        ) || !hwp5_group_child_leaf_supported(
+            if new.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE },
+            new_leaf,
+            new.width,
+            new.height,
+            true,
+        ) {
+            return false;
+        }
+    } else if old_leaf != new_leaf {
+        return false;
+    }
+    let fill_changed = old_fill != new_fill;
+    if fill_changed
+        && !(old.solid_fill
+            && new.solid_fill
+            && old_fill.len() == 21
+            && new_fill.len() == 21
+            && old_fill[4..8] != new_fill[4..8]
+            && old_fill[..4] == new_fill[..4]
+            && old_fill[8..] == new_fill[8..])
+    {
+        return false;
+    }
+    (offset_changed || size_changed || fill_changed || old_leaf != new_leaf)
+        && same_except_hwp5_component_ranges(
+            old_sc,
+            new_sc,
+            &[(4, 12), (16, 32), (64, 72), (88, 96), (old.fill_start + 4, old.fill_start + 8)],
+        )
+}
+
+fn prove_hwp5_group_child_edit(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    old_sc_idx: usize,
+    new_sc_idx: usize,
+    child_count: usize,
+    rendering_end: usize,
+    parent_width: usize,
+    parent_height: usize,
+) -> Checked<()> {
+    let (Some(old_header), Some(new_header)) = (old.first(), new.first()) else {
+        return Err(finding(FindingCode::OutputMalformed, BODY));
+    };
+    let (Some(old_parent), Some(new_parent)) = (old.get(old_sc_idx), new.get(new_sc_idx)) else {
+        return Err(finding(FindingCode::OutputMalformed, BODY));
+    };
+    preserved(
+        old_sc_idx == 1
+            && new_sc_idx == 1
+            && old_header == new_header
+            && old_parent == new_parent
+            && old_parent.0 == TAG_SHAPE_COMPONENT
+            && old_parent.1 == 2
+            && old_parent.2.starts_with(SC_CONTAINER),
+        BODY,
+    )?;
+    let parent_sc = old_parent.2;
+    let id_off = 8;
+    let parent_render_end = shape_rendering_end(parent_sc, id_off)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let parent_attr = dword(old_header.2, 4)? as u32;
+    let original_width = dword(parent_sc, id_off + 12)?;
+    let original_height = dword(parent_sc, id_off + 16)?;
+    let current_width = dword(parent_sc, id_off + 20)?;
+    let current_height = dword(parent_sc, id_off + 24)?;
+    let parent_flip = dword(parent_sc, id_off + 28)? as u32;
+    let parent_rotation = i16::from_le_bytes(parent_sc[id_off + 32..id_off + 34].try_into().unwrap());
+    preserved(
+        parent_attr & (ATTR_LOCKED | ATTR_SIZE_PROTECT | ATTR_CAPTION) == 0
+            && word(parent_sc, id_off + 8)? == 0
+            && parent_sc[id_off..id_off + 8] == [0; 8]
+            && parent_flip & 3 == 0
+            && parent_rotation == 0,
+        BODY,
+    )?;
+    valid(
+        (1..=MAX_DIM_HU).contains(&parent_width)
+            && (1..=MAX_DIM_HU).contains(&parent_height)
+            && original_width == parent_width
+            && original_height == parent_height
+            && current_width == parent_width
+            && current_height == parent_height
+            && parent_render_end == rendering_end
+            && hwp5_identity_rendering(&parent_sc[id_off + 42..parent_render_end], 1, 0.0, 0.0),
+        BODY,
+    )?;
+    let expected_tail = child_count
+        .checked_mul(4)
+        .and_then(|n| n.checked_add(6))
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(
+        (1..=128).contains(&child_count)
+            && parent_sc.len() == parent_render_end + expected_tail
+            && word(parent_sc, parent_render_end)? == child_count,
+        BODY,
+    )?;
+    let old_body = &old[old_sc_idx + 1..];
+    let new_body = &new[new_sc_idx + 1..];
+    preserved(old_body.len() == child_count * 2 && new_body.len() == child_count * 2, BODY)?;
+    let mut seen = std::collections::HashSet::with_capacity(child_count);
+    let mut changed_children = 0usize;
+    for index in 0..child_count {
+        let old_component = old_body[index * 2];
+        let new_component = new_body[index * 2];
+        let old_leaf = old_body[index * 2 + 1];
+        let new_leaf = new_body[index * 2 + 1];
+        preserved(
+            old_component.0 == TAG_SHAPE_COMPONENT
+                && old_component.1 == 3
+                && new_component.0 == TAG_SHAPE_COMPONENT
+                && new_component.1 == 3
+                && old_leaf.0 == new_leaf.0
+                && old_leaf.1 == 4
+                && new_leaf.1 == 4,
+            BODY,
+        )?;
+        let id_at = parent_render_end + 2 + index * 4;
+        preserved(
+            old_component.2.get(..4) == parent_sc.get(id_at..id_at + 4)
+                && new_component.2.get(..4) == parent_sc.get(id_at..id_at + 4),
+            BODY,
+        )?;
+        let old_layout = parse_hwp5_group_child_component(&old_component.2, parent_width, parent_height)
+            .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+        let new_layout = parse_hwp5_group_child_component(&new_component.2, parent_width, parent_height)
+            .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+        let leaf_tag = if old_layout.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE };
+        preserved(old_leaf.0 == leaf_tag, BODY)?;
+        valid(
+            hwp5_group_child_leaf_supported(leaf_tag, old_leaf.2, old_layout.width, old_layout.height, false)
+                && hwp5_group_child_leaf_supported(leaf_tag, new_leaf.2, new_layout.width, new_layout.height, false),
+            BODY,
+        )?;
+        reference(seen.insert((old_layout.ctrl_id, old_layout.inst_id)), BODY)?;
+        if old_component != new_component || old_leaf != new_leaf {
+            changed_children += 1;
+            preserved(
+                hwp5_group_child_change_is_safe(
+                    old_component.2,
+                    new_component.2,
+                    old_leaf.2,
+                    new_leaf.2,
+                    old_layout,
+                    new_layout,
+                ),
+                BODY,
+            )?;
+        }
+    }
+    preserved(changed_children > 0, BODY)?;
+    Ok(())
+}
+
 fn parse_rectangle_vertices(vertices: &[u8]) -> Option<([i32; 4], [i32; 4])> {
     if vertices.len() != 32 {
         return None;
@@ -1571,12 +1936,22 @@ pub(super) fn prove_evolved_gso(
                 && new_sc.len() == new_r_end + expected_tail,
             BODY,
         )?;
-        preserved(
-            old_sc[old_r_end..] == new_sc[new_r_end..]
-                && !old[old_sc_idx + 1..].is_empty()
-                && old[old_sc_idx + 1..] == new[new_sc_idx + 1..],
-            BODY,
-        )?;
+        preserved(old_sc[old_r_end..] == new_sc[new_r_end..], BODY)?;
+        let old_children = &old[old_sc_idx + 1..];
+        let new_children = &new[new_sc_idx + 1..];
+        if old_children != new_children {
+            return prove_hwp5_group_child_edit(
+                old,
+                new,
+                old_sc_idx,
+                new_sc_idx,
+                child_count,
+                old_r_end,
+                old_w,
+                old_h_dim,
+            );
+        }
+        preserved(!old_children.is_empty(), BODY)?;
         return Ok(());
     }
 
@@ -4106,6 +4481,148 @@ mod tests {
     }
 
     #[test]
+    fn hwp_group_child_t009_proves_geometry_fill_and_sibling_ownership() {
+        let identity = |tx: f64, ty: f64| {
+            let mut bytes = Vec::new();
+            for value in [1.0, 0.0, tx, 0.0, 1.0, ty] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            bytes
+        };
+        let component = |ctrl: &[u8; 4], x: i32, y: i32, w: u32, h: u32, inst: u32, color: u32| {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(ctrl);
+            bytes.extend_from_slice(&x.to_le_bytes());
+            bytes.extend_from_slice(&y.to_le_bytes());
+            bytes.extend_from_slice(&1u16.to_le_bytes());
+            bytes.extend_from_slice(&1u16.to_le_bytes());
+            bytes.extend_from_slice(&w.to_le_bytes());
+            bytes.extend_from_slice(&h.to_le_bytes());
+            bytes.extend_from_slice(&w.to_le_bytes());
+            bytes.extend_from_slice(&h.to_le_bytes());
+            bytes.extend_from_slice(&0x0008_0000u32.to_le_bytes());
+            bytes.extend_from_slice(&0i16.to_le_bytes());
+            bytes.extend_from_slice(&((w / 2) as i32).to_le_bytes());
+            bytes.extend_from_slice(&((h / 2) as i32).to_le_bytes());
+            bytes.extend_from_slice(&2u16.to_le_bytes());
+            bytes.extend_from_slice(&identity(f64::from(x), f64::from(y)));
+            for _ in 0..2 {
+                bytes.extend_from_slice(&identity(0.0, 0.0));
+                bytes.extend_from_slice(&identity(0.0, 0.0));
+            }
+            bytes.extend_from_slice(&[0u8; 13]);
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&color.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&(-1i32).to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.push(0);
+            bytes.extend_from_slice(&[0u8; 16]);
+            bytes.extend_from_slice(&inst.to_le_bytes());
+            bytes.push(0);
+            bytes.push(0);
+            bytes
+        };
+        let rectangle = |w: i32, h: i32| rect_leaf(0, w, h);
+        let ellipse = |w: i32, h: i32| {
+            let (cx, cy) = (w / 2, h / 2);
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            for (x, y) in [
+                (cx, cy), (w, cy), (cx, h), (w, cy),
+                (w, cy), (w, cy), (w, cy),
+            ] {
+                bytes.extend_from_slice(&x.to_le_bytes());
+                bytes.extend_from_slice(&y.to_le_bytes());
+            }
+            bytes
+        };
+        let parent = || {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(super::SC_CONTAINER);
+            bytes.extend_from_slice(super::SC_CONTAINER);
+            bytes.extend_from_slice(&[0u8; 8]);
+            bytes.extend_from_slice(&0u16.to_le_bytes());
+            bytes.extend_from_slice(&1u16.to_le_bytes());
+            for dim in [12000u32, 8000, 12000, 8000] {
+                bytes.extend_from_slice(&dim.to_le_bytes());
+            }
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&0i16.to_le_bytes());
+            bytes.extend_from_slice(&6000i32.to_le_bytes());
+            bytes.extend_from_slice(&4000i32.to_le_bytes());
+            bytes.extend_from_slice(&1u16.to_le_bytes());
+            bytes.extend_from_slice(&identity(0.0, 0.0));
+            bytes.extend_from_slice(&identity(0.0, 0.0));
+            bytes.extend_from_slice(&identity(0.0, 0.0));
+            bytes.extend_from_slice(&2u16.to_le_bytes());
+            bytes.extend_from_slice(super::SC_RECT);
+            bytes.extend_from_slice(super::SC_ELLIPSE);
+            bytes.extend_from_slice(&301u32.to_le_bytes());
+            bytes
+        };
+        let records = |rect_sc: Vec<u8>, rect_leaf: Vec<u8>, ellipse_sc: Vec<u8>, ellipse_leaf: Vec<u8>| {
+            vec![
+                (71, 1, b" osg\0\0\0\0".to_vec()),
+                (76, 2, parent()),
+                (76, 3, rect_sc), (79, 4, rect_leaf),
+                (76, 3, ellipse_sc), (80, 4, ellipse_leaf),
+            ]
+        };
+        let original = records(
+            component(super::SC_RECT, 0, 0, 4000, 3000, 1001, 0x0011_2233),
+            rectangle(4000, 3000),
+            component(super::SC_ELLIPSE, 6000, 1000, 4000, 3000, 1002, 0x0044_5566),
+            ellipse(4000, 3000),
+        );
+        let prove = |next: &[(u16, u16, Vec<u8>)]| {
+            let old_refs: Vec<super::Record<'_>> = original.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+            let new_refs: Vec<super::Record<'_>> = next.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+            super::prove_hwp5_group_child_edit(&old_refs, &new_refs, 1, 1, 2, 196, 12000, 8000).is_ok()
+        };
+        let mut moved = original.clone();
+        moved[2].2[4..8].copy_from_slice(&100i32.to_le_bytes());
+        moved[2].2[64..72].copy_from_slice(&100f64.to_le_bytes());
+        assert!(prove(&moved), "single-child movement should pass");
+
+        let mut resized = original.clone();
+        for (at, value) in [(16, 3800u32), (20, 2800), (24, 3800), (28, 2800)] {
+            resized[2].2[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        resized[3].2 = rectangle(3800, 2800);
+        assert!(prove(&resized), "single-child resize should pass");
+
+        let mut filled = original.clone();
+        filled[2].2[305..309].copy_from_slice(&0x0066_7788u32.to_le_bytes());
+        assert!(prove(&filled), "solid fill color edit should pass");
+
+        let mut combined = original.clone();
+        combined[2].2[4..8].copy_from_slice(&100i32.to_le_bytes());
+        combined[2].2[64..72].copy_from_slice(&100f64.to_le_bytes());
+        for (at, value) in [(16, 3800u32), (20, 2800), (24, 3800), (28, 2800)] {
+            combined[2].2[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        combined[2].2[305..309].copy_from_slice(&0x0066_7788u32.to_le_bytes());
+        combined[3].2 = rectangle(3800, 2800);
+        combined[4].2[305..309].copy_from_slice(&0x0099_aabb_u32.to_le_bytes());
+        assert!(prove(&combined), "multiple safe child edits should pass");
+
+        let mut bad_matrix = moved.clone();
+        bad_matrix[2].2[64..72].copy_from_slice(&99f64.to_le_bytes());
+        assert!(!prove(&bad_matrix), "offset/render translation mismatch must fail");
+        let mut bad_border = filled.clone();
+        bad_border[2].2[288] ^= 1;
+        assert!(!prove(&bad_border), "border changes must fail");
+        let mut bad_leaf = resized.clone();
+        bad_leaf[3].2[5] ^= 1;
+        assert!(!prove(&bad_leaf), "noncanonical resized leaf must fail");
+        let mut reordered = original.clone();
+        reordered.swap(2, 4);
+        reordered.swap(3, 5);
+        assert!(!prove(&reordered), "child order changes must fail");
+    }
+
+    #[test]
     #[ignore = "Release-WASM fixtures: run the HWP group geometry scenario first"]
     fn release_hwp_group_geometry_preserves_children() {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
@@ -4121,6 +4638,21 @@ mod tests {
         });
         assert!(check_with_preview_refresh(&original, &tampered)
             .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+    }
+
+    #[test]
+    #[ignore = "Release-WASM fixtures: run the HWP5 group-child scenario first"]
+    fn release_hwp_group_child_edits_preserve_children() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let original = std::fs::read(dir.join("p4-h5-group-original.hwp")).unwrap();
+        for name in ["move", "resize", "fill", "combined"] {
+            let edited = std::fs::read(dir.join(format!("p4-h5-group-{name}.hwp"))).unwrap();
+            assert_eq!(
+                check_with_preview_refresh(&original, &edited),
+                vec![],
+                "T009 must accept the supported {name} edit while preserving the source group"
+            );
+        }
     }
 
     #[test]

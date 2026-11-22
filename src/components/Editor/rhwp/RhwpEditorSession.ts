@@ -2008,7 +2008,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
           const groupChildFills = group && groupAddress && this.doc.setGroupChildFill
             ? inspectRhwpGroupFills(this.doc, groupAddress) : undefined;
-          const groupChildren = format === "hwpx" && group && groupAddress && this.doc.moveGroupChild && this.doc.resizeGroupChild
+          const groupChildren = (format === "hwpx" || (format === "hwp" && canEditHwp && groupSupported))
+            && group && groupAddress && this.doc.moveGroupChild && this.doc.resizeGroupChild
             ? inspectRhwpGroupChildren(this.doc, groupAddress) : undefined;
           if (groupChildFills) operations.push("groupChildFill");
           if (groupChildren) operations.push("groupChildGeometry");
@@ -4906,9 +4907,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const pathEdit = edit.kind === "pathPoint" || edit.kind === "pathVertex" || edit.kind === "pathSegment";
     const groupChildGeomEdit = edit.kind === "groupChildMove" || edit.kind === "groupChildResize";
     if (!pathEdit && edit.kind !== "groupChildFill" && !groupChildGeomEdit) return false;
-    if (groupChildGeomEdit && this.sessions.get(this.sessionId)?.format !== "hwpx") return false;
     const address = pathEdit ? saved.shapeAddress : saved.groupAddress;
-    if (!address || !this.gsoFormatEditable(address, pathEdit)) return false;
+    const format = this.sessions.get(this.sessionId)?.format;
+    const ownerEditable = pathEdit
+      ? this.gsoFormatEditable(address, true)
+      : format === "hwpx" || (format === "hwp" && this.structuralFormat() && this.unlockedBodyGso(address) === "그리기");
+    if (!address || !ownerEditable) return false;
     const read = (d: RhwpDocument, a: readonly [number, number, number]) => pathEdit
       ? inspectRhwpShapePath(d, a)
       : groupChildGeomEdit ? inspectRhwpGroupChildren(d, a) : inspectRhwpGroupFills(d, a);

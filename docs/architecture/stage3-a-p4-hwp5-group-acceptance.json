@@ -1,0 +1,54 @@
+{
+  "baselineHead": "023ce9b18296a8a54ccd35c37df14fef7f11a4fe",
+  "feature": "P4-H5-GROUP",
+  "category": "A",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "HWP5 top-level body-owned flat SC_CONTAINER groups with a complete preserved child-ID table and unique (ctrl_id, inst_id) addresses. Supports direct resource-free Rectangle/Ellipse children only when the component, solid/none fill, rendering matrices and geometry are fully modeled; parent and child matrices are identity, dimensions are positive, children remain inside the parent, and the owner is editable. Demonstrated move, rectangle resize, and ellipse solid-fill editing.",
+  "refused": "Nested containers, captions, text boxes, pictures, charts/OLE, child resources, unsupported fill/component/leaf layouts, malformed or ambiguous child-ID tables, non-identity/composite transforms, rotation/flips, protected or locked owners, and unsupported serialized structures remain fail-closed.",
+  "engineIntegration": {
+    "rhwpSubmodule": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patchSeriesIndex": 47,
+    "patch": "patches/rhwp/stage3a-hwp5-group-child-editing.patch",
+    "patchSha256": "be092fe46644e5ceee130a830003723b4d58c188597ddad312046c89369f7df1",
+    "seriesSource": "scripts/rhwp-patches.py",
+    "officialBuildExternalUnchanged": true,
+    "releaseGeneration": "ccf81de4a3c1c45ce4f85b49a6da8c6e64057f9f1cf557bcf45d8facc7c3879d",
+    "artifacts": {
+      "rhwp.js": "fe3942733de35ff18566b529e0a0a26589e4bd40a7f0990cb2e7bce7957cb334",
+      "rhwp_bg.wasm": "0d2c045d8f7858ac87aa785b8b776ea670e47451bdb9452a9c7d0df63dcdc4f4"
+    }
+  },
+  "checks": {
+    "releaseWasm": "PASS — GEUL_STAGE3_HWP5_GROUP=1 focused Vitest test, actual generated HWP5 group opened by Release RHWP WASM; selection, move/resize/fill API, Undo/Redo, export and reopen; 1 passed, 1763 skipped.",
+    "t009Synthetic": "PASS — cargo test --manifest-path src-tauri/Cargo.toml --lib hwp_group -- --nocapture; synthetic ownership, geometry/fill, sibling-preservation and refusal proofs passed.",
+    "t009ReleaseCfb": "PASS — ignored release_hwp_group_child_edits_preserve_children proof against four actual exported HWP CFB files; 1 passed. check_with_preview_refresh accepted supported edits and retained safe rejection behavior.",
+    "independentCfb": "PASS — original and saved CFB streams/records compared. Only BodyText/Section0 and preview PrvImage changed; Section0 record tag/level/order unchanged. Parent container, child-ID table/order and unaffected ellipse leaf remained byte-identical; only the rectangle SC/leaf and selected ellipse SC fill bytes changed. Native run record indexes: parent 13, children 14–17, changed 14–16.",
+    "wasmSession": "PASS — group child addresses and selected geometry/fill state survived the real RHWP WASM editor session and save/reopen.",
+    "typecheck": "PASS — npm run typecheck.",
+    "frontend": "PASS — npm run build (one non-fatal chunk-size warning).",
+    "tauriRelease": "PASS — protected npm run tauri -- build --no-bundle; release-path/privacy gate passed.",
+    "native": "PASS — actual Linux X11/Xvfb application with private IBus Hangul, run12. Trusted native pointer move/resize, fill edit, each operation Undo/Redo, synced save and independent application reopen.",
+    "nativeCleanup": "PASS — private session cleanup and filesystem ownership proven; no surviving processes or temporary resources.",
+    "pythonSyntax": "PASS — python3 -m py_compile scripts/tests/native-stage3a-p4.py scripts/tests/native-stage3-c.py.",
+    "diffCheck": "PASS — git diff --check.",
+    "upstreamTests": "NOT RUN — RHWP full upstream test suite was outside the focused acceptance selection; no PASS claim."
+  },
+  "outputs": {
+    "fixture": "target/p4-h5-group-work/probe-output/p4-h5-group-original.hwp",
+    "fixtureSha256": "6e7cc7be36961d9ce1973971063d194d24f011d32794558216505c449a5a3d6e",
+    "nativePublishedSha256": "25fd5ea0dd13cbe0c053f49c88e638c6eb6eb9a063690aca41dcb61ae0314854"
+  },
+  "native": {
+    "platform": "Linux X11/Xvfb + private IBus Hangul",
+    "result": "PASS",
+    "appSha256": "d72b0bc0ba7ca863fdbf119af172f560b5da42cfc2d642227e4608ffa6f0e017",
+    "rhwpGeneration": "ccf81de4a3c1c45ce4f85b49a6da8c6e64057f9f1cf557bcf45d8facc7c3879d",
+    "run": "target/p4-h5-group-work/native/run12/result/result.json",
+    "cleanup": "target/p4-h5-group-work/native/run12/session/cleanup.json"
+  },
+  "notRun": [
+    "Wayland for this HWP5 group child feature.",
+    "Windows and macOS native acceptance.",
+    "External Hancom Office or Microsoft Office reopen interoperability."
+  ]
+}

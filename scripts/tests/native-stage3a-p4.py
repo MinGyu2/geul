@@ -3,6 +3,7 @@
 
 from copy import deepcopy
 import importlib.util
+import hashlib
 import math
 from pathlib import Path
 import shutil
@@ -15,6 +16,9 @@ entry = Path(__file__).with_name("native-stage3-c.py")
 spec = importlib.util.spec_from_file_location("stage3c", entry)
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
+record_spec = importlib.util.spec_from_file_location("hwp_record_diff", Path(__file__).with_name("hwp_record_diff.py"))
+hwp_records = importlib.util.module_from_spec(record_spec)
+record_spec.loader.exec_module(hwp_records)
 
 POINT = ".object-path-point"
 COORDS = ".object-path-coordinates"
@@ -1205,6 +1209,190 @@ def group_child_capture_case(acc, row, fixtures, out):
     h.require(values() == resized, "published dimensions did not reopen in the app", values())
 
 
+def hwp5_group_records(original, output, final_group):
+    old_streams = hwp_records.cfb_streams(original.read_bytes())
+    new_streams = hwp_records.cfb_streams(output.read_bytes())
+    h.require(old_streams.keys() == new_streams.keys(), "HWP5 group edit changed CFB stream ownership")
+    changed_streams = [name for name in sorted(old_streams) if old_streams[name] != new_streams[name]]
+    h.require(set(changed_streams) <= {"BodyText/Section0", "PrvImage"}
+              and "BodyText/Section0" in changed_streams,
+              "HWP5 group edit changed unrelated streams", changed_streams)
+    before = hwp_records.records(hwp_records.unpacked(old_streams, "BodyText/Section0"))
+    after = hwp_records.records(hwp_records.unpacked(new_streams, "BodyText/Section0"))
+    h.require(len(before) == len(after), "HWP5 group edit inserted or removed records", [len(before), len(after)])
+    h.require([(tag, level) for tag, level, _ in before] == [(tag, level) for tag, level, _ in after],
+              "HWP5 group edit changed record identity or order")
+    containers = [i for i, (tag, level, data) in enumerate(before)
+                  if tag == 76 and level == 2 and len(data) >= 12 and data[:4] == b"noc$"]
+    h.require(len(containers) == 1, "fixture must have one owned HWP5 container", containers)
+    group_at = containers[0]
+    indexes = (group_at + 1, group_at + 2, group_at + 3, group_at + 4)
+    h.require(indexes[-1] < len(before), "group children are truncated")
+    expected_records = [(76, 3), (79, 4), (76, 3), (80, 4)]
+    h.require([(before[i][0], before[i][1]) for i in indexes] == expected_records,
+              "fixture group is outside the supported flat rectangle/ellipse shape", [before[i][:2] for i in indexes])
+    h.require(before[group_at] == after[group_at], "parent container, ID table, or transforms changed")
+    child0_sc_old, child0_leaf_old, child1_sc_old, child1_leaf_old = (before[i][2] for i in indexes)
+    child0_sc_new, child0_leaf_new, child1_sc_new, child1_leaf_new = (after[i][2] for i in indexes)
+    group_children = final_group["children"]
+    for old_sc, new_sc, expected, allow_geometry in (
+        (child0_sc_old, child0_sc_new, group_children[0], True),
+        (child1_sc_old, child1_sc_new, group_children[1], False),
+    ):
+        h.require(len(old_sc) == len(new_sc) == 344, "unsupported child component envelope")
+        h.require(old_sc[:4] == new_sc[:4] and old_sc[-6:-1] == new_sc[-6:-1],
+                  "child identity or instance ID changed")
+        allowed = [(305, 309)]
+        if allow_geometry:
+            allowed += [(4, 12), (16, 32), (64, 72), (88, 96)]
+            x, y, width, height = (expected[k] for k in ("x", "y", "width", "height"))
+            h.require(struct.unpack_from("<ii", new_sc, 4) == (x, y), "saved child offset differs")
+            h.require(struct.unpack_from("<IIII", new_sc, 16) == (width, height, width, height),
+                      "saved child dimensions differ")
+            tx, ty = struct.unpack_from("<dd", new_sc, 64)[0], struct.unpack_from("<d", new_sc, 88)[0]
+            h.require(math.isfinite(tx) and math.isfinite(ty) and tx == x and ty == y,
+                      "saved local transform disagrees with child coordinates", [tx, ty, x, y])
+        normalized = bytearray(old_sc)
+        for start, end in allowed:
+            normalized[start:end] = new_sc[start:end]
+        h.require(bytes(normalized) == new_sc, "unapproved child component bytes changed")
+    rect = group_children[0]
+    expected_vertices = (0, 0, rect["width"], 0, rect["width"], rect["height"], 0, rect["height"])
+    h.require(len(child0_leaf_new) == 33 and struct.unpack_from("<8i", child0_leaf_new, 1) == expected_vertices,
+              "saved rectangle leaf geometry differs", child0_leaf_new.hex())
+    h.require(child1_leaf_old == child1_leaf_new, "unaffected ellipse leaf changed")
+    changed_records = [i for i, (old, new) in enumerate(zip(before, after, strict=True)) if old != new]
+    h.require(set(changed_records) <= set(indexes) and changed_records,
+              "records outside the two owned child components changed", changed_records)
+    return {"changedStreams": changed_streams, "changedRecordIndexes": changed_records,
+            "containerRecordIndex": group_at, "childRecordIndexes": list(indexes)}
+
+
+def hwp5_group_child_edit_case(acc, row, fixtures, out):
+    fixture = fixtures / "p4-h5-group-original.hwp"
+    before = row["before"] = inspect(fixture)
+    target, = [frame for frame in before["frames"] if frame["groupChildren"]]
+    group = target["groupChildren"]
+    rect0, ellipse0 = group["children"]
+    path = h.begin(acc, row, fixture, out, "p4-h5-group-edited.hwp")
+    CHILD = ".object-group-child"
+    HANDLE = ".object-group-child-handle"
+    CCOORDS = ".object-group-child-coordinates"
+
+    def enter_mode(child_idx=0):
+        h.select_object(acc, target, "group")
+        acc.dom_click(".object-group-child-mode")
+        acc.wait("return document.querySelectorAll(arguments[0]).length===2", CHILD)
+        h.require(acc.d.js("return document.querySelectorAll('[data-testid^=object-handle-]').length") == 0,
+                  "outer group resize handles remained active")
+        acc.dom_click(f"{CHILD}[data-index='{child_idx}']")
+
+    def ui_values():
+        return acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", CCOORDS)
+
+    enter_mode(0)
+    h.require(ui_values() == [rect0["x"], rect0["y"], rect0["width"], rect0["height"]],
+              "initial HWP5 rectangle child coordinates differ", ui_values())
+    h.require([e for e in acc.d.js("return [...document.querySelectorAll(arguments[0])].map(e=>e.dataset.handle)", HANDLE)]
+              == ["e", "se", "s"], "expected safe left/top-anchored resize handles")
+    acc.d.js("""
+      window.hwp5GroupMove=[];
+      for (const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+        if (e.target.closest?.('.object-group-child')) window.hwp5GroupMove.push({type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      },true);
+    """)
+    x0, y0 = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2];",
+                      f"{CHILD}[data-index='0']")
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x0*sx,y0*sy), ((x0+10)*sx,y0*sy))
+    h.revision(acc, "hwp", 1)
+    move_events = row["movePointer"] = acc.d.js("return window.hwp5GroupMove")
+    h.require(len(move_events)==2 and all(event["trusted"] for event in move_events),
+              "HWP5 child movement did not use trusted native pointer input", move_events)
+    frame = h.frame(acc)
+    moved_x = min(group["width"]-rect0["width"], max(0, round(rect0["x"] +
+        (move_events[1]["x"]-move_events[0]["x"])*group["width"]/frame["width"])))
+    moved_y = rect0["y"]
+    h.require(ui_values()==[moved_x,moved_y,rect0["width"],rect0["height"]],
+              "trusted HWP5 child move differs", ui_values())
+    acc.key("ctrl+z")
+    h.revision(acc,"hwp",2)
+    enter_mode(0)
+    h.require(ui_values()==[rect0["x"],rect0["y"],rect0["width"],rect0["height"]], "move Undo differs")
+    acc.key("ctrl+y")
+    h.revision(acc,"hwp",3)
+    enter_mode(0)
+    h.require(ui_values()==[moved_x,moved_y,rect0["width"],rect0["height"]], "move Redo differs")
+
+    acc.d.js("""
+      window.hwp5GroupResize=[];
+      for (const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+        if (e.target.closest?.('.object-group-child-handle')) window.hwp5GroupResize.push({type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      },true);
+    """)
+    hx, hy = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect(); return [r.x+r.width/2,r.y+r.height/2];",
+                      f"{HANDLE}[data-handle='se']")
+    h.p4.rhwp_poc.drag(acc.d,(hx*sx,hy*sy),((hx-8)*sx,(hy-6)*sy))
+    h.revision(acc,"hwp",4)
+    resize_events = row["resizePointer"] = acc.d.js("return window.hwp5GroupResize")
+    h.require(len(resize_events)==2 and all(event["trusted"] for event in resize_events),
+              "HWP5 child resize did not use trusted native pointer input", resize_events)
+    resized_width = min(group["width"]-moved_x, max(1,round(rect0["width"]+
+        (resize_events[1]["x"]-resize_events[0]["x"])*group["width"]/frame["width"])))
+    resized_height = min(group["height"]-moved_y, max(1,round(rect0["height"]+
+        (resize_events[1]["y"]-resize_events[0]["y"])*group["height"]/frame["height"])))
+    h.require(ui_values()==[moved_x,moved_y,resized_width,resized_height], "HWP5 child resize differs", ui_values())
+    acc.key("ctrl+z")
+    h.revision(acc,"hwp",5)
+    enter_mode(0)
+    h.require(ui_values()==[moved_x,moved_y,rect0["width"],rect0["height"]], "resize Undo differs")
+    acc.key("ctrl+y")
+    h.revision(acc,"hwp",6)
+    enter_mode(0)
+    h.require(ui_values()==[moved_x,moved_y,resized_width,resized_height], "resize Redo differs")
+    acc.key("Escape")
+    h.require(not acc.d.exists(CHILD), "Escape did not leave HWP5 child editing")
+
+    original_color = target["children"][1]["color"]
+    original_hex = original_color.to_bytes(3,"little").hex().upper()
+    chosen = "00AA55"
+    fill = GROUP + " input"
+    def choose_fill():
+        h.select_object(acc,target,"group")
+        acc.dom_click(GROUP + " summary")
+        acc.d.click(GROUP + " option[value='1']")
+        acc.wait("return !!document.querySelector(arguments[0])",fill)
+        return h.p6.value(acc,fill)
+    h.require(choose_fill()==original_hex,
+              "did not select HWP5 ellipse fill", h.p6.value(acc,fill))
+    h.p6.gso.replace(acc,fill,chosen)
+    acc.dom_click(GROUP + " button")
+    h.revision(acc,"hwp",7)
+    h.require(choose_fill()==chosen,"HWP5 fill edit was not shown",h.p6.value(acc,fill))
+    acc.key("ctrl+z")
+    h.revision(acc,"hwp",8)
+    h.require(choose_fill()==original_hex,"HWP5 fill Undo differs")
+    acc.key("ctrl+y")
+    h.revision(acc,"hwp",9)
+    h.require(choose_fill()==chosen,"HWP5 fill Redo differs")
+    h.publish(acc,"hwp",row)
+
+    after = row["after"] = inspect(path)
+    want_group = {**group,"children":[{**rect0,"x":moved_x,"y":moved_y,
+        "width":resized_width,"height":resized_height},ellipse0]}
+    want_fills = [target["children"][0],
+                  {**target["children"][1],"color":int.from_bytes(bytes.fromhex(chosen),"little")}]
+    expected_target = {**target,"children":want_fills,"groupChildren":want_group}
+    h.require(after=={**before,"frames":[expected_target if item==target else item for item in before["frames"]]},
+              "saved HWP5 group child owner, sibling, or document model changed",after)
+    row["recordProof"] = hwp5_group_records(fixture,path,want_group)
+    h.reopen(acc,path,row)
+    enter_mode(0)
+    h.require(ui_values()==[moved_x,moved_y,resized_width,resized_height],"reopened HWP5 rectangle differs")
+    acc.key("Escape")
+    h.require(choose_fill()==chosen,"reopened HWP5 child fill differs")
+
+
 h.CASES = {
     "P4-DX-CURVE": docx_curve_case,
     "P4-DX-PATH": docx_path_vertex_case,
@@ -1219,6 +1407,7 @@ h.CASES = {
     "P4-H5-POLY-POINT": lambda *args: points_case(*args, "polygon", "hwp"),
     "P4-H5-POLY-EDGES": hwp5_polygon_edges,
     "P4.6": group_child_edit_case,
+    "P4-H5-GROUP": hwp5_group_child_edit_case,
     "P4.6-capture": group_child_capture_case,
 }
 
