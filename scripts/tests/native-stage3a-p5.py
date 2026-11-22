@@ -165,8 +165,9 @@ def story_picture_points(acc, page):
     """, page)
 
 
-def select_story_note(acc, layout, order, name, require_move=True, page_override=None):
+def select_story_note(acc, layout, order, name, require_move=True, page_override=None, expected_description=None):
     page = layout[name]["page"] if page_override is None else page_override
+    expected_description = name if expected_description is None else expected_description
     acc.wait("""
       const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
       return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
@@ -201,8 +202,9 @@ def select_story_note(acc, layout, order, name, require_move=True, page_override
         clickInsideFrame:!!box&&point[1]>=box.left&&point[1]<=box.left+box.width&&point[2]>=box.top&&point[2]<=box.top+box.height,
         moveHandle:!!document.querySelector('[data-testid=object-move]'),
         revision:status?.dataset.revision??null, point, expected:arguments[1]};
-    """,DESCRIPTION,name,point)
-    owner_verified=selected["descriptionEditor"]==name or selected["descriptionDisplay"]==name
+    """,DESCRIPTION,expected_description,point)
+    owner_verified=(selected["descriptionEditor"]==expected_description
+                    or selected["descriptionDisplay"]==expected_description)
     h.require(selected["objectKind"]=="picture" and (not require_move or selected["moveHandle"])
               and selected["clickInsideFrame"] and owner_verified,
               "native hit test selected the wrong note picture or owner",selected)
@@ -535,8 +537,15 @@ def delete_docx_story_pictures(acc, row, fixtures, out):
     story_pages={story["page"] for story in layout.values()}
     h.require(len(story_pages)==1,"body picture page is ambiguous in the story fixture",sorted(story_pages))
     body_page=story_pages.pop()
+    with zipfile.ZipFile(fixture) as original:
+        document=ET.fromstring(original.read("word/document.xml"))
+    body_doc_prs=list(document.iter(WP+"docPr"))
+    h.require(len(body_doc_prs)==1 and bool(body_doc_prs[0].get("descr")),
+              "source document does not have exactly one described body drawing",body_doc_prs)
+    body_description=body_doc_prs[0].get("descr")
     _,body_frame,body_selection=select_story_note(acc,layout,remaining_order,"body",require_move=False,
-                                                   page_override=body_page)
+                                                   page_override=body_page,
+                                                   expected_description=body_description)
     h.require(not body_selection["moveHandle"],"body picture unexpectedly gained a non-body move handle")
     row["remainingBodyPicture"]={"frame":body_frame,"selection":body_selection}
     h.publish(acc,"docx",row)
