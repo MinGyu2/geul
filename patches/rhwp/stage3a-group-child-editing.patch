@@ -224,7 +224,7 @@
  const MAX_RECT_DIM_HU: u32 = 2_000_000;
  const MAX_RECT_VERTEX_HU: i32 = 10_000_000;
  
-@@ -829,6 +1046,172 @@
+@@ -829,7 +1046,173 @@
          Ok(())
      }
  
@@ -394,9 +394,10 @@
 +        })
 +    }
 +
-     /// The editor merges only neighboring, ordinary paragraphs that share
-     /// their exact format definitions. Refuse invisible structure which the
-     /// text/font-run query cannot observe.
+     /// A join keeps the first paragraph's paragraph style; `Paragraph::merge_from`
+     /// appends the later text and its character formatting. Permit different
+     /// paragraph styles only when both sides have fully observable, ordinary text.
+     /// Refuse invisible structure which the text/font-run query cannot observe.
 @@ -3852,4 +4235,99 @@
          assert_eq!(rect.common.width, 7200);
          assert_eq!(rect.x_coords, [100, 100, 100, 100]);

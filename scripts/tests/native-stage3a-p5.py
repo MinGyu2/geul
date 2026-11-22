@@ -803,8 +803,8 @@ def textbox(acc, row, fixtures, out):
     h.require(h.core_shapes(path)["frames"][0]["props"] == after["shape"], "published textbox did not reopen")
 
 
-def textbox_join(acc, row, fixtures, out, span=2, replace=False):
-    name = "a-p5-textbox-paste" if replace else "a-p5-textbox-join" if span == 2 else "a-p5-textbox-range"
+def textbox_join(acc, row, fixtures, out, span=2, replace=False, mixed=False):
+    name = "a-p5-textbox-mix" if mixed else "a-p5-textbox-paste" if replace else "a-p5-textbox-join" if span == 2 else "a-p5-textbox-range"
     fixture = fixtures / f"{name}-original.hwpx"
     before = row["before"] = inspect_box(fixture)
     path = h.begin(acc, row, fixture, out, f"{name}-published.hwpx")
@@ -889,6 +889,43 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False):
                                       if part != section and not part.startswith("Preview/")}
         h.require(unrelated(original) == unrelated(published), "unrelated HWPX parts changed")
         roots = [ET.fromstring(package.read(section)) for package in (original,published)]
+        if mixed:
+            subs = [root.find(".//{*}drawText/{*}subList") for root in roots]
+            h.require(all(sub is not None for sub in subs), "mixed-style textbox XML owner missing")
+            paragraphs = [sub.findall("{*}p") for sub in subs]
+            source_paragraphs, saved_paragraphs = paragraphs
+            h.require(len(source_paragraphs) == 5 and len(saved_paragraphs) == 3,
+                      "mixed-style textbox paragraph count differs", [len(source_paragraphs), len(saved_paragraphs)])
+            h.require(source_paragraphs[1].get("paraPrIDRef") != source_paragraphs[2].get("paraPrIDRef"),
+                      "fixture does not contain different source paragraph formats")
+            owner_attrs = ("id", "paraPrIDRef", "styleIDRef")
+            h.require(all(saved_paragraphs[1].get(name) == source_paragraphs[1].get(name) for name in owner_attrs),
+                      "joined paragraph did not retain the starting paragraph owner and style",
+                      [source_paragraphs[1].attrib, saved_paragraphs[1].attrib])
+
+            def formatted_text(para):
+                result = []
+                for run in para.findall("{*}run"):
+                    text = "".join(node.text or "" for node in run.findall(".//{*}t"))
+                    if text:
+                        result.append((run.get("charPrIDRef"), text))
+                return result
+
+            retained_runs = formatted_text(saved_paragraphs[1])
+            expected_runs = [(source_paragraphs[1].find("{*}run").get("charPrIDRef"), "Bo"),
+                             (source_paragraphs[3].find("{*}run").get("charPrIDRef"), "ain")]
+            h.require(retained_runs == expected_runs,
+                      "saved prefix/suffix no longer use their source character styles", retained_runs)
+            h.require([saved_paragraphs[0].get("id"), saved_paragraphs[2].get("id")]
+                      == [source_paragraphs[0].get("id"), source_paragraphs[4].get("id")],
+                      "unselected boundary paragraph identities changed")
+            row["paragraphStyleInheritance"] = {
+                "sourceParaPrIDRefs": [source_paragraphs[1].get("paraPrIDRef"), source_paragraphs[2].get("paraPrIDRef")],
+                "savedOwner": {name: saved_paragraphs[1].get(name) for name in owner_attrs},
+                "savedText": "".join(node.text or "" for node in saved_paragraphs[1].iter() if node.tag.endswith("}t")),
+                "retainedRuns": [{"charPrIDRef": char_id, "text": text} for char_id, text in retained_runs],
+                "unselectedParagraphIds": [saved_paragraphs[0].get("id"), saved_paragraphs[2].get("id")],
+            }
         for root,count in zip(roots,(span,2 if replace else 1),strict=True):
             sub = root.find(".//{*}drawText/{*}subList")
             for para in sub.findall("{*}p")[1:1+count]:
@@ -907,6 +944,10 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False):
     else:
         place(positions[1])
     acc.text_is("hwpx", edited_text)
+    row["nativeReopenedParagraphText"] = acc.status("hwpx").get("paragraphText")
+    h.require(row["nativeReopenedParagraphText"] == edited_text,
+              "native reopened textbox paragraph differs from the published text",
+              row["nativeReopenedParagraphText"])
 
 
 
@@ -919,6 +960,7 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-DELETE-FRESH-REOPEN": delete_docx_story_pictures_fresh_reopen,
            "P5-DX-SIZE-NONCANON": resize_noncanonical_story_picture,
            "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
+           "P5-TB-MIX": lambda *args: textbox_join(*args, span=3, mixed=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
 

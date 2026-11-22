@@ -1524,7 +1524,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       || !this.ownsPosition(from) || !this.ownsPosition(to)) return false;
     const address = [from.section, box.parentParagraph, box.control] as const;
     const left = text.textBoxParagraph(from), right = text.textBoxParagraph(to);
-    if (!left || !right || left.properties !== right.properties
+    if (!left || !right
       || !Number.isSafeInteger(from.offset) || from.offset < 0 || from.offset > left.styles.length
       || !Number.isSafeInteger(to.offset) || to.offset < 0 || to.offset > right.styles.length) return false;
     const retainedLength = from.offset + right.styles.length - to.offset;

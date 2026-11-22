@@ -788,7 +788,7 @@ print(json.dumps(dict(section=ET.tostring(root, encoding="unicode"), points=poin
 `], { input: bytes, encoding: "utf8" }));
 }
 
-function mixedTextBoxFixture(joinRange?: 2 | 3 | "differentMiddle"): { bytes: Uint8Array; control: number } {
+function mixedTextBoxFixture(joinRange?: 2 | 3 | "differentMiddle" | "tabbedMiddle"): { bytes: Uint8Array; control: number } {
   const fixture = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
   try {
     const created = JSON.parse(fixture.createShapeControl!(JSON.stringify({
@@ -807,9 +807,9 @@ function mixedTextBoxFixture(joinRange?: 2 | 3 | "differentMiddle"): { bytes: Ui
     fixture.splitParagraphInCell(...address, 1, 10);
     fixture.insertTextInCell(...address, 2, 0, "Trailing paragraph");
     if (joinRange) fixture.splitParagraphInCell(...address, 1, 5);
-    if (joinRange === 3 || joinRange === "differentMiddle") {
+    if (joinRange === 3 || joinRange === "differentMiddle" || joinRange === "tabbedMiddle") {
       fixture.splitParagraphInCell(...address, 2, 0);
-      fixture.insertTextInCell(...address, 2, 0, "middle");
+      fixture.insertTextInCell(...address, 2, 0, joinRange === "tabbedMiddle" ? "mid\tdle" : "middle");
       if (joinRange === "differentMiddle") fixture.applyParaFormatInCell!(...address, 2, '{"alignment":"right"}');
     }
     return { bytes: fixture.exportHwpx(), control };
@@ -4010,13 +4010,33 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
       const shape = doc.getShapeProperties!(0, 0, control);
       const untouched = doc.exportHwpx();
       point(1, 0);
-      expect(editor.backspace()).toBe(false); // Different paragraph format on the preceding paragraph.
+      expect(before[0]!.props).not.toBe(before[1]!.props);
+      expect(editor.backspace()).toBe(true); // Start paragraph owns the joined paragraph format.
+      await confirm();
+      const boundaryJoin = paragraphs(doc);
+      const prefixLength = Array.from(before[0]!.text).length;
+      const shiftedRuns = before[1]!.runs.map(([start, end, style]: number[]) => [start! + prefixLength, end! + prefixLength, style]);
+      expect(boundaryJoin[0]).toEqual({ ...before[0], text: before[0]!.text + before[1]!.text,
+        runs: [...before[0]!.runs, ...shiftedRuns] });
+      expect(boundaryJoin.slice(1)).toEqual(before.slice(2));
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+
       point(0, 2);
       point(span, 2, true);
-      expect(editor.deleteForward()).toBe(false); // An incompatible paragraph anywhere in the range.
-      expect(editor.localRevision).toBe(0);
-      expect(editor.hasUnpreservedChanges).toBe(false);
-      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(editor.deleteForward()).toBe(true); // Different formats keep the first paragraph's owner.
+      await confirm();
+      const mixedDelete = paragraphs(doc);
+      expect(mixedDelete).toEqual([
+        { ...before[0], text: "Fiain", runs: [[0, 2, 0], [2, 5, 2]] }, before[span + 1],
+      ]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+      expect(editor.localRevision).toBe(4);
+      expect(editor.hasUnpreservedChanges).toBe(true); // Revisions remain dirty after the four accepted edit/undo transactions.
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: true });
       expect(doc.exportHwpx()).toEqual(untouched);
 
       if (span === 2) {
@@ -4155,20 +4175,67 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
-  it("Stage 3-A refuses a fully selected incompatible HWPX text box paragraph", async () => {
+  it("Stage 3-A edits a mixed-format HWPX text box range with first-paragraph inheritance", async () => {
     const { bytes, control } = mixedTextBoxFixture("differentMiddle");
     const { editor, doc } = await setup("hwpx", bytes);
+    const address = [0, 0, control, 0] as const;
+    const paragraphs = (file: RhwpDocument) => Array.from({ length: file.getCellParagraphCount(...address) }, (_, p) => {
+      const n = file.getCellParagraphLength(...address, p);
+      return { text: file.getTextInCell(...address, p, 0, n), props: file.getCellParaPropertiesAt!(...address, p),
+        runs: JSON.parse(file.getFormattingRuns!(...address, p, 0, n)).runs };
+    });
     try {
+      const before = paragraphs(doc);
+      expect(before[1]!.props).not.toBe(before[2]!.props);
+      expect(before.map(p => p.text)).toEqual(["First paragraph", "Bold ", "middle", "plain", "Trailing paragraph"]);
+      const shape = doc.getShapeProperties!(0, 0, control);
+      const original = doc.exportHwpx();
       const start = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 1, 2));
       const end = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 3, 2));
-      const before = doc.exportHwpx();
       expect(editor.pointAt(start.pageIndex, start.x + 0.1, start.y + start.height / 2, false)).toBe(true);
       expect(editor.pointAt(end.pageIndex, end.x + 0.1, end.y + end.height / 2, true)).toBe(true);
       expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 3 }, offset: 2 });
+      expect(editor.deleteForward()).toBe(true);
+      await confirm();
+      const after = paragraphs(doc);
+      expect(after).toEqual([before[0], { ...before[1], text: "Boain", runs: [[0, 2, 1], [2, 5, 2]] }, before[4]]);
+      expect(doc.getShapeProperties!(0, 0, control)).toBe(shape);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(after);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(paragraphs(reopened)).toEqual(after);
+          expect(reopened.getShapeProperties!(0, 0, control)).toBe(shape);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p5-textbox-mix-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p5-textbox-mix-edited.hwpx"), output);
+          writeFileSync(resolve(out, "a-p5-textbox-mix-report.json"), report);
+        }
+      } finally { exported.free(); }
+      expect(original).not.toEqual(doc.exportHwpx());
+    } finally { editor.dispose(); }
+  });
+
+  it("Stage 3-A rejects a mixed-format text box range containing a tab atomically", async () => {
+    const { bytes, control } = mixedTextBoxFixture("tabbedMiddle");
+    const { editor, doc } = await setup("hwpx", bytes);
+    try {
+      const before = doc.exportHwpx();
+      const start = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 1, 2));
+      const end = JSON.parse(doc.getCursorRectInCell(0, 0, control, 0, 3, 2));
+      expect(editor.pointAt(start.pageIndex, start.x + 0.1, start.y + start.height / 2, false)).toBe(true);
+      expect(editor.pointAt(end.pageIndex, end.x + 0.1, end.y + end.height / 2, true)).toBe(true);
       expect(editor.deleteForward()).toBe(false);
-      expect(await editor.executeClipboard("edit.paste", () => true, {
-        readText: async () => "replacement", writeText: async () => undefined,
-      })).toBe(false);
       expect(editor.localRevision).toBe(0);
       expect(editor.hasUnpreservedChanges).toBe(false);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
