@@ -165,14 +165,14 @@ def story_picture_points(acc, page):
     """, page)
 
 
-def select_story_note(acc, layout, order, name, require_move=True):
-    where = layout[name]
+def select_story_note(acc, layout, order, name, require_move=True, page_override=None):
+    page = layout[name]["page"] if page_override is None else page_override
     acc.wait("""
       const canvas = document.querySelectorAll('.docx-page canvas')[arguments[0]];
       return canvas?.width > 0 && canvas.parentElement.dataset.current === 'true' &&
         canvas.parentElement.dataset.revision === document.querySelector('[data-testid=docx-status]').dataset.revision;
-    """, where["page"])
-    points = story_picture_points(acc, where["page"])
+    """, page)
+    points = story_picture_points(acc, page)
     h.require(len(points)==len(order), "note fixture picture scan differs", points)
     point=points[order.index(name)]
     x,y=acc.d.js("""
@@ -531,7 +531,12 @@ def delete_docx_story_pictures(acc, row, fixtures, out):
 
     remaining_order=tuple(item for item in order if item not in removed)
     h.require(remaining_order==("body",),"story deletion removed an unrelated drawing",remaining_order)
-    _,body_frame,body_selection=select_story_note(acc,layout,remaining_order,"body",require_move=False)
+    # The body picture has no linked-story layout entry; derive its shared page from the fixture stories.
+    story_pages={story["page"] for story in layout.values()}
+    h.require(len(story_pages)==1,"body picture page is ambiguous in the story fixture",sorted(story_pages))
+    body_page=story_pages.pop()
+    _,body_frame,body_selection=select_story_note(acc,layout,remaining_order,"body",require_move=False,
+                                                   page_override=body_page)
     h.require(not body_selection["moveHandle"],"body picture unexpectedly gained a non-body move handle")
     row["remainingBodyPicture"]={"frame":body_frame,"selection":body_selection}
     h.publish(acc,"docx",row)
