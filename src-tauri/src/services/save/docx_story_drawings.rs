@@ -209,10 +209,10 @@ pub(crate) fn move_source_supported(source: &[u8], export: &[u8], count: usize) 
     pictures == count
 }
 
-/// Admit only one note-picture placement change. The target picture, character run properties,
-/// drawing body, note id, relationship, document note references, and every paragraph/run outside
-/// that picture must remain intact. This covers inline-to-square movement and subsequent movement
-/// of a WordCraft-authored square anchor.
+/// Admit one note-picture placement change in each of the linked footnote and endnote parts.
+/// Each part is proved independently: the target picture, character run properties, drawing body,
+/// note id, relationship, document note references, and every paragraph/run outside that picture
+/// must remain intact. Multiple moves in either part remain unsupported.
 pub(super) fn moved_note_picture_edits(original: &Package, output: &Package) -> BTreeSet<String> {
     if original.get(DOCUMENT_XML) != output.get(DOCUMENT_XML)
         || !same_story_references(original, output)
@@ -222,26 +222,27 @@ pub(super) fn moved_note_picture_edits(original: &Package, output: &Package) -> 
     let Some(stories) = linked_stories(original, output) else {
         return BTreeSet::new();
     };
-    let mut admitted = None;
+    let mut admitted = BTreeSet::new();
+    let mut admitted_kinds = BTreeSet::new();
     for (part, root, note) in stories {
-        if note.is_none() {
+        let Some(note) = note else {
             continue;
-        }
+        };
         let (Some(before), Some(after)) = (original.get(&part), output.get(&part)) else {
             return BTreeSet::new();
         };
         if before == after {
             continue;
         }
-        if admitted.is_some() {
+        if !matches!(note, "footnote" | "endnote") || !admitted_kinds.insert(note) {
             return BTreeSet::new();
         }
         let Some(images) = owned_images(original, output, &part) else {
             return BTreeSet::new();
         };
         let (Some(before), Some(after)) = (
-            normalize_story(before, root, note, &images),
-            normalize_story(after, root, note, &images),
+            normalize_story(before, root, Some(note), &images),
+            normalize_story(after, root, Some(note), &images),
         ) else {
             return BTreeSet::new();
         };
@@ -279,9 +280,9 @@ pub(super) fn moved_note_picture_edits(original: &Package, output: &Package) -> 
         if changed != 1 {
             return BTreeSet::new();
         }
-        admitted = Some(part);
+        admitted.insert(part);
     }
-    admitted.into_iter().collect()
+    admitted
 }
 
 fn safe_note_move(before: &PicturePlacement, after: &PicturePlacement) -> bool {

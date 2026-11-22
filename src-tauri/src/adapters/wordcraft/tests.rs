@@ -8986,6 +8986,137 @@ fn stage3a_moves_docx_pictures_within_owned_notes() {
             "T009 rejects an unsupported note picture wrap change"
         );
     }
+
+    // The Native scenario publishes both moves in one document revision. Exercise that exact
+    // transaction: separate per-part checks do not prove the combined OPC comparison admits it.
+    let mut composite = DocxModel::open(&original).unwrap();
+    let mut after_footnote = None;
+    for (part_kind, _, label, _) in stories {
+        let current = composite.export().unwrap();
+        let mut reader = Session::new(io::open_bytes("note-move.docx", &current).unwrap());
+        let layout = reader.layout();
+        let id = *baseline
+            .doc
+            .parts
+            .iter()
+            .find(|(_, data)| data.kind == part_kind)
+            .unwrap()
+            .0;
+        let story = StoryRef::Part(id);
+        let hit = layout
+            .find_object(0, |object| object.story == story)
+            .expect("composite note picture remains in its owner");
+        let destination = layout
+            .pages
+            .iter()
+            .enumerate()
+            .find_map(|(page, placed)| {
+                placed.items.iter().find_map(|item| match item {
+                    wordcraft_engine::layout::Placed::Lines {
+                        story: owner,
+                        path,
+                        l0: 0,
+                        x,
+                        y,
+                        ..
+                    } if *owner == story && *path == Path::top(1) => Some((page, *x, *y)),
+                    _ => None,
+                })
+            })
+            .expect("composite note target paragraph is laid out");
+        let click = DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + hit.rect.w / 2.0,
+            y: hit.rect.y + hit.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
+        assert_eq!(composite.apply(&[click]).changed, 0);
+        let object = serde_json::to_value(composite.view()).unwrap()["object"].clone();
+        let position = object["position"].as_str().unwrap().to_owned();
+        let epoch = object["epoch"].as_u64().unwrap();
+        let movement = DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(destination.1),
+                y: Some(destination.2),
+                width: None,
+                height: None,
+            },
+        };
+        assert_eq!(composite.apply(&[movement]).changed, 1, "{label} composite move rejected");
+        if part_kind == PartKind::Footnote {
+            after_footnote = Some(composite.export().unwrap());
+        }
+    }
+    let combined = composite.export().unwrap();
+    assert!(composite.same_as(&combined));
+    let after_footnote = after_footnote.expect("footnote movement was applied first");
+    assert_eq!(composite.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), after_footnote);
+    assert_eq!(composite.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), original);
+    assert_eq!(composite.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), after_footnote);
+    assert_eq!(composite.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(composite.export().unwrap(), combined);
+    assert!(
+        service::check_saved(Format::Docx, &original, &combined, None, true).is_safe(),
+        "T009 must independently prove a footnote and endnote move in one save"
+    );
+    let original_package = package::open(&original, package::Side::Original).unwrap();
+    let combined_package = package::open(&combined, package::Side::Output).unwrap();
+    assert_eq!(
+        original_package.parts.keys().collect::<Vec<_>>(),
+        combined_package.parts.keys().collect::<Vec<_>>(),
+        "composite note movement cannot change the OPC inventory"
+    );
+    for (part_kind, _, _, part) in stories {
+        assert_ne!(original_package.get(part), combined_package.get(part));
+        let id = *baseline
+            .doc
+            .parts
+            .iter()
+            .find(|(_, data)| data.kind == part_kind)
+            .unwrap()
+            .0;
+        let reopened = io::open_bytes("note-move.docx", &combined).unwrap();
+        let note = reopened.parts.get(&id).expect("the same note id must reopen");
+        let target = match note.blocks[1].as_ref() {
+            wordcraft_engine::doc::Block::Para(para) => para,
+            _ => panic!("the composite note target paragraph changed shape"),
+        };
+        let moved = target
+            .object_offsets()
+            .into_iter()
+            .find(|&off| matches!(target.object_at(off), Some(InlineObject::Image { .. })))
+            .expect("both moved pictures reopen in their destination paragraph");
+        assert_eq!(target.props_of_char(moved).size, Some(24.0));
+        assert_eq!(target.props_of_char(moved).italic, Some(true));
+    }
+    for name in original_package.parts.keys().filter(|name| {
+        name.as_str() != "word/footnotes.xml" && name.as_str() != "word/endnotes.xml"
+    }) {
+        assert_eq!(
+            original_package.get(name),
+            combined_package.get(name),
+            "composite note movement changed unrelated OPC part: {name}"
+        );
+    }
+    let mut unauthorized = package::open(&combined, package::Side::Output).unwrap();
+    let (_, bytes) = unauthorized.parts.get_mut("word/endnotes.xml").unwrap();
+    let xml = std::str::from_utf8(bytes).unwrap();
+    assert!(xml.contains("endnote destination paragraph"));
+    *bytes = xml
+        .replacen("endnote destination paragraph", "unauthorized note text", 1)
+        .into_bytes();
+    assert!(
+        !package::compare_saved_docx(&original_package, &unauthorized).is_empty(),
+        "a valid footnote move cannot authorize unrelated endnote content changes"
+    );
 }
 
 #[test]
