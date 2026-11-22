@@ -1,0 +1,97 @@
+{
+  "date": "2026-11-23",
+  "baselineHead": "8cb90173c64ab8e057e1b30ec01fcaf67484c218",
+  "implementationCommit": "096be6cd3e2c3c466b82bd478f51a378a7928b3c",
+  "feature": "P5-TB-MIX mixed-format HWPX textbox range deletion and paragraph join",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "Top-level, uncaptioned HWPX body text boxes with no more than 64 non-empty paragraphs whose text topology is fully observable. Delete may join ordinary paragraphs with different paragraph-shape/style references. The joined paragraph retains the starting paragraph identity, paraPrIDRef and styleIDRef; retained prefix/suffix character runs keep their source character formatting. The edit is one Undo/Redo transaction.",
+  "refused": "HWP5; captioned or grouped text boxes; more than 64 paragraphs; empty text; page/column or unobservable raw break structure; controls, field/range/title/markpen markers, extended tabs, tab characters, HWPX text topology or numbering restart; cross-paragraph IME/clipboard replacement. Unsupported topology fails before mutation.",
+  "release": {
+    "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "generation": "6f8cde0ed91e2fe27d1055df86e7499c4496a31443ca2bbd7e995316e53f5cad",
+    "artifacts": {
+      "rhwp.js": "0d5300276a71ea01db94ffbf8a4aa45e3b285dddbe0c053f82e28b093df8f986",
+      "rhwp_bg.wasm": "4ab10cb4f8db3903973c60e7718ef7af588ef81c9e20b186afbe90d6c3c781dd"
+    }
+  },
+  "checks": {
+    "releaseWasm": "scripts/tests/stage3-shapes.wasm.test.ts focused mixed-format/range/tab-refusal regression: 5 PASS, 75 skipped.",
+    "typecheck": "npm run typecheck — PASS.",
+    "rhwpRelease": "Ordered RHWP patch-series Release WASM rebuild — PASS; generation and artifact hashes recorded above.",
+    "transaction": "Mixed-format Delete, Undo and Redo preserve the original model after undo and reproduce the joined state after redo. Tab-containing mixed selection is rejected atomically with byte-identical export, unchanged revision/history and no unpreserved mutation.",
+    "saveCheck": "T009 save_check — safe, findings []. Native save result: saved, synced=true, changedSince=false, revision=3.",
+    "independentOpcXml": "Package inventory exact. Nine non-preview OPC entries outside section0 are byte-identical; section XML outside the edited textbox paragraphs and generated line layout is preserved. Source 5 textbox paragraphs become 3. Joined paragraph id 2 keeps paraPrIDRef 20/styleIDRef 0 and text Boain; retained Bo and ain runs keep charPrIDRef 7 and 8. Unselected paragraph IDs 1 and 5, textbox geometry and body are unchanged.",
+    "independentReopen": "A separate RHWP load of the saved HWPX confirms paragraph text, paragraph properties, retained character runs and textbox shape. The actual Release app closes and opens the saved file, then pointer-selects the joined paragraph and verifies rendered text Boain.",
+    "diffCheck": "git diff --check — PASS."
+  },
+  "nativeX11": {
+    "build": "Guarded Release build with VITE_GEUL_TEST_HOOKS=1; frontend manifest mode=production and the sole test flag is the read-only paragraphText UI diagnostic. Privacy and runtime-path checks PASS; portability NOT VERIFIED.",
+    "appSha256": "5ebbc6c493d719a73004a37ba9844804ee51bb6e61f68bf0041e287fad83dc53",
+    "os": "Linux-7.2.14-arch1-1-x86_64 with glibc 2.44",
+    "session": "Linux X11/Xvfb with IBus 1.5.33 and ibus-hangul 1.5.5; actual trusted pointer and keyboard input.",
+    "case": {
+      "id": "P5-TB-MIX",
+      "status": "PASS",
+      "fixture": "a-p5-textbox-mix-original.hwpx",
+      "fixtureSha256": "b81c12841f409958d7931fca9f7a73ae81aa2a32aea5c44c9df082c02d622852",
+      "saved": "a-p5-textbox-mix-published.hwpx",
+      "savedSha256": "43ab5b3cff7fb324e725e65fd4c193f750fe32cb6bbecf2b17709a228f445691",
+      "undoRedo": "Native Delete, Undo and Redo passed; save revision 3.",
+      "save": {
+        "state": "saved",
+        "synced": "true",
+        "changedSince": "false",
+        "findings": "",
+        "revision": "3"
+      },
+      "paragraphStyleInheritance": {
+        "sourceParaPrIDRefs": [
+          "20",
+          "21"
+        ],
+        "savedOwner": {
+          "id": "2",
+          "paraPrIDRef": "20",
+          "styleIDRef": "0"
+        },
+        "savedText": "Boain",
+        "retainedRuns": [
+          {
+            "charPrIDRef": "7",
+            "text": "Bo"
+          },
+          {
+            "charPrIDRef": "8",
+            "text": "ain"
+          }
+        ],
+        "unselectedParagraphIds": [
+          "1",
+          "5"
+        ]
+      },
+      "nativeReopenedParagraphText": "Boain"
+    },
+    "cleanup": {
+      "complete": true,
+      "proven": true,
+      "filesystemProven": true,
+      "exit": 0,
+      "survivors": []
+    }
+  },
+  "outputs": {
+    "fixture": "target/p5-tb-mix-wasm/a-p5-textbox-mix-original.hwpx",
+    "wasmEdited": "target/p5-tb-mix-wasm/a-p5-textbox-mix-edited.hwpx",
+    "opcInspection": "target/p5-tb-mix-wasm/opc-inspection.json",
+    "nativeResult": "target/p5-tb-mix-x11-result-verified/result.json",
+    "nativeCleanup": "target/p5-tb-mix-x11-session-verified/cleanup.json"
+  },
+  "otherPlatforms": {
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macOS": "NOT RUN",
+    "externalOffice": "NOT RUN",
+    "portability": "NOT VERIFIED — Nix runtime dependencies"
+  }
+}
