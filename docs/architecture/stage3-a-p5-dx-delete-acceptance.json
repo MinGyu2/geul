@@ -1,0 +1,93 @@
+{
+  "date": "2026-11-23",
+  "feature": "P5-DX-DELETE",
+  "category": "B",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "a93c1376ebfb45589ad40ba486a1764ec1ed4ae4",
+  "verificationHead": "71ba116bf32adbed26c6c57b9b1eee2e874deaba",
+  "harnessFixCommits": [
+    "8fbc2b49f0cd06330a65e118fc45b14405d4fc41",
+    "f512f0dad5ec70f5c7c430831351ea045e3eb240",
+    "71ba116bf32adbed26c6c57b9b1eee2e874deaba"
+  ],
+  "wordcraftSourceCommit": "d945a5bcac9f9e8f2cfe4cea39a055a8fbf6fb8c",
+  "previousWordcraftPin": "c2338a2b5e5dd7f9fd0439940f1df2ff5b467728",
+  "wordcraftPin": "d945a5bcac9f9e8f2cfe4cea39a055a8fbf6fb8c",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "supported": "DOCX의 연결된 header/footer/footnote/endnote story 안에서 실제 story part에 소유된 picture를 삭제한다. 표 셀 안 footer 그림도 지원한다. DrawingML source IDs와 owner를 보존하고, 허가된 deletion에서 삭제 대상 run만 제거한다.",
+  "refused": "오래되었거나 다른 story를 가리키는 주소, unsupported/OLE 또는 모호한 picture owner, 무관 story text·media·relationship/package 변경은 mutation 없이 거부한다. 각 변경 story part의 picture run 하나만 한 저장 비교에서 삭제를 허용하며, 해당 story 관계 part는 삭제된 그림의 단일 image relationship만 소유할 때만 제거한다.",
+  "preservation": [
+    "word/document.xml과 body picture 및 note references 불변",
+    "footnote/endnote IDs, internal text, numbering 및 story ownership 불변",
+    "각 변경 story에서 삭제 대상 외 picture DrawingML IDs, run properties, placement와 story events 불변",
+    "남은 OPC parts와 relationships, media bytes 불변; shared media는 보존",
+    "Undo/Redo, T009 atomic rejection, same-session reopen 및 separate-process reopen"
+  ],
+  "checks": {
+    "wordcraftDocxRoundtrip": "PASS: `cargo test --locked -p wordcraft-docx --test roundtrip`, 52/52.",
+    "wordcraftXtaskCi": "PASS 6/6 on exact WordCraft pin d945a5bc: formatting, workspace Clippy -D warnings, workspace tests, assets, layers, WASM.",
+    "geulFocusedRust": "PASS 1/1: `stage3a_deletes_docx_pictures_from_owned_stories`; includes header/footer/footnote/endnote owner deletion, nested footer table path, Undo/Redo, combined T009, unrelated text/media rejection.",
+    "storyMoveRegressions": "PASS: related header/footer and footnote/endnote movement regressions in the focused Stage 3-A run.",
+    "wordcraftReproducibility": "PASS 1/1: `python3 -m unittest scripts.tests.test_wordcraft_reproduction`; fresh clone fetched only public base, rebuilt ordered commits exactly to d945a5bc, no alternates, clean worktree and offline compile.",
+    "guardedRelease": "PASS: `python3 scripts/tauri-geul.py build --no-bundle`, built at implementation commit a93c1376; exact WordCraft d945 engine and geul adapter compiled. Privacy/runtime-path PASS. App SHA-256 c053e3c2c1c6d38f57d66a1a61316c88ffa098ebf9ca5a7de45ba3f9664605bf; x86_64, 63,256,072 bytes. Portability outside Nix runtime NOT VERIFIED.",
+    "nativeHarnessSyntax": "PASS: `python3 -m py_compile scripts/tests/native-stage3a-p5.py` after final harness corrections.",
+    "nativeX11Delete": "PASS: actual Linux X11/Xvfb run07; four story pictures selected by owner and deleted using trusted native pointer events, per-picture Undo/Redo, T009 saved/synced with changedSince=false and no findings, independent OPC/relationship/media/note inspection, same-session clean reopen and unchanged retained body-picture geometry.",
+    "nativeX11FreshProcess": "PASS: actual run08 opened the exact saved DOCX in a distinct app PID, clean/unpreserved=false, body-picture owner and rendered frame match.",
+    "nativeCleanup": "PASS: run07/run08 cleanup manifests complete=true, exit=0, proven=true, filesystemProven=true, survivors=[]. WebDriver cleanup also complete with no survivors.",
+    "geulRustfmt": "FAIL: repository-wide `rustfmt --check` reports pre-existing formatting drift across unrelated Rust files; no broad unrelated rewrite was applied.",
+    "unrelatedP6HxDxRegression": "FAIL observed during broad Stage 3-A run: `stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import` differs at Field(shape). Tracked for open P6-HX-DX-MORE; not part of the story deletion path and remains to be fixed during P6.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN."
+  },
+  "limitations": [
+    "One picture run per changed story part is admitted in a single saved-package comparison; unrelated or ambiguous edits fail closed.",
+    "Wayland, Windows, macOS and external Office interoperability were not tested.",
+    "The Release runtime references Nix store libraries; Debian/Ubuntu portability is not established."
+  ],
+  "nativeEvidence": {
+    "environment": "Linux x86_64 X11/Xvfb, private test-owned X11/DBus/IBus, actual Release Tauri application and trusted native pointer input.",
+    "applicationCodeCommit": "a93c1376ebfb45589ad40ba486a1764ec1ed4ae4",
+    "harnessHead": "71ba116bf32adbed26c6c57b9b1eee2e874deaba",
+    "appSha256": "c053e3c2c1c6d38f57d66a1a61316c88ffa098ebf9ca5a7de45ba3f9664605bf",
+    "fixtureSha256": "f896dd34e55a90e04109acd5f27b52f5c2d5b7e03457869d55d4f4d7e0e227ca",
+    "publishedSha256": "da99473aa69d6f12b350ccb2867ae771ef7fffb08fffdd43ee6d4e4247299c39",
+    "deleteRun": {
+      "case": "P5-DX-DELETE",
+      "appPid": 506763,
+      "resultFile": "target/p5-dx-delete-x11-run-07/result.json",
+      "cleanupFile": "target/p5-dx-delete-x11-session-07/cleanup.json",
+      "status": "PASS",
+      "saveState": "saved; synced=true; changedSince=false; findings empty",
+      "deletedStories": ["header", "endnote", "footnote", "footer"],
+      "trustedPointerEvents": true,
+      "undoRedoPerStory": true,
+      "changedStoryParts": ["word/header1.xml", "word/footer1.xml", "word/footnotes.xml", "word/endnotes.xml"],
+      "removedRelationshipParts": ["word/_rels/header1.xml.rels", "word/_rels/footer1.xml.rels", "word/_rels/footnotes.xml.rels", "word/_rels/endnotes.xml.rels"],
+      "unchangedMedia": {"word/media/image1.png": "e2f0acaa68ee5654dc129fb96f537de9f12f7ac30b1cdb51f1f8ab5cd51f71b2"},
+      "preservedNoteIds": {"footnote": ["-1", "0", "1"], "endnote": ["-1", "0", "1"]},
+      "sameSessionReopen": {
+        "dirty": false,
+        "unpreserved": false,
+        "bodyPictureFrame": {"left": 96.0, "top": 256.265587, "width": 37.333333, "height": 29.333333},
+        "bodyPictureDescription": "body picture",
+        "bodyMoveHandle": false
+      }
+    },
+    "freshProcessRun": {
+      "case": "P5-DX-DELETE-FRESH-REOPEN",
+      "appPid": 507126,
+      "previousAppPid": 506763,
+      "resultFile": "target/p5-dx-delete-x11-run-08/result.json",
+      "cleanupFile": "target/p5-dx-delete-x11-session-08/cleanup.json",
+      "status": "PASS",
+      "savedPackageSha256": "da99473aa69d6f12b350ccb2867ae771ef7fffb08fffdd43ee6d4e4247299c39",
+      "appSha256": "c053e3c2c1c6d38f57d66a1a61316c88ffa098ebf9ca5a7de45ba3f9664605bf",
+      "cleanReadOnlyOpen": true,
+      "bodyPictureFrame": {"left": 96.0, "top": 256.265587, "width": 37.333333, "height": 29.333333},
+      "bodyPictureDescription": "body picture",
+      "bodyMoveHandle": false
+    }
+  },
+  "push": "NOT PERFORMED"
+}
