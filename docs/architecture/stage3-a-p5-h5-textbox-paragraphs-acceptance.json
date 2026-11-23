@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-23",
+  "baselineHead": "56071945f457b04dfa52115256f0eb3a91523262",
+  "implementationCommit": "906d7aa8c118587067157a3f8f8d5ba7629a2f66",
+  "feature": "P5-H5-TB HWP5 text-box paragraph split and adjacent boundary merge",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "SAFE HWP5 Section0 body-owned top-level flat unlocked uncaptioned text boxes with no more than 64 ordinary, non-empty paragraphs. Enter at an interior caret splits one paragraph into adjacent paragraphs; Backspace at the adjacent paragraph boundary merges them. The split gets a globally unique paragraph instance ID. Paragraph/list counts, owner, record nesting/control levels, paragraph/style references, character-shape runs, paragraph raw tails, siblings and outer object geometry are preserved. HWPX behavior remains under its previous limits.",
+  "refused": "Empty or structurally marked paragraphs; controls, fields, tabs, break/topology metadata, captions, groups, locks, ambiguous ownership, more than 64 paragraphs, HWP5 cross-paragraph selection/replacement or paste, and non-adjacent paragraph joins. Unsupported inputs fail before mutation.",
+  "rhwpRelease": {
+    "submodulePin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "orderedPatchCount": 49,
+    "lastPatch": "patches/rhwp/stage3a-textbox-paragraph-join.patch",
+    "lastPatchSha256": "20aa195e567e1ce8f382607f1b4f4e3da97049a2d8f468b7e1942240ffa90944",
+    "sourceTreeSha256": "ef27b4cf8cb0430146d761aef75fef2ca45a87b80ba6fe161b27acdd1b8634a4",
+    "generation": "60c876bc0837e70327621679a01bdddf367df641a08535e600436331a68d1ae3",
+    "artifacts": {
+      "rhwp.js": "7e21cebb72d84f61c5224e7509ec322e563645e8bc4243b5c8ed45e21a1b56fa",
+      "rhwp_bg.wasm": "533578c0355866feda366310071303ea4b5dfe9abf963af7fd2257875b5488f3"
+    },
+    "productVerification": "PASS: dist/rhwp Release product matches the exact immutable generation; public/rhwp pointer was not changed."
+  },
+  "checks": {
+    "releaseWasm": "PASS 1, skipped 80: splits and merges ordinary HWP5 text-box paragraphs, verifies Undo/Redo, source paragraph runs/properties and split/merged HWP5 reopen. Existing HWPX mixed-style split and adjacent join regressions PASS 2/2 after provisioning the test output directory; the initial invocation completed assertions but reported ENOENT while writing artifacts.",
+    "typecheck": "PASS: npm run typecheck after the TypeScript session and RHWP binding changes.",
+    "releaseT009": "PASS 1/1: release_hwp5_textbox_split_merge_accepts_only_proven_story_changes. Proves original→split, split→merge and original→merge; same-session second-save preview rebuild from exact reopened raster; rejects preview-only publication, changed text, geometry mutation, duplicate split ID and reuse of the deleted paragraph ID elsewhere in the CFB.",
+    "nativeX11": "PASS: actual protected Release Tauri app on isolated Linux X11/Xvfb; trusted pointer enters the owned text box; split and merge each report saved/synced=true/findings empty; Undo/Redo; independent CFB stream and record proof; fresh process reopen.",
+    "tauriRelease": {
+      "command": "GEUL_RHWP_TEST_ARTIFACTS=target/p5-h5tb-rhwp-store-v2 python scripts/tauri-geul.py build --no-bundle",
+      "result": "PASS",
+      "appSha256": "4f3b874a8bfad8c3b7e5c7d23de4229c30effc0071600f106a55501c498f1030",
+      "privacyStatus": "PASS",
+      "runtimePathStatus": "PASS",
+      "portabilityStatus": "NOT VERIFIED — Nix store runtime dependencies",
+      "frontend": "production, testFlags={}"
+    },
+    "diffCheck": "PASS: git diff --check and git diff --check --cached before commit."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb with isolated test-owned D-Bus and IBus Hangul; real Tauri app, trusted pointer events and GTK keyboard input.",
+    "resultFile": "target/p5-h5tb-x11-run-product10/result.json",
+    "sessionFile": "target/p5-h5tb-x11-session-product10/session.json",
+    "cleanupFile": "target/p5-h5tb-x11-session-product10/cleanup.json",
+    "appSha256": "4f3b874a8bfad8c3b7e5c7d23de4229c30effc0071600f106a55501c498f1030",
+    "fixture": "target/p5-h5tb-wasm-v2/p5-h5tb-original.hwp",
+    "fixtureSha256": "3b01b2da8820751863ec64be4d7c4ae0adbddcc411a929b9997c14dd64bee2dc",
+    "rhwpGeneration": "60c876bc0837e70327621679a01bdddf367df641a08535e600436331a68d1ae3",
+    "savedSha256": "ee218459165ab3f324284849662d70268aa85564fe3f13b0950a7fc13cf657a7",
+    "trustedCaret": "0:0:4@textbox/2/0/0",
+    "undoRedo": "PASS: split undo/redo and merge undo/redo; final revision 6.",
+    "splitDiskProof": {
+      "changedStreams": ["BodyText/Section0", "PrvImage"],
+      "listHeaderParagraphCount": [1, 2],
+      "paragraphIds": [0, 1],
+      "ownerSha256": "0d6ea61615617429a1bc2795c570afc19d5bae07e3d142489687a0dcebb7b663"
+    },
+    "mergeDiskProof": {
+      "changedStreams": ["BodyText/Section0", "PrvImage"],
+      "listHeaderParagraphCount": [1, 1],
+      "paragraphIds": [0],
+      "ownerSha256": "0d6ea61615617429a1bc2795c570afc19d5bae07e3d142489687a0dcebb7b663"
+    },
+    "freshProcess": {
+      "editPid": 937676,
+      "reopenPid": 937866,
+      "status": "PASS: saved paragraphs, body, shape identity/geometry, exact RHWP generation, clean revision, textbox caret and rendered screenshot verified.",
+      "renderedScreenshotSha256": "58d88ada149399b2fb5b4e0e755e54795b792ff864f33d8df92568a84b4dfaa61"
+    },
+    "cleanup": "PASS: complete=true, proven=true, filesystemProven=true, exit=0, no survivors/processErrors."
+  },
+  "implementation": {
+    "commit": "906d7aa8c118587067157a3f8f8d5ba7629a2f66",
+    "commitMessage": "feat(stage3-p5): split and merge HWP5 textbox paragraphs [P5-H5-TB]",
+    "parentAtAcceptance": "56071945f457b04dfa52115256f0eb3a91523262",
+    "push": "NOT PERFORMED"
+  },
+  "otherPlatforms": {
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macOS": "NOT RUN",
+    "externalOffice": "NOT RUN",
+    "portability": "NOT VERIFIED — Nix runtime dependencies"
+  }
+}
