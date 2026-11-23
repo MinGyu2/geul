@@ -179,7 +179,8 @@ fn plain_textbox(rs: &[Record<'_>]) -> bool {
 pub(super) fn textbox_edit_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
     plain_textbox(old)
         && plain_textbox(new)
-        && old[..3] == new[..3]
+        && old[..2] == new[..2]
+        && old[2].2[4..] == new[2].2[4..]
         && old.last() == new.last()
         && old != new
 }
@@ -203,11 +204,177 @@ pub(super) fn textbox_story<'a, 'b>(
     })
 }
 
+fn textbox_paragraph_content(rs: &[Record<'_>]) -> Option<(Vec<u16>, Vec<(usize, u32)>)> {
+    let text_records: Vec<_> = rs
+        .iter()
+        .filter(|record| record.0 == 67 && record.1 == 4)
+        .collect();
+    if text_records.len() != 1 {
+        return None;
+    }
+    let encoded = text_records[0].2.strip_suffix(&[13, 0])?;
+    if encoded.is_empty() || encoded.len() % 2 != 0 {
+        return None;
+    }
+    let text: Vec<u16> = encoded
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect();
+    if text.iter().any(|unit| *unit < 32) {
+        return None;
+    }
+    let shape_records: Vec<_> = rs
+        .iter()
+        .filter(|record| record.0 == 68 && record.1 == 4)
+        .collect();
+    if shape_records.len() != 1 || shape_records[0].2.len() % 8 != 0 {
+        return None;
+    }
+    let runs: Vec<(usize, u32)> = shape_records[0]
+        .2
+        .chunks_exact(8)
+        .map(|run| {
+            Some((
+                u32::from_le_bytes(run[..4].try_into().ok()?) as usize,
+                u32::from_le_bytes(run[4..].try_into().ok()?),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if runs.first().is_none_or(|run| run.0 != 0)
+        || runs.windows(2).any(|pair| pair[0].0 >= pair[1].0)
+        || runs.iter().any(|run| run.0 > text.len())
+    {
+        return None;
+    }
+    Some((text, runs))
+}
+
+fn textbox_char_shape(runs: &[(usize, u32)], offset: usize) -> Option<u32> {
+    runs.iter()
+        .take_while(|run| run.0 <= offset)
+        .last()
+        .map(|run| run.1)
+}
+
+fn textbox_content_matches(
+    source: &[Record<'_>],
+    first: &[Record<'_>],
+    second: Option<&[Record<'_>]>,
+) -> bool {
+    let (Some((source_text, source_shapes)), Some((first_text, first_shapes))) = (
+        textbox_paragraph_content(source),
+        textbox_paragraph_content(first),
+    ) else {
+        return false;
+    };
+    let second_content = second.map(textbox_paragraph_content);
+    if second.is_some()
+        && second_content
+            .as_ref()
+            .is_none_or(|content| content.is_none())
+    {
+        return false;
+    }
+    let second_content = second_content.flatten();
+    let second_text = second_content
+        .as_ref()
+        .map_or(&[][..], |(text, _)| text.as_slice());
+    if source_text.len() != first_text.len() + second_text.len()
+        || source_text
+            .iter()
+            .copied()
+            .ne(first_text.iter().chain(second_text).copied())
+    {
+        return false;
+    }
+    let second_shapes = second_content
+        .as_ref()
+        .map_or(&[][..], |(_, shapes)| shapes.as_slice());
+    (0..source_text.len()).all(|offset| {
+        let target = if offset < first_text.len() {
+            textbox_char_shape(&first_shapes, offset)
+        } else {
+            textbox_char_shape(&second_shapes, offset - first_text.len())
+        };
+        textbox_char_shape(&source_shapes, offset) == target
+    })
+}
+
+fn same_textbox_paragraph_refs(first: &[Record<'_>], second: &[Record<'_>]) -> bool {
+    let (Some(a), Some(b)) = (
+        first.first().map(|record| record.2),
+        second.first().map(|record| record.2),
+    ) else {
+        return false;
+    };
+    a.len() >= 22 && b.len() >= 22 && a[8..11] == b[8..11]
+}
+
+fn textbox_paragraph_instance(rs: &[Record<'_>]) -> Option<u32> {
+    let header = rs.first()?.2;
+    let bytes: [u8; 4] = header.get(18..22)?.try_into().ok()?;
+    Some(u32::from_le_bytes(bytes))
+}
+
+fn textbox_paragraph_tail<'a>(rs: &[Record<'a>]) -> Option<&'a [u8]> {
+    rs.first()?.2.get(22..)
+}
+
+fn proven_textbox_split(
+    source: &[Record<'_>],
+    first: &[Record<'_>],
+    second: &[Record<'_>],
+    original_instances: &std::collections::BTreeMap<u32, usize>,
+    output_instances: &std::collections::BTreeMap<u32, usize>,
+) -> bool {
+    let (Some(source_id), Some(first_id), Some(second_id)) = (
+        textbox_paragraph_instance(source),
+        textbox_paragraph_instance(first),
+        textbox_paragraph_instance(second),
+    ) else {
+        return false;
+    };
+    same_textbox_paragraph_refs(source, first)
+        && same_textbox_paragraph_refs(source, second)
+        && source_id == first_id
+        && textbox_paragraph_tail(source) == textbox_paragraph_tail(first)
+        && textbox_paragraph_tail(source) == textbox_paragraph_tail(second)
+        && second_id != 0
+        && !original_instances.contains_key(&second_id)
+        && output_instances.get(&second_id) == Some(&1)
+        && textbox_content_matches(source, first, Some(second))
+}
+
+fn proven_textbox_merge(
+    first: &[Record<'_>],
+    second: &[Record<'_>],
+    merged: &[Record<'_>],
+    original_instances: &std::collections::BTreeMap<u32, usize>,
+    output_instances: &std::collections::BTreeMap<u32, usize>,
+) -> bool {
+    let (Some(first_id), Some(second_id), Some(merged_id)) = (
+        textbox_paragraph_instance(first),
+        textbox_paragraph_instance(second),
+        textbox_paragraph_instance(merged),
+    ) else {
+        return false;
+    };
+    same_textbox_paragraph_refs(first, merged)
+        && first_id == merged_id
+        && second_id != first_id
+        && original_instances.get(&second_id) == Some(&1)
+        && !output_instances.contains_key(&second_id)
+        && textbox_paragraph_tail(first) == textbox_paragraph_tail(merged)
+        && textbox_content_matches(merged, first, Some(second))
+}
+
 pub(super) fn prove_textbox_edit(
     old: &[Record<'_>],
     new: &[Record<'_>],
     original_defs: &Defs<'_>,
     defs: &Defs<'_>,
+    original_instances: &std::collections::BTreeMap<u32, usize>,
+    output_instances: &std::collections::BTreeMap<u32, usize>,
 ) -> Checked<()> {
     preserved(textbox_edit_candidate(old, new), BODY)?;
     let paragraphs = |rs: &[Record<'_>]| {
@@ -223,19 +390,72 @@ pub(super) fn prove_textbox_edit(
         before.first() == Some(&0)
             && after.first() == Some(&0)
             && before.len() == count + 1
-            && after.len() == count + 1,
+            && after.len() == dword(new[2].2, 0)? + 1,
         BODY,
     )?;
-    for (a, b) in before.windows(2).zip(after.windows(2)) {
-        let old_para = &old_story[a[0]..a[1]];
-        let new_para = &new_story[b[0]..b[1]];
+    let new_count = dword(new[2].2, 0)?;
+    preserved(new_count.abs_diff(count) <= 1, BODY)?;
+    let old_paragraphs: Vec<_> = before
+        .windows(2)
+        .map(|span| &old_story[span[0]..span[1]])
+        .collect();
+    let new_paragraphs: Vec<_> = after
+        .windows(2)
+        .map(|span| &new_story[span[0]..span[1]])
+        .collect();
+    for old_para in &old_paragraphs {
         super::insertions::prove_textbox_paragraph(old_para, original_defs, original_defs)?;
-        super::insertions::prove_textbox_paragraph(new_para, defs, original_defs)?;
-        let old_style = entries(original_defs, 25)[word(old_para[0].2, 8)?];
-        let new_style = entries(defs, 25)[word(new_para[0].2, 8)?];
-        super::insertions::same_textbox_para_style(old_style, new_style)?;
     }
-    Ok(())
+    for new_para in &new_paragraphs {
+        super::insertions::prove_textbox_paragraph(new_para, defs, original_defs)?;
+    }
+    if count == new_count {
+        for (old_para, new_para) in old_paragraphs.iter().zip(&new_paragraphs) {
+            preserved(
+                textbox_paragraph_instance(old_para) == textbox_paragraph_instance(new_para)
+                    && textbox_paragraph_tail(old_para) == textbox_paragraph_tail(new_para),
+                BODY,
+            )?;
+            let old_style = entries(original_defs, 25)[word(old_para[0].2, 8)?];
+            let new_style = entries(defs, 25)[word(new_para[0].2, 8)?];
+            super::insertions::same_textbox_para_style(old_style, new_style)?;
+        }
+        return Ok(());
+    }
+    preserved(original_defs == defs, BODY)?;
+    let mut witnesses = 0usize;
+    if new_count == count + 1 {
+        for index in 0..old_paragraphs.len() {
+            if old_paragraphs[..index] == new_paragraphs[..index]
+                && old_paragraphs[index + 1..] == new_paragraphs[index + 2..]
+                && proven_textbox_split(
+                    old_paragraphs[index],
+                    new_paragraphs[index],
+                    new_paragraphs[index + 1],
+                    original_instances,
+                    output_instances,
+                )
+            {
+                witnesses += 1;
+            }
+        }
+    } else if count == new_count + 1 {
+        for index in 0..new_paragraphs.len() {
+            if old_paragraphs[..index] == new_paragraphs[..index]
+                && old_paragraphs[index + 2..] == new_paragraphs[index + 1..]
+                && proven_textbox_merge(
+                    old_paragraphs[index],
+                    old_paragraphs[index + 1],
+                    new_paragraphs[index],
+                    original_instances,
+                    output_instances,
+                )
+            {
+                witnesses += 1;
+            }
+        }
+    }
+    preserved(witnesses == 1, BODY)
 }
 
 pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
@@ -2370,7 +2590,10 @@ fn differs_by_one_cubic(short: &[CurveStep], long: &[CurveStep]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::super::preview::PreviewRaster;
-    use super::super::{Finding, FindingCode, Mode, compare_with, refresh_previews};
+    use super::super::{
+        Finding, FindingCode, Mode, Side, compare_saved_with_preview, compare_with, open,
+        rebuild_preview, refresh_previews,
+    };
     use std::io::{Cursor, Write};
 
     fn pack_records(rs: &[(u16, u16, &[u8])]) -> Vec<u8> {
@@ -3540,6 +3763,131 @@ mod tests {
                 "accepted changed text-box record {tag}"
             );
         }
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 textbox split/merge fixtures"]
+    fn release_hwp5_textbox_split_merge_accepts_only_proven_story_changes() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p5-h5tb-original.hwp");
+        let split = read("p5-h5tb-split.hwp");
+        let merged = read("p5-h5tb-merged.hwp");
+
+        assert_eq!(check_with_preview_refresh(&original, &split), vec![]);
+        assert_eq!(check_with_preview_refresh(&split, &merged), vec![]);
+        assert_eq!(check_with_preview_refresh(&original, &merged), vec![]);
+
+        // The same live WASM document exports its original PrvImage after the first save,
+        // even though the published source now contains this save's regenerated preview.
+        let mut pixels = vec![255u8; 724 * 1024 * 3];
+        pixels[0] = 0;
+        let raster = PreviewRaster {
+            width: 724,
+            height: 1024,
+            rgb: pixels,
+            blank_page: false,
+        };
+        let first_refresh = refresh_previews(&original, &split, Some(&raster)).unwrap();
+        let first_output = first_refresh.output.expect("first split preview rebuilt");
+        let first_image = first_refresh.image.expect("first split preview evidence");
+        assert!(compare_saved_with_preview(&original, &first_output, Some(&first_image)).is_empty());
+
+        // A second save from that same live engine exports `merged` with the pre-save image.
+        // It must replace that stale image with the exact reopened render, then pass the full
+        // T009 comparison against the current on-disk split document.
+        let second_refresh = refresh_previews(&first_output, &merged, Some(&raster)).unwrap();
+        let second_output = second_refresh.output.expect("second merge preview rebuilt");
+        let second_image = second_refresh.image.expect("second merge preview evidence");
+        assert_eq!(second_image, first_image);
+        assert!(compare_saved_with_preview(&first_output, &second_output, Some(&second_image)).is_empty());
+
+        // A changed preview without a body edit is not a save: even a valid render cannot
+        // authorize replacing the image when the output has no visual body change.
+        let old_image = open(&original, Side::Original).unwrap().streams["PrvImage"].clone();
+        let first_container = open(&first_output, Side::Original).unwrap();
+        let preview_only_change = rebuild_preview(
+            &first_output,
+            &first_container,
+            &[("PrvImage", old_image.as_slice())],
+        )
+        .unwrap();
+        assert!(refresh_previews(&first_output, &preview_only_change, Some(&raster))
+            .unwrap()
+            .output
+            .is_none());
+
+        let changed_text = mutate_body_record(
+            &split,
+            |tag, level, data| tag == 67 && level == 4 && data.starts_with(b"e\0"),
+            |data| {
+                let mut changed = data.to_vec();
+                changed[0] = b'x';
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&original, &changed_text)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted an unauthorized text mutation inside a split textbox"
+        );
+
+        let duplicate_paragraph_id = mutate_body_record(
+            &split,
+            |tag, level, data| {
+                tag == 66
+                    && level == 3
+                    && data.get(18..22) == Some(&[1, 0, 0, 0][..])
+            },
+            |data| {
+                let mut changed = data.to_vec();
+                changed[18..22].copy_from_slice(&0u32.to_le_bytes());
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&original, &duplicate_paragraph_id)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted a split paragraph that reused its owner's paragraph ID"
+        );
+
+        let reused_deleted_paragraph_id = mutate_body_record(
+            &merged,
+            |tag, level, data| tag == 66 && level == 0 && data.len() >= 22,
+            |data| {
+                let mut changed = data.to_vec();
+                changed[18..22].copy_from_slice(&1u32.to_le_bytes());
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&split, &reused_deleted_paragraph_id)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted reusing the deleted textbox paragraph ID elsewhere"
+        );
+
+        let moved_owner = mutate_body_record(
+            &split,
+            |tag, level, data| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO),
+            |data| {
+                let mut changed = data.to_vec();
+                changed[12] ^= 1;
+                changed
+            },
+        );
+        assert!(refresh_previews(&first_output, &moved_owner, Some(&raster))
+            .unwrap()
+            .output
+            .is_none(), "regenerated preview authorized a textbox geometry mutation");
+        assert!(
+            check_with_preview_refresh(&original, &moved_owner)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted a textbox geometry mutation alongside the paragraph split"
+        );
     }
 
     #[test]

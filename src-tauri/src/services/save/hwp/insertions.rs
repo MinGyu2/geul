@@ -107,6 +107,27 @@ fn read_records(c: &Container, name: &str) -> Checked<Vec<u8>> {
 fn decode_records<'a>(b: &'a [u8], name: &str) -> Checked<Vec<Record<'a>>> {
     records(b).ok_or_else(|| finding(FindingCode::OutputMalformed, name))
 }
+fn paragraph_instance_counts(
+    container: &Container,
+    side: Side,
+) -> Checked<BTreeMap<u32, usize>> {
+    let mut counts = BTreeMap::new();
+    for (name, data) in &container.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let raw = unpack(container, data)
+            .map_err(|problem| side.unpack_finding(problem, name))?;
+        let rows = decode_records(&raw, name)?;
+        for (tag, _, payload) in rows {
+            if tag == 66 && payload.len() >= 22 {
+                let id = u32::from_le_bytes(payload[18..22].try_into().unwrap());
+                *counts.entry(id).or_default() += 1;
+            }
+        }
+    }
+    Ok(counts)
+}
 fn feature_counts(rs: &[Record<'_>]) -> (usize, usize, Vec<usize>) {
     (
         rs.iter().filter(|r| r.0 == 77).count(),
@@ -940,6 +961,8 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     preserved(ar.len() <= 20_000 && br.len() <= 20_000, "DocInfo")?;
     let ac = definitions(ar);
     let bc = definitions(br);
+    let original_paragraph_instances = paragraph_instance_counts(a, Side::Original)?;
+    let output_paragraph_instances = paragraph_instance_counts(b, Side::Output)?;
     let am = mappings(ar, &ac)?;
     let bm = mappings(br, &bc)?;
     preserved(am.len() == bm.len(), "DocInfo")?;
@@ -1181,7 +1204,14 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     break;
                 }
                 if !exact_later && super::gso::textbox_edit_candidate(o, object) {
-                    super::gso::prove_textbox_edit(o, object, &ac, &bc)?;
+                    super::gso::prove_textbox_edit(
+                        o,
+                        object,
+                        &ac,
+                        &bc,
+                        &original_paragraph_instances,
+                        &output_paragraph_instances,
+                    )?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;
@@ -1793,11 +1823,10 @@ pub(super) fn prove_textbox_paragraph(
         return Err(finding(FindingCode::RecordsChanged, BODY));
     };
     preserved(
-        header.len() == 24
+        matches!(header.len(), 22 | 24)
             && dword(header, 4)? == 0
             && header[10] == 0
             && header[11] == 0
-            && header[18..] == [0; 6]
             && rs[1..].iter().all(|r| matches!((r.0, r.1), (67..=69, 4))),
         BODY,
     )?;

@@ -1803,9 +1803,12 @@ fn first_paragraph_unproven(container: &Container, require_blank: bool) -> bool 
 }
 
 /// Regenerate PrvText *and* PrvImage when the only obstacles to an otherwise valid edited
-/// output are its stale previews and the frontend supplied a render of page 1 of the reopened
-/// raw export. Without a raster, or when PrvImage is not stale, this is exactly
-/// [`refresh_text_preview`]. Refusals return no output; the caller's final gates then reject.
+/// output are its previews and the frontend supplied a render of page 1 of the reopened raw
+/// export. A long-lived RHWP document can export its load-time PrvImage on a later save even
+/// after an earlier save replaced the on-disk preview; the changed raw image is discarded and
+/// replaced before the final T009 comparison. Without a raster, or when PrvImage is unchanged,
+/// this is exactly [`refresh_text_preview`]. Refusals return no output; the caller's final gates
+/// then reject.
 /// - The size comes from the output's own Section0 PAGE_DEF (`preview::preview_dimensions`);
 ///   a raster outside canvas rounding slack of it is refused (wrong page geometry).
 /// - A uniform raster is a failed render unless page 1 is proven blank by two independent
@@ -1831,13 +1834,19 @@ pub fn refresh_previews(
         return text_only();
     };
     let findings = compare_saved(original, output);
-    let image = Finding::at(FindingCode::PreviewStale, "PrvImage");
+    let image_stale = Finding::at(FindingCode::PreviewStale, "PrvImage");
+    let image_changed = Finding::at(FindingCode::PartChanged, "PrvImage");
     let allowed = [
         Finding::at(FindingCode::PreviewStale, "PrvText"),
         Finding::at(FindingCode::PartChanged, "PrvText"),
-        image.clone(),
+        image_stale.clone(),
+        image_changed.clone(),
     ];
-    if !findings.contains(&image) || !findings.iter().all(|f| allowed.contains(f)) {
+    // A changed raw PrvImage is only a disposable input obstacle here, never an admitted
+    // published change. The exact rebuilt PNG must pass the full saved-output comparison below.
+    if !(findings.contains(&image_stale) || findings.contains(&image_changed))
+        || !findings.iter().all(|finding| allowed.contains(finding))
+    {
         return text_only();
     }
     let refused = Ok(RefreshedPreviews::default());
@@ -1876,10 +1885,10 @@ pub fn refresh_previews(
         &[("PrvText", &text), ("PrvImage", &png)],
     )
     .map_err(|_| crate::document::DocumentError::Internal)?;
-    Ok(RefreshedPreviews {
-        output: Some(bytes),
-        image: Some(png),
-    })
+    if !compare_saved_with_preview(original, &bytes, Some(&png)).is_empty() {
+        return Ok(RefreshedPreviews::default());
+    }
+    Ok(RefreshedPreviews { output: Some(bytes), image: Some(png) })
 }
 
 fn rebuild_preview(

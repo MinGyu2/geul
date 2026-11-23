@@ -1518,8 +1518,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const { doc, text } = this;
     const box = from.cell;
     const first = paragraphOf(from), last = paragraphOf(to);
+    const format = this.sessions.get(this.sessionId)?.format;
     if (this.objectSelection || !box?.textBox || !to.cell?.textBox || !doc?.canJoinTextBoxParagraphs
-      || !doc.getShapeProperties || !text || this.imeUnsettled || this.sessions.get(this.sessionId)?.format !== "hwpx"
+      || !doc.getShapeProperties || !text || this.imeUnsettled || (format !== "hwpx" && format !== "hwp")
       || !sameContext(from, to) || last <= first || last >= 64
       || !this.ownsPosition(from) || !this.ownsPosition(to)) return false;
     const address = [from.section, box.parentParagraph, box.control] as const;
@@ -1527,6 +1528,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!left || !right
       || !Number.isSafeInteger(from.offset) || from.offset < 0 || from.offset > left.styles.length
       || !Number.isSafeInteger(to.offset) || to.offset < 0 || to.offset > right.styles.length) return false;
+    if (format === "hwp" && (last !== first + 1 || replacement !== undefined
+      || from.offset !== left.styles.length || to.offset !== 0)) return false;
     const retainedLength = from.offset + right.styles.length - to.offset;
     if (retainedLength < 1 || retainedLength > 65_536) return false;
     const lines = replacement ?? [""];
@@ -1581,13 +1584,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private splitOwnedTextBox(): boolean {
     const { caret: at, doc, text } = this;
     const c = at.cell;
+    const format = this.sessions.get(this.sessionId)?.format;
     if (!c?.textBox || !doc?.getShapeProperties || !text || this.hasSelection || this.imeUnsettled
-      || this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.ownsPosition(at)) return false;
+      || (format !== "hwpx" && format !== "hwp") || !this.ownsPosition(at)) return false;
     const old = text.textBoxParagraph(at);
     if (!old || !Number.isSafeInteger(at.offset) || at.offset <= 0 || at.offset >= old.styles.length) return false;
     const address = [at.section, c.parentParagraph, c.control] as const;
     let count: number, shape: string;
     try {
+      if (format === "hwp" && !doc.canSplitTextBoxParagraphs?.(...address, paragraphOf(at))) return false;
       count = text.paragraphCount(at);
       if (count >= 64) return false;
       shape = doc.getShapeProperties(...address);

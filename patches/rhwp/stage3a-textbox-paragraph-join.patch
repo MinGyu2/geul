@@ -2,7 +2,7 @@ diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/
 index e879544..be4fe4a 100644
 --- a/src/document_core/commands/object_ops/shape.rs
 +++ b/src/document_core/commands/object_ops/shape.rs
-@@ -829,6 +829,43 @@ impl DocumentCore {
+@@ -829,6 +829,84 @@ impl DocumentCore {
          Ok(())
      }
 
@@ -13,7 +13,7 @@ index e879544..be4fe4a 100644
 +    pub fn can_join_textbox_paragraphs(&self, sec: usize, para: usize, ctrl: usize, first: usize) -> bool {
 +        use crate::model::paragraph::{ColumnBreakType, Paragraph};
 +        use crate::parser::FileFormat;
-+        if self.source_format != FileFormat::Hwpx {
++        if !matches!(self.source_format, FileFormat::Hwp | FileFormat::Hwpx) {
 +            return false;
 +        }
 +        let Some(shape) = self.advanced_body_shape(sec, para, ctrl) else {
@@ -30,33 +30,130 @@ index e879544..be4fe4a 100644
 +        let Some(pair) = textbox.paragraphs.get(first..).and_then(|paragraphs| paragraphs.get(..2)) else {
 +            return false;
 +        };
-+        fn ordinary(para: &Paragraph) -> bool {
++        fn ordinary(para: &Paragraph, format: FileFormat) -> bool {
++            let metadata = match format {
++                FileFormat::Hwp => matches!(para.raw_header_extra.len(), 0 | 10 | 12),
++                FileFormat::Hwpx => para.raw_header_extra.len() <= 10,
++                _ => false,
++            };
 +            !para.text.is_empty()
 +                && para.column_type == ColumnBreakType::None && para.raw_break_type == 0
-+                && !para.page_break_synthesized && para.raw_header_extra.len() <= 10
++                && !para.page_break_synthesized && metadata
 +                && para.controls.is_empty() && para.ctrl_data_records.is_empty()
 +                && para.field_ranges.is_empty() && para.orphan_field_ends.is_empty()
 +                && para.range_tags.is_empty() && para.title_marks.is_empty() && para.markpen_marks.is_empty()
 +                && para.tab_extended.is_empty() && !para.text.contains('\t')
 +                && para.hwpx_text_topology.is_none() && para.numbering_restart.is_none()
 +        }
-+        pair.iter().all(ordinary)
++        pair.iter().all(|para| ordinary(para, self.source_format))
++    }
++
++    /// Only ordinary text in a flat, unlocked drawing text box may be split.
++    pub fn can_split_textbox_paragraphs(&self, sec: usize, para: usize, ctrl: usize, paragraph: usize) -> bool {
++        use crate::model::paragraph::ColumnBreakType;
++        use crate::parser::FileFormat;
++        if !matches!(self.source_format, FileFormat::Hwp | FileFormat::Hwpx) {
++            return false;
++        }
++        let Some(shape) = self.advanced_body_shape(sec, para, ctrl) else {
++            return false;
++        };
++        let Some(textbox) = get_textbox_from_shape(shape) else {
++            return false;
++        };
++        if shape.shape_attr().group_level != 0 || Self::shape_caption_ref(shape).is_some()
++            || textbox.paragraphs.len() > 64
++        {
++            return false;
++        }
++        let Some(target) = textbox.paragraphs.get(paragraph) else {
++            return false;
++        };
++        let metadata = match self.source_format {
++            FileFormat::Hwp => matches!(target.raw_header_extra.len(), 0 | 10 | 12),
++            FileFormat::Hwpx => target.raw_header_extra.len() <= 10,
++            _ => false,
++        };
++        !target.text.is_empty()
++            && target.column_type == ColumnBreakType::None && target.raw_break_type == 0
++            && !target.page_break_synthesized && metadata
++            && target.controls.is_empty() && target.ctrl_data_records.is_empty()
++            && target.field_ranges.is_empty() && target.orphan_field_ends.is_empty()
++            && target.range_tags.is_empty() && target.title_marks.is_empty() && target.markpen_marks.is_empty()
++            && target.tab_extended.is_empty() && !target.text.contains('\t')
++            && target.hwpx_text_topology.is_none() && target.numbering_restart.is_none()
 +    }
 +
      fn advanced_body_shape(&self, sec: usize, para: usize, ctrl: usize) -> Option<&ShapeObject> {
          let Control::Shape(shape) = self.document.sections.get(sec)?.paragraphs.get(para)?.controls.get(ctrl)? else {
              return None;
+diff --git a/src/document_core/commands/text_editing.rs b/src/document_core/commands/text_editing.rs
+index 3d1efba..48e7d31 100644
+--- a/src/document_core/commands/text_editing.rs
++++ b/src/document_core/commands/text_editing.rs
+@@ -4550,6 +4550,31 @@
+         char_offset: usize,
+         restore_meta: Option<ParaMeta>,
+     ) -> Result<String, HwpError> {
++        // A new HWP5 text-box paragraph needs its own unique instance ID.
++        // Reserve it before borrowing/mutating the source paragraph so failure
++        // leaves the document untouched. Undo restores the removed ID via meta.
++        let new_textbox_para_id = if restore_meta.is_none()
++            && self.source_format == crate::parser::FileFormat::Hwp
++            && cell_idx != super::super::TABLE_CAPTION_CELL_SENTINEL
++            && self.document.sections.get(section_idx)
++                .and_then(|section| section.paragraphs.get(parent_para_idx))
++                .and_then(|paragraph| paragraph.controls.get(control_idx))
++                .is_some_and(|control| matches!(control, Control::Shape(shape)
++                    if get_textbox_from_shape(shape).is_some()))
++        {
++            let para = self.document.sections[section_idx].paragraphs[parent_para_idx]
++                .controls.get(control_idx).and_then(|control| match control {
++                    Control::Shape(shape) => get_textbox_from_shape(shape)
++                        .and_then(|textbox| textbox.paragraphs.get(cell_para_idx)),
++                    _ => None,
++                }).ok_or_else(|| HwpError::RenderError("글상자 문단을 찾을 수 없습니다".to_string()))?;
++            if !matches!(para.raw_header_extra.len(), 0 | 10 | 12) {
++                return Err(HwpError::RenderError("글상자 문단 ID 구조를 보존할 수 없습니다".to_string()));
++            }
++            Some(crate::model::identity::next_instance_id(&self.document)?)
++        } else {
++            None
++        };
+         // 셀 문단 검증 및 분할
+         let cell_para = self.get_cell_paragraph_mut(
+             section_idx,
+@@ -4561,8 +4586,14 @@
+         let original_vpos = cell_para.line_segs.first().map(|seg| seg.vertical_pos);
+         let mut new_para = cell_para.split_at(char_offset);
+         if let Some(meta) = restore_meta {
+             restore_para_meta(&mut new_para, meta, &self.document.doc_info.para_shapes);
+         }
++        if let Some(id) = new_textbox_para_id {
++            if new_para.raw_header_extra.len() < 10 {
++                new_para.raw_header_extra.resize(10, 0);
++            }
++            new_para.raw_header_extra[6..10].copy_from_slice(&id.to_le_bytes());
++        }
+
+         // 새 문단을 셀/글상자에 삽입
+         let new_cell_para_idx = cell_para_idx + 1;
 diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 index 1216c7e..a166412 100644
 --- a/src/wasm_api.rs
 +++ b/src/wasm_api.rs
-@@ -4715,6 +4715,11 @@ impl HwpDocument {
+@@ -4715,6 +4715,16 @@ impl HwpDocument {
              .map_err(|e| e.into())
      }
 
 +    #[wasm_bindgen(js_name = canJoinTextBoxParagraphs)]
 +    pub fn can_join_textbox_paragraphs_wasm(&self, sec: u32, para: u32, ctrl: u32, first: u32) -> bool {
 +        self.can_join_textbox_paragraphs(sec as usize, para as usize, ctrl as usize, first as usize)
++    }
++
++    #[wasm_bindgen(js_name = canSplitTextBoxParagraphs)]
++    pub fn can_split_textbox_paragraphs_wasm(&self, sec: u32, para: u32, ctrl: u32, paragraph: u32) -> bool {
++        self.can_split_textbox_paragraphs(sec as usize, para as usize, ctrl as usize, paragraph as usize)
 +    }
 +
      #[wasm_bindgen(js_name = getEditableGroupFills)]

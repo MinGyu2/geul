@@ -4410,6 +4410,107 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
     } finally { editor.dispose(); }
   });
 
+  it("splits and merges ordinary HWP5 text-box paragraphs without changing their owner", async () => {
+    const { editor, doc, bytes, take, confirm } = await setup("hwp");
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+      const control = shapes(doc)[0]!.controlIdx;
+      const address = [0, 0, control, 0] as const;
+      const shape = doc.getShapeProperties!(0, 0, control);
+      const paragraph = (index: number) => {
+        const length = doc.getCellParagraphLength(...address, index);
+        return {
+          text: doc.getTextInCell(...address, index, 0, length),
+          runs: JSON.parse(doc.getFormattingRuns!(...address, index, 0, length)).runs,
+          properties: doc.getCellParaPropertiesAt!(...address, index),
+        };
+      };
+      const cursor = JSON.parse(doc.getCursorRectInCell(...address, 0, 0));
+      expect(editor.pointAt(cursor.pageIndex, cursor.x + 1, cursor.y + cursor.height / 2, false)).toBe(true);
+      expect(editor.typeText("abcdef")).toBe(true);
+      await confirm();
+      const originalExport = doc.exportHwpWithReport();
+      const original = originalExport.takeBytes();
+      originalExport.free();
+      if (out) {
+        mkdirSync(out, { recursive: true });
+        writeFileSync(resolve(out, "p5-h5tb-original.hwp"), original);
+      }
+      expect(editor.moveHorizontal(-1, false)).toBe(true);
+      expect(editor.moveHorizontal(-1, false)).toBe(true);
+      const before = paragraph(0);
+      const untouchedBody = doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0));
+
+      expect(editor.enter()).toBe(true);
+      await confirm();
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: 1 }, offset: 0 });
+      expect([paragraph(0).text, paragraph(1).text]).toEqual(["abcd", "ef"]);
+      expect(paragraph(0).properties).toBe(before.properties);
+      expect(paragraph(1).properties).toBe(before.properties);
+      expect(paragraph(0).runs).toEqual([[0, 4, 0]]);
+      expect(paragraph(1).runs).toEqual([[0, 2, 0]]);
+      expect(doc.getCellParagraphCount(...address)).toBe(2);
+      expect(doc.getShapeProperties!(0, 0, control)).toBe(shape);
+      expect(doc.getTextRange(0, 0, 0, doc.getParagraphLength(0, 0))).toBe(untouchedBody);
+      const splitExport = doc.exportHwpWithReport();
+      const splitLoss = splitExport.contentLoss();
+      const split = splitExport.takeBytes();
+      splitExport.free();
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(doc.getCellParagraphCount(...address)).toBe(1);
+      expect(paragraph(0).text).toBe("abcdef");
+      expect(doc.exportHwp()).toEqual(original);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(doc.getCellParagraphCount(...address)).toBe(2);
+      expect(doc.exportHwp()).toEqual(split);
+
+      expect(editor.backspace()).toBe(true);
+      await confirm();
+      expect(doc.getCellParagraphCount(...address)).toBe(1);
+      expect(paragraph(0).text).toBe("abcdef");
+      expect(paragraph(0).runs).toEqual(before.runs);
+      expect(paragraph(0).properties).toBe(before.properties);
+      expect(doc.getShapeProperties!(0, 0, control)).toBe(shape);
+      const mergedExport = doc.exportHwpWithReport();
+      const mergedLoss = mergedExport.contentLoss();
+      const merged = mergedExport.takeBytes();
+      mergedExport.free();
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect([paragraph(0).text, paragraph(1).text]).toEqual(["abcd", "ef"]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(doc.getCellParagraphCount(...address)).toBe(1);
+      expect(paragraph(0).text).toBe("abcdef");
+      expect(doc.exportHwp()).toEqual(merged);
+
+      const openedSplit = new engine.HwpDocument(split) as RhwpDocument;
+      const openedMerged = new engine.HwpDocument(merged) as RhwpDocument;
+      try {
+        expect(openedSplit.getCellParagraphCount(...address)).toBe(2);
+        expect(openedSplit.getTextInCell(...address, 0, 0, 4)).toBe("abcd");
+        expect(openedSplit.getTextInCell(...address, 1, 0, 2)).toBe("ef");
+        expect(openedMerged.getCellParagraphCount(...address)).toBe(1);
+        expect(openedMerged.getTextInCell(...address, 0, 0, 6)).toBe("abcdef");
+      } finally { openedSplit.free(); openedMerged.free(); }
+      if (out) {
+        mkdirSync(out, { recursive: true });
+        writeFileSync(resolve(out, "p5-h5tb-split.hwp"), split);
+        writeFileSync(resolve(out, "p5-h5tb-split.loss.json"), splitLoss);
+        writeFileSync(resolve(out, "p5-h5tb-merged.hwp"), merged);
+        writeFileSync(resolve(out, "p5-h5tb-merged.loss.json"), mergedLoss);
+      }
+    } finally { editor.dispose(); }
+  });
+
   it("inserts the four supported HWP shape families after SAFE preflight and reopens them without loss", async () => {
     const { editor, doc, bytes, confirm, take, calls } = await setup("hwp");
     try {
