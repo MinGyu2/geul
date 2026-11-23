@@ -1,0 +1,179 @@
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -747,6 +747,8 @@
+     pub start: Point,
+     pub end: Point,
+     pub attributes: Vec<(String, String)>,
++    /// Conservative source-envelope guard for non-empty `<hp:seg>` elements.
++    pub has_children: bool,
+     /// Mark only when an endpoint was explicitly edited. Otherwise the
+     /// attribute spelling and lexical coordinate values remain untouched.
+     pub coordinates_edited: bool,
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -5069,6 +5069,7 @@
+                                 start: crate::model::Point { x: x1, y: y1 },
+                                 end: crate::model::Point { x: x2, y: y2 },
+                                 attributes,
++                                has_children: !self_closing,
+                                 coordinates_edited: false,
+                             });
+                         }
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -74,4 +74,27 @@
+         derived.len() == points.len()
+             && derived.iter().zip(points).all(|(a, b)| geul_same_point(a, b))
+     })
++}
++
++/// A line segment can be split or joined only when its source record contains
++/// exactly the standard attributes we understand. Unknown attributes stay
++/// round-trippable, but editing that segment could change their meaning.
++fn geul_hwpx_line_segment_is_editable(segment: &HwpxCurveSegment) -> bool {
++    if segment.has_children || segment.attributes.len() != 5 {
++        return false;
++    }
++    let mut names = std::collections::BTreeSet::new();
++    for (name, _) in &segment.attributes {
++        if !matches!(name.as_str(), "type" | "x1" | "y1" | "x2" | "y2")
++            || !names.insert(name.as_str())
++        {
++            return false;
++        }
++    }
++    names.len() == 5
++        && segment
++            .attributes
++            .iter()
++            .find(|(name, _)| name == "type")
++            .is_some_and(|(_, value)| value == "LINE")
+ }
+@@ -1824,6 +1847,104 @@
+         };
+         curve.points = points;
+         curve.segment_types = commands;
++        self.refresh_advanced_shape(sec);
++        Ok(())
++    }
++
++    /// Return only HWPX LINE records whose full source envelopes are known.
++    /// CURVE records and proprietary attributes remain editable only at their
++    /// already-supported endpoints.
++    pub fn editable_hwpx_curve_line_segments(
++        &self, sec: usize, para: usize, ctrl: usize,
++    ) -> Option<Vec<usize>> {
++        if self.source_format != crate::parser::FileFormat::Hwpx {
++            return None;
++        }
++        let ShapeObject::Curve(curve) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        if !geul_hwpx_curve_matches(&curve.hwpx_segments, &curve.points) {
++            return None;
++        }
++        Some(
++            curve.hwpx_segments
++                .iter()
++                .enumerate()
++                .filter_map(|(index, segment)| {
++                    geul_hwpx_line_segment_is_editable(segment).then_some(index)
++                })
++                .collect(),
++        )
++    }
++
++    /// Split one explicit standard HWPX LINE at an interior collinear point,
++    /// or join two such lines at an interior collinear vertex. No CURVE or
++    /// extended segment record is rewritten by this operation.
++    pub fn edit_hwpx_curve_line(
++        &mut self, sec: usize, para: usize, ctrl: usize, index: usize,
++        split_at: Option<crate::model::Point>,
++    ) -> Result<(), HwpError> {
++        let (mut segments, mut points, width, height) = {
++            if self.source_format != crate::parser::FileFormat::Hwpx {
++                return Err(geul_bad_shape_edit());
++            }
++            let Some(ShapeObject::Curve(curve)) = self.advanced_body_shape(sec, para, ctrl) else {
++                return Err(geul_bad_shape_edit());
++            };
++            if !geul_hwpx_curve_matches(&curve.hwpx_segments, &curve.points) {
++                return Err(geul_bad_shape_edit());
++            }
++            (
++                curve.hwpx_segments.clone(),
++                curve.points.clone(),
++                curve.drawing.shape_attr.original_width as i32,
++                curve.drawing.shape_attr.original_height as i32,
++            )
++        };
++        let between = |a, point, b| {
++            !geul_same_point(&a, &point) && !geul_same_point(&point, &b)
++                && geul_within_segment_bounds(point, a, b)
++                && geul_cross(a, b, point) == 0
++        };
++        if let Some(point) = split_at {
++            if segments.len() >= 256 || points.len() >= 257 || index >= segments.len()
++                || !geul_hwpx_line_segment_is_editable(&segments[index])
++                || point.x < 0 || point.y < 0 || point.x > width || point.y > height
++                || !between(segments[index].start, point, segments[index].end)
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            let mut first = segments[index].clone();
++            let mut second = first.clone();
++            first.end = point;
++            first.coordinates_edited = true;
++            second.start = point;
++            second.coordinates_edited = true;
++            segments.splice(index..=index, [first, second]);
++            points.insert(index + 1, point);
++        } else {
++            if index == 0 || index >= points.len() - 1 || index >= segments.len()
++                || !geul_hwpx_line_segment_is_editable(&segments[index - 1])
++                || !geul_hwpx_line_segment_is_editable(&segments[index])
++                || !between(points[index - 1], points[index], points[index + 1])
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            let mut merged = segments[index - 1].clone();
++            merged.end = points[index + 1];
++            merged.coordinates_edited = true;
++            segments[index - 1] = merged;
++            segments.remove(index);
++            points.remove(index);
++        }
++        if !geul_hwpx_curve_matches(&segments, &points) {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        curve.points = points;
++        curve.hwpx_segments = segments;
+         self.refresh_advanced_shape(sec);
+         Ok(())
+     }
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4721,5 +4721,20 @@
+     ) -> Result<(), JsValue> {
+         self.edit_curve_interior_line(sec as usize, para as usize, ctrl as usize, index as usize,
+             insert.then_some(crate::model::Point { x, y }))
++            .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = getHwpxCurveLineSegments)]
++    pub fn get_hwpx_curve_line_segments(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.editable_hwpx_curve_line_segments(sec as usize, para as usize, ctrl as usize)
++            .map_or(serde_json::Value::Null, |segments| serde_json::json!(segments)).to_string()
++    }
++
++    #[wasm_bindgen(js_name = editHwpxCurveLine)]
++    pub fn edit_hwpx_curve_line_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, index: u32, split: bool, x: i32, y: i32,
++    ) -> Result<(), JsValue> {
++        self.edit_hwpx_curve_line(sec as usize, para as usize, ctrl as usize, index as usize,
++            split.then_some(crate::model::Point { x, y }))
+             .map_err(|e| e.into())
+     }

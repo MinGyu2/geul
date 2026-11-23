@@ -38,7 +38,7 @@ function defaultCubic(path: ShapePath, point: ShapePath["points"][number]) {
   };
 }
 
-export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveCubicStructure, onEdit }: {
+export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveLineSegments, curveCubicStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
@@ -49,6 +49,7 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
   collinearVertexRemoval: ObjectSelection["collinearVertexRemoval"];
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
   curveLineStructure: ObjectSelection["curveLineStructure"];
+  curveLineSegments: ObjectSelection["curveLineSegments"];
   curveCubicStructure: ObjectSelection["curveCubicStructure"];
   onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
 }) {
@@ -68,9 +69,13 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
   const removable = editVertices && points.length > 3 && (!collinearVertexRemoval
     || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!));
   const previous = points[index - 1], next = points[index + 1];
-  const split = curveLineStructure && points.length < 257 && !selected.control && next && !next.control
-    ? edgeInteriorPoint(selected, next) : undefined;
-  const canJoin = curveLineStructure && previous && next && !previous.control && !selected.control && !next.control
+  const curveNext = next ?? (curveLineSegments && path.closed ? points[0] : undefined);
+  const lineSplitAllowed = curveLineStructure || curveLineSegments?.includes(index) === true;
+  const split = lineSplitAllowed && path.points.length < 257 && !selected.control && curveNext && !curveNext.control
+    ? edgeInteriorPoint(selected, curveNext) : undefined;
+  const lineJoinAllowed = curveLineStructure || (curveLineSegments?.includes(index - 1) === true
+    && curveLineSegments?.includes(index) === true);
+  const canJoin = lineJoinAllowed && previous && next && !previous.control && !selected.control && !next.control
     && canJoinEdges(previous, selected, next);
   const activeDraft = draft?.owner === owner && draft.index === index ? draft : null;
   const rawX = activeDraft?.x ?? String(selected.x), rawY = activeDraft?.y ?? String(selected.y);

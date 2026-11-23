@@ -106,6 +106,7 @@ export interface ObjectHit {
   collinearVertexRemoval?: true;
   curveTerminalLine?: { append: boolean; remove: boolean };
   curveLineStructure?: true;
+  curveLineSegments?: readonly number[];
   curveCubicStructure?: true;
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;

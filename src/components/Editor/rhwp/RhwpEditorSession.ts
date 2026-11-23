@@ -2,7 +2,7 @@ import { MAX_CAPTION_SPACING_HWPUNIT, POSITION_PRESETS, objectEditMatches, objec
 import { hitRhwpObject, type CellPictureAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -2065,10 +2065,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const curveTerminalLine = format === "hwp" && shapePath?.kind === "curve" && shapeAddress
             ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
           const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
+          const curveLineSegments = format === "hwpx" && shapePath?.kind === "curve" && shapeAddress
+            ? inspectRhwpHwpxCurveLineSegments(this.doc, shapeAddress, shapePath.points.length - 1) : undefined;
           const curveCubicStructure = format === "hwp" && shapePath?.kind === "curve"
             && !!curveTerminalLine && !!this.doc.editCurveCubicSegment
             && shapePath.points.some((point, index) => point.control && shapePath.points[index + 1]?.control);
-          if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure || curveCubicStructure) operations.push("pathSegment");
+          if (curveTerminalLine?.append || curveTerminalLine?.remove || curveLineStructure || curveCubicStructure
+            || curveLineSegments?.length) operations.push("pathSegment");
           if (shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
@@ -2139,6 +2142,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(format === "hwp" && shapePath?.kind === "polygon" ? { collinearVertexRemoval: true } : {}),
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(curveLineStructure ? { curveLineStructure: true } : {}),
+              ...(curveLineSegments ? { curveLineSegments } : {}),
               ...(curveCubicStructure ? { curveCubicStructure: true } : {}),
               ...(captionSide ? { captionSide } : {}),
               ...(captionLateral ? { captionLateral: true } : {}),
@@ -5002,7 +5006,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       ? inspectRhwpShapePath(d, a)
       : groupChildGeomEdit ? inspectRhwpGroupChildren(d, a) : inspectRhwpGroupFills(d, a);
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "curveCubicStructure" | "operations">;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "curveLineSegments" | "curveCubicStructure" | "operations">;
     if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
@@ -5030,10 +5034,36 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       refreshed = { operations: selected.operations, shapePath: { ...path, points } };
     } else if (edit.kind === "pathSegment") {
       const path = selected.shapePath;
+      if (format === "hwpx") {
+        if (path?.kind !== "curve" || !selected.curveLineSegments || !doc.editHwpxCurveLine) return false;
+        const available = inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1);
+        if (!available || JSON.stringify(available) !== JSON.stringify(selected.curveLineSegments)) return false;
+        const points = path.points.slice();
+        let curveLineSegments: number[];
+        if (edit.action === "splitLine") {
+          if (!available.includes(edit.index) || edit.index >= points.length - 1 || points.length >= 257
+            || !Number.isSafeInteger(edit.x) || !Number.isSafeInteger(edit.y)
+            || edit.x < 0 || edit.x > path.width || edit.y < 0 || edit.y > path.height) return false;
+          points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
+          curveLineSegments = available.flatMap(index => index < edit.index ? [index]
+            : index === edit.index ? [index, index + 1] : [index + 1]);
+          apply = () => doc.editHwpxCurveLine!(...address, edit.index, true, edit.x, edit.y);
+        } else if (edit.action === "joinLines") {
+          if (edit.index <= 0 || edit.index >= points.length - 1
+            || !available.includes(edit.index - 1) || !available.includes(edit.index)) return false;
+          points.splice(edit.index, 1);
+          curveLineSegments = available.filter(index => index !== edit.index)
+            .map(index => index > edit.index ? index - 1 : index);
+          apply = () => doc.editHwpxCurveLine!(...address, edit.index, false, 0, 0);
+        } else return false;
+        refreshed = { operations: curveLineSegments.length ? selected.operations
+          : selected.operations.filter(operation => operation !== "pathSegment"),
+        shapePath: { ...path, points }, curveLineSegments };
+      } else {
       const available = inspectRhwpCurveTerminalLine(doc, address);
-      if (this.sessions.get(this.sessionId)?.format !== "hwp" || path?.kind !== "curve" || path.closed
-        || !available
-        || available.append !== selected.curveTerminalLine?.append || available.remove !== selected.curveTerminalLine?.remove) return false;
+      if (format !== "hwp" || path?.kind !== "curve" || path.closed
+        || !available || available.append !== selected.curveTerminalLine?.append
+        || available.remove !== selected.curveTerminalLine?.remove) return false;
       const points = path.points.slice();
       if (edit.action === "insertCubic") {
         const anchor = points[edit.index];
@@ -5081,6 +5111,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const curveTerminalLine = { append: points.length < 257, remove: points.at(-2)!.control === false };
       refreshed = { operations: selected.operations, shapePath: { ...path, points }, curveTerminalLine,
         ...(selected.curveCubicStructure ? { curveCubicStructure: true as const } : {}) };
+      }
     } else if (edit.kind === "groupChildFill") {
       const children = selected.groupChildFills;
       const child = children?.find(item => item.index === edit.index);
@@ -5158,6 +5189,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         const available = inspectRhwpCurveTerminalLine(doc, address);
         if (JSON.stringify(available) !== JSON.stringify(refreshed.curveTerminalLine)) {
           throw new Error("curve terminal line edit did not verify");
+        }
+      }
+      if (refreshed.curveLineSegments) {
+        const path = refreshed.shapePath;
+        const available = path?.kind === "curve"
+          ? inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1) : undefined;
+        if (JSON.stringify(available) !== JSON.stringify(refreshed.curveLineSegments)) {
+          throw new Error("HWPX curve line edit did not verify");
         }
       }
       if (pathEdit && refreshed.shapePath?.kind === "polygon") {

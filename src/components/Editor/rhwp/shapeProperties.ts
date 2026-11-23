@@ -128,6 +128,19 @@ export function inspectRhwpCurveTerminalLine(doc: RhwpDocument, address: readonl
   } catch { return undefined; }
 }
 
+export function inspectRhwpHwpxCurveLineSegments(
+  doc: RhwpDocument, address: readonly [number, number, number], segmentCount: number,
+): number[] | undefined {
+  if (!doc.getHwpxCurveLineSegments || !doc.editHwpxCurveLine || !within(segmentCount, 256)) return undefined;
+  try {
+    const value: unknown = JSON.parse(doc.getHwpxCurveLineSegments(...address));
+    if (!Array.isArray(value) || value.length > segmentCount
+      || !value.every((index, position) => within(index, Math.max(0, segmentCount - 1))
+        && (position === 0 || index > value[position - 1]))) return undefined;
+    return value as number[];
+  } catch { return undefined; }
+}
+
 export function inspectRhwpGroupFills(doc: RhwpDocument, address: readonly [number, number, number]): GroupChildFill[] | undefined {
   if (!doc.getEditableGroupFills) return undefined;
   try {

@@ -739,6 +739,31 @@ print(json.dumps([dict(segment.attrib) for segment in curve.findall("{*}seg")]))
 `], { input: bytes, encoding: "utf8" }));
 }
 
+function addCurveSegmentChild(bytes: Uint8Array, segmentIndex: number): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+target = int(sys.argv[1])
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == "Contents/section0.xml":
+                index = 0
+                def change(match):
+                    global index
+                    current = index
+                    index += 1
+                    if current == target:
+                        return b'<hp:seg' + match.group(1) + b'><hp:futureMeta token="retain"/></hp:seg>'
+                    return match.group(0)
+                data, count = re.subn(rb'<hp:seg\\b([^>]*)/>', change, data)
+                assert count > target, (count, target)
+            destination.writestr(entry, data)
+sys.stdout.buffer.write(output.getvalue())
+`, String(segmentIndex)], { input: bytes });
+}
+
 function unchangedHwpxParts(original: Uint8Array, output: Uint8Array): boolean {
   return execFileSync("python3", ["-c", `
 import base64, io, json, sys, zipfile
@@ -1281,6 +1306,144 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(sourceDoc.getEditableShapePath!(0, 0, unsupported.index)).toBe("null");
       expect(curveSegments(sourceDoc.exportHwpx())[0]?.type).toBe("SPLINE");
     } finally { sourceDoc.free(); }
+  });
+
+  it("splits and rejoins only explicit unextended HWPX LINE curve segments", async () => {
+    const { bytes, index } = curveFixture("LINE");
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      const frame = shapes(doc).find(shape => shape.controlIdx === index)!;
+      const selected = pick(frame);
+      expect(selected?.shapePath?.kind).toBe("curve");
+      expect(selected?.curveLineSegments).toEqual([1]);
+      expect(selected.operations).toContain("pathSegment");
+      const initial = selected.shapePath!;
+      const initialSegments = curveSegments(bytes);
+      const beforeProperties = doc.getShapeProperties!(0, 0, index);
+      const untouched = doc.exportHwpx();
+      const readPath = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
+      const readLineSegments = () => JSON.parse(doc.getHwpxCurveLineSegments!(0, 0, index));
+      const initialRawPath = readPath();
+      expect(initialRawPath).toMatchObject(initial);
+
+      for (const [segment, x, y] of [
+        [0, 5000, 1000], // LINE with an unknown source attribute
+        [2, 4000, 3900], // CURVE
+        [1, 8000, 3000], // off the line
+        [1, 9700, 700], // endpoint
+      ] as const) {
+        expect(() => doc.editHwpxCurveLine!(0, 0, index, segment, true, x, y)).toThrow();
+      }
+      expect(() => doc.editHwpxCurveLine!(0, 0, index, 1, false, 0, 0)).toThrow();
+      expect(() => doc.editHwpxCurveLine!(0, 0, index, 2, false, 0, 0)).toThrow();
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 5000, y: 1000 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 2, x: 4000, y: 3900 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 1, x: 8000, y: 3000 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "joinLines", index: 1 })).toBe(false);
+      expect(edit({ kind: "pathSegment", action: "joinLines", index: 2 })).toBe(false);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(readPath()).toEqual(initialRawPath);
+      expect(readLineSegments()).toEqual([1]);
+
+      const selectedLine = editor.objectSelection!;
+      expect(editor.execute("object.edit", objectEditRequest(selectedLine,
+        { kind: "pathSegment", action: "splitLine", index: 1, x: 8050, y: 3600 })).accepted).toBe(true);
+      await confirm();
+      const splitSegments = initialSegments.flatMap((segment, segmentIndex) => segmentIndex === 1
+        ? [{ ...segment, x2: "8050", y2: "3600" }, { ...segment, x1: "8050", y1: "3600" }]
+        : [{ ...segment }]);
+      const splitPath = { ...initialRawPath,
+        points: [
+          ...initial.points.slice(0, 2), { x: 8050, y: 3600, control: false }, ...initial.points.slice(2),
+        ],
+        segments: splitSegments.map(segment => Object.entries(segment)),
+      };
+      expect(readPath()).toEqual(splitPath);
+      expect(readLineSegments()).toEqual([1, 2]);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+      const splitBytes = (() => {
+        const exported = doc.exportHwpxWithReport();
+        try {
+          const output = exported.takeBytes();
+          expectReopenEvidence(doc, output, exported.contentLoss());
+          expect(curveSegments(output)).toEqual(splitSegments);
+          return output;
+        } finally { exported.free(); }
+      })();
+      expect(unchangedHwpxParts(bytes, splitBytes)).toBe(true);
+      const independentlySplit = new engine.HwpDocument(splitBytes) as RhwpDocument;
+      try {
+        expect(independentlySplit.getEditableShapePath!(0, 0, index)).toBe(doc.getEditableShapePath!(0, 0, index));
+        expect(JSON.parse(independentlySplit.getHwpxCurveLineSegments!(0, 0, index))).toEqual([1, 2]);
+      } finally { independentlySplit.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(readPath()).toEqual(initialRawPath);
+      expect(readLineSegments()).toEqual([1]);
+      expect(curveSegments(doc.exportHwpx())).toEqual(initialSegments);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(readPath()).toEqual(splitPath);
+      expect(readLineSegments()).toEqual([1, 2]);
+
+      const afterSplit = pick(shapes(doc).find(shape => shape.controlIdx === index)!);
+      expect(editor.execute("object.edit", objectEditRequest(afterSplit,
+        { kind: "pathSegment", action: "joinLines", index: 2 })).accepted).toBe(true);
+      await confirm();
+      expect(readPath()).toEqual(initialRawPath);
+      expect(readLineSegments()).toEqual([1]);
+      expect(curveSegments(doc.exportHwpx())).toEqual(initialSegments);
+      expect(doc.getShapeProperties!(0, 0, index)).toBe(beforeProperties);
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(readPath()).toEqual(splitPath);
+      expect(readLineSegments()).toEqual([1, 2]);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(readPath()).toEqual(initialRawPath);
+      expect(readLineSegments()).toEqual([1]);
+
+      const saved = doc.exportHwpxWithReport();
+      try {
+        const output = saved.takeBytes();
+        expectReopenEvidence(doc, output, saved.contentLoss());
+        expect(curveSegments(output)).toEqual(initialSegments);
+        expect(unchangedHwpxParts(bytes, output)).toBe(true);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(reopened.getEditableShapePath!(0, 0, index)).toBe(doc.getEditableShapePath!(0, 0, index));
+          expect(JSON.parse(reopened.getHwpxCurveLineSegments!(0, 0, index))).toEqual([1]);
+        } finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-lines-original.hwpx"), bytes);
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-lines-split.hwpx"), splitBytes);
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-lines-joined.hwpx"), output);
+          writeFileSync(resolve(out, "a-p4-hwpx-curve-lines-report.json"), saved.contentLoss());
+        }
+      } finally { saved.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("keeps child-bearing HWPX curve segments unavailable to split and join", async () => {
+    const { bytes, index } = curveFixture("LINE");
+    const extended = addCurveSegmentChild(bytes, 1);
+    const { editor, doc, pick } = await setup("hwpx", extended);
+    try {
+      const selected = pick(shapes(doc).find(shape => shape.controlIdx === index)!);
+      expect(selected.shapePath?.kind).toBe("curve");
+      expect(selected.curveLineSegments).toEqual([]);
+      expect(selected.operations).not.toContain("pathSegment");
+      const untouched = doc.exportHwpx();
+      expect(() => doc.editHwpxCurveLine!(0, 0, index, 1, true, 8050, 3600)).toThrow();
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+    } finally { editor.dispose(); }
   });
 
   it("Stage 3-A inserts on the closing HWPX edge and removes the first vertex", async () => {

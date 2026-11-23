@@ -1115,6 +1115,181 @@ def section_pair(fixture, path):
         return ET.fromstring(before.read(section)), ET.fromstring(after.read(section))
 
 
+def hwpx_curve_line_segments_case(acc, row, fixtures, out):
+    fixture = fixtures / "a-p4-curve-original.hwpx"
+    before = row["before"] = inspect(fixture)
+    target = next(frame for frame in before["frames"] if frame["path"] and frame["path"]["kind"] == "curve")
+    original_points = target["path"]["points"]
+    original_segments = deepcopy(target["path"]["segments"])
+    h.require(target["path"]["closed"] and len(original_points) == 4 and len(original_segments) == 3,
+              "unexpected HWPX curve fixture topology", target["path"])
+    h.require([dict(segment)["type"] for segment in original_segments] == ["CURVE", "LINE", "CURVE"],
+              "fixture must contain one supported interior LINE", original_segments)
+    h.require(set(dict(original_segments[1])) == {"type", "x1", "y1", "x2", "y2"},
+              "editable LINE source envelope differs", original_segments[1])
+    midpoint = {
+        "x": (original_points[1]["x"] + original_points[2]["x"]) // 2,
+        "y": (original_points[1]["y"] + original_points[2]["y"]) // 2,
+        "control": False,
+    }
+    h.require(midpoint == {"x": 8050, "y": 3600, "control": False}, "unexpected integer line midpoint", midpoint)
+    path = h.begin(acc, row, fixture, out, "a-p4-hwpx-curve-lines.hwpx")
+
+    def select():
+        h.select_object(acc, target, "shape")
+        before = acc.d.js("""
+          const e=document.querySelector('.object-path-mode'), f=document.querySelector('.object-selection-frame');
+          return {button:!!e,pressed:e?.getAttribute('aria-pressed'),kind:f?.dataset.objectKind,
+            points:document.querySelectorAll(arguments[0]).length,revision:document.querySelector('[data-testid=rhwp-status]')?.dataset.revision};
+        """, POINT)
+        if before["pressed"] != "true":
+            acc.dom_click(".object-path-mode")
+        after = acc.d.js("""
+          const e=document.querySelector('.object-path-mode'), f=document.querySelector('.object-selection-frame');
+          return {button:!!e,pressed:e?.getAttribute('aria-pressed'),kind:f?.dataset.objectKind,
+            points:document.querySelectorAll(arguments[0]).length,revision:document.querySelector('[data-testid=rhwp-status]')?.dataset.revision,
+            clicks:window.hwpxCurveLineModeClicks};
+        """, POINT)
+        row.setdefault("pathModeTrace", []).append({"before": before, "after": after})
+        h.require(after["pressed"] == "true", "native pointer did not activate path edit mode", row["pathModeTrace"][-1])
+
+    def select_vertex(index, value):
+        labels = acc.d.js("return [...document.querySelectorAll(arguments[0])].map(e=>e.getAttribute('aria-label'))", POINT)
+        h.require(len(labels) > index, "missing curve point handle", labels)
+        label = labels[index].replace("\\", "\\\\").replace('"', '\\"')
+        acc.dom_click(f'{POINT}[aria-label="{label}"]')
+        expected = f'[{value["x"]},{value["y"]}]'
+        acc.wait("return JSON.stringify([...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value))===arguments[1]",
+                 COORDS, expected)
+
+    def present(selector, expected):
+        condition = "!!document.querySelector(arguments[0])" if expected else "!document.querySelector(arguments[0])"
+        acc.wait("return " + condition, selector)
+
+    def count(expected):
+        acc.wait("return document.querySelectorAll(arguments[0]).length===arguments[1]", POINT, expected)
+
+    acc.d.js("""
+      window.hwpxCurveLineActions=[];
+      window.hwpxCurveLineModeClicks=[];
+      document.addEventListener('click',e=>{
+        if(e.target.matches('.object-path-mode'))
+          window.hwpxCurveLineModeClicks.push({trusted:e.isTrusted,pressed:e.target.getAttribute('aria-pressed')});
+        if(e.target.matches('.object-path-split-line,.object-path-join-lines'))
+          window.hwpxCurveLineActions.push({action:e.target.classList.contains('object-path-split-line')?'split':'join',trusted:e.isTrusted});
+      },true);
+    """)
+    select()
+    count(3)
+    select_vertex(0, original_points[0])
+    present(".object-path-split-line", False)
+    present(".object-path-join-lines", False)
+    select_vertex(1, original_points[1])
+    present(".object-path-split-line", True)
+    present(".object-path-join-lines", False)
+    select_vertex(2, original_points[2])
+    present(".object-path-split-line", False)
+    present(".object-path-join-lines", False)
+    select_vertex(1, original_points[1])
+    acc.dom_click(".object-path-split-line")
+    h.revision(acc, "hwpx", 1)
+    select()
+    count(4)
+    select_vertex(2, midpoint)
+    present(".object-path-join-lines", True)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    select()
+    count(3)
+    select_vertex(1, original_points[1])
+    present(".object-path-join-lines", False)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    select()
+    count(4)
+    select_vertex(2, midpoint)
+    present(".object-path-join-lines", True)
+
+    split_segments = deepcopy(original_segments)
+    left = deepcopy(split_segments[1])
+    right = deepcopy(split_segments[1])
+    for attributes, updates in ((left, {"x2": str(midpoint["x"]), "y2": str(midpoint["y"])}),
+                                (right, {"x1": str(midpoint["x"]), "y1": str(midpoint["y"])})):
+        for pair in attributes:
+            if pair[0] in updates:
+                pair[1] = updates[pair[0]]
+    split_segments[1:2] = [left, right]
+    split_points = [*original_points[:2], midpoint, *original_points[2:]]
+    split_path = {**target["path"], "points": split_points, "segments": split_segments}
+    split_target = {**target, "path": split_path}
+    expected_split = {**before, "frames": [split_target if frame == target else frame for frame in before["frames"]]}
+    h.publish(acc, "hwpx", row)
+    row["splitSave"] = row["save"]
+    split_model = row["splitModel"] = inspect(path)
+    h.require(split_model == expected_split, "saved split changed curve ownership, siblings, or geometry", split_model)
+    original_section, split_section = section_pair(fixture, path)
+    expected_section = deepcopy(original_section)
+    curve = expected_section.find(".//{*}curve")
+    serialized_segments = curve.findall("{*}seg")
+    h.require(len(serialized_segments) == 3, "source XML lost the expected three curve segments")
+    line = serialized_segments[1]
+    second = deepcopy(line)
+    line.attrib["x2"], line.attrib["y2"] = str(midpoint["x"]), str(midpoint["y"])
+    second.attrib["x1"], second.attrib["y1"] = str(midpoint["x"]), str(midpoint["y"])
+    curve.insert(list(curve).index(line) + 1, second)
+    h.require(ET.tostring(expected_section) == ET.tostring(split_section),
+              "saved split changed segment metadata, XML siblings, or section structure")
+    h.reopen(acc, path, row)
+    row["splitReopenedSession"] = row["reopenedSession"]
+    h.require(row["splitReopenedSession"].get("dirty") == "false"
+              and row["splitReopenedSession"].get("unpreserved") == "false",
+              "split document did not reopen cleanly", row["splitReopenedSession"])
+
+    target = next(frame for frame in split_model["frames"] if frame["path"] and frame["path"]["kind"] == "curve")
+    select()
+    count(4)
+    select_vertex(2, midpoint)
+    present(".object-path-join-lines", True)
+    acc.dom_click(".object-path-join-lines")
+    # The independent reopened session starts a fresh revision sequence.
+    h.revision(acc, "hwpx", 1)
+    select()
+    count(3)
+    select_vertex(1, original_points[1])
+    present(".object-path-split-line", True)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    select()
+    count(4)
+    select_vertex(2, midpoint)
+    present(".object-path-join-lines", True)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    select()
+    count(3)
+    row["lineActions"] = acc.d.js("return window.hwpxCurveLineActions")
+    h.require(row["lineActions"] == [{"action": "split", "trusted": True}, {"action": "join", "trusted": True}],
+              "split/join actions were not trusted Native clicks", row["lineActions"])
+    h.publish(acc, "hwpx", row)
+    row["joinedSave"] = row["save"]
+    after = row["after"] = inspect(path)
+    h.require(after == before, "joined document did not restore the original owner and geometry", after)
+    old, new = section_pair(fixture, path)
+    h.require(ET.tostring(old) == ET.tostring(new), "join did not restore exact curve XML and unrelated section data")
+    h.reopen(acc, path, row)
+    row["joinedReopenedSession"] = row["reopenedSession"]
+    h.require(row["joinedReopenedSession"].get("dirty") == "false"
+              and row["joinedReopenedSession"].get("unpreserved") == "false",
+              "joined document did not reopen cleanly", row["joinedReopenedSession"])
+    target = next(frame for frame in after["frames"] if frame["path"] and frame["path"]["kind"] == "curve")
+    select()
+    count(3)
+    select_vertex(1, original_points[1])
+    present(".object-path-split-line", True)
+    row["publishedSha256"] = h.digest(path)
+    h.require(h.digest(fixture) == row["fixtureSha256"], "source fixture was modified")
+
+
 def polygon_vertices_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-polygon-original.hwpx"
     before = row["before"] = inspect(fixture)
@@ -2170,6 +2345,7 @@ h.CASES = {
     "P4-PATH-XFM-HWP5": lambda *args: rhwp_path_transform_case(*args, "hwp"),
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
+    "P4-HX-CURVE-LINES": hwpx_curve_line_segments_case,
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
     "P4.3": group_case,
     "P4.4": polygon_vertices_case,
