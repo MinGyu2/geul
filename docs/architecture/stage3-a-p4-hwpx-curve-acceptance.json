@@ -7,12 +7,13 @@
     "Parse and retain original HWPX hp:seg attributes, type identity, ordering, and lexical coordinate strings.",
     "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
     "Move a shared endpoint in both adjacent segment records; keep a closed path closed.",
-    "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types."
+    "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types.",
+    "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts."
   ],
   "unresolvedRequirements": [
     "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
-    "Bezier control-point editing therefore has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
-    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. Any narrower LINE-only split/merge extension remains unimplemented and must preserve original segment metadata."
+    "Bezier control-point editing has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
+    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed."
   ],
   "formatEvidence": {
     "source": "Hancom HWPML 3.0 Revision 1.2, section 5.6.6, table 140 SEGMENT",
@@ -34,7 +35,7 @@
       "external/rhwp/src/model/shape.rs (CurveShape)",
       "external/rhwp/src/serializer/hwpx/section.rs"
     ],
-    "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The geul partial edit path retains original hp:seg lexical metadata for supported endpoint edits; unknown source metadata/types are not promoted into a guessed control-point model."
+    "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The added ordered patch records whether each source hp:seg had children and exposes structural split/join only for childless LINE records with exactly the five standard attributes. The geul edit path retains segment metadata/order and original segment types outside the touched LINE records; unsupported source envelopes are rejected."
   },
   "sampleCorpusAudit": {
     "source": "Repository RHWP sample corpus under external/rhwp/samples/**/*.hwpx; aggregate counts are observational and may include synthetic regression fixtures.",
@@ -72,6 +73,80 @@
     "conclusion": "The inspected compatible examples agree with the current schema, but the sample corpus cannot prove that no proprietary extension exists anywhere."
   },
   "releaseWasm": {
+    "generation": "a8e4ecb1456b0aeccc2e93295edcee7ffa7a259639f3f62b2f65a5221fc2beea",
+    "sourceCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "sourceTreeSha256": "67811ca886802aba4d949f5308bf5984321ad3ff4fb689ab1f0cc0366df81ac7",
+    "patchSeriesCount": 53,
+    "lastPatch": "patches/rhwp/stage3a-hwpx-curve-lines.patch",
+    "lastPatchSha256": "0949dbc924f436e22f5a95738fe34a887d54a1c8434c5c4c7d7ae57189aea10d",
+    "command": "GEUL_RHWP_TEST_ARTIFACTS=public/rhwp GEUL_STAGE3_OUT=target/p4-hx-curve/wasm-lines-node node_modules/.bin/vitest run scripts/tests/stage3-shapes.wasm.test.ts --config target/vitest-stage3-shapes.config.ts -t \"preserves HWPX curve segment identity and edits connected endpoints losslessly|splits and rejoins only explicit unextended HWPX LINE curve segments|keeps child-bearing HWPX curve segments unavailable to split and join\"",
+    "result": "PASS: 3 passed, 83 skipped. npm run typecheck PASS. Fresh 53-patch pinned RHWP Release WASM build PASS; external checkout unchanged. Guarded Tauri Release PASS for this generation; matching Linux X11 Native run06 PASS.",
+    "assertions": [
+      "Connected LINE/CURVE endpoint behavior, original segment identity, unknown metadata, and closed path remain preserved.",
+      "Only strict standard childless HWPX LINE records permit exact integer split and adjacent collinear join; unsupported attributes, child elements, types, and geometries reject without mutation.",
+      "Undo/Redo, zero-loss Release export, independent HWPX reopen, unrelated OPC byte equality, and T009-style serialization evidence pass."
+    ],
+    "rhwpJsSha256": "2e27849add212f316e83cbb9317c18b6b7561a8d5710c527047a3e5a228688e8",
+    "wasmSha256": "3e84f41de4c73505a50175e42e5fc95eaadaf9a4ad4665f77a8d7de08d5d1ffa",
+    "externalUnchanged": true
+  },
+  "native": {
+    "status": "PASS_FOR_IMPLEMENTED_ENDPOINT_AND_STRICT_LINE_SPLIT_JOIN_SUBSET",
+    "environment": "Linux X11/Xvfb, test-owned private X11, D-Bus, IBus and Tauri WebDriver session",
+    "appSha256": "8fa3e603b7b0c7bcdc31975241baf356c88b9e4d7e397231304858c461b43ac8",
+    "rhwpGeneration": "a8e4ecb1456b0aeccc2e93295edcee7ffa7a259639f3f62b2f65a5221fc2beea",
+    "fixtureSha256": "a814700021b3176f45555526d86ddd1954dceaf11e5bb9cc38939ba6fcc0a297",
+    "publishedFileSha256": "14bd18c03e65d1ac4aab44f6be9e9be1bc7f831b1a57e47e11e23678f21c46e6",
+    "resultFile": "target/p4-hx-curve/native-x11-run-06/result.json",
+    "caseStatus": "PASS",
+    "splitSave": {
+      "state": "saved",
+      "findings": "",
+      "synced": true,
+      "changedSince": false
+    },
+    "joinSave": {
+      "state": "saved",
+      "findings": "",
+      "synced": true,
+      "changedSince": false
+    },
+    "cleanupFile": "target/p4-hx-curve/native-x11-session-06/cleanup.json",
+    "cleanup": {
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": [],
+      "processErrors": []
+    },
+    "checks": [
+      "Trusted Native pointer selection and path-mode entry; only eligible LINE midpoint offers split, and mixed CURVE endpoints do not.",
+      "Trusted split and join clicks; split Undo/Redo and join Undo/Redo each restore their expected topology.",
+      "T009 split and join saves report saved, synced=true, changedSince=false, and findings empty.",
+      "Independent shape model and section XML checks prove segment type, coordinates, metadata, order, shape owner, sibling structure, and original joined XML; unrelated OPC entries remain byte-identical.",
+      "Both split and final joined files reopen in a fresh document session with dirty=false and unpreserved=false; fixture hash remains unchanged.",
+      "Native launcher proves process teardown and private temporary resource cleanup with no survivors."
+    ],
+    "otherPlatforms": "Wayland, Windows, macOS and external Office NOT RUN; complete Bezier acceptance remains unresolved."
+  },
+  "commit": {
+    "status": "PARTIAL_IMPLEMENTATION_COMMITTED_UNRESOLVED",
+    "sha": "fee5efa43d55c68a8962164a8c2a557c8aeec323",
+    "subject": "feat(stage3a-p4): preserve HWPX curve endpoints (partial) [P4-HX-CURVE]",
+    "lineSplitJoinExtension": {
+      "status": "PARTIAL_IMPLEMENTATION_COMMITTED_UNRESOLVED",
+      "subject": "feat(stage3a-p4): split and join strict HWPX LINE curve segments [P4-HX-CURVE]",
+      "sha": "5a75b1972217fcf6a5f5a12456df961c1131b132"
+    }
+  },
+  "tauriRelease": {
+    "command": "python3 scripts/tauri-geul.py build --no-bundle",
+    "appSha256": "8fa3e603b7b0c7bcdc31975241baf356c88b9e4d7e397231304858c461b43ac8",
+    "privacyStatus": "PASS",
+    "runtimePathStatus": "PASS",
+    "portabilityStatus": "NOT_VERIFIED",
+    "reason": "Nix store runtime dependencies; Debian/Ubuntu portability is not established."
+  },
+  "previousEndpointReleaseWasm": {
     "generation": "d89b0ccfc6f7eca581911ced6707b5a218958822095e06c1273be5449bbb52d3",
     "patchSeriesCount": 45,
     "lastPatch": "patches/rhwp/stage3a-hwpx-curve-segments.patch",
@@ -86,7 +161,7 @@
     ],
     "wasmSha256": "3346eb05f40f10dfebe0de49fabd8d2595c2b40f0e03d5c295b7f7fabca05ef8"
   },
-  "native": {
+  "previousEndpointNative": {
     "status": "PASS_FOR_IMPLEMENTED_ENDPOINT_SUBSET",
     "environment": "Linux X11/Xvfb, test-owned private X11 and Tauri WebDriver session",
     "appSha256": "27b5ce15c3206d7bf091591d23c562e4150bda62f6a98dc71b5240aab4764a81",
@@ -106,12 +181,7 @@
     "otherPlatforms": "Wayland, Windows, and macOS NOT RUN; complete Bezier acceptance remains unresolved.",
     "cleanupFile": "target/p4-hx-curve/native-session5/cleanup.json"
   },
-  "commit": {
-    "status": "PARTIAL_IMPLEMENTATION_COMMITTED_UNRESOLVED",
-    "sha": "fee5efa43d55c68a8962164a8c2a557c8aeec323",
-    "subject": "feat(stage3a-p4): preserve HWPX curve endpoints (partial) [P4-HX-CURVE]"
-  },
-  "tauriRelease": {
+  "previousEndpointTauriRelease": {
     "appSha256": "27b5ce15c3206d7bf091591d23c562e4150bda62f6a98dc71b5240aab4764a81",
     "privacyStatus": "PASS",
     "runtimePathStatus": "PASS",
