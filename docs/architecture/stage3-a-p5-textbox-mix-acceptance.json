@@ -5,7 +5,7 @@
   "feature": "P5-TB-MIX mixed-format HWPX textbox range deletion and paragraph join",
   "status": "IMPLEMENTED_VERIFIED",
   "supported": "Top-level, uncaptioned HWPX body text boxes with no more than 64 non-empty paragraphs whose text topology is fully observable. Delete may join ordinary paragraphs with different paragraph-shape/style references. The joined paragraph retains the starting paragraph identity, paraPrIDRef and styleIDRef; retained prefix/suffix character runs keep their source character formatting. The edit is one Undo/Redo transaction.",
-  "refused": "HWP5; captioned or grouped text boxes; more than 64 paragraphs; empty text; page/column or unobservable raw break structure; controls, field/range/title/markpen markers, extended tabs, tab characters, HWPX text topology or numbering restart; cross-paragraph IME/clipboard replacement. Unsupported topology fails before mutation.",
+  "refused": "HWP5; captioned or grouped text boxes; more than 64 paragraphs; empty text; page/column or unobservable raw break structure; controls, field/range/title/markpen markers, extended tabs, tab characters, HWPX text topology or numbering restart. Replacement is separately supported only under the documented P5-TB-REPLACE HWPX IME/plain-text and HWP5 collapsed-caret paste contract; other unsupported topology fails before mutation.",
   "release": {
     "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
     "generation": "6f8cde0ed91e2fe27d1055df86e7499c4496a31443ca2bbd7e995316e53f5cad",

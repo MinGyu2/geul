@@ -5,7 +5,7 @@
   "feature": "P5-H5-TB HWP5 text-box paragraph split and adjacent boundary merge",
   "status": "IMPLEMENTED_VERIFIED",
   "supported": "SAFE HWP5 Section0 body-owned top-level flat unlocked uncaptioned text boxes with no more than 64 ordinary, non-empty paragraphs. Enter at an interior caret splits one paragraph into adjacent paragraphs; Backspace at the adjacent paragraph boundary merges them. The split gets a globally unique paragraph instance ID. Paragraph/list counts, owner, record nesting/control levels, paragraph/style references, character-shape runs, paragraph raw tails, siblings and outer object geometry are preserved. HWPX behavior remains under its previous limits.",
-  "refused": "Empty or structurally marked paragraphs; controls, fields, tabs, break/topology metadata, captions, groups, locks, ambiguous ownership, more than 64 paragraphs, HWP5 cross-paragraph selection/replacement or paste, and non-adjacent paragraph joins. Unsupported inputs fail before mutation.",
+  "refused": "Empty or structurally marked paragraphs; controls, fields, tabs, break/topology metadata, captions, groups, locks, ambiguous ownership, more than 64 paragraphs, HWP5 cross-paragraph IME replacement, and multiline paste replacing a non-collapsed selection. HWP5 multiline plain-text paste at a collapsed caret is accepted separately by P5-TB-REPLACE. Unsupported inputs fail before mutation.",
   "rhwpRelease": {
     "submodulePin": "1a76570e833917d15817415a53c09ad61ab3203f",
     "orderedPatchCount": 49,

@@ -39,5 +39,7 @@
     "evidence": "stage3-a-native-p4-p5-p6-acceptance.json"
   },
   "evidence": "target/stage3a-p5-textbox-paste/",
-  "implementationCommit": "59e27f60593439cfaac1eae1b9455c889663e93e"
+  "implementationCommit": "59e27f60593439cfaac1eae1b9455c889663e93e",
+  "supersededBy": "stage3-a-p5-textbox-replace-acceptance.json",
+  "scopeNote": "This record verifies the original HWPX same-style plain clipboard subset. It is not the complete P5-TB-REPLACE acceptance by itself."
 }

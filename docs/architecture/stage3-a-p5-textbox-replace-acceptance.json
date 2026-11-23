@@ -1,0 +1,124 @@
+{
+  "date": "2026-11-23",
+  "baselineHead": "75feaddc6208ac39cce6cdc75ff88808002a0dc5",
+  "implementationCommit": "8e467c8f65b1991e79a33d8f9811f77d78f95baf",
+  "feature": "P5-TB-REPLACE cross-paragraph HWPX IME replacement and HWP5 text-box multiline paste",
+  "status": "IMPLEMENTED_VERIFIED",
+  "supported": "HWPX body-owned text boxes: cross-paragraph IME replacement with selection deletion and delayed insertFromComposition in one composition transaction; preserve the existing same-style plain-text multi-paragraph clipboard replacement. SAFE HWP5 Section0 flat, unlocked, uncaptioned body text boxes: insert multiline plain text at a collapsed caret as ordinary paragraphs. Preserve start paragraph identity/style, retained prefix/suffix character styles, destination ownership, textbox geometry and unrelated package/CFB data.",
+  "refused": "HWP5 cross-paragraph IME replacement and HWP5 multiline paste replacing a non-collapsed selection remain fail-closed. Empty result paragraphs, unsupported/ambiguous HWPX text topology, fields/controls/tabs, stale selection/session ownership, more than 64 resulting paragraphs, and unproven HWP5 IDs/style/topology are refused before partial mutation.",
+  "rhwpRelease": {
+    "submodulePin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "orderedPatchCount": 52,
+    "lastPatch": "patches/rhwp/stage3a-textbox-delete-topology-occurrences.patch",
+    "lastPatchSha256": "84124733a1fc066e47255dc90de82a4fd040f98c51a91adf8c5d8a3ac1278415",
+    "sourceTreeSha256": "34c5ff15b915ec8d3c1b67a277d7fea93b5eb7a86a456445b61000f7ba857b02",
+    "generation": "3e2996555be154f21b745c3261fb9ad6ad8cb3cdf8884713c5782a9e021e15df",
+    "artifacts": {
+      "rhwp.js": "7e21cebb72d84f61c5224e7509ec322e563645e8bc4243b5c8ed45e21a1b56fa",
+      "rhwp_bg.wasm": "2fc5ab716e7eebe8e8ab75d67e0576488d1cc2a1c6512ed692fd5690a3e3fa4c"
+    },
+    "productVerification": "PASS: protected Release build embeds the exact immutable RHWP generation and patch identity; upstream RHWP submodule remains clean at the pinned commit."
+  },
+  "checks": {
+    "focusedImeAndCancellation": "PASS: src/components/Editor/rhwp/inputBuffer.test.tsx and cancellationBoundary.test.ts — 44/44.",
+    "releaseWasm": "PASS 3, skipped 81: P5-TB-REPLACE HWPX IME replacement, post-save/reopen replacement and HWP5 multiline paste; test output under target/p5-tb-replace-out-splitfix-v1.",
+    "releaseT009": "PASS 1/1: release_hwp5_textbox_multiline_paste_accepts_only_proven_reflow. Checks the real HWP5 output and rejects reused paragraph ID, changed paragraph metadata and changed textbox owner/geometry.",
+    "typecheck": "PASS: npm run typecheck.",
+    "nativeHarness": "PASS: python3 -m py_compile scripts/tests/native-stage3a-p5.py.",
+    "diffCheck": "PASS for product and test source. The general Git check reports only a required blank context line in the nested unified diff inside stage3a-textbox-join-topology-merge.patch; RHWP manifest, ordered apply and protected build prove that patch is valid and exact.",
+    "protectedRelease": {
+      "command": "GEUL_RHWP_TEST_ARTIFACTS=target/p5-tb-replace-rhwp-assets-delete-v2 npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "appSha256": "85d435e052bdc197f99b96f34d5be3e107fc68dc0a356d30f31eacdffa1380de",
+      "privacyStatus": "PASS",
+      "runtimePathStatus": "PASS",
+      "portabilityStatus": "NOT VERIFIED — Nix store runtime dependencies"
+    }
+  },
+  "nativeX11": {
+    "result": "PASS",
+    "environment": "Linux X11/Xvfb, isolated test-owned D-Bus and IBus Hangul; actual Release Tauri GTK app, trusted pointer/keyboard and composition events.",
+    "appSha256": "85d435e052bdc197f99b96f34d5be3e107fc68dc0a356d30f31eacdffa1380de",
+    "processAppSha256": "85d435e052bdc197f99b96f34d5be3e107fc68dc0a356d30f31eacdffa1380de",
+    "rhwpGeneration": "3e2996555be154f21b745c3261fb9ad6ad8cb3cdf8884713c5782a9e021e15df",
+    "case": "P5-TB-REPLACE",
+    "resultFile": "target/p5-tb-replace-x11-run-splitfix-v3/result.json",
+    "sessionFile": "target/p5-tb-replace-x11-session-splitfix-v3/session.json",
+    "cleanupFile": "target/p5-tb-replace-x11-session-splitfix-v3/cleanup.json",
+    "hwpxIme": {
+      "fixture": "target/p5-tb-replace-x11-fixtures-v1/a-p5-textbox-paste-original.hwpx",
+      "fixtureSha256": "e99448f289e09adcfdb4ec7e7555f3d1de4066feba6e436936be77c72c409340",
+      "trustedEvents": "compositionstart/update/end observed; actual cross-paragraph owned textbox selection replaced with Hangul IBus input.",
+      "revisions": {
+        "afterTwoSyllables": 2,
+        "undoFirst": 3,
+        "undoAll": 4,
+        "redoFirst": 5,
+        "redoAll": 6
+      },
+      "undoRedo": "PASS: first Undo restores the first syllable state; second Undo restores the original clipboard result/selection; Redo restores each intermediate/final rendering.",
+      "save": {
+        "state": "saved",
+        "synced": true,
+        "changedSince": false,
+        "findings": "",
+        "revision": 6
+      },
+      "savedSha256": "c24129ae4f82290b0ef8434fb4b8c8cc2df5863875f9f299398d8716bc6858bc",
+      "preservation": "Independent HWPX inspection proved exact textbox owner/shape/body, retained prefix/suffix character runs, unselected paragraph IDs, and all non-section OPC parts. App closed and reopened the saved HWPX in a new document session with ready/clean revision 0."
+    },
+    "hwp5Paste": {
+      "fixture": "target/p5-tb-replace-x11-fixtures-v1/p5-h5tb-paste-original.hwp",
+      "fixtureSha256": "3b01b2da8820751863ec64be4d7c4ae0adbddcc411a929b9997c14dd64bee2dc",
+      "trustedPasteKey": true,
+      "undoRedoRevisions": [
+        1,
+        2,
+        3
+      ],
+      "cfbProof": {
+        "changedStreams": [
+          "BodyText/Section0",
+          "PrvImage"
+        ],
+        "sourceParagraphs": [
+          "abcdef"
+        ],
+        "savedParagraphs": [
+          "abcX",
+          "Ydef"
+        ],
+        "savedTextboxParagraphIds": [
+          0,
+          1
+        ],
+        "ownerSha256": "0d6ea61615617429a1bc2795c570afc19d5bae07e3d142489687a0dcebb7b663",
+        "preservedSourceTextOffsets": [
+          0,
+          1,
+          2,
+          5,
+          6,
+          7
+        ],
+        "unrelatedStreams": "unchanged; parent/shape geometry, LIST_HEADER tail, paragraph style references and siblings preserved"
+      },
+      "savedSha256": "62ae3f517d923a11b141e8263822c924fde204d3806869c8c518c2ca287c1dd0",
+      "reopen": "PASS: HWP5 CFB independently reopened; paragraph text, textbox owner/shape/body and clean revision 0 verified."
+    },
+    "cleanup": {
+      "exit": 0,
+      "proven": true,
+      "filesystemProven": true,
+      "survivors": [],
+      "processErrors": []
+    }
+  },
+  "otherPlatforms": {
+    "Wayland": "NOT RUN",
+    "Windows": "NOT RUN",
+    "macOS": "NOT RUN",
+    "externalOffice": "NOT RUN",
+    "portability": "NOT VERIFIED outside Nix runtime"
+  }
+}
