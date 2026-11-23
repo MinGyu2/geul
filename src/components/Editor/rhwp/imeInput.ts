@@ -332,12 +332,17 @@ export class ImeInput {
 
     if (session.composing) {
       const awaited = finalText === "" && this.shown;
-      session.endComposition(finalText);
+      if (awaited) {
+        // WebKitGTK/ibus may split one commit into an empty end and a delayed final input.
+        // Keep the same session transaction open so a selected range is not committed
+        // separately before the syllable arrives. Clear any still-visible preedit now.
+        if (session.compositionText) session.updateComposition("");
+      } else session.endComposition(finalText);
       this.context.terminal = this.viewConfirming && finalText ? { text: finalText, confirmedByView: true }
         : finalText ? { text: finalText, composed: true } : { text: finalText };
       this.viewConfirming = false;
       this.shown = false;
-      if (awaited) {
+      if (awaited && session.composing) {
         this.beginAwaiting();
         this.cancellationEnd = this.deletedPreedit;
       }
@@ -446,7 +451,7 @@ export class ImeInput {
 
   /** 빈 끝 뒤 최종 글자를 이 세션에서 기다린다. */
   private beginAwaiting() {
-    this.releaseAwaiting();
+    if (this.context.awaiting !== this.session || !this.session.awaitingCommit) this.releaseAwaiting();
     this.context.awaiting = this.session;
     this.claim();
     this.session.setAwaitingCommit(true);
@@ -455,6 +460,9 @@ export class ImeInput {
   /** 기다림을 끝낸다(최종 글자가 왔거나 새 입력이 시작됨). */
   private releaseAwaiting() {
     const awaiting = this.context.awaiting;
+    // A delayed commit was left open as the same composition transaction. A new
+    // input boundary settles it as an empty end before allowing another edit.
+    if (awaiting?.awaitingCommit && awaiting.composing) awaiting.endComposition("");
     this.context.awaiting = null;
     if (awaiting?.awaitingCommit) awaiting.setAwaitingCommit(false);
     if (!this.context.interrupted && !this.session.composing) this.context.owner = null;

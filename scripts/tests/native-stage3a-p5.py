@@ -13,6 +13,10 @@ entry = Path(__file__).with_name("native-stage3-c.py")
 spec = importlib.util.spec_from_file_location("stage3c", entry)
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
+h5_entry = Path(__file__).with_name("native-stage3-h5-textbox-paragraphs.py")
+h5_spec = importlib.util.spec_from_file_location("stage3h5textbox", h5_entry)
+h5 = importlib.util.module_from_spec(h5_spec)
+h5_spec.loader.exec_module(h5)
 
 DESCRIPTION = '[aria-labelledby=properties-selection] .object-tools input[maxlength="1024"]'
 WP = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
@@ -739,6 +743,12 @@ def inspect_box(path):
     """)
 
 
+def canvas_hashes(acc):
+    images = acc.d.js("return [...document.querySelectorAll('.rhwp-page__canvas')].map(c=>c.toDataURL())")
+    h.require(images, "rendered page canvas is unavailable")
+    return [hashlib.sha256(image.encode()).hexdigest() for image in images]
+
+
 def textbox(acc, row, fixtures, out):
     fixture = fixtures / "a-p5-textbox-original.hwpx"
     before = row["before"] = inspect_box(fixture)
@@ -845,6 +855,7 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False, mixed=False):
     h.require(acc.status("hwpx")["selection"] and acc.status("hwpx")["caret"].endswith(f"/0/{span}")
               and ":2@textbox/" in acc.status("hwpx")["caret"], "did not make a cross-paragraph selection", acc.status("hwpx"))
     edited_text = "nextain" if replace else "Boain"
+    source_canvas = canvas_hashes(acc) if replace else None
     if replace:
         acc.d.js("""
           window.pasteKeys=[];
@@ -860,16 +871,28 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False, mixed=False):
         h.clipboard_peer(acc, "UTF8_STRING", "새\nnext", paste)
         row["trustedPaste"] = acc.d.js("return window.pasteKeys")
         h.require(row["trustedPaste"] == [True], "missing trusted paste key", row["trustedPaste"])
+        pasted_canvas = canvas_hashes(acc)
+        h.require(pasted_canvas != source_canvas, "trusted paste did not change rendered textbox pixels")
     else:
         acc.key("Delete")
         h.revision(acc, "hwpx", revision + 1)
-    acc.text_is("hwpx", edited_text)
+        acc.text_is("hwpx", edited_text)
     acc.key("ctrl+z")
     h.revision(acc, "hwpx", revision + 2)
-    acc.text_is("hwpx", "plain")
+    if replace:
+        undo_canvas = canvas_hashes(acc)
+        h.require(undo_canvas == source_canvas, "paste Undo did not restore the source rendering", undo_canvas)
+    else:
+        acc.text_is("hwpx", "plain")
     acc.key("ctrl+y")
     h.revision(acc, "hwpx", revision + 3)
-    acc.text_is("hwpx", edited_text)
+    if replace:
+        redo_canvas = canvas_hashes(acc)
+        h.require(redo_canvas == pasted_canvas, "paste Redo did not restore the edited rendering", redo_canvas)
+        row["pasteUndoRedoCanvases"] = {"source": source_canvas, "pasted": pasted_canvas,
+                                        "undo": undo_canvas, "redo": redo_canvas}
+    else:
+        acc.text_is("hwpx", edited_text)
     h.publish(acc, "hwpx", row)
 
     after = row["after"] = inspect_box(path)
@@ -936,6 +959,10 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False, mixed=False):
         h.require(ET.tostring(roots[0]) == ET.tostring(roots[1]), "unrelated section XML changed")
     h.reopen(acc, path, row)
     if replace:
+        reopened = inspect_box(path)
+        h.require(reopened["paragraphs"] == expected and reopened["shape"] == before["shape"]
+                  and reopened["body"] == before["body"],
+                  "native reopened paste differs from the independent HWPX model", reopened)
         inserted = h.inspect_rhwp(path, """
           const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
           console.log(JSON.stringify(JSON.parse(doc.getCursorRectInCell(0,owner.para,owner.controlIndex,0,2,4))));
@@ -943,11 +970,329 @@ def textbox_join(acc, row, fixtures, out, span=2, replace=False, mixed=False):
         place(inserted)
     else:
         place(positions[1])
-    acc.text_is("hwpx", edited_text)
-    row["nativeReopenedParagraphText"] = acc.status("hwpx").get("paragraphText")
-    h.require(row["nativeReopenedParagraphText"] == edited_text,
-              "native reopened textbox paragraph differs from the published text",
-              row["nativeReopenedParagraphText"])
+        acc.text_is("hwpx", edited_text)
+        row["nativeReopenedParagraphText"] = acc.status("hwpx").get("paragraphText")
+        h.require(row["nativeReopenedParagraphText"] == edited_text,
+                  "native reopened textbox paragraph differs from the published text",
+                  row["nativeReopenedParagraphText"])
+
+
+def hwp5_textbox_paste_disk_proof(source, output, expected):
+    before_streams, after_streams = (
+        h5.gso.cfb_streams(Path(path).read_bytes()) for path in (source, output)
+    )
+    h.require(before_streams.keys() == after_streams.keys(), "HWP CFB stream set changed")
+    changed = sorted(name for name in before_streams if before_streams[name] != after_streams[name])
+    h.require(set(changed) <= {"BodyText/Section0", "PrvImage"}, "unrelated HWP stream changed", changed)
+    before_rows = h5.records(h5.unpacked(before_streams, "BodyText/Section0"))
+    after_rows = h5.records(h5.unpacked(after_streams, "BodyText/Section0"))
+    before_start, before_end, before_obj = h5.textbox_object(before_rows)
+    after_start, after_end, after_obj = h5.textbox_object(after_rows)
+    h.require(before_rows[:before_start] == after_rows[:after_start], "preceding body records changed")
+    h.require(before_rows[before_end:] == after_rows[after_end:], "following body records changed")
+    h.require(before_obj[0] == after_obj[0] and before_obj[1] == after_obj[1],
+              "textbox owner, drawing identity or geometry changed")
+    h.require(before_obj[-1] == after_obj[-1], "textbox shape leaf changed")
+    old_list, new_list = h5.list_header(before_obj), h5.list_header(after_obj)
+    h.require(old_list[4:] == new_list[4:], "textbox LIST_HEADER metadata changed")
+    old_paras, new_paras = h5.textbox_paragraphs(before_obj), h5.textbox_paragraphs(after_obj)
+    h.require([h5.paragraph_text(para) for para in new_paras] == expected,
+              "saved HWP5 textbox paragraphs differ", [h5.paragraph_text(para) for para in new_paras])
+    old_header = old_paras[0][0][2]
+    new_ids = [int.from_bytes(para[0][2][18:22], "little") for para in new_paras]
+    old_ids = {int.from_bytes(data[18:22], "little") for tag, _, data in before_rows
+               if tag == 66 and len(data) >= 22}
+    h.require(new_ids[0] == int.from_bytes(old_header[18:22], "little"),
+              "paste did not preserve the first paragraph identity", new_ids)
+    h.require(len(set(new_ids)) == len(new_ids)
+              and all(value != 0 and value not in old_ids for value in new_ids[1:]),
+              "paste reused or duplicated a paragraph identity", new_ids)
+    h.require(all(para[0][2][8:11] == old_header[8:11]
+                  and para[0][2][22:] == old_header[22:] for para in new_paras),
+              "paste changed paragraph style references or raw header tail")
+
+    source_text = "".join(h5.paragraph_text(para) for para in old_paras)
+    output_text = "".join(h5.paragraph_text(para) for para in new_paras)
+    source_pairs, output_pairs = [], []
+    for para in old_paras:
+        text = h5.paragraph_text(para)
+        runs = h5.paragraph_char_shapes(para)
+        source_pairs.extend((char, h5.char_shape_at(runs, offset)) for offset, char in enumerate(text))
+    for para in new_paras:
+        text = h5.paragraph_text(para)
+        runs = h5.paragraph_char_shapes(para)
+        output_pairs.extend((char, h5.char_shape_at(runs, offset)) for offset, char in enumerate(text))
+    cursor = 0
+    preserved_offsets = []
+    for pair in source_pairs:
+        found = next((index for index in range(cursor, len(output_pairs)) if output_pairs[index] == pair), None)
+        h.require(found is not None, "paste removed or reformatted original text", pair)
+        preserved_offsets.append(found)
+        cursor = found + 1
+    source_styles = {style for _, style in source_pairs}
+    h.require(all(style in source_styles for index, (_, style) in enumerate(output_pairs)
+                  if index not in preserved_offsets), "pasted text used a foreign character style")
+    h.require(int.from_bytes(old_list[:4], "little") == len(old_paras)
+              and int.from_bytes(new_list[:4], "little") == len(new_paras),
+              "textbox paragraph counts do not match LIST_HEADER")
+    return {"changedStreams": changed, "sourceParagraphs": [h5.paragraph_text(para) for para in old_paras],
+            "savedParagraphs": [h5.paragraph_text(para) for para in new_paras],
+            "sourceParagraphIds": sorted(old_ids), "savedTextboxParagraphIds": new_ids,
+            "ownerSha256": hashlib.sha256(after_obj[0][2]).hexdigest(),
+            "sourceText": source_text, "savedText": output_text,
+            "preservedSourceTextOffsets": preserved_offsets}
+
+
+def place_textbox_point(acc, caret, fmt, pointer_id):
+    h.p6.pointer(acc, (caret["pageIndex"], caret["x"] + 0.1, caret["y"] + caret["height"] / 2))
+    if acc.d.exists(h.FRAME):
+        x, y = acc.d.js("""
+          const at=arguments[0], canvas=document.querySelectorAll('.rhwp-page__canvas')[at.pageIndex];
+          const rect=canvas.getBoundingClientRect(), scale=rect.width/canvas.clientWidth;
+          return [rect.left+(at.x+.1)*scale,rect.top+(at.y+at.height/2)*scale];
+        """, caret)
+        sx, sy = acc.d.pointer_scale
+        h.p4.rhwp_poc.perform(acc.d, [{"type": "pointer", "id": pointer_id,
+            "parameters": {"pointerType": "mouse"}, "actions": [
+                {"type": "pointerMove", "x": round(x*sx), "y": round(y*sy), "origin": "viewport"},
+                {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0},
+                {"type": "pause", "duration": 60},
+                {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0}]}])
+    status = acc.status(fmt)
+    h.require("textbox" in (status.get("caret") or "").lower(), "pointer lost textbox ownership", status)
+    return status
+
+
+def textbox_replace_ime_and_hwp5(acc, row, fixtures, out):
+    hwpx_path = out / "a-p5-textbox-paste-published.hwpx"
+    source = fixtures / "a-p5-textbox-paste-original.hwpx"
+    source_model = inspect_box(source)
+    positions = h.inspect_rhwp(hwpx_path, """
+      const owner=controls.find(c=>c.list===0 && c.ctrlId==='gso');
+      const address=[0,owner.para,owner.controlIndex,0];
+      console.log(JSON.stringify([[1,2],[2,4]].map(([p,o])=>
+        JSON.parse(doc.getCursorRectInCell(...address,p,o)))));
+    """)
+    paste_canvas = canvas_hashes(acc)
+    start = place_textbox_point(acc, positions[0], "hwpx", "p5-ime-start")
+    h.require(not start.get("selection"), "IME replacement caret unexpectedly selected text", start)
+    for _ in range(6):
+        acc.key("shift+Right")
+    selection = acc.status("hwpx")
+    h.require(selection.get("selection") and "textbox" in (selection.get("caret") or "").lower(),
+              "IME replacement did not create an owned cross-paragraph selection", selection)
+    acc.d.js("""
+      window.p5TextboxIme=[];
+      window.p5TextboxDom=[];
+      const input=document.querySelector('.rhwp-input');
+      for(const type of ['compositionstart','compositionupdate','compositionend','keydown','keyup','beforeinput','input'])
+        input.addEventListener(type,e=>window.p5TextboxDom.push({type,key:e.key,code:e.code,keyCode:e.keyCode,
+          data:e.data,inputType:e.inputType,isComposing:e.isComposing,trusted:e.isTrusted}),true);
+      for(const type of ['compositionstart','compositionupdate','compositionend'])
+        input.addEventListener(type,e=>window.p5TextboxIme.push({type,data:e.data,trusted:e.isTrusted}),true);
+    """)
+    row["imeInputBefore"] = acc.d.js("""
+      const input=document.querySelector('.rhwp-input');
+      return {activeTag:document.activeElement?.tagName,activeClass:document.activeElement?.className,
+        inputFocused:document.activeElement===input,inputValueLength:input?.value.length,
+        engineStatus:document.querySelector('[data-testid=rhwp-status]')?.dataset.status};
+    """)
+    acc.engine("xkb:us::eng")
+    acc.engine("hangul")
+    row["imeEngine"] = acc.command(acc.args.ibus, "engine")
+    acc.type("gk")
+    try:
+        acc.wait("""
+          const status=document.querySelector('[data-testid="rhwp-status"]')?.dataset;
+          return status?.composing === "true";
+        """, timeout=8)
+    except Exception:
+        row["imeInputFailureDiagnostics"] = acc.d.js("""
+          const input=document.querySelector('.rhwp-input');
+          const status=document.querySelector('[data-testid=rhwp-status]')?.dataset;
+          return {activeTag:document.activeElement?.tagName,activeClass:document.activeElement?.className,
+            inputFocused:document.activeElement===input,inputValueLength:input?.value.length,
+            status:{revision:status?.revision,composing:status?.composing,caret:status?.caret,selection:status?.selection},
+            events:window.p5TextboxDom};
+        """)
+        raise
+    preedit = acc.status("hwpx")
+    row["imePreeditTrace"] = {
+        "status": preedit,
+        "compositionEvents": acc.d.js("return window.p5TextboxIme"),
+        "domEvents": acc.d.js("return window.p5TextboxDom"),
+    }
+    acc.type("srmf")
+    acc.key("End")
+    acc.engine("xkb:us::eng")
+    acc.wait("""
+      const status=document.querySelector('[data-testid=rhwp-status]')?.dataset;
+      return status?.composing==='false' && Number(status.revision)>0;
+    """)
+    committed = acc.status("hwpx")
+    committed_canvas = canvas_hashes(acc)
+    events = acc.d.js("return window.p5TextboxIme")
+    row["imeCommittedTrace"] = {
+        "status": committed,
+        "compositionEvents": events,
+        "domEvents": acc.d.js("return window.p5TextboxDom"),
+    }
+    h.require(committed_canvas != paste_canvas, "cross-paragraph IME did not change rendered textbox pixels")
+    for kind in ("compositionstart", "compositionupdate", "compositionend"):
+        h.require(any(event["type"] == kind and event["trusted"] for event in events),
+                  f"missing trusted native IME {kind}", events)
+    # IBus committed two Hangul syllables; the selected replacement itself must
+    # join the first syllable transaction instead of becoming a third revision.
+    h.revision(acc, "hwpx", 2)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 3)
+    undo_one = acc.status("hwpx")
+    undo_one_canvas = canvas_hashes(acc)
+    h.require(undo_one_canvas not in (paste_canvas, committed_canvas),
+              "one IME Undo did not restore the first committed syllable", undo_one_canvas)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 4)
+    undo = acc.status("hwpx")
+    undo_canvas = canvas_hashes(acc)
+    h.require(undo_canvas == paste_canvas, "IME Undo did not restore the published paste rendering", undo_canvas)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 5)
+    redo_one = acc.status("hwpx")
+    redo_one_canvas = canvas_hashes(acc)
+    h.require(redo_one_canvas == undo_one_canvas,
+              "first IME Redo did not restore the first committed syllable", redo_one_canvas)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 6)
+    redo = acc.status("hwpx")
+    redo_canvas = canvas_hashes(acc)
+    h.require(redo_canvas == committed_canvas, "IME Redo did not restore committed rendering", redo_canvas)
+    ime = row["crossParagraphIme"] = {"selection": selection, "preedit": preedit,
+                                       "committed": committed, "undoFirst": undo_one, "undo": undo,
+                                       "redoFirst": redo_one, "redo": redo,
+                                       "trustedCompositionEvents": events,
+                                       "canvasSha256": {"paste": paste_canvas, "committed": committed_canvas,
+                                                        "undoFirst": undo_one_canvas, "undo": undo_canvas,
+                                                        "redoFirst": redo_one_canvas, "redo": redo_canvas}}
+    h.publish(acc, "hwpx", row)
+    row["imeSave"] = row["save"]
+    after = inspect_box(hwpx_path)
+    old = source_model["paragraphs"]
+    expected = [old[0], {**old[1], "text": "Bo한글ain", "runs": [
+        [0, 4, old[1]["runs"][0][2]], [4, 7, old[3]["runs"][0][2]]]}, old[4]]
+    h.require(after["paragraphs"] == expected and after["shape"] == source_model["shape"]
+              and after["body"] == source_model["body"], "IME save changed textbox ownership or text", after)
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(hwpx_path) as published:
+        section = "Contents/section0.xml"
+        unrelated = lambda package: {part: package.read(part) for part in package.namelist()
+                                     if part != section and not part.startswith("Preview/")}
+        h.require(unrelated(original) == unrelated(published), "IME save changed unrelated HWPX package parts")
+        roots = [ET.fromstring(package.read(section)) for package in (original, published)]
+        source_paras = roots[0].find(".//{*}drawText/{*}subList").findall("{*}p")
+        saved_paras = roots[1].find(".//{*}drawText/{*}subList").findall("{*}p")
+        h.require(len(source_paras) == 5 and len(saved_paras) == 3, "IME paragraph count differs")
+        owner_attrs = ("id", "paraPrIDRef", "styleIDRef")
+        h.require(all(saved_paras[1].get(name) == source_paras[1].get(name) for name in owner_attrs),
+                  "IME replacement changed the starting paragraph owner/style")
+        h.require([saved_paras[0].get("id"), saved_paras[2].get("id")]
+                  == [source_paras[0].get("id"), source_paras[4].get("id")],
+                  "IME replacement changed unselected paragraph identities")
+
+        def runs(para):
+            result = []
+            for run in para.findall("{*}run"):
+                text = "".join(node.text or "" for node in run.findall(".//{*}t"))
+                if text:
+                    result.append((run.get("charPrIDRef"), text))
+            return result
+
+        expected_runs = [(source_paras[1].find("{*}run").get("charPrIDRef"), "Bo한글"),
+                         (source_paras[3].find("{*}run").get("charPrIDRef"), "ain")]
+        h.require(runs(saved_paras[1]) == expected_runs, "IME replacement changed retained character styles",
+                  runs(saved_paras[1]))
+        for root, count in zip(roots, (3, 1), strict=True):
+            sub = root.find(".//{*}drawText/{*}subList")
+            for para in sub.findall("{*}p")[1:1 + count]:
+                sub.remove(para)
+            for para in sub.findall("{*}p"):
+                for layout in para.findall("{*}linesegarray"):
+                    para.remove(layout)
+        h.require(ET.tostring(roots[0]) == ET.tostring(roots[1]), "IME changed unrelated section XML")
+    h.reopen(acc, hwpx_path, row)
+    reopened_hwpx = inspect_box(hwpx_path)
+    h.require(reopened_hwpx["paragraphs"] == expected, "HWPX IME result differs after document reopen")
+    ime["savedSha256"] = h.digest(hwpx_path)
+    ime["reopen"] = acc.status("hwpx")
+
+    h.require(h.p4.rhwp_poc.close_tab(acc.d, hwpx_path.name), "HWPX textbox tab did not close")
+    hwp5_fixture = fixtures / "p5-h5tb-paste-original.hwp"
+    hwp5_before = h5.inspect(hwp5_fixture)
+    h.require(hwp5_before["paragraphs"] == ["abcdef"], "unexpected HWP5 paste fixture", hwp5_before)
+    hwp5_row = row["hwp5Paste"] = {"before": hwp5_before}
+    hwp5_path = h.begin(acc, hwp5_row, hwp5_fixture, out, "p5-h5tb-paste-edited.hwp")
+    pointer_status = h5.point_to_textbox(acc, hwp5_before["midCaret"])
+    acc.key("Left")
+    caret = acc.status("hwp")
+    h.require("textbox" in caret.get("caret", "").lower() and "0:0:3@textbox/" in caret.get("caret", ""),
+              "HWP5 paste caret is not at the requested text-box position", caret)
+    before_status = acc.status("hwp")
+    source_canvas = canvas_hashes(acc)
+    acc.d.js("""
+      window.p5TextboxPasteKeys=[];
+      addEventListener('keydown',e=>{
+        if(e.ctrlKey&&e.key.toLowerCase()==='v') window.p5TextboxPasteKeys.push(e.isTrusted);
+      },true);
+    """)
+
+    def paste_hwp5():
+        acc.key("ctrl+v")
+        h.revision(acc, "hwp", 1)
+
+    h.clipboard_peer(acc, "UTF8_STRING", "X\nY", paste_hwp5)
+    hwp5_row["trustedPasteKeys"] = acc.d.js("return window.p5TextboxPasteKeys")
+    h.require(hwp5_row["trustedPasteKeys"] == [True], "HWP5 paste did not use a trusted Ctrl+V key")
+    pasted_status = acc.status("hwp")
+    h.require("textbox" in pasted_status.get("caret", "").lower(),
+              "multiline paste caret lost its HWP5 textbox owner", pasted_status)
+    pasted_canvas = canvas_hashes(acc)
+    h.require(pasted_canvas != source_canvas, "HWP5 multiline paste did not change rendered textbox pixels")
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    undo_status = acc.status("hwp")
+    undo_canvas = canvas_hashes(acc)
+    h.require(undo_canvas == source_canvas, "HWP5 paste Undo did not restore the original rendering", undo_canvas)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    redo_status = acc.status("hwp")
+    redo_canvas = canvas_hashes(acc)
+    h.require(redo_canvas == pasted_canvas, "HWP5 paste Redo did not restore the pasted rendering", redo_canvas)
+    hwp5_row["undoRedo"] = {"before": before_status, "pasted": pasted_status,
+                            "undo": undo_status, "redo": redo_status,
+                            "canvasSha256": {"before": source_canvas, "pasted": pasted_canvas,
+                                             "undo": undo_canvas, "redo": redo_canvas}}
+    hwp5_row["pointer"] = pointer_status
+    h.publish(acc, "hwp", hwp5_row)
+    hwp5_after = h5.inspect(hwp5_path)
+    h.require(hwp5_after["paragraphs"] == ["abcX", "Ydef"]
+              and hwp5_after["shape"] == hwp5_before["shape"]
+              and hwp5_after["body"] == hwp5_before["body"],
+              "saved HWP5 paste changed text-box owner or paragraph contents", hwp5_after)
+    hwp5_row["cfbProof"] = hwp5_textbox_paste_disk_proof(hwp5_fixture, hwp5_path, ["abcX", "Ydef"])
+    h.reopen(acc, hwp5_path, hwp5_row)
+    reopened_hwp5 = h5.inspect(hwp5_path)
+    h.require(reopened_hwp5["paragraphs"] == ["abcX", "Ydef"]
+              and reopened_hwp5["shape"] == hwp5_before["shape"]
+              and reopened_hwp5["body"] == hwp5_before["body"],
+              "HWP5 paste result differs after document reopen", reopened_hwp5)
+    h5point = h5.point_to_textbox(acc, reopened_hwp5["midCaret"])
+    h.require(h5point["revision"] == "0" and h5point["dirty"] == "false",
+              "HWP5 saved textbox did not reopen cleanly", h5point)
+    hwp5_row["reopen"] = {"model": reopened_hwp5, "status": h5point,
+                          "savedSha256": h.digest(hwp5_path)}
+
+
+def textbox_replace(acc, row, fixtures, out):
+    textbox_join(acc, row, fixtures, out, span=3, replace=True)
+    textbox_replace_ime_and_hwp5(acc, row, fixtures, out)
 
 
 
@@ -959,7 +1304,7 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-DELETE": delete_docx_story_pictures,
            "P5-DX-DELETE-FRESH-REOPEN": delete_docx_story_pictures_fresh_reopen,
            "P5-DX-SIZE-NONCANON": resize_noncanonical_story_picture,
-           "P5-TB-REPLACE": lambda *args: textbox_join(*args, span=3, replace=True),
+           "P5-TB-REPLACE": textbox_replace,
            "P5-TB-MIX": lambda *args: textbox_join(*args, span=3, mixed=True),
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}

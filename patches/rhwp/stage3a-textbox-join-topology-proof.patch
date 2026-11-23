@@ -1,0 +1,10 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+index c365f37c22f79801689d58346901cf3f63428b23..a00a9c7e5a94682361b01125aafb536e58d44c89 100644
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -2484,2 +2484,4 @@
+-                && para.hwpx_text_topology.is_none() && para.numbering_restart.is_none()
++                // The merge path uses this same proof to retain ordered source run occurrences.
++                && para.hwpx_text_topology.as_ref().is_none_or(|topology| topology.can_split(para))
++                && para.numbering_restart.is_none()
+         }

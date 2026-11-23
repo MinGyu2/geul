@@ -1,0 +1,61 @@
+diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
+index febe748eb15068f23b1e8a20b161320b23341c27..6f53edcc3f570c1a132fb2fe3fdf84f0cce5ccaf 100644
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -2035,8 +2035,16 @@
+     ///
+     /// 병합 후 other 문단의 내용은 현재 문단에 포함된다.
+     /// 반환값: 병합 지점의 char offset (원래 텍스트의 길이).
+     pub fn merge_from(&mut self, other: &Paragraph) -> usize {
++        let preserve_hwpx_run_occurrences = self
++            .hwpx_text_topology
++            .as_ref()
++            .is_some_and(|topology| topology.can_split(self))
++            || other
++                .hwpx_text_topology
++                .as_ref()
++                .is_some_and(|topology| topology.can_split(other));
+         let topology = super::hwpx_topology::HwpxTextTopology::before_merge(self, other);
+         // 텍스트 없이 컨트롤만 있는 문단(예: 그림 복사 클립보드)도 병합 대상 (#1323)
+         if other.text.is_empty() && other.controls.is_empty() {
+             self.hwpx_text_topology = topology.map(|(mut t, _, _, _)| {
+@@ -2090,14 +2098,15 @@
+ 
+         // 3. char_shapes 결합 (other의 start_pos에 utf16_end 추가)
+         for cs in &other.char_shapes {
+             let new_pos = cs.start_pos + utf16_end;
+-            // 중복 위치에 같은 스타일이면 스킵
+-            if self
+-                .char_shapes
+-                .last()
+-                .map(|last| last.start_pos == new_pos && last.char_shape_id == cs.char_shape_id)
+-                .unwrap_or(false)
++            // Tracked HWPX topology distinguishes source runs at the paragraph boundary.
++            if !preserve_hwpx_run_occurrences
++                && self
++                    .char_shapes
++                    .last()
++                    .map(|last| last.start_pos == new_pos && last.char_shape_id == cs.char_shape_id)
++                    .unwrap_or(false)
+             {
+                 continue;
+             }
+             self.char_shapes.push(CharShapeRef {
+diff --git a/src/model/hwpx_topology.rs b/src/model/hwpx_topology.rs
+index 764541e8ccae695cfcf006f2ffcc28013ef263e8..4bd8118477dde145180c5c6b49ec17225d3aada8 100644
+--- a/src/model/hwpx_topology.rs
++++ b/src/model/hwpx_topology.rs
+@@ -1277,12 +1277,9 @@
+         let mut expected = left_shapes.to_vec();
+         let mut map = Vec::new();
+         for &(pos, shape) in right_shapes {
+             let v = (pos + shift, shape);
+-            // A deduplicated occurrence cannot retain two source run identities.
+-            if expected.last() == Some(&v) {
+-                return reject(self);
+-            }
++            // Retain repeated boundary occurrences when the model proves source identity.
+             map.push(expected.len());
+             expected.push(v);
+         }
+         if shape_positions(p) != expected {

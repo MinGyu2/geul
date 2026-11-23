@@ -816,6 +816,24 @@ function mixedTextBoxFixture(joinRange?: 2 | 3 | "differentMiddle" | "tabbedMidd
   } finally { fixture.free(); }
 }
 
+function addSplitTextRun(bytes: Uint8Array): Uint8Array {
+  return new Uint8Array(execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == "Contents/section0.xml":
+                xml = data.decode("utf-8")
+                marker = "<hp:t>nextain</hp:t>"
+                assert xml.count(marker) == 1, xml.count(marker)
+                data = xml.replace(marker, "<hp:t>next</hp:t><hp:t>ain</hp:t>", 1).encode("utf-8")
+            destination.writestr(entry, data)
+sys.stdout.buffer.write(output.getvalue())
+`], { input: bytes }));
+}
+
 describe("Stage 3 shapes on the Release engine", () => {
   it("inserts a rectangle and a text box, formats, moves, resizes, layers and deletes the outer shape", async () => {
     const { editor, doc, bytes, pick, edit, confirm } = await setup("hwpx");
@@ -4407,6 +4425,225 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as zout:
           writeFileSync(resolve(out, "p2-hwp-edited.hwp"), edited);
         }
       } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("P5-TB-REPLACE replaces a cross-paragraph HWPX text-box selection through IME", async () => {
+    const { bytes, control } = mixedTextBoxFixture(3);
+    const { editor, doc, confirm } = await setup("hwpx", bytes);
+    const address = [0, 0, control, 0] as const;
+    const paragraphs = (file: RhwpDocument) => Array.from({ length: file.getCellParagraphCount(...address) }, (_, p) => {
+      const length = file.getCellParagraphLength(...address, p);
+      return file.getTextInCell(...address, p, 0, length);
+    });
+    const point = (paragraph: number, offset: number, extend = false) => {
+      const rect = JSON.parse(doc.getCursorRectInCell(...address, paragraph, offset));
+      expect(editor.pointAt(rect.pageIndex, rect.x + 0.1, rect.y + rect.height / 2, extend)).toBe(true);
+      expect(editor.caret).toMatchObject({ cell: { textBox: true, cellParagraph: paragraph }, offset });
+    };
+    try {
+      const before = paragraphs(doc);
+      expect(before).toEqual(["First paragraph", "Bold ", "middle", "plain", "Trailing paragraph"]);
+      const original = doc.exportHwpx();
+      point(1, 2);
+      point(3, 2, true);
+      editor.beginComposition();
+      expect(editor.composing).toBe(true);
+      expect(paragraphs(doc)).toEqual(["First paragraph", "Boain", "Trailing paragraph"]);
+      editor.updateComposition("새");
+      expect(editor.endComposition("새")).toBe("새");
+      await confirm();
+      const replaced = paragraphs(doc);
+      expect(replaced).toEqual(["First paragraph", "Bo새ain", "Trailing paragraph"]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(replaced);
+      const exported = doc.exportHwpxWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(paragraphs(reopened)).toEqual(replaced); }
+        finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p5-tb-ime-original.hwpx"), original);
+          writeFileSync(resolve(out, "p5-tb-ime-edited.hwpx"), output);
+          writeFileSync(resolve(out, "p5-tb-ime-report.json"), report);
+        }
+      } finally { exported.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      point(1, 2);
+      point(3, 2, true);
+      editor.beginComposition();
+      expect(editor.composing).toBe(true);
+      editor.updateComposition("취소");
+      expect(editor.endComposition("")).toBe("");
+      await confirm();
+      expect(paragraphs(doc)).toEqual(["First paragraph", "Boain", "Trailing paragraph"]);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+    } finally { editor.dispose(); }
+  });
+
+  it("P5-TB-REPLACE starts HWPX cross-paragraph IME after paste save and reopen", async () => {
+    const fixture = mixedTextBoxFixture(3);
+    const source = await setup("hwpx", fixture.bytes);
+    const address = [0, 0, fixture.control, 0] as const;
+    let saved = new Uint8Array();
+    const sourcePoint = (paragraph: number, offset: number, extend = false) => {
+      const rect = JSON.parse(source.doc.getCursorRectInCell(...address, paragraph, offset));
+      expect(source.editor.pointAt(rect.pageIndex, rect.x + 0.1, rect.y + rect.height / 2, extend)).toBe(true);
+    };
+    try {
+      sourcePoint(1, 2);
+      sourcePoint(3, 2, true);
+      const clipboard: PlainClipboard = { readText: async () => "새\nnext", writeText: async () => undefined };
+      expect(await source.editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(true);
+      await source.confirm();
+      expect(source.editor.undo()).toBe(true);
+      await source.confirm();
+      expect(source.editor.redo()).toBe(true);
+      await source.confirm();
+      const exported = source.doc.exportHwpxWithReport();
+      try {
+        saved = exported.takeBytes();
+        expectReopenEvidence(source.doc, saved, exported.contentLoss());
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p5-tb-replace-paste-published.hwpx"), saved);
+        }
+      } finally { exported.free(); }
+    } finally { source.editor.dispose(); }
+
+    const reopened = await setup("hwpx", saved);
+    const paragraphText = (paragraph: number) => {
+      const length = reopened.doc.getCellParagraphLength(...address, paragraph);
+      return reopened.doc.getTextInCell(...address, paragraph, 0, length);
+    };
+    const reopenedPoint = (paragraph: number, offset: number, extend = false) => {
+      const rect = JSON.parse(reopened.doc.getCursorRectInCell(...address, paragraph, offset));
+      expect(reopened.editor.pointAt(rect.pageIndex, rect.x + 0.1, rect.y + rect.height / 2, extend)).toBe(true);
+    };
+    try {
+      expect([1, 2].map(paragraphText)).toEqual(["Bo새", "nextain"]);
+      expect(reopened.doc.canJoinTextBoxParagraphs?.(0, 0, fixture.control, 1)).toBe(true);
+      expect(reopened.doc.canJoinTextBoxParagraphs?.(0, 0, fixture.control, 2)).toBe(true);
+
+      const unsupported = new engine.HwpDocument(addSplitTextRun(saved)) as RhwpDocument;
+      try { expect(unsupported.canJoinTextBoxParagraphs?.(0, 0, fixture.control, 2)).toBe(false); }
+      finally { unsupported.free(); }
+
+      reopenedPoint(1, 2);
+      reopenedPoint(2, 4, true);
+      expect(reopened.editor.hasSelection).toBe(true);
+      reopened.editor.beginComposition();
+      expect(reopened.editor.composing).toBe(true);
+      expect(paragraphText(1)).toBe("Boain");
+      reopened.editor.updateComposition("한글");
+      expect(reopened.editor.endComposition("한글")).toBe("한글");
+      await reopened.confirm();
+      expect([1, 2].map(paragraphText)).toEqual(["Bo한글ain", "Trailing paragraph"]);
+      expect(reopened.editor.undo()).toBe(true);
+      await reopened.confirm();
+      expect([1, 2].map(paragraphText)).toEqual(["Bo새", "nextain"]);
+      expect(reopened.editor.redo()).toBe(true);
+      await reopened.confirm();
+      expect([1, 2].map(paragraphText)).toEqual(["Bo한글ain", "Trailing paragraph"]);
+
+      const finalExport = reopened.doc.exportHwpxWithReport();
+      try {
+        const report = finalExport.contentLoss();
+        const output = finalExport.takeBytes();
+        expectReopenEvidence(reopened.doc, output, report);
+        const durable = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect([1, 2].map(paragraph => {
+            const length = durable.getCellParagraphLength(...address, paragraph);
+            return durable.getTextInCell(...address, paragraph, 0, length);
+          })).toEqual(["Bo한글ain", "Trailing paragraph"]);
+          expect(durable.canJoinTextBoxParagraphs?.(0, 0, fixture.control, 1)).toBe(true);
+        } finally { durable.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p5-tb-replace-ime-reopen-edited.hwpx"), output);
+          writeFileSync(resolve(out, "p5-tb-replace-ime-reopen-report.json"), report);
+        }
+      } finally { finalExport.free(); }
+    } finally { reopened.editor.dispose(); }
+  });
+
+  it("P5-TB-REPLACE pastes multiline plain text into an HWP5 text box atomically", async () => {
+    const { editor, doc, bytes, take, confirm } = await setup("hwp");
+    try {
+      take("original").reply(ok(bytes));
+      await flush();
+      take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true }));
+      await flush();
+      expect(editor.execute("insert.textBox").accepted).toBe(true);
+      await confirm();
+      const control = shapes(doc)[0]!.controlIdx;
+      const address = [0, 0, control, 0] as const;
+      const paragraphs = (file: RhwpDocument) => Array.from({ length: file.getCellParagraphCount(...address) }, (_, p) => {
+        const length = file.getCellParagraphLength(...address, p);
+        return file.getTextInCell(...address, p, 0, length);
+      });
+      const point = (paragraph: number, offset: number, extend = false) => {
+        const rect = JSON.parse(doc.getCursorRectInCell(...address, paragraph, offset));
+        expect(editor.pointAt(rect.pageIndex, rect.x + 1, rect.y + rect.height / 2, extend)).toBe(true);
+      };
+      point(0, 0);
+      expect(editor.typeText("abcdef")).toBe(true);
+      await confirm();
+      const original = doc.exportHwp();
+      const before = paragraphs(doc);
+      point(0, 2);
+      point(0, 4, true);
+      const rejectedClipboard: PlainClipboard = { readText: async () => "X\nY", writeText: async () => undefined };
+      expect(await editor.executeClipboard("edit.paste", () => true, rejectedClipboard)).toBe(false);
+      expect(editor.hasSelection).toBe(true);
+      expect(paragraphs(doc)).toEqual(before);
+      point(0, 3);
+      const clipboard: PlainClipboard = { readText: async () => "X\nY", writeText: async () => undefined };
+      expect(await editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(true);
+      await confirm();
+      const pasted = paragraphs(doc);
+      expect(pasted).toEqual(["abcX", "Ydef"]);
+      point(0, 2);
+      point(1, 2, true);
+      editor.beginComposition();
+      expect(editor.composing).toBe(false);
+      expect(editor.hasSelection).toBe(true);
+      expect(paragraphs(doc)).toEqual(pasted);
+      let expectedOutput = new Uint8Array();
+      const exported = doc.exportHwpWithReport();
+      try {
+        const output = exported.takeBytes(), report = exported.contentLoss();
+        expectedOutput = new Uint8Array(output);
+        expect(JSON.parse(report)).toMatchObject({ count: 0 });
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try { expect(paragraphs(reopened)).toEqual(pasted); }
+        finally { reopened.free(); }
+        if (out) {
+          mkdirSync(out, { recursive: true });
+          writeFileSync(resolve(out, "p5-h5tb-paste-original.hwp"), original);
+          writeFileSync(resolve(out, "p5-h5tb-paste-edited.hwp"), output);
+          writeFileSync(resolve(out, "p5-h5tb-paste-report.json"), report);
+        }
+      } finally { exported.free(); }
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(paragraphs(doc)).toEqual(pasted);
+      expect(doc.exportHwp()).toEqual(expectedOutput);
     } finally { editor.dispose(); }
   });
 

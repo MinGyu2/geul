@@ -250,6 +250,40 @@ describe("textarea 범위 바꾸기", () => {
     expect(t.editor.localRevision).toBe(1);
   });
 
+  it("빈 compositionend 뒤 늦은 확정은 선택 교체와 한 거래이며 음절별 Undo/Redo가 보존된다", async () => {
+    const t = await mounted(["abc"]);
+    t.editor.moveHorizontal(1, false);
+    t.editor.moveHorizontal(1, true); // 'b' 선택
+
+    t.fire(new CompositionEvent("compositionstart", { data: "" }));
+    t.native("insertCompositionText", "ㅎ", "ㅎ", true);
+    t.native("insertCompositionText", "하", "하", true);
+    t.native("deleteCompositionText", "", null, true);
+    t.fire(new CompositionEvent("compositionend", { data: "" }));
+
+    expect(t.doc.paragraphs).toEqual(["ac"]);
+    expect(t.editor.composing).toBe(true);
+    expect(t.editor.awaitingCommit).toBe(true);
+    expect(t.editor.localRevision).toBe(0);
+
+    t.native("insertFromComposition", "한", "한", true);
+    t.fire(new CompositionEvent("compositionend", { data: "한" }));
+    expect(t.doc.paragraphs).toEqual(["a한c"]);
+    expect(t.editor.localRevision).toBe(1);
+
+    t.compose("글");
+    expect(t.doc.paragraphs).toEqual(["a한글c"]);
+    expect(t.editor.localRevision).toBe(2);
+    expect(t.editor.undo()).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["a한c"]);
+    expect(t.editor.undo()).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["abc"]);
+    expect(t.editor.redo()).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["a한c"]);
+    expect(t.editor.redo()).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["a한글c"]);
+  });
+
   it("조합 중 클릭 뒤의 바꾸기와 붙여넣기는 기다림을 끝내지 않고, 실제 IME 끝 뒤에만 붙인다", async () => {
     const t = await mounted(["가나다", "abc"]);
     t.input.value = "ㅎ";

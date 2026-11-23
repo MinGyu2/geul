@@ -213,7 +213,7 @@ fn textbox_paragraph_content(rs: &[Record<'_>]) -> Option<(Vec<u16>, Vec<(usize,
         return None;
     }
     let encoded = text_records[0].2.strip_suffix(&[13, 0])?;
-    if encoded.is_empty() || encoded.len() % 2 != 0 {
+    if encoded.len() % 2 != 0 {
         return None;
     }
     let text: Vec<u16> = encoded
@@ -300,6 +300,172 @@ fn textbox_content_matches(
     })
 }
 
+fn textbox_range_content(
+    paragraphs: &[&[Record<'_>]],
+) -> Option<(Vec<u16>, Vec<u32>, std::collections::BTreeSet<u32>)> {
+    let mut text = Vec::new();
+    let mut styles = Vec::new();
+    let mut available_styles = std::collections::BTreeSet::new();
+    for paragraph in paragraphs {
+        let (paragraph_text, runs) = textbox_paragraph_content(paragraph)?;
+        available_styles.extend(runs.iter().map(|run| run.1));
+        for offset in 0..paragraph_text.len() {
+            styles.push(textbox_char_shape(&runs, offset)?);
+        }
+        text.extend(paragraph_text);
+    }
+    Some((text, styles, available_styles))
+}
+
+fn textbox_preserves_inserted_range(
+    old_paragraphs: &[&[Record<'_>]],
+    new_paragraphs: &[&[Record<'_>]],
+) -> bool {
+    let (Some((old_text, old_styles, available_styles)), Some((new_text, new_styles, _))) = (
+        textbox_range_content(old_paragraphs),
+        textbox_range_content(new_paragraphs),
+    ) else {
+        return false;
+    };
+    if old_text.len() > 65_536 || new_text.len() > 65_536 {
+        return false;
+    }
+
+    // Paragraph reflow is authorized only for insertion-only edits: every
+    // original UTF-16 unit must remain in order and on the same character
+    // shape, and inserted units must use a character shape already owned by
+    // the source text box. This distinguishes multiline paste from altered
+    // paragraph text or formatting.
+    let mut next = 0;
+    let mut previous_match = None;
+    let mut matched_new = vec![false; new_text.len()];
+    for (source_offset, (unit, style)) in old_text.iter().zip(&old_styles).enumerate() {
+        let Some(offset) = (next..new_text.len())
+            .find(|offset| new_text[*offset] == *unit && new_styles[*offset] == *style)
+        else {
+            return false;
+        };
+        if previous_match.is_some_and(|previous| {
+            source_offset > 0
+                && (0xD800..=0xDBFF).contains(&old_text[source_offset - 1])
+                && (0xDC00..=0xDFFF).contains(unit)
+                && offset != previous + 1
+        }) {
+            return false;
+        }
+        matched_new[offset] = true;
+        previous_match = Some(offset);
+        next = offset + 1;
+    }
+    new_styles
+        .iter()
+        .enumerate()
+        .all(|(offset, style)| matched_new[offset] || available_styles.contains(style))
+}
+
+fn proven_textbox_reflow(
+    old_paragraphs: &[&[Record<'_>]],
+    new_paragraphs: &[&[Record<'_>]],
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+    original_instances: &std::collections::BTreeMap<u32, usize>,
+    output_instances: &std::collections::BTreeMap<u32, usize>,
+) -> bool {
+    if old_paragraphs.is_empty()
+        || new_paragraphs.is_empty()
+        || old_paragraphs.len() == new_paragraphs.len()
+        || old_paragraphs.len().abs_diff(new_paragraphs.len()) > 63
+        || original_defs != defs
+    {
+        return false;
+    }
+    let mut prefix = 0;
+    while prefix < old_paragraphs.len().min(new_paragraphs.len())
+        && old_paragraphs[prefix] == new_paragraphs[prefix]
+    {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < old_paragraphs.len() - prefix
+        && suffix < new_paragraphs.len() - prefix
+        && old_paragraphs[old_paragraphs.len() - 1 - suffix]
+            == new_paragraphs[new_paragraphs.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    let old_changed = &old_paragraphs[prefix..old_paragraphs.len() - suffix];
+    let new_changed = &new_paragraphs[prefix..new_paragraphs.len() - suffix];
+    let (Some(first_old), Some(first_new)) = (old_changed.first(), new_changed.first()) else {
+        return false;
+    };
+    let Some(first_id) = textbox_paragraph_instance(first_old) else {
+        return false;
+    };
+    if original_instances.get(&first_id) != Some(&1)
+        || textbox_paragraph_instance(first_new) != Some(first_id)
+        || output_instances.get(&first_id) != Some(&1)
+    {
+        return false;
+    }
+
+    let Some(base_tail) = textbox_paragraph_tail(first_old) else {
+        return false;
+    };
+    let Some(style_refs) = first_old.first().and_then(|record| record.2.get(8..11)) else {
+        return false;
+    };
+    let Some(style_index) = first_old.first().and_then(|record| word(record.2, 8).ok()) else {
+        return false;
+    };
+    let Some(base_style) = entries(original_defs, 25).get(style_index) else {
+        return false;
+    };
+
+    for paragraph in old_changed.iter().chain(new_changed) {
+        let Some(header) = paragraph.first().map(|record| record.2) else {
+            return false;
+        };
+        let Some(style_index) = word(header, 8).ok() else {
+            return false;
+        };
+        let Some(style) = entries(original_defs, 25).get(style_index) else {
+            return false;
+        };
+        if header.get(8..11) != Some(style_refs)
+            || textbox_paragraph_tail(paragraph) != Some(base_tail)
+            || super::insertions::same_textbox_para_style(base_style, style).is_err()
+        {
+            return false;
+        }
+    }
+    for paragraph in old_changed {
+        let Some(id) = textbox_paragraph_instance(paragraph) else {
+            return false;
+        };
+        if original_instances.get(&id) != Some(&1) {
+            return false;
+        }
+    }
+    for (index, paragraph) in new_changed.iter().enumerate() {
+        let Some(id) = textbox_paragraph_instance(paragraph) else {
+            return false;
+        };
+        if (index == 0 && id != first_id)
+            || (index > 0
+                && (id == 0
+                    || original_instances.contains_key(&id)
+                    || output_instances.get(&id) != Some(&1)))
+        {
+            return false;
+        }
+    }
+    let removed_ids_absent = old_changed.iter().skip(1).all(|paragraph| {
+        textbox_paragraph_instance(paragraph).is_some_and(|id| !output_instances.contains_key(&id))
+    });
+    let content_preserved = textbox_preserves_inserted_range(old_changed, new_changed);
+    removed_ids_absent && content_preserved
+}
+
 fn same_textbox_paragraph_refs(first: &[Record<'_>], second: &[Record<'_>]) -> bool {
     let (Some(a), Some(b)) = (
         first.first().map(|record| record.2),
@@ -378,8 +544,11 @@ pub(super) fn prove_textbox_edit(
 ) -> Checked<()> {
     preserved(textbox_edit_candidate(old, new), BODY)?;
     let paragraphs = |rs: &[Record<'_>]| {
-        rs.iter().enumerate().filter_map(|(i, r)| (r.0 == 66 && r.1 == 3).then_some(i))
-            .chain(std::iter::once(rs.len())).collect::<Vec<_>>()
+        rs.iter()
+            .enumerate()
+            .filter_map(|(i, r)| (r.0 == 66 && r.1 == 3).then_some(i))
+            .chain(std::iter::once(rs.len()))
+            .collect::<Vec<_>>()
     };
     let old_story = &old[3..old.len() - 1];
     let new_story = &new[3..new.len() - 1];
@@ -394,7 +563,7 @@ pub(super) fn prove_textbox_edit(
         BODY,
     )?;
     let new_count = dword(new[2].2, 0)?;
-    preserved(new_count.abs_diff(count) <= 1, BODY)?;
+    preserved(new_count.abs_diff(count) <= 63, BODY)?;
     let old_paragraphs: Vec<_> = before
         .windows(2)
         .map(|span| &old_story[span[0]..span[1]])
@@ -455,7 +624,18 @@ pub(super) fn prove_textbox_edit(
             }
         }
     }
-    preserved(witnesses == 1, BODY)
+    preserved(
+        witnesses == 1
+            || proven_textbox_reflow(
+                &old_paragraphs,
+                &new_paragraphs,
+                original_defs,
+                defs,
+                original_instances,
+                output_instances,
+            ),
+        BODY,
+    )
 }
 
 pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
@@ -3887,6 +4067,69 @@ mod tests {
                 .iter()
                 .any(|finding| finding.part.as_deref() == Some(super::BODY)),
             "accepted a textbox geometry mutation alongside the paragraph split"
+        );
+    }
+
+    #[test]
+    #[ignore = "Release-WASM HWP5 text-box multiline paste fixture"]
+    fn release_hwp5_textbox_multiline_paste_accepts_only_proven_reflow() {
+        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
+        let read = |name| std::fs::read(dir.join(name)).unwrap();
+        let original = read("p5-h5tb-paste-original.hwp");
+        let edited = read("p5-h5tb-paste-edited.hwp");
+
+        assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
+
+        let duplicate_paragraph_id = mutate_body_record(
+            &edited,
+            |tag, level, data| {
+                tag == 66 && level == 3 && data.get(18..22) == Some(&[1, 0, 0, 0][..])
+            },
+            |data| {
+                let mut changed = data.to_vec();
+                changed[18..22].copy_from_slice(&0u32.to_le_bytes());
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&original, &duplicate_paragraph_id)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted a new textbox paragraph that reused an existing ID"
+        );
+
+        let changed_tail = mutate_body_record(
+            &edited,
+            |tag, level, data| {
+                tag == 66 && level == 3 && data.get(18..22) == Some(&[1, 0, 0, 0][..])
+            },
+            |data| {
+                let mut changed = data.to_vec();
+                changed[22] ^= 1;
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&original, &changed_tail)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted a multiline paste that changed paragraph metadata"
+        );
+
+        let changed_owner = mutate_body_record(
+            &edited,
+            |tag, level, data| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO),
+            |data| {
+                let mut changed = data.to_vec();
+                changed[12] ^= 1;
+                changed
+            },
+        );
+        assert!(
+            check_with_preview_refresh(&original, &changed_owner)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+            "accepted a multiline paste alongside a textbox geometry mutation"
         );
     }
 

@@ -1,0 +1,27 @@
+diff --git a/src/model/paragraph.rs b/src/model/paragraph.rs
+index 6f53edcc3f570c1a132fb2fe3fdf84f0cce5ccaf..61c09fabae539f6c556212c4105b5cd7d211d47b 100644
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -1496,8 +1496,11 @@
+         // 실제 삭제할 문자 수 (범위 클램핑)
+         let actual_count = count.min(text_len - char_offset);
+         let del_end = char_offset + actual_count;
+         let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
++        let preserve_hwpx_run_occurrences = topology
++            .as_ref()
++            .is_some_and(|topology| topology.can_split(self));
+         let old_shapes: Vec<_> = if topology.is_some() {
+             self.char_shapes
+                 .iter()
+                 .map(|s| (s.start_pos, s.char_shape_id))
+@@ -1569,9 +1572,9 @@
+         let preserve_right_shape = del_end < text_len;
+         let mut deduped = Vec::<CharShapeRef>::with_capacity(self.char_shapes.len());
+         for cs in self.char_shapes.drain(..) {
+             if let Some(previous) = deduped.last_mut() {
+-                if previous.start_pos == cs.start_pos {
++                if previous.start_pos == cs.start_pos && !preserve_hwpx_run_occurrences {
+                     if preserve_right_shape && cs.start_pos == utf16_start {
+                         *previous = cs;
+                     }
+                     continue;
