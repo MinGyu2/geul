@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-26",
+  "issueId": "P5-R-HF-OBJECTS",
+  "category": "A",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "33c548c33c1819e310888d95d0fd4df772a73c85",
+  "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "rhwpGeneration": "eeacbfbf37a45098ff9b18496a263127b6f12e98b287a38f4694b92ec5056524",
+  "rhwpSourceTreeSha256": "2079fcd8ae77ac35faa4600730c843f1cae61e1aeb97e29efa4fddfc20ca0cdd",
+  "rhwpWasmSha256": "e718bb88f60f20b646b4866af890efa53af4d2e805994cdfa3035bf83741ac0e",
+  "orderedRhwpPatches": [
+    {
+      "name": "stage3a-p5-header-footer-shapes.patch",
+      "sha256": "f12c738c538938d7bd118cc64e59a3180307512ee60e3b476efe699a0eb3c9d1"
+    },
+    {
+      "name": "stage3a-p5-hwpx-roundtrip-preservation.patch",
+      "sha256": "9e6bdc6aac714d14a03eb786faad0fb8f0b8b2da152fe7974e6910cd7f0d4fa6"
+    },
+    {
+      "name": "stage3a-p5-header-footer-offset-u32.patch",
+      "sha256": "45848cfbe17d078255ff9afdafa3e7ab79a71dcb30145f92b8ac15f033a81026"
+    },
+    {
+      "name": "stage3a-p5-hwpx-rect-position-preservation.patch",
+      "sha256": "7c12686db052ab55a49be88663ec83da4b0198d9c877690ff901d24280f5dcbe"
+    },
+    {
+      "name": "stage3a-p5-page-field-preservation.patch",
+      "sha256": "43fa4720ae32aca449cf301eb64f3d59ab2527a781927b269dec7cd9326aacf1"
+    }
+  ],
+  "supported": "HWP5/HWPX 머리말·꼬리말에 소유된 비그림 shape/line의 exact story owner 및 nested table-cell 경로를 사용해 적중·선택하고, 주소를 유지한 shape-property 편집을 수행한다. Native에서는 HWP5/HWPX nested header rectangle 이동, 저장과 독립 재열기를 확인했다.",
+  "refused": "잘못되거나 모호한 header/footer owner·cell path, 다른 story를 가리키는 주소, stale object, 지원되지 않는 속성/변환, 잠긴 개체 크기 변경은 변경 전에 거부한다. 복잡한 HWP5 textbox 내부 story는 순수 위치 변경만 허용하며 자식/문단 변경과 크기 변경은 거부한다.",
+  "preservation": [
+    "HWP5 T009는 정확한 head/foot owner와 GSO ID를 확인하며 대상 object subtree 밖의 record를 byte-identical하게 유지한다. 복잡한 textbox fallback은 잠기지 않은 비그림 개체의 bounded signed x/y 위치만 허용하고 자식 story records와 모든 다른 CTRL_HEADER bytes를 보존한다.",
+    "HWPX getter/setter는 section·header/footer·outer paragraph/control·inner paragraph/control·nested cell path를 모두 해석하고 정확한 Shape control만 변경한다.",
+    "HWPX preview refresh는 완전한 XML event stream이 같은 원본 XML part만 원본 bytes/method로 복구하며 comments, processing instructions와 text를 비교한다. 다른 모든 package part의 inventory/order/content/method를 확인한 뒤 최종 T009를 실행한다.",
+    "HWP/HWPX source identity, owner/address, object identity, Undo/Redo, save/reopen 및 resource/unknown-data preservation을 확인한다."
+  ],
+  "checks": {
+    "focusedReleaseRustHwp": "PASS: `cargo test --release --manifest-path src-tauri/Cargo.toml --lib header_and_footer_story_object_geometry_is_exactly_owned -- --nocapture`, 1/1.",
+    "focusedReleaseRustHwpx": "PASS: `cargo test --release --manifest-path src-tauri/Cargo.toml --lib hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다 -- --nocapture`, 1/1.",
+    "focusedVitest": "PASS: header/footer-scoped objectHit and HWP reopen tests, 9 passed and 82 unrelated skipped.",
+    "nativeProofRegression": "PASS: `python3 scripts/tests/test_native_stage3a_hf_shape_proof.py`, 2 tests; admits target placement edits and rejects comment, PI, tail, sibling and nested-position mutations.",
+    "nativeHarnessSyntax": "PASS: py_compile for native-stage3a-p5.py, native-stage3-c.py, rhwp-patches.py and the added proof regression.",
+    "rhwpPatchReconstruction": "PASS: exact pinned RHWP base plus all 60 ordered patches rebuilt 1,654 files matching the reviewed source manifest and source-tree SHA-256.",
+    "releaseWasm": "PASS: guarded offline Release generation; JS SHA-256 ee01fe42d6c766062d0059f2f2cde5da804ff378eb410204efe2a106c3d79263; WASM SHA-256 recorded above.",
+    "guardedReleaseBuild": "PASS: frontend TypeScript/Vite build, optimized Rust/Tauri application build, privacy/runtime-path scans and external dependency integrity; application SHA-256 8602915877ec840f74890825d60649ecbf48ca35459c696e9b371f0c83c97d70. Nix runtime portability NOT VERIFIED.",
+    "nativeX11": "PASS: actual Release Tauri app under Linux X11/Xvfb with private IBus Hangul; trusted pointer and keyboard input, HWP5 and HWPX story ownership, movement, Undo/Redo, T009 saved/synced, independent package/record proof and same-session reopen.",
+    "t009": "PASS: HWP5/HWPX saves returned saved=true, synced=true and empty preservation findings; the saved files passed direct independent HWP CFB and HWPX OPC/section-tree checks.",
+    "undoRedo": "PASS: trusted Native movement was restored by Undo and reapplied by Redo for both formats.",
+    "serializationAndReopen": "PASS: HWP5 changed only target Section0 GSO record 173 / object ID 1926588463 / position bytes [12,13]; non-target decompressed section records, DocInfo, BinData payloads and PrvText match. HWPX changed only target section0 placement and regenerated preview parts; shape identity and all other section-tree events match. Same-session and separate-app fresh-process geometry/owner checks passed.",
+    "gitDiffCheck": "PASS: final staged diff check; RHWP patch files use the same scoped whitespace attributes as the existing ordered patch files.",
+    "broadHwpReopenModel": "FAIL at current HEAD, reproduced identically from clean baseline bf3846adabe30922188d77ffd6854158f58f2c5d: 2 existing HWP cell-field reopen tests fail, 76 pass. Failures: sole paragraph-zero formula field acceptance; recognized formula/ClickHere metadata comparison. These tests are separate from header/footer ownership and fail at the pre-feature baseline too.",
+    "repositoryRustfmt": "FAIL: repository-wide rustfmt check reports broad formatting drift; no mass formatting rewrite was applied.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN.",
+    "releasePortability": "NOT VERIFIED outside the available Nix runtime.",
+    "push": "NOT PERFORMED."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb with private IBus Hangul; actual guarded Release Tauri application and trusted Native input.",
+    "appSha256": "8602915877ec840f74890825d60649ecbf48ca35459c696e9b371f0c83c97d70",
+    "rhwpGeneration": "eeacbfbf37a45098ff9b18496a263127b6f12e98b287a38f4694b92ec5056524",
+    "initialResultFile": "target/p5-r-hf-objects/native-pass-07/result.json",
+    "initialCleanupFile": "target/p5-r-hf-objects/native-session-pass-07/cleanup.json",
+    "freshResultFile": "target/p5-r-hf-objects/native-pass-07-fresh-final/result.json",
+    "freshCleanupFile": "target/p5-r-hf-objects/native-session-pass-07-fresh-final/cleanup.json",
+    "initialCleanup": "PASS: complete=true, proven=true, filesystemProven=true, survivors=[], exit=0.",
+    "freshCleanup": "PASS: complete=true, proven=true, filesystemProven=true, survivors=[], exit=0.",
+    "hwp": {
+      "case": "P5-R-HF-OBJECTS-HWP and P5-R-HF-OBJECTS-HWP-FRESH",
+      "editingPid": 382839,
+      "freshPid": 383700,
+      "fixtureSha256": "ef1f84e7dd213194e68c243a67b0b60022472d9fa81e4db8dcf9bd9be0825146",
+      "savedSha256": "7736fd06e2ae1e72f7807427df56b3f0d5937764d493750de2d78eff24560638",
+      "ownerAddress": {
+        "section": 0,
+        "kind": "header",
+        "outerParagraph": 0,
+        "outerControl": 6,
+        "innerParagraph": 0,
+        "innerControl": 0,
+        "cellPath": "[{\"controlIndex\":0,\"cellIndex\":0,\"cellParaIndex\":0}]"
+      },
+      "status": "PASS",
+      "objectId": 1926588463,
+      "changedRecordIndices": [173],
+      "changedControlBytes": [12, 13],
+      "compressionOnlySections": ["BodyText/Section1"],
+      "docInfoAndBinData": "PASS: decompressed DocInfo and every BinData payload byte-identical.",
+      "preview": "PASS: PrvText unchanged; regenerated canonical 707x1024 RGB8 PrvImage; CRC and pixel hash independently checked.",
+      "freshProcess": "PASS: distinct PID; exact saved hash; clean, preserved session; owner/properties/rendered frame match accepted state."
+    },
+    "hwpx": {
+      "case": "P5-R-HF-OBJECTS-HWPX and P5-R-HF-OBJECTS-HWPX-FRESH",
+      "editingPid": 383071,
+      "freshPid": 383859,
+      "fixtureSha256": "c11b117dfc55606bb3ea703f9ea5b0a14481f7e70e918bc09ce4e202a04c9fd0",
+      "savedSha256": "6fb2a7a4772d17db84c0a5455b2531e52ea98d2df3afb56699d960dbd211574c",
+      "ownerAddress": {
+        "section": 0,
+        "kind": "header",
+        "outerParagraph": 0,
+        "outerControl": 6,
+        "innerParagraph": 0,
+        "innerControl": 0,
+        "cellPath": "[{\"controlIndex\":0,\"cellIndex\":0,\"cellParaIndex\":0}]"
+      },
+      "status": "PASS",
+      "objectId": 1926588463,
+      "changedParts": ["Contents/section0.xml", "Preview/PrvImage.png", "Preview/PrvText.txt"],
+      "sectionTreeProof": "PASS: only selected rectangle position fields differ; identity, comments, processing instructions, nested child positions, siblings and mixed-content tails are preserved.",
+      "preview": "PASS: canonical page-sized RGB8 PNG and exact CRLF blank preview text.",
+      "freshProcess": "PASS: distinct PID; exact saved hash; clean, preserved session; owner/properties/rendered frame match accepted state."
+    }
+  },
+  "remaining": [
+    "Wayland, Windows and macOS acceptance was not run.",
+    "External Microsoft Word/Office/LibreOffice interoperability was not run.",
+    "Release portability outside the Nix runtime environment is not verified."
+  ],
+  "push": "NOT PERFORMED"
+}
