@@ -140,6 +140,9 @@ export interface RhwpDocument {
   getTextRange(section: number, paragraph: number, offset: number, count: number): string;
   /** P5 note editing. The address is checked by note kind, anchor control, instance ID and current number. */
   hitTestInFootnote?(page: number, x: number, y: number): string;
+  /** Maps a rendered endnote paragraph back to its exact note control and note-local character offset. */
+  getEndnoteHitInfo?(renderSection: number, virtualParagraph: number, renderOffset: number, page: number): string;
+  getEndnoteEditInfo?(section: number, paragraph: number, control: number, ownerPath: string): string;
   getPageFootnoteInfo?(page: number, footnoteIndex: number): string;
   getFootnoteInfo?(section: number, paragraph: number, control: number): string;
   getNoteInfo?(kind: string, section: number, paragraph: number, control: number, ownerPath: string): string;
@@ -147,6 +150,9 @@ export interface RhwpDocument {
   getFootnoteViewAddress?(section: number, paragraph: number, control: number,
     instanceId: number, number: number, noteParagraph: number, offset: number, preferredPage: number, ownerPath: string): string;
   getCursorRectInFootnote?(page: number, footnoteIndex: number, noteParagraph: number, offset: number): string;
+  getCursorRectInNote?(section: number, paragraph: number, control: number, noteParagraph: number, offset: number): string;
+  getCursorRectInOwnedEndnote?(section: number, paragraph: number, control: number, ownerPath: string,
+    noteParagraph: number, offset: number): string;
   getSelectionRectsInFootnote?(page: number, footnoteIndex: number,
     startParagraph: number, startOffset: number, endParagraph: number, endOffset: number): string;
   insertTextInNote?(kind: string, section: number, paragraph: number, control: number,

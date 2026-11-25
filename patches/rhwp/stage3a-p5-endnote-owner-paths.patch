@@ -1,0 +1,473 @@
+--- a/src/document_core/queries/cursor_rect.rs
++++ b/src/document_core/queries/cursor_rect.rs
+@@ -5749,6 +5749,7 @@
+         section_idx: usize,
+         para_idx: usize,
+         control_idx: usize,
++        owner_path: NoteOwnerPath,
+         note_para_idx: usize,
+     ) -> Option<(u32, usize, usize)> {
+         let pr = self.pagination.get(section_idx)?;
+@@ -5756,6 +5757,7 @@
+             src.section_index == section_idx
+                 && src.para_index == para_idx
+                 && src.control_index == control_idx
++                && src.owner_path == owner_path
+                 && src.note_para_index == note_para_idx
+         })?;
+         let virtual_para_idx =
+@@ -5809,7 +5811,7 @@
+             }
+             Control::Endnote(_) => {
+                 let (page_num, endnote_index, virtual_para_idx) = self
+-                    .find_endnote_edit_target(section_idx, para_idx, control_idx, 0)
++                    .find_endnote_edit_target(section_idx, para_idx, control_idx, NoteOwnerPath::Body, 0)
+                     .ok_or_else(|| {
+                         HwpError::RenderError("미주 렌더 위치를 찾을 수 없습니다".to_string())
+                     })?;
+@@ -5822,6 +5824,32 @@
+                 "지정된 컨트롤이 각주/미주가 아닙니다".to_string(),
+             )),
+         }
++    }
++
++    /// Resolve an endnote reference through its exact body, table-cell, or textbox owner.
++    pub(crate) fn get_endnote_edit_info_at_native(
++        &self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++    ) -> Result<String, HwpError> {
++        let Control::Endnote(note) = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| HwpError::RenderError("미주 소유 경로가 잘못되었습니다".to_string()))?
++        else {
++            return Err(HwpError::RenderError("지정된 소유자가 미주가 아닙니다".to_string()));
++        };
++        let (page_num, endnote_index, virtual_para_idx) = self
++            .find_endnote_edit_target(section_idx, para_idx, control_idx, owner_path, 0)
++            .ok_or_else(|| HwpError::RenderError("미주 렌더 위치를 찾을 수 없습니다".to_string()))?;
++        Ok(serde_json::json!({
++            "ok": true, "kind": "endnote", "pageNum": page_num,
++            "footnoteIndex": endnote_index, "fnParaIndex": 0,
++            "charOffset": 2, "virtualParaIndex": virtual_para_idx,
++            "ownerPath": owner_path.to_json(), "instanceId": note.instance_id,
++            "number": note.number,
++        }).to_string())
+     }
+-
++
+     /// Resolve an endnote hit in the rendered virtual paragraph back to its exact
+@@ -5833,9 +5861,6 @@
+         render_char_offset: usize,
+         preferred_page_num: u32,
+     ) -> Result<String, HwpError> {
+-        use crate::document_core::NoteOwnerPath;
+-        use crate::model::control::Control;
+-
+         let body_count = self
+             .document
+             .sections
+@@ -5853,19 +5878,14 @@
+             .endnote_para_sources
+             .get(local_idx)
+             .ok_or_else(|| HwpError::RenderError("가상 미주 문단 주소가 없습니다".to_string()))?;
+-        let owner_section = self
+-            .document
+-            .sections
+-            .get(source.section_index)
+-            .ok_or_else(|| HwpError::RenderError("미주 소유 구역이 없습니다".to_string()))?;
+-        let owner_para = owner_section
+-            .paragraphs
+-            .get(source.para_index)
+-            .ok_or_else(|| HwpError::RenderError("미주 앵커 문단이 없습니다".to_string()))?;
+-        let Control::Endnote(note) = owner_para
+-            .controls
+-            .get(source.control_index)
+-            .ok_or_else(|| HwpError::RenderError("미주 컨트롤 주소가 없습니다".to_string()))?
++        let Control::Endnote(note) = self
++            .note_control_ref_at(
++                source.section_index,
++                source.para_index,
++                source.control_index,
++                source.owner_path,
++            )
++            .ok_or_else(|| HwpError::RenderError("미주 소유 경로가 잘못되었습니다".to_string()))?
+         else {
+             return Err(HwpError::RenderError(
+                 "가상 문단 소유자가 미주 컨트롤이 아닙니다".to_string(),
+@@ -5892,6 +5912,7 @@
+                 mapped.section_index == source.section_index
+                     && mapped.para_index == source.para_index
+                     && mapped.control_index == source.control_index
++                    && mapped.owner_path == source.owner_path
+                     && mapped.note_para_index == note_para_index
+             }) {
+                 return Err(HwpError::RenderError(
+@@ -5952,7 +5973,7 @@
+             ));
+         }
+-
++
+-        let owner_path = NoteOwnerPath::Body;
++        let owner_path = source.owner_path;
+         let raw_info = self.get_note_info_at_native(
+             "endnote",
+             source.section_index,
+@@ -6064,7 +6085,7 @@
+             }
+             Control::Endnote(endnote) => {
+                 let (page_num, _, virtual_para_idx) = self
+-                    .find_endnote_edit_target(section_idx, para_idx, control_idx, note_para_idx)
++                    .find_endnote_edit_target(section_idx, para_idx, control_idx, NoteOwnerPath::Body, note_para_idx)
+                     .ok_or_else(|| {
+                         HwpError::RenderError("미주 렌더 위치를 찾을 수 없습니다".to_string())
+                     })?;
+@@ -6096,6 +6117,52 @@
+                 "지정된 컨트롤이 각주/미주가 아닙니다".to_string(),
+             )),
+         }
++    }
++
++    /// Resolve a caret in a rendered endnote paragraph through the exact note owner path.
++    pub(crate) fn get_cursor_rect_in_endnote_at_native(
++        &self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        note_para_idx: usize,
++        char_offset: usize,
++    ) -> Result<String, HwpError> {
++        let Control::Endnote(note) = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| HwpError::RenderError("미주 소유 경로가 잘못되었습니다".to_string()))?
++        else {
++            return Err(HwpError::RenderError("지정된 소유자가 미주가 아닙니다".to_string()));
++        };
++        let paragraph = note.paragraphs.get(note_para_idx).ok_or_else(|| {
++            HwpError::RenderError("미주 내부 문단 주소가 범위를 벗어났습니다".to_string())
++        })?;
++        if char_offset > paragraph.text.chars().count() {
++            return Err(HwpError::RenderError("미주 커서 범위가 잘못되었습니다".to_string()));
++        }
++        let (page_num, _, virtual_para_idx) = self
++            .find_endnote_edit_target(section_idx, para_idx, control_idx, owner_path, note_para_idx)
++            .ok_or_else(|| HwpError::RenderError("미주 렌더 위치를 찾을 수 없습니다".to_string()))?;
++        let render_char_offset = if note_para_idx == 0 {
++            char_offset
++                + note_marker_text(
++                    note.number,
++                    note.number_shape,
++                    note.before_decoration_letter,
++                    note.after_decoration_letter,
++                ).chars().count()
++                + 1
++        } else {
++            char_offset
++        };
++        self.cursor_rect_for_render_paragraph(
++            page_num,
++            section_idx,
++            virtual_para_idx,
++            render_char_offset,
++        )?
++        .ok_or_else(|| HwpError::RenderError("미주 커서 위치를 찾을 수 없습니다".to_string()))
+     }
+-
++
+     /// 각주 내 커서 위치 (커서 렉트) 계산
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -5223,16 +5223,54 @@
+                         }
+                         for (pi, para) in sec_j.paragraphs.iter().enumerate() {
+                             for (ci, ctrl) in para.controls.iter().enumerate() {
+-                                if let crate::model::control::Control::Endnote(en) = ctrl {
++                                let mut push_endnote = |owner_path, en: &crate::model::footnote::Endnote| {
+                                     acc.push(DeferredEndnote {
+                                         reff: EndnoteRef {
+                                             number: en.number,
+                                             section_index: sj,
+                                             para_index: pi,
+                                             control_index: ci,
++                                            owner_path,
+                                         },
+-                                        endnote: (**en).clone(),
++                                        endnote: en.clone(),
+                                     });
++                                };
++                                match ctrl {
++                                    crate::model::control::Control::Endnote(en) =>
++                                        push_endnote(crate::document_core::NoteOwnerPath::Body, en),
++                                    crate::model::control::Control::Table(table) => {
++                                        for (cell_index, cell) in table.cells.iter().enumerate() {
++                                            for (cell_para_index, cell_para) in cell.paragraphs.iter().enumerate() {
++                                                for (cell_control_index, cell_control) in cell_para.controls.iter().enumerate() {
++                                                    if let crate::model::control::Control::Endnote(en) = cell_control {
++                                                        push_endnote(
++                                                            crate::document_core::NoteOwnerPath::TableCell {
++                                                                cell_index, cell_para_index, cell_control_index,
++                                                            },
++                                                            en,
++                                                        );
++                                                    }
++                                                }
++                                            }
++                                        }
++                                    }
++                                    crate::model::control::Control::Shape(shape) => {
++                                        if let Some(text_box) = shape.drawing().and_then(|drawing| drawing.text_box.as_ref()) {
++                                            for (tb_para_index, tb_para) in text_box.paragraphs.iter().enumerate() {
++                                                for (tb_control_index, tb_control) in tb_para.controls.iter().enumerate() {
++                                                    if let crate::model::control::Control::Endnote(en) = tb_control {
++                                                        push_endnote(
++                                                            crate::document_core::NoteOwnerPath::ShapeTextBox {
++                                                                tb_para_index, tb_control_index,
++                                                            },
++                                                            en,
++                                                        );
++                                                    }
++                                                }
++                                            }
++                                        }
++                                    }
++                                    _ => {}
+                                 }
+                             }
+                         }
+@@ -6419,6 +6457,7 @@
+                             "section": src.section_index,
+                             "para": src.para_index,
+                             "controlIndex": src.control_index,
++                            "ownerPath": src.owner_path.to_json(),
+                             "noteParaIndex": src.note_para_index,
+                         })
+                     })
+--- a/src/renderer/layout.rs
++++ b/src/renderer/layout.rs
+@@ -2334,6 +2334,7 @@
+     a.section_index == b.section_index
+         && a.para_index == b.para_index
+         && a.control_index == b.control_index
++        && a.owner_path == b.owner_path
+ }
+-
++
+ fn para_large_tac_picture_or_shape_height_px(para: &Paragraph, dpi: f64) -> Option<f64> {
+--- a/src/renderer/pagination.rs
++++ b/src/renderer/pagination.rs
+@@ -104,8 +104,10 @@
+     pub section_index: usize,
+     /// 본문 문단 인덱스
+     pub para_index: usize,
+-    /// 문단 내 컨트롤 인덱스
++    /// 본문 문단 안에서 미주를 소유하는 컨트롤 인덱스
+     pub control_index: usize,
++    /// 본문 컨트롤 아래의 정확한 노트 소유 경로
++    pub(crate) owner_path: crate::document_core::NoteOwnerPath,
+ }
+-
++
+ /// [미주 배치 — END_OF_DOCUMENT] 문서 끝으로 미룬, 앞선 구역의 미주 하나.
+@@ -139,8 +141,10 @@
+     pub section_index: usize,
+     /// 원본 Endnote 컨트롤이 있는 본문 문단 인덱스
+     pub para_index: usize,
+-    /// 본문 문단 내 Endnote 컨트롤 인덱스
++    /// 본문 문단 내 소유 컨테이너 컨트롤 인덱스
+     pub control_index: usize,
++    /// Endnote 컨트롤까지의 정확한 소유 경로
++    pub(crate) owner_path: crate::document_core::NoteOwnerPath,
+     /// Endnote 내부 문단 인덱스
+     pub note_para_index: usize,
+ }
+--- a/src/renderer/typeset/notes/endnotes/content.rs
++++ b/src/renderer/typeset/notes/endnotes/content.rs
+@@ -3,6 +3,7 @@
+ use crate::renderer::typeset::{
+     format_number, Control, EndnoteDeferral, EndnoteRef, Paragraph, RenderNumberFormat,
+ };
++use crate::document_core::NoteOwnerPath;
+-
++
+ /// [미주 배치] `en_ref` 의 미주 본문(en_ctrl)을 해석한다. 현재 구역 미주면 본문
+ /// paragraphs 에서, END_OF_DOCUMENT 로 문서 끝에 모인 앞 구역 미주면 deferral
+@@ -14,11 +15,42 @@
+     deferral: &'a EndnoteDeferral<'a>,
+ ) -> Option<&'a crate::model::footnote::Endnote> {
+     if en_ref.section_index == section_index {
+-        match paragraphs
++        let anchor = paragraphs
+             .get(en_ref.para_index)
+-            .and_then(|p| p.controls.get(en_ref.control_index))
+-        {
+-            Some(Control::Endnote(en_ctrl)) => Some(en_ctrl.as_ref()),
++            .and_then(|p| p.controls.get(en_ref.control_index))?;
++        let control = match en_ref.owner_path {
++            NoteOwnerPath::Body => anchor,
++            NoteOwnerPath::TableCell {
++                cell_index,
++                cell_para_index,
++                cell_control_index,
++            } => match anchor {
++                Control::Table(table) => table
++                    .cells
++                    .get(cell_index)?
++                    .paragraphs
++                    .get(cell_para_index)?
++                    .controls
++                    .get(cell_control_index)?,
++                _ => return None,
++            },
++            NoteOwnerPath::ShapeTextBox {
++                tb_para_index,
++                tb_control_index,
++            } => match anchor {
++                Control::Shape(shape) => shape
++                    .drawing()?
++                    .text_box
++                    .as_ref()?
++                    .paragraphs
++                    .get(tb_para_index)?
++                    .controls
++                    .get(tb_control_index)?,
++                _ => return None,
++            },
++        };
++        match control {
++            Control::Endnote(en_ctrl) => Some(en_ctrl.as_ref()),
+             _ => None,
+         }
+     } else if let EndnoteDeferral::RenderAll(deferred) = deferral {
+@@ -28,6 +60,7 @@
+                 d.reff.section_index == en_ref.section_index
+                     && d.reff.para_index == en_ref.para_index
+                     && d.reff.control_index == en_ref.control_index
++                    && d.reff.owner_path == en_ref.owner_path
+             })
+             .map(|d| &d.endnote)
+     } else {
+--- a/src/renderer/typeset/notes/endnotes/paragraph.rs
++++ b/src/renderer/typeset/notes/endnotes/paragraph.rs
+@@ -122,6 +122,7 @@
+                 section_index: en_ref.section_index,
+                 para_index: en_ref.para_index,
+                 control_index: en_ref.control_index,
++                owner_path: en_ref.owner_path,
+                 note_para_index: ep_idx,
+             });
+             last_render_endnote_para_local_idx = Some(en_para_local_idx);
+@@ -1288,6 +1289,7 @@
+                         section_index: en_ref.section_index,
+                         para_index: en_ref.para_index,
+                         control_index: en_ref.control_index,
++                        owner_path: en_ref.owner_path,
+                         note_para_index: ep_idx + 1,
+                     });
+                     last_render_endnote_para_local_idx = Some(st.endnote_paragraphs.len() - 1);
+--- a/src/renderer/typeset/section/controls.rs
++++ b/src/renderer/typeset/section/controls.rs
+@@ -374,6 +374,17 @@
+                                                 );
+                                                 st.add_footnote_height(fn_height);
+                                             }
++                                        } else if let Control::Endnote(endnote) = tc {
++                                            st.collect_endnote(EndnoteRef {
++                                                number: endnote.number,
++                                                section_index,
++                                                para_index: para_idx,
++                                                control_index: ctrl_idx,
++                                                owner_path: crate::document_core::NoteOwnerPath::ShapeTextBox {
++                                                    tb_para_index: tp_idx,
++                                                    tb_control_index: tc_idx,
++                                                },
++                                            });
+                                         }
+                                     }
+                                 }
+@@ -612,7 +623,32 @@
+                         section_index,
+                         para_index: para_idx,
+                         control_index: ctrl_idx,
++                        owner_path: crate::document_core::NoteOwnerPath::Body,
+                     });
++                }
++                Control::Table(table) => {
++                    // Table-cell endnotes are owned by the table host plus an exact
++                    // cell/paragraph/control path. Do not treat the table host itself
++                    // as a note control.
++                    for (cell_index, cell) in table.cells.iter().enumerate() {
++                        for (cell_para_index, cell_para) in cell.paragraphs.iter().enumerate() {
++                            for (cell_control_index, cell_control) in cell_para.controls.iter().enumerate() {
++                                if let Control::Endnote(endnote) = cell_control {
++                                    st.collect_endnote(EndnoteRef {
++                                        number: endnote.number,
++                                        section_index,
++                                        para_index: para_idx,
++                                        control_index: ctrl_idx,
++                                        owner_path: crate::document_core::NoteOwnerPath::TableCell {
++                                            cell_index,
++                                            cell_para_index,
++                                            cell_control_index,
++                                        },
++                                    });
++                                }
++                            }
++                        }
++                    }
+                 }
+                 _ => {}
+             }
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -5593,6 +5593,48 @@
+             section_idx as usize,
+             para_idx as usize,
+             control_idx as usize,
++        )
++        .map_err(|e| e.into())
++    }
++
++    /// Resolve the edit location of an endnote owned by a nested story object.
++    #[wasm_bindgen(js_name = getEndnoteEditInfo)]
++    pub fn get_endnote_edit_info(
++        &self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++    ) -> Result<String, JsValue> {
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.get_endnote_edit_info_at_native(
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++        )
++        .map_err(|e| e.into())
++    }
++
++    /// Resolve a caret in a rendered endnote through its exact owner path.
++    #[wasm_bindgen(js_name = getCursorRectInOwnedEndnote)]
++    pub fn get_cursor_rect_in_owned_endnote(
++        &self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++        note_para_idx: u32,
++        char_offset: u32,
++    ) -> Result<String, JsValue> {
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.get_cursor_rect_in_endnote_at_native(
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++            note_para_idx as usize,
++            char_offset as usize,
+         )
+         .map_err(|e| e.into())
+     }

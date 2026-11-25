@@ -64,7 +64,9 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/stage3a-p5-header-footer-offset-u32.patch",
           "patches/rhwp/stage3a-p5-hwpx-rect-position-preservation.patch",
           "patches/rhwp/stage3a-p5-page-field-preservation.patch",
-          "patches/rhwp/stage3a-p5-footnote-owner-edit.patch")
+          "patches/rhwp/stage3a-p5-footnote-owner-edit.patch",
+          "patches/rhwp/stage3a-p5-endnote-virtual-owner.patch",
+          "patches/rhwp/stage3a-p5-endnote-owner-paths.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"

@@ -2223,6 +2223,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let position: DocPosition | null;
     try {
       const hit = JSON.parse(this.doc.hitTest(page, x, y));
+      const section = hit?.sectionIndex, paragraph = hit?.paragraphIndex, offset = hit?.charOffset;
+      if (Number.isSafeInteger(section) && section >= 0 && Number.isSafeInteger(paragraph) && paragraph >= 0
+        && paragraph >= this.doc.getParagraphCount(section)) {
+        // RHWP renders endnotes as virtual paragraphs after a section's body. Resolve that address
+        // to its exact endnote owner before any ordinary body API can see it.
+        position = this.text?.endnotePosition(section, paragraph, offset, page) ?? null;
+        if (!position || !this.ownsPosition(position)) return false;
+        return this.moveTo(position, extend);
+      }
       position = parsePosition(hit, this.canEditTextBox(hit?.sectionIndex));
     } catch {
       position = null;

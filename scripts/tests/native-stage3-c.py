@@ -1068,7 +1068,7 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.fixtures, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("docx" if case in {"C03", "P4-DX-GROUP", "P4-DX-CURVE", "P4-DX-PATH", "P4-PATH-XFM-DOCX", "P5-DX-NOTE-MOVE", "P5-DX-NOTE-MOVE-FRESH-REOPEN", "P5-DX-HF-MOVE", "P5-DX-HF-MOVE-FRESH-REOPEN", "P5-DX-DELETE", "P5-DX-DELETE-FRESH-REOPEN", "P5-DX-SIZE-NONCANON"} else "hwp" if case in {"P4-H5-GROUP", "P4-PATH-XFM-HWP5", "P5-R-HF-OBJECTS-HWP", "P5-R-HF-OBJECTS-HWP-FRESH", "P5-R-HDR-HWP", "P5-R-HDR-HWP-FRESH", "P5-R-FTR-HWP", "P5-R-FTR-HWP-FRESH", "P5-R-FN-HWP-BODY", "P5-R-FN-HWP-BODY-FRESH"} else "hwpx")
+                        row["failureAppState"] = acc.status("docx" if case in {"C03", "P4-DX-GROUP", "P4-DX-CURVE", "P4-DX-PATH", "P4-PATH-XFM-DOCX", "P5-DX-NOTE-MOVE", "P5-DX-NOTE-MOVE-FRESH-REOPEN", "P5-DX-HF-MOVE", "P5-DX-HF-MOVE-FRESH-REOPEN", "P5-DX-DELETE", "P5-DX-DELETE-FRESH-REOPEN", "P5-DX-SIZE-NONCANON"} else "hwp" if case in {"P4-H5-GROUP", "P4-PATH-XFM-HWP5", "P5-R-HF-OBJECTS-HWP", "P5-R-HF-OBJECTS-HWP-FRESH", "P5-R-HDR-HWP", "P5-R-HDR-HWP-FRESH", "P5-R-FTR-HWP", "P5-R-FTR-HWP-FRESH", "P5-R-FN-HWP-BODY", "P5-R-FN-HWP-BODY-FRESH", "P5-R-EN-HWP-BODY", "P5-R-EN-HWP-BODY-FRESH", "P5-R-EN-HWP-TABLE", "P5-R-EN-HWP-TABLE-FRESH"} else "hwpx")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

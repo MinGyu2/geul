@@ -36,7 +36,7 @@ export interface CellRef {
   caption?: true;
 }
 
-/** Exact footnote container. The page is only a rendering hint; this path and note identity own edits. */
+/** Exact note container. The rendering page is only a hint; this path and identity own edits. */
 export type NoteOwnerPath =
   | { sourceType: "body" }
   | { sourceType: "table"; cellIndex: number; cellParaIndex: number; cellControlIndex: number }
@@ -52,6 +52,23 @@ export interface FootnoteRef {
   number: number;
   viewPage: number;
 }
+
+export interface EndnoteRef {
+  kind: "endnote";
+  section: number;
+  anchorParagraph: number;
+  control: number;
+  ownerPath: NoteOwnerPath;
+  instanceId: number;
+  number: number;
+  viewPage: number;
+  renderSection: number;
+  renderParagraphBase: number;
+  sourceLeadingSpaces: number;
+  renderPrefixLength: number;
+}
+
+export type NoteRef = FootnoteRef | EndnoteRef;
 
 /** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
 // Matches the engine path decoder's stack envelope. JSON size and ownership
@@ -87,7 +104,7 @@ export interface DocPosition {
   paragraph: number;
   offset: number;
   cell?: CellRef;
-  note?: FootnoteRef;
+  note?: NoteRef;
 }
 
 /** 페이지 좌표(배율 1, CSS px)의 커서. */
@@ -129,7 +146,8 @@ function json(text: string): unknown {
   }
 }
 
-interface FootnoteInfo {
+interface NoteInfo {
+  kind: "footnote" | "endnote";
   instanceId: number;
   number: number;
   texts: string[];
@@ -137,11 +155,11 @@ interface FootnoteInfo {
   controlStates: unknown[][];
   paraCount: number;
 }
-function parseFootnoteInfo(raw: string): FootnoteInfo | null {
+function parseNoteInfo(raw: string, kind: NoteInfo["kind"]): NoteInfo | null {
   if (raw.length > 2 * 1024 * 1024) return null;
   const value = json(raw);
   if (!isRecord(value) || Object.keys(value).sort().join(",") !== "controlStates,editableStarts,instanceId,kind,number,ok,paraCount,texts,totalTextLen"
-    || value.ok !== true || value.kind !== "footnote" || !isIndex(value.instanceId) || value.instanceId > 0xffffffff
+    || value.ok !== true || value.kind !== kind || !isIndex(value.instanceId) || value.instanceId > 0xffffffff
     || !isIndex(value.number) || value.number > 0xffff || !isIndex(value.paraCount) || value.paraCount < 1
     || !Array.isArray(value.texts) || value.texts.length !== value.paraCount || !isIndex(value.totalTextLen)
     || !Array.isArray(value.editableStarts) || value.editableStarts.length !== value.paraCount
@@ -154,7 +172,7 @@ function parseFootnoteInfo(raw: string): FootnoteInfo | null {
   if (editableStarts.some((start, index) => start !== null && start > charCount(texts[index]!))) return null;
   const total = texts.reduce((sum, text) => sum + charCount(text), 0);
   if (total !== value.totalTextLen) return null;
-  return { instanceId: value.instanceId, number: value.number, texts, editableStarts,
+  return { kind, instanceId: value.instanceId, number: value.number, texts, editableStarts,
     controlStates: value.controlStates as unknown[][], paraCount: value.paraCount };
 }
 
@@ -424,7 +442,7 @@ export class RhwpText {
     const path = parseNoteOwnerPath(owner.ownerPath);
     if (!path || path.sourceType !== owner.sourceType) return null;
     const ownerPath = JSON.stringify(path);
-    const note = parseFootnoteInfo(getInfo.call(this.doc, "footnote", owner.sectionIdx, owner.paraIdx, owner.controlIdx, ownerPath));
+    const note = parseNoteInfo(getInfo.call(this.doc, "footnote", owner.sectionIdx, owner.paraIdx, owner.controlIdx, ownerPath), "footnote");
     if (!note || note.instanceId !== owner.noteInstanceId || note.number !== owner.noteNumber
       || note.paraCount !== owner.noteParaCount || hit.fnParaIndex >= note.paraCount
       || note.editableStarts[hit.fnParaIndex] === null
@@ -441,40 +459,96 @@ export class RhwpText {
     return view?.page === page && view.footnoteIndex === hit.footnoteIndex ? position : null;
   }
 
+  /** Resolve a rendered virtual endnote paragraph through its exact note control and owner identity. */
+  endnotePosition(renderSection: number, virtualParagraph: number, renderOffset: number, page: number): DocPosition | null {
+    const resolve = this.doc.getEndnoteHitInfo, getInfo = this.doc.getNoteInfo;
+    if (!resolve || !getInfo || !isIndex(renderSection) || renderSection > 0xffffffff
+      || !isIndex(virtualParagraph) || virtualParagraph > 0xffffffff || !isIndex(renderOffset) || renderOffset > 0xffffffff
+      || !isIndex(page) || page > 0xffffffff) return null;
+    try {
+      const value = json(resolve.call(this.doc, renderSection, virtualParagraph, renderOffset, page));
+      if (!isRecord(value) || Object.keys(value).sort().join(",") !== "anchorParagraph,control,hit,instanceId,kind,noteOffset,noteParagraph,number,ownerPath,renderParagraph,renderParagraphBase,renderPrefixLength,renderSection,section,sourceLeadingSpaces,viewPage"
+        || value.hit !== true || value.kind !== "endnote"
+        || !isIndex(value.section) || value.section > 0xffffffff
+        || !isIndex(value.anchorParagraph) || value.anchorParagraph > 0xffffffff
+        || !isIndex(value.control) || value.control > 0xffffffff
+        || !isIndex(value.instanceId) || value.instanceId > 0xffffffff
+        || !isIndex(value.number) || value.number < 1 || value.number > 0xffff
+        || !isIndex(value.noteParagraph) || value.noteParagraph > 0xffffffff
+        || !isIndex(value.noteOffset) || value.noteOffset > 0xffffffff
+        || value.renderSection !== renderSection || value.renderParagraph !== virtualParagraph
+        || !isIndex(value.renderParagraphBase) || value.renderParagraphBase > 0xffffffff
+        || value.renderParagraphBase + value.noteParagraph !== virtualParagraph
+        || !isIndex(value.renderPrefixLength) || value.renderPrefixLength < 1 || value.renderPrefixLength > 64
+        || !isIndex(value.sourceLeadingSpaces) || value.sourceLeadingSpaces > 0xffffffff
+        || value.viewPage !== page) return null;
+      const ownerPath = parseNoteOwnerPath(value.ownerPath);
+      if (!ownerPath) return null;
+      const note = parseNoteInfo(getInfo.call(this.doc, "endnote", value.section, value.anchorParagraph,
+        value.control, JSON.stringify(ownerPath)), "endnote");
+      if (!note || note.instanceId !== value.instanceId || note.number !== value.number
+        || value.noteParagraph >= note.paraCount || note.editableStarts[value.noteParagraph] === null
+        || value.noteOffset < note.editableStarts[value.noteParagraph]!
+        || value.noteOffset > charCount(note.texts[value.noteParagraph]!)) return null;
+      const leading = value.noteParagraph === 0
+        ? (note.texts[0]!.match(/^[ \u00a0\u2007]*/u)?.[0].length ?? 0) : 0;
+      if (leading !== value.sourceLeadingSpaces) return null;
+      return {
+        section: value.section,
+        paragraph: value.noteParagraph,
+        offset: value.noteOffset,
+        note: {
+          kind: "endnote", section: value.section, anchorParagraph: value.anchorParagraph,
+          control: value.control, ownerPath, instanceId: value.instanceId, number: value.number,
+          viewPage: page, renderSection, renderParagraphBase: value.renderParagraphBase,
+          sourceLeadingSpaces: leading, renderPrefixLength: value.renderPrefixLength,
+        },
+      };
+    } catch { return null; }
+  }
+
   /** Recheck note identity on every edit/read used for admission; page-local indices never establish ownership. */
   ownsNote(at: DocPosition): boolean {
     const owner = at.note, getInfo = this.doc.getNoteInfo;
-    if (!owner || owner.kind !== "footnote" || !isIndex(owner.section) || owner.section > 0xffffffff || owner.section !== at.section
+    if (!owner || (owner.kind !== "footnote" && owner.kind !== "endnote")
+      || !isIndex(owner.section) || owner.section > 0xffffffff || owner.section !== at.section
       || !isIndex(owner.anchorParagraph) || owner.anchorParagraph > 0xffffffff || !isIndex(owner.control) || owner.control > 0xffffffff
       || !isIndex(owner.instanceId) || owner.instanceId > 0xffffffff || !isIndex(owner.number) || owner.number < 1 || owner.number > 0xffff
       || !isIndex(owner.viewPage) || owner.viewPage > 0xffffffff
       || !parseNoteOwnerPath(owner.ownerPath) || at.cell || !getInfo
       || !isIndex(at.section) || at.section > 0xffffffff || !isIndex(at.paragraph) || at.paragraph > 0xffffffff
       || !isIndex(at.offset) || at.offset > 0xffffffff) return false;
+    if (owner.kind === "endnote" && (!isIndex(owner.renderSection) || owner.renderSection > 0xffffffff
+      || !isIndex(owner.renderParagraphBase) || owner.renderParagraphBase > 0xffffffff
+      || owner.renderParagraphBase + at.paragraph > 0xffffffff
+      || !isIndex(owner.sourceLeadingSpaces) || owner.sourceLeadingSpaces > 0xffffffff
+      || !isIndex(owner.renderPrefixLength) || owner.renderPrefixLength < 1 || owner.renderPrefixLength > 64)) return false;
     try {
-      const info = parseFootnoteInfo(getInfo.call(this.doc, owner.kind, owner.section, owner.anchorParagraph,
-        owner.control, JSON.stringify(owner.ownerPath)));
+      const info = parseNoteInfo(getInfo.call(this.doc, owner.kind, owner.section, owner.anchorParagraph,
+        owner.control, JSON.stringify(owner.ownerPath)), owner.kind);
       return !!info && info.instanceId === owner.instanceId && info.number === owner.number
         && at.paragraph < info.paraCount
         && info.editableStarts[at.paragraph] !== null
         && at.offset >= info.editableStarts[at.paragraph]!
-        && at.offset <= charCount(info.texts[at.paragraph]!);
+        && at.offset <= charCount(info.texts[at.paragraph]!)
+        && (owner.kind !== "endnote" || (owner.sourceLeadingSpaces === (at.paragraph === 0
+          ? (info.texts[0]!.match(/^[ \u00a0\u2007]*/u)?.[0].length ?? 0) : 0)));
     } catch { return false; }
   }
 
-  private footnoteInfo(at: DocPosition): FootnoteInfo {
+  private noteInfo(at: DocPosition): NoteInfo {
     const note = at.note;
-    if (!note || !this.ownsNote(at) || !this.doc.getNoteInfo) throw new Error("footnote owner changed or is unsupported");
-    if (at.section !== note.section) throw new Error("footnote section mismatch");
-    const info = parseFootnoteInfo(this.doc.getNoteInfo(note.kind, note.section, note.anchorParagraph,
-      note.control, JSON.stringify(note.ownerPath)));
-    if (!info || info.instanceId !== note.instanceId || info.number !== note.number) throw new Error("footnote identity mismatch");
+    if (!note || !this.ownsNote(at) || !this.doc.getNoteInfo) throw new Error("note owner changed or is unsupported");
+    if (at.section !== note.section) throw new Error("note section mismatch");
+    const info = parseNoteInfo(this.doc.getNoteInfo(note.kind, note.section, note.anchorParagraph,
+      note.control, JSON.stringify(note.ownerPath)), note.kind);
+    if (!info || info.instanceId !== note.instanceId || info.number !== note.number) throw new Error("note identity mismatch");
     return info;
   }
 
   private footnoteView(at: DocPosition): { page: number; footnoteIndex: number } | null {
     const note = at.note, viewAddress = this.doc.getFootnoteViewAddress;
-    if (!note || !viewAddress || !this.ownsNote(at)) return null;
+    if (!note || note.kind !== "footnote" || !viewAddress || !this.ownsNote(at)) return null;
     try {
       if (at.section !== note.section) return null;
       const value = json(viewAddress.call(this.doc, note.section, note.anchorParagraph, note.control,
@@ -491,6 +565,21 @@ export class RhwpText {
   private sameFootnoteView(a: DocPosition, b: DocPosition): boolean {
     const x = this.footnoteView(a), y = this.footnoteView(b);
     return !!x && !!y && x.page === y.page && x.footnoteIndex === y.footnoteIndex;
+  }
+
+  private sameNoteView(a: DocPosition, b: DocPosition): boolean {
+    if (!a.note || !b.note || !sameContext(a, b) || !this.ownsNote(a) || !this.ownsNote(b)) return false;
+    if (a.note.kind === "footnote") return this.sameFootnoteView(a, b);
+    return b.note.kind === "endnote" && a.note.renderSection === b.note.renderSection
+      && a.note.renderParagraphBase === b.note.renderParagraphBase;
+  }
+
+  private endnoteRenderOffset(at: DocPosition): number {
+    const note = at.note;
+    if (!note || note.kind !== "endnote") throw new Error("endnote render address unavailable");
+    return at.paragraph === 0
+      ? at.offset - note.sourceLeadingSpaces + note.renderPrefixLength
+      : at.offset;
   }
 
   /**
@@ -682,7 +771,7 @@ export class RhwpText {
   }
 
   paragraphCount(at: DocPosition): number {
-    if (at.note) return this.footnoteInfo(at).paraCount;
+    if (at.note) return this.noteInfo(at).paraCount;
     const c = at.cell;
     if (c?.nested) return this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(c));
     return c ? this.doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, c.cell) : this.doc.getParagraphCount(at.section);
@@ -716,9 +805,9 @@ export class RhwpText {
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
     if (from.note || to.note) {
       if (!from.note || !to.note || !sameContext(from, to) || compare(from, to) > 0
-        || !this.sameFootnoteView(from, to)) return false;
+        || !this.sameNoteView(from, to)) return false;
       try {
-        const info = this.footnoteInfo(from);
+        const info = this.noteInfo(from);
         return to.paragraph < info.paraCount && from.paragraph <= to.paragraph
           && from.offset <= charCount(info.texts[from.paragraph]!)
           && to.offset <= charCount(info.texts[to.paragraph]!);
@@ -757,7 +846,7 @@ export class RhwpText {
   }
 
   paragraphLength(at: DocPosition): number {
-    if (at.note) return charCount(this.footnoteInfo(at).texts[at.paragraph]!);
+    if (at.note) return charCount(this.noteInfo(at).texts[at.paragraph]!);
     const c = at.cell, inline = this.inlineCell({ ...at, offset: 0 });
     if (inline) return inline.length;
     if (c?.nested) return this.doc.getCellParagraphLengthByPath!(at.section, c.parentParagraph, pathJson(c));
@@ -769,6 +858,17 @@ export class RhwpText {
   caret(at: DocPosition): CaretRect | null {
     if (at.note) {
       try {
+        if (at.note.kind === "endnote") {
+          if (!this.ownsNote(at)) return null;
+          if (at.note.ownerPath.sourceType === "body") {
+            if (!this.doc.getCursorRectInNote) return null;
+            return parseCaretRect(json(this.doc.getCursorRectInNote(at.note.section, at.note.anchorParagraph,
+              at.note.control, at.paragraph, at.offset)));
+          }
+          if (!this.doc.getCursorRectInOwnedEndnote) return null;
+          return parseCaretRect(json(this.doc.getCursorRectInOwnedEndnote(at.note.section,
+            at.note.anchorParagraph, at.note.control, JSON.stringify(at.note.ownerPath), at.paragraph, at.offset)));
+        }
         const view = this.footnoteView(at);
         if (!view || !this.doc.getCursorRectInFootnote) return null;
         return parseCaretRect(json(this.doc.getCursorRectInFootnote(view.page, view.footnoteIndex, at.paragraph, at.offset)));
@@ -794,7 +894,24 @@ export class RhwpText {
   /** Rendered line boundaries in the explicitly owned paragraph, including nested cells. */
   line(at: DocPosition): { start: number; end: number } | null {
     if (at.note) {
-      try { return { start: 0, end: this.paragraphLength(at) }; } catch { return null; }
+      try {
+        const info = this.noteInfo(at);
+        if (at.note.kind === "endnote") {
+          const endnote = at.note;
+          const renderParagraph = endnote.renderParagraphBase + at.paragraph;
+          const renderedOffset = this.endnoteRenderOffset(at);
+          const value = json(this.doc.getLineInfo(endnote.renderSection, renderParagraph, renderedOffset));
+          if (!isRecord(value) || !isIndex(value.charStart) || !isIndex(value.charEnd)) return null;
+          const sourceOffset = (renderOffset: number): number => at.paragraph === 0
+            ? Math.max(info.editableStarts[0] ?? 0,
+              endnote.sourceLeadingSpaces + renderOffset - endnote.renderPrefixLength)
+            : renderOffset;
+          const start = sourceOffset(value.charStart), end = sourceOffset(value.charEnd);
+          return start <= end && end <= charCount(info.texts[at.paragraph]!) ? { start, end } : null;
+        }
+        const start = 0;
+        return { start, end: this.paragraphLength(at) };
+      } catch { return null; }
     }
     const c = at.cell;
     try {
@@ -822,6 +939,21 @@ export class RhwpText {
 
   /** 위·아래 줄로 이동한 위치와 유지할 가로 좌표. 같은 문맥을 벗어나면 null. */
   vertical(at: DocPosition, delta: number, preferredX: number): { position: DocPosition; preferredX: number } | null {
+    if (at.note?.kind === "endnote") {
+      try {
+        if (!this.ownsNote(at)) return null;
+        const renderParagraph = at.note.renderParagraphBase + at.paragraph;
+        const renderedOffset = this.endnoteRenderOffset(at);
+        const value = json(this.doc.moveVertical(at.note.renderSection, renderParagraph,
+          renderedOffset, delta, preferredX, NO_CELL, 0, 0, 0));
+        if (!isRecord(value) || !isIndex(value.paragraphIndex) || !isIndex(value.charOffset)
+          || !isIndex(value.pageIndex) || !isNumber(value.preferredX)) return null;
+        const position = this.endnotePosition(at.note.renderSection, value.paragraphIndex,
+          value.charOffset, value.pageIndex);
+        return position && sameContext(at, position)
+          ? { position, preferredX: value.preferredX } : null;
+      } catch { return null; }
+    }
     if (at.note) return null;
     const c = at.cell;
     try {
@@ -845,10 +977,19 @@ export class RhwpText {
 
   selection(from: DocPosition, to: DocPosition): PageRect[] {
     if (from.note || to.note) {
-      if (!from.note || !to.note || !sameContext(from, to) || !this.sameFootnoteView(from, to)
-        || !this.doc.getSelectionRectsInFootnote
+      if (!from.note || !to.note || !sameContext(from, to) || !this.sameNoteView(from, to)
         || !this.ownsNote(from) || !this.ownsNote(to)) return [];
       try {
+        if (from.note.kind === "endnote") {
+          if (!this.doc.getSelectionRects || to.note.kind !== "endnote") return [];
+          const start = from.note.renderParagraphBase + from.paragraph;
+          const end = to.note.renderParagraphBase + to.paragraph;
+          const startOffset = this.endnoteRenderOffset(from);
+          const endOffset = this.endnoteRenderOffset(to);
+          return parseSelectionRects(json(this.doc.getSelectionRects(from.note.renderSection,
+            start, startOffset, end, endOffset))) ?? [];
+        }
+        if (!this.doc.getSelectionRectsInFootnote) return [];
         const view = this.footnoteView(from);
         if (!view) return [];
         return parseSelectionRects(json(this.doc.getSelectionRectsInFootnote(view.page, view.footnoteIndex,
@@ -871,7 +1012,7 @@ export class RhwpText {
 
   text(at: DocPosition, count: number): string {
     if (at.note) {
-      const info = this.footnoteInfo(at), content = Array.from(info.texts[at.paragraph]!);
+      const info = this.noteInfo(at), content = Array.from(info.texts[at.paragraph]!);
       if (!isIndex(count) || at.offset + count > content.length) throw new Error("unsupported footnote text range");
       return content.slice(at.offset, at.offset + count).join("");
     }
@@ -888,7 +1029,7 @@ export class RhwpText {
   selectedText(a: DocPosition, b: DocPosition): string | null {
     if (a.note || b.note) {
       if (!a.note || !b.note || !sameContext(a, b) || compare(a, b) === 0
-        || !this.sameFootnoteView(a, b)) return null;
+        || !this.sameNoteView(a, b)) return null;
       const [from, to] = compare(a, b) < 0 ? [a, b] : [b, a];
       try {
         const count = this.paragraphCount(from), start = paragraphOf(from), end = paragraphOf(to);
