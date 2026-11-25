@@ -1,0 +1,99 @@
+{
+  "date": "2026-11-25",
+  "issueId": "P5-R-FTR",
+  "category": "B",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "5b6c507ec4f6162ee9325ed2868187dbae2a35b9",
+  "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "rhwpGeneration": "febc56678adf0c9e367ed90385c1c969706659d43bd517b1e9ebea685ab30f6b",
+  "supported": "HWP5와 HWPX에서 실제 section/footer 소유자와 그림 주소를 정확히 확인할 수 있는 꼬리말 그림의 지원 geometry 변경. UI 선택·변경은 그 footer owner와 picture address에 묶고, 형식별 모델이 표현하는 소유 picture 속성만 편집한다.",
+  "refused": "footer/header/body 주소가 다르거나 모호한 경우, footer owner를 정확히 증명할 수 없는 경우, 크기 보호·지원되지 않는 변환·표현 불가능하거나 안전하게 저장할 수 없는 source는 변이 전에 fail-closed로 거부한다. 비그림 머리말·꼬리말 개체는 이 항목의 범위가 아니다.",
+  "preservation": [
+    "HWP5: CFB stream inventory 유지; 압축 해제 DocInfo와 모든 BinData payload, PrvText 유지; Section0 record topology 유지; 변경 record [194,195]는 정확한 footer owner span [185,197] 안에 한정; 재생성 PrvImage는 유효한 724×1024 PNG.",
+    "HWPX: OPC inventory 유지 및 변경 part는 Contents/section0.xml 하나; 주소된 그림의 sz, 대응 curSz, 파생 scale matrix만 바뀌고 picture id/instid는 유지; shapeComment 줄바꿈은 동등한 표현으로 정규화; 다른 section 내용, 관계와 media는 유지.",
+    "지원 대상 geometry 변경의 Undo/Redo, T009 동기 저장, 같은 앱 세션 재열기 및 별도 앱 프로세스 재열기에서 소유자·속성·렌더 배치 유지."
+  ],
+  "checks": {
+    "focusedVitest": "PASS: headerFooterPicture.test.ts와 hwpReopenModel.test.ts, 12 passed; 73 unrelated tests skipped.",
+    "typecheck": "PASS: npm run typecheck.",
+    "focusedReleaseRust": "PASS: Release Rust footer filter, 3/3.",
+    "typescriptBuild": "PASS: npm run build; existing Vite chunk-size warning (>500 kB).",
+    "protectedReleaseBuild": "PASS: guarded Release Tauri application build; tested app SHA-256 recorded below.",
+    "nativeX11": "PASS: guarded Release Tauri application under Linux X11/Xvfb with private IBus Hangul; attempt 13 passed all four HWP/HWPX edit and fresh-process reopen cases.",
+    "t009": "PASS: both HWP and HWPX edits saved, synced=true, findings empty, revision 3.",
+    "undoRedo": "PASS: both Native geometry edits restored by Undo and reapplied by Redo; focused RHWP move/resize Undo/Redo regressions PASS.",
+    "serializationAndReopen": "PASS: independent CFB/OPC checks and clean fresh-app process reopen retained exact footer ownership, saved properties and rendered placement.",
+    "pythonSyntax": "PASS: in-memory syntax checks for 3 changed Python harness/fixture scripts.",
+    "gitDiffCheck": "PASS: git diff --check.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN.",
+    "push": "NOT PERFORMED."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb + private IBus Hangul; trusted native pointer input in the actual guarded Release Tauri application.",
+    "attempt": 13,
+    "resultFile": "target/p5-r-ftr/native-run-13/result.json",
+    "cleanupFile": "target/p5-r-ftr/native-session-13/cleanup.json",
+    "appSha256": "b7a4776517e04255c8f9979d4627b015b10dec6536a71a031d0d37c81497b801",
+    "rhwpGeneration": "febc56678adf0c9e367ed90385c1c969706659d43bd517b1e9ebea685ab30f6b",
+    "launcherCleanup": "PASS: complete=true, exit=0, filesystemProven=true, proven=true, survivors=[], no leftover test processes observed.",
+    "hwp": {
+      "cases": [
+        "P5-R-FTR-HWP",
+        "P5-R-FTR-HWP-FRESH"
+      ],
+      "appPids": [
+        117012,
+        117527
+      ],
+      "status": "PASS",
+      "source": "external/rhwp/samples/pic-in-head-02.hwp",
+      "fixtureSha256": "c9e7d8e42550f13f86f149f9edb2a40918c09cce4dbd2d8155dd0b9511ea237b",
+      "savedSha256": "1733227b85db31a0ef60f32edbbd8c32e83439cb1a2f40e35463d87ecbc772f7",
+      "footerAddress": {
+        "section": 0,
+        "kind": "footer",
+        "outerParagraph": 4,
+        "outerControl": 0,
+        "innerParagraph": 0,
+        "innerControl": 1
+      },
+      "saveState": "saved; synced=true; findings empty; revision=3",
+      "cfbProof": "Stream inventory, decompressed DocInfo, all BinData payloads and PrvText preserved; Section0 topology unchanged; only records [194,195] changed within footer owner span [185,197]; PrvImage regenerated as valid 724×1024 PNG.",
+      "freshProcess": "PASS: PID 117527 differs from editing PID 117012; loaded saved SHA-256 exactly; clean, preserved session and rendered geometry matched."
+    },
+    "hwpx": {
+      "cases": [
+        "P5-R-FTR-HWPX",
+        "P5-R-FTR-HWPX-FRESH"
+      ],
+      "appPids": [
+        117696,
+        118541
+      ],
+      "status": "PASS",
+      "source": "external/rhwp/samples/issue6179/right_tab_footer_logo.hwpx",
+      "sourceSha256": "7e9bb96a5c1c62b09ec7446afa01b16f38bef22a5c8354af2b7fd46b31821ca4",
+      "fixtureSha256": "57e0e2d70f528539c4804138a92544cfb606c0091d6f9795d6af092135c01291",
+      "savedSha256": "227c05cd4beb34dc4effad6b23492c43bf1f0d9baffd709d724f064b9131f060",
+      "footerAddress": {
+        "section": 0,
+        "kind": "footer",
+        "outerParagraph": 0,
+        "outerControl": 4,
+        "innerParagraph": 0,
+        "innerControl": 2
+      },
+      "saveState": "saved; synced=true; findings empty; revision=3",
+      "opcProof": "Only Contents/section0.xml changed: the exact target sz, derived curSz, and derived target scale matrix (normalized to identity); shapeComment line endings are equivalent; picture id/instid, unrelated OPC parts, relationships and media preserved.",
+      "freshProcess": "PASS: PID 118541 differs from editing PID 117696; loaded saved SHA-256 exactly; clean, preserved session and rendered geometry matched."
+    }
+  },
+  "remaining": [
+    "Only footer picture geometry is covered; P5-R-HF-OBJECTS non-picture header/footer editing remains a separate unresolved requirement.",
+    "Wayland, Windows, macOS and external Office interoperability were not tested."
+  ],
+  "push": "NOT PERFORMED"
+}
