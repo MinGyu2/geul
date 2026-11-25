@@ -2160,6 +2160,169 @@ fn f_hwpx와_docx도_본문을_바꾼_저장은_미리보기가_비었음을_증
 }
 
 #[test]
+fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다() {
+    const HP: &str = "http://www.hancom.co.kr/hwpml/2011/paragraph";
+    let section = |body: &str, width: u32| {
+        format!(
+            r#"<hp:hs xmlns:hp="{HP}"><hp:pagePr width="{width}" height="111685"/><hp:p>{body}</hp:p></hp:hs>"#
+        )
+    };
+    let archive = |body: &str, width: u32, text: &[u8], image: &[u8], resource: &[u8]| {
+        let section = section(body, width);
+        let mut entries = hwpx_package(&section, "<head/>", true, true);
+        entries.push(entry("Preview/PrvText.txt", text));
+        entries.push(entry("Preview/PrvImage.png", image));
+        entries.push(entry("BinData/untouched.bin", resource));
+        zip(&entries, false)
+    };
+    let archive_with_masterpage = |body: &str,
+                                   text: &[u8],
+                                   image: &[u8],
+                                   resource: &[u8],
+                                   masterpage: &[u8]| {
+        let section = section(body, 77102);
+        let mut entries = hwpx_package(&section, "<head/>", true, true);
+        entries.push(entry("Preview/PrvText.txt", text));
+        entries.push(entry("Preview/PrvImage.png", image));
+        entries.push(entry("BinData/untouched.bin", resource));
+        entries.push(entry("Contents/masterpage0.xml", masterpage));
+        zip(&entries, false)
+    };
+    let source_text = b"old text preview";
+    let source_image = png(8, 4, false);
+    let original = archive("source", 77102, source_text, &source_image, b"same resource");
+    let raw_output = archive("edited", 77102, source_text, &source_image, b"same resource");
+
+    let mut pixels = vec![255; 707 * 1024 * 3];
+    pixels[(512 * 707 + 353) * 3..(512 * 707 + 353) * 3 + 3].copy_from_slice(&[0, 0, 0]);
+    let raster = super::preview::PreviewRaster::new(707, 1024, pixels).unwrap();
+    let refreshed = package::refresh_hwpx_previews(&original, &raw_output, Some(&raster), 16 * 1024 * 1024)
+        .unwrap();
+    let normalized = refreshed.output.as_deref().expect("stale previews are refreshed");
+    let image = refreshed.image.as_deref().expect("page-1 image is refreshed");
+    let text = refreshed.text.as_deref().expect("stale text is cleared to the known blank value");
+    assert_eq!(text, b"\r\n");
+    assert_eq!(
+        super::preview::decode_canonical_png(image).map(|(width, height, _)| (width, height)),
+        Some((707, 1024))
+    );
+
+    let before = package::open(&original, package::Side::Original).unwrap();
+    let engine_output = package::open(&raw_output, package::Side::Output).unwrap();
+    let after = package::open(normalized, package::Side::Output).unwrap();
+    assert_eq!(before.order, after.order, "OPC entry order is preserved");
+    for name in &engine_output.order {
+        match name.as_str() {
+            "Preview/PrvImage.png" => assert_eq!(after.get(name), Some(image)),
+            "Preview/PrvText.txt" => assert_eq!(after.get(name), Some(text)),
+            _ => assert_eq!(engine_output.get(name), after.get(name), "unrelated OPC part {name}"),
+        }
+    }
+    assert!(package::compare_saved_hwpx_with_previews(&before, &after, Some(image), Some(text)).is_empty());
+
+    // The preview exception is tied to the exact package bytes and its declared first-page geometry.
+    let mut altered_image = image.to_vec();
+    *altered_image.last_mut().unwrap() ^= 1;
+    assert!(package::compare_saved_hwpx_with_previews(
+        &before, &after, Some(&altered_image), Some(text)
+    ).iter().any(|finding| finding.code == FindingCode::PartChanged));
+    assert!(package::compare_saved_hwpx_with_previews(
+        &before, &after, Some(image), Some(b"not the blank preview")
+    ).iter().any(|finding| finding.code == FindingCode::PartChanged));
+
+    // Missing, wrong-sized, and uniform client rasters cannot authorize replacing the old image.
+    assert!(package::refresh_hwpx_previews(&original, &raw_output, None, 16 * 1024 * 1024)
+        .unwrap().output.is_none());
+    let small_raster = super::preview::PreviewRaster::new(700, 700, vec![255; 700 * 700 * 3]).unwrap();
+    assert!(package::refresh_hwpx_previews(&original, &raw_output, Some(&small_raster), 16 * 1024 * 1024)
+        .unwrap().output.is_none());
+    let uniform_raster = super::preview::PreviewRaster::new(707, 1024, vec![255; 707 * 1024 * 3]).unwrap();
+    assert!(package::refresh_hwpx_previews(&original, &raw_output, Some(&uniform_raster), 16 * 1024 * 1024)
+        .unwrap().output.is_none());
+
+    // A mutation outside the two specifically proven preview entries blocks the entire normalization.
+    let unauthorized = archive("edited", 77102, source_text, &source_image, b"changed resource");
+    assert!(package::refresh_hwpx_previews(&original, &unauthorized, Some(&raster), 16 * 1024 * 1024)
+        .unwrap().output.is_none());
+    let unauthorized = archive("edited", 77102, source_text, &source_image, b"changed resource");
+    let rejected = service::check_saved(
+        Format::Hwpx, &original, &unauthorized, Some(&report("hwpx", json!([]))), true,
+    );
+    assert_eq!(rejected.outcome, Outcome::Unsafe);
+    assert!(rejected.findings.iter().any(|finding| {
+        finding.code == FindingCode::PartChanged && finding.part.as_deref() == Some("BinData/untouched.bin")
+    }));
+
+    // The output's own page definition determines the image size. A raster for the prior geometry is refused.
+    let changed_geometry = archive("edited", 30000, source_text, &source_image, b"same resource");
+    assert!(package::refresh_hwpx_previews(
+        &original, &changed_geometry, Some(&raster), 16 * 1024 * 1024,
+    ).unwrap().output.is_none());
+
+    // RHWP may rewrite unrelated XML prefixes, declaration and attribute order. The complete
+    // XML event stream, including comments and processing instructions, must remain equivalent;
+    // reconstruction restores the exact source bytes while preserving the edited body and previews.
+    let source_masterpage = br#"<?xml version="1.0" encoding="UTF-8"?>
+<m:root xmlns:m="urn:master"><!-- keep --><?keep stable?><m:item a="1" b="2">same</m:item></m:root>"#;
+    let rewritten_masterpage = br#"<x:root xmlns:x="urn:master"><!-- keep --><?keep stable?><x:item b="2" a="1">same</x:item></x:root>"#;
+    let original_with_masterpage = archive_with_masterpage(
+        "source", source_text, &source_image, b"same resource", source_masterpage,
+    );
+    let output_with_masterpage = archive_with_masterpage(
+        "edited", source_text, &source_image, b"same resource", rewritten_masterpage,
+    );
+    assert_eq!(
+        crate::document::xml::canonical_equal(source_masterpage, rewritten_masterpage),
+        Ok(true),
+        "prefix, attribute order, declaration and formatting are the only XML differences"
+    );
+    let source_package = package::open(&original_with_masterpage, package::Side::Original).unwrap();
+    let raw_package = package::open(&output_with_masterpage, package::Side::Output).unwrap();
+    assert!(package::validate_hwpx(&source_package, &raw_package).is_empty());
+    assert!(package::validate_hwpx_references(&raw_package).is_empty());
+    assert_eq!(
+        package::compare_saved_hwpx(&source_package, &raw_package),
+        vec![Finding::at(FindingCode::PreviewStale, "Preview/PrvImage.png"), Finding::at(FindingCode::PreviewStale, "Preview/PrvText.txt")]
+    );
+    let refreshed = package::refresh_hwpx_previews(
+        &original_with_masterpage,
+        &output_with_masterpage,
+        Some(&raster),
+        16 * 1024 * 1024,
+    )
+    .unwrap();
+    let normalized = refreshed
+        .output
+        .as_deref()
+        .expect("canonical-equivalent XML rewrites are restored alongside exact preview refresh");
+    let before = package::open(&original_with_masterpage, package::Side::Original).unwrap();
+    let after = package::open(normalized, package::Side::Output).unwrap();
+    assert_eq!(after.get("Contents/masterpage0.xml"), Some(&source_masterpage[..]));
+    assert_ne!(after.get("Contents/section0.xml"), before.get("Contents/section0.xml"));
+    assert!(package::compare_saved_hwpx_with_previews(
+        &before,
+        &after,
+        refreshed.image.as_deref(),
+        refreshed.text.as_deref(),
+    )
+    .is_empty());
+
+    let changed_comment = br#"<x:root xmlns:x="urn:master"><!-- changed --><?keep stable?><x:item b="2" a="1">same</x:item></x:root>"#;
+    let unauthorized_xml = archive_with_masterpage(
+        "edited", source_text, &source_image, b"same resource", changed_comment,
+    );
+    assert!(package::refresh_hwpx_previews(
+        &original_with_masterpage,
+        &unauthorized_xml,
+        Some(&raster),
+        16 * 1024 * 1024,
+    )
+    .unwrap()
+    .output
+    .is_none(), "a changed comment is not hidden by XML formatting normalization");
+}
+
+#[test]
 fn g_rhwp_형식은_손실_보고가_반드시_있어야_하고_docx는_받지_않는다() {
     let hwp = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
     let invalid = Finding::new(FindingCode::LossReportInvalid);

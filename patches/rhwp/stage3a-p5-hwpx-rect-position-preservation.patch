@@ -1,0 +1,64 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -1263,6 +1263,14 @@
+ ) -> Result<Option<RectVertexPlan>, HwpError> {
+     let target_w = new_w.unwrap_or(width_before);
+     let target_h = new_h.unwrap_or(height_before);
++    // Position/property edits do not change a rectangle's local path. In
++    // particular, HWPX `hp:rect` vertices may use a noncanonical source
++    // coordinate system together with `renderingInfo`; normalizing them to
++    // the display box on a move changes the saved geometry even though size
++    // is unchanged. Keep the original vertices unless an axis is resized.
++    if target_w == width_before && target_h == height_before {
++        return Ok(None);
++    }
+     if !preserve_hwp_geometry {
+         let w = i32::try_from(target_w)
+             .map_err(|_| HwpError::RenderError("사각형 너비가 i32 범위를 초과했습니다".into()))?;
+@@ -1270,9 +1278,6 @@
+             .map_err(|_| HwpError::RenderError("사각형 높이가 i32 범위를 초과했습니다".into()))?;
+         return Ok(Some(([0, w, w, 0], [0, 0, h, h], None)));
+     }
+-    if target_w == width_before && target_h == height_before {
+-        return Ok(None);
+-    }
+     let source = rect.source_hwp_geometry.unwrap_or(SourceHwpRectGeometry {
+         width: width_before,
+         height: height_before,
+@@ -5609,6 +5614,36 @@
+         }
+     }
+ 
++    #[test]
++    fn hwpx_rectangle_position_edit_preserves_source_vertices() {
++        let mut core = make_test_core();
++        let (para, ctrl) = create_rectangle(&mut core);
++        let xs = [100, 8700, 8700, 100];
++        let ys = [200, 200, 6400, 6400];
++        let Control::Shape(shape) = &mut core.document.sections[0].paragraphs[para].controls[ctrl]
++        else {
++            panic!("expected shape");
++        };
++        let ShapeObject::Rectangle(rect) = shape.as_mut() else {
++            panic!("expected rectangle");
++        };
++        rect.x_coords = xs;
++        rect.y_coords = ys;
++
++        DocumentCore::apply_shape_props_inner(shape, r#"{"horzOffset":1200}"#, false)
++            .expect("HWPX position edit");
++
++        let Control::Shape(shape) = &core.document.sections[0].paragraphs[para].controls[ctrl]
++        else {
++            panic!("expected shape");
++        };
++        let ShapeObject::Rectangle(rect) = shape.as_ref() else {
++            panic!("expected rectangle");
++        };
++        assert_eq!((rect.x_coords, rect.y_coords), (xs, ys));
++        assert_eq!(rect.common.horizontal_offset, 1200);
++    }
++
+     /// 리사이즈 핸들을 반대편 너머로 잡아끌 때 studio가 width=0 을 보내도
+     /// 도형 공통 크기는 MIN_SHAPE_SIZE 이상을 유지해야 한다.
+     #[test]

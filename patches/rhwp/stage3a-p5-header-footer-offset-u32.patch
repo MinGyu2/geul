@@ -1,0 +1,48 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -98,7 +98,16 @@
+         integer(key, 1, 2_000_000)?;
+     }
+     for key in ["horzOffset", "vertOffset"] {
+-        integer(key, -2_000_000, 2_000_000)?;
++        if let Some(value) = object.get(key) {
++            let raw = value.as_i64().ok_or_else(invalid)?;
++            // CommonObjAttr stores signed HWP offsets in u32. RHWP returns and
++            // expects that exact bit pattern (for example -3685 == 4294963611).
++            let encoded = u32::try_from(raw).map_err(|_| invalid())?;
++            let signed = i64::from(encoded as i32);
++            if !(-2_000_000..=2_000_000).contains(&signed) {
++                return Err(invalid());
++            }
++        }
+     }
+     integer("rotationAngle", 0, 359)?;
+     integer("borderColor", 0, 0x00ff_ffff)?;
+@@ -5549,6 +5558,27 @@
+         }
+     }
+ 
++    #[test]
++    fn header_footer_shape_validator_accepts_bounded_signed_u32_offsets() {
++        let mut core = make_test_core();
++        let (para, ctrl) = create_rectangle(&mut core);
++        let Control::Shape(shape) = &core.document.sections[0].paragraphs[para].controls[ctrl] else {
++            panic!("expected shape");
++        };
++
++        validate_header_footer_shape_edit(shape, r#"{"vertOffset":4294963611}"#)
++            .expect("wrapped -3685 HWP offset");
++        validate_header_footer_shape_edit(shape, r#"{"vertOffset":2000000}"#)
++            .expect("positive HWP offset boundary");
++        for invalid in [
++            r#"{"vertOffset":-3685}"#,
++            r#"{"vertOffset":4294967296}"#,
++            r#"{"vertOffset":4292967295}"#,
++        ] {
++            assert!(validate_header_footer_shape_edit(shape, invalid).is_err(), "{invalid}");
++        }
++    }
++
+     #[test]
+     fn hwp_rectangle_preserves_imported_vertices_during_property_edits() {
+         let mut core = make_test_core();

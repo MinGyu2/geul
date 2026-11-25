@@ -1,0 +1,827 @@
+--- a/src/document_core/commands/header_footer_ops.rs
++++ b/src/document_core/commands/header_footer_ops.rs
+@@ -1409,6 +1409,7 @@
+                 }],
+                 auto_tab_left: false,
+                 auto_tab_right: false,
++                hwpx_source_xml: None,
+             };
+             let tab_id = self.document.find_or_create_tab_def(new_td);
+             para_mods.tab_def_id = Some(tab_id);
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -4032,6 +4032,8 @@
+                     margin_bottom: 283,
+                     max_width: width,
+                     raw_list_header_extra: vec![0u8; 13],
++                    hwpx_source_present: false,
++                    hwpx_text_margin_present: false,
+                     paragraphs: vec![inner_para],
+                 })
+             } else {
+--- a/src/document_core/helpers.rs
++++ b/src/document_core/helpers.rs
+@@ -645,14 +645,20 @@
+         .unwrap_or_default();
+     let auto_left = json_bool(json, "tabAutoLeft").unwrap_or(base.auto_tab_left);
+     let auto_right = json_bool(json, "tabAutoRight").unwrap_or(base.auto_tab_right);
+-    let tabs = parse_tab_stops_json(json).unwrap_or(base.tabs);
++    let tabs = parse_tab_stops_json(json).unwrap_or_else(|| base.tabs.clone());
+     let attr = (if auto_left { 1u32 } else { 0 }) | (if auto_right { 2u32 } else { 0 });
++    let hwpx_source_xml = base.hwpx_source_xml.clone().filter(|source| {
++        source.auto_tab_left == auto_left
++            && source.auto_tab_right == auto_right
++            && source.tabs == tabs
++    });
+     TabDef {
+         raw_data: None,
+         attr,
+         tabs,
+         auto_tab_left: auto_left,
+         auto_tab_right: auto_right,
++        hwpx_source_xml,
+     }
+ }
+ 
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -271,6 +271,10 @@
+     pub rotation_center: Point,
+     /// 렌더링 정보 원본 바이트 (변환 행렬 등, 라운드트립 보존용)
+     pub raw_rendering: Vec<u8>,
++    /// Original HWPX renderingInfo markup and the HWP5-style matrix snapshot.
++    /// Reused only while the modeled matrix bytes remain unchanged.
++    #[serde(skip)]
++    pub hwpx_rendering_info_source: Option<HwpxRawRenderingInfo>,
+     /// HWP5 그룹 자식으로 안전한 편집 모델링이 확인된 표준 컴포넌트인지 여부.
+     /// 원본 컴포넌트의 행렬·채우기·그림자 꼬리가 모두 완전하고 지원 형식일 때만 참이다.
+     #[serde(skip_serializing)]
+@@ -323,6 +327,7 @@
+             rotate_image: false,
+             rotation_center: Point::default(),
+             raw_rendering: Vec::new(),
++            hwpx_rendering_info_source: None,
+             hwp5_group_child_component_supported: false,
+             hwpx_group_child_id_presence: None,
+             hwpx_group_child_source_ids: None,
+@@ -337,6 +342,12 @@
+             render_c: 0.0,
+         }
+     }
++}
++
++#[derive(Debug, Clone)]
++pub struct HwpxRawRenderingInfo {
++    pub raw_rendering: Vec<u8>,
++    pub markup: Vec<u8>,
+ }
+ 
+ /// 그리기 개체 공통 속성
+@@ -360,6 +371,9 @@
+     pub inst_id: u32,
+     /// 그림자 투명도
+     pub shadow_alpha: u8,
++    /// Preserve an explicit HWPX shadow element even when it has no visible effect.
++    #[serde(skip)]
++    pub hwpx_shadow_present: bool,
+     /// 이 도형이 소유한 내부 문단 영역. 빈 문단/그림 전용 영역도 Some이다.
+     /// 배경 이미지(fill)나 캡션의 문단은 이 영역이 아니다.
+     pub text_box: Option<TextBox>,
+@@ -391,8 +405,29 @@
+     pub max_width: HwpUnit,
+     /// LIST_HEADER 레코드의 파싱된 필드 이후 추가 바이트 (라운드트립 보존용)
+     pub raw_list_header_extra: Vec<u8>,
++    /// HWPX drawText/textMargin source-presence flags; excluded from the public JSON model.
++    #[serde(skip)]
++    pub hwpx_source_present: bool,
++    #[serde(skip)]
++    pub hwpx_text_margin_present: bool,
+     /// 문단 리스트
+     pub paragraphs: Vec<Paragraph>,
++}
++
++impl TextBox {
++    pub fn has_hwpx_serializable_content(&self) -> bool {
++        self.hwpx_source_present
++            || self.hwpx_text_margin_present
++            || !self.paragraphs.is_empty()
++            || self.list_attr != 0
++            || self.vertical_all
++            || self.margin_left != 0
++            || self.margin_right != 0
++            || self.margin_top != 0
++            || self.margin_bottom != 0
++            || self.max_width != 0
++            || !self.raw_list_header_extra.is_empty()
++    }
+ }
+ 
+ /// 그리기 개체 종류
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -562,6 +562,19 @@
+     pub auto_tab_left: bool,
+     /// 오른쪽 끝 자동 탭 유무
+     pub auto_tab_right: bool,
++    /// HWPX tabPr source subtree, retained only while its modeled values and
++    /// resource ID are unchanged. This preserves signed/unknown source values.
++    #[serde(skip)]
++    pub hwpx_source_xml: Option<HwpxTabPrSource>,
++}
++
++#[derive(Debug, Clone)]
++pub struct HwpxTabPrSource {
++    pub id: Option<u16>,
++    pub auto_tab_left: bool,
++    pub auto_tab_right: bool,
++    pub tabs: Vec<TabItem>,
++    pub xml: Vec<u8>,
+ }
+ 
+ /// 탭 항목
+--- a/src/parser/control/shape.rs
++++ b/src/parser/control/shape.rs
+@@ -778,6 +778,7 @@
+             shadow_color: parsed.shadow_color,
+             shadow_offset_x: parsed.shadow_offset_x,
+             shadow_offset_y: parsed.shadow_offset_y,
++            hwpx_shadow_present: false,
+             inst_id: parsed.inst_id,
+             shadow_alpha: parsed.shadow_alpha,
+             text_box: None,
+--- a/src/parser/doc_info.rs
++++ b/src/parser/doc_info.rs
+@@ -703,6 +703,7 @@
+         tabs,
+         auto_tab_left: (attr & 0x01) != 0,
+         auto_tab_right: (attr & 0x02) != 0,
++        hwpx_source_xml: None,
+     })
+ }
+ 
+--- a/src/parser/hwp3/mod.rs
++++ b/src/parser/hwp3/mod.rs
+@@ -776,6 +776,7 @@
+             tabs: tab_items,
+             auto_tab_left: false,
+             auto_tab_right: false,
++            hwpx_source_xml: None,
+         };
+         let id = doc_tab_defs.iter().position(|td| *td == new_td);
+         ps.tab_def_id = match id {
+--- a/src/parser/hwpx/header.rs
++++ b/src/parser/hwpx/header.rs
+@@ -11,8 +11,9 @@
+ use crate::parser::tags;
+ 
+ use super::utils::{
+-    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_hatch_style,
+-    parse_i16, parse_i32, parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
++    append_event_markup, attr_str, begin_element_markup, empty_element_markup, local_name,
++    parse_bool, parse_color, parse_gradient_type, parse_hatch_style, parse_i16, parse_i32,
++    parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
+ };
+ use super::HwpxError;
+ 
+@@ -208,13 +209,22 @@
+                     b"tabPr" => {
+                         // 자기 닫힘 태그: 빈 TabDef만 push
+                         let mut td = TabDef::default();
++                        let mut id = None;
+                         for attr in e.attributes().flatten() {
+                             match attr.key.as_ref().as_bytes() {
++                                b"id" => id = Some(parse_u16(&attr)),
+                                 b"autoTabLeft" => td.auto_tab_left = attr_str(&attr) == "1",
+                                 b"autoTabRight" => td.auto_tab_right = attr_str(&attr) == "1",
+                                 _ => {}
+                             }
+                         }
++                        td.hwpx_source_xml = Some(crate::model::style::HwpxTabPrSource {
++                            id,
++                            auto_tab_left: td.auto_tab_left,
++                            auto_tab_right: td.auto_tab_right,
++                            tabs: Vec::new(),
++                            xml: empty_element_markup(e),
++                        });
+                         doc_info.tab_defs.push(td);
+                     }
+                     b"memoPr" => {
+@@ -1986,15 +1996,20 @@
+     doc_info: &mut DocInfo,
+ ) -> Result<(), HwpxError> {
+     let mut td = TabDef::default();
++    let mut source_id = None;
+ 
+     for attr in e.attributes().flatten() {
+         match attr.key.as_ref().as_bytes() {
++            b"id" => source_id = Some(parse_u16(&attr)),
+             b"autoTabLeft" => td.auto_tab_left = attr_str(&attr) == "1",
+             b"autoTabRight" => td.auto_tab_right = attr_str(&attr) == "1",
+             _ => {}
+         }
+     }
+ 
++    let mut source_xml = begin_element_markup(e);
++    let mut source_xml_complete = true;
++    let mut source_xml_closed = false;
+     if !is_empty_event(e) {
+         let mut buf = Vec::new();
+         let mut in_hwpunitchar_case = false;
+@@ -2002,7 +2017,11 @@
+         let mut found_case = false;
+         let mut default_tabs: Vec<TabItem> = Vec::new();
+         loop {
+-            match reader.read_event_into(&mut buf) {
++            let event = reader.read_event_into(&mut buf);
++            if let Ok(ref event) = event {
++                source_xml_complete &= append_event_markup(&mut source_xml, event);
++            }
++            match event {
+                 Ok(Event::Start(ref ce)) => {
+                     let cname = ce.name();
+                     let local = local_name(cname.as_ref());
+@@ -2053,7 +2072,10 @@
+                         b"default" => {
+                             in_default = false;
+                         }
+-                        b"tabPr" => break,
++                        b"tabPr" => {
++                            source_xml_closed = true;
++                            break;
++                        }
+                         _ => {}
+                     }
+                 }
+@@ -2078,6 +2100,16 @@
+                 }
+             }
+         }
++    }
++
++    if source_xml_complete && source_xml_closed {
++        td.hwpx_source_xml = Some(crate::model::style::HwpxTabPrSource {
++            id: source_id,
++            auto_tab_left: td.auto_tab_left,
++            auto_tab_right: td.auto_tab_right,
++            tabs: td.tabs.clone(),
++            xml: source_xml,
++        });
+     }
+ 
+     doc_info.tab_defs.push(td);
+@@ -3212,6 +3244,24 @@
+     }
+ 
+     #[test]
++    fn tab_pr_source_markup_preserves_negative_and_unknown_values() {
++        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
++<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
++  <hh:refList><hh:tabProperties itemCnt="1">
++    <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"><hh:tabItem pos="-127472" type="LEFT" leader="NONE" unit="HWPUNIT" vendor="keep"/></hh:tabPr>
++  </hh:tabProperties></hh:refList>
++</hh:head>"#;
++        let (info, _) = parse_hwpx_header(xml).expect("header parse");
++        let tab = &info.tab_defs[0];
++        assert_eq!(tab.tabs[0].position, 0, "layout model remains bounded");
++        let source = tab.hwpx_source_xml.as_ref().expect("retained tabPr source");
++        let source_xml = std::str::from_utf8(&source.xml).unwrap();
++        assert!(source_xml.contains(r#"pos="-127472""#), "{source_xml}");
++        assert!(source_xml.contains(r#"vendor="keep""#), "{source_xml}");
++        assert_eq!(source.tabs, tab.tabs);
++    }
++
++    #[test]
+     fn parse_tab_item_leader_double_slim_maps_to_8() {
+         // 방출측 tab_leader_str 이 fill_type 8 을 "DOUBLE_SLIM" 으로 내므로 파서도 8 로
+         // 받아야 이중실선 탭 리더가 왕복 보존된다(종전엔 _ => 0/NONE 유실).
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -38,9 +38,9 @@
+ use crate::parser::tags;
+ 
+ use super::utils::{
+-    attr_str, local_name, parse_bool, parse_color, parse_gradient_type, parse_hatch_style,
+-    parse_i16, parse_i32, parse_i32_wrapping, parse_i8, parse_u16, parse_u32, parse_u8,
+-    skip_element,
++    append_event_markup, attr_str, begin_element_markup, local_name, parse_bool, parse_color,
++    parse_gradient_type, parse_hatch_style, parse_i16, parse_i32, parse_i32_wrapping,
++    parse_i8, parse_u16, parse_u32, parse_u8, skip_element,
+ };
+ use super::HwpxError;
+ 
+@@ -3631,7 +3631,7 @@
+                     b"renderingInfo" => {
+                         // 그룹 내 자식의 아핀 변환 행렬 파싱
+                         if !self_closing {
+-                            parse_rendering_info(reader, &mut shape_attr)?;
++                            parse_rendering_info(reader, &mut shape_attr, ce)?;
+                         }
+                     }
+                     b"flip" => {
+@@ -4286,6 +4286,7 @@
+ fn parse_rendering_info(
+     reader: &mut Reader<&[u8]>,
+     shape_attr: &mut ShapeComponentAttr,
++    element: &BytesStart<'_>,
+ ) -> Result<(), HwpxError> {
+     fn hwp5_matrix_value(raw: f64) -> f64 {
+         if raw.fract() == 0.0 {
+@@ -4353,6 +4354,9 @@
+     }
+ 
+     let mut buf = Vec::new();
++    let mut source_markup = begin_element_markup(element);
++    let mut source_markup_complete = true;
++    let mut source_markup_closed = false;
+     let mut trans = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]; // identity
+     let mut sca_rot_pairs: Vec<([f64; 6], [f64; 6])> = Vec::new();
+     let mut pending_sca: Option<[f64; 6]> = None;
+@@ -4360,7 +4364,11 @@
+     let mut next_matrix: &[u8] = b"transMatrix";
+     let mut exact_identity = true;
+     loop {
+-        match reader.read_event_into(&mut buf) {
++        let event = reader.read_event_into(&mut buf);
++        if let Ok(ref event) = event {
++            source_markup_complete &= append_event_markup(&mut source_markup, event);
++        }
++        match event {
+             Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
+@@ -4386,6 +4394,7 @@
+             }
+             Ok(Event::End(ref ee)) => {
+                 if local_name(ee.name().as_ref()) == b"renderingInfo" {
++                    source_markup_closed = true;
+                     break;
+                 }
+             }
+@@ -4419,7 +4428,13 @@
+     shape_attr.render_c = result[3]; // c (회전/전단)
+     shape_attr.render_sy = result[4]; // d
+     shape_attr.render_ty = result[5]; // ty
+-    shape_attr.raw_rendering = make_raw_rendering(&trans, &sca_rot_pairs);
++    let raw_rendering = make_raw_rendering(&trans, &sca_rot_pairs);
++    shape_attr.raw_rendering = raw_rendering.clone();
++    shape_attr.hwpx_rendering_info_source = (source_markup_complete && source_markup_closed)
++        .then_some(crate::model::shape::HwpxRawRenderingInfo {
++            raw_rendering,
++            markup: source_markup,
++        });
+     shape_attr.hwpx_unproven_path_transform |= !exact_identity || next_matrix != b"scaMatrix";
+ 
+     Ok(())
+@@ -4789,6 +4804,7 @@
+ 
+ /// `<hp:drawText>` 내부의 `<hp:subList>` → `<hp:p>` 문단을 파싱한다.
+ fn parse_draw_text(reader: &mut Reader<&[u8]>, text_box: &mut TextBox) -> Result<(), HwpxError> {
++    text_box.hwpx_source_present = true;
+     let content_start = reader.buffer_position();
+     parse_draw_text_body(reader, text_box).map_err(|error| match error {
+         // Some semantic/resource guards also use XmlError. Only an actual XML
+@@ -4861,6 +4877,7 @@
+                         text_box.paragraphs.push(para);
+                     }
+                     b"textMargin" => {
++                        text_box.hwpx_text_margin_present = true;
+                         for attr in ce.attributes().flatten() {
+                             match attr.key.as_ref().as_bytes() {
+                                 b"left" => text_box.margin_left = parse_i16(&attr),
+@@ -5047,6 +5064,7 @@
+                     }
+                     b"drawText" => {
+                         let mut tb = TextBox::default();
++                        tb.hwpx_source_present = true;
+                         tb.max_width = common.width;
+                         // `<hp:drawText/>` 는 글이 없는 빈 글상자다 — 자식만 건너뛰고
+                         // 글상자 자체는 남긴다(도형의 HWP5 저장 종류가 바뀌지 않도록).
+@@ -5207,7 +5225,7 @@
+                             seen_path_rendering = true;
+                         }
+                         if !self_closing {
+-                            parse_rendering_info(reader, &mut shape_attr)?;
++                            parse_rendering_info(reader, &mut shape_attr, ce)?;
+                         }
+                     }
+                     b"fillBrush" => {
+@@ -5241,6 +5259,7 @@
+     };
+     materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, storage_kind);
+ 
++    let hwpx_shadow_present = shadow_acc.is_some();
+     let (shadow_type, shadow_color, shadow_offset_x, shadow_offset_y, shadow_alpha) =
+         shadow_acc.unwrap_or((0, 0, 0, 0, 0));
+ 
+@@ -5253,6 +5272,7 @@
+         shadow_offset_x,
+         shadow_offset_y,
+         shadow_alpha,
++        hwpx_shadow_present,
+         inst_id,
+         text_box,
+         caption,
+@@ -5521,7 +5541,7 @@
+                     }
+                     b"renderingInfo" => {
+                         if !self_closing {
+-                            parse_rendering_info(reader, &mut shape_attr)?;
++                            parse_rendering_info(reader, &mut shape_attr, ce)?;
+                         }
+                     }
+                     _ => {}
+@@ -7299,7 +7319,7 @@
+     loop {
+         match reader.read_event_into(&mut buf) {
+             Ok(Event::Text(ref t)) => {
+-                text.push_str(t.as_ref());
++                append_xml_line_normalized(&mut text, t.as_ref());
+             }
+             Ok(Event::GeneralRef(ref r)) => {
+                 text.push_str(&decode_xml_general_ref(r));
+@@ -7308,7 +7328,7 @@
+             // 않으면 덧말 텍스트가 소실된다. #2916/#2935의 hp:script/stringParam CDATA
+             // 누락과 동일한 패턴.
+             Ok(Event::CData(ref cdata)) => {
+-                text.push_str(cdata.as_ref());
++                append_xml_line_normalized(&mut text, cdata.as_ref());
+             }
+             Ok(Event::End(ref ee)) => {
+                 let eename = ee.name();
+@@ -7329,6 +7349,21 @@
+         buf.clear();
+     }
+     Ok(text)
++}
++
++/// XML 1.0 normalizes literal CRLF and CR line endings to LF before parsing.
++/// Character references are handled separately and deliberately keep CR.
++fn append_xml_line_normalized(target: &mut String, source: &str) {
++    let mut remaining = source;
++    while let Some(index) = remaining.find('\r') {
++        target.push_str(&remaining[..index]);
++        target.push('\n');
++        remaining = &remaining[index + 1..];
++        if let Some(rest) = remaining.strip_prefix('\n') {
++            remaining = rest;
++        }
++    }
++    target.push_str(remaining);
+ }
+ 
+ /// `<hp:equation>` 요소 (수식)를 파싱한다.
+@@ -8281,7 +8316,7 @@
+                     b"flip" => parse_shape_flip(ce, shape_attr_out),
+                     b"renderingInfo" => {
+                         if !self_closing {
+-                            parse_rendering_info(reader, shape_attr_out)?;
++                            parse_rendering_info(reader, shape_attr_out, ce)?;
+                         }
+                     }
+                     b"lineShape" => {
+@@ -9788,6 +9823,46 @@
+     }
+ 
+     #[test]
++    fn shape_source_presence_keeps_zero_shadow_and_text_margin() {
++        let xml = r##"<hp:rect xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
++  <hp:shadow type="NONE" color="#000000" offsetX="0" offsetY="0" alpha="0"/>
++  <hp:drawText><hp:subList textDirection="HORIZONTAL" vertAlign="TOP"/><hp:textMargin left="0" right="0" top="0" bottom="0"/></hp:drawText>
++</hp:rect>"##;
++        let mut reader = Reader::from_str(xml);
++        let mut buf = Vec::new();
++        let control = loop {
++            match reader.read_event_into(&mut buf).unwrap() {
++                Event::Start(ref element) if local_name(element.name().as_ref()) == b"rect" => {
++                    break parse_shape_object(b"rect", element, &mut reader, false).unwrap();
++                }
++                Event::Eof => panic!("rectangle not found"),
++                _ => {}
++            }
++            buf.clear();
++        };
++        let Control::Shape(shape) = control else { panic!("expected a shape") };
++        let ShapeObject::Rectangle(rect) = *shape else { panic!("expected a rectangle") };
++        assert!(rect.drawing.hwpx_shadow_present);
++        let text_box = rect.drawing.text_box.as_ref().expect("drawText owner");
++        assert!(text_box.hwpx_source_present);
++        assert!(text_box.hwpx_text_margin_present);
++    }
++
++    #[test]
++    fn shape_comment_xml_line_endings_normalize_but_charref_cr_remains() {
++        let xml = "<hp:shapeComment>A\r\nB&#13;C</hp:shapeComment>";
++        let mut reader = Reader::from_str(xml);
++        let mut buf = Vec::new();
++        match reader.read_event_into(&mut buf).unwrap() {
++            Event::Start(_) => assert_eq!(
++                read_dutmal_text(&mut reader, b"shapeComment").unwrap(),
++                "A\nB\rC"
++            ),
++            event => panic!("shape comment not found: {event:?}"),
++        }
++    }
++
++    #[test]
+     fn test_rendering_info_materializes_hwp5_raw_rendering_count() {
+         let xml = r#"<hp:renderingInfo xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+             xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+@@ -9804,7 +9879,7 @@
+         loop {
+             match reader.read_event_into(&mut buf).unwrap() {
+                 Event::Start(ref e) if local_name(e.name().as_ref()) == b"renderingInfo" => {
+-                    parse_rendering_info(&mut reader, &mut shape_attr).unwrap();
++                    parse_rendering_info(&mut reader, &mut shape_attr, e).unwrap();
+                     break;
+                 }
+                 Event::Eof => panic!("renderingInfo not found"),
+@@ -9881,7 +9956,7 @@
+         loop {
+             match reader.read_event_into(&mut buf).unwrap() {
+                 Event::Start(ref e) if local_name(e.name().as_ref()) == b"renderingInfo" => {
+-                    parse_rendering_info(&mut reader, &mut shape_attr).unwrap();
++                    parse_rendering_info(&mut reader, &mut shape_attr, e).unwrap();
+                     break;
+                 }
+                 Event::Eof => panic!("renderingInfo not found"),
+--- a/src/parser/hwpx/utils.rs
++++ b/src/parser/hwpx/utils.rs
+@@ -2,10 +2,73 @@
+ //!
+ //! header.rs, section.rs 등에서 공통으로 사용하는 XML 파싱 헬퍼.
+ 
+-use quick_xml::events::Event;
++use quick_xml::events::{BytesStart, Event};
+ use quick_xml::Reader;
+ 
+ use super::HwpxError;
++
++/// Reconstruct an XML element from the original quick-xml event payloads.
++/// Attribute spelling/order, references, comments, and nested unknown nodes
++/// remain intact; callers retain it only while the corresponding model fields
++/// are unchanged.
++pub(crate) fn begin_element_markup(start: &BytesStart<'_>) -> Vec<u8> {
++    let mut markup = Vec::with_capacity(start.as_ref().len() + 2);
++    markup.push(b'<');
++    markup.extend_from_slice(start.as_ref().as_bytes());
++    markup.push(b'>');
++    markup
++}
++
++pub(crate) fn empty_element_markup(start: &BytesStart<'_>) -> Vec<u8> {
++    let mut markup = Vec::with_capacity(start.as_ref().len() + 3);
++    markup.push(b'<');
++    markup.extend_from_slice(start.as_ref().as_bytes());
++    markup.extend_from_slice(b"/>");
++    markup
++}
++
++pub(crate) fn append_event_markup(markup: &mut Vec<u8>, event: &Event<'_>) -> bool {
++    match event {
++        Event::Start(element) => {
++            markup.push(b'<');
++            markup.extend_from_slice(element.as_ref().as_bytes());
++            markup.push(b'>');
++        }
++        Event::Empty(element) => {
++            markup.push(b'<');
++            markup.extend_from_slice(element.as_ref().as_bytes());
++            markup.extend_from_slice(b"/>");
++        }
++        Event::End(element) => {
++            markup.extend_from_slice(b"</");
++            markup.extend_from_slice(element.as_ref().as_bytes());
++            markup.push(b'>');
++        }
++        Event::Text(text) => markup.extend_from_slice(text.as_ref().as_bytes()),
++        Event::CData(text) => {
++            markup.extend_from_slice(b"<![CDATA[");
++            markup.extend_from_slice(text.as_ref().as_bytes());
++            markup.extend_from_slice(b"]]>");
++        }
++        Event::Comment(text) => {
++            markup.extend_from_slice(b"<!--");
++            markup.extend_from_slice(text.as_ref().as_bytes());
++            markup.extend_from_slice(b"-->");
++        }
++        Event::PI(text) => {
++            markup.extend_from_slice(b"<?");
++            markup.extend_from_slice(text.as_ref().as_bytes());
++            markup.extend_from_slice(b"?>");
++        }
++        Event::GeneralRef(reference) => {
++            markup.push(b'&');
++            markup.extend_from_slice(reference.as_ref().as_bytes());
++            markup.push(b';');
++        }
++        Event::Decl(_) | Event::DocType(_) | Event::Eof => return false,
++    }
++    true
++}
+ 
+ /// XML 이름을 바이트 태그 비교에 쓰기 위한 공통 입력 경계.
+ ///
+--- a/src/serializer/doc_info/tests.rs
++++ b/src/serializer/doc_info/tests.rs
+@@ -588,6 +588,7 @@
+         }],
+         auto_tab_left: true,
+         auto_tab_right: true,
++        hwpx_source_xml: None,
+     };
+ 
+     let data = serialize_tab_def(&td);
+@@ -784,6 +785,7 @@
+         tabs: vec![],
+         auto_tab_left: false,
+         auto_tab_right: true,
++        hwpx_source_xml: None,
+     };
+     let bytes = serialize_tab_def(&td);
+     let mut r = crate::parser::byte_reader::ByteReader::new(&bytes);
+--- a/src/serializer/hwpx/header.rs
++++ b/src/serializer/hwpx/header.rs
+@@ -674,6 +674,19 @@
+ }
+ 
+ fn write_tab_pr<W: Write>(w: &mut Writer<W>, id: u16, td: &TabDef) -> Result<(), SerializeError> {
++    if let Some(source) = &td.hwpx_source_xml {
++        if source.id == Some(id)
++            && source.auto_tab_left == td.auto_tab_left
++            && source.auto_tab_right == td.auto_tab_right
++            && source.tabs == td.tabs
++        {
++            w.get_mut()
++                .write_all(&source.xml)
++                .map_err(|e| SerializeError::XmlError(e.to_string()))?;
++            return Ok(());
++        }
++    }
++
+     let attrs = [
+         ("id", id.to_string()),
+         ("autoTabLeft", bool01(td.auto_tab_left).to_string()),
+@@ -2123,6 +2136,40 @@
+     }
+ 
+     #[test]
++    fn write_tab_pr_reuses_source_only_while_its_model_is_unchanged() {
++        use crate::model::style::{HwpxTabPrSource, TabDef, TabItem};
++
++        let raw = br#"<hh:tabPr id="0" autoTabLeft="0" autoTabRight="0"><hh:tabItem pos="-127472" type="LEFT" leader="NONE" vendor="keep"/></hh:tabPr>"#.to_vec();
++        let tabs = vec![TabItem {
++            position: 0,
++            tab_type: 0,
++            fill_type: 0,
++        }];
++        let mut td = TabDef {
++            tabs: tabs.clone(),
++            hwpx_source_xml: Some(HwpxTabPrSource {
++                id: Some(0),
++                auto_tab_left: false,
++                auto_tab_right: false,
++                tabs,
++                xml: raw.clone(),
++            }),
++            ..Default::default()
++        };
++
++        let mut writer = Writer::new(Vec::new());
++        write_tab_pr(&mut writer, 0, &td).expect("write original tabPr");
++        assert_eq!(writer.into_inner(), raw);
++
++        td.tabs[0].position = 1;
++        let mut writer = Writer::new(Vec::new());
++        write_tab_pr(&mut writer, 0, &td).expect("write edited tabPr");
++        let edited = String::from_utf8(writer.into_inner()).unwrap();
++        assert!(!edited.contains("-127472"), "stale source must not override edits: {edited}");
++        assert!(!edited.contains("vendor=\"keep\""), "unsupported source is not reused after edit");
++    }
++
++    #[test]
+     fn write_para_pr_emits_margin_switch_case_default() {
+         // paraPr margin/lineSpacing 은 <hp:switch>(case=저장값/2, default=저장값)
+         // 구조로, margin 자식은 hc: 네임스페이스(value, unit 순)로 출력되어야 한다.
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -3441,7 +3441,7 @@
+             let dt = d
+                 .text_box
+                 .as_ref()
+-                .filter(|tb| !tb.paragraphs.is_empty())
++                .filter(|tb| tb.has_hwpx_serializable_content())
+                 .map(|tb| {
+                     writer_to_string(|w| super::shape::write_draw_text(w, tb, ctx))
+                         .unwrap_or_default()
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -105,7 +105,7 @@
+ 
+     // drawText: 글상자 내부 문단
+     if let Some(ref tb) = rect.drawing.text_box {
+-        if !tb.paragraphs.is_empty() {
++        if tb.has_hwpx_serializable_content() {
+             write_draw_text(w, tb, ctx)?;
+         }
+     }
+@@ -600,7 +600,12 @@
+ 
+     end_tag(w, "hp:subList")?;
+ 
+-    if tb.margin_left != 0 || tb.margin_right != 0 || tb.margin_top != 0 || tb.margin_bottom != 0 {
++    if tb.hwpx_text_margin_present
++        || tb.margin_left != 0
++        || tb.margin_right != 0
++        || tb.margin_top != 0
++        || tb.margin_bottom != 0
++    {
+         let ml = tb.margin_left.to_string();
+         let mr = tb.margin_right.to_string();
+         let mt = tb.margin_top.to_string();
+@@ -728,6 +733,15 @@
+     w: &mut Writer<W>,
+     sa: &ShapeComponentAttr,
+ ) -> Result<(), SerializeError> {
++    if let Some(source) = &sa.hwpx_rendering_info_source {
++        if source.raw_rendering == sa.raw_rendering {
++            w.get_mut()
++                .write_all(&source.markup)
++                .map_err(|e| SerializeError::XmlError(e.to_string()))?;
++            return Ok(());
++        }
++    }
++
+     let (trans, pairs) = decode_raw_rendering(&sa.raw_rendering)
+         .unwrap_or_else(|| generated_rendering_matrices(sa));
+ 
+@@ -1121,7 +1135,8 @@
+     w: &mut Writer<W>,
+     d: &DrawingObjAttr,
+ ) -> Result<(), SerializeError> {
+-    if d.shadow_type == 0
++    if !d.hwpx_shadow_present
++        && d.shadow_type == 0
+         && d.shadow_color == 0
+         && d.shadow_offset_x == 0
+         && d.shadow_offset_y == 0
+@@ -1404,6 +1419,60 @@
+         let mut ctx = SerializeContext::collect_from_document(&Default::default());
+         write_line(&mut w, line, &mut ctx).expect("write_line");
+         String::from_utf8(w.into_inner()).unwrap()
++    }
++
++    #[test]
++    fn write_shadow_retains_explicit_zero_effect_source() {
++        use crate::model::shape::DrawingObjAttr;
++
++        let drawing = DrawingObjAttr {
++            hwpx_shadow_present: true,
++            ..Default::default()
++        };
++        let mut writer = Writer::new(Vec::new());
++        write_shadow(&mut writer, &drawing).expect("write explicit no-effect shadow");
++        let xml = String::from_utf8(writer.into_inner()).unwrap();
++        assert!(xml.contains(r##"<hp:shadow type="NONE" color="#000000" offsetX="0" offsetY="0" alpha="0"/>"##), "{xml}");
++    }
++
++    #[test]
++    fn write_draw_text_retains_explicit_zero_margin_source() {
++        use crate::model::shape::TextBox;
++
++        let text_box = TextBox {
++            hwpx_source_present: true,
++            hwpx_text_margin_present: true,
++            ..Default::default()
++        };
++        let mut writer = Writer::new(Vec::new());
++        let mut ctx = SerializeContext::collect_from_document(&Default::default());
++        write_draw_text(&mut writer, &text_box, &mut ctx).expect("write empty drawText");
++        let xml = String::from_utf8(writer.into_inner()).unwrap();
++        assert!(xml.contains(r#"<hp:textMargin left="0" right="0" top="0" bottom="0"/>"#), "{xml}");
++    }
++
++    #[test]
++    fn write_rendering_info_reuses_original_markup_until_the_matrix_changes() {
++        use crate::model::shape::{HwpxRawRenderingInfo, ShapeComponentAttr};
++
++        let markup = br#"<hp:renderingInfo vendor="keep"><hc:scaMatrix e1="0.01" e2="0" e3="0" e4="0" e5="924.090027" e6="0"/></hp:renderingInfo>"#.to_vec();
++        let raw_rendering = vec![1, 2, 3];
++        let mut shape = ShapeComponentAttr {
++            raw_rendering: raw_rendering.clone(),
++            hwpx_rendering_info_source: Some(HwpxRawRenderingInfo {
++                raw_rendering,
++                markup: markup.clone(),
++            }),
++            ..Default::default()
++        };
++        let mut writer = Writer::new(Vec::new());
++        write_rendering_info(&mut writer, &shape).expect("write preserved source");
++        assert_eq!(writer.into_inner(), markup);
++
++        shape.raw_rendering.push(4);
++        let mut writer = Writer::new(Vec::new());
++        write_rendering_info(&mut writer, &shape).expect("write changed matrix");
++        assert_ne!(writer.into_inner(), markup, "changed matrix must not reuse stale XML");
+     }
+ 
+     fn line_shape_style(attr: u32) -> String {

@@ -90,8 +90,8 @@ export function pdfFrame(sessionId: SessionId, generation: number, revision: num
 }
 
 /**
- * HWP 미리보기 그림 재생성(2026-11-08): 다시 연 원시 내보내기의 1쪽을 그린 픽셀(RGB8, 위→아래, 흰 바탕에 합성).
- * 백엔드가 출력의 PAGE_DEF 크기로 맞추고 정규 PNG로 부호화·검사한다. 메타 `preview: {width, height}`, 바이트는 출력 뒤에 붙는다.
+ * HWP/HWPX 미리보기 그림 재생성: 다시 연 원시 내보내기의 1쪽을 그린 픽셀(RGB8, 위→아래, 흰 바탕에 합성).
+ * 백엔드가 출력 페이지 크기와 대조해 정규 PNG로 부호화·검사한다. 메타 `preview: {width, height}`, 바이트는 출력 뒤에 붙는다.
  */
 export interface PreviewRaster {
   width: number;

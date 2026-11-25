@@ -130,7 +130,7 @@ fn save_meta<'a>(meta: &'a Value, base: &[&str]) -> Option<&'a serde_json::Map<S
     })
 }
 
-/// Optional HWP preview raster (`preview` meta `{"width","height"[,"blankPage"]}`): RGB8 rows, top-down,
+/// Optional HWP/HWPX preview raster (`preview` meta `{"width","height"[,"blankPage"]}`): RGB8 rows, top-down,
 /// alpha composited onto white, appended after the engine output. Its geometry is checked
 /// against the output document by the save service; here only its shape.
 fn split_preview(

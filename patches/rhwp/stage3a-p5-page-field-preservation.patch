@@ -1,0 +1,116 @@
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -1258,7 +1258,9 @@
+ pub(crate) fn assign_auto_numbers(doc: &mut Document) {
+     use crate::model::control::AutoNumberType;
+ 
+-    // 번호 종류별 카운터 — DocProperties 시작번호로 초기화
++    // Numbered object counters — page fields are resolved from their laid-out page.
++    // Keep page AutoNumber payloads as authored so a parse/edit/save round trip does
++    // not replace the stored value using a document-order counter.
+     let mut counters = [
+         doc.doc_properties.page_start_num.saturating_sub(1),
+         doc.doc_properties.footnote_start_num.saturating_sub(1),
+@@ -1270,7 +1272,9 @@
+ 
+     fn counter_index(t: AutoNumberType) -> Option<usize> {
+         match t {
+-            AutoNumberType::Page => Some(0),
++            // PAGE is a page-context field, not a sequential document counter. The
++            // renderer substitutes the current page when composing each page/story.
++            AutoNumberType::Page => None,
+             AutoNumberType::Footnote => Some(1),
+             AutoNumberType::Endnote => Some(2),
+             AutoNumberType::Picture => Some(3),
+@@ -2655,12 +2659,14 @@
+     }
+ 
+     #[test]
+-    fn total_page_auto_number_does_not_advance_page_counter() {
++    fn page_fields_keep_source_payload_and_numbered_objects_still_increment() {
+         use crate::model::control::{AutoNumber, AutoNumberType, Control};
+ 
+         let mut document = document_with_number_controls(vec![
+             Control::AutoNumber(AutoNumber {
+                 number_type: AutoNumberType::Page,
++                number: 7,
++                assigned_number: 7,
+                 ..Default::default()
+             }),
+             Control::AutoNumber(AutoNumber {
+@@ -2670,7 +2676,13 @@
+                 ..Default::default()
+             }),
+             Control::AutoNumber(AutoNumber {
++                number_type: AutoNumberType::Footnote,
++                ..Default::default()
++            }),
++            Control::AutoNumber(AutoNumber {
+                 number_type: AutoNumberType::Page,
++                number: 1,
++                assigned_number: 1,
+                 ..Default::default()
+             }),
+         ]);
+@@ -2680,21 +2692,24 @@
+         assert_eq!(
+             auto_number_values(&document),
+             vec![
+-                (AutoNumberType::Page, 1, 1),
++                (AutoNumberType::Page, 7, 7),
+                 (AutoNumberType::TotalPage, 8, 8),
+-                (AutoNumberType::Page, 2, 2),
++                (AutoNumberType::Footnote, 1, 1),
++                (AutoNumberType::Page, 1, 1),
+             ],
+-            "TotalPage 표시값은 보존되고 뒤 Page 번호는 연속이어야 한다"
++            "페이지 필드는 원본 값을 유지하고 페이지별 렌더링에서 표시값을 결정해야 한다"
+         );
+     }
+ 
+     #[test]
+-    fn total_page_new_number_does_not_reset_page_counter() {
++    fn page_restart_controls_do_not_rewrite_page_field_payloads() {
+         use crate::model::control::{AutoNumber, AutoNumberType, Control, NewNumber};
+ 
+         let mut document = document_with_number_controls(vec![
+             Control::AutoNumber(AutoNumber {
+                 number_type: AutoNumberType::Page,
++                number: 4,
++                assigned_number: 4,
+                 ..Default::default()
+             }),
+             Control::NewNumber(NewNumber {
+@@ -2703,6 +2718,8 @@
+             }),
+             Control::AutoNumber(AutoNumber {
+                 number_type: AutoNumberType::Page,
++                number: 7,
++                assigned_number: 7,
+                 ..Default::default()
+             }),
+             Control::NewNumber(NewNumber {
+@@ -2711,6 +2728,8 @@
+             }),
+             Control::AutoNumber(AutoNumber {
+                 number_type: AutoNumberType::Page,
++                number: 2,
++                assigned_number: 2,
+                 ..Default::default()
+             }),
+         ]);
+@@ -2720,11 +2739,11 @@
+         assert_eq!(
+             auto_number_values(&document),
+             vec![
+-                (AutoNumberType::Page, 1, 1),
++                (AutoNumberType::Page, 4, 4),
++                (AutoNumberType::Page, 7, 7),
+                 (AutoNumberType::Page, 2, 2),
+-                (AutoNumberType::Page, 10, 10),
+             ],
+-            "NewNumber(TotalPage)는 Page 카운터에 영향이 없고 NewNumber(Page)는 유지돼야 한다"
++            "새 페이지 번호의 계산은 페이지 조판에 맡기고 저장 필드 값을 보존해야 한다"
+         );
+     }
+ 

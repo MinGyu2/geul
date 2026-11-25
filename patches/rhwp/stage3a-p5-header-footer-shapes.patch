@@ -1,0 +1,396 @@
+diff --git a/src/document_core/commands/object_ops/shape.rs b/src/document_core/commands/object_ops/shape.rs
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -11,6 +11,157 @@
+     Caption, CaptionDirection, CaptionVertAlign, HwpxCurveSegment, RectangleShape, ShapeObject,
+     SourceHwpRectGeometry,
+ };
++
++#[derive(serde::Deserialize)]
++#[serde(deny_unknown_fields)]
++struct HeaderFooterCellPathEntry {
++    #[serde(rename = "controlIndex")]
++    control_index: u32,
++    #[serde(rename = "cellIndex")]
++    cell_index: u32,
++    #[serde(rename = "cellParaIndex")]
++    cell_para_index: u32,
++}
++
++fn header_footer_paragraphs<'a>(
++    control: &'a Control,
++    kind: &str,
++) -> Result<&'a [Paragraph], HwpError> {
++    match (kind, control) {
++        ("header", Control::Header(header)) => Ok(&header.paragraphs),
++        ("footer", Control::Footer(footer)) => Ok(&footer.paragraphs),
++        _ => Err(HwpError::RenderError(
++            "머리말/꼬리말 종류와 실제 소유자가 일치하지 않습니다".to_string(),
++        )),
++    }
++}
++
++fn header_footer_paragraphs_mut<'a>(
++    control: &'a mut Control,
++    kind: &str,
++) -> Result<&'a mut Vec<Paragraph>, HwpError> {
++    match (kind, control) {
++        ("header", Control::Header(header)) => Ok(&mut header.paragraphs),
++        ("footer", Control::Footer(footer)) => Ok(&mut footer.paragraphs),
++        _ => Err(HwpError::RenderError(
++            "머리말/꼬리말 종류와 실제 소유자가 일치하지 않습니다".to_string(),
++        )),
++    }
++}
++
++fn validate_header_footer_shape_edit(
++    shape: &ShapeObject,
++    props_json: &str,
++) -> Result<(), HwpError> {
++    use serde_json::Value;
++    let invalid = || HwpError::RenderError("Unsupported header/footer Shape edit".to_string());
++    if shape.common().locked {
++        return Err(HwpError::RenderError(
++            "잠긴 머리말/꼬리말 개체는 편집할 수 없습니다".to_string(),
++        ));
++    }
++    let value: Value = serde_json::from_str(props_json).map_err(|_| invalid())?;
++    let object = value
++        .as_object()
++        .filter(|object| !object.is_empty())
++        .ok_or_else(invalid)?;
++    const ALLOWED: &[&str] = &[
++        "width",
++        "height",
++        "horzOffset",
++        "vertOffset",
++        "rotationAngle",
++        "horzFlip",
++        "vertFlip",
++        "borderColor",
++        "borderWidth",
++        "fillType",
++        "fillBgColor",
++        "treatAsChar",
++        "textWrap",
++    ];
++    if object.keys().any(|key| !ALLOWED.contains(&key.as_str())) {
++        return Err(invalid());
++    }
++    let integer = |key: &str, min: i64, max: i64| -> Result<(), HwpError> {
++        if object.get(key).is_some_and(|value| {
++            value
++                .as_i64()
++                .is_none_or(|number| !(min..=max).contains(&number))
++        }) {
++            Err(invalid())
++        } else {
++            Ok(())
++        }
++    };
++    for key in ["width", "height"] {
++        integer(key, 1, 2_000_000)?;
++    }
++    for key in ["horzOffset", "vertOffset"] {
++        integer(key, -2_000_000, 2_000_000)?;
++    }
++    integer("rotationAngle", 0, 359)?;
++    integer("borderColor", 0, 0x00ff_ffff)?;
++    integer("borderWidth", 1, 7200)?;
++    integer("fillBgColor", 0, 0x00ff_ffff)?;
++    for key in ["horzFlip", "vertFlip", "treatAsChar"] {
++        if object.get(key).is_some_and(|value| !value.is_boolean()) {
++            return Err(invalid());
++        }
++    }
++    if object
++        .get("fillType")
++        .is_some_and(|value| !matches!(value.as_str(), Some("none" | "solid")))
++        || object.get("textWrap").is_some_and(|value| {
++            !matches!(
++                value.as_str(),
++                Some(
++                    "Square"
++                        | "Tight"
++                        | "Through"
++                        | "TopAndBottom"
++                        | "BehindText"
++                        | "InFrontOfText"
++                )
++            )
++        })
++    {
++        return Err(invalid());
++    }
++    if (object.contains_key("width") || object.contains_key("height"))
++        && shape.common().size_protect
++    {
++        return Err(HwpError::RenderError(
++            "크기 보호된 머리말/꼬리말 개체는 크기를 바꿀 수 없습니다".to_string(),
++        ));
++    }
++    Ok(())
++}
++
++fn parse_header_footer_cell_path(json: &str) -> Result<Vec<(usize, usize, usize)>, HwpError> {
++    if json.len() > 16 * 1024 {
++        return Err(HwpError::RenderError(
++            "머리말/꼬리말 셀 경로가 너무 큽니다".to_string(),
++        ));
++    }
++    let parsed: Vec<HeaderFooterCellPathEntry> = serde_json::from_str(json)
++        .map_err(|error| HwpError::RenderError(format!("셀 경로 JSON 파싱 실패: {error}")))?;
++    if parsed.len() > 64 {
++        return Err(HwpError::RenderError(
++            "머리말/꼬리말 셀 경로 깊이 초과".to_string(),
++        ));
++    }
++    Ok(parsed
++        .into_iter()
++        .map(|entry| {
++            (
++                entry.control_index as usize,
++                entry.cell_index as usize,
++                entry.cell_para_index as usize,
++            )
++        })
++        .collect())
++}
+ 
+ fn geul_bad_shape_edit() -> HwpError {
+     HwpError::RenderError("Unsupported shape edit".into())
+@@ -2784,6 +2935,65 @@
+             common_json, tb_json, extra_json, round_json, connector_json, caption_json, group_json
+         ))
+     }
++    /// Read a Shape through the exact header/footer owner and nested table path.
++    pub fn get_header_footer_shape_properties_native(
++        &self,
++        section_idx: usize,
++        kind: &str,
++        outer_para_idx: usize,
++        outer_control_idx: usize,
++        inner_para_idx: usize,
++        cell_path_json: &str,
++        inner_control_idx: usize,
++    ) -> Result<String, HwpError> {
++        let path = parse_header_footer_cell_path(cell_path_json)?;
++        let section =
++            self.document.sections.get(section_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("구역 인덱스 {section_idx} 범위 초과"))
++            })?;
++        let outer_para = section.paragraphs.get(outer_para_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("외부 문단 인덱스 {outer_para_idx} 범위 초과"))
++        })?;
++        let outer_control = outer_para.controls.get(outer_control_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("외부 컨트롤 인덱스 {outer_control_idx} 범위 초과"))
++        })?;
++        let inner_paragraphs = header_footer_paragraphs(outer_control, kind)?;
++        let mut paragraph = inner_paragraphs.get(inner_para_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("내부 문단 인덱스 {inner_para_idx} 범위 초과"))
++        })?;
++        for (level, &(table_idx, cell_idx, cell_para_idx)) in path.iter().enumerate() {
++            let control = paragraph.controls.get(table_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("셀 경로 {level}의 표 컨트롤이 범위를 벗어났습니다"))
++            })?;
++            let table = match control {
++                Control::Table(table) => table,
++                _ => {
++                    return Err(HwpError::RenderError(
++                        "셀 경로가 표 소유자를 가리키지 않습니다".to_string(),
++                    ));
++                }
++            };
++            let cell = table.cells.get(cell_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("셀 경로 {level}의 셀이 범위를 벗어났습니다"))
++            })?;
++            paragraph = cell.paragraphs.get(cell_para_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("셀 경로 {level}의 문단이 범위를 벗어났습니다"))
++            })?;
++        }
++        let control = paragraph.controls.get(inner_control_idx).ok_or_else(|| {
++            HwpError::RenderError(format!("내부 컨트롤 인덱스 {inner_control_idx} 범위 초과"))
++        })?;
++        let shape = match control {
++            Control::Shape(shape) => shape.as_ref(),
++            _ => {
++                return Err(HwpError::RenderError(
++                    "지정된 story 개체가 Shape이 아닙니다".to_string(),
++                ));
++            }
++        };
++        Self::format_shape_props_inner(shape)
++    }
++
+     /// 글상자(Shape) 속성 변경 (네이티브).
+     pub fn set_shape_properties_native(
+         &mut self,
+@@ -3072,6 +3282,98 @@
+         });
+         Ok("{\"ok\":true}".to_string())
+     }
++    /// Mutate exactly one Shape owned by the addressed header/footer paragraph or table cell.
++    pub fn set_header_footer_shape_properties_native(
++        &mut self,
++        section_idx: usize,
++        kind: &str,
++        outer_para_idx: usize,
++        outer_control_idx: usize,
++        inner_para_idx: usize,
++        cell_path_json: &str,
++        inner_control_idx: usize,
++        props_json: &str,
++    ) -> Result<String, HwpError> {
++        let path = parse_header_footer_cell_path(cell_path_json)?;
++        let caption_changed = {
++            let section = self.document.sections.get_mut(section_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("구역 인덱스 {section_idx} 범위 초과"))
++            })?;
++            let outer_para = section.paragraphs.get_mut(outer_para_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("외부 문단 인덱스 {outer_para_idx} 범위 초과"))
++            })?;
++            let outer_control =
++                outer_para
++                    .controls
++                    .get_mut(outer_control_idx)
++                    .ok_or_else(|| {
++                        HwpError::RenderError(format!(
++                            "외부 컨트롤 인덱스 {outer_control_idx} 범위 초과"
++                        ))
++                    })?;
++            let inner_paragraphs = header_footer_paragraphs_mut(outer_control, kind)?;
++            let mut paragraph = inner_paragraphs.get_mut(inner_para_idx).ok_or_else(|| {
++                HwpError::RenderError(format!("내부 문단 인덱스 {inner_para_idx} 범위 초과"))
++            })?;
++            for (level, &(table_idx, cell_idx, cell_para_idx)) in path.iter().enumerate() {
++                let control = paragraph.controls.get_mut(table_idx).ok_or_else(|| {
++                    HwpError::RenderError(format!(
++                        "셀 경로 {level}의 표 컨트롤이 범위를 벗어났습니다"
++                    ))
++                })?;
++                let table = match control {
++                    Control::Table(table) => table,
++                    _ => {
++                        return Err(HwpError::RenderError(
++                            "셀 경로가 표 소유자를 가리키지 않습니다".to_string(),
++                        ));
++                    }
++                };
++                let cell = table.cells.get_mut(cell_idx).ok_or_else(|| {
++                    HwpError::RenderError(format!("셀 경로 {level}의 셀이 범위를 벗어났습니다"))
++                })?;
++                paragraph = cell.paragraphs.get_mut(cell_para_idx).ok_or_else(|| {
++                    HwpError::RenderError(format!("셀 경로 {level}의 문단이 범위를 벗어났습니다"))
++                })?;
++            }
++            let control = paragraph
++                .controls
++                .get_mut(inner_control_idx)
++                .ok_or_else(|| {
++                    HwpError::RenderError(format!(
++                        "내부 컨트롤 인덱스 {inner_control_idx} 범위 초과"
++                    ))
++                })?;
++            let shape = match control {
++                Control::Shape(shape) => shape.as_mut(),
++                _ => {
++                    return Err(HwpError::RenderError(
++                        "지정된 story 개체가 Shape이 아닙니다".to_string(),
++                    ));
++                }
++            };
++            validate_header_footer_shape_edit(shape, props_json)?;
++            Self::apply_shape_props_inner(
++                shape,
++                props_json,
++                matches!(self.source_format, crate::parser::FileFormat::Hwp),
++            )?
++        };
++        if caption_changed {
++            crate::parser::assign_auto_numbers(&mut self.document);
++        }
++        self.document.sections[section_idx].raw_stream = None;
++        self.recompose_section(section_idx);
++        self.paginate_if_needed();
++        self.invalidate_page_tree_cache();
++        self.event_log.push(DocumentEvent::PictureResized {
++            section: section_idx,
++            para: outer_para_idx,
++            ctrl: outer_control_idx,
++        });
++        Ok("{\"ok\":true}".to_string())
++    }
++
+     /// [Task #1138] Shape 속성 → JSON. get_shape_properties_native +
+     /// get_cell_shape_properties_by_path_native 공유.
+     pub(crate) fn format_shape_props_inner(
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4666,6 +4666,30 @@
+         .map_err(|e| e.into())
+     }
+ 
++    /// Header/footer Shape getter with an exact outer owner and optional nested cell path.
++    #[wasm_bindgen(js_name = getHeaderFooterShapeProperties)]
++    pub fn get_header_footer_shape_properties(
++        &self,
++        section_idx: u32,
++        kind: &str,
++        outer_para_idx: u32,
++        outer_control_idx: u32,
++        inner_para_idx: u32,
++        cell_path_json: &str,
++        inner_control_idx: u32,
++    ) -> Result<String, JsValue> {
++        self.get_header_footer_shape_properties_native(
++            section_idx as usize,
++            kind,
++            outer_para_idx as usize,
++            outer_control_idx as usize,
++            inner_para_idx as usize,
++            cell_path_json,
++            inner_control_idx as usize,
++        )
++        .map_err(|error| error.into())
++    }
++
+     #[wasm_bindgen(js_name = getEditableShapePath)]
+     pub fn get_editable_shape_path(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_shape_path(sec as usize, para as usize, ctrl as usize)
+@@ -4906,6 +4930,35 @@
+             props_json,
+         )
+         .map_err(|e| e.into())
++    }
++
++    /// Shape(글상자) 컨트롤을 문단에서 삭제한다.
++    ///
++    /// 반환: JSON `{"ok":true}`
++    /// Set Shape properties without dropping header/footer story ownership.
++    #[wasm_bindgen(js_name = setHeaderFooterShapeProperties)]
++    pub fn set_header_footer_shape_properties(
++        &mut self,
++        section_idx: u32,
++        kind: &str,
++        outer_para_idx: u32,
++        outer_control_idx: u32,
++        inner_para_idx: u32,
++        cell_path_json: &str,
++        inner_control_idx: u32,
++        props_json: &str,
++    ) -> Result<String, JsValue> {
++        self.set_header_footer_shape_properties_native(
++            section_idx as usize,
++            kind,
++            outer_para_idx as usize,
++            outer_control_idx as usize,
++            inner_para_idx as usize,
++            cell_path_json,
++            inner_control_idx as usize,
++            props_json,
++        )
++        .map_err(|error| error.into())
+     }
+ 
+     /// Shape(글상자) 컨트롤을 문단에서 삭제한다.

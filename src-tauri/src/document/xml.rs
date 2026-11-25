@@ -449,6 +449,7 @@ struct CanonicalCursor<'a, const RETAIN: bool, const STREAM: bool> {
     last_text: bool,
     pending_end: bool,
     pending_text: Option<(&'a str, usize)>,
+    pending_text_normalize_eol: bool,
     validation_name: Atom,
 }
 
@@ -463,6 +464,7 @@ impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STR
             last_text: false,
             pending_end: false,
             pending_text: None,
+            pending_text_normalize_eol: false,
             validation_name: Atom(Arc::new(String::new())),
         }
     }
@@ -472,19 +474,49 @@ impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STR
             return Ok(Canonical::Text(String::new()));
         }
         // Slice-reader text and CDATA borrow the immutable decoded input.
-        // No full text-node copy is needed by the comparison cursor.
+        // No full text-node copy is needed by the comparison cursor; literal
+        // line-ending normalization is also streamed in bounded chunks.
         let piece = match piece {
             Cow::Borrowed(piece) if STREAM && piece.len() > TEXT_CHUNK => {
+                self.pending_text_normalize_eol = piece.contains('\r');
                 self.pending_text = Some((piece, 0));
                 return self.text_chunk();
             }
             piece => piece,
         };
-        Ok(Canonical::Text(fallible_string(&piece)?))
+        Ok(Canonical::Text(normalize_xml_line_endings(&piece)?))
     }
 
     fn text_chunk(&mut self) -> Result<Canonical, Invalid> {
         let (piece, start) = self.pending_text.ok_or(Invalid)?;
+        if self.pending_text_normalize_eol {
+            let mut text = String::new();
+            text.try_reserve_exact(TEXT_CHUNK).map_err(|_| {
+                crate::document::resources::allocation_refused();
+                Invalid
+            })?;
+            let mut end = start;
+            while end < piece.len() {
+                let character = piece[end..].chars().next().ok_or(Invalid)?;
+                let width = character.len_utf8();
+                let next = if character == '\r' && piece[end + width..].starts_with('\n') {
+                    end + width + 1
+                } else {
+                    end + width
+                };
+                let normalized = if character == '\r' { '\n' } else { character };
+                if !text.is_empty() && text.len() + normalized.len_utf8() > TEXT_CHUNK {
+                    break;
+                }
+                text.push(normalized);
+                end = next;
+            }
+            self.pending_text = (end < piece.len()).then_some((piece, end));
+            if self.pending_text.is_none() {
+                self.pending_text_normalize_eol = false;
+            }
+            return Ok(Canonical::Text(text));
+        }
         let mut end = piece.len().min(start + TEXT_CHUNK);
         while !piece.is_char_boundary(end) {
             end -= 1;
@@ -632,12 +664,12 @@ impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STR
                 }
                 Event::DocType(_) => return Err(Invalid),
                 Event::Comment(content) => Canonical::Comment(if RETAIN {
-                    fallible_string(content.as_ref())?
+                    normalize_xml_line_endings(content.as_ref())?
                 } else {
                     String::new()
                 }),
                 Event::PI(content) => Canonical::Instruction(if RETAIN {
-                    fallible_string(content.as_ref())?
+                    normalize_xml_line_endings(content.as_ref())?
                 } else {
                     String::new()
                 }),
@@ -656,6 +688,31 @@ fn fallible_string(value: &str) -> Result<String, Invalid> {
         Invalid
     })?;
     out.push_str(value);
+    Ok(out)
+}
+
+/// XML 1.0 normalizes literal CRLF and CR line endings to LF before parsing.
+/// Character references are emitted as separate events and intentionally do
+/// not pass through this helper.
+fn normalize_xml_line_endings(value: &str) -> Result<String, Invalid> {
+    if !value.contains('\r') {
+        return fallible_string(value);
+    }
+    let mut out = String::new();
+    out.try_reserve_exact(value.len()).map_err(|_| {
+        crate::document::resources::allocation_refused();
+        Invalid
+    })?;
+    let mut remaining = value;
+    while let Some(index) = remaining.find('\r') {
+        out.push_str(&remaining[..index]);
+        out.push('\n');
+        remaining = &remaining[index + 1..];
+        if let Some(rest) = remaining.strip_prefix('\n') {
+            remaining = rest;
+        }
+    }
+    out.push_str(remaining);
     Ok(out)
 }
 
@@ -762,7 +819,7 @@ fn canonical_walk(
                 }
                 emit(
                     Canonical::Text(if retain_content {
-                        piece.to_owned()
+                        normalize_xml_line_endings(piece)?
                     } else {
                         String::new()
                     }),
@@ -776,7 +833,7 @@ fn canonical_walk(
                 let piece: &str = content.as_ref();
                 emit(
                     Canonical::Text(if retain_content {
-                        piece.to_owned()
+                        normalize_xml_line_endings(piece)?
                     } else {
                         String::new()
                     }),
@@ -817,7 +874,7 @@ fn canonical_walk(
                 let piece: &str = content.as_ref();
                 emit(
                     Canonical::Comment(if retain_content {
-                        piece.to_owned()
+                        normalize_xml_line_endings(piece)?
                     } else {
                         String::new()
                     }),
@@ -828,7 +885,7 @@ fn canonical_walk(
                 let piece: &str = content.as_ref();
                 emit(
                     Canonical::Instruction(if retain_content {
-                        piece.to_owned()
+                        normalize_xml_line_endings(piece)?
                     } else {
                         String::new()
                     }),
@@ -1533,20 +1590,44 @@ mod resource_tests {
     use super::*;
 
     #[test]
-    fn document_events_and_literal_newlines_are_preserved() {
+    fn document_events_are_preserved_and_xml_line_endings_are_normalized() {
         for (before, after) in [
             ("<!--before--><r/>", "<r/>"),
             ("<r/><!--after-->", "<r/>"),
             ("<?app before?><r/>", "<r/>"),
             ("<r/><?app after?>", "<r/>"),
-            ("<!--a\r\nb--><r/>", "<!--a\nb--><r/>"),
-            ("<?app a\r\nb?><r/>", "<?app a\nb?><r/>"),
-            ("<r>a\r\nb</r>", "<r>a\nb</r>"),
         ] {
             assert_ne!(canonical(before.as_bytes()), canonical(after.as_bytes()));
             assert!(!canonical_equal(before.as_bytes(), after.as_bytes()).unwrap());
         }
-        assert!(canonical_equal(b"<r>a\r\nb</r>", b"<r>a&#13;&#10;b</r>").unwrap());
+        for (before, after) in [
+            (b"<r>a\r\nb</r>".as_slice(), b"<r>a\nb</r>".as_slice()),
+            (b"<r>a\rb</r>".as_slice(), b"<r>a\nb</r>".as_slice()),
+            (
+                b"<!--a\r\nb--><r/>".as_slice(),
+                b"<!--a\nb--><r/>".as_slice(),
+            ),
+            (
+                b"<?app a\r\nb?><r/>".as_slice(),
+                b"<?app a\nb?><r/>".as_slice(),
+            ),
+            (
+                b"<r><![CDATA[a\r\nb]]></r>".as_slice(),
+                b"<r><![CDATA[a\nb]]></r>".as_slice(),
+            ),
+        ] {
+            assert_eq!(canonical(before).unwrap(), canonical(after).unwrap());
+            assert_eq!(canonical_equal(before, after), Ok(true));
+        }
+        assert_eq!(
+            canonical_equal(b"<r>a&#13;\nb</r>", b"<r>a\nb</r>"),
+            Ok(false),
+            "a character reference preserves CR while literal CRLF normalizes to LF"
+        );
+        let prefix = "x".repeat(TEXT_CHUNK - 1);
+        let before = format!("<r>{prefix}\r\nz</r>");
+        let after = format!("<r>{prefix}\nz</r>");
+        assert_eq!(canonical_equal(before.as_bytes(), after.as_bytes()), Ok(true));
     }
 
     fn differential(bytes: &[u8]) {

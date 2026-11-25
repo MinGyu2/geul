@@ -52,6 +52,14 @@ pub struct Package {
     pub parts: BTreeMap<String, (u16, Vec<u8>)>,
 }
 
+/// Server-generated HWPX preview bytes accepted only after matching the rebuilt package exactly.
+#[derive(Default)]
+pub struct RefreshedHwpxPreviews {
+    pub output: Option<Vec<u8>>,
+    pub image: Option<Vec<u8>>,
+    pub text: Option<Vec<u8>>,
+}
+
 impl Package {
     pub fn get(&self, name: &str) -> Option<&[u8]> {
         self.parts.get(name).map(|(_, data)| data.as_slice())
@@ -1164,7 +1172,42 @@ fn thumbnails(package: &Package) -> Vec<String> {
 /// HWPX 편집 저장 비교: 본문 부분을 빼고 원본과 같아야 한다. 본문을 바꿨다면 원본 그대로 남는 `Preview/*`는 내용이
 /// 문서 내용과 무관함을 증명해야 한다(빈 값·고정 rhwp 빈 미리보기 상수와 바이트가 같음, `preview`). 그 밖의 미리보기 부분은
 /// 증명할 수 없어 막는다.
+const HWPX_PREVIEW_IMAGE: &str = "Preview/PrvImage.png";
+const HWPX_PREVIEW_TEXT: &str = "Preview/PrvText.txt";
+
+/// XML that differs only in its complete canonical event stream can be restored from source.
+/// `canonical_equal` retains comments and processing instructions as well as element content.
+fn same_hwpx_xml(name: &str, source: &[u8], exported: &[u8]) -> bool {
+    source != exported
+        && is_xml(name, source)
+        && is_xml(name, exported)
+        && xml::canonical_equal(source, exported) == Ok(true)
+}
+
 pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> {
+    compare_saved_hwpx_with_previews(original, output, None, None)
+}
+
+/// Compare an HWPX output with only exact server-regenerated preview parts exempted from part
+/// equality. The image must be this package's canonical page-sized PNG, and text may only become
+/// the known content-independent CRLF value. Ordinary callers retain the strict comparator above.
+pub fn compare_saved_hwpx_with_previews(
+    original: &Package,
+    output: &Package,
+    regenerated_image: Option<&[u8]>,
+    regenerated_text: Option<&[u8]>,
+) -> Vec<Finding> {
+    let image_proven = regenerated_image.is_some_and(|expected| {
+        output.get(HWPX_PREVIEW_IMAGE) == Some(expected)
+            && hwpx_preview_dimensions(output).is_some_and(|size| {
+                preview::decode_canonical_png(expected)
+                    .is_some_and(|(width, height, _)| (width, height) == size)
+            })
+    });
+    let text_proven = regenerated_text.is_some_and(|expected| {
+        expected == preview::RHWP_BLANK_PREVIEW_TEXT
+            && output.get(HWPX_PREVIEW_TEXT) == Some(expected)
+    });
     let pictures = hwpx_pictures_appended(original, output);
     // Stage 1 F: embedded fonts (manifest font items + hh:font references); not composed with pictures.
     let fonts = if pictures.is_none() { super::hwpx_fonts::hwpx_fonts_embedded(original, output) } else { None };
@@ -1174,6 +1217,8 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
             || ((pictures.is_some() || fonts.is_some()) && name == "Contents/content.hpf")
             || charts.contains(name))
             || name == HWPX_HEADER
+            || (name == HWPX_PREVIEW_IMAGE && image_proven)
+            || (name == HWPX_PREVIEW_TEXT && text_proven)
     });
     if let Some(names) = &pictures {
         findings.retain(|f| {
@@ -1248,6 +1293,192 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
         }
     }
     findings
+}
+
+/// Geometry for the first HWPX page, from the exported package itself. The page dimensions are
+/// already the effective width/height; canvas rounding may differ by at most the preview helper's
+/// two-pixel slack. Unknown or repeated page definitions refuse preview regeneration.
+fn hwpx_preview_dimensions(package: &Package) -> Option<(u32, u32)> {
+    const HWPML_PARAGRAPH: &str = "http://www.hancom.co.kr/hwpml/2011/paragraph";
+    let section = package.get("Contents/section0.xml")?;
+    let mut dimensions = None;
+    xml::visit_element_starts(section, |element| {
+        if element.namespace.as_deref() == Some(HWPML_PARAGRAPH) && element.name == "pagePr" {
+            if dimensions.is_some() {
+                return Err(xml::Invalid);
+            }
+            let attr = |name: &str| {
+                element.attributes.iter()
+                    .find(|(namespace, key, _)| namespace.is_none() && key == name)
+                    .map(|(_, _, value)| value.as_str())
+            };
+            let parse_dimension = |name: &str| {
+                let text = attr(name)?;
+                if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return None;
+                }
+                text.parse::<u32>().ok().filter(|value| (1..=2_000_000).contains(value))
+            };
+            dimensions = Some((parse_dimension("width").ok_or(xml::Invalid)?,
+                parse_dimension("height").ok_or(xml::Invalid)?));
+        }
+        Ok(())
+    }).ok()?;
+    let (width, height) = dimensions?;
+    preview::preview_dimensions(width, height, false)
+}
+
+/// Regenerate only stale HWPX previews from the exact reopened export. A page-sized raster is
+/// required for a stale image; stale text is replaced with RHWP's known content-independent CRLF
+/// placeholder so no old preview text can survive. XML parts that differ only in their complete
+/// canonical event stream are restored byte-for-byte from source; semantically changed body parts
+/// remain the reopened export. Every reconstructed part is checked against that exact choice, and
+/// final publication still runs the full T009 validator.
+pub fn refresh_hwpx_previews(
+    original: &[u8],
+    output: &[u8],
+    raster: Option<&preview::PreviewRaster>,
+    max_file_bytes: u64,
+) -> Result<RefreshedHwpxPreviews, crate::document::DocumentError> {
+    use crate::document::resources::{self, Category};
+
+    let (Ok(before), Ok(raw)) = (open(original, Side::Original), open(output, Side::Output)) else {
+        return Ok(RefreshedHwpxPreviews::default());
+    };
+    let mut stale_image = false;
+    let mut stale_text = false;
+    let findings = validate_hwpx(&before, &raw)
+        .into_iter()
+        .chain(compare_saved_hwpx(&before, &raw))
+        .chain(validate_hwpx_references(&raw));
+    for finding in findings {
+        if finding.code != FindingCode::PreviewStale {
+            return Ok(RefreshedHwpxPreviews::default());
+        }
+        match finding.part.as_deref() {
+            Some(HWPX_PREVIEW_IMAGE) => stale_image = true,
+            Some(HWPX_PREVIEW_TEXT) => stale_text = true,
+            _ => return Ok(RefreshedHwpxPreviews::default()),
+        }
+    }
+    if !stale_image && !stale_text {
+        return Ok(RefreshedHwpxPreviews::default());
+    }
+
+    let image = if stale_image {
+        let Some(raster) = raster else { return Ok(RefreshedHwpxPreviews::default()) };
+        let Some((width, height)) = hwpx_preview_dimensions(&raw) else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        let Some(rgb) = preview::fit_raster(raster, width, height) else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        let Some(first) = rgb.as_chunks::<3>().0.first() else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        if rgb.as_chunks::<3>().0.iter().all(|pixel| pixel == first) {
+            // Blank-page evidence is independently checked for HWP5. HWPX has no equivalent
+            // backend proof yet, so a uniform client raster cannot authorize a regenerated image.
+            return Ok(RefreshedHwpxPreviews::default());
+        }
+        let Some(png) = preview::encode_png(width, height, &rgb) else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        Some(png)
+    } else {
+        None
+    };
+    let text = stale_text.then(|| preview::RHWP_BLANK_PREVIEW_TEXT.to_vec());
+
+    let mut entries = Vec::new();
+    entries.try_reserve_exact(raw.order.len()).map_err(|_| {
+        resources::allocation_refused();
+        crate::document::DocumentError::ResourceLimit { limit: crate::document::LimitKind::FileSize }
+    })?;
+    for name in &raw.order {
+        let Some((method, data)) = raw.parts.get(name) else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        let source_xml = before
+            .parts
+            .get(name)
+            .filter(|(_, source)| same_hwpx_xml(name, source, data));
+        let (selected_method, selected_data) = source_xml
+            .map(|(source_method, source)| (*source_method, source.as_slice()))
+            .unwrap_or((*method, data.as_slice()));
+        let replacement = match name.as_str() {
+            HWPX_PREVIEW_IMAGE => image.as_deref(),
+            HWPX_PREVIEW_TEXT => text.as_deref(),
+            _ => None,
+        };
+        entries.push(crate::document::zip::WriteEntry {
+            name,
+            data: replacement.unwrap_or(selected_data),
+            method: selected_method,
+        });
+    }
+    let reserve = output.len()
+        .checked_add(image.as_ref().map_or(0, Vec::len))
+        .and_then(|size| size.checked_add(text.as_ref().map_or(0, Vec::len)))
+        .ok_or(crate::document::DocumentError::ResourceLimit { limit: crate::document::LimitKind::FileSize })?;
+    resources::charge(Category::Staging, reserve)?;
+    let rebuilt = match crate::document::zip::write_archive(&entries, max_file_bytes) {
+        Ok(bytes) => bytes,
+        Err(crate::document::zip::ZipProblem::EntryCount
+            | crate::document::zip::ZipProblem::MetadataSize
+            | crate::document::zip::ZipProblem::PartSize) => {
+                return Err(crate::document::DocumentError::ResourceLimit {
+                    limit: crate::document::LimitKind::FileSize,
+                })
+            }
+        Err(_) => return Ok(RefreshedHwpxPreviews::default()),
+    };
+    if rebuilt.len() as u64 > max_file_bytes {
+        return Err(crate::document::DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        });
+    }
+    let Ok(rebuilt_package) = open(&rebuilt, Side::Output) else {
+        return Ok(RefreshedHwpxPreviews::default());
+    };
+    if rebuilt_package.order != raw.order {
+        return Ok(RefreshedHwpxPreviews::default());
+    }
+    for name in &raw.order {
+        let Some((raw_method, raw_data)) = raw.parts.get(name) else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
+        let source_xml = before
+            .parts
+            .get(name)
+            .filter(|(_, source)| same_hwpx_xml(name, source, raw_data));
+        let (expected_method, expected_data) = source_xml
+            .map(|(source_method, source)| (*source_method, source.as_slice()))
+            .unwrap_or((*raw_method, raw_data.as_slice()));
+        let expected = match name.as_str() {
+            HWPX_PREVIEW_IMAGE => image.as_deref(),
+            HWPX_PREVIEW_TEXT => text.as_deref(),
+            _ => None,
+        }
+        .unwrap_or(expected_data);
+        if rebuilt_package
+            .parts
+            .get(name)
+            .is_none_or(|(method, data)| *method != expected_method || data.as_slice() != expected)
+        {
+            return Ok(RefreshedHwpxPreviews::default());
+        }
+    }
+    let final_findings = validate_hwpx(&before, &rebuilt_package)
+        .into_iter()
+        .chain(compare_saved_hwpx_with_previews(
+            &before, &rebuilt_package, image.as_deref(), text.as_deref(),
+        ))
+        .chain(validate_hwpx_references(&rebuilt_package));
+    if final_findings.into_iter().next().is_some() {
+        return Ok(RefreshedHwpxPreviews::default());
+    }
+    Ok(RefreshedHwpxPreviews { output: Some(rebuilt), image, text })
 }
 
 /// HWPX 글자·문단 모양 정의를 읽는 부분(고정 rhwp `parser/hwpx/reader.rs` `DOCUMENT_HEADER_PATH`).

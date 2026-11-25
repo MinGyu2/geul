@@ -136,6 +136,49 @@ describe("HWP detailed independent reopen evidence", () => {
     expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), before.structure)).toBe(false);
   });
 
+  it("accepts the renderer's exact nested header-shape path when parentParaIdx is omitted", () => {
+    const fixture = model();
+    fixture.state.controls = [{ ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} }];
+    fixture.state.headerLayout = [{
+      type: "shape", secIdx: 0, paraIdx: 0, controlIdx: 7,
+      stableIndex: [0, 0, 0, 0, 0, 7],
+      cellPath: [{ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 }],
+      outerTableControlIdx: 0, cellIdx: 0, cellParaIdx: 0,
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 1 },
+    }];
+    Object.assign(fixture.doc, {
+      getHeaderFooterShapeProperties: () => JSON.stringify({
+        width: 15941, height: 3685, horzOffset: 0, vertOffset: 4294963611, rotationAngle: 0,
+        borderColor: 0, borderWidth: 33, treatAsChar: false, horzFlip: false, vertFlip: false,
+        textWrap: "InFrontOfText", fillType: "none",
+      }),
+    });
+
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.headerShapesComplete).toBe(true);
+    expect(result.headerShapes).toHaveLength(1);
+    expect(result.headerShapes[0]).toMatchObject({
+      address: {
+        section: 0, kind: "header", outerParagraph: 0, outerControl: 1,
+        innerParagraph: 0, innerControl: 7,
+        cellPath: JSON.stringify([{ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 }]),
+      },
+      owner: { ctrlId: "head", para: 0, controlIndex: 1 },
+      properties: { width: 15941, height: 3685, vertOffset: 4294963611 },
+    });
+
+    Object.assign(fixture.doc, {
+      getHeaderFooterShapeProperties: () => JSON.stringify({
+        width: 15941, height: 3685, horzOffset: 0, vertOffset: 4294967296, rotationAngle: 0,
+        borderColor: 0, borderWidth: 33, treatAsChar: false, horzFlip: false, vertFlip: false,
+        textWrap: "InFrontOfText", fillType: "none",
+      }),
+    });
+    const invalidOffset = hwpReopenModel(fixture.doc);
+    expect(invalidOffset.headerShapesComplete).toBe(false);
+    expect(invalidOffset.headerShapes).toHaveLength(0);
+  });
+
   it("fails header-picture ownership closed when the section owner is ambiguous", () => {
     const fixture = model();
     const owner = { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} };

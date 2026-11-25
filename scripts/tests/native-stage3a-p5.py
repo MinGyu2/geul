@@ -9,6 +9,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import zlib
 from xml.etree import ElementTree as ET
 import zipfile
 
@@ -65,6 +66,471 @@ try {
 
 def rhwp_header_state(path):
     return json.loads(subprocess.check_output(["node", "-e", RHWP_HEADER_ORACLE, str(path)], cwd=h.ROOT, text=True))
+
+
+RHWP_HEADER_SHAPE_ORACLE = r"""
+const fs=require('fs'),path=require('path');
+const root=path.resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS||'public/rhwp');
+const release=JSON.parse(fs.readFileSync(path.join(root,'RELEASE.json')));
+const folder=path.join(root,'generations',release.generation);
+const rhwp=require(path.join(folder,'rhwp.js'));
+rhwp.initSync({module:fs.readFileSync(path.join(folder,'rhwp_bg.wasm'))});
+const doc=new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));
+try {
+  const controls=JSON.parse(doc.getControls());
+  const owners=controls.filter(c=>c.list===0&&(c.ctrlId==='head'||c.ctrlId==='foot'));
+  const shapes=new Map();
+  for(let page=0;page<Math.min(doc.pageCount(),12);page++) {
+    const layout=JSON.parse(doc.getPageControlLayout(page)).controls||[];
+    for(const c of layout) {
+      const kind=c.headerFooter?.kind;
+      if(!['shape','line','group'].includes(c.type)||(kind!=='header'&&kind!=='footer')) continue;
+      const cellPath=Array.isArray(c.cellPath)?JSON.stringify(c.cellPath):'[]';
+      const address={section:c.secIdx,kind,outerParagraph:c.headerFooter.outerParaIdx,
+        outerControl:c.headerFooter.outerControlIdx,innerParagraph:c.paraIdx,innerControl:c.controlIdx,
+        ...(cellPath!=='[]'?{cellPath}:{})};
+      const key=JSON.stringify(address);
+      if(shapes.has(key)) continue;
+      const ownerMatches=owners.filter(o=>o.para===address.outerParagraph
+        &&o.controlIndex===address.outerControl);
+      const properties=JSON.parse(doc.getHeaderFooterShapeProperties(address.section,kind,
+        address.outerParagraph,address.outerControl,address.innerParagraph,cellPath,address.innerControl));
+      shapes.set(key,{page,control:c,address,
+        owner:ownerMatches.length===1?ownerMatches[0]:null,properties});
+    }
+  }
+  console.log(JSON.stringify({generation:release.generation,pageCount:doc.pageCount(),owners,
+    shapes:[...shapes.values()]}));
+} finally { doc.free(); }
+"""
+
+
+def rhwp_header_shape_state(path):
+    return json.loads(subprocess.check_output(
+        ["node", "-e", RHWP_HEADER_SHAPE_ORACLE, str(path)], cwd=h.ROOT, text=True))
+
+
+def header_shape(state):
+    candidates = [item for item in state["shapes"]
+                  if item["address"]["kind"] == "header" and item["control"]["type"] == "shape"
+                  and item["control"]["w"] >= 100]
+    h.require(len(candidates) == 1, "fixture must expose exactly one large owned header shape", candidates)
+    shape = candidates[0]
+    address, owner = shape["address"], shape["owner"]
+    h.require(owner is not None and owner["ctrlId"] == "head" and owner["userDesc"] == "머리말"
+              and owner["list"] == 0 and owner["para"] == address["outerParagraph"]
+              and owner["controlIndex"] == address["outerControl"],
+              "header shape address does not resolve to its exact section owner", shape)
+    h.require(address.get("cellPath") is not None,
+              "acceptance fixture must exercise a nested header table-cell path", address)
+    return shape
+
+
+def select_header_shape(acc, shape):
+    control = shape["control"]
+    target = (shape["page"], control["x"] + control["w"] / 2,
+              control["y"] + control["h"] / 2)
+    expected_kind = "textBox" if "tbVerticalAlign" in shape["properties"] else "shape"
+    acc.d.js("""
+      if(!Array.isArray(window.p5RhfPointers)){
+        window.p5RhfPointers=[];
+        for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>
+          window.p5RhfPointers.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY}),true);
+      }
+    """)
+    h.p6.pointer(acc, target)
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind===arguments[1]",
+             h.p6.FRAME, expected_kind)
+    return h.frame(acc)
+
+
+def header_shape_id(shape):
+    # This stable source object id is shared by the HWP and HWPX fixtures and is
+    # independently located in their CFB GSO / Contents section XML storage.
+    h.require(shape["properties"].get("instanceId") == 1926588463
+              and shape["properties"].get("scInstId") == 852846640,
+              "fixture's header shape identity changed", shape["properties"])
+    return 1926588463
+
+
+def preview_dimensions(width, height, landscape=False):
+    if not (1 <= width <= 2_000_000 and 1 <= height <= 2_000_000):
+        return None
+    if landscape:
+        width, height = height, width
+    short = max(1, (2 * 1024 * min(width, height) + max(width, height))
+                // (2 * max(width, height)))
+    return (short, 1024) if width < height else (1024, short)
+
+
+def canonical_preview_png(data, expected_size):
+    """Independently validate the exact RGB8, filter-0 preview encoding used by T009."""
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not expected_size or len(data) > 4 * 1024 * 1024 or not data.startswith(signature):
+        return None
+    at, chunks = len(signature), []
+    while at < len(data):
+        if len(data) - at < 12:
+            return None
+        length = int.from_bytes(data[at:at + 4], "big")
+        end = at + 12 + length
+        if end > len(data):
+            return None
+        kind, body = data[at + 4:at + 8], data[at + 8:at + 8 + length]
+        crc = int.from_bytes(data[at + 8 + length:end], "big")
+        if (zlib.crc32(kind + body) & 0xffffffff) != crc:
+            return None
+        chunks.append((kind, body))
+        at = end
+    if at != len(data) or len(chunks) != 3:
+        return None
+    if chunks[0][0] != b"IHDR" or chunks[1][0] != b"IDAT" or chunks[2] != (b"IEND", b""):
+        return None
+    ihdr, compressed = chunks[0][1], chunks[1][1]
+    if len(ihdr) != 13:
+        return None
+    width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", ihdr)
+    if (width, height) != expected_size or depth != 8 or color != 2 or (compression, filtering, interlace) != (0, 0, 0):
+        return None
+    stride = width * 3 + 1
+    expected_raw = stride * height
+    try:
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(compressed, expected_raw + 1)
+    except zlib.error:
+        return None
+    if len(raw) != expected_raw or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+        return None
+    pixels = hashlib.sha256()
+    for row_at in range(0, expected_raw, stride):
+        row = raw[row_at:row_at + stride]
+        if len(row) != stride or row[0] != 0:
+            return None
+        pixels.update(row[1:])
+    return {"width": width, "height": height, "pixelSha256": pixels.hexdigest(),
+            "chunkTypes": [kind.decode("ascii") for kind, _ in chunks],
+            "crcValid": True, "filter0": True, "rgb8": True}
+
+
+def hwp_preview_dimensions(streams):
+    records = h.p6.gso.records(h.p6.gso.unpacked(streams, "BodyText/Section0"))
+    page_defs = [record[2] for record in records if record[0] == 73]
+    if len(page_defs) != 1 or len(page_defs[0]) < 40:
+        return None
+    body = page_defs[0]
+    width, height, attr = (int.from_bytes(body[at:at + 4], "little") for at in (0, 4, 36))
+    return preview_dimensions(width, height, bool(attr & 1))
+
+
+def hwpx_preview_dimensions(section_xml):
+    root = ET.fromstring(section_xml)
+    page_prs = list(root.iter("{http://www.hancom.co.kr/hwpml/2011/paragraph}pagePr"))
+    if len(page_prs) != 1:
+        return None
+    values = []
+    for name in ("width", "height"):
+        value = page_prs[0].get(name, "")
+        if not value or not value.isascii() or not value.isdecimal():
+            return None
+        values.append(int(value))
+    return preview_dimensions(*values)
+
+
+def parse_hwpx_xml_preserving_events(data):
+    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True))
+    return ET.fromstring(data, parser=parser)
+
+
+def hwpx_header_shape_tree_matches(old_root, new_root, object_id):
+    old_shape = old_root.find(f".//{{*}}rect[@id='{object_id}']")
+    new_shape = new_root.find(f".//{{*}}rect[@id='{object_id}']")
+    if old_shape is None or new_shape is None:
+        return False
+
+    def comparable(node, parent_is_target=False, parent_is_target_rendering=False):
+        if node.tag is ET.Comment:
+            return ("comment", node.text or "", node.tail or "")
+        if node.tag is ET.ProcessingInstruction:
+            return ("instruction", node.text or "", node.tail or "")
+        if not isinstance(node.tag, str):
+            return ("unknown-markup", repr(node.tag), node.text or "", node.tail or "")
+        attrs = dict(node.attrib)
+        name = node.tag.rsplit("}", 1)[-1]
+        is_target = name == "rect" and node.get("id") == str(object_id)
+        # Ignore only placement fields within the selected object. The complete
+        # section tree, comments, processing instructions and mixed-content tails
+        # remain part of the comparison. Geometry exemptions apply only to the
+        # selected object's direct placement children, not nested child stories.
+        if parent_is_target and name == "pos":
+            attrs.pop("horzOffset", None)
+            attrs.pop("vertOffset", None)
+        if parent_is_target and name == "offset":
+            attrs.pop("x", None)
+            attrs.pop("y", None)
+        if parent_is_target_rendering and name == "transMatrix":
+            attrs.pop("e3", None)
+            attrs.pop("e6", None)
+        return (node.tag, tuple(sorted(attrs.items())), node.text or "", node.tail or "",
+                tuple(comparable(child, is_target, parent_is_target and name == "renderingInfo")
+                      for child in node))
+
+    return comparable(old_root) == comparable(new_root)
+
+
+def hwp_header_shape_record_proof(before, after, object_id):
+    old = h.p6.gso.cfb_streams(before.read_bytes())
+    new = h.p6.gso.cfb_streams(after.read_bytes())
+    h.require(set(old) == set(new), "HWP save changed the CFB stream inventory")
+    changed_streams = sorted(name for name in old if old[name] != new[name])
+    compression_only_sections = []
+    for name in sorted(name for name in old if name.startswith("BodyText/Section")
+                       and name != "BodyText/Section0" and old[name] != new[name]):
+        old_records = h.p6.gso.unpacked(old, name)
+        new_records = h.p6.gso.unpacked(new, name)
+        h.require(old_records == new_records,
+                  "HWP save changed a non-target section beyond its CFB compression envelope", name)
+        compression_only_sections.append(name)
+    allowed = {"BodyText/Section0", "DocInfo", "PrvImage", "PrvText",
+               *compression_only_sections,
+               *(name for name in old if name.startswith("BinData/"))}
+    h.require("BodyText/Section0" in changed_streams and set(changed_streams) <= allowed,
+              "HWP save changed streams outside the header object and previews", changed_streams)
+    old_docinfo = h.p6.gso.unpacked(old, "DocInfo")
+    new_docinfo = h.p6.gso.unpacked(new, "DocInfo")
+    h.require(old_docinfo == new_docinfo, "HWP header shape edit changed DocInfo records")
+    for name in sorted(name for name in old if name.startswith("BinData/")):
+        h.require(h.p6.gso.unpacked(old, name) == h.p6.gso.unpacked(new, name),
+                  "HWP header shape edit changed a BinData resource", name)
+    h.require(old["PrvText"] == new["PrvText"], "HWP header shape edit changed the text preview")
+    h.require(old["PrvImage"] != new["PrvImage"],
+              "HWP header movement did not regenerate its stale image preview")
+    image_proof = canonical_preview_png(new["PrvImage"], hwp_preview_dimensions(new))
+    h.require(image_proof is not None,
+              "HWP header save did not publish a canonical page-sized RGB preview")
+    old_records = h.p6.gso.records(h.p6.gso.unpacked(old, "BodyText/Section0"))
+    new_records = h.p6.gso.records(h.p6.gso.unpacked(new, "BodyText/Section0"))
+    h.require(len(old_records) == len(new_records)
+              and all(a[:2] == b[:2] for a, b in zip(old_records, new_records)),
+              "HWP header shape edit changed the section record topology")
+    target = [i for i, record in enumerate(old_records)
+              if record[0] == 71 and record[2].startswith(b" osg")
+              and len(record[2]) >= 40 and int.from_bytes(record[2][36:40], "little") == object_id]
+    h.require(len(target) == 1, "fixture header shape GSO identity is not unique", target)
+    changed = [i for i, pair in enumerate(zip(old_records, new_records)) if pair[0] != pair[1]]
+    h.require(changed == target, "HWP save changed records outside the exact header shape", changed)
+    index = target[0]
+    before_payload, after_payload = old_records[index][2], new_records[index][2]
+    changed_bytes = [i for i, pair in enumerate(zip(before_payload, after_payload)) if pair[0] != pair[1]]
+    h.require(before_payload[:8] == after_payload[:8] and before_payload[16:] == after_payload[16:]
+              and changed_bytes and set(changed_bytes) <= set(range(8, 16)),
+              "HWP header shape edit changed identity or non-position fields", changed_bytes)
+    return {"changedStreams": changed_streams,
+            "compressionOnlySections": compression_only_sections,
+            "changedRecords": changed,
+            "targetGsoId": object_id, "changedControlBytes": changed_bytes,
+            "previewImage": {"sha256": hashlib.sha256(new["PrvImage"]).hexdigest(),
+                             "bytes": len(new["PrvImage"]), **image_proof}}
+
+
+def hwpx_header_shape_proof(before, after, object_id):
+    with zipfile.ZipFile(before) as original, zipfile.ZipFile(after) as published:
+        old_names, new_names = original.namelist(), published.namelist()
+        h.require(len(old_names) == len(set(old_names)) and len(new_names) == len(set(new_names))
+                  and set(old_names) == set(new_names),
+                  "HWPX save changed or duplicated the OPC part inventory")
+        preview_size = hwpx_preview_dimensions(published.read("Contents/section0.xml"))
+        h.require(preview_size is not None, "HWPX page geometry is ambiguous for preview validation")
+        changed_parts = []
+        canonical_xml_parts = []
+        preview_proofs = {}
+        for name in sorted(original.namelist()):
+            source, saved = original.read(name), published.read(name)
+            if source == saved:
+                continue
+            changed_parts.append(name)
+            if name == "Contents/section0.xml":
+                continue  # The following tree proof admits placement fields only on the selected object.
+            if name == "Preview/PrvText.txt":
+                h.require(saved == b"\r\n", "HWPX save did not replace stale preview text with the pinned blank value")
+                preview_proofs[name] = {"sha256": hashlib.sha256(saved).hexdigest(),
+                                        "bytes": len(saved), "exactBlankText": True}
+                continue
+            if name == "Preview/PrvImage.png":
+                image_proof = canonical_preview_png(saved, preview_size)
+                h.require(image_proof is not None,
+                          "HWPX save did not publish a canonical page-sized RGB preview", preview_size)
+                preview_proofs[name] = {"sha256": hashlib.sha256(saved).hexdigest(),
+                                        "bytes": len(saved), **image_proof}
+                continue
+            is_xml = (name.lower().endswith((".xml", ".rels", ".hpf"))
+                      or source.startswith(b"<?xml") or source.startswith(b"\xef\xbb\xbf<?xml"))
+            if not is_xml:
+                h.require(False, "HWPX save changed an unrelated binary OPC part", name)
+            try:
+                source_xml = ET.canonicalize(xml_data=source.decode("utf-8"),
+                                            with_comments=True, rewrite_prefixes=True)
+                saved_xml = ET.canonicalize(xml_data=saved.decode("utf-8"),
+                                            with_comments=True, rewrite_prefixes=True)
+            except (UnicodeDecodeError, ET.ParseError, ValueError) as exc:
+                h.require(False, "HWPX save changed an unrelated XML part that cannot be canonicalized",
+                          {"part": name, "error": str(exc)})
+            h.require(source_xml == saved_xml,
+                      "HWPX save changed XML content outside the selected object's placement", name)
+            canonical_xml_parts.append(name)
+        for name in ("Preview/PrvText.txt", "Preview/PrvImage.png"):
+            if name in old_names and name not in changed_parts:
+                source = original.read(name)
+                if name.endswith("PrvText.txt"):
+                    h.require(source in (b"", b"\r\n"),
+                              "HWPX save retained stale preview text after changing its body", name)
+                else:
+                    known_blank = ((len(source) == 68 and hashlib.sha256(source).hexdigest()
+                                    == "c1bf607dd7214cb64486934b72c335a64b31d7f5203c40afdea5a1b95c826cf8")
+                                   or (len(source) == 4502 and hashlib.sha256(source).hexdigest()
+                                       == "ca5d23cd1aad2853672cdb0d116137a0bdc2ff62148da9886c264305d0025f3d"))
+                    h.require(known_blank,
+                              "HWPX save retained an unproven/stale preview image after changing its body", name)
+                    preview_proofs[name] = {"sha256": hashlib.sha256(source).hexdigest(),
+                                            "bytes": len(source), "knownBlankEncoding": True}
+        old_root = parse_hwpx_xml_preserving_events(original.read("Contents/section0.xml"))
+        new_root = parse_hwpx_xml_preserving_events(published.read("Contents/section0.xml"))
+
+    old_shape = old_root.find(f".//{{*}}rect[@id='{object_id}']")
+    new_shape = new_root.find(f".//{{*}}rect[@id='{object_id}']")
+    h.require(old_shape is not None and new_shape is not None,
+              "HWPX save lost the owned header rectangle")
+
+    h.require(hwpx_header_shape_tree_matches(old_root, new_root, object_id),
+              "HWPX header shape edit changed the section tree outside selected-object position fields")
+    h.require(old_shape.get("id") == new_shape.get("id")
+              and old_shape.get("instid") == new_shape.get("instid"),
+              "HWPX header shape edit changed document or instance identity")
+    h.require("Contents/section0.xml" in changed_parts,
+              "HWPX header shape save did not update its owning section")
+    h.require(set(changed_parts) <= {"Contents/section0.xml", "Preview/PrvText.txt", "Preview/PrvImage.png"},
+              "HWPX save changed unrelated OPC parts", changed_parts)
+    return {"changedParts": changed_parts, "canonicalXmlEquivalentParts": canonical_xml_parts,
+            "targetShapePart": "Contents/section0.xml", "targetShapeId": object_id,
+            "stableIdentity": True, "nonPositionXmlPreserved": True,
+            "unrelatedBinaryPartsByteIdentical": True, "previewParts": preview_proofs}
+
+
+def header_shape_edit(acc, row, fixtures, out, fmt):
+    fixture = fixtures / f"header-shape-original.{fmt}"
+    before_state = rhwp_header_shape_state(fixture)
+    before = header_shape(before_state)
+    address = before["address"]
+    object_id = header_shape_id(before)
+    h.require(before["control"]["type"] == "shape" and before["control"]["w"] >= 100
+              and before["control"]["h"] >= 20,
+              "fixture's nested header rectangle no longer provides a safe Native target", before["control"])
+    path = h.begin(acc, row, fixture, out, f"header-shape-{fmt}-moved.{fmt}")
+    opened = rhwp_header_shape_state(path)
+    h.require(opened["owners"] == before_state["owners"], "open changed HWP header/footer owners")
+    ui_before = select_header_shape(acc, before)
+    h.require(acc.d.exists("[data-testid=object-move]"), "header shape has no move affordance")
+    events_expr = """
+      window.p5RhfKeys=[];
+      addEventListener('keydown',e=>{
+        if(e.shiftKey&&e.key==='ArrowRight') window.p5RhfKeys.push({trusted:e.isTrusted});
+      },true);
+    """
+    acc.d.js(events_expr)
+    acc.key("shift+Right")
+    h.revision(acc, fmt, 1)
+    key_events = acc.d.js("return window.p5RhfKeys")
+    h.require(key_events == [{"trusted": True}], "header shape edit did not use a trusted Native key", key_events)
+    select_header_shape(acc, before)
+    ui_after = h.frame(acc)
+    h.require(ui_after["left"] > ui_before["left"] + 1,
+              "Native keyboard edit did not move the selected header shape", [ui_before, ui_after])
+    events = acc.d.js("return window.p5RhfPointers.slice(-2)")
+    h.require([(event["type"], event["trusted"]) for event in events]
+              == [("pointerdown", True), ("pointerup", True)],
+              "header shape was not selected by trusted Native pointer input", events)
+    after_move = select_header_shape(acc, before)
+    acc.key("ctrl+z")
+    h.revision(acc, fmt, 2)
+    undo = select_header_shape(acc, before)
+    h.require(same_geometry(undo, ui_before), f"{fmt.upper()} header shape Undo did not restore geometry", undo)
+    acc.key("ctrl+y")
+    h.revision(acc, fmt, 3)
+    redo = select_header_shape(acc, before)
+    h.require(same_geometry(redo, after_move), f"{fmt.upper()} header shape Redo did not restore movement", redo)
+    row["shapeMove"] = {"before": ui_before, "after": after_move, "undo": undo, "redo": redo,
+                         "trustedPointerEvents": events, "trustedKeyEvents": key_events,
+                         "ownerAddress": address, "propertiesBefore": before["properties"]}
+    h.publish(acc, fmt, row)
+
+    after_state = rhwp_header_shape_state(path)
+    after = header_shape(after_state)
+    h.require(after_state["owners"] == before_state["owners"] and after["address"] == address
+              and after["owner"] == before["owner"], "save changed exact HWP header shape ownership", after_state)
+    changed_props = [key for key in before["properties"]
+                     if before["properties"][key] != after["properties"].get(key)]
+    h.require(changed_props and set(changed_props) <= {"horzOffset"},
+              "save changed HWP header shape fields outside its horizontal position", changed_props)
+    h.require(after["properties"]["horzOffset"] != before["properties"]["horzOffset"],
+              "saved header shape has no durable movement", [before["properties"], after["properties"]])
+    other_before = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                    for item in before_state["shapes"] if item["address"] != address}
+    other_after = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                   for item in after_state["shapes"] if item["address"] != address}
+    h.require(other_before == other_after, "save changed another header/footer shape", [other_before, other_after])
+    proof = hwp_header_shape_record_proof(fixture, path, object_id) if fmt == "hwp" else hwpx_header_shape_proof(
+        fixture, path, object_id)
+    row["serializationProof"] = proof
+    h.reopen(acc, path, row)
+    reopened_state = rhwp_header_shape_state(path)
+    reopened = header_shape(reopened_state)
+    h.require(reopened["address"] == address and reopened["owner"] == after["owner"]
+              and reopened["properties"] == after["properties"],
+              "header shape ownership or properties changed after same-process reopen", reopened)
+    reopened_frame = select_header_shape(acc, reopened)
+    h.require(same_geometry(reopened_frame, redo, 1.5),
+              "header shape layout changed after save/reopen", [redo, reopened_frame])
+    row["reopened"] = {"frame": reopened_frame, "shape": reopened, "savedSha256": row["publishedSha256"]}
+    (out / f"header-shape-{fmt}-expected.json").write_text(json.dumps({
+        "savedFile": path.name, "publishedSha256": row["publishedSha256"],
+        "appSha256": row["processAppSha256"], "appPid": row["appPid"],
+        "owners": after_state["owners"], "shape": after, "finalFrame": redo,
+    }, indent=2, ensure_ascii=False) + "\n")
+
+
+def header_shape_hwp(acc, row, fixtures, out):
+    header_shape_edit(acc, row, fixtures, out, "hwp")
+
+
+def header_shape_hwpx(acc, row, fixtures, out):
+    header_shape_edit(acc, row, fixtures, out, "hwpx")
+
+
+def header_shape_fresh_reopen(acc, row, fixtures, out, fmt):
+    expected = json.loads((fixtures / f"header-shape-{fmt}-expected.json").read_text())
+    fixture = fixtures / expected["savedFile"]
+    path = h.begin(acc, row, fixture, out, f"header-shape-{fmt}-fresh-reopen.{fmt}")
+    row["expectedSavedSha256"] = expected["publishedSha256"]
+    row["savedSha256"] = h.digest(path)
+    h.require(row["savedSha256"] == expected["publishedSha256"],
+              "fresh shape session input differs from the accepted saved file")
+    h.require(row["processAppSha256"] == expected["appSha256"] and row["appPid"] != expected["appPid"],
+              "header shape fresh reopen did not use a different process with the same Release application")
+    h.require(row["initialSession"].get("dirty") == "false"
+              and row["initialSession"].get("unpreserved") == "false",
+              "saved header shape reopened dirty or unpreserved", row["initialSession"])
+    state = rhwp_header_shape_state(path)
+    shape = header_shape(state)
+    h.require(state["owners"] == expected["owners"] and shape["owner"] == expected["shape"]["owner"]
+              and shape["address"] == expected["shape"]["address"]
+              and shape["properties"] == expected["shape"]["properties"],
+              "fresh reopen changed header shape owner or properties", shape)
+    frame = select_header_shape(acc, shape)
+    ui = {"selectionFrame": frame, "shapeProperties": shape["properties"]}
+    h.require(same_geometry(frame, expected["finalFrame"], 1.5),
+              "fresh Release process rendered the saved header shape at a different placement",
+              [expected["finalFrame"], frame])
+    row["readOnlyFreshProcessReopen"] = {"frame": frame, "shape": shape, "ui": ui,
+                                        "savedSha256": row["savedSha256"]}
 
 
 def header_picture(state):
@@ -2168,6 +2634,10 @@ def textbox_replace(acc, row, fixtures, out):
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-NOTE-MOVE": note_move,
            "P5-DX-HF-MOVE": header_footer_move,
+           "P5-R-HF-OBJECTS-HWP": header_shape_hwp,
+           "P5-R-HF-OBJECTS-HWPX": header_shape_hwpx,
+           "P5-R-HF-OBJECTS-HWP-FRESH": lambda *args: header_shape_fresh_reopen(*args, "hwp"),
+           "P5-R-HF-OBJECTS-HWPX-FRESH": lambda *args: header_shape_fresh_reopen(*args, "hwpx"),
            "P5-R-HDR-HWP": header_picture_hwp,
            "P5-R-HDR-HWPX": header_picture_hwpx,
            "P5-R-HDR-HWP-FRESH": header_picture_hwp_fresh,

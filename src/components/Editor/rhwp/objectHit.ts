@@ -16,6 +16,18 @@ export interface HeaderFooterPictureAddress {
   innerControl: number;
 }
 
+/** Exact header/footer owner plus the local object location within that story. */
+export interface HeaderFooterShapeAddress {
+  section: number;
+  kind: "header" | "footer";
+  outerParagraph: number;
+  outerControl: number;
+  innerParagraph: number;
+  innerControl: number;
+  /** Canonical RHWP table-cell path; omitted for an object directly in the story paragraph. */
+  cellPath?: string;
+}
+
 interface ControlHit {
   kind: ObjectKind;
   path: readonly number[];
@@ -24,6 +36,7 @@ interface ControlHit {
   zOrder: number;
   bodyPicture?: readonly [number, number, number];
   headerFooterPicture?: HeaderFooterPictureAddress;
+  headerFooterShape?: HeaderFooterShapeAddress;
   cellPicture?: CellPictureAddress;
   bodyEmbedded?: readonly [number, number, number];
   bodyShape?: readonly [number, number, number];
@@ -119,6 +132,50 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
           innerParagraph: control.paraIdx,
           innerControl: control.controlIdx,
         };
+      }
+    }
+    if (kind !== "picture" && record(control.headerFooter)) {
+      const owner = control.headerFooter;
+      if ((owner.kind === "header" || owner.kind === "footer")
+        && index(owner.outerParaIdx) && index(owner.outerControlIdx)) {
+        let cellPath: string | undefined;
+        let validCellPath = true;
+        if (Object.prototype.hasOwnProperty.call(control, "cellPath")) {
+          const raw = control.cellPath;
+          const entries: { controlIndex: number; cellIndex: number; cellParaIndex: number }[] = [];
+          if (!Array.isArray(raw) || raw.length < 1 || raw.length > 64
+            || ("parentParaIdx" in control && control.parentParaIdx !== control.paraIdx)) validCellPath = false;
+          else {
+            for (const entry of raw as unknown[]) {
+              if (!record(entry) || !index(entry.controlIndex) || !index(entry.cellIndex) || !index(entry.cellParaIndex)) {
+                validCellPath = false;
+                break;
+              }
+              entries.push({ controlIndex: entry.controlIndex, cellIndex: entry.cellIndex, cellParaIndex: entry.cellParaIndex });
+            }
+            const last = entries.at(-1);
+            if (!last || last.controlIndex !== control.outerTableControlIdx || last.cellIndex !== control.cellIdx
+              || last.cellParaIndex !== control.cellParaIdx) validCellPath = false;
+            const expected = [control.secIdx, control.paraIdx,
+              ...entries.flatMap(entry => [entry.controlIndex, entry.cellIndex, entry.cellParaIndex]), control.controlIdx];
+            if (path.length !== expected.length || !expected.every((value, i) => path[i] === value)) validCellPath = false;
+            if (validCellPath) cellPath = JSON.stringify(entries);
+          }
+        } else if ("cellIdx" in control || "cellParaIdx" in control || "outerTableControlIdx" in control
+          || "parentParaIdx" in control) {
+          validCellPath = false;
+        }
+        if (validCellPath) {
+          candidate.headerFooterShape = {
+            section: control.secIdx,
+            kind: owner.kind,
+            outerParagraph: owner.outerParaIdx,
+            outerControl: owner.outerControlIdx,
+            innerParagraph: control.paraIdx,
+            innerControl: control.controlIdx,
+            ...(cellPath !== undefined ? { cellPath } : {}),
+          };
+        }
       }
     }
     // The renderer exposes the model path independently of the sorting key.

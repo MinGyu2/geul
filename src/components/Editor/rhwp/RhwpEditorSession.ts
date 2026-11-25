@@ -1,8 +1,8 @@
 import { MAX_CAPTION_SPACING_HWPUNIT, POSITION_PRESETS, objectEditMatches, objectEditRequest, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectOperation, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
-import { hitRhwpObject, type CellPictureAddress, type HeaderFooterPictureAddress } from "./objectHit";
+import { hitRhwpObject, type CellPictureAddress, type HeaderFooterPictureAddress, type HeaderFooterShapeAddress } from "./objectHit";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
-import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -330,6 +330,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     complete: boolean;
     headerPictures: ReturnType<typeof hwpReopenModel>["headerPictures"];
     headerPicturesComplete: boolean;
+    headerShapes: ReturnType<typeof hwpReopenModel>["headerShapes"];
+    headerShapesComplete: boolean;
   } | null = null;
   private borderFillBaseline: number | null = null;
   /**
@@ -357,7 +359,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; headerFooterPictureAddress?: HeaderFooterPictureAddress; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; groupAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number]; copyControl?: { kind: RichObjectKind; address: readonly [number, number, number] } } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; headerFooterPictureAddress?: HeaderFooterPictureAddress; headerFooterShapeAddress?: HeaderFooterShapeAddress; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; groupAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number]; copyControl?: { kind: RichObjectKind; address: readonly [number, number, number] } } | null = null;
   private objectEpoch = 0;
   private lastCopiedObjectToken: string | null = null;
 
@@ -707,8 +709,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.formatSourceCache = { key: String(epoch), safe: false };
     try {
       if (doc.getSourceFormat() === "hwp") {
-        const { structure, complete, headerPictures, headerPicturesComplete } = hwpReopenModel(doc);
-        this.hwpBaseline = { structure, complete, headerPictures, headerPicturesComplete };
+        const { structure, complete, headerPictures, headerPicturesComplete, headerShapes, headerShapesComplete } = hwpReopenModel(doc);
+        this.hwpBaseline = { structure, complete, headerPictures, headerPicturesComplete, headerShapes, headerShapesComplete };
         // Immutable original-document eligibility: ordinary edits may discard the
         // engine's raw section streams. Never infer source safety from edited IR.
         this.formatSourceCache.safe = doc.canFormatCharacters?.() === true;
@@ -2070,11 +2072,27 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           if (captionSide) operations.push("captionSide");
           if (captionSpacing !== undefined) operations.push("captionSpacing");
           if (captionVerticalAlign) operations.push("captionVerticalAlign");
-          // Stage 3 P3: HWPX body shapes/text boxes, and verified HWP rectangle/ellipse/line/polygon/curve body shapes.
+          // Body and story-owned shapes use separate addresses. A story hit never falls back to a body tuple.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
-          const shapeSupported = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
-          const shape = shapeAddress && this.history && canEditGso && shapeSupported && this.doc.setShapeProperties
-            ? inspectRhwpShape(this.doc, shapeAddress) : undefined;
+          const headerFooterShape = hit.headerFooterShape;
+          const headerShapeApi = headerFooterShape && this.doc.getHeaderFooterShapeProperties && this.doc.setHeaderFooterShapeProperties
+            ? { getShapeProperties: () => this.doc!.getHeaderFooterShapeProperties!(
+              headerFooterShape.section, headerFooterShape.kind, headerFooterShape.outerParagraph,
+              headerFooterShape.outerControl, headerFooterShape.innerParagraph,
+              headerFooterShape.cellPath ?? "[]", headerFooterShape.innerControl,
+            ) } : undefined;
+          const resolvedShapeAddress = shapeAddress ?? (headerFooterShape
+            ? [headerFooterShape.section, headerFooterShape.innerParagraph, headerFooterShape.innerControl] as const
+            : undefined);
+          // Story-owned shapes have their own exact-owner baseline and T009 proof. Do not
+          // make them depend on the broader body-structure eligibility gate.
+          const shapeSupported = headerFooterShape
+            ? format === "hwpx" || (format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterShape))
+            : format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
+          const shapePropertiesApi = shapeAddress ? this.doc : headerShapeApi;
+          const shape = resolvedShapeAddress && this.history && shapeSupported
+            && (shapeAddress ? !!this.doc.setShapeProperties : !!headerShapeApi)
+            ? inspectRhwpShape(shapePropertiesApi!, resolvedShapeAddress) : undefined;
           const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
             ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
           if (shapePath) operations.push("pathPoint");
@@ -2092,12 +2110,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
-              ...(format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : []),
-              ...(this.doc.deleteShapeControl
+              ...(headerFooterShape
+                ? (!shape.sizeProtected ? ["resize" as const] : [])
+                : (format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : [])),
+              ...(!headerFooterShape && this.doc.deleteShapeControl
                 && (format !== "hwp" || !shape.hasCaption || this.ownsHwpGsoCaption(shapeAddress, true))
                 ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
-              ...(this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
+              ...(!headerFooterShape && this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
                 ? ["zOrder" as const] : []));
           }
           const groupAddress = hit.bodyGroup && hit.bodyGroup[1] < this.doc.getParagraphCount(hit.bodyGroup[0]) ? hit.bodyGroup : undefined;
@@ -2142,6 +2162,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             model: this.modelVersion, layout: this.layoutVersion, owner: this.epoch,
             ...(operations.length > 0 && address ? { pictureAddress: address } : {}),
             ...(operations.length > 0 && headerFooterPicture ? { headerFooterPictureAddress: headerFooterPicture } : {}),
+            ...(operations.length > 0 && headerFooterShape ? { headerFooterShapeAddress: headerFooterShape } : {}),
             ...(cellPicture ? { cellPicture: hit.cellPicture } : {}),
             ...(shape && shapeAddress ? { shapeAddress } : {}),
             ...(group && groupAddress ? { groupAddress } : {}),
@@ -2170,7 +2191,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(graphic ? { graphic } : {}),
               ...(shape ? { shape: {
                 ...shape.properties,
-                ...(shape.solidOutline && this.isEditableHwpGso(shapeAddress, true) ? { outlineWidthEditable: true } : {}),
+                ...(shape.solidOutline && (headerFooterShape
+                  ? format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterShape)
+                  : this.isEditableHwpGso(shapeAddress, true)) ? { outlineWidthEditable: true } : {}),
               } } : {}),
             },
           };
@@ -2389,9 +2412,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpBaseline?.structure ?? null);
       }
       if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
-      // HWP: page 1 of the reopened raw export — the same bytes the service validates — for
+      // HWP/HWPX: page 1 of the reopened raw export — the same bytes the service validates — for
       // PrvImage regeneration. Failure only omits the raster (stale previews stay refused).
-      if (strict && format === "hwp") preview = capturePreviewRaster(reopened);
+      if (strict) preview = capturePreviewRaster(reopened);
       report.failure = null;
     } catch {
       // report.failure가 실패한 단계를 가리킨다.
@@ -3632,6 +3655,26 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
     return original?.state === "safe" && !!inspectRhwpHeaderFooterPicture(this.doc, address);
   }
+  private hwpHeaderFooterShapeBaselineAvailable(address?: HeaderFooterShapeAddress): boolean {
+    const baseline = this.hwpBaseline;
+    if (this.sessions.get(this.sessionId)?.format !== "hwp" || !this.doc
+      || baseline?.headerShapesComplete !== true || baseline.headerShapes.length === 0) return false;
+    return !address || baseline.headerShapes.some(shape => {
+      const found = shape.address;
+      return found.section === address.section && found.kind === address.kind
+        && found.outerParagraph === address.outerParagraph && found.outerControl === address.outerControl
+        && found.innerParagraph === address.innerParagraph && found.innerControl === address.innerControl
+        && found.cellPath === address.cellPath;
+    });
+  }
+  private hwpHeaderFooterShapeEditable(address: HeaderFooterShapeAddress): boolean {
+    if (!this.hwpHeaderFooterShapeBaselineAvailable(address) || !this.doc?.getHeaderFooterShapeProperties
+      || !this.doc.setHeaderFooterShapeProperties) return false;
+    const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
+    if (check && blockedBy(check)) return false;
+    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
+    return original?.state === "safe" && !!inspectRhwpHeaderFooterShape(this.doc, address);
+  }
   /** Load-time conditions independent of the original preflight: HWP, detailed APIs, complete baseline. */
   private hwpStructuralStatic(): boolean {
     const doc = this.doc;
@@ -3657,6 +3700,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     if (this.status.kind !== "ready" || (format === "hwp"
       ? !this.hwpStructuralStatic() && !this.hwpHeaderFooterPictureBaselineAvailable()
+        && !this.hwpHeaderFooterShapeBaselineAvailable()
       : format !== "hwpx" || !this.text?.hasFontOwnership)) return;
     const owner = this.originalOwner();
     if (this.hwpOriginal?.owner === owner) return;
@@ -4874,6 +4918,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return this.editPictureCaption(request);
     }
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
+    if (this.selectedObject?.headerFooterShapeAddress) {
+      return this.editShape(request,
+        [this.selectedObject.headerFooterShapeAddress.section, this.selectedObject.headerFooterShapeAddress.innerParagraph,
+          this.selectedObject.headerFooterShapeAddress.innerControl],
+        this.selectedObject.headerFooterShapeAddress);
+    }
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
     if (this.selectedObject?.cellPicture) {
@@ -5453,12 +5503,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** Stage 3 P3 `object.edit` on the selected HWPX/HWP body shape/text box (outer object). */
-  private editShape(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
+  private editShape(
+    request: ObjectEditRequest,
+    address: readonly [number, number, number],
+    headerFooterAddress?: HeaderFooterShapeAddress,
+  ): boolean {
     const doc = this.doc, selected = this.objectSelection;
-    if (!selected || !doc?.setShapeProperties || !objectEditMatches(request, selected) || !this.history) return false;
+    const setterAvailable = headerFooterAddress ? !!doc?.setHeaderFooterShapeProperties : !!doc?.setShapeProperties;
+    if (!selected || !doc || !setterAvailable || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (!this.gsoFormatEditable(address, true)) return false;
-    const before = inspectRhwpShape(doc, address);
+    if (headerFooterAddress
+      ? format !== "hwpx" && !(format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterAddress))
+      : !this.gsoFormatEditable(address, true)) return false;
+    const inspect = () => headerFooterAddress
+      ? inspectRhwpHeaderFooterShape(doc, headerFooterAddress) : inspectRhwpShape(doc, address);
+    const before = inspect();
     if (!before || !selected.shape
       || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
     const { edit } = request;
@@ -5467,11 +5526,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const unchanged = (after: Raw, keep: readonly (keyof Raw)[]) => keep.every(key => after[key] === before.raw[key]);
     const all: (keyof Raw)[] = ["width", "height", "horzOffset", "vertOffset", "rotationAngle", "horzFlip", "vertFlip", "borderColor", "borderWidth", "fillType", "fillBgColor", "treatAsChar", "textWrap", "description"];
     const except = (...keys: (keyof Raw)[]) => all.filter(key => !keys.includes(key));
+    const offsetAfterMove = (raw: number, delta: number): number | undefined => {
+      if (!headerFooterAddress) return raw + delta;
+      if (!Number.isSafeInteger(raw) || raw < 0 || raw > 0xffff_ffff) return undefined;
+      const signed = raw > 0x7fff_ffff ? raw - 0x1_0000_0000 : raw;
+      const moved = signed + delta;
+      if (!Number.isSafeInteger(moved) || moved < -2_000_000 || moved > 2_000_000) return undefined;
+      return moved < 0 ? moved + 0x1_0000_0000 : moved;
+    };
     let props: Record<string, unknown>, expect: Partial<Raw>, keep: (keyof Raw)[];
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (!doc.deleteShapeControl || (format === "hwp" && before.hasCaption && !this.ownsHwpGsoCaption(address, true))) return false;
+        if (headerFooterAddress || !doc.deleteShapeControl
+          || (format === "hwp" && before.hasCaption && !this.ownsHwpGsoCaption(address, true))) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
           if (result.ok !== true) throw new Error("shape deletion refused");
@@ -5482,8 +5550,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (edit.x !== undefined) {
           if (!before.movable || edit.width !== undefined || edit.height !== undefined || selected.frame.width <= 0) return false;
           const perFrame = before.raw.width / selected.frame.width;
-          const horzOffset = before.raw.horzOffset + Math.round((edit.x - selected.frame.x) * perFrame);
-          const vertOffset = before.raw.vertOffset + Math.round((edit.y! - selected.frame.y) * perFrame);
+          const horzOffset = offsetAfterMove(before.raw.horzOffset, Math.round((edit.x - selected.frame.x) * perFrame));
+          const vertOffset = offsetAfterMove(before.raw.vertOffset, Math.round((edit.y! - selected.frame.y) * perFrame));
+          if (horzOffset === undefined || vertOffset === undefined) return false;
           props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
         } else {
           if (edit.width === undefined || edit.height === undefined || (format === "hwp" && before.sizeProtected)) return false;
@@ -5494,7 +5563,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }
       case "nudge": {
         if (!before.movable) return false;
-        const horzOffset = before.raw.horzOffset + Math.round(edit.dx * 100), vertOffset = before.raw.vertOffset + Math.round(edit.dy * 100);
+        const horzOffset = offsetAfterMove(before.raw.horzOffset, Math.round(edit.dx * 100));
+        const vertOffset = offsetAfterMove(before.raw.vertOffset, Math.round(edit.dy * 100));
+        if (horzOffset === undefined || vertOffset === undefined) return false;
         props = { horzOffset, vertOffset }; expect = props as Partial<Raw>; keep = except("horzOffset", "vertOffset");
         break;
       }
@@ -5512,7 +5583,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           keep = except("borderColor");
         } else {
           const borderWidth = Math.round(edit.width * 100);
-          if (!selected.shape.outlineWidthEditable || !before.solidOutline || !this.isEditableHwpGso(address, true)
+          if (!selected.shape.outlineWidthEditable || !before.solidOutline
+            || (headerFooterAddress ? format !== "hwpx" && !this.hwpHeaderFooterShapeEditable(headerFooterAddress)
+              : !this.isEditableHwpGso(address, true))
             || edit.width < 0.01 || edit.width > 72 || !Number.isSafeInteger(borderWidth)) return false;
           props = expect = { borderColor, borderWidth };
           keep = except("borderColor", "borderWidth");
@@ -5532,7 +5605,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
         break;
       case "layer": {
-        if (!doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
+        if (headerFooterAddress || !doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
         const layers = format === "hwp" ? this.hwpShapeLayers(address) : null;
         if (format === "hwp" && !layers) return false;
         const edge = layers && (edit.front ? layers.max : layers.min);
@@ -5542,7 +5615,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const result = JSON.parse(doc.changeShapeZOrder!(...address, edit.front ? "front" : "back")) as { ok?: boolean; moves?: unknown[] };
           if (result.ok !== true) throw new Error("z-order refused");
           if (!Array.isArray(result.moves) || result.moves.length === 0) throw new Error("z-order unchanged");
-          const after = inspectRhwpShape(doc, address);
+          const after = inspect();
           if (!after || !unchanged(after.raw, all)) throw new Error("z-order changed other fields");
           if (layers) {
             const updated = this.hwpShapeLayers(address);
@@ -5561,8 +5634,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!operation) {
       if (Object.entries(expect).every(([key, value]) => before.raw[key as keyof Raw] === value)) return false;
       operation = () => {
-        const result = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
-        const after = inspectRhwpShape(doc, address);
+        const result = JSON.parse(headerFooterAddress
+          ? doc.setHeaderFooterShapeProperties!(headerFooterAddress.section, headerFooterAddress.kind,
+            headerFooterAddress.outerParagraph, headerFooterAddress.outerControl, headerFooterAddress.innerParagraph,
+            headerFooterAddress.cellPath ?? "[]", headerFooterAddress.innerControl, JSON.stringify(props))
+          : doc.setShapeProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
+        const after = inspect();
         if (result.ok !== true || !after || !unchanged(after.raw, keep)
           || !Object.entries(expect).every(([key, value]) => after.raw[key as keyof Raw] === value)) throw new Error("shape property did not verify");
       };

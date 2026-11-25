@@ -1141,7 +1141,7 @@ fn compare_with(
         Err(finding) => return vec![finding],
     };
     let insertion = if mode == Mode::Edited {
-        insertions::assess_header_pictures(&original, &output)
+        insertions::assess_header_objects(&original, &output)
             .map(Ok)
             .or_else(|| insertions::assess(&original, &output))
     } else {

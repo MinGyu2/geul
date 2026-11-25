@@ -11,7 +11,9 @@ use std::collections::HashSet;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use flate2::read::DeflateDecoder;
+use flate2::write::DeflateEncoder;
 use flate2::Crc;
+use flate2::Compression;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ZipProblem {
@@ -499,6 +501,140 @@ impl Write for ReservedBytes {
     }
 }
 
+/// One already-validated OPC part to write. Only the two methods this reader admits are accepted.
+pub struct WriteEntry<'a> {
+    pub name: &'a str,
+    pub data: &'a [u8],
+    pub method: u16,
+}
+
+fn zip_write_error(error: io::Error) -> ZipProblem {
+    if error.kind() == io::ErrorKind::OutOfMemory {
+        ZipProblem::PartSize
+    } else {
+        ZipProblem::Io
+    }
+}
+
+fn zip_write_bytes(out: &mut ReservedBytes, bytes: &[u8]) -> Result<(), ZipProblem> {
+    out.write_all(bytes).map_err(zip_write_error)
+}
+
+fn zip_write_u16(out: &mut ReservedBytes, value: u16) -> Result<(), ZipProblem> {
+    zip_write_bytes(out, &value.to_le_bytes())
+}
+
+fn zip_write_u32(out: &mut ReservedBytes, value: u32) -> Result<(), ZipProblem> {
+    zip_write_bytes(out, &value.to_le_bytes())
+}
+
+/// Rebuild an OPC ZIP from verified uncompressed parts while retaining part order and each
+/// part's stored/deflate method. It deliberately writes no data descriptors, comments, or
+/// unverified extra fields. Callers must prove every changed uncompressed part before publish.
+pub fn write_archive(entries: &[WriteEntry<'_>], max_bytes: u64) -> Result<Vec<u8>, ZipProblem> {
+    const LOCAL_SIG: u32 = 0x0403_4b50;
+    const CENTRAL_SIG: u32 = 0x0201_4b50;
+    const EOCD_SIG: u32 = 0x0605_4b50;
+    const UTF8_FLAG: u16 = 1 << 11;
+    const DOS_DATE_1980_01_01: u16 = 0x0021;
+
+    if entries.is_empty() || entries.len() > u16::MAX as usize {
+        return Err(ZipProblem::EntryCount);
+    }
+    let max_capacity = usize::try_from(max_bytes).map_err(|_| ZipProblem::MetadataSize)?;
+    let mut out = ReservedBytes {
+        bytes: Vec::new(),
+        initial: 4096.min(max_capacity),
+        max_capacity,
+    };
+    let mut names = HashSet::new();
+    names.try_reserve(entries.len()).map_err(|_| ZipProblem::PartSize)?;
+    let mut central = Vec::new();
+    central.try_reserve(entries.len()).map_err(|_| ZipProblem::PartSize)?;
+
+    for entry in entries {
+        let name = entry.name.as_bytes();
+        if name.is_empty() || name.len() > u16::MAX as usize || name.contains(&0)
+            || !names.insert(entry.name.to_ascii_lowercase())
+        {
+            return Err(ZipProblem::Corrupt);
+        }
+        if !matches!(entry.method, 0 | 8) {
+            return Err(ZipProblem::UnsupportedMethod);
+        }
+        let uncompressed = u32::try_from(entry.data.len()).map_err(|_| ZipProblem::PartSize)?;
+        let local_offset = u32::try_from(out.bytes.len()).map_err(|_| ZipProblem::MetadataSize)?;
+        let mut crc = Crc::new();
+        crc.update(entry.data);
+        let local_at = out.bytes.len();
+
+        zip_write_u32(&mut out, LOCAL_SIG)?;
+        zip_write_u16(&mut out, 20)?; // version needed
+        zip_write_u16(&mut out, UTF8_FLAG)?;
+        zip_write_u16(&mut out, entry.method)?;
+        zip_write_u16(&mut out, 0)?; // deterministic DOS time
+        zip_write_u16(&mut out, DOS_DATE_1980_01_01)?;
+        zip_write_u32(&mut out, 0)?; // filled after streaming compressed data
+        zip_write_u32(&mut out, 0)?;
+        zip_write_u32(&mut out, 0)?;
+        zip_write_u16(&mut out, name.len() as u16)?;
+        zip_write_u16(&mut out, 0)?; // extra length
+        zip_write_bytes(&mut out, name)?;
+        let compressed_at = out.bytes.len();
+        match entry.method {
+            0 => zip_write_bytes(&mut out, entry.data)?,
+            8 => {
+                let mut encoder = DeflateEncoder::new(&mut out, Compression::new(6));
+                encoder.write_all(entry.data).map_err(zip_write_error)?;
+                encoder.finish().map_err(zip_write_error)?;
+            }
+            _ => unreachable!("method checked above"),
+        }
+        let compressed = u32::try_from(out.bytes.len() - compressed_at)
+            .map_err(|_| ZipProblem::PartSize)?;
+        let crc = crc.sum();
+        out.bytes[local_at + 14..local_at + 18].copy_from_slice(&crc.to_le_bytes());
+        out.bytes[local_at + 18..local_at + 22].copy_from_slice(&compressed.to_le_bytes());
+        out.bytes[local_at + 22..local_at + 26].copy_from_slice(&uncompressed.to_le_bytes());
+        central.push((name.to_vec(), entry.method, crc, compressed, uncompressed, local_offset));
+    }
+
+    let directory_offset = u32::try_from(out.bytes.len()).map_err(|_| ZipProblem::MetadataSize)?;
+    for (name, method, crc, compressed, uncompressed, local_offset) in &central {
+        zip_write_u32(&mut out, CENTRAL_SIG)?;
+        zip_write_u16(&mut out, 20)?; // version made by
+        zip_write_u16(&mut out, 20)?; // version needed
+        zip_write_u16(&mut out, UTF8_FLAG)?;
+        zip_write_u16(&mut out, *method)?;
+        zip_write_u16(&mut out, 0)?;
+        zip_write_u16(&mut out, DOS_DATE_1980_01_01)?;
+        zip_write_u32(&mut out, *crc)?;
+        zip_write_u32(&mut out, *compressed)?;
+        zip_write_u32(&mut out, *uncompressed)?;
+        zip_write_u16(&mut out, name.len() as u16)?;
+        zip_write_u16(&mut out, 0)?; // extra length
+        zip_write_u16(&mut out, 0)?; // comment length
+        zip_write_u16(&mut out, 0)?; // disk number
+        zip_write_u16(&mut out, 0)?; // internal attributes
+        zip_write_u32(&mut out, 0)?; // external attributes
+        zip_write_u32(&mut out, *local_offset)?;
+        zip_write_bytes(&mut out, name)?;
+    }
+    let directory_size = u32::try_from(out.bytes.len())
+        .ok()
+        .and_then(|end| end.checked_sub(directory_offset))
+        .ok_or(ZipProblem::MetadataSize)?;
+    zip_write_u32(&mut out, EOCD_SIG)?;
+    zip_write_u16(&mut out, 0)?;
+    zip_write_u16(&mut out, 0)?;
+    zip_write_u16(&mut out, entries.len() as u16)?;
+    zip_write_u16(&mut out, entries.len() as u16)?;
+    zip_write_u32(&mut out, directory_size)?;
+    zip_write_u32(&mut out, directory_offset)?;
+    zip_write_u16(&mut out, 0)?; // comment length
+    Ok(out.bytes)
+}
+
 /// 푼 데이터를 넘기면서 길이와 CRC를 센다.
 struct Checked<W> {
     out: W,
@@ -548,5 +684,50 @@ mod resource_buffer_tests {
             });
             assert_eq!(pool.usage().0, 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod archive_writer_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn limits() -> ZipLimits {
+        ZipLimits {
+            max_entries: 32,
+            max_directory_bytes: 64 * 1024,
+            max_name_bytes: 4096,
+        }
+    }
+
+    #[test]
+    fn writer_roundtrips_stored_and_deflated_utf8_entries_in_order() {
+        let entries = [
+            WriteEntry { name: "mimetype", data: b"application/hwp+zip", method: 0 },
+            WriteEntry { name: "Contents/섹션.xml", data: b"<root>body</root>", method: 8 },
+        ];
+        let bytes = write_archive(&entries, 64 * 1024).unwrap();
+        let mut reader = Cursor::new(bytes.as_slice());
+        let archive = read_directory(&mut reader, bytes.len() as u64, &limits()).unwrap();
+        assert_eq!(archive.entries().len(), 2);
+        assert_eq!(archive.entries()[0].method(), 0);
+        assert_eq!(archive.entries()[1].method(), 8);
+        assert_eq!(archive.entries()[0].name(), b"mimetype");
+        assert_eq!(archive.entries()[1].name(), "Contents/섹션.xml".as_bytes());
+        assert_eq!(archive.read(&mut reader, &archive.entries()[0], 1024).unwrap(), b"application/hwp+zip");
+        assert_eq!(archive.read(&mut reader, &archive.entries()[1], 1024).unwrap(), b"<root>body</root>");
+    }
+
+    #[test]
+    fn writer_refuses_duplicates_unsupported_methods_and_size_overflow() {
+        let duplicate = [
+            WriteEntry { name: "Contents/a.xml", data: b"a", method: 0 },
+            WriteEntry { name: "contents/A.xml", data: b"b", method: 0 },
+        ];
+        assert_eq!(write_archive(&duplicate, 1024).unwrap_err(), ZipProblem::Corrupt);
+        let unsupported = [WriteEntry { name: "a", data: b"a", method: 12 }];
+        assert_eq!(write_archive(&unsupported, 1024).unwrap_err(), ZipProblem::UnsupportedMethod);
+        let too_small = [WriteEntry { name: "a", data: b"a", method: 0 }];
+        assert_eq!(write_archive(&too_small, 8).unwrap_err(), ZipProblem::PartSize);
     }
 }

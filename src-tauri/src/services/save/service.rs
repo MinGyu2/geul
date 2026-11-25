@@ -120,8 +120,8 @@ pub fn check_saved(
     check_saved_with_preview(format, original, output, report, reopen_equal, None)
 }
 
-/// `check_saved`, plus (HWP) the PrvImage bytes this save regenerated (`hwp::refresh_previews`).
-/// Without them a changed PrvImage is never accepted.
+/// `check_saved`, plus the exact server-generated preview bytes from this save. Without them a
+/// changed image preview is never accepted.
 pub fn check_saved_with_preview(
     format: Format,
     original: &[u8],
@@ -129,6 +129,20 @@ pub fn check_saved_with_preview(
     report: Option<&Value>,
     reopen_equal: bool,
     regenerated_image: Option<&[u8]>,
+) -> Preservation {
+    check_saved_with_regenerated_previews(
+        format, original, output, report, reopen_equal, regenerated_image, None,
+    )
+}
+
+fn check_saved_with_regenerated_previews(
+    format: Format,
+    original: &[u8],
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    regenerated_hwp_image: Option<&[u8]>,
+    regenerated_hwpx: Option<(Option<&[u8]>, Option<&[u8]>)>,
 ) -> Preservation {
     let mut findings = report_findings(format, report);
     if !reopen_equal {
@@ -159,7 +173,7 @@ pub fn check_saved_with_preview(
         Format::Hwp => findings.extend(hwp::compare_saved_with_preview(
             original,
             output,
-            regenerated_image,
+            regenerated_hwp_image,
         )),
         Format::Hwpx | Format::Docx => match (
             package::open(original, package::Side::Original),
@@ -167,7 +181,8 @@ pub fn check_saved_with_preview(
         ) {
             (Ok(before), Ok(after)) if format == Format::Hwpx => {
                 findings.extend(package::validate_hwpx(&before, &after));
-                findings.extend(package::compare_saved_hwpx(&before, &after));
+                let (image, text) = regenerated_hwpx.unwrap_or((None, None));
+                findings.extend(package::compare_saved_hwpx_with_previews(&before, &after, image, text));
                 findings.extend(package::validate_hwpx_references(&after));
             }
             (Ok(before), Ok(after)) => {
@@ -229,7 +244,7 @@ pub fn validate_snapshot(
         });
     }
     let original = read_original(&ticket.source, limits)?;
-    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original, None)
+    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original, None, None)
 }
 
 fn validate_snapshot_from(
@@ -240,6 +255,7 @@ fn validate_snapshot_from(
     reopen_equal: bool,
     original: Vec<u8>,
     regenerated_image: Option<&[u8]>,
+    regenerated_hwpx: Option<(Option<&[u8]>, Option<&[u8]>)>,
 ) -> Result<Vec<u8>, DocumentError> {
     if output.len() as u64 > limits.max_file_bytes {
         return Err(DocumentError::ResourceLimit {
@@ -248,13 +264,14 @@ fn validate_snapshot_from(
     }
     validate_evidence(ticket, report, reopen_equal)?;
     let format = ticket.source.load.format;
-    let checked = check_saved_with_preview(
+    let checked = check_saved_with_regenerated_previews(
         format,
         &original,
         output,
         report,
         reopen_equal,
         regenerated_image,
+        regenerated_hwpx,
     );
     if !checked.is_safe() {
         return Err(DocumentError::UnsafeSave {
@@ -298,9 +315,8 @@ fn validate_evidence(
 }
 
 /// The validated bytes a save or a recovery checkpoint may write: source identity re-read, preflight and
-/// engine evidence, HWP preview regeneration (only PrvText/PrvImage, `hwp::refresh_previews`) and the full
-/// saved-output validator. Returns the original bytes and, for HWP, the preview-refreshed output (`None`
-/// = the engine output itself is final).
+/// engine evidence, safe HWP/HWPX preview refresh, and the full saved-output validator. Returns the
+/// original bytes and any preview-refreshed output (`None` = the engine output itself is final).
 fn validated_output(
     ticket: &SaveTicket<'_>,
     limits: &Limits,
@@ -310,7 +326,7 @@ fn validated_output(
     preview: Option<&super::preview::PreviewRaster>,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), DocumentError> {
     // Establish source identity and eligibility before expensive normalization.
-    // Normalize only the preview, never body/metadata, before the final validator.
+    // Normalize only proven preview parts, never body or document metadata, before the final validator.
     // Preflight, source identity, loss/reopen/reference checks and publication are
     // still mandatory. Unsupported previews leave the raw export rejected.
     if output.len() as u64 > limits.max_file_bytes {
@@ -320,25 +336,45 @@ fn validated_output(
     }
     let source = read_original(&ticket.source, limits)?;
     validate_evidence(ticket, report, reopen_equal)?;
-    let refreshed = if ticket.source.load.format == Format::Hwp {
+    let refreshed_hwp = if ticket.source.load.format == Format::Hwp {
         hwp::refresh_previews(&source, output, preview)?
     } else {
         hwp::RefreshedPreviews::default()
     };
+    let refreshed_hwpx = if ticket.source.load.format == Format::Hwpx {
+        package::refresh_hwpx_previews(&source, output, preview, limits.max_file_bytes)?
+    } else {
+        package::RefreshedHwpxPreviews::default()
+    };
+    let normalized = match ticket.source.load.format {
+        Format::Hwp => refreshed_hwp.output.as_deref(),
+        Format::Hwpx => refreshed_hwpx.output.as_deref(),
+        Format::Docx => None,
+    }.unwrap_or(output);
+    let hwp_image = if ticket.source.load.format == Format::Hwp { refreshed_hwp.image.as_deref() } else { None };
+    let hwpx_previews = (refreshed_hwpx.image.is_some() || refreshed_hwpx.text.is_some()).then_some((
+        refreshed_hwpx.image.as_deref(), refreshed_hwpx.text.as_deref(),
+    ));
     let original = validate_snapshot_from(
         ticket,
         limits,
-        refreshed.output.as_deref().unwrap_or(output),
+        normalized,
         report,
         reopen_equal,
         source,
-        refreshed.image.as_deref(),
+        hwp_image,
+        hwpx_previews,
     )?;
-    Ok((original, refreshed.output))
+    let refreshed = match ticket.source.load.format {
+        Format::Hwp => refreshed_hwp.output,
+        Format::Hwpx => refreshed_hwpx.output,
+        Format::Docx => None,
+    };
+    Ok((original, refreshed))
 }
 
 /// Recovery checkpoint of an RHWP (HWP/HWPX) session (T014 B): the same validation as an explicit save of
-/// the same output to the original (`validated_output`, including HWP preview regeneration), then a
+/// the same output to the original (`validated_output`, including safe preview regeneration), then a
 /// create-only private recovery record. Never stages or publishes a document file, never calls
 /// `finish_save`: the source file, dirty state, clean revision, path and preflight stay unchanged. A
 /// record that was not durably confirmed is an error (the previous durable checkpoint is retained).

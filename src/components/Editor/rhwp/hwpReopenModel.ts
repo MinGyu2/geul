@@ -19,12 +19,29 @@ export interface HwpHeaderFooterPictureModel {
   owner: { ctrlId: "head" | "foot"; para: number; controlIndex: number };
   properties: JsonObject;
 }
+export interface HwpHeaderFooterShapeAddress {
+  section: number;
+  kind: "header" | "footer";
+  outerParagraph: number;
+  outerControl: number;
+  innerParagraph: number;
+  innerControl: number;
+  cellPath?: string;
+}
+export interface HwpHeaderFooterShapeModel {
+  address: HwpHeaderFooterShapeAddress;
+  owner: { ctrlId: "head" | "foot"; para: number; controlIndex: number };
+  kind: "shape" | "line";
+  properties: JsonObject;
+}
 export interface HwpReopenModel {
   model: string;
   structure: string;
   complete: boolean;
   headerPictures: HwpHeaderFooterPictureModel[];
   headerPicturesComplete: boolean;
+  headerShapes: HwpHeaderFooterShapeModel[];
+  headerShapesComplete: boolean;
 }
 
 /** A getter result whose required fields are missing or of the wrong JSON type. */
@@ -100,7 +117,12 @@ export function checkPictureProperties(o: JsonObject): void {
 }
 export function checkShapeProperties(o: JsonObject): void {
   fields(o, "shape", "uint", "width", "height");
-  fields(o, "shape", "int", "horzOffset", "vertOffset", "rotationAngle", "borderColor", "borderWidth");
+  // RHWP stores signed HWP/HWPX offsets in u32 fields, so negative source values
+  // can arrive as their exact two's-complement representation.
+  for (const key of ["horzOffset", "vertOffset"]) {
+    if (!isInt(o[key], -HWPUNIT_MAX - 1, 0xffff_ffff)) throw new HwpEvidenceError(`shape.${key}`);
+  }
+  fields(o, "shape", "int", "rotationAngle", "borderColor", "borderWidth");
   fields(o, "shape", "boolean", "treatAsChar", "horzFlip", "vertFlip");
   if (typeof o.textWrap !== "string" || !TEXT_WRAPS.has(o.textWrap)) throw new HwpEvidenceError("shape.textWrap");
   if (typeof o.fillType !== "string") throw new HwpEvidenceError("shape.fillType");
@@ -418,9 +440,11 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const controls = json(doc.getControls!());
   if (!Array.isArray(controls) || controls.length > 100_000) throw new Error("HWP controls");
   const headerPictures: HwpHeaderFooterPictureModel[] = [];
+  const headerShapes: HwpHeaderFooterShapeModel[] = [];
   const headerOwners = controls.filter((value): value is JsonObject => isObject(value) && value.list === 0
     && (value.ctrlId === "head" || value.ctrlId === "foot"));
   let headerPicturesComplete = headerOwners.length === 0;
+  let headerShapesComplete = headerOwners.length === 0;
   if (headerOwners.length > 0 && doc.getPageControlLayout && doc.getHeaderFooterPictureProperties
     && doc.getSectionCount && doc.getParagraphCount) {
     try {
@@ -446,7 +470,9 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
         controlsByAddress.set(key, matches);
       }
       const pictures = new Map<string, HwpHeaderFooterPictureModel>();
+      const shapes = new Map<string, HwpHeaderFooterShapeModel>();
       headerPicturesComplete = true;
+      headerShapesComplete = !!doc.getHeaderFooterShapeProperties;
       for (let page = 0; page < pageCount; page++) {
         const layout = object(json(doc.getPageControlLayout(page)));
         if (!Array.isArray(layout.controls) || layout.controls.length > 100_000) {
@@ -457,6 +483,74 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
           node();
           if (!isObject(value) || value.headerFooter === undefined) continue;
           const owner = object(value.headerFooter);
+          if (owner.kind !== "header" && owner.kind !== "footer") {
+            headerShapesComplete = false;
+            headerPicturesComplete = false;
+            continue;
+          }
+          if (value.type === "shape" || value.type === "line") {
+            try {
+              if (!doc.getHeaderFooterShapeProperties) throw new Error("HF shape getter unavailable");
+              const section = count(value.secIdx, sectionCount - 1);
+              const innerParagraph = count(value.paraIdx);
+              const innerControl = count(value.controlIdx);
+              const outerParagraph = count(owner.outerParaIdx);
+              const outerControl = count(owner.outerControlIdx);
+              const cellPathEntries = value.cellPath === undefined ? undefined : value.cellPath;
+              let cellPath: string | undefined;
+              if (cellPathEntries !== undefined) {
+                if (!Array.isArray(cellPathEntries) || cellPathEntries.length < 1 || cellPathEntries.length > 64
+                  || ("parentParaIdx" in value && value.parentParaIdx !== innerParagraph)) {
+                  throw new Error("HF shape cell path malformed");
+                }
+                const entries = cellPathEntries.map(raw => {
+                  const entry = object(raw);
+                  return {
+                    controlIndex: count(entry.controlIndex), cellIndex: count(entry.cellIndex),
+                    cellParaIndex: count(entry.cellParaIndex),
+                  };
+                });
+                const last = entries.at(-1)!;
+                if (last.controlIndex !== value.outerTableControlIdx || last.cellIndex !== value.cellIdx
+                  || last.cellParaIndex !== value.cellParaIdx) throw new Error("HF shape cell path identity mismatch");
+                cellPath = JSON.stringify(entries);
+              } else if ("cellIdx" in value || "cellParaIdx" in value || "outerTableControlIdx" in value
+                || "parentParaIdx" in value) throw new Error("HF shape cell path incomplete");
+              if (section >= sectionCount || outerParagraph >= sectionParagraphCounts[section]!) {
+                throw new Error("HF shape owner outside section");
+              }
+              const globalParagraph = sectionParagraphStarts[section]! + outerParagraph;
+              const ownerId = owner.kind === "header" ? "head" : "foot";
+              const ownerLabel = owner.kind === "header" ? "머리말" : "꼬리말";
+              const ownerMatches = controlsByAddress.get(`${globalParagraph}/${outerControl}`) ?? [];
+              if (ownerMatches.length !== 1 || ownerMatches[0]?.ctrlId !== ownerId
+                || ownerMatches[0]?.userDesc !== ownerLabel) throw new Error("HF shape has no exact story owner");
+              const address: HwpHeaderFooterShapeAddress = {
+                section, kind: owner.kind, outerParagraph, outerControl, innerParagraph, innerControl,
+                ...(cellPath ? { cellPath } : {}),
+              };
+              const rawProperties = doc.getHeaderFooterShapeProperties(
+                section, address.kind, outerParagraph, outerControl, innerParagraph,
+                cellPath ?? "[]", innerControl,
+              );
+              const properties = object(json(rawProperties));
+              checkShapeProperties(properties);
+              const key = canonical(address);
+              const existing = shapes.get(key);
+              const model: HwpHeaderFooterShapeModel = {
+                address,
+                owner: { ctrlId: ownerId, para: globalParagraph, controlIndex: outerControl },
+                kind: value.type,
+                properties,
+              };
+              if (existing && canonical(existing) !== canonical(model)) throw new Error("HF shape repeated layout differs");
+              shapes.set(key, model);
+            } catch {
+              headerShapesComplete = false;
+            }
+          } else if (value.type !== "image" && value.type !== "table") {
+            headerShapesComplete = false;
+          }
           if (value.type !== "image" || (owner.kind !== "header" && owner.kind !== "footer")) {
             headerPicturesComplete = false;
             continue;
@@ -504,9 +598,14 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       }
       headerPictures.push(...[...pictures.values()].sort((left, right) =>
         canonical(left.address).localeCompare(canonical(right.address))));
+      headerShapes.push(...[...shapes.values()].sort((left, right) =>
+        canonical(left.address).localeCompare(canonical(right.address))));
     } catch {
       headerPicturesComplete = false;
+      headerShapesComplete = false;
     }
+  } else if (headerOwners.length > 0) {
+    headerShapesComplete = false;
   }
   const cellFields = controls.some(c => isObject(c) && c.list !== 0 && c.ctrlId === "") ? cellFieldEvidence(doc, controls, json) : new Map<unknown, JsonObject>();
   const bullets = doc.getBulletList ? json(doc.getBulletList()) : null;
@@ -773,8 +872,8 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     }
   }
   return {
-    model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes, headerPictures }),
-    structure: canonical({ inventory, headings }), complete, headerPictures, headerPicturesComplete,
+    model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes, headerPictures, headerShapes }),
+    structure: canonical({ inventory, headings }), complete, headerPictures, headerPicturesComplete, headerShapes, headerShapesComplete,
   };
 }
 

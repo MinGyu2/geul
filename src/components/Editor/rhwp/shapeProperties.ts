@@ -1,5 +1,6 @@
 import type { EditableGroupChildren, GroupChildFill, GroupChildPathStep, ShapePath, ShapeProperties } from "../../../commands/objectSelection";
 import type { RhwpDocument } from "./rhwpModule";
+import type { HeaderFooterShapeAddress } from "./objectHit";
 
 /** HWP colors are 0x00BBGGRR. */
 export const bgrToHex = (value: number) => [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff]
@@ -59,6 +60,20 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
   } catch {
     return undefined;
   }
+}
+
+/** Read a shape through its exact header/footer owner, including an optional table-cell path. */
+export function inspectRhwpHeaderFooterShape(
+  doc: Pick<RhwpDocument, "getHeaderFooterShapeProperties">,
+  address: HeaderFooterShapeAddress,
+): RhwpShapeInspection | undefined {
+  if (!doc.getHeaderFooterShapeProperties) return undefined;
+  return inspectRhwpShape({
+    getShapeProperties: () => doc.getHeaderFooterShapeProperties!(
+      address.section, address.kind, address.outerParagraph, address.outerControl,
+      address.innerParagraph, address.cellPath ?? "[]", address.innerControl,
+    ),
+  }, [address.section, address.innerParagraph, address.innerControl]);
 }
 
 export interface RhwpGroupInspection {

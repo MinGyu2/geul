@@ -51,6 +51,10 @@ export interface RhwpDocument {
     innerParagraph: number, innerControl: number, properties: string): string;
   deletePictureControl?(section: number, paragraph: number, control: number): string;
   getShapeProperties?(section: number, paragraph: number, control: number): string;
+  getHeaderFooterShapeProperties?(
+    section: number, kind: "header" | "footer", outerParagraph: number, outerControl: number,
+    innerParagraph: number, cellPathJson: string, innerControl: number,
+  ): string;
   getEditableShapePath?(section: number, paragraph: number, control: number): string;
   getPortablePolygonPath?(section: number, paragraph: number, control: number): string;
   moveShapePathPoint?(section: number, paragraph: number, control: number, index: number, x: number, y: number): void;
@@ -84,6 +88,10 @@ export interface RhwpDocument {
     flatIndex: number, expectedId: number, expectedInstId: number, pathJson: string, width: number, height: number,
   ): void;
   setShapeProperties?(section: number, paragraph: number, control: number, properties: string): string;
+  setHeaderFooterShapeProperties?(
+    section: number, kind: "header" | "footer", outerParagraph: number, outerControl: number,
+    innerParagraph: number, cellPathJson: string, innerControl: number, properties: string,
+  ): string;
   deleteShapeControl?(section: number, paragraph: number, control: number): string;
   changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;
   createShapeControl?(json: string): string;

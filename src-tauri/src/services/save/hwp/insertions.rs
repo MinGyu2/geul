@@ -303,10 +303,10 @@ fn empty_description_canonicalization(before: &Record<'_>, after: &Record<'_>) -
     (id != 0).then_some(id)
 }
 
-/// Accept only geometry edits within existing picture subtrees owned by exact
-/// `head`/`foot` controls. Every other record in each affected HWP section, all
-/// DocInfo definitions, and every instance identity must remain unchanged.
-fn header_picture_section(
+/// Accept only supported edits within existing GSO object subtrees owned by
+/// exact `head`/`foot` controls. Every other record in each affected HWP section,
+/// all DocInfo definitions, and every instance identity must remain unchanged.
+fn header_object_section(
     before: &[Record<'_>],
     after: &[Record<'_>],
     defs: &Defs<'_>,
@@ -375,7 +375,7 @@ fn object_id_occurrences(container: &Container, id: u32) -> Option<usize> {
     Some(count)
 }
 
-pub(super) fn assess_header_pictures(a: &Container, b: &Container) -> Option<Proof> {
+pub(super) fn assess_header_objects(a: &Container, b: &Container) -> Option<Proof> {
     if a.header[..FILE_HEADER_LEN] != b.header[..FILE_HEADER_LEN]
         || !a.streams.keys().eq(b.streams.keys())
     {
@@ -424,7 +424,7 @@ pub(super) fn assess_header_pictures(a: &Container, b: &Container) -> Option<Pro
         if header_markers_bound(&after).is_none() {
             return None;
         }
-        let Some((ids, normalized)) = header_picture_section(&before, &after, &defs) else {
+        let Some((ids, normalized)) = header_object_section(&before, &after, &defs) else {
             return None;
         };
         for id in ids {

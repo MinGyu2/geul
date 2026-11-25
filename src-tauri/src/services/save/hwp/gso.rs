@@ -920,10 +920,10 @@ pub(super) fn evolved_candidate(
     )
 }
 
-/// Prove geometry-only edits to pictures owned by one exact HWP header/footer
-/// control. The outer `head`/`foot` control and every record outside a picture
-/// subtree must remain byte-identical. Relative levels are normalized only for
-/// reusing the existing HWP GSO field proof.
+/// Prove supported geometry/property edits to drawable GSO objects owned by one
+/// exact HWP header/footer control. The outer `head`/`foot` control and every
+/// record outside an object subtree must remain byte-identical. Relative levels
+/// are normalized only for the existing HWP GSO field proof.
 pub(super) fn prove_header_story_edit(
     old: &[Record<'_>],
     new: &[Record<'_>],
@@ -938,7 +938,7 @@ pub(super) fn prove_header_story_edit(
                 .is_some_and(|id| id == b"daeh" || id == b"toof")
     }
 
-    fn picture_spans(records: &[Record<'_>]) -> Checked<Vec<(usize, usize)>> {
+    fn object_spans(records: &[Record<'_>]) -> Checked<Vec<(usize, usize)>> {
         let owner_level = records[0].1;
         let mut spans = Vec::new();
         let mut index = 1;
@@ -968,12 +968,10 @@ pub(super) fn prove_header_story_edit(
         BODY,
     )?;
 
-    let old_spans = picture_spans(old)?;
-    let new_spans = picture_spans(new)?;
+    let old_spans = object_spans(old)?;
+    let new_spans = object_spans(new)?;
     preserved(old_spans == new_spans && !old_spans.is_empty(), BODY)?;
-    // Captions are separate editable stories and are outside this movement/resize
-    // operation. Preserve each caption subtree byte-for-byte even when its picture
-    // geometry is otherwise valid.
+    // Captions are separate editable stories; preserve each subtree byte-for-byte.
     preserved(caption_subtrees(old).eq(caption_subtrees(new)), BODY)?;
 
     let mut changed_ids = Vec::new();
@@ -983,18 +981,23 @@ pub(super) fn prove_header_story_edit(
         if before == after {
             continue;
         }
-        let Some((SC_PICTURE, _, _)) = shape_ctrl_id(before) else {
+        let Some((ctrl_id, _, _)) = shape_ctrl_id(before) else {
             return Err(finding(FindingCode::RecordsChanged, BODY));
         };
+        if !matches!(ctrl_id, SC_PICTURE | SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER) {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        }
         let Some(id) = gso_header_id(before) else {
             return Err(finding(FindingCode::OutputMalformed, BODY));
         };
         preserved(id != 0, BODY)?;
-        preserved(dword(before[0].2, 4)? as u32 & ATTR_CAPTION == 0, BODY)?;
-        preserved(
-            description_parts(before[0].2) == description_parts(after[0].2),
-            BODY,
-        )?;
+        if ctrl_id == SC_PICTURE {
+            preserved(dword(before[0].2, 4)? as u32 & ATTR_CAPTION == 0, BODY)?;
+            preserved(
+                description_parts(before[0].2) == description_parts(after[0].2),
+                BODY,
+            )?;
+        }
         let shift = before[0]
             .1
             .checked_sub(1)
@@ -1006,21 +1009,76 @@ pub(super) fn prove_header_story_edit(
         let normalize = |(tag, level, data)| (tag, level - shift, data);
         let old_normalized: Vec<_> = before.iter().copied().map(normalize).collect();
         let new_normalized: Vec<_> = after.iter().copied().map(normalize).collect();
-        prove_evolved_gso(&old_normalized, &new_normalized, defs, defs)?;
+        if prove_evolved_gso(&old_normalized, &new_normalized, defs, defs).is_err() {
+            prove_header_position_only(&old_normalized, &new_normalized)?;
+        }
         changed_ids.push(id);
     }
     preserved(!changed_ids.is_empty(), BODY)?;
 
-    let mut in_picture = vec![false; old.len()];
+    let mut in_objects = vec![false; old.len()];
     for &(start, end) in &old_spans {
-        in_picture[start..end].fill(true);
+        in_objects[start..end].fill(true);
     }
     for (index, (before, after)) in old.iter().zip(new).enumerate() {
-        if !in_picture[index] {
+        if !in_objects[index] {
             preserved(before == after, BODY)?;
         }
     }
     Ok(changed_ids)
+}
+
+/// A header/footer object may contain a complex TextBox story that the general
+/// GSO editor intentionally does not interpret. A pure move is still safe when
+/// its exact owner and object ID are established and every record except the
+/// two signed position fields is byte-identical. This fallback does not admit
+/// resizing, styling, path edits, child edits, or any story-content changes.
+fn prove_header_position_only(old: &[Record<'_>], new: &[Record<'_>]) -> Checked<()> {
+    let reject = || finding(FindingCode::RecordsChanged, BODY);
+    valid(!old.is_empty() && old.len() == new.len(), BODY)?;
+    let (Some((old_kind, _, old_sc)), Some((new_kind, _, new_sc))) =
+        (shape_ctrl_id(old), shape_ctrl_id(new))
+    else {
+        return Err(reject());
+    };
+    preserved(
+        old[0].0 == TAG_CTRL_HEADER
+            && old[0].1 == 1
+            && new[0].0 == TAG_CTRL_HEADER
+            && new[0].1 == 1
+            && old_kind == new_kind
+            && matches!(old_kind, SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER)
+            && old_sc == new_sc
+            && old[1..] == new[1..],
+        BODY,
+    )?;
+    let (Some(old_id), Some(new_id)) = (gso_header_id(old), gso_header_id(new)) else {
+        return Err(reject());
+    };
+    preserved(old_id != 0 && old_id == new_id, BODY)?;
+
+    let before = old[0].2;
+    let after = new[0].2;
+    preserved(
+        before.len() == after.len()
+            && before.len() >= 44
+            && before[..8] == after[..8]
+            && before[16..] == after[16..]
+            && before[8..16] != after[8..16]
+            && dword(before, 4)? as u32 & ATTR_LOCKED == 0,
+        BODY,
+    )?;
+    for bytes in [before, after] {
+        for offset in [8, 12] {
+            let value = i32::from_le_bytes(
+                bytes[offset..offset + 4]
+                    .try_into()
+                    .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?,
+            );
+            valid((-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&value), BODY)?;
+        }
+    }
+    Ok(())
 }
 
 /// Rank and wrapping plane for a bare floating body shape. Reordering is
@@ -3427,7 +3485,7 @@ mod tests {
     }
 
     #[test]
-    fn header_and_footer_picture_geometry_evolution_is_exactly_owned() {
+    fn header_and_footer_story_object_geometry_is_exactly_owned() {
         fn borrow(rows: &[(u16, u16, Vec<u8>)]) -> Vec<(u16, u16, &[u8])> {
             rows.iter()
                 .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
@@ -3490,18 +3548,121 @@ mod tests {
         changed_description[2].2 = ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "x", b"\xaa\xbb");
         assert!(super::prove_header_story_edit(&before, &borrow(&changed_description), &defs).is_err());
 
-        let non_picture = vec![
-            (71, 1, original[0].2.clone()),
-            (66, 2, original[1].2.clone()),
-            (71, 3, ctrl_header(101, 0x000a_0000, 120, 80, 4000, 3000, "", b"")),
-            (
-                76,
-                4,
-                shape_component_base(b"cer$", 4000, 3000, 4000, 3000, 0, 0),
-            ),
-            (79, 5, vec![0; 33]),
-        ];
-        assert!(super::prove_header_story_edit(&before, &borrow(&non_picture), &defs).is_err());
+        let rectangle_owner = |x: i32, y: i32| {
+            let mut owner = vec![0u8; 16];
+            owner[..4].copy_from_slice(b"daeh");
+            let mut paragraph = vec![0u8; 22];
+            paragraph[0..4].copy_from_slice(&1u32.to_le_bytes());
+            vec![
+                (71, 1, owner),
+                (66, 2, paragraph),
+                (71, 3, ctrl_header(606, 0x000a_0000, x, y, 4000, 3000, "", b"")),
+                (76, 4, shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0x004455, None, 901)),
+                (79, 5, rect_leaf(7, 4000, 3000)),
+            ]
+        };
+        let rectangle = rectangle_owner(0, 0);
+        let rectangle_moved = rectangle_owner(120, 80);
+        assert_eq!(
+            super::prove_header_story_edit(&borrow(&rectangle), &borrow(&rectangle_moved), &defs).unwrap(),
+            vec![606],
+            "an existing non-picture GSO shape can change only within its exact story owner"
+        );
+        let mut rectangle_other_story = rectangle_moved.clone();
+        rectangle_other_story[0].2[..4].copy_from_slice(b"toof");
+        assert!(super::prove_header_story_edit(
+            &borrow(&rectangle),
+            &borrow(&rectangle_other_story),
+            &defs,
+        ).is_err());
+        let mut rectangle_sibling_mutation = rectangle_moved.clone();
+        rectangle_sibling_mutation[1].2[4] ^= 1;
+        assert!(super::prove_header_story_edit(
+            &borrow(&rectangle),
+            &borrow(&rectangle_sibling_mutation),
+            &defs,
+        ).is_err());
+
+        // This supported move contains an opaque nested table story. Every record in that
+        // story remains byte-identical while only the owning CTRL_HEADER position changes.
+        let nested_box = |x: i32, y: i32| {
+            vec![
+                (71, 1, {
+                    let mut owner = vec![0u8; 16];
+                    owner[..4].copy_from_slice(b"daeh");
+                    owner
+                }),
+                (66, 2, vec![0; 22]),
+                (71, 3, ctrl_header(707, 0x000a_0000, x, y, 4000, 3000, "", b"")),
+                (76, 4, shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0, None, 902)),
+                (72, 5, vec![1; 12]),
+                (77, 6, vec![2; 24]),
+                (66, 7, vec![3; 22]),
+                (67, 8, vec![4; 8]),
+                (79, 5, rect_leaf(7, 4000, 3000)),
+            ]
+        };
+        let nested_original = nested_box(0, 0);
+        let nested_moved = nested_box(120, 80);
+        assert_eq!(
+            super::prove_header_story_edit(
+                &borrow(&nested_original),
+                &borrow(&nested_moved),
+                &defs,
+            )
+            .unwrap(),
+            vec![707],
+            "a nested table story is retained exactly during a position-only move"
+        );
+        let mut nested_child_changed = nested_moved.clone();
+        nested_child_changed[6].2[0] ^= 1;
+        assert!(super::prove_header_story_edit(
+            &borrow(&nested_original),
+            &borrow(&nested_child_changed),
+            &defs,
+        )
+        .is_err());
+        let mut nested_resize = nested_moved.clone();
+        // CTRL_HEADER width starts at byte 16; resizing is outside the narrow fallback.
+        nested_resize[2].2[16..20].copy_from_slice(&4001u32.to_le_bytes());
+        assert!(super::prove_header_story_edit(
+            &borrow(&nested_original),
+            &borrow(&nested_resize),
+            &defs,
+        )
+        .is_err());
+        let mut nested_reidentified = nested_moved.clone();
+        nested_reidentified[2].2[36..40].copy_from_slice(&708u32.to_le_bytes());
+        assert!(super::prove_header_story_edit(
+            &borrow(&nested_original),
+            &borrow(&nested_reidentified),
+            &defs,
+        )
+        .is_err());
+        let locked_original = {
+            let mut rows = nested_original.clone();
+            rows[2].2[4..8].copy_from_slice(&(1u32 << 30).to_le_bytes());
+            rows
+        };
+        let locked_moved = {
+            let mut rows = nested_moved.clone();
+            rows[2].2[4..8].copy_from_slice(&(1u32 << 30).to_le_bytes());
+            rows
+        };
+        assert!(super::prove_header_story_edit(
+            &borrow(&locked_original),
+            &borrow(&locked_moved),
+            &defs,
+        )
+        .is_err());
+        let mut nested_out_of_range = nested_moved;
+        nested_out_of_range[2].2[8..12].copy_from_slice(&2_000_001i32.to_le_bytes());
+        assert!(super::prove_header_story_edit(
+            &borrow(&nested_original),
+            &borrow(&nested_out_of_range),
+            &defs,
+        )
+        .is_err());
     }
 
     #[test]

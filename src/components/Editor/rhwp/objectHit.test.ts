@@ -137,6 +137,61 @@ describe("RHWP object hit testing", () => {
       headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 0 },
     })), 4, 25, 40);
     expect(shape?.headerFooterPicture).toBeUndefined();
+    expect(shape?.headerFooterShape).toEqual({
+      section: 0,
+      kind: "header",
+      outerParagraph: 0,
+      outerControl: 0,
+      innerParagraph: 2,
+      innerControl: 3,
+    });
+    expect(shape?.bodyShape).toBeUndefined();
+  });
+
+  it("preserves the complete nested header/footer table path and rejects mismatched paths", () => {
+    const owner = { kind: "header", outerParaIdx: 8, outerControlIdx: 9 };
+    const cellPath = [{ controlIndex: 3, cellIndex: 4, cellParaIndex: 5 }];
+    const nested = control({
+      type: "shape",
+      secIdx: 0,
+      paraIdx: 2,
+      controlIdx: 7,
+      stableIndex: [0, 2, 3, 4, 5, 7],
+      headerFooter: owner,
+      parentParaIdx: 2,
+      outerTableControlIdx: 3,
+      cellIdx: 4,
+      cellParaIdx: 5,
+      cellPath,
+    });
+    const hit = hitRhwpObject(layout(nested), 4, 25, 40);
+    expect(hit?.headerFooterShape).toEqual({
+      section: 0,
+      kind: "header",
+      outerParagraph: 8,
+      outerControl: 9,
+      innerParagraph: 2,
+      innerControl: 7,
+      cellPath: JSON.stringify(cellPath),
+    });
+    expect(hit?.bodyShape).toBeUndefined();
+
+    // RHWP's current renderer emits the authoritative cell path and stable path,
+    // but omits parentParaIdx for header/footer story controls.
+    const rendererLayoutShape: Record<string, unknown> = { ...nested };
+    delete rendererLayoutShape.parentParaIdx;
+    const rendererHit = hitRhwpObject(layout(rendererLayoutShape), 4, 25, 40);
+    expect(rendererHit?.headerFooterShape).toEqual(hit?.headerFooterShape);
+    expect(rendererHit?.bodyShape).toBeUndefined();
+
+    const mismatchedParent = hitRhwpObject(layout({ ...nested, parentParaIdx: 1 }), 4, 25, 40);
+    expect(mismatchedParent?.headerFooterShape).toBeUndefined();
+    expect(mismatchedParent?.bodyShape).toBeUndefined();
+
+    const mismatched = { ...nested, stableIndex: [0, 2, 3, 4, 6, 7] };
+    const rejected = hitRhwpObject(layout(mismatched), 4, 25, 40);
+    expect(rejected?.headerFooterShape).toBeUndefined();
+    expect(rejected?.bodyShape).toBeUndefined();
   });
 
   it("selects the visually topmost control by plane, z-order, then engine path", () => {
