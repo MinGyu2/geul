@@ -1,0 +1,6 @@
+tree 5777e22459b2bf1165a142892b4a6ca4fc5a67bb
+parent ce77006df77470f044a4f31257b5fec8d58640fc
+author Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795650555 +0900
+committer Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795650555 +0900
+
+fix(stage3-p5): keep textbox image ownership [P5-TB-CONTROL]
