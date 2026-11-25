@@ -55,6 +55,90 @@ describe("RHWP object hit testing", () => {
     }
   });
 
+  it("keeps header/footer picture ownership separate from the inner drawing address", () => {
+    const hit = hitRhwpObject(layout(control({
+      stableIndex: [0, 2, 3],
+      secIdx: 2,
+      paraIdx: 4,
+      controlIdx: 5,
+      headerFooter: { kind: "header", outerParaIdx: 8, outerControlIdx: 9 },
+    })), 4, 25, 40);
+    expect(hit?.headerFooterPicture).toEqual({
+      section: 2,
+      kind: "header",
+      outerParagraph: 8,
+      outerControl: 9,
+      innerParagraph: 4,
+      innerControl: 5,
+    });
+    expect(hit?.bodyPicture).toBeUndefined();
+
+    const footer = hitRhwpObject(layout(control({
+      stableIndex: [0, 2, 3],
+      headerFooter: { kind: "footer", outerParaIdx: 8, outerControlIdx: 9 },
+    })), 4, 25, 40);
+    expect(footer?.headerFooterPicture?.kind).toBe("footer");
+  });
+
+  it("does not treat identical layout paths in different stories as duplicate objects", () => {
+    const header = control({
+      stableIndex: [0, 0, 0],
+      secIdx: 0,
+      paraIdx: 0,
+      controlIdx: 0,
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 3 },
+    });
+    const footer = control({
+      stableIndex: [0, 0, 0],
+      secIdx: 0,
+      paraIdx: 0,
+      controlIdx: 0,
+      x: 20,
+      y: 900,
+      headerFooter: { kind: "footer", outerParaIdx: 4, outerControlIdx: 0 },
+    });
+    expect(hitRhwpObject(layout(header, footer), 0, 25, 40)?.headerFooterPicture).toEqual({
+      section: 0,
+      kind: "header",
+      outerParagraph: 0,
+      outerControl: 3,
+      innerParagraph: 0,
+      innerControl: 0,
+    });
+    expect(hitRhwpObject(layout(header, footer), 0, 25, 910)?.headerFooterPicture).toEqual({
+      section: 0,
+      kind: "footer",
+      outerParagraph: 4,
+      outerControl: 0,
+      innerParagraph: 0,
+      innerControl: 0,
+    });
+    expect(hitRhwpObject(layout(header, { ...header }), 0, 25, 40)).toBeNull();
+  });
+
+  it("refuses malformed header/footer owners and never promotes them to body pictures", () => {
+    for (const headerFooter of [
+      true,
+      { kind: "masterPage", outerParaIdx: 0, outerControlIdx: 0 },
+      { kind: "header", outerParaIdx: -1, outerControlIdx: 0 },
+      { kind: "footer", outerParaIdx: 0, outerControlIdx: 1.5 },
+    ]) {
+      const hit = hitRhwpObject(layout(control({
+        body: true,
+        stableIndex: [0, 2, 3],
+        headerFooter,
+      })), 4, 25, 40);
+      expect(hit?.headerFooterPicture).toBeUndefined();
+      expect(hit?.bodyPicture).toBeUndefined();
+    }
+
+    const shape = hitRhwpObject(layout(control({
+      type: "shape",
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 0 },
+    })), 4, 25, 40);
+    expect(shape?.headerFooterPicture).toBeUndefined();
+  });
+
   it("selects the visually topmost control by plane, z-order, then engine path", () => {
     const back = control({ stableIndex: [0], plane: 0, zOrder: 9 });
     const front = control({ type: "shape", stableIndex: [1], plane: 1, zOrder: 0 });

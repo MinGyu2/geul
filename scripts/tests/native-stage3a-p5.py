@@ -4,7 +4,10 @@
 import importlib.util
 import hashlib
 import json
+import math
 from pathlib import Path
+import struct
+import subprocess
 import sys
 from xml.etree import ElementTree as ET
 import zipfile
@@ -24,6 +27,485 @@ PIC = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+RHWP_HEADER_ORACLE = r"""
+const fs=require('fs'),path=require('path');
+const root=path.resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS||'public/rhwp');
+const release=JSON.parse(fs.readFileSync(path.join(root,'RELEASE.json')));
+const folder=path.join(root,'generations',release.generation);
+const rhwp=require(path.join(folder,'rhwp.js'));
+rhwp.initSync({module:fs.readFileSync(path.join(folder,'rhwp_bg.wasm'))});
+const doc=new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));
+try {
+  const controls=JSON.parse(doc.getControls());
+  const owners=controls.filter(c=>c.ctrlId==='head'||c.ctrlId==='foot').map(c=>({
+    ctrlId:c.ctrlId,userDesc:c.userDesc,list:c.list,para:c.para,controlIndex:c.controlIndex
+  }));
+  const pictures=new Map();
+  for(let page=0;page<Math.min(doc.pageCount(),8);page++) {
+    const layout=JSON.parse(doc.getPageControlLayout(page)).controls||[];
+    for(const c of layout) {
+      const kind=c.headerFooter?.kind;
+      if(c.type!=='image'||(kind!=='header'&&kind!=='footer')) continue;
+      const hf=c.headerFooter;
+      const address={section:c.secIdx,kind,outerParagraph:hf.outerParaIdx,outerControl:hf.outerControlIdx,
+        innerParagraph:c.paraIdx,innerControl:c.controlIdx};
+      const key=JSON.stringify(address);
+      if(pictures.has(key)) continue;
+      const owner=owners.filter(o=>o.list===0&&o.para===hf.outerParaIdx&&o.controlIndex===hf.outerControlIdx);
+      const properties=JSON.parse(doc.getHeaderFooterPictureProperties(
+        address.section,address.outerParagraph,address.outerControl,address.innerParagraph,address.innerControl));
+      pictures.set(key,{page,control:c,address,owner:owner.length===1?owner[0]:null,properties});
+    }
+    if([...pictures.values()].some(p=>p.address.kind==='header')) break;
+  }
+  console.log(JSON.stringify({generation:release.generation,pageCount:doc.pageCount(),owners,pictures:[...pictures.values()]}));
+} finally { doc.free(); }
+"""
+
+
+def rhwp_header_state(path):
+    return json.loads(subprocess.check_output(["node", "-e", RHWP_HEADER_ORACLE, str(path)], cwd=h.ROOT, text=True))
+
+
+def header_picture(state):
+    pictures = [item for item in state["pictures"] if item["address"]["kind"] == "header"]
+    h.require(len(pictures) == 1, "fixture must expose exactly one owned header picture", pictures)
+    picture = pictures[0]
+    address, owner = picture["address"], picture["owner"]
+    h.require(owner is not None and owner["ctrlId"] == "head" and owner["userDesc"] == "머리말"
+              and owner["list"] == 0 and owner["para"] == address["outerParagraph"]
+              and owner["controlIndex"] == address["outerControl"],
+              "header picture address does not resolve to its exact section owner", picture)
+    return picture
+
+
+def select_header_picture(acc, picture):
+    control = picture["control"]
+    target = (picture["page"], control["x"] + control["w"] / 2,
+              control["y"] + control["h"] / 2)
+    acc.d.js("""
+      if(!Array.isArray(window.p5RhdrPointers)){
+        window.p5RhdrPointers=[];
+        for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>
+          window.p5RhdrPointers.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY}),true);
+      }
+    """)
+    h.p6.pointer(acc, (picture["page"], control["x"] + control["w"] / 2,
+                       control["y"] + control["h"] / 2))
+    try:
+        acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='picture'", h.p6.FRAME, timeout=10)
+    except Exception as exc:
+        diagnostic = acc.d.js("""
+          const canvas=document.querySelectorAll('.rhwp-page__canvas')[arguments[0][0]],
+            scroll=document.querySelector('.editor__scroll'), event=window.p5RhdrPointers?.at(-1),
+            point=event&&document.elementFromPoint(event.x,event.y), rect=canvas?.getBoundingClientRect();
+          return {target:arguments[0],canvas:canvas&&{rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},
+              client:{width:canvas.clientWidth,height:canvas.clientHeight},scrollTop:scroll?.scrollTop},
+            event:event&&{type:event.type,trusted:event.trusted,x:event.x,y:event.y},
+            element:point&&{tag:point.tagName,className:String(point.className||''),testid:point.dataset?.testid,
+              text:(point.textContent||'').slice(0,80),html:point.outerHTML.slice(0,500)},
+            selection:document.querySelector(arguments[1])?.outerHTML||null,
+            caret:document.querySelector('[data-testid=rhwp-status]')?.dataset.caret,
+            frame:document.querySelector(arguments[1])?.getBoundingClientRect().toJSON()||null};
+        """, target, h.p6.FRAME)
+        raise RuntimeError(f"header picture trusted hit did not select a picture: {diagnostic!r}") from exc
+    return h.frame(acc)
+
+
+def same_geometry(left, right, tolerance=0.35):
+    return bool(left and right and all(abs(left[key] - right[key]) <= tolerance
+                                       for key in ("left", "top", "width", "height")))
+
+
+def header_fresh_reopen(acc, row, fixtures, out, fmt):
+    expected = json.loads((out / f"header-{fmt}-expected.json").read_text())
+    fixture = out / expected["savedFile"]
+    path = h.begin(acc, row, fixture, out, f"header-{fmt}-fresh-reopen.{fmt}")
+    row["expectedSavedSha256"] = expected["publishedSha256"]
+    row["savedSha256"] = h.digest(path)
+    h.require(row["savedSha256"] == expected["publishedSha256"], "fresh session input differs from accepted saved file")
+    h.require(row["processAppSha256"] == expected["appSha256"], "fresh session used a different Release application")
+    h.require(row["appPid"] != expected["appPid"], "fresh reopen reused the original application process")
+    h.require(row["initialSession"].get("dirty") == "false"
+              and row["initialSession"].get("unpreserved") == "false",
+              "saved header document reopened dirty or unpreserved", row["initialSession"])
+    state = rhwp_header_state(path)
+    picture = header_picture(state)
+    h.require(state["owners"] == expected["owners"], "fresh reopen changed header/footer owner controls")
+    h.require(picture["address"] == expected["header"]["address"]
+              and picture["owner"] == expected["header"]["owner"]
+              and picture["properties"] == expected["header"]["properties"],
+              "fresh reopen changed header picture identity or properties", picture)
+    frame = select_header_picture(acc, picture)
+    ui = h.p6.gso.props(acc, "picture")
+    props = picture["properties"]
+    h.require(ui["size"] == [props["width"] / 100, props["height"] / 100],
+              "fresh Native rendering selected a different header picture size", [ui, props])
+    row["readOnlyFreshProcessReopen"] = {"frame": frame, "picture": picture, "ui": ui,
+                                         "savedSha256": row["savedSha256"]}
+
+
+def header_picture_hwp(acc, row, fixtures, out):
+    fixture = fixtures / "header-original.hwp"
+    before_state = rhwp_header_state(fixture)
+    before = header_picture(before_state)
+    address = before["address"]
+    h.require(before["properties"]["treatAsChar"] is False,
+              "HWP fixture must exercise a floating movable header picture", before["properties"])
+    path = h.begin(acc, row, fixture, out, "header-hwp-moved.hwp")
+    opened = rhwp_header_state(path)
+    h.require(opened["owners"] == before_state["owners"], "HWP open changed story owners")
+    events_expr = """
+      window.p5RhdrPointers=[];
+      for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>
+        window.p5RhdrPointers.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY}),true);
+    """
+    acc.d.js(events_expr)
+    frame_before = select_header_picture(acc, before)
+    ui = h.p6.gso.props(acc, "picture")
+    expected_size = [before["properties"]["width"] / 100, before["properties"]["height"] / 100]
+    h.require(all(abs(ui["size"][i] - expected_size[i]) <= 0.02 for i in range(2)),
+              "trusted hit selected a different HWP header picture", [ui, expected_size])
+    if not acc.d.exists("[data-testid=object-move]"):
+        acc.wait("return !!document.querySelector('[data-testid=object-move]')", timeout=30)
+        frame_before = select_header_picture(acc, before)
+    h.require(acc.d.exists("[data-testid=object-move]"), "floating header picture has no move handle")
+    x, y = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]",
+                    h.p6.FRAME)
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x * sx, y * sy), ((x + 20) * sx, (y + 12) * sy))
+    pointer_events = acc.d.js("return window.p5RhdrPointers.slice(-2)")
+    h.require([(event["type"], event["trusted"]) for event in pointer_events]
+              == [("pointerdown", True), ("pointerup", True)],
+              "HWP header movement did not use trusted Native pointer input", pointer_events)
+    h.revision(acc, "hwp", 1)
+    moved = {**before, "control": {**before["control"], "x": before["control"]["x"] + 20,
+                                   "y": before["control"]["y"] + 12}}
+    frame_after = select_header_picture(acc, moved)
+    h.require(frame_after and (abs(frame_after["left"] - frame_before["left"]) > 2
+                               or abs(frame_after["top"] - frame_before["top"]) > 2),
+              "Native drag did not move the selected HWP header picture", [frame_before, frame_after])
+    acc.key("ctrl+z")
+    h.revision(acc, "hwp", 2)
+    frame_undo = select_header_picture(acc, before)
+    h.require(same_geometry(frame_undo, frame_before), "HWP header Undo did not restore geometry", frame_undo)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwp", 3)
+    frame_redo = select_header_picture(acc, moved)
+    h.require(same_geometry(frame_redo, frame_after), "HWP header Redo did not restore movement", frame_redo)
+    row["movement"] = {"before": frame_before, "after": frame_after, "undo": frame_undo,
+                        "redo": frame_redo, "trustedPointerEvents": pointer_events,
+                        "ownerAddress": address}
+    h.publish(acc, "hwp", row)
+
+    after_state = rhwp_header_state(path)
+    after = header_picture(after_state)
+    h.require(after_state["owners"] == before_state["owners"] and after["address"] == address
+              and after["owner"] == before["owner"], "HWP save changed header/footer ownership", after_state)
+    before_props, after_props = before["properties"], after["properties"]
+    h.require(any(before_props[key] != after_props[key] for key in ("horzOffset", "vertOffset")),
+              "saved HWP header picture did not retain its movement", [before_props, after_props])
+    for key in before_props:
+        if key not in {"horzOffset", "vertOffset"}:
+            h.require(before_props[key] == after_props[key], "HWP header edit changed another picture property",
+                      [key, before_props[key], after_props[key]])
+    before_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                       for item in before_state["pictures"] if item["address"] != address}
+    after_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                      for item in after_state["pictures"] if item["address"] != address}
+    h.require(before_pictures == after_pictures, "HWP header movement changed another owned picture",
+              [before_pictures, after_pictures])
+
+    streams_before = h.p6.gso.cfb_streams(fixture.read_bytes())
+    streams_after = h.p6.gso.cfb_streams(path.read_bytes())
+    h.require(set(streams_before) == set(streams_after), "HWP save changed the CFB stream inventory",
+              [sorted(streams_before), sorted(streams_after)])
+    changed = sorted(name for name in streams_before if streams_before[name] != streams_after[name])
+    bin_data = {name for name in streams_before if name.startswith("BinData/")}
+    allowed = {"BodyText/Section0", "DocInfo", "PrvImage", "PrvText", *bin_data}
+    h.require("BodyText/Section0" in changed and set(changed) <= allowed,
+              "HWP save changed streams outside the header story, compressed content, and previews", changed)
+
+    # RHWP rewrites raw-DEFLATE envelopes while preserving the complete logical
+    # DocInfo and BinData payloads. Compare the decompressed bytes, not compressor
+    # output, so resource equality remains exact without rejecting a harmless
+    # compression-level/implementation change.
+    doc_info_before = h.p6.gso.unpacked(streams_before, "DocInfo")
+    doc_info_after = h.p6.gso.unpacked(streams_after, "DocInfo")
+    h.require(doc_info_before == doc_info_after,
+              "HWP header movement changed DocInfo records after decompression")
+    bin_data_hashes = {}
+    for name in sorted(bin_data):
+        old_bytes = h.p6.gso.unpacked(streams_before, name)
+        new_bytes = h.p6.gso.unpacked(streams_after, name)
+        h.require(old_bytes == new_bytes, "HWP header movement changed picture resource content", name)
+        bin_data_hashes[name] = hashlib.sha256(old_bytes).hexdigest()
+    h.require(streams_before["PrvText"] == streams_after["PrvText"],
+              "image preview refresh changed the untouched HWP text preview")
+    image = streams_after.get("PrvImage", b"")
+    h.require(image != streams_before.get("PrvImage") and image.startswith(b"\x89PNG\r\n\x1a\n")
+              and image[12:16] == b"IHDR" and len(image) >= 24,
+              "HWP image preview was not independently serialized as a PNG")
+    preview_size = [int.from_bytes(image[16:20], "big"), int.from_bytes(image[20:24], "big")]
+    h.require(all(0 < value <= 1032 for value in preview_size),
+              "HWP preview dimensions are outside the supported raster bounds", preview_size)
+
+    before_records = h.p6.gso.records(h.p6.gso.unpacked(streams_before, "BodyText/Section0"))
+    after_records = h.p6.gso.records(h.p6.gso.unpacked(streams_after, "BodyText/Section0"))
+    h.require(len(before_records) == len(after_records)
+              and all(old[:2] == new[:2] for old, new in zip(before_records, after_records)),
+              "HWP header movement changed the body record topology")
+    changed_records = [index for index, (old, new) in enumerate(zip(before_records, after_records))
+                       if old != new]
+    h.require(changed_records == [19, 20],
+              "HWP header movement changed records outside its single owned picture", changed_records)
+
+    control_before, control_after = before_records[19], after_records[19]
+    h.require((control_before[:2], control_after[:2]) == ((71, 3), (71, 3))
+              and control_before[2][:8] == control_after[2][:8]
+              and control_before[2][16:] == control_after[2][16:],
+              "HWP picture control changed identity or non-position fields")
+    control_changed_bytes = [index for index, (old, new) in enumerate(zip(control_before[2], control_after[2]))
+                             if old != new]
+    h.require(control_changed_bytes and set(control_changed_bytes) <= set(range(8, 16)),
+              "HWP picture control changed fields outside its position", control_changed_bytes)
+
+    shape_before, shape_after = before_records[20], after_records[20]
+    h.require((shape_before[:2], shape_after[:2]) == ((76, 4), (76, 4))
+              and shape_before[2][:50] == shape_after[2][:50]
+              and shape_before[2][196:] == shape_after[2][196:],
+              "HWP picture component changed dimensions, identity, or non-transform data")
+
+    def rendering_matrices(payload):
+        count = struct.unpack_from("<H", payload, 50)[0]
+        size = 2 + 48 + count * 96
+        if count != 1 or len(payload) < 50 + size:
+            return None
+        raw = payload[50:50 + size]
+        return [struct.unpack_from("<6d", raw, 2 + index * 48)
+                for index in range(1 + 2 * count)]
+
+    matrices_before = rendering_matrices(shape_before[2])
+    matrices_after = rendering_matrices(shape_after[2])
+    h.require(matrices_before is not None and matrices_after is not None,
+              "HWP picture transform matrix structure is unsupported")
+    ox, oy = struct.unpack_from("<ii", shape_before[2], 8)
+    original_width, original_height, current_width, current_height = struct.unpack_from(
+        "<IIII", shape_before[2], 20)
+    h.require(min(original_width, original_height, current_width, current_height) > 0,
+              "HWP picture transform has invalid dimensions")
+    identity = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    translation = (1.0, 0.0, float(ox), 0.0, 1.0, float(oy))
+    source_scale = (current_width / original_width, 0.0, float(-ox),
+                    0.0, current_height / original_height, float(-oy))
+    close_matrix = lambda actual, expected: all(
+        math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12) for a, b in zip(actual, expected)
+    )
+    h.require(close_matrix(matrices_before[0], translation)
+              and close_matrix(matrices_before[1], source_scale)
+              and close_matrix(matrices_before[2], identity)
+              and close_matrix(matrices_after[0], translation)
+              and close_matrix(matrices_after[1], identity)
+              and close_matrix(matrices_after[2], identity),
+              "HWP movement did not preserve the proven scaled-source transform while normalizing it",
+              {"before": matrices_before, "after": matrices_after})
+    row["cfbProof"] = {
+        "rawChangedStreams": changed,
+        "streamInventoryPreserved": True,
+        "docInfoUncompressedBytesPreserved": True,
+        "binDataUncompressedSha256": bin_data_hashes,
+        "textPreviewPreserved": True,
+        "imagePreviewPngDimensions": preview_size,
+        "changedSectionRecordIndices": changed_records,
+        "pictureControlChangedBytes": control_changed_bytes,
+        "pictureTransform": {"sourceMatrices": matrices_before, "savedMatrices": matrices_after,
+                             "sourceDimensions": [original_width, original_height],
+                             "currentDimensions": [current_width, current_height]},
+    }
+
+    h.reopen(acc, path, row)
+    reopened_state = rhwp_header_state(path)
+    reopened = header_picture(reopened_state)
+    h.require(reopened["address"] == after["address"] and reopened["owner"] == after["owner"]
+              and reopened["properties"] == after["properties"],
+              "HWP header ownership or serialized movement changed on reopen", reopened)
+    reopened_frame = select_header_picture(acc, reopened)
+    h.require(same_geometry(reopened_frame, frame_redo, 1.5),
+              "HWP saved header did not render at its moved position after reopen", [frame_redo, reopened_frame])
+    row["reopened"] = {"frame": reopened_frame, "picture": reopened,
+                       "publishedSha256": row["publishedSha256"]}
+    (out / "header-hwp-expected.json").write_text(json.dumps({
+        "savedFile": path.name, "publishedSha256": row["publishedSha256"],
+        "appSha256": row["processAppSha256"], "appPid": row["appPid"],
+        "owners": after_state["owners"], "header": after,
+    }, indent=2, ensure_ascii=False) + "\n")
+
+
+def canonical_xml(data):
+    root = ET.fromstring(data)
+    return ET.canonicalize(ET.tostring(root, encoding="unicode"))
+
+
+def hwpx_header_picture_element(root, address):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    paragraphs = [node for node in list(root) if node.tag == hp + "p"]
+    outer_index = address["outerParagraph"]
+    h.require(outer_index < len(paragraphs), "HWPX header outer paragraph is outside the section", outer_index)
+    outer_controls = list(paragraphs[outer_index].iter(hp + "ctrl"))
+    control_index = address["outerControl"]
+    h.require(control_index < len(outer_controls), "HWPX outer control is outside its paragraph", control_index)
+    header = outer_controls[control_index].find(hp + "header")
+    h.require(header is not None, "HWPX outer control is not a header", control_index)
+    sublist = header.find(hp + "subList")
+    h.require(sublist is not None, "HWPX header has no owned subList")
+    inner = sublist.findall(hp + "p")
+    paragraph_index = address["innerParagraph"]
+    h.require(paragraph_index < len(inner), "HWPX header inner paragraph is outside the subList", paragraph_index)
+    pictures = list(inner[paragraph_index].iter(hp + "pic"))
+    control = address["innerControl"]
+    h.require(len(pictures) == 1 and control == 0,
+              "HWPX fixture inner paragraph must contain one unambiguous picture control",
+              {"control": control, "pictures": len(pictures)})
+    picture = pictures[0]
+    size = picture.find(hp + "sz")
+    h.require(size is not None, "HWPX header picture has no modeled size node")
+    return picture, size
+
+
+def prove_hwpx_header_resize(source, output, address, before_state, after_state):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(output) as saved:
+        old_names, new_names = set(original.namelist()), set(saved.namelist())
+        h.require(old_names == new_names, "HWPX header resize changed OPC inventory",
+                  {"added": sorted(new_names - old_names), "removed": sorted(old_names - new_names)})
+        changed = sorted(name for name in old_names if original.read(name) != saved.read(name))
+        h.require("Contents/section0.xml" in changed, "HWPX section XML did not contain the header resize", changed)
+        h.require(set(changed) <= {"Contents/section0.xml", "Contents/header.xml", "Contents/content.hpf"},
+                  "HWPX save changed an unrelated package part", changed)
+        for name in ("Contents/header.xml", "Contents/content.hpf"):
+            if name in old_names:
+                h.require(canonical_xml(original.read(name)) == canonical_xml(saved.read(name)),
+                          "HWPX header edit changed shared metadata XML", name)
+        for name in old_names:
+            if name.endswith(".rels") or "/BinData/" in name:
+                h.require(original.read(name) == saved.read(name), "HWPX header edit changed a relationship or media part", name)
+
+        before_root = ET.fromstring(original.read("Contents/section0.xml"))
+        after_root = ET.fromstring(saved.read("Contents/section0.xml"))
+        before_picture, before_size = hwpx_header_picture_element(before_root, address)
+        after_picture, after_size = hwpx_header_picture_element(after_root, address)
+        old_size, new_size = dict(before_size.attrib), dict(after_size.attrib)
+        h.require(set(old_size) == set(new_size) and
+                  {key: value for key, value in old_size.items() if key not in {"width", "height"}} ==
+                  {key: value for key, value in new_size.items() if key not in {"width", "height"}},
+                  "HWPX picture size edit changed size-node metadata", [old_size, new_size])
+        h.require((old_size.get("width"), old_size.get("height")) !=
+                  (new_size.get("width"), new_size.get("height")), "HWPX saved picture size did not change", new_size)
+        after_size.attrib = old_size
+        h.require(ET.canonicalize(ET.tostring(before_root, encoding="unicode")) ==
+                  ET.canonicalize(ET.tostring(after_root, encoding="unicode")),
+                  "HWPX section changed beyond the exact owned picture size node")
+
+        before_secpr = [node for node in before_root.iter(hp + "secPr")]
+        after_secpr = [node for node in ET.fromstring(saved.read("Contents/section0.xml")).iter(hp + "secPr")]
+        h.require(len(before_secpr) == len(after_secpr) == 1, "HWPX source section properties are ambiguous")
+        before_presentation = before_secpr[0].find(hp + "presentation")
+        after_presentation = after_secpr[0].find(hp + "presentation")
+        h.require((before_presentation is None) == (after_presentation is None)
+                  and (before_presentation is None or
+                    canonical_xml(ET.tostring(before_presentation, encoding="unicode").encode()) ==
+                    canonical_xml(ET.tostring(after_presentation, encoding="unicode").encode())),
+                  "HWPX unknown presentation metadata was lost or changed")
+        h.require(after_picture.get("id") == before_picture.get("id"),
+                  "HWPX header resize changed picture identity", [before_picture.get("id"), after_picture.get("id")])
+        return {"changedParts": changed, "pictureSizeBefore": old_size, "pictureSizeAfter": new_size,
+                "presentationPreserved": True, "unrelatedRelationshipsAndMediaPreserved": True}
+
+
+def header_picture_hwpx(acc, row, fixtures, out):
+    fixture = fixtures / "header-original.hwpx"
+    before_state = rhwp_header_state(fixture)
+    before = header_picture(before_state)
+    address = before["address"]
+    h.require(address == {"section": 0, "kind": "header", "outerParagraph": 1, "outerControl": 1,
+                         "innerParagraph": 0, "innerControl": 0},
+              "HWPX authentic header fixture owner changed", address)
+    h.require(before["properties"]["treatAsChar"] is True,
+              "HWPX fixture must exercise a simple inline header picture", before["properties"])
+    path = h.begin(acc, row, fixture, out, "header-hwpx-resized.hwpx")
+    frame_before = select_header_picture(acc, before)
+    ui_before = h.p6.gso.props(acc, "picture")
+    props_before = before["properties"]
+    expected_before = [props_before["width"] / 100, props_before["height"] / 100]
+    h.require(all(abs(ui_before["size"][i] - expected_before[i]) <= 0.02 for i in range(2)),
+              "trusted hit selected a different HWPX header picture", [ui_before, expected_before])
+    h.require(acc.d.exists(h.p6.gso.SIZE), "inline header picture has no resize fields")
+    width_field = h.p6.gso.SIZE
+    requested_width = 100
+    h.p6.gso.replace(acc, width_field, str(requested_width))
+    acc.dom_click(SIZE_FORM + " button[type=submit]")
+    h.revision(acc, "hwpx", 1)
+    frame_after = select_header_picture(acc, before)
+    ui_after = h.p6.gso.props(acc, "picture")
+    h.require(ui_after["size"][0] == requested_width and ui_after["size"][1] > ui_before["size"][1],
+              "Native resize did not update the selected inline header picture proportionally", [ui_before, ui_after])
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    frame_undo = select_header_picture(acc, before)
+    h.require(same_geometry(frame_undo, frame_before), "HWPX header Undo did not restore geometry", frame_undo)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    frame_redo = select_header_picture(acc, before)
+    h.require(same_geometry(frame_redo, frame_after), "HWPX header Redo did not restore resize", frame_redo)
+    row["resize"] = {"before": frame_before, "after": frame_after, "undo": frame_undo,
+                      "redo": frame_redo, "ownerAddress": address}
+    h.publish(acc, "hwpx", row)
+
+    after_state = rhwp_header_state(path)
+    after = header_picture(after_state)
+    h.require(after_state["owners"] == before_state["owners"] and after["address"] == address
+              and after["owner"] == before["owner"], "HWPX resize changed header/footer ownership", after_state)
+    props_after = after["properties"]
+    h.require(props_after["width"] > props_before["width"] and props_after["height"] > props_before["height"],
+              "HWPX serialized header picture did not retain its resize", [props_before, props_after])
+    for key in props_before:
+        if key not in {"width", "height"}:
+            h.require(props_before[key] == props_after[key], "HWPX header resize changed another picture property",
+                      [key, props_before[key], props_after[key]])
+    before_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                       for item in before_state["pictures"] if item["address"] != address}
+    after_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                      for item in after_state["pictures"] if item["address"] != address}
+    h.require(before_pictures == after_pictures, "HWPX header resize changed another owned picture",
+              [before_pictures, after_pictures])
+    row["opcProof"] = prove_hwpx_header_resize(fixture, path, address, before_state, after_state)
+    h.reopen(acc, path, row)
+    reopened_state = rhwp_header_state(path)
+    reopened = header_picture(reopened_state)
+    h.require(reopened["address"] == after["address"] and reopened["owner"] == after["owner"]
+              and reopened["properties"] == after["properties"],
+              "HWPX header ownership or size changed on reopen", reopened)
+    reopened_frame = select_header_picture(acc, reopened)
+    reopened_ui = h.p6.gso.props(acc, "picture")
+    h.require(reopened_ui["size"] == [props_after["width"] / 100, props_after["height"] / 100],
+              "HWPX header resize did not render after reopen", [reopened_ui, props_after])
+    h.require(same_geometry(reopened_frame, frame_redo, 1.5),
+              "HWPX header geometry changed after reopen", [frame_redo, reopened_frame])
+    row["reopened"] = {"frame": reopened_frame, "picture": reopened, "ui": reopened_ui,
+                       "publishedSha256": row["publishedSha256"]}
+    (out / "header-hwpx-expected.json").write_text(json.dumps({
+        "savedFile": path.name, "publishedSha256": row["publishedSha256"],
+        "appSha256": row["processAppSha256"], "appPid": row["appPid"],
+        "owners": after_state["owners"], "header": after,
+    }, indent=2, ensure_ascii=False) + "\n")
+
+
+def header_picture_hwp_fresh(acc, row, fixtures, out):
+    header_fresh_reopen(acc, row, fixtures, out, "hwp")
+
+
+def header_picture_hwpx_fresh(acc, row, fixtures, out):
+    header_fresh_reopen(acc, row, fixtures, out, "hwpx")
 SIZE_FORM = "[aria-labelledby=properties-selection] .object-tools form:has(input[max='4000'])"
 WIDTH = SIZE_FORM + " label:first-of-type input"
 
@@ -1299,6 +1781,10 @@ def textbox_replace(acc, row, fixtures, out):
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-NOTE-MOVE": note_move,
            "P5-DX-HF-MOVE": header_footer_move,
+           "P5-R-HDR-HWP": header_picture_hwp,
+           "P5-R-HDR-HWPX": header_picture_hwpx,
+           "P5-R-HDR-HWP-FRESH": header_picture_hwp_fresh,
+           "P5-R-HDR-HWPX-FRESH": header_picture_hwpx_fresh,
            "P5-DX-NOTE-MOVE-FRESH-REOPEN": note_move_fresh_reopen,
            "P5-DX-HF-MOVE-FRESH-REOPEN": header_footer_move_fresh_reopen,
            "P5-DX-DELETE": delete_docx_story_pictures,

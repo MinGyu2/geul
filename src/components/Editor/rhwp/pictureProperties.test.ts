@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RhwpDocument } from "./rhwpModule";
-import { inspectRhwpPicture } from "./pictureProperties";
+import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 
 describe("RHWP picture property inspection", () => {
   it("reads the selected body picture through its engine address and converts HWPUNIT to points", () => {
@@ -94,5 +94,51 @@ describe("RHWP picture property inspection", () => {
   it("returns no properties when the engine getter is unavailable or fails", () => {
     expect(inspectRhwpPicture({}, [0, 2, 3])).toBeUndefined();
     expect(inspectRhwpPicture({ getPictureProperties: () => { throw new Error("unavailable"); } }, [0, 2, 3])).toBeUndefined();
+  });
+
+  it("reads a header picture only through its exact section, outer owner, and inner picture address", () => {
+    const getHeaderFooterPictureProperties = vi.fn(() => JSON.stringify({
+      width: 7200, height: 3600, treatAsChar: false, textWrap: "Square",
+      horzAlign: "Left", vertAlign: "Top", horzOffset: 100, vertOffset: 200,
+      sizeProtect: false, hasCaption: false, rotationAngle: 0, horzFlip: false, vertFlip: false,
+    }));
+    const doc = {
+      getSectionCount: () => 2,
+      getParagraphCount: (section: number) => section === 0 ? 5 : 8,
+      getControls: () => JSON.stringify([{ ctrlId: "head", userDesc: "머리말", list: 0, para: 7, controlIndex: 9 }]),
+      getHeaderFooterPictureProperties,
+    } as unknown as RhwpDocument;
+    const address = {
+      section: 1, kind: "header" as const, outerParagraph: 2, outerControl: 9,
+      innerParagraph: 3, innerControl: 4,
+    };
+
+    expect(inspectRhwpHeaderFooterPicture(doc, address)?.movable).toEqual({ horzOffset: 100, vertOffset: 200 });
+    expect(getHeaderFooterPictureProperties).toHaveBeenCalledOnce();
+    expect(getHeaderFooterPictureProperties).toHaveBeenCalledWith(1, 2, 9, 3, 4);
+  });
+
+  it.each([
+    ["wrong story kind", [{ ctrlId: "foot", userDesc: "꼬리말", list: 0, para: 7, controlIndex: 9 }]],
+    ["duplicate owner", [
+      { ctrlId: "head", userDesc: "머리말", list: 0, para: 7, controlIndex: 9 },
+      { ctrlId: "head", userDesc: "머리말", list: 0, para: 7, controlIndex: 9 },
+    ]],
+    ["non-body-list alias", [{ ctrlId: "head", userDesc: "머리말", list: 1, para: 7, controlIndex: 9 }]],
+  ])("refuses a header/footer address with %s", (_name, controls) => {
+    const getHeaderFooterPictureProperties = vi.fn(() => JSON.stringify({
+      width: 7200, height: 3600, treatAsChar: false, textWrap: "Square",
+    }));
+    const doc = {
+      getSectionCount: () => 2,
+      getParagraphCount: (section: number) => section === 0 ? 5 : 8,
+      getControls: () => JSON.stringify(controls),
+      getHeaderFooterPictureProperties,
+    } as unknown as RhwpDocument;
+    expect(inspectRhwpHeaderFooterPicture(doc, {
+      section: 1, kind: "header", outerParagraph: 2, outerControl: 9,
+      innerParagraph: 3, innerControl: 4,
+    })).toBeUndefined();
+    expect(getHeaderFooterPictureProperties).not.toHaveBeenCalled();
   });
 });

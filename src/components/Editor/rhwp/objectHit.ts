@@ -7,6 +7,15 @@ export interface CellPictureAddress {
   control: number;
 }
 
+export interface HeaderFooterPictureAddress {
+  section: number;
+  kind: "header" | "footer";
+  outerParagraph: number;
+  outerControl: number;
+  innerParagraph: number;
+  innerControl: number;
+}
+
 interface ControlHit {
   kind: ObjectKind;
   path: readonly number[];
@@ -14,6 +23,7 @@ interface ControlHit {
   plane: number;
   zOrder: number;
   bodyPicture?: readonly [number, number, number];
+  headerFooterPicture?: HeaderFooterPictureAddress;
   cellPicture?: CellPictureAddress;
   bodyEmbedded?: readonly [number, number, number];
   bodyShape?: readonly [number, number, number];
@@ -52,8 +62,9 @@ function lineContains(control: Record<string, unknown>, x: number, y: number): b
 export function hitRhwpObject(layout: unknown, page: number, x: number, y: number): ControlHit | null {
   if (!record(layout) || !Array.isArray(layout.controls) || !index(page) || !finite(x) || !finite(y)) return null;
   let top: ControlHit | null = null;
+  let topIdentity: string | null = null;
   let ambiguous = false;
-  const addresses = new Set<string>();
+  const identities = new Set<string>();
   const duplicates = new Set<string>();
   for (const control of layout.controls as unknown[]) {
     if (!record(control)) continue;
@@ -67,9 +78,17 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
     const path = Array.isArray(stableIndex) && stableIndex.length === 0 && kind === "embedded" && body
       ? address : stableIndex;
     if (!Array.isArray(path) || path.length === 0 || path.length > 64 || !path.every(index)) continue;
-    const key = path.join(".");
-    if (addresses.has(key)) duplicates.add(key);
-    addresses.add(key);
+    const story = control.headerFooter;
+    // Layout paths are local to a repeated header/footer story. Qualify those
+    // identities with their exact owner so the first header image does not
+    // alias the first footer image (both can be [section, 0, 0]).
+    const identity = record(story) && (story.kind === "header" || story.kind === "footer")
+      && index(story.outerParaIdx) && index(story.outerControlIdx)
+      ? JSON.stringify(["story", story.kind, control.secIdx, story.outerParaIdx, story.outerControlIdx,
+        control.paraIdx, control.controlIdx])
+      : JSON.stringify(["path", path]);
+    if (identities.has(identity)) duplicates.add(identity);
+    identities.add(identity);
     // A background control may share the same area as selectable document text.
     if (control.wrap === "behindText" || control.missing === true) continue;
     if (!finite(left) || !finite(topEdge) || !finite(width) || width < 0 || !finite(height) || height < 0
@@ -77,12 +96,30 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
     const contains = type === "line" ? lineContains(control, x, y)
       : x >= left && x < left + width && y >= topEdge && y < topEdge + height;
     if (!contains) continue;
-    const candidate: ControlHit = { kind, path: [...path], plane, zOrder, frame: { page, x: left, y: topEdge, width, height } };
-    if (body && path.length === 3 && address.every((index, i) => path[i] === index)) {
+    const candidate: ControlHit = { kind, path: [...path], plane, zOrder,
+      frame: { page, x: left, y: topEdge, width, height } };
+    // A record that claims any non-body story owner must never be reinterpreted
+    // through a coincident body address, even when that owner is malformed.
+    const hasStoryOwner = Object.prototype.hasOwnProperty.call(control, "headerFooter");
+    if (body && !hasStoryOwner && path.length === 3 && address.every((index, i) => path[i] === index)) {
       if (kind === "picture") candidate.bodyPicture = address;
       if (kind === "embedded") candidate.bodyEmbedded = address;
       if (kind === "shape") candidate.bodyShape = address;
       if (kind === "group") candidate.bodyGroup = address;
+    }
+    if (kind === "picture" && record(control.headerFooter)) {
+      const owner = control.headerFooter;
+      if ((owner.kind === "header" || owner.kind === "footer")
+        && index(owner.outerParaIdx) && index(owner.outerControlIdx)) {
+        candidate.headerFooterPicture = {
+          section: control.secIdx,
+          kind: owner.kind,
+          outerParagraph: owner.outerParaIdx,
+          outerControl: owner.outerControlIdx,
+          innerParagraph: control.paraIdx,
+          innerControl: control.controlIdx,
+        };
+      }
     }
     // The renderer exposes the model path independently of the sorting key.
     // Admit table-cell picture paths up to the nested table limit (64 levels)
@@ -127,10 +164,11 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
     }
     if (!top || above(candidate, top)) {
       top = candidate;
+      topIdentity = identity;
       ambiguous = false;
     } else if (!above(top, candidate)) {
       ambiguous = true;
     }
   }
-  return top && !ambiguous && !duplicates.has(top.path.join(".")) ? top : null;
+  return top && !ambiguous && topIdentity !== null && !duplicates.has(topIdentity) ? top : null;
 }

@@ -6,7 +6,26 @@ import { inspectRhwpShapePath } from "./shapeProperties";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 
 type JsonObject = Record<string, unknown>;
-export interface HwpReopenModel { model: string; structure: string; complete: boolean }
+export interface HwpHeaderFooterPictureAddress {
+  section: number;
+  kind: "header" | "footer";
+  outerParagraph: number;
+  outerControl: number;
+  innerParagraph: number;
+  innerControl: number;
+}
+export interface HwpHeaderFooterPictureModel {
+  address: HwpHeaderFooterPictureAddress;
+  owner: { ctrlId: "head" | "foot"; para: number; controlIndex: number };
+  properties: JsonObject;
+}
+export interface HwpReopenModel {
+  model: string;
+  structure: string;
+  complete: boolean;
+  headerPictures: HwpHeaderFooterPictureModel[];
+  headerPicturesComplete: boolean;
+}
 
 /** A getter result whose required fields are missing or of the wrong JSON type. */
 export class HwpEvidenceError extends Error {
@@ -398,6 +417,97 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   };
   const controls = json(doc.getControls!());
   if (!Array.isArray(controls) || controls.length > 100_000) throw new Error("HWP controls");
+  const headerPictures: HwpHeaderFooterPictureModel[] = [];
+  const headerOwners = controls.filter((value): value is JsonObject => isObject(value) && value.list === 0
+    && (value.ctrlId === "head" || value.ctrlId === "foot"));
+  let headerPicturesComplete = headerOwners.length === 0;
+  if (headerOwners.length > 0 && doc.getPageControlLayout && doc.getHeaderFooterPictureProperties
+    && doc.getSectionCount && doc.getParagraphCount) {
+    try {
+      const pageCount = doc.pageCount();
+      if (!isInt(pageCount, 0, 512)) throw new Error("HWP header layout page limit");
+      const sectionCount = count(doc.getSectionCount(), 4096);
+      const sectionParagraphCounts: number[] = [];
+      const sectionParagraphStarts: number[] = [];
+      let paragraphBase = 0;
+      for (let section = 0; section < sectionCount; section++) {
+        sectionParagraphStarts.push(paragraphBase);
+        const paragraphs = count(doc.getParagraphCount(section));
+        sectionParagraphCounts.push(paragraphs);
+        paragraphBase += paragraphs;
+      }
+      const controlsByAddress = new Map<string, JsonObject[]>();
+      for (const value of controls) {
+        if (!isObject(value) || value.list !== 0
+          || !isInt(value.para, 0) || !isInt(value.controlIndex, 0)) continue;
+        const key = `${value.para}/${value.controlIndex}`;
+        const matches = controlsByAddress.get(key) ?? [];
+        matches.push(value);
+        controlsByAddress.set(key, matches);
+      }
+      const pictures = new Map<string, HwpHeaderFooterPictureModel>();
+      headerPicturesComplete = true;
+      for (let page = 0; page < pageCount; page++) {
+        const layout = object(json(doc.getPageControlLayout(page)));
+        if (!Array.isArray(layout.controls) || layout.controls.length > 100_000) {
+          headerPicturesComplete = false;
+          break;
+        }
+        for (const value of layout.controls) {
+          node();
+          if (!isObject(value) || value.headerFooter === undefined) continue;
+          const owner = object(value.headerFooter);
+          if (value.type !== "image" || (owner.kind !== "header" && owner.kind !== "footer")) {
+            headerPicturesComplete = false;
+            continue;
+          }
+          const address: HwpHeaderFooterPictureAddress = {
+            section: value.secIdx as number,
+            kind: owner.kind,
+            outerParagraph: owner.outerParaIdx as number,
+            outerControl: owner.outerControlIdx as number,
+            innerParagraph: value.paraIdx as number,
+            innerControl: value.controlIdx as number,
+          };
+          if (![address.section, address.outerParagraph, address.outerControl,
+            address.innerParagraph, address.innerControl].every(index => isInt(index, 0))) {
+            headerPicturesComplete = false;
+            continue;
+          }
+          const key = canonical(address);
+          if (pictures.has(key)) continue; // Repeated pages render the same owned master-story picture.
+          const ownerId = address.kind === "header" ? "head" : "foot";
+          const ownerLabel = address.kind === "header" ? "머리말" : "꼬리말";
+          if (address.section >= sectionCount
+            || address.outerParagraph >= sectionParagraphCounts[address.section]!) {
+            headerPicturesComplete = false;
+            continue;
+          }
+          const globalParagraph = sectionParagraphStarts[address.section]! + address.outerParagraph;
+          const ownerMatches = controlsByAddress.get(`${globalParagraph}/${address.outerControl}`) ?? [];
+          if (ownerMatches.length !== 1 || ownerMatches[0]?.ctrlId !== ownerId
+            || ownerMatches[0]?.userDesc !== ownerLabel) {
+            headerPicturesComplete = false;
+            continue;
+          }
+          const properties = object(json(doc.getHeaderFooterPictureProperties(
+            address.section, address.outerParagraph, address.outerControl,
+            address.innerParagraph, address.innerControl,
+          )));
+          checkPictureProperties(properties);
+          pictures.set(key, {
+            address,
+            owner: { ctrlId: ownerId, para: globalParagraph, controlIndex: address.outerControl },
+            properties,
+          });
+        }
+      }
+      headerPictures.push(...[...pictures.values()].sort((left, right) =>
+        canonical(left.address).localeCompare(canonical(right.address))));
+    } catch {
+      headerPicturesComplete = false;
+    }
+  }
   const cellFields = controls.some(c => isObject(c) && c.list !== 0 && c.ctrlId === "") ? cellFieldEvidence(doc, controls, json) : new Map<unknown, JsonObject>();
   const bullets = doc.getBulletList ? json(doc.getBulletList()) : null;
   if (bullets !== null && !Array.isArray(bullets)) throw new Error("HWP bullets");
@@ -662,7 +772,10 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
       nested.push({ section, host, levels, coordinates, paragraphs });
     }
   }
-  return { model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes }), structure: canonical({ inventory, headings }), complete };
+  return {
+    model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes, headerPictures }),
+    structure: canonical({ inventory, headings }), complete, headerPictures, headerPicturesComplete,
+  };
 }
 
 function cursorListMap(cursor: JsonObject): Map<number, JsonObject> {

@@ -1,0 +1,195 @@
+--- a/src/model/document.rs
++++ b/src/model/document.rs
+@@ -425,6 +425,10 @@
+     pub extra_child_records: Vec<RawRecord>,
+     /// 바탕쪽 (extra_child_records에서 파싱, 렌더링 전용)
+     pub master_pages: Vec<MasterPage>,
++    /// HWPX secPr에서 아직 모델링하지 않는 presentation 요소의 원문 XML.
++    /// 섹션 재직렬화 때 이 요소가 조용히 탈락하지 않도록 보존한다.
++    #[serde(skip)]
++    pub hwpx_presentation_xml: Vec<String>,
+ }
+ 
+ impl Document {
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -3,8 +3,8 @@
+ //! 섹션 XML의 문단(<hp:p>), 텍스트 런(<hp:run>), 표(<hp:tbl>),
+ //! 이미지(<hp:pic>) 등을 기존 Document 모델로 변환한다.
+ 
+-use quick_xml::events::{BytesRef, Event};
+-use quick_xml::Reader;
++use quick_xml::events::{BytesRef, BytesStart, Event};
++use quick_xml::{Reader, Writer};
+ 
+ use crate::model::control::{
+     AutoNumber, AutoNumberType, Bookmark, CharOverlap, Control, Equation, Field, FieldType,
+@@ -1387,6 +1387,13 @@
+                     b"endNotePr" => {
+                         parse_note_pr_children(reader, &mut sec_def.endnote_shape, b"endNotePr")?;
+                     }
++                    // HWPX presentation metadata is not part of SectionDef's editable model,
++                    // but dropping it when any other section object is edited loses source data.
++                    b"presentation" => {
++                        sec_def
++                            .hwpx_presentation_xml
++                            .push(capture_hwpx_element(reader, e.to_owned())?);
++                    }
+                     _ => {}
+                 }
+             }
+@@ -1411,6 +1418,11 @@
+                             &mut page_border_fill_count,
+                         );
+                     }
++                    b"presentation" => {
++                        sec_def
++                            .hwpx_presentation_xml
++                            .push(write_hwpx_event(Event::Empty(e.to_owned()))?);
++                    }
+                     _ => {}
+                 }
+             }
+@@ -1427,6 +1439,77 @@
+         buf.clear();
+     }
+     Ok(col_def)
++}
++
++/// Retain one unmodeled HWPX secPr subtree as validated XML events.
++///
++/// The source namespace declarations for the HWPML `hp` and `hc` prefixes are present in the
++/// section template used by the writer. Capturing the complete subtree also preserves nested
++/// brush/gradation data instead of retaining only the element's visible scalar attributes.
++fn capture_hwpx_element(
++    reader: &mut Reader<&[u8]>,
++    start: BytesStart<'_>,
++) -> Result<String, HwpxError> {
++    let mut writer = Writer::new(Vec::new());
++    writer
++        .write_event(Event::Start(start.into_owned()))
++        .map_err(|error| HwpxError::XmlError(format!("secPr child: {error}")))?;
++    let mut depth = 1usize;
++    let mut buffer = Vec::new();
++    while depth > 0 {
++        let event = reader
++            .read_event_into(&mut buffer)
++            .map_err(|error| HwpxError::XmlError(format!("secPr child: {error}")))?;
++        match &event {
++            Event::Start(_) => depth += 1,
++            Event::End(_) => depth -= 1,
++            Event::Eof => return Err(HwpxError::XmlError("secPr child is unterminated".into())),
++            _ => {}
++        }
++        writer
++            .write_event(event.into_owned())
++            .map_err(|error| HwpxError::XmlError(format!("secPr child: {error}")))?;
++        buffer.clear();
++    }
++    String::from_utf8(writer.into_inner())
++        .map_err(|error| HwpxError::XmlError(format!("secPr child encoding: {error}")))
++}
++
++fn write_hwpx_event(event: Event<'_>) -> Result<String, HwpxError> {
++    let mut writer = Writer::new(Vec::new());
++    writer
++        .write_event(event.into_owned())
++        .map_err(|error| HwpxError::XmlError(format!("secPr child: {error}")))?;
++    String::from_utf8(writer.into_inner())
++        .map_err(|error| HwpxError::XmlError(format!("secPr child encoding: {error}")))
++}
++
++#[cfg(test)]
++mod secpr_presentation_tests {
++    use super::*;
++
++    #[test]
++    fn captures_nested_secpr_presentation_xml() {
++        let mut reader = Reader::from_str(
++            r###"<hp:presentation effect="none" applyto="WholeDoc"><hc:fillBrush><hc:gradation angle="0"><hc:color value="#0000FF"/></hc:gradation></hc:fillBrush></hp:presentation></hp:secPr>"###,
++        );
++        let mut section_def = SectionDef::default();
++        parse_sec_pr_children(&mut reader, &mut section_def).expect("parse secPr");
++        assert_eq!(section_def.hwpx_presentation_xml.len(), 1);
++        let preserved = &section_def.hwpx_presentation_xml[0];
++        assert!(preserved.starts_with(r#"<hp:presentation effect="none" applyto="WholeDoc">"#));
++        assert!(preserved.contains(r#"<hc:gradation angle="0">"#));
++        assert!(preserved.contains(r##"<hc:color value="#0000FF"/>"##));
++        assert!(preserved.ends_with("</hp:presentation>"));
++    }
++
++    #[test]
++    fn captures_empty_secpr_presentation_xml() {
++        let mut reader = Reader::from_str(r#"<hp:presentation effect="none"/><hp:secPr/>"#);
++        let mut section_def = SectionDef::default();
++        parse_sec_pr_children(&mut reader, &mut section_def).expect("parse secPr");
++        assert_eq!(section_def.hwpx_presentation_xml, [r#"<hp:presentation effect="none"/>"#]);
++    }
+ }
+ 
+ /// [Task #1050] `<hp:footNotePr>` / `<hp:endNotePr>` 의 자식 요소 파싱:
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -668,6 +668,7 @@
+         let refs = super::master_page::render_master_page_refs(&ids);
+         out = out.replacen("</hp:secPr>", &format!("{refs}</hp:secPr>"), 1);
+     }
++    out = append_hwpx_presentation(&out, &section.section_def)?;
+ 
+     // [#1407] 본문 단 정의(colPr) — 첫 문단 IR 의 ColumnDef 를 템플릿 하드코딩
+     // colPr(colCount=1)에 치환한다. 본문(depth 0) ColumnDef 는 render_runs 인라인
+@@ -877,10 +878,27 @@
+     secpr = replace_secpr_tab_stop(&secpr, sd)?;
+     secpr = replace_secpr_scalars(&secpr, sd);
+     secpr = replace_footnote_shape(&secpr, sd);
++    secpr = append_hwpx_presentation(&secpr, sd)?;
+     Ok(format!(
+         r#"<hp:run charPrIDRef="{}">{}</hp:run>"#,
+         first_cs, secpr
+     ))
++}
++
++/// Add preserved, currently unmodeled presentation nodes back to the generated secPr.
++fn append_hwpx_presentation(xml: &str, sd: &SectionDef) -> Result<String, SerializeError> {
++    if sd.hwpx_presentation_xml.is_empty() {
++        return Ok(xml.to_string());
++    }
++    let close = xml.rfind("</hp:secPr>").ok_or_else(|| {
++        SerializeError::UnsupportedInput("HWPX secPr presentation: missing secPr end".into())
++    })?;
++    let extra: String = sd.hwpx_presentation_xml.iter().cloned().collect();
++    let mut output = String::with_capacity(xml.len() + extra.len());
++    output.push_str(&xml[..close]);
++    output.push_str(&extra);
++    output.push_str(&xml[close..]);
++    Ok(output)
+ }
+ 
+ /// Paragraph 하나를 (완전한 `<hp:run>` 시퀀스 XML, `<hp:linesegarray>` 요소 XML,
+@@ -4059,6 +4077,26 @@
+     use super::*;
+     use crate::model::paragraph::{CharShapeRef, Paragraph};
+ 
++    #[test]
++    fn appends_preserved_presentation_inside_section_properties() {
++        let mut section_def = SectionDef::default();
++        section_def
++            .hwpx_presentation_xml
++            .push(r#"<hp:presentation effect="none"/>"#.to_owned());
++        let output = append_hwpx_presentation(EMPTY_SECTION_XML, &section_def).expect("append");
++        let close = output.find("</hp:secPr>").expect("secPr close");
++        let presentation = output.find(r#"<hp:presentation effect="none"/>"#).expect("presentation");
++        let last_border = output[..close].rfind("</hp:pageBorderFill>").expect("page border");
++        assert!(last_border < presentation && presentation < close, "{output}");
++        assert_eq!(output.matches(r#"<hp:presentation effect="none"/>"#).count(), 1);
++    }
++
++    #[test]
++    fn returns_original_template_when_presentation_is_absent() {
++        let output = append_hwpx_presentation(EMPTY_SECTION_XML, &SectionDef::default()).expect("append");
++        assert_eq!(output, EMPTY_SECTION_XML);
++    }
++
+     /// [#XXXX] `<hp:pageNum formatType="...">`의 원문자(circled digit) 값은 OWPML Core
+     /// 스키마 NumberType1 표기인 "CIRCLED_DIGIT"이어야 한다. 종전엔 "CIRCLE_DIGIT"(D 없음)
+     /// 오탈자로 방출돼 한컴이 값을 인식하지 못했다.

@@ -1,0 +1,410 @@
+--- a/src/doclang/adapter/inline.rs
++++ b/src/doclang/adapter/inline.rs
+@@ -733,6 +733,7 @@
+             control_idx: 0,
+             end_field_id: 0,
+             inner_slot_count: 0,
++            hwp5_end: None,
+         }];
+ 
+         let di = DocInfo::default();
+@@ -768,6 +769,7 @@
+             control_idx: 0,
+             end_field_id: 0,
+             inner_slot_count: 0,
++            hwp5_end: None,
+         }];
+ 
+         let di = DocInfo::default();
+--- a/src/document_core/commands/table_ops.rs
++++ b/src/document_core/commands/table_ops.rs
+@@ -7455,7 +7455,7 @@
+ 
+         // Export HWP and HWPX and reopen independently
+         let hwp_bytes = core.export_hwp_native().unwrap();
+-        let reopened_hwp = DocumentCore::from_hwp_bytes(&hwp_bytes).unwrap();
++        let reopened_hwp = DocumentCore::from_bytes(&hwp_bytes).unwrap();
+         let rt_hwp = table(&reopened_hwp, para, ctrl);
+         let bf_hwp = &reopened_hwp.document.doc_info.border_fills
+             [(rt_hwp.cells[0].border_fill_id - 1) as usize];
+@@ -7463,7 +7463,7 @@
+         assert_eq!(bf_hwp.fill.fill_type, FillType::Solid);
+ 
+         let hwpx_bytes = core.export_hwpx_native().unwrap();
+-        let reopened_hwpx = DocumentCore::from_hwpx_bytes(&hwpx_bytes).unwrap();
++        let reopened_hwpx = DocumentCore::from_bytes(&hwpx_bytes).unwrap();
+         let rt_hwpx = table(&reopened_hwpx, para, ctrl);
+         let bf_hwpx = &reopened_hwpx.document.doc_info.border_fills
+             [(rt_hwpx.cells[0].border_fill_id - 1) as usize];
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -595,6 +595,20 @@
+ }
+ 
+ /// 필드 텍스트 범위 (0x03 FIELD_BEGIN ~ 0x04 FIELD_END 사이 텍스트)
++#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
++pub struct Hwp5FieldEnd {
++    /// FIELD_END inline-control payload after its leading 0x0004 code unit,
++    /// including the repeated trailing code unit. The format does not define
++    /// these seven UTF-16 units for every field type, so retain them verbatim.
++    pub data: [u16; 7],
++    /// Field identity at parse time. Do not reuse an opaque marker if this
++    /// field has since changed type or identity.
++    pub source_ctrl_id: u32,
++    pub source_field_id: u32,
++    pub source_field_type: crate::model::control::FieldType,
++    pub source_memo_index: u32,
++}
++
+ #[derive(Debug, Clone, Default, serde::Serialize)]
+ pub struct FieldRange {
+     /// text 문자열 내 시작 인덱스 (포함)
+@@ -619,6 +633,10 @@
+     /// 본문으로 표시한다(10k 스윕 G-순수증식 16경로 근인). 이 값만큼 슬롯을
+     /// 지나서 fieldEnd 를 놓으면 원본 범위가 보존된다.
+     pub inner_slot_count: usize,
++    /// HWP5 matched FIELD_END payload. It is not exposed in JSON and remains
++    /// usable only while the paired source field's type and identity match.
++    #[serde(skip)]
++    pub hwp5_end: Option<Hwp5FieldEnd>,
+ }
+ 
+ /// 고아 FIELD_END (0x04) — 짝이 되는 FIELD_BEGIN 이 다른 문단에 있는
+@@ -1890,6 +1908,7 @@
+                     control_idx: fr.control_idx,
+                     end_field_id: fr.end_field_id,
+                     inner_slot_count: fr.inner_slot_count,
++                    hwp5_end: fr.hwp5_end,
+                 });
+             } else if fr.end_char_idx <= split_pos {
+                 // 완전히 원래 문단 쪽
+@@ -1903,6 +1922,7 @@
+                     end_field_id: fr.end_field_id,
+                     // 문단이 잘려 안쪽 슬롯 소속이 불확실해진다 — 보수적으로 0.
+                     inner_slot_count: 0,
++                    hwp5_end: fr.hwp5_end,
+                 });
+             }
+         }
+@@ -2167,6 +2187,7 @@
+                 control_idx: fr.control_idx + ctrl_offset,
+                 end_field_id: fr.end_field_id,
+                 inner_slot_count: fr.inner_slot_count,
++                hwp5_end: fr.hwp5_end,
+             });
+         }
+ 
+--- a/src/parser/body_text/tests.rs
++++ b/src/parser/body_text/tests.rs
+@@ -986,6 +986,26 @@
+     assert_eq!(parts.orphan_field_ends[0].char_idx, 2, "글자 뒤에 놓인다");
+ }
+ 
++#[test]
++fn matched_hwp5_field_end_keeps_its_opaque_payload() {
++    let payload: [u16; 7] = [0x6b6c, 0x0963, 0x0001, 0x0000, 0x0025, 0x0000, 0x0004];
++    let mut data = Vec::new();
++    for unit in [0x0003u16, 0x6b6c, 0x0963, 1, 0, 0, 0, 0x0003] {
++        data.extend_from_slice(&unit.to_le_bytes());
++    }
++    data.extend_from_slice(&u16::from(b'A').to_le_bytes());
++    data.extend_from_slice(&0x0004u16.to_le_bytes());
++    for unit in payload {
++        data.extend_from_slice(&unit.to_le_bytes());
++    }
++    data.extend_from_slice(&0x000Du16.to_le_bytes());
++
++    let parts = parse_para_text(&data);
++    assert_eq!(parts.text, "A");
++    assert_eq!(parts.field_ranges.len(), 1);
++    assert_eq!(parts.field_ranges[0].hwp5_end.unwrap().data, payload);
++}
++
+ /// 종료 마커는 앞 문단에서 열린 필드의 id 를 물려받아야 한다.
+ ///
+ /// 매달린 참조(`beginIDRef="0"`)를 내보내면 한글이 **파일을 열지 못한다**(01752 실측).
+@@ -1042,6 +1062,7 @@
+         control_idx: 0,
+         end_field_id: 0,
+         inner_slot_count: 0,
++        hwp5_end: None,
+     });
+ 
+     let stray = Paragraph {
+@@ -1145,6 +1166,7 @@
+                         control_idx: field_ctrl_idx,
+                         end_field_id: 0,
+                         inner_slot_count: ctrl_idx.saturating_sub(field_ctrl_idx + 1),
++                        hwp5_end: None,
+                     });
+                 } else {
+                     // 짝 FIELD_BEGIN 이 **앞 문단**에 있는 다단락 필드의 종료 마커.
+--- a/src/parser/body_text.rs
++++ b/src/parser/body_text.rs
+@@ -29,8 +29,8 @@
+     BindingMethod, ColumnDef, ColumnDirection, ColumnType, PageBorderFill, PageDef,
+ };
+ use crate::model::paragraph::{
+-    CharShapeRef, ColumnBreakType, FieldRange, LineSeg, OrphanFieldEnd, Paragraph, RangeTag,
+-    TitleMark,
++    CharShapeRef, ColumnBreakType, FieldRange, Hwp5FieldEnd, LineSeg, OrphanFieldEnd, Paragraph,
++    RangeTag, TitleMark,
+ };
+ 
+ /// `PARA_TEXT` 한 레코드에서 뽑아낸 문단 본문 축 정보.
+@@ -386,7 +386,35 @@
+     }
+ 
+     para.import_markpen_range_tags();
++    // Matched FIELD_END 뒤의 7 code unit은 HWP5 일반 필드 계약에 정의되어 있지 않다.
++    // 파서/라이터가 값을 재생성해 미지 데이터를 바꾸지 않도록 원본 컨트롤과 필드 ID,
++    // 종류를 함께 보관한다.
++    for range in &mut para.field_ranges {
++        let Some(end) = range.hwp5_end.as_mut() else {
++            continue;
++        };
++        let Some(Control::Field(field)) = para.controls.get(range.control_idx) else {
++            range.hwp5_end = None;
++            continue;
++        };
++        end.source_ctrl_id = field.ctrl_id;
++        end.source_field_id = field.field_id;
++        end.source_field_type = field.field_type;
++        end.source_memo_index = hwp5_memo_index(field);
++    }
+     Ok(para)
++}
++
++fn hwp5_memo_index(field: &crate::model::control::Field) -> u32 {
++    if field.memo_index != 0 {
++        return field.memo_index;
++    }
++    field
++        .command
++        .split('/')
++        .nth(2)
++        .and_then(|part| part.parse().ok())
++        .unwrap_or(0)
+ }
+ 
+ /// PARA_HEADER 바이너리 데이터 파싱
+@@ -548,6 +576,13 @@
+                         control_idx: field_ctrl_idx,
+                         end_field_id: 0,
+                         inner_slot_count: ctrl_idx.saturating_sub(field_ctrl_idx + 1),
++                        hwp5_end: read_hwp5_field_end(data, pos).map(|data| Hwp5FieldEnd {
++                            data,
++                            source_ctrl_id: 0,
++                            source_field_id: 0,
++                            source_field_type: crate::model::control::FieldType::Unknown,
++                            source_memo_index: 0,
++                        }),
+                     });
+                 } else {
+                     // 짝 FIELD_BEGIN 이 **앞 문단**에 있는 다단락 필드의 종료 마커.
+@@ -694,6 +729,15 @@
+         orphan_field_ends,
+         nb_space_control,
+     }
++}
++
++fn read_hwp5_field_end(data: &[u8], pos: usize) -> Option<[u16; 7]> {
++    let payload = data.get(pos + 2..pos + 16)?;
++    let mut units = [0; 7];
++    for (unit, bytes) in units.iter_mut().zip(payload.chunks_exact(2)) {
++        *unit = u16::from_le_bytes([bytes[0], bytes[1]]);
++    }
++    Some(units)
+ }
+ 
+ /// extended 컨트롤 문자 여부 (CTRL_HEADER 레코드가 있는 컨트롤)
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -1121,6 +1121,7 @@
+                         control_idx: begin_control_idx,
+                         end_field_id: field_id,
+                         inner_slot_count,
++                        hwp5_end: None,
+                     });
+                 } else {
+                     // [Task #1556] 짝 fieldBegin 이 다른 문단에 있는 다단락 필드의 종료 마커.
+--- a/src/serializer/body_text.rs
++++ b/src/serializer/body_text.rs
+@@ -759,7 +759,7 @@
+ 
+     for fr in &para.field_ranges {
+         let marker = if let Some(control) = para.controls.get(fr.control_idx) {
+-            field_end_marker(control)
++            field_end_marker(control, fr.hwp5_end)
+         } else {
+             FieldEndMarker::default()
+         };
+@@ -1250,10 +1250,14 @@
+ struct FieldEndMarker {
+     ctrl_id: u32,
+     memo_index: u32,
+-}
+-
+-fn field_end_marker(ctrl: &Control) -> FieldEndMarker {
+-    match ctrl {
++    raw_payload: Option<[u16; 7]>,
++}
++
++fn field_end_marker(
++    ctrl: &Control,
++    source_end: Option<crate::model::paragraph::Hwp5FieldEnd>,
++) -> FieldEndMarker {
++    let mut marker = match ctrl {
+         Control::Field(field)
+             if field.field_type == crate::model::control::FieldType::Memo
+                 || field.command.starts_with("MEMO/") =>
+@@ -1261,14 +1265,28 @@
+             FieldEndMarker {
+                 ctrl_id: tags::FIELD_MEMO,
+                 memo_index: memo_field_index(field),
++                raw_payload: None,
+             }
+         }
+         Control::Field(field) => FieldEndMarker {
+             ctrl_id: field.ctrl_id,
+             memo_index: 0,
++            raw_payload: None,
+         },
+         _ => FieldEndMarker::default(),
+-    }
++    };
++    if let (Control::Field(field), Some(source_end)) = (ctrl, source_end) {
++        let current_memo_index = memo_field_index(field);
++        if field.field_id != 0
++            && source_end.source_ctrl_id == field.ctrl_id
++            && source_end.source_field_id == field.field_id
++            && source_end.source_field_type == field.field_type
++            && source_end.source_memo_index == current_memo_index
++        {
++            marker.raw_payload = Some(source_end.data);
++        }
++    }
++    marker
+ }
+ 
+ fn memo_field_index(field: &crate::model::control::Field) -> u32 {
+@@ -1283,6 +1301,11 @@
+ }
+ 
+ fn push_field_end_ctrl(code_units: &mut Vec<u16>, marker: FieldEndMarker) {
++    if let Some(raw_payload) = marker.raw_payload {
++        code_units.push(0x0004);
++        code_units.extend_from_slice(&raw_payload);
++        return;
++    }
+     if marker.ctrl_id == tags::FIELD_MEMO {
+         // Hancom writes MEMO field end with a distinct 8-code-unit marker:
+         //   04 00 65 6d 25 00 01 ff ff 00 01 00 00 00 04 00
+@@ -1495,7 +1518,7 @@
+     };
+     use crate::model::document::{Section, SectionDef};
+     use crate::model::paragraph::{
+-        CharShapeRef, FieldRange, LineSeg, Paragraph, RangeTag, TitleMark,
++        CharShapeRef, FieldRange, Hwp5FieldEnd, LineSeg, Paragraph, RangeTag, TitleMark,
+     };
+     use crate::parser::body_text::parse_body_text_section;
+ 
+@@ -2470,6 +2493,46 @@
+             .any(|window| window == expected_field_end));
+     }
+ 
++    #[test]
++    fn hwp5_field_end_payload_is_reused_only_for_the_same_field() {
++        let data = [0x6b6c, 0x0963, 0x0001, 0x0000, 0x0025, 0x0000, 0x0004];
++        let source = Hwp5FieldEnd {
++            data,
++            source_ctrl_id: tags::FIELD_CLICKHERE,
++            source_field_id: 77,
++            source_field_type: FieldType::ClickHere,
++            source_memo_index: 0,
++        };
++        let original = Field {
++            field_type: FieldType::ClickHere,
++            ctrl_id: tags::FIELD_CLICKHERE,
++            field_id: 77,
++            ..Default::default()
++        };
++
++        let marker = field_end_marker(&Control::Field(original.clone()), Some(source));
++        assert_eq!(marker.raw_payload, Some(data));
++        let mut emitted = Vec::new();
++        push_field_end_ctrl(&mut emitted, marker);
++        assert_eq!(emitted, [vec![0x0004], data.to_vec()].concat());
++
++        let mut changed_id = original.clone();
++        changed_id.field_id = 78;
++        assert_eq!(
++            field_end_marker(&Control::Field(changed_id), Some(source)).raw_payload,
++            None,
++            "다른 field id에는 opaque payload를 복사하지 않는다"
++        );
++
++        let mut changed_type = original;
++        changed_type.field_type = FieldType::Hyperlink;
++        assert_eq!(
++            field_end_marker(&Control::Field(changed_type), Some(source)).raw_payload,
++            None,
++            "다른 필드 종류에는 opaque payload를 복사하지 않는다"
++        );
++    }
++
+     /// [#1795] FIELD_END 전용 갭(8 cu)을 다음 컨트롤(FIELD_BEGIN)이 선점하면
+     /// 이후 char_offsets 가 시프트되어 lineseg text_start 매핑이 어긋난다.
+     /// 필드 2개 문단에서 스트림 배치와 offsets 가 라운드트립 보존되는지 검증.
+@@ -2688,6 +2751,7 @@
+                 control_idx: 1,
+                 end_field_id: 0,
+                 inner_slot_count: 0,
++                hwp5_end: None,
+             }],
+             ..Default::default()
+         };
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -5914,6 +5914,7 @@
+             control_idx: 0,
+             end_field_id: 100,
+             inner_slot_count: 0,
++            hwp5_end: None,
+         });
+         let (doc, section) = make_doc_with_paragraph(para);
+         let mut ctx = SerializeContext::collect_from_document(&doc);
+@@ -6015,6 +6016,7 @@
+             control_idx: 0,
+             end_field_id: 0,
+             inner_slot_count: 0,
++            hwp5_end: None,
+         });
+ 
+         let (doc, section) = make_doc_with_paragraph(para);
+@@ -6380,6 +6382,7 @@
+             control_idx: 0,
+             end_field_id: 1_867_945_538,
+             inner_slot_count: 0,
++            hwp5_end: None,
+         }];
+         // ① 여는 짝이 **있는** 고아 — 종전 계약대로 방출하되 begin 이 먼저다.
+         para.orphan_field_ends = vec![OrphanFieldEnd {
+--- a/src/wasm_api/tests.rs
++++ b/src/wasm_api/tests.rs
+@@ -16166,6 +16166,7 @@
+         img_dim: (0, 0),
+         reverse: ref_pic.reverse,
+         lock: false,
++        ..Default::default()
+     };
+ 
+     // 5. 문단 구성 (참조 파일: 단일 문단에 SectionDef + ColumnDef + Picture)
+@@ -17360,6 +17361,7 @@
+         img_dim: (0, 0),
+         reverse: ref_pic.reverse,
+         lock: false,
++        ..Default::default()
+     };
+ 
+     // 6. 셀 내부 문단 구성 (cc=9: gso(8)+CR(1), mask=0x00000800)

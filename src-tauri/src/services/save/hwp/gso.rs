@@ -53,10 +53,25 @@ const ATTR_LOCKED: u32 = 1 << 30;
 
 fn gso_header_id(rs: &[Record<'_>]) -> Option<u32> {
     let first = rs.first()?;
-    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 46 {
+    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 40 {
         return None;
     }
     Some(u32::from_le_bytes(first.2.get(36..40)?.try_into().ok()?))
+}
+
+/// HWP5 permits CTRL_HEADER records with no description string at all. The
+/// pinned RHWP parser reads that as an empty description and its writer emits
+/// the canonical zero-length UTF-16 string before the exact opaque tail.
+fn description_parts(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    if bytes.len() < 44 {
+        return None;
+    }
+    if bytes.len() < 46 {
+        return Some((&[], &bytes[44..]));
+    }
+    let units = u16::from_le_bytes(bytes[44..46].try_into().ok()?) as usize;
+    let end = 46usize.checked_add(units.checked_mul(2)?)?;
+    Some((bytes.get(46..end)?, bytes.get(end..)?))
 }
 
 /// An original caption subtree can be carried through an unrelated edit by
@@ -103,7 +118,7 @@ pub(super) fn caption_subtrees<'a, 'b>(
 
 fn shape_component_pos(rs: &[Record<'_>]) -> Option<usize> {
     let first = rs.first()?;
-    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 46 {
+    if first.0 != TAG_CTRL_HEADER || !first.2.starts_with(CTRL_GSO) || first.2.len() < 44 {
         return None;
     }
     let level = first.1 + 1;
@@ -905,6 +920,109 @@ pub(super) fn evolved_candidate(
     )
 }
 
+/// Prove geometry-only edits to pictures owned by one exact HWP header/footer
+/// control. The outer `head`/`foot` control and every record outside a picture
+/// subtree must remain byte-identical. Relative levels are normalized only for
+/// reusing the existing HWP GSO field proof.
+pub(super) fn prove_header_story_edit(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    defs: &Defs<'_>,
+) -> Checked<Vec<u32>> {
+    fn is_owner(record: &Record<'_>) -> bool {
+        record.0 == TAG_CTRL_HEADER
+            && record.1 == 1
+            && record
+                .2
+                .get(..4)
+                .is_some_and(|id| id == b"daeh" || id == b"toof")
+    }
+
+    fn picture_spans(records: &[Record<'_>]) -> Checked<Vec<(usize, usize)>> {
+        let owner_level = records[0].1;
+        let mut spans = Vec::new();
+        let mut index = 1;
+        while index < records.len() {
+            let record = records[index];
+            if record.0 == TAG_CTRL_HEADER && record.2.starts_with(CTRL_GSO) {
+                preserved(record.1 >= owner_level + 2, BODY)?;
+                let end = records[index + 1..]
+                    .iter()
+                    .position(|next| next.1 <= record.1)
+                    .map_or(records.len(), |offset| index + 1 + offset);
+                valid(end > index, BODY)?;
+                spans.push((index, end));
+                index = end;
+            } else {
+                index += 1;
+            }
+        }
+        Ok(spans)
+    }
+
+    preserved(old.first().is_some_and(is_owner), BODY)?;
+    preserved(new.first().is_some_and(is_owner), BODY)?;
+    preserved(old.len() == new.len() && old[0] == new[0], BODY)?;
+    preserved(
+        old.iter().zip(new).all(|(a, b)| (a.0, a.1) == (b.0, b.1)),
+        BODY,
+    )?;
+
+    let old_spans = picture_spans(old)?;
+    let new_spans = picture_spans(new)?;
+    preserved(old_spans == new_spans && !old_spans.is_empty(), BODY)?;
+    // Captions are separate editable stories and are outside this movement/resize
+    // operation. Preserve each caption subtree byte-for-byte even when its picture
+    // geometry is otherwise valid.
+    preserved(caption_subtrees(old).eq(caption_subtrees(new)), BODY)?;
+
+    let mut changed_ids = Vec::new();
+    for &(start, end) in &old_spans {
+        let before = &old[start..end];
+        let after = &new[start..end];
+        if before == after {
+            continue;
+        }
+        let Some((SC_PICTURE, _, _)) = shape_ctrl_id(before) else {
+            return Err(finding(FindingCode::RecordsChanged, BODY));
+        };
+        let Some(id) = gso_header_id(before) else {
+            return Err(finding(FindingCode::OutputMalformed, BODY));
+        };
+        preserved(id != 0, BODY)?;
+        preserved(dword(before[0].2, 4)? as u32 & ATTR_CAPTION == 0, BODY)?;
+        preserved(
+            description_parts(before[0].2) == description_parts(after[0].2),
+            BODY,
+        )?;
+        let shift = before[0]
+            .1
+            .checked_sub(1)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+        preserved(
+            before.iter().chain(after).all(|record| record.1 >= shift),
+            BODY,
+        )?;
+        let normalize = |(tag, level, data)| (tag, level - shift, data);
+        let old_normalized: Vec<_> = before.iter().copied().map(normalize).collect();
+        let new_normalized: Vec<_> = after.iter().copied().map(normalize).collect();
+        prove_evolved_gso(&old_normalized, &new_normalized, defs, defs)?;
+        changed_ids.push(id);
+    }
+    preserved(!changed_ids.is_empty(), BODY)?;
+
+    let mut in_picture = vec![false; old.len()];
+    for &(start, end) in &old_spans {
+        in_picture[start..end].fill(true);
+    }
+    for (index, (before, after)) in old.iter().zip(new).enumerate() {
+        if !in_picture[index] {
+            preserved(before == after, BODY)?;
+        }
+    }
+    Ok(changed_ids)
+}
+
 /// Rank and wrapping plane for a bare floating body shape. Reordering is
 /// never routed through the broader field evolution or deletion proofs.
 pub(super) fn shape_layer(rs: &[Record<'_>]) -> Option<(i32, u32)> {
@@ -1461,6 +1579,35 @@ fn matches_rotated_rendering(
         && (rotation[5] - (ty - y)).abs() <= position_tol
 }
 
+/// A second authentic nonrotated HWP5 representation scales around the object
+/// origin: T(offset) × S(current/original, -offset) × I. RHWP parses this as
+/// `current_*` geometry and emits the canonical translation form after edits.
+fn matches_scaled_source_rendering(
+    raw: &[u8],
+    offset: [i32; 2],
+    original: [usize; 2],
+    current: [usize; 2],
+) -> bool {
+    let Some([translation, scale, rotation]) = parse_rendering_matrices(raw) else {
+        return false;
+    };
+    if original.into_iter().chain(current).any(|dim| dim == 0) {
+        return false;
+    }
+    let [x, y] = offset.map(f64::from);
+    let close = |actual: f64, expected: f64| {
+        (actual - expected).abs() <= 8.0 * f64::EPSILON * (1.0 + expected.abs())
+    };
+    translation == [1.0, 0.0, x, 0.0, 1.0, y]
+        && close(scale[0], current[0] as f64 / original[0] as f64)
+        && scale[1] == 0.0
+        && close(scale[2], -x)
+        && scale[3] == 0.0
+        && close(scale[4], current[1] as f64 / original[1] as f64)
+        && close(scale[5], -y)
+        && rotation == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+}
+
 fn compose_affine(a: [f64; 6], b: [f64; 6]) -> [f64; 6] {
     [
         a[0] * b[0] + a[1] * b[3],
@@ -1509,6 +1656,7 @@ fn validate_rendering_info(
     is_container: bool,
     component_offset: [i32; 2],
     rotated_pic: Option<(i16, [usize; 2], [usize; 2], [usize; 2])>,
+    scaled_source_picture: bool,
 ) -> Checked<()> {
     if is_container {
         if old_r == new_r {
@@ -1573,7 +1721,7 @@ fn validate_rendering_info(
     // The writer also has an identity fallback. Admit replacement only where
     // the source is one of these two known representations.
     preserved(
-        matches(old_r, identity) || matches(old_r, translation),
+        matches(old_r, identity) || matches(old_r, translation) || scaled_source_picture,
         BODY,
     )?;
     preserved(matches(new_r, translation), BODY)
@@ -1584,11 +1732,15 @@ fn check_ctrl_header(
     new_h: &[u8],
     is_picture: bool,
 ) -> Checked<(usize, usize, usize, usize, bool, bool)> {
-    valid(old_h.len() >= 46 && new_h.len() >= 46, BODY)?;
+    valid(old_h.len() >= 44 && new_h.len() >= 44, BODY)?;
     preserved(old_h[..4] == *CTRL_GSO && new_h[..4] == *CTRL_GSO, BODY)?;
     preserved(old_h[36..40] == new_h[36..40], BODY)?; // instance_id
     preserved(old_h[24..36] == new_h[24..36], BODY)?; // z_order + margins
     preserved(old_h[40..44] == new_h[40..44], BODY)?; // prevent_page_break
+    let (old_description, old_extra) = description_parts(old_h)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let (new_description, new_extra) = description_parts(new_h)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
 
     let old_attr = dword(old_h, 4)? as u32;
     let new_attr = dword(new_h, 4)? as u32;
@@ -1608,7 +1760,8 @@ fn check_ctrl_header(
                 && new_h[8..16] == [0; 8]
                 && old_h[16..24] == new_h[16..24]
                 && old_h[28..36] == [0; 8]
-                && old_h[44..] == new_h[44..],
+                && old_description == new_description
+                && old_extra == new_extra,
             BODY,
         )?;
     } else {
@@ -1648,19 +1801,15 @@ fn check_ctrl_header(
         )?;
     }
 
-    let old_n = word(old_h, 44)?;
-    let new_n = word(new_h, 44)?;
-    let old_end = 46usize
-        .checked_add(2 * old_n)
-        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-    let new_end = 46usize
-        .checked_add(2 * new_n)
-        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-    valid(old_h.len() >= old_end && new_h.len() >= new_end, BODY)?;
-    let desc_changed = old_h[44..old_end] != new_h[44..new_end];
+    let desc_changed = old_description != new_description;
     if desc_changed {
-        preserved(is_picture && new_n <= MAX_DESC_UNITS, BODY)?;
-        let units: Vec<u16> = new_h[46..new_end]
+        preserved(
+            is_picture
+                && new_description.len().is_multiple_of(2)
+                && new_description.len() / 2 <= MAX_DESC_UNITS,
+            BODY,
+        )?;
+        let units: Vec<u16> = new_description
             .as_chunks::<2>()
             .0
             .iter()
@@ -1669,7 +1818,7 @@ fn check_ctrl_header(
         valid(String::from_utf16(&units).is_ok(), BODY)?;
     }
     // Preserve any trailing raw_extra bytes verbatim.
-    preserved(old_h[old_end..] == new_h[new_end..], BODY)?;
+    preserved(old_extra == new_extra, BODY)?;
     Ok((
         old_w,
         old_h_dim,
@@ -2314,6 +2463,18 @@ pub(super) fn prove_evolved_gso(
         dword(new_sc, attr_at)? as i32,
         dword(new_sc, attr_at + 4)? as i32,
     ];
+    let old_component_offset = [
+        dword(old_sc, attr_at)? as i32,
+        dword(old_sc, attr_at + 4)? as i32,
+    ];
+    let scaled_source_picture = is_picture
+        && !rotated_picture
+        && matches_scaled_source_rendering(
+            &old_sc[r_at..old_r_end],
+            old_component_offset,
+            [orig_w, orig_h],
+            [old_cw, old_ch],
+        );
     validate_rendering_info(
         &old_sc[r_at..old_r_end],
         &new_sc[r_at..new_r_end],
@@ -2321,6 +2482,7 @@ pub(super) fn prove_evolved_gso(
         is_container,
         component_offset,
         rotated_picture.then_some((new_rot, [orig_w, orig_h], [old_cw, old_ch], [new_cw, new_ch])),
+        scaled_source_picture,
     )?;
 
     if is_container {
@@ -2936,6 +3098,28 @@ mod tests {
         b
     }
 
+    fn header_picture_owner(x: i32, y: i32, ctrl_id: u32, bin_id: u16) -> Vec<(u16, u16, Vec<u8>)> {
+        let mut owner = vec![0u8; 16];
+        owner[..4].copy_from_slice(b"daeh");
+        let mut paragraph = vec![0u8; 22];
+        paragraph[0..4].copy_from_slice(&1u32.to_le_bytes());
+        vec![
+            (71, 1, owner),
+            (66, 2, paragraph),
+            (
+                71,
+                3,
+                ctrl_header(ctrl_id, 0x000a_0311, x, y, 4000, 3000, "", b"\xaa\xbb"),
+            ),
+            (
+                76,
+                4,
+                shape_component_base(b"cip$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (85, 5, picture_leaf(bin_id, [0, 0, 4000, 3000], b"\x01\x02")),
+        ]
+    }
+
     fn shape_component_drawing(
         ctrl: &[u8; 4],
         w: u32,
@@ -3240,6 +3424,112 @@ mod tests {
         let s2_ref: Vec<_> = s2.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
         let o2 = build_hwp(&di_ref, &s2_ref, b"\x89PNG\r\n\x1a\n123");
         assert_eq!(check_with_preview_refresh(&o1, &o2), vec![]);
+    }
+
+    #[test]
+    fn header_picture_geometry_evolution_is_exactly_owned() {
+        fn borrow(rows: &[(u16, u16, Vec<u8>)]) -> Vec<(u16, u16, &[u8])> {
+            rows.iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect()
+        }
+
+        let original = header_picture_owner(0, 0, 101, 1);
+        let moved = header_picture_owner(120, 80, 101, 1);
+        let bin_data = [0u8; 1];
+        let defs = super::super::insertions::Defs::from([(18, vec![&bin_data[..]])]);
+        let before = borrow(&original);
+        let after = borrow(&moved);
+        assert_eq!(
+            super::prove_header_story_edit(&before, &after, &defs).unwrap(),
+            vec![101]
+        );
+
+        let mut omitted_description = original.clone();
+        omitted_description[2].2 = ctrl_header(101, 0x000a_0311, 0, 0, 4000, 3000, "", &[]);
+        omitted_description[2].2.truncate(44);
+        let mut canonicalized = moved.clone();
+        canonicalized[2].2 = ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "", &[]);
+        assert_eq!(
+            super::prove_header_story_edit(&borrow(&omitted_description), &borrow(&canonicalized), &defs).unwrap(),
+            vec![101],
+            "RHWP's explicit empty description preserves the source's omitted empty field"
+        );
+
+        let mut body_text = moved.clone();
+        body_text[2].2[0] = b'X';
+        assert!(super::prove_header_story_edit(&before, &borrow(&body_text), &defs).is_err());
+
+        let mut other_owner = moved.clone();
+        other_owner[0].2[..4].copy_from_slice(b"toof");
+        assert!(super::prove_header_story_edit(&before, &borrow(&other_owner), &defs).is_err());
+
+        let mut replaced_media = moved.clone();
+        replaced_media[4].2[71..73].copy_from_slice(&2u16.to_le_bytes());
+        assert!(super::prove_header_story_edit(&before, &borrow(&replaced_media), &defs).is_err());
+
+        let mut changed_description = moved.clone();
+        changed_description[2].2 = ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "x", b"\xaa\xbb");
+        assert!(super::prove_header_story_edit(&before, &borrow(&changed_description), &defs).is_err());
+
+        let non_picture = vec![
+            (71, 1, original[0].2.clone()),
+            (66, 2, original[1].2.clone()),
+            (71, 3, ctrl_header(101, 0x000a_0000, 120, 80, 4000, 3000, "", b"")),
+            (
+                76,
+                4,
+                shape_component_base(b"cer$", 4000, 3000, 4000, 3000, 0, 0),
+            ),
+            (79, 5, vec![0; 33]),
+        ];
+        assert!(super::prove_header_story_edit(&before, &borrow(&non_picture), &defs).is_err());
+    }
+
+    #[test]
+    fn source_scaled_hwp_picture_rendering_is_bound_to_object_geometry() {
+        let mut raw = 1u16.to_le_bytes().to_vec();
+        for value in [
+            1.0f64,
+            0.0,
+            -8917.0,
+            0.0,
+            1.0,
+            -430.0,
+            9367.0 / 30000.0,
+            0.0,
+            8917.0,
+            0.0,
+            4559.0 / 20000.0,
+            430.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        ] {
+            raw.extend_from_slice(&value.to_le_bytes());
+        }
+        let offset = [-8917, -430];
+        assert!(super::matches_scaled_source_rendering(
+            &raw,
+            offset,
+            [30000, 20000],
+            [9367, 4559]
+        ));
+        assert!(!super::matches_scaled_source_rendering(
+            &raw,
+            [-8916, -430],
+            [30000, 20000],
+            [9367, 4559]
+        ));
+        assert!(!super::matches_scaled_source_rendering(
+            &raw,
+            offset,
+            [30000, 20000],
+            [9366, 4559]
+        ));
     }
 
     #[test]

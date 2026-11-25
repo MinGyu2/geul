@@ -1,2 +1,4 @@
 patches/rhwp/stage3a-hwp5-cubic-segments.patch whitespace=-blank-at-eol,-blank-at-eof
 patches/rhwp/stage3a-hwp5-group-child-editing.patch whitespace=-blank-at-eol,-blank-at-eof
+patches/rhwp/stage3a-hwpx-secpr-presentation-preservation.patch whitespace=-blank-at-eol,-blank-at-eof
+patches/rhwp/stage3a-p5-hwp-field-end-preservation.patch whitespace=-blank-at-eol,-blank-at-eof

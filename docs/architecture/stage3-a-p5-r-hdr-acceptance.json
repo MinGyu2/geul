@@ -1,0 +1,66 @@
+{
+  "date": "2026-11-25",
+  "issueId": "P5-R-HDR",
+  "category": "B",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": null,
+  "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "rhwpGeneration": "febc56678adf0c9e367ed90385c1c969706659d43bd517b1e9ebea685ab30f6b",
+  "supported": "HWP5와 HWPX에서 정확한 section/header owner가 확인된 머리말 소유 그림의 지원 geometry 편집. 선택·변경은 활성 머리말 소유자에 한정하고 문서 본문과 다른 section/header를 보존한다.",
+  "refused": "소유 section/header를 유일하게 확정할 수 없거나 지원되지 않는 구조·변환·필드가 있는 편집은 fail-closed로 거부한다.",
+  "preservation": [
+    "HWPX header/section presentation metadata와 관련 없는 relationships 및 media 보존",
+    "HWP5 CFB stream inventory, 압축 해제 DocInfo 362개 record, 모든 BinData payload SHA-256 보존",
+    "HWP5 BodyText/Section0의 소유 그림 geometry record 외 변경 없음; control identity와 non-position fields 보존",
+    "Undo/Redo, T009 동기 저장, 같은 프로세스 재열기 및 별도 앱 프로세스 재열기"
+  ],
+  "checks": {
+    "focusedReleaseRust": "PASS: 20 passed, 1 ignored in Release Rust header tests.",
+    "typescriptBuild": "PASS: npm run build.",
+    "protectedReleaseIntegrity": "PASS: protected Release integrity. Application SHA-256 e7d46129729bbc332baccb0173354faa3f8b22a9e4a9e89b1e666a1f41e4bbe6.",
+    "gitDiffCheck": "PASS: git diff --check.",
+    "repositoryRustfmt": "FAIL: broad pre-existing rustfmt drift; not a P5-R-HDR feature gate and no repository-wide format rewrite was applied.",
+    "nativeX11Hwpx": "PASS: Linux X11/Xvfb + private IBus Hangul Native run19 HWPX and fresh-app reopen; trusted pointer resize, story ownership, Undo/Redo, T009 synced save and independent presentation/relationships/media preservation. Cleanup complete; no survivors.",
+    "nativeX11Hwp": "PASS: Linux X11/Xvfb + private IBus Hangul Native run21 HWP and fresh-app reopen; trusted pointer move, exact header owner, Undo/Redo, T009 synced save, independent CFB proof (only Section0 records [19,20] changed). Cleanup complete; no survivors.",
+    "externalOffice": "NOT RUN",
+    "waylandWindowsMacOS": "NOT RUN",
+    "focusedVitest": "PASS: focused story/owner/property tests 32 passed; header-specific hwpReopenModel tests 3 passed (73 unrelated skipped; 76 total).",
+    "broadHwpReopenModel": "FAIL: two failures reproduced identically with HEAD baseline source; pre-existing and distinct from P5-R-HDR."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb with private IBus Hangul; actual Release Tauri application and trusted native pointer interaction.",
+    "appSha256": "e7d46129729bbc332baccb0173354faa3f8b22a9e4a9e89b1e666a1f41e4bbe6",
+    "hwpx": {
+      "case": "P5-R-HDR-HWPX and fresh-app reopen",
+      "resultFile": "target/p5-r-hdr/native-results-final-19/result.json",
+      "cleanupFile": "target/p5-r-hdr/private-session-final-19/cleanup.json",
+      "fixtureSha256": "b0bdf5feef7257a08ba826fe977507e99a2c924a4c2e49a4d5c378676ef645c4",
+      "savedSha256": "83bad2b004534cb3e02d957ccd2f5f6439554e4155d2ffb130b905fee1a6c665",
+      "initialAppPid": 91363,
+      "freshAppPid": 91589,
+      "status": "PASS",
+      "cleanup": "PASS: complete; no surviving test processes"
+    },
+    "hwp": {
+      "case": "P5-R-HDR-HWP and fresh-app reopen",
+      "resultFile": "target/p5-r-hdr/native-results-final-21/result.json",
+      "cleanupFile": "target/p5-r-hdr/private-session-final-21/cleanup.json",
+      "fixtureSha256": "c9e7d8e42550f13f86f149f9edb2a40918c09cce4dbd2d8155dd0b9511ea237b",
+      "savedSha256": "da22d6767f9508ea033ec3930a1b728b72f2b8a025412d4fec2095d034c1f582",
+      "initialAppPid": 91855,
+      "freshAppPid": 92079,
+      "status": "PASS",
+      "cleanup": "PASS: complete; no surviving test processes",
+      "independentCfbProof": "PASS: only BodyText/Section0 record indices [19,20] changed for owned geometry; control identity/non-position fields preserved; stream inventory, decompressed DocInfo, BinData payloads and PrvText preserved; PrvImage valid 724x1024 PNG.",
+      "saveState": "saved; synced=true; findings empty"
+    }
+  },
+  "remaining": [
+    "Implementation local commit hash is pending; main agent will record it after review and commit.",
+    "Wayland, Windows, macOS and external Office interoperability were not tested."
+  ],
+  "push": "NOT PERFORMED",
+  "implementationCommitNote": "Pending local review and commit; no implementation hash has been assigned."
+}

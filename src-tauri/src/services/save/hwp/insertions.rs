@@ -24,6 +24,12 @@ const NUMBERING: u16 = 23;
 
 pub(super) struct Proof {
     pub streams: BTreeSet<String>,
+    /// Section streams whose complete change was proved to be geometry-only
+    /// edits to an exactly owned header/footer picture subtree.
+    pub header_streams: BTreeSet<String>,
+    /// Generic insertion proofs may append validated definitions. Header picture
+    /// proofs require DocInfo to remain byte-identical and set this to false.
+    pub allow_docinfo_change: bool,
     /// Stage 2 Phase 2: digests (`object_digest`) of original cell child objects that a proven
     /// `evolved_table` correspondence dropped together with the cells it deleted, as a multiset.
     pub removed: BTreeMap<Vec<u8>, usize>,
@@ -36,14 +42,6 @@ fn require(ok: bool, code: FindingCode, part: &str) -> Checked<()> {
     if ok {
         Ok(())
     } else {
-        // Diagnostic only (debug builds, explicit opt-in): which proof step refused. Never alters the verdict.
-        #[cfg(debug_assertions)]
-        if std::env::var_os("GEUL_T009_TRACE").is_some() {
-            eprintln!(
-                "T009_TRACE {code:?} {part} at {}",
-                std::panic::Location::caller()
-            );
-        }
         Err(finding(code, part))
     }
 }
@@ -139,6 +137,13 @@ fn feature_counts(rs: &[Record<'_>]) -> (usize, usize, Vec<usize>) {
     )
 }
 
+/// CTRL_HEADER-backed control characters whose entire opaque subtree is proven by
+/// its exact record identity. Page controls use 0x0015 in the pinned HWP5 reader
+/// and serializer, alongside the section/field/drawing controls used elsewhere.
+fn has_modeled_control_header(ch: u16) -> bool {
+    matches!(ch, 2 | 3 | 11 | 16 | 21)
+}
+
 /// None keeps the legacy text/T012 contract. A structural insertion or list toggle
 /// must prove the entire narrow contract, even if DocInfo happens to be unchanged.
 pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
@@ -187,6 +192,261 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
         return None;
     }
     Some(prove(a, b, &ar, &br))
+}
+
+fn header_owner(record: &Record<'_>) -> bool {
+    record.0 == 71
+        && record.1 == 1
+        && record
+            .2
+            .get(..4)
+            .is_some_and(|id| id == b"daeh" || id == b"toof")
+}
+
+fn header_owner_spans(rs: &[Record<'_>]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    for (start, record) in rs.iter().enumerate() {
+        if !header_owner(record) {
+            continue;
+        }
+        let end = rs[start + 1..]
+            .iter()
+            .position(|next| next.1 <= record.1)
+            .map_or(rs.len(), |offset| start + 1 + offset);
+        spans.push((start, end));
+    }
+    spans
+}
+
+/// Bind every top-level CTRL_HEADER identity to the extended-control marker in
+/// its owning paragraph. This small reader intentionally does not interpret
+/// unrelated DocInfo paragraph-shape extensions; their bytes must remain exact.
+fn header_markers_bound(rs: &[Record<'_>]) -> Option<()> {
+    if rs.is_empty()
+        || rs.len() > 100_000
+        || rs.windows(2).any(|pair| pair[1].1 > pair[0].1 + 1)
+    {
+        return None;
+    }
+    let mut start = 0;
+    while start < rs.len() {
+        if rs[start].0 != 66 || rs[start].1 != 0 || !matches!(rs[start].2.len(), 22 | 24) {
+            return None;
+        }
+        let end = rs[start + 1..]
+            .iter()
+            .position(|record| record.1 == 0)
+            .map_or(rs.len(), |offset| start + 1 + offset);
+        let paragraph = &rs[start..end];
+        let text: Vec<_> = paragraph
+            .iter()
+            .filter(|record| record.0 == 67 && record.1 == 1)
+            .collect();
+        if text.len() > 1 || text.first().is_some_and(|record| record.2.len() % 2 != 0) {
+            return None;
+        }
+        let mut markers = Vec::new();
+        if let Some(record) = text.first() {
+            let units: Vec<u16> = record
+                .2
+                .chunks_exact(2)
+                .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+                .collect();
+            let mut at = 0;
+            while at < units.len() {
+                let code = units[at];
+                if matches!(code, 2 | 3 | 11 | 16 | 21 | 4..=9 | 19 | 20) {
+                    if at + 8 > units.len() || units[at + 7] != code {
+                        return None;
+                    }
+                    if matches!(code, 2 | 3 | 11 | 16 | 21) {
+                        markers.push(record.2.get(at * 2 + 2..at * 2 + 6)?.to_vec());
+                    }
+                    at += 8;
+                } else if code >= 32 || matches!(code, 10 | 13 | 24 | 30 | 31) {
+                    at += 1;
+                } else {
+                    return None;
+                }
+            }
+        }
+        let controls: Vec<_> = paragraph
+            .iter()
+            .filter(|record| record.0 == 71 && record.1 == 1)
+            .map(|record| record.2.get(..4).map(<[u8]>::to_vec))
+            .collect::<Option<_>>()?;
+        if controls != markers {
+            return None;
+        }
+        start = end;
+    }
+    Some(())
+}
+
+/// The pinned RHWP parser treats a `CTRL_HEADER` with no trailing description
+/// bytes as an empty description. Its serializer writes the canonical two-byte
+/// zero-length HWP string. Admit only that exact representation change for an
+/// otherwise unchanged, uniquely identified GSO object.
+fn empty_description_canonicalization(before: &Record<'_>, after: &Record<'_>) -> Option<u32> {
+    if before.0 != 71
+        || before.0 != after.0
+        || before.1 != after.1
+        || before.2.len() != 44
+        || after.2.len() != 46
+        || after.2.get(..44)? != before.2
+        || after.2.get(44..46)? != [0, 0]
+        || !(before.2.starts_with(b" osg") || before.2.starts_with(b" lbt"))
+    {
+        return None;
+    }
+    let id = u32::from_le_bytes(before.2.get(36..40)?.try_into().ok()?);
+    (id != 0).then_some(id)
+}
+
+/// Accept only geometry edits within existing picture subtrees owned by exact
+/// `head`/`foot` controls. Every other record in each affected HWP section, all
+/// DocInfo definitions, and every instance identity must remain unchanged.
+fn header_picture_section(
+    before: &[Record<'_>],
+    after: &[Record<'_>],
+    defs: &Defs<'_>,
+) -> Option<(Vec<u32>, Vec<u32>)> {
+    if before.len() != after.len() {
+        return None;
+    }
+    if before
+        .iter()
+        .zip(after)
+        .any(|(a, b)| (a.0, a.1) != (b.0, b.1))
+    {
+        return None;
+    }
+    let old_owners = header_owner_spans(before);
+    let new_owners = header_owner_spans(after);
+    if old_owners.is_empty() || old_owners != new_owners {
+        return None;
+    }
+    let mut in_header = vec![false; before.len()];
+    let mut changed_ids = Vec::new();
+    let mut canonicalized_ids = Vec::new();
+    for &(start, end) in &old_owners {
+        in_header[start..end].fill(true);
+        if before[start..end] != after[start..end] {
+            match super::gso::prove_header_story_edit(
+                &before[start..end],
+                &after[start..end],
+                defs,
+            ) {
+                Ok(ids) => changed_ids.extend(ids),
+                Err(_) => {
+                    return None;
+                }
+            }
+        }
+    }
+    if changed_ids.is_empty() {
+        return None;
+    }
+    for (index, (old, new)) in before.iter().zip(after).enumerate() {
+        if in_header[index] || old == new {
+            continue;
+        }
+        let Some(id) = empty_description_canonicalization(old, new) else {
+            return None;
+        };
+        canonicalized_ids.push(id);
+    }
+    Some((changed_ids, canonicalized_ids))
+}
+
+fn object_id_occurrences(container: &Container, id: u32) -> Option<usize> {
+    let mut count = 0;
+    for (name, data) in &container.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let raw = unpack(container, data).ok()?;
+        for (tag, _, body) in records(&raw)? {
+            if tag == 71 && (body.starts_with(b" lbt") || body.starts_with(b" osg")) {
+                count += usize::from(dword(body, 36).ok()? == id as usize);
+            }
+        }
+    }
+    Some(count)
+}
+
+pub(super) fn assess_header_pictures(a: &Container, b: &Container) -> Option<Proof> {
+    if a.header[..FILE_HEADER_LEN] != b.header[..FILE_HEADER_LEN]
+        || !a.streams.keys().eq(b.streams.keys())
+    {
+        return None;
+    }
+    let Some(old_docinfo) = read_records(a, "DocInfo").ok() else {
+        return None;
+    };
+    let Some(new_docinfo) = read_records(b, "DocInfo").ok() else {
+        return None;
+    };
+    let Some(old_docinfo_records) = decode_records(&old_docinfo, "DocInfo").ok() else {
+        return None;
+    };
+    let Some(new_docinfo_records) = decode_records(&new_docinfo, "DocInfo").ok() else {
+        return None;
+    };
+    if old_docinfo_records != new_docinfo_records {
+        return None;
+    }
+    let defs = definitions(&old_docinfo_records);
+    let mut changed_streams = BTreeSet::new();
+    let mut changed_ids = BTreeSet::new();
+    let mut canonicalized_ids = BTreeSet::new();
+    for name in a.streams.keys().filter(|name| section_stream(name)) {
+        let Some(before_raw) = read_records(a, name).ok() else {
+            return None;
+        };
+        let Some(after_raw) = read_records(b, name).ok() else {
+            return None;
+        };
+        let Some(before) = decode_records(&before_raw, name).ok() else {
+            return None;
+        };
+        let Some(after) = decode_records(&after_raw, name).ok() else {
+            return None;
+        };
+        if before == after {
+            continue;
+        }
+        // Bind each extended header/footer marker to its exact top-level control
+        // without interpreting unrelated paragraph-shape extensions.
+        if header_markers_bound(&before).is_none() {
+            return None;
+        }
+        if header_markers_bound(&after).is_none() {
+            return None;
+        }
+        let Some((ids, normalized)) = header_picture_section(&before, &after, &defs) else {
+            return None;
+        };
+        for id in ids {
+            changed_ids.insert(id);
+        }
+        canonicalized_ids.extend(normalized);
+        changed_streams.insert(name.clone());
+    }
+    if changed_streams.is_empty() || changed_ids.is_empty() {
+        return None;
+    }
+    for id in changed_ids.iter().chain(&canonicalized_ids) {
+        if object_id_occurrences(a, *id) != Some(1) || object_id_occurrences(b, *id) != Some(1) {
+            return None;
+        }
+    }
+    Some(Proof {
+        streams: BTreeSet::new(),
+        header_streams: changed_streams,
+        allow_docinfo_change: false,
+        removed: BTreeMap::new(),
+    })
 }
 
 /// Independent field boundary shared by ordinary and structural comparison paths.
@@ -1137,12 +1397,9 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         preserved(!(xr[0].2[11] & 3 == 0 && yr[0].2[11] & 3 == 3), name)?;
         for object in &old.objects {
             let kind = object[0].2.get(..4).unwrap_or_default();
-            preserved(matches!(kind, b"dces" | b"dloc" | b" lbt" | b" osg"), name)?;
-            // Original tables/pictures are not held to the new-insertion schema: each must reappear
-            // byte-identical (whole subtree, nested controls included) and in order below — `cursor`
-            // — and original DocInfo definitions are proven unchanged, so their references still
-            // resolve to the same objects. Any changed original object is unmatched and must then
-            // validate as a new basic table/inline picture, which an edited original cannot.
+            // Unmodeled controls are kept opaque here. The ordered matching below
+            // requires them to reappear byte-identically; only known tables and GSO
+            // objects enter additional format-specific validation.
             if kind == b" lbt" {
                 validate_existing_table(object)?;
             }
@@ -1317,6 +1574,8 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     preserved(entries(&added, 20).is_empty() || !used.borders.is_empty(), "DocInfo")?;
     Ok(Proof {
         streams: resources.new_paths,
+        header_streams: BTreeSet::new(),
+        allow_docinfo_change: true,
         removed: used.removed,
     })
 }
@@ -2180,7 +2439,7 @@ fn paragraph_with_caption_number<'a>(
             shape += 1;
         }
         // Extended controls with a CTRL_HEADER object: section/column (2), field begin (3), objects (11).
-        if matches!(ch, 2 | 3 | 11) || (caption && ch == 18) {
+        if has_modeled_control_header(ch) || (caption && ch == 18) {
             valid(
                 unit + 8 <= text.len() / 2 && word(text, (unit + 7) * 2)? == ch as usize,
                 BODY,
@@ -4426,6 +4685,33 @@ pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
 mod tests {
     use super::*;
     #[test]
+    fn empty_description_canonicalization_only_admits_the_pinned_empty_string_form() {
+        let mut before = b" osg".to_vec();
+        before.resize(44, 0);
+        before[36..40].copy_from_slice(&0x7203_cb70u32.to_le_bytes());
+        let mut after = before.clone();
+        after.extend_from_slice(&[0, 0]);
+        let old = (71, 3, before.as_slice());
+        let new = (71, 3, after.as_slice());
+        assert_eq!(empty_description_canonicalization(&old, &new), Some(0x7203_cb70));
+
+        let mut changed_prefix = after.clone();
+        changed_prefix[20] ^= 1;
+        assert!(empty_description_canonicalization(&old, &(71, 3, changed_prefix.as_slice())).is_none());
+        let mut nonempty_description = before.clone();
+        nonempty_description.extend_from_slice(&[1, 0]);
+        assert!(empty_description_canonicalization(&old, &(71, 3, nonempty_description.as_slice())).is_none());
+        assert!(empty_description_canonicalization(&old, &(71, 2, after.as_slice())).is_none());
+        let mut zero_id = before;
+        zero_id[36..40].fill(0);
+        assert!(empty_description_canonicalization(
+            &(71, 3, zero_id.as_slice()),
+            &(71, 3, after.as_slice())
+        )
+        .is_none());
+    }
+
+    #[test]
     fn inline_formula_slots_bind_controls_ranges_and_values() {
         fn header(id: u32) -> Vec<u8> {
             let command = "=1??%g,;;1".encode_utf16().collect::<Vec<_>>();
@@ -4534,6 +4820,116 @@ mod tests {
             generic_references(&bad, &defs).err(),
             Some(Finding::at(FindingCode::ReferenceInvalid, BODY))
         );
+    }
+}
+
+#[cfg(test)]
+mod page_control_tests {
+    use super::{header_markers_bound, section, Defs, Record};
+
+    #[test]
+    fn page_control_extended_char_is_bound_to_its_unchanged_control_record() {
+        let para_shape = [0u8; 54];
+        let char_shape = [0u8; 74];
+        let style = [0u8; 1];
+        let defs = Defs::from([
+            (21, vec![char_shape.as_slice()]),
+            (25, vec![para_shape.as_slice()]),
+            (26, vec![style.as_slice()]),
+        ]);
+        let control_id = u32::from_be_bytes(*b"nwno");
+        let control_payload = control_id.to_le_bytes();
+        let text: Vec<u8> = [
+            0x0015,
+            control_id as u16,
+            (control_id >> 16) as u16,
+            0,
+            0,
+            0,
+            0,
+            0x0015,
+            0x000d,
+        ]
+        .into_iter()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+        let mut header = vec![0u8; 22];
+        header[..4].copy_from_slice(&9u32.to_le_bytes());
+        header[4..8].copy_from_slice(&(1u32 << 21).to_le_bytes());
+        header[12..14].copy_from_slice(&1u16.to_le_bytes());
+        header[16..18].copy_from_slice(&1u16.to_le_bytes());
+        let run = [0u8; 8];
+        let line = [0u8; 36];
+        let records: Vec<Record<'_>> = vec![
+            (66, 0, &header),
+            (67, 1, &text),
+            (68, 1, &run),
+            (69, 1, &line),
+            (71, 1, &control_payload),
+        ];
+
+        let parsed = section(&records, &defs, &defs).unwrap();
+        assert_eq!(parsed.objects.len(), 1);
+        assert_eq!(parsed.objects[0][0].2, b"onwn");
+        assert!(header_markers_bound(&records).is_some());
+    }
+
+    #[test]
+    fn header_control_extended_char_is_bound_to_its_owned_control_record() {
+        let para_shape = [0u8; 54];
+        let char_shape = [0u8; 74];
+        let style = [0u8; 1];
+        let defs = Defs::from([
+            (21, vec![char_shape.as_slice()]),
+            (25, vec![para_shape.as_slice()]),
+            (26, vec![style.as_slice()]),
+        ]);
+        let control_id = u32::from_be_bytes(*b"head");
+        let control_payload = control_id.to_le_bytes();
+        let text: Vec<u8> = [
+            0x0010,
+            control_id as u16,
+            (control_id >> 16) as u16,
+            0,
+            0,
+            0,
+            0,
+            0x0010,
+            0x000d,
+        ]
+        .into_iter()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+        let mut header = vec![0u8; 22];
+        header[..4].copy_from_slice(&9u32.to_le_bytes());
+        header[4..8].copy_from_slice(&(1u32 << 16).to_le_bytes());
+        header[12..14].copy_from_slice(&1u16.to_le_bytes());
+        header[16..18].copy_from_slice(&1u16.to_le_bytes());
+        let run = [0u8; 8];
+        let line = [0u8; 36];
+        let records: Vec<Record<'_>> = vec![
+            (66, 0, &header),
+            (67, 1, &text),
+            (68, 1, &run),
+            (69, 1, &line),
+            (71, 1, &control_payload),
+        ];
+
+        let parsed = section(&records, &defs, &defs).unwrap();
+        assert_eq!(parsed.objects.len(), 1);
+        assert_eq!(parsed.objects[0][0].2, b"daeh");
+        assert!(header_markers_bound(&records).is_some());
+
+        let mut mismatched_text = text.to_vec();
+        mismatched_text[2] ^= 1;
+        let mismatched_records: Vec<Record<'_>> = vec![
+            (66, 0, header.as_slice()),
+            (67, 1, mismatched_text.as_slice()),
+            (68, 1, &run),
+            (69, 1, &line),
+            (71, 1, &control_payload),
+        ];
+        assert!(header_markers_bound(&mismatched_records).is_none());
     }
 }
 

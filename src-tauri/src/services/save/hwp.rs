@@ -1140,9 +1140,13 @@ fn compare_with(
         Ok(container) => container,
         Err(finding) => return vec![finding],
     };
-    let insertion = (mode == Mode::Edited)
-        .then(|| insertions::assess(&original, &output))
-        .flatten();
+    let insertion = if mode == Mode::Edited {
+        insertions::assess_header_pictures(&original, &output)
+            .map(Ok)
+            .or_else(|| insertions::assess(&original, &output))
+    } else {
+        None
+    };
     let proof = insertion.as_ref().and_then(|result| result.as_ref().ok());
     let mut findings = Vec::new();
     if mode == Mode::Edited {
@@ -1285,6 +1289,7 @@ fn compare_with(
                 .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()));
             if opaque
                 && before_records != after_records
+                && !proof.is_some_and(|p| p.header_streams.contains(name))
                 && !opaque_owners_preserved(
                     &before_records,
                     &after_records,
@@ -1297,7 +1302,7 @@ fn compare_with(
             continue; // 본문 내용은 다시 열기 비교 몫
         }
         let same = if mode == Mode::Edited && name == "DocInfo" {
-            proof.is_some()
+            proof.is_some_and(|p| p.allow_docinfo_change)
                 || same_docinfo(&before_records, &after_records)
                 || docinfo_char_shapes_appended(&before_records, &after_records)
                     .or_else(|| docinfo_font_shapes_appended(&before_records, &after_records))
@@ -1317,7 +1322,9 @@ fn compare_with(
             .get(name)
             .is_some_and(|data| original.streams.get(name) == Some(data) && !empty(data))
     };
+    let header_only = proof.is_some_and(|p| !p.header_streams.is_empty());
     if body_changed
+        && !header_only
         && stale("PrvText", preview::blank_utf16)
         && text_preview(&output).as_ref() != output.streams.get("PrvText")
     {
@@ -1802,13 +1809,13 @@ fn first_paragraph_unproven(container: &Container, require_blank: bool) -> bool 
     !text_seen || text_controls != headers
 }
 
-/// Regenerate PrvText *and* PrvImage when the only obstacles to an otherwise valid edited
-/// output are its previews and the frontend supplied a render of page 1 of the reopened raw
-/// export. A long-lived RHWP document can export its load-time PrvImage on a later save even
-/// after an earlier save replaced the on-disk preview; the changed raw image is discarded and
-/// replaced before the final T009 comparison. Without a raster, or when PrvImage is unchanged,
-/// this is exactly [`refresh_text_preview`]. Refusals return no output; the caller's final gates
-/// then reject.
+/// Regenerate PrvImage when the frontend supplied a render of page 1 of the reopened raw export.
+/// Regenerate PrvText only when its own T009 finding requires it and the body text has a proven
+/// representation. A long-lived RHWP document can export its load-time PrvImage on a later save
+/// even after an earlier save replaced the on-disk preview; the changed raw image is discarded
+/// and replaced before the final T009 comparison. Without a raster, or when PrvImage is
+/// unchanged, this is exactly [`refresh_text_preview`]. Refusals return no output; the caller's
+/// final gates then reject.
 /// - The size comes from the output's own Section0 PAGE_DEF (`preview::preview_dimensions`);
 ///   a raster outside canvas rounding slack of it is refused (wrong page geometry).
 /// - A uniform raster is a failed render unless page 1 is proven blank by two independent
@@ -1853,8 +1860,32 @@ pub fn refresh_previews(
     let Ok(container) = open(output, Side::Output) else {
         return refused;
     };
-    let (Some(text), Some((width, height))) = (text_preview(&container), preview_size(&container))
+    let Ok(original_container) = open(original, Side::Original) else {
+        return refused;
+    };
+    let Some((original_text, output_text)) = original_container
+        .streams
+        .get("PrvText")
+        .zip(container.streams.get("PrvText"))
     else {
+        return refused;
+    };
+    let text_requires_refresh = findings.iter().any(|finding| finding.part.as_deref() == Some("PrvText"));
+    let text = if text_requires_refresh {
+        let Some(text) = text_preview(&container) else {
+            return refused;
+        };
+        Some(text)
+    } else {
+        // If T009 did not flag PrvText, preserve its exact bytes. In particular, do not
+        // reject a safe image-only refresh just because this body uses text controls that
+        // the preview extractor deliberately cannot interpret.
+        if original_text != output_text {
+            return refused;
+        }
+        None
+    };
+    let Some((width, height)) = preview_size(&container) else {
         return refused;
     };
     let Some(rgb) = preview::fit_raster(raster, width, height) else {
@@ -1879,13 +1910,15 @@ pub fn refresh_previews(
         crate::document::resources::Category::Staging,
         output.len() + png.len(),
     )?;
-    let bytes = rebuild_preview(
-        output,
-        &container,
-        &[("PrvText", &text), ("PrvImage", &png)],
-    )
-    .map_err(|_| crate::document::DocumentError::Internal)?;
-    if !compare_saved_with_preview(original, &bytes, Some(&png)).is_empty() {
+    let mut replaced = Vec::with_capacity(2);
+    if let Some(text) = text.as_deref() {
+        replaced.push(("PrvText", text));
+    }
+    replaced.push(("PrvImage", png.as_slice()));
+    let bytes = rebuild_preview(output, &container, &replaced)
+        .map_err(|_| crate::document::DocumentError::Internal)?;
+    let findings = compare_saved_with_preview(original, &bytes, Some(&png));
+    if !findings.is_empty() {
         return Ok(RefreshedPreviews::default());
     }
     Ok(RefreshedPreviews { output: Some(bytes), image: Some(png) })
@@ -2315,6 +2348,120 @@ mod chart_tests {
             cf.create_stream("/PrvText").unwrap().write_all(&[0x0d, 0x00, 0x0a, 0x00]).unwrap();
         }
         cur.into_inner()
+    }
+
+    fn add_unparseable_preview_context(file: &[u8]) -> Vec<u8> {
+        let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
+        let mut section = Vec::new();
+        cf.open_stream("/BodyText/Section0")
+            .unwrap()
+            .read_to_end(&mut section)
+            .unwrap();
+
+        // The preview raster still has a well-defined page size, while the body's
+        // PARA_TEXT contains a control sequence the conservative text extractor cannot
+        // interpret. An image-only edit must leave the existing PrvText bytes alone.
+        let mut page_def = vec![0; 40];
+        page_def[..4].copy_from_slice(&21_000u32.to_le_bytes());
+        page_def[4..8].copy_from_slice(&29_700u32.to_le_bytes());
+        let mut decorated = pack_rec(TAG_PAGE_DEF, 0, &page_def);
+        decorated.extend_from_slice(&section);
+        decorated.extend_from_slice(&pack_rec(67, 1, &2u16.to_le_bytes()));
+        cf.create_stream("/BodyText/Section0")
+            .unwrap()
+            .write_all(&decorated)
+            .unwrap();
+        cf.create_stream("/PrvText")
+            .unwrap()
+            .write_all(&[b'P', 0, b'R', 0])
+            .unwrap();
+        cf.create_stream("/PrvImage")
+            .unwrap()
+            .write_all(b"old preview")
+            .unwrap();
+        cf.into_inner().into_inner()
+    }
+
+    #[test]
+    fn image_only_refresh_preserves_unparseable_unchanged_prvtext() {
+        let original_ole = make_ole_stream(&chart_xml("4.3", "Title"), b"OLE-ORIG", false, true);
+        let edited_ole = make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, true);
+        let original = add_unparseable_preview_context(&build_hwp_with_ole(&original_ole, false));
+        let output = add_unparseable_preview_context(&build_hwp_with_ole(&edited_ole, false));
+        let output_container = open(&output, Side::Output).unwrap();
+
+        assert!(text_preview(&output_container).is_none());
+        assert_eq!(
+            compare_saved(&original, &output),
+            vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+        );
+        let (width, height) = preview_size(&output_container).unwrap();
+        let mut rgb = vec![0xff; width as usize * height as usize * 3];
+        rgb[..3].copy_from_slice(&[0x12, 0x34, 0x56]);
+        let raster = preview::PreviewRaster {
+            width,
+            height,
+            rgb,
+            blank_page: false,
+        };
+
+        let refreshed = refresh_previews(&original, &output, Some(&raster)).unwrap();
+        let final_bytes = refreshed.output.expect("the rendered image should refresh");
+        let image = refreshed.image.expect("the refreshed PNG is part of the proof");
+        let final_container = open(&final_bytes, Side::Output).unwrap();
+        assert_eq!(
+            final_container.streams.get("PrvText"),
+            output_container.streams.get("PrvText"),
+            "an image-only refresh must preserve the exact existing PrvText stream"
+        );
+        assert_eq!(final_container.streams.get("PrvImage"), Some(&image));
+        assert_eq!(compare_saved_with_preview(&original, &final_bytes, Some(&image)), vec![]);
+    }
+
+    #[test]
+    fn image_refresh_rejects_unproven_text_or_unrelated_stream_changes() {
+        let original_ole = make_ole_stream(&chart_xml("4.3", "Title"), b"OLE-ORIG", false, true);
+        let edited_ole = make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, true);
+        let original = add_unparseable_preview_context(&build_hwp_with_ole(&original_ole, false));
+        let output = add_unparseable_preview_context(&build_hwp_with_ole(&edited_ole, false));
+        let container = open(&output, Side::Output).unwrap();
+        let (width, height) = preview_size(&container).unwrap();
+        let raster = preview::PreviewRaster {
+            width,
+            height,
+            rgb: vec![0x44; width as usize * height as usize * 3],
+            blank_page: false,
+        };
+
+        let mut changed_text = cfb::CompoundFile::open(Cursor::new(output.clone())).unwrap();
+        changed_text
+            .create_stream("/PrvText")
+            .unwrap()
+            .write_all(b"changed")
+            .unwrap();
+        let changed_text = changed_text.into_inner().into_inner();
+        assert!(
+            refresh_previews(&original, &changed_text, Some(&raster))
+                .unwrap()
+                .output
+                .is_none(),
+            "a stale text preview cannot be regenerated from an unsupported body"
+        );
+
+        let mut unrelated = cfb::CompoundFile::open(Cursor::new(output)).unwrap();
+        unrelated
+            .create_stream("/Unrelated")
+            .unwrap()
+            .write_all(b"unauthorized")
+            .unwrap();
+        let unrelated = unrelated.into_inner().into_inner();
+        assert!(
+            refresh_previews(&original, &unrelated, Some(&raster))
+                .unwrap()
+                .output
+                .is_none(),
+            "image refresh must reject any unrelated package mutation"
+        );
     }
 
     #[test]

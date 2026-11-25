@@ -1,4 +1,5 @@
 import type { PictureProperties } from "../../../commands/objectSelection";
+import type { HeaderFooterPictureAddress } from "./objectHit";
 import type { RhwpDocument } from "./rhwpModule";
 
 const HWPUNIT_PER_POINT = 100;
@@ -87,5 +88,59 @@ export function inspectRhwpPicture(
     };
   } catch {
     return undefined;
+  }
+}
+
+/** Inspect a picture only after the outer control proves the requested story owner. */
+export function inspectRhwpHeaderFooterPicture(
+  doc: RhwpDocument,
+  address: HeaderFooterPictureAddress,
+): RhwpPictureInspection | undefined {
+  if (!doc.getHeaderFooterPictureProperties || !headerFooterPictureOwnerMatches(doc, address)) return undefined;
+  try {
+    const raw = doc.getHeaderFooterPictureProperties(
+      address.section,
+      address.outerParagraph,
+      address.outerControl,
+      address.innerParagraph,
+      address.innerControl,
+    );
+    return inspectRhwpPicture({ getPictureProperties: () => raw }, [
+      address.section, address.innerParagraph, address.innerControl,
+    ]);
+  } catch {
+    return undefined;
+  }
+}
+
+export function headerFooterPictureOwnerMatches(
+  doc: RhwpDocument,
+  address: HeaderFooterPictureAddress,
+): boolean {
+  if (!doc.getControls || !doc.getParagraphCount
+    || ![address.section, address.outerParagraph, address.outerControl,
+      address.innerParagraph, address.innerControl].every(value => Number.isSafeInteger(value) && value >= 0)) return false;
+  try {
+    const sectionCount = doc.getSectionCount?.();
+    if ((sectionCount !== undefined && address.section >= sectionCount)
+      || (address.section > 0 && sectionCount === undefined)) return false;
+    let globalParagraph = address.outerParagraph;
+    for (let section = 0; section < address.section; section++) {
+      globalParagraph += doc.getParagraphCount(section);
+      if (!Number.isSafeInteger(globalParagraph)) return false;
+    }
+    if (address.outerParagraph >= doc.getParagraphCount(address.section)) return false;
+    const raw = doc.getControls();
+    if (typeof raw !== "string" || raw.length > 8 * 1024 * 1024) return false;
+    const controls: unknown = JSON.parse(raw);
+    if (!Array.isArray(controls) || controls.length > 200_000) return false;
+    const matches = controls.filter((value): value is Record<string, unknown> =>
+      !!value && typeof value === "object" && !Array.isArray(value)
+      && value.list === 0 && value.para === globalParagraph && value.controlIndex === address.outerControl);
+    const owner = matches[0];
+    return matches.length === 1 && owner?.ctrlId === (address.kind === "header" ? "head" : "foot")
+      && owner.userDesc === (address.kind === "header" ? "머리말" : "꼬리말");
+  } catch {
+    return false;
   }
 }

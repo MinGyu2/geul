@@ -17,6 +17,8 @@ function model() {
     validation: { ok: true, changed: false, fieldId: 1, text: "0", command: "=0??%g,;;0" } as Record<string, unknown>,
     para: null as Override, bullets: null as Override, dims: null as Override, tableProps: null as Override,
     cellInfo: null as Override, cellProps: null as Override, picture: null as Override,
+    headerLayout: [] as unknown[],
+    headerPicture: { width: 1000, height: 500, treatAsChar: false, textWrap: "Square" } as Record<string, unknown>,
   };
   const encode = (override: Override, value: unknown) => typeof override === "string" ? override
     : JSON.stringify(override === null ? value : override);
@@ -42,6 +44,8 @@ function model() {
       return text?.slice(start, length === undefined ? undefined : start + length) ?? "";
     },
     getPictureProperties: () => encode(state.picture, { width: state.width, height: 4800, treatAsChar: state.inline, textWrap: "Square", originalWidth: 7200 }),
+    getPageControlLayout: () => JSON.stringify({ controls: state.headerLayout }),
+    getHeaderFooterPictureProperties: () => JSON.stringify(state.headerPicture),
   }) as unknown as RhwpDocument;
   return { doc, state };
 }
@@ -88,6 +92,52 @@ function inserted(control: unknown) {
 }
 
 describe("HWP detailed independent reopen evidence", () => {
+  it("records header-picture story ownership and properties in independent reopen evidence", () => {
+    const live = model(), reopened = model();
+    const owner = { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} };
+    const layout = { type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 1 } };
+    for (const fixture of [live, reopened]) {
+      fixture.state.controls = [owner];
+      fixture.state.headerLayout = [layout];
+    }
+    const before = hwpReopenModel(live.doc), after = hwpReopenModel(reopened.doc);
+    expect(before.headerPicturesComplete).toBe(true);
+    expect(before.headerPictures).toHaveLength(1);
+    expect(before.headerPictures[0]).toMatchObject({
+      address: { section: 0, kind: "header", outerParagraph: 0, outerControl: 1, innerParagraph: 0, innerControl: 0 },
+      owner: { ctrlId: "head", para: 0, controlIndex: 1 },
+      properties: { width: 1000, height: 500 },
+    });
+    expect(hwpReopenEqual(before, after, before.structure)).toBe(true);
+    reopened.state.headerPicture.width = 1200;
+    expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), before.structure)).toBe(false);
+  });
+
+  it("fails header-picture ownership closed when the section owner is ambiguous", () => {
+    const fixture = model();
+    const owner = { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} };
+    fixture.state.controls = [owner, { ...owner }];
+    fixture.state.headerLayout = [{ type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 1 } }];
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.headerPicturesComplete).toBe(false);
+    expect(result.headerPictures).toHaveLength(0);
+  });
+
+  it("rejects a header address aliased by another root control", () => {
+    const fixture = model();
+    fixture.state.controls = [
+      { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1 },
+      { ctrlId: "other", userDesc: "기타", list: 0, para: 0, controlIndex: 1 },
+    ];
+    fixture.state.headerLayout = [{ type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
+      headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 1 } }];
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.headerPicturesComplete).toBe(false);
+    expect(result.headerPictures).toHaveLength(0);
+  });
+
   it("distinguishes paragraph boundaries even with identical concatenated text", () => {
     const live = model(), fresh = model(); (fresh.doc as unknown as FakeDocument).paragraphs.splice(0, 2, "A", "BCDEF");
     const a = hwpReopenModel(live.doc), b = hwpReopenModel(fresh.doc);

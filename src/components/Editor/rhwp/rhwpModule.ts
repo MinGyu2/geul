@@ -32,6 +32,8 @@ export interface RhwpDocument {
   getChartData?(section: number, paragraph: number, control: number): string;
   setChartData?(section: number, paragraph: number, control: number, editsJson: string): string;
   getPictureProperties?(section: number, paragraph: number, control: number): string;
+  getHeaderFooterPictureProperties?(section: number, outerParagraph: number, outerControl: number,
+    innerParagraph: number, innerControl: number): string;
   getParaPropertiesAt?(section: number, paragraph: number): string;
   ensureDefaultBullet?(character: string): number;
   applyParaFormat?(section: number, paragraph: number, properties: string): string;
@@ -45,6 +47,8 @@ export interface RhwpDocument {
   deleteCellPictureControlByPath?(section: number, paragraph: number, path: string, control: number): string;
   insertPicture?(section: number, paragraph: number, offset: number, cellPath: string, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
   setPictureProperties?(section: number, paragraph: number, control: number, properties: string): string;
+  setHeaderFooterPictureProperties?(section: number, outerParagraph: number, outerControl: number,
+    innerParagraph: number, innerControl: number, properties: string): string;
   deletePictureControl?(section: number, paragraph: number, control: number): string;
   getShapeProperties?(section: number, paragraph: number, control: number): string;
   getEditableShapePath?(section: number, paragraph: number, control: number): string;
