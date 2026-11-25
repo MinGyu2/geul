@@ -1,0 +1,164 @@
+{
+  "date": "2026-11-26",
+  "issueId": "P5-R-FN",
+  "category": "A",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "7aa0f054296499f9314400aba3f296d4a748294d",
+  "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "rhwpGeneration": "07b8cd61f3ca304cb225343784ba35f45eaaf4b8b35ca5feaa6f0eaee42e7c75",
+  "rhwpSourceTreeSha256": "24bfeb6e47a0eaa40e10249d7d89f63ffd70c63b2499a15657bdbb4ccc02d4ef",
+  "orderedRhwpPatchCount": 61,
+  "lastRhwpPatch": {
+    "name": "stage3a-p5-footnote-owner-edit.patch",
+    "sha256": "43ccf091c76ac7e8bec79941d6e650b827eeb98f432879ae52b2c6b7420a1863"
+  },
+  "releaseArtifacts": {
+    "rhwp.js": "ae9033c1545bf237fad64a684b52806dcfdf9351a21d55745bf1bd8e90a99a93",
+    "rhwp_bg.wasm": "828f8b11d2765238aa8f7891fd82ddfe2bf610062a8e5fa463e21167d6453cc3"
+  },
+  "supported": "HWP5/HWPX footnote paragraphs in body, table-cell and textbox stories support exact owner-addressed selection, navigation, plain-text insertion/deletion, paragraph splitting/merging where representable, Undo/Redo and safe save. Note type, anchor section/paragraph/control, owner path, instance ID, number, inner paragraph and run/paragraph metadata remain bound to the same footnote.",
+  "refused": "Endnotes remain P5-R-EN. Unsupported note structures, ambiguous/stale owners, body-address aliases, cross-note edits, unsupported paragraph metadata and non-plain-text mutations fail closed without partial changes.",
+  "changedFiles": [
+    "patches/rhwp/stage3a-p5-footnote-owner-edit.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/native-stage3-c.py",
+    "scripts/tests/native-stage3a-p5.py",
+    "scripts/tests/native-stage3a-p5-notes.py",
+    "src-tauri/src/services/save/hwp.rs",
+    "src-tauri/src/services/save/hwp/insertions.rs",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpHistory.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/rhwpText.ts",
+    "src/components/Editor/rhwp/rhwpNote.test.ts",
+    "src/components/Editor/rhwp/rhwpNoteReopen.test.ts",
+    "src/components/Editor/rhwp/rhwpNoteReopen.ts",
+    "src/components/Editor/rhwp/rhwpNoteSession.test.ts"
+  ],
+  "preservation": [
+    "The session and RHWP APIs resolve a note through its exact story owner path, anchor control, note type, instance ID, number and inner paragraph; note addresses do not alias body, table, textbox or another note.",
+    "HWP5 T009 preserves the complete decompressed DocInfo stream and CFB stream inventory. Independent record comparison found only the owned note PARA_HEADER length and PARA_TEXT records changed in BodyText/Section0; note identity and other notes remained unchanged.",
+    "HWPX T009 preserves OPC inventory and all unrelated parts. Only Contents/section0.xml and the two known preview parts changed; Preview/PrvText.txt was the exact content-independent CRLF placeholder, and Preview/PrvImage.png passed PNG chunk CRC and source-dimension checks (724x1024).",
+    "The note-specific rendered crop, centered on the independently resolved cursor rectangle, matched byte-for-byte after same-session reopen and fresh-process reopen for each fixture. The full HWP page is reflowed after reopening; paragraph text/control state is independently unchanged and the saved note crop/position is stable.",
+    "Undo and Redo restored the original and edited canvas hashes. Native tests used trusted X11 pointer and keyboard events; saves reported saved, synced=true, changedSince=false and empty findings.",
+    "Unknown, unsupported or ambiguous note mutations remain fail-closed. Rejected operations do not partially mutate the document or history."
+  ],
+  "checks": {
+    "focusedRust": "PASS: note-focused Rust suite 98/98; authentic HWP5 body, HWPX table and HWPX textbox note roundtrips 3/3; focused preserved-legacy-DocInfo and top-level-preview-source regressions 1/1 each.",
+    "focusedTypeScript": "PASS: note ownership/session/reopen Vitest tests 11/11; npm run typecheck PASS.",
+    "nativeHarness": "PASS: py_compile and git diff --check.",
+    "rhwpReconstruction": "PASS: exact pinned RHWP base plus 61 ordered patches matches the prepared source file manifest and source-tree SHA-256; external/rhwp stayed clean.",
+    "rhwpReleaseProduct": "PASS: scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release; immutable embedded generation matches the declared Release artifact hashes.",
+    "wordcraftPin": "PASS: scripts/prepare-wordcraft.py reports the exact clean WordCraft pin ce77006df77470f044a4f31257b5fec8d58640fc.",
+    "guardedReleaseBuild": "PASS: npm run tauri -- build --no-bundle, frontend build and guarded Tauri Release build; final app SHA-256 5437e103c206721f8ad13a11cf36eccff1522ecef7e6aef24d95e653a9091672. Nix runtime portability NOT VERIFIED.",
+    "nativeX11": "PASS: actual Release application under private Linux X11/Xvfb and private IBus; HWP5 body footnote, HWPX table footnote and HWPX textbox footnote, each with a distinct-process fresh reopen.",
+    "t009": "PASS: all three edits saved at revision 3 with saved/synced=true, changedSince=false and empty findings; independent CFB/OPC/package and RHWP model checks passed.",
+    "undoRedo": "PASS: trusted native input; source==undo and typed==redo for all three fixtures.",
+    "serializationAndReopen": "PASS: exact note inventory/number/owner, body paragraphs and unrelated controls after save; independent CFB/OPC diff; same-session and fresh-process note-crop/position equality.",
+    "cleanup": "PASS: both private Native launcher manifests complete/proven/filesystemProven with no surviving processes.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN.",
+    "releasePortability": "NOT VERIFIED outside the available Nix runtime.",
+    "push": "NOT PERFORMED."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb, private IBus, actual protected Release Tauri app, trusted native pointer and keyboard interaction.",
+    "appSha256": "5437e103c206721f8ad13a11cf36eccff1522ecef7e6aef24d95e653a9091672",
+    "releaseGeneration": "07b8cd61f3ca304cb225343784ba35f45eaaf4b8b35ca5feaa6f0eaee42e7c75",
+    "run15Hwp": {
+      "resultFile": "target/p5-r-fn-native/run15/result.json",
+      "cleanupFile": "target/p5-r-fn-native/run15-session/cleanup.json",
+      "cleanup": "PASS: complete=true, proven=true, filesystemProven=true, survivors=[], exit=0.",
+      "hwpBody": {
+        "case": "P5-R-FN-HWP-BODY and P5-R-FN-HWP-BODY-FRESH",
+        "fixture": "external/rhwp/samples/footnote-01.hwp",
+        "fixtureSha256": "5bbc8a8fd23415aad59dd91d1eb261050946d9c64635933fcd49609ec2cc94e5",
+        "savedSha256": "8fe1ce829314e27e16f184f31aa10b98aa324c14e62953ad759c17fc268a8612",
+        "editingPid": 545431,
+        "freshPid": 545651,
+        "target": {
+          "section": 0,
+          "anchorParagraph": 3,
+          "control": 0,
+          "instanceId": 16,
+          "number": 1,
+          "ownerPath": {"sourceType": "body"}
+        },
+        "changedCfbStreams": ["BodyText/Section0", "DocInfo", "PrvImage"],
+        "independentCfbProof": "PASS: identical stream inventory; decompressed DocInfo byte-identical; only note PARA_HEADER and PARA_TEXT records 54/55 changed; PrvText unchanged; refreshed PrvImage valid CRC PNG, 724x1024.",
+        "noteCrop": {
+          "page": 0,
+          "top": 968,
+          "bottom": 1045,
+          "inkPixels": 737,
+          "sha256": "bda0056df8de7c2b1725fd33700d23f39c6e3cf6ebeabff74cf8f04fdb74e0ba"
+        }
+      }
+    },
+    "run15Hwpx": {
+      "resultFile": "target/p5-r-fn-native/run15/result.json",
+      "cleanupFile": "target/p5-r-fn-native/run15-session/cleanup.json",
+      "cleanup": "PASS: complete=true, proven=true, filesystemProven=true, survivors=[], exit=0.",
+      "hwpxTable": {
+        "case": "P5-R-FN-HWPX-TABLE and P5-R-FN-HWPX-TABLE-FRESH",
+        "fixture": "external/rhwp/samples/hwpx/footnote-01.hwpx",
+        "fixtureSha256": "2b59b7248af275a5fa6e108f95997ceacbec9f3bb4fc9b1a30502373a8f672cb",
+        "savedSha256": "4425baad73d35315b8c9637a9ce3aecbeed1a792828947f1c4585b81c0323161",
+        "editingPid": 545813,
+        "freshPid": 546031,
+        "target": {
+          "section": 0,
+          "anchorParagraph": 11,
+          "control": 0,
+          "instanceId": 16,
+          "number": 3,
+          "ownerPath": {"sourceType": "table", "cellIndex": 2, "cellParaIndex": 0, "cellControlIndex": 0}
+        },
+        "changedOpcParts": ["Contents/section0.xml", "Preview/PrvText.txt", "Preview/PrvImage.png"],
+        "previewText": "exact CRLF placeholder",
+        "previewImage": {"sha256": "16116f1f15bf63092cc319a10e840eef106243fa91d4a8e510bd3af709171bae", "width": 724, "height": 1024, "validChunkCrcs": true},
+        "noteCrop": {
+          "page": 1,
+          "top": 968,
+          "bottom": 1045,
+          "inkPixels": 459,
+          "sha256": "55433f2acc22cc6989a9d387239eb1e76c72379d81725c845030455d5af149b4"
+        }
+      },
+      "hwpxTextbox": {
+        "case": "P5-R-FN-HWPX-TEXTBOX and P5-R-FN-HWPX-TEXTBOX-FRESH",
+        "fixture": "external/rhwp/samples/hwpx/footnote-tbox-01.hwpx",
+        "fixtureSha256": "e7e6d109beee222f01f089b014c42d8d0f540564b57c7dd47384c1b5ae19e2f7",
+        "savedSha256": "b54bc092ba8c8fae47c8664f1b940830f467683f72df0b1d80697357fd9f493d",
+        "editingPid": 546193,
+        "freshPid": 546408,
+        "target": {
+          "section": 0,
+          "anchorParagraph": 1,
+          "control": 0,
+          "instanceId": 52,
+          "number": 1,
+          "ownerPath": {"sourceType": "shape", "tbParaIndex": 0, "tbControlIndex": 0}
+        },
+        "changedOpcParts": ["Contents/section0.xml", "Preview/PrvText.txt", "Preview/PrvImage.png"],
+        "previewText": "exact CRLF placeholder",
+        "previewImage": {"sha256": "cc1dd60f14502185d7a55288a11771e888f172910605eda30d9119b7652c1841", "width": 724, "height": 1024, "validChunkCrcs": true},
+        "noteCrop": {
+          "page": 0,
+          "top": 949,
+          "bottom": 1026,
+          "inkPixels": 538,
+          "sha256": "068a05932cfe9e3a4a0d20330f329642914d421ed18b4c7821774cf801b646ab"
+        }
+      }
+    }
+  },
+  "remaining": [
+    "P5-R-EN is tracked separately; HWP/HWPX endnote object editing was not exercised by P5-R-FN.",
+    "Microsoft Word/Hancom interoperability was NOT RUN.",
+    "Wayland, Windows, macOS and non-Nix Release portability were NOT RUN/VERIFIED."
+  ],
+  "push": "NOT PERFORMED"
+}
