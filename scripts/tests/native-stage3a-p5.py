@@ -9,6 +9,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+import time
 import zlib
 from xml.etree import ElementTree as ET
 import zipfile
@@ -2079,9 +2080,22 @@ def inspect_box(path):
 
 
 def canvas_hashes(acc):
-    images = acc.d.js("return [...document.querySelectorAll('.rhwp-page__canvas')].map(c=>c.toDataURL())")
-    h.require(images, "rendered page canvas is unavailable")
-    return [hashlib.sha256(image.encode()).hexdigest() for image in images]
+    deadline = time.monotonic() + 8
+    previous = None
+    stable_samples = 0
+    while time.monotonic() < deadline:
+        images = acc.d.js("return [...document.querySelectorAll('.rhwp-page__canvas')].map(c=>c.toDataURL())")
+        h.require(images, "rendered page canvas is unavailable")
+        current = [hashlib.sha256(image.encode()).hexdigest() for image in images]
+        if current == previous:
+            stable_samples += 1
+            if stable_samples >= 2:
+                return current
+        else:
+            stable_samples = 0
+        previous = current
+        time.sleep(0.1)
+    h.require(False, "rendered page canvases did not stabilize", previous)
 
 
 def textbox(acc, row, fixtures, out):

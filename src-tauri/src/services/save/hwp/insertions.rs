@@ -4638,23 +4638,47 @@ fn validate_picture(
 
 /// Extra reference checks for modeled structures, including pre-existing objects.
 /// Unmodeled bodies retain their existing opaque/reopen boundary, not a guessed schema.
-pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
+pub(super) fn reference_findings(original: &Container, output: &Container) -> Vec<Finding> {
     let result = (|| -> Checked<()> {
         let mut pictures = false;
         // compare_with owns framing/unpack diagnostics on both sides. Avoid
         // relabeling an identical malformed original as a second output error.
-        let Ok(data) = read_records(c, "DocInfo") else {
+        let original_docinfo = original
+            .streams
+            .get("DocInfo")
+            .and_then(|raw| unpack(original, raw).ok());
+        let original_records = original_docinfo.as_ref().and_then(|data| records(data));
+        let Ok(data) = read_records(output, "DocInfo") else {
             return Ok(());
         };
         let Some(rs) = records(&data) else {
             return Ok(());
         };
         let defs = definitions(&rs);
-        for (name, raw) in &c.streams {
+        let original_shapes: Vec<_> = original_records
+            .as_ref()
+            .into_iter()
+            .flat_map(|records| records.iter())
+            .filter_map(|record| (record.0 == 25).then_some(record.2))
+            .collect();
+        let original_bullets: Vec<_> = original_records
+            .as_ref()
+            .into_iter()
+            .flat_map(|records| records.iter())
+            .filter_map(|record| (record.0 == 24).then_some(record.2))
+            .collect();
+        // Old, exactly preserved paragraph definitions can use legacy HWP variants
+        // outside this validator's narrow schema. They remain safe to carry through
+        // an unrelated edit because DocInfo comparison separately proves every
+        // definition and reference target unchanged (apart from the cursor fields).
+        let stable_docinfo = original_records
+            .as_ref()
+            .is_some_and(|before| super::same_docinfo(before, &rs));
+        for (name, raw) in &output.streams {
             if !section_stream(name) {
                 continue;
             }
-            let Ok(bytes) = unpack(c, raw) else {
+            let Ok(bytes) = unpack(output, raw) else {
                 continue;
             };
             let Some(body) = records(&bytes) else {
@@ -4666,14 +4690,32 @@ pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
             pictures |= body.iter().any(|r| r.0 == 85);
         }
         if pictures {
-            resource_paths(c, &defs)?;
+            resource_paths(output, &defs)?;
         }
         if !entries(&defs, 24).is_empty() {
-            for ps in entries(&defs, 25) {
-                valid_para_shape(ps, &defs)?;
+            for (index, ps) in entries(&defs, 25).iter().enumerate() {
+                if let Err(finding) = valid_para_shape(ps, &defs) {
+                    let preserved_legacy = stable_docinfo
+                        && original_shapes
+                            .get(index)
+                            .is_some_and(|before| *before == *ps);
+                    if !preserved_legacy {
+                        return Err(finding);
+                    }
+                }
             }
-            for bullet in entries(&defs, 24) {
-                reference(dword(bullet, 8)? < entries(&defs, 21).len(), "DocInfo")?;
+            for (index, bullet) in entries(&defs, 24).iter().enumerate() {
+                let validation = dword(bullet, 8)
+                    .and_then(|id| reference(id < entries(&defs, 21).len(), "DocInfo"));
+                if let Err(finding) = validation {
+                    let preserved_legacy = stable_docinfo
+                        && original_bullets
+                            .get(index)
+                            .is_some_and(|before| *before == *bullet);
+                    if !preserved_legacy {
+                        return Err(finding);
+                    }
+                }
             }
         }
         Ok(())

@@ -127,6 +127,20 @@ fn open(bytes: &[u8], side: Side) -> Result<Container, Finding> {
 /// 레코드 하나: (태그, 수준, 내용).
 type Record<'a> = (u16, u16, &'a [u8]);
 
+/// Whether the text records read as top-level body paragraphs (the pinned
+/// serializer's `build_preview_text` input) stayed byte-identical. Nested note,
+/// table, and textbox stories do not contribute to HWP `PrvText`.
+fn same_preview_source_text(before: &[Record<'_>], after: &[Record<'_>]) -> bool {
+    before
+        .iter()
+        .filter(|record| record.0 == 67 && record.1 == 1)
+        .map(|record| record.2)
+        .eq(after
+            .iter()
+            .filter(|record| record.0 == 67 && record.1 == 1)
+            .map(|record| record.2))
+}
+
 /// 레코드 스트림을 끝까지 읽는다. 머리·크기가 스트림 끝을 넘으면 None.
 /// The owner subtree of every opaque body record (a record outside the modeled 66–85 range, or a non-empty
 /// PARA_RANGE_TAG): its nearest preceding record one level up — a control header (71) or a paragraph header
@@ -1182,6 +1196,7 @@ fn compare_with(
     };
     let mut ole_owners = None;
     let mut body_changed = false;
+    let mut preview_text_changed = false;
     let mut chart_changed = false;
     for (name, before) in &original.streams {
         let Some(after) = output.streams.get(name) else {
@@ -1273,6 +1288,7 @@ fn compare_with(
         };
         if mode == Mode::Edited && section_stream(name) {
             body_changed |= before_records != after_records;
+            preview_text_changed |= !same_preview_source_text(&before_records, &after_records);
             if let Err(finding) = insertions::ordinary_boundaries(
                 &before_records,
                 &after_records,
@@ -1314,7 +1330,8 @@ fn compare_with(
             findings.push(Finding::at(FindingCode::RecordsChanged, name));
         }
     }
-    // 본문을 바꾼 저장: 원본 그대로 남는 미리보기는 문서 내용과 무관함을 증명해야 한다(지운 내용이 남지 않게).
+    // The source serializer's PrvText uses top-level body paragraphs only. A nested note,
+    // table, or textbox edit can change BodyText records without changing PrvText inputs.
     let visual_changed = body_changed || chart_changed;
     let stale = |name: &str, empty: fn(&[u8]) -> bool| {
         output
@@ -1325,6 +1342,7 @@ fn compare_with(
     let header_only = proof.is_some_and(|p| !p.header_streams.is_empty());
     if body_changed
         && !header_only
+        && preview_text_changed
         && stale("PrvText", preview::blank_utf16)
         && text_preview(&output).as_ref() != output.streams.get("PrvText")
     {
@@ -1363,7 +1381,7 @@ fn compare_with(
             }
         }
         findings.extend(references(&output));
-        findings.extend(insertions::reference_findings(&output));
+        findings.extend(insertions::reference_findings(&original, &output));
     }
     findings
 }
@@ -2643,5 +2661,68 @@ mod chart_tests {
                 .iter()
                 .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
         );
+    }
+}
+
+#[cfg(test)]
+mod preserved_legacy_reference_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_legacy_paragraph_shapes_are_preserved_but_changed_ones_stay_blocked() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let original = std::fs::read(root.join("external/rhwp/samples/footnote-01.hwp")).unwrap();
+        let before = open(&original, Side::Original).unwrap();
+        assert!(insertions::reference_findings(&before, &before).is_empty());
+
+        let raw = unpack(&before, before.streams.get("DocInfo").unwrap())
+            .unwrap_or_else(|_| panic!("fixture DocInfo did not inflate"));
+        let rows = records(&raw).unwrap();
+        let legacy_shape = rows
+            .iter()
+            .filter(|record| record.0 == TAG_PARA_SHAPE)
+            .nth(10)
+            .expect("pinned fixture's legacy paragraph shape");
+        let offset = legacy_shape.2.as_ptr() as usize - raw.as_ptr() as usize;
+        let mut changed_raw = raw;
+        changed_raw[offset + 4] ^= 1;
+        let changed_stream = if before.compressed {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+            encoder.write_all(&changed_raw).unwrap();
+            encoder.finish().unwrap()
+        } else {
+            changed_raw
+        };
+        let mut after = Container {
+            header: before.header.clone(),
+            compressed: before.compressed,
+            streams: before
+                .streams
+                .iter()
+                .map(|(name, bytes)| (name.clone(), bytes.clone()))
+                .collect(),
+        };
+        after.streams.insert("DocInfo".into(), changed_stream);
+        assert!(insertions::reference_findings(&before, &after)
+            .contains(&Finding::at(FindingCode::OutputMalformed, "DocInfo")));
+    }
+}
+
+#[cfg(test)]
+mod preview_text_source_tests {
+    use super::{same_preview_source_text, Record};
+
+    #[test]
+    fn nested_story_changes_do_not_stale_the_top_level_hwp_text_preview() {
+        let body = b"main story\r\0".as_slice();
+        let old_note = b"old footnote\r\0".as_slice();
+        let new_note = b"new footnote\r\0".as_slice();
+        let old: [Record<'_>; 2] = [(67, 1, body), (67, 3, old_note)];
+        let nested_edit: [Record<'_>; 2] = [(67, 1, body), (67, 3, new_note)];
+        let main_edit: [Record<'_>; 2] = [(67, 1, b"changed main\r\0"), (67, 3, old_note)];
+
+        assert!(same_preview_source_text(&old, &nested_edit));
+        assert!(!same_preview_source_text(&old, &main_edit));
     }
 }

@@ -36,6 +36,23 @@ export interface CellRef {
   caption?: true;
 }
 
+/** Exact footnote container. The page is only a rendering hint; this path and note identity own edits. */
+export type NoteOwnerPath =
+  | { sourceType: "body" }
+  | { sourceType: "table"; cellIndex: number; cellParaIndex: number; cellControlIndex: number }
+  | { sourceType: "shape"; tbParaIndex: number; tbControlIndex: number };
+
+export interface FootnoteRef {
+  kind: "footnote";
+  section: number;
+  anchorParagraph: number;
+  control: number;
+  ownerPath: NoteOwnerPath;
+  instanceId: number;
+  number: number;
+  viewPage: number;
+}
+
 /** Supported table depth (outer table + nested levels). Deeper engine paths are refused, not truncated. */
 // Matches the engine path decoder's stack envelope. JSON size and ownership
 // inventory work have independent budgets; paths are never silently truncated.
@@ -70,6 +87,7 @@ export interface DocPosition {
   paragraph: number;
   offset: number;
   cell?: CellRef;
+  note?: FootnoteRef;
 }
 
 /** 페이지 좌표(배율 1, CSS px)의 커서. */
@@ -109,6 +127,57 @@ function json(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+interface FootnoteInfo {
+  instanceId: number;
+  number: number;
+  texts: string[];
+  editableStarts: (number | null)[];
+  controlStates: unknown[][];
+  paraCount: number;
+}
+function parseFootnoteInfo(raw: string): FootnoteInfo | null {
+  if (raw.length > 2 * 1024 * 1024) return null;
+  const value = json(raw);
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "controlStates,editableStarts,instanceId,kind,number,ok,paraCount,texts,totalTextLen"
+    || value.ok !== true || value.kind !== "footnote" || !isIndex(value.instanceId) || value.instanceId > 0xffffffff
+    || !isIndex(value.number) || value.number > 0xffff || !isIndex(value.paraCount) || value.paraCount < 1
+    || !Array.isArray(value.texts) || value.texts.length !== value.paraCount || !isIndex(value.totalTextLen)
+    || !Array.isArray(value.editableStarts) || value.editableStarts.length !== value.paraCount
+    || !value.editableStarts.every(start => start === null || isIndex(start))
+    || !Array.isArray(value.controlStates) || value.controlStates.length !== value.paraCount
+    || !value.controlStates.every(Array.isArray)
+    || !value.texts.every(text => typeof text === "string")) return null;
+  const texts = value.texts as string[];
+  const editableStarts = value.editableStarts as (number | null)[];
+  if (editableStarts.some((start, index) => start !== null && start > charCount(texts[index]!))) return null;
+  const total = texts.reduce((sum, text) => sum + charCount(text), 0);
+  if (total !== value.totalTextLen) return null;
+  return { instanceId: value.instanceId, number: value.number, texts, editableStarts,
+    controlStates: value.controlStates as unknown[][], paraCount: value.paraCount };
+}
+
+function parseNoteOwnerPath(value: unknown): NoteOwnerPath | null {
+  if (!isRecord(value) || typeof value.sourceType !== "string") return null;
+  if (value.sourceType === "body" && Object.keys(value).sort().join(",") === "sourceType") return { sourceType: "body" };
+  if (value.sourceType === "table" && Object.keys(value).sort().join(",") === "cellControlIndex,cellIndex,cellParaIndex,sourceType"
+    && isIndex(value.cellIndex) && value.cellIndex <= 0xffffffff
+    && isIndex(value.cellParaIndex) && value.cellParaIndex <= 0xffffffff
+    && isIndex(value.cellControlIndex) && value.cellControlIndex <= 0xffffffff) {
+    return { sourceType: "table", cellIndex: value.cellIndex, cellParaIndex: value.cellParaIndex, cellControlIndex: value.cellControlIndex };
+  }
+  if (value.sourceType === "shape" && Object.keys(value).sort().join(",") === "sourceType,tbControlIndex,tbParaIndex"
+    && isIndex(value.tbParaIndex) && value.tbParaIndex <= 0xffffffff
+    && isIndex(value.tbControlIndex) && value.tbControlIndex <= 0xffffffff) {
+    return { sourceType: "shape", tbParaIndex: value.tbParaIndex, tbControlIndex: value.tbControlIndex };
+  }
+  return null;
+}
+
+function sameNoteOwnerPath(a: unknown, b: NoteOwnerPath): boolean {
+  const parsed = parseNoteOwnerPath(a);
+  return !!parsed && JSON.stringify(parsed) === JSON.stringify(b);
 }
 
 /** 글자 수(유니코드 스칼라). rhwp 오프셋과 같은 단위. */
@@ -177,6 +246,13 @@ export function parseSelectionRects(value: unknown): PageRect[] | null {
  */
 export function sameContext(a: DocPosition, b: DocPosition): boolean {
   if (a.section !== b.section) return false;
+  if (a.note || b.note) {
+    const x = a.note, y = b.note;
+    return !!x && !!y && !a.cell && !b.cell && x.kind === y.kind && x.section === y.section
+      && x.anchorParagraph === y.anchorParagraph && x.control === y.control
+      && x.instanceId === y.instanceId && x.number === y.number
+      && sameNoteOwnerPath(x.ownerPath, y.ownerPath);
+  }
   if (a.cell === undefined || b.cell === undefined) return a.cell === b.cell;
   const x = a.cell, y = b.cell, nx = x.nested ?? [], ny = y.nested ?? [];
   if (x.textBox !== y.textBox || x.caption !== y.caption || x.parentParagraph !== y.parentParagraph || x.control !== y.control || x.cell !== y.cell || nx.length !== ny.length) return false;
@@ -187,7 +263,7 @@ export function sameContext(a: DocPosition, b: DocPosition): boolean {
 
 /** Same explicitly owned table; only the innermost cell may differ. */
 export function sameTable(a: DocPosition, b: DocPosition): boolean {
-  return !!a.cell && !!b.cell && !a.cell.textBox && !b.cell.textBox && !a.cell.caption && !b.cell.caption && sameContext(withCell(a, innermost(b.cell).cell), b);
+  return !a.note && !b.note && !!a.cell && !!b.cell && !a.cell.textBox && !b.cell.textBox && !a.cell.caption && !b.cell.caption && sameContext(withCell(a, innermost(b.cell).cell), b);
 }
 
 /** 같은 문맥(본문 또는 같은 셀)에서 문서 순서 비교. */
@@ -219,6 +295,7 @@ export function withCell(position: DocPosition, index: number): DocPosition {
 
 /** Stable identity of a position's context and paragraph path (cache/history keys; not display text). */
 export function contextKey(at: DocPosition): string {
+  if (at.note) return `${at.section}:note:${at.note.kind}:${at.note.section}/${at.note.anchorParagraph}/${at.note.control}/${JSON.stringify(at.note.ownerPath)}/${at.note.instanceId}/${at.note.number}:${at.paragraph}`;
   const c = at.cell;
   return c ? `${at.section}:${c.parentParagraph}${c.textBox ? ":textbox" : ""}/${[c, ...(c.nested ?? [])].map(l => `${l.control}.${l.cell}.${l.cellParagraph}`).join(">")}`
     : `${at.section}:body:${at.paragraph}`;
@@ -326,6 +403,94 @@ export class RhwpText {
       && d.getSelectionRectsInCellByPath && d.getTextInCellByPath && d.insertTextInCellByPath && d.deleteTextInCellByPath
       && d.deleteRangeInCellByPath && d.splitParagraphInCellByPath && d.mergeParagraphInCellByPath
       && d.getTableDimensionsByPath && d.getCellInfoByPath && d.getCursorModel);
+  }
+
+  /** Resolve a rendered footnote hit to its exact body/table/textbox control path and stable identity. */
+  footnotePosition(raw: string, page: number): DocPosition | null {
+    const hit = json(raw);
+    if (!isRecord(hit) || hit.hit !== true || Object.keys(hit).sort().join(",") !== "charOffset,cursorRect,fnParaIndex,footnoteIndex,hit"
+      || !isIndex(page) || page > 0xffffffff || !isIndex(hit.footnoteIndex) || !isIndex(hit.fnParaIndex) || !isIndex(hit.charOffset)
+      || !isRecord(hit.cursorRect) || hit.cursorRect.pageIndex !== page || !isNumber(hit.cursorRect.x)
+      || !isNumber(hit.cursorRect.y) || !isNumber(hit.cursorRect.height)) return null;
+    const getPageInfo = this.doc.getPageFootnoteInfo, getInfo = this.doc.getNoteInfo;
+    if (!getPageInfo || !getInfo) return null;
+    const owner = json(getPageInfo.call(this.doc, page, hit.footnoteIndex));
+    if (!isRecord(owner) || Object.keys(owner).sort().join(",") !== "controlIdx,editable,kind,noteInstanceId,noteNumber,noteParaCount,ok,ownerPath,paraIdx,sectionIdx,sourceType"
+      || owner.ok !== true || owner.kind !== "footnote" || owner.sourceType !== "body" && owner.sourceType !== "table" && owner.sourceType !== "shape" || owner.editable !== true
+      || !isIndex(owner.sectionIdx) || !isIndex(owner.paraIdx) || !isIndex(owner.controlIdx)
+      || owner.sectionIdx > 0xffffffff || owner.paraIdx > 0xffffffff || owner.controlIdx > 0xffffffff
+      || !isIndex(owner.noteInstanceId) || owner.noteInstanceId > 0xffffffff || !isIndex(owner.noteNumber)
+      || owner.noteNumber < 1 || owner.noteNumber > 0xffff || !isIndex(owner.noteParaCount) || owner.noteParaCount < 1) return null;
+    const path = parseNoteOwnerPath(owner.ownerPath);
+    if (!path || path.sourceType !== owner.sourceType) return null;
+    const ownerPath = JSON.stringify(path);
+    const note = parseFootnoteInfo(getInfo.call(this.doc, "footnote", owner.sectionIdx, owner.paraIdx, owner.controlIdx, ownerPath));
+    if (!note || note.instanceId !== owner.noteInstanceId || note.number !== owner.noteNumber
+      || note.paraCount !== owner.noteParaCount || hit.fnParaIndex >= note.paraCount
+      || note.editableStarts[hit.fnParaIndex] === null
+      || hit.charOffset < note.editableStarts[hit.fnParaIndex]!
+      || hit.charOffset > charCount(note.texts[hit.fnParaIndex]!)) return null;
+    const position: DocPosition = {
+      section: owner.sectionIdx,
+      paragraph: hit.fnParaIndex,
+      offset: hit.charOffset,
+      note: { kind: "footnote", section: owner.sectionIdx, anchorParagraph: owner.paraIdx, control: owner.controlIdx,
+        ownerPath: path, instanceId: note.instanceId, number: note.number, viewPage: page },
+    };
+    const view = this.footnoteView(position);
+    return view?.page === page && view.footnoteIndex === hit.footnoteIndex ? position : null;
+  }
+
+  /** Recheck note identity on every edit/read used for admission; page-local indices never establish ownership. */
+  ownsNote(at: DocPosition): boolean {
+    const owner = at.note, getInfo = this.doc.getNoteInfo;
+    if (!owner || owner.kind !== "footnote" || !isIndex(owner.section) || owner.section > 0xffffffff || owner.section !== at.section
+      || !isIndex(owner.anchorParagraph) || owner.anchorParagraph > 0xffffffff || !isIndex(owner.control) || owner.control > 0xffffffff
+      || !isIndex(owner.instanceId) || owner.instanceId > 0xffffffff || !isIndex(owner.number) || owner.number < 1 || owner.number > 0xffff
+      || !isIndex(owner.viewPage) || owner.viewPage > 0xffffffff
+      || !parseNoteOwnerPath(owner.ownerPath) || at.cell || !getInfo
+      || !isIndex(at.section) || at.section > 0xffffffff || !isIndex(at.paragraph) || at.paragraph > 0xffffffff
+      || !isIndex(at.offset) || at.offset > 0xffffffff) return false;
+    try {
+      const info = parseFootnoteInfo(getInfo.call(this.doc, owner.kind, owner.section, owner.anchorParagraph,
+        owner.control, JSON.stringify(owner.ownerPath)));
+      return !!info && info.instanceId === owner.instanceId && info.number === owner.number
+        && at.paragraph < info.paraCount
+        && info.editableStarts[at.paragraph] !== null
+        && at.offset >= info.editableStarts[at.paragraph]!
+        && at.offset <= charCount(info.texts[at.paragraph]!);
+    } catch { return false; }
+  }
+
+  private footnoteInfo(at: DocPosition): FootnoteInfo {
+    const note = at.note;
+    if (!note || !this.ownsNote(at) || !this.doc.getNoteInfo) throw new Error("footnote owner changed or is unsupported");
+    if (at.section !== note.section) throw new Error("footnote section mismatch");
+    const info = parseFootnoteInfo(this.doc.getNoteInfo(note.kind, note.section, note.anchorParagraph,
+      note.control, JSON.stringify(note.ownerPath)));
+    if (!info || info.instanceId !== note.instanceId || info.number !== note.number) throw new Error("footnote identity mismatch");
+    return info;
+  }
+
+  private footnoteView(at: DocPosition): { page: number; footnoteIndex: number } | null {
+    const note = at.note, viewAddress = this.doc.getFootnoteViewAddress;
+    if (!note || !viewAddress || !this.ownsNote(at)) return null;
+    try {
+      if (at.section !== note.section) return null;
+      const value = json(viewAddress.call(this.doc, note.section, note.anchorParagraph, note.control,
+        note.instanceId, note.number, at.paragraph, at.offset, note.viewPage, JSON.stringify(note.ownerPath)));
+      if (!isRecord(value) || Object.keys(value).sort().join(",") !== "controlIdx,footnoteIndex,instanceId,noteParaIdx,number,ok,ownerPath,pageNum,paraIdx,sectionIdx"
+        || value.ok !== true || value.sectionIdx !== at.section || value.paraIdx !== note.anchorParagraph
+        || value.controlIdx !== note.control || value.instanceId !== note.instanceId || value.number !== note.number
+        || value.noteParaIdx !== at.paragraph || !isIndex(value.pageNum) || value.pageNum > 0xffffffff
+        || !isIndex(value.footnoteIndex) || !sameNoteOwnerPath(value.ownerPath, note.ownerPath)) return null;
+      return { page: value.pageNum, footnoteIndex: value.footnoteIndex };
+    } catch { return null; }
+  }
+
+  private sameFootnoteView(a: DocPosition, b: DocPosition): boolean {
+    const x = this.footnoteView(a), y = this.footnoteView(b);
+    return !!x && !!y && x.page === y.page && x.footnoteIndex === y.footnoteIndex;
   }
 
   /**
@@ -517,6 +682,7 @@ export class RhwpText {
   }
 
   paragraphCount(at: DocPosition): number {
+    if (at.note) return this.footnoteInfo(at).paraCount;
     const c = at.cell;
     if (c?.nested) return this.doc.getCellParagraphCountByPath!(at.section, c.parentParagraph, pathJson(c));
     return c ? this.doc.getCellParagraphCount(at.section, c.parentParagraph, c.control, c.cell) : this.doc.getParagraphCount(at.section);
@@ -548,6 +714,16 @@ export class RhwpText {
 
   /** Admission only: unsupported inline slots must never open a mutation/history transaction. */
   canDeleteRange(from: DocPosition, to: DocPosition): boolean {
+    if (from.note || to.note) {
+      if (!from.note || !to.note || !sameContext(from, to) || compare(from, to) > 0
+        || !this.sameFootnoteView(from, to)) return false;
+      try {
+        const info = this.footnoteInfo(from);
+        return to.paragraph < info.paraCount && from.paragraph <= to.paragraph
+          && from.offset <= charCount(info.texts[from.paragraph]!)
+          && to.offset <= charCount(info.texts[to.paragraph]!);
+      } catch { return false; }
+    }
     if (!sameContext(from, to) || compare(from, to) > 0
       || (from.cell?.textBox && paragraphOf(from) !== paragraphOf(to))) return false;
     if (from.cell?.caption) {
@@ -581,6 +757,7 @@ export class RhwpText {
   }
 
   paragraphLength(at: DocPosition): number {
+    if (at.note) return charCount(this.footnoteInfo(at).texts[at.paragraph]!);
     const c = at.cell, inline = this.inlineCell({ ...at, offset: 0 });
     if (inline) return inline.length;
     if (c?.nested) return this.doc.getCellParagraphLengthByPath!(at.section, c.parentParagraph, pathJson(c));
@@ -590,6 +767,13 @@ export class RhwpText {
   }
 
   caret(at: DocPosition): CaretRect | null {
+    if (at.note) {
+      try {
+        const view = this.footnoteView(at);
+        if (!view || !this.doc.getCursorRectInFootnote) return null;
+        return parseCaretRect(json(this.doc.getCursorRectInFootnote(view.page, view.footnoteIndex, at.paragraph, at.offset)));
+      } catch { return null; }
+    }
     const c = at.cell;
     try {
       const rect = parseCaretRect(json(
@@ -609,6 +793,9 @@ export class RhwpText {
 
   /** Rendered line boundaries in the explicitly owned paragraph, including nested cells. */
   line(at: DocPosition): { start: number; end: number } | null {
+    if (at.note) {
+      try { return { start: 0, end: this.paragraphLength(at) }; } catch { return null; }
+    }
     const c = at.cell;
     try {
       let value = json(
@@ -635,6 +822,7 @@ export class RhwpText {
 
   /** 위·아래 줄로 이동한 위치와 유지할 가로 좌표. 같은 문맥을 벗어나면 null. */
   vertical(at: DocPosition, delta: number, preferredX: number): { position: DocPosition; preferredX: number } | null {
+    if (at.note) return null;
     const c = at.cell;
     try {
       const value = json(c?.nested
@@ -656,6 +844,17 @@ export class RhwpText {
   }
 
   selection(from: DocPosition, to: DocPosition): PageRect[] {
+    if (from.note || to.note) {
+      if (!from.note || !to.note || !sameContext(from, to) || !this.sameFootnoteView(from, to)
+        || !this.doc.getSelectionRectsInFootnote
+        || !this.ownsNote(from) || !this.ownsNote(to)) return [];
+      try {
+        const view = this.footnoteView(from);
+        if (!view) return [];
+        return parseSelectionRects(json(this.doc.getSelectionRectsInFootnote(view.page, view.footnoteIndex,
+          from.paragraph, from.offset, to.paragraph, to.offset))) ?? [];
+      } catch { return []; }
+    }
     const c = from.cell;
     try {
       return parseSelectionRects(json(
@@ -671,6 +870,11 @@ export class RhwpText {
   }
 
   text(at: DocPosition, count: number): string {
+    if (at.note) {
+      const info = this.footnoteInfo(at), content = Array.from(info.texts[at.paragraph]!);
+      if (!isIndex(count) || at.offset + count > content.length) throw new Error("unsupported footnote text range");
+      return content.slice(at.offset, at.offset + count).join("");
+    }
     const inline = this.inlineCell(at, count);
     if (inline) { at = { ...at, offset: inline.textOffset }; count = inline.textCount; }
     const c = at.cell;
@@ -682,6 +886,28 @@ export class RhwpText {
 
   /** Full text from one coherent body/cell context; verify lengths, never preview/truncate. */
   selectedText(a: DocPosition, b: DocPosition): string | null {
+    if (a.note || b.note) {
+      if (!a.note || !b.note || !sameContext(a, b) || compare(a, b) === 0
+        || !this.sameFootnoteView(a, b)) return null;
+      const [from, to] = compare(a, b) < 0 ? [a, b] : [b, a];
+      try {
+        const count = this.paragraphCount(from), start = paragraphOf(from), end = paragraphOf(to);
+        if (end >= count || end - start > MAX_CLIPBOARD_CHARS) return null;
+        const parts: string[] = [];
+        let total = 0;
+        for (let paragraph = start; paragraph <= end; paragraph++) {
+          const at = withParagraph(from, paragraph, paragraph === start ? from.offset : 0);
+          const until = paragraph === end ? to.offset : this.paragraphLength(at);
+          if (until < at.offset) return null;
+          const part = this.text(at, until - at.offset);
+          if (!validClipboardText(part)) return null;
+          total += charCount(part) + (paragraph > start ? 1 : 0);
+          if (total > MAX_CLIPBOARD_CHARS) return null;
+          parts.push(part);
+        }
+        return parts.join("\n") || null;
+      } catch { return null; }
+    }
     if (!sameContext(a, b) || compare(a, b) === 0) return null;
     const [from, to] = compare(a, b) < 0 ? [a, b] : [b, a];
     try {
@@ -759,6 +985,7 @@ export class RhwpText {
   }
 
   canInsertText(at: DocPosition): boolean {
+    if (at.note) return this.ownsNote(at);
     if (!at.cell) return true;
     if (at.cell.caption && !this.captionControlSlots(at)) return false;
     try { return !this.formulaInventory(at).some(f => f.fieldType === "formula" && isIndex(f.startCharIdx)
@@ -767,6 +994,13 @@ export class RhwpText {
   }
 
   insert(at: DocPosition, text: string): void {
+    if (at.note) {
+      const note = at.note;
+      if (!this.doc.insertTextInNote || !this.ownsNote(at)) throw new Error("footnote insertion unsupported");
+      this.nestedResult(this.doc.insertTextInNote(note.kind, at.section, note.anchorParagraph, note.control,
+        JSON.stringify(note.ownerPath), note.instanceId, note.number, at.paragraph, at.offset, text));
+      return;
+    }
     const c = at.cell;
     if (c && this.inlineCell(at)) {
       this.nestedResult(this.doc.insertCellInlineTextByPath!(at.section, c.parentParagraph, pathJson(c), at.offset, text));
@@ -784,6 +1018,14 @@ export class RhwpText {
   }
 
   delete(at: DocPosition, count: number): void {
+    if (at.note) {
+      const note = at.note;
+      if (!this.doc.deleteTextInNote || !this.ownsNote(at) || !isIndex(count)
+        || at.offset + count > this.paragraphLength(at)) throw new Error("footnote deletion unsupported");
+      this.nestedResult(this.doc.deleteTextInNote(note.kind, at.section, note.anchorParagraph, note.control,
+        JSON.stringify(note.ownerPath), note.instanceId, note.number, at.paragraph, at.offset, count));
+      return;
+    }
     const inline = this.inlineCell(at, count);
     if (inline) {
       if (inline.containsControl) throw new Error("inline object selection requires object deletion");
@@ -796,6 +1038,16 @@ export class RhwpText {
   }
 
   deleteRange(from: DocPosition, to: DocPosition): void {
+    if (from.note || to.note) {
+      if (!from.note || !to.note || !this.canDeleteRange(from, to)) throw new Error("footnote range unsupported");
+      const paragraphs = paragraphOf(to) - paragraphOf(from);
+      if (paragraphs === 0) { this.delete(from, to.offset - from.offset); return; }
+      const startLength = this.paragraphLength(from);
+      if (from.offset < startLength) this.delete(from, startLength - from.offset);
+      for (let i = 0; i < paragraphs; i++) this.mergeIntoPrevious(from, paragraphOf(from) + 1);
+      if (to.offset > 0) this.delete({ ...from, offset: from.offset }, to.offset);
+      return;
+    }
     const c = from.cell;
     if (c && paragraphOf(from) === paragraphOf(to) && this.inlineCell(from, to.offset - from.offset)) {
       this.delete(from, to.offset - from.offset); return;
@@ -815,6 +1067,7 @@ export class RhwpText {
    * 엔진에 서식 함수가 없으면 아무것도 바꾸기 전에 던진다.
    */
   format(from: DocPosition, to: DocPosition, props: string): void {
+    if (from.note || to.note) throw new Error("footnote formatting unsupported");
     const c = from.cell;
     if (c?.nested ? !this.doc.applyCharFormatInCellByPath : c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
     const first = paragraphOf(from), last = paragraphOf(to);
@@ -880,6 +1133,7 @@ export class RhwpText {
   formatSelection(from: DocPosition, to: DocPosition): {
     state: Record<"bold" | "italic" | "underline" | "strikethrough", boolean>;
   } | null {
+    if (from.note || to.note) return null;
     try {
       const valid = (at: DocPosition) => [at.section, at.paragraph, at.offset,
         ...(at.cell ? [at.cell.parentParagraph, at.cell.control, at.cell.cell, at.cell.cellParagraph] : [])].every(isIndex)
@@ -970,6 +1224,7 @@ export class RhwpText {
   }
 
   private charProperties(at: DocPosition): Record<string, unknown> | null {
+    if (at.note) return null;
     const c = at.cell;
     try {
       const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
@@ -1086,6 +1341,7 @@ export class RhwpText {
   /** Document-owned IDs/face definitions for the actual selected character, in all seven language slots.
    * Read-only: an inventory is never sufficient evidence for a save or a mutation. */
   fontReferences(at: DocPosition) {
+    if (at.note) return null;
     try {
       if (!isIndex(at.section) || !isIndex(at.paragraph) || !isIndex(at.offset) || at.offset > this.paragraphLength(at)) return null;
       const table = documentFontTable(this.doc);
@@ -1107,6 +1363,7 @@ export class RhwpText {
 
   /** Stage 5-A: the stored font names (7 language slots) of the character at `at`. null when unreadable. */
   fontFamilies(at: DocPosition): string[] | null {
+    if (at.note) return null;
     const c = at.cell;
     try {
       const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
@@ -1124,6 +1381,7 @@ export class RhwpText {
 
   /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */
   charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
+    if (at.note) return null;
     const c = at.cell;
     try {
       const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
@@ -1145,6 +1403,7 @@ export class RhwpText {
    * 보인다(적용은 7개 모두 같은 값으로 한다).
    */
   charShape(at: DocPosition): { width: number; spacing: number } | null {
+    if (at.note) return null;
     const c = at.cell;
     try {
       const inline = this.inlineCell(at); if (inline) at = { ...at, offset: inline.textOffset };
@@ -1300,6 +1559,13 @@ export class RhwpText {
 
   /** 위치에서 문단을 나눈다(Enter). */
   split(at: DocPosition): void {
+    if (at.note) {
+      const note = at.note;
+      if (!this.doc.splitParagraphInNote || !this.ownsNote(at)) throw new Error("footnote split unsupported");
+      this.nestedResult(this.doc.splitParagraphInNote(note.kind, at.section, note.anchorParagraph, note.control,
+        JSON.stringify(note.ownerPath), note.instanceId, note.number, at.paragraph, at.offset, null));
+      return;
+    }
     const c = at.cell;
     if (c?.nested) this.nestedResult(this.doc.splitParagraphInCellByPath!(at.section, c.parentParagraph, pathJson(c), at.offset));
     else if (c?.textBox) this.nestedResult(this.doc.splitParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset));
@@ -1309,6 +1575,13 @@ export class RhwpText {
 
   /** `paragraph` 문단을 앞 문단에 붙인다. */
   mergeIntoPrevious(at: DocPosition, paragraph: number): void {
+    if (at.note) {
+      const note = at.note;
+      if (!this.doc.mergeParagraphInNote || !this.ownsNote(at) || paragraph <= 0) throw new Error("footnote merge unsupported");
+      this.nestedResult(this.doc.mergeParagraphInNote(note.kind, at.section, note.anchorParagraph, note.control,
+        JSON.stringify(note.ownerPath), note.instanceId, note.number, paragraph));
+      return;
+    }
     const c = at.cell;
     if (c?.nested) this.nestedResult(this.doc.mergeParagraphInCellByPath!(at.section, c.parentParagraph, pathJson(c, paragraph)));
     else if (c) this.doc.mergeParagraphInCell(at.section, c.parentParagraph, c.control, c.cell, paragraph);

@@ -79,7 +79,9 @@ export function captureCheckpoint(text: RhwpText, caret: DocPosition, anchor: Do
 
 function structurallyValid(text: RhwpText, at: DocPosition): boolean {
   try {
-    if (at.cell?.textBox) {
+    if (at.note) {
+      if (!text.ownsNote(at)) return false;
+    } else if (at.cell?.textBox) {
       if (!text.ownsTextBox(at)) return false;
     } else if (at.cell?.caption) {
       if (!text.ownsPictureCaption(at)) return false;

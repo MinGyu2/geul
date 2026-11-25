@@ -54,6 +54,7 @@ import {
 //   조정한다(문서 모델은 하나). 일반 기록과 선택 글자 서식은 제품 capability이며 실제 세션의 IME·기록·소유권·원본 보존 조건으로
 //   가용성을 정한다. HWP는 원본 문자 모양을 파생 직렬화할 수 있어야 한다. 저장은 T009 전체 검증을 다시 통과해야 한다.
 import { sha256 } from "./rhwpArtifactIdentity";
+import { rhwpNoteReopenEqual } from "./rhwpNoteReopen";
 import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, cellPictureEvidence, insertedBasicTable, insertedInlinePicture, insertedCellPicture, insertedNestedTable } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
@@ -1091,6 +1092,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * path is proven once per structural version through the engine's cursor lists (RhwpText.ownsNestedCell).
    */
   private ownsPosition(at: DocPosition): boolean {
+    if (at.note) return this.text?.ownsNote(at) === true;
     if (at.cell?.caption) return this.ownsHwpPictureCaption(at);
     if (at.cell?.textBox) return this.canEditTextBox(at.section) && this.text?.ownsTextBox(at) === true;
     if (!at.cell?.nested) return true;
@@ -1519,13 +1521,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
     // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
     // otherwise the same keystroke would split while the preflight is CHECKING and exit once it is SAFE.
-    if (!this.bulletExitBlocked() && !this.hasSelection && !this.caret.cell
+    if (!this.caret.note && !this.bulletExitBlocked() && !this.hasSelection && !this.caret.cell
       && this.doc?.getParagraphLength(this.caret.section, this.caret.paragraph) === 0 && this.doc.getParaPropertiesAt) {
       try { if (JSON.parse(this.doc.getParaPropertiesAt(this.caret.section, this.caret.paragraph)).headType === "Bullet") return this.toggleBullets(true); }
       catch { return false; }
     }
     // Enter on an empty numbered item (body or cell) ends the list: the paragraph leaves the numbering (no new item).
-    if (!this.hasSelection && this.text.paragraphLength(this.caret) === 0) {
+    if (!this.caret.note && !this.hasSelection && this.text.paragraphLength(this.caret) === 0) {
       const range = this.listRange();
       if (range) {
         try {
@@ -1867,11 +1869,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.imeTargets.delete(target);
     if (!captured || captured.epoch !== this.imeEpoch || !text || this.composition) return false;
     const { at, version } = captured;
-    if (at.cell?.textBox || at.cell?.caption) {
+    if (at.note || at.cell?.textBox || at.cell?.caption) {
       // A control index may name a different box after any model edit.
       // A caret move alone leaves the captured owner and offset valid.
       if (version !== this.modelVersion || this.provisional || !this.ownsPosition(at)
-        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text) || (at.cell.caption && (text.includes("\t") || !this.text?.canInsertText(at)))) return false;
+        || !validClipboardText(text) || /[\r\n\u2029]/u.test(text)
+        || ((at.note || at.cell?.caption) && (text.includes("\t") || !this.text?.canInsertText(at)))) return false;
       try {
         if (!this.text || !Number.isSafeInteger(at.offset) || at.offset < 0
           || !(at.offset <= this.text.paragraphLength(at))) return false;
@@ -2019,6 +2022,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 페이지 좌표(배율 1)를 클릭했다. extend면 선택을 넓힌다. */
   pointAt(page: number, x: number, y: number, extend: boolean, drag = false, selectObject = false): boolean {
     if (!this.doc || !this.editable || (drag && this.objectSelection)) return false;
+    // A current canvas routes ordinary pointer input through selectObject so object selection can inspect
+    // the rendered layout. Footnote text still owns its hit area and must be resolved before that branch.
+    if (!this.imeUnsettled && this.doc.hitTestInFootnote && this.text) {
+      try {
+        const value: unknown = JSON.parse(this.doc.hitTestInFootnote(page, x, y));
+        if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+        const hit = value as Record<string, unknown>;
+        if (hit.hit === true) {
+          const position = this.text.footnotePosition(JSON.stringify(hit), page);
+          if (!position || !this.ownsPosition(position)) return false;
+          return this.moveTo(position, extend);
+        }
+        if (hit.hit !== false || Object.keys(hit).join(",") !== "hit") return false;
+      } catch { return false; }
+    }
     if (selectObject && !extend && !this.imeUnsettled && this.doc.getPageControlLayout) {
       try {
         const hit = hitRhwpObject(JSON.parse(this.doc.getPageControlLayout(page)), page, x, y);
@@ -2405,6 +2423,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
+      if (format === "hwpx" || format === "hwp") {
+        report.controlsEqual &&= rhwpNoteReopenEqual(doc, reopened);
+      }
       if ((format === "hwpx" || format === "hwp") && (doc.getChartData || doc.getEditableShapePath || doc.getEditableGroupFills)) {
         report.controlsEqual &&= this.bodyDrawingsEqualOnReopen(doc, reopened, controls(doc));
       }
@@ -2491,7 +2512,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   private stage1ParaRange(): { at: DocPosition; first: number; last: number } | null {
     const doc = this.doc;
-    if (!doc || !this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain || this.pending > 0
+    if (!doc || this.caret.note || this.anchor.note || !this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain || this.pending > 0
       || this.committingEpoch === this.epoch || this.saving || !sameContext(this.anchor, this.caret)
       || !this.ownsPosition(this.caret) || !this.ownsPosition(this.anchor)) return null;
     const c = this.caret.cell;
@@ -3374,7 +3395,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
     if (!payload || !doc || !this.text || !this.editable || !this.history
-      || this.imeUnsettled || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) {
+      || this.caret.note || this.imeUnsettled || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) {
       return "rejected";
     }
     if (format !== "hwp" && format !== "hwpx") return "rejected";
@@ -3511,7 +3532,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     if (!payload || payload.version !== 3 || (payload.sourceFormat !== "hwpx" && payload.sourceFormat !== "hwp")
       || payload.sourceFormat !== format) return "rejected";
-    if (!doc || !this.history || !this.editable || this.imeUnsettled || this.uncertain
+    if (!doc || !this.history || !this.editable || this.caret.note || this.imeUnsettled || this.uncertain
       || this.objectSelection || this.hasSelection || this.caret.cell
       || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return "rejected";
     const at = this.caret;
@@ -4400,7 +4421,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private imageSelecting = false;
   async executeImage(owns: () => boolean, pick: () => Promise<import("../../../commands/target").ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed"> {
-    if (this.imageSelecting || !owns() || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+    if (this.caret.note || this.imageSelecting || !owns() || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
     const epoch = this.epoch, version = this.modelVersion, caret = this.clipboardVersion, position = RhwpEditorSession.positionKey(this.caret);
     this.imageSelecting = true; this.emit();
     try {
@@ -5773,6 +5794,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    // Notes currently expose plain text editing/navigation only. Refuse other commands instead of falling through to body addresses.
+    if (this.caret.note && command !== "edit.undo" && command !== "edit.redo" && command !== "file.save") return { accepted: false };
     if (command === "picture.size") return { accepted: args?.command === command && this.resizePicture(args) };
     if (command === "object.edit") return { accepted: args?.command === command && this.editObject(args) };
     if (command === "insert.shape") {
@@ -6199,6 +6222,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /** 커서 위치를 짧은 문자열로(진단 표시용). 예: "0:3:5", 셀이면 "0:2:1@0/3/0". */
   static positionKey(position: DocPosition): string {
+    if (position.note) return `${contextKey(position)}:${position.offset}`;
     const c = position.cell;
     const nested = c?.nested?.map(level => `>${level.control}/${level.cell}/${level.cellParagraph}`).join("") ?? "";
     return `${position.section}:${position.paragraph}:${position.offset}${c ? `@${c.textBox ? "textbox/" : c.caption ? "caption/" : ""}${c.control}/${c.cell}/${c.cellParagraph}${nested}` : ""}`;

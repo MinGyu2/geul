@@ -1,0 +1,2443 @@
+--- a/src/document_core/commands/footnote_ops.rs
++++ b/src/document_core/commands/footnote_ops.rs
+@@ -12,7 +12,431 @@
+ use crate::model::paragraph::{ParaMeta, Paragraph};
+ use crate::renderer::composer::{reflow_line_segs, restamp_indentation, ParagraphBox};
+ 
++/// A note may be owned by a body paragraph, a table-cell paragraph, or a shape text box.
++/// This path is separate from the note's rendered page/index and is validated on every edit.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum NoteOwnerPath {
++    Body,
++    TableCell {
++        cell_index: usize,
++        cell_para_index: usize,
++        cell_control_index: usize,
++    },
++    ShapeTextBox {
++        tb_para_index: usize,
++        tb_control_index: usize,
++    },
++}
++
++impl NoteOwnerPath {
++    pub(crate) fn from_json(raw: &str) -> Result<Self, HwpError> {
++        if raw.len() > 1024 {
++            return Err(HwpError::RenderError(
++                "노트 소유 경로가 너무 깁니다".to_string(),
++            ));
++        }
++        let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| {
++            HwpError::RenderError("노트 소유 경로 JSON이 잘못되었습니다".to_string())
++        })?;
++        let object = value
++            .as_object()
++            .ok_or_else(|| HwpError::RenderError("노트 소유 경로가 객체가 아닙니다".to_string()))?;
++        let index = |key: &str| -> Result<usize, HwpError> {
++            let value = object
++                .get(key)
++                .and_then(serde_json::Value::as_u64)
++                .ok_or_else(|| {
++                    HwpError::RenderError("노트 소유 경로 인덱스가 잘못되었습니다".to_string())
++                })?;
++            if value > u32::MAX as u64 {
++                return Err(HwpError::RenderError(
++                    "노트 소유 경로 인덱스가 범위를 벗어났습니다".to_string(),
++                ));
++            }
++            Ok(value as usize)
++        };
++        match object.get("sourceType").and_then(serde_json::Value::as_str) {
++            Some("body") if object.len() == 1 => Ok(Self::Body),
++            Some("table")
++                if object.len() == 4
++                    && object.contains_key("cellIndex")
++                    && object.contains_key("cellParaIndex")
++                    && object.contains_key("cellControlIndex") =>
++            {
++                Ok(Self::TableCell {
++                    cell_index: index("cellIndex")?,
++                    cell_para_index: index("cellParaIndex")?,
++                    cell_control_index: index("cellControlIndex")?,
++                })
++            }
++            Some("shape")
++                if object.len() == 3
++                    && object.contains_key("tbParaIndex")
++                    && object.contains_key("tbControlIndex") =>
++            {
++                Ok(Self::ShapeTextBox {
++                    tb_para_index: index("tbParaIndex")?,
++                    tb_control_index: index("tbControlIndex")?,
++                })
++            }
++            _ => Err(HwpError::RenderError(
++                "노트 소유 경로 종류나 필드가 지원되지 않습니다".to_string(),
++            )),
++        }
++    }
++
++    pub(crate) fn to_json(self) -> serde_json::Value {
++        match self {
++            Self::Body => serde_json::json!({"sourceType":"body"}),
++            Self::TableCell {
++                cell_index,
++                cell_para_index,
++                cell_control_index,
++            } => serde_json::json!({
++                "sourceType":"table", "cellIndex":cell_index,
++                "cellParaIndex":cell_para_index, "cellControlIndex":cell_control_index,
++            }),
++            Self::ShapeTextBox {
++                tb_para_index,
++                tb_control_index,
++            } => serde_json::json!({
++                "sourceType":"shape", "tbParaIndex":tb_para_index, "tbControlIndex":tb_control_index,
++            }),
++        }
++    }
++}
++
+ impl DocumentCore {
++    pub(crate) fn note_control_ref_at(
++        &self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++    ) -> Option<&Control> {
++        let anchor = self
++            .document
++            .sections
++            .get(section_idx)?
++            .paragraphs
++            .get(para_idx)?
++            .controls
++            .get(control_idx)?;
++        match owner_path {
++            NoteOwnerPath::Body => Some(anchor),
++            NoteOwnerPath::TableCell {
++                cell_index,
++                cell_para_index,
++                cell_control_index,
++            } => {
++                let Control::Table(table) = anchor else {
++                    return None;
++                };
++                table
++                    .cells
++                    .get(cell_index)?
++                    .paragraphs
++                    .get(cell_para_index)?
++                    .controls
++                    .get(cell_control_index)
++            }
++            NoteOwnerPath::ShapeTextBox {
++                tb_para_index,
++                tb_control_index,
++            } => {
++                let Control::Shape(shape) = anchor else {
++                    return None;
++                };
++                shape
++                    .drawing()?
++                    .text_box
++                    .as_ref()?
++                    .paragraphs
++                    .get(tb_para_index)?
++                    .controls
++                    .get(tb_control_index)
++            }
++        }
++    }
++
++    fn note_control_mut_at(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++    ) -> Option<&mut Control> {
++        let anchor = self
++            .document
++            .sections
++            .get_mut(section_idx)?
++            .paragraphs
++            .get_mut(para_idx)?
++            .controls
++            .get_mut(control_idx)?;
++        match owner_path {
++            NoteOwnerPath::Body => Some(anchor),
++            NoteOwnerPath::TableCell {
++                cell_index,
++                cell_para_index,
++                cell_control_index,
++            } => {
++                let Control::Table(table) = anchor else {
++                    return None;
++                };
++                table
++                    .cells
++                    .get_mut(cell_index)?
++                    .paragraphs
++                    .get_mut(cell_para_index)?
++                    .controls
++                    .get_mut(cell_control_index)
++            }
++            NoteOwnerPath::ShapeTextBox {
++                tb_para_index,
++                tb_control_index,
++            } => {
++                let Control::Shape(shape) = anchor else {
++                    return None;
++                };
++                shape
++                    .drawing_mut()?
++                    .text_box
++                    .as_mut()?
++                    .paragraphs
++                    .get_mut(tb_para_index)?
++                    .controls
++                    .get_mut(tb_control_index)
++            }
++        }
++    }
++
++    fn note_paragraph_ref_at(
++        &self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        note_para_idx: usize,
++    ) -> Option<&Paragraph> {
++        match self.note_control_ref_at(section_idx, para_idx, control_idx, owner_path)? {
++            Control::Footnote(note) => note.paragraphs.get(note_para_idx),
++            Control::Endnote(note) => note.paragraphs.get(note_para_idx),
++            _ => None,
++        }
++    }
++
++    fn note_paragraph_mut_at(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        note_para_idx: usize,
++    ) -> Option<&mut Paragraph> {
++        match self.note_control_mut_at(section_idx, para_idx, control_idx, owner_path)? {
++            Control::Footnote(note) => note.paragraphs.get_mut(note_para_idx),
++            Control::Endnote(note) => note.paragraphs.get_mut(note_para_idx),
++            _ => None,
++        }
++    }
++
++    /// Validate the exact direct-body note owner used by an editing session.
++    /// Indices alone are not enough: after a reload or a stale hit they could
++    /// name another note of the same local number.
++    pub fn validate_note_owner_native(
++        &self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++    ) -> Result<(), HwpError> {
++        if !matches!(kind, "footnote" | "endnote") {
++            return Err(HwpError::RenderError(
++                "지원하지 않는 노트 종류입니다".to_string(),
++            ));
++        }
++        let control = self
++            .document
++            .sections
++            .get(section_idx)
++            .and_then(|section| section.paragraphs.get(para_idx))
++            .and_then(|paragraph| paragraph.controls.get(control_idx))
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 소유 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?;
++        let (actual_kind, instance_id, number) = match control {
++            Control::Footnote(note) => ("footnote", note.instance_id, note.number),
++            Control::Endnote(note) => ("endnote", note.instance_id, note.number),
++            _ => {
++                return Err(HwpError::RenderError(
++                    "주소가 각주/미주 컨트롤을 가리키지 않습니다".to_string(),
++                ))
++            }
++        };
++        if actual_kind != kind || instance_id != expected_instance_id || number != expected_number {
++            return Err(HwpError::RenderError(
++                "노트 종류, 식별자 또는 번호가 현재 소유자와 일치하지 않습니다".to_string(),
++            ));
++        }
++        Ok(())
++    }
++
++    pub(crate) fn validate_note_owner_at_native(
++        &self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++    ) -> Result<(), HwpError> {
++        if !matches!(kind, "footnote" | "endnote") {
++            return Err(HwpError::RenderError(
++                "지원하지 않는 노트 종류입니다".to_string(),
++            ));
++        }
++        let control = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 소유 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?;
++        let (actual_kind, instance_id, number) = match control {
++            Control::Footnote(note) => ("footnote", note.instance_id, note.number),
++            Control::Endnote(note) => ("endnote", note.instance_id, note.number),
++            _ => {
++                return Err(HwpError::RenderError(
++                    "주소가 각주/미주 컨트롤을 가리키지 않습니다".to_string(),
++                ))
++            }
++        };
++        if actual_kind != kind || instance_id != expected_instance_id || number != expected_number {
++            return Err(HwpError::RenderError(
++                "노트 종류, 식별자 또는 번호가 현재 소유자와 일치하지 않습니다".to_string(),
++            ));
++        }
++        Ok(())
++    }
++
++    /// Text editing is allowed only in a note paragraph with no inline or
++    /// structural controls. The existing plain-text mutators do not have a
++    /// control-aware range contract, so refusing such paragraphs preserves
++    /// their IDs and references until a typed control path is available.
++    fn validate_note_paragraph_edit_native(
++        &self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        start: usize,
++        end: usize,
++    ) -> Result<(), HwpError> {
++        self.validate_note_paragraph_edit_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            NoteOwnerPath::Body,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            start,
++            end,
++        )
++    }
++
++    fn validate_note_paragraph_edit_at_native(
++        &self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        start: usize,
++        end: usize,
++    ) -> Result<(), HwpError> {
++        self.validate_note_owner_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            expected_instance_id,
++            expected_number,
++        )?;
++        let paragraph = self
++            .note_paragraph_ref_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx,
++            )
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 문단 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?;
++        let len = paragraph.text.chars().count();
++        let editable_start = Self::note_paragraph_editable_start(kind, expected_number, paragraph)
++            .ok_or_else(|| {
++                HwpError::RenderError("노트 문단 컨트롤 배치를 증명할 수 없습니다".to_string())
++            })?;
++        if start < editable_start || start > end || end > len {
++            return Err(HwpError::RenderError(
++                "노트 문단의 컨트롤 또는 텍스트 범위를 증명할 수 없습니다".to_string(),
++            ));
++        }
++        Ok(())
++    }
++
++    fn note_paragraph_editable_start(
++        kind: &str,
++        number: u16,
++        paragraph: &crate::model::paragraph::Paragraph,
++    ) -> Option<usize> {
++        if paragraph.controls.is_empty() {
++            return Some(0);
++        }
++        let expected_type = match kind {
++            "footnote" => crate::model::control::AutoNumberType::Footnote,
++            "endnote" => crate::model::control::AutoNumberType::Endnote,
++            _ => return None,
++        };
++        let [Control::AutoNumber(auto)] = paragraph.controls.as_slice() else {
++            return None;
++        };
++        if auto.number_type != expected_type
++            || auto.number != number
++            || auto.assigned_number != number
++        {
++            return None;
++        }
++        let positions = paragraph.control_text_positions();
++        let [position] = positions.as_slice() else {
++            return None;
++        };
++        // HWP footnote paragraphs reserve the two leading placeholder spaces
++        // around the inline AutoNumber. Editing before both have been passed
++        // can consume or move the format's note marker even when a raw control
++        // position alone looks editable.
++        let start = position.checked_add(1)?.max(2);
++        (start <= paragraph.text.chars().count()).then_some(start)
++    }
++
+     fn renumber_footnotes_in_section(&mut self, section_idx: usize) {
+         let mut number = 1u16;
+         for para in &mut self.document.sections[section_idx].paragraphs {
+@@ -364,6 +788,60 @@
+         }
+     }
+ 
++    fn reflow_note_paragraph_at(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        note_para_idx: usize,
++    ) {
++        use crate::renderer::hwpunit_to_px;
++        let available_width = {
++            let Some(section) = self.document.sections.get(section_idx) else {
++                return;
++            };
++            let page_def = &section.section_def.page_def;
++            hwpunit_to_px(
++                page_def.width as i32 - page_def.margin_left as i32 - page_def.margin_right as i32,
++                self.dpi,
++            )
++        };
++        let Some(para_shape_id) = self
++            .note_paragraph_ref_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx,
++            )
++            .map(|paragraph| paragraph.para_shape_id)
++        else {
++            return;
++        };
++        let para_style = self.styles.para_styles.get(para_shape_id as usize);
++        let final_width = (available_width
++            - para_style.map(|s| s.margin_left).unwrap_or(0.0)
++            - para_style.map(|s| s.margin_right).unwrap_or(0.0))
++        .max(0.0);
++        let dpi = self.dpi;
++        let styles = self.styles.clone();
++        if let Some(paragraph) = self.note_paragraph_mut_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        ) {
++            reflow_line_segs(
++                paragraph,
++                ParagraphBox::content_width_px(final_width, dpi),
++                &styles,
++                dpi,
++            );
++        }
++    }
++
+     /// 각주/미주 내부 문단 속성 조회.
+     pub fn get_para_properties_in_footnote_native(
+         &self,
+@@ -473,44 +951,679 @@
+         let ctrl = para.controls.get(control_idx).ok_or_else(|| {
+             HwpError::RenderError(format!("컨트롤 인덱스 {} 범위 초과", control_idx))
+         })?;
+-        match ctrl {
+-            Control::Footnote(f) => {
+-                let para_count = f.paragraphs.len();
+-                let texts: Vec<String> = f
+-                    .paragraphs
+-                    .iter()
+-                    .map(|p| p.text.replace('\\', "\\\\").replace('"', "\\\""))
+-                    .collect();
+-                let total_len: usize = f.paragraphs.iter().map(|p| p.text.chars().count()).sum();
+-                Ok(format!(
+-                    "{{\"ok\":true,\"paraCount\":{},\"totalTextLen\":{},\"number\":{},\"texts\":[{}]}}",
+-                    para_count,
+-                    total_len,
+-                    f.number,
+-                    texts.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(","),
+-                ))
+-            }
+-            Control::Endnote(e) => {
+-                let para_count = e.paragraphs.len();
+-                let texts: Vec<String> = e
+-                    .paragraphs
+-                    .iter()
+-                    .map(|p| p.text.replace('\\', "\\\\").replace('"', "\\\""))
+-                    .collect();
+-                let total_len: usize = e.paragraphs.iter().map(|p| p.text.chars().count()).sum();
+-                Ok(format!(
+-                    "{{\"ok\":true,\"paraCount\":{},\"totalTextLen\":{},\"number\":{},\"texts\":[{}]}}",
+-                    para_count,
+-                    total_len,
+-                    e.number,
+-                    texts.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(","),
+-                ))
+-            }
++        let (kind, instance_id, number, paragraphs) = match ctrl {
++            Control::Footnote(note) => {
++                ("footnote", note.instance_id, note.number, &note.paragraphs)
++            }
++            Control::Endnote(note) => ("endnote", note.instance_id, note.number, &note.paragraphs),
+             _ => Err(HwpError::RenderError(format!(
+                 "컨트롤 {}은 각주/미주가 아닙니다",
+                 control_idx
+-            ))),
+-        }
++            )))?,
++        };
++        let texts: Vec<&str> = paragraphs.iter().map(|p| p.text.as_str()).collect();
++        let editable_starts: Vec<Option<usize>> = paragraphs
++            .iter()
++            .map(|p| Self::note_paragraph_editable_start(kind, number, p))
++            .collect();
++        let control_states: Vec<serde_json::Value> = paragraphs
++            .iter()
++            .map(|paragraph| serde_json::to_value(&paragraph.controls))
++            .collect::<Result<_, _>>()
++            .map_err(|_| {
++                HwpError::RenderError("노트 문단 컨트롤을 직렬화할 수 없습니다".to_string())
++            })?;
++        let total_len: usize = texts.iter().map(|text| text.chars().count()).sum();
++        Ok(serde_json::json!({
++            "ok": true,
++            "kind": kind,
++            "instanceId": instance_id,
++            "number": number,
++            "paraCount": paragraphs.len(),
++            "totalTextLen": total_len,
++            "texts": texts,
++            "editableStarts": editable_starts,
++            "controlStates": control_states,
++        })
++        .to_string())
++    }
++
++    pub(crate) fn get_note_info_at_native(
++        &self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++    ) -> Result<String, HwpError> {
++        let control = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 소유 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?;
++        let (actual_kind, instance_id, number, paragraphs) = match control {
++            Control::Footnote(note) => {
++                ("footnote", note.instance_id, note.number, &note.paragraphs)
++            }
++            Control::Endnote(note) => ("endnote", note.instance_id, note.number, &note.paragraphs),
++            _ => {
++                return Err(HwpError::RenderError(
++                    "주소가 각주/미주 컨트롤을 가리키지 않습니다".to_string(),
++                ))
++            }
++        };
++        if kind != actual_kind {
++            return Err(HwpError::RenderError(
++                "노트 종류가 소유자와 일치하지 않습니다".to_string(),
++            ));
++        }
++        let texts: Vec<&str> = paragraphs.iter().map(|p| p.text.as_str()).collect();
++        let editable_starts: Vec<Option<usize>> = paragraphs
++            .iter()
++            .map(|p| Self::note_paragraph_editable_start(kind, number, p))
++            .collect();
++        let control_states: Vec<serde_json::Value> = paragraphs
++            .iter()
++            .map(|paragraph| serde_json::to_value(&paragraph.controls))
++            .collect::<Result<_, _>>()
++            .map_err(|_| {
++                HwpError::RenderError("노트 문단 컨트롤을 직렬화할 수 없습니다".to_string())
++            })?;
++        let total_len: usize = texts.iter().map(|text| text.chars().count()).sum();
++        Ok(serde_json::json!({
++            "ok": true, "kind": kind, "instanceId": instance_id, "number": number,
++            "paraCount": paragraphs.len(), "totalTextLen": total_len,
++            "texts": texts, "editableStarts": editable_starts, "controlStates": control_states,
++        })
++        .to_string())
++    }
++
++    /// Stable inventory for save/reopen comparison. Only owner paths exposed by page hit-testing are included;
++    /// a nested note that the renderer cannot address exactly makes the inventory fail closed.
++    pub(crate) fn get_note_inventory_native(&self) -> Result<String, HwpError> {
++        fn entry(
++            section: usize,
++            para: usize,
++            control_index: usize,
++            owner_path: NoteOwnerPath,
++            control: &Control,
++        ) -> Result<serde_json::Value, HwpError> {
++            let (kind, instance_id, number, paragraphs) = match control {
++                Control::Footnote(note) => {
++                    ("footnote", note.instance_id, note.number, &note.paragraphs)
++                }
++                Control::Endnote(note) => {
++                    ("endnote", note.instance_id, note.number, &note.paragraphs)
++                }
++                _ => {
++                    return Err(HwpError::RenderError(
++                        "노트 인벤토리에 노트가 아닌 컨트롤이 전달되었습니다".to_string(),
++                    ))
++                }
++            };
++            let texts: Vec<&str> = paragraphs.iter().map(|p| p.text.as_str()).collect();
++            let editable_starts: Vec<Option<usize>> = paragraphs
++                .iter()
++                .map(|p| DocumentCore::note_paragraph_editable_start(kind, number, p))
++                .collect();
++            let control_states: Vec<serde_json::Value> = paragraphs
++                .iter()
++                .map(|paragraph| serde_json::to_value(&paragraph.controls))
++                .collect::<Result<_, _>>()
++                .map_err(|_| {
++                    HwpError::RenderError("노트 문단 컨트롤을 직렬화할 수 없습니다".to_string())
++                })?;
++            let total_text_len = texts.iter().map(|text| text.chars().count()).sum::<usize>();
++            Ok(serde_json::json!({
++                "section": section, "anchorParagraph": para, "control": control_index,
++                "ownerPath": owner_path.to_json(), "kind": kind, "instanceId": instance_id,
++                "number": number, "paraCount": paragraphs.len(), "totalTextLen": total_text_len,
++                "texts": texts, "editableStarts": editable_starts, "controlStates": control_states,
++            }))
++        }
++
++        fn contains_note(control: &Control) -> bool {
++            match control {
++                Control::Footnote(_) | Control::Endnote(_) => true,
++                Control::Table(table) => table
++                    .cells
++                    .iter()
++                    .flat_map(|cell| &cell.paragraphs)
++                    .flat_map(|paragraph| &paragraph.controls)
++                    .any(contains_note),
++                Control::Shape(shape) => shape
++                    .drawing()
++                    .and_then(|drawing| drawing.text_box.as_ref())
++                    .is_some_and(|text_box| {
++                        text_box
++                            .paragraphs
++                            .iter()
++                            .flat_map(|p| &p.controls)
++                            .any(contains_note)
++                    }),
++                _ => false,
++            }
++        }
++
++        let mut entries = Vec::new();
++        for (section_idx, section) in self.document.sections.iter().enumerate() {
++            for (para_idx, paragraph) in section.paragraphs.iter().enumerate() {
++                for (control_idx, control) in paragraph.controls.iter().enumerate() {
++                    match control {
++                        Control::Footnote(_) | Control::Endnote(_) => entries.push(entry(
++                            section_idx,
++                            para_idx,
++                            control_idx,
++                            NoteOwnerPath::Body,
++                            control,
++                        )?),
++                        Control::Table(table) => {
++                            for (cell_index, cell) in table.cells.iter().enumerate() {
++                                for (cell_para_index, cell_para) in
++                                    cell.paragraphs.iter().enumerate()
++                                {
++                                    for (cell_control_index, cell_control) in
++                                        cell_para.controls.iter().enumerate()
++                                    {
++                                        if matches!(
++                                            cell_control,
++                                            Control::Footnote(_) | Control::Endnote(_)
++                                        ) {
++                                            entries.push(entry(
++                                                section_idx,
++                                                para_idx,
++                                                control_idx,
++                                                NoteOwnerPath::TableCell {
++                                                    cell_index,
++                                                    cell_para_index,
++                                                    cell_control_index,
++                                                },
++                                                cell_control,
++                                            )?);
++                                        } else if contains_note(cell_control) {
++                                            return Err(HwpError::RenderError("중첩 표/도형 안 노트의 저장 소유 경로를 증명할 수 없습니다".to_string()));
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                        Control::Shape(shape) => {
++                            if let Some(text_box) = shape
++                                .drawing()
++                                .and_then(|drawing| drawing.text_box.as_ref())
++                            {
++                                for (tb_para_index, tb_para) in
++                                    text_box.paragraphs.iter().enumerate()
++                                {
++                                    for (tb_control_index, tb_control) in
++                                        tb_para.controls.iter().enumerate()
++                                    {
++                                        if matches!(
++                                            tb_control,
++                                            Control::Footnote(_) | Control::Endnote(_)
++                                        ) {
++                                            entries.push(entry(
++                                                section_idx,
++                                                para_idx,
++                                                control_idx,
++                                                NoteOwnerPath::ShapeTextBox {
++                                                    tb_para_index,
++                                                    tb_control_index,
++                                                },
++                                                tb_control,
++                                            )?);
++                                        } else if contains_note(tb_control) {
++                                            return Err(HwpError::RenderError("중첩 표/도형 안 노트의 저장 소유 경로를 증명할 수 없습니다".to_string()));
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                        other if contains_note(other) => return Err(HwpError::RenderError(
++                            "지원되지 않는 컨트롤 내부 노트의 저장 소유 경로를 증명할 수 없습니다"
++                                .to_string(),
++                        )),
++                        _ => {}
++                    }
++                }
++            }
++        }
++        let result = serde_json::Value::Array(entries);
++        let raw = serde_json::to_string(&result).map_err(|_| {
++            HwpError::RenderError("노트 인벤토리를 직렬화할 수 없습니다".to_string())
++        })?;
++        if raw.len() > 8 * 1024 * 1024 {
++            return Err(HwpError::RenderError(
++                "노트 인벤토리가 크기 제한을 넘었습니다".to_string(),
++            ));
++        }
++        Ok(raw)
++    }
++
++    pub fn insert_text_in_note_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        text: &str,
++    ) -> Result<String, HwpError> {
++        self.insert_text_in_note_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            NoteOwnerPath::Body,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            text,
++        )
++    }
++
++    pub(crate) fn insert_text_in_note_at_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        text: &str,
++    ) -> Result<String, HwpError> {
++        self.validate_note_paragraph_edit_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            char_offset,
++        )?;
++        let inserted = text.chars().count();
++        self.note_paragraph_mut_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        )
++        .ok_or_else(|| {
++            HwpError::RenderError("노트 문단 주소가 오래되었거나 범위를 벗어났습니다".to_string())
++        })?
++        .insert_text_at(char_offset, text);
++        self.reflow_note_paragraph_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        );
++        self.document.sections[section_idx].raw_stream = None;
++        self.mark_section_dirty(section_idx);
++        self.paginate_if_needed();
++        self.event_log.push(DocumentEvent::TextInserted {
++            section: section_idx,
++            para: para_idx,
++            offset: char_offset,
++            len: inserted,
++        });
++        Ok(super::super::helpers::json_ok_with(&format!(
++            "\"charOffset\":{}",
++            char_offset + inserted
++        )))
++    }
++
++    pub fn delete_text_in_note_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        count: usize,
++    ) -> Result<String, HwpError> {
++        self.delete_text_in_note_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            NoteOwnerPath::Body,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            count,
++        )
++    }
++
++    pub(crate) fn delete_text_in_note_at_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        count: usize,
++    ) -> Result<String, HwpError> {
++        let end = char_offset
++            .checked_add(count)
++            .ok_or_else(|| HwpError::RenderError("노트 삭제 범위가 오버플로합니다".to_string()))?;
++        self.validate_note_paragraph_edit_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            end,
++        )?;
++        let deleted_text: String = self
++            .note_paragraph_ref_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx,
++            )
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 문단 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?
++            .text
++            .chars()
++            .skip(char_offset)
++            .take(count)
++            .collect();
++        self.note_paragraph_mut_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        )
++        .ok_or_else(|| {
++            HwpError::RenderError("노트 문단 주소가 오래되었거나 범위를 벗어났습니다".to_string())
++        })?
++        .delete_text_at(char_offset, count);
++        self.reflow_note_paragraph_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        );
++        self.document.sections[section_idx].raw_stream = None;
++        self.mark_section_dirty(section_idx);
++        self.paginate_if_needed();
++        self.event_log.push(DocumentEvent::TextDeleted {
++            section: section_idx,
++            para: para_idx,
++            offset: char_offset,
++            count,
++        });
++        Ok(super::super::helpers::json_ok_with(&format!(
++            "\"charOffset\":{},\"deletedText\":\"{}\"",
++            char_offset,
++            super::super::helpers::json_escape(&deleted_text)
++        )))
++    }
++
++    pub fn split_paragraph_in_note_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        restore_meta: Option<ParaMeta>,
++    ) -> Result<String, HwpError> {
++        self.split_paragraph_in_note_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            NoteOwnerPath::Body,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            restore_meta,
++        )
++    }
++
++    pub(crate) fn split_paragraph_in_note_at_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        restore_meta: Option<ParaMeta>,
++    ) -> Result<String, HwpError> {
++        self.validate_note_paragraph_edit_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++            char_offset,
++            char_offset,
++        )?;
++        let mut new_para = self
++            .note_paragraph_mut_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx,
++            )
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 문단 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })?
++            .split_at(char_offset);
++        if let Some(meta) = restore_meta {
++            restore_para_meta(&mut new_para, meta, &self.document.doc_info.para_shapes);
++        }
++        let inserted_para = note_para_idx + 1;
++        match self
++            .note_control_mut_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 소유 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })? {
++            Control::Footnote(note) => note.paragraphs.insert(inserted_para, new_para),
++            Control::Endnote(note) => note.paragraphs.insert(inserted_para, new_para),
++            _ => {
++                return Err(HwpError::RenderError(
++                    "주소가 각주/미주 컨트롤을 가리키지 않습니다".to_string(),
++                ))
++            }
++        }
++        self.reflow_note_paragraph_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            note_para_idx,
++        );
++        self.reflow_note_paragraph_at(
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            inserted_para,
++        );
++        self.document.sections[section_idx].raw_stream = None;
++        self.mark_section_dirty(section_idx);
++        self.paginate_if_needed();
++        self.event_log.push(DocumentEvent::ParagraphSplit {
++            section: section_idx,
++            para: para_idx,
++            offset: char_offset,
++        });
++        Ok(super::super::helpers::json_ok_with(&format!(
++            "\"fnParaIndex\":{},\"charOffset\":0",
++            inserted_para
++        )))
++    }
++
++    pub fn merge_paragraph_in_note_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++    ) -> Result<String, HwpError> {
++        self.merge_paragraph_in_note_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            NoteOwnerPath::Body,
++            expected_instance_id,
++            expected_number,
++            note_para_idx,
++        )
++    }
++
++    pub(crate) fn merge_paragraph_in_note_at_native(
++        &mut self,
++        kind: &str,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        owner_path: NoteOwnerPath,
++        expected_instance_id: u32,
++        expected_number: u16,
++        note_para_idx: usize,
++    ) -> Result<String, HwpError> {
++        if note_para_idx == 0 {
++            return Err(HwpError::RenderError(
++                "첫 번째 노트 문단에는 앞 문단이 없습니다".to_string(),
++            ));
++        }
++        self.validate_note_owner_at_native(
++            kind,
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            expected_instance_id,
++            expected_number,
++        )?;
++        let previous = self
++            .note_paragraph_ref_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx - 1,
++            )
++            .ok_or_else(|| {
++                HwpError::RenderError("앞 노트 문단 주소가 범위를 벗어났습니다".to_string())
++            })?;
++        if Self::note_paragraph_editable_start(kind, expected_number, previous).is_none() {
++            return Err(HwpError::RenderError(
++                "앞 노트 문단 컨트롤 배치를 증명할 수 없습니다".to_string(),
++            ));
++        }
++        let current = self
++            .note_paragraph_ref_at(
++                section_idx,
++                para_idx,
++                control_idx,
++                owner_path,
++                note_para_idx,
++            )
++            .ok_or_else(|| {
++                HwpError::RenderError("노트 문단 주소가 범위를 벗어났습니다".to_string())
++            })?;
++        if !current.controls.is_empty() {
++            return Err(HwpError::RenderError(
++                "컨트롤이 든 노트 문단은 병합할 수 없습니다".to_string(),
++            ));
++        }
++        let (merge_offset, removed_meta) = match self
++            .note_control_mut_at(section_idx, para_idx, control_idx, owner_path)
++            .ok_or_else(|| {
++                HwpError::RenderError(
++                    "노트 소유 주소가 오래되었거나 범위를 벗어났습니다".to_string(),
++                )
++            })? {
++            Control::Footnote(note) => {
++                let offset = note.paragraphs[note_para_idx - 1].text.chars().count();
++                let removed = note.paragraphs.remove(note_para_idx);
++                let meta = super::super::helpers::removed_para_meta_field(&removed.capture_meta());
++                note.paragraphs[note_para_idx - 1].merge_from(&removed);
++                (offset, meta)
++            }
++            Control::Endnote(note) => {
++                let offset = note.paragraphs[note_para_idx - 1].text.chars().count();
++                let removed = note.paragraphs.remove(note_para_idx);
++                let meta = super::super::helpers::removed_para_meta_field(&removed.capture_meta());
++                note.paragraphs[note_para_idx - 1].merge_from(&removed);
++                (offset, meta)
++            }
++            _ => {
++                return Err(HwpError::RenderError(
++                    "주소가 각주/미주 컨트롤을 가리키지 않습니다".to_string(),
++                ))
++            }
++        };
++        let previous_idx = note_para_idx - 1;
++        self.reflow_note_paragraph_at(section_idx, para_idx, control_idx, owner_path, previous_idx);
++        self.document.sections[section_idx].raw_stream = None;
++        self.mark_section_dirty(section_idx);
++        self.paginate_if_needed();
++        self.event_log.push(DocumentEvent::ParagraphMerged {
++            section: section_idx,
++            para: para_idx,
++        });
++        Ok(super::super::helpers::json_ok_with(&format!(
++            "\"fnParaIndex\":{},\"charOffset\":{}{}",
++            previous_idx, merge_offset, removed_meta
++        )))
+     }
+ 
+     /// 각주 내 텍스트 삽입
+@@ -746,8 +1859,331 @@
+ 
+ #[cfg(test)]
+ mod tests {
++    use super::NoteOwnerPath;
+     use crate::document_core::DocumentCore;
+     use crate::model::control::Control;
++    use serde_json::Value;
++
++    fn semantic_doc_info(document: &crate::wasm_api::HwpDocument) -> String {
++        let mut info = document.document.doc_info.clone();
++        info.raw_stream = None;
++        format!("{info:#?}")
++    }
++
++    fn edit_first_authentic_footnote(
++        document: &mut crate::wasm_api::HwpDocument,
++        source_type: &str,
++    ) -> (Vec<Value>, Vec<Value>, usize, String) {
++        let doc_info_before = semantic_doc_info(document);
++        let before: Vec<Value> = serde_json::from_str(
++            &document
++                .get_note_inventory()
++                .unwrap_or_else(|_| panic!("authentic note inventory must be addressable")),
++        )
++        .expect("note inventory JSON");
++        let (note_index, note) = before
++            .iter()
++            .enumerate()
++            .find(|(_, note)| {
++                note["kind"] == "footnote"
++                    && note["ownerPath"]["sourceType"].as_str() == Some(source_type)
++            })
++            .expect("authentic sample must contain an addressable footnote");
++        let para_index = note["editableStarts"]
++            .as_array()
++            .expect("editable note paragraphs")
++            .iter()
++            .position(Value::is_u64)
++            .expect("authentic footnote must have an editable paragraph");
++        let old_text = note["texts"][para_index]
++            .as_str()
++            .expect("footnote paragraph text")
++            .to_string();
++        let offset = old_text.chars().count() as u32;
++        let section = note["section"].as_u64().expect("section") as u32;
++        let anchor = note["anchorParagraph"].as_u64().expect("anchor") as u32;
++        let control = note["control"].as_u64().expect("control") as u32;
++        let owner_path = note["ownerPath"].to_string();
++        let instance_id = note["instanceId"].as_u64().expect("instance ID") as u32;
++        let number = note["number"].as_u64().expect("note number") as u32;
++        let result = document
++            .insert_text_in_note(
++                "footnote",
++                section,
++                anchor,
++                control,
++                &owner_path,
++                instance_id,
++                number,
++                para_index as u32,
++                offset,
++                "각",
++            )
++            .unwrap_or_else(|_| panic!("exact-owned authentic footnote edit must succeed"));
++        assert_eq!(
++            serde_json::from_str::<Value>(&result).unwrap()["ok"],
++            true,
++            "note mutation must report success explicitly"
++        );
++
++        let mut expected = before.clone();
++        expected[note_index]["texts"][para_index] = Value::String(format!("{old_text}각"));
++        let total = expected[note_index]["totalTextLen"]
++            .as_u64()
++            .expect("total note text length");
++        expected[note_index]["totalTextLen"] = Value::from(total + 1);
++        let mutated: Vec<Value> = serde_json::from_str(
++            &document
++                .get_note_inventory()
++                .unwrap_or_else(|_| panic!("mutated note inventory must remain addressable")),
++        )
++        .expect("mutated note inventory JSON");
++        assert_eq!(mutated, expected, "only the addressed note text may change");
++        (before, expected, section as usize, doc_info_before)
++    }
++
++    fn hwpx_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
++        use std::io::Read;
++
++        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
++            .expect("HWPX package must remain a valid ZIP");
++        let mut parts = std::collections::BTreeMap::new();
++        for index in 0..archive.len() {
++            let mut entry = archive.by_index(index).expect("HWPX package entry");
++            let name = entry.name().to_string();
++            let mut data = Vec::new();
++            entry.read_to_end(&mut data).expect("read HWPX part");
++            assert!(
++                parts.insert(name.clone(), data).is_none(),
++                "duplicate HWPX part: {name}"
++            );
++        }
++        parts
++    }
++
++    fn authentic_fixture_path(name: &str) -> std::path::PathBuf {
++        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
++            .join("samples")
++            .join(name)
++    }
++
++    fn hwpx_xml_node(node: roxmltree::Node<'_, '_>) -> Value {
++        use roxmltree::NodeType;
++
++        match node.node_type() {
++            NodeType::Root => Value::Array(node.children().map(hwpx_xml_node).collect()),
++            NodeType::Element => {
++                let mut attributes: Vec<_> = node
++                    .attributes()
++                    .map(|attribute| {
++                        (
++                            attribute.namespace().unwrap_or("").to_string(),
++                            attribute.name().to_string(),
++                            attribute.value().to_string(),
++                        )
++                    })
++                    .collect();
++                attributes.sort();
++                serde_json::json!({
++                    "element": [node.tag_name().namespace(), node.tag_name().name()],
++                    "attributes": attributes,
++                    "children": node.children().map(hwpx_xml_node).collect::<Vec<_>>(),
++                })
++            }
++            NodeType::PI => {
++                let pi = node.pi().expect("processing instruction node");
++                serde_json::json!({"pi": [pi.target, pi.value]})
++            }
++            NodeType::Comment => serde_json::json!({"comment": node.text()}),
++            NodeType::Text => serde_json::json!({"text": node.text()}),
++        }
++    }
++
++    /// Match T009's XML-part rule: full namespace-aware event content (including comments and PIs),
++    /// with attribute order and XML declaration spelling treated as serialization details.
++    fn hwpx_unrelated_part_preserved(name: &str, before: &[u8], after: &[u8]) -> bool {
++        if before == after {
++            return true;
++        }
++        if !name.ends_with(".xml") {
++            return false;
++        }
++        let (Ok(before), Ok(after)) = (std::str::from_utf8(before), std::str::from_utf8(after))
++        else {
++            return false;
++        };
++        let (Ok(before), Ok(after)) = (
++            roxmltree::Document::parse(before),
++            roxmltree::Document::parse(after),
++        ) else {
++            return false;
++        };
++        hwpx_xml_node(before.root()) == hwpx_xml_node(after.root())
++    }
++
++    fn normalize_opf_modified_date(bytes: &[u8]) -> Vec<u8> {
++        let mut xml = String::from_utf8(bytes.to_vec()).expect("OPF manifest must be UTF-8");
++        xml = xml.replace(" standalone=\"yes\"", "");
++        xml = xml.replace("encoding=\"UTF-8\" ?>", "encoding=\"UTF-8\"?>");
++        if let Some(start) = xml.find("<opf:meta name=\"ModifiedDate\"") {
++            if let Some(open_end) = xml[start..].find('>') {
++                let open_end = start + open_end + 1;
++                let open = xml[start..open_end].trim_end();
++                let close = if open.ends_with("/>") {
++                    open_end
++                } else {
++                    open_end
++                        + xml[open_end..]
++                            .find("</opf:meta>")
++                            .map(|offset| offset + "</opf:meta>".len())
++                            .expect("ModifiedDate element must be closed")
++                };
++                xml.replace_range(start..close, "<opf:meta name=\"ModifiedDate\"/>");
++            }
++        }
++        xml.into_bytes()
++    }
++
++    fn assert_opf_manifest_matches_except_modified_date(before: &[u8], after: &[u8]) {
++        let before = normalize_opf_modified_date(before);
++        let after = normalize_opf_modified_date(after);
++        if before != after {
++            let left = String::from_utf8(before).expect("normalized source OPF UTF-8");
++            let right = String::from_utf8(after).expect("normalized saved OPF UTF-8");
++            let offset = left
++                .bytes()
++                .zip(right.bytes())
++                .position(|(a, b)| a != b)
++                .unwrap_or(left.len().min(right.len()));
++            let start_target = offset.saturating_sub(100);
++            let start = (0..=start_target)
++                .rev()
++                .find(|index| left.is_char_boundary(*index))
++                .unwrap_or(0);
++            let left_end_target = (offset + 180).min(left.len());
++            let right_end_target = (offset + 180).min(right.len());
++            let left_end = (left_end_target..=left.len())
++                .find(|index| left.is_char_boundary(*index))
++                .unwrap_or(left.len());
++            let right_end = (right_end_target..=right.len())
++                .find(|index| right.is_char_boundary(*index))
++                .unwrap_or(right.len());
++            panic!(
++                "HWPX manifest changed outside declaration and ModifiedDate at byte {offset}: source={:?}, saved={:?}",
++                &left[start..left_end], &right[start..right_end]
++            );
++        }
++    }
++
++    fn assert_authentic_hwpx_footnote_edit_round_trips(fixture: &str, source_type: &str) {
++        let source = std::fs::read(authentic_fixture_path(fixture))
++            .expect("pinned authentic HWPX note sample");
++        let mut document = crate::wasm_api::HwpDocument::from_bytes(&source)
++            .expect("open authentic HWPX note sample");
++        let (_, expected, section, doc_info_before) =
++            edit_first_authentic_footnote(&mut document, source_type);
++        let saved = document
++            .export_hwpx()
++            .unwrap_or_else(|_| panic!("serialize authentic HWPX footnote edit"));
++        let reopened = crate::wasm_api::HwpDocument::from_bytes(&saved)
++            .expect("reopen saved authentic HWPX note sample");
++        let actual: Vec<Value> = serde_json::from_str(
++            &reopened
++                .get_note_inventory()
++                .unwrap_or_else(|_| panic!("reopened HWPX note inventory")),
++        )
++        .expect("reopened HWPX note inventory JSON");
++        assert_eq!(
++            actual, expected,
++            "note identity, numbering and all other note state must survive"
++        );
++        assert_eq!(
++            semantic_doc_info(&reopened),
++            doc_info_before,
++            "HWPX edit must preserve semantic document information"
++        );
++
++        let before_parts = hwpx_parts(&source);
++        let after_parts = hwpx_parts(&saved);
++        assert_eq!(
++            before_parts.keys().collect::<Vec<_>>(),
++            after_parts.keys().collect::<Vec<_>>(),
++            "note text mutation must preserve HWPX part inventory"
++        );
++        let allowed = format!("Contents/section{section}.xml");
++        for (name, before) in before_parts {
++            if name == "Contents/content.hpf" {
++                assert_opf_manifest_matches_except_modified_date(&before, &after_parts[&name]);
++            } else if name != allowed {
++                assert!(
++                    hwpx_unrelated_part_preserved(&name, &before, &after_parts[&name]),
++                    "unrelated HWPX part changed semantically: {name}"
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn authentic_hwpx_table_footnote_edit_round_trips_only_its_owner_section() {
++        assert_authentic_hwpx_footnote_edit_round_trips("hwpx/footnote-01.hwpx", "table");
++    }
++
++    #[test]
++    fn authentic_hwpx_textbox_footnote_edit_round_trips_only_its_owner_section() {
++        assert_authentic_hwpx_footnote_edit_round_trips("hwpx/footnote-tbox-01.hwpx", "shape");
++    }
++
++    #[test]
++    fn authentic_hwp_footnote_edit_round_trips_only_its_body_stream() {
++        let source = std::fs::read(authentic_fixture_path("footnote-01.hwp"))
++            .expect("pinned authentic HWP5 note sample");
++        let mut document = crate::wasm_api::HwpDocument::from_bytes(&source)
++            .expect("open authentic HWP5 note sample");
++        let (_, expected, section, doc_info_before) =
++            edit_first_authentic_footnote(&mut document, "body");
++        let saved = document
++            .export_hwp()
++            .unwrap_or_else(|_| panic!("serialize authentic HWP5 footnote edit"));
++        let reopened = crate::wasm_api::HwpDocument::from_bytes(&saved)
++            .expect("reopen saved authentic HWP5 note sample");
++        let actual: Vec<Value> = serde_json::from_str(
++            &reopened
++                .get_note_inventory()
++                .unwrap_or_else(|_| panic!("reopened HWP5 note inventory")),
++        )
++        .expect("reopened HWP5 note inventory JSON");
++        assert_eq!(
++            actual, expected,
++            "note identity, numbering and all other note state must survive"
++        );
++        assert_eq!(
++            semantic_doc_info(&reopened),
++            doc_info_before,
++            "HWP5 edit must preserve semantic document information"
++        );
++
++        let mut before = crate::parser::cfb_reader::CfbReader::open(&source).expect("source CFB");
++        let mut after = crate::parser::cfb_reader::CfbReader::open(&saved).expect("saved CFB");
++        let before_streams = before.list_streams();
++        let mut after_streams = after.list_streams();
++        let mut sorted_before = before_streams.clone();
++        sorted_before.sort();
++        after_streams.sort();
++        assert_eq!(
++            sorted_before, after_streams,
++            "HWP5 stream inventory changed"
++        );
++        let changed_stream = format!("/BodyText/Section{section}");
++        for name in before_streams {
++            if name != changed_stream && name != "/DocInfo" {
++                assert_eq!(
++                    before.read_stream_raw(&name).unwrap(),
++                    after.read_stream_raw(&name).unwrap(),
++                    "unrelated HWP5 CFB stream changed: {name}"
++                );
++            }
++        }
++    }
+ 
+     /// 본문 최상위(표/글상자 밖) 미주는 renumber_footnotes_in_section 의 바깥쪽 match 에
+     /// Control::Endnote 분기가 없어 각주 삭제 후에도 번호가 갱신되지 않던 결함의 회귀 테스트.
+@@ -786,6 +2222,280 @@
+         assert_eq!(
+             remaining_endnote_number, 1,
+             "각주 삭제 후 본문 최상위 미주 번호가 1로 재계산되어야 함"
++        );
++    }
++
++    #[test]
++    fn typed_note_edit_requires_exact_owner_and_preserves_json_text() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.insert_text_native(0, 0, 0, "body").unwrap();
++        core.insert_footnote_native(0, 0, 0).unwrap();
++        let control_idx = core.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .position(|control| matches!(control, Control::Footnote(_)))
++            .expect("footnote control");
++        let (instance_id, number) =
++            match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++                Control::Footnote(note) => (note.instance_id, note.number),
++                _ => unreachable!(),
++            };
++        let original_text = match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++            Control::Footnote(note) => note.paragraphs[0].text.clone(),
++            _ => unreachable!(),
++        };
++
++        let inserted = "A\n\"\\\t한글";
++        core.insert_text_in_note_native(
++            "footnote",
++            0,
++            0,
++            control_idx,
++            instance_id,
++            number,
++            0,
++            2,
++            inserted,
++        )
++        .unwrap();
++        let info: serde_json::Value =
++            serde_json::from_str(&core.get_footnote_info_native(0, 0, control_idx).unwrap())
++                .unwrap();
++        assert_eq!(info["kind"], "footnote");
++        assert_eq!(info["instanceId"], instance_id);
++        assert_eq!(info["number"], number);
++        assert_eq!(info["paraCount"], 1);
++        assert_eq!(info["editableStarts"], serde_json::json!([2]));
++        assert_eq!(info["controlStates"].as_array().map(Vec::len), Some(1));
++        assert_eq!(info["controlStates"][0].as_array().map(Vec::len), Some(1));
++        assert_eq!(info["texts"][0], format!("{original_text}{inserted}"));
++
++        let before = match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++            Control::Footnote(note) => note.paragraphs[0].text.clone(),
++            _ => unreachable!(),
++        };
++        for protected_offset in [0, 1] {
++            assert!(core
++                .insert_text_in_note_native(
++                    "footnote",
++                    0,
++                    0,
++                    control_idx,
++                    instance_id,
++                    number,
++                    0,
++                    protected_offset,
++                    "MUTATION",
++                )
++                .is_err());
++            assert!(core
++                .delete_text_in_note_native(
++                    "footnote",
++                    0,
++                    0,
++                    control_idx,
++                    instance_id,
++                    number,
++                    0,
++                    protected_offset,
++                    1,
++                )
++                .is_err());
++        }
++        for (kind, expected_id, expected_number) in [
++            ("endnote", instance_id, number),
++            ("footnote", instance_id.wrapping_add(1), number),
++            ("footnote", instance_id, number.wrapping_add(1)),
++        ] {
++            assert!(core
++                .insert_text_in_note_native(
++                    kind,
++                    0,
++                    0,
++                    control_idx,
++                    expected_id,
++                    expected_number,
++                    0,
++                    2,
++                    "MUTATION",
++                )
++                .is_err());
++            let after = match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++                Control::Footnote(note) => note.paragraphs[0].text.clone(),
++                _ => unreachable!(),
++            };
++            assert_eq!(after, before, "rejected identity must not mutate note text");
++        }
++
++        let mut controlled = DocumentCore::new_empty();
++        controlled.create_blank_document_native().unwrap();
++        controlled.insert_text_native(0, 0, 0, "body").unwrap();
++        controlled.insert_footnote_native(0, 0, 0).unwrap();
++        let controlled_idx = controlled.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .position(|control| matches!(control, Control::Footnote(_)))
++            .unwrap();
++        let (controlled_id, controlled_number) =
++            match &mut controlled.document.sections[0].paragraphs[0].controls[controlled_idx] {
++                Control::Footnote(note) => {
++                    note.paragraphs[0]
++                        .controls
++                        .push(Control::AutoNumber(Default::default()));
++                    (note.instance_id, note.number)
++                }
++                _ => unreachable!(),
++            };
++        let before = controlled
++            .get_footnote_info_native(0, 0, controlled_idx)
++            .unwrap();
++        let before: serde_json::Value = serde_json::from_str(&before).unwrap();
++        assert_eq!(before["editableStarts"], serde_json::json!([null]));
++        assert!(controlled
++            .delete_text_in_note_native(
++                "footnote",
++                0,
++                0,
++                controlled_idx,
++                controlled_id,
++                controlled_number,
++                0,
++                2,
++                1
++            )
++            .is_err());
++        let after: serde_json::Value = serde_json::from_str(
++            &controlled
++                .get_footnote_info_native(0, 0, controlled_idx)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(
++            after, before,
++            "rejected control-bearing note edit must be atomic"
++        );
++    }
++
++    #[test]
++    fn typed_table_note_edit_requires_the_exact_cell_owner_path() {
++        use crate::model::footnote::Footnote;
++        use crate::model::paragraph::Paragraph;
++
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.create_table_native(0, 0, 0, 1, 1).unwrap();
++        let (anchor_para, table_control) = core.document.sections[0]
++            .paragraphs
++            .iter()
++            .enumerate()
++            .find_map(|(pi, paragraph)| {
++                paragraph
++                    .controls
++                    .iter()
++                    .enumerate()
++                    .find(|(_, control)| matches!(control, Control::Table(_)))
++                    .map(|(ci, _)| (pi, ci))
++            })
++            .expect("table anchor");
++        let mut note = Footnote::default();
++        note.instance_id = 9_876;
++        note.number = 1;
++        let mut paragraph = Paragraph::default();
++        paragraph.insert_text_at(0, "table note");
++        note.paragraphs.push(paragraph);
++        let cell =
++            match &mut core.document.sections[0].paragraphs[anchor_para].controls[table_control] {
++                Control::Table(table) => table.cells.get_mut(0).expect("table cell"),
++                _ => unreachable!(),
++            };
++        cell.paragraphs
++            .get_mut(0)
++            .expect("cell paragraph")
++            .controls
++            .push(Control::Footnote(Box::new(note)));
++        let path = NoteOwnerPath::TableCell {
++            cell_index: 0,
++            cell_para_index: 0,
++            cell_control_index: 0,
++        };
++        let before = core
++            .get_note_info_at_native("footnote", 0, anchor_para, table_control, path)
++            .unwrap();
++        let before: serde_json::Value = serde_json::from_str(&before).unwrap();
++        assert_eq!(before["instanceId"], 9_876);
++        assert_eq!(before["texts"], serde_json::json!(["table note"]));
++
++        core.insert_text_in_note_at_native(
++            "footnote",
++            0,
++            anchor_para,
++            table_control,
++            path,
++            9_876,
++            1,
++            0,
++            5,
++            "X",
++        )
++        .unwrap();
++        let after: serde_json::Value = serde_json::from_str(
++            &core
++                .get_note_info_at_native("footnote", 0, anchor_para, table_control, path)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(after["instanceId"], before["instanceId"]);
++        assert_eq!(after["number"], before["number"]);
++        assert_eq!(after["texts"], serde_json::json!(["tableX note"]));
++        let inventory: serde_json::Value =
++            serde_json::from_str(&core.get_note_inventory_native().unwrap()).unwrap();
++        assert_eq!(inventory.as_array().map(Vec::len), Some(1));
++        assert_eq!(inventory[0]["ownerPath"], path.to_json());
++        assert_eq!(inventory[0]["texts"], serde_json::json!(["tableX note"]));
++
++        let wrong_cell = NoteOwnerPath::TableCell {
++            cell_index: 1,
++            cell_para_index: 0,
++            cell_control_index: 0,
++        };
++        assert!(core
++            .insert_text_in_note_at_native(
++                "footnote",
++                0,
++                anchor_para,
++                table_control,
++                wrong_cell,
++                9_876,
++                1,
++                0,
++                5,
++                "MUTATION"
++            )
++            .is_err());
++        assert!(core
++            .insert_text_in_note_at_native(
++                "footnote",
++                0,
++                anchor_para,
++                table_control,
++                path,
++                9_875,
++                1,
++                0,
++                5,
++                "MUTATION"
++            )
++            .is_err());
++        let unchanged: serde_json::Value = serde_json::from_str(
++            &core
++                .get_note_info_at_native("footnote", 0, anchor_para, table_control, path)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(
++            unchanged, after,
++            "rejected stale/ambiguous owner path must not mutate any note state"
+         );
+     }
+ 
+--- a/src/document_core/commands/mod.rs
++++ b/src/document_core/commands/mod.rs
+@@ -9,6 +9,7 @@
+ mod document;
+ // [jb] 외부 문서(다른 서식표)를 커서에 끼워 넣기 — 한글 클립보드 문서모델 붙여넣기용
+ mod footnote_ops;
++pub(crate) use footnote_ops::NoteOwnerPath;
+ mod foreign_paste;
+ mod formatting;
+ mod font_table;
+--- a/src/document_core/mod.rs
++++ b/src/document_core/mod.rs
+@@ -13,6 +13,7 @@
+ mod natural_fonts;
+ pub use canvas_metric_requests::{CanvasMetricBatch, CanvasMetricReply, CanvasMetricRequest};
+ mod commands;
++pub(crate) use commands::NoteOwnerPath;
+ pub use commands::paragraph_block::{
+     FillTemplateRequest, FillTemplateResult, ImportParagraphBlockLimits,
+     ImportParagraphBlockPreview, ImportParagraphBlockRequest, ImportParagraphBlockResult,
+--- a/src/document_core/queries/cursor_rect.rs
++++ b/src/document_core/queries/cursor_rect.rs
+@@ -4,6 +4,7 @@
+     find_char_at_x, find_logical_control_positions, is_treat_as_char_object_control,
+     navigable_text_len, LineInfoResult,
+ };
++use crate::document_core::NoteOwnerPath;
+ use crate::document_core::{header_footer_apply_to_u8, DocumentCore};
+ use crate::error::HwpError;
+ use crate::model::control::Control;
+@@ -6180,27 +6181,219 @@
+             ))
+         })?;
+ 
+-        let (para_idx, control_idx, source_type) = match &fn_ref.source {
++        let (para_idx, control_idx, source_type, owner_path) = match &fn_ref.source {
+             FootnoteSource::Body {
+                 para_index,
+                 control_index,
+-            } => (*para_index, *control_index, "body"),
++            } => (*para_index, *control_index, "body", NoteOwnerPath::Body),
+             FootnoteSource::TableCell {
+                 para_index,
+                 table_control_index,
+-                ..
+-            } => (*para_index, *table_control_index, "table"),
++                cell_index,
++                cell_para_index,
++                cell_control_index,
++            } => (
++                *para_index,
++                *table_control_index,
++                "table",
++                NoteOwnerPath::TableCell {
++                    cell_index: *cell_index,
++                    cell_para_index: *cell_para_index,
++                    cell_control_index: *cell_control_index,
++                },
++            ),
+             FootnoteSource::ShapeTextBox {
+                 para_index,
+                 shape_control_index,
+-                ..
+-            } => (*para_index, *shape_control_index, "shape"),
++                tb_para_index,
++                tb_control_index,
++            } => (
++                *para_index,
++                *shape_control_index,
++                "shape",
++                NoteOwnerPath::ShapeTextBox {
++                    tb_para_index: *tb_para_index,
++                    tb_control_index: *tb_control_index,
++                },
++            ),
+         };
+ 
+-        Ok(format!(
+-            "{{\"ok\":true,\"sectionIdx\":{},\"paraIdx\":{},\"controlIdx\":{},\"sourceType\":\"{}\"}}",
+-            section_idx, para_idx, control_idx, source_type
+-        ))
++        let direct_note = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .and_then(|control| match control {
++                crate::model::control::Control::Footnote(note) => {
++                    Some((note.instance_id, note.number, note.paragraphs.len()))
++                }
++                _ => None,
++            });
++        let editable = direct_note.is_some_and(|(_, number, _)| number == fn_ref.number);
++        let (instance_id, number, para_count) = direct_note
++            .filter(|(_, number, _)| *number == fn_ref.number)
++            .map(|(id, number, count)| (Some(id), number, Some(count)))
++            .unwrap_or((None, fn_ref.number, None));
++        Ok(serde_json::json!({
++            "ok": true,
++            "kind": "footnote",
++            "sectionIdx": section_idx,
++            "paraIdx": para_idx,
++            "controlIdx": control_idx,
++            "sourceType": source_type,
++            "ownerPath": owner_path.to_json(),
++            "editable": editable,
++            "noteInstanceId": instance_id,
++            "noteNumber": number,
++            "noteParaCount": para_count,
++        })
++        .to_string())
++    }
++
++    /// Resolve one direct-body footnote paragraph to the page-local render address that currently contains it.
++    pub(crate) fn get_footnote_view_address_native(
++        &self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++        instance_id: u32,
++        number: u16,
++        note_para_idx: usize,
++        char_offset: usize,
++        preferred_page_num: u32,
++        owner_path: NoteOwnerPath,
++    ) -> Result<String, HwpError> {
++        use crate::model::control::Control;
++        use crate::renderer::pagination::FootnoteSource;
++        use crate::renderer::render_tree::{RenderNode, RenderNodeType};
++
++        self.validate_note_owner_at_native(
++            "footnote",
++            section_idx,
++            para_idx,
++            control_idx,
++            owner_path,
++            instance_id,
++            number,
++        )?;
++        let note = self
++            .note_control_ref_at(section_idx, para_idx, control_idx, owner_path)
++            .and_then(|control| match control {
++                Control::Footnote(note) => Some(note),
++                _ => None,
++            })
++            .ok_or_else(|| HwpError::RenderError("각주 소유자를 찾을 수 없습니다".to_string()))?;
++        let Some(note_paragraph) = note.paragraphs.get(note_para_idx) else {
++            return Err(HwpError::RenderError(
++                "각주 문단 주소가 범위를 벗어났습니다".to_string(),
++            ));
++        };
++        let text_len = note_paragraph.text.chars().count();
++        if char_offset > text_len {
++            return Err(HwpError::RenderError(
++                "각주 문자 주소가 범위를 벗어났습니다".to_string(),
++            ));
++        }
++        let empty = text_len == 0;
++
++        fn has_caret_offset(
++            node: &RenderNode,
++            footnote_index: usize,
++            marker_para: usize,
++            char_offset: usize,
++            empty: bool,
++        ) -> bool {
++            matches!(&node.node_type, RenderNodeType::TextRun(run)
++            if run.section_index == Some(footnote_index) && run.para_index == Some(marker_para)
++                && match run.char_start {
++                    Some(start) => char_offset >= start
++                        && char_offset <= start.saturating_add(run.text.chars().count()),
++                    None => empty && char_offset == 0,
++                })
++                || node.children.iter().any(|child| {
++                    has_caret_offset(child, footnote_index, marker_para, char_offset, empty)
++                })
++        }
++
++        let pagination = self
++            .pagination
++            .get(section_idx)
++            .ok_or_else(|| HwpError::RenderError("각주 페이지를 찾을 수 없습니다".to_string()))?;
++        let page_base = self.global_page_base_for_section(section_idx);
++        let marker_para = usize::MAX - 2000 - note_para_idx;
++        let mut first_match = None;
++        for (local_page_idx, page) in pagination.pages.iter().enumerate() {
++            let Some(footnote_index) =
++                page.footnotes
++                    .iter()
++                    .position(|reference| match (&reference.source, owner_path) {
++                        (
++                            FootnoteSource::Body {
++                                para_index,
++                                control_index,
++                            },
++                            NoteOwnerPath::Body,
++                        ) => *para_index == para_idx && *control_index == control_idx,
++                        (
++                            FootnoteSource::TableCell {
++                                para_index,
++                                table_control_index,
++                                cell_index,
++                                cell_para_index,
++                                cell_control_index,
++                            },
++                            NoteOwnerPath::TableCell {
++                                cell_index: expected_cell,
++                                cell_para_index: expected_para,
++                                cell_control_index: expected_control,
++                            },
++                        ) => {
++                            *para_index == para_idx
++                                && *table_control_index == control_idx
++                                && *cell_index == expected_cell
++                                && *cell_para_index == expected_para
++                                && *cell_control_index == expected_control
++                        }
++                        (
++                            FootnoteSource::ShapeTextBox {
++                                para_index,
++                                shape_control_index,
++                                tb_para_index,
++                                tb_control_index,
++                            },
++                            NoteOwnerPath::ShapeTextBox {
++                                tb_para_index: expected_para,
++                                tb_control_index: expected_control,
++                            },
++                        ) => {
++                            *para_index == para_idx
++                                && *shape_control_index == control_idx
++                                && *tb_para_index == expected_para
++                                && *tb_control_index == expected_control
++                        }
++                        _ => false,
++                    })
++            else {
++                continue;
++            };
++            let page_num = page_base + local_page_idx as u32;
++            let tree = self.build_page_tree_cached(page_num)?;
++            if has_caret_offset(&tree.root, footnote_index, marker_para, char_offset, empty) {
++                let address = serde_json::json!({
++                    "ok": true, "pageNum": page_num, "footnoteIndex": footnote_index,
++                    "sectionIdx": section_idx, "paraIdx": para_idx, "controlIdx": control_idx,
++                    "instanceId": instance_id, "number": number, "noteParaIdx": note_para_idx,
++                    "ownerPath": owner_path.to_json(),
++                })
++                .to_string();
++                if page_num == preferred_page_num {
++                    return Ok(address);
++                }
++                if first_match.is_none() {
++                    first_match = Some(address);
++                }
++            }
++        }
++        first_match.ok_or_else(|| {
++            HwpError::RenderError("각주 문자가 현재 배치에서 보이지 않습니다".to_string())
++        })
+     }
+ }
+ 
+@@ -7112,3 +7305,155 @@
+         );
+     }
+ }
++
++#[cfg(test)]
++mod footnote_view_address_tests {
++    use crate::document_core::DocumentCore;
++    use crate::document_core::NoteOwnerPath;
++    use crate::model::control::Control;
++
++    #[test]
++    fn footnote_view_address_matches_the_exact_note_paragraph() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.insert_text_native(0, 0, 0, "body").unwrap();
++        core.insert_footnote_native(0, 0, 0).unwrap();
++        let control_idx = core.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .position(|control| matches!(control, Control::Footnote(_)))
++            .unwrap();
++        let (instance_id, number) =
++            match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++                Control::Footnote(note) => (note.instance_id, note.number),
++                _ => unreachable!(),
++            };
++        core.insert_text_in_note_native(
++            "footnote",
++            0,
++            0,
++            control_idx,
++            instance_id,
++            number,
++            0,
++            2,
++            "note",
++        )
++        .unwrap();
++
++        let address: serde_json::Value = serde_json::from_str(
++            &core
++                .get_footnote_view_address_native(
++                    0,
++                    0,
++                    control_idx,
++                    instance_id,
++                    number,
++                    0,
++                    2,
++                    0,
++                    NoteOwnerPath::Body,
++                )
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(address["ok"], true);
++        assert_eq!(address["sectionIdx"], 0);
++        assert_eq!(address["paraIdx"], 0);
++        assert_eq!(address["controlIdx"], control_idx);
++        assert_eq!(address["instanceId"], instance_id);
++        assert_eq!(address["number"], number);
++        assert_eq!(address["noteParaIdx"], 0);
++        assert_eq!(address["ownerPath"]["sourceType"], "body");
++        assert!(core
++            .get_footnote_view_address_native(
++                0,
++                0,
++                control_idx,
++                instance_id,
++                number + 1,
++                0,
++                2,
++                0,
++                NoteOwnerPath::Body
++            )
++            .is_err());
++        assert!(core
++            .get_footnote_view_address_native(
++                0,
++                0,
++                control_idx,
++                instance_id,
++                number,
++                9,
++                0,
++                0,
++                NoteOwnerPath::Body
++            )
++            .is_err());
++    }
++
++    #[test]
++    fn footnote_view_address_falls_back_when_page_hint_is_stale() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.insert_text_native(0, 0, 0, "body").unwrap();
++        core.insert_footnote_native(0, 0, 0).unwrap();
++        let control_idx = core.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .position(|control| matches!(control, Control::Footnote(_)))
++            .unwrap();
++        let (instance_id, number) =
++            match &core.document.sections[0].paragraphs[0].controls[control_idx] {
++                Control::Footnote(note) => (note.instance_id, note.number),
++                _ => unreachable!(),
++            };
++        let contents = "note";
++        let last_offset = contents.chars().count() + 2;
++        core.insert_text_in_note_native(
++            "footnote",
++            0,
++            0,
++            control_idx,
++            instance_id,
++            number,
++            0,
++            2,
++            &contents,
++        )
++        .unwrap();
++
++        assert_eq!(core.pagination[0].pages.len(), 1);
++        let address: serde_json::Value = serde_json::from_str(
++            &core
++                .get_footnote_view_address_native(
++                    0,
++                    0,
++                    control_idx,
++                    instance_id,
++                    number,
++                    0,
++                    last_offset,
++                    u32::MAX,
++                    NoteOwnerPath::Body,
++                )
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(address["pageNum"], 0);
++        assert!(core
++            .get_footnote_view_address_native(
++                0,
++                0,
++                control_idx,
++                instance_id,
++                number,
++                0,
++                last_offset + 1,
++                u32::MAX,
++                NoteOwnerPath::Body,
++            )
++            .is_err());
++    }
++}
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -5212,6 +5212,32 @@
+         .map_err(|e| e.into())
+     }
+ 
++    /// Resolve a note through its exact body, table-cell, or shape-textbox owner path.
++    #[wasm_bindgen(js_name = getNoteInfo)]
++    pub fn get_note_info(
++        &self,
++        kind: &str,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++    ) -> Result<String, JsValue> {
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.get_note_info_at_native(
++            kind,
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = getNoteInventory)]
++    pub fn get_note_inventory(&self) -> Result<String, JsValue> {
++        self.get_note_inventory_native().map_err(|e| e.into())
++    }
++
+     /// 본문 커서 위치의 각주 마커를 조회한다.
+     ///
+     /// direction: "backward" 또는 "forward"
+@@ -5332,6 +5358,132 @@
+         .map_err(|e| e.into())
+     }
+ 
++    /// Exact-owner note edits. Every mutation is tied to note kind, control
++    /// address, instance ID and current number before the document is changed.
++    #[wasm_bindgen(js_name = insertTextInNote)]
++    pub fn insert_text_in_note(
++        &mut self,
++        kind: &str,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++        expected_instance_id: u32,
++        expected_number: u32,
++        note_para_idx: u32,
++        char_offset: u32,
++        text: &str,
++    ) -> Result<String, JsValue> {
++        let number =
++            u16::try_from(expected_number).map_err(|_| JsValue::from_str("invalid note number"))?;
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.insert_text_in_note_at_native(
++            kind,
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++            expected_instance_id,
++            number,
++            note_para_idx as usize,
++            char_offset as usize,
++            text,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = deleteTextInNote)]
++    pub fn delete_text_in_note(
++        &mut self,
++        kind: &str,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++        expected_instance_id: u32,
++        expected_number: u32,
++        note_para_idx: u32,
++        char_offset: u32,
++        count: u32,
++    ) -> Result<String, JsValue> {
++        let number =
++            u16::try_from(expected_number).map_err(|_| JsValue::from_str("invalid note number"))?;
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.delete_text_in_note_at_native(
++            kind,
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++            expected_instance_id,
++            number,
++            note_para_idx as usize,
++            char_offset as usize,
++            count as usize,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = splitParagraphInNote)]
++    pub fn split_paragraph_in_note(
++        &mut self,
++        kind: &str,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++        expected_instance_id: u32,
++        expected_number: u32,
++        note_para_idx: u32,
++        char_offset: u32,
++        removed_para_meta: Option<String>,
++    ) -> Result<String, JsValue> {
++        let number =
++            u16::try_from(expected_number).map_err(|_| JsValue::from_str("invalid note number"))?;
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.split_paragraph_in_note_at_native(
++            kind,
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++            expected_instance_id,
++            number,
++            note_para_idx as usize,
++            char_offset as usize,
++            parse_removed_para_meta(removed_para_meta)?,
++        )
++        .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = mergeParagraphInNote)]
++    pub fn merge_paragraph_in_note(
++        &mut self,
++        kind: &str,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        owner_path_json: &str,
++        expected_instance_id: u32,
++        expected_number: u32,
++        note_para_idx: u32,
++    ) -> Result<String, JsValue> {
++        let number =
++            u16::try_from(expected_number).map_err(|_| JsValue::from_str("invalid note number"))?;
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.merge_paragraph_in_note_at_native(
++            kind,
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            owner_path,
++            expected_instance_id,
++            number,
++            note_para_idx as usize,
++        )
++        .map_err(|e| e.into())
++    }
++
+     /// 페이지에 각주 영역이 있는지 빠르게 확인 (hitTestFootnote fast-reject).
+     /// 페이지네이션 메타데이터만 조회하므로 render tree build가 필요 없다 (#2428).
+     #[wasm_bindgen(js_name = pageHasFootnoteFootholds)]
+@@ -5362,6 +5514,35 @@
+     ) -> Result<String, JsValue> {
+         self.get_page_footnote_info_native(page_num, footnote_index as usize)
+             .map_err(|e| e.into())
++    }
++
++    #[wasm_bindgen(js_name = getFootnoteViewAddress)]
++    pub fn get_footnote_view_address(
++        &self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++        instance_id: u32,
++        number: u32,
++        note_para_idx: u32,
++        char_offset: u32,
++        preferred_page_num: u32,
++        owner_path_json: &str,
++    ) -> Result<String, JsValue> {
++        let number = u16::try_from(number).map_err(|_| JsValue::from_str("invalid note number"))?;
++        let owner_path = crate::document_core::NoteOwnerPath::from_json(owner_path_json)?;
++        self.get_footnote_view_address_native(
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++            instance_id,
++            number,
++            note_para_idx as usize,
++            char_offset as usize,
++            preferred_page_num,
++            owner_path,
++        )
++        .map_err(|e| e.into())
+     }
+ 
+     /// 각주 내 커서 렉트 계산

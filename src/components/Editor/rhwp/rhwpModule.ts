@@ -138,6 +138,25 @@ export interface RhwpDocument {
     startCellParagraph: number, startOffset: number, endCellParagraph: number, endOffset: number,
   ): string;
   getTextRange(section: number, paragraph: number, offset: number, count: number): string;
+  /** P5 note editing. The address is checked by note kind, anchor control, instance ID and current number. */
+  hitTestInFootnote?(page: number, x: number, y: number): string;
+  getPageFootnoteInfo?(page: number, footnoteIndex: number): string;
+  getFootnoteInfo?(section: number, paragraph: number, control: number): string;
+  getNoteInfo?(kind: string, section: number, paragraph: number, control: number, ownerPath: string): string;
+  getNoteInventory?(): string;
+  getFootnoteViewAddress?(section: number, paragraph: number, control: number,
+    instanceId: number, number: number, noteParagraph: number, offset: number, preferredPage: number, ownerPath: string): string;
+  getCursorRectInFootnote?(page: number, footnoteIndex: number, noteParagraph: number, offset: number): string;
+  getSelectionRectsInFootnote?(page: number, footnoteIndex: number,
+    startParagraph: number, startOffset: number, endParagraph: number, endOffset: number): string;
+  insertTextInNote?(kind: string, section: number, paragraph: number, control: number,
+    ownerPath: string, instanceId: number, number: number, noteParagraph: number, offset: number, text: string): string;
+  deleteTextInNote?(kind: string, section: number, paragraph: number, control: number,
+    ownerPath: string, instanceId: number, number: number, noteParagraph: number, offset: number, count: number): string;
+  splitParagraphInNote?(kind: string, section: number, paragraph: number, control: number,
+    ownerPath: string, instanceId: number, number: number, noteParagraph: number, offset: number, restoreMeta?: string | null): string;
+  mergeParagraphInNote?(kind: string, section: number, paragraph: number, control: number,
+    ownerPath: string, instanceId: number, number: number, noteParagraph: number): string;
   /** Stage 1 paragraph formatting in table cells (first level and, with the stage1-editing patch, any depth). */
   getCellParaPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number): string;
   applyParaFormatInCell?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, props: string): string;
