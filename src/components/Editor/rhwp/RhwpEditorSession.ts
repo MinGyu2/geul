@@ -2025,8 +2025,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           this.history?.boundary();
           const address = hit.bodyPicture;
           const body = address && address[1] < this.doc.getParagraphCount(address[0]);
-          // P5-R-HDR has its own story address. Footer mutation stays gated for its separate acceptance item.
-          const headerFooterPicture = hit.headerFooterPicture?.kind === "header" ? hit.headerFooterPicture : undefined;
+          // Header and footer pictures share this API but keep distinct exact story owner addresses.
+          const headerFooterPicture = hit.headerFooterPicture;
           const cellPicture = hit.cellPicture && this.readCellPicture(hit.cellPicture);
           const format = this.sessions.get(this.sessionId)?.format;
           const inspected = body ? inspectRhwpPicture(this.doc, address)
@@ -2037,7 +2037,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const canEditGso = format === "hwpx" || canEditHwp;
           const picUnlocked = format === "hwpx" || (canEditHwp && this.isEditableHwpGso(address, false));
           const headerFooterPicUnlocked = !!headerFooterPicture && (format === "hwpx"
-            || (format === "hwp" && this.hwpHeaderPictureEditable(headerFooterPicture)))
+            || (format === "hwp" && this.hwpHeaderFooterPictureEditable(headerFooterPicture)))
             && !!this.doc.getHeaderFooterPictureProperties && !!this.doc.setHeaderFooterPictureProperties;
           const canPic = Boolean(inspected && this.history && (headerFooterPicture
             ? headerFooterPicUnlocked : canEditGso && picUnlocked));
@@ -3611,9 +3611,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return original.state === "safe" ? null : "originalUnverified";
   }
   private structuralFormat(): boolean { return this.structuralBlock() === null; }
-  /** HWP header pictures have an exact story address. This narrow gate does not unlock body structural edits
+  /** HWP header/footer pictures have an exact story address. This narrow gate does not unlock body structural edits
    * when the document's broader HWP reopen model is incomplete. */
-  private hwpHeaderPictureBaselineAvailable(address?: HeaderFooterPictureAddress): boolean {
+  private hwpHeaderFooterPictureBaselineAvailable(address?: HeaderFooterPictureAddress): boolean {
     const baseline = this.hwpBaseline;
     if (this.sessions.get(this.sessionId)?.format !== "hwp" || !this.doc
       || baseline?.headerPicturesComplete !== true || baseline.headerPictures.length === 0) return false;
@@ -3624,8 +3624,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         && found.innerParagraph === address.innerParagraph && found.innerControl === address.innerControl;
     });
   }
-  private hwpHeaderPictureEditable(address: HeaderFooterPictureAddress): boolean {
-    if (!this.hwpHeaderPictureBaselineAvailable(address) || !this.doc
+  private hwpHeaderFooterPictureEditable(address: HeaderFooterPictureAddress): boolean {
+    if (!this.hwpHeaderFooterPictureBaselineAvailable(address) || !this.doc
       || !this.doc.getHeaderFooterPictureProperties || !this.doc.setHeaderFooterPictureProperties) return false;
     const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
     if (check && blockedBy(check)) return false;
@@ -3656,7 +3656,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private probeHwpOriginal(): void {
     const format = this.sessions.get(this.sessionId)?.format;
     if (this.status.kind !== "ready" || (format === "hwp"
-      ? !this.hwpStructuralStatic() && !this.hwpHeaderPictureBaselineAvailable()
+      ? !this.hwpStructuralStatic() && !this.hwpHeaderFooterPictureBaselineAvailable()
       : format !== "hwpx" || !this.text?.hasFontOwnership)) return;
     const owner = this.originalOwner();
     if (this.hwpOriginal?.owner === owner) return;
@@ -4937,8 +4937,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!selected || (!address && !headerFooterAddress) || !doc || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
     if (headerFooterAddress) {
-      if (headerFooterAddress.kind !== "header" || (format !== "hwpx"
-        && !(format === "hwp" && this.hwpHeaderPictureEditable(headerFooterAddress)))
+      if ((format !== "hwpx"
+        && !(format === "hwp" && this.hwpHeaderFooterPictureEditable(headerFooterAddress)))
         || !doc.getHeaderFooterPictureProperties || !doc.setHeaderFooterPictureProperties
         || !inspectRhwpHeaderFooterPicture(doc, headerFooterAddress)) return false;
     } else if (!address || !this.gsoFormatEditable(address, false)) return false;
@@ -5645,8 +5645,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!selected || !pictureResizeMatches(request, selected) || !doc || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
     if (!cell && headerFooterAddress) {
-      if (headerFooterAddress.kind !== "header" || (format !== "hwpx"
-        && !(format === "hwp" && this.hwpHeaderPictureEditable(headerFooterAddress)))
+      if ((format !== "hwpx"
+        && !(format === "hwp" && this.hwpHeaderFooterPictureEditable(headerFooterAddress)))
         || !doc.setHeaderFooterPictureProperties || !doc.getHeaderFooterPictureProperties
         || !inspectRhwpHeaderFooterPicture(doc, headerFooterAddress)) return false;
     } else if (!cell && (!address || !doc.setPictureProperties || !this.gsoFormatEditable(address, false))) return false;

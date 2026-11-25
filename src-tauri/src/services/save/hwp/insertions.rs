@@ -4931,6 +4931,64 @@ mod page_control_tests {
         ];
         assert!(header_markers_bound(&mismatched_records).is_none());
     }
+
+    #[test]
+    fn footer_control_extended_char_is_bound_to_its_owned_control_record() {
+        let para_shape = [0u8; 54];
+        let char_shape = [0u8; 74];
+        let style = [0u8; 1];
+        let defs = Defs::from([
+            (21, vec![char_shape.as_slice()]),
+            (25, vec![para_shape.as_slice()]),
+            (26, vec![style.as_slice()]),
+        ]);
+        let control_id = u32::from_be_bytes(*b"foot");
+        let control_payload = control_id.to_le_bytes();
+        let text: Vec<u8> = [
+            0x0010,
+            control_id as u16,
+            (control_id >> 16) as u16,
+            0,
+            0,
+            0,
+            0,
+            0x0010,
+            0x000d,
+        ]
+        .into_iter()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+        let mut header = vec![0u8; 22];
+        header[..4].copy_from_slice(&9u32.to_le_bytes());
+        header[4..8].copy_from_slice(&(1u32 << 16).to_le_bytes());
+        header[12..14].copy_from_slice(&1u16.to_le_bytes());
+        header[16..18].copy_from_slice(&1u16.to_le_bytes());
+        let run = [0u8; 8];
+        let line = [0u8; 36];
+        let records: Vec<Record<'_>> = vec![
+            (66, 0, &header),
+            (67, 1, &text),
+            (68, 1, &run),
+            (69, 1, &line),
+            (71, 1, &control_payload),
+        ];
+
+        let parsed = section(&records, &defs, &defs).unwrap();
+        assert_eq!(parsed.objects.len(), 1);
+        assert_eq!(parsed.objects[0][0].2, b"toof");
+        assert!(header_markers_bound(&records).is_some());
+
+        let mut mismatched_text = text.to_vec();
+        mismatched_text[2] ^= 1;
+        let mismatched_records: Vec<Record<'_>> = vec![
+            (66, 0, &header),
+            (67, 1, &mismatched_text),
+            (68, 1, &run),
+            (69, 1, &line),
+            (71, 1, &control_payload),
+        ];
+        assert!(header_markers_bound(&mismatched_records).is_none());
+    }
 }
 
 #[cfg(test)]

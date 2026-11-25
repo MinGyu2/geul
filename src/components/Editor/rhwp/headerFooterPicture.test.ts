@@ -36,7 +36,11 @@ const inlinePicture = () => ({
   cropBottom: 0,
 });
 
-async function headerPictureSession(initialProperties = picture(), format: "hwp" | "hwpx" = "hwpx") {
+async function headerPictureSession(
+  initialProperties = picture(),
+  format: "hwp" | "hwpx" = "hwpx",
+  ownerKind: "header" | "footer" = "header",
+) {
   const { backend, take } = controlledBackend();
   const sessions = new DocumentSessions(backend);
   const opening = sessions.open(`/a.${format}`);
@@ -65,9 +69,13 @@ async function headerPictureSession(initialProperties = picture(), format: "hwp"
   engine.getPageControlLayout = () => JSON.stringify({ controls: [{
     type: "image", x: 50, y: 50, w: 100, h: 50, secIdx: 0,
     paraIdx: 0, controlIdx: 1, stableIndex: [0, 0, 1], plane: 1, zOrder: 0,
-    headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 2 },
+    headerFooter: { kind: ownerKind, outerParaIdx: 0, outerControlIdx: 2 },
   }] });
-  engine.getControls = () => JSON.stringify([{ ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 2 }]);
+  engine.getControls = () => JSON.stringify([{
+    ctrlId: ownerKind === "header" ? "head" : "foot",
+    userDesc: ownerKind === "header" ? "머리말" : "꼬리말",
+    list: 0, para: 0, controlIndex: 2,
+  }]);
   engine.getHeaderFooterPictureProperties = (section, outerParagraph, outerControl, innerParagraph, innerControl) => {
     expect([section, outerParagraph, outerControl, innerParagraph, innerControl]).toEqual([0, 0, 2, 0, 1]);
     return JSON.stringify(properties);
@@ -104,6 +112,13 @@ describe("RHWP header picture ownership", () => {
     expect(editor.objectSelection?.editable).toBe(true);
   });
 
+  it("allows an HWP footer picture with its own exact baseline when unrelated HWP structure is incomplete", async () => {
+    const { editor } = await headerPictureSession(picture(), "hwp", "footer");
+    expect(editor.pointAt(0, 60, 60, false, false, true)).toBe(true);
+    expect(editor.objectSelection?.operations).toContain("move");
+    expect(editor.objectSelection?.editable).toBe(true);
+  });
+
   it("selects and moves only the exact header picture, with Undo and Redo on that story address", async () => {
     const { editor, take, properties, doc, sessions } = await headerPictureSession();
     expect(inspectRhwpHeaderFooterPicture(doc, {
@@ -132,6 +147,59 @@ describe("RHWP header picture ownership", () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(editor.execute("edit.redo")).toEqual({ accepted: true });
     expect(properties()).toMatchObject({ horzOffset: 400, vertOffset: 400 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 3, dirty: true, sequence: 6 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  it("selects and moves only the exact footer picture, with Undo and Redo on that story address", async () => {
+    const { editor, take, properties, doc } = await headerPictureSession(picture(), "hwpx", "footer");
+    expect(inspectRhwpHeaderFooterPicture(doc, {
+      section: 0, kind: "footer", outerParagraph: 0, outerControl: 2, innerParagraph: 0, innerControl: 1,
+    })?.movable).toEqual({ horzOffset: 100, vertOffset: 200 });
+    expect(editor.pointAt(0, 60, 60, false, false, true)).toBe(true);
+    const selected = editor.objectSelection!;
+    expect(selected.operations).toContain("move");
+
+    const edit = objectEditRequest(selected, { kind: "nudge", dx: 3, dy: 2 });
+    expect(editor.execute("object.edit", edit)).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ horzOffset: 400, vertOffset: 400 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 1, dirty: true, sequence: 4 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(editor.execute("edit.undo")).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ horzOffset: 100, vertOffset: 200 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 2, dirty: true, sequence: 5 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(editor.execute("edit.redo")).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ horzOffset: 400, vertOffset: 400 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 3, dirty: true, sequence: 6 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+
+  it("resizes an inline footer picture and restores exact geometry through Undo and Redo", async () => {
+    const { editor, take, properties } = await headerPictureSession(inlinePicture(), "hwpx", "footer");
+    expect(editor.pointAt(0, 60, 60, false, false, true)).toBe(true);
+    const selected = editor.objectSelection!;
+    expect(selected.operations).toContain("resize");
+    const request = {
+      command: "picture.size" as const,
+      selectionEpoch: selected.epoch,
+      sessionId: selected.sessionId,
+      loadGeneration: selected.loadGeneration,
+      revision: selected.revision,
+      widthPt: 12,
+      heightPt: 6,
+    };
+    expect(editor.execute("picture.size", request)).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ width: 1200, height: 600 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 1, dirty: true, sequence: 4 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(editor.execute("edit.undo")).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ width: 1000, height: 500 });
+    take("commit").reply({ ok: true, value: info({ state: "ready", revision: 2, dirty: true, sequence: 5 }) });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(editor.execute("edit.redo")).toEqual({ accepted: true });
+    expect(properties()).toMatchObject({ width: 1200, height: 600 });
     take("commit").reply({ ok: true, value: info({ state: "ready", revision: 3, dirty: true, sequence: 6 }) });
     await new Promise(resolve => setTimeout(resolve, 0));
   });

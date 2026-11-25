@@ -79,7 +79,7 @@ def header_picture(state):
     return picture
 
 
-def select_header_picture(acc, picture):
+def select_header_picture(acc, picture, scroll_to_object=False):
     control = picture["control"]
     target = (picture["page"], control["x"] + control["w"] / 2,
               control["y"] + control["h"] / 2)
@@ -90,8 +90,34 @@ def select_header_picture(acc, picture):
           window.p5RhdrPointers.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY}),true);
       }
     """)
-    h.p6.pointer(acc, (picture["page"], control["x"] + control["w"] / 2,
-                       control["y"] + control["h"] / 2))
+    if scroll_to_object:
+        screen = acc.d.js("""
+          const [page,x,y]=arguments[0], canvas=document.querySelectorAll('.rhwp-page__canvas')[page];
+          const scroll=document.querySelector('.editor__scroll'), view=scroll.getBoundingClientRect();
+          const zoom=parseInt(document.querySelector('.statusbar__zoom-value')?.textContent||'100',10)/100;
+          let rect=canvas.getBoundingClientRect(), k=rect.width/canvas.clientWidth;
+          const before={page,rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},
+            client:{width:canvas.clientWidth,height:canvas.clientHeight},zoom,
+            view:{x:view.x,y:view.y,width:view.width,height:view.height},
+            scroll:{left:scroll.scrollLeft,top:scroll.scrollTop,width:scroll.scrollWidth,height:scroll.scrollHeight,
+              clientWidth:scroll.clientWidth,clientHeight:scroll.clientHeight},k,target:{x,y}};
+          k*=zoom;
+          scroll.scrollTop += rect.top+y*k-(view.top+view.height/2);
+          rect=canvas.getBoundingClientRect();
+          scroll.scrollLeft += rect.left+x*k-(view.left+view.width/2);
+          rect=canvas.getBoundingClientRect();
+          return {x:rect.left+x*k,y:rect.top+y*k,before,
+            after:{rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},
+              scroll:{left:scroll.scrollLeft,top:scroll.scrollTop,width:scroll.scrollWidth,height:scroll.scrollHeight,
+                clientWidth:scroll.clientWidth,clientHeight:scroll.clientHeight}}};
+        """, target)
+        try:
+            h.p4.rhwp_poc.click(acc.d, screen["x"], screen["y"])
+        except Exception as exc:
+            raise RuntimeError(f"footer/header trusted hit is outside the viewport: {screen!r}") from exc
+    else:
+        h.p6.pointer(acc, (picture["page"], control["x"] + control["w"] / 2,
+                           control["y"] + control["h"] / 2))
     try:
         acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='picture'", h.p6.FRAME, timeout=10)
     except Exception as exc:
@@ -506,6 +532,367 @@ def header_picture_hwp_fresh(acc, row, fixtures, out):
 
 def header_picture_hwpx_fresh(acc, row, fixtures, out):
     header_fresh_reopen(acc, row, fixtures, out, "hwpx")
+
+
+def footer_picture(state, address=None, treat_as_char=None, require_resizable=False):
+    pictures = [item for item in state["pictures"] if item["address"]["kind"] == "footer"]
+    if address is not None:
+        pictures = [item for item in pictures if item["address"] == address]
+    else:
+        if treat_as_char is not None:
+            pictures = [item for item in pictures if item["properties"]["treatAsChar"] is treat_as_char]
+        if require_resizable:
+            pictures = [item for item in pictures if item["properties"]["sizeProtect"] is False]
+        if pictures:
+            first_address = min((item["address"]["innerParagraph"], item["address"]["innerControl"])
+                                for item in pictures)
+            pictures = [item for item in pictures
+                        if (item["address"]["innerParagraph"], item["address"]["innerControl"]) == first_address]
+    h.require(len(pictures) == 1, "fixture must expose one exact footer picture address", pictures)
+    picture = pictures[0]
+    owner = picture["owner"]
+    address = picture["address"]
+    h.require(owner is not None and owner["ctrlId"] == "foot" and owner["userDesc"] == "꼬리말"
+              and owner["list"] == 0 and owner["para"] == address["outerParagraph"]
+              and owner["controlIndex"] == address["outerControl"],
+              "footer picture address does not resolve to its exact section owner", picture)
+    return picture
+
+
+def footer_fit_large_hwp_document(acc):
+    zoom_selector = ".statusbar__zoom-value"
+    zoom = int(acc.d.js("return parseInt(document.querySelector(arguments[0])?.textContent||'',10)", zoom_selector))
+    starting_zoom = zoom
+    while zoom > 50:
+        acc.dom_click('[data-command="view.zoomOut"]')
+        acc.wait("return parseInt(document.querySelector(arguments[0])?.textContent||'',10)<arguments[1]",
+                 zoom_selector, zoom, timeout=5)
+        zoom = int(acc.d.js("return parseInt(document.querySelector(arguments[0])?.textContent||'',10)", zoom_selector))
+    acc.wait("const e=document.querySelector('[data-testid=rhwp-status]');return e?.dataset.firstPaintMs!==''",
+             timeout=60)
+    acc.wait("return document.querySelector('.editor__scroll canvas')?.width>0")
+    return {"startingZoom": starting_zoom, "renderableZoom": zoom,
+            "firstPaintMs": acc.status("hwp")["firstPaintMs"]}
+
+
+def hwpx_footer_picture_element(root, address):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    paragraphs = [node for node in list(root) if node.tag == hp + "p"]
+    outer_index = address["outerParagraph"]
+    h.require(outer_index < len(paragraphs), "HWPX footer outer paragraph is outside the section", outer_index)
+    outer_controls = list(paragraphs[outer_index].iter(hp + "ctrl"))
+    control_index = address["outerControl"]
+    h.require(control_index < len(outer_controls), "HWPX footer outer control is outside its paragraph", control_index)
+    footer = outer_controls[control_index].find(hp + "footer")
+    h.require(footer is not None, "HWPX outer control is not a footer", control_index)
+    sublist = footer.find(hp + "subList")
+    h.require(sublist is not None, "HWPX footer has no owned subList")
+    inner = sublist.findall(hp + "p")
+    paragraph_index = address["innerParagraph"]
+    h.require(paragraph_index < len(inner), "HWPX footer inner paragraph is outside the subList", paragraph_index)
+    pictures = list(inner[paragraph_index].iter(hp + "pic"))
+    control = address["innerControl"]
+    picture_index = control - 1
+    h.require(0 <= picture_index < len(pictures),
+              "HWPX footer picture control does not map to its exact source picture",
+              {"control": control, "pictures": len(pictures)})
+    picture = pictures[picture_index]
+    size = picture.find(hp + "sz")
+    h.require(size is not None, "HWPX footer picture has no modeled size node")
+    return picture, size
+
+
+def normalize_hwpx_description_line_endings(root):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    for node in root.iter(hp + "shapeComment"):
+        if node.text is not None:
+            node.text = node.text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def prove_hwpx_footer_resize(source, output, address, before_state, after_state):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(output) as saved:
+        old_names, new_names = set(original.namelist()), set(saved.namelist())
+        h.require(old_names == new_names, "HWPX footer resize changed OPC inventory",
+                  {"added": sorted(new_names - old_names), "removed": sorted(old_names - new_names)})
+        changed = sorted(name for name in old_names if original.read(name) != saved.read(name))
+        allowed_changes = {"Contents/section0.xml", "Contents/header.xml", "Contents/content.hpf",
+                           "Preview/PrvImage.png", "Preview/PrvText.txt"}
+        h.require("Contents/section0.xml" in changed and set(changed) <= allowed_changes,
+                  "HWPX save changed a package part outside the footer story or known preview metadata", changed)
+        for name in ("Contents/header.xml", "Contents/content.hpf"):
+            if name in old_names:
+                h.require(canonical_xml(original.read(name)) == canonical_xml(saved.read(name)),
+                          "HWPX footer edit changed shared package metadata", name)
+        for name in old_names:
+            if name.endswith(".rels") or "/BinData/" in name:
+                h.require(original.read(name) == saved.read(name),
+                          "HWPX footer edit changed a relationship or media part", name)
+        if "Preview/PrvText.txt" in old_names:
+            h.require(original.read("Preview/PrvText.txt") == saved.read("Preview/PrvText.txt"),
+                      "HWPX footer resize changed the untouched text preview")
+        preview = saved.read("Preview/PrvImage.png") if "Preview/PrvImage.png" in old_names else b""
+        if "Preview/PrvImage.png" in changed:
+            h.require(preview.startswith(b"\x89PNG\r\n\x1a\n") and preview[12:16] == b"IHDR" and len(preview) >= 24,
+                      "HWPX footer save did not serialize a valid PNG preview")
+
+        before_root = ET.fromstring(original.read("Contents/section0.xml"))
+        after_root = ET.fromstring(saved.read("Contents/section0.xml"))
+        before_picture, before_size = hwpx_footer_picture_element(before_root, address)
+        after_picture, after_size = hwpx_footer_picture_element(after_root, address)
+        old_size, new_size = dict(before_size.attrib), dict(after_size.attrib)
+        h.require(set(old_size) == set(new_size)
+                  and {key: value for key, value in old_size.items() if key not in {"width", "height"}}
+                  == {key: value for key, value in new_size.items() if key not in {"width", "height"}},
+                  "HWPX picture size edit changed size-node metadata", [old_size, new_size])
+        h.require((old_size.get("width"), old_size.get("height")) !=
+                  (new_size.get("width"), new_size.get("height")),
+                  "HWPX saved footer picture size did not change", new_size)
+
+        before_cur = before_picture.find(hp + "curSz")
+        after_cur = after_picture.find(hp + "curSz")
+        h.require(before_cur is not None and after_cur is not None,
+                  "HWPX footer picture has no current-size node")
+        old_cur, new_cur = dict(before_cur.attrib), dict(after_cur.attrib)
+        h.require(set(old_cur) == set(new_cur)
+                  and {key: value for key, value in old_cur.items() if key not in {"width", "height"}}
+                  == {key: value for key, value in new_cur.items() if key not in {"width", "height"}}
+                  and (old_cur.get("width"), old_cur.get("height")) ==
+                  (old_size.get("width"), old_size.get("height"))
+                  and (new_cur.get("width"), new_cur.get("height")) ==
+                  (new_size.get("width"), new_size.get("height")),
+                  "HWPX resize did not update only the target picture's derived current size",
+                  {"before": old_cur, "after": new_cur, "sizeBefore": old_size, "sizeAfter": new_size})
+
+        core = "{http://www.hancom.co.kr/hwpml/2011/core}"
+        before_scale = before_picture.find(hp + "renderingInfo/" + core + "scaMatrix")
+        after_scale = after_picture.find(hp + "renderingInfo/" + core + "scaMatrix")
+        h.require(before_scale is not None and after_scale is not None,
+                  "HWPX footer picture has no scaling matrix")
+        old_scale, new_scale = dict(before_scale.attrib), dict(after_scale.attrib)
+        h.require(set(old_scale) == set(new_scale)
+                  and {key: value for key, value in old_scale.items() if key in {"e2", "e3", "e4", "e6"}}
+                  == {key: value for key, value in new_scale.items() if key in {"e2", "e3", "e4", "e6"}}
+                  and new_scale.get("e1") == new_scale.get("e5") == "1",
+                  "HWPX resize changed more than the target picture's derived scale",
+                  {"before": old_scale, "after": new_scale})
+
+        after_size.attrib = old_size
+        after_cur.attrib = old_cur
+        after_scale.attrib = old_scale
+        normalize_hwpx_description_line_endings(before_root)
+        normalize_hwpx_description_line_endings(after_root)
+        h.require(canonical_xml(ET.tostring(before_root, encoding="unicode").encode())
+                  == canonical_xml(ET.tostring(after_root, encoding="unicode").encode()),
+                  "HWPX section changed outside the footer picture size and its derived geometry")
+        h.require(after_picture.get("id") == before_picture.get("id")
+                  and after_picture.get("instid") == before_picture.get("instid"),
+                  "HWPX footer resize changed picture identity")
+        before_pic = footer_picture(before_state, address)
+        after_pic = footer_picture(after_state, address)
+        h.require(before_pic["properties"]["originalWidth"] == after_pic["properties"]["originalWidth"]
+                  and before_pic["properties"]["originalHeight"] == after_pic["properties"]["originalHeight"],
+                  "HWPX footer resize changed source image dimensions")
+        return {"changedParts": changed, "pictureSizeBefore": old_size, "pictureSizeAfter": new_size,
+                "derivedCurrentSizeBefore": old_cur, "derivedCurrentSizeAfter": new_cur,
+                "derivedScaleBefore": old_scale, "derivedScaleAfter": new_scale,
+                "shapeCommentLineEndingsEquivalent": True,
+                "pictureId": before_picture.get("id"), "instid": before_picture.get("instid"),
+                "unrelatedRelationshipsAndMediaPreserved": True,
+                "sectionChangedOnlyAtOwnedPictureSizeAndDerivedGeometry": True}
+
+
+def footer_picture_resize(acc, row, fixtures, out, fmt):
+    fixture = fixtures / f"footer-original.{fmt}"
+    before_state = rhwp_header_state(fixture)
+    if fmt == "hwp":
+        target_address = {"section": 0, "kind": "footer", "outerParagraph": 4, "outerControl": 0,
+                          "innerParagraph": 0, "innerControl": 1}
+        before = footer_picture(before_state, address=target_address)
+    else:
+        before = footer_picture(before_state, treat_as_char=True, require_resizable=True)
+    address = before["address"]
+    if fmt == "hwp":
+        h.require(address == {"section": 0, "kind": "footer", "outerParagraph": 4, "outerControl": 0,
+                              "innerParagraph": 0, "innerControl": 1},
+                  "authentic HWP footer fixture owner changed", address)
+        h.require(0 <= before["control"]["x"]
+                  and before["control"]["x"] + before["control"]["w"] <= 794
+                  and 0 <= before["control"]["y"]
+                  and before["control"]["y"] + before["control"]["h"] <= 1123,
+                  "authentic HWP footer target is not within its logical page bounds", before["control"])
+    else:
+        h.require(address == {"section": 0, "kind": "footer", "outerParagraph": 0, "outerControl": 4,
+                              "innerParagraph": 0, "innerControl": 2},
+                  "authentic HWPX footer fixture owner changed", address)
+    h.require(before["properties"]["treatAsChar"] is True
+              and before["properties"]["sizeProtect"] is False,
+              "footer resize fixture must be an unlocked inline picture", before["properties"])
+    path = h.begin(acc, row, fixture, out, f"footer-{fmt}-resized.{fmt}")
+    if fmt == "hwp":
+        row["renderBudgetZoom"] = footer_fit_large_hwp_document(acc)
+    acc.d.js("""
+      window.p5RftrPointers=[];
+      for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>
+        window.p5RftrPointers.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY}),true);
+    """)
+    frame_before = select_header_picture(acc, before, scroll_to_object=fmt == "hwp")
+    ui_before = h.p6.gso.props(acc, "picture")
+    expected_before = [before["properties"]["width"] / 100, before["properties"]["height"] / 100]
+    h.require(all(abs(ui_before["size"][i] - expected_before[i]) <= 0.02 for i in range(2)),
+              f"trusted hit selected a different {fmt.upper()} footer picture", [ui_before, expected_before])
+    pointer_events = acc.d.js("return window.p5RftrPointers.slice(-2)")
+    h.require([(event["type"], event["trusted"]) for event in pointer_events]
+              == [("pointerdown", True), ("pointerup", True)],
+              f"{fmt.upper()} footer selection did not use trusted Native pointer input", pointer_events)
+    h.require(acc.d.exists(h.p6.gso.SIZE), "inline footer picture has no resize fields")
+    requested_width = 100
+    h.require(abs(ui_before["size"][0] - requested_width) > 0.01,
+              "footer fixture size unexpectedly matches the requested test size", ui_before)
+    h.p6.gso.replace(acc, h.p6.gso.SIZE, str(requested_width))
+    acc.dom_click(SIZE_FORM + " button[type=submit]")
+    h.revision(acc, fmt, 1)
+    frame_after = select_header_picture(acc, before, scroll_to_object=fmt == "hwp")
+    ui_after = h.p6.gso.props(acc, "picture")
+    h.require(ui_after["size"][0] == requested_width and ui_after["size"][1] > 0
+              and ui_after["size"] != ui_before["size"],
+              f"Native {fmt.upper()} resize did not update the selected inline footer picture", [ui_before, ui_after])
+    acc.key("ctrl+z")
+    h.revision(acc, fmt, 2)
+    frame_undo = select_header_picture(acc, before, scroll_to_object=fmt == "hwp")
+    h.require(same_geometry(frame_undo, frame_before), f"{fmt.upper()} footer Undo did not restore geometry", frame_undo)
+    acc.key("ctrl+y")
+    h.revision(acc, fmt, 3)
+    frame_redo = select_header_picture(acc, before, scroll_to_object=fmt == "hwp")
+    h.require(same_geometry(frame_redo, frame_after), f"{fmt.upper()} footer Redo did not restore resize", frame_redo)
+    row["resize"] = {"before": frame_before, "after": frame_after, "undo": frame_undo,
+                      "redo": frame_redo, "ownerAddress": address, "trustedPointerEvents": pointer_events,
+                      "sizeBefore": ui_before["size"], "sizeAfter": ui_after["size"]}
+    h.publish(acc, fmt, row)
+
+    after_state = rhwp_header_state(path)
+    after = footer_picture(after_state, address)
+    h.require(after_state["owners"] == before_state["owners"] and after["owner"] == before["owner"],
+              f"{fmt.upper()} resize changed footer ownership", after_state)
+    for key in before["properties"]:
+        if key not in {"width", "height"}:
+            h.require(before["properties"][key] == after["properties"][key],
+                      f"{fmt.upper()} footer resize changed another picture property",
+                      [key, before["properties"][key], after["properties"][key]])
+    h.require(after["properties"]["width"] != before["properties"]["width"]
+              and after["properties"]["height"] != before["properties"]["height"],
+              f"{fmt.upper()} footer resize was not serialized", [before["properties"], after["properties"]])
+    before_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                       for item in before_state["pictures"] if item["address"] != address}
+    after_pictures = {json.dumps(item["address"], sort_keys=True): item["properties"]
+                      for item in after_state["pictures"] if item["address"] != address}
+    h.require(before_pictures == after_pictures, f"{fmt.upper()} footer resize changed a sibling picture",
+              [before_pictures, after_pictures])
+
+    if fmt == "hwp":
+        streams_before = h.p6.gso.cfb_streams(fixture.read_bytes())
+        streams_after = h.p6.gso.cfb_streams(path.read_bytes())
+        h.require(set(streams_before) == set(streams_after), "HWP footer save changed the CFB stream inventory")
+        changed = sorted(name for name in streams_before if streams_before[name] != streams_after[name])
+        bin_data = {name for name in streams_before if name.startswith("BinData/")}
+        allowed = {"BodyText/Section0", "DocInfo", "PrvImage", "PrvText", *bin_data}
+        h.require("BodyText/Section0" in changed and set(changed) <= allowed,
+                  "HWP footer save changed streams outside its story, preview, or resources", changed)
+        h.require(h.p6.gso.unpacked(streams_before, "DocInfo") == h.p6.gso.unpacked(streams_after, "DocInfo"),
+                  "HWP footer resize changed DocInfo records")
+        resource_hashes = {}
+        for name in sorted(bin_data):
+            old, new = h.p6.gso.unpacked(streams_before, name), h.p6.gso.unpacked(streams_after, name)
+            h.require(old == new, "HWP footer resize changed image resource bytes", name)
+            resource_hashes[name] = hashlib.sha256(old).hexdigest()
+        h.require(streams_before["PrvText"] == streams_after["PrvText"],
+                  "HWP footer resize changed the text preview")
+        image = streams_after.get("PrvImage", b"")
+        h.require(image.startswith(b"\x89PNG\r\n\x1a\n") and image[12:16] == b"IHDR" and len(image) >= 24,
+                  "HWP footer save did not contain a valid PNG preview")
+        preview_size = [int.from_bytes(image[16:20], "big"), int.from_bytes(image[20:24], "big")]
+        h.require(all(0 < value <= 1032 for value in preview_size), "HWP preview dimensions are out of bounds", preview_size)
+        old_records = h.p6.gso.records(h.p6.gso.unpacked(streams_before, "BodyText/Section0"))
+        new_records = h.p6.gso.records(h.p6.gso.unpacked(streams_after, "BodyText/Section0"))
+        h.require(len(old_records) == len(new_records)
+                  and all(old[:2] == new[:2] for old, new in zip(old_records, new_records)),
+                  "HWP footer resize changed Section0 record topology")
+        owner_spans = []
+        for index, record in enumerate(old_records):
+            if record[0] == 71 and record[1] == 1 and record[2].startswith(b"toof"):
+                end = next((j for j in range(index + 1, len(old_records)) if old_records[j][1] <= record[1]),
+                           len(old_records))
+                owner_spans.append((index, end))
+        h.require(len(owner_spans) == 1, "HWP Section0 does not contain one exact footer owner", owner_spans)
+        start, end = owner_spans[0]
+        changed_records = [index for index, (old, new) in enumerate(zip(old_records, new_records)) if old != new]
+        h.require(changed_records and all(start <= index < end for index in changed_records),
+                  "HWP resize changed records outside the footer owner", changed_records)
+        row["cfbProof"] = {"changedStreams": changed, "streamInventoryPreserved": True,
+                           "docInfoPreserved": True, "binDataUncompressedSha256": resource_hashes,
+                           "textPreviewPreserved": True, "imagePreviewPngDimensions": preview_size,
+                           "footerOwnerRecordSpan": [start, end], "changedSectionRecordIndices": changed_records}
+    else:
+        row["opcProof"] = prove_hwpx_footer_resize(fixture, path, address, before_state, after_state)
+
+    h.reopen(acc, path, row)
+    reopened_state = rhwp_header_state(path)
+    reopened = footer_picture(reopened_state, address)
+    h.require(reopened_state["owners"] == after_state["owners"] and reopened["owner"] == after["owner"]
+              and reopened["properties"] == after["properties"],
+              f"{fmt.upper()} footer ownership or size changed on reopen", reopened)
+    reopened_frame = select_header_picture(acc, reopened, scroll_to_object=fmt == "hwp")
+    reopened_ui = h.p6.gso.props(acc, "picture")
+    h.require(reopened_ui["size"] == [after["properties"]["width"] / 100,
+                                      after["properties"]["height"] / 100],
+              f"{fmt.upper()} footer picture did not render at its saved size after reopen", reopened_ui)
+    h.require(same_geometry(reopened_frame, frame_redo, 1.5),
+              f"{fmt.upper()} footer picture layout changed after reopen", [frame_redo, reopened_frame])
+    row["reopened"] = {"frame": reopened_frame, "picture": reopened, "ui": reopened_ui,
+                       "publishedSha256": row["publishedSha256"]}
+    (out / f"footer-{fmt}-expected.json").write_text(json.dumps({
+        "savedFile": path.name, "publishedSha256": row["publishedSha256"],
+        "appSha256": row["processAppSha256"], "appPid": row["appPid"],
+        "owners": after_state["owners"], "footer": after, "finalFrame": frame_redo,
+    }, indent=2, ensure_ascii=False) + "\n")
+
+
+def footer_picture_hwp(acc, row, fixtures, out):
+    footer_picture_resize(acc, row, fixtures, out, "hwp")
+
+
+def footer_picture_hwpx(acc, row, fixtures, out):
+    footer_picture_resize(acc, row, fixtures, out, "hwpx")
+
+
+def footer_fresh_reopen(acc, row, fixtures, out, fmt):
+    expected = json.loads((out / f"footer-{fmt}-expected.json").read_text())
+    fixture = out / expected["savedFile"]
+    path = h.begin(acc, row, fixture, out, f"footer-{fmt}-fresh-reopen.{fmt}")
+    if fmt == "hwp":
+        row["renderBudgetZoom"] = footer_fit_large_hwp_document(acc)
+    row["expectedSavedSha256"] = expected["publishedSha256"]
+    row["savedSha256"] = h.digest(path)
+    h.require(row["savedSha256"] == expected["publishedSha256"], "fresh footer session input differs from saved file")
+    h.require(row["processAppSha256"] == expected["appSha256"] and row["appPid"] != expected["appPid"],
+              "footer fresh reopen did not use a distinct process with the same Release application")
+    h.require(row["initialSession"].get("dirty") == "false"
+              and row["initialSession"].get("unpreserved") == "false",
+              "saved footer document reopened dirty or unpreserved", row["initialSession"])
+    state = rhwp_header_state(path)
+    picture = footer_picture(state, expected["footer"]["address"])
+    h.require(state["owners"] == expected["owners"] and picture["owner"] == expected["footer"]["owner"]
+              and picture["properties"] == expected["footer"]["properties"],
+              "fresh footer reopen changed story ownership or object properties", picture)
+    frame = select_header_picture(acc, picture, scroll_to_object=fmt == "hwp")
+    ui = h.p6.gso.props(acc, "picture")
+    props = picture["properties"]
+    h.require(ui["size"] == [props["width"] / 100, props["height"] / 100],
+              "fresh Native footer rendering uses a different picture size", [ui, props])
+    h.require(same_geometry(frame, expected["finalFrame"], 1.5),
+              "fresh Native footer rendering changed its saved placement", [expected["finalFrame"], frame])
+    row["readOnlyFreshProcessReopen"] = {"frame": frame, "picture": picture, "ui": ui,
+                                         "savedSha256": row["savedSha256"]}
 SIZE_FORM = "[aria-labelledby=properties-selection] .object-tools form:has(input[max='4000'])"
 WIDTH = SIZE_FORM + " label:first-of-type input"
 
@@ -1785,6 +2172,10 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-R-HDR-HWPX": header_picture_hwpx,
            "P5-R-HDR-HWP-FRESH": header_picture_hwp_fresh,
            "P5-R-HDR-HWPX-FRESH": header_picture_hwpx_fresh,
+           "P5-R-FTR-HWP": footer_picture_hwp,
+           "P5-R-FTR-HWPX": footer_picture_hwpx,
+           "P5-R-FTR-HWP-FRESH": lambda *args: footer_fresh_reopen(*args, "hwp"),
+           "P5-R-FTR-HWPX-FRESH": lambda *args: footer_fresh_reopen(*args, "hwpx"),
            "P5-DX-NOTE-MOVE-FRESH-REOPEN": note_move_fresh_reopen,
            "P5-DX-HF-MOVE-FRESH-REOPEN": header_footer_move_fresh_reopen,
            "P5-DX-DELETE": delete_docx_story_pictures,

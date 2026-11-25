@@ -3427,7 +3427,7 @@ mod tests {
     }
 
     #[test]
-    fn header_picture_geometry_evolution_is_exactly_owned() {
+    fn header_and_footer_picture_geometry_evolution_is_exactly_owned() {
         fn borrow(rows: &[(u16, u16, Vec<u8>)]) -> Vec<(u16, u16, &[u8])> {
             rows.iter()
                 .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
@@ -3443,6 +3443,24 @@ mod tests {
         assert_eq!(
             super::prove_header_story_edit(&before, &after, &defs).unwrap(),
             vec![101]
+        );
+
+        let mut footer_original = original.clone();
+        footer_original[0].2[..4].copy_from_slice(b"toof");
+        let mut footer_moved = moved.clone();
+        footer_moved[0].2[..4].copy_from_slice(b"toof");
+        assert_eq!(
+            super::prove_header_story_edit(&borrow(&footer_original), &borrow(&footer_moved), &defs)
+                .unwrap(),
+            vec![101],
+            "a picture move is accepted only within the exact footer owner"
+        );
+        let mut wrong_story = footer_moved.clone();
+        wrong_story[0].2[..4].copy_from_slice(b"daeh");
+        assert!(
+            super::prove_header_story_edit(&borrow(&footer_original), &borrow(&wrong_story), &defs)
+                .is_err(),
+            "the same picture cannot move between footer and header stories"
         );
 
         let mut omitted_description = original.clone();

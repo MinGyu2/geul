@@ -114,6 +114,28 @@ describe("HWP detailed independent reopen evidence", () => {
     expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), before.structure)).toBe(false);
   });
 
+  it("records exact footer-picture ownership and properties in independent reopen evidence", () => {
+    const live = model(), reopened = model();
+    const owner = { ctrlId: "foot", userDesc: "꼬리말", list: 0, para: 0, controlIndex: 1, props: {} };
+    const layout = { type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
+      headerFooter: { kind: "footer", outerParaIdx: 0, outerControlIdx: 1 } };
+    for (const fixture of [live, reopened]) {
+      fixture.state.controls = [owner];
+      fixture.state.headerLayout = [layout];
+    }
+    const before = hwpReopenModel(live.doc), after = hwpReopenModel(reopened.doc);
+    expect(before.headerPicturesComplete).toBe(true);
+    expect(before.headerPictures).toHaveLength(1);
+    expect(before.headerPictures[0]).toMatchObject({
+      address: { section: 0, kind: "footer", outerParagraph: 0, outerControl: 1, innerParagraph: 0, innerControl: 0 },
+      owner: { ctrlId: "foot", para: 0, controlIndex: 1 },
+      properties: { width: 1000, height: 500 },
+    });
+    expect(hwpReopenEqual(before, after, before.structure)).toBe(true);
+    reopened.state.headerPicture.width = 1200;
+    expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), before.structure)).toBe(false);
+  });
+
   it("fails header-picture ownership closed when the section owner is ambiguous", () => {
     const fixture = model();
     const owner = { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} };
@@ -133,6 +155,16 @@ describe("HWP detailed independent reopen evidence", () => {
     ];
     fixture.state.headerLayout = [{ type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
       headerFooter: { kind: "header", outerParaIdx: 0, outerControlIdx: 1 } }];
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.headerPicturesComplete).toBe(false);
+    expect(result.headerPictures).toHaveLength(0);
+  });
+
+  it("rejects a footer layout address owned by a header control", () => {
+    const fixture = model();
+    fixture.state.controls = [{ ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1 }];
+    fixture.state.headerLayout = [{ type: "image", secIdx: 0, paraIdx: 0, controlIdx: 0,
+      headerFooter: { kind: "footer", outerParaIdx: 0, outerControlIdx: 1 } }];
     const result = hwpReopenModel(fixture.doc);
     expect(result.headerPicturesComplete).toBe(false);
     expect(result.headerPictures).toHaveLength(0);
