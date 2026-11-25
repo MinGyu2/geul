@@ -4,7 +4,7 @@
   "category": "B",
   "status": "IMPLEMENTED_VERIFIED",
   "acceptance": "IMPLEMENTED_VERIFIED",
-  "implementationCommit": null,
+  "implementationCommit": "7f4c5c68c0ad7216f46d7f0492305b493dbaefdb",
   "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
   "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
   "rhwpGeneration": "febc56678adf0c9e367ed90385c1c969706659d43bd517b1e9ebea685ab30f6b",
@@ -58,9 +58,7 @@
     }
   },
   "remaining": [
-    "Implementation local commit hash is pending; main agent will record it after review and commit.",
     "Wayland, Windows, macOS and external Office interoperability were not tested."
   ],
-  "push": "NOT PERFORMED",
-  "implementationCommitNote": "Pending local review and commit; no implementation hash has been assigned."
+  "push": "NOT PERFORMED"
 }
