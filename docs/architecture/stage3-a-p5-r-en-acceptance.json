@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-26",
+  "issueId": "P5-R-EN",
+  "category": "A",
+  "status": "IMPLEMENTED_VERIFIED",
+  "acceptance": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "8170317396645b55e1cb0e12e84d38fe3c126dda",
+  "wordcraftPin": "ce77006df77470f044a4f31257b5fec8d58640fc",
+  "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "rhwpGeneration": "6997657c0ffdcfb6f5eda5c3984f78aa8b1e7d44fe468755e8c45c9380ceb1f3",
+  "rhwpSourceTreeSha256": "f587f36e4911aebb036bd688e7dad6ae1814e5057962d71cc9abc9ae965bf4ad",
+  "orderedRhwpPatchCount": 63,
+  "rhwpPatches": [
+    {
+      "name": "stage3a-p5-endnote-virtual-owner.patch",
+      "sha256": "844eaa06e34c55a75b45c459e8379dab709966e933541aa020dba180ead1d6d3"
+    },
+    {
+      "name": "stage3a-p5-endnote-owner-paths.patch",
+      "sha256": "a4b539e70c3a5229608eeb455fc722cda26b1b8125ea49d9b35102b01d9fb0d8"
+    }
+  ],
+  "releaseArtifacts": {
+    "rhwp.js": "2b15a5497c60ac040188a33bb668cbd0a00be8928eac6d97fba88dbbcc6ff9bc",
+    "rhwp_bg.wasm": "17c106700c917713afcfbcee721b57dea452ba449bbb93304f770b981b1758fb"
+  },
+  "supported": "HWP5/HWPX body and table-cell endnotes resolve through an exact owner path, anchor control, note kind, note instance ID and number. Rendered virtual paragraphs map to the note-local paragraph and character; trusted selection, caret placement, plain-text editing, Undo/Redo, T009 save and independent reopen preserve note identity, numbering and unrelated content. Unsupported or ambiguous addresses fail closed.",
+  "changedFiles": [
+    "patches/rhwp/stage3a-p5-endnote-virtual-owner.patch",
+    "patches/rhwp/stage3a-p5-endnote-owner-paths.patch",
+    "scripts/rhwp-patches.py",
+    "scripts/tests/native-stage3-c.py",
+    "scripts/tests/native-stage3a-p5-endnotes.py",
+    "scripts/tests/prepare-stage3a-p5-en-fixtures.py",
+    "src/components/Editor/rhwp/RhwpEditorSession.ts",
+    "src/components/Editor/rhwp/rhwpEndnoteSession.test.ts",
+    "src/components/Editor/rhwp/rhwpModule.ts",
+    "src/components/Editor/rhwp/rhwpText.ts"
+  ],
+  "preservation": [
+    "Endnote virtual addresses are resolved through the source owner's body/table-cell/textbox path; malformed paths, wrong note kinds, stale IDs/numbers and body-paragraph aliases are rejected without falling through to body editing.",
+    "The authentic HWP fixture has six endnotes: five body-owned and one owned by table cell 2. HWP and generated HWPX retain the same target section, anchor paragraph 11, control 0, note instance ID 32, number 3 and table owner path.",
+    "HWP T009 keeps all nine CFB streams and record topology. Decompressed DocInfo is byte-identical; the only BodyText/Section0 changes are the exact target PARA_HEADER and PARA_TEXT pair. For the table note, its endnote control number and nested list/header levels are independently proved; every other BodyText record is byte-identical.",
+    "HWPX T009 keeps all 12 OPC parts; only Contents/section0.xml changes for the note text. HWP/HWPX model inspection confirms all other endnote identities, numbers and text remain unchanged.",
+    "Undo restored the original rendered canvas state and Redo restored the edited canvas state. Same-session and fresh-process reopen resolved the same owner, ID, number, note text and rendered location.",
+    "RHWP source was rebuilt from the exact clean pin and 63 ordered patches. A fresh reconstruction matched all 1,654 prepared source files byte-for-byte. external/rhwp remained unchanged."
+  ],
+  "checks": {
+    "focusedRust": "PASS: patched RHWP cargo check; Release WASM compilation passed.",
+    "focusedTypeScript": "PASS: rhwpEndnoteSession Vitest 4/4; npm run typecheck.",
+    "fixturePreparation": "PASS: authentic HWP to HWPX conversion reported zero loss; both direct-body and table-owned endnote identities/addresses survived roundtrip.",
+    "rhwpReconstruction": "PASS: exact pinned source plus 63 ordered patches reconstructed 1,654 files byte-for-byte; Release artifacts match their manifest hashes.",
+    "guardedReleaseBuild": "PASS: npm run tauri -- build --no-bundle; app SHA-256 eced04e4e620a84a5ed339311bf6d694f52c7e806ae73ebc969fbcb7be9f18db.",
+    "nativeHarness": "PASS: py_compile and git diff --check.",
+    "nativeX11": "PASS: all eight cases in target/p5-r-en-final-699765/result.json under actual Release app, Linux X11/Xvfb and private IBus: HWP/HWPX body and table-cell edits, plus each fresh-process reopen.",
+    "t009": "PASS: all four edits report saved, synced=true, changedSince=false and empty findings; independent CFB/OPC package checks passed.",
+    "undoRedo": "PASS: source canvas hashes match Undo and edited canvas hashes match Redo in all four editing cases.",
+    "serializationAndReopen": "PASS: HWP CFB stream/record proof, HWPX OPC part proof, exact owner/ID/number/text checks, same-session reopen and four separate app-PID reopen cases.",
+    "cleanup": "PASS: target/p5-r-en-final-699765-session/cleanup.json has exit=0, proven=true, filesystemProven=true and no surviving process.",
+    "externalOffice": "NOT RUN.",
+    "waylandWindowsMacOS": "NOT RUN.",
+    "releasePortability": "NOT VERIFIED outside the available Nix runtime.",
+    "push": "NOT PERFORMED."
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb, private IBus, actual protected Release Tauri application with trusted pointer and keyboard input.",
+    "appSha256": "eced04e4e620a84a5ed339311bf6d694f52c7e806ae73ebc969fbcb7be9f18db",
+    "releaseGeneration": "6997657c0ffdcfb6f5eda5c3984f78aa8b1e7d44fe468755e8c45c9380ceb1f3",
+    "hwpFixtureSha256": "07ae69995ef24da322ae85f99c9f5dbee9a919bea15077863ebced38e13e1541",
+    "hwpxFixtureSha256": "8d6e8b4a582b5e82f70493f6d85a5a149621c089c349dff22764b3ee34634c11",
+    "cases": [
+      {
+        "case": "P5-R-EN-HWP-BODY and P5-R-EN-HWP-BODY-FRESH",
+        "owner": {"section": 0, "anchorParagraph": 3, "control": 0, "instanceId": 2112512773, "number": 1, "ownerPath": {"sourceType": "body"}},
+        "editPid": 597035,
+        "freshPid": 597255,
+        "sourceSha256": "07ae69995ef24da322ae85f99c9f5dbee9a919bea15077863ebced38e13e1541",
+        "savedSha256": "ca3bd1bfd08e99bc0a2bb98e6dccc85d25435754799e135e9b19f2c570f35cdf"
+      },
+      {
+        "case": "P5-R-EN-HWP-TABLE and P5-R-EN-HWP-TABLE-FRESH",
+        "owner": {"section": 0, "anchorParagraph": 11, "control": 0, "instanceId": 32, "number": 3, "ownerPath": {"sourceType": "table", "cellIndex": 2, "cellParaIndex": 0, "cellControlIndex": 0}},
+        "editPid": 597419,
+        "freshPid": 597646,
+        "sourceSha256": "07ae69995ef24da322ae85f99c9f5dbee9a919bea15077863ebced38e13e1541",
+        "savedSha256": "749ff69428b804a1346eb4c0edbb63223d056dc538aea7a85f8536110aad295b"
+      },
+      {
+        "case": "P5-R-EN-HWPX-BODY and P5-R-EN-HWPX-BODY-FRESH",
+        "owner": {"section": 0, "anchorParagraph": 3, "control": 0, "instanceId": 2112512773, "number": 1, "ownerPath": {"sourceType": "body"}},
+        "editPid": 597802,
+        "freshPid": 598023,
+        "sourceSha256": "8d6e8b4a582b5e82f70493f6d85a5a149621c089c349dff22764b3ee34634c11",
+        "savedSha256": "b016a6ad725aea7b45384609cc4df0d377eeb840456252f2331af9cd70a6f3ff"
+      },
+      {
+        "case": "P5-R-EN-HWPX-TABLE and P5-R-EN-HWPX-TABLE-FRESH",
+        "owner": {"section": 0, "anchorParagraph": 11, "control": 0, "instanceId": 32, "number": 3, "ownerPath": {"sourceType": "table", "cellIndex": 2, "cellParaIndex": 0, "cellControlIndex": 0}},
+        "editPid": 598189,
+        "freshPid": 598414,
+        "sourceSha256": "8d6e8b4a582b5e82f70493f6d85a5a149621c089c349dff22764b3ee34634c11",
+        "savedSha256": "1ca422980bfe093406d1cb8b2d3e1858f9b2c5a7d6ac9ad744a5024563038363"
+      }
+    ],
+    "hwpRecordProof": {
+      "streamInventoryPreserved": true,
+      "decompressedDocInfoByteIdentical": true,
+      "docInfoRecordCount": 132,
+      "bodyRecordCount": 261,
+      "bodyEndnoteChangedRecords": [54, 55],
+      "tableEndnoteChangedRecords": [116, 117],
+      "tableNestedLevels": {"endnoteControlHeader": 3, "listHeader": 4, "paragraphHeader": 4, "paragraphText": 5},
+      "allOtherBodyRecordsByteIdentical": true
+    },
+    "hwpxPackageProof": {
+      "partCount": 12,
+      "changedParts": ["Contents/section0.xml"],
+      "unrelatedPartsByteIdentical": true
+    },
+    "cleanupFile": "target/p5-r-en-final-699765-session/cleanup.json",
+    "resultFile": "target/p5-r-en-final-699765/result.json"
+  },
+  "limitations": [
+    "The authentic sample covers body and table-cell endnotes; no authentic textbox-owned endnote sample was available for Native acceptance.",
+    "Wayland, Windows, macOS and external Office interoperability were NOT RUN; runtime portability outside the available Nix environment is NOT VERIFIED."
+  ]
+}
