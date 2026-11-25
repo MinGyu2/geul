@@ -25,9 +25,19 @@
     "source": "e나라표준인증 KS X 6101:2024 machine-readable standard, revision 03, active; operation date 2024-10-30; Annex E ParaList XML Schema, CurveType",
     "viewerUrl": "https://www.standard.go.kr/KSCI/api/std/viewMachine.do?reformNo=03&tmprKsNo=KSX6101&formType=STD",
     "dataEndpoint": "https://www.standard.go.kr/KSCI/api/std/viewMachineNextPage.do?format=json (POST tmprKsNo=KSX6101, reformNo=03, formType=STD)",
-    "accessed": "2026-11-23",
-    "schemaFinding": "CurveType contains an unbounded sequence of seg elements. Each seg defines type (LINE or CURVE), x1, y1, x2, and y2 integer attributes only. It has no control-point attributes/elements or wildcard. ConnectLineType separately defines controlPoints/point; that applies to connectors, not CurveType.",
-    "conclusion": "The supported current schema does not provide an editable Bezier control-point serialization contract. Keep those mutations fail-closed unless a compatible authentic extension/sample establishes one."
+    "accessed": "2026-11-25",
+    "schemaFinding": "Annex E CurveType contains an unbounded sequence of seg. Each seg has exactly type (default CURVE; enum LINE/CURVE), x1, y1, x2, y2 integer attributes, with no child elements or xs:any wildcard. ConnectLineType separately defines controlPoints/point; that is not a CurveType contract.",
+    "conclusion": "The supported current schema does not provide an editable Bezier control-point serialization contract. Keep those mutations fail-closed unless a compatible authentic extension/sample establishes one.",
+    "revision": "03",
+    "status": "active",
+    "operationDate": "2024-10-30",
+    "requestMethod": "POST",
+    "requestParameters": {
+      "tmprKsNo": "KSX6101",
+      "reformNo": "03",
+      "formType": "STD"
+    },
+    "revalidationDate": "2026-11-25"
   },
   "rhwpModelReview": {
     "files": [
@@ -35,10 +45,11 @@
       "external/rhwp/src/model/shape.rs (CurveShape)",
       "external/rhwp/src/serializer/hwpx/section.rs"
     ],
-    "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The added ordered patch records whether each source hp:seg had children and exposes structural split/join only for childless LINE records with exactly the five standard attributes. The geul edit path retains segment metadata/order and original segment types outside the touched LINE records; unsupported source envelopes are rejected."
+    "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The added ordered patch records whether each source hp:seg had children and exposes structural split/join only for childless LINE records with exactly the five standard attributes. The geul edit path retains segment metadata/order and original segment types outside the touched LINE records; unsupported source envelopes are rejected.",
+    "revalidated": "2026-11-25 at pinned RHWP 1a76570e833917d15817415a53c09ad61ab3203f. The HWPX parser reduces each seg to endpoint point-chain entries, leaves HWP5-specific segment_types empty for HWPX, and the writer emits hp:seg endpoint pairs."
   },
   "sampleCorpusAudit": {
-    "source": "Repository RHWP sample corpus under external/rhwp/samples/**/*.hwpx; aggregate counts are observational and may include synthetic regression fixtures.",
+    "source": "Tracked repository corpus external/rhwp/samples/**/*.hwpx; aggregate counts are observational and cannot prove no proprietary extension exists.",
     "candidateFiles": 579,
     "invalidOrUnreadableContainersOrSections": 7,
     "curveObjects": 337,
@@ -70,7 +81,9 @@
       ],
       "additionalControlPointData": 0
     },
-    "conclusion": "The inspected compatible examples agree with the current schema, but the sample corpus cannot prove that no proprietary extension exists anywhere."
+    "conclusion": "The inspected compatible examples agree with the current schema, but the sample corpus cannot prove that no proprietary extension exists anywhere.",
+    "revalidated": "2026-11-25",
+    "unreadable": 7
   },
   "releaseWasm": {
     "generation": "a8e4ecb1456b0aeccc2e93295edcee7ffa7a259639f3f62b2f65a5221fc2beea",
@@ -187,5 +200,42 @@
     "runtimePathStatus": "PASS",
     "portabilityStatus": "NOT_VERIFIED",
     "reason": "Nix store runtime dependencies; Debian/Ubuntu portability is not established."
+  },
+  "revalidationMethod": {
+    "officialRevalidation": {
+      "date": "2026-11-25",
+      "officialRegistry": "e나라표준인증 KS X 6101 revision 03, active; operation date 2024-10-30.",
+      "sourceUrl": "https://www.standard.go.kr/KSCI/api/std/viewMachineNextPage.do?format=json",
+      "method": "POST",
+      "parameters": {
+        "tmprKsNo": "KSX6101",
+        "reformNo": "03",
+        "formType": "STD"
+      },
+      "scope": "Annex E ParaList XML Schema: CurveType and ConnectLineType.",
+      "finding": "CurveType has an unbounded seg sequence. Each seg has exactly type (default CURVE; LINE/CURVE enum), x1, y1, x2, y2 integer attributes; no child elements or xs:any wildcard. ConnectLineType separately defines controlPoints/point, which is not a CurveType control-point contract.",
+      "methodLimit": "This revalidation checks the current official schema, pinned RHWP parser/model/writer, and tracked sample corpus. The corpus is observational and cannot establish absence of proprietary extensions."
+    },
+    "rhwpReview": "At RHWP pin 1a76570e833917d15817415a53c09ad61ab3203f, the HWPX parser reduces each seg to endpoint point-chain entries; HWP5-specific segment_types remains empty for HWPX; the writer emits hp:seg endpoint pairs.",
+    "corpusReaudit": {
+      "date": "2026-11-25",
+      "glob": "external/rhwp/samples/**/*.hwpx",
+      "candidateFiles": 579,
+      "curveObjects": 337,
+      "segments": 1504,
+      "attributesObserved": [
+        "type",
+        "x1",
+        "y1",
+        "x2",
+        "y2"
+      ],
+      "additionalSegmentAttributes": 0,
+      "segmentChildElements": 0,
+      "unreadable": 7,
+      "representativeSample": "external/rhwp/samples/3-09월_교육_통합_2022.hwpx",
+      "representativeSampleSha256": "b3ed3d5c4f0f95f9a8990b17720da3bef566b5a36174153aa3def28fd46e6029",
+      "scopeLimit": "Observational sample evidence only; not proof that proprietary extensions do not exist."
+    }
   }
 }
