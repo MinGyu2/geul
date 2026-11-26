@@ -69,6 +69,7 @@ export const docxInfo = (patch: Partial<SessionInfo> = {}): SessionInfo => ({
 
 export class FakeDocx implements DocxBackend {
   paragraphs: string[];
+  drawingInsertionAllowed = false;
   caret: At = { p: 0, o: 0 };
   anchor: At = { p: 0, o: 0 };
   info: SessionInfo = docxInfo();
@@ -171,6 +172,7 @@ export class FakeDocx implements DocxBackend {
       hasToc: this.toc !== null,
       bullets: null,
       imageInsertionAllowed: true,
+      ...(this.drawingInsertionAllowed ? { drawingInsertionAllowed: true } : {}),
       tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
@@ -752,8 +754,9 @@ export function stubScreenContext() {
 }
 
 /** 열고 불러온 DOCX 편집 세션. 화면 밖 래스터는 2D 문맥이 있는 가짜 canvas다(jsdom canvas에는 문맥이 없어 그림 실패로 센다). */
-export async function readyDocx(text?: string[]) {
+export async function readyDocx(text?: string[], options: { drawingInsertionAllowed?: boolean } = {}) {
   const fake = new FakeDocx(text);
+  fake.drawingInsertionAllowed = options.drawingInsertionAllowed ?? false;
   const sessions = docxSessions(fake);
   await sessions.open("/a.docx");
   const editor = new DocxEditorSession(1, fake, sessions, decodeFake, () => recordingCanvas().canvas);

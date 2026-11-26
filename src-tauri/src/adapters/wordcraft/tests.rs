@@ -10181,3 +10181,214 @@ fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
         std::fs::write(out.join("a-p6-import-destination.docx"), before_import).unwrap();
     }
 }
+
+#[test]
+fn stage3a_p6_hwpx_inline_primitives_remain_editable_and_t009_safe() {
+    use super::engine::{BasicShape, HwpxShape};
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use wordcraft_engine::doc::{para::ShapeKind, InlineObject, StoryRef};
+    use wordcraft_engine::io;
+
+    let mut base = model();
+    assert_eq!(
+        base.apply(&[
+            DocxOp::DeselectObject {},
+            mv(MoveTarget::DocEnd, false),
+            DocxOp::Shape {
+                kind: BasicShape::Rectangle,
+            },
+        ])
+        .changed,
+        1
+    );
+    let original = base.export().unwrap();
+    let mut model = DocxModel::open(&original).expect("fixture with an existing editable drawing opens");
+    let unedited = model.export().unwrap();
+    assert!(package::docx_body_source_roundtrips(&original, &unedited));
+    assert!(service::preflight(Format::Docx, &original, &unedited, None).is_safe());
+    assert_eq!(model.apply(&[DocxOp::DeselectObject {}, mv(MoveTarget::DocEnd, false)]).changed, 0);
+    let native_fixture_caret = model.view().caret_key.clone();
+    if let Some(out) = std::env::var_os("GEUL_P6_HX_DX_MORE_FIXTURE_OUT") {
+        let out = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("destination.docx"), &original).unwrap();
+        std::fs::write(
+            out.join("destination.json"),
+            serde_json::to_vec_pretty(&json!({"caretKey": native_fixture_caret})).unwrap(),
+        )
+        .unwrap();
+    }
+    model.apply(&[DocxOp::NewParagraph]);
+    let original = model.export().unwrap();
+    let invalid = HwpxShape {
+        kind: BasicShape::Line,
+        width: 2540,
+        height: 1270,
+        fill: None,
+        stroke: Some("112233".into()),
+        stroke_width: 35,
+        rotation_angle: 20,
+        horz_flip: false,
+        vert_flip: false,
+        description: "rotated HWPX line".into(),
+    };
+    assert!(!validate(&[DocxOp::PasteHwpxShape {
+        shape: invalid.clone(),
+    }]));
+    assert_eq!(
+        model
+            .apply(&[DocxOp::PasteHwpxShape { shape: invalid }])
+            .rejected,
+        vec![0]
+    );
+    assert_eq!(model.export().unwrap(), original);
+
+    let shapes = [
+        HwpxShape {
+            kind: BasicShape::Rectangle,
+            width: 2540,
+            height: 1270,
+            fill: Some("cc8844".into()),
+            stroke: Some("112233".into()),
+            stroke_width: 35,
+            rotation_angle: 90,
+            horz_flip: true,
+            vert_flip: false,
+            description: "HWPX rectangle".into(),
+        },
+        HwpxShape {
+            kind: BasicShape::Ellipse,
+            width: 3000,
+            height: 1800,
+            fill: None,
+            stroke: Some("00a0ff".into()),
+            stroke_width: 0,
+            rotation_angle: 0,
+            horz_flip: false,
+            vert_flip: true,
+            description: "HWPX ellipse".into(),
+        },
+        HwpxShape {
+            kind: BasicShape::Line,
+            width: 2200,
+            height: 1200,
+            fill: None,
+            stroke: Some("a01020".into()),
+            stroke_width: 25,
+            rotation_angle: 0,
+            horz_flip: false,
+            vert_flip: false,
+            description: "HWPX line".into(),
+        },
+    ];
+    for shape in shapes {
+        assert!(validate(&[DocxOp::PasteHwpxShape {
+            shape: shape.clone(),
+        }]));
+        assert_eq!(model.apply(&[DocxOp::PasteHwpxShape { shape }]).changed, 1);
+    }
+    let output = model.export().unwrap();
+    assert!(model.same_as(&output));
+    assert!(service::check_saved(Format::Docx, &original, &output, None, true).is_safe());
+    let before = package::open(&original, package::Side::Original).unwrap();
+    let after = package::open(&output, package::Side::Output).unwrap();
+    for name in before
+        .parts
+        .keys()
+        .filter(|name| name.as_str() != "word/document.xml")
+    {
+        assert_eq!(
+            before.get(name),
+            after.get(name),
+            "unrelated DOCX part changed: {name}"
+        );
+    }
+
+    let reopened = io::open_bytes("hwpx-primitives.docx", &output).unwrap();
+    let objects = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|para| para.objects.iter())
+        .collect::<Vec<_>>();
+    let imported = objects
+        .iter()
+        .filter_map(|object| match object {
+            InlineObject::Shape {
+                kind,
+                w,
+                h,
+                fill,
+                stroke,
+                stroke_width,
+                story: None,
+                freeform: None,
+                float,
+                ..
+            } => Some((*kind, *w, *h, *fill, *stroke, *stroke_width, float)),
+            _ => None,
+        })
+        .filter(|shape| shape.6.alt.text.starts_with("HWPX "))
+        .collect::<Vec<_>>();
+    assert_eq!(imported.len(), 3);
+    assert_eq!(imported[0].0, ShapeKind::Rectangle);
+    assert_eq!((imported[0].1, imported[0].2), (25.4, 12.7));
+    assert_eq!(imported[0].3.unwrap().hex(), "CC8844");
+    assert_eq!(imported[0].4.unwrap().hex(), "112233");
+    assert_eq!(imported[0].5, 0.35);
+    assert_eq!(imported[0].6.rot, 90.0);
+    assert!(imported[0].6.flip_h && !imported[0].6.flip_v);
+    assert_eq!(imported[0].6.alt.text, "HWPX rectangle");
+    assert_eq!(imported[1].0, ShapeKind::Ellipse);
+    assert!(imported[1].3.is_none());
+    assert_eq!(imported[1].4.unwrap().hex(), "00A0FF");
+    assert_eq!(imported[1].6.alt.text, "HWPX ellipse");
+    assert_eq!(imported[2].0, ShapeKind::Line);
+    assert!(imported[2].3.is_none());
+    assert_eq!(imported[2].4.unwrap().hex(), "A01020");
+    assert_eq!(imported[2].5, 0.25);
+    assert_eq!(imported[2].6.alt.text, "HWPX line");
+    assert_eq!(reopened.end_of(StoryRef::Body).story, StoryRef::Body);
+
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), output);
+}
+
+#[test]
+fn stage3a_p6_hwpx_shape_transfer_refuses_docx_body_without_t009_roundtrip() {
+    use super::engine::{BasicShape, HwpxShape};
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+
+    let source = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scripts/tests/fixtures/stage3a-p4-dx-group.docx"
+    ))
+    .unwrap();
+    let mut model = DocxModel::open(&source).expect("group DOCX fixture opens");
+    let unedited = model.export().unwrap();
+    assert!(!package::docx_body_source_roundtrips(&source, &unedited));
+    assert!(!service::preflight(Format::Docx, &source, &unedited, None).is_safe());
+
+    let shape = HwpxShape {
+        kind: BasicShape::Rectangle,
+        width: 2540,
+        height: 1270,
+        fill: Some("cc8844".into()),
+        stroke: Some("112233".into()),
+        stroke_width: 35,
+        rotation_angle: 0,
+        horz_flip: false,
+        vert_flip: false,
+        description: "HWPX rectangle".into(),
+    };
+    assert_eq!(
+        model
+            .apply(&[DocxOp::PasteHwpxShape { shape }])
+            .rejected,
+        vec![0]
+    );
+    assert_eq!(model.export().unwrap(), unedited);
+}

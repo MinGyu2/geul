@@ -175,6 +175,9 @@ pub enum DocxOp {
     PasteHwpxPolygon {
         polygon: HwpxPolygon,
     },
+    PasteHwpxShape {
+        shape: HwpxShape,
+    },
     /// Stage 3: an edit of the selected drawing. `position`/`epoch` must name the current object selection
     /// (stale selections are rejected); the change must pass the DOCX T009 check against the pre-edit export.
     ObjectEdit {
@@ -484,6 +487,50 @@ impl HwpxPolygon {
         self.points.iter().zip(self.points.iter().cycle().skip(1))
             .map(|([a, b], [c, d])| i64::from(*a) * i64::from(*d) - i64::from(*b) * i64::from(*c))
             .sum::<i64>() != 0
+    }
+}
+
+/// HWPUNIT geometry/style for an inline HWPX preset primitive with a proven DOCX mapping.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HwpxShape {
+    pub kind: BasicShape,
+    pub width: u32,
+    pub height: u32,
+    pub fill: Option<String>,
+    pub stroke: Option<String>,
+    pub stroke_width: u32,
+    pub rotation_angle: u16,
+    pub horz_flip: bool,
+    pub vert_flip: bool,
+    pub description: String,
+}
+
+impl HwpxShape {
+    fn valid(&self) -> bool {
+        let color = |value: &Option<String>| {
+            value.as_ref().is_none_or(|value| {
+                value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+        };
+        (200..=14_400).contains(&self.width)
+            && (200..=14_400).contains(&self.height)
+            && self.rotation_angle <= 359
+            && self.stroke_width <= 7_200
+            && color(&self.fill)
+            && color(&self.stroke)
+            && (self.stroke.is_some() || self.stroke_width == 0)
+            && valid_object_alt_text(&self.description)
+            && match self.kind {
+                BasicShape::Rectangle | BasicShape::Ellipse => true,
+                BasicShape::Line => {
+                    self.fill.is_none()
+                        && self.stroke.is_some()
+                        && self.rotation_angle == 0
+                        && !self.horz_flip
+                        && !self.vert_flip
+                }
+            }
     }
 }
 
@@ -1017,6 +1064,7 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     && payload.drawing().is_some()
             }
             DocxOp::PasteHwpxPolygon { polygon } => polygon.valid(),
+            DocxOp::PasteHwpxShape { shape } => shape.valid(),
             DocxOp::ObjectEdit {
                 position,
                 epoch,
@@ -1934,6 +1982,7 @@ impl DocxModel {
             } => self.object_edit(position, *epoch, edit),
             DocxOp::PasteObject { payload } => self.paste_object(payload),
             DocxOp::PasteHwpxPolygon { polygon } => self.paste_hwpx_polygon(polygon),
+            DocxOp::PasteHwpxShape { shape } => self.paste_hwpx_shape(shape),
             DocxOp::Image { data } => {
                 let at = &self.session.sel.focus;
                 if !self.session.sel.is_collapsed()
@@ -3052,6 +3101,67 @@ impl DocxModel {
         para.insert_object(0, drawing, &CharProps::default()).map_err(|_| Rejected)?;
         self.paste_object(&ObjectPayload {
             fragment: Fragment { blocks: vec![Block::Para(para)], ..Fragment::default() },
+            media: Vec::new(),
+        })
+    }
+
+    fn paste_hwpx_shape(&mut self, shape: &HwpxShape) -> Result<bool, Rejected> {
+        use wordcraft_engine::doc::{
+            edit::Fragment,
+            para::{Float, ShapeKind},
+            props::{CharProps, Rgb},
+            Block, Paragraph,
+        };
+        // Do not append a new DrawingML object when the loaded body itself does
+        // not round-trip through the pinned reader/writer. The UI can still
+        // display/copy from such a file, but a later save would fail T009 before
+        // publishing any body edit.
+        if !self.body_roundtrips || !shape.valid() {
+            return Err(Rejected);
+        }
+        let parse_color = |value: &Option<String>| -> Result<Option<Rgb>, Rejected> {
+            value
+                .as_deref()
+                .map(|value| {
+                    let red = u8::from_str_radix(&value[0..2], 16).map_err(|_| Rejected)?;
+                    let green = u8::from_str_radix(&value[2..4], 16).map_err(|_| Rejected)?;
+                    let blue = u8::from_str_radix(&value[4..6], 16).map_err(|_| Rejected)?;
+                    Ok(Rgb(red, green, blue))
+                })
+                .transpose()
+        };
+        let kind = match shape.kind {
+            BasicShape::Rectangle => ShapeKind::Rectangle,
+            BasicShape::Ellipse => ShapeKind::Ellipse,
+            BasicShape::Line => ShapeKind::Line,
+        };
+        let mut float = Float::default();
+        float.rot = f32::from(shape.rotation_angle);
+        float.flip_h = shape.horz_flip;
+        float.flip_v = shape.vert_flip;
+        let drawing = InlineObject::Shape {
+            kind,
+            w: shape.width as f32 / 100.0,
+            h: shape.height as f32 / 100.0,
+            fill: parse_color(&shape.fill)?,
+            stroke: parse_color(&shape.stroke)?,
+            stroke_width: shape.stroke_width as f32 / 100.0,
+            float,
+            story: None,
+            freeform: None,
+            effects: Default::default(),
+            extra: Default::default(),
+        };
+        let mut drawing = drawing;
+        drawing.set_alt_text(&shape.description);
+        let mut para = Paragraph::new();
+        para.insert_object(0, drawing, &CharProps::default())
+            .map_err(|_| Rejected)?;
+        self.paste_object(&ObjectPayload {
+            fragment: Fragment {
+                blocks: vec![Block::Para(para)],
+                ..Fragment::default()
+            },
             media: Vec::new(),
         })
     }

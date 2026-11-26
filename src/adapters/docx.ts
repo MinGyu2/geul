@@ -267,6 +267,10 @@ export type DocxOp =
   /** Stage 3 P5: the engine part of a v2 object clipboard payload (validated by the engine). */
   | { op: "pasteObject"; payload: unknown }
   | { op: "pasteHwpxPolygon"; polygon: { width: number; height: number; points: [number, number][]; fill: string; description: string } }
+  | { op: "pasteHwpxShape"; shape: {
+    kind: BasicShape; width: number; height: number; fill: string | null; stroke: string | null;
+    strokeWidth: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean; description: string;
+  } }
   | { op: "textBox" }
   | { op: "selectAll" }
   | { op: "mark"; id: number }

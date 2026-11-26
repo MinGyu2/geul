@@ -147,7 +147,7 @@ def _hwp_embedded_payload(data):
 def inspect_hwpx_clip(path):
     return c.inspect_rhwp(path, """
       const all = pages.flatMap((p, page) => p.map(item => ({...item, page})));
-      const shapes = all.filter(x => x.type === 'shape' || x.type === 'group').map(x => {
+      const shapes = all.filter(x => x.type === 'shape' || x.type === 'line' || x.type === 'group').map(x => {
         const props = JSON.parse(doc.getShapeProperties(x.secIdx, x.paraIdx, x.controlIdx));
         let capTexts = null, capBold = null, capAlign = null, boxTexts = null, boxAlign = null, boxRun = null;
         if (props.hasCaption) {
@@ -330,6 +330,298 @@ try {
     return source_docx, unsupported_docx, destination_hwpx, refusal_hwpx
 
 
+def prepare_p6_hx_dx_more_fixtures(out):
+    fixture_dir = out / "p6-hx-dx-more-fixtures"
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    names = ["rectangle", "ellipse", "line", "rounded"]
+    paths = [fixture_dir / (name + ".hwpx") for name in names]
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    create = r"""
+const specs=[
+  {kind:'rectangle',shapeType:'rectangle',width:2540,height:1270,props:{fillType:'solid',fillBgColor:0x004488cc,borderColor:0x00332211,borderWidth:35,description:'HWPX rectangle'}},
+  {kind:'ellipse',shapeType:'ellipse',width:3000,height:1800,props:{fillType:'solid',fillBgColor:0x0060a020,borderColor:0x00204060,borderWidth:40,rotationAngle:90,horzFlip:true,description:'HWPX ellipse'}},
+  {kind:'line',shapeType:'line',width:14400,height:1000,props:{borderColor:0x0060a0e0,borderWidth:100,description:'HWPX line'}},
+  {kind:'rounded',shapeType:'rectangle',width:3000,height:2000,props:{roundRate:35,fillType:'solid',fillBgColor:0x000080c0,borderColor:0x00002040,borderWidth:30,description:'Unsupported rounded HWPX shape'}},
+];
+for(let i=0;i<specs.length;i++) {
+  const spec=specs[i], doc=rhwp.HwpDocument.createEmpty();
+  const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+  try {
+    doc.createBlankDocument();
+    doc.insertText(0,0,0,'primitive source');
+    const result=ok(doc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:16,
+      shapeType:spec.shapeType,width:spec.width,height:spec.height,treatAsChar:true,textWrap:'Square',horzOffset:0,vertOffset:0})),spec.kind);
+    ok(doc.setShapeProperties(0,0,result.controlIdx,JSON.stringify(spec.props)),spec.kind+' properties');
+    fs.writeFileSync(process.argv[i+1],doc.exportHwpx());
+  } finally {doc.free();}
+}
+console.log(JSON.stringify({fixtures:specs.map((spec,i)=>({kind:spec.kind,path:process.argv[i+1]}))}));
+"""
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 HWPX-to-DOCX primitive fixture template is stale")
+    script = template.replace(marker, create)
+    subprocess.run(["node", "-e", script, *(str(path) for path in paths)], cwd=ROOT, check=True)
+    destination_dir = ROOT / "src-tauri/target/p6-hx-dx-more/native-fixture"
+    destination_fixture = destination_dir / "destination.docx"
+    destination_state_path = destination_dir / "destination.json"
+    require(destination_fixture.is_file() and destination_state_path.is_file(),
+            "run the focused P6-HX-DX-MORE engine test to prepare its preflighted DOCX destination fixture")
+    destination_state = json.loads(destination_state_path.read_text())
+    require(re.fullmatch(r"body:(?:\d+\.)*\d+:\d+", destination_state.get("caretKey", "")) is not None,
+            "generated DOCX destination caret metadata is malformed", destination_state)
+    return dict(zip(names, paths)), destination_fixture, destination_state
+
+
+def _docx_canvas_digest(acc):
+    data = acc.d.js("return [...document.querySelectorAll('.docx-page canvas')].map(c=>c.toDataURL('image/png'))")
+    return hashlib.sha256(json.dumps(data, separators=(",", ":")).encode()).hexdigest()
+
+
+def _docx_texts(path):
+    with ZipFile(path) as package:
+        root = ElementTree.fromstring(package.read("word/document.xml"))
+    return [node.text or "" for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")]
+
+
+def _docx_imported_shapes(path):
+    wps = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
+    wp = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
+    a = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    with ZipFile(path) as package:
+        names = package.namelist()
+        root = ElementTree.fromstring(package.read("word/document.xml"))
+    imported = {}
+    for drawing in root.findall(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"):
+        descriptor = drawing.find(".//" + wp + "docPr")
+        if descriptor is None or descriptor.get("descr") not in {"HWPX rectangle", "HWPX ellipse", "HWPX line"}:
+            continue
+        label = descriptor.get("descr")
+        require(label not in imported, "duplicate transferred DOCX shape description", label)
+        inline = drawing.find(".//" + wp + "inline")
+        shape = drawing.find(".//" + wps + "wsp")
+        shape_props = shape.find(wps + "spPr") if shape is not None else None
+        geometry = shape_props.find(a + "prstGeom") if shape_props is not None else None
+        transform = shape_props.find(a + "xfrm") if shape_props is not None else None
+        fill = shape_props.find(a + "solidFill/" + a + "srgbClr") if shape_props is not None else None
+        line = shape_props.find(a + "ln") if shape_props is not None else None
+        stroke = line.find(a + "solidFill/" + a + "srgbClr") if line is not None else None
+        extent = inline.find(wp + "extent") if inline is not None else None
+        imported[label] = {
+            "docPrId": int(descriptor.get("id")),
+            "preset": geometry.get("prst") if geometry is not None else None,
+            "cx": int(extent.get("cx")) if extent is not None else None,
+            "cy": int(extent.get("cy")) if extent is not None else None,
+            "rotation": transform.get("rot") if transform is not None else None,
+            "flipH": transform.get("flipH") if transform is not None else None,
+            "flipV": transform.get("flipV") if transform is not None else None,
+            "fill": fill.get("val", "").upper() if fill is not None else None,
+            "stroke": stroke.get("val", "").upper() if stroke is not None else None,
+            "strokeWidth": int(line.get("w")) if line is not None and line.get("w") else None,
+        }
+    return names, imported, root
+
+
+def _docx_drawing_identities(path):
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    wp = "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}"
+    wps = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
+    with ZipFile(path) as package:
+        root = ElementTree.fromstring(package.read("word/document.xml"))
+    identities = []
+    for drawing in root.findall(".//" + w + "drawing"):
+        docpr = drawing.find(".//" + wp + "docPr")
+        c_nv_pr = drawing.findall(".//" + wps + "cNvPr")
+        identities.append((
+            int(docpr.get("id")) if docpr is not None else None,
+            docpr.get("name") if docpr is not None else None,
+            docpr.get("descr") if docpr is not None else None,
+            tuple(int(item.get("id")) for item in c_nv_pr if item.get("id") is not None),
+        ))
+    return identities
+
+
+def _position_docx_body_end(acc, expected_caret):
+    point = acc.d.js("""
+      const canvas=document.querySelector('.docx-page canvas');
+      if(!canvas) return null;
+      canvas.scrollIntoView({block:'center',inline:'center'});
+      const r=canvas.getBoundingClientRect();
+      const x=r.left+r.width*.85;
+      const y=Math.min(r.bottom-8,Math.max(r.top+8,window.innerHeight-72));
+      return document.elementFromPoint(x,y)===canvas ? [x,y] : null;
+    """)
+    require(point is not None, "could not place a trusted pointer on the visible DOCX page")
+    p4.rhwp_poc.click(acc.d, point[0], point[1])
+    acc.key("ctrl+End")
+    acc.wait("return document.querySelector('[data-testid=docx-status]')?.dataset.caret===arguments[0]", expected_caret, timeout=8)
+    status = acc.status("docx")
+    events = acc.d.js("return window.p6HxDxMoreEvents.slice()")
+    pointer_events = [event for event in events if event["type"] == "pointerdown"]
+    require(pointer_events and pointer_events[-1]["trusted"], "DOCX caret placement did not use trusted pointer input", events)
+    return {"point": point, "expectedCaret": expected_caret, "status": status, "events": events}
+
+
+def p6_hx_dx_more(acc, row, b_root, out):
+    fixtures, destination_fixture, destination_state = prepare_p6_hx_dx_more_fixtures(out)
+    expected = {
+        "rectangle": {"preset": "rect", "cx": 2540 * 127, "cy": 1270 * 127, "rotation": None,
+                      "flipH": None, "flipV": None, "fill": "CC8844", "stroke": "112233", "strokeWidth": 35 * 127},
+        "ellipse": {"preset": "ellipse", "cx": 3000 * 127, "cy": 1800 * 127, "rotation": "5400000",
+                    "flipH": "1", "flipV": None, "fill": "20A060", "stroke": "604020", "strokeWidth": 40 * 127},
+        "line": {"preset": "line", "cx": 14400 * 127, "cy": 1000 * 127, "rotation": None,
+                 "flipH": None, "flipV": None, "fill": None, "stroke": "E0A060", "strokeWidth": 100 * 127},
+    }
+    for kind in ("rectangle", "ellipse", "line", "rounded"):
+        source_info = inspect_hwpx_clip(fixtures[kind])
+        require(len(source_info["shapes"]) == 1 and not source_info["pictures"], "ambiguous HWPX source fixture", source_info)
+        props = source_info["shapes"][0]["props"]
+        row.setdefault("sourceFixtures", {})[kind] = {
+            "sha256": digest(fixtures[kind]), "props": props,
+            "layout": {key: source_info["shapes"][0].get(key) for key in ("page", "x", "y", "w", "h")},
+        }
+
+    destination = begin(acc, row, destination_fixture, out, "p6-hx-dx-more-destination.docx")
+    row["destinationFixture"] = {"sha256": digest(destination), **destination_state}
+    destination_hash = digest(destination)
+    original_parts = _package_parts(destination)
+    original_text = _docx_texts(destination)
+    original_drawing_identities = _docx_drawing_identities(destination)
+    inserted_labels = {"rectangle": "HWPX rectangle", "ellipse": "HWPX ellipse", "line": "HWPX line"}
+    acc.d.js("""
+      window.p6HxDxMoreEvents=[];
+      for(const type of ['pointerdown','keydown']) addEventListener(type,e=>window.p6HxDxMoreEvents.push({
+        type,key:e.key,ctrl:e.ctrlKey,trusted:e.isTrusted
+      }),true);
+    """)
+    for index, kind in enumerate(("rectangle", "ellipse", "line")):
+        source = begin(acc, row, fixtures[kind], out, f"p6-hx-dx-more-{kind}-source.hwpx")
+        source_hash = digest(source)
+        before_source = inspect_hwpx_clip(source)
+        shape = before_source["shapes"][0]
+        require(shape["props"]["description"] == inserted_labels[kind], "wrong HWPX source shape", shape)
+        select_object(acc, shape, "shape")
+        acc.key("ctrl+c")
+        acc.settle("hwpx")
+        trusted_copy = acc.d.js("return window.p6HxDxMoreEvents.slice()")
+        row.setdefault("trustedInputs", {})[kind + "Copy"] = trusted_copy
+        source_status = acc.status("hwpx")
+        row.setdefault("sourceStatusAfterCopy", {})[kind] = source_status
+        require(source_status["revision"] == "0" and source_status["dirty"] == "false"
+                and not source_status.get("inputNotice")
+                and any(e["type"] == "pointerdown" and e["trusted"] for e in trusted_copy)
+                and any(e["type"] == "keydown" and e["key"].lower() == "c" and e["ctrl"] and e["trusted"] for e in trusted_copy),
+                "HWPX object copy was not trusted/read-only", {"status": source_status, "events": trusted_copy})
+        require(digest(source) == source_hash, "copy changed HWPX source bytes")
+        require(p4.rhwp_poc.close_tab(acc.d, source.name), "could not return to DOCX destination tab")
+        acc.wait("return document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])",
+                 destination.name)
+        caret_path, base_offset = destination_state["caretKey"].rsplit(":", 1)
+        expected_end = f"{caret_path}:{int(base_offset) + 3 * index}"
+        row.setdefault("destinationPagePointer", {})[kind] = _position_docx_body_end(acc, expected_end)
+        acc.wait("return document.querySelector(arguments[0])===null", FRAME)
+        initial = acc.status("docx")
+        row.setdefault("destinationCaretAfterSwitch", {})[kind] = initial
+        require(initial["caret"] == expected_end and initial["selection"] == "",
+                "DOCX destination did not retain its known body-end caret", initial)
+        before_canvas = _docx_canvas_digest(acc)
+        acc.key("ctrl+v")
+        after_paste = revision(acc, "docx", int(initial["revision"]) + 1)
+        pasted_canvas = _docx_canvas_digest(acc)
+        require(pasted_canvas != before_canvas, "HWPX primitive paste did not render in DOCX", kind)
+        acc.key("ctrl+z")
+        after_undo = revision(acc, "docx", int(initial["revision"]) + 2)
+        require(_docx_canvas_digest(acc) == before_canvas, "Undo did not restore DOCX canvas", kind)
+        acc.key("ctrl+y")
+        after_redo = revision(acc, "docx", int(initial["revision"]) + 3)
+        require(_docx_canvas_digest(acc) == pasted_canvas, "Redo did not restore DOCX canvas", kind)
+        row.setdefault("mutations", {})[kind] = {
+            "before": initial, "paste": after_paste, "undo": after_undo, "redo": after_redo,
+            "canvasBefore": before_canvas, "canvasAfter": pasted_canvas,
+        }
+        keys = acc.d.js("return window.p6HxDxMoreEvents.slice()")
+        row["trustedInputs"][kind + "PasteUndoRedo"] = keys
+        for key in ("v", "z", "y"):
+            require(any(e["type"] == "keydown" and e["key"].lower() == key and e["ctrl"] and e["trusted"] for e in keys),
+                    "paste/Undo/Redo did not use trusted input", {"shape": kind, "key": key, "events": keys})
+
+    source = begin(acc, row, fixtures["rounded"], out, "p6-hx-dx-more-rounded-source.hwpx")
+    rounded_hash = digest(source)
+    rounded = inspect_hwpx_clip(source)["shapes"][0]
+    require(rounded["props"].get("roundRate") == 35 or rounded["props"].get("shapeType") != "rectangle",
+            "unsupported rounded HWPX fixture is not actually rounded", rounded["props"])
+    select_object(acc, rounded, "shape")
+    acc.key("ctrl+c")
+    source_status = acc.status("hwpx")
+    require(source_status["revision"] == "0" and source_status["dirty"] == "false", "unsupported copy changed HWPX source")
+    require(p4.rhwp_poc.close_tab(acc.d, source.name), "could not close unsupported HWPX source")
+    acc.wait("return document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])",
+             destination.name)
+    caret_path, base_offset = destination_state["caretKey"].rsplit(":", 1)
+    row["unsupportedDestinationFocus"] = _position_docx_body_end(
+        acc, f"{caret_path}:{int(base_offset) + 3 * len(inserted_labels)}",
+    )
+    before_refusal = acc.status("docx")
+    before_refusal_canvas = _docx_canvas_digest(acc)
+    negative_event_start = len(acc.d.js("return window.p6HxDxMoreEvents.slice()"))
+    acc.key("ctrl+v")
+    acc.settle("docx")
+    after_refusal = acc.status("docx")
+    negative_events = acc.d.js("return window.p6HxDxMoreEvents.slice(arguments[0])", negative_event_start)
+    row["trustedInputs"]["unsupportedRoundedPaste"] = negative_events
+    require(any(event["type"] == "keydown" and event["key"].lower() == "v" and event["ctrl"] and event["trusted"]
+                for event in negative_events), "unsupported-shape paste was not a trusted input", negative_events)
+    for field in ("status", "revision", "pending", "dirty", "unpreserved", "uncertain", "selection", "caret", "caretOffset", "rejected"):
+        require(after_refusal.get(field) == before_refusal.get(field), "unsupported rounded shape mutated DOCX session",
+                {field: after_refusal.get(field), "before": before_refusal.get(field)})
+    require(_docx_canvas_digest(acc) == before_refusal_canvas and digest(destination) == destination_hash
+            and digest(source) == rounded_hash, "unsupported HWPX shape changed target/source bytes or rendering")
+    row["unsupportedRoundedShape"] = {"before": before_refusal, "after": after_refusal,
+                                      "state": "rejected without mutation"}
+
+    publish(acc, "docx", row)
+    names, imported, _ = _docx_imported_shapes(destination)
+    require(set(imported) == set(inserted_labels.values()), "saved DOCX does not contain exactly the three transferred shapes", imported)
+    for label, shape_expected in zip(inserted_labels.values(), expected.values()):
+        actual = imported[label]
+        require({key: actual[key] for key in shape_expected} == shape_expected,
+                "serialized DOCX primitive geometry/style differs", {"shape": label, "actual": actual, "expected": shape_expected})
+    drawing_identities = _docx_drawing_identities(destination)
+    docpr_ids = [item[0] for item in drawing_identities]
+    cnvpr_ids = [identifier for item in drawing_identities for identifier in item[3]]
+    require(None not in docpr_ids and len(set(docpr_ids)) == len(docpr_ids), "DOCX wp:docPr IDs are missing or duplicated", drawing_identities)
+    require(len(set(cnvpr_ids)) == len(cnvpr_ids), "DOCX wps:cNvPr IDs are duplicated", drawing_identities)
+    transferred = set(inserted_labels.values())
+    preserved_identities = [item for item in drawing_identities if item[2] not in transferred]
+    require(preserved_identities == original_drawing_identities, "preexisting DOCX drawing ownership or IDs changed",
+            {"before": original_drawing_identities, "after": preserved_identities})
+    after_parts = _package_parts(destination)
+    require(original_parts.keys() == after_parts.keys(), "HWPX to DOCX transfer changed OPC part names")
+    changed_parts = sorted(name for name in original_parts if original_parts[name] != after_parts[name])
+    require(changed_parts == ["word/document.xml"], "primitive paste changed unrelated DOCX package parts", changed_parts)
+    require(_docx_texts(destination) == original_text, "primitive paste changed destination text")
+    row["savedPackage"] = {"sha256": digest(destination), "parts": names, "changedParts": changed_parts,
+                           "editableShapes": imported, "drawingIdentities": drawing_identities,
+                           "destinationTextUnchanged": True}
+    reopen(acc, destination, row)
+    reopened_names, reopened_shapes, _ = _docx_imported_shapes(destination)
+    reopened_drawing_identities = _docx_drawing_identities(destination)
+    require(reopened_shapes == imported, "DOCX shapes changed after independent reopen", reopened_shapes)
+    require(reopened_names == names, "DOCX OPC parts changed during reopen")
+    require(reopened_drawing_identities == drawing_identities,
+            "DOCX DrawingML object/child IDs changed after independent reopen", reopened_drawing_identities)
+    for color in ("CC8844", "20A060", "E0A060"):
+        point = _docx_shape_viewport_point(acc, color)
+        p4.rhwp_poc.click(acc.d, point[1], point[2])
+        acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+        require(acc.d.exists("[data-testid='object-handle-se']"), "reopened primitive is not selectable/editable", color)
+        acc.key("Escape")
+    require(digest(fixtures["rectangle"]) == row["sourceFixtures"]["rectangle"]["sha256"]
+            and digest(fixtures["ellipse"]) == row["sourceFixtures"]["ellipse"]["sha256"]
+            and digest(fixtures["line"]) == row["sourceFixtures"]["line"]["sha256"], "source fixture changed during conversion")
+    row["preservation"] = {"sourceHwpXBytes": True, "destinationText": True, "unrelatedOpcParts": True,
+                           "unsupportedMutation": False, "saveReopenEditable": True}
+
+
 def _docx_shape_viewport_point(acc, rgb):
     point = acc.d.js("""
       const wanted=arguments[0], target=wanted.match(/../g).map(v=>parseInt(v,16));
@@ -338,10 +630,12 @@ def _docx_shape_viewport_point(acc, rgb):
         if(!canvas||!ctx) continue;
         const image=ctx.getImageData(0,0,canvas.width,canvas.height);
         let x=0,y=0,count=0;
-        for(let i=0;i<image.data.length;i+=4) if(target.every((v,j)=>image.data[i+j]===v)) {
+        for(let i=0;i<image.data.length;i+=4) if(target.every((v,j)=>Math.abs(image.data[i+j]-v)<=48)) {
           x+=(i/4)%canvas.width; y+=Math.floor(i/4/canvas.width); count++;
         }
-        if(count<100) continue;
+        // Filled shapes produce many exact-color pixels; thin line presets may
+        // only cover a few antialiased pixels, so accept a smaller color cluster.
+        if(count<10) continue;
         const r=canvas.getBoundingClientRect(), scale=r.width/canvas.width;
         const px=r.left+x/count*scale, py=r.top+y/count*scale;
         const scroll=document.querySelector('.editor__scroll'), viewport=scroll.getBoundingClientRect();
@@ -351,8 +645,59 @@ def _docx_shape_viewport_point(acc, rgb):
       }
       return null;
     """, rgb)
-    require(point is not None, "could not find source DOCX shape fill in rendered page", rgb)
+    require(point is not None, "could not find source DOCX shape fill or stroke in rendered page", rgb)
     return point
+
+
+def p6_hx_dx_more_fresh(acc, row, b_root, out):
+    saved = out / "p6-hx-dx-more-destination.docx"
+    source_fixture = ROOT / "src-tauri/target/p6-hx-dx-more/native-fixture/destination.docx"
+    expected_hash = row["previousPackageSha256"]
+    require(saved.is_file() and digest(saved) == expected_hash,
+            "fresh-process reopen input differs from the prior T009-saved DOCX", {
+                "expected": expected_hash, "actual": digest(saved) if saved.is_file() else None,
+            })
+    require(row["appPid"] != row["previousAppPid"], "saved DOCX was not reopened in a fresh application process",
+            {"previous": row["previousAppPid"], "current": row["appPid"]})
+    source_hash = digest(saved)
+    destination = begin(acc, row, saved, out, "p6-hx-dx-more-fresh-reopen.docx")
+    require(digest(destination) == expected_hash, "fresh-process fixture copy changed saved DOCX bytes")
+    initial = row["initialSession"]
+    require(initial["status"] == "ready" and initial["dirty"] == "false" and initial["revision"] == "0",
+            "fresh-process saved DOCX did not open cleanly", initial)
+
+    names, shapes, _ = _docx_imported_shapes(destination)
+    previous = row["previousSavedPackage"]
+    require(shapes == previous["editableShapes"], "fresh process imported different editable DrawingML shapes", shapes)
+    identities = _docx_drawing_identities(destination)
+    require(identities == previous["drawingIdentities"], "fresh process changed saved DOCX drawing identities", identities)
+    source_parts, reopened_parts = _package_parts(source_fixture), _package_parts(destination)
+    require(source_parts.keys() == reopened_parts.keys() == set(names), "fresh reopen changed DOCX OPC part names")
+    require(sorted(name for name in source_parts if source_parts[name] != reopened_parts[name]) == ["word/document.xml"],
+            "fresh reopen changed unrelated DOCX package parts")
+    require(_docx_texts(source_fixture) == _docx_texts(destination), "fresh reopen changed destination text")
+
+    acc.d.js("window.p6HxDxMoreFreshPointerEvents=[]; document.addEventListener('pointerdown',e=>window.p6HxDxMoreFreshPointerEvents.push(e.isTrusted),true)")
+    selected = []
+    for label, color in (("HWPX rectangle", "CC8844"), ("HWPX ellipse", "20A060"), ("HWPX line", "E0A060")):
+        point = _docx_shape_viewport_point(acc, color)
+        event_start = acc.d.js("return window.p6HxDxMoreFreshPointerEvents.length")
+        p4.rhwp_poc.click(acc.d, point[1], point[2])
+        events = acc.d.js("return window.p6HxDxMoreFreshPointerEvents.slice(arguments[0])", event_start)
+        require(events and events[0] is True, "fresh-process selection did not use trusted pointer input", {"shape": label, "events": events})
+        acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+        require(acc.d.exists("[data-testid='object-handle-se']"),
+                "fresh-process reopened primitive is not selectable/editable", label)
+        selected.append(label)
+        acc.key("Escape")
+    require(selected == list(previous["editableShapes"]), "fresh-process shape selection list differs", selected)
+    require(digest(saved) == source_hash and digest(destination) == source_hash,
+            "fresh-process shape selection modified the durable saved file")
+    row["freshApplicationProcess"] = {"pid": row["appPid"], "previousPid": row["previousAppPid"],
+                                      "savedSha256": source_hash, "selectedEditableShapes": selected,
+                                      "sameOpcPartsAndDestinationText": True}
+    row["preservation"] = {"saveReopenInFreshProcess": True, "editableSelection": True,
+                           "unrelatedOpcParts": True, "destinationText": True, "savedBytesUnchanged": True}
 
 
 def _package_parts(path):
@@ -1781,6 +2126,8 @@ CASES = {
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
     "P6-DX-HX": p6_dx_hx,
+    "P6-HX-DX-MORE": p6_hx_dx_more,
+    "P6-HX-DX-MORE-FRESH": p6_hx_dx_more_fresh,
     "P6-HX-TYPE": p6_hx_type,
     "B1-1": b1_1,
     "B1-2": b1_2,
@@ -1817,6 +2164,16 @@ def main():
                 (args.out / "result.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
                 print(case, row["status"], row["error"], flush=True)
                 continue
+        if case == "P6-HX-DX-MORE-FRESH":
+            previous = report["cases"].get("P6-HX-DX-MORE")
+            if previous is None or previous.get("status") != "PASS" or "savedPackage" not in previous:
+                row.update(status="BLOCKED", error="P6-HX-DX-MORE did not complete its T009 save prerequisites; fresh-process acceptance was not run")
+                (args.out / "result.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+                print(case, row["status"], row["error"], flush=True)
+                continue
+            row["previousAppPid"] = previous["appPid"]
+            row["previousPackageSha256"] = previous["savedPackage"]["sha256"]
+            row["previousSavedPackage"] = previous["savedPackage"]
         p4.smoke.DRIVER_LOG = str(args.out / (case + "-driver.log"))
         try:
             with tempfile.TemporaryDirectory(prefix="geul-stage3b-") as profile:
@@ -1833,7 +2190,8 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.b_root, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE", "P6-DX-HX"} else "hwp")
+                        row["failureAppState"] = acc.status("docx" if case in {"P6-HX-DX-MORE", "P6-HX-DX-MORE-FRESH"} else
+                            "hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE", "P6-DX-HX"} else "hwp")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

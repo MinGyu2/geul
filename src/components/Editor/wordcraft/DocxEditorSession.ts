@@ -1185,16 +1185,41 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             const shape = object.portable;
             if (object.sourceFormat !== "hwpx" || object.object !== "shape" || !shape
               || shape.kind === "picture" || shape.kind === "group"
-              || shape.shapeType !== "polygon" || !shape.polygonPoints || !shape.treatAsChar || shape.textWrap !== "Square"
-              || shape.horzOffset !== 0 || shape.vertOffset !== 0 || shape.lineType !== 0
-              || shape.borderWidth !== 0 || shape.borderColor !== 0 || shape.fillType !== "solid" || shape.fillBgColor === undefined
+              || !shape.treatAsChar || shape.textWrap !== "Square" || shape.horzOffset !== 0 || shape.vertOffset !== 0
               || shape.width < 200 || shape.width > 14_400 || shape.height < 200 || shape.height > 14_400
-              || !validAltText(shape.description ?? "")) return "rejected";
-            const fill = [shape.fillBgColor & 0xff, (shape.fillBgColor >> 8) & 0xff, (shape.fillBgColor >> 16) & 0xff]
+              || shape.caption !== undefined || shape.tbMargins !== undefined || shape.tbVerticalAlign !== undefined
+              || shape.paragraphs !== undefined || !validAltText(shape.description ?? "")) return "rejected";
+            if (shape.shapeType === "polygon") {
+              if (!shape.polygonPoints || shape.rotationAngle !== 0 || shape.horzFlip || shape.vertFlip || shape.lineType !== 0
+                || shape.borderWidth !== 0 || shape.borderColor !== 0 || shape.fillType !== "solid" || shape.fillBgColor === undefined) {
+                return "rejected";
+              }
+              const fill = [shape.fillBgColor & 0xff, (shape.fillBgColor >> 8) & 0xff, (shape.fillBgColor >> 16) & 0xff]
+                .map(part => part.toString(16).padStart(2, "0")).join("");
+              return this.push({ op: "pasteHwpxPolygon", polygon: { width: shape.width, height: shape.height, fill,
+                points: shape.polygonPoints.slice(0, -1).map(({ x, y }) => [x, y]), description: shape.description ?? "" } })
+                ? "ok" : "rejected";
+            }
+            if (shape.shapeType !== "rectangle" && shape.shapeType !== "ellipse" && shape.shapeType !== "line"
+              || shape.polygonPoints !== undefined
+              || shape.borderColor > 0xffffff || (shape.lineType === 0 && (shape.borderColor !== 0 || shape.borderWidth !== 0))
+              || (shape.fillType === "solid" ? shape.fillBgColor === undefined || shape.fillBgColor > 0xffffff
+                : shape.fillBgColor !== undefined)
+              || (shape.shapeType === "line" && (shape.fillType !== "none" || shape.lineType !== 1
+                || shape.rotationAngle !== 0 || shape.horzFlip || shape.vertFlip))) {
+              return "rejected";
+            }
+            const color = (value: number) => [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff]
               .map(part => part.toString(16).padStart(2, "0")).join("");
-            return this.push({ op: "pasteHwpxPolygon", polygon: { width: shape.width, height: shape.height, fill,
-              points: shape.polygonPoints.slice(0, -1).map(({ x, y }) => [x, y]), description: shape.description ?? "" } })
-              ? "ok" : "rejected";
+            const kind = shape.shapeType === "rectangle" ? "rectangle" : shape.shapeType === "ellipse" ? "ellipse" : "line";
+            return this.push({ op: "pasteHwpxShape", shape: {
+              kind, width: shape.width, height: shape.height,
+              fill: shape.fillType === "solid" ? color(shape.fillBgColor!) : null,
+              stroke: shape.lineType === 1 ? color(shape.borderColor) : null,
+              strokeWidth: shape.lineType === 1 ? shape.borderWidth : 0,
+              rotationAngle: shape.rotationAngle, horzFlip: shape.horzFlip, vertFlip: shape.vertFlip,
+              description: shape.description ?? "",
+            } }) ? "ok" : "rejected";
           }
           if (object.version === 1) return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
           return this.push({ op: "pasteObject", payload: object.engine }) ? "ok" : "rejected";
