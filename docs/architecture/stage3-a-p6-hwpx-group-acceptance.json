@@ -1,0 +1,148 @@
+{
+  "issue": "P6-HX-GROUP",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer an editable HWPX group tree between HWPX documents while preserving child hierarchy, geometry/transforms, object identity, and owned resources.",
+  "implementation": {
+    "geulCommit": "07308fdf3b9721e11d15aa44c9448b890f7eb74c",
+    "files": [
+      "patches/rhwp/stage3a-p6-hwpx-group-clipboard.patch",
+      "scripts/rhwp-patches.py",
+      "scripts/tests/native-stage3-b.py",
+      "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts",
+      "src/commands/objectClipboard.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+      "src/components/Editor/rhwp/rhwpModule.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.ts"
+    ],
+    "api": [
+      "exportHwpxGroupClipboard",
+      "pasteHwpxGroupClipboard"
+    ],
+    "limits": {
+      "packageBytes": 8388608,
+      "ownedMediaBytes": 6291456,
+      "groupNodes": 256,
+      "nestingDepth": 8
+    },
+    "rhwp": {
+      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 66,
+      "patch": "stage3a-p6-hwpx-group-clipboard.patch",
+      "patchSha256": "aa2ef72a32f71e07d6cde1a35c74c27abb26cc396d3db31904f1e8b775b8a8eb",
+      "releaseGeneration": "ceee159417cd8adee46cf8611a41852caaa9164b09f9171d3c0808e67ea3531e",
+      "sourceTreeSha256": "a7cc33957a04da9493ad0b3f2b42172ea11c960a4b317938d8c4604dd26cb460",
+      "artifacts": {
+        "rhwp.js": "4f76535ca69d7e3968c72904fd9150b66891cc059754ebb1d0b913fa44a3d47e",
+        "rhwp_bg.wasm": "6e1c2234d43f3bf7075f4b9d58bece5085340ccb2135e037b56dd30a47e0d2cb"
+      },
+      "sharedInputs": [
+        {
+          "path": "patches/rhwp/table-calc/parser.rs",
+          "sha256": "3017bf6827a048b2beccdf2caa6931f1cfd703ee9aa2e71ca055c55937e463a5"
+        },
+        {
+          "path": "patches/rhwp/table-calc/tokenizer.rs",
+          "sha256": "4d08006b1a145ea79583a98c69ec21a5952e46c66c3efedc9cc57d42e77ad1d2"
+        },
+        {
+          "path": "patches/rhwp/table-calc/evaluator.rs",
+          "sha256": "6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1",
+          "note": "Pre-existing user-owned worktree edit at the 39-item continuation start; included in the local build input, preserved, and excluded from this issue commit. Commit-only clean reconstruction of this exact artifact is NOT VERIFIED."
+        }
+      ]
+    },
+    "releaseApplication": {
+      "path": "src-tauri/target/release/geul",
+      "sha256": "eaeebc035a4bed1d4d8a70e2a2217ef2c07c68402d21428d88ac8b74e4983653",
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED"
+    }
+  },
+  "verification": {
+    "patchApplication": "PASS",
+    "guardedRhwpReleaseBuild": "PASS; pinned RHWP source unchanged",
+    "typescriptAndViteReleaseBuild": "PASS; tsc --noEmit and production build",
+    "releaseProductIdentity": "PASS; dist/rhwp contains exactly the selected Release generation and artifact hashes",
+    "focusedWasm": "PASS; 72/72 tests",
+    "native": {
+      "status": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "eaeebc035a4bed1d4d8a70e2a2217ef2c07c68402d21428d88ac8b74e4983653",
+      "rhwpGeneration": "ceee159417cd8adee46cf8611a41852caaa9164b09f9171d3c0808e67ea3531e",
+      "cases": {
+        "P6-HX-GROUP": "PASS",
+        "P6-HX-GROUP-FRESH": "PASS"
+      },
+      "trustedPointer": "PASS",
+      "trustedCopyPasteUndoRedoKeys": "PASS",
+      "undoRedoRenderRestoration": "PASS",
+      "t009Save": {
+        "state": "saved",
+        "synced": true,
+        "changedSince": false
+      },
+      "sameProcessReopen": "PASS",
+      "freshApplicationProcessReopen": "PASS; different PID and group remains selectable",
+      "cleanup": "PASS; complete/proven/filesystemProven, zero survivors/leaks/errors"
+    },
+    "savedOpc": {
+      "sourceFileUnchanged": true,
+      "destinationBodyTextPreserved": true,
+      "groupOwnerParagraph": 1,
+      "sourceAndSavedNormalizedGroupTreeSha256": "cea6179235b256ad00896f05592fc9d60867238b2cd5bce77e77084e1a541e28",
+      "sourceAndSavedGroupPictureSha256": "11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63",
+      "changedParts": [
+        "Contents/content.hpf",
+        "Contents/section0.xml"
+      ],
+      "addedParts": [
+        "BinData/image2.png"
+      ],
+      "removedParts": [],
+      "existingDestinationMediaPreserved": {
+        "BinData/image1.png": "90506d137585e835a5063561ad0a25adbc473feeb3a127ddd9923d5db649bce7"
+      },
+      "sourceGroupObjectIds": ["0", "0", "2112123472", "2112130828", "0"],
+      "savedDestinationGroupObjectIds": ["1", "3", "5", "8", "11"],
+      "sourceGroupInstanceIds": ["0", "0", "1038381649", "1038389005", "0"],
+      "savedDestinationGroupInstanceIds": ["0", "0", "7", "10", "13"],
+      "tree": {
+        "rootChildren": ["container", "pic"],
+        "nestedChildren": ["rect", "ellipse"],
+        "editable": true,
+        "geometryAndTransformsPreserved": true,
+        "ownedImageResourceRemapped": true
+      }
+    },
+    "nativeEvidence": {
+      "result": {
+        "path": "target/p6-hx-group/native/run03/result.json",
+        "sha256": "8590b0b221b212218a6efe5b006b1b993d829609abfcd1836e4d2b3a153013f5"
+      },
+      "session": {
+        "path": "target/p6-hx-group/native/session03/session.json",
+        "sha256": "ff75b5955ed4b297627e10b0da262909b8b398106ec5d3bd66509e918b77949e"
+      },
+      "cleanup": {
+        "path": "target/p6-hx-group/native/session03/cleanup.json",
+        "sha256": "02b6de9114f5bdd90532faea6634e04868e9f8bc2f80822bebbcb6c629099b55"
+      },
+      "sourceFixtureSha256": "098968c2523c4ea84352df71a13521c50439cfea636f816916f55d0d97d0f671",
+      "destinationFixtureSha256": "c961df3f35031bd6172fe52d524e6057fcd2ab77abaef8121e9f64664ac36c66",
+      "publishedDestinationSha256": "5db5d98e0fed30ded54e3459276263d5941f7b9cb32bf7b68468f70b8ee2a167"
+    }
+  },
+  "negativeCases": {
+    "malformedPortableGroupPackage": "Truncated ZIP payload rejected; destination bytes and editor snapshot remain unchanged",
+    "tamperedNativeGroupMarker": "Rejected without document mutation",
+    "unsupportedChildPolicy": "Unsupported child/resource structures are rejected before publication; dedicated per-type Native cases were not run"
+  },
+  "remainingLimitations": {
+    "unsupportedChildren": "Group captions, nested text boxes, curves, connected lines, charts, OLE, external images, ambiguous or unowned resources are rejected. Curve transfer is separately tracked by P6-HX-CURVE.",
+    "otherPlatforms": "Wayland, Windows, and macOS NOT RUN",
+    "externalOfficeReopen": "NOT RUN",
+    "releasePortability": "NOT VERIFIED; this Release binary uses Nix store runtime dependencies"
+  }
+}
