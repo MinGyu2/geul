@@ -41,7 +41,7 @@
     "typescript": "PASS: npm run typecheck.",
     "vitest": "PASS: hwpReopenModel.test.ts 90/90; objectHit.test.ts and textBoxOwnerPath.test.ts 15/15.",
     "wordcraft": "PASS: exact pin reconstruction, nested textbox reader parse/write/reopen regression and locked compile.",
-    "protectedRelease": "PASS: GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle. Native result files record appSha256 and each live process /proc executable digest matches it. The exact --app path passed to the Native harness was not persisted, so no launch pathname is claimed. A retained Cargo Release bin-geul target at src-tauri/target/release/deps/geul-06bcdc71d016eac5 has the same SHA-256; its fingerprint lists wordcraft_engine and geul_lib dependencies. Privacy/runtime path checks PASS; portability beyond Nix runtime NOT VERIFIED.",
+    "protectedRelease": "PASS before storage cleanup: GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle. Native result files record appSha256 and every live process /proc executable digest matches it. Before cleanup, the exact SHA-256 also matched the generated Cargo Release bin-geul target at src-tauri/target/release/deps/geul-06bcdc71d016eac5; its fingerprint listed wordcraft_engine and geul_lib. The run record does not retain the --app argument path. That generated build target was later removed by the user-requested cargo clean. Privacy/runtime path checks PASS; portability beyond Nix runtime NOT VERIFIED.",
     "nativeX11": "PASS 10/10 actual Linux X11/Xvfb cases with private IBus Hangul; HWP/HWPX/DOCX nested pictures and shapes selected by trusted pointer input, edited, Undo/Redo, saved and reopened.",
     "cleanup": "PASS for both X11 sessions: complete/proven/filesystemProven, exit 0 in run summary, no survivors or process errors; post-run scan found no matching test processes.",
     "externalOffice": "NOT RUN",
@@ -220,7 +220,8 @@
         "wordcraft_engine",
         "geul_lib"
       ],
-      "launchPath": "NOT RECORDED; the native harness accepts an --app override and the run record stores process hashes, not the command-line path."
+      "launchPath": "NOT RECORDED; the harness accepts an --app override and its run record stores process hashes, not the command-line path.",
+      "status": "SHA-256 and bytes verified before user-requested cargo clean; generated build target was deleted after acceptance. Native result JSON retains app/process hashes."
     }
   },
   "otherPlatforms": {
@@ -230,5 +231,6 @@
     "externalOffice": "NOT RUN",
     "portability": "NOT VERIFIED outside Nix runtime dependencies."
   },
-  "push": "NOT PERFORMED"
+  "push": "NOT PERFORMED",
+  "acceptanceDocumentationCommit": "d4d3d55a9b9492ea37247d0f7b1c437fda41cf15"
 }
