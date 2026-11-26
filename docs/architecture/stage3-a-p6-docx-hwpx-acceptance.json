@@ -1,0 +1,71 @@
+{
+  "issue": "P6-DX-HX",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer supported DOCX shapes into editable HWPX objects with verified geometry and formatting mapping.",
+  "implementation": {
+    "geulCommit": "b948f2baa49fb3100c520970ba6f158f308da246",
+    "parentCommit": "879034a5bd0c0050cf42c0d6c6e2867bbadce3d0",
+    "files": [
+      "scripts/tests/native-stage3-b.py",
+      "src/commands/objectClipboard.test.ts",
+      "src/commands/objectClipboard.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts"
+    ],
+    "payloadVersion": 4,
+    "supportedSourceObjects": [
+      "editable inline DOCX rectangle",
+      "editable inline DOCX ellipse",
+      "editable inline DOCX line"
+    ],
+    "mapping": "The source engine model is independently converted to a validated portable HWPX shape. The receiving HWPX session rechecks the envelope and recomputes the DOCX mapping before using it. Geometry is converted from EMU/points to HWPUNIT; supported fill, stroke, stroke width, rotation, flips, and description are preserved.",
+    "preservation": "Source DOCX package bytes and OPC parts remain unchanged. The HWPX target receives one editable native shape with stable document ownership. T009 saves only Contents/section0.xml for the exercised transfer; destination OPC part names, BinData, and unrelated resources remain unchanged. Undo/Redo and fresh-session save/reopen preserve the shape.",
+    "rejections": "Floating anchors, custom/freeform/triangle shapes, text boxes, media, actual effects, unknown metadata/envelopes, or a tampered portable payload reject before target mutation. Source spin compensation is accepted only when it exactly corresponds to the zero source wp:effectExtent; nonzero effects remain unsupported.",
+    "dependencies": {
+      "wordcraftGitlink": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    }
+  },
+  "verification": {
+    "focusedVitest": "PASS 10/10",
+    "typescriptTypecheck": "PASS",
+    "nativeHarnessPythonSyntax": "PASS",
+    "guardedReleaseBuild": {
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "3bdf73adec39b5337dfece6e14499204e9ef91371efb9a3c440e9ecf04f98b81",
+      "bytes": 63514584,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; Nix store runtime dependencies"
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-DX-HX attempt07",
+      "trustedPointerAndClipboard": "PASS",
+      "undoRedo": "PASS; HWPX revisions 1/2/3",
+      "t009": "PASS; saved=true, synced=true, changedSince=false",
+      "freshSessionReopenAndSelection": "PASS",
+      "resultJsonSha256": "9d10f89cac4aedc0acd949f004c53b4428853f28b28dac91d6af58222eb1593c",
+      "sessionSha256": "38e4028c848eb2361f5d89f5108936d81ff805d5d363aebfd3e178098cae98fc",
+      "cleanupSha256": "387295aed6193fb5774e8ec22a0d8551758a03b3059a9110fd33bdde7265bc87",
+      "cleanup": "PASS; complete and proven, exit 0, no survivors or errors"
+    },
+    "savedHWPX": {
+      "sha256": "f8d18c3e9e630d3efbac1f7901f54e89e3fa935f5ddcde02cca5a79c8f68b7c4",
+      "independentStructureInspection": "PASS; one editable ellipse, 7761x4586 HWPUNIT, fill 4491468, border 3351057 at width 35, rotation 90 degrees, vertical flip, description preserved",
+      "opcPreservation": "PASS; only Contents/section0.xml changed; all 12 part names and BinData bytes preserved",
+      "sourceDOCXImmutability": "PASS; source bytes and OPC parts unchanged"
+    },
+    "negativeCases": {
+      "unsupportedTriangle": "PASS; rejected before mutation, target stayed clean at revision 0, refusal output matched fixture SHA-256 1b316c448d4cd885bff1b2dfd87f06f5b47f3dc4309defff4b6f1d49fe0ffad4",
+      "tamperedPortablePayload": "PASS; rejected before mutation, target stayed clean at revision 0"
+    }
+  },
+  "limitations": [
+    "This is structured object transfer for the listed inline primitives, not full-document format conversion.",
+    "Other shape types, floating objects, text boxes, media, effects, and unknown source structures remain fail-closed.",
+    "Wayland, Windows, macOS, and external Office/Hancom reopen were NOT RUN.",
+    "Nix-independent portability and committed-root-only reproduction with the preserved user-owned evaluator edit were NOT VERIFIED."
+  ]
+}
