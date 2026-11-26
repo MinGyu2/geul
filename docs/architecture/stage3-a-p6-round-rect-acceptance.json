@@ -43,5 +43,6 @@
     "evidence": "stage3-a-native-p4-p5-p6-acceptance.json"
   },
   "evidence": "target/stage3a-p6-round-rect/",
-  "implementationCommit": "778573e874db221e68765c86b9608d4889990e86"
+  "implementationCommit": "778573e874db221e68765c86b9608d4889990e86",
+  "supersededBy": "stage3-a-p6-dx-type-extended-acceptance.json; the original narrow roundRect evidence remains valid for its canonical inline case."
 }

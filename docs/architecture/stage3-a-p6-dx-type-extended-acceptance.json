@@ -1,0 +1,168 @@
+{
+  "issue": "P6-DX-TYPE",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Safely extend DOCX shape-type changes to supported floating shapes, effects, and custom preset adjustments.",
+  "supportedScope": {
+    "source": "Owned top-level DOCX body DrawingML rounded rectangle (`roundRect`).",
+    "target": "Rectangle preset (`rect`).",
+    "extendedEnvelope": [
+      "floating `wp:anchor` with preserved placement/wrap attributes",
+      "supported DrawingML glow effect and matching WordprocessingML effect extent",
+      "ordered preset adjustment list (`a:gd` name/formula), including `adj=val 25000`"
+    ],
+    "gate": "Extended envelopes expose the conversion only when a complete body no-op export round-trips the original source XML exactly. The operation changes only the shape preset; unsupported envelopes remain unavailable and reject atomically."
+  },
+  "implementation": {
+    "rootCommits": [
+      {
+        "role": "WordCraft model and geul adapter/T009 integration",
+        "commit": "851585bbf905e9e8ca4e8d60383b8b4550d2441f",
+        "parent": "e58a57aac1cd2ebb2ff5114b61db8b6b17f6d5bf"
+      },
+      {
+        "role": "fresh-process Native acceptance harness",
+        "commit": "1eb41e2976b32cc47e00f1e9294ad43dabf66dbd",
+        "parent": "851585bbf905e9e8ca4e8d60383b8b4550d2441f"
+      }
+    ],
+    "wordcraft": {
+      "pin": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "tree": "51acd8810518a1a13cc722dbabf7d94a88da1c47",
+      "parent": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee",
+      "patchSha256": "7da92df4fac381eaec084ac286209b7abfec92a15342c22ba797434c3b1bfd1c",
+      "reconstruction": "Fresh public-base reconstruction verified the exact reviewed pin without alternates. A first local commit object was rejected by the mandatory sensitive-information hook; the final local pin uses a sanitized reconstruction identity with the same parent, tree, message, and patch. No hook was bypassed."
+    },
+    "files": [
+      "external/wordcraft (gitlink)",
+      "patches/wordcraft/docx-preset-adjustments.commit",
+      "patches/wordcraft/docx-preset-adjustments.patch.b64",
+      "scripts/prepare-wordcraft.py",
+      "scripts/tests/native-stage3a-p6.py",
+      "scripts/tests/native-stage3-c.py",
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src-tauri/src/adapters/wordcraft/tests.rs"
+    ],
+    "api": "Existing shape conversion action; preset adjustment parser/writer now preserves bounded ordered `a:gd` metadata losslessly."
+  },
+  "preservation": {
+    "t009": "PASS; whole-body no-op roundtrip gate is required for the extended envelope. Supported conversion produces the exact expected source-to-output change.",
+    "opc": "PASS; 9 OPC parts retained. Only `word/document.xml` changed; replacing `prst=\"roundRect\"` with `prst=\"rect\"` in the source XML exactly reproduces the saved part.",
+    "preserved": [
+      "floating anchor envelope and wrap/placement attributes",
+      "drawing identity and description",
+      "extent",
+      "custom adjustment name/formula/order",
+      "supported glow effect and effect extent",
+      "all relationships and media",
+      "all unrelated OPC parts"
+    ],
+    "undoRedo": "PASS; one Undo restores the complete source package and one Redo restores the converted package.",
+    "rejection": "PASS; unsupported shadow effect does not expose a conversion target, rejects the command, leaves package/history unchanged, and does not create an Undo entry.",
+    "reopen": "PASS; WordCraft independent read and application same-session and separate-process reopen identify the editable rectangle."
+  },
+  "verification": {
+    "focusedRust": {
+      "result": "PASS 1/1",
+      "test": "stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape"
+    },
+    "canonicalRust": {
+      "result": "PASS 1/1",
+      "test": "stage3a_p6_docx_converts_canonical_round_rect_to_rect"
+    },
+    "wordcraftCi": {
+      "result": "PASS",
+      "command": "cargo xtask ci",
+      "gates": "all six required gates"
+    },
+    "wordcraftReconstruction": {
+      "result": "PASS",
+      "command": "python3 scripts/prepare-wordcraft.py"
+    },
+    "release": {
+      "result": "PASS",
+      "command": "npm run tauri -- build --no-bundle",
+      "appSha256": "5f4a3407c3c959c3ab132bec437fbe279eb64b5627e26098143614b95ab6c04e",
+      "bytes": 63553784,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; Nix store runtime dependencies",
+      "rhwpGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "rhwpJsSha256": "96a212ef1431110b89638c77fefc4236ea705d2deb582791ab151414f76534f6",
+      "rhwpWasmSha256": "9bda2bc097ffded47c0ed2948a8b731fb4a0bec92dd1b56b1dbded8ae89f64b4"
+    },
+    "fixtures": {
+      "originalSha256": "6533e03f75779c6d7a21f52ab780d34494f67a141aed8d2fd0f40dd473d04680",
+      "publishedSha256": "05f513937ba2b7a4955fd3c447eb79376b6242ad82139c75a01a4da86e77b973",
+      "independentInspection": "PASS; source and saved OPC member lists match; floating anchor, roundRect-to-rect preset, adjustment `adj=val 25000`, glow radius 25400, IDs, extents, and unrelated parts independently inspected."
+    },
+    "native": {
+      "result": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul; two independent sessions",
+      "primary": {
+        "case": "P6-DX-TYPE",
+        "appPid": 1848517,
+        "trustedPointer": "PASS",
+        "undoRedoRevisions": [
+          0,
+          3
+        ],
+        "t009": {
+          "state": "saved",
+          "synced": true,
+          "changedSince": false
+        },
+        "sameProcessReopen": "PASS; frame 144x96 at (96,256.265587) preserved"
+      },
+      "freshProcess": {
+        "case": "P6-DX-TYPE-FRESH",
+        "appPid": 1848792,
+        "distinctAppProcess": true,
+        "editableAction": "타원으로 변경",
+        "frameMatch": "PASS",
+        "savedCopySha256": "05f513937ba2b7a4955fd3c447eb79376b6242ad82139c75a01a4da86e77b973"
+      },
+      "cleanup": "PASS; both sessions complete/proven/filesystemProven with no survivors or process errors",
+      "evidence": [
+        {
+          "path": "target/p6-dx-type/native/attempt01/primary-results/result.json",
+          "sha256": "19198e400e2fa86d5d442ec2dedff354288893b3060f0ce65688bbaf54da1bc2"
+        },
+        {
+          "path": "target/p6-dx-type/native/attempt01/primary-session/session.json",
+          "sha256": "ca5728e5dde88e0713d182a1526427fbe15f6d36db8273a385fe8373aee2017d"
+        },
+        {
+          "path": "target/p6-dx-type/native/attempt01/primary-session/cleanup.json",
+          "sha256": "1737097478117ed4cacefc6e8fd426e2dcae9df61d48dffa7e3560c933d53317"
+        },
+        {
+          "path": "target/p6-dx-type/native/attempt01/fresh-results/result.json",
+          "sha256": "fcea78d03103640c633382e016cab4f48f144e6e99c06d1a8f32334a12588e30"
+        },
+        {
+          "path": "target/p6-dx-type/native/attempt01/fresh-session/session.json",
+          "sha256": "e45937069e4b2d503a19a18ca175a40d0a88c18e5c7b124e4569a972178f30d0"
+        },
+        {
+          "path": "target/p6-dx-type/native/attempt01/fresh-session/cleanup.json",
+          "sha256": "19c95637010d35f01d5ad321b54ddd71b7900d2bb88f74977aa7b1ca6a9d0b00"
+        }
+      ]
+    },
+    "separateRegressionFailure": {
+      "result": "FAIL; not caused or repaired by this issue and remains open for follow-up",
+      "test": "stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import",
+      "finding": "The broader adapter regression run reported a P6-HX-DX-MORE freeform T009 reopen mismatch (`Freeform.drawingml`: None -> Some). It is outside P6-DX-TYPE; root cause and clean-baseline status have not yet been established."
+    },
+    "externalOffice": "NOT RUN",
+    "wayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macOS": "NOT RUN"
+  },
+  "limitations": [
+    "Only body-owned top-level DrawingML shape conversions surfaced by the existing action are in scope.",
+    "Extended float/effect/adjustment envelopes are accepted only after exact complete-body no-op roundtrip. Unsupported effects/metadata are fail-closed.",
+    "No external Microsoft Office interoperability or non-Linux platform result is claimed."
+  ],
+  "evidence": "Native results and fixture files are retained under target/p6-dx-type/native/attempt01 and src-tauri/target/p6-dx-type/fixtures."
+}
