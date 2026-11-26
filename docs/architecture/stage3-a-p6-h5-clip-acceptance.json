@@ -1,0 +1,218 @@
+{
+  "issue": "P6-H5-CLIP",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "HWP5-to-HWP5 inter-document structured clipboard transfer with destination identity, DocInfo/style and BinData remapping, exact body ownership, source immutability, and atomic refusal.",
+  "implementation": {
+    "geulCommit": "b8559d9997b6ed1c1334bfd16b7c7f653be12f45",
+    "parentCommit": "9f4be4c0a533cd21d92bb7d4a8242cd0420d30d0",
+    "files": [
+      "patches/rhwp/stage3a-p6-hwp5-object-clipboard.patch",
+      "scripts/rhwp-patches.py",
+      "scripts/tests/native-stage3-b.py",
+      "src-tauri/src/services/save/hwp/insertions.rs",
+      "src/commands/objectClipboard.test.ts",
+      "src/commands/objectClipboard.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/rhwpModule.ts"
+    ],
+    "api": [
+      "exportHwp5ControlClipboard",
+      "pasteHwp5ControlClipboard"
+    ],
+    "clipboardEnvelope": {
+      "format": "Standalone HWP5 CFB fragment, one selected body control per operation",
+      "maximumSerializedBytes": 8388608,
+      "maximumBase64Characters": 11184812,
+      "validatedControlKinds": [
+        "Table",
+        "Picture",
+        "Shape"
+      ],
+      "validation": "One section, one control-only paragraph, exact generated section/column controls, existing paragraph-block reference and ownership validation, reachable BinData only; unsupported/ambiguous structures rejected."
+    },
+    "remapping": "Existing paragraph-block staged importer carries referenced DocInfo/styles/paragraph shapes/character shapes and BinData into destination-owned IDs; object and picture IDs are allocated without destination aliases. All fallible parsing/resource/ID staging completes before destination mutation.",
+    "t009PictureIdentity": "Preserve nonzero HWP5 Picture component instance IDs and admit new ones only when document-wide unique; zero remains valid.",
+    "rhwp": {
+      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 67,
+      "patch": "stage3a-p6-hwp5-object-clipboard.patch",
+      "patchSha256": "af5de5fa46fc159fd70b78fdc7112514665ef99ffd362126a8307234408315a4",
+      "sourceTreeSha256": "05a8dfe50351762fe34b173bedf580f7c4cd3788914dadf42bd6e84e68ce0607",
+      "releaseGeneration": "2a2a78af2894726e1fa99b86ec63af96e9a5bd7a795ed3649c6981a60f797d77",
+      "artifacts": {
+        "rhwp.js": "4dc988334cbf5d640f7806122b0ad3cba01f6bb38aff78fbd7be2045aa505dcc",
+        "rhwp_bg.wasm": "39db6e68c6f5bd31a9f013b5b084caee59afa7bf1802b9819efad2a35c0863c4"
+      },
+      "tools": {
+        "cargo": "1.99.1",
+        "rustc": "1.99.1",
+        "wasm-bindgen": "0.2.127"
+      },
+      "sharedInputs": [
+        {
+          "path": "patches/rhwp/table-calc/evaluator.rs",
+          "sha256": "6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1",
+          "note": "Pre-existing user-owned unstaged work was preserved and included in the local build source identity. A clean committed-root reconstruction of this exact artifact is therefore NOT VERIFIED."
+        }
+      ]
+    },
+    "releaseApplication": {
+      "path": "src-tauri/target/release/geul",
+      "sha256": "a086e0702ba2a09b02e77bcef8131d429bc766679a7f9687c4f68619e723db5e",
+      "bytes": 63489728,
+      "profile": "Release; no bundle",
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; binary uses Nix store runtime dependencies"
+    }
+  },
+  "verification": {
+    "frontendTest": {
+      "command": "npm test -- src/commands/objectClipboard.test.ts",
+      "result": "PASS 8/8"
+    },
+    "typescript": {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    "harnessSyntax": {
+      "command": "python3 -m py_compile scripts/tests/native-stage3-b.py",
+      "result": "PASS"
+    },
+    "geulT009": {
+      "command": "python3 scripts/cargo-geul.py test --lib inserted_root_picture_accepts_unique_hwp_instance_id",
+      "result": "PASS 1/1"
+    },
+    "rhwpEngine": {
+      "source": "Isolated copy of exact prepared pinned RHWP source with authentic pinned fixtures",
+      "tests": {
+        "hwp5_object_fragment": "PASS 1/1",
+        "hwp5_shape_fragment": "PASS 1/1"
+      },
+      "broaderSupplementalFilter": {
+        "filter": "hwp5_",
+        "result": "FAIL: 52 passed, 10 failed of 62",
+        "cause": "Sparse isolated test copy omitted upstream runtime sample fixtures; the ten failures were missing-fixture errors. This result is not counted as PASS."
+      }
+    },
+    "guardedRhwpRelease": {
+      "result": "PASS",
+      "command": "python3 scripts/build-rhwp-wasm.py (locked wasm-bindgen 0.2.127)",
+      "externalSourceUnchanged": true,
+      "publishedGeneration": "2a2a78af2894726e1fa99b86ec63af96e9a5bd7a795ed3649c6981a60f797d77",
+      "productVerification": "PASS; dist/rhwp exact Release product contains the selected generation and matching artifact hashes"
+    },
+    "guardedTauriRelease": {
+      "command": "npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "viteTypeScriptBuild": "PASS"
+    },
+    "releasePathScan": {
+      "result": "PASS",
+      "forbiddenPaths": 0,
+      "portability": "NOT VERIFIED"
+    },
+    "native": {
+      "status": "PASS",
+      "harness": "scripts/tests/native-stage3-b.py; case P6-H5-CLIP",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "a086e0702ba2a09b02e77bcef8131d429bc766679a7f9687c4f68619e723db5e",
+      "rhwpGeneration": "2a2a78af2894726e1fa99b86ec63af96e9a5bd7a795ed3649c6981a60f797d77",
+      "trustedPointerSelection": "PASS; trusted pointerdown and pointerup",
+      "undoRedo": {
+        "pasteRevision": "1",
+        "undoRevision": "2",
+        "redoRevision": "3"
+      },
+      "t009Save": {
+        "state": "saved",
+        "synced": true,
+        "changedSince": false,
+        "revision": "3",
+        "error": "",
+        "findings": ""
+      },
+      "sameApplicationCloseReopen": "PASS; both copied and pre-existing destination pictures selectable",
+      "freshApplicationProcessReopen": "NOT RUN",
+      "sourceImmutability": {
+        "bytes": true,
+        "model": true
+      },
+      "malformedClipboard": "Atomic refusal; destination revision/dirty/file hash unchanged",
+      "cfbPreservation": {
+        "sourceFixtureSha256": "cb594d462b62d6f6432b8fc6db6a393d1af6a7c74e8b72396b4da7ebc0d31822",
+        "destinationFixtureSha256": "188cb6fed8cecdecca67a7dfa244f29bba9f7695732b404c804d6652bb81c1b1",
+        "savedDestinationSha256": "8c83d626e8c528ad94c0b91e35c7f1757a23cc1ef3530127935fe28cd439cda4",
+        "changedExistingStreams": [
+          "BodyText/Section0",
+          "DocInfo",
+          "PrvImage"
+        ],
+        "addedStreams": [
+          "BinData/BIN0002.png"
+        ],
+        "retainedMedia": [
+          "BinData/BIN0001.png"
+        ],
+        "removedStreams": [],
+        "unrelatedStreamsUnchanged": true,
+        "docInfoBinDataMapping": {
+          "oldBinDataIds": [
+            1
+          ],
+          "newBinDataId": 2,
+          "pictureBinDataIds": [
+            1,
+            2
+          ],
+          "unrelatedDefinitionsPreserved": true
+        },
+        "preview": {
+          "width": 724,
+          "height": 1024,
+          "crcValid": true,
+          "rgb8": true,
+          "filter0": true,
+          "renderedRaster": [
+            725,
+            1024
+          ],
+          "nonWhitePixels": 1857,
+          "nonUniform": true
+        }
+      },
+      "nativeEvidence": {
+        "result": {
+          "path": "target/p6-h5-clip/native/attempt06/results/result.json",
+          "sha256": "ac636bd854343e172fe2c11a7671722b949f8f85346ca24f50c10227212cb7d8"
+        },
+        "cleanup": {
+          "path": "target/p6-h5-clip/native/attempt06/session/cleanup.json",
+          "sha256": "b18d017123dc4b5470d6a9728ec389723ec5c47214e5fe3ff2379249713b389d",
+          "complete": true,
+          "exit": 0,
+          "proven": true,
+          "filesystemProven": true,
+          "survivors": [],
+          "processErrors": []
+        },
+        "appPid": 1474872
+      }
+    }
+  },
+  "engineEvidence": {
+    "sourceImmutability": "Serialized source remains byte-identical after fragment export.",
+    "identityAndStyleRemap": "Picture and rectangle fragments; object/picture IDs do not alias destination; BinData remapped; source style, paragraph style, character shape, paragraph shape and geometry survive saved HWP5 reopen.",
+    "negativeCases": [
+      "Invalid CFB fragment rejected before mutation.",
+      "A second/ambiguous control is rejected before mutation; serialized destination remains unchanged."
+    ]
+  },
+  "remainingLimitations": {
+    "scope": "One individually selected, validated body control per operation; unsupported story owners, captions, ambiguous nested structures and malformed/unknown packages remain fail-closed.",
+    "coverage": "Native transfer scenario exercised a picture; RHWP engine tests exercised picture and rectangle shape. No dedicated table Native case was run.",
+    "platforms": "Wayland, Windows, macOS and external Office/Hancom reopen NOT RUN.",
+    "portability": "Nix runtime portability NOT VERIFIED.",
+    "reproducibility": "The pre-existing user-owned RHWP evaluator edit was preserved and included in this local build; committed-root-only exact artifact reconstruction NOT VERIFIED."
+  }
+}

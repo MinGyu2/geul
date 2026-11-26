@@ -460,6 +460,16 @@ Guarded Release app SHA-256 `8602915877ec840f74890825d60649ecbf48ca35459c696e9b3
 
 **Stage 3-A P6 고급 개체 구조 (2026-11-20) — PARTIAL_SUPPORT.**
 
+#### P6-H5-CLIP HWP5 개체 간 구조 클립보드 (2026-11-26)
+
+**IMPLEMENTED_VERIFIED — 검증된 단일 본문 객체 전송.** `exportHwp5ControlClipboard` / `pasteHwp5ControlClipboard`는 최대 8 MiB의 독립 HWP5 CFB fragment에 선택된 body Table/Picture/Shape 한 개와 도달 가능한 BinData를 담는다. 수신 문서는 paragraph-block staged importer를 통해 목적지 object/picture ID, BinData, DocInfo 및 문단·문자 모양 참조를 재매핑한다. source model/bytes는 바뀌지 않고, 오브젝트/reference 검증과 모든 자원·ID 준비가 완료되기 전에는 대상에 쓰지 않는다. 형식이 손상됐거나 두 번째 객체·모호한 owner·지원하지 않는 구조는 fail-closed다.
+
+Focused Vitest 8/8, TypeScript typecheck, harness syntax, geul T009 picture-instance uniqueness 1/1, RHWP `hwp5_object_fragment` 1/1 및 `hwp5_shape_fragment` 1/1 PASS. 추가 `hwp5_` broad filter는 분리된 시험 복제본에 upstream runtime fixture corpus가 없어 52 PASS / 10 FAIL(누락 fixture)였으며 PASS로 계산하지 않았다. 보호된 RHWP Release generation `2a2a78af2894726e1fa99b86ec63af96e9a5bd7a795ed3649c6981a60f797d77`, source tree `05a8dfe50351762fe34b173bedf580f7c4cd3788914dadf42bd6e84e68ce0607`, patch 67 SHA `af5de5fa46fc159fd70b78fdc7112514665ef99ffd362126a8307234408315a4`; guarded Tauri Release app SHA `a086e0702ba2a09b02e77bcef8131d429bc766679a7f9687c4f68619e723db5e`. 앱과 RHWP source가 pre-existing user-owned `patches/rhwp/table-calc/evaluator.rs` 변경을 포함하므로 이 정확한 산출물의 committed-root-only 재현은 NOT VERIFIED다.
+
+Linux X11/Xvfb + private D-Bus/IBus Hangul Release Native attempt06에서 trusted pointer로 원본 picture를 고르고 다른 HWP 문서에 붙여넣었다. Paste/Undo/Redo revision 1/2/3, 실제 T009 save `saved; synced=true; changedSince=false`, 저장 CFB 독립 검사, 같은 앱에서 닫고 다시 열기 및 두 그림 선택이 PASS했다. 원본 fixture bytes/model은 같았다. 기존 `BIN0001` 보존, `BIN0002` 하나 추가, DocInfo BinData id 1→2 및 picture ids `[1,2]`; `BodyText/Section0`, `DocInfo`, `PrvImage`만 수정되고 무관 stream/정의는 그대로였다. PrvImage는 CRC-valid RGB8 724×1024였고 새 725×1024 실제 raster는 nonuniform이다. malformed MIME/CFB paste는 문서와 파일을 바꾸지 않고 거부했다. 저장 HWP SHA `8c83d626e8c528ad94c0b91e35c7f1757a23cc1ef3530127935fe28cd439cda4`; source/destination fixture SHA `cb594d462b62d6f6432b8fc6db6a393d1af6a7c74e8b72396b4da7ebc0d31822` / `188cb6fed8cecdecca67a7dfa244f29bba9f7695732b404c804d6652bb81c1b1`. [P6-H5-CLIP acceptance JSON](architecture/stage3-a-p6-h5-clip-acceptance.json)에 result/cleanup hashes와 세부 CFB proof가 있다.
+
+Engine test는 picture와 rectangle shape의 ID·style·geometry/resource remapping 및 save/reopen을 확인했다. Native scenario는 picture만 실행했고 table용 별도 Native case는 NOT RUN이다. caption, nested/ambiguous story ownership, unsupported shape/control types와 일반 문서 변환은 이 항목에서 허용하지 않는다. Wayland, Windows/macOS 및 외부 한컴/Office 재열기 NOT RUN; Release portability NOT VERIFIED. 구현 커밋 `b8559d9997b6ed1c1334bfd16b7c7f653be12f45`.
+
 #### P6-HX-GROUP HWPX 중첩 그룹 전송 (2026-11-26)
 
 **IMPLEMENTED_VERIFIED — 지원되는 편집 가능 그룹 트리와 소유 리소스.** `exportHwpxGroupClipboard` / `pasteHwpxGroupClipboard`는 크기 제한이 있는 독립 HWPX 패키지로 중첩 그룹·사각형·타원·소유 그림을 다른 HWPX 문서에 전송한다. 대상 문서에서는 자식 순서, 그룹 계층, geometry/transform, 그림 바이트를 보존하고 대상 object/instance ID와 BinData 관계를 새로 연결한다. unsupported children, 외부·모호·미소유 리소스는 게시 전에 거부한다.
@@ -470,7 +480,7 @@ Guarded Release app SHA-256 `8602915877ec840f74890825d60649ecbf48ca35459c696e9b3
 
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
-| P6.1 구조 클립보드 | HWPX 본문 폐합 다각형 및 지원되는 중첩 그룹 트리를 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, geometry·속성, 원본과 대상 형제 및 소유 미디어 보존. [그룹 저장·재열기 증거](architecture/stage3-a-p6-hwpx-group-acceptance.json); HWP5 교차 문서 리소스 매핑과 HWPX 곡선은 남아 있다. |
+| P6.1 구조 클립보드 | HWPX 본문 폐합 다각형 및 지원되는 중첩 그룹 트리를 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, geometry·속성, 원본과 대상 형제 및 소유 미디어 보존. [그룹 저장·재열기 증거](architecture/stage3-a-p6-hwpx-group-acceptance.json); HWP5 같은 형식의 기본 객체 전송은 P6-H5-CLIP에서 수락했고, HWPX 곡선과 HWPX→HWP5 변환은 남아 있다. |
 | P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경. 원본 본문 XML 왕복이 일치하는 기본 `roundRect`에서 `rect`로 변환 | 둥근 사각형 변환은 집중 Rust·T009·독립 OPC 검사·재열기 및 X11·Wayland PASS. 사용자 조정·비슷한 프리셋 정규화는 거부한다. [검증 기록](architecture/stage3-a-p6-round-rect-acceptance.json) |
 | P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
 | P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 지원 열 기준 부유 그림에 좌우 위치와 위·가운데·아래 세로 정렬을 제공한다. Linux X11 실제 속성 편집, 각각 Undo/Redo, 안전 게시, 독립 XML/배치 검사와 앱 재열기 PASS다. 인라인 그림의 좌우 배치, 그룹 캡션, DOCX/HWP5 위치 변경은 남아 있다. [좌우 배치·정렬 수락](architecture/stage3-a-p6-caption-lateral-acceptance.json) |
