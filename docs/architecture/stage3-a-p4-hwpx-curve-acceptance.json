@@ -237,5 +237,28 @@
       "representativeSampleSha256": "b3ed3d5c4f0f95f9a8990b17720da3bef566b5a36174153aa3def28fd46e6029",
       "scopeLimit": "Observational sample evidence only; not proof that proprietary extensions do not exist."
     }
+  },
+  "officialHancomModel": {
+    "repository": "https://github.com/hancom-io/hwpx-owpml-model",
+    "commit": "1453388472c703a4b299a0834f425cdac16644b9",
+    "reviewedAt": "2026-11-27",
+    "files": [
+      {
+        "path": "OWPML/Class/Para/CurveType.h",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/CurveType.h",
+        "finding": "CCurveType stores repeated CSeg child objects."
+      },
+      {
+        "path": "OWPML/Class/Para/seg.h",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/seg.h",
+        "finding": "CSeg model fields are type, x1, y1, x2 and y2; it declares no Bezier control coordinates or extra children."
+      },
+      {
+        "path": "OWPML/Class/Para/seg.cpp",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/seg.cpp",
+        "finding": "ReadAttribute/WriteElement map exactly type, x1, y1, x2 and y2."
+      }
+    ],
+    "scope": "This official implementation corroborates the current revision 03 schema; it does not rule out private extensions or authentic samples that are not public."
   }
 }
