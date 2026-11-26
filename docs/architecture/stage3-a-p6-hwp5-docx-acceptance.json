@@ -1,0 +1,121 @@
+{
+  "issue": "P6-H5-DX",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer supported HWP5 body primitive shapes into editable DOCX DrawingML while preserving ownership, geometry, formatting, source bytes, destination OPC structure, safe rejection, Undo/Redo, and durable reopen.",
+  "implementation": {
+    "geulCommit": "00fab440062578db51ded91e0f44133b0c9f8fd9",
+    "parentCommit": "0977f884a16d3817864c8596eab1f7257bfb988e",
+    "payloadVersion": 5,
+    "supportedSourceObjects": [
+      "HWP5 body Rectangle",
+      "HWP5 body Ellipse",
+      "HWP5 body Line"
+    ],
+    "targetStructure": "Editable DOCX body DrawingML preset shape with a unique wp:docPr ID.",
+    "mapping": "The HWP5 source model is validated into a bounded portable shape snapshot. HWPUNIT dimensions, rotation, flips, fill, stroke, stroke width, and description are mapped by the existing DOCX shape insertion adapter. Same-format HWP5 structural clipboard remains available.",
+    "rejected": [
+      "rounded HWP5 shape",
+      "malformed portable geometry",
+      "unsupported portable shape types",
+      "ambiguous or unexpected payload fields"
+    ],
+    "dependencies": {
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    }
+  },
+  "verification": {
+    "typescriptTypecheck": "PASS",
+    "focusedVitest": "PASS 10/10 object clipboard tests",
+    "scopedEslint": "PASS",
+    "nativeHarnessPythonSyntax": "PASS",
+    "diffCheck": "PASS",
+    "guardedReleaseBuild": {
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "5c9dd046c867b8059bfea7b1ddb6b3ebcb9f6a296d1b77f2f7bed10cfc24fa7e",
+      "bytes": 63630528,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; Nix store runtime dependencies"
+    },
+    "wordcraftReconstruction": "PASS; exact pinned Gitlink",
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-H5-DX attempt05",
+      "environment": "Linux X11/Xvfb, private D-Bus, IBus Hangul",
+      "appSha256": "5c9dd046c867b8059bfea7b1ddb6b3ebcb9f6a296d1b77f2f7bed10cfc24fa7e",
+      "processAppSha256": "5c9dd046c867b8059bfea7b1ddb6b3ebcb9f6a296d1b77f2f7bed10cfc24fa7e",
+      "rhwpGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "fixtureHashes": {
+        "sourceHwpRectangle": "d9cd9a8d23626ea17837d8d17ce88c51e4ac791e210f8558b828476430494825",
+        "sourceHwpEllipse": "565f0847ac2d44b036a7eba034cd516536cb454037331acd53204971adb2a04e",
+        "sourceHwpLine": "15feeafa74c9c2fccff80e39c65acd427da02b6d7fb395d852e75dc3c3cd84f7",
+        "unsupportedRoundedHwp": "45952cdc3695d593148ce2a70a27e6ab5092ca335d4c7b7139be1fcb728856e1",
+        "destinationDocx": "1bba58cebb6d474c6a7f480697d6a3f11282af97e5e6c1b5d7bec1c6de8522e5"
+      },
+      "trustedPointerAndClipboard": "PASS for source selection/copy and destination paste",
+      "undoRedo": "PASS for rectangle, ellipse, line; exact canvas digest restored on Undo and reproduced on Redo",
+      "t009": "PASS; saved, synced, changedSince=false at revision 9",
+      "mappedDrawingMl": {
+        "rectangle": {
+          "docPrId": 2,
+          "preset": "rect",
+          "extentEmu": [
+            322580,
+            161290
+          ],
+          "fill": "CC8844",
+          "stroke": "112233",
+          "strokeWidthEmu": 4445
+        },
+        "ellipse": {
+          "docPrId": 3,
+          "preset": "ellipse",
+          "extentEmu": [
+            381000,
+            228600
+          ],
+          "rotation": 5400000,
+          "flipH": true,
+          "fill": "20A060",
+          "stroke": "604020",
+          "strokeWidthEmu": 5080
+        },
+        "line": {
+          "docPrId": 4,
+          "preset": "line",
+          "extentEmu": [
+            1828800,
+            127000
+          ],
+          "fill": null,
+          "stroke": "E0A060",
+          "strokeWidthEmu": 12700
+        }
+      },
+      "savedDocxSha256": "7576055e33d1eab59319c12adf3bcc5df48690841945a5758079b9d620685b08",
+      "opc": "PASS; only word/document.xml changed; part names unchanged; destination text and preexisting drawing identity preserved; docPr IDs unique",
+      "freshDocumentSessionReopen": "PASS in the same application process; rectangle, ellipse, and line each reselected as editable shapes",
+      "sourceImmutability": "PASS; all HWP5 source fixture bytes and ownership unchanged",
+      "negativeCases": "PASS; rounded shape and malformed payload refused without source, target, revision, or rendering mutation",
+      "resultJson": {
+        "path": "target/p6-h5-dx/native/attempt05/result.json",
+        "sha256": "e9ffb21eb7f8e78c767541b8afd1550f5ec25c003a5ff5f5f3b1d0d40f8368cd"
+      },
+      "cleanup": {
+        "path": "target/p6-h5-dx/native/attempt05/cleanup.json",
+        "sha256": "d0347d308b2ae0ed326388b4318efc7a46af43a637f2940424a069affbe14a81",
+        "result": "PASS; complete, proven, filesystemProven, exit 0, no survivors or process errors"
+      }
+    }
+  },
+  "limitations": [
+    "Only resource-free body Rectangle, Ellipse and Line are mapped; rounded, polygonal, floating, grouped, captioned, media-backed, and unknown structures fail closed.",
+    "This is structured-object transfer, not full-document HWP5-to-DOCX conversion.",
+    "External Office/Hancom interoperability and Wayland, Windows, macOS were NOT RUN.",
+    "Nix-independent portability and committed-root-only build reproduction are NOT VERIFIED."
+  ]
+}

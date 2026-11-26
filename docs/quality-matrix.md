@@ -31,7 +31,7 @@
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
 | 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | CURRENT PASS: Linux Release native HWP/HWPX natural metrics(advance·wrap·caret·selection·Canvas/PDF) and table-cell acceptance run12, independent inspection | [글꼴 시스템](architecture/font-system.md) 6.3·6.4절 | complex shaping(ligature/contextual/RTL/kerning) unsupported and documented; external office NOT RUN; nested-cell native NOT RUN; Windows/macOS DEFERRED |
-| 17 | 구조 도형 교차 형식 전송 | IV(HWPX inline rectangle/ellipse/canonical line/closed filled polygon → editable DrawingML) | IV(DOCX inline rectangle/ellipse/line → editable HWPX) | IV(DOCX inline rectangle/ellipse/line → HWP5 editable body GSO) | CURRENT PASS: Stage 3-A P6-HX-DX-MORE, P6-DX-HX, P6-DX-H5의 제한 Native/T009 수락 | [HWPX→DOCX](architecture/stage3-a-p6-hwpx-docx-more-acceptance.json), [DOCX→HWPX](architecture/stage3-a-p6-docx-hwpx-acceptance.json), [DOCX→HWP5](architecture/stage3-a-p6-docx-hwp5-acceptance.json) | 선택된 body-owned inline primitive preset 및 bounded closed filled polygon만. non-polygon custom/freeform/curve/floating/textbox/caption/media/effect는 거부; 전체 문서 변환·Wayland/Windows/macOS·외부 Office NOT RUN |
+| 17 | 구조 도형 교차 형식 전송 | IV(HWPX inline rectangle/ellipse/canonical line/closed filled polygon → editable DrawingML); IV(HWP5 body rectangle/ellipse/line → editable DrawingML) | IV(DOCX inline rectangle/ellipse/line → editable HWPX) | IV(DOCX inline rectangle/ellipse/line → HWP5 editable body GSO) | CURRENT PASS: Stage 3-A P6-HX-DX-MORE, P6-H5-DX, P6-DX-HX, P6-DX-H5의 제한 Native/T009 수락 | [HWPX→DOCX](architecture/stage3-a-p6-hwpx-docx-more-acceptance.json), [HWP5→DOCX](architecture/stage3-a-p6-hwp5-docx-acceptance.json), [DOCX→HWPX](architecture/stage3-a-p6-docx-hwpx-acceptance.json), [DOCX→HWP5](architecture/stage3-a-p6-docx-hwp5-acceptance.json) | 네 조합 모두 선택된 body-owned bounded preset/freeform만. 미지원 custom/curve/floating/textbox/caption/media/effect는 거부; 전체 문서 변환·Wayland/Windows/macOS·외부 Office NOT RUN |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 
@@ -504,6 +504,16 @@ Focused Rust tests 2/2, `cargo xtask ci`의 여섯 필수 gate, fresh WordCraft 
 Focused Vitest 10/10, TypeScript typecheck, Native harness Python syntax와 guarded Tauri Release build PASS. Release app SHA-256 `3bdf73adec39b5337dfece6e14499204e9ef91371efb9a3c440e9ecf04f98b81` (63,514,584 bytes), privacy/runtimePath PASS, Nix portability NOT VERIFIED. 실제 Linux X11 attempt07에서 신뢰된 clipboard, paste/Undo/Redo revisions 1/2/3, T009 `saved/synced=true/changedSince=false`, fresh-session reopen 및 재선택 PASS. 저장 HWPX SHA-256 `f8d18c3e9e630d3efbac1f7901f54e89e3fa935f5ddcde02cca5a79c8f68b7c4`; 독립 구조 검사에서 ellipse geometry/style/rotation/flip/description가 일치하고 `Contents/section0.xml`만 바뀌었으며 12개 OPC part 이름과 BinData는 보존됐다. source DOCX bytes/parts는 불변이다. 지원 밖 triangle과 tampered payload는 revision 0, clean 상태에서 거부됐다. result/session/cleanup hashes와 세부 결과는 [P6-DX-HX acceptance JSON](architecture/stage3-a-p6-docx-hwpx-acceptance.json)에 기록했다. 구현 commit `b948f2baa49fb3100c520970ba6f158f308da246`.
 
 Wayland, Windows/macOS, 외부 Office/Hancom 재열기와 Nix-independent portability는 NOT RUN/NOT VERIFIED다. 다른 개체, floating story와 전체 문서 변환은 별도 요구사항으로 남아 있다.
+
+#### P6-H5-DX HWP5 → DOCX 편집 가능한 기본 도형 전송 (2026-11-27)
+
+IMPLEMENTED_VERIFIED — HWP5 body Rectangle/Ellipse/Line subset. payload v5는 source format, object kind, session/generation, validated portable geometry/style와 선택적 same-format HWP5 fragment를 제한된 envelope로 전달한다. RHWP HWP5 source primitive를 DOCX DrawingML preset Rectangle/Ellipse/Line으로 매핑한다. rounded shape, malformed geometry, 미지원 shape type과 추가 payload field는 변경 전 거부한다.
+
+TypeScript typecheck, focused Vitest 10/10, scoped ESLint, Native harness Python syntax, diff check와 guarded Release build PASS. Release app SHA-256 5c9dd046c867b8059bfea7b1ddb6b3ebcb9f6a296d1b77f2f7bed10cfc24fa7e; RHWP generation 2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497; WordCraft exact pin PASS.
+
+Linux X11/Xvfb + private D-Bus/IBus Hangul Native attempt05에서 세 shape의 trusted selection/copy/paste와 Undo/Redo, 실제 T009 save, 독립 DrawingML/OPC 검사를 통과했다. 저장 DOCX는 word/document.xml만 변경되고 part names, 관계, destination text와 기존 drawing identities가 보존됐다. 새 문서 세션으로 재열어 세 도형을 다시 편집 선택했다. rounded shape와 malformed v5 payload는 source/target 무변이로 거부됐다. 세부 수락·fixture/result/cleanup hashes는 architecture/stage3-a-p6-hwp5-docx-acceptance.json에 기록했다.
+
+외부 Office/Hancom 재열기와 Wayland/Windows/macOS는 NOT RUN, Nix 외 portability와 committed-root-only build reproduction은 NOT VERIFIED다. 이는 구조 도형 subset 전송이며 전체 문서 변환이 아니다.
 
 #### P6-DX-H5 DOCX → HWP5 편집 가능한 기본 도형 전송 (2026-11-27)
 
