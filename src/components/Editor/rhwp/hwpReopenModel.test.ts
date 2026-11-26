@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HwpEvidenceError, hwpReopenEqual, hwpReopenModel, tableLayoutConsistent } from "./hwpReopenModel";
+import { cellPictureEvidence, HwpEvidenceError, hwpReopenEqual, hwpReopenModel, insertedCellPicture, tableLayoutConsistent } from "./hwpReopenModel";
 import type { RhwpDocument } from "./rhwpModule";
 import { FakeDocument } from "./testing";
 
@@ -14,7 +14,7 @@ function model() {
     bullet: "•", cells: ["one", "two"], coordinates: [0, 1], width: 7200, inline: true,
     controls: [] as unknown[], rows: 1, cols: 2, extraParagraphs: {} as Record<number, string[]>,
     cursorLists: [] as unknown[], fields: [] as unknown[],
-    validation: { ok: true, changed: false, fieldId: 1, text: "0", command: "=0??%g,;;0" } as Record<string, unknown>,
+    validation: { ok: true, changed: false, fieldId: 1, start: 0, controlIndex: 0, text: "0", command: "=0??%g,;;0" } as Record<string, unknown>,
     para: null as Override, bullets: null as Override, dims: null as Override, tableProps: null as Override,
     cellInfo: null as Override, cellProps: null as Override, picture: null as Override,
     headerLayout: [] as unknown[],
@@ -29,6 +29,7 @@ function model() {
     getControls: () => JSON.stringify(state.controls),
     getCursorModel: () => JSON.stringify({ lists: state.cursorLists }),
     getFieldList: () => JSON.stringify(state.fields),
+    validateTableFormulaAt: () => JSON.stringify(state.validation),
     validateTableFormulaField: () => JSON.stringify(state.validation),
     getTableDimensions: () => encode(state.dims, { rowCount: state.rows, colCount: state.cols, cellCount: state.cells.length }),
     getTableProperties: () => encode(state.tableProps, { cellSpacing: 0, paddingLeft: 510, paddingRight: 510, paddingTop: 141, paddingBottom: 141, repeatHeader: false, borderFillId: 3, ...borders, tableWidth: 41952, tableHeight: 2564, treatAsChar: false, textWrap: "TopAndBottom" }),
@@ -91,7 +92,126 @@ function inserted(control: unknown) {
   return { live, fresh, baseline: hwpReopenModel(model().doc).structure };
 }
 
+function textBoxShapeModel() {
+  const fixture = model();
+  const owner = { ctrlId: "gso", userDesc: "사각형", list: 0, para: 0, controlIndex: 2, pos: 0,
+    props: { ...tableProps, Lock: 0, TreatAsChar: 0, Width: 2000, Height: 1600 } };
+  const child = { ctrlId: "gso", userDesc: "타원", list: 2, para: 0, controlIndex: 0, pos: 12,
+    props: { ...tableProps, Lock: 0, TreatAsChar: 0, Width: 800, Height: 600 } };
+  const rootProperties = { width: 2000, height: 1600, horzOffset: 0, vertOffset: 0, rotationAngle: 0,
+    borderColor: 0, borderWidth: 0, treatAsChar: false, horzFlip: false, vertFlip: false,
+    textWrap: "InFrontOfText", fillType: "none", tbVerticalAlign: "Top" };
+  const childProperties = { width: 800, height: 600, horzOffset: 0, vertOffset: 0, rotationAngle: 0,
+    borderColor: 0, borderWidth: 0, treatAsChar: false, horzFlip: false, vertFlip: false,
+    textWrap: "InFrontOfText", fillType: "solid", fillColor: "#996633" };
+  fixture.state.controls = [owner, child];
+  fixture.state.cursorLists = [{ listId: 2, isCell: false, hostListId: 0, sectionIndex: 0, hostPara: 0,
+    controlIndex: 2, cellIndex: 0, paraCount: 1 }];
+  const doc = fixture.doc as unknown as Record<string, (...args: unknown[]) => unknown>;
+  doc.getShapeProperties = (_section, _paragraph, control) => JSON.stringify(control === 2 ? rootProperties : childProperties);
+  doc.getCellShapePropertiesByPath = (_section, _paragraph, path, control) => {
+    if (path !== JSON.stringify([{ controlIndex: 2, cellIndex: 0, cellParaIndex: 0 }]) || control !== 0) return "{}";
+    return JSON.stringify(childProperties);
+  };
+  doc.getCellParagraphCount = () => 1;
+  doc.getCellParagraphLength = () => 0;
+  doc.getTextInCell = () => "";
+  return { ...fixture, owner, child, rootProperties, childProperties };
+}
+
+function textBoxPictureModel() {
+  const fixture = model();
+  const owner = { ctrlId: "gso", userDesc: "사각형", list: 0, para: 0, controlIndex: 2, pos: 0,
+    props: { ...tableProps, Lock: 0, TreatAsChar: 1, Width: 18000, Height: 12000 } };
+  const child = { ctrlId: "gso", userDesc: "그림", list: 2, para: 0, controlIndex: 0, pos: 30,
+    props: { ...tableProps, Lock: 0, TreatAsChar: 1, TextWrap: 0, Width: 4000, Height: 2000 } };
+  const rootProperties = { width: 18000, height: 12000, horzOffset: 0, vertOffset: 0, rotationAngle: 0,
+    borderColor: 0, borderWidth: 33, treatAsChar: true, horzFlip: false, vertFlip: false,
+    textWrap: "Square", fillType: "solid", fillColor: "#FFFFFF", tbVerticalAlign: "Bottom" };
+  const resource = { ok: true, section: 0, paraIdx: 0, path: [{ controlIndex: 2, cellIndex: 0, cellParaIndex: 0 }],
+    controlIdx: 0, instanceId: 2112370673, position: 30, width: 4000, height: 2000, treatAsChar: true,
+    binDataId: 1, storageId: 1, byteLength: 169,
+    sha256: "2e0817c744876e5f3ef3d890ab2601a435cc41a1d4507f67295c4ad968b623b2",
+    imageWidthHu: 0, imageHeightHu: 0, crop: [0, 0, 90000, 90000], horizontalOffset: 0, verticalOffset: 0 };
+  const properties = { width: 4000, height: 2000, treatAsChar: true, textWrap: "Square", sizeProtect: false,
+    externalPath: undefined, hasCaption: false, rotationAngle: 0, restrictInPage: false,
+    horzFlip: false, vertFlip: false, horzOffset: 0, vertOffset: 0, description: "Nested textbox picture",
+    originalWidth: 4000, originalHeight: 2000, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 };
+  fixture.state.controls = [owner, child];
+  fixture.state.cursorLists = [{ listId: 2, isCell: false, hostListId: 0, sectionIndex: 0, hostPara: 0,
+    controlIndex: 2, cellIndex: 0, paraCount: 1 }];
+  const doc = fixture.doc as unknown as Record<string, (...args: unknown[]) => unknown>;
+  doc.getShapeProperties = () => JSON.stringify(rootProperties);
+  doc.getCellPictureByPath = (_section, _paragraph, path, control) => path === JSON.stringify(resource.path) && control === 0
+    ? JSON.stringify(resource) : JSON.stringify({ ok: false });
+  doc.getCellPicturePropertiesByPath = (_section, _paragraph, path, control) => path === JSON.stringify(resource.path) && control === 0
+    ? JSON.stringify(properties) : "{}";
+  return { ...fixture, owner, child, resource, properties };
+}
+
 describe("HWP detailed independent reopen evidence", () => {
+  it("records a directly-owned textbox shape by its exact path and compares child properties", () => {
+    const live = textBoxShapeModel(), reopened = textBoxShapeModel();
+    const baseline = hwpReopenModel(model().doc).structure;
+    const before = hwpReopenModel(live.doc), after = hwpReopenModel(reopened.doc);
+    expect(before.complete).toBe(true);
+    expect(before.model).toContain('"textBoxObjects"');
+    expect(hwpReopenEqual(before, after, baseline)).toBe(true);
+
+    reopened.childProperties.fillColor = "#884422";
+    expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), baseline)).toBe(false);
+  });
+
+  it.each([
+    ["locked child", (fixture: ReturnType<typeof textBoxShapeModel>) => { fixture.child.props.Lock = 1; }],
+    ["ambiguous parent control", (fixture: ReturnType<typeof textBoxShapeModel>) => { fixture.state.controls.push({ ...fixture.owner }); }],
+    ["ambiguous owner list", (fixture: ReturnType<typeof textBoxShapeModel>) => { fixture.state.cursorLists.push({
+      listId: 3, isCell: false, hostListId: 0, sectionIndex: 0, hostPara: 0, controlIndex: 2, cellIndex: 0, paraCount: 1,
+    }); }],
+    ["unmodeled polygon path", (fixture: ReturnType<typeof textBoxShapeModel>) => { fixture.child.userDesc = "다각형"; }],
+  ])("keeps %s textbox content incomplete", (_name, mutate) => {
+    const fixture = textBoxShapeModel(); mutate(fixture);
+    const baseline = hwpReopenModel(model().doc).structure;
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.complete).toBe(false);
+    expect(hwpReopenEqual(result, result, baseline)).toBe(false);
+  });
+
+  it("records a direct textbox picture with an exact resource digest when HWP5 has no decoded image dimensions", () => {
+    const live = textBoxPictureModel(), reopened = textBoxPictureModel();
+    const path = JSON.stringify([{ controlIndex: 2, cellIndex: 0, cellParaIndex: 0 }]);
+    const baseline = hwpReopenModel(model().doc).structure;
+    const before = hwpReopenModel(live.doc), after = hwpReopenModel(reopened.doc);
+    expect(before.complete).toBe(true);
+    expect(before.model).toContain('"textBoxPictures"');
+    expect(hwpReopenEqual(before, after, baseline)).toBe(true);
+    expect(cellPictureEvidence(live.doc, 0, 0, path, 0)).toBeNull();
+    expect(cellPictureEvidence(live.doc, 0, 0, path, 0, { allowMissingImageDimensions: true })).toMatchObject({
+      instanceId: 2112370673, binDataId: 1, storageId: 1, byteLength: 169,
+      sha256: live.resource.sha256, imageWidthHu: 0, imageHeightHu: 0,
+    });
+    expect(insertedCellPicture(live.doc, 0, 0, path, 0)).toBe(false);
+
+    reopened.properties.width = 5000;
+    expect(hwpReopenEqual(before, hwpReopenModel(reopened.doc), baseline)).toBe(false);
+  });
+
+  it.each([
+    ["one missing image dimension", (fixture: ReturnType<typeof textBoxPictureModel>) => { fixture.resource.imageWidthHu = 0; fixture.resource.imageHeightHu = 90000; }],
+    ["missing resource digest", (fixture: ReturnType<typeof textBoxPictureModel>) => { fixture.resource.sha256 = ""; }],
+    ["locked picture", (fixture: ReturnType<typeof textBoxPictureModel>) => { fixture.child.props.Lock = 1; }],
+    ["ambiguous owner list", (fixture: ReturnType<typeof textBoxPictureModel>) => { fixture.state.cursorLists.push({
+      listId: 3, isCell: false, hostListId: 0, sectionIndex: 0, hostPara: 0, controlIndex: 2, cellIndex: 0, paraCount: 1,
+    }); }],
+    ["floating picture", (fixture: ReturnType<typeof textBoxPictureModel>) => { fixture.properties.treatAsChar = false; }],
+  ])("keeps %s textbox picture evidence incomplete", (_name, mutate) => {
+    const fixture = textBoxPictureModel(); mutate(fixture);
+    const baseline = hwpReopenModel(model().doc).structure;
+    const result = hwpReopenModel(fixture.doc);
+    expect(result.complete).toBe(false);
+    expect(hwpReopenEqual(result, result, baseline)).toBe(false);
+  });
+
   it("records header-picture story ownership and properties in independent reopen evidence", () => {
     const live = model(), reopened = model();
     const owner = { ctrlId: "head", userDesc: "머리말", list: 0, para: 0, controlIndex: 1, props: {} };

@@ -8,3 +8,5 @@ patches/rhwp/stage3a-p5-footnote-owner-edit.patch whitespace=-blank-at-eol,-blan
 patches/rhwp/stage3a-p5-hwpx-rect-position-preservation.patch whitespace=-blank-at-eol,-blank-at-eof
 patches/rhwp/stage3a-p5-hwpx-roundtrip-preservation.patch whitespace=-blank-at-eol,-blank-at-eof
 patches/rhwp/stage3a-p5-page-field-preservation.patch whitespace=-blank-at-eol,-blank-at-eof
+patches/rhwp/stage3a-p5-textbox-nested-paths.patch whitespace=-blank-at-eol,-blank-at-eof
+patches/rhwp/stage3a-p5-textbox-nested-picture-evidence.patch whitespace=-blank-at-eol,-blank-at-eof

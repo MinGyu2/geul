@@ -1464,9 +1464,9 @@ pub struct DocxModel {
     story_picture_delete: bool,
     header_footer_picture_move: bool,
     rounded_rectangle_conversion: bool,
-    /// Group-child edits rewrite the owning DrawingML body tree. Expose them only when the
-    /// opened body's semantic XML was already preserved exactly by this reader/writer pair.
-    group_body_roundtrips: bool,
+    /// Body-hosted structured drawing edits depend on the owning DrawingML source being preserved
+    /// exactly by this reader/writer pair before the edit.
+    body_roundtrips: bool,
     created_shapes: Vec<Pos>,
     marks: Vec<(u32, Pos)>,
     last_insert: Option<LastInsert>,
@@ -1596,7 +1596,7 @@ impl DocxModel {
             story_picture_delete: false,
             header_footer_picture_move: false,
             rounded_rectangle_conversion: false,
-            group_body_roundtrips: false,
+            body_roundtrips: false,
             created_shapes: Vec::new(),
             marks: Vec::new(),
             last_insert: None,
@@ -1650,7 +1650,7 @@ impl DocxModel {
             }
         }
         if let Some(export) = model.export() {
-            model.group_body_roundtrips = crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
+            model.body_roundtrips = crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
         }
         Ok(model)
     }
@@ -2813,9 +2813,15 @@ impl DocxModel {
         if !drawing {
             return Vec::new();
         }
-        // Pinned WordCraft `docx/read/story.rs:948` scans `a:graphicData` descendants for `a:blip`
-        // before `wps:wsp`, collapsing any TextBox that contains an image into a plain Image on reopen.
-        if pos.story != StoryRef::Body {
+        // Secondary parts still reject media-backed edits here; their story-specific T009 proof
+        // owns those relationships. A Body-hosted TextBox serializes inside document.xml, and the
+        // reader preserves nested pictures as objects in that exact TextBox story.
+        let body_text_box = matches!(pos.story, StoryRef::Part(id)
+            if doc.parts.get(&id).is_some_and(|part| part.kind == wordcraft_engine::doc::PartKind::TextBox));
+        if body_text_box && matches!(object, InlineObject::Image { .. }) && !self.body_roundtrips {
+            return Vec::new();
+        }
+        if pos.story != StoryRef::Body && !body_text_box {
             let mut media = Vec::new();
             if !drawing_media(object, &mut media, 0) || !media.is_empty() {
                 return Vec::new();
@@ -2870,7 +2876,7 @@ impl DocxModel {
     /// exact. Unsupported or out-of-frame children remain in the model and are not exposed here.
     fn editable_group_children(&self, pos: &Pos) -> Option<EditableGroupChildrenView> {
         use wordcraft_engine::doc::para::{GroupChild, ShapeKind};
-        if !self.group_body_roundtrips || pos.story != StoryRef::Body || pos.path.0.len() != 1
+        if !self.body_roundtrips || pos.story != StoryRef::Body || pos.path.0.len() != 1
             || self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes
         {
             return None;

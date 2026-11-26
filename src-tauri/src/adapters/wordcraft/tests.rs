@@ -6738,19 +6738,26 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(model.diagnostic_document().media.len(), 1);
 
-    // 2. Shapes inside a Body-hosted TextBox (rectangle + ellipse + text inside same TextBox;
-    // pictures inside a TextBox are rejected because pinned WordCraft reader collapses a:blip inside wps:txbx).
+    // 2. Shapes and a picture inside a Body-hosted TextBox.
     let mut boxed = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     boxed.run("caret.docEnd", &json!({})).unwrap();
     boxed.run("text.newParagraph", &json!({})).unwrap();
     boxed.run("insert.textBox", &json!({"width": 240, "height": 180})).unwrap();
     boxed.run("text.insert", &json!({"text": "상자안"})).unwrap();
+    boxed.run("insert.picture", &json!({"data": tiny_png_b64(16, 16, [140, 90, 40])})).unwrap();
+    boxed.run("picture.size", &json!({"width": 40, "height": 20})).unwrap();
+    boxed.run("select.collapse", &json!({"end": true})).unwrap();
     boxed.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
     boxed.run("picture.size", &json!({"width": 48, "height": 24})).unwrap();
+    boxed.run("shape.fill", &json!({"color": "7A47A8"})).unwrap();
     boxed.run("select.collapse", &json!({"end": true})).unwrap();
     boxed.run("insert.shape", &json!({"kind": "ellipse"})).unwrap();
     boxed.run("picture.size", &json!({"width": 32, "height": 16})).unwrap();
-    let boxed_original = io::save_bytes("fixture.docx", &boxed.doc).unwrap();
+    let boxed_draft = io::save_bytes("fixture.docx", &boxed.doc).unwrap();
+    let boxed_original = io::save_bytes(
+        "fixture.docx",
+        &io::open_bytes("fixture.docx", &boxed_draft).unwrap(),
+    ).unwrap();
 
     let mut box_reader = Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
     let box_layout = box_reader.layout();
@@ -6835,9 +6842,183 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
             .filter_map(|p| reopened_deleted.para(StoryRef::Part(del_tb_id), p))
             .map(|p| p.objects.len())
             .sum::<usize>(),
-        1
+        2
     );
     assert_eq!(tb_model.apply(&[DocxOp::Undo {}]).changed, 1);
+
+    // The nested picture is a separate object owned by the TextBox story, not a body picture or
+    // the enclosing TextBox frame. Its media-backed edits stay fail-closed until that ownership
+    // is explicitly admitted by the adapter.
+    let nested_picture_hit = box_layout
+        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 40.0).abs() < 0.5)
+        .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
+        .unwrap();
+    let mut nested_picture_model = DocxModel::open(&boxed_original).unwrap();
+    nested_picture_model.apply(&[nested_picture_hit]);
+    let v = obj_view(&mut nested_picture_model);
+    assert_eq!(v["kind"], "picture");
+    assert_eq!(v["operations"], json!(["resize", "delete", "crop", "altText"]));
+    let stale_position = v["position"].as_str().unwrap().to_owned();
+    let stale_epoch = v["epoch"].as_u64().unwrap();
+    let resized = nested_picture_model.apply(&[DocxOp::ObjectEdit {
+        position: stale_position.clone(),
+        epoch: stale_epoch,
+        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(54.0), height: Some(27.0) },
+    }]);
+    assert_eq!((resized.changed, resized.rejected), (1, vec![]));
+    let v = obj_view(&mut nested_picture_model);
+    let before_stale_edit = nested_picture_model.export().unwrap();
+    assert_eq!(nested_picture_model.apply(&[DocxOp::ObjectEdit {
+        position: stale_position,
+        epoch: stale_epoch,
+        edit: ObjectEdit::AltText { text: "stale edit".into() },
+    }]).rejected, vec![0]);
+    assert_eq!(nested_picture_model.export().unwrap(), before_stale_edit);
+    let cropped = nested_picture_model.apply(&[DocxOp::ObjectEdit {
+        position: v["position"].as_str().unwrap().to_owned(),
+        epoch: v["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Crop { left: 0.1, top: 0.05, right: 0.0, bottom: 0.0 },
+    }]);
+    assert_eq!((cropped.changed, cropped.rejected), (1, vec![]));
+    let v = obj_view(&mut nested_picture_model);
+    let described = nested_picture_model.apply(&[DocxOp::ObjectEdit {
+        position: v["position"].as_str().unwrap().to_owned(),
+        epoch: v["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::AltText { text: "텍스트 상자 안 그림".into() },
+    }]);
+    assert_eq!((described.changed, described.rejected), (1, vec![]));
+
+    let nested_picture_saved = nested_picture_model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &boxed_original,
+        &nested_picture_saved,
+        None,
+        nested_picture_model.same_as(&nested_picture_saved),
+    ).is_safe());
+    let before_pkg = crate::services::save::package::open(
+        &boxed_original,
+        crate::services::save::package::Side::Original,
+    ).unwrap();
+    let after_pkg = crate::services::save::package::open(
+        &nested_picture_saved,
+        crate::services::save::package::Side::Output,
+    ).unwrap();
+    assert_eq!(before_pkg.parts.keys().collect::<Vec<_>>(), after_pkg.parts.keys().collect::<Vec<_>>());
+    for name in before_pkg.parts.keys().filter(|name| name.as_str() != "word/document.xml" && name.as_str() != "docProps/app.xml") {
+        assert_eq!(before_pkg.get(name), after_pkg.get(name), "unrelated OPC part changed: {name}");
+    }
+    let reopened_picture = io::open_bytes("fixture.docx", &nested_picture_saved).unwrap();
+    let (&textbox_id, textbox_part) = reopened_picture.parts.iter()
+        .find(|(_, part)| part.kind == PartKind::TextBox)
+        .unwrap();
+    assert_eq!(textbox_part.kind, PartKind::TextBox);
+    assert_eq!(reopened_picture.plain_text(StoryRef::Part(textbox_id)), "상자안");
+    let nested_picture = reopened_picture.para_paths(StoryRef::Part(textbox_id)).iter()
+        .filter_map(|path| reopened_picture.para(StoryRef::Part(textbox_id), path))
+        .flat_map(|paragraph| paragraph.objects.iter())
+        .find_map(|object| match object {
+            InlineObject::Image { media, w, h, crop, alt, .. } => Some((media, *w, *h, *crop, alt.as_str())),
+            _ => None,
+        }).unwrap();
+    assert_eq!((nested_picture.1, nested_picture.2), (54.0, 27.0));
+    assert!((nested_picture.3[0] - 0.1).abs() < 1e-4 && (nested_picture.3[1] - 0.05).abs() < 1e-4);
+    assert_eq!(nested_picture.4, "텍스트 상자 안 그림");
+    assert!(reopened_picture.media.contains_key(nested_picture.0));
+
+    // Undo and redo restore the nested picture metadata without changing story ownership.
+    assert_eq!(nested_picture_model.apply(&[DocxOp::Undo {}]).changed, 1);
+    let undone = nested_picture_model.diagnostic_document();
+    let undone_picture = undone.para_paths(StoryRef::Part(textbox_id)).iter()
+        .filter_map(|path| undone.para(StoryRef::Part(textbox_id), path))
+        .flat_map(|paragraph| paragraph.objects.iter())
+        .find_map(|object| match object {
+            InlineObject::Image { alt, .. } => Some(alt.as_str()),
+            _ => None,
+        }).unwrap();
+    assert_ne!(undone_picture, "텍스트 상자 안 그림");
+    assert_eq!(nested_picture_model.apply(&[DocxOp::Redo {}]).changed, 1);
+    let redone = nested_picture_model.diagnostic_document();
+    let redone_picture = redone.para_paths(StoryRef::Part(textbox_id)).iter()
+        .filter_map(|path| redone.para(StoryRef::Part(textbox_id), path))
+        .flat_map(|paragraph| paragraph.objects.iter())
+        .find_map(|object| match object {
+            InlineObject::Image { alt, .. } => Some(alt.as_str()),
+            _ => None,
+        }).unwrap();
+    assert_eq!(redone_picture, "텍스트 상자 안 그림");
+    let redone_bytes = nested_picture_model.export().unwrap();
+    let mut redone_reader = Session::new(io::open_bytes("fixture.docx", &redone_bytes).unwrap());
+    let redone_hit = redone_reader.layout()
+        .find_object(0, |object| object.story == StoryRef::Part(textbox_id) && (object.rect.w - 54.0).abs() < 0.5)
+        .map(|hit| click(hit.page, hit.rect.x + hit.rect.w / 2.0, hit.rect.y + hit.rect.h / 2.0))
+        .unwrap();
+    nested_picture_model.apply(&[redone_hit]);
+    let v = obj_view(&mut nested_picture_model);
+    let deleted = nested_picture_model.apply(&[DocxOp::ObjectEdit {
+        position: v["position"].as_str().unwrap().to_owned(),
+        epoch: v["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Delete {},
+    }]);
+    assert_eq!((deleted.changed, deleted.rejected), (1, vec![]));
+    let nested_picture_deleted = nested_picture_model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &boxed_original,
+        &nested_picture_deleted,
+        None,
+        nested_picture_model.same_as(&nested_picture_deleted),
+    ).is_safe());
+    let reopened_deleted_picture = io::open_bytes("fixture.docx", &nested_picture_deleted).unwrap();
+    let deleted_textbox_id = *reopened_deleted_picture.parts.iter()
+        .find(|(_, part)| part.kind == PartKind::TextBox)
+        .unwrap().0;
+    let deleted_textbox_objects = reopened_deleted_picture.para_paths(StoryRef::Part(deleted_textbox_id)).iter()
+        .filter_map(|path| reopened_deleted_picture.para(StoryRef::Part(deleted_textbox_id), path))
+        .flat_map(|paragraph| paragraph.objects.iter())
+        .collect::<Vec<_>>();
+    assert_eq!(deleted_textbox_objects.len(), 2);
+    assert!(deleted_textbox_objects.iter().all(|object| !matches!(object, InlineObject::Image { .. })));
+    assert_eq!(nested_picture_model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(nested_picture_model.diagnostic_document().media.len(), 1);
+    assert_eq!(nested_picture_model.apply(&[DocxOp::Redo {}]).changed, 1);
+
+    // A body textbox with source XML that WordCraft cannot round-trip stays read-only for its
+    // media-backed child: the global document.xml T009 exemption cannot stand in for this proof.
+    let source_package = crate::services::save::package::open(
+        &boxed_original,
+        crate::services::save::package::Side::Original,
+    ).unwrap();
+    let body_xml = std::str::from_utf8(source_package.get("word/document.xml").unwrap()).unwrap();
+    let unknown_body = body_xml.replace("</w:txbxContent>", "<w:alien/></w:txbxContent>");
+    assert_ne!(unknown_body, body_xml);
+    let unsupported_entries = source_package.order.iter().map(|name| {
+        if name == "word/document.xml" {
+            entry(name, unknown_body.as_bytes())
+        } else {
+            entry(name, source_package.get(name).unwrap())
+        }
+    }).collect::<Vec<_>>();
+    let unsupported_body = zip(&unsupported_entries, false);
+    let mut unsupported_reader = Session::new(io::open_bytes("fixture.docx", &unsupported_body).unwrap());
+    let unsupported_hit = unsupported_reader.layout()
+        .find_object(0, |object| matches!(object.story, StoryRef::Part(id)
+            if unsupported_reader.doc.parts.get(&id).is_some_and(|part| part.kind == PartKind::TextBox))
+            && (object.rect.w - 40.0).abs() < 0.5)
+        .map(|hit| click(hit.page, hit.rect.x + hit.rect.w / 2.0, hit.rect.y + hit.rect.h / 2.0))
+        .unwrap();
+    let mut unsupported_model = DocxModel::open(&unsupported_body).unwrap();
+    unsupported_model.apply(&[unsupported_hit]);
+    let unsupported_view = obj_view(&mut unsupported_model);
+    assert_eq!(unsupported_view["kind"], "picture");
+    assert_eq!(unsupported_view["operations"], json!([]));
+    let unsupported_before = unsupported_model.export().unwrap();
+    assert_eq!(unsupported_model.apply(&[DocxOp::ObjectEdit {
+        position: unsupported_view["position"].as_str().unwrap().to_owned(),
+        epoch: unsupported_view["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(55.0), height: Some(28.0) },
+    }]).rejected, vec![0]);
+    assert_eq!(unsupported_model.export().unwrap(), unsupported_before);
 
     // 3. Negative boundary: a drawing in a separate OPC Header part still prevents delete/renumbering
     // on Body/TextBox drawings, and Header objects cannot be selected or mutated.
@@ -6863,14 +7044,53 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
         .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
         .unwrap();
     let mut hdr_model = DocxModel::open(&hdr_bytes).unwrap();
-    // Clicking header area does not select the header picture as an editable object.
     hdr_model.apply(&[hdr_pic]);
-    assert!(serde_json::to_value(hdr_model.view()).unwrap()["object"].is_null());
+    let header_object = serde_json::to_value(hdr_model.view()).unwrap()["object"].clone();
+    assert_eq!(header_object["kind"], "picture");
+    assert!(header_object["position"].as_str().unwrap().starts_with("part"));
+    assert_eq!(header_object["operations"], json!(["resize", "altText"]));
     // Body shape still admits in-place resize/fill/outline/altText, but blocks delete/move when Header has a drawing.
     hdr_model.apply(&[body_shape]);
     let v = obj_view(&mut hdr_model);
-    assert_eq!(v["operations"], json!(["resize", "altText", "fill", "outline"]));
-    assert_eq!(hdr_model.export().unwrap(), hdr_bytes);
+    assert_eq!(v["operations"], json!(["resize", "altText", "fill", "outline", "convertShape"]));
+    let no_op_export = hdr_model.export().unwrap();
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &hdr_bytes,
+        &no_op_export,
+        None,
+        hdr_model.same_as(&no_op_export),
+    ).is_safe());
+    let before = crate::services::save::package::open(
+        &hdr_bytes,
+        crate::services::save::package::Side::Original,
+    ).unwrap();
+    let after = crate::services::save::package::open(
+        &no_op_export,
+        crate::services::save::package::Side::Output,
+    ).unwrap();
+    assert_eq!(before.get("word/header1.xml"), after.get("word/header1.xml"));
+
+    // Keep a deterministic, WordCraft-authored fixture available to the focused Native test.
+    // Exporting it again must preserve document.xml before media-backed child edits are admitted
+    // by the adapter's T009 source-envelope gate.
+    let native_fixture_reader = Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
+    let native_fixture_roundtrip = io::save_bytes("fixture.docx", &native_fixture_reader.doc).unwrap();
+    assert!(crate::services::save::package::docx_body_source_roundtrips(
+        &boxed_original,
+        &native_fixture_roundtrip,
+    ));
+    if let Some(path) = std::env::var_os("GEUL_P5_TB_CONTROL_DOCX_FIXTURE_OUT") {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .expect("create requested P5 textbox DOCX fixture");
+        file.write_all(&boxed_original)
+            .expect("write requested P5 textbox DOCX fixture");
+        file.sync_all().expect("sync requested P5 textbox DOCX fixture");
+    }
 }
 
 #[test]

@@ -1,0 +1,133 @@
+diff --git a/src/document_core/commands/object_ops/picture.rs b/src/document_core/commands/object_ops/picture.rs
+--- a/src/document_core/commands/object_ops/picture.rs
++++ b/src/document_core/commands/object_ops/picture.rs
+@@ -1918,9 +1918,26 @@
+     pub fn get_cell_picture_by_path_native(&self, section: usize, paragraph: usize,
+         path: &[(usize, usize, usize)], control: usize) -> Result<String, HwpError> {
+         use sha2::{Digest, Sha256};
+-        if path.is_empty() { return Err(HwpError::RenderError("cell path required".into())); }
+-        for depth in 1..=path.len() { self.resolve_cell_by_path(section, paragraph, &path[..depth])?; }
+-        let host = self.resolve_paragraph_by_path(section, paragraph, path)?;
++        if path.is_empty() || path.len() > 64 {
++            return Err(HwpError::RenderError("invalid picture owner path".into()));
++        }
++        let mut host = self.document.sections.get(section)
++            .and_then(|section| section.paragraphs.get(paragraph))
++            .ok_or_else(|| HwpError::RenderError("missing picture owner paragraph".into()))?;
++        for (depth, &(owner_idx, child_idx, para_idx)) in path.iter().enumerate() {
++            let child_paragraphs = match host.controls.get(owner_idx) {
++                Some(Control::Table(table)) => table.cells.get(child_idx)
++                    .map(|cell| cell.paragraphs.as_slice()),
++                Some(Control::Shape(shape)) if child_idx == 0 => get_textbox_from_shape(shape)
++                    .map(|text_box| text_box.paragraphs.as_slice()),
++                _ => None,
++            }.ok_or_else(|| HwpError::RenderError(format!(
++                "unsupported picture owner at path[{depth}]"
++            )))?;
++            host = child_paragraphs.get(para_idx).ok_or_else(|| HwpError::RenderError(format!(
++                "missing picture owner paragraph at path[{depth}]"
++            )))?;
++        }
+         let Some(Control::Picture(pic)) = host.controls.get(control) else {
+             return Err(HwpError::RenderError("missing cell picture".into()));
+         };
+@@ -4379,6 +4396,99 @@
+             "글상자 안에 붙여넣은 그림 컨트롤이 보존되어야 한다 (#1323)"
+         );
+     }
++
++    #[test]
++    fn picture_evidence_by_path_supports_textbox_and_table_owners() {
++        use sha2::{Digest, Sha256};
++
++        let bytes = {
++            use image::ImageEncoder;
++            let mut png = Vec::new();
++            image::codecs::png::PngEncoder::new(&mut png)
++                .write_image(
++                    &[0x5a, 0xa0, 0x28, 0xff],
++                    1,
++                    1,
++                    image::ExtendedColorType::Rgba8,
++                )
++                .expect("encode a valid one-pixel PNG");
++            png
++        };
++        let expected_sha256 = Sha256::digest(&bytes)
++            .iter()
++            .map(|byte| format!("{byte:02x}"))
++            .collect::<String>();
++
++        let mut textbox_core = DocumentCore::new_empty();
++        textbox_core.create_blank_document_native().unwrap();
++        let (textbox_para, textbox_ctrl) = create_shape(&mut textbox_core, "textbox");
++        let textbox_path = [(textbox_ctrl, 0, 0)];
++        let inserted = textbox_core
++            .insert_picture_native(
++                0, textbox_para, 0, &textbox_path, &bytes, 5000, 5000, 1, 1, "png",
++                "Nested textbox picture", None, None,
++            )
++            .expect("insert a picture into the text box paragraph");
++        let textbox_picture_ctrl = parse_idx(&inserted, "controlIdx");
++        let evidence: serde_json::Value = serde_json::from_str(
++            &textbox_core.get_cell_picture_by_path_native(
++                0, textbox_para, &textbox_path, textbox_picture_ctrl,
++            ).expect("textbox-owned picture evidence"),
++        ).unwrap();
++        assert_eq!(evidence["path"][0]["controlIndex"], textbox_ctrl);
++        assert_eq!(evidence["path"][0]["cellIndex"], 0);
++        assert_eq!(evidence["controlIdx"], textbox_picture_ctrl);
++        assert_eq!(evidence["byteLength"], bytes.len());
++        assert_eq!(evidence["sha256"], expected_sha256);
++
++        let owner_before: serde_json::Value = serde_json::from_str(
++            &textbox_core.get_shape_properties_native(0, textbox_para, textbox_ctrl).unwrap(),
++        ).unwrap();
++        let saved = textbox_core.export_hwpx_native().unwrap();
++        let reopened = DocumentCore::from_bytes(&saved).expect("reopen HWPX textbox picture");
++        let reopened_evidence: serde_json::Value = serde_json::from_str(
++            &reopened.get_cell_picture_by_path_native(
++                0, textbox_para, &textbox_path, textbox_picture_ctrl,
++            ).expect("reopened textbox-owned picture evidence"),
++        ).unwrap();
++        assert_eq!(reopened_evidence, evidence, "picture owner and resource identity survive save/reopen");
++        let owner_after: serde_json::Value = serde_json::from_str(
++            &reopened.get_shape_properties_native(0, textbox_para, textbox_ctrl).unwrap(),
++        ).unwrap();
++        for key in ["instanceId", "width", "height", "horzOffset", "vertOffset"] {
++            assert_eq!(owner_after[key], owner_before[key], "textbox owner field {key} changed");
++        }
++
++        let mut table_core = DocumentCore::new_empty();
++        table_core.create_blank_document_native().unwrap();
++        let table = table_core.create_table_native(0, 0, 0, 1, 1).unwrap();
++        let table_ctrl = parse_idx(&table, "controlIdx");
++        let table_path = [(table_ctrl, 0, 0)];
++        let inserted = table_core.insert_picture_in_cell_by_path_native(
++            0, 0, &table_path, 0, &bytes, 5000, 5000, 1, 1, "png", "Table picture",
++        ).expect("existing table-cell picture insertion remains supported");
++        let table_picture_ctrl = parse_idx(&inserted, "controlIdx");
++        let table_evidence: serde_json::Value = serde_json::from_str(
++            &table_core.get_cell_picture_by_path_native(0, 0, &table_path, table_picture_ctrl).unwrap(),
++        ).unwrap();
++        assert_eq!(table_evidence["sha256"], expected_sha256);
++        let table_saved = table_core.export_hwpx_native().unwrap();
++        let table_reopened = DocumentCore::from_bytes(&table_saved).expect("reopen table picture");
++        let reopened_table_evidence: serde_json::Value = serde_json::from_str(
++            &table_reopened.get_cell_picture_by_path_native(0, 0, &table_path, table_picture_ctrl).unwrap(),
++        ).unwrap();
++        assert_eq!(reopened_table_evidence, table_evidence, "table-cell ownership remains unchanged");
++
++        let bad_textbox_path = [(textbox_ctrl, 1, 0)];
++        assert!(textbox_core.get_cell_picture_by_path_native(
++            0, textbox_para, &bad_textbox_path, textbox_picture_ctrl,
++        ).is_err(), "nonzero textbox cell index is rejected");
++        let (_, rectangle_ctrl) = create_shape(&mut textbox_core, "rectangle");
++        let unsupported_path = [(rectangle_ctrl, 0, 0)];
++        assert!(textbox_core.get_cell_picture_by_path_native(
++            0, textbox_para, &unsupported_path, 0,
++        ).is_err(), "shape without a text box cannot alias a picture owner");
++    }
+ }
+ 
+ #[cfg(test)]

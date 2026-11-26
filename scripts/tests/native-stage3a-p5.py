@@ -29,6 +29,7 @@ PIC = "{http://schemas.openxmlformats.org/drawingml/2006/picture}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+WPS = "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}"
 RHWP_HEADER_ORACLE = r"""
 const fs=require('fs'),path=require('path');
 const root=path.resolve(process.env.GEUL_RHWP_TEST_ARTIFACTS||'public/rhwp');
@@ -2644,6 +2645,798 @@ def textbox_replace(acc, row, fixtures, out):
     textbox_replace_ime_and_hwp5(acc, row, fixtures, out)
 
 
+def textbox_nested_shape_state(path):
+    return h.inspect_rhwp(path, """
+      const nested = pages.flatMap((items,page)=>items.filter(c=>c.type==='shape'
+        && Array.isArray(c.cellPath)).map(c=>({...c,page})));
+      const children = nested.map(child=>{
+        const ownerPath=child.cellPath;
+        const owner=JSON.parse(doc.getShapeProperties(child.secIdx,child.paraIdx,ownerPath[0].controlIndex));
+        const shape=JSON.parse(doc.getCellShapePropertiesByPath(child.secIdx,child.paraIdx,
+          JSON.stringify(ownerPath),child.controlIdx));
+        const paragraphs=Array.from({length:doc.getCellParagraphCount(child.secIdx,child.paraIdx,
+          ownerPath[0].controlIndex,ownerPath[0].cellIndex)},(_,para)=>{
+          const length=doc.getCellParagraphLength(child.secIdx,child.paraIdx,ownerPath[0].controlIndex,
+            ownerPath[0].cellIndex,para);
+          return doc.getTextInCell(child.secIdx,child.paraIdx,ownerPath[0].controlIndex,
+            ownerPath[0].cellIndex,para,0,length);
+        });
+        return {child,owner,shape,paragraphs,ownerPath};
+      });
+      const model=JSON.parse(doc.getCursorModel());
+      console.log(JSON.stringify({children,controls,lists:model.lists,body}));
+    """)
+
+
+def textbox_nested_picture_state(path):
+    return h.inspect_rhwp(path, """
+      const nested=pages.flatMap((items,page)=>items.filter(c=>c.type==='image'
+        &&Array.isArray(c.cellPath)).map(c=>({...c,page})));
+      const pictures=nested.map(child=>{
+        const ownerPath=child.cellPath,pathJson=JSON.stringify(ownerPath);
+        const picture=JSON.parse(doc.getCellPictureByPath(child.secIdx,child.parentParaIdx,pathJson,child.controlIdx));
+        const rawPicture=JSON.parse(doc.getCellPicturePropertiesByPath(child.secIdx,child.parentParaIdx,pathJson,child.controlIdx));
+        const owner=JSON.parse(doc.getShapeProperties(child.secIdx,child.parentParaIdx,ownerPath[0].controlIndex));
+        const ownerControl=controls.filter(c=>c.list===0&&c.para===child.parentParaIdx
+          &&c.controlIndex===ownerPath[0].controlIndex);
+        return {child,ownerPath,picture,rawPicture,owner,ownerControl};
+      });
+      const model=JSON.parse(doc.getCursorModel());
+      console.log(JSON.stringify({pictures,controls,lists:model.lists,body}));
+    """)
+
+
+def textbox_nested_shape_package_proof(source, output, instance_id, chosen):
+    with zipfile.ZipFile(source) as before_zip, zipfile.ZipFile(output) as after_zip:
+        before_names, after_names = set(before_zip.namelist()), set(after_zip.namelist())
+        h.require(before_names == after_names, "textbox shape edit changed the OPC part set",
+                  [sorted(before_names - after_names), sorted(after_names - before_names)])
+        changed = [name for name in sorted(before_names)
+                   if before_zip.read(name) != after_zip.read(name)]
+        h.require(changed == ["Contents/section0.xml"],
+                  "textbox shape edit changed unrelated HWPX parts", changed)
+        before = ET.fromstring(before_zip.read("Contents/section0.xml"))
+        after = ET.fromstring(after_zip.read("Contents/section0.xml"))
+
+    def ellipse(root):
+        matches = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "ellipse"
+                   and node.get("id") == str(instance_id)]
+        h.require(len(matches) == 1, "nested ellipse identity is absent or ambiguous", len(matches))
+        return matches[0]
+
+    before_shape, after_shape = ellipse(before), ellipse(after)
+    before_fill = before_shape.find(".//{*}fillBrush/{*}winBrush")
+    after_fill = after_shape.find(".//{*}fillBrush/{*}winBrush")
+    h.require(before_fill is not None and after_fill is not None, "nested ellipse lost its solid fill")
+    old_color = before_fill.get("faceColor")
+    h.require(old_color == "#996633" and after_fill.get("faceColor", "").upper() == "#" + chosen,
+              "nested ellipse fill differs from source or requested edit",
+              {"before": old_color, "after": after_fill.get("faceColor")})
+    before_fill.set("faceColor", after_fill.get("faceColor"))
+
+    # After restoring the one requested field, compare the complete section tree.
+    h.require(ET.tostring(before) == ET.tostring(after),
+              "HWPX section XML changed outside the nested shape fill", changed)
+    return {"changedParts": changed, "partSetPreserved": True,
+            "nestedShapeInstanceId": instance_id, "fillBefore": old_color,
+            "fillAfter": after_fill.get("faceColor"), "sectionSemanticEqualityAfterExpectedFill": True,
+            "resourceParts": [name for name in sorted(before_names)
+                              if name.startswith("BinData/") or "/media/" in name]}
+
+
+def textbox_nested_shape_native_select(acc, child, expected_fill="#996633"):
+    acc.d.js("""
+      window.p5TextboxShapePointers=[];
+      document.addEventListener('pointerdown',e=>{
+        if(e.target.closest('.rhwp-page__canvas'))
+          window.p5TextboxShapePointers.push({trusted:e.isTrusted,x:e.clientX,y:e.clientY});
+      },true);
+    """)
+    h.p6.pointer(acc, (child["page"], child["x"] + child["w"] / 2,
+                       child["y"] + child["h"] / 2))
+    # HWP's original-source SAFE preflight is asynchronous. A pointer hit can expose the
+    # frame before the structural edit gate settles; wait for the inspector capability too
+    # so an initial read-only transient is not misreported as a permanently blocked object.
+    try:
+        acc.wait("""
+          const f=document.querySelector(arguments[0]);
+          return f?.dataset.objectKind==='shape' && !!document.querySelector(arguments[1]);
+        """, h.FRAME, h.p6.SHAPE, timeout=30)
+    except Exception as error:
+        observed = acc.d.js("""
+          const f=document.querySelector(arguments[0]);
+          const save=document.querySelector(arguments[2]);
+          return {kind:f?.dataset.objectKind,shapeTools:!!document.querySelector(arguments[1]),
+            saveResult:save&&Object.fromEntries(['state','outcome','error','findings'].map(k=>[k,save.dataset[k]])),
+            saveFindings:Array.from(document.querySelectorAll(arguments[3]+' [data-code]')).map(e=>({code:e.dataset.code,part:e.dataset.part})),
+            text:document.body.innerText.slice(0,1200)};
+        """, h.FRAME, h.p6.SHAPE, "[data-testid='rhwp-save-result']", "[data-testid='save-findings']")
+        raise ValueError(f"textbox child inspector did not become editable after the source preflight settled: {observed!r}") from error
+    observed = acc.d.js("""
+      const f=document.querySelector(arguments[0]);
+      const input=document.querySelector(arguments[1]);
+      return {frame:f&&Object.fromEntries(['left','top','width','height'].map(k=>[k,parseFloat(f.style[k])])),
+        kind:f?.dataset.objectKind,fill:input?.value,shapeTools:!!document.querySelector(arguments[2]),
+        pointers:window.p5TextboxShapePointers.slice()};
+    """, h.FRAME, h.p6.SHAPE + " > label input[type=color]", h.p6.SHAPE)
+    h.require(observed["kind"] == "shape" and observed["shapeTools"],
+              "textbox child did not resolve to the editable shape inspector", observed)
+    h.require(observed["fill"].upper() == expected_fill.upper(),
+              "pointer selected the textbox owner or another sibling instead of the child ellipse", observed)
+    h.require(observed["pointers"] and observed["pointers"][-1]["trusted"] is True,
+              "nested shape was not selected by trusted Native pointer input", observed["pointers"])
+    return observed
+
+
+def textbox_nested_shape_hwp5_disk_proof(source, output, instance_id, chosen):
+    source_streams, output_streams = (h5.cfb_streams(path.read_bytes()) for path in (source, output))
+    h.require(source_streams.keys() == output_streams.keys(), "HWP5 CFB stream set changed")
+    changed_streams = sorted(name for name in source_streams if source_streams[name] != output_streams[name])
+    h.require(set(changed_streams) <= {"BodyText/Section0", "PrvText", "PrvImage"},
+              "nested textbox edit changed an unrelated HWP5 stream", changed_streams)
+    expected_text_preview = "body parent sibling\r\n".encode("utf-16le")
+    h.require(output_streams.get("PrvText") == expected_text_preview,
+              "saved HWP5 text preview is not the exact top-level body text", output_streams.get("PrvText"))
+    image_proof = canonical_preview_png(
+        output_streams.get("PrvImage", b""), hwp_preview_dimensions(output_streams))
+    h.require(image_proof is not None, "saved HWP5 page preview is not a canonical output-sized PNG")
+    before_rows = h5.records(h5.unpacked(source_streams, "BodyText/Section0"))
+    after_rows = h5.records(h5.unpacked(output_streams, "BodyText/Section0"))
+    before_start, before_end, before_owner = h5.textbox_object(before_rows)
+    after_start, after_end, after_owner = h5.textbox_object(after_rows)
+    h.require(before_rows[:before_start] == after_rows[:after_start]
+              and before_rows[before_end:] == after_rows[after_end:],
+              "HWP5 body records outside the textbox changed")
+    h.require(before_start == after_start and before_end - before_start == after_end - after_start,
+              "HWP5 textbox record span changed")
+
+    def child_span(owner):
+        starts = [index for index, (tag, level, data) in enumerate(owner)
+                  if tag == 71 and level > 3 and data.startswith(b" osg")]
+        h.require(len(starts) == 1, "expected exactly one direct nested GSO child", starts)
+        start = starts[0]
+        level = owner[start][1]
+        end = next((index for index in range(start + 1, len(owner)) if owner[index][1] <= level), len(owner))
+        h.require(owner[start + 1][0] == 76 and owner[start + 1][1] == level + 1,
+                  "nested GSO child has no shape component")
+        return start, end
+
+    before_child, after_child = child_span(before_owner), child_span(after_owner)
+    h.require(before_child == after_child and before_owner[:before_child[0]] == after_owner[:after_child[0]]
+              and before_owner[before_child[1]:] == after_owner[after_child[1]:],
+              "HWP5 textbox owner, paragraph, or child siblings changed")
+    h.require(len(before_owner[before_child[0]:before_child[1]])
+              == len(after_owner[after_child[0]:after_child[1]]),
+              "nested HWP5 GSO record count changed")
+    return {"changedStreams": changed_streams, "streamSetPreserved": True,
+            "onlyNestedGsoChildChanged": True, "nestedShapeInstanceId": instance_id,
+            "derivedTextPreviewExact": True, "imagePreview": image_proof,
+            "sourceChildRecordCount": before_child[1] - before_child[0],
+            "savedChildRecordCount": after_child[1] - after_child[0]}
+
+
+def textbox_nested_picture_hwpx_disk_proof(source, output, instance_id, sc_inst_id, width, height):
+    with zipfile.ZipFile(source) as before_zip, zipfile.ZipFile(output) as after_zip:
+        before_names, after_names = set(before_zip.namelist()), set(after_zip.namelist())
+        h.require(before_names == after_names, "nested HWPX picture resize changed the package part set",
+                  [sorted(before_names - after_names), sorted(after_names - before_names)])
+        changed = [name for name in sorted(before_names)
+                   if before_zip.read(name) != after_zip.read(name)]
+        h.require(changed == ["Contents/section0.xml"],
+                  "nested HWPX picture resize changed unrelated package parts", changed)
+        for name in before_names:
+            if name.startswith("BinData/"):
+                h.require(before_zip.read(name) == after_zip.read(name),
+                          "nested HWPX picture resize changed its media resource", name)
+        before = ET.fromstring(before_zip.read("Contents/section0.xml"))
+        after = ET.fromstring(after_zip.read("Contents/section0.xml"))
+
+    def picture(root):
+        matches = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "pic"
+                   and node.get("id") == str(instance_id)]
+        h.require(len(matches) == 1, "HWPX textbox picture identity is absent or ambiguous", len(matches))
+        return matches[0]
+
+    old_pic, new_pic = picture(before), picture(after)
+    h.require(old_pic.get("instid") == str(sc_inst_id) and new_pic.get("instid") == str(sc_inst_id),
+              "HWPX textbox picture source identity changed", [old_pic.attrib, new_pic.attrib])
+    changed_fields = {}
+    for tag in ("sz", "curSz"):
+        old = next((node for node in old_pic if node.tag.rsplit("}", 1)[-1] == tag), None)
+        new = next((node for node in new_pic if node.tag.rsplit("}", 1)[-1] == tag), None)
+        h.require(old is not None and new is not None, f"HWPX textbox picture lost its {tag} size")
+        h.require((new.get("width"), new.get("height")) == (str(width), str(height)),
+                  f"HWPX textbox picture {tag} differs from the requested dimensions",
+                  None if new is None else new.attrib)
+        changed_fields[tag] = {"before": dict(old.attrib), "after": dict(new.attrib)}
+        new.attrib = dict(old.attrib)
+    h.require(ET.tostring(before) == ET.tostring(after),
+              "HWPX section changed outside the nested picture's two size records")
+    return {"changedParts": changed, "partSetPreserved": True, "mediaBytesUnchanged": True,
+            "pictureInstanceId": instance_id, "pictureScInstId": sc_inst_id,
+            "sizeFields": changed_fields, "wholeSectionEqualAfterExpectedSize": True}
+
+
+def textbox_nested_picture_hwp5_disk_proof(source, output, before_model, after_model, width, height):
+    source_streams, output_streams = (h5.cfb_streams(path.read_bytes()) for path in (source, output))
+    h.require(source_streams.keys() == output_streams.keys(), "nested HWP5 picture resize changed CFB streams")
+    changed_streams = sorted(name for name in source_streams if source_streams[name] != output_streams[name])
+    h.require(set(changed_streams) <= {"BodyText/Section0", "PrvText", "PrvImage"},
+              "nested HWP5 picture resize changed unrelated CFB streams", changed_streams)
+    for name in source_streams:
+        if name.startswith("BinData/"):
+            h.require(source_streams[name] == output_streams[name],
+                      "nested HWP5 picture resize changed its BinData resource", name)
+    expected_text_preview = "\r\n".join(before_model["body"]) .encode("utf-16le") + "\r\n".encode("utf-16le")
+    h.require(output_streams.get("PrvText") == expected_text_preview,
+              "saved HWP5 text preview differs from the exact top-level body text",
+              output_streams.get("PrvText"))
+    image_proof = canonical_preview_png(
+        output_streams.get("PrvImage", b""), hwp_preview_dimensions(output_streams))
+    h.require(image_proof is not None, "saved HWP5 preview is not a canonical output-sized PNG")
+
+    before_rows = h5.records(h5.unpacked(source_streams, "BodyText/Section0"))
+    after_rows = h5.records(h5.unpacked(output_streams, "BodyText/Section0"))
+    before_start, before_end, before_owner = h5.textbox_object(before_rows)
+    after_start, after_end, after_owner = h5.textbox_object(after_rows)
+    h.require(before_rows[:before_start] == after_rows[:after_start]
+              and before_rows[before_end:] == after_rows[after_end:],
+              "HWP5 body records outside the textbox changed")
+    h.require(before_start == after_start and before_end - before_start == after_end - after_start,
+              "HWP5 textbox record span changed")
+
+    def child_span(owner):
+        starts = [index for index, (tag, level, data) in enumerate(owner)
+                  if tag == 71 and level > 3 and data.startswith(b" osg")]
+        h.require(len(starts) == 1, "expected exactly one direct nested picture GSO", starts)
+        start = starts[0]
+        level = owner[start][1]
+        end = next((index for index in range(start + 1, len(owner))
+                    if owner[index][1] <= level), len(owner))
+        return start, end
+
+    before_child, after_child = child_span(before_owner), child_span(after_owner)
+    h.require(before_child == after_child and len(before_owner) == len(after_owner),
+              "HWP5 nested picture record position or child span changed")
+    fields = {71: (16, 20), 76: (28, 32)}
+    normalized = []
+    seen = {71: 0, 76: 0}
+    for index, (old, new) in enumerate(zip(before_owner, after_owner)):
+        old_tag, old_level, old_data = old
+        new_tag, new_level, new_data = new
+        h.require((old_tag, old_level, len(old_data)) == (new_tag, new_level, len(new_data)),
+                  "HWP5 nested picture edit changed record tags, levels, or lengths", index)
+        if before_child[0] <= index < before_child[1] and old_tag in fields:
+            width_offset, height_offset = fields[old_tag]
+            old_bytes, new_bytes = bytearray(old_data), bytearray(new_data)
+            expected_old = (int(before_model["pictures"][0]["picture"]["width"]),
+                            int(before_model["pictures"][0]["picture"]["height"]))
+            expected_new = (width, height)
+            actual_old = (int.from_bytes(old_bytes[width_offset:width_offset + 4], "little"),
+                          int.from_bytes(old_bytes[height_offset:height_offset + 4], "little"))
+            actual_new = (int.from_bytes(new_bytes[width_offset:width_offset + 4], "little"),
+                          int.from_bytes(new_bytes[height_offset:height_offset + 4], "little"))
+            h.require(actual_old == expected_old and actual_new == expected_new,
+                      "HWP5 nested picture size fields differ from the inspected object", [old_tag, actual_old, actual_new])
+            new_bytes[width_offset:width_offset + 4] = old_bytes[width_offset:width_offset + 4]
+            new_bytes[height_offset:height_offset + 4] = old_bytes[height_offset:height_offset + 4]
+            normalized.append((new_tag, new_level, bytes(new_bytes)))
+            seen[old_tag] += 1
+        else:
+            normalized.append(new)
+    h.require(seen == {71: 1, 76: 1}, "HWP5 picture resize did not touch exactly its two size fields", seen)
+    h.require(before_owner == normalized,
+              "HWP5 textbox owner or nested picture bytes changed outside width and height")
+    return {"changedStreams": changed_streams, "streamSetPreserved": True, "binDataBytesUnchanged": True,
+            "pictureInstanceId": before_model["pictures"][0]["picture"]["instanceId"],
+            "normalizedNestedRecordsEqual": True, "onlyPictureWidthAndHeightChanged": True,
+            "sizeFields": {"width": width, "height": height}, "derivedTextPreviewExact": True,
+            "imagePreview": image_proof, "sourceChildRecordCount": before_child[1] - before_child[0],
+            "savedChildRecordCount": after_child[1] - after_child[0]}
+
+
+def textbox_nested_picture_native_select(acc, child, expected_width):
+    acc.d.js("""
+      if(!Array.isArray(window.p5TextboxPicturePointers)){
+        window.p5TextboxPicturePointers=[];
+        document.addEventListener('pointerdown',e=>{
+          if(e.target.closest('.rhwp-page__canvas'))
+            window.p5TextboxPicturePointers.push({trusted:e.isTrusted,x:e.clientX,y:e.clientY});
+        },true);
+      }
+    """)
+    h.p6.pointer(acc, (child["page"], child["x"] + child["w"] / 2,
+                       child["y"] + child["h"] / 2))
+    try:
+        acc.wait("""
+          return document.querySelector(arguments[0])?.dataset.objectKind==='picture'
+            &&!!document.querySelector(arguments[1]);
+        """, h.FRAME, WIDTH, timeout=30)
+    except Exception as error:
+        observed = acc.d.js("""
+          const f=document.querySelector(arguments[0]),save=document.querySelector(arguments[2]);
+          return {kind:f?.dataset.objectKind,sizeTools:!!document.querySelector(arguments[1]),
+            saveResult:save&&Object.fromEntries(['state','outcome','error','findings'].map(k=>[k,save.dataset[k]])),
+            text:document.body.innerText.slice(0,1000)};
+        """, h.FRAME, WIDTH, "[data-testid='rhwp-save-result']")
+        raise ValueError(f"textbox picture inspector did not become editable: {observed!r}") from error
+    observed = acc.d.js("""
+      const f=document.querySelector(arguments[0]);
+      const width=document.querySelector(arguments[1]),height=document.querySelector(arguments[2]);
+      return {kind:f?.dataset.objectKind,width:width?.value,height:height?.value,
+        frame:f&&Object.fromEntries(['left','top','width','height'].map(k=>[k,parseFloat(f.style[k])])),
+        pointers:window.p5TextboxPicturePointers.slice()};
+    """, h.FRAME, WIDTH, SIZE_FORM + " label:nth-of-type(2) input")
+    h.require(observed["kind"] == "picture" and observed["frame"] is not None,
+              "trusted hit selected the textbox owner instead of its nested picture", observed)
+    h.require(abs(float(observed["width"]) - expected_width) < 0.01,
+              "nested picture size inspector is bound to the wrong object or size", observed)
+    h.require(observed["pointers"] and observed["pointers"][-1]["trusted"] is True,
+              "nested textbox picture was not selected by trusted Native pointer input", observed["pointers"])
+    return observed
+
+
+def textbox_nested_picture(acc, row, fixtures, out, fmt="hwpx"):
+    fixture = fixtures / ("p5-tb-control-hwp5-picture.hwp" if fmt == "hwp"
+                          else "p5-tb-control-hwpx-picture.hwpx")
+    before = row["before"] = textbox_nested_picture_state(fixture)
+    h.require(len(before["pictures"]) == 1, "fixture must contain one nested textbox-owned picture", before)
+    target = before["pictures"][0]
+    h.require(target["ownerPath"] == [{"controlIndex": 2, "cellIndex": 0, "cellParaIndex": 0}]
+              and target["owner"].get("tbVerticalAlign") == "Bottom"
+              and target["picture"].get("instanceId") != target["owner"].get("instanceId")
+              and target["picture"].get("treatAsChar") is True
+              and target["picture"].get("width") == 4000 and target["picture"].get("height") == 2000,
+              "fixture picture identity, dimensions, or exact textbox ownership differs", target)
+    h.require(target["picture"].get("sha256") == "2e0817c744876e5f3ef3d890ab2601a435cc41a1d4507f67295c4ad968b623b2"
+              and target["ownerControl"][0].get("ctrlId") == "gso"
+              and target["ownerControl"][0].get("props", {}).get("Lock") == 0,
+              "fixture media hash or unlocked parent ownership is not verified", target)
+    row["initialFixtureSha256"] = h.digest(fixture)
+    path = h.begin(acc, row, fixture, out, f"p5-tb-control-{fmt}-picture-edited.{fmt}")
+    if fmt == "hwp":
+        h.p6.gso.p4.rhwp_poc.press_button(acc.d, "[data-testid=rhwp-save-check]")
+        acc.wait("""
+          const s=document.querySelector(arguments[0]);
+          return s?.dataset.state==='failed'||['safe','unsafe'].includes(s?.dataset.outcome);
+        """, "[data-testid=rhwp-save-result]", timeout=60)
+        row["originalPreflight"] = acc.d.js("""
+          const s=document.querySelector(arguments[0]);
+          return s&&Object.fromEntries(['state','outcome','error','findings'].map(k=>[k,s.dataset[k]]));
+        """, "[data-testid=rhwp-save-result]")
+        row["originalPreflightFindings"] = acc.d.js("""
+          return Array.from(document.querySelectorAll(arguments[0]+' [data-code]'))
+            .map(e=>({code:e.dataset.code,part:e.dataset.part}));
+        """, "[data-testid=save-findings]")
+        h.require(row["originalPreflight"].get("outcome") == "safe"
+                  and not row["originalPreflight"].get("error"),
+                  "HWP source preflight did not prove SAFE before picture mutation",
+                  {"check": row["originalPreflight"], "findings": row["originalPreflightFindings"]})
+
+    selected = row["nativeSelection"] = textbox_nested_picture_native_select(acc, target["child"], 40)
+    h.p6.fill_input(acc, WIDTH, "50")
+    acc.dom_click(SIZE_FORM + " button[type=submit]")
+    h.revision(acc, fmt, 1)
+    selected = textbox_nested_picture_native_select(acc, target["child"], 50)
+    acc.key("ctrl+z")
+    h.revision(acc, fmt, 2)
+    textbox_nested_picture_native_select(acc, target["child"], 40)
+    acc.key("ctrl+y")
+    h.revision(acc, fmt, 3)
+    selected = textbox_nested_picture_native_select(acc, target["child"], 50)
+    row["trustedPointerEvents"] = selected["pointers"]
+    h.require(row["trustedPointerEvents"]
+              and all(event["trusted"] is True for event in row["trustedPointerEvents"]),
+              "nested picture selection included an untrusted pointer event", row["trustedPointerEvents"])
+
+    h.publish(acc, fmt, row)
+    row["savedSha256"] = h.digest(path)
+    after = row["after"] = textbox_nested_picture_state(path)
+    h.require(len(after["pictures"]) == 1 and after["body"] == before["body"],
+              "picture resize changed body ownership or nested child count", after)
+    edited = after["pictures"][0]
+    h.require(edited["ownerPath"] == target["ownerPath"] and edited["owner"] == target["owner"]
+              and edited["ownerControl"] == target["ownerControl"]
+              and edited["picture"].get("instanceId") == target["picture"].get("instanceId")
+              and edited["picture"].get("binDataId") == target["picture"].get("binDataId")
+              and edited["picture"].get("byteLength") == target["picture"].get("byteLength")
+              and edited["picture"].get("sha256") == target["picture"].get("sha256")
+              and (edited["picture"].get("width"), edited["picture"].get("height")) == (5000, 2500),
+              "saved textbox picture changed owner/resource identity or requested dimensions", edited)
+    if fmt == "hwpx":
+        manifest = json.loads((fixtures / "fixture-manifest.json").read_text())
+        sc_inst_id = manifest["nestedPicture"]["sourceScInstId"]
+        row["packageProof"] = textbox_nested_picture_hwpx_disk_proof(
+            fixture, path, target["picture"]["instanceId"], sc_inst_id, 5000, 2500)
+    else:
+        row["cfbProof"] = textbox_nested_picture_hwp5_disk_proof(fixture, path, before, after, 5000, 2500)
+    row["undoRedo"] = {"undoRestoredWidth": 40, "redoRestoredWidth": 50, "revisions": [1, 2, 3]}
+    h.reopen(acc, path, row)
+    reopened = textbox_nested_picture_state(path)
+    h.require(reopened["pictures"][0]["picture"].get("instanceId") == target["picture"].get("instanceId")
+              and (reopened["pictures"][0]["picture"].get("width"),
+                   reopened["pictures"][0]["picture"].get("height")) == (5000, 2500),
+              "same-session reopen lost nested picture identity or dimensions", reopened)
+    row["sameSessionReopen"] = textbox_nested_picture_native_select(
+        acc, reopened["pictures"][0]["child"], 50)
+
+
+def textbox_nested_picture_fresh(acc, row, fixtures, out, fmt="hwpx"):
+    prior = json.loads((out / "result.json").read_text())
+    prior_case = prior.get("cases", {}).get(f"P5-TB-CONTROL-{fmt.upper()}-PICTURE", {})
+    h.require(prior_case.get("status") == "PASS", "fresh picture reopen requires a passing edit case", prior_case)
+    fixture = out / f"p5-tb-control-{fmt}-picture-edited.{fmt}"
+    path = h.begin(acc, row, fixture, out, f"p5-tb-control-{fmt}-picture-fresh-probe.{fmt}")
+    row["expectedSavedSha256"] = prior_case.get("savedSha256")
+    row["savedSha256"] = h.digest(path)
+    h.require(row["savedSha256"] == row["expectedSavedSha256"],
+              "fresh Native process received a different saved picture package", row)
+    h.require(row["processAppSha256"] == prior_case.get("processAppSha256")
+              and row["appPid"] != prior_case.get("appPid"),
+              "fresh reopen did not use the same Release application in a distinct process", row)
+    state = row["freshModel"] = textbox_nested_picture_state(path)
+    picture = state["pictures"][0]["picture"]
+    h.require(row["initialSession"].get("dirty") == "false"
+              and row["initialSession"].get("unpreserved") == "false"
+              and picture.get("instanceId") == prior_case.get("before", {}).get("pictures", [{}])[0].get("picture", {}).get("instanceId")
+              and (picture.get("width"), picture.get("height")) == (5000, 2500),
+              "fresh process did not restore the saved nested picture cleanly", state)
+    row["freshProcessReopen"] = textbox_nested_picture_native_select(
+        acc, state["pictures"][0]["child"], 50)
+
+
+def textbox_nested_shape(acc, row, fixtures, out, fmt="hwpx"):
+    fixture = fixtures / ("p5-tb-control-hwp5-shape.hwp" if fmt == "hwp"
+                         else "p5-tb-control-hwpx-shape.hwpx")
+    before = row["before"] = textbox_nested_shape_state(fixture)
+    h.require(len(before["children"]) == 1, "fixture must contain exactly one nested textbox-owned shape",
+              before["children"])
+    target = before["children"][0]
+    owner_path = target["ownerPath"]
+    h.require(owner_path == [{"controlIndex": 2, "cellIndex": 0, "cellParaIndex": 0}]
+              and target["owner"].get("tbVerticalAlign") == "Bottom"
+              and target["shape"].get("instanceId") != target["owner"].get("instanceId"),
+              "fixture child and textbox parent do not have independent owner identities", target)
+    row["initialFixtureSha256"] = h.digest(fixture)
+    path = h.begin(acc, row, fixture, out, f"p5-tb-control-{fmt}-shape-edited.{fmt}")
+    if fmt == "hwp":
+        # HWP structural edits require a SAFE proof of the exact source. Request the
+        # documented user-visible retry explicitly and record its decision before mutation.
+        h.p6.gso.p4.rhwp_poc.press_button(acc.d, "[data-testid=rhwp-save-check]")
+        acc.wait("""
+          const s=document.querySelector(arguments[0]);
+          return s?.dataset.state==='failed' || ['safe','unsafe'].includes(s?.dataset.outcome);
+        """, "[data-testid=rhwp-save-result]", timeout=60)
+        row["originalPreflight"] = acc.d.js("""
+          const s=document.querySelector(arguments[0]);
+          return s&&Object.fromEntries(['state','outcome','error','findings'].map(k=>[k,s.dataset[k]]));
+        """, "[data-testid=rhwp-save-result]")
+        row["originalPreflightFindings"] = acc.d.js("""
+          return Array.from(document.querySelectorAll(arguments[0]+' [data-code]'))
+            .map(e=>({code:e.dataset.code,part:e.dataset.part}));
+        """, "[data-testid=save-findings]")
+        h.require(row["originalPreflight"].get("outcome") == "safe"
+                  and not row["originalPreflight"].get("error"),
+                  "HWP source preflight did not prove SAFE before nested-object mutation",
+                  {"check": row["originalPreflight"], "findings": row["originalPreflightFindings"]})
+    selected = row["nativeSelection"] = textbox_nested_shape_native_select(acc, target["child"])
+    fill = h.p6.SHAPE + " > label input[type=color]"
+    original = h.p6.value(acc, fill)
+    h.require(original.upper() == "#996633", "nested fill inspector bound to the wrong shape", original)
+    chosen = "884422"
+    h.p6.color(acc, fill, "#" + chosen)
+    h.revision(acc, fmt, 1)
+    selected = textbox_nested_shape_native_select(acc, target["child"], "#" + chosen)
+    h.require(selected["fill"].upper() == "#" + chosen,
+              "nested ellipse color did not change through its textbox owner path", selected)
+    acc.key("ctrl+z")
+    h.revision(acc, fmt, 2)
+    selected = textbox_nested_shape_native_select(acc, target["child"])
+    h.require(selected["fill"].upper() == "#996633", "Undo did not restore the child fill", selected)
+    acc.key("ctrl+y")
+    h.revision(acc, fmt, 3)
+    selected = textbox_nested_shape_native_select(acc, target["child"], "#" + chosen)
+    h.require(selected["fill"].upper() == "#" + chosen, "Redo did not restore the child fill", selected)
+    row["trustedPointerEvents"] = selected["pointers"]
+    h.publish(acc, fmt, row)
+    after = row["after"] = textbox_nested_shape_state(path)
+    h.require(len(after["children"]) == 1 and after["body"] == before["body"],
+              "textbox shape edit changed body ownership or child count", after)
+    edited = after["children"][0]
+    h.require(edited["ownerPath"] == owner_path and edited["owner"] == target["owner"]
+              and edited["paragraphs"] == target["paragraphs"],
+              "nested shape edit changed textbox ownership or paragraph text", edited)
+    h.require(edited["shape"]["instanceId"] == target["shape"]["instanceId"]
+              and edited["shape"]["scInstId"] == target["shape"]["scInstId"]
+              and edited["shape"]["fillBgColor"] == int.from_bytes(bytes.fromhex(chosen), "little"),
+              "saved nested shape identity or fill is incorrect", edited["shape"])
+    row["packageProof"] = textbox_nested_shape_package_proof(
+        fixture, path, target["shape"]["instanceId"], chosen) if fmt == "hwpx" else textbox_nested_shape_hwp5_disk_proof(
+            fixture, path, target["shape"]["instanceId"], chosen)
+    row["undoRedo"] = {"undoRestored": "#996633", "redoRestored": "#" + chosen,
+                       "revisions": [1, 2, 3]}
+    row["savedSha256"] = h.digest(path)
+
+
+def textbox_nested_shape_fresh(acc, row, fixtures, out, fmt="hwpx"):
+    fixture = out / f"p5-tb-control-{fmt}-shape-edited.{fmt}"
+    prior = json.loads((out / "result.json").read_text())
+    prior_row = prior.get("cases", {}).get(f"P5-TB-CONTROL-{fmt.upper()}", {})
+    h.require(prior_row.get("status") == "PASS", "fresh reopen requires a passing edit case", prior_row)
+    h.require(prior_row.get("appPid") != row.get("appPid"),
+              "fresh reopen reused the prior Native application process",
+              {"editPid": prior_row.get("appPid"), "freshPid": row.get("appPid")})
+    before = row["savedModel"] = textbox_nested_shape_state(fixture)
+    h.require(len(before["children"]) == 1 and
+              before["children"][0]["shape"].get("fillBgColor") == int.from_bytes(bytes.fromhex("884422"), "little"),
+              "saved nested ellipse fill did not survive independent model reopen", before)
+    acc.open_native(fmt, fixture)
+    row["opened"] = acc.status(fmt)
+    h.require(row["opened"].get("dirty") == "false", f"fresh {fmt.upper()} session opened dirty", row["opened"])
+    selected = row["nativeSelection"] = textbox_nested_shape_native_select(
+        acc, before["children"][0]["child"], "#884422")
+    h.require(selected["fill"].upper() == "#884422", "fresh Native process rendered or selected a different child", selected)
+    row["freshProcessReopen"] = True
+    row["savedSha256"] = h.digest(fixture)
+
+
+
+def docx_textbox_color_points(acc, rgb):
+    return acc.d.js("""
+      const want=arguments[0],result=[];
+      for(const [page,c] of [...document.querySelectorAll('.docx-page canvas')].entries()){
+        if(!c.width||!c.height)continue;
+        const sx=c.width/c.clientWidth,sy=c.height/c.clientHeight;
+        const data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+        let count=0,sumX=0,sumY=0;
+        for(let y=0;y<=c.height;y++){
+          let row=0,rowX=0;
+          if(y<c.height)for(let x=0;x<c.width;x++){
+            const i=(y*c.width+x)*4;
+            if(data[i]!==want[0]||data[i+1]!==want[1]||data[i+2]!==want[2]||data[i+3]!==255)continue;
+            row++;rowX+=x;
+          }
+          if(row>5){count+=row;sumX+=rowX;sumY+=y*row}
+          else if(count>0){if(count>100)result.push([page,sumX/count/sx,sumY/count/sy,count]);count=0;sumX=0;sumY=0}
+        }
+      }
+      return result;
+    """, list(rgb))
+
+
+def select_docx_textbox_color(acc, rgb, kind):
+    points=docx_textbox_color_points(acc,rgb)
+    h.require(len(points)==1,"expected one rendered nested textbox target color",[rgb,points])
+    point=points[0]
+    x,y=acc.d.js("""
+      const [page,x,y]=arguments[0],c=document.querySelectorAll('.docx-page canvas')[page];
+      const s=document.querySelector('.editor__scroll'),r=c.getBoundingClientRect(),v=s.getBoundingClientRect();
+      const k=r.width/c.clientWidth;s.scrollTop+=r.top+y*k-(v.top+v.height/2);
+      const n=c.getBoundingClientRect();return[n.left+x*k,n.top+y*k];
+    """,point)
+    h.p4.rhwp_poc.click(acc.d,x,y)
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind===arguments[1]",
+             h.FRAME,kind,timeout=10)
+    crop=h.p6.TOOLS+" form:has(.picture-crop-fields)"
+    state=acc.d.js("""
+      const f=document.querySelector(arguments[0]);
+      return {kind:f?.dataset.objectKind,
+        frame:f&&Object.fromEntries(['left','top','width','height'].map(k=>[k,parseFloat(f.style[k])])),
+        width:document.querySelector(arguments[1])?.value??null,
+        height:document.querySelector(arguments[2])?.value??null,
+        description:document.querySelector(arguments[3])?.value??null,
+        fill:document.querySelector(arguments[4])?.value??null,
+        crop:[...document.querySelectorAll(arguments[5]+' .picture-crop-fields input')].map(e=>e.value)};
+    """,h.FRAME,WIDTH,SIZE_FORM+" label:nth-of-type(2) input",DESCRIPTION,
+      h.p6.SHAPE+" label input[type=color]",crop)
+    h.require(state["kind"]==kind and state["frame"] is not None,
+              "trusted hit did not select the nested textbox child",state)
+    return {"point":point,"state":state}
+
+
+def docx_textbox_picture_proof(source,output):
+    with zipfile.ZipFile(source) as before_zip,zipfile.ZipFile(output) as after_zip:
+        before_names,after_names=set(before_zip.namelist()),set(after_zip.namelist())
+        h.require(before_names==after_names,"textbox child edits changed the OPC part set",
+                  [sorted(before_names-after_names),sorted(after_names-before_names)])
+        changed=[name for name in sorted(before_names) if before_zip.read(name)!=after_zip.read(name)]
+        h.require(set(changed)<={"word/document.xml","docProps/app.xml"}
+                  and "word/document.xml" in changed,"textbox child edit changed unrelated OPC parts",changed)
+        for name in sorted(before_names):
+            if name.endswith(".rels") or name.startswith("word/media/"):
+                h.require(before_zip.read(name)==after_zip.read(name),
+                          "textbox picture edit changed a relationship or media resource",name)
+        before=ET.fromstring(before_zip.read("word/document.xml"))
+        after=ET.fromstring(after_zip.read("word/document.xml"))
+
+    def content(root):
+        matches=list(root.iter(W+"txbxContent"))
+        h.require(len(matches)==1,"DOCX fixture has ambiguous textbox story ownership",len(matches))
+        return matches[0]
+
+    def picture(textbox):
+        matches=list(textbox.iter(PIC+"pic"))
+        h.require(len(matches)==1,"textbox story must contain exactly one picture",len(matches))
+        pic=matches[0]
+        inline=next((node for node in textbox.iter(WP+"inline")
+                     if node.find(".//"+PIC+"pic") is pic),None)
+        h.require(inline is not None,"nested textbox picture lost its inline frame")
+        return inline,pic
+
+    before_content,after_content=content(before),content(after)
+    before_inline,before_pic=picture(before_content)
+    after_inline,after_pic=picture(after_content)
+    paragraphs=lambda node:["".join(t.text or "" for t in p.iter(W+"t")) for p in node.iter(W+"p")]
+    h.require(paragraphs(before_content)==paragraphs(after_content),"picture edit changed textbox paragraph text")
+    old_frame,new_frame=before_inline.find(WP+"extent"),after_inline.find(WP+"extent")
+    old_shape,new_shape=before_pic.find(".//"+A+"xfrm/"+A+"ext"),after_pic.find(".//"+A+"xfrm/"+A+"ext")
+    h.require(all(node is not None for node in (old_frame,new_frame,old_shape,new_shape)),
+              "nested picture lost a DrawingML extent")
+    h.require(new_frame.attrib=={"cx":"635000","cy":"317500"}
+              and new_shape.attrib=={"cx":"635000","cy":"317500"},
+              "saved nested picture extents differ from 50×25 pt",[new_frame.attrib,new_shape.attrib])
+    old_blip,new_blip=before_pic.find(".//"+A+"blip"),after_pic.find(".//"+A+"blip")
+    old_cn,new_cn=before_pic.find(".//"+PIC+"cNvPr"),after_pic.find(".//"+PIC+"cNvPr")
+    old_docpr,new_docpr=before_inline.find(WP+"docPr"),after_inline.find(WP+"docPr")
+    h.require(old_blip is not None and new_blip is not None and old_blip.attrib==new_blip.attrib,
+              "nested picture relationship identity changed")
+    h.require(old_cn is not None and new_cn is not None and old_docpr is not None and new_docpr is not None
+              and new_cn.get("descr")=="Nested textbox picture"
+              and new_docpr.get("descr")=="Nested textbox picture"
+              and old_cn.get("id")==new_cn.get("id") and old_docpr.get("id")==new_docpr.get("id"),
+              "nested picture identity or alt text changed incorrectly")
+    old_crop,new_crop=before_pic.find(".//"+A+"srcRect"),after_pic.find(".//"+A+"srcRect")
+    h.require(new_crop is not None and new_crop.get("l")=="10000"
+              and all(new_crop.get(side,"0")=="0" for side in ("t","r","b")),
+              "saved nested picture crop differs from the requested left crop",
+              None if new_crop is None else new_crop.attrib)
+
+    def child_shape(textbox):
+        candidates=[]
+        for node in textbox.iter(WPS+"wsp"):
+            fill=node.find(".//"+A+"solidFill/"+A+"srgbClr")
+            if fill is not None and fill.get("val","").upper() in {"7A47A8","884422"}:
+                candidates.append((node,fill))
+        h.require(len(candidates)==1,"nested textbox child shape is absent or ambiguous",len(candidates))
+        return candidates[0]
+
+    (old_shape_obj,old_fill),(new_shape_obj,new_fill)=child_shape(before_content),child_shape(after_content)
+    h.require(old_fill.get("val","").upper()=="7A47A8" and new_fill.get("val","").upper()=="884422",
+              "nested textbox shape did not preserve the requested fill")
+    saved_frame,saved_shape=new_frame.attrib.copy(),new_shape.attrib.copy()
+    saved_crop=new_crop.attrib.copy()
+    saved_alt_text=new_docpr.get("descr")
+    saved_shape_fill=new_fill.get("val")
+    saved_relationship=new_blip.get(REL+"embed")
+    h.require(saved_relationship is not None,"saved nested picture relationship id is missing")
+    new_frame.attrib=old_frame.attrib.copy();new_shape.attrib=old_shape.attrib.copy()
+    if old_crop is None:
+        for parent in after_pic.iter():
+            for child in list(parent):
+                if child is new_crop: parent.remove(child)
+    else:
+        new_crop.attrib=old_crop.attrib.copy()
+    for target,source_node in ((new_cn,old_cn),(new_docpr,old_docpr)):
+        if "descr" in source_node.attrib: target.set("descr",source_node.get("descr"))
+        else: target.attrib.pop("descr",None)
+    new_fill.set("val",old_fill.get("val"))
+    h.require(ET.tostring(before)==ET.tostring(after),
+              "document.xml changed outside the nested picture fields and child shape fill")
+    return {"changedParts":changed,"partSetPreserved":True,"relationshipsAndMediaUnchanged":True,
+            "textboxParagraphTextPreserved":True,"nestedPictureRelationship":saved_relationship,
+            "pictureIdentityPreserved":True,"pictureFrameExtent":saved_frame,
+            "pictureShapeExtent":saved_shape,"pictureCrop":saved_crop,
+            "pictureAltText":saved_alt_text,"siblingShapeFill":saved_shape_fill,
+            "wholeDocumentEqualAfterExpectedEdits":True}
+
+
+def textbox_nested_docx(acc,row,fixtures,out):
+    fixture=fixtures/"p5-tb-control-docx-original.docx"
+    path=h.begin(acc,row,fixture,out,"p5-tb-control-docx-edited.docx")
+    row["sourceObjects"]={"nestedPictureRgb":[140,90,40],"nestedShapeRgb":[122,71,168]}
+    acc.wait("return [...document.querySelectorAll('.docx-page canvas')].some(c=>c.width>0)",timeout=15)
+    acc.d.js("""
+      window.p5TextboxChildPointers=[];
+      document.addEventListener('pointerdown',e=>{
+        if(e.target.closest('.docx-page'))window.p5TextboxChildPointers.push({trusted:e.isTrusted,x:e.clientX,y:e.clientY});
+      },true);
+    """)
+
+    def select_picture(expected_width):
+        selected=select_docx_textbox_color(acc,(140,90,40),"picture")
+        state=selected["state"]
+        h.require(float(state["width"])==expected_width and state["height"] is not None
+                  and len(state["crop"])==4 and state["description"] is not None,
+                  "nested picture inspector lacks the required story-owned edit fields",state)
+        return selected
+
+    selected=row["pictureSelection"]=select_picture(40)
+    size_button=SIZE_FORM+" button[type=submit]"
+    h.p6.fill_input(acc,WIDTH,"50");acc.dom_click(size_button);h.revision(acc,"docx",1)
+    select_picture(50);acc.key("ctrl+z");h.revision(acc,"docx",2)
+    select_picture(40);acc.key("ctrl+y");h.revision(acc,"docx",3)
+    select_picture(50)
+
+    crop_form=h.p6.TOOLS+" form:has(.picture-crop-fields)"
+    h.p6.fill_input(acc,crop_form+" .picture-crop-fields label:first-of-type input","10")
+    acc.dom_click(crop_form+" button[type=submit]");h.revision(acc,"docx",4)
+    crop_state=select_picture(50)["state"]
+    h.require(crop_state["crop"][0]=="10","nested picture crop was not applied",crop_state)
+    acc.key("ctrl+z");h.revision(acc,"docx",5)
+    crop_state=select_picture(50)["state"]
+    h.require(float(crop_state["crop"][0])==0,"Undo did not restore the nested picture crop",crop_state)
+    acc.key("ctrl+y");h.revision(acc,"docx",6)
+    crop_state=select_picture(50)["state"]
+    h.require(crop_state["crop"][0]=="10","Redo did not restore the nested picture crop",crop_state)
+
+    alt_form=h.p6.TOOLS+' form:has(input[maxlength="1024"])'
+    h.p6.fill_input(acc,DESCRIPTION,"Nested textbox picture")
+    acc.dom_click(alt_form+" button[type=submit]");h.revision(acc,"docx",7)
+    h.require(select_picture(50)["state"]["description"]=="Nested textbox picture",
+              "nested picture alt text did not update")
+    acc.key("ctrl+z");h.revision(acc,"docx",8)
+    h.require(select_picture(50)["state"]["description"]=="","Undo did not restore nested picture alt text")
+    acc.key("ctrl+y");h.revision(acc,"docx",9)
+    h.require(select_picture(50)["state"]["description"]=="Nested textbox picture",
+              "Redo did not restore nested picture alt text")
+
+    shape=row["shapeSelection"]=select_docx_textbox_color(acc,(122,71,168),"shape")
+    fill=h.p6.SHAPE+" label input[type=color]"
+    h.require(shape["state"]["fill"].upper()=="#7A47A8",
+              "Native hit selected a parent or sibling instead of the nested rectangle",shape)
+    h.p6.color(acc,fill,"#884422");h.revision(acc,"docx",10)
+    shape=select_docx_textbox_color(acc,(136,68,34),"shape")
+    h.require(shape["state"]["fill"].upper()=="#884422","nested shape fill edit missed its child",shape)
+    acc.key("ctrl+z");h.revision(acc,"docx",11)
+    shape=select_docx_textbox_color(acc,(122,71,168),"shape")
+    h.require(shape["state"]["fill"].upper()=="#7A47A8","Undo did not restore nested shape fill",shape)
+    acc.key("ctrl+y");h.revision(acc,"docx",12)
+    shape=select_docx_textbox_color(acc,(136,68,34),"shape")
+    h.require(shape["state"]["fill"].upper()=="#884422","Redo did not restore nested shape fill",shape)
+    row["trustedNativePointers"]=acc.d.js("return window.p5TextboxChildPointers.slice()")
+    h.require(len(row["trustedNativePointers"])>=12
+              and all(event["trusted"] is True for event in row["trustedNativePointers"]),
+              "nested textbox children were not reached through trusted Native pointer input",
+              row["trustedNativePointers"])
+
+    h.publish(acc,"docx",row)
+    row["savedSha256"]=h.digest(path)
+    row["packageProof"]=docx_textbox_picture_proof(fixture,path)
+    h.reopen(acc,path,row)
+    reopened_picture=select_picture(50)
+    h.require(reopened_picture["state"]["description"]=="Nested textbox picture",
+              "same-session reopen lost nested picture alt text",reopened_picture)
+    reopened_shape=select_docx_textbox_color(acc,(136,68,34),"shape")
+    h.require(reopened_shape["state"]["fill"].upper()=="#884422",
+              "same-session reopen lost nested shape fill",reopened_shape)
+    row["sameSessionReopen"]={"picture":reopened_picture,"shape":reopened_shape}
+
+
+def textbox_nested_docx_fresh(acc,row,fixtures,out):
+    prior=json.loads((out/"result.json").read_text())
+    prior_row=prior.get("cases",{}).get("P5-TB-CONTROL-DOCX",{})
+    h.require(prior_row.get("status")=="PASS","fresh DOCX reopen requires a passing edit case",prior_row)
+    fixture=out/"p5-tb-control-docx-edited.docx"
+    path=h.begin(acc,row,fixture,out,"p5-tb-control-docx-fresh-probe.docx")
+    row["expectedSavedSha256"]=prior_row.get("savedSha256")
+    row["savedSha256"]=h.digest(path)
+    h.require(row["savedSha256"]==row["expectedSavedSha256"],"fresh DOCX received a different saved package",row)
+    h.require(row["processAppSha256"]==prior_row.get("processAppSha256")
+              and row["appPid"]!=prior_row.get("appPid"),
+              "fresh DOCX did not use the same Release app in a distinct process",row)
+    h.require(row["initialSession"].get("dirty")=="false"
+              and row["initialSession"].get("unpreserved")=="false",
+              "saved DOCX reopened dirty or unpreserved in a fresh process",row["initialSession"])
+    picture=select_docx_textbox_color(acc,(140,90,40),"picture")
+    h.require(float(picture["state"]["width"])==50
+              and picture["state"]["description"]=="Nested textbox picture"
+              and picture["state"]["crop"][0]=="10",
+              "fresh DOCX did not restore nested picture fields",picture)
+    shape=select_docx_textbox_color(acc,(136,68,34),"shape")
+    h.require(shape["state"]["fill"].upper()=="#884422",
+              "fresh DOCX did not restore nested shape ownership and fill",shape)
+    row["freshProcessReopen"]={"picture":picture,"shape":shape}
+
 
 h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-NOTE-MOVE": note_move,
@@ -2667,6 +3460,16 @@ h.CASES = {"P5.1": stories, "P5.2": textbox, "P5.5": textbox_join,
            "P5-DX-SIZE-NONCANON": resize_noncanonical_story_picture,
            "P5-TB-REPLACE": textbox_replace,
            "P5-TB-MIX": lambda *args: textbox_join(*args, span=3, mixed=True),
+           "P5-TB-CONTROL-HWPX": textbox_nested_shape,
+           "P5-TB-CONTROL-HWPX-FRESH": lambda *args: textbox_nested_shape_fresh(*args, "hwpx"),
+           "P5-TB-CONTROL-HWP": lambda *args: textbox_nested_shape(*args, "hwp"),
+           "P5-TB-CONTROL-HWP-FRESH": lambda *args: textbox_nested_shape_fresh(*args, "hwp"),
+           "P5-TB-CONTROL-HWPX-PICTURE": lambda *args: textbox_nested_picture(*args, "hwpx"),
+           "P5-TB-CONTROL-HWPX-PICTURE-FRESH": lambda *args: textbox_nested_picture_fresh(*args, "hwpx"),
+           "P5-TB-CONTROL-HWP-PICTURE": lambda *args: textbox_nested_picture(*args, "hwp"),
+           "P5-TB-CONTROL-HWP-PICTURE-FRESH": lambda *args: textbox_nested_picture_fresh(*args, "hwp"),
+           "P5-TB-CONTROL-DOCX": textbox_nested_docx,
+           "P5-TB-CONTROL-DOCX-FRESH": textbox_nested_docx_fresh,
            "P5-DX-STORY-SIZE": lambda *args: stories(*args, resize=True),
            "P5-TB-RANGE": lambda *args: textbox_join(*args, span=3)}
 

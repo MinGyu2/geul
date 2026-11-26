@@ -865,6 +865,140 @@ pub(super) fn is_basic_shape(rs: &[Record<'_>]) -> bool {
     shape_ctrl_id(rs).is_some_and(|(kind, _, _)| matches!(kind, SC_RECT | SC_ELLIPSE | SC_LINE))
 }
 
+/// The record spans of direct GSO controls inside one unlocked, uncaptained HWP5 text box.
+/// The textbox itself, its LIST_HEADER, paragraph records, and its rectangle leaf remain
+/// outside these spans so a child edit cannot authorize a change to its owner or story.
+fn textbox_nested_gso_spans(rs: &[Record<'_>]) -> Option<Vec<(usize, usize)>> {
+    let first = rs.first()?;
+    let (SC_RECT, 8, 1) = shape_ctrl_id(rs)? else {
+        return None;
+    };
+    let owner_level = first.1;
+    let owner_id = gso_header_id(rs)?;
+    if owner_level != 1
+        || owner_id == 0
+        || dword(first.2, 4).ok()? as u32 & (ATTR_LOCKED | ATTR_CAPTION) != 0
+        || rs.get(2).is_none_or(|record| {
+            record.0 != TAG_LIST_HEADER || record.1 != owner_level + 2 || record.2.len() != 33
+        })
+        || !dword(rs[2].2, 0)
+            .ok()
+            .is_some_and(|count| (1..=64).contains(&count))
+        || rs
+            .last()
+            .is_none_or(|record| record.0 != TAG_RECTANGLE || record.1 != owner_level + 2)
+    {
+        return None;
+    }
+
+    let mut spans = Vec::new();
+    let mut index = 3;
+    let parent_leaf = rs.len() - 1;
+    while index < parent_leaf {
+        let record = rs[index];
+        if record.0 == TAG_CTRL_HEADER
+            && record.1 > owner_level + 2
+            && record.2.starts_with(CTRL_GSO)
+        {
+            let end = rs[index + 1..]
+                .iter()
+                .position(|next| next.1 <= record.1)
+                .map_or(rs.len(), |offset| index + 1 + offset);
+            if end > parent_leaf {
+                return None;
+            }
+            spans.push((index, end));
+            index = end;
+        } else {
+            index += 1;
+        }
+    }
+    (!spans.is_empty()).then_some(spans)
+}
+
+/// Candidate for a one-child GSO edit inside a text box. The parent object and
+/// all text/story records must be byte-identical outside the changed child span.
+pub(super) fn textbox_nested_gso_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    if old == new || old.len() != new.len() || gso_header_id(old) != gso_header_id(new) {
+        return false;
+    }
+    let (Some(old_spans), Some(new_spans)) =
+        (textbox_nested_gso_spans(old), textbox_nested_gso_spans(new))
+    else {
+        return false;
+    };
+    if old_spans != new_spans || old_spans.is_empty() {
+        return false;
+    }
+    let mut in_child = vec![false; old.len()];
+    let mut child_ids = std::collections::BTreeSet::new();
+    let mut changed = 0usize;
+    for &(start, end) in &old_spans {
+        in_child[start..end].fill(true);
+        let before = &old[start..end];
+        let after = &new[start..end];
+        let Some(id) = gso_header_id(before) else {
+            return false;
+        };
+        if id == 0 || !child_ids.insert(id) || gso_header_id(after) != Some(id) {
+            return false;
+        }
+        if before != after {
+            let (Some((old_kind, _, _)), Some((new_kind, _, _))) =
+                (shape_ctrl_id(before), shape_ctrl_id(after))
+            else {
+                return false;
+            };
+            if old_kind != new_kind {
+                return false;
+            }
+            changed += 1;
+        }
+    }
+    changed == 1
+        && old
+            .iter()
+            .zip(new)
+            .enumerate()
+            .all(|(index, (before, after))| in_child[index] || before == after)
+}
+
+/// Prove that exactly one direct textbox-owned GSO evolved through the existing
+/// field-level validator. No parent geometry, paragraph, sibling, or other child
+/// record is admitted by this path.
+pub(super) fn prove_textbox_nested_gso_edit(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(textbox_nested_gso_candidate(old, new), BODY)?;
+    let spans =
+        textbox_nested_gso_spans(old).ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    let mut changed = None;
+    for (start, end) in spans {
+        let before = &old[start..end];
+        let after = &new[start..end];
+        if before != after {
+            preserved(changed.is_none(), BODY)?;
+            changed = Some((before, after));
+        }
+    }
+    let (before, after) = changed.ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    let shift = before[0]
+        .1
+        .checked_sub(1)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    preserved(
+        before.iter().chain(after).all(|record| record.1 >= shift),
+        BODY,
+    )?;
+    let normalize = |(tag, level, data)| (tag, level - shift, data);
+    let old_normalized: Vec<_> = before.iter().copied().map(normalize).collect();
+    let new_normalized: Vec<_> = after.iter().copied().map(normalize).collect();
+    prove_evolved_gso(&old_normalized, &new_normalized, orig_defs, defs)
+}
+
 fn picture_bin_id(rs: &[Record<'_>]) -> Option<usize> {
     let leaf = rs.last()?;
     if leaf.0 != TAG_PICTURE || leaf.2.len() < 73 {
@@ -3225,6 +3359,63 @@ mod tests {
         b
     }
 
+    fn textbox_with_nested_shapes(
+        fills: &[u32],
+        text: &[u8],
+        owner_x: i32,
+        lock_first_child: bool,
+    ) -> Vec<(u16, u16, Vec<u8>)> {
+        let mut list = vec![0u8; 33];
+        list[..4].copy_from_slice(&1u32.to_le_bytes());
+        let mut records = vec![
+            (
+                71,
+                1,
+                ctrl_header(303, 0x000a_0000, owner_x, 0, 8000, 4000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, None, 555),
+            ),
+            (72, 3, list),
+            (66, 4, vec![0; 22]),
+            (67, 4, text.to_vec()),
+        ];
+        for (index, fill) in fills.iter().enumerate() {
+            let child_id = 404 + index as u32;
+            let attr = if index == 0 && lock_first_child {
+                0x400a_0000
+            } else {
+                0x000a_0000
+            };
+            records.extend([
+                (
+                    71,
+                    4,
+                    ctrl_header(child_id, attr, 0, 0, 3000, 2000, "", &[]),
+                ),
+                (
+                    76,
+                    5,
+                    shape_component_drawing(
+                        b"cer$",
+                        3000,
+                        2000,
+                        0,
+                        0,
+                        0,
+                        Some(*fill),
+                        child_id + 1000,
+                    ),
+                ),
+                (79, 6, rect_leaf(0, 3000, 2000)),
+            ]);
+        }
+        records.push((79, 3, rect_leaf(0, 8000, 4000)));
+        records
+    }
+
     fn wrap_section(objects: Vec<Vec<(u16, u16, Vec<u8>)>>) -> Vec<(u16, u16, Vec<u8>)> {
         let mut text = Vec::new();
         text.extend_from_slice(&2u16.to_le_bytes());
@@ -3280,6 +3471,143 @@ mod tests {
         let refreshed = refresh_previews(orig, edited, Some(&raster)).unwrap();
         let output = refreshed.output.as_deref().unwrap_or(edited);
         compare_with(orig, output, Mode::Edited, refreshed.image.as_deref())
+    }
+
+    #[test]
+    fn textbox_nested_gso_t009_proves_one_child_and_rejects_owner_or_sibling_changes() {
+        let package = |textbox: Vec<(u16, u16, Vec<u8>)>| {
+            let di = doc_info_records(0);
+            let di_ref: Vec<_> = di
+                .iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect();
+            let section = wrap_section(vec![textbox]);
+            let section_ref: Vec<_> = section
+                .iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect();
+            build_hwp(&di_ref, &section_ref, b"\x89PNG\r\n\x1a\n123")
+        };
+        let definitions = doc_info_records(0);
+        let definition_refs: Vec<_> = definitions
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let original_object =
+            textbox_with_nested_shapes(&[0xAABBCC, 0x334455], b"text\r\0", 0, false);
+        let edited_object =
+            textbox_with_nested_shapes(&[0x112233, 0x334455], b"text\r\0", 0, false);
+        let original_records: Vec<_> = original_object
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let edited_records: Vec<_> = edited_object
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let defs = super::super::insertions::definitions(&definition_refs);
+        assert!(super::textbox_nested_gso_candidate(
+            &original_records,
+            &edited_records
+        ));
+        super::prove_textbox_nested_gso_edit(&original_records, &edited_records, &defs, &defs)
+            .unwrap();
+
+        let original = package(textbox_with_nested_shapes(
+            &[0xAABBCC, 0x334455],
+            b"text\r\0",
+            0,
+            false,
+        ));
+        let one_child_edit = package(textbox_with_nested_shapes(
+            &[0x112233, 0x334455],
+            b"text\r\0",
+            0,
+            false,
+        ));
+        assert_eq!(
+            check_with_preview_refresh(&original, &one_child_edit),
+            vec![]
+        );
+
+        let parent_moved = package(textbox_with_nested_shapes(
+            &[0x112233, 0x334455],
+            b"text\r\0",
+            100,
+            false,
+        ));
+        assert!(check_with_preview_refresh(&original, &parent_moved)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        let text_changed = package(textbox_with_nested_shapes(
+            &[0x112233, 0x334455],
+            b"Text\r\0",
+            0,
+            false,
+        ));
+        assert!(check_with_preview_refresh(&original, &text_changed)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        let two_children_changed = package(textbox_with_nested_shapes(
+            &[0x112233, 0x778899],
+            b"text\r\0",
+            0,
+            false,
+        ));
+        assert!(check_with_preview_refresh(&original, &two_children_changed)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        let locked_child = package(textbox_with_nested_shapes(
+            &[0x112233, 0x334455],
+            b"text\r\0",
+            0,
+            true,
+        ));
+        assert!(check_with_preview_refresh(&original, &locked_child)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(super::BODY)));
+
+        // The textbox child route shares the field validator with root pictures, but it must
+        // also prove that the exact child identity and BinData owner stay fixed.
+        let picture = |width: u32, height: u32, bin_id: u16, leaf_tail: &[u8]| {
+            let mut list = vec![0u8; 33];
+            list[..4].copy_from_slice(&1u32.to_le_bytes());
+            vec![
+                (71, 1, ctrl_header(303, 0x000a_0000, 0, 0, 8000, 4000, "", &[])),
+                (76, 2, shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, None, 555)),
+                (72, 3, list),
+                (66, 4, vec![0; 22]),
+                (67, 4, b"text\r\0".to_vec()),
+                (71, 4, ctrl_header(404, 0x000a_0311, 0, 0, width, height, "Nested", b"\xaa\xbb")),
+                (76, 5, shape_component_base(b"cip$", 4000, 2000, width, height, 0, 0)),
+                (85, 6, picture_leaf(bin_id, [0, 0, 4000, 2000], leaf_tail)),
+                (79, 3, rect_leaf(0, 8000, 4000)),
+            ]
+        };
+        let picture_defs = doc_info_records(1);
+        let picture_def_refs: Vec<_> = picture_defs
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let picture_defs = super::super::insertions::definitions(&picture_def_refs);
+        let before = picture(4000, 2000, 1, b"\x01\x02");
+        let resized = picture(5000, 2500, 1, b"\x01\x02");
+        let before_refs: Vec<_> = before.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+        let resized_refs: Vec<_> = resized.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+        assert!(super::textbox_nested_gso_candidate(&before_refs, &resized_refs));
+        super::prove_textbox_nested_gso_edit(&before_refs, &resized_refs, &picture_defs, &picture_defs).unwrap();
+
+        let substituted_resource = picture(5000, 2500, 2, b"\x01\x02");
+        let substituted_refs: Vec<_> = substituted_resource
+            .iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+        assert!(super::textbox_nested_gso_candidate(&before_refs, &substituted_refs));
+        assert!(super::prove_textbox_nested_gso_edit(&before_refs, &substituted_refs, &picture_defs, &picture_defs).is_err());
+
+        let changed_opaque_tail = picture(5000, 2500, 1, b"\x01\x03");
+        let changed_tail_refs: Vec<_> = changed_opaque_tail
+            .iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
+        assert!(super::textbox_nested_gso_candidate(&before_refs, &changed_tail_refs));
+        assert!(super::prove_textbox_nested_gso_edit(&before_refs, &changed_tail_refs, &picture_defs, &picture_defs).is_err());
     }
 
     #[test]

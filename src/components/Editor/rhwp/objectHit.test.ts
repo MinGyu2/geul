@@ -255,6 +255,35 @@ describe("RHWP object hit testing", () => {
     expect(hitRhwpObject(layout({ ...nested, noteRef: 1 }), 0, 25, 40)?.cellPicture).toBeUndefined();
   });
 
+  it("resolves a text-box-owned shape only from its complete stable cell path", () => {
+    const cellPath = [
+      { controlIndex: 4, cellIndex: 0, cellParaIndex: 2 },
+      { controlIndex: 1, cellIndex: 0, cellParaIndex: 0 },
+    ];
+    const nested = control({
+      type: "shape",
+      secIdx: 3,
+      paraIdx: 7,
+      controlIdx: 0,
+      parentParaIdx: 7,
+      cellPath,
+      stableIndex: [3, 7, 4, 0, 2, 1, 0, 0, 0],
+    });
+    const hit = hitRhwpObject(layout(nested), 0, 25, 40);
+    expect(hit?.cellShape).toEqual({
+      section: 3,
+      paragraph: 7,
+      control: 0,
+      path: JSON.stringify(cellPath),
+    });
+    expect(hit?.bodyShape).toBeUndefined();
+
+    expect(hitRhwpObject(layout({
+      ...nested,
+      stableIndex: [3, 7, 4, 0, 2, 1, 0, 0, 2],
+    }), 0, 25, 40)?.cellShape).toBeUndefined();
+  });
+
   it("rejects invalid points, pages, bounds, and unknown object types", () => {
     expect(hitRhwpObject(layout(control()), -1, 25, 40)).toBeNull();
     expect(hitRhwpObject(layout(control()), 0, Number.NaN, 40)).toBeNull();

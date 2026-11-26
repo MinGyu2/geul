@@ -13,7 +13,8 @@ ARTIFACTS = ("rhwp.js", "rhwp_bg.wasm")
 PUBLIC_FIELDS = {"schemaVersion", "engine", "commit", "profile", "tools", "sourceFingerprint", "generation", "artifacts"}
 HEX256 = re.compile(r"[0-9a-f]{64}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?")
-MAX_PATCHES = 64
+# Stage 3's ordered, independently reviewable RHWP patch series now exceeds 64.
+MAX_PATCHES = 128
 MAX_GENERATIONS = 6
 OPT_FLAGS = ("-O",)
 

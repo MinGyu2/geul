@@ -3,6 +3,7 @@ import type { RhwpDocument } from "./rhwpModule";
 import { canonical } from "./rhwpArtifactIdentity";
 import { cachedFormula } from "./formulaDependencies";
 import { inspectRhwpShapePath } from "./shapeProperties";
+import { inspectRhwpPicture } from "./pictureProperties";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 
 type JsonObject = Record<string, unknown>;
@@ -269,13 +270,19 @@ export function insertedCellPicture(doc: RhwpDocument, section: number, host: nu
   } catch { return false; }
 }
 
-export function cellPictureEvidence(doc: RhwpDocument, section: number, host: number, path: string, control: number): JsonObject | null {
+export function cellPictureEvidence(doc: RhwpDocument, section: number, host: number, path: string, control: number,
+  options: { allowMissingImageDimensions?: boolean } = {}): JsonObject | null {
   if (!doc.getCellPictureByPath) return null;
   const p = readObject(doc.getCellPictureByPath(section, host, path, control));
+  const imageDimensions = [p.imageWidthHu, p.imageHeightHu];
+  const validImageDimensions = options.allowMissingImageDimensions === true
+    ? imageDimensions.every(value => isInt(value, 0)) && (imageDimensions.every(value => value === 0)
+      || imageDimensions.every(value => isInt(value, 1)))
+    : imageDimensions.every(value => isInt(value, 1));
   if (p.ok !== true || p.section !== section || p.paraIdx !== host || p.controlIdx !== control
     || canonical(p.path) !== canonical(JSON.parse(path)) || p.treatAsChar !== true
     || !["instanceId", "width", "height", "binDataId", "storageId", "byteLength"].every(k => isInt(p[k], 1))
-    || !["imageWidthHu", "imageHeightHu"].every(k => isInt(p[k], 1))
+    || !validImageDimensions
     || !Array.isArray(p.crop) || p.crop.length !== 4 || !p.crop.every(v => isInt(v, 0))
     || p.horizontalOffset !== 0 || p.verticalOffset !== 0 || (p.byteLength as number) > 16 * 1024 * 1024
     || !isInt(p.position, 0) || typeof p.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(p.sha256)) return null;
@@ -307,6 +314,100 @@ function nestedPictureModel(doc: RhwpDocument, c: JsonObject, lists: Map<number,
     if (typeof props.description === "string") description = props.description;
   }
   return { ...picture, ...(description !== undefined ? { description } : {}), streamPosition: c.pos };
+}
+
+/** A directly-owned, unlocked body-textbox shape can be compared through its exact cursor-list path.
+ * Keep other nested GSO controls fail-closed: captions, notes, cells, and recursive owners need their
+ * own independently-proven story model. */
+function nestedTextBoxShapeModel(doc: RhwpDocument, c: JsonObject, lists: Map<number, JsonObject>,
+  textboxOwners: ReadonlyMap<string, JsonObject[]>, ownerLists: ReadonlyMap<string, JsonObject[]>,
+  sectionEnds: readonly number[]): JsonObject | null {
+  if (c.ctrlId !== "gso" || typeof c.userDesc !== "string" || !["사각형", "타원", "직선"].includes(c.userDesc)
+    || !isInt(c.list, 2) || !isInt(c.para, 0) || !isInt(c.controlIndex, 0) || !isInt(c.pos, 0)
+    || !isObject(c.props) || c.props.Lock !== 0 || !doc.getShapeProperties || !doc.getCellShapePropertiesByPath) return null;
+  const list = lists.get(c.list);
+  if (!list || list.isCell !== false || list.hostListId !== 0
+    || !isInt(list.listId, 2) || !isInt(list.sectionIndex, 0, sectionEnds.length - 1)
+    || !isInt(list.hostPara, 0) || !isInt(list.controlIndex, 0) || list.cellIndex !== 0
+    || !isInt(list.paraCount, 1) || c.para >= list.paraCount
+    || lists.size === 0) return null;
+
+  const section = list.sectionIndex;
+  const hostParagraph = list.hostPara;
+  const listOwners = ownerLists.get(`${section}/${hostParagraph}/${list.controlIndex}/0`);
+  if (!listOwners || listOwners.length !== 1 || listOwners[0]!.listId !== list.listId) return null;
+  const hostGlobalParagraph = (section === 0 ? 0 : sectionEnds[section - 1]!) + hostParagraph;
+  const owners = textboxOwners.get(`${hostGlobalParagraph}/${list.controlIndex}`);
+  const owner = owners?.length === 1 ? owners[0]! : undefined;
+  if (!owner || owner.ctrlId !== "gso" || (owner.userDesc !== "사각형" && owner.userDesc !== "글상자")
+    || !isObject(owner.props) || owner.props.Lock !== 0) return null;
+
+  try {
+    const ownerProperties = readObject(doc.getShapeProperties(section, hostParagraph, list.controlIndex));
+    if (!["Top", "Center", "Bottom"].includes(String(ownerProperties.tbVerticalAlign))) return null;
+    const path = JSON.stringify([{ controlIndex: list.controlIndex, cellIndex: 0, cellParaIndex: c.para }]);
+    const properties = readObject(doc.getCellShapePropertiesByPath(section, hostParagraph, path, c.controlIndex));
+    checkShapeProperties(properties);
+    checkControlProps(c.props);
+    if ((properties.width as number) < 1 || (properties.height as number) < 1
+      || properties.width !== c.props.Width || properties.height !== c.props.Height
+      || properties.treatAsChar !== (c.props.TreatAsChar === 1)) return null;
+    return {
+      owner: { section, paragraph: hostParagraph, control: list.controlIndex, type: owner.userDesc },
+      path: JSON.parse(path),
+      child: { list: c.list, paragraph: c.para, control: c.controlIndex, type: c.userDesc, position: c.pos, props: c.props },
+      properties,
+    };
+  } catch { return null; }
+}
+
+/** A direct unlocked body-textbox picture is represented only when its exact path, media
+ * digest, frame metadata, and simple-inline geometry can all be re-read independently. HWP5
+ * does not expose decoded media dimensions for imported pictures; the zero/zero pair is safe
+ * here because this model is for existing pictures and the supported HWP operation is resize.
+ * New-picture insertion continues to require positive image dimensions. */
+function nestedTextBoxPictureModel(doc: RhwpDocument, c: JsonObject, lists: Map<number, JsonObject>,
+  textboxOwners: ReadonlyMap<string, JsonObject[]>, ownerLists: ReadonlyMap<string, JsonObject[]>,
+  sectionEnds: readonly number[]): JsonObject | null {
+  if (c.ctrlId !== "gso" || c.userDesc !== "그림" || !isInt(c.list, 2) || !isInt(c.para, 0)
+    || !isInt(c.controlIndex, 0) || !isInt(c.pos, 0) || !isObject(c.props) || c.props.Lock !== 0
+    || !doc.getShapeProperties || !doc.getCellPicturePropertiesByPath) return null;
+  const list = lists.get(c.list);
+  if (!list || list.isCell !== false || list.hostListId !== 0 || list.listId !== c.list
+    || !isInt(list.sectionIndex, 0, sectionEnds.length - 1) || !isInt(list.hostPara, 0)
+    || !isInt(list.controlIndex, 0) || list.cellIndex !== 0 || !isInt(list.paraCount, 1)
+    || c.para >= list.paraCount) return null;
+  const section = list.sectionIndex;
+  const hostParagraph = list.hostPara;
+  const path = JSON.stringify([{ controlIndex: list.controlIndex, cellIndex: 0, cellParaIndex: c.para }]);
+  const listOwners = ownerLists.get(`${section}/${hostParagraph}/${list.controlIndex}/0`);
+  if (!listOwners || listOwners.length !== 1 || listOwners[0]!.listId !== list.listId) return null;
+  const hostGlobalParagraph = (section === 0 ? 0 : sectionEnds[section - 1]!) + hostParagraph;
+  const owners = textboxOwners.get(`${hostGlobalParagraph}/${list.controlIndex}`);
+  const owner = owners?.length === 1 ? owners[0]! : undefined;
+  if (!owner || owner.ctrlId !== "gso" || (owner.userDesc !== "사각형" && owner.userDesc !== "글상자")
+    || !isObject(owner.props) || owner.props.Lock !== 0) return null;
+
+  try {
+    const ownerProperties = readObject(doc.getShapeProperties(section, hostParagraph, list.controlIndex));
+    if (!["Top", "Center", "Bottom"].includes(String(ownerProperties.tbVerticalAlign))) return null;
+    const resource = cellPictureEvidence(doc, section, hostParagraph, path, c.controlIndex,
+      { allowMissingImageDimensions: true });
+    if (!resource || resource.treatAsChar !== true || resource.width !== c.props.Width
+      || resource.height !== c.props.Height || c.props.TreatAsChar !== 1) return null;
+    checkControlProps(c.props);
+    const raw = doc.getCellPicturePropertiesByPath(section, hostParagraph, path, c.controlIndex);
+    const picture = inspectRhwpPicture({ getPictureProperties: () => raw }, [section, hostParagraph, c.controlIndex]);
+    if (!picture?.simpleInline || !picture.deletable
+      || picture.properties.widthPt * 100 !== resource.width || picture.properties.heightPt * 100 !== resource.height) return null;
+    return {
+      owner: { section, paragraph: hostParagraph, control: list.controlIndex, type: owner.userDesc },
+      path: JSON.parse(path),
+      child: { list: c.list, paragraph: c.para, control: c.controlIndex, type: c.userDesc, position: c.pos, props: c.props },
+      resource,
+      properties: readObject(raw),
+    };
+  } catch { return null; }
 }
 
 /** A blank getControls kind is not evidence of a field. Independently join the
@@ -650,6 +751,8 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const tables: unknown[] = [];
   const pictures: unknown[] = [];
   const shapes: unknown[] = [];
+  const textBoxObjects: unknown[] = [];
+  const textBoxPictures: unknown[] = [];
   const charts: unknown[] = [];
   const textBoxes: unknown[] = [];
   const inventory: unknown[] = [];
@@ -662,6 +765,22 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
   const cursorLists = controls.some(c => isObject(c) && c.list !== 0
     && (c.ctrlId === "tbl" || c.ctrlId === "gso" || c.ctrlId === "atno")) && doc.getCursorModel
     ? cursorListMap(object(json(doc.getCursorModel()))) : null;
+  const textboxOwners = new Map<string, JsonObject[]>();
+  const ownerLists = new Map<string, JsonObject[]>();
+  if (cursorLists) for (const list of cursorLists.values()) if (list.isCell === false && list.hostListId === 0
+    && isInt(list.sectionIndex, 0) && isInt(list.hostPara, 0) && isInt(list.controlIndex, 0) && list.cellIndex === 0) {
+    const key = `${list.sectionIndex}/${list.hostPara}/${list.controlIndex}/0`;
+    const owners = ownerLists.get(key) ?? [];
+    owners.push(list);
+    ownerLists.set(key, owners);
+  }
+  for (const value of controls) if (isObject(value) && value.list === 0
+    && isInt(value.para, 0) && isInt(value.controlIndex, 0)) {
+    const key = `${value.para}/${value.controlIndex}`;
+    const owners = textboxOwners.get(key) ?? [];
+    owners.push(value);
+    textboxOwners.set(key, owners);
+  }
   const bodyGsos = new Set(controls.filter((v): v is JsonObject =>
     isObject(v) && v.list === 0 && v.ctrlId === "gso" && isInt(v.para, 0) && isInt(v.controlIndex, 0))
     .map(v => `${v.para}/${v.controlIndex}`));
@@ -678,6 +797,12 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     if (c.list !== 0 && c.ctrlId === "gso" && c.userDesc === "그림" && cursorLists) {
       const picture = nestedPictureModel(doc, c, cursorLists);
       if (picture) { pictures.push(picture); continue; }
+      const textBoxPicture = nestedTextBoxPictureModel(doc, c, cursorLists, textboxOwners, ownerLists, sectionEnds);
+      if (textBoxPicture) { textBoxPictures.push(textBoxPicture); continue; }
+    }
+    if (c.list !== 0 && c.ctrlId === "gso" && cursorLists) {
+      const child = nestedTextBoxShapeModel(doc, c, cursorLists, textboxOwners, ownerLists, sectionEnds);
+      if (child) { textBoxObjects.push(child); continue; }
     }
     if (c.list !== 0 && c.ctrlId === "atno" && c.ctrlCh === 18 && c.userDesc === "번호 넣기"
       && isObject(c.props) && Object.keys(c.props).length === 0
@@ -872,7 +997,8 @@ export function hwpReopenModel(doc: RhwpDocument): HwpReopenModel {
     }
   }
   return {
-    model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes, headerPictures, headerShapes }),
+    model: canonical({ sections, tables, pictures, shapes, charts, fields, nested, textBoxes, textBoxObjects,
+      textBoxPictures, headerPictures, headerShapes }),
     structure: canonical({ inventory, headings }), complete, headerPictures, headerPicturesComplete, headerShapes, headerShapesComplete,
   };
 }

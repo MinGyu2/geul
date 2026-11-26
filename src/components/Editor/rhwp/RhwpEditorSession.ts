@@ -1,5 +1,6 @@
 import { MAX_CAPTION_SPACING_HWPUNIT, POSITION_PRESETS, objectEditMatches, objectEditRequest, pictureResizeMatches, type MutatingObjectOperation, type ObjectEditRequest, type ObjectOperation, type ObjectSelection, type PictureResizeRequest } from "../../../commands/objectSelection";
-import { hitRhwpObject, type CellPictureAddress, type HeaderFooterPictureAddress, type HeaderFooterShapeAddress } from "./objectHit";
+import { hitRhwpObject, type CellPictureAddress, type CellShapeAddress, type HeaderFooterPictureAddress, type HeaderFooterShapeAddress } from "./objectHit";
+import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
@@ -360,7 +361,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
-  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; headerFooterPictureAddress?: HeaderFooterPictureAddress; headerFooterShapeAddress?: HeaderFooterShapeAddress; cellPicture?: CellPictureAddress; shapeAddress?: readonly [number, number, number]; groupAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number]; copyControl?: { kind: RichObjectKind; address: readonly [number, number, number] } } | null = null;
+  private selectedObject: { selection: ObjectSelection; model: number; layout: number; owner: number; pictureAddress?: readonly [number, number, number]; headerFooterPictureAddress?: HeaderFooterPictureAddress; headerFooterShapeAddress?: HeaderFooterShapeAddress; cellPicture?: CellPictureAddress; cellShapeAddress?: CellShapeAddress; shapeAddress?: readonly [number, number, number]; groupAddress?: readonly [number, number, number]; chartAddress?: readonly [number, number, number]; copyControl?: { kind: RichObjectKind; address: readonly [number, number, number] } } | null = null;
   private objectEpoch = 0;
   private lastCopiedObjectToken: string | null = null;
 
@@ -2059,8 +2060,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const headerFooterPicUnlocked = !!headerFooterPicture && (format === "hwpx"
             || (format === "hwp" && this.hwpHeaderFooterPictureEditable(headerFooterPicture)))
             && !!this.doc.getHeaderFooterPictureProperties && !!this.doc.setHeaderFooterPictureProperties;
-          const canPic = Boolean(inspected && this.history && (headerFooterPicture
-            ? headerFooterPicUnlocked : canEditGso && picUnlocked));
+          const canPic = Boolean(inspected && this.history && (cellPicture
+            ? format === "hwpx" || (format === "hwp" && this.structuralFormat())
+            : headerFooterPicture ? headerFooterPicUnlocked : canEditGso && picUnlocked));
           const pictureSetter = headerFooterPicture
             ? this.doc.setHeaderFooterPictureProperties : this.doc.setPictureProperties;
           const canResize = canPic && inspected!.simpleInline && !!pictureSetter;
@@ -2093,23 +2095,32 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           // Body and story-owned shapes use separate addresses. A story hit never falls back to a body tuple.
           const shapeAddress = hit.bodyShape && hit.bodyShape[1] < this.doc.getParagraphCount(hit.bodyShape[0]) ? hit.bodyShape : undefined;
           const headerFooterShape = hit.headerFooterShape;
+          const cellShapeAddress = hit.cellShape && (format === "hwpx"
+            || (format === "hwp" && this.structuralFormat())) ? hit.cellShape : undefined;
+          const cellShape = cellShapeAddress ? this.readCellShape(cellShapeAddress) : null;
           const headerShapeApi = headerFooterShape && this.doc.getHeaderFooterShapeProperties && this.doc.setHeaderFooterShapeProperties
             ? { getShapeProperties: () => this.doc!.getHeaderFooterShapeProperties!(
               headerFooterShape.section, headerFooterShape.kind, headerFooterShape.outerParagraph,
               headerFooterShape.outerControl, headerFooterShape.innerParagraph,
               headerFooterShape.cellPath ?? "[]", headerFooterShape.innerControl,
             ) } : undefined;
+          const cellShapeApi = cellShapeAddress && this.doc.getCellShapePropertiesByPath && this.doc.setCellShapePropertiesByPath
+            ? { getShapeProperties: () => this.doc!.getCellShapePropertiesByPath!(
+              cellShapeAddress.section, cellShapeAddress.paragraph, cellShapeAddress.path, cellShapeAddress.control,
+            ) } : undefined;
           const resolvedShapeAddress = shapeAddress ?? (headerFooterShape
             ? [headerFooterShape.section, headerFooterShape.innerParagraph, headerFooterShape.innerControl] as const
+            : cellShapeAddress ? [cellShapeAddress.section, cellShapeAddress.paragraph, cellShapeAddress.control] as const
             : undefined);
           // Story-owned shapes have their own exact-owner baseline and T009 proof. Do not
           // make them depend on the broader body-structure eligibility gate.
           const shapeSupported = headerFooterShape
             ? format === "hwpx" || (format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterShape))
+            : cellShapeAddress ? !!cellShape && (format === "hwpx" || (format === "hwp" && this.structuralFormat()))
             : format === "hwpx" || (canEditHwp && this.isEditableHwpGso(shapeAddress, true));
-          const shapePropertiesApi = shapeAddress ? this.doc : headerShapeApi;
+          const shapePropertiesApi = shapeAddress ? this.doc : headerShapeApi ?? cellShapeApi;
           const shape = resolvedShapeAddress && this.history && shapeSupported
-            && (shapeAddress ? !!this.doc.setShapeProperties : !!headerShapeApi)
+            && (shapeAddress ? !!this.doc.setShapeProperties : !!headerShapeApi || !!cellShapeApi)
             ? inspectRhwpShape(shapePropertiesApi!, resolvedShapeAddress) : undefined;
           const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
             ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
@@ -2131,11 +2142,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(headerFooterShape
                 ? (!shape.sizeProtected ? ["resize" as const] : [])
                 : (format === "hwpx" || !shape.sizeProtected ? ["resize" as const] : [])),
-              ...(!headerFooterShape && this.doc.deleteShapeControl
+              ...(!headerFooterShape && !cellShape && this.doc.deleteShapeControl
                 && (format !== "hwp" || !shape.hasCaption || this.ownsHwpGsoCaption(shapeAddress, true))
                 ? ["delete" as const] : []), "wrap",
               ...(shape.fillEditable ? ["fill" as const] : []), "outline", "rotate",
-              ...(!headerFooterShape && this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
+              ...(!headerFooterShape && !cellShape && this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
                 ? ["zOrder" as const] : []));
           }
           const groupAddress = hit.bodyGroup && hit.bodyGroup[1] < this.doc.getParagraphCount(hit.bodyGroup[0]) ? hit.bodyGroup : undefined;
@@ -2182,6 +2193,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ...(operations.length > 0 && headerFooterPicture ? { headerFooterPictureAddress: headerFooterPicture } : {}),
             ...(operations.length > 0 && headerFooterShape ? { headerFooterShapeAddress: headerFooterShape } : {}),
             ...(cellPicture ? { cellPicture: hit.cellPicture } : {}),
+            ...(shape && cellShapeAddress ? { cellShapeAddress } : {}),
             ...(shape && shapeAddress ? { shapeAddress } : {}),
             ...(group && groupAddress ? { groupAddress } : {}),
             ...(chartAddress ? { chartAddress } : {}),
@@ -2211,6 +2223,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
                 ...shape.properties,
                 ...(shape.solidOutline && (headerFooterShape
                   ? format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterShape)
+                  : cellShape ? format === "hwpx"
                   : this.isEditableHwpGso(shapeAddress, true)) ? { outlineWidthEditable: true } : {}),
               } } : {}),
             },
@@ -4954,6 +4967,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           this.selectedObject.headerFooterShapeAddress.innerControl],
         this.selectedObject.headerFooterShapeAddress);
     }
+    if (this.selectedObject?.cellShapeAddress) {
+      const cell = this.selectedObject.cellShapeAddress;
+      return this.editShape(request, [cell.section, cell.paragraph, cell.control], undefined, cell);
+    }
     if (this.selectedObject?.shapeAddress) return this.editShape(request, this.selectedObject.shapeAddress);
     if (this.selectedObject?.groupAddress) return this.editGroup(request, this.selectedObject.groupAddress);
     if (this.selectedObject?.cellPicture) {
@@ -5537,16 +5554,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     request: ObjectEditRequest,
     address: readonly [number, number, number],
     headerFooterAddress?: HeaderFooterShapeAddress,
+    cellShapeAddress?: CellShapeAddress,
   ): boolean {
     const doc = this.doc, selected = this.objectSelection;
-    const setterAvailable = headerFooterAddress ? !!doc?.setHeaderFooterShapeProperties : !!doc?.setShapeProperties;
+    const setterAvailable = headerFooterAddress ? !!doc?.setHeaderFooterShapeProperties
+      : cellShapeAddress ? !!doc?.setCellShapePropertiesByPath : !!doc?.setShapeProperties;
     if (!selected || !doc || !setterAvailable || !objectEditMatches(request, selected) || !this.history) return false;
     const format = this.sessions.get(this.sessionId)?.format;
     if (headerFooterAddress
       ? format !== "hwpx" && !(format === "hwp" && this.hwpHeaderFooterShapeEditable(headerFooterAddress))
+      : cellShapeAddress ? format !== "hwpx" && !(format === "hwp" && this.structuralFormat())
       : !this.gsoFormatEditable(address, true)) return false;
     const inspect = () => headerFooterAddress
-      ? inspectRhwpHeaderFooterShape(doc, headerFooterAddress) : inspectRhwpShape(doc, address);
+      ? inspectRhwpHeaderFooterShape(doc, headerFooterAddress)
+      : cellShapeAddress
+        ? (() => {
+          const value = this.readCellShape(cellShapeAddress);
+          return value?.shape;
+        })()
+        : inspectRhwpShape(doc, address);
     const before = inspect();
     if (!before || !selected.shape
       || before.properties.widthPt !== selected.shape.widthPt || before.properties.heightPt !== selected.shape.heightPt) return false;
@@ -5568,7 +5594,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let operation: (() => void) | null = null;
     switch (edit.kind) {
       case "delete":
-        if (headerFooterAddress || !doc.deleteShapeControl
+        if (headerFooterAddress || cellShapeAddress || !doc.deleteShapeControl
           || (format === "hwp" && before.hasCaption && !this.ownsHwpGsoCaption(address, true))) return false;
         operation = () => {
           const result = JSON.parse(doc.deleteShapeControl!(...address)) as { ok?: boolean };
@@ -5615,7 +5641,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const borderWidth = Math.round(edit.width * 100);
           if (!selected.shape.outlineWidthEditable || !before.solidOutline
             || (headerFooterAddress ? format !== "hwpx" && !this.hwpHeaderFooterShapeEditable(headerFooterAddress)
-              : !this.isEditableHwpGso(address, true))
+              : !cellShapeAddress && format === "hwp" && !this.isEditableHwpGso(address, true))
             || edit.width < 0.01 || edit.width > 72 || !Number.isSafeInteger(borderWidth)) return false;
           props = expect = { borderColor, borderWidth };
           keep = except("borderColor", "borderWidth");
@@ -5635,7 +5661,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         keep = except("treatAsChar", "textWrap", "horzOffset", "vertOffset");
         break;
       case "layer": {
-        if (headerFooterAddress || !doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
+        if (headerFooterAddress || cellShapeAddress || !doc.changeShapeZOrder || !selected.operations.includes("zOrder")) return false;
         const layers = format === "hwp" ? this.hwpShapeLayers(address) : null;
         if (format === "hwp" && !layers) return false;
         const edge = layers && (edit.front ? layers.max : layers.min);
@@ -5668,6 +5694,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           ? doc.setHeaderFooterShapeProperties!(headerFooterAddress.section, headerFooterAddress.kind,
             headerFooterAddress.outerParagraph, headerFooterAddress.outerControl, headerFooterAddress.innerParagraph,
             headerFooterAddress.cellPath ?? "[]", headerFooterAddress.innerControl, JSON.stringify(props))
+          : cellShapeAddress
+            ? doc.setCellShapePropertiesByPath!(cellShapeAddress.section, cellShapeAddress.paragraph,
+              cellShapeAddress.path, cellShapeAddress.control, JSON.stringify(props))
           : doc.setShapeProperties!(...address, JSON.stringify(props))) as { ok?: boolean };
         const after = inspect();
         if (result.ok !== true || !after || !unchanged(after.raw, keep)
@@ -5692,50 +5721,155 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return accepted;
   }
 
+  private cellPathHasTextBoxOwners(
+    section: number,
+    paragraph: number,
+    entries: readonly { controlIndex: number; cellIndex: number; cellParaIndex: number }[],
+  ): boolean {
+    const doc = this.doc;
+    if (!doc?.getShapeProperties || !doc.getCellShapePropertiesByPath || !doc.getControls || !doc.getCursorModel
+      || entries.length < 1 || entries.length > 64) return false;
+    try {
+      const rawControls = doc.getControls(), rawModel = doc.getCursorModel();
+      if (rawControls.length + rawModel.length > 8 * 1024 * 1024) return false;
+      const controls = JSON.parse(rawControls) as {
+        list: number; para: number; controlIndex: number; ctrlId: string; userDesc: string;
+        props?: { Lock?: number };
+      }[];
+      const { lists } = JSON.parse(rawModel) as { lists: {
+        listId: number; isCell: boolean; hostListId: number; sectionIndex: number; hostPara: number;
+        controlIndex: number; cellIndex: number; paraCount: number;
+      }[] };
+      let paragraphOffset = 0;
+      for (let i = 0; i < section; i += 1) paragraphOffset += doc.getParagraphCount(i);
+      if (!hasUnlockedTextBoxOwnerPath(section, paragraph, paragraphOffset, entries, lists, controls)) return false;
+
+      for (let i = 0; i < entries.length; i += 1) {
+        const owner = entries[i]!;
+        const rawOwner = i === 0
+          ? doc.getShapeProperties(section, paragraph, owner.controlIndex)
+          : doc.getCellShapePropertiesByPath(section, paragraph, JSON.stringify(entries.slice(0, i)), owner.controlIndex);
+        const props: unknown = JSON.parse(rawOwner);
+        if (!props || typeof props !== "object" || Array.isArray(props)
+          || typeof (props as Record<string, unknown>).tbVerticalAlign !== "string") return false;
+      }
+      return true;
+    } catch { return false; }
+  }
+
+  /** Resolve the final control in a validated textbox child path without aliasing a body address. */
+  private cellPathChildControl(
+    section: number,
+    paragraph: number,
+    entries: readonly { controlIndex: number; cellIndex: number; cellParaIndex: number }[],
+    controlIndex: number,
+  ): { ctrlId: string; userDesc: string; list: number; para: number; controlIndex: number;
+    props?: { Lock?: number } } | null {
+    const doc = this.doc;
+    if (!doc?.getControls || !doc.getCursorModel || entries.length < 1 || entries.length > 64) return null;
+    try {
+      const rawControls = doc.getControls(), rawModel = doc.getCursorModel();
+      if (rawControls.length + rawModel.length > 8 * 1024 * 1024) return null;
+      const controls = JSON.parse(rawControls) as {
+        list: number; para: number; controlIndex: number; ctrlId: string; userDesc: string; props?: { Lock?: number };
+      }[];
+      const { lists } = JSON.parse(rawModel) as { lists: {
+        listId: number; isCell: boolean; hostListId: number; sectionIndex: number; hostPara: number;
+        controlIndex: number; cellIndex: number;
+      }[] };
+      let list = 0;
+      let para = paragraph;
+      for (let i = 0; i < section; i += 1) para += doc.getParagraphCount(i);
+      let localHostPara = paragraph;
+      for (const owner of entries) {
+        const matches = lists.filter(candidate => !candidate.isCell && candidate.hostListId === list
+          && candidate.sectionIndex === section && candidate.hostPara === localHostPara
+          && candidate.controlIndex === owner.controlIndex && candidate.cellIndex === owner.cellIndex);
+        if (matches.length !== 1) return null;
+        list = matches[0]!.listId;
+        para = owner.cellParaIndex;
+        localHostPara = owner.cellParaIndex;
+      }
+      const matches = controls.filter(control => control.list === list && control.para === para
+        && control.controlIndex === controlIndex);
+      return matches.length === 1 ? matches[0]! : null;
+    } catch { return null; }
+  }
+
+  private readCellShape(address: CellShapeAddress) {
+    const doc = this.doc;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if ((format !== "hwpx" && !(format === "hwp" && this.structuralFormat())) || !this.history
+      || !doc?.getShapeProperties || !doc.getCellShapePropertiesByPath || !doc.setCellShapePropertiesByPath) return null;
+    try {
+      const entries = JSON.parse(address.path) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[];
+      if (!Array.isArray(entries) || !this.cellPathHasTextBoxOwners(address.section, address.paragraph, entries)) return null;
+      const owner = this.cellPathChildControl(address.section, address.paragraph, entries, address.control);
+      if (!owner || owner.ctrlId !== "gso" || owner.props?.Lock !== 0
+        || !["사각형", "타원", "직선", "다각형", "곡선", "글상자"].includes(owner.userDesc)) return null;
+
+      const raw = doc.getCellShapePropertiesByPath(address.section, address.paragraph, address.path, address.control);
+      const shape = inspectRhwpShape({ getShapeProperties: () => raw },
+        [address.section, address.paragraph, address.control]);
+      return shape ? { shape, raw } : null;
+    } catch { return null; }
+  }
+
   private readCellPicture(address: CellPictureAddress) {
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
     if ((format !== "hwpx" && !(format === "hwp" && address.section === 0 && this.structuralFormat()))
-      || !this.history || !doc?.getControls || !doc.getCursorModel
+      || !this.history || !doc
       || !doc.getCellPicturePropertiesByPath || !doc.setCellPicturePropertiesByPath) return null;
     const { section, paragraph, path, control } = address;
     try {
       const entries = JSON.parse(path) as { controlIndex: number; cellIndex: number; cellParaIndex: number }[];
       if (!Array.isArray(entries) || entries.length < 1 || entries.length > 64) return null;
-      const rawModel = doc.getCursorModel(), rawControls = doc.getControls();
-      if (rawModel.length + rawControls.length > 8 * 1024 * 1024) return null;
-      const { lists } = JSON.parse(rawModel) as { lists: { listId: number; isCell: boolean; hostListId: number;
-        sectionIndex: number; hostPara: number; controlIndex: number; cellIndex: number }[] };
-      const controls = JSON.parse(rawControls) as { list: number; para: number; controlIndex: number; ctrlId: string;
-        userDesc: string; props?: { Lock?: number; TreatAsChar?: number } }[];
-      let currentListId = 0;
-      let currentPara = paragraph;
-      for (let s = 0; s < section; s++) currentPara += doc.getParagraphCount(s);
-      let localHostPara = paragraph;
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i]!;
-        if (!entry || !Number.isSafeInteger(entry.controlIndex) || entry.controlIndex < 0
-          || !Number.isSafeInteger(entry.cellIndex) || entry.cellIndex < 0
-          || !Number.isSafeInteger(entry.cellParaIndex) || entry.cellParaIndex < 0) return null;
-        const table = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === entry.controlIndex);
-        if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0) return null;
-        if (format === "hwp" && i === 0 && table[0]!.props?.TreatAsChar !== 0) return null;
-        const owners = lists.filter(l => l.isCell && l.hostListId === currentListId && l.sectionIndex === section
-          && l.hostPara === localHostPara && l.controlIndex === entry.controlIndex && l.cellIndex === entry.cellIndex);
-        if (owners.length !== 1) return null;
-        currentListId = owners[0]!.listId;
-        currentPara = entry.cellParaIndex;
-        localHostPara = entry.cellParaIndex;
+      const textBoxOwned = this.cellPathHasTextBoxOwners(section, paragraph, entries);
+      let childControlId: string | undefined;
+      if (textBoxOwned) {
+        const owner = this.cellPathChildControl(section, paragraph, entries, control);
+        if (!owner || owner.ctrlId !== "gso" || owner.userDesc !== "그림" || owner.props?.Lock !== 0) return null;
+        childControlId = owner.ctrlId;
+      } else {
+        if (!doc.getControls || !doc.getCursorModel) return null;
+        const rawModel = doc.getCursorModel(), rawControls = doc.getControls();
+        if (rawModel.length + rawControls.length > 8 * 1024 * 1024) return null;
+        const { lists } = JSON.parse(rawModel) as { lists: { listId: number; isCell: boolean; hostListId: number;
+          sectionIndex: number; hostPara: number; controlIndex: number; cellIndex: number }[] };
+        const controls = JSON.parse(rawControls) as { list: number; para: number; controlIndex: number; ctrlId: string;
+          userDesc: string; props?: { Lock?: number; TreatAsChar?: number } }[];
+        let currentListId = 0;
+        let currentPara = paragraph;
+        for (let s = 0; s < section; s++) currentPara += doc.getParagraphCount(s);
+        let localHostPara = paragraph;
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i]!;
+          if (!entry || !Number.isSafeInteger(entry.controlIndex) || entry.controlIndex < 0
+            || !Number.isSafeInteger(entry.cellIndex) || entry.cellIndex < 0
+            || !Number.isSafeInteger(entry.cellParaIndex) || entry.cellParaIndex < 0) return null;
+          const table = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === entry.controlIndex);
+          if (table.length !== 1 || table[0]!.ctrlId !== "tbl" || table[0]!.props?.Lock !== 0) return null;
+          if (format === "hwp" && i === 0 && table[0]!.props?.TreatAsChar !== 0) return null;
+          const owners = lists.filter(l => l.isCell && l.hostListId === currentListId && l.sectionIndex === section
+            && l.hostPara === localHostPara && l.controlIndex === entry.controlIndex && l.cellIndex === entry.cellIndex);
+          if (owners.length !== 1) return null;
+          currentListId = owners[0]!.listId;
+          currentPara = entry.cellParaIndex;
+          localHostPara = entry.cellParaIndex;
+        }
+        const child = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === control);
+        if (child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
+        childControlId = child[0]!.ctrlId;
       }
-      const child = controls.filter(c => c.list === currentListId && c.para === currentPara && c.controlIndex === control);
-      if (child.length !== 1 || child[0]!.userDesc !== "그림" || child[0]!.props?.Lock !== 0) return null;
-      const resource = cellPictureEvidence(doc, section, paragraph, path, control);
+      const resource = cellPictureEvidence(doc, section, paragraph, path, control,
+        { allowMissingImageDimensions: format === "hwp" && textBoxOwned && entries.length === 1 && entries[0]!.cellIndex === 0 });
       const rawPicture = doc.getCellPicturePropertiesByPath(section, paragraph, path, control);
       if (format === "hwp") {
         const { rotationAngle, restrictInPage } = JSON.parse(rawPicture) as { rotationAngle?: unknown; restrictInPage?: unknown };
         // RHWP's picture JSON uses restrictInPage for the flow-with-text flag.
         // That flag can resize the owning cell as a side effect.
-        if (child[0]!.ctrlId !== "gso" || rotationAngle !== 0 || restrictInPage !== false) return null;
+        if (childControlId !== "gso" || rotationAngle !== 0 || restrictInPage !== false) return null;
       }
       const picture = inspectRhwpPicture({ getPictureProperties: () => rawPicture }, [section, paragraph, control]);
       return resource && picture?.deletable && (format !== "hwp" || picture.simpleInline)

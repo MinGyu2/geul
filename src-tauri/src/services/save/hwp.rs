@@ -1383,6 +1383,27 @@ fn compare_with(
         findings.extend(references(&output));
         findings.extend(insertions::reference_findings(&original, &output));
     }
+    // An otherwise byte/record-identical unedited roundtrip may materialize the
+    // pinned serializer's derived PrvText when the source carries only the known
+    // content-free blank. This is not a general preview allowlist: the sole
+    // finding must be this exact stream, and the replacement must be independently
+    // reconstructed from the output's unchanged top-level body records. Any body,
+    // header, stream-set, or unrelated-part difference leaves additional findings
+    // and therefore cannot pass this exception.
+    if mode == Mode::Unedited
+        && findings == [Finding::at(FindingCode::PartChanged, "PrvText")]
+        && original
+            .streams
+            .get("PrvText")
+            .is_some_and(|data| preview::blank_utf16(data))
+        && output
+            .streams
+            .get("PrvText")
+            .zip(text_preview(&output).as_ref())
+            .is_some_and(|(actual, expected)| actual == expected)
+    {
+        findings.clear();
+    }
     findings
 }
 
@@ -1895,11 +1916,17 @@ pub fn refresh_previews(
         };
         Some(text)
     } else {
-        // If T009 did not flag PrvText, preserve its exact bytes. In particular, do not
-        // reject a safe image-only refresh just because this body uses text controls that
-        // the preview extractor deliberately cannot interpret.
+        // If T009 did not flag PrvText, normally preserve its exact bytes. A blank source
+        // may be materialized by RHWP as the pinned serializer's exact body-derived text
+        // during an otherwise unchanged open/export; that value is safe to retain while
+        // refreshing a separate image preview. This is deliberately limited to the known
+        // blank bytes and the independently reconstructed top-level text.
         if original_text != output_text {
-            return refused;
+            let derived_from_blank = preview::blank_utf16(original_text)
+                && text_preview(&container).as_ref() == Some(output_text);
+            if !derived_from_blank {
+                return refused;
+            }
         }
         None
     };

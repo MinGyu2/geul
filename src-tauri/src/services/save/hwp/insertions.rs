@@ -1437,24 +1437,16 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     matched = true;
                     break;
                 }
-                if !exact_later && evolved_candidate(o, object) {
-                    evolved_table(
-                        o,
-                        object,
-                        &bc,
-                        &ac,
-                        &mut used,
-                        &mut table_ids,
-                        &mut table_total,
-                    )?;
+                if !exact_later && super::gso::picture_caption_candidate(o, object) {
+                    preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
+                    super::gso::prove_picture_caption(o, object, &ac, &bc)?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;
                     break;
                 }
-                if !exact_later && super::gso::picture_caption_candidate(o, object) {
-                    preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
-                    super::gso::prove_picture_caption(o, object, &ac, &bc)?;
+                if !exact_later && super::gso::textbox_nested_gso_candidate(o, object) {
+                    super::gso::prove_textbox_nested_gso_edit(o, object, &ac, &bc)?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
                     matched = true;
@@ -1468,6 +1460,21 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         &bc,
                         &original_paragraph_instances,
                         &output_paragraph_instances,
+                    )?;
+                    restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                if !exact_later && evolved_candidate(o, object) {
+                    evolved_table(
+                        o,
+                        object,
+                        &bc,
+                        &ac,
+                        &mut used,
+                        &mut table_ids,
+                        &mut table_total,
                     )?;
                     restructured.push((object_digest(o), object_digest(object)));
                     cursor += 1;
@@ -1498,6 +1505,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         || evolved_candidate(o, later)
                         || super::gso::evolved_candidate(o, later, &ac)
                         || super::gso::textbox_edit_candidate(o, later)
+                        || super::gso::textbox_nested_gso_candidate(o, later)
                         || super::gso::picture_caption_candidate(o, later)
                 });
                 if survives_later {

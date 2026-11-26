@@ -1,0 +1,560 @@
+diff --git a/src/document_core/commands/object_ops/table.rs b/src/document_core/commands/object_ops/table.rs
+index 3413ce73..d1f87d0a 100644
+--- a/src/document_core/commands/object_ops/table.rs
++++ b/src/document_core/commands/object_ops/table.rs
+@@ -1341,11 +1341,9 @@ impl DocumentCore {
+         inner_control_idx: usize,
+     ) -> Result<String, HwpError> {
+         let path = Self::parse_cell_path_json(cell_path_json)?;
+-        let cell = self.resolve_cell_by_path(section_idx, parent_para_idx, &path)?;
+-        let last_cell_para_idx = path.last().unwrap().2;
+-        let cell_para = cell.paragraphs.get(last_cell_para_idx).ok_or_else(|| {
+-            HwpError::RenderError(format!("셀 내 문단 {} 범위 초과", last_cell_para_idx))
+-        })?;
++        // The path resolver also handles text-box paragraphs using the cell-index-zero
++        // sentinel. Keep this paired with the picture getter and mutable shape setter.
++        let cell_para = self.resolve_paragraph_by_path(section_idx, parent_para_idx, &path)?;
+         let ctrl = cell_para.controls.get(inner_control_idx).ok_or_else(|| {
+             HwpError::RenderError(format!("셀 내 컨트롤 {} 범위 초과", inner_control_idx))
+         })?;
+@@ -1642,6 +1640,7 @@ impl DocumentCore {
+ 
+ #[cfg(test)]
+ mod tests {
++    use crate::document_core::helpers::{get_textbox_from_shape, get_textbox_from_shape_mut};
+     use crate::document_core::DocumentCore;
+     use crate::model::control::Control;
+     use crate::model::paragraph::CharShapeRef;
+@@ -1773,4 +1772,211 @@ mod tests {
+             .unwrap();
+         assert_cells_inherit_cursor_shape(table_of(&core));
+     }
++
++    #[test]
++    fn shape_properties_by_path_resolve_textbox_owned_shape_without_body_aliasing() {
++        let mut core = core_with_shaped_paragraph();
++        core.document.sections[0].paragraphs[0].para_shape_id = 0;
++        core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id = 0;
++        let outer = core
++            .create_shape_control_native(
++                0,
++                0,
++                0,
++                6000,
++                3600,
++                2400,
++                2400,
++                false,
++                "Square",
++                "textbox",
++                false,
++                false,
++                &[],
++            )
++            .unwrap();
++        let outer_index: usize = serde_json::from_str::<serde_json::Value>(&outer).unwrap()
++            ["controlIdx"]
++            .as_u64()
++            .unwrap() as usize;
++        let child = core
++            .create_shape_control_native(
++                0,
++                0,
++                0,
++                1800,
++                900,
++                300,
++                400,
++                false,
++                "Square",
++                "rectangle",
++                false,
++                false,
++                &[],
++            )
++            .unwrap();
++        let child_index: usize = serde_json::from_str::<serde_json::Value>(&child).unwrap()
++            ["controlIdx"]
++            .as_u64()
++            .unwrap() as usize;
++
++        let section = &mut core.document.sections[0];
++        let para = &mut section.paragraphs[0];
++        let child = para.controls.remove(child_index);
++        let outer_index = if child_index < outer_index {
++            outer_index - 1
++        } else {
++            outer_index
++        };
++        let outer_shape = match para.controls.get_mut(outer_index).unwrap() {
++            Control::Shape(shape) if get_textbox_from_shape(shape).is_some() => shape,
++            _ => panic!("expected the inserted outer text box"),
++        };
++        let text_box = get_textbox_from_shape_mut(outer_shape).unwrap();
++        text_box.paragraphs[0].controls.push(child);
++        text_box.paragraphs[0].ctrl_data_records.push(None);
++        text_box.paragraphs[0].char_count += 8;
++
++        let path =
++            format!("[{{\"controlIndex\":{outer_index},\"cellIndex\":0,\"cellParaIndex\":0}}]");
++        let outer_before: serde_json::Value =
++            serde_json::from_str(&core.get_shape_properties_native(0, 0, outer_index).unwrap())
++                .unwrap();
++        assert_eq!(outer_before["tbVerticalAlign"], "Top");
++        let before: serde_json::Value = serde_json::from_str(
++            &core
++                .get_cell_shape_properties_by_path_native(0, 0, &path, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(
++            (before["width"].as_i64(), before["height"].as_i64()),
++            (Some(1800), Some(900))
++        );
++
++        core.set_cell_shape_properties_by_path_native(
++            0,
++            0,
++            &path,
++            0,
++            "{\"width\":2100,\"height\":1100}",
++        )
++        .unwrap();
++        let after: serde_json::Value = serde_json::from_str(
++            &core
++                .get_cell_shape_properties_by_path_native(0, 0, &path, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(
++            (after["width"].as_i64(), after["height"].as_i64()),
++            (Some(2100), Some(1100))
++        );
++        let outer_after: serde_json::Value =
++            serde_json::from_str(&core.get_shape_properties_native(0, 0, outer_index).unwrap())
++                .unwrap();
++        assert_eq!(
++            outer_after, outer_before,
++            "nested shape edit changed its text-box owner"
++        );
++        let layout: serde_json::Value =
++            serde_json::from_str(&core.get_page_control_layout_native(0).unwrap()).unwrap();
++        let expected_path = serde_json::json!([0, 0, outer_index, 0, 0, 0]);
++        let rendered = layout["controls"]
++            .as_array()
++            .unwrap()
++            .iter()
++            .find(|control| control["type"] == "shape" && control["stableIndex"] == expected_path)
++            .expect("nested textbox shape has its full stable source path");
++        assert_eq!(rendered["parentParaIdx"], 0);
++        assert_eq!(rendered["cellPath"][0]["controlIndex"], outer_index);
++        assert_eq!(rendered["cellPath"][0]["cellIndex"], 0);
++        assert_eq!(rendered["cellPath"][0]["cellParaIndex"], 0);
++        let cursor_model: serde_json::Value =
++            serde_json::from_str(&core.get_cursor_model_json()).unwrap();
++        let controls: serde_json::Value = serde_json::from_str(&core.controls_json()).unwrap();
++        let textbox_list = cursor_model["lists"]
++            .as_array()
++            .unwrap()
++            .iter()
++            .find(|list| {
++                list["isCell"] == false
++                    && list["hostListId"] == 0
++                    && list["sectionIndex"] == 0
++                    && list["hostPara"] == 0
++                    && list["controlIndex"] == outer_index
++                    && list["cellIndex"] == 0
++            })
++            .expect("text box has its exact paragraph list");
++        let child_list = textbox_list["listId"].as_u64().unwrap();
++        assert!(controls.as_array().unwrap().iter().any(|control| {
++            control["list"] == child_list
++                && control["para"] == 0
++                && control["controlIndex"] == 0
++                && control["ctrlId"] == "gso"
++                && control["props"]["Lock"] == 0
++        }));
++
++        let saved = core.export_hwpx_native().unwrap();
++        let reopened = DocumentCore::from_bytes(&saved).unwrap();
++        let reopened_child: serde_json::Value = serde_json::from_str(
++            &reopened
++                .get_cell_shape_properties_by_path_native(0, 0, &path, 0)
++                .unwrap(),
++        )
++        .unwrap();
++        assert_eq!(
++            (
++                reopened_child["width"].as_i64(),
++                reopened_child["height"].as_i64()
++            ),
++            (Some(2100), Some(1100)),
++            "edited textbox child shape survives HWPX save and reopen"
++        );
++        let reopened_outer: serde_json::Value = serde_json::from_str(
++            &reopened
++                .get_shape_properties_native(0, 0, outer_index)
++                .unwrap(),
++        )
++        .unwrap();
++        for key in [
++            "width",
++            "height",
++            "horzOffset",
++            "vertOffset",
++            "tbVerticalAlign",
++        ] {
++            assert_eq!(
++                reopened_outer[key], outer_before[key],
++                "textbox owner field {key} changed"
++            );
++        }
++        let reopened_layout: serde_json::Value =
++            serde_json::from_str(&reopened.get_page_control_layout_native(0).unwrap()).unwrap();
++        assert!(reopened_layout["controls"]
++            .as_array()
++            .unwrap()
++            .iter()
++            .any(|control| control["type"] == "shape" && control["stableIndex"] == expected_path));
++
++        let before_invalid = after.clone();
++        assert!(core
++            .get_cell_shape_properties_by_path_native(
++                0,
++                0,
++                &path.replace("\"cellIndex\":0", "\"cellIndex\":1"),
++                0,
++            )
++            .is_err());
++        assert_eq!(
++            serde_json::from_str::<serde_json::Value>(
++                &core
++                    .get_cell_shape_properties_by_path_native(0, 0, &path, 0)
++                    .unwrap(),
++            )
++            .unwrap(),
++            before_invalid,
++        );
++    }
+ }
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+index c435fd5f..c28701de 100644
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -3752,6 +3752,26 @@ impl DocumentCore {
+                 ",\"plane\":{},\"zOrder\":{},\"stableIndex\":{}{}{}",
+                 plane, z_order, stable_index, wrap_extra, hf_extra
+             );
++            let nested_shape_path = || {
++                let path = node.source_path.as_ref()?;
++                if path.len() < 6 || (path.len() - 3) % 3 != 0 {
++                    return None;
++                }
++                let entries = path[2..path.len() - 1]
++                    .chunks_exact(3)
++                    .map(|entry| {
++                        format!(
++                            "{{\"controlIndex\":{},\"cellIndex\":{},\"cellParaIndex\":{}}}",
++                            entry[0], entry[1], entry[2]
++                        )
++                    })
++                    .collect::<Vec<_>>();
++                Some(format!(
++                    ",\"parentParaIdx\":{},\"cellPath\":[{}]",
++                    path[1],
++                    entries.join(",")
++                ))
++            };
+             match &node.node_type {
+                 RenderNodeType::Table(table_node) => {
+                     // 문서 좌표
+@@ -4078,11 +4098,13 @@ impl DocumentCore {
+                         rect_node.control_index,
+                     ) {
+                         // [Task #1138] 표 셀 안 사각형: cellIdx/cellParaIdx/outerTableControlIdx
+-                        let cell_str = DocumentCore::shape_cell_context_json(
+-                            rect_node.cell_index,
+-                            rect_node.cell_para_index,
+-                            rect_node.outer_table_control_index,
+-                        );
++                        let cell_str = nested_shape_path().unwrap_or_else(|| {
++                            DocumentCore::shape_cell_context_json(
++                                rect_node.cell_index,
++                                rect_node.cell_para_index,
++                                rect_node.outer_table_control_index,
++                            )
++                        });
+                         controls.push(format!(
+                             "{{\"type\":\"shape\",\"x\":{:.1},\"y\":{:.1},\"w\":{:.1},\"h\":{:.1},\"secIdx\":{},\"paraIdx\":{},\"controlIdx\":{}{}{}}}",
+                             node.bbox.x, node.bbox.y, node.bbox.width, node.bbox.height,
+@@ -4101,11 +4123,13 @@ impl DocumentCore {
+                         line_node.control_index,
+                     ) {
+                         // [Task #1138] 표 셀 안 직선
+-                        let cell_str = DocumentCore::shape_cell_context_json(
+-                            line_node.cell_index,
+-                            line_node.cell_para_index,
+-                            line_node.outer_table_control_index,
+-                        );
++                        let cell_str = nested_shape_path().unwrap_or_else(|| {
++                            DocumentCore::shape_cell_context_json(
++                                line_node.cell_index,
++                                line_node.cell_para_index,
++                                line_node.outer_table_control_index,
++                            )
++                        });
+                         controls.push(format!(
+                             "{{\"type\":\"line\",\"x\":{:.1},\"y\":{:.1},\"w\":{:.1},\"h\":{:.1},\"x1\":{:.1},\"y1\":{:.1},\"x2\":{:.1},\"y2\":{:.1},\"secIdx\":{},\"paraIdx\":{},\"controlIdx\":{}{}{}}}",
+                             node.bbox.x, node.bbox.y, node.bbox.width, node.bbox.height,
+@@ -4122,11 +4146,13 @@ impl DocumentCore {
+                         ell_node.control_index,
+                     ) {
+                         // [Task #1138] 표 셀 안 타원
+-                        let cell_str = DocumentCore::shape_cell_context_json(
+-                            ell_node.cell_index,
+-                            ell_node.cell_para_index,
+-                            ell_node.outer_table_control_index,
+-                        );
++                        let cell_str = nested_shape_path().unwrap_or_else(|| {
++                            DocumentCore::shape_cell_context_json(
++                                ell_node.cell_index,
++                                ell_node.cell_para_index,
++                                ell_node.outer_table_control_index,
++                            )
++                        });
+                         controls.push(format!(
+                             "{{\"type\":\"shape\",\"x\":{:.1},\"y\":{:.1},\"w\":{:.1},\"h\":{:.1},\"secIdx\":{},\"paraIdx\":{},\"controlIdx\":{}{}{}}}",
+                             node.bbox.x, node.bbox.y, node.bbox.width, node.bbox.height,
+@@ -4142,11 +4168,13 @@ impl DocumentCore {
+                         path_node.control_index,
+                     ) {
+                         // [Task #1138] 표 셀 안 path (다각형/곡선/연결선)
+-                        let cell_str = DocumentCore::shape_cell_context_json(
+-                            path_node.cell_index,
+-                            path_node.cell_para_index,
+-                            path_node.outer_table_control_index,
+-                        );
++                        let cell_str = nested_shape_path().unwrap_or_else(|| {
++                            DocumentCore::shape_cell_context_json(
++                                path_node.cell_index,
++                                path_node.cell_para_index,
++                                path_node.outer_table_control_index,
++                            )
++                        });
+                         if let Some((x1, y1, x2, y2)) = path_node.connector_endpoints {
+                             // 연결선: 선 선택 방식 (시작/끝 좌표 포함)
+                             controls.push(format!(
+diff --git a/src/renderer/layout/shape_layout.rs b/src/renderer/layout/shape_layout.rs
+index 06ac2fa2..b25f31c7 100644
+--- a/src/renderer/layout/shape_layout.rs
++++ b/src/renderer/layout/shape_layout.rs
+@@ -26,6 +26,40 @@ use crate::model::shape::{Caption, CommonObjAttr, DrawingObjAttr, ShapeObject, T
+ use crate::model::shape::{HorzAlign, HorzRelTo, VertAlign, VertRelTo};
+ use crate::model::style::{Alignment, FillType};
+ 
++fn attach_nested_shape_source_path(
++    node: &mut RenderNode,
++    section_index: usize,
++    parent_paragraph_index: usize,
++    parent_cell_path: &[CellPathEntry],
++    control_index: usize,
++) {
++    if parent_cell_path.is_empty() {
++        return;
++    }
++    let Ok(section_index) = u32::try_from(section_index) else {
++        return;
++    };
++    let Ok(parent_paragraph_index) = u32::try_from(parent_paragraph_index) else {
++        return;
++    };
++    let Ok(control_index) = u32::try_from(control_index) else {
++        return;
++    };
++    let mut path = vec![section_index, parent_paragraph_index];
++    for entry in parent_cell_path {
++        let (Ok(control), Ok(cell), Ok(paragraph)) = (
++            u32::try_from(entry.control_index),
++            u32::try_from(entry.cell_index),
++            u32::try_from(entry.cell_para_index),
++        ) else {
++            return;
++        };
++        path.extend([control, cell, paragraph]);
++    }
++    path.push(control_index);
++    node.source_path = Some(path);
++}
++
+ /// 묶음 자식의 AABB에서 부호 있는 점 좌표 원점과 배율을 복원한다.
+ /// 음수 축의 원점은 오른쪽/아래쪽 변이다. 상자·텍스트 소속은 이동하지 않고
+ /// 실제 경로 점에만 대칭을 적용하며 비대각 회전은 기존 affine 경로가 담당한다.
+@@ -1492,6 +1526,13 @@ impl LayoutEngine {
+                     }),
+                     BoundingBox::new(render_x, render_y, render_w, render_h),
+                 );
++                attach_nested_shape_source_path(
++                    &mut node,
++                    section_index,
++                    para_index,
++                    parent_cell_path,
++                    control_index,
++                );
+                 // 이미지 채우기가 있으면 자식으로 이미지 노드 추가
+                 self.add_image_fill_node(
+                     tree,
+@@ -1718,11 +1759,18 @@ impl LayoutEngine {
+                         {
+                             path_node.line_style = Some(line_style);
+                         }
+-                        let node = RenderNode::new(
++                        let mut node = RenderNode::new(
+                             node_id,
+                             RenderNodeType::Path(path_node),
+                             BoundingBox::new(render_x, render_y, render_w, render_h),
+                         );
++                        attach_nested_shape_source_path(
++                            &mut node,
++                            section_index,
++                            para_index,
++                            parent_cell_path,
++                            control_index,
++                        );
+                         parent.children.push(node);
+                     } else {
+                         // 제어점 없는 연결선 → 직선으로 렌더링
+@@ -1762,11 +1810,18 @@ impl LayoutEngine {
+                         line_node.cell_index = cell_index;
+                         line_node.cell_para_index = cell_para_index;
+                         line_node.outer_table_control_index = outer_table_control_index;
+-                        let node = RenderNode::new(
++                        let mut node = RenderNode::new(
+                             node_id,
+                             RenderNodeType::Line(line_node),
+                             BoundingBox::new(render_x, render_y, render_w, render_h),
+                         );
++                        attach_nested_shape_source_path(
++                            &mut node,
++                            section_index,
++                            para_index,
++                            parent_cell_path,
++                            control_index,
++                        );
+                         parent.children.push(node);
+                     }
+                 } else {
+@@ -1789,11 +1844,18 @@ impl LayoutEngine {
+                     line_node.cell_index = cell_index;
+                     line_node.cell_para_index = cell_para_index;
+                     line_node.outer_table_control_index = outer_table_control_index;
+-                    let node = RenderNode::new(
++                    let mut node = RenderNode::new(
+                         node_id,
+                         RenderNodeType::Line(line_node),
+                         BoundingBox::new(render_x, render_y, render_w, render_h),
+                     );
++                    attach_nested_shape_source_path(
++                        &mut node,
++                        section_index,
++                        para_index,
++                        parent_cell_path,
++                        control_index,
++                    );
+                     parent.children.push(node);
+                 }
+             }
+@@ -1813,6 +1875,13 @@ impl LayoutEngine {
+                     RenderNodeType::Ellipse(ell_node),
+                     BoundingBox::new(render_x, render_y, render_w, render_h),
+                 );
++                attach_nested_shape_source_path(
++                    &mut node,
++                    section_index,
++                    para_index,
++                    parent_cell_path,
++                    control_index,
++                );
+                 self.add_image_fill_node(
+                     tree,
+                     &mut node,
+@@ -1940,11 +2009,18 @@ impl LayoutEngine {
+                 path_node.cell_index = cell_index;
+                 path_node.cell_para_index = cell_para_index;
+                 path_node.outer_table_control_index = outer_table_control_index;
+-                let node = RenderNode::new(
++                let mut node = RenderNode::new(
+                     node_id,
+                     RenderNodeType::Path(path_node),
+                     BoundingBox::new(render_x, render_y, render_w, render_h),
+                 );
++                attach_nested_shape_source_path(
++                    &mut node,
++                    section_index,
++                    para_index,
++                    parent_cell_path,
++                    control_index,
++                );
+                 parent.children.push(node);
+             }
+             ShapeObject::Polygon(poly) => {
+@@ -2000,6 +2076,13 @@ impl LayoutEngine {
+                     RenderNodeType::Path(path_node),
+                     BoundingBox::new(render_x, render_y, render_w, render_h),
+                 );
++                attach_nested_shape_source_path(
++                    &mut node,
++                    section_index,
++                    para_index,
++                    parent_cell_path,
++                    control_index,
++                );
+                 self.add_image_fill_node(
+                     tree,
+                     &mut node,
+@@ -2067,6 +2150,13 @@ impl LayoutEngine {
+                     RenderNodeType::Path(path_node),
+                     BoundingBox::new(render_x, render_y, render_w, render_h),
+                 );
++                attach_nested_shape_source_path(
++                    &mut node,
++                    section_index,
++                    para_index,
++                    parent_cell_path,
++                    control_index,
++                );
+                 self.add_image_fill_node(
+                     tree,
+                     &mut node,
+diff --git a/src/renderer/render_tree.rs b/src/renderer/render_tree.rs
+index a2f5dcf2..f8db28ff 100644
+--- a/src/renderer/render_tree.rs
++++ b/src/renderer/render_tree.rs
+@@ -165,6 +165,10 @@ pub struct RenderNode {
+     /// Public source provenance, separate from header/footer layout cache keys.
+     #[serde(skip)]
+     pub header_footer_source: Option<(usize, HeaderFooterImageRef)>,
++    /// Exact source path for a control rendered inside a text box. Shape render nodes do not
++    /// otherwise carry the full table/text-box path required by editing and stable hit testing.
++    #[serde(skip)]
++    pub source_path: Option<Vec<u32>>,
+ }
+ 
+ #[derive(Debug, Default, Clone, Copy, Serialize)]
+@@ -187,6 +191,7 @@ impl RenderNode {
+             editor_only: false,
+             control_code: ControlCode::Automatic,
+             header_footer_source: None,
++            source_path: None,
+         }
+     }
+ 
+@@ -1718,6 +1723,9 @@ fn doc_path_single_cell_level(
+ /// 42개 노드류) `None` — 호출부가 무엇으로 대체할지 결정한다(`node.id` 로 되돌아가지
+ /// 않는 것이 이 이슈의 목적이다).
+ pub(crate) fn doc_path_for_node(node: &RenderNode) -> Option<DocPath> {
++    if let Some(path) = &node.source_path {
++        return Some(path.clone());
++    }
+     match &node.node_type {
+         RenderNodeType::Table(t) => doc_path_full(
+             t.section_index,

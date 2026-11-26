@@ -241,6 +241,114 @@ fn hwp_편집_없는_왕복은_레코드_수준에서_같을_때만_safe() {
 }
 
 #[test]
+fn hwp_편집_없는_왕복은_빈_미리보기만_본문에서_재생성된_값으로_정규화한다() {
+    let blank = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("hello"),
+        &[("/PrvText", b"\r\0\n\0")],
+    );
+    let regenerated = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("hello"),
+        &[("/PrvText", &utf16("hello\r\n"))],
+    );
+    assert_eq!(hwp::compare(&blank, &regenerated), vec![]);
+
+    // Existing source preview content is not replaceable by this derived-preview
+    // proof, even when the candidate equals the body's reconstructed text.
+    let nonblank = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("hello"),
+        &[("/PrvText", b"prior preview")],
+    );
+    assert_eq!(
+        hwp::compare(&nonblank, &regenerated),
+        vec![Finding::at(FindingCode::PartChanged, "PrvText")]
+    );
+
+    // A blank source does not authorize an arbitrary replacement.
+    let arbitrary = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("hello"),
+        &[("/PrvText", b"not derived from body")],
+    );
+    assert_eq!(
+        hwp::compare(&blank, &arbitrary),
+        vec![Finding::at(FindingCode::PartChanged, "PrvText")]
+    );
+
+    // Nor can the preview exception hide a body edit during an unedited preflight.
+    let changed_body = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("changed"),
+        &[("/PrvText", &utf16("changed\r\n"))],
+    );
+    assert!(hwp::compare(&blank, &changed_body)
+        .iter()
+        .any(|finding| finding.code == FindingCode::RecordsChanged));
+}
+
+#[test]
+fn hwp_이미지_미리보기_갱신은_본문에서_유도된_빈_글_미리보기를_그대로_인정한다() {
+    use super::preview::PreviewRaster;
+
+    let body = |char_count: u32| {
+        let mut header = vec![0; 22];
+        header[..4].copy_from_slice(&char_count.to_le_bytes());
+        let mut page = vec![0; 40];
+        page[..4].copy_from_slice(&59_528u32.to_le_bytes());
+        page[4..8].copy_from_slice(&84_188u32.to_le_bytes());
+        [record(66, 0, &header), record(67, 1, &utf16("hello")), record(73, 0, &page)].concat()
+    };
+    let original = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &body(0),
+        &[("/PrvText", b"\r\0\n\0"), ("/PrvImage", b"previous page image")],
+    );
+    let output = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &body(5),
+        &[
+            ("/PrvText", &utf16("hello\r\n")),
+            ("/PrvImage", b"previous page image"),
+        ],
+    );
+    assert_eq!(
+        hwp::compare_saved(&original, &output),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+    );
+    let mut rgb = vec![255; 724 * 1024 * 3];
+    rgb[0] = 0;
+    let raster = PreviewRaster::new(724, 1024, rgb).unwrap();
+    let refreshed = hwp::refresh_previews(&original, &output, Some(&raster)).unwrap();
+    let saved = refreshed.output.expect("the exact derived text and fresh image should publish");
+    let image = refreshed.image.expect("the new image is part of this proof");
+    assert!(hwp::compare_saved_with_preview(&original, &saved, Some(&image)).is_empty());
+    assert_eq!(cfb_stream(&saved, "/PrvText").unwrap(), utf16("hello\r\n"));
+    assert_ne!(cfb_stream(&saved, "/PrvImage").unwrap(), b"previous page image");
+
+    // A previously nonblank source preview cannot be replaced by a body-derived value
+    // through this image-only path.
+    let nonblank = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &body(0),
+        &[("/PrvText", b"prior preview"), ("/PrvImage", b"previous page image")],
+    );
+    assert!(hwp::refresh_previews(&nonblank, &output, Some(&raster))
+        .unwrap()
+        .output
+        .is_none());
+}
+
+#[test]
 fn hwp_검사할_수_없는_원본은_unknown() {
     let good = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
     for flags in [0x02u32, 0x04, 0x10] {
@@ -6733,7 +6841,7 @@ fn hwp_본문의_모양_id는_docinfo_정의_수보다_작아야_하고_미리�
         invalid,
         "문단 모양 ID 자리가 없는 문단 머리"
     );
-    // 미리보기가 원본 그대로여도 참조 근거는 따로 나온다(previewStale에 기대지 않음).
+    // 본문 글자는 그대로이므로 텍스트 미리보기도 그대로 유효하다. 참조 오류는 미리보기 판정과 독립적으로 막는다.
     let preview: [(&str, &[u8]); 1] = [("/PrvText", b"t\0e\0x\0t\0")];
     let original_with_preview = hwp_doc(
         0,
@@ -6750,13 +6858,7 @@ fn hwp_본문의_모양_id는_docinfo_정의_수보다_작아야_하고_미리�
             &preview,
         ),
     );
-    assert_eq!(
-        both,
-        vec![
-            Finding::at(FindingCode::PreviewStale, "PrvText"),
-            Finding::at(FindingCode::ReferenceInvalid, "BodyText/Section0"),
-        ]
-    );
+    assert_eq!(both, invalid);
     // 사전 검사(편집 없는 왕복)는 바이트 같음만 본다: 참조 검사는 편집한 저장에만.
     assert_eq!(hwp::compare(&original, &original), vec![]);
 }

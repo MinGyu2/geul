@@ -7,6 +7,13 @@ export interface CellPictureAddress {
   control: number;
 }
 
+export interface CellShapeAddress {
+  section: number;
+  paragraph: number;
+  path: string;
+  control: number;
+}
+
 export interface HeaderFooterPictureAddress {
   section: number;
   kind: "header" | "footer";
@@ -38,6 +45,7 @@ interface ControlHit {
   headerFooterPicture?: HeaderFooterPictureAddress;
   headerFooterShape?: HeaderFooterShapeAddress;
   cellPicture?: CellPictureAddress;
+  cellShape?: CellShapeAddress;
   bodyEmbedded?: readonly [number, number, number];
   bodyShape?: readonly [number, number, number];
   bodyGroup?: readonly [number, number, number];
@@ -217,6 +225,37 @@ export function hitRhwpObject(layout: unknown, page: number, x: number, y: numbe
             };
           }
         }
+      }
+    }
+    if (kind === "shape" && !("headerFooter" in control) && !("noteRef" in control)
+      && control.parentParaIdx === control.paraIdx && Array.isArray(control.cellPath)
+      && control.cellPath.length >= 1 && control.cellPath.length <= 64) {
+      const normalized: { controlIndex: number; cellIndex: number; cellParaIndex: number }[] = [];
+      let validPath = true;
+      for (const entry of control.cellPath as unknown[]) {
+        if (!record(entry) || !index(entry.controlIndex) || !index(entry.cellIndex) || !index(entry.cellParaIndex)) {
+          validPath = false;
+          break;
+        }
+        normalized.push({
+          controlIndex: entry.controlIndex,
+          cellIndex: entry.cellIndex,
+          cellParaIndex: entry.cellParaIndex,
+        });
+      }
+      const expected = [
+        control.secIdx,
+        control.paraIdx,
+        ...normalized.flatMap(entry => [entry.controlIndex, entry.cellIndex, entry.cellParaIndex]),
+        control.controlIdx,
+      ];
+      if (validPath && path.length === expected.length && expected.every((value, i) => path[i] === value)) {
+        candidate.cellShape = {
+          section: control.secIdx,
+          paragraph: control.paraIdx,
+          control: control.controlIdx,
+          path: JSON.stringify(normalized),
+        };
       }
     }
     if (!top || above(candidate, top)) {

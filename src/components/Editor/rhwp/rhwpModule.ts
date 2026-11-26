@@ -45,6 +45,8 @@ export interface RhwpDocument {
   getCellPicturePropertiesByPath?(section: number, paragraph: number, path: string, control: number): string;
   setCellPicturePropertiesByPath?(section: number, paragraph: number, path: string, control: number, properties: string): string;
   deleteCellPictureControlByPath?(section: number, paragraph: number, path: string, control: number): string;
+  getCellShapePropertiesByPath?(section: number, paragraph: number, path: string, control: number): string;
+  setCellShapePropertiesByPath?(section: number, paragraph: number, path: string, control: number, properties: string): string;
   insertPicture?(section: number, paragraph: number, offset: number, cellPath: string, data: Uint8Array, width: number, height: number, naturalWidth: number, naturalHeight: number, extension: string, description: string): string;
   setPictureProperties?(section: number, paragraph: number, control: number, properties: string): string;
   setHeaderFooterPictureProperties?(section: number, outerParagraph: number, outerControl: number,
