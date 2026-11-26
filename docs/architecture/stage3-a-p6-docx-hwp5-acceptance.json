@@ -1,0 +1,118 @@
+{
+  "issue": "P6-DX-H5",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer supported DOCX primitive shapes into editable HWP5 body objects with verified geometry and formatting mapping, T009 preservation, safe rejection, and save/reopen evidence.",
+  "implementation": {
+    "geulCommit": "1362c7340a077a3e5e958128aef753e439f61bba",
+    "parentCommit": "cfa99a96616864ce8a768c82c651922af06db7d5",
+    "files": [
+      "scripts/tests/native-stage3-b.py",
+      "src-tauri/src/services/save/hwp/gso.rs",
+      "src-tauri/src/services/save/hwp/insertions.rs",
+      "src/components/Editor/rhwp/RhwpEditorSession.test.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.test.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts"
+    ],
+    "payloadVersion": 4,
+    "supportedSourceObjects": [
+      "resource-free inline DOCX Rectangle",
+      "resource-free inline DOCX Ellipse",
+      "resource-free inline DOCX Line"
+    ],
+    "targetStructure": "One editable GSO object owned by HWP5 body Section0.",
+    "mapping": "The receiving HWP5 session revalidates the portable envelope and recomputes the DOCX source mapping before insertion. EMU/point dimensions map to HWPUNIT. Supported size, rotation, flips, solid/no-fill, border and description are preserved.",
+    "t009Proof": "Only the pinned RHWP output record envelope for the supported primitive subset is admitted. Unknown records/effects, instance ID reuse, invalid UTF-16 description and field/record tampering fail closed. The proof includes positive rectangle, ellipse and line records; Native acceptance exercised an ellipse.",
+    "preservation": "Source DOCX bytes and OPC parts remain unchanged. Destination CFB DocInfo and existing BinData remain unchanged. For the accepted HWP5 save, BodyText/Section0 and refreshed PrvImage were the only changed streams; the existing destination picture, BinData/BIN0001.png and unrelated streams were retained.",
+    "dependencies": {
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    }
+  },
+  "verification": {
+    "focusedRustT009": "PASS 3/3",
+    "focusedVitest": "PASS 3; 22 nonmatching tests skipped",
+    "typescriptTypecheck": "PASS",
+    "scopedEslint": "PASS",
+    "nativeHarnessPythonSyntax": "PASS",
+    "diffCheck": "PASS",
+    "guardedReleaseBuild": {
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "b80fff41bad3f4896b906d915bc946d03990e4e5f062f2a753190340f39470d3",
+      "bytes": 63514584,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; Nix store runtime dependencies"
+    },
+    "rhwpProduct": {
+      "command": "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+      "result": "PASS",
+      "generation": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    },
+    "wordcraftReproduction": {
+      "command": "python3 scripts/prepare-wordcraft.py",
+      "result": "PASS; exact current pin"
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-DX-H5 attempt02",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "b80fff41bad3f4896b906d915bc946d03990e4e5f062f2a753190340f39470d3",
+      "processAppSha256": "b80fff41bad3f4896b906d915bc946d03990e4e5f062f2a753190f39470d3",
+      "trustedPointerCopyPasteUndoRedo": "PASS",
+      "revisions": "1/2/3",
+      "t009": "PASS; saved, synced=true, changedSince=false, findings empty",
+      "previewRaster": {
+        "width": 725,
+        "height": 1024,
+        "uniform": false,
+        "nonWhitePixels": 5406
+      },
+      "mappedEllipse": {
+        "widthHwpUnit": 7761,
+        "heightHwpUnit": 4586,
+        "rotationDegrees": 90,
+        "verticalFlip": true,
+        "fillStrokeAndDescription": "preserved",
+        "uniqueBodyOwner": "PASS"
+      },
+      "changedCfbStreams": [
+        "BodyText/Section0",
+        "PrvImage"
+      ],
+      "preservation": "Destination DocInfo, existing BinData/BIN0001.png, existing picture and unrelated CFB streams unchanged.",
+      "fixtureHashes": {
+        "sourceDocxSha256": "195859143e7aef5957f0fa7779a8a50f6d2b8cc561b03117372613b0a316ab5d",
+        "destinationHwpSha256": "188cb6fed8cecdecca67a7dfa244f29bba9f7695732b404c804d6652bb81c1b1"
+      },
+      "savedHwpSha256": "2cb85df422439cc4905208f341bd2975ca2fe48a4e1434f18422e088c532eff4",
+      "sourceDocxImmutability": "PASS; source hash and OPC parts unchanged",
+      "freshDocumentSessionReopen": "PASS; closed and reopened in a fresh document session within the same application process; transferred ellipse and original picture both selectable",
+      "separateApplicationProcessReopen": "NOT RUN",
+      "negativeCases": {
+        "triangle": "PASS; refused without mutation",
+        "tamperedPayload": "PASS; refused without mutation"
+      },
+      "resultJson": {
+        "path": "target/p6-dx-h5/native/attempt02/result.json",
+        "sha256": "9c33144ef608ec3b3122a01799c21a668094701e33423ebe5e8839ee42ba1ec9"
+      },
+      "cleanup": {
+        "path": "target/p6-dx-h5/native/attempt02/session/cleanup.json",
+        "sha256": "3c2d8b13759d5273d7d3170de419e4e4c734047b05360312d276c43b98735586",
+        "result": "PASS; complete, proven, filesystemProven, exit 0, no survivors or process errors"
+      }
+    }
+  },
+  "limitations": [
+    "Native acceptance exercised an ellipse only. Focused HWP5 T009 proof includes positive rectangle, ellipse and line record cases.",
+    "This is structured-object transfer for the listed inline primitive subset, not full-document format conversion.",
+    "Floating objects, other shape types, text boxes, media and unknown source structures remain outside this mapping and fail closed.",
+    "The saved HWP5 was reopened in a fresh document session within the same application process; separate application PID reopen was NOT RUN.",
+    "The guarded build included the preserved user-owned dirty patches/rhwp/table-calc/evaluator.rs input; committed-root-only artifact reproduction is NOT VERIFIED.",
+    "Wayland, Windows, macOS and external Office/Hancom interoperability were NOT RUN. Nix-independent portability is NOT VERIFIED."
+  ]
+}
