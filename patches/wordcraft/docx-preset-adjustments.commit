@@ -1,0 +1,6 @@
+tree 51acd8810518a1a13cc722dbabf7d94a88da1c47
+parent 7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee
+author Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795713524 +0900
+committer Geul Local Reconstruction <geul-reconstruction@example.invalid> 1795713524 +0900
+
+feat(stage3-p6): preserve DOCX preset adjustments [P6-DX-TYPE]

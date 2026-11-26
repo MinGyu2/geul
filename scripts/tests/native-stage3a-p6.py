@@ -148,8 +148,8 @@ def paste_polygon(acc, row, fixtures, out, fmt):
 
 
 def preset(acc, row, fixtures, out, rounded=False):
-    fixture = fixtures / ("a-p6-round-rect-original.docx" if rounded else "a-p6-rect-original.docx")
-    output = "a-p6-round-rect-published.docx" if rounded else "a-p6-ellipse-edited.docx"
+    fixture = fixtures / ("a-p6-floating-round-rect-original.docx" if rounded else "a-p6-rect-original.docx")
+    output = "a-p6-floating-round-rect-published.docx" if rounded else "a-p6-ellipse-edited.docx"
     path = h.begin(acc, row, fixture, out, output)
     selector = "[aria-labelledby=properties-selection] .object-tools button:enabled"
 
@@ -192,6 +192,13 @@ def preset(acc, row, fixtures, out, rounded=False):
     old,new=docx_root(fixture),docx_root(path)
     geometry = old.find(f".//{A}prstGeom")
     h.require(geometry.get("prst") == ("roundRect" if rounded else "rect"), "unexpected source preset")
+    if rounded:
+        anchor = old.find(f".//{WP}anchor")
+        adjustment = geometry.find(f"{A}avLst/{A}gd")
+        glow = old.find(f".//{A}effectLst/{A}glow")
+        h.require(anchor is not None, "floating anchor changed to inline placement")
+        h.require(adjustment is not None and adjustment.get("name") == "adj" and adjustment.get("fmla") == "val 25000", "custom adjustment changed")
+        h.require(glow is not None and glow.get("rad") == "25400", "supported glow effect changed")
     geometry.set("prst","rect" if rounded else "ellipse")
     h.require(ET.tostring(old)==ET.tostring(new), "more than the shape preset changed")
     h.reopen(acc,path,row)

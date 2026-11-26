@@ -10041,10 +10041,7 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
         position: position.into(), epoch: object["epoch"].as_u64().unwrap(),
         edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
     };
-    for unsupported in [
-        "prst=\"round1Rect\"><a:avLst/>",
-        "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
-    ] {
+    for unsupported in ["prst=\"round1Rect\"><a:avLst/>"] {
         let mut rejected = DocxModel::open(&fixture(unsupported)).unwrap();
         rejected.apply(&[select.clone()]);
         let object = selection(&mut rejected);
@@ -10093,6 +10090,189 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("a-p6-round-rect-original.docx"), &source).unwrap();
         std::fs::write(directory.join("a-p6-round-rect-edited.docx"), &after).unwrap();
+    }
+}
+
+#[test]
+fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
+    use crate::document::Format;
+    use crate::services::save::{package, service};
+    use super::engine::{BasicShape, ObjectEdit};
+    use wordcraft_engine::doc::para::{ShapeKind, Wrap};
+    use wordcraft_engine::{io, Session};
+
+    const MAIN: &str = "word/document.xml";
+    let mut seed = model();
+    seed.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::NewParagraph,
+        DocxOp::Shape {
+            kind: BasicShape::Rectangle,
+        },
+    ]);
+    let inline = seed.export().unwrap();
+    let mut reader = Session::new(io::open_bytes("inline.docx", &inline).unwrap());
+    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let pointer = DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    };
+    seed.apply(&[pointer]);
+    let object = serde_json::to_value(seed.view()).unwrap()["object"].clone();
+    let floating = seed.apply(&[DocxOp::ObjectEdit {
+        position: object["position"].as_str().unwrap().into(),
+        epoch: object["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Wrap { wrap: Wrap::Square },
+    }]);
+    assert_eq!(floating.changed, 1);
+    let floating = seed.export().unwrap();
+    let original = package::open(&floating, package::Side::Original).unwrap();
+    let body = std::str::from_utf8(original.get(MAIN).unwrap()).unwrap();
+    assert!(body.contains("<wp:anchor "));
+    let rebuild = |body: &str| {
+        let entries = original.order.iter().map(|name| {
+            let bytes = if name == MAIN { body.as_bytes() } else { original.get(name).unwrap() };
+            entry(name, bytes)
+        }).collect::<Vec<_>>();
+        zip(&entries, false)
+    };
+    let floating_noop = DocxModel::open(&floating).unwrap().export().unwrap();
+    assert!(package::docx_body_source_roundtrips(&floating, &floating_noop), "floating anchor no-op round-trip");
+    let with_glow = |body: &str| {
+        body.replacen(
+            "</wps:spPr>",
+            "<a:effectLst><a:glow rad=\"25400\"><a:srgbClr val=\"123456\"><a:alpha val=\"100000\"/></a:srgbClr></a:glow></a:effectLst></wps:spPr>",
+            1,
+        )
+        .replacen(
+            "<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>",
+            "<wp:effectExtent l=\"25400\" t=\"25400\" r=\"25400\" b=\"25400\"/>",
+            1,
+        )
+    };
+    let effect_only_body = with_glow(body);
+    let effect_only = rebuild(&effect_only_body);
+    let effect_noop = DocxModel::open(&effect_only).unwrap().export().unwrap();
+    assert!(package::docx_body_source_roundtrips(&effect_only, &effect_noop), "supported glow no-op round-trip");
+    let adjustment_only_body = body.replacen(
+        "prst=\"rect\"><a:avLst/>",
+        "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
+        1,
+    );
+    let adjustment_only = rebuild(&adjustment_only_body);
+    let adjustment_noop = DocxModel::open(&adjustment_only).unwrap().export().unwrap();
+    assert!(package::docx_body_source_roundtrips(&adjustment_only, &adjustment_noop), "custom adjustment no-op round-trip");
+    let body = body
+        .replacen(
+            "prst=\"rect\"><a:avLst/>",
+            "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
+            1,
+        );
+    let body = with_glow(&body);
+    let source = rebuild(&body);
+
+    let mut model = DocxModel::open(&source).unwrap();
+    let before = model.export().unwrap();
+    assert!(
+        package::docx_body_source_roundtrips(&source, &before),
+        "floating placement, supported effects, and custom preset adjustments must round-trip before conversion is enabled"
+    );
+    let mut reader = Session::new(io::open_bytes("floating.docx", &source).unwrap());
+    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
+    assert_eq!(object["kind"], "shape");
+    assert_eq!(object["convertShape"], "rectangle");
+    let convert = DocxOp::ObjectEdit {
+        position: object["position"].as_str().unwrap().into(),
+        epoch: object["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+    };
+    assert_eq!(model.apply(&[convert.clone()]).changed, 1);
+    let after = model.export().unwrap();
+    assert!(model.same_as(&after));
+    assert!(service::check_saved(Format::Docx, &source, &after, None, true).is_safe());
+    let original_package = package::open(&source, package::Side::Original).unwrap();
+    let saved = package::open(&after, package::Side::Output).unwrap();
+    assert_eq!(original_package.parts.keys().collect::<Vec<_>>(), saved.parts.keys().collect::<Vec<_>>());
+    for name in original_package.parts.keys().filter(|name| name.as_str() != MAIN) {
+        assert_eq!(original_package.get(name), saved.get(name), "unrelated OPC part {name}");
+    }
+    let original_body = std::str::from_utf8(original_package.get(MAIN).unwrap()).unwrap();
+    assert_eq!(
+        original_body.replace("prst=\"roundRect\"", "prst=\"rect\"").as_bytes(),
+        saved.get(MAIN).unwrap(),
+        "conversion may change only the DrawingML preset; float anchor, glow, adjustment, IDs, and relationships stay intact"
+    );
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), before);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(model.export().unwrap(), after);
+    let reopened = io::open_bytes("converted.docx", &after).unwrap();
+    let shape = reopened.body.iter().filter_map(|block| block.as_para())
+        .flat_map(|para| para.objects.iter())
+        .find_map(|object| match object {
+            wordcraft_engine::doc::InlineObject::Shape { kind, float, effects, extra, .. } => Some((*kind, float.clone(), effects.clone(), extra.clone())),
+            _ => None,
+        }).unwrap();
+    assert_eq!(shape.0, ShapeKind::Rectangle);
+    assert_eq!(shape.1.wrap, Wrap::Square);
+    assert!(!shape.2.is_empty());
+    assert_eq!(shape.3.preset_adjustments, vec![
+        wordcraft_engine::doc::connector::PresetAdjustment { name: "adj".into(), formula: "val 25000".into() },
+    ]);
+
+    let unsupported = original_body.replace(
+        "<a:effectLst><a:glow rad=\"25400\"><a:srgbClr val=\"123456\"><a:alpha val=\"100000\"/></a:srgbClr></a:glow></a:effectLst>",
+        "<a:effectLst><a:prstShdw prst=\"shdw1\"><a:srgbClr val=\"000000\"/></a:prstShdw></a:effectLst>",
+    );
+    let entries = original_package.order.iter().map(|name| {
+        let bytes = if name == MAIN { unsupported.as_bytes() } else { original_package.get(name).unwrap() };
+        entry(name, bytes)
+    }).collect::<Vec<_>>();
+    let unsupported = zip(&entries, false);
+    let mut rejected = DocxModel::open(&unsupported).unwrap();
+    let mut reader = Session::new(io::open_bytes("unsupported-effect.docx", &unsupported).unwrap());
+    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    rejected.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let object = serde_json::to_value(rejected.view()).unwrap()["object"].clone();
+    assert!(object["convertShape"].is_null());
+    let before = rejected.export().unwrap();
+    let request = DocxOp::ObjectEdit {
+        position: object["position"].as_str().unwrap().into(),
+        epoch: object["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+    };
+    assert_eq!(rejected.apply(&[request]).rejected, vec![0]);
+    assert_eq!(rejected.export().unwrap(), before);
+    assert_eq!(rejected.apply(&[DocxOp::Undo {}]).changed, 0);
+
+    if let Some(directory) = std::env::var_os("GEUL_STAGE3_OUT") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("a-p6-floating-round-rect-original.docx"), &source).unwrap();
+        std::fs::write(directory.join("a-p6-floating-round-rect-edited.docx"), &after).unwrap();
     }
 }
 

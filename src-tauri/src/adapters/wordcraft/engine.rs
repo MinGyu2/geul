@@ -3062,11 +3062,21 @@ impl DocxModel {
     }
 
     fn conversion_target(&self, pos: &Pos) -> Option<BasicShape> {
-        use wordcraft_engine::doc::para::{ShapeKind, Wrap};
+        use wordcraft_engine::doc::para::ShapeKind;
         let InlineObject::Shape { kind, story: None, freeform: None, effects, extra, float, .. }
             = self.object_at(pos)? else { return None };
-        if pos.story != StoryRef::Body || pos.path.0.len() != 1 || !effects.is_empty()
-            || !extra.is_empty() || float.wrap != Wrap::Inline {
+        let extended_envelope = float.wrap != wordcraft_engine::doc::para::Wrap::Inline
+            || !effects.is_empty()
+            || !extra.preset_adjustments.is_empty();
+        let unsupported_extra = extra.id != 0
+            || extra.warp.is_some()
+            || extra.start.is_some()
+            || extra.end.is_some()
+            || extra.arrow_start
+            || extra.arrow_end;
+        if pos.story != StoryRef::Body || pos.path.0.len() != 1
+            || (extended_envelope && !self.body_roundtrips)
+            || unsupported_extra {
             return None;
         }
         match kind {
