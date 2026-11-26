@@ -31,6 +31,7 @@
 | 14 | Linux native 통합 | IV | IV | IV | REUSED PASS + CURRENT PASS(PDF 명령·GTK 대화상자) | Stage 4 native, Stage 5-A PDF native run2 | Windows/macOS DEFERRED(S5-3) |
 | 15 | **PDF 출력** | IV(벡터·글자 선택 가능) | IV(쪽 그림) | IV(쪽 그림) | CURRENT PASS (조건: 3절) | 3절 | 다른 OS·인쇄 미구현 |
 | 16 | 글꼴·글꼴 누락 | IV(fontconfig·사용자 글꼴·선택·저장·PDF) | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | seven-slot mutation + existing/new definitions + narrow T009 save/reopen + natural metrics | CURRENT PASS: Linux Release native HWP/HWPX natural metrics(advance·wrap·caret·selection·Canvas/PDF) and table-cell acceptance run12, independent inspection | [글꼴 시스템](architecture/font-system.md) 6.3·6.4절 | complex shaping(ligature/contextual/RTL/kerning) unsupported and documented; external office NOT RUN; nested-cell native NOT RUN; Windows/macOS DEFERRED |
+| 17 | 구조 도형 교차 형식 전송 | IV(HWPX inline rectangle/ellipse/canonical line → editable DrawingML) | IV(DOCX inline rectangle/ellipse/line → editable HWPX) | SR(지원된 HWP5 교차 형식 변환 없음) | CURRENT PASS: Stage 3-A P6-HX-DX-MORE와 P6-DX-HX의 제한 preset Native/T009 수락 | [HWPX→DOCX](architecture/stage3-a-p6-hwpx-docx-more-acceptance.json), [DOCX→HWPX](architecture/stage3-a-p6-docx-hwpx-acceptance.json) | 선택된 inline preset 객체만. rounded/custom/freeform/curve/floating/textbox/caption/media/effect는 거부; HWP5 교차 변환, 전체 문서 변환, Wayland/Windows/macOS·외부 Office NOT RUN |
 
 요구 사항 대응: FR-011(대표·손상·암호화·표·그림·수식·폰트·IME·PDF) → 행 1·3·5·6·7·12·15·16; SC-002 → 행 9·10; SC-004 → 행 9·13(T014); SC-009 → 행 2; SC-010 → 행 2·9(T023·T014).
 

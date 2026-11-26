@@ -1,11 +1,11 @@
 # Stage 3-A 요청 39개 항목 원장
 
-업데이트: 2026-11-26 (Asia/Seoul)
+업데이트: 2026-11-27 (Asia/Seoul)
 기준 저장소 시작 HEAD: `5ef8ba99152ea787ab1a793ea16dd8c2a78c97ff`
 P4-DX-CURVE 구현·IPC 회귀 보완 포함 기준 HEAD: `4050b8960fda0ba868aed4be0aa4467da17341d8`
 범위: P0 회귀 1 + P4 9 + P5 13 + P6 16 = **39개** (A 24, B 14, 회귀 1). 이 원장은 사용자 지정 ID를 모두 유지한다. 기존 [현행 인벤토리](stage3-a-current-inventory.md)와 [품질 매트릭스](../quality-matrix.md)는 관련 역사·구현 정보를 계속 보존한다.
 
-현재 수락 집계(2026-11-26): **26/39 IMPLEMENTED_VERIFIED** — P0 1/1, P4 8/9, P5 13/13, P6 4/16. 미완료 13개는 OPEN 12개와 P4-HX-CURVE의 PARTIAL / BLOCKED_BY_FORMAT_CONTRACT 1개다.
+현재 수락 집계(2026-11-27): **27/39 IMPLEMENTED_VERIFIED** — P0 1/1, P4 8/9, P5 13/13, P6 5/16. 미완료 12개는 OPEN 11개와 P4-HX-CURVE의 PARTIAL / BLOCKED_BY_FORMAT_CONTRACT 1개다.
 
 `IMPLEMENTED_VERIFIED`는 명시된 기능과 해당 저장/Undo/Redo/재열기 조건을 실제로 확인한 경우에만 사용한다. `IN_PROGRESS`는 증거가 일부 있어도 요구사항의 일부가 빠져 있음을 뜻한다. `OPEN`은 이 요구사항 자체에 대한 완료 증명이 아직 없다는 뜻이며, 현재 코드에 관련 기능이 전혀 없다고 단정하지 않는다. Native 수락과 개발 구현은 별도로 기록한다.
 
@@ -43,7 +43,7 @@ P4-DX-CURVE 구현·IPC 회귀 보완 포함 기준 HEAD: `4050b8960fda0ba868aed
 | P6-H5-DX | A | HWP5→DOCX 지원 shape conversion | OPEN | DrawingML editable conversion 증거 미수집 | NOT RUN | — | preset/geometry/style/relationship 보존 확인 |
 | P6-H5-HX | A | HWP5→HWPX 지원 shape·style·resource conversion | OPEN | HWPX structure conversion 증거 미수집 | NOT RUN | — | 유효 HWPX structure/IDs/resources 및 reopen 확인 |
 | P6-HX-H5 | A | HWPX→HWP5 지원 object conversion | OPEN | HWP5 DocInfo/BinData/record mapping 증거 미수집 | NOT RUN | — | target editable structure, unsupported refusal, reopen 확인 |
-| P6-HX-DX-MORE | A | HWPX→DOCX polygon 외 editable shape/style conversion | OPEN | 기존 polygon subset을 넘는 mapping 증거 미수집 | NOT RUN | — | geometric/style semantics 및 명시 support boundary 검증 |
+| P6-HX-DX-MORE | A | HWPX→DOCX polygon 외 editable shape/style conversion | IMPLEMENTED_VERIFIED | inline rectangle·ellipse·canonical straight line의 편집 가능한 DrawingML 변환. HWPUNIT→EMU, fill/stroke/width, 지원 회전·flip·설명 보존. T009는 `word/document.xml`만 변경하고 본문 텍스트·기존 도형·OPC part set 보존; Undo/Redo·새 앱 프로세스 재열기·도형 세 개 재선택 PASS. [상세 수락 JSON](stage3-a-p6-hwpx-docx-more-acceptance.json) | Linux X11/IBus attempt10: trusted copy/paste, revision 0→9 Undo/Redo, rounded rectangle 원자적 거부, saved/synced, 독립 OPC/XML, fresh PID 1633882→1634462에서 편집 가능성 PASS. 결과 `80a4859782c052ada130b7de1f1919eeb4ca5468eb6d0a585372b6c485311966`; cleanup complete/proven, survivor 없음 | geul 구현 `5fbf2a6191ce763ade18b0c5fe0a2af9129225a7` | inline body-owned 기본 rectangle·ellipse와 canonical endpoint line만. rounded/custom/freeform/curve/floating/textbox/caption/media/effect/미지원 metadata와 비canonical line 거부; 전체 문서 변환 아님. Wayland/Windows/macOS·외부 Office NOT RUN, Nix portability NOT VERIFIED |
 | P6-OTHER-CAP | A | DOCX/RHWP group-owned caption 소유·편집 | OPEN | 일반 개체 caption 이력은 group caption ownership을 증명하지 않음 | NOT RUN | — | association·text·placement·serialization·Undo/Redo 확인 |
 | P6-SMARTART-MODEL | A | DOCX SmartArt node-specific style/additional data model | OPEN | 기존 item/step/layout 편집 범위와 추가 model fields를 대조하지 않음 | NOT RUN | — | 원본 data/diagram parts·serialization·reopen 증거 수집 |
 | P6-DX-TYPE | B | DOCX floating/effects/custom-adjustment 등 추가 type transform 안전 활성화 | OPEN | canonical inline roundRect→rect 검증은 남은 unsafe transform을 해소하지 않음 | NOT RUN | — | collateral XML 불변, unsupported rejection, relationships/Undo/Redo 확인 |

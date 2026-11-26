@@ -1,0 +1,113 @@
+{
+  "issue": "P6-HX-DX-MORE",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Expand HWPX-to-DOCX editable shape/style transfer beyond the previously supported polygon subset.",
+  "implementation": {
+    "geulCommit": "5fbf2a6191ce763ade18b0c5fe0a2af9129225a7",
+    "parentCommit": "155346f200f69aea325b05bfdd0c317aee8d5868",
+    "files": [
+      "scripts/tests/native-stage3-b.py",
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src-tauri/src/adapters/wordcraft/tests.rs",
+      "src/adapters/docx.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.test.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.ts",
+      "src/components/Editor/wordcraft/testing.ts"
+    ],
+    "supportedTransfer": [
+      "HWPX inline rectangle to editable DOCX DrawingML preset rect",
+      "HWPX inline ellipse to editable DOCX DrawingML preset ellipse",
+      "HWPX inline straight line with canonical top-left to bottom-right endpoints to editable DOCX DrawingML preset line"
+    ],
+    "mapping": "HWPUNIT dimensions are converted to DOCX point extents and serialized EMU. BGR fill/stroke colors become RGB, solid stroke width is preserved, and supported rotation, flips, and alt description are retained. The native ellipse acceptance covers 90-degree rotation and horizontal flip. The line importer independently requires canonical endpoint geometry and refuses unsupported transforms.",
+    "preconditions": "Only body-owned inline HWPX objects with treatAsChar=true, Square wrap, zero offsets, dimensions 200..14400 HWPUNIT, and no caption/textbox are accepted. The pinned RHWP portable extractor rejects rounded rectangles, unsupported fill/line styles, arrows, effects, and noncanonical line geometry. The DOCX engine independently validates shape kind, colors, dimensions, transforms, and alt text. A loaded DOCX body that fails source-model roundtrip is refused before mutation.",
+    "preservation": "Source HWPX fixture bytes remain unchanged. The destination retains all 9 OPC part names; T009 changes only word/document.xml. Destination text and the preexisting DrawingML identity 1 remain unchanged. New editable shapes receive unique docPr IDs 2, 3, and 4. Undo/Redo, same-process document reopen, and a separate application process reopen preserve editability.",
+    "unsupportedCases": "Rounded HWPX rectangle is rejected without changing revision, caret, render, or file bytes. A rotated HWPX line is rejected before DOCX mutation by the focused TypeScript regression. An unsafe non-roundtripping DOCX body rejects insertion atomically in Rust. Unsupported/freeform shapes, textboxes, captions, media, noncanonical line geometry, unsupported effects/styles, and unmodeled envelopes remain outside this mapping.",
+    "dependencies": {
+      "wordcraftGitlink": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    }
+  },
+  "verification": {
+    "focusedRust": "PASS 2/2: editable inline primitives/T009/Undo-Redo/reopen and atomic refusal for a non-roundtripping DOCX body",
+    "focusedVitest": "PASS 3; 21 other tests skipped by name filter",
+    "typescriptTypecheck": "PASS",
+    "nativeHarnessPythonSyntax": "PASS",
+    "releaseBuild": {
+      "result": "PASS: npm run tauri -- build --no-bundle",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "80dee820d4cebbb19f7f3fbf66c7e6de160b9b6aeabc4c725cd6e323a7eed45f",
+      "bytes": 63536536,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; runtime references Nix store paths"
+    },
+    "rhwpArtifacts": {
+      "verification": "PASS",
+      "distGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "publicGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-HX-DX-MORE and P6-HX-DX-MORE-FRESH, attempt10, Linux X11 with private D-Bus and IBus Hangul",
+      "trustedPointerClipboard": "PASS; source selection/copy and destination selection/paste used trusted Native input",
+      "undoRedo": "PASS; rectangle, ellipse, and line each pasted, undone, and redone; revisions advanced 0 through 9",
+      "negativeCase": "PASS; rounded rectangle paste rejected with target state/render and source/target bytes unchanged",
+      "t009": "PASS; saved, synced=true, changedSince=false",
+      "primaryAppPid": 1633882,
+      "freshAppPid": 1634462,
+      "freshProcess": "PASS; the saved DOCX opened in a different application process and all three shapes were trusted-pointer selectable/editable",
+      "resultJsonSha256": "80a4859782c052ada130b7de1f1919eeb4ca5468eb6d0a585372b6c485311966",
+      "sessionSha256": "550b6264b0539d7c9f82938eaec862e0cf01e2598c4069412226a4ba923ca9f5",
+      "cleanupSha256": "43b26dd7e6d1f5f8e67912e8a4118c209afa3b425c506a9ce42937d61d1b5dad",
+      "cleanup": "PASS; complete and proven, exit 0, no survivors or process errors"
+    },
+    "savedDocx": {
+      "sha256": "c2c284a40d4ad92459bca55e8e7c080d87aa0aab13874b109951fd9285e6f5d1",
+      "opcPartCount": 9,
+      "changedParts": [
+        "word/document.xml"
+      ],
+      "destinationTextUnchanged": true,
+      "drawingIdentities": [
+        [1, "Shape 1", ""],
+        [2, "Shape 2", "HWPX rectangle"],
+        [3, "Shape 3", "HWPX ellipse"],
+        [4, "Shape 4", "HWPX line"]
+      ],
+      "editableShapes": {
+        "HWPX rectangle": {
+          "preset": "rect",
+          "extentEmu": [322580, 161290],
+          "fill": "CC8844",
+          "stroke": "112233",
+          "strokeWidthEmu": 4445
+        },
+        "HWPX ellipse": {
+          "preset": "ellipse",
+          "extentEmu": [381000, 228600],
+          "rotation": "5400000",
+          "flipH": true,
+          "fill": "20A060",
+          "stroke": "604020",
+          "strokeWidthEmu": 5080
+        },
+        "HWPX line": {
+          "preset": "line",
+          "extentEmu": [1828800, 127000],
+          "fill": null,
+          "stroke": "E0A060",
+          "strokeWidthEmu": 12700
+        }
+      },
+      "freshProcessCopySha256": "c2c284a40d4ad92459bca55e8e7c080d87aa0aab13874b109951fd9285e6f5d1"
+    }
+  },
+  "limitations": [
+    "This is object-level structured transfer, not full-document format conversion.",
+    "Floating shapes, rounded rectangles, custom/freeform shapes, curves, textboxes, captions, media, unsupported effects/line styles, and noncanonical line geometry are rejected.",
+    "Wayland, Windows, macOS, and external Microsoft Word/Hancom reopen were NOT RUN.",
+    "Nix-independent runtime portability was NOT VERIFIED."
+  ]
+}
