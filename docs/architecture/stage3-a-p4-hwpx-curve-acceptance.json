@@ -25,7 +25,7 @@
     "source": "e나라표준인증 KS X 6101:2024 machine-readable standard, revision 03, active; operation date 2024-10-30; Annex E ParaList XML Schema, CurveType",
     "viewerUrl": "https://www.standard.go.kr/KSCI/api/std/viewMachine.do?reformNo=03&tmprKsNo=KSX6101&formType=STD",
     "dataEndpoint": "https://www.standard.go.kr/KSCI/api/std/viewMachineNextPage.do?format=json (POST tmprKsNo=KSX6101, reformNo=03, formType=STD)",
-    "accessed": "2026-11-25",
+    "accessed": "2026-11-27",
     "schemaFinding": "Annex E CurveType contains an unbounded sequence of seg. Each seg has exactly type (default CURVE; enum LINE/CURVE), x1, y1, x2, y2 integer attributes, with no child elements or xs:any wildcard. ConnectLineType separately defines controlPoints/point; that is not a CurveType contract.",
     "conclusion": "The supported current schema does not provide an editable Bezier control-point serialization contract. Keep those mutations fail-closed unless a compatible authentic extension/sample establishes one.",
     "revision": "03",
@@ -37,7 +37,7 @@
       "reformNo": "03",
       "formType": "STD"
     },
-    "revalidationDate": "2026-11-25"
+    "revalidationDate": "2026-11-27"
   },
   "rhwpModelReview": {
     "files": [
@@ -46,7 +46,7 @@
       "external/rhwp/src/serializer/hwpx/section.rs"
     ],
     "finding": "The parser builds a point chain from each hp:seg start/end pair and leaves the HWP5-specific segment_types field empty for HWPX. The writer emits endpoint hp:seg records from that chain. The added ordered patch records whether each source hp:seg had children and exposes structural split/join only for childless LINE records with exactly the five standard attributes. The geul edit path retains segment metadata/order and original segment types outside the touched LINE records; unsupported source envelopes are rejected.",
-    "revalidated": "2026-11-25 at pinned RHWP 1a76570e833917d15817415a53c09ad61ab3203f. The HWPX parser reduces each seg to endpoint point-chain entries, leaves HWP5-specific segment_types empty for HWPX, and the writer emits hp:seg endpoint pairs."
+    "revalidated": "2026-11-27 at pinned RHWP 1a76570e833917d15817415a53c09ad61ab3203f. The HWPX parser reduces each seg to endpoint point-chain entries, leaves HWP5-specific segment_types empty for HWPX, and the writer emits hp:seg endpoint pairs."
   },
   "sampleCorpusAudit": {
     "source": "Tracked repository corpus external/rhwp/samples/**/*.hwpx; aggregate counts are observational and cannot prove no proprietary extension exists.",
