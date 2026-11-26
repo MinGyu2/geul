@@ -7,6 +7,7 @@
     "parentCommit": "155346f200f69aea325b05bfdd0c317aee8d5868",
     "files": [
       "scripts/tests/native-stage3-b.py",
+      "scripts/tests/native-stage3a-p6.py",
       "src-tauri/src/adapters/wordcraft/engine.rs",
       "src-tauri/src/adapters/wordcraft/tests.rs",
       "src/adapters/docx.ts",
@@ -17,20 +18,22 @@
     "supportedTransfer": [
       "HWPX inline rectangle to editable DOCX DrawingML preset rect",
       "HWPX inline ellipse to editable DOCX DrawingML preset ellipse",
-      "HWPX inline straight line with canonical top-left to bottom-right endpoints to editable DOCX DrawingML preset line"
+      "HWPX inline straight line with canonical top-left to bottom-right endpoints to editable DOCX DrawingML preset line",
+      "HWPX inline closed filled borderless polygon to editable DOCX DrawingML custom geometry (`a:custGeom`)"
     ],
-    "mapping": "HWPUNIT dimensions are converted to DOCX point extents and serialized EMU. BGR fill/stroke colors become RGB, solid stroke width is preserved, and supported rotation, flips, and alt description are retained. The native ellipse acceptance covers 90-degree rotation and horizontal flip. The line importer independently requires canonical endpoint geometry and refuses unsupported transforms.",
-    "preconditions": "Only body-owned inline HWPX objects with treatAsChar=true, Square wrap, zero offsets, dimensions 200..14400 HWPUNIT, and no caption/textbox are accepted. The pinned RHWP portable extractor rejects rounded rectangles, unsupported fill/line styles, arrows, effects, and noncanonical line geometry. The DOCX engine independently validates shape kind, colors, dimensions, transforms, and alt text. A loaded DOCX body that fails source-model roundtrip is refused before mutation.",
-    "preservation": "Source HWPX fixture bytes remain unchanged. The destination retains all 9 OPC part names; T009 changes only word/document.xml. Destination text and the preexisting DrawingML identity 1 remain unchanged. New editable shapes receive unique docPr IDs 2, 3, and 4. Undo/Redo, same-process document reopen, and a separate application process reopen preserve editability.",
-    "unsupportedCases": "Rounded HWPX rectangle is rejected without changing revision, caret, render, or file bytes. A rotated HWPX line is rejected before DOCX mutation by the focused TypeScript regression. An unsafe non-roundtripping DOCX body rejects insertion atomically in Rust. Unsupported/freeform shapes, textboxes, captions, media, noncanonical line geometry, unsupported effects/styles, and unmodeled envelopes remain outside this mapping.",
+    "mapping": "HWPUNIT dimensions are converted to DOCX point extents and serialized EMU. BGR fill/stroke colors become RGB, solid stroke width is preserved, and supported rotation, flips, and alt description are retained. The native ellipse acceptance covers 90-degree rotation and horizontal flip. The line importer independently requires canonical endpoint geometry and refuses unsupported transforms. Closed filled polygons retain vertex order and the close command as an editable DrawingML path; HWPUNIT coordinates map to EMU at 127 EMU/HWPUNIT, with fill and description preserved.",
+    "preconditions": "Only body-owned inline HWPX objects with treatAsChar=true, Square wrap, zero offsets, dimensions 200..14400 HWPUNIT, and no caption/textbox are accepted. The pinned RHWP portable extractor rejects rounded rectangles, unsupported fill/line styles, arrows, effects, and noncanonical line geometry. The DOCX engine independently validates shape kind, colors, dimensions, transforms, and alt text. A loaded DOCX body that fails source-model roundtrip is refused before mutation. Polygon transfer additionally requires 3..256 unique non-collinear in-bounds vertices, no closure duplicate in the portable point list, no rotation/flips, solid fill, and no border.",
+    "preservation": "Source HWPX fixture bytes remain unchanged. The destination retains all 9 OPC part names; T009 changes only word/document.xml. Destination text and the preexisting DrawingML identity 1 remain unchanged. New editable shapes receive unique docPr IDs 2, 3, and 4. Undo/Redo, same-process document reopen, and a separate application process reopen preserve editability. The polygon follow-up Native save changed only `word/document.xml`; existing drawing ID 1 remained and the polygon received unique ID 2. The polygon-specific Native case closed/reopened in the same application process and selected the editable shape; independent Rust read and T009 check passed.",
+    "unsupportedCases": "Rounded HWPX rectangle is rejected without changing revision, caret, render, or file bytes. A rotated HWPX line is rejected before DOCX mutation by the focused TypeScript regression. An unsafe non-roundtripping DOCX body rejects insertion atomically in Rust. Non-polygon custom/freeform shapes and curves, textboxes, captions, media, noncanonical line geometry, unsupported effects/styles, and unmodeled envelopes remain outside this mapping.",
     "dependencies": {
       "wordcraftGitlink": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee",
       "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
       "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
-    }
+    },
+    "followUpCommits": ["ca5302ec5be184fa3460a75e6ceff2ecd5af86d9"]
   },
   "verification": {
-    "focusedRust": "PASS 2/2: editable inline primitives/T009/Undo-Redo/reopen and atomic refusal for a non-roundtripping DOCX body",
+    "focusedRust": "PASS 3/3: preset conversion, canonical freeform import with T009/package-part preservation and editable DrawingML reopen, and atomic refusal for a non-roundtripping DOCX body",
     "focusedVitest": "PASS 3; 21 other tests skipped by name filter",
     "typescriptTypecheck": "PASS",
     "nativeHarnessPythonSyntax": "PASS",
@@ -61,7 +64,39 @@
       "resultJsonSha256": "80a4859782c052ada130b7de1f1919eeb4ca5468eb6d0a585372b6c485311966",
       "sessionSha256": "550b6264b0539d7c9f82938eaec862e0cf01e2598c4069412226a4ba923ca9f5",
       "cleanupSha256": "43b26dd7e6d1f5f8e67912e8a4118c209afa3b425c506a9ce42937d61d1b5dad",
-      "cleanup": "PASS; complete and proven, exit 0, no survivors or process errors"
+      "cleanup": "PASS; complete and proven, exit 0, no survivors or process errors",
+      "polygonImport": {
+        "result": "PASS",
+        "case": "P6.2-format, attempt04; Linux X11/Xvfb with private D-Bus and IBus Hangul",
+        "trustedPointerClipboard": "PASS; HWPX polygon selection/copy and DOCX paste used actual Native input",
+        "undoRedo": {
+          "result": "PASS",
+          "revisions": [0, 1, 2, 3],
+          "renderCanvas": {
+            "before": "240fed71e5107ad23eccafb57df29d86966b2f57eed8e64b6dac240e7dc0d95d",
+            "afterPaste": "5a94c09dbfeb8e683aadad7b2c612f088fa3a6c4823f6223e379c50ef0371a14",
+            "afterUndo": "240fed71e5107ad23eccafb57df29d86966b2f57eed8e64b6dac240e7dc0d95d",
+            "afterRedo": "5a94c09dbfeb8e683aadad7b2c612f088fa3a6c4823f6223e379c50ef0371a14"
+          },
+          "undoKeepsUnsavedRevision": true
+        },
+        "t009": {"state": "saved", "synced": true, "changedSince": false, "revision": 3},
+        "reopen": "PASS; close/reopen in the same application process, reopened clean and polygon remained selectable/editable",
+        "appSha256": "b4c611db4ad2b9b96f7855f783a86db50b9c4d4391348c24f2849f9334d3883d",
+        "rhwpGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+        "sourceFixtureSha256": "4dc4d5e255f212d722e680a9445c108d4d80a09f95b3cd9558a48e506b43e60f",
+        "destinationFixtureSha256": "fcb019c1c3b38e61e12bbd36fd4f668e0a1ec0e9ff144fca1a7d544af8e5d982",
+        "savedDocxSha256": "0cbb1a8d50a0b38f1affb4459c31455a5efffd3ea9b7ad3c948924050e09e3d4",
+        "resultJsonSha256": "66b7ae37f26820c4ae9176c742832fe872c07f02d60b2dcf1bfb639dface819e",
+        "sessionSha256": "6d215f6428cc79794b33e22acf9dde57b299878c43d8968180c2a961a9b1c321",
+        "cleanupSha256": "444bc59c52ea346b54c636ed3e1c3e2f96108294923d9ae0d61ac4541bc7091d",
+        "cleanup": "PASS; complete/proven/filesystemProven, exit 0, no process errors or survivors",
+        "priorAttempts": [
+          {"attempt": "01", "result": "FAIL; harness read nonexistent DOCX paragraphText; paste/Undo occurred, downstream gates NOT RUN"},
+          {"attempt": "02", "result": "FAIL; harness called canvas helper on wrong module; downstream gates NOT RUN"},
+          {"attempt": "03", "result": "FAIL; overstrict harness expected Undo to clear dirty/unpreserved. Render/caret restored; project semantics retain monotonic unsaved revision. T009 onward NOT RUN"}
+        ]
+      }
     },
     "savedDocx": {
       "sha256": "c2c284a40d4ad92459bca55e8e7c080d87aa0aab13874b109951fd9285e6f5d1",
@@ -101,13 +136,38 @@
           "strokeWidthEmu": 12700
         }
       },
-      "freshProcessCopySha256": "c2c284a40d4ad92459bca55e8e7c080d87aa0aab13874b109951fd9285e6f5d1"
+      "freshProcessCopySha256": "c2c284a40d4ad92459bca55e8e7c080d87aa0aab13874b109951fd9285e6f5d1",
+      "polygonImport": {
+        "sha256": "0cbb1a8d50a0b38f1affb4459c31455a5efffd3ea9b7ad3c948924050e09e3d4",
+        "opcPartCount": 9,
+        "changedParts": ["word/document.xml"],
+        "sourceHwpXUnchanged": true,
+        "drawingIdentities": [[1, "Shape 1", ""], [2, "Shape 2", "Portable polygon"]],
+        "editableGeometry": {
+          "element": "a:custGeom",
+          "commands": ["moveTo", "lnTo", "lnTo", "close"],
+          "viewportEmu": [1371600, 914400],
+          "pointsEmu": [[203200, 165100], [1231900, 88900], [812800, 825500]],
+          "fill": "442277",
+          "stroke": null,
+          "description": "Portable polygon"
+        },
+        "destinationTextAndExistingDrawingUnchanged": true,
+        "unrelatedOpcPartsAndRelationshipsUnchanged": true
+      }
+    },
+    "regressionFix": {
+      "commit": "ca5302ec5be184fa3460a75e6ceff2ecd5af86d9",
+      "rootCause": "Imported Freeform lacked DrawingML provenance. DOCX serialization emitted canonical a:custGeom, then reopening reconstructed editable DrawingMlGeometry; T009 correctly rejected None→Some.",
+      "fix": "Seed the same canonical editable DrawingMlGeometry projection and EMU path commands on import; assert exact path/viewport and unrelated OPC part preservation.",
+      "nativeHarness": "Verify rendered paste/Undo/Redo and monotonic dirty state; Undo restores content but retains an unsaved revision until save."
     }
   },
   "limitations": [
     "This is object-level structured transfer, not full-document format conversion.",
-    "Floating shapes, rounded rectangles, custom/freeform shapes, curves, textboxes, captions, media, unsupported effects/line styles, and noncanonical line geometry are rejected.",
+    "Only the bounded closed, filled, borderless HWPX polygon maps to editable DrawingML custom geometry. Non-polygon custom/freeform outlines, curves, unsupported metadata/transforms, floating objects, textboxes, captions and media remain rejected.",
     "Wayland, Windows, macOS, and external Microsoft Word/Hancom reopen were NOT RUN.",
-    "Nix-independent runtime portability was NOT VERIFIED."
+    "Nix-independent runtime portability was NOT VERIFIED.",
+    "The polygon-specific Native close/reopen ran in the same application process; separate-process reopen evidence from attempt10 covers rectangle, ellipse and line, not this polygon follow-up."
   ]
 }

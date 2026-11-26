@@ -150,9 +150,12 @@
       ]
     },
     "separateRegressionFailure": {
-      "result": "FAIL; not caused or repaired by this issue and remains open for follow-up",
+      "result": "RESOLVED by a separate P6-HX-DX-MORE follow-up; not attributable to P6-DX-TYPE.",
       "test": "stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import",
-      "finding": "The broader adapter regression run reported a P6-HX-DX-MORE freeform T009 reopen mismatch (`Freeform.drawingml`: None -> Some). It is outside P6-DX-TYPE; root cause and clean-baseline status have not yet been established."
+      "finding": "The imported Freeform lacked DrawingML provenance, so DOCX reopen reconstructed editable DrawingMlGeometry and T009 rejected None→Some.",
+      "resolutionCommit": "ca5302ec5be184fa3460a75e6ceff2ecd5af86d9",
+      "focusedResult": "PASS 3/3 for the stage3a_p6_docx filter, including the corrected polygon test with T009, unrelated OPC preservation, editable path commands, Undo/Redo and independent reopen.",
+      "nativeResult": "PASS P6.2-format attempt04; T009 saved/synced/changedSince=false, DrawingML/OPC independently inspected, saved DOCX reopened and remained editable. Evidence is recorded in stage3-a-p6-hwpx-docx-more-acceptance.json."
     },
     "externalOffice": "NOT RUN",
     "wayland": "NOT RUN",
