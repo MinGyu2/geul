@@ -194,7 +194,20 @@ export interface ObjectClipboardPayloadV5 {
   token: string;
 }
 
-export type ObjectClipboardPayload = ObjectClipboardPayloadV1 | ObjectClipboardPayloadV2 | ObjectClipboardPayloadV3 | ObjectClipboardPayloadV4 | ObjectClipboardPayloadV5;
+/** HWP5 portable object snapshot for safe cross-document HWPX insertion. */
+export interface ObjectClipboardPayloadV6 {
+  kind: "geul.object";
+  version: 6;
+  sourceFormat: "hwp";
+  object: "picture" | "shape" | "textBox";
+  sourceSessionId: number;
+  sourceGeneration: number;
+  portable: Exclude<HwpxPortableObject, { kind: "group" }>;
+  hwpFragmentBase64?: string;
+  token: string;
+}
+
+export type ObjectClipboardPayload = ObjectClipboardPayloadV1 | ObjectClipboardPayloadV2 | ObjectClipboardPayloadV3 | ObjectClipboardPayloadV4 | ObjectClipboardPayloadV5 | ObjectClipboardPayloadV6;
 
 function standardShape(shape: BasicShape): ClipboardShape {
   return {
@@ -298,6 +311,26 @@ export function createHwp5PortableShapeClipboardPayload(
     ...(hwpFragmentBase64 !== undefined ? { hwpFragmentBase64 } : {}),
     token: token(),
   };
+}
+
+export function createHwp5HwpxPortableClipboardPayload(
+  sourceSessionId: number,
+  sourceGeneration: number,
+  object: ObjectClipboardPayloadV6["object"],
+  portable: Exclude<HwpxPortableObject, { kind: "group" }>,
+  hwpFragmentBase64?: string,
+): ObjectClipboardPayloadV6 | null {
+  if (!intInRange(sourceSessionId, 0, Number.MAX_SAFE_INTEGER)
+    || !intInRange(sourceGeneration, 0, Number.MAX_SAFE_INTEGER)
+    || !validHwpxPortableObject(portable, object)
+    || (hwpFragmentBase64 !== undefined && !validHwp5ObjectFragmentBase64(hwpFragmentBase64))) return null;
+  const payload: ObjectClipboardPayloadV6 = {
+    kind: "geul.object", version: 6, sourceFormat: "hwp", object,
+    sourceSessionId, sourceGeneration, portable,
+    ...(hwpFragmentBase64 !== undefined ? { hwpFragmentBase64 } : {}),
+    token: token(),
+  };
+  return JSON.stringify(payload).length <= MAX_OBJECT_CLIPBOARD_BYTES ? payload : null;
 }
 
 function validHwp5ObjectFragmentBase64(value: unknown): value is string {
@@ -695,6 +728,25 @@ export function parseObjectClipboardPayload(serialized: string): ObjectClipboard
         kind: "geul.object", version: 5, sourceFormat: "hwp", object: "shape",
         sourceSessionId: raw.sourceSessionId, sourceGeneration: raw.sourceGeneration,
         portable: raw.portable as HwpxPortableShape,
+        ...(raw.hwpFragmentBase64 !== undefined ? { hwpFragmentBase64: raw.hwpFragmentBase64 } : {}),
+        token: raw.token,
+      };
+    }
+    if (raw.version === 6) {
+      const required = ["kind", "object", "portable", "sourceFormat", "sourceGeneration", "sourceSessionId", "token", "version"];
+      const allowed = [...required, "hwpFragmentBase64"];
+      const object = ["picture", "shape", "textBox"].find(kind => kind === raw.object) as ObjectClipboardPayloadV6["object"] | undefined;
+      if (raw.sourceFormat !== "hwp" || !object
+        || Object.keys(raw).some(key => !allowed.includes(key))
+        || required.some(key => !(key in raw))
+        || !intInRange(raw.sourceSessionId, 0, Number.MAX_SAFE_INTEGER)
+        || !intInRange(raw.sourceGeneration, 0, Number.MAX_SAFE_INTEGER)
+        || !validHwpxPortableObject(raw.portable, object)
+        || (raw.hwpFragmentBase64 !== undefined && !validHwp5ObjectFragmentBase64(raw.hwpFragmentBase64))) return null;
+      return {
+        kind: "geul.object", version: 6, sourceFormat: "hwp", object,
+        sourceSessionId: raw.sourceSessionId, sourceGeneration: raw.sourceGeneration,
+        portable: raw.portable as ObjectClipboardPayloadV6["portable"],
         ...(raw.hwpFragmentBase64 !== undefined ? { hwpFragmentBase64: raw.hwpFragmentBase64 } : {}),
         token: raw.token,
       };

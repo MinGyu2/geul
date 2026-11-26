@@ -4,6 +4,7 @@ import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clip
 import {
   decodeHwp5ObjectFragment,
   encodeHwp5ObjectFragment,
+  createHwp5HwpxPortableClipboardPayload,
   createHwp5PortableShapeClipboardPayload,
   createHwpObjectClipboardPayload,
   createHwpxObjectClipboardPayload,
@@ -395,6 +396,13 @@ describe("rich object clipboard (v2)", () => {
     expect(parseObjectClipboardPayload(JSON.stringify(picPortable))).toEqual(picPortable);
     const portablePicture = picPortable?.portable;
     if (!portablePicture || portablePicture.kind !== "picture") throw new Error("expected a portable picture");
+    const hwp5Picture = createHwp5HwpxPortableClipboardPayload(7, 3, "picture", portablePicture, encodedFragment!);
+    if (!hwp5Picture) throw new Error("HWP5 portable picture payload not admitted");
+    expect(hwp5Picture).toMatchObject({ version: 6, sourceFormat: "hwp", object: "picture", portable: portablePicture });
+    expect(parseObjectClipboardPayload(JSON.stringify(hwp5Picture))).toEqual(hwp5Picture);
+    expect(createHwp5HwpxPortableClipboardPayload(7, 3, "shape", portablePicture)).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...hwp5Picture, object: "shape" }))).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...hwp5Picture, unexpected: true }))).toBeNull();
     expect(createHwpxObjectClipboardPayload("picture", 2, 1, {
       ...portablePicture,
       mime: "image/jpeg",

@@ -1224,6 +1224,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             } }) ? "ok" : "rejected";
           }
           if (object.version === 1) return this.push({ op: "shape", kind: object.object.shape }) ? "ok" : "rejected";
+          if (object.version !== 2) return "rejected";
           return this.push({ op: "pasteObject", payload: object.engine }) ? "ok" : "rejected";
         }
         if (mime !== TABLE_CLIPBOARD_MIME) return "rejected";

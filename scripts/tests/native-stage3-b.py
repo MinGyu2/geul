@@ -106,6 +106,15 @@ def inspect_hwp_clip(path):
     """)
 
 
+def inspect_hwp_portable(path):
+    model = inspect_hwp(path)
+    # RHWP exposes a plain HWP5 line as `line`, while rectangle/ellipse use
+    # `shape`. Keep both in the portable cross-format shape acceptance model.
+    model["shapes"] = inspect_hwp_transfer_shapes(path)["shapes"]
+    model["pictures"] = inspect_hwp_clip(path)["pictures"]
+    return model
+
+
 def prepare_p6_h5_clip_fixtures(staging: Path):
     staging.mkdir(parents=True, exist_ok=True)
     source = staging / "p6-h5-clip-source.hwp"
@@ -143,6 +152,63 @@ try {
     script = template.replace(marker, create)
     subprocess.run(["node", "-e", script, str(source), str(destination)], cwd=ROOT, check=True)
     return source, destination
+
+
+def prepare_p6_h5_hx_fixtures(out):
+    out.mkdir(parents=True, exist_ok=True)
+    source = out / "p6-h5-hx-source.fixture.hwp"
+    unsupported = out / "p6-h5-hx-rounded.fixture.hwp"
+    destination = out / "p6-h5-hx-destination.fixture.hwpx"
+    create = r"""
+const sourcePath=process.argv[1], unsupportedPath=process.argv[2], destinationPath=process.argv[3];
+const sourceDoc=rhwp.HwpDocument.createEmpty();
+const unsupportedDoc=rhwp.HwpDocument.createEmpty();
+const targetDoc=rhwp.HwpDocument.createEmpty();
+const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+try {
+  sourceDoc.createBlankDocument();
+  sourceDoc.insertText(0,0,0,'HWP5 portable objects');
+  const rectangle=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:5,
+    shapeType:'rectangle',width:3000,height:1700,treatAsChar:true,textWrap:'Square',horzOffset:0,vertOffset:0})), 'source rectangle');
+  ok(sourceDoc.setShapeProperties(0,0,rectangle.controlIdx,JSON.stringify({rotationAngle:30,fillType:'solid',
+    fillBgColor:0x004488cc,borderColor:0x00332211,borderWidth:35,description:'HWP5 to HWPX rectangle'})), 'source rectangle style');
+  const ellipse=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:6,
+    shapeType:'ellipse',width:2400,height:1800,treatAsChar:true,textWrap:'Square',horzOffset:0,vertOffset:0})), 'source ellipse');
+  ok(sourceDoc.setShapeProperties(0,0,ellipse.controlIdx,JSON.stringify({rotationAngle:45,horzFlip:true,fillType:'solid',
+    fillBgColor:0x0060a020,borderColor:0x00204060,borderWidth:40,description:'HWP5 to HWPX ellipse'})), 'source ellipse style');
+  const line=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:7,
+    shapeType:'line',width:4000,height:900,treatAsChar:true,textWrap:'Square',horzOffset:0,vertOffset:0})), 'source line');
+  ok(sourceDoc.setShapeProperties(0,0,line.controlIdx,JSON.stringify({fillType:'none',lineType:1,
+    borderColor:0x0060a0e0,borderWidth:50,description:'HWP5 to HWPX line'})), 'source line style');
+  const picture=ok(sourceDoc.insertPicture(0,0,8,'[]',fs.readFileSync(path.resolve('src-tauri/icons/32x32.png')),
+    3600,2100,32,32,'png','HWP5 source picture'), 'source picture');
+  ok(sourceDoc.setPictureProperties(0,0,picture.controlIdx,JSON.stringify({treatAsChar:true,textWrap:'Square',
+    horzOffset:1700,vertOffset:1800,description:'HWP5 source picture'})), 'source picture style');
+  fs.writeFileSync(sourcePath,sourceDoc.exportHwp());
+
+  unsupportedDoc.createBlankDocument();
+  unsupportedDoc.insertText(0,0,0,'unsupported');
+  const rounded=ok(unsupportedDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
+    shapeType:'rectangle',width:2800,height:1500,treatAsChar:true,textWrap:'Square',horzOffset:0,vertOffset:0})), 'rounded source');
+  ok(unsupportedDoc.setShapeProperties(0,0,rounded.controlIdx,JSON.stringify({roundRate:35,fillType:'solid',
+    fillBgColor:0x002080c0,borderColor:0x00102030,borderWidth:25})), 'rounded source style');
+  fs.writeFileSync(unsupportedPath,unsupportedDoc.exportHwp());
+
+  targetDoc.createBlankDocument();
+  targetDoc.insertText(0,0,0,'HWPX destination baseline');
+  const keep=ok(targetDoc.insertPicture(0,0,0,'[]',fs.readFileSync(path.resolve('src-tauri/icons/128x128.png')),
+    2400,1500,128,128,'png','keep destination resource'), 'destination picture');
+  ok(targetDoc.setPictureProperties(0,0,keep.controlIdx,JSON.stringify({treatAsChar:true,textWrap:'Square',
+    horzOffset:7800,vertOffset:2500,description:'keep destination resource'})), 'destination picture style');
+  fs.writeFileSync(destinationPath,targetDoc.exportHwpx());
+} finally { sourceDoc.free(); unsupportedDoc.free(); targetDoc.free(); }
+"""
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 HWP5-to-HWPX fixture template is stale")
+    subprocess.run(["node", "-e", template.replace(marker, create),
+                    str(source), str(unsupported), str(destination)], cwd=ROOT, check=True)
+    return source, unsupported, destination
 
 
 def _hwp_embedded_payload(data):
@@ -2255,6 +2321,250 @@ def b3_1(acc, row, b_root, out):
     reopen(acc, path, row)
 
 
+def p6_h5_hx(acc, row, b_root, out):
+    source_fixture, unsupported_fixture, destination_fixture = prepare_p6_h5_hx_fixtures(
+        out / "p6-h5-hx-fixtures",
+    )
+    source_before = inspect_hwp_portable(source_fixture)
+    require(len(source_before["shapes"]) == 3 and len(source_before["pictures"]) == 1,
+            "HWP5 source must contain three primitive shapes and one embedded picture", source_before)
+    source_shapes = source_before["shapes"]
+    source_picture, = source_before["pictures"]
+    require({shape["props"].get("shapeType") for shape in source_shapes} == {"rectangle", "ellipse", "line"}
+            and all(shape["props"].get("roundRate", 0) == 0 for shape in source_shapes),
+            "HWP5 source shapes are not portable primitive types", [s["props"] for s in source_shapes])
+    source = begin(acc, row, source_fixture, out, "p6-h5-hx-source.hwp")
+    source_hash = digest(source)
+    row["fixtureHashes"] = {
+        "sourceHwp": source_hash,
+        "unsupportedRoundedHwp": digest(unsupported_fixture),
+        "destinationHwpx": digest(destination_fixture),
+    }
+    acc.d.js("""
+      window.p6H5HxEvents=[];
+      for(const type of ['pointerdown','keydown']) document.addEventListener(type,e=>{
+        if(type==='pointerdown'||(e.ctrlKey&&['c','v','z','y'].includes(e.key.toLowerCase())))
+          window.p6H5HxEvents.push({type,key:e.key||null,trusted:e.isTrusted});
+      },true);
+    """)
+    source_status = row["sourceInitialState"] = acc.status("hwp")
+    destination = out / "p6-h5-hx-destination.hwpx"
+    shutil.copyfile(destination_fixture, destination)
+    target_parts_before = _package_parts(destination)
+    target_before = row["destinationBefore"] = inspect_hwpx_clip(destination)
+    require(not target_before["shapes"] and len(target_before["pictures"]) == 1,
+            "HWPX destination must retain one preservation picture", target_before)
+    retained_picture, = target_before["pictures"]
+    target_text_before = [text for text in target_before["body"] if text]
+    source_tab = json.dumps(source.name)
+    destination_tab = json.dumps(destination.name)
+    row["shapeTransfers"] = []
+    for index, source_shape in enumerate(source_shapes):
+        if index > 0:
+            acc.dom_click(".document-tab__select",
+                f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({source_tab}))")
+            acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", source.name)
+        event_start = acc.d.js("return window.p6H5HxEvents.length")
+        select_object(acc, source_shape, "shape")
+        acc.key("ctrl+c")
+        copy_events = acc.d.js("return window.p6H5HxEvents.slice(arguments[0])", event_start)
+        require(any(e["type"] == "pointerdown" and e["trusted"] for e in copy_events)
+                and any(e["key"] == "c" and e["trusted"] for e in copy_events),
+                "HWP5 shape selection/copy did not use trusted Native input", copy_events)
+        require(digest(source) == source_hash and inspect_hwp_portable(source) == source_before,
+                "copy changed HWP5 source bytes or object ownership")
+        for key in ("revision", "dirty", "status"):
+            require(acc.status("hwp").get(key) == source_status.get(key),
+                    "shape copy changed source session state", {key: acc.status("hwp").get(key)})
+        if index == 0:
+            acc.open_native("hwpx", destination)
+        else:
+            acc.dom_click(".document-tab__select",
+                f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({destination_tab}))")
+            acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", destination.name)
+        c.body_end(acc)
+        before_canvas = _canvas_digest(acc)
+        initial_revision = index * 3
+        acc.key("ctrl+v")
+        paste_state = revision(acc, "hwpx", initial_revision + 1)
+        pasted_canvas = _canvas_digest(acc)
+        require(pasted_canvas != before_canvas, "HWP5-to-HWPX shape paste did not render", source_shape["props"])
+        acc.key("ctrl+z")
+        undo_state = revision(acc, "hwpx", initial_revision + 2)
+        require(_canvas_digest(acc) == before_canvas, "shape Undo did not restore HWPX rendering", source_shape["props"])
+        acc.key("ctrl+y")
+        redo_state = revision(acc, "hwpx", initial_revision + 3)
+        require(_canvas_digest(acc) == pasted_canvas, "shape Redo did not restore HWPX rendering", source_shape["props"])
+        row["shapeTransfers"].append({
+            "sourceDescription": source_shape["props"].get("description"),
+            "shapeType": source_shape["props"].get("shapeType"),
+            "paste": paste_state, "undo": undo_state, "redo": redo_state,
+            "trustedSelectionAndCopy": True,
+        })
+
+    acc.dom_click(".document-tab__select",
+        f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({source_tab}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", source.name)
+    picture_event_start = acc.d.js("return window.p6H5HxEvents.length")
+    select_object(acc, source_picture, "picture")
+    acc.key("ctrl+c")
+    picture_copy_events = acc.d.js("return window.p6H5HxEvents.slice(arguments[0])", picture_event_start)
+    require(any(e["type"] == "pointerdown" and e["trusted"] for e in picture_copy_events)
+            and any(e["key"] == "c" and e["trusted"] for e in picture_copy_events),
+            "HWP5 picture selection/copy did not use trusted Native input", picture_copy_events)
+    picture_source_status = acc.status("hwp")
+    for key in ("revision", "dirty", "status"):
+        require(picture_source_status.get(key) == source_status.get(key),
+                "picture copy changed source session state", {key: picture_source_status.get(key)})
+    require(digest(source) == source_hash and inspect_hwp_portable(source) == source_before,
+            "picture copy changed HWP5 source bytes or object ownership")
+    acc.dom_click(".document-tab__select",
+        f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(destination.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", destination.name)
+    c.body_end(acc)
+    canvas_before_picture = _canvas_digest(acc)
+    acc.key("ctrl+v")
+    row["picturePaste"] = revision(acc, "hwpx", 10)
+    canvas_after_picture = _canvas_digest(acc)
+    require(canvas_after_picture != canvas_before_picture, "HWP5-to-HWPX picture paste did not render")
+    acc.key("ctrl+z")
+    row["pictureUndo"] = revision(acc, "hwpx", 11)
+    require(_canvas_digest(acc) == canvas_before_picture, "picture Undo did not restore HWPX rendering")
+    acc.key("ctrl+y")
+    row["pictureRedo"] = revision(acc, "hwpx", 12)
+    require(_canvas_digest(acc) == canvas_after_picture, "picture Redo did not restore HWPX rendering")
+    events = row["trustedInput"] = acc.d.js("return window.p6H5HxEvents.slice()")
+    for key in ("v", "z", "y"):
+        require(any(e["key"] == key and e["trusted"] for e in events),
+                "paste/Undo/Redo did not use trusted Native input", key)
+
+    publish(acc, "hwpx", row)
+    require(digest(source) == source_hash and inspect_hwp_portable(source) == source_before,
+            "T009 save changed HWP5 source bytes or ownership")
+    after = row["destinationAfter"] = inspect_hwpx_clip(destination)
+    require(len(after["shapes"]) == 3 and len(after["pictures"]) == 2,
+            "saved HWPX does not own three transferred shapes and both pictures", after)
+    transferred_shapes = {shape["props"]["description"]: shape for shape in after["shapes"]}
+    copied_picture, = [p for p in after["pictures"] if p["sha256"] == source_picture["sha256"]]
+    retained_after, = [p for p in after["pictures"] if p["sha256"] == retained_picture["sha256"]]
+    require(retained_after["props"] == retained_picture["props"],
+            "existing HWPX picture geometry/style changed", retained_after)
+    require([text for text in after["body"] if text] == target_text_before,
+            "cross-format insert changed destination text", after["body"])
+    row["portableShapeMapping"] = {}
+    for source_shape in source_shapes:
+        source_props = source_shape["props"]
+        description = source_props["description"]
+        transferred = transferred_shapes.get(description)
+        require(transferred is not None, "HWPX is missing a transferred primitive shape", description)
+        expected_shape = {
+            key: source_props.get(key) for key in (
+                "shapeType", "width", "height", "rotationAngle", "horzFlip", "vertFlip", "borderColor",
+                "borderWidth", "lineType", "fillType", "fillBgColor", "description", "treatAsChar",
+            )
+        }
+        row["portableShapeMapping"][description] = {key: transferred["props"].get(key) for key in expected_shape}
+        for key, value in expected_shape.items():
+            require(transferred["props"].get(key) == value,
+                    "HWP5 shape geometry or formatting changed in HWPX",
+                    {"description": description, key: transferred["props"].get(key), "expected": value})
+    picture_keys = (
+        "width", "height", "horzOffset", "vertOffset", "treatAsChar", "textWrap", "borderColor",
+        "borderWidth", "borderType", "description", "cropLeft", "cropTop", "cropRight", "cropBottom",
+        "cropRect", "hasCaption", "captionDirection", "captionVertAlign", "captionWidth", "captionSpacing",
+        "captionMaxWidth", "captionIncludeMargin",
+    )
+    expected_picture = {key: source_picture["props"].get(key) for key in picture_keys}
+    actual_picture = {key: copied_picture["props"].get(key) for key in picture_keys}
+    require(actual_picture == expected_picture,
+            "HWP5 picture geometry, crop, story layout, or caption changed during HWPX resource import",
+            {"expected": expected_picture, "observed": actual_picture})
+    row["portablePictureMapping"] = actual_picture
+
+    target_parts_after = _package_parts(destination)
+    added_parts = sorted(set(target_parts_after) - set(target_parts_before))
+    removed_parts = sorted(set(target_parts_before) - set(target_parts_after))
+    require(not removed_parts, "HWP5-to-HWPX removed destination package parts", removed_parts)
+    changed_existing = sorted(name for name in target_parts_before
+                              if target_parts_before[name] != target_parts_after.get(name))
+    allowed_existing = {"Contents/section0.xml", "Contents/content.hpf", "Preview/PrvImage.png", "Preview/PrvText.txt"}
+    require(set(changed_existing) <= allowed_existing,
+            "HWP5-to-HWPX changed unrelated existing OPC parts", changed_existing)
+    media_added = [name for name in added_parts if name.startswith("BinData/")]
+    require(len(media_added) == 1 and hashlib.sha256(target_parts_after[media_added[0]]).hexdigest() == source_picture["sha256"],
+            "HWP5 picture bytes were not remapped to exactly one new HWPX media resource", media_added)
+    require(set(added_parts) == set(media_added), "HWP5-to-HWPX added unexpected package parts", added_parts)
+    row["opcPreservation"] = {
+        "changedExistingParts": changed_existing, "addedMediaParts": media_added,
+        "retainedDestinationPartsAndMedia": True, "sourceMediaBytesExact": True,
+        "destinationTextAndExistingPicture": True,
+    }
+    with ZipFile(destination) as package:
+        section = ElementTree.fromstring(package.read("Contents/section0.xml"))
+        manifest = ElementTree.fromstring(package.read("Contents/content.hpf"))
+    references = [node.attrib.get("binaryItemIDRef") for node in section.iter() if node.attrib.get("binaryItemIDRef")]
+    manifest_refs = [node.attrib.get("href") for node in manifest.iter() if node.attrib.get("href", "").startswith("BinData/")]
+    require(len(references) == 2 and len(set(references)) == 2,
+            "destination and imported HWPX pictures do not own distinct resource IDs", references)
+    require(len(manifest_refs) == len(set(manifest_refs)) and set(media_added) <= set(manifest_refs),
+            "HWPX media manifest does not uniquely own the transferred resource", manifest_refs)
+    row["resourceReferences"] = {"pictureBinaryRefs": references, "manifestMedia": manifest_refs}
+
+    reopen(acc, destination, row)
+    reopened = inspect_hwpx_clip(destination)
+    require(reopened == after, "HWPX portable shape or picture changed after saved reopen", reopened)
+    row["reopenedEditableShapes"] = []
+    for shape in reopened["shapes"]:
+        select_object(acc, shape, "shape")
+        row["reopenedEditableShapes"].append(shape["props"]["description"])
+        acc.key("Escape")
+    select_object(acc, copied_picture, "picture")
+    row["reopenedEditablePicture"] = "selected"
+    acc.key("Escape")
+
+    begin(acc, row, unsupported_fixture, out, "p6-h5-hx-rounded.hwp")
+    unsupported_model = inspect_hwp(out / "p6-h5-hx-rounded.hwp")
+    rounded, = unsupported_model["shapes"]
+    require(rounded["props"].get("roundRate") == 35, "negative fixture is not rounded", rounded["props"])
+    unsupported_hash = digest(out / "p6-h5-hx-rounded.hwp")
+    select_object(acc, rounded, "shape")
+    acc.key("ctrl+c")
+    require(digest(out / "p6-h5-hx-rounded.hwp") == unsupported_hash, "copy mutated unsupported HWP5 source")
+    acc.dom_click(".document-tab__select",
+        f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({json.dumps(destination.name)}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", destination.name)
+    before_refusal = acc.status("hwpx")
+    before_refusal_hash = digest(destination)
+    before_refusal_canvas = _canvas_digest(acc)
+    acc.key("ctrl+v")
+    acc.settle("hwpx")
+    after_refusal = acc.status("hwpx")
+    for key in ("revision", "localRevision", "dirty", "unpreserved", "uncertain", "selection", "caret"):
+        require(after_refusal.get(key) == before_refusal.get(key),
+                "unsupported rounded HWP5 shape changed target session", {key: after_refusal.get(key)})
+    require(digest(destination) == before_refusal_hash and _canvas_digest(acc) == before_refusal_canvas,
+            "unsupported shape refusal changed target file or rendering")
+    invalid = {
+        "kind": "geul.object", "version": 6, "sourceFormat": "hwp", "object": "picture",
+        "sourceSessionId": 1, "sourceGeneration": 1, "token": "b" * 24,
+        "portable": {"kind": "picture", "mime": "image/png", "bytesBase64": "AA==", "width": 0,
+          "height": 1, "naturalWidth": 1, "naturalHeight": 1, "horzOffset": 0, "vertOffset": 0,
+          "treatAsChar": True, "textWrap": "Square", "borderColor": 0, "borderWidth": 0, "borderType": 0,
+          "crop": {"left": 0, "top": 0, "right": 0, "bottom": 0},
+          "cropRect": {"left": 0, "top": 0, "right": 0, "bottom": 0}},
+    }
+    c.clipboard_peer(acc, "application/x-geul-object+json", json.dumps(invalid, separators=(",", ":")), lambda: (
+        acc.key("ctrl+v"), acc.settle("hwpx"), require(
+            acc.status("hwpx")["revision"] == before_refusal["revision"]
+            and digest(destination) == before_refusal_hash,
+            "malformed HWP5 portable payload was not rejected atomically",
+        )
+    ), plain="Geul picture [" + "b" * 24 + "]")
+    row["negativeCases"] = "rounded source shape and malformed portable picture rejected atomically"
+    row["sourceImmutability"] = digest(source) == source_hash and inspect_hwp_portable(source) == source_before
+    require(row["sourceImmutability"], "final HWP5 source bytes or model changed")
+
+
 def p6_h5_clip(acc, row, b_root, out):
     staging = out / "p6-h5-clip-fixtures"
     source_fixture, destination_fixture = prepare_p6_h5_clip_fixtures(staging)
@@ -2607,6 +2917,7 @@ def b3_2(acc, row, b_root, out):
 
 CASES = {
     "P6-H5-CLIP": p6_h5_clip,
+    "P6-H5-HX": p6_h5_hx,
     "P6-H5-DX": p6_h5_dx,
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
@@ -2677,7 +2988,7 @@ def main():
                         CASES[case](acc, row, args.b_root, args.out)
                     except Exception:
                         row["failureAppState"] = acc.status("docx" if case in {"P6-H5-DX", "P6-HX-DX-MORE", "P6-HX-DX-MORE-FRESH"} else
-                            "hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE", "P6-DX-HX"} else "hwp")
+                            "hwpx" if case in {"B3-2", "P6-H5-HX", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE", "P6-DX-HX"} else "hwp")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:
