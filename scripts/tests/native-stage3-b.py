@@ -616,7 +616,22 @@ def _shape_xml_summary(element, normalize_type=False):
     return namespace, local, tuple(sorted(attrs.items())), element.text or "", tuple(children)
 
 
-def _prove_hwp_shape_type_package(before_path, after_path, target_id, rounded_id):
+def _hwpx_shape_geometry(element, shape_type):
+    def one(local):
+        matches = [child for child in list(element) if child.tag.rsplit("}", 1)[-1] == local]
+        require(len(matches) == 1, "HWPX basic shape geometry child is ambiguous", [local, len(matches)])
+        try:
+            return (int(matches[0].attrib["x"]), int(matches[0].attrib["y"]))
+        except (KeyError, ValueError) as error:
+            raise AssertionError(f"HWPX shape point {local} is not an exact integer coordinate") from error
+
+    if shape_type == "rectangle":
+        return {name: one(name) for name in ("pt0", "pt1", "pt2", "pt3")}
+    return {name: one(name) for name in ("center", "ax1", "ax2", "start1", "end1", "start2", "end2")}
+
+
+def _prove_hwp_shape_type_package(before_path, after_path, target_id, rounded_id,
+                                 source_type="rectangle", target_type="ellipse"):
     before_streams = p6.gso.cfb_streams(before_path.read_bytes())
     after_streams = p6.gso.cfb_streams(after_path.read_bytes())
     require(before_streams.keys() == after_streams.keys(), "HWP5 conversion added or removed CFB streams")
@@ -640,9 +655,11 @@ def _prove_hwp_shape_type_package(before_path, after_path, target_id, rounded_id
     old, new = old_shapes[target_id], new_shapes[target_id]
     require(len(old) == len(new) == 3 and old[0] == new[0], "HWP5 shape owner or record topology changed")
     old_component, new_component = old[1][2], new[1][2]
+    source_ctrl, source_leaf_tag = ((b"cer$", 79) if source_type == "rectangle" else (b"lle$", 80))
+    target_ctrl, target_leaf_tag = ((b"cer$", 79) if target_type == "rectangle" else (b"lle$", 80))
     require(old[1][:2] == new[1][:2] == (76, 2)
-            and old_component[:4] == old_component[4:8] == b"cer$"
-            and new_component[:4] == new_component[4:8] == b"lle$"
+            and old_component[:4] == old_component[4:8] == source_ctrl
+            and new_component[:4] == new_component[4:8] == target_ctrl
             and old_component[8:] == new_component[8:],
             "HWP5 shape identity/style bytes changed beyond type control IDs")
     width, height = struct.unpack_from("<II", old[0][2], 16)
@@ -655,18 +672,24 @@ def _prove_hwp_shape_type_package(before_path, after_path, target_id, rounded_id
     endpoint = (width, center[1])
     ellipse_points = [center, endpoint, (center[0], height), endpoint, endpoint, endpoint, endpoint]
     ellipse_bytes = struct.pack("<I", 0) + b"".join(struct.pack("<ii", x, y) for x, y in ellipse_points)
-    require(old_leaf[:2] == (79, 3) and old_leaf[2] == rect_bytes
-            and new_leaf[:2] == (80, 3) and new_leaf[2] == ellipse_bytes,
+    canonical = {"rectangle": (79, rect_bytes), "ellipse": (80, ellipse_bytes)}
+    require(old_leaf[:2] == (canonical[source_type][0], 3)
+            and old_leaf[2] == canonical[source_type][1]
+            and new_leaf[:2] == (canonical[target_type][0], 3)
+            and new_leaf[2] == canonical[target_type][1]
+            and old_leaf[0] == source_leaf_tag and new_leaf[0] == target_leaf_tag,
             "HWP5 target leaf geometry or type was not serialized canonically")
     preview_size = p5.hwp_preview_dimensions(after_streams)
     require(after_streams.get("PrvImage") != before_streams.get("PrvImage")
             and p5.canonical_preview_png(after_streams["PrvImage"], preview_size) is not None,
             "HWP5 T009 did not refresh a canonical page preview")
     return {"changedCfbStreams": sorted(changed), "shapeInstanceIds": sorted(old_shapes),
+            "sourceTargetType": source_type, "savedTargetType": target_type,
             "targetGeometry": [width, height], "previewDimensions": preview_size}
 
 
-def _prove_hwpx_shape_type_package(before_path, after_path, target_id, rounded_id):
+def _prove_hwpx_shape_type_package(before_path, after_path, target_id, rounded_id,
+                                   source_type="rectangle", target_type="ellipse"):
     with ZipFile(before_path) as before_zip, ZipFile(after_path) as after_zip:
         before = {name: before_zip.read(name) for name in before_zip.namelist() if not name.endswith("/")}
         after = {name: after_zip.read(name) for name in after_zip.namelist() if not name.endswith("/")}
@@ -679,20 +702,57 @@ def _prove_hwpx_shape_type_package(before_path, after_path, target_id, rounded_i
     after_target = _shape_type_element(after_path, target_id)
     before_rounded = _shape_type_element(before_path, rounded_id)
     after_rounded = _shape_type_element(after_path, rounded_id)
-    require(before_target.tag.rsplit("}", 1)[-1] == "rect"
-            and after_target.tag.rsplit("}", 1)[-1] == "ellipse",
-            "HWPX target shape tag did not change rectangle to ellipse")
+    shape_tags = {"rectangle": "rect", "ellipse": "ellipse"}
+    require(before_target.tag.rsplit("}", 1)[-1] == shape_tags[source_type]
+            and after_target.tag.rsplit("}", 1)[-1] == shape_tags[target_type],
+            "HWPX target shape tag did not match the requested type conversion")
     require(_shape_xml_summary(before_target, normalize_type=True)
             == _shape_xml_summary(after_target, normalize_type=True),
             "HWPX common geometry, formatting, ownership, or description changed")
+    def dimensions(element):
+        sizes = [child for child in list(element) if child.tag.rsplit("}", 1)[-1] == "orgSz"]
+        require(len(sizes) == 1, "HWPX shape original-size child is ambiguous", len(sizes))
+        try:
+            return int(sizes[0].attrib["width"]), int(sizes[0].attrib["height"])
+        except (KeyError, ValueError) as error:
+            raise AssertionError("HWPX shape dimensions are not exact integers") from error
+
+    width, height = dimensions(before_target)
+    require(dimensions(after_target) == (width, height), "HWPX conversion changed object dimensions")
+    center = (width // 2, height // 2)
+    endpoint = (width, center[1])
+    expected = {
+        "rectangle": {"pt0": (0, 0), "pt1": (width, 0),
+                      "pt2": (width, height), "pt3": (0, height)},
+        "ellipse": {"center": center, "ax1": endpoint, "ax2": (center[0], height),
+                    "start1": endpoint, "end1": endpoint, "start2": endpoint, "end2": endpoint},
+    }
+    require(_hwpx_shape_geometry(before_target, source_type) == expected[source_type],
+            "HWPX source shape is not canonical for the conversion contract")
+    require(_hwpx_shape_geometry(after_target, target_type) == expected[target_type],
+            "HWPX target shape geometry was not serialized canonically")
     require(_shape_xml_summary(before_rounded) == _shape_xml_summary(after_rounded),
             "unconverted HWPX rounded rectangle changed")
     return {"changedOpcParts": sorted(changed), "targetId": target_id, "roundedId": rounded_id,
-            "preservedOtherParts": True, "sourceTargetType": "rect", "savedTargetType": "ellipse"}
+            "preservedOtherParts": True, "sourceTargetType": source_type, "savedTargetType": target_type}
 
 
 def _shape_type_button_label(acc):
     return acc.d.js("return document.querySelector('[data-testid=shape-type-convert]')?.textContent.trim()||null")
+
+
+def _track_shape_type_native_events(acc):
+    acc.d.js("""
+      window.__p6ShapeTypeEvents=[];
+      document.addEventListener('pointerdown',e=>{
+        if(e.target instanceof Element&&(e.target.closest('.rhwp-page__canvas')||e.target.closest('[data-testid=shape-type-convert]')))
+          window.__p6ShapeTypeEvents.push({type:'pointerdown',trusted:e.isTrusted,control:!!e.target.closest('[data-testid=shape-type-convert]')});
+      },true);
+      document.addEventListener('keydown',e=>{
+        if(e.ctrlKey&&['z','y'].includes(e.key.toLowerCase()))
+          window.__p6ShapeTypeEvents.push({type:'keydown',key:e.key.toLowerCase(),trusted:e.isTrusted});
+      },true);
+    """)
 
 
 def _run_p6_shape_type_format(acc, fmt, fixture, out, case_row, target_id, rounded_id, fixture_hash):
@@ -706,17 +766,7 @@ def _run_p6_shape_type_format(acc, fmt, fixture, out, case_row, target_id, round
             f"{fmt} rounded rectangle was not fail-closed", rounded)
     path = begin(acc, case_row, fixture, out, f"p6-hx-type.{fmt}")
     require(digest(fixture) == fixture_hash, f"{fmt} source fixture changed after opening")
-    acc.d.js("""
-      window.__p6ShapeTypeEvents=[];
-      document.addEventListener('pointerdown',e=>{
-        if(e.target instanceof Element&&(e.target.closest('.rhwp-page__canvas')||e.target.closest('[data-testid=shape-type-convert]')))
-          window.__p6ShapeTypeEvents.push({type:'pointerdown',trusted:e.isTrusted,control:!!e.target.closest('[data-testid=shape-type-convert]')});
-      },true);
-      document.addEventListener('keydown',e=>{
-        if(e.ctrlKey&&['z','y'].includes(e.key.toLowerCase()))
-          window.__p6ShapeTypeEvents.push({type:'keydown',key:e.key.toLowerCase(),trusted:e.isTrusted});
-      },true);
-    """)
+    _track_shape_type_native_events(acc)
     select_object(acc, rounded, "shape")
     require(_shape_type_button_label(acc) is None, f"{fmt} rounded rectangle exposed a conversion control")
     initial_state = acc.status(fmt)
@@ -752,8 +802,10 @@ def _run_p6_shape_type_format(acc, fmt, fixture, out, case_row, target_id, round
     current_state = acc.status(fmt)
     require(current_state["revision"] == "3" and current_state["dirty"] == "true",
             f"{fmt} conversion transaction state is unexpected", current_state)
-    events = case_row["trustedNativeEvents"] = acc.d.js("return window.__p6ShapeTypeEvents.slice()")
-    require(any(event.get("trusted") and event.get("type") == "pointerdown" and event.get("control") for event in events),
+    events = acc.d.js("return window.__p6ShapeTypeEvents.slice()")
+    trusted_controls = [event for event in events if event.get("trusted")
+                        and event.get("type") == "pointerdown" and event.get("control")]
+    require(len(trusted_controls) >= 1,
             f"{fmt} conversion control was not used with a trusted pointer", events)
     require(any(event.get("trusted") and event.get("type") == "pointerdown" and not event.get("control") for event in events),
             f"{fmt} object selection was not performed with a trusted pointer", events)
@@ -777,19 +829,93 @@ def _run_p6_shape_type_format(acc, fmt, fixture, out, case_row, target_id, round
     else:
         case_row["serializedProof"] = _prove_hwpx_shape_type_package(fixture, path, target_id, rounded_id)
 
-    reopen(acc, path, case_row)
-    reopened = case_row["afterReopen"] = inspect_shape_types(path)
-    require(reopened == after, f"{fmt} independent save/reopen changed type or object properties")
-    reopened_target = next(shape for shape in reopened["shapes"] if shape["props"].get("instanceId") == target_id)
+    # Verify the inverse UI/API path as its own saved transaction, comparing the
+    # ellipse package to the new rectangle package instead of only checking Undo.
+    forward_path = out / f"p6-hx-type.forward.{fmt}"
+    shutil.copyfile(path, forward_path)
+    case_row["forwardSavedSha256"] = digest(forward_path)
+    reopen(acc, path, case_row.setdefault("forwardReopen", {}))
+    _track_shape_type_native_events(acc)
+    reopened_forward = case_row["afterForwardReopen"] = inspect_shape_types(path)
+    require(reopened_forward == after, f"{fmt} forward conversion changed on save/reopen")
+    reopened_target = next(shape for shape in reopened_forward["shapes"]
+                           if shape["props"].get("instanceId") == target_id)
     select_object(acc, reopened_target, "shape")
     require(_shape_type_button_label(acc) == converted_label,
-            f"{fmt} reopened converted shape is not editable/selectable")
-    select_object(acc, saved_rounded, "shape")
+            f"{fmt} reopened ellipse did not expose rectangle conversion")
+    ellipse_canvas = _canvas_digest(acc)
+    reverse_before_label = _shape_type_button_label(acc)
+    acc.dom_click("[data-testid=shape-type-convert]")
+    case_row["reverseAfterConvert"] = revision(acc, fmt, 1)
+    rectangle_canvas = _canvas_digest(acc)
+    require(rectangle_canvas == before_canvas, f"{fmt} reverse conversion did not restore rectangle rendering")
+    select_object(acc, reopened_target, "shape")
+    reverse_label = _shape_type_button_label(acc)
+    require(reverse_label == before_label, f"{fmt} reverse conversion did not expose ellipse as the inverse", reverse_label)
+    acc.key("ctrl+z")
+    case_row["reverseAfterUndo"] = revision(acc, fmt, 2)
+    require(_canvas_digest(acc) == ellipse_canvas, f"{fmt} reverse Undo did not restore ellipse rendering")
+    select_object(acc, reopened_target, "shape")
+    require(_shape_type_button_label(acc) == reverse_before_label,
+            f"{fmt} reverse Undo did not restore type capability")
+    acc.key("ctrl+y")
+    case_row["reverseAfterRedo"] = revision(acc, fmt, 3)
+    require(_canvas_digest(acc) == rectangle_canvas, f"{fmt} reverse Redo did not restore rectangle rendering")
+    select_object(acc, reopened_target, "shape")
+    require(_shape_type_button_label(acc) == reverse_label,
+            f"{fmt} reverse Redo did not restore type capability")
+    reverse_events = acc.d.js("return window.__p6ShapeTypeEvents.slice()")
+    case_row["trustedNativeEvents"] = events + reverse_events
+    require(len([event for event in reverse_events if event.get("trusted") and event.get("type") == "pointerdown"
+                 and event.get("control")]) >= 1,
+            f"{fmt} reverse control was not activated with a trusted pointer", reverse_events)
+    for key in ("z", "y"):
+        require(len([event for event in reverse_events if event.get("trusted") and event.get("type") == "keydown"
+                     and event.get("key") == key]) >= 1,
+                f"{fmt} reverse {key.upper()} was not a trusted Native key", reverse_events)
+    for key in ("z", "y"):
+        require(len([event for event in case_row["trustedNativeEvents"]
+                     if event.get("trusted") and event.get("type") == "keydown" and event.get("key") == key]) >= 2,
+                f"{fmt} forward and reverse {key.upper()} did not both use trusted Native keys",
+                case_row["trustedNativeEvents"])
+
+    case_row["forwardSave"] = case_row.pop("save")
+    publish(acc, fmt, case_row)
+    case_row["reverseSave"] = case_row.pop("save")
+    reversed_after = case_row["afterReverse"] = inspect_shape_types(path)
+    reversed_target = next(shape for shape in reversed_after["shapes"]
+                           if shape["props"].get("instanceId") == target_id)
+    reversed_rounded = next(shape for shape in reversed_after["shapes"]
+                            if shape["props"].get("instanceId") == rounded_id)
+    require(reversed_target["props"]["shapeType"] == "rectangle" and reversed_target["target"] == "ellipse",
+            f"{fmt} saved reverse conversion type/identity is wrong", reversed_target)
+    require(_shape_without_type(saved_target["props"]) == _shape_without_type(reversed_target["props"]),
+            f"{fmt} reverse conversion changed geometry, style, or owner", reversed_target["props"])
+    require(reversed_rounded["props"] == rounded["props"] and reversed_rounded["target"] == "",
+            f"{fmt} reverse conversion changed or enabled the rounded sibling", reversed_rounded)
+    require(reversed_after["body"] == before["body"], f"{fmt} reverse conversion changed body text")
+    if fmt == "hwp":
+        case_row["reverseSerializedProof"] = _prove_hwp_shape_type_package(
+            forward_path, path, target_id, rounded_id, "ellipse", "rectangle")
+    else:
+        case_row["reverseSerializedProof"] = _prove_hwpx_shape_type_package(
+            forward_path, path, target_id, rounded_id, "ellipse", "rectangle")
+
+    reopen(acc, path, case_row.setdefault("reverseReopen", {}))
+    reopened_reverse = case_row["afterReopen"] = inspect_shape_types(path)
+    require(reopened_reverse == reversed_after, f"{fmt} reverse conversion changed after save/reopen")
+    final_target = next(shape for shape in reopened_reverse["shapes"]
+                        if shape["props"].get("instanceId") == target_id)
+    select_object(acc, final_target, "shape")
+    require(_shape_type_button_label(acc) == reverse_label,
+            f"{fmt} reopened rectangle did not expose ellipse conversion")
+    select_object(acc, reversed_rounded, "shape")
     require(_shape_type_button_label(acc) is None,
             f"{fmt} reopened rounded sibling unexpectedly became convertible")
     require(digest(fixture) == fixture_hash, f"{fmt} conversion changed its source fixture")
     case_row["preservation"] = {"sourceFixture": True, "bodyText": True, "unconvertedSibling": True,
-                                 "saveReopen": True, "t009": case_row["save"]}
+                                 "forwardSaveReopen": True, "reverseSaveReopen": True,
+                                 "forwardT009": case_row["forwardSave"], "reverseT009": case_row["reverseSave"]}
 
 
 def p6_hx_type(acc, row, b_root, out):
