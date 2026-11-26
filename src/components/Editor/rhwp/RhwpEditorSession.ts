@@ -3567,18 +3567,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const payload = parseObjectClipboardPayload(data);
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
-    if (!payload || payload.version !== 3 || (payload.sourceFormat !== "hwpx" && payload.sourceFormat !== "hwp")
-      || payload.sourceFormat !== format) return "rejected";
+    if (!payload) return "rejected";
+    const sameFormatPayload = payload.version === 3
+      && (payload.sourceFormat === "hwpx" || payload.sourceFormat === "hwp")
+      && payload.sourceFormat === format;
+    const docxHwpxPortable = payload.version === 4 && format === "hwpx" ? payload.portable : undefined;
+    if (!sameFormatPayload && !docxHwpxPortable) return "rejected";
     if (!doc || !this.history || !this.editable || this.caret.note || this.imeUnsettled || this.uncertain
       || this.objectSelection || this.hasSelection || this.caret.cell
       || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return "rejected";
     const at = this.caret;
     if (at.paragraph >= doc.getParagraphCount(at.section)) return "rejected";
 
-    const sameDoc = payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
+    const sameDoc = payload.version === 3 && payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
-    const portable = !sameDoc && format === "hwpx" ? payload.portable : undefined;
-    const hwpFragment = !sameDoc && format === "hwp" && payload.hwpFragmentBase64 !== undefined
+    const portable = !sameDoc && payload.version === 3 && format === "hwpx" ? payload.portable : docxHwpxPortable;
+    const hwpFragment = !sameDoc && payload.version === 3 && format === "hwp" && payload.hwpFragmentBase64 !== undefined
       ? decodeHwp5ObjectFragment(payload.hwpFragmentBase64)
       : null;
 

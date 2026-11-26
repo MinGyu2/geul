@@ -163,7 +163,21 @@ export interface ObjectClipboardPayloadV3 {
   token: string;
 }
 
-export type ObjectClipboardPayload = ObjectClipboardPayloadV1 | ObjectClipboardPayloadV2 | ObjectClipboardPayloadV3;
+/**
+ * v4 (P6-DX-HX): a DOCX shape copied with its same-format engine fragment and a
+ * separately validated HWPX shape snapshot when the source has an exact supported mapping.
+ */
+export interface ObjectClipboardPayloadV4 {
+  kind: "geul.object";
+  version: 4;
+  sourceFormat: "docx";
+  object: "shape";
+  engine: unknown;
+  portable: HwpxPortableShape;
+  token: string;
+}
+
+export type ObjectClipboardPayload = ObjectClipboardPayloadV1 | ObjectClipboardPayloadV2 | ObjectClipboardPayloadV3 | ObjectClipboardPayloadV4;
 
 function standardShape(shape: BasicShape): ClipboardShape {
   return {
@@ -179,11 +193,22 @@ export function createObjectClipboardPayload(shape: BasicShape): ObjectClipboard
 }
 
 /** Wrap the engine's serialized payload (`docx_selection_object`). */
-export function createRichObjectClipboardPayload(object: RichObjectKind, engineJson: string): ObjectClipboardPayloadV2 | null {
+export function createRichObjectClipboardPayload(
+  object: RichObjectKind, engineJson: string,
+): ObjectClipboardPayloadV2 | ObjectClipboardPayloadV4 | null {
   if (engineJson.length > MAX_OBJECT_CLIPBOARD_BYTES) return null;
   try {
     const engine: unknown = JSON.parse(engineJson);
     if (!record(engine)) return null;
+    if (object === "shape") {
+      const portable = docxEngineShapeToHwpx(engine);
+      if (portable) {
+        const crossFormat: ObjectClipboardPayloadV4 = {
+          kind: "geul.object", version: 4, sourceFormat: "docx", object, engine, portable, token: token(),
+        };
+        if (JSON.stringify(crossFormat).length <= MAX_OBJECT_CLIPBOARD_BYTES) return crossFormat;
+      }
+    }
     return { kind: "geul.object", version: 2, sourceFormat: "docx", object, engine, token: token() };
   } catch {
     return null;
@@ -280,6 +305,137 @@ export function objectClipboardPlainText(payload: ObjectClipboardPayload): strin
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const intInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
+
+const hasOnlyKeys = (value: Record<string, unknown>, allowed: readonly string[]): boolean => {
+  const set = new Set(allowed);
+  return Object.keys(value).every(key => set.has(key));
+};
+
+const emptyRecord = (value: unknown): boolean => value === undefined || (record(value) && Object.keys(value).length === 0);
+
+function pointToHwpUnit(value: unknown, min: number, max: number): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  const units = Math.round(value * 2540 / 72);
+  return intInRange(units, min, max) ? units : null;
+}
+
+function docxRgbToHwpx(value: unknown): number | null {
+  if (!Array.isArray(value) || value.length !== 3 || !value.every(channel => intInRange(channel, 0, 255))) return null;
+  const [red, green, blue] = value as [number, number, number];
+  // HWPX shape properties expose COLORREF ordering (red in the low byte).
+  return red | (green << 8) | (blue << 16);
+}
+
+/**
+ * WordCraft folds `wp:effectExtent` and the rotated frame's overhang into
+ * `float.effect` when it reads DOCX. HWPX stores rotation on the shape itself,
+ * so admit only the exact f32 compensation produced by `Float::spin_pad` for a
+ * zero source effect extent. Any additional source extent remains unsupported.
+ */
+function docxHasRotationOnlyEffectExtent(value: unknown, width: number, height: number, rotation: number): boolean {
+  if (!Array.isArray(value) || value.length !== 4
+    || !value.every(part => typeof part === "number" && Number.isFinite(part))) return false;
+  const f32 = Math.fround;
+  const frameWidth = f32(Math.min(Math.max(width, 0), 4000));
+  const frameHeight = f32(Math.min(Math.max(height, 0), 4000));
+  const radians = f32(f32(rotation) * f32(Math.PI / 180));
+  const sin = f32(Math.sin(radians));
+  const cos = f32(Math.cos(radians));
+  const turnedWidth = f32(f32(frameWidth * Math.abs(cos)) + f32(frameHeight * Math.abs(sin)));
+  const turnedHeight = f32(f32(frameWidth * Math.abs(sin)) + f32(frameHeight * Math.abs(cos)));
+  const padX = f32(f32(turnedWidth - frameWidth) / 2);
+  const padY = f32(f32(turnedHeight - frameHeight) / 2);
+  const xCompensation = f32(Math.max(0, -padX));
+  const yCompensation = f32(Math.max(0, -padY));
+  const expected = [xCompensation, yCompensation, xCompensation, yCompensation];
+  return value.every((part, index) => f32(part) === expected[index]);
+}
+
+/**
+ * Convert only a model-proven DOCX inline primitive with no nonportable envelope.
+ * Floating anchors, custom/freeform geometry, actual effects, attached text,
+ * and unknown fields have no exact HWPX mapping in this payload contract and are refused.
+ */
+function docxEngineShapeToHwpx(engine: unknown): HwpxPortableShape | undefined {
+  if (!record(engine) || Object.keys(engine).sort().join(",") !== "fragment,media"
+    || !Array.isArray(engine.media) || engine.media.length !== 0 || !record(engine.fragment)
+    || !hasOnlyKeys(engine.fragment, ["blocks", "parts"])) return undefined;
+  const fragment = engine.fragment;
+  if (!Array.isArray(fragment.blocks) || fragment.blocks.length !== 1
+    || (fragment.parts !== undefined && (!record(fragment.parts) || Object.keys(fragment.parts).length !== 0))) return undefined;
+
+  const block = fragment.blocks[0];
+  if (!record(block) || block.kind !== "para"
+    || !hasOnlyKeys(block, ["kind", "text", "runs", "props", "mark", "objects", "section"])) return undefined;
+  if (block.text !== "\uFFFC" || !Array.isArray(block.objects) || block.objects.length !== 1
+    || !Array.isArray(block.runs) || block.runs.length !== 1
+    || !record(block.runs[0]) || block.runs[0].len !== 3 || !emptyRecord(block.runs[0].props)
+    || !emptyRecord(block.props) || !emptyRecord(block.mark)
+    || (block.section !== undefined && block.section !== null)) return undefined;
+
+  const source = block.objects[0];
+  const shapeKeys = ["type", "kind", "w", "h", "fill", "stroke", "stroke_width", "float", "story", "freeform", "effects", "extra"];
+  if (!record(source) || source.type !== "shape" || !hasOnlyKeys(source, shapeKeys)
+    || (source.story !== undefined && source.story !== null)
+    || (source.freeform !== undefined && source.freeform !== null)
+    || !emptyRecord(source.effects) || !emptyRecord(source.extra) || !record(source.float)) return undefined;
+
+  const shapeType = source.kind;
+  if (shapeType !== "rectangle" && shapeType !== "ellipse" && shapeType !== "line") return undefined;
+  const width = pointToHwpUnit(source.w, 1, 2_000_000);
+  const height = pointToHwpUnit(source.h, 1, 2_000_000);
+  if (width === null || height === null) return undefined;
+
+  const float = source.float;
+  const floatKeys = ["wrap", "wrapText", "hRel", "vRel", "x", "y", "hAlign", "vAlign", "dist", "distTop", "distBottom",
+    "effect", "rot", "flipH", "flipV", "wrapPolygon", "alt", "hidden"];
+  if (!hasOnlyKeys(float, floatKeys) || float.wrap !== "inline"
+    || (float.wrapText !== undefined && float.wrapText !== "bothSides")
+    || (float.hRel !== undefined && float.hRel !== "column") || (float.vRel !== undefined && float.vRel !== "column")
+    || (float.x !== undefined && float.x !== 0) || (float.y !== undefined && float.y !== 0)
+    || (float.hAlign !== undefined && float.hAlign !== null) || (float.vAlign !== undefined && float.vAlign !== null)
+    || (float.dist !== undefined && float.dist !== 0) || (float.distTop !== undefined && float.distTop !== 0)
+    || (float.distBottom !== undefined && float.distBottom !== 0)
+    || !docxHasRotationOnlyEffectExtent(float.effect, source.w as number, source.h as number, float.rot === undefined ? 0 : float.rot as number)
+    || (float.wrapPolygon !== undefined && float.wrapPolygon !== null)
+    || (float.hidden !== undefined && float.hidden !== false)) return undefined;
+  const rotation = float.rot === undefined ? 0 : float.rot;
+  const horzFlip = float.flipH === undefined ? false : float.flipH;
+  const vertFlip = float.flipV === undefined ? false : float.flipV;
+  if (!intInRange(rotation, 0, 359) || typeof horzFlip !== "boolean" || typeof vertFlip !== "boolean") return undefined;
+  let description: string | undefined;
+  if (float.alt !== undefined) {
+    if (!record(float.alt) || !hasOnlyKeys(float.alt, ["text", "title", "decorative"])
+      || (float.alt.title !== undefined && float.alt.title !== "")
+      || (float.alt.decorative !== undefined && float.alt.decorative !== false)) return undefined;
+    if (float.alt.text !== undefined) {
+      if (typeof float.alt.text !== "string" || float.alt.text.length > 4096) return undefined;
+      if (float.alt.text) description = float.alt.text;
+    }
+  }
+
+  const fill = source.fill === null ? null : docxRgbToHwpx(source.fill);
+  const border = source.stroke === null ? null : docxRgbToHwpx(source.stroke);
+  const borderWidth = source.stroke === null ? (source.stroke_width === 0 ? 0 : null) : pointToHwpUnit(source.stroke_width, 0, 7200);
+  if ((source.fill !== null && fill === null) || (source.stroke !== null && border === null) || borderWidth === null
+    || (shapeType === "line" && fill !== null)) return undefined;
+
+  return {
+    kind: "shape", shapeType, width, height, horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square",
+    rotationAngle: rotation, horzFlip, vertFlip,
+    borderColor: border ?? 0, borderWidth, lineType: border === null ? 0 : 1,
+    fillType: fill === null ? "none" : "solid", ...(fill !== null ? { fillBgColor: fill } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(stableJson).join(",") + "]";
+  if (record(value)) {
+    return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + stableJson(value[key])).join(",") + "}";
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
 
 const hexColor = (value: unknown): value is string => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 
@@ -507,6 +663,16 @@ export function parseObjectClipboardPayload(serialized: string): ObjectClipboard
       };
     }
     if (raw.sourceFormat !== "docx") return null;
+    if (raw.version === 4) {
+      if (raw.object !== "shape" || Object.keys(raw).sort().join(",") !== "engine,kind,object,portable,sourceFormat,token,version"
+        || !record(raw.engine) || !validHwpxPortableObject(raw.portable, "shape")) return null;
+      const mapped = docxEngineShapeToHwpx(raw.engine);
+      if (!mapped || stableJson(mapped) !== stableJson(raw.portable)) return null;
+      return {
+        kind: "geul.object", version: 4, sourceFormat: "docx", object: "shape",
+        engine: raw.engine, portable: raw.portable as HwpxPortableShape, token: raw.token,
+      };
+    }
     if (raw.version === 2) {
       const object = RICH_OBJECT_KINDS.find(kind => kind === raw.object);
       if (Object.keys(raw).length !== 6 || !object || !record(raw.engine)) return null;

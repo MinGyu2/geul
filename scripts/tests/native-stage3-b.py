@@ -6,6 +6,7 @@ import importlib.util
 import json
 import platform
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -277,6 +278,237 @@ try {
     script = template.replace(marker, create)
     subprocess.run(["node", "-e", script, str(source), str(destination)], cwd=ROOT, check=True)
     return source, destination
+
+
+def prepare_p6_dx_hx_fixtures(out):
+    out.mkdir(parents=True, exist_ok=True)
+    base = ROOT / "scripts/tests/fixtures/stage3a-p4-dx-group.docx"
+    source_docx = out / "p6-dx-hx-source.docx"
+    unsupported_docx = out / "p6-dx-hx-triangle.docx"
+    destination_hwpx = out / "p6-dx-hx-destination.fixture.hwpx"
+    refusal_hwpx = out / "p6-dx-hx-refusal.fixture.hwpx"
+    source_shape = """<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="2794000" cy="1651000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="1" name="Transfer shape" descr="Transfer shape"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvPr id="2" name="Transfer shape" descr="Transfer shape"/><wps:cNvSpPr/><wps:spPr><a:xfrm rot="5400000" flipV="1"><a:off x="0" y="0"/><a:ext cx="2794000" cy="1651000"/></a:xfrm><a:prstGeom prst="{preset}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="CC8844"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:ln></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"""
+
+    def write_docx(path, preset):
+        with ZipFile(base) as src:
+            items = [(info, src.read(info.filename)) for info in src.infolist()]
+        xml_index = next(i for i, (info, _) in enumerate(items) if info.filename == "word/document.xml")
+        info, data = items[xml_index]
+        document = data.decode("utf-8")
+        opening = document[:document.index("<w:body>") + len("<w:body>")]
+        section = re.search(r"<w:sectPr\b.*?</w:sectPr>", document)
+        require(section is not None, "DOCX fixture has no final section properties")
+        body = opening + source_shape.format(preset=preset) + section.group(0) + "</w:body></w:document>"
+        items[xml_index] = (info, body.encode("utf-8"))
+        with ZipFile(path, "w") as dst:
+            for entry, payload in items:
+                dst.writestr(entry, payload)
+
+    write_docx(source_docx, "ellipse")
+    write_docx(unsupported_docx, "triangle")
+
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    create = r"""
+const targetPath=process.argv[1];
+const doc=rhwp.HwpDocument.createEmpty();
+try {
+  doc.createBlankDocument();
+  doc.insertText(0,0,0,'destination baseline');
+  fs.writeFileSync(targetPath,doc.exportHwpx());
+} finally { doc.free(); }
+"""
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 DOCX-to-HWPX fixture template is stale")
+    subprocess.run(["node", "-e", template.replace(marker, create), str(destination_hwpx)], cwd=ROOT, check=True)
+    shutil.copyfile(destination_hwpx, refusal_hwpx)
+    for path, expected in ((source_docx, "ellipse"), (unsupported_docx, "triangle")):
+        with ZipFile(path) as package:
+            root = ElementTree.fromstring(package.read("word/document.xml"))
+        geometries = root.findall(".//{*}prstGeom")
+        require(len(geometries) == 1 and geometries[0].get("prst") == expected,
+                "generated DOCX shape fixture is ambiguous", path)
+    return source_docx, unsupported_docx, destination_hwpx, refusal_hwpx
+
+
+def _docx_shape_viewport_point(acc, rgb):
+    point = acc.d.js("""
+      const wanted=arguments[0], target=wanted.match(/../g).map(v=>parseInt(v,16));
+      for(const page of document.querySelectorAll('.docx-page')) {
+        const canvas=page.querySelector('canvas'), ctx=canvas?.getContext('2d');
+        if(!canvas||!ctx) continue;
+        const image=ctx.getImageData(0,0,canvas.width,canvas.height);
+        let x=0,y=0,count=0;
+        for(let i=0;i<image.data.length;i+=4) if(target.every((v,j)=>image.data[i+j]===v)) {
+          x+=(i/4)%canvas.width; y+=Math.floor(i/4/canvas.width); count++;
+        }
+        if(count<100) continue;
+        const r=canvas.getBoundingClientRect(), scale=r.width/canvas.width;
+        const px=r.left+x/count*scale, py=r.top+y/count*scale;
+        const scroll=document.querySelector('.editor__scroll'), viewport=scroll.getBoundingClientRect();
+        scroll.scrollTop += py-(viewport.top+viewport.height/2);
+        const moved=canvas.getBoundingClientRect();
+        return [Number(page.dataset.page||0),moved.left+x/count*scale,moved.top+y/count*scale];
+      }
+      return null;
+    """, rgb)
+    require(point is not None, "could not find source DOCX shape fill in rendered page", rgb)
+    return point
+
+
+def _package_parts(path):
+    with ZipFile(path) as package:
+        return {name: package.read(name) for name in package.namelist()}
+
+
+def _p6_dx_hx_invalid_v4_payload():
+    engine = {
+        "fragment": {"blocks": [{"kind": "para", "text": "\uFFFC", "runs": [{"len": 3}], "objects": [{
+            "type": "shape", "kind": "ellipse", "w": 108, "h": 72,
+            "fill": [21, 96, 130], "stroke": [14, 64, 90], "stroke_width": 1, "story": None,
+            "float": {"wrap": "inline", "hRel": "column", "vRel": "column", "x": 0, "y": 0,
+                      "dist": 0, "distTop": 0, "distBottom": 0, "effect": [0, 0, 0, 0]},
+        }]}]},
+        "media": [],
+    }
+    return json.dumps({
+        "kind": "geul.object", "version": 4, "sourceFormat": "docx", "object": "shape",
+        "engine": engine,
+        "portable": {"kind": "shape", "shapeType": "ellipse", "width": 3811, "height": 2540,
+                     "horzOffset": 0, "vertOffset": 0, "treatAsChar": True, "textWrap": "Square",
+                     "rotationAngle": 0, "horzFlip": False, "vertFlip": False,
+                     "borderColor": 0x5a400e, "borderWidth": 35, "lineType": 1,
+                     "fillType": "solid", "fillBgColor": 0x826015},
+        "token": "a" * 24,
+    }, separators=(",", ":"))
+
+
+def p6_dx_hx(acc, row, b_root, out):
+    fixture_dir = out / "p6-dx-hx-fixtures"
+    source_fixture, unsupported_fixture, destination_fixture, refusal_fixture = prepare_p6_dx_hx_fixtures(fixture_dir)
+    source = begin(acc, row, source_fixture, out, "p6-dx-hx-source.docx")
+    source_hash = digest(source)
+    source_parts = _package_parts(source)
+    row["fixtureHashes"] = {
+        "sourceDocx": source_hash, "destinationHwpx": digest(destination_fixture),
+        "unsupportedDocx": digest(unsupported_fixture), "refusalHwpx": digest(refusal_fixture),
+    }
+    acc.d.js("""
+      window.p6DxHxEvents=[];
+      for(const type of ['pointerdown','keydown']) document.addEventListener(type,e=>{
+        if(type==='pointerdown'||(e.ctrlKey&&['c','v','z','y'].includes(e.key.toLowerCase())))
+          window.p6DxHxEvents.push({type,key:e.key||null,trusted:e.isTrusted});
+      },true);
+    """)
+    page, x, y = _docx_shape_viewport_point(acc, "CC8844")
+    p4.rhwp_poc.click(acc.d, x, y)
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+    acc.key("ctrl+c")
+    row["trustedCopyInput"] = acc.d.js("return window.p6DxHxEvents.slice()")
+    row["sourceStatusAfterCopy"] = acc.status("docx")
+    require(row["sourceStatusAfterCopy"]["revision"] == "0"
+            and row["sourceStatusAfterCopy"]["status"] == "ready"
+            and row["sourceStatusAfterCopy"]["dirty"] == "false",
+            "cross-format copy changed the DOCX source", row["sourceStatusAfterCopy"])
+    require(any(e["type"] == "pointerdown" and e["trusted"] for e in row["trustedCopyInput"])
+            and any(e["key"] == "c" and e["trusted"] for e in row["trustedCopyInput"]),
+            "DOCX selection/copy did not use trusted Native input", row["trustedCopyInput"])
+    require(digest(source) == source_hash, "copy changed source DOCX bytes")
+
+    destination = out / "p6-dx-hx-destination.hwpx"
+    shutil.copyfile(destination_fixture, destination)
+    destination_parts_before = _package_parts(destination)
+    before = row["beforeDestination"] = inspect_hwpx_clip(destination)
+    require(not before["shapes"] and not before["pictures"], "HWPX destination fixture is not empty", before)
+    acc.open_native("hwpx", destination)
+    c.body_end(acc)
+    before_canvas = _canvas_digest(acc)
+    initial = acc.status("hwpx")
+    acc.key("ctrl+v")
+    row["afterPaste"] = revision(acc, "hwpx", 1)
+    pasted_canvas = _canvas_digest(acc)
+    require(pasted_canvas != before_canvas, "trusted DOCX-to-HWPX paste did not render a shape")
+    acc.key("ctrl+z")
+    row["afterUndo"] = revision(acc, "hwpx", 2)
+    require(_canvas_digest(acc) == before_canvas, "Undo did not restore HWPX destination rendering")
+    acc.key("ctrl+y")
+    row["afterRedo"] = revision(acc, "hwpx", 3)
+    require(_canvas_digest(acc) == pasted_canvas, "Redo did not restore the transferred HWPX shape")
+    trusted = row["trustedClipboardKeys"] = acc.d.js("return window.p6DxHxEvents.slice()")
+    for key in ("v", "z", "y"):
+        require(any(e["key"] == key and e["trusted"] for e in trusted),
+                "clipboard/history action did not use trusted Native input", key)
+    publish(acc, "hwpx", row)
+    require(digest(source) == source_hash, "save changed source DOCX bytes")
+    after = row["after"] = inspect_hwpx_clip(destination)
+    require(len(after["shapes"]) == 1 and not after["pictures"], "target did not own exactly one editable shape", after)
+    require([text for text in after["body"] if text] == [text for text in before["body"] if text],
+            "destination body text changed", after["body"])
+    shape, = after["shapes"]
+    props = shape["props"]
+    expected = {
+        "width": 7761, "height": 4586, "rotationAngle": 90, "horzFlip": False, "vertFlip": True,
+        "borderColor": 0x00332211, "borderWidth": 35, "lineType": 1,
+        "fillType": "solid", "fillBgColor": 0x004488CC, "treatAsChar": True,
+        "horzOffset": 0, "vertOffset": 0, "description": "Transfer shape",
+    }
+    row["mappedProperties"] = {key: props.get(key) for key in expected}
+    for key, value in expected.items():
+        require(props.get(key) == value, "DOCX-to-HWPX geometry/style mapping differs", {key: props.get(key), "expected": value, "props": props})
+    require(shape["page"] == 0, "transferred shape lost destination page ownership", shape)
+    with ZipFile(destination) as package:
+        section = ElementTree.fromstring(package.read("Contents/section0.xml"))
+    tags = [node.tag.rsplit("}", 1)[-1] for node in section.iter() if node.tag.rsplit("}", 1)[-1] in {"rect", "ellipse", "line", "polygon"}]
+    require(tags == ["ellipse"], "serialized HWPX target is not one native editable ellipse", tags)
+    destination_parts_after = _package_parts(destination)
+    require(destination_parts_before.keys() == destination_parts_after.keys(),
+            "shape conversion unexpectedly added or removed OPC parts")
+    changed = sorted(name for name in destination_parts_before if destination_parts_before[name] != destination_parts_after[name])
+    row["changedOPCParts"] = changed
+    require(changed and set(changed) <= {"Contents/section0.xml", "Preview/PrvImage.png", "Preview/PrvText.txt"},
+            "conversion changed unrelated HWPX OPC parts", changed)
+    require(all(destination_parts_before[name] == destination_parts_after[name]
+                for name in destination_parts_before if name.startswith("BinData/")),
+            "conversion changed unrelated HWPX resources")
+    reopen(acc, destination, row)
+    reopened = inspect_hwpx_clip(destination)
+    require(reopened == after, "saved HWPX shape changed after independent reopen", reopened)
+    select_object(acc, reopened["shapes"][0], "shape")
+    row["reopenedEditableSelection"] = "shape selectable"
+
+    unsupported = begin(acc, row, unsupported_fixture, out, "p6-dx-hx-triangle.docx")
+    triangle_point = _docx_shape_viewport_point(acc, "CC8844")
+    p4.rhwp_poc.click(acc.d, triangle_point[1], triangle_point[2])
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+    acc.key("ctrl+c")
+    refusal = out / "p6-dx-hx-refusal.hwpx"
+    shutil.copyfile(refusal_fixture, refusal)
+    refusal_hash = digest(refusal)
+    acc.open_native("hwpx", refusal)
+    initial_refusal = acc.status("hwpx")
+    acc.key("ctrl+v")
+    acc.settle("hwpx")
+    rejected = acc.status("hwpx")
+    row["unsupportedPasteBefore"] = initial_refusal
+    row["unsupportedPasteAfter"] = rejected
+    for key in ("status", "revision", "localRevision", "dirty", "unpreserved", "uncertain", "selection", "caret"):
+        require(rejected[key] == initial_refusal[key], "unsupported shape paste mutated HWPX session", {key: rejected[key], "initial": initial_refusal[key]})
+    require(digest(refusal) == refusal_hash, "unsupported shape paste changed file bytes")
+    row["unsupportedShape"] = {"state": "refused without mutation", "kind": "triangle"}
+    invalid_payload = _p6_dx_hx_invalid_v4_payload()
+    c.clipboard_peer(acc, "application/x-geul-object+json", invalid_payload, lambda: (
+        acc.key("ctrl+v"), acc.settle("hwpx"), require(
+            acc.status("hwpx")["revision"] == initial_refusal["revision"]
+            and acc.status("hwpx")["localRevision"] == initial_refusal["localRevision"]
+            and acc.status("hwpx")["dirty"] == initial_refusal["dirty"]
+            and digest(refusal) == refusal_hash,
+            "tampered DOCX-to-HWPX payload was not rejected atomically",
+        )
+    ), plain="Geul shape [" + "a" * 24 + "]")
+    row["tamperedPayload"] = "refused before mutation"
+    require(digest(source) == source_hash, "cross-format copy changed source DOCX bytes")
+    require(source_parts == _package_parts(source), "source OPC parts changed during copy/paste")
+    row["preservation"] = {"sourceDocxBytesAndParts": True, "destinationUnrelatedOpc": True,
+                           "destinationUnrelatedResources": True, "savedTargetReopen": True}
 
 
 def inspect_hwpx_group(path):
@@ -1548,6 +1780,7 @@ CASES = {
     "P6-H5-CLIP": p6_h5_clip,
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
+    "P6-DX-HX": p6_dx_hx,
     "P6-HX-TYPE": p6_hx_type,
     "B1-1": b1_1,
     "B1-2": b1_2,
@@ -1600,7 +1833,7 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.b_root, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE"} else "hwp")
+                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE", "P6-DX-HX"} else "hwp")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

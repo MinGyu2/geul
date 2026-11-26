@@ -26,6 +26,83 @@ const target = (engine: DocumentCommandSnapshot["engine"] = "wordcraft"): Docume
   }),
 });
 
+describe("DOCX to HWPX portable shape clipboard (v4)", () => {
+  const shapeObject = (kind = "ellipse") => ({
+    type: "shape", kind, w: 220, h: 130,
+    fill: [204, 136, 68], stroke: [17, 34, 51], stroke_width: 1,
+    float: {
+      wrap: "inline", hRel: "column", vRel: "column", x: 0, y: 0,
+      dist: 0, distTop: 0, distBottom: 0, effect: [44.999992, 0, 44.999992, 0],
+      rot: 90, flipV: true, alt: { text: "Transfer shape" },
+    },
+    story: null,
+  });
+  const engineValue = (shape: unknown = shapeObject(), extras: Record<string, unknown> = {}) => ({
+    fragment: {
+      blocks: [{ kind: "para", text: "\uFFFC", runs: [{ len: 3 }], objects: [shape] }],
+      ...(extras.parts !== undefined ? { parts: extras.parts } : {}),
+    },
+    media: extras.media ?? [],
+  });
+
+  it("maps editable inline primitives, style and transforms into exact bounded HWPX fields", () => {
+    const source = engineValue();
+    const payload = createRichObjectClipboardPayload("shape", JSON.stringify(source))!;
+    expect(payload).toMatchObject({
+      kind: "geul.object", version: 4, sourceFormat: "docx", object: "shape",
+      portable: {
+        kind: "shape", shapeType: "ellipse", width: 7761, height: 4586,
+        horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square",
+        rotationAngle: 90, horzFlip: false, vertFlip: true,
+        borderColor: 0x00332211, borderWidth: 35, lineType: 1,
+        fillType: "solid", fillBgColor: 0x004488cc, description: "Transfer shape",
+      },
+    });
+    expect(parseObjectClipboardPayload(JSON.stringify(payload))).toEqual(payload);
+    expect(objectClipboardPlainText(payload)).toBe("Geul shape [" + payload.token + "]");
+    expect(payload.version === 4 && payload.engine).toEqual(source);
+
+    const rectangle = createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(shapeObject("rectangle"))));
+    expect(rectangle).toMatchObject({ version: 4, portable: { shapeType: "rectangle" } });
+    const lineShape = { ...shapeObject("line"), fill: null };
+    const line = createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(lineShape)));
+    expect(line).toMatchObject({ version: 4, portable: { shapeType: "line", fillType: "none", borderWidth: 35 } });
+
+    const unrotated = { ...shapeObject("rectangle"), float: { ...shapeObject().float, rot: 0, effect: [0, 0, 0, 0] } };
+    expect(createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(unrotated))))
+      .toMatchObject({ version: 4, portable: { shapeType: "rectangle", rotationAngle: 0 } });
+  });
+
+  it("keeps unsupported DOCX shapes same-format-only and refuses tampered portable mappings", () => {
+    const unsupported: unknown[] = [
+      shapeObject("triangle"),
+      { ...shapeObject(), float: { ...shapeObject().float, wrap: "square" } },
+      // Nonzero source effect extents remain rejected after accounting for the
+      // zero-source wp:effectExtent compensation caused by the 90-degree turn.
+      { ...shapeObject(), float: { ...shapeObject().float, effect: [54.999992, 10, 54.999992, 10] } },
+      { ...shapeObject(), effects: { shadow: { blur: 2 } } },
+      { ...shapeObject(), story: 7 },
+      { ...shapeObject(), customEnvelope: { id: "unknown" } },
+    ];
+    for (const shape of unsupported) {
+      const payload = createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(shape)))!;
+      expect(payload.version).toBe(2);
+    }
+    expect(createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(shapeObject(), { media: [{}] })))?.version).toBe(2);
+    expect(createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(shapeObject(), { parts: { 7: {} } })))?.version).toBe(2);
+
+    const payload = createRichObjectClipboardPayload("shape", JSON.stringify(engineValue(shapeObject())))!;
+    expect(payload.version).toBe(4);
+    if (payload.version !== 4) throw new Error("expected v4");
+    for (const raw of [
+      { ...payload, portable: { ...payload.portable, width: 9000 } },
+      { ...payload, portable: { ...payload.portable, shapeType: "polygon" } },
+      { ...payload, extra: true },
+      { ...payload, engine: { ...(payload.engine as Record<string, unknown>), media: [{}] } },
+    ]) expect(parseObjectClipboardPayload(JSON.stringify(raw))).toBeNull();
+  });
+});
+
 afterEach(clearStructuredClipboard);
 
 describe("versioned object clipboard", () => {
