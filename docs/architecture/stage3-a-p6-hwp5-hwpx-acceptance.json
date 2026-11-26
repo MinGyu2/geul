@@ -1,0 +1,104 @@
+{
+  "issue": "P6-H5-HX",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer supported HWP5 body shapes and pictures into editable HWPX objects while preserving ownership, geometry, formatting, image resources, source bytes, safe rejection, Undo/Redo, and durable reopen.",
+  "implementation": {
+    "geulCommit": "a64e689b868106c9f9cb8686879f6632e3c7a0a1",
+    "parentCommit": "b4b6b1450c6e66d97ea8a6f95d6833eefa6e38a4",
+    "payloadVersions": [
+      5,
+      6
+    ],
+    "supportedAndAcceptedSourceObjects": [
+      "HWP5 body Rectangle",
+      "HWP5 body Ellipse",
+      "HWP5 body Line",
+      "HWP5 body embedded Picture"
+    ],
+    "targetStructure": "Editable HWPX native shapes and picture with remapped object/instance IDs and an owned BinData relationship.",
+    "mapping": "Bounded HWP5 portable snapshots preserve shape dimensions, rotation/flips, fill/stroke and description, and compare picture size, crop, layout, border and caption metadata fields. The Native picture fixture had no actual caption content. Picture bytes are imported into a new HWPX BinData part; the existing destination media remains owned by its original reference.",
+    "rejected": [
+      "rounded HWP5 shape",
+      "malformed HWP5 portable picture payload",
+      "ambiguous or unexpected payload fields"
+    ],
+    "dependencies": {
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpReleaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    }
+  },
+  "verification": {
+    "typescriptTypecheck": "PASS",
+    "focusedVitest": "PASS 10/10 object clipboard tests",
+    "scopedEslint": "PASS",
+    "nativeHarnessPythonSyntax": "PASS; py_compile",
+    "diffCheck": "PASS; git diff --check",
+    "wordcraftReconstruction": "PASS; exact pinned Gitlink reconstruction",
+    "rhwpReleaseProductVerification": {
+      "command": "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+      "result": "PASS",
+      "generation": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497"
+    },
+    "guardedReleaseBuild": {
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "b32b4348b217663f8b22c456fe88b6162e9c72b24e1d0270993aabeb95177e8a",
+      "bytes": 63630280,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED"
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-H5-HX attempt04",
+      "environment": "Linux X11/Xvfb, private D-Bus, IBus Hangul",
+      "appSha256": "b32b4348b217663f8b22c456fe88b6162e9c72b24e1d0270993aabeb95177e8a",
+      "processAppSha256": "b32b4348b217663f8b22c456fe88b6162e9c72b24e1d0270993aabeb95177e8a",
+      "rhwpGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "fixtureHashes": {
+        "sourceHwp": "f8f58ae49f7890df061adea7bf1b115f92852fe342819d8bb12b8c4c2c96ee11",
+        "unsupportedRoundedHwp": "b99809f30fce073c538debb900d606d8630b2376e39d860461d58a1cac38fcfc",
+        "destinationHwpx": "82b3991b1455c8f972b8c39bc86f319ac56ea6638812876915740e84bee8caca"
+      },
+      "trustedPointerAndClipboard": "PASS for source object selection/copy and destination paste",
+      "undoRedo": "PASS for rectangle, ellipse, line, and picture; paste/Undo/Redo revisions 1 through 12",
+      "t009": "PASS; saved, synced=true, changedSince=false at revision 12",
+      "mappedObjects": {
+        "shapeTypes": [
+          "rectangle",
+          "ellipse",
+          "line"
+        ],
+        "geometryAndFormatting": "PASS; dimensions, rotation/flips, fill/stroke and descriptions preserved",
+        "picturePortableFields": "PASS; dimensions, offsets, treatAsChar, text wrap, border, description, crop, and caption metadata match the HWP5 source snapshot; the fixture hasCaption=false and no caption content",
+        "pictureSha256": "11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63"
+      },
+      "savedHwpxSha256": "5fd2f9d92c67a1c52c27e57a4edc397570807c087a76d825feb2328935850ccb",
+      "opc": "PASS; only Contents/section0.xml and Contents/content.hpf changed; exactly BinData/image2.png was added with source picture bytes; other package parts and existing media were preserved; image1/image2 references are unique",
+      "sourceImmutability": "PASS; HWP5 source bytes and object model unchanged",
+      "freshDocumentSessionReopen": "PASS; saved HWPX closed and reopened into a clean document session, and all three transferred shapes and the transferred picture were selectable",
+      "negativeCases": "PASS; rounded shape and malformed portable picture payload were refused atomically without target mutation",
+      "sessionIndicators": {
+        "duringPasteUndoRedo": "unpreserved=true while the destination was edited and dirty",
+        "afterSaveAndReopen": "unpreserved=false and dirty=false"
+      },
+      "resultJson": {
+        "path": "target/p6-h5-hx/native/attempt04/results/result.json",
+        "sha256": "d7e7f1070c9dd1aeed5ebcb09df7163a359ae428f90239332ddbc399c6058481"
+      },
+      "cleanup": {
+        "path": "target/p6-h5-hx/native/attempt04/cleanup.json",
+        "sha256": "a06b2be5bd4fcdd7ec18ed2ad10e8b5be8191f1a4fcf0cab5599ed77a418b25a",
+        "result": "PASS; complete, proven, filesystemProven, exit 0, no survivors or process errors"
+      }
+    }
+  },
+  "limitations": [
+    "Native acceptance covers HWP5 body Rectangle, Ellipse, Line and embedded Picture only; textbox, group, curve, and other complex objects were not exercised by this acceptance.",
+    "This is structured-object transfer for the verified subset, not full-document HWP5-to-HWPX conversion.",
+    "External Office/Hancom interoperability and Wayland, Windows, macOS were NOT RUN.",
+    "Nix-independent portability is NOT VERIFIED."
+  ]
+}
