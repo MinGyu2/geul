@@ -98,8 +98,12 @@ export interface RhwpDocument {
   changeShapeZOrder?(section: number, paragraph: number, control: number, operation: "front" | "back" | "forward" | "backward"): string;
   createShapeControl?(json: string): string;
   copyControl?(section: number, paragraph: number, cellPathJson: string, control: number): string;
+  /** Export one supported HWP5 body control as a bounded standalone clipboard fragment. */
+  exportHwp5ControlClipboard?(section: number, paragraph: number, control: number): Uint8Array;
   clipboardHasControl?(): boolean;
   pasteControl?(section: number, paragraph: number, offset: number): string;
+  /** Transactionally import a HWP5 object fragment from a separate document. */
+  pasteHwp5ControlClipboard?(section: number, paragraph: number, offset: number, fragmentBytes: Uint8Array): string;
   /** Export one owned HWPX group tree and its referenced embedded resources into a bounded package. */
   exportHwpxGroupClipboard?(section: number, paragraph: number, control: number): Uint8Array;
   /** Import a bounded HWPX group package as one transactional document control. */

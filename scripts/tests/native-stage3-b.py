@@ -7,10 +7,12 @@ import json
 import platform
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import traceback
+import zlib
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
@@ -29,6 +31,7 @@ def load(name):
 c = load("native-stage3-c")
 p6 = c.p6
 p4 = c.p4
+p5 = load("native-stage3a-p5")
 FRAME = c.FRAME
 SHAPE = p6.SHAPE
 TOOLS = p6.TOOLS
@@ -75,6 +78,69 @@ def inspect_hwp(path):
       const groups = withProps('group');
       console.log(JSON.stringify({body, controls, images, shapes, groups}));
     """)
+
+
+def inspect_hwp_clip(path):
+    return c.inspect_rhwp(path, """
+      const all = pages.flatMap((p, page) => p.map(item => ({...item, page})));
+      const pictures = all.filter(x => x.type === 'image').map(x => {
+        const bytes = doc.getControlImageData(x.secIdx, x.paraIdx, '[]', x.controlIdx);
+        return {
+          ...x,
+          props: JSON.parse(doc.getPictureProperties(x.secIdx, x.paraIdx, x.controlIdx)),
+          sha256: require('node:crypto').createHash('sha256').update(bytes).digest('hex'),
+        };
+      });
+      console.log(JSON.stringify({body, pictures}));
+    """)
+
+
+def prepare_p6_h5_clip_fixtures(staging: Path):
+    staging.mkdir(parents=True, exist_ok=True)
+    source = staging / "p6-h5-clip-source.hwp"
+    destination = staging / "p6-h5-clip-destination.hwp"
+    create = r"""
+const sourcePath=process.argv[1], destinationPath=process.argv[2];
+const sourceDoc=rhwp.HwpDocument.createEmpty();
+const targetDoc=rhwp.HwpDocument.createEmpty();
+const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+try {
+  sourceDoc.createBlankDocument();
+  sourceDoc.insertText(0,0,0,'HWP5 source body');
+  const sourcePicture=ok(sourceDoc.insertPicture(0,0,0,'[]',
+    fs.readFileSync(path.resolve('src-tauri/icons/32x32.png')),3600,2100,32,32,'png','source transfer'),
+    'source picture');
+  ok(sourceDoc.setPictureProperties(0,0,sourcePicture.controlIdx,
+    '{"treatAsChar":true,"textWrap":"Square","horzOffset":1700,"vertOffset":1800}'),
+    'source picture properties');
+  fs.writeFileSync(sourcePath,sourceDoc.exportHwp());
+
+  targetDoc.createBlankDocument();
+  targetDoc.insertText(0,0,0,'HWP5 destination body');
+  const targetPicture=ok(targetDoc.insertPicture(0,0,0,'[]',
+    fs.readFileSync(path.resolve('src-tauri/icons/128x128.png')),2400,1500,128,128,'png','keep destination'),
+    'destination picture');
+  ok(targetDoc.setPictureProperties(0,0,targetPicture.controlIdx,
+    '{"treatAsChar":true,"textWrap":"Square","horzOffset":7800,"vertOffset":2500}'),
+    'destination picture properties');
+  fs.writeFileSync(destinationPath,targetDoc.exportHwp());
+} finally { sourceDoc.free(); targetDoc.free(); }
+"""
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 HWP5 fixture template is stale")
+    script = template.replace(marker, create)
+    subprocess.run(["node", "-e", script, str(source), str(destination)], cwd=ROOT, check=True)
+    return source, destination
+
+
+def _hwp_embedded_payload(data):
+    for window in (-15, 15):
+        try:
+            return zlib.decompress(data, window)
+        except zlib.error:
+            continue
+    return data
 
 
 def inspect_hwpx_clip(path):
@@ -727,6 +793,208 @@ def b3_1(acc, row, b_root, out):
     reopen(acc, path, row)
 
 
+def p6_h5_clip(acc, row, b_root, out):
+    staging = out / "p6-h5-clip-fixtures"
+    source_fixture, destination_fixture = prepare_p6_h5_clip_fixtures(staging)
+    source_before = inspect_hwp_clip(source_fixture)
+    destination_before = inspect_hwp_clip(destination_fixture)
+    require(len(source_before["pictures"]) == 1, "source fixture must contain one picture", source_before)
+    require(len(destination_before["pictures"]) == 1, "destination fixture must contain one picture", destination_before)
+    source_picture, = source_before["pictures"]
+    destination_picture, = destination_before["pictures"]
+    require(source_picture["sha256"] != destination_picture["sha256"], "fixtures must own distinct media")
+
+    source_path = begin(acc, row, source_fixture, out, "p6-h5-clip-source.hwp")
+    source_hash = digest(source_path)
+    row["sourceBefore"] = source_before
+    source_state = row["sourceInitialState"] = acc.status("hwp")
+    acc.d.js("""
+      window.__p6H5PointerEvents=[];
+      for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+        if(e.target.closest('.rhwp-page__canvas')) window.__p6H5PointerEvents.push({type,trusted:e.isTrusted});
+      },true);
+    """)
+    select_object(acc, source_picture, "picture")
+    pointer_events = row["trustedPointerEvents"] = acc.d.js("return window.__p6H5PointerEvents")
+    require(any(e["trusted"] and e["type"] == "pointerdown" for e in pointer_events),
+            "source picture selection did not use a trusted pointer", pointer_events)
+    acc.key("ctrl+c")
+    source_after_copy = row["sourceAfterCopyState"] = acc.status("hwp")
+    for key in ("revision", "localRevision", "dirty"):
+        require(source_after_copy[key] == source_state[key], f"copy changed source {key}", source_after_copy)
+
+    destination_path = out / "p6-h5-clip-destination.hwp"
+    shutil.copyfile(destination_fixture, destination_path)
+    row["destinationFixtureSha256"] = digest(destination_fixture)
+    row["destinationBefore"] = destination_before
+    destination_streams_before = p6.gso.cfb_streams(destination_path.read_bytes())
+    acc.open_native("hwp", destination_path)
+    row["destinationInitialState"] = acc.status("hwp")
+    c.body_end(acc)
+    acc.key("ctrl+v")
+    row["afterPaste"] = revision(acc, "hwp", 1)
+    acc.key("ctrl+z")
+    row["afterUndo"] = revision(acc, "hwp", 2)
+    acc.key("ctrl+y")
+    row["afterRedo"] = revision(acc, "hwp", 3)
+
+    acc.d.js(r"""
+      window.__p6H5PreviewRasterEvidence=[];
+      const originalGetContext=HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext=function(type,...args){
+        const context=originalGetContext.call(this,type,...args);
+        if(type==='2d'&&context&&!context.__p6H5Wrapped){
+          context.__p6H5Wrapped=true;
+          const originalGetImageData=context.getImageData.bind(context);
+          context.getImageData=(...imageArgs)=>{
+            const image=originalGetImageData(...imageArgs), data=image.data;
+            let uniform=true, nonWhite=0;
+            for(let i=0;i<data.length;i+=4){
+              if(i>0&&(data[i]!==data[0]||data[i+1]!==data[1]||data[i+2]!==data[2])) uniform=false;
+              if(data[i]!==255||data[i+1]!==255||data[i+2]!==255) nonWhite++;
+            }
+            window.__p6H5PreviewRasterEvidence.push({canvas:[this.width,this.height],read:[image.width,image.height],uniform,nonWhite});
+            return image;
+          };
+        }
+        return context;
+      };
+    """)
+    try:
+        publish(acc, "hwp", row)
+    finally:
+        row["previewRasterEvidence"] = acc.d.js("return window.__p6H5PreviewRasterEvidence||[]")
+    row["destinationSavedSha256"] = digest(destination_path)
+    require(row["destinationSavedSha256"] != row["destinationFixtureSha256"],
+            "cross-document paste did not publish the destination")
+    destination_after = row["destinationAfter"] = inspect_hwp_clip(destination_path)
+    require(len(destination_after["pictures"]) == 2, "expected old and transferred pictures", destination_after)
+    require([p for p in destination_after["body"] if p] == [p for p in destination_before["body"] if p],
+            "clipboard changed destination body text", destination_after["body"])
+    copied, = [p for p in destination_after["pictures"] if p["sha256"] == source_picture["sha256"]]
+    retained, = [p for p in destination_after["pictures"] if p["sha256"] == destination_picture["sha256"]]
+    require(copied["props"] == source_picture["props"], "picture geometry or formatting changed", copied)
+    require(retained["props"] == destination_picture["props"], "existing destination object changed", retained)
+    require(copied["secIdx"] == 0 and retained["secIdx"] == 0, "picture ownership left the destination body")
+
+    destination_streams_after = p6.gso.cfb_streams(destination_path.read_bytes())
+    before_media = {k: v for k, v in destination_streams_before.items() if k.startswith("BinData/")}
+    after_media = {k: v for k, v in destination_streams_after.items() if k.startswith("BinData/")}
+    require(before_media and all(after_media.get(k) == v for k, v in before_media.items()),
+            "existing destination BinData changed or disappeared")
+    added_media = set(after_media) - set(before_media)
+    require(len(added_media) == 1, "paste should add exactly one owned media stream", sorted(added_media))
+    source_streams = p6.gso.cfb_streams(source_path.read_bytes())
+    source_media = [_hwp_embedded_payload(v) for k, v in source_streams.items() if k.startswith("BinData/")]
+    added_payload = [_hwp_embedded_payload(after_media[name]) for name in added_media]
+    require(len(source_media) == 1 and added_payload == source_media,
+            "new destination media does not contain the source picture bytes")
+    allowed_changed = {"DocInfo", "BodyText/Section0", "PrvImage"}
+    changed_unrelated = sorted(
+        name for name, value in destination_streams_before.items()
+        if name not in allowed_changed and not name.startswith("BinData/")
+        and destination_streams_after.get(name) != value
+    )
+    require(not changed_unrelated, "unrelated CFB streams changed", changed_unrelated)
+    require(set(destination_streams_before) <= set(destination_streams_after),
+            "destination package streams were removed",
+            sorted(set(destination_streams_before) - set(destination_streams_after)))
+    added_streams = set(destination_streams_after) - set(destination_streams_before)
+    require(added_streams == added_media, "paste added an unauthorized CFB stream", sorted(added_streams - added_media))
+
+    old_docinfo = p6.gso.records(p6.gso.unpacked(destination_streams_before, "DocInfo"))
+    new_docinfo = p6.gso.records(p6.gso.unpacked(destination_streams_after, "DocInfo"))
+    old_mapping, = [record for record in old_docinfo if record[0] == 17]
+    new_mapping, = [record for record in new_docinfo if record[0] == 17]
+    require(len(old_mapping[2]) == len(new_mapping[2]) == 72
+            and int.from_bytes(new_mapping[2][:4], "little") == int.from_bytes(old_mapping[2][:4], "little") + 1
+            and old_mapping[2][4:] == new_mapping[2][4:],
+            "DocInfo ID_MAPPINGS changed beyond the single BinData addition")
+    old_binary_defs = [record for record in old_docinfo if record[0] == 18]
+    new_binary_defs = [record for record in new_docinfo if record[0] == 18]
+    require(len(new_binary_defs) == len(old_binary_defs) + 1
+            and new_binary_defs[:-1] == old_binary_defs,
+            "DocInfo changed a BinData definition or failed to append exactly one")
+    require([(tag, level, body) for tag, level, body in old_docinfo if tag not in (17, 18)]
+            == [(tag, level, body) for tag, level, body in new_docinfo if tag not in (17, 18)],
+            "DocInfo changed an unrelated definition")
+    output_records = p6.gso.records(p6.gso.unpacked(destination_streams_after, "BodyText/Section0"))
+    picture_bin_ids = [int.from_bytes(body[71:73], "little") for tag, _, body in output_records
+                       if tag == 85 and len(body) >= 73]
+    require(sorted(picture_bin_ids) == [1, 2],
+            "destination and transferred pictures do not own distinct BinData IDs", picture_bin_ids)
+
+    require(destination_streams_before.get("PrvImage") != destination_streams_after.get("PrvImage"),
+            "T009 did not refresh the stale HWP5 image preview")
+    preview_dimensions = p5.hwp_preview_dimensions(destination_streams_after)
+    preview_proof = p5.canonical_preview_png(destination_streams_after["PrvImage"], preview_dimensions)
+    require(preview_proof is not None,
+            "saved HWP5 PrvImage is not a canonical page-sized RGB8 preview", preview_dimensions)
+    raster_calls = row.get("previewRasterEvidence", [])
+    require(len(raster_calls) == 1, "expected one fresh page-1 render for T009", raster_calls)
+    raster = raster_calls[0]
+    raster_size = raster.get("read")
+    require(raster_size == raster.get("canvas") and isinstance(raster_size, list)
+            and len(raster_size) == 2 and max(raster_size) == 1024
+            and all(abs(raster_size[index] - preview_dimensions[index]) <= 8 for index in range(2))
+            and raster.get("uniform") is False and raster.get("nonWhite", 0) > 0,
+            "fresh page-1 raster does not match the saved page geometry/content", raster)
+    row["cfbPreservation"] = {
+        "retainedBinData": sorted(before_media),
+        "addedBinData": sorted(added_media),
+        "changedAllowedStreams": sorted(name for name in allowed_changed
+                                         if destination_streams_before.get(name) != destination_streams_after.get(name)),
+        "docInfoRemap": {"oldBinDataIds": [record[2].hex() for record in old_binary_defs],
+                         "newBinDataId": new_binary_defs[-1][2].hex(),
+                         "pictureBinDataIds": picture_bin_ids,
+                         "unrelatedDefinitionsPreserved": True},
+        "previewImage": {"sourceSha256": hashlib.sha256(destination_streams_before["PrvImage"]).hexdigest(),
+                         "savedSha256": hashlib.sha256(destination_streams_after["PrvImage"]).hexdigest(),
+                         **preview_proof, "render": raster},
+        "unrelatedStreamsUnchanged": True,
+    }
+
+    reopen(acc, destination_path, row)
+    reopened = inspect_hwp_clip(destination_path)
+    require(reopened == destination_after, "reopened HWP5 object or resource differs from saved state", reopened)
+    row["reopenedObjectSelection"] = {}
+    select_object(acc, copied, "picture")
+    row["reopenedObjectSelection"]["copiedPicture"] = "selected"
+    acc.key("Escape")
+    select_object(acc, retained, "picture")
+    row["reopenedObjectSelection"]["destinationPicture"] = "selected"
+    acc.key("Escape")
+
+    source_tab = json.dumps(source_path.name)
+    acc.dom_click(".document-tab__select", f"[...document.querySelectorAll('.document-tab__select')].find(t=>t.textContent.includes({source_tab}))")
+    acc.wait("return !!document.querySelector('.document-tab[data-active=true]')?.textContent.includes(arguments[0])", source_path.name)
+    source_after_paste = row["sourceAfterPasteState"] = acc.status("hwp")
+    for key in ("revision", "localRevision", "dirty"):
+        require(source_after_paste[key] == source_state[key], f"cross-document paste changed source {key}", source_after_paste)
+    require(digest(source_path) == source_hash and inspect_hwp_clip(source_path) == source_before,
+            "cross-document paste changed source bytes or object content")
+
+    refusal_path = out / "p6-h5-clip-refusal.hwp"
+    shutil.copyfile(destination_fixture, refusal_path)
+    refusal_hash = digest(refusal_path)
+    acc.open_native("hwp", refusal_path)
+    refusal_state = acc.status("hwp")
+    invalid_payload = json.dumps({
+        "kind": "geul.object", "version": 3, "sourceFormat": "hwp", "object": "picture",
+        "sourceSessionId": 999999, "sourceGeneration": 1,
+        "hwpFragmentBase64": "A" * 684, "token": "a" * 24,
+    })
+    c.clipboard_peer(acc, "application/x-geul-object+json", invalid_payload,
+                     lambda: (acc.key("ctrl+v"), acc.settle("hwp")),
+                     plain="Geul picture [" + "a" * 24 + "]")
+    refusal_after = row["malformedPasteRefusal"] = acc.status("hwp")
+    for key in ("revision", "localRevision", "dirty"):
+        require(refusal_after[key] == refusal_state[key], f"malformed paste changed {key}", refusal_after)
+    require(digest(refusal_path) == refusal_hash, "malformed paste changed file on disk")
+    row["preservation"] = {"sourceBytesAndModel": True, "destinationMediaAndUnrelatedStreams": True,
+                           "malformedPasteAtomicRefusal": True, "saveAndReopen": True}
+
+
 def b3_2(acc, row, b_root, out):
     staging = out / "b3-2-staging"
     staging.mkdir(parents=True, exist_ok=True)
@@ -876,6 +1144,7 @@ def b3_2(acc, row, b_root, out):
 
 
 CASES = {
+    "P6-H5-CLIP": p6_h5_clip,
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
     "B1-1": b1_1,

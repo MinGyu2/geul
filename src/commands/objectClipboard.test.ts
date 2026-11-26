@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { documentCommandState } from "./capability";
 import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clipboard";
 import {
+  decodeHwp5ObjectFragment,
+  encodeHwp5ObjectFragment,
   createHwpObjectClipboardPayload,
   createHwpxObjectClipboardPayload,
   createObjectClipboardPayload,
   createRichObjectClipboardPayload,
   MAX_OBJECT_CLIPBOARD_BYTES,
+  MAX_HWP5_OBJECT_FRAGMENT_BYTES,
   OBJECT_CLIPBOARD_MIME,
   objectClipboardPlainText,
   parseObjectClipboardPayload,
@@ -252,6 +255,21 @@ describe("rich object clipboard (v2)", () => {
       ...hwpPayload,
       portable: { shapeType: "rectangle", width: 100, height: 100, horzOffset: 0, vertOffset: 0, treatAsChar: false, textWrap: "Square", rotationAngle: 0, horzFlip: false, vertFlip: false, borderColor: 0, borderWidth: 33, fillType: "none" },
     }))).toBeNull();
+
+    const fragment = Uint8Array.from({ length: 1024 }, (_, i) => i & 0xff);
+    const encodedFragment = encodeHwp5ObjectFragment(fragment);
+    expect(encodedFragment).not.toBeNull();
+    const transferable = createHwpObjectClipboardPayload("shape", 7, 3, encodedFragment!);
+    expect(transferable).not.toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify(transferable))).toEqual(transferable);
+    expect([...decodeHwp5ObjectFragment(encodedFragment!)!]).toEqual([...fragment]);
+    expect(encodeHwp5ObjectFragment(new Uint8Array(MAX_HWP5_OBJECT_FRAGMENT_BYTES + 1))).toBeNull();
+    const maxFragment = encodeHwp5ObjectFragment(new Uint8Array(MAX_HWP5_OBJECT_FRAGMENT_BYTES));
+    expect(maxFragment).toHaveLength(4 * Math.ceil(MAX_HWP5_OBJECT_FRAGMENT_BYTES / 3));
+    expect(decodeHwp5ObjectFragment(maxFragment!)?.length).toBe(MAX_HWP5_OBJECT_FRAGMENT_BYTES);
+    expect(parseObjectClipboardPayload(JSON.stringify(createHwpObjectClipboardPayload("shape", 7, 3, maxFragment!)))).not.toBeNull();
+    expect(decodeHwp5ObjectFragment(`${encodedFragment!.slice(0, -4)}****`)).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...transferable, sourceFormat: "hwpx" }))).toBeNull();
 
     const pngB64 = "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC";
     const picPortable = createHwpxObjectClipboardPayload("picture", 2, 1, {

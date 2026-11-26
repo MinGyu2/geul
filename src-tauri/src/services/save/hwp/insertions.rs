@@ -1370,6 +1370,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         ..Used::default()
     };
     let mut table_ids = BTreeSet::new();
+    let mut original_picture_instance_ids = BTreeSet::new();
     let mut output_ids = BTreeSet::new();
     let mut output_fields = BTreeSet::new();
     for (name, data) in &a.streams {
@@ -1379,6 +1380,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         let raw = unpack(a, data).map_err(|e| Side::Original.unpack_finding(e, name))?;
         let records = decode_records(&raw, name)?;
         unique_ids(&records, &mut table_ids, name)?;
+        unique_picture_instance_ids(&records, &mut original_picture_instance_ids, name)?;
         unique_field_ids(&records, &mut used.fields, name)?;
     }
     let original_ids = table_ids.clone();
@@ -1408,6 +1410,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
             }
         }
         unique_ids(&yr, &mut output_ids, name)?;
+        unique_picture_instance_ids(&yr, &mut used.picture_instance_ids, name)?;
         unique_field_ids(&yr, &mut output_fields, name)?;
         preserved(
             old.paragraphs <= new.paragraphs && old.breaks == new.breaks,
@@ -1931,6 +1934,8 @@ struct Used {
     bullets: BTreeSet<usize>,
     paras: BTreeSet<usize>,
     pictures: BTreeSet<usize>,
+    /// Non-zero instance IDs on output Picture record components (tag 85).
+    picture_instance_ids: BTreeSet<usize>,
     /// Independently decoded additions, keyed by BinData definition ordinal.
     image_dimensions: BTreeMap<usize, (u32, u32)>,
     /// Field IDs of the original (seeded) and of new formula fields: a new field never reuses one.
@@ -4266,6 +4271,24 @@ fn unique_ids(rs: &[Record<'_>], seen: &mut BTreeSet<usize>, part: &str) -> Chec
     Ok(())
 }
 
+/// Picture payloads carry a second document-wide instance ID at byte offset 74.
+/// Zero occurs in existing files; non-zero IDs must be unique across all sections.
+fn unique_picture_instance_ids(
+    rs: &[Record<'_>],
+    seen: &mut BTreeSet<usize>,
+    part: &str,
+) -> Checked<()> {
+    for r in rs {
+        if r.0 == 85 && r.2.len() >= 78 {
+            let id = dword(r.2, 74)?;
+            if id != 0 {
+                reference(seen.insert(id), part)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn generic_references(rs: &[Record<'_>], defs: &Defs<'_>) -> Checked<()> {
     // A LIST_HEADER can also be a caption/header/textbox. Decode cell offsets
     // only under a table control AFTER its TABLE record, never from size alone.
@@ -4566,11 +4589,11 @@ fn validate_picture(
     valid(
         dword(h, 8)? == 0
             && dword(h, 12)? == 0
-            && (if level == 1 {
-                dword(h, 36)? == 0
-            } else {
-                dword(h, 36)? != 0
-            })
+            // Top-level HWP GSO instances use both zero (the pinned RHWP
+            // creator) and non-zero IDs (Hancom-authored files). `unique_ids`
+            // proves every non-zero output identity is unique across sections.
+            // Nested pictures require an owner ID to bind them to their parent.
+            && (level == 1 || dword(h, 36)? != 0)
             && dword(h, 40)? == 0,
         BODY,
     )?;
@@ -4641,6 +4664,9 @@ fn validate_picture(
         expected[at..at + 4].copy_from_slice(&(v as u32).to_le_bytes());
     }
     expected[71..73].copy_from_slice(&(id as u16).to_le_bytes());
+    // The HWP5 Picture record's component instance ID is independently
+    // uniqueness-checked across every output section above.
+    expected[74..78].copy_from_slice(&pic[74..78]);
     valid(pic == expected, BODY)
 }
 
@@ -4841,6 +4867,79 @@ mod tests {
         // Across sections the same accounting set is shared.
         let mut seen = BTreeSet::from([2]);
         assert!(unique_ids(&ok, &mut seen, BODY).is_err());
+    }
+
+    #[test]
+    fn inserted_root_picture_accepts_unique_hwp_instance_id() {
+        let make_root_picture = |instance_id: u32| {
+            let (width, height) = (7200u32, 4800u32);
+            let mut header = vec![0u8; 46];
+            header[..4].copy_from_slice(b" osg");
+            header[4..8].copy_from_slice(&0x000a_0311u32.to_le_bytes());
+            header[16..20].copy_from_slice(&width.to_le_bytes());
+            header[20..24].copy_from_slice(&height.to_le_bytes());
+            header[24..28].copy_from_slice(&1u32.to_le_bytes());
+            header[36..40].copy_from_slice(&instance_id.to_le_bytes());
+
+            let mut component = vec![0u8; 52];
+            component[..8].copy_from_slice(b"cip$cip$");
+            component[18..20].copy_from_slice(&1u16.to_le_bytes());
+            for (at, value) in [(20, width), (24, height), (28, width), (32, height)] {
+                component[at..at + 4].copy_from_slice(&value.to_le_bytes());
+            }
+            component[50..52].copy_from_slice(&1u16.to_le_bytes());
+            for _ in 0..3 {
+                for value in [1f64, 0., 0., 0., 1., 0.] {
+                    component.extend(value.to_le_bytes());
+                }
+            }
+
+            let mut picture = vec![0u8; 91];
+            for (at, value) in [
+                (20, width),
+                (28, width),
+                (32, height),
+                (40, height),
+                (52, 75),
+                (56, 75),
+                (82, 75),
+                (86, 75),
+            ] {
+                picture[at..at + 4].copy_from_slice(&value.to_le_bytes());
+            }
+            picture[71..73].copy_from_slice(&1u16.to_le_bytes());
+            picture[74..78].copy_from_slice(&5u32.to_le_bytes());
+            (header, component, picture)
+        };
+
+        let (header, component, picture) = make_root_picture(2);
+        let records = vec![
+            (71, 1, header.as_slice()),
+            (76, 2, component.as_slice()),
+            (85, 3, picture.as_slice()),
+        ];
+        let defs = Defs::from([(18, vec![b"picture resource".as_slice()])]);
+        let dimensions = BTreeMap::from([(1, (1, 1))]);
+        let mut used_pictures = BTreeSet::new();
+        assert!(validate_picture(&records, 1, &defs, &dimensions, &mut used_pictures).is_ok());
+
+        // Identity uniqueness is checked separately inside each complete package:
+        // preserved source objects naturally retain the same IDs in the output.
+        let mut original_picture_ids = BTreeSet::new();
+        assert!(unique_picture_instance_ids(&records, &mut original_picture_ids, BODY).is_ok());
+        let mut output_picture_ids = BTreeSet::new();
+        assert!(unique_picture_instance_ids(&records, &mut output_picture_ids, BODY).is_ok());
+        let mut duplicate_picture_ids = BTreeSet::from([5]);
+        assert_eq!(
+            unique_picture_instance_ids(&records, &mut duplicate_picture_ids, BODY).err(),
+            Some(Finding::at(FindingCode::ReferenceInvalid, BODY))
+        );
+
+        let mut ids = BTreeSet::from([2]);
+        assert_eq!(
+            unique_ids(&[(71, 1, header.as_slice())], &mut ids, BODY).err(),
+            Some(Finding::at(FindingCode::ReferenceInvalid, BODY))
+        );
     }
     #[test]
     fn cell_reference_offsets_require_table_context() {

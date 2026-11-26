@@ -1,0 +1,948 @@
+diff --git a/src/document_core/commands/clipboard.rs b/src/document_core/commands/clipboard.rs
+index 4a0ede6a..331a0685 100644
+--- a/src/document_core/commands/clipboard.rs
++++ b/src/document_core/commands/clipboard.rs
+@@ -16,6 +16,10 @@ use crate::model::paragraph::{FieldRange, LineSeg, Paragraph};
+ /// 약 2mm (1mm = 7200/25.4 ≈ 283.46 HWPUNIT). 한컴 정합은 작업지시자 시각 대조로 미세조정.
+ const PASTE_CASCADE_STEP_HU: u32 = 567;
+-
++
++/// Maximum serialized HWP5 object fragment offered to the structured clipboard.
++/// The UI's Base64 envelope remains below its 12 MiB clipboard ceiling.
++pub(crate) const MAX_HWP5_OBJECT_CLIPBOARD_BYTES: usize = 8 * 1024 * 1024;
++
+ /// [#4413] 셀 안 컨트롤을 HTML로 변환하는 재귀(표 안의 표 안의 표…)의 깊이 상한.
+ /// `table_extract::MAX_NEST_DEPTH`/`explain::MAX_NEST_DEPTH`/`hidden_text::MAX_NEST_DEPTH`와
+ /// 같은 값·형태 — 병적으로 깊은 중첩 문서에서 export 재귀가 스택을 태우지 않게 막는다.
+@@ -720,6 +724,90 @@ impl DocumentCore {
+         )))
+     }
+-
++
++    /// Export the selected body control as a bounded, standalone HWP5 fragment.
++    /// Only the selected control, its reachable BinData, and source DocInfo tables
++    /// are carried. The live document model is never edited by this operation.
++    pub fn export_hwp5_control_clipboard_native(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        control_idx: usize,
++    ) -> Result<Vec<u8>, HwpError> {
++        if self.source_format != crate::parser::FileFormat::Hwp {
++            return Err(HwpError::RenderError(
++                "HWP5 object clipboard requires an HWP5 source".to_string(),
++            ));
++        }
++
++        self.copy_control_native(section_idx, para_idx, &[], control_idx)?;
++        let clip_para = self
++            .clipboard
++            .as_ref()
++            .and_then(|clipboard| clipboard.paragraphs.first())
++            .cloned()
++            .ok_or_else(|| HwpError::RenderError("object clipboard is empty".to_string()))?;
++        if clip_para.controls.len() != 1
++            || !matches!(
++                clip_para.controls.first(),
++                Some(Control::Table(_) | Control::Shape(_) | Control::Picture(_))
++            )
++        {
++            return Err(HwpError::RenderError(
++                "only a single body table, picture, or shape can be exported".to_string(),
++            ));
++        }
++
++        let mut fragment = self.document.clone();
++        let mut section =
++            fragment.sections.get(section_idx).cloned().ok_or_else(|| {
++                HwpError::RenderError("source section is out of range".to_string())
++            })?;
++        section.paragraphs = vec![clip_para];
++        section.raw_stream = None;
++        section.raw_provenance = None;
++        // The fragment owns a body object only. Master-page stories and unrelated CFB
++        // streams are not part of this clipboard operation.
++        section.section_def.master_pages.clear();
++        fragment.sections = vec![section];
++        fragment.preview = None;
++        fragment.extra_streams.clear();
++        fragment.hwpx_aux_entries.clear();
++        fragment.doc_info.raw_stream = None;
++        fragment.doc_info.raw_provenance = None;
++        fragment.doc_info.raw_stream_dirty = true;
++
++        // Apply the same strict support and reference-closure checks used by the
++        // destination importer before pruning any resource that opaque records might
++        // reference. Unsupported or ambiguous objects stay same-document only.
++        super::paragraph_block::validate_hwp5_clipboard_fragment(&fragment)?;
++        super::bin_data_prune::prune_unreferenced_bin_data(&mut fragment);
++
++        let mut remaining = MAX_HWP5_OBJECT_CLIPBOARD_BYTES;
++        for content in &mut fragment.bin_data_content {
++            let bytes = content.data.load_limited_shared(remaining).ok_or_else(|| {
++                HwpError::RenderError(
++                    "object resources exceed the HWP5 clipboard size limit".to_string(),
++                )
++            })?;
++            if bytes.is_empty() {
++                return Err(HwpError::RenderError(
++                    "object references an empty embedded resource".to_string(),
++                ));
++            }
++            remaining = remaining.saturating_sub(bytes.len());
++            content.data = crate::model::bin_data::BinDataBytes::from_shared(bytes);
++        }
++
++        let bytes = crate::serializer::serialize_document(&fragment)
++            .map_err(|error| HwpError::RenderError(error.to_string()))?;
++        if bytes.is_empty() || bytes.len() > MAX_HWP5_OBJECT_CLIPBOARD_BYTES {
++            return Err(HwpError::RenderError(
++                "serialized HWP5 object fragment exceeds the clipboard size limit".to_string(),
++            ));
++        }
++        Ok(bytes)
++    }
++
+     /// 내부 클립보드의 내용을 캐럿 위치에 붙여넣는다 (본문 문단).
+     pub fn paste_internal_native(
+         &mut self,
+@@ -2121,6 +2209,426 @@ mod char_shape_inherit_tests {
+     }
+ }
+-
++
++#[cfg(test)]
++mod hwp5_object_clipboard_tests {
++    use super::MAX_HWP5_OBJECT_CLIPBOARD_BYTES;
++    use crate::document_core::DocumentCore;
++    use crate::model::{control::Control, document::Document};
++
++    fn minimal_png() -> Vec<u8> {
++        vec![
++            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
++            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
++            0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78,
++            0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x00, 0x00, 0x00,
++            0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
++        ]
++    }
++
++    fn picture_address(
++        document: &Document,
++        expected_bin_id: Option<u16>,
++    ) -> (usize, usize, u32, u32, u16) {
++        for (para_idx, para) in document.sections[0].paragraphs.iter().enumerate() {
++            for (control_idx, control) in para.controls.iter().enumerate() {
++                if let Control::Picture(picture) = control {
++                    if expected_bin_id.is_none_or(|id| picture.image_attr.bin_data_id == id) {
++                        return (
++                            para_idx,
++                            control_idx,
++                            picture.common.instance_id,
++                            picture.instance_id,
++                            picture.image_attr.bin_data_id,
++                        );
++                    }
++                }
++            }
++        }
++        panic!("picture control not found");
++    }
++
++    fn add_picture(core: &mut DocumentCore, bytes: &[u8]) {
++        core.insert_picture_native(
++            0,
++            0,
++            0,
++            &[],
++            bytes,
++            5000,
++            5000,
++            1,
++            1,
++            "png",
++            "clip",
++            None,
++            None,
++        )
++        .expect("insert picture");
++    }
++
++    #[test]
++    fn hwp5_object_fragment_remaps_ids_and_resources_and_reopens() {
++        let bytes = minimal_png();
++        let mut source = DocumentCore::new_empty();
++        source.create_blank_document_native().expect("source blank");
++        add_picture(&mut source, &bytes);
++        let (source_para, source_control, _, _, source_bin_id) =
++            picture_address(&source.document, None);
++        let Control::Picture(source_picture) =
++            &mut source.document.sections[0].paragraphs[source_para].controls[source_control]
++        else {
++            panic!("source picture control");
++        };
++        source_picture.common.instance_id = 0x1234;
++        source_picture.instance_id = 0x5678;
++        let source_id = source_picture.common.instance_id;
++        let source_picture_id = source_picture.instance_id;
++        let source_char_shape_id =
++            u16::try_from(source.document.doc_info.char_shapes.len()).unwrap();
++        let mut source_char_shape = source.document.doc_info.char_shapes[0].clone();
++        source_char_shape.raw_data = None;
++        source_char_shape.base_size = 2400;
++        source.document.doc_info.char_shapes.push(source_char_shape);
++        let source_para_shape_id =
++            u16::try_from(source.document.doc_info.para_shapes.len()).unwrap();
++        let mut source_para_shape = source.document.doc_info.para_shapes[0].clone();
++        source_para_shape.raw_data = None;
++        source_para_shape.alignment = crate::model::style::Alignment::Right;
++        source.document.doc_info.para_shapes.push(source_para_shape);
++        let source_style = &mut source.document.doc_info.styles[0];
++        source_style.raw_data = None;
++        source_style.local_name = "Clipboard source style".to_string();
++        source_style.para_shape_id = source_para_shape_id;
++        source_style.char_shape_id = source_char_shape_id;
++        let source_paragraph = &mut source.document.sections[0].paragraphs[source_para];
++        source_paragraph.para_shape_id = source_para_shape_id;
++        source_paragraph.char_shapes[0].char_shape_id = u32::from(source_char_shape_id);
++        let original_source = crate::serializer::serialize_document(&source.document).unwrap();
++
++        let fragment = source
++            .export_hwp5_control_clipboard_native(0, source_para, source_control)
++            .expect("export bounded HWP5 object fragment");
++        assert!(!fragment.is_empty());
++        assert!(fragment.len() <= MAX_HWP5_OBJECT_CLIPBOARD_BYTES);
++        assert_eq!(
++            crate::serializer::serialize_document(&source.document).unwrap(),
++            original_source,
++            "copy/export must not mutate the source document model"
++        );
++        let parsed_fragment = crate::parser::parse_hwp(&fragment).expect("fragment is HWP5 CFB");
++        assert_eq!(parsed_fragment.sections.len(), 1);
++        assert_eq!(parsed_fragment.sections[0].paragraphs.len(), 1);
++        assert_eq!(
++            parsed_fragment.doc_info.char_shapes[usize::from(source_char_shape_id)].base_size,
++            2400
++        );
++        assert_eq!(
++            parsed_fragment.sections[0].paragraphs[0].char_shapes[0].char_shape_id,
++            u32::from(source_char_shape_id)
++        );
++        let serialized_controls = &parsed_fragment.sections[0].paragraphs[0].controls;
++        assert!(matches!(
++            serialized_controls.as_slice(),
++            [
++                Control::SectionDef(_),
++                Control::ColumnDef(_),
++                Control::Picture(_)
++            ]
++        ));
++        let mut normalized_fragment = parsed_fragment.clone();
++        super::super::paragraph_block::normalize_hwp5_clipboard_fragment(&mut normalized_fragment)
++            .expect("strip only the section-owned controls");
++        assert!(matches!(
++            normalized_fragment.sections[0].paragraphs[0]
++                .controls
++                .as_slice(),
++            [Control::Picture(_)]
++        ));
++
++        let mut target = DocumentCore::new_empty();
++        target.create_blank_document_native().expect("target blank");
++        add_picture(&mut target, &bytes);
++        let (_, target_control, _, _, _) = picture_address(&target.document, None);
++        let Control::Picture(target_picture) =
++            &mut target.document.sections[0].paragraphs[0].controls[target_control]
++        else {
++            panic!("target picture control");
++        };
++        target_picture.common.instance_id = source_id;
++        target_picture.instance_id = source_picture_id;
++        // A valid sparse HWP5 storage ID forces resource remapping even when the bytes match.
++        target.document.bin_data_content[0].id = 4;
++        target.document.doc_info.bin_data_list[0].storage_id = 4;
++        let (_, _, target_id, target_picture_id, target_bin_id) =
++            picture_address(&target.document, None);
++        assert_eq!(source_bin_id, 1);
++        assert_eq!(target_bin_id, 1);
++        assert_eq!(target_id, source_id);
++        assert_eq!(target_picture_id, source_picture_id);
++        let target_style_base = target.document.doc_info.styles.len();
++
++        let result = target
++            .paste_hwp5_control_clipboard_native(0, 0, 0, &fragment)
++            .expect("cross-document HWP5 object paste");
++        assert!(result.contains("\"ok\":true"));
++        let (inserted_para, inserted_control, inserted_id, inserted_picture_id, inserted_bin_id) =
++            picture_address(&target.document, Some(2));
++        assert_eq!(
++            inserted_bin_id, 2,
++            "source ordinal must map into the target BinData pool"
++        );
++        assert_ne!(
++            inserted_id, source_id,
++            "source object ID must not alias the copied object"
++        );
++        assert_ne!(
++            inserted_id, target_id,
++            "copied object ID must not alias a target owner"
++        );
++        assert_ne!(
++            inserted_picture_id, source_picture_id,
++            "copied picture ID must not alias its source"
++        );
++        assert_ne!(
++            inserted_picture_id, target_picture_id,
++            "copied picture ID must not alias a target owner"
++        );
++        let imported_para = &target.document.sections[0].paragraphs[inserted_para];
++        assert_eq!(imported_para.style_id as usize, target_style_base);
++        let imported_style = &target.document.doc_info.styles[imported_para.style_id as usize];
++        assert_eq!(imported_style.local_name, "Clipboard source style");
++        assert_eq!(imported_style.para_shape_id, imported_para.para_shape_id);
++        assert_eq!(
++            u32::from(imported_style.char_shape_id),
++            imported_para.char_shapes[0].char_shape_id
++        );
++        assert_eq!(
++            target.document.doc_info.char_shapes
++                [imported_para.char_shapes[0].char_shape_id as usize]
++                .base_size,
++            2400
++        );
++        assert_eq!(
++            target.document.doc_info.para_shapes[imported_para.para_shape_id as usize].alignment,
++            crate::model::style::Alignment::Right
++        );
++        let imported_style_id = imported_para.style_id;
++        let imported_para_shape_id = imported_para.para_shape_id;
++        let imported_char_shape_id = imported_para.char_shapes[0].char_shape_id;
++        let Control::Picture(imported) =
++            &target.document.sections[0].paragraphs[inserted_para].controls[inserted_control]
++        else {
++            panic!("inserted control is a picture");
++        };
++        assert_eq!(
++            target.document.bin_data_content[(imported.image_attr.bin_data_id - 1) as usize]
++                .data
++                .load(),
++            bytes
++        );
++
++        let invalid_before = crate::serializer::serialize_document(&target.document).unwrap();
++        assert!(target
++            .paste_hwp5_control_clipboard_native(0, 0, 0, &[0u8; 512])
++            .is_err());
++        assert_eq!(
++            crate::serializer::serialize_document(&target.document).unwrap(),
++            invalid_before,
++            "a rejected fragment must not change document or resource state"
++        );
++
++        let mut ambiguous = parsed_fragment;
++        let paragraph = &mut ambiguous.sections[0].paragraphs[0];
++        paragraph.controls.push(paragraph.controls[2].clone());
++        paragraph.ctrl_data_records.push(None);
++        ambiguous.sections[0].raw_stream = None;
++        ambiguous.sections[0].raw_provenance = None;
++        let ambiguous_bytes = crate::serializer::serialize_document(&ambiguous).unwrap();
++        assert!(target
++            .paste_hwp5_control_clipboard_native(0, 0, 0, &ambiguous_bytes)
++            .is_err());
++        assert_eq!(
++            crate::serializer::serialize_document(&target.document).unwrap(),
++            invalid_before,
++            "an extra object must be rejected before mutation"
++        );
++
++        let saved = target
++            .export_hwp_with_adapter()
++            .expect("serialize HWP5 destination");
++        let reopened = DocumentCore::from_bytes(&saved).expect("reopen saved HWP5 destination");
++        let (_, _, reopened_id, reopened_picture_id, reopened_bin_id) =
++            picture_address(&reopened.document, Some(2));
++        assert_eq!(reopened_id, inserted_id);
++        assert_eq!(reopened_picture_id, inserted_picture_id);
++        assert_eq!(reopened_bin_id, 2);
++        let reopened_para = &reopened.document.sections[0].paragraphs[inserted_para];
++        assert_eq!(reopened_para.style_id, imported_style_id);
++        assert_eq!(reopened_para.para_shape_id, imported_para_shape_id);
++        assert_eq!(
++            reopened_para.char_shapes[0].char_shape_id,
++            imported_char_shape_id
++        );
++        assert_eq!(
++            reopened.document.doc_info.styles[imported_style_id as usize].local_name,
++            "Clipboard source style"
++        );
++        assert_eq!(
++            reopened.document.doc_info.para_shapes[reopened_para.para_shape_id as usize].alignment,
++            crate::model::style::Alignment::Right
++        );
++        assert_eq!(
++            reopened.document.doc_info.char_shapes
++                [reopened_para.char_shapes[0].char_shape_id as usize]
++                .base_size,
++            2400
++        );
++        assert_eq!(
++            reopened.document.bin_data_content[(reopened_bin_id - 1) as usize]
++                .data
++                .load(),
++            bytes,
++            "the remapped picture resource must survive durable CFB save/reopen"
++        );
++    }
++    fn rectangles(document: &Document) -> Vec<(u32, (u32, u32, u32, u32, [i32; 4], [i32; 4]))> {
++        use crate::model::shape::ShapeObject;
++        document.sections[0]
++            .paragraphs
++            .iter()
++            .flat_map(|para| &para.controls)
++            .filter_map(|control| match control {
++                Control::Shape(shape) => match shape.as_ref() {
++                    ShapeObject::Rectangle(rectangle) => Some((
++                        rectangle.common.instance_id,
++                        (
++                            rectangle.common.width,
++                            rectangle.common.height,
++                            rectangle.common.horizontal_offset,
++                            rectangle.common.vertical_offset,
++                            rectangle.x_coords,
++                            rectangle.y_coords,
++                        ),
++                    )),
++                    _ => None,
++                },
++                _ => None,
++            })
++            .collect()
++    }
++
++    #[test]
++    fn hwp5_shape_fragment_preserves_geometry_and_remaps_identity() {
++        use crate::model::shape::ShapeObject;
++
++        let mut source = DocumentCore::new_empty();
++        source.create_blank_document_native().expect("source blank");
++        source
++            .create_shape_control_native(
++                0,
++                0,
++                0,
++                9000,
++                6750,
++                321,
++                654,
++                false,
++                "InFrontOfText",
++                "rectangle",
++                false,
++                false,
++                &[],
++            )
++            .expect("insert source rectangle");
++        let (source_para, source_control) = source.document.sections[0]
++            .paragraphs
++            .iter()
++            .enumerate()
++            .find_map(|(para_idx, para)| {
++                para.controls
++                    .iter()
++                    .enumerate()
++                    .find_map(|(control_idx, control)| {
++                        matches!(control, Control::Shape(shape) if matches!(shape.as_ref(), ShapeObject::Rectangle(_)))
++                            .then_some((para_idx, control_idx))
++                    })
++            })
++            .expect("source rectangle address");
++        let Control::Shape(shape) = &mut source.document.sections[0].paragraphs[source_para]
++            .controls[source_control]
++        else {
++            panic!("source rectangle control");
++        };
++        let ShapeObject::Rectangle(rectangle) = shape.as_mut() else {
++            panic!("source rectangle shape");
++        };
++        rectangle.common.instance_id = 0x1234;
++        let geometry = rectangles(&source.document)[0].1;
++        let source_before = crate::serializer::serialize_document(&source.document).unwrap();
++        let fragment = source
++            .export_hwp5_control_clipboard_native(0, source_para, source_control)
++            .expect("export HWP5 rectangle");
++        assert_eq!(
++            crate::serializer::serialize_document(&source.document).unwrap(),
++            source_before,
++            "copy/export must leave the source model unchanged"
++        );
++
++        let mut target = DocumentCore::new_empty();
++        target.create_blank_document_native().expect("target blank");
++        target
++            .create_shape_control_native(
++                0,
++                0,
++                0,
++                9000,
++                6750,
++                321,
++                654,
++                false,
++                "InFrontOfText",
++                "rectangle",
++                false,
++                false,
++                &[],
++            )
++            .expect("insert target rectangle");
++        let Control::Shape(shape) = target.document.sections[0].paragraphs[0]
++            .controls
++            .iter_mut()
++            .find(|control| matches!(control, Control::Shape(_)))
++            .unwrap()
++        else {
++            panic!("target rectangle control");
++        };
++        let ShapeObject::Rectangle(rectangle) = shape.as_mut() else {
++            panic!("target rectangle shape");
++        };
++        rectangle.common.instance_id = 0x1234;
++        target
++            .paste_hwp5_control_clipboard_native(0, 0, 0, &fragment)
++            .expect("paste HWP5 rectangle into another document");
++
++        let copied = rectangles(&target.document);
++        assert_eq!(copied.len(), 2);
++        assert_eq!(copied[0].1, geometry);
++        assert_eq!(copied[1].1, geometry);
++        assert_ne!(
++            copied[0].0, copied[1].0,
++            "destination owner ID must be remapped"
++        );
++        let saved = target
++            .export_hwp_with_adapter()
++            .expect("serialize destination HWP5");
++        let reopened = DocumentCore::from_bytes(&saved).expect("reopen destination HWP5");
++        let durable = rectangles(&reopened.document);
++        assert_eq!(
++            durable, copied,
++            "both editable shapes and their IDs must survive reopen"
++        );
++    }
++}
++
+ /// [#2825] `paste_internal_in_cell_by_path_native` 가 깊이 ≥2 중첩 셀에서도
+ /// 최내곽 셀 폭으로 재래핑(reflow)하는지 검증한다.
+ #[cfg(test)]
+diff --git a/src/document_core/commands/foreign_paste.rs b/src/document_core/commands/foreign_paste.rs
+index 5d847515..c8f40ee2 100755
+--- a/src/document_core/commands/foreign_paste.rs
++++ b/src/document_core/commands/foreign_paste.rs
+@@ -5,6 +5,7 @@
+ //! 그대로 유효하다고 가정한다), 외부 문서는 서식표를 먼저 현재 문서로 옮겨 심고
+ //! 문단이 참조하는 id 를 전부 새 번호로 바꿔야 한다.
+-
++
++use super::clipboard::MAX_HWP5_OBJECT_CLIPBOARD_BYTES;
+ use crate::error::HwpError;
+ use crate::model::bin_data::{BinData, BinDataContent, BinDataType};
+ use crate::model::control::Control;
+@@ -18,6 +19,37 @@ use crate::renderer::composer::restamp_indentation;
+ use std::collections::HashMap;
+-
++
+ impl crate::document_core::DocumentCore {
++    /// Parse a bounded HWP5 object fragment and transactionally insert its one
++    /// supported body object at the current document caret.
++    pub fn paste_hwp5_control_clipboard_native(
++        &mut self,
++        section_idx: usize,
++        para_idx: usize,
++        char_offset: usize,
++        bytes: &[u8],
++    ) -> Result<String, HwpError> {
++        if self.source_format != crate::parser::FileFormat::Hwp {
++            return Err(HwpError::RenderError(
++                "HWP5 object clipboard requires an HWP5 destination".to_string(),
++            ));
++        }
++        if bytes.is_empty() || bytes.len() > MAX_HWP5_OBJECT_CLIPBOARD_BYTES {
++            return Err(HwpError::RenderError(
++                "HWP5 object clipboard fragment is empty or exceeds the size limit".to_string(),
++            ));
++        }
++        if crate::parser::detect_format(bytes) != crate::parser::FileFormat::Hwp {
++            return Err(HwpError::RenderError(
++                "HWP5 object clipboard payload must be an HWP5 CFB document".to_string(),
++            ));
++        }
++        let mut source = crate::parser::parse_hwp(bytes).map_err(|error| {
++            HwpError::RenderError(format!("invalid HWP5 object clipboard fragment: {error}"))
++        })?;
++        super::paragraph_block::normalize_hwp5_clipboard_fragment(&mut source)?;
++        self.import_hwp5_object_at_native(&source, section_idx, para_idx, char_offset)
++    }
++
+     /// 외부 문서의 본문 문단을 현재 문서 `section_idx`/`para_idx`/`char_offset` 에 삽입한다.
+     ///
+     /// 세 단계다.
+diff --git a/src/document_core/commands/paragraph_block.rs b/src/document_core/commands/paragraph_block.rs
+index e01cce4a..4bb58ffa 100644
+--- a/src/document_core/commands/paragraph_block.rs
++++ b/src/document_core/commands/paragraph_block.rs
+@@ -28,6 +28,18 @@ pub use validation::{ParagraphBlockPathStep, ParagraphBlockValidationError};
+ use crate::{document_core::DocumentCore, error::HwpError};
+ use serde::{Deserialize, Serialize};
+-
++
++pub(crate) fn validate_hwp5_clipboard_fragment(
++    source: &crate::model::document::Document,
++) -> Result<(), HwpError> {
++    import::validate_hwp5_clipboard_fragment(source)
++}
++
++pub(crate) fn normalize_hwp5_clipboard_fragment(
++    source: &mut crate::model::document::Document,
++) -> Result<(), HwpError> {
++    import::normalize_hwp5_clipboard_fragment(source)
++}
++
+ /// Request-local ceilings, not file-format limits or an RSS guarantee.
+ /// Callers may lower, but cannot raise, the hard ceilings in `Default`.
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+diff --git a/src/document_core/commands/paragraph_block/import.rs b/src/document_core/commands/paragraph_block/import.rs
+index b831954b..a4f4e909 100644
+--- a/src/document_core/commands/paragraph_block/import.rs
++++ b/src/document_core/commands/paragraph_block/import.rs
+@@ -40,6 +40,80 @@ pub struct ImportParagraphBlockLimits {
+     pub max_binary_bytes: usize,
+ }
+-
++
++/// Strict profile for a detached object clipboard fragment. The fragment must contain
++/// one control-only paragraph, and its supported-object/reference graph is validated
++/// before the exporter prunes unrelated body resources.
++pub(super) fn validate_hwp5_clipboard_fragment(source: &Document) -> Result<(), HwpError> {
++    if source.sections.len() != 1 || source.sections[0].paragraphs.len() != 1 {
++        return Err(invalid(
++            "HWP5 clipboard fragment must contain one section and paragraph",
++        ));
++    }
++    let paragraph = &source.sections[0].paragraphs[0];
++    if !paragraph.text.is_empty()
++        || paragraph.controls.len() != 1
++        || !matches!(
++            paragraph.controls.first(),
++            Some(
++                crate::model::control::Control::Table(_)
++                    | crate::model::control::Control::Shape(_)
++                    | crate::model::control::Control::Picture(_)
++            )
++        )
++    {
++        return Err(invalid("HWP5 clipboard fragment must own one body object"));
++    }
++    let request = RepeatParagraphBlockRequest {
++        section_index: 0,
++        source_start: 0,
++        source_end: 1,
++        insert_before: 0,
++        count: 1,
++        limits: super::ParagraphBlockLimits::default(),
++    };
++    validation::validate_document_block(source, &request)
++        .map(|_| ())
++        .map_err(|error| invalid(error.to_string()))
++}
++
++/// HWP5 serializes section and column definitions as controls at the beginning of a
++/// section's first paragraph. They are owned by the destination section, not by the
++/// copied object. Strip only the exact pair emitted for a one-section fragment; reject
++/// any additional or reordered control before importing the object.
++pub(super) fn normalize_hwp5_clipboard_fragment(source: &mut Document) -> Result<(), HwpError> {
++    if source.sections.len() != 1 || source.sections[0].paragraphs.len() != 1 {
++        return Err(invalid(
++            "HWP5 clipboard fragment must contain one section and paragraph",
++        ));
++    }
++    let section = &mut source.sections[0];
++    let paragraph = &mut section.paragraphs[0];
++    if paragraph.controls.len() != 3 || paragraph.ctrl_data_records.len() != 3 {
++        return Err(invalid(
++            "HWP5 clipboard fragment must contain one object and its section controls",
++        ));
++    }
++    let section_def_matches = match &paragraph.controls[0] {
++        crate::model::control::Control::SectionDef(control) => {
++            serde_json::to_value(&**control).ok() == serde_json::to_value(&section.section_def).ok()
++        }
++        _ => false,
++    };
++    if !section_def_matches
++        || !matches!(
++            paragraph.controls.get(1),
++            Some(crate::model::control::Control::ColumnDef(_))
++        )
++    {
++        return Err(invalid(
++            "HWP5 clipboard section controls are missing, ambiguous, or inconsistent",
++        ));
++    }
++    paragraph.controls.drain(0..2);
++    paragraph.ctrl_data_records.drain(0..2);
++    validate_hwp5_clipboard_fragment(source)
++}
++
+ impl Default for ImportParagraphBlockLimits {
+     fn default() -> Self {
+         Self {
+@@ -144,6 +218,193 @@ impl DocumentCore {
+         Ok(prepared.result)
+     }
+-
++
++    /// Transactionally insert one validated HWP5 body object at a text caret.
++    /// The same staged resource, DocInfo, style, ownership and identity remapping
++    /// used by paragraph-block import completes before the target paragraph changes.
++    pub(crate) fn import_hwp5_object_at_native(
++        &mut self,
++        source: &Document,
++        target_section: usize,
++        target_para: usize,
++        char_offset: usize,
++    ) -> Result<String, HwpError> {
++        validate_hwp5_clipboard_fragment(source)?;
++        let target = self
++            .document
++            .sections
++            .get(target_section)
++            .and_then(|section| section.paragraphs.get(target_para))
++            .ok_or_else(|| invalid("HWP5 object paste target is out of range"))?;
++        let logical_length = target.text.chars().count()
++            + target
++                .controls
++                .iter()
++                .filter(|control| control.is_logical_inline())
++                .count();
++        if char_offset > logical_length {
++            return Err(invalid("HWP5 object paste offset is out of range"));
++        }
++
++        let replace_empty =
++            target.text.is_empty() && target.controls.is_empty() && char_offset == 0;
++        let split_target = char_offset > 0 && !target.text.is_empty();
++        let insert_para_idx = if replace_empty || (char_offset == 0 && target.controls.is_empty()) {
++            target_para
++        } else {
++            target_para + 1
++        };
++        let request = ImportParagraphBlockRequest {
++            source_section: 0,
++            source_start: 0,
++            source_end: 1,
++            target_section,
++            insert_before: insert_para_idx,
++            count: 1,
++            limits: ImportParagraphBlockLimits::default(),
++        };
++        let mut prepared = self.prepare_paragraph_block_import(source, &request)?;
++        if prepared.paragraphs.len() != 1 {
++            return Err(invalid(
++                "HWP5 object import did not stage exactly one paragraph",
++            ));
++        }
++        let mut imported = prepared
++            .paragraphs
++            .pop()
++            .ok_or_else(|| invalid("HWP5 object import staging is empty"))?;
++        if imported.text.len() != 0 || imported.controls.len() != 1 {
++            return Err(invalid("HWP5 object import staging changed its structure"));
++        }
++        let resources = prepared
++            .resources
++            .take()
++            .ok_or_else(|| invalid("HWP5 object import has no staged resources"))?;
++        let binary_changed = !resources.binaries.is_empty();
++
++        let (default_char_shape_id, default_para_shape_id) = {
++            let target = &self.document.sections[target_section].paragraphs[target_para];
++            (
++                target.char_shape_id_at(char_offset).unwrap_or(0),
++                target.para_shape_id,
++            )
++        };
++        let page = &self.document.sections[target_section].section_def.page_def;
++        let content_width = (page.width as i32 - page.margin_left as i32 - page.margin_right as i32)
++            .max(7200) as u32;
++        let control_height = imported
++            .controls
++            .first()
++            .map_or(0, |control| match control {
++                crate::model::control::Control::Picture(picture) => picture.common.height as i32,
++                crate::model::control::Control::Shape(shape) => shape.common().height as i32,
++                _ => 0,
++            });
++        if let Some(line) = imported.line_segs.first_mut() {
++            line.segment_width = content_width as i32;
++            if control_height > 0 {
++                line.line_height = control_height;
++                line.text_height = control_height;
++                line.baseline_distance = (control_height * 850) / 1000;
++                line.line_spacing = 600;
++            }
++        }
++        let mut empty_raw = vec![0u8; 10];
++        empty_raw[0..2].copy_from_slice(&1u16.to_le_bytes());
++        empty_raw[4..6].copy_from_slice(&1u16.to_le_bytes());
++        let empty_para = Paragraph {
++            text: String::new(),
++            char_count: 1,
++            control_mask: 0,
++            para_shape_id: default_para_shape_id,
++            style_id: 0,
++            char_shapes: vec![crate::model::paragraph::CharShapeRef {
++                start_pos: 0,
++                char_shape_id: default_char_shape_id,
++            }],
++            line_segs: vec![crate::model::paragraph::LineSeg {
++                text_start: 0,
++                line_height: 1000,
++                text_height: 1000,
++                baseline_distance: 850,
++                line_spacing: 600,
++                segment_width: content_width as i32,
++                tag: crate::model::paragraph::LineSeg::TAG_SINGLE_SEGMENT_LINE,
++                ..Default::default()
++            }],
++            has_para_text: false,
++            raw_header_extra: empty_raw,
++            ..Default::default()
++        };
++        let next_pos = format!("{{\"ok\":true,\"paraIdx\":{insert_para_idx},\"controlIdx\":0}}");
++
++        // All fallible staging/allocation completes before the document is modified.
++        resources.reserve(&mut self.document)?;
++        self.reserve_block_commit(
++            target_section,
++            if replace_empty {
++                1
++            } else if split_target {
++                3
++            } else {
++                2
++            },
++            0,
++        )?;
++        resources.commit(&mut self.document);
++        if binary_changed {
++            self.bump_bin_data_epoch();
++        }
++        self.rebuild_resolved_styles();
++
++        let right_half = if split_target {
++            Some(
++                self.document.sections[target_section].paragraphs[target_para]
++                    .split_at(char_offset),
++            )
++        } else {
++            None
++        };
++        if replace_empty {
++            self.document.sections[target_section].paragraphs[target_para] = imported;
++        } else {
++            self.document.sections[target_section]
++                .paragraphs
++                .insert(insert_para_idx, imported);
++        }
++        self.document.sections[target_section]
++            .paragraphs
++            .insert(insert_para_idx + 1, empty_para);
++        if let Some(right) = right_half {
++            self.document.sections[target_section]
++                .paragraphs
++                .insert(insert_para_idx + 2, right);
++        }
++        self.document.sections[target_section].raw_stream = None;
++
++        if split_target {
++            self.reflow_paragraph(target_section, target_para);
++        }
++        let fresh_end = insert_para_idx + 2 + usize::from(split_target);
++        let hwp3_layout = self.document.layout_profile().hwp3_layout();
++        crate::renderer::composer::recalculate_section_vpos(
++            &mut self.document.sections[target_section].paragraphs,
++            target_para,
++            Some(insert_para_idx..fresh_end),
++            None,
++            &self.styles,
++            self.dpi,
++            hwp3_layout,
++        );
++        self.recompose_section(target_section);
++        self.paginate_if_needed();
++        self.event_log
++            .push(crate::model::event::DocumentEvent::ContentPasted {
++                section: target_section,
++                para: insert_para_idx,
++            });
++        Ok(next_pos)
++    }
++
+     fn prepare_paragraph_block_import(
+         &self,
+         source: &Document,
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -9837,6 +9837,23 @@
+         .map_err(|e| e.into())
+     }
+-
++
++    /// Export one supported HWP5 body object as a bounded standalone fragment
++    /// for cross-document structured clipboard transport.
++    #[wasm_bindgen(js_name = exportHwp5ControlClipboard)]
++    pub fn export_hwp5_control_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++    ) -> Result<Vec<u8>, JsValue> {
++        self.export_hwp5_control_clipboard_native(
++            section_idx as usize,
++            para_idx as usize,
++            control_idx as usize,
++        )
++        .map_err(|error| error.into())
++    }
++
+     /// 내부 클립보드에 컨트롤(표/그림/도형)이 포함되어 있는지 확인한다.
+     #[wasm_bindgen(js_name = clipboardHasControl)]
+     pub fn clipboard_has_control(&self) -> bool {
+@@ -9861,6 +9878,25 @@
+         .map_err(|e| e.into())
+     }
+-
++
++    /// Paste a bounded HWP5 object fragment from a different document. The engine
++    /// validates and stages all DocInfo/BinData/identity remaps before committing.
++    #[wasm_bindgen(js_name = pasteHwp5ControlClipboard)]
++    pub fn paste_hwp5_control_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        char_offset: u32,
++        fragment: &[u8],
++    ) -> Result<String, JsValue> {
++        self.paste_hwp5_control_clipboard_native(
++            section_idx as usize,
++            para_idx as usize,
++            char_offset as usize,
++            fragment,
++        )
++        .map_err(|error| error.into())
++    }
++
+     /// Export one supported HWPX group as an isolated, bounded HWPX clipboard package.
+     /// The package contains the editable group tree and only the embedded resources it owns.
+     #[wasm_bindgen(js_name = exportHwpxGroupClipboard)]

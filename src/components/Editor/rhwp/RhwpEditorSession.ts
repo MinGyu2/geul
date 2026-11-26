@@ -8,6 +8,7 @@ import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCap
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
+  decodeHwp5ObjectFragment, encodeHwp5ObjectFragment,
   objectClipboardPlainText, parseObjectClipboardPayload, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import {
@@ -3525,8 +3526,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const portable = format === "hwpx"
         ? extractHwpxPortableObject(doc, copyControl.address, copyControl.kind)
         : undefined;
+      const hwpFragment = format === "hwp" && doc.exportHwp5ControlClipboard
+        ? encodeHwp5ObjectFragment(doc.exportHwp5ControlClipboard(...copyControl.address)) ?? undefined
+        : undefined;
       const payload = format === "hwp"
-        ? createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation)
+        ? createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, hwpFragment)
         : createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, portable);
       if (!payload) return null;
       this.lastCopiedObjectToken = payload.token;
@@ -3563,15 +3567,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const sameDoc = payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
     const portable = !sameDoc && format === "hwpx" ? payload.portable : undefined;
+    const hwpFragment = !sameDoc && format === "hwp" && payload.hwpFragmentBase64 !== undefined
+      ? decodeHwp5ObjectFragment(payload.hwpFragmentBase64)
+      : null;
 
-    // HWP5 and unsupported HWPX snapshots (e.g. curves, gradients, or unsafe captions/stories)
-    // remain same-document only. Supported HWPX groups carry an isolated structural package.
-    if (!sameDoc && !portable) return "rejected";
+    // Unsupported snapshots (e.g. curves, gradients, or unsafe captions/stories) remain
+    // same-document only. Cross-document imports are bounded format-owned fragments.
+    if (!sameDoc && !portable && (!hwpFragment || !doc.pasteHwp5ControlClipboard)) return "rejected";
     this.history.boundary();
     const applied = this.mutate(() => {
       const res = sameDoc
         ? JSON.parse(doc.pasteControl!(at.section, at.paragraph, at.offset)) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown }
-        : insertHwpxPortableObject(doc, at, portable!);
+        : portable
+          ? insertHwpxPortableObject(doc, at, portable)
+          : JSON.parse(doc.pasteHwp5ControlClipboard!(at.section, at.paragraph, at.offset, hwpFragment!)) as {
+            ok?: boolean; paraIdx?: unknown; controlIdx?: unknown;
+          };
       if ((res as { ok?: boolean }).ok === false || !Number.isSafeInteger(res.paraIdx) || !Number.isSafeInteger(res.controlIdx)) {
         throw new Error("paste object failed");
       }
