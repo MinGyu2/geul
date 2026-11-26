@@ -1,0 +1,227 @@
+{
+  "issue": "P6-HX-H5",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Transfer the supported HWPX editable-object subset to HWP5 while preserving source bytes, body ownership, geometry/style, IDs, picture resources, rejection atomicity, Undo/Redo, T009 and save/reopen.",
+  "implementation": {
+    "geulCommit": "64611773fa312002344f140be281fcd27f2e13d5",
+    "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "rhwpOrderedPatch": {
+      "index": 69,
+      "path": "patches/rhwp/stage3a-hwp5-line-flag-width.patch",
+      "sha256": "ca34d83ceda1c14a84317b2797c38ca4b8ad56a55f61e23a1e01ace820c2363d"
+    },
+    "rhwpReleaseGeneration": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609",
+    "supportedSourceObjects": [
+      "HWPX inline Rectangle",
+      "HWPX inline Ellipse",
+      "HWPX inline straight Line",
+      "uncropped PNG/JPEG Picture without caption or border"
+    ],
+    "targetStructure": "Editable HWP5 Section0 body-owned GSO shapes/pictures. New instance/control IDs are unique. Picture bytes receive a new BinData owner while existing resources retain their original IDs and bytes.",
+    "mapping": "Shape dimensions, rotation/flips, fill/stroke, line type, description, text wrap and offsets are checked against the portable HWPX snapshot. Pictures are checked for bytes, dimensions, offsets, inline/wrap state, description and zero crop/border.",
+    "recordContract": "Official HWP 5.0 revision 1.3 table 92 defines SHAPE_COMPONENT_LINE as 4 INT32 coordinates plus a UINT16 flag (18 bytes). Ordered RHWP patch changes both ordinary and group-child serializers from i32 to u16 and adds a true/false regression for both ownership levels.",
+    "specification": "https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D_5.0_revision1.3.pdf",
+    "rejected": [
+      "rounded/custom shapes",
+      "groups and curves",
+      "captioned/textbox objects",
+      "cropped pictures",
+      "pictures with borders/captions",
+      "unsupported image MIME or malformed media",
+      "ambiguous or non-body ownership"
+    ],
+    "atomicity": "Import is inside the session history transaction. Unsupported snapshots reject before insertion; any post-insert verification exception uses the existing recoverable history rollback path."
+  },
+  "verification": {
+    "rhwpFocusedRegression": {
+      "result": "PASS 1/1",
+      "test": "hwp5_straight_line_component_uses_18_byte_spec_at_both_ownership_levels",
+      "checkout": "exact pinned RHWP source restored and clean after test"
+    },
+    "typescriptTypecheck": "PASS through guarded npm run build",
+    "focusedVitest": {
+      "sessionGate": "PASS 1/1",
+      "hwpxToHwp5Adapter": "PASS 2/2"
+    },
+    "scopedEslint": "PASS",
+    "nativeHarnessPythonSyntax": "PASS; py_compile",
+    "geulT009Proof": {
+      "result": "PASS 1/1",
+      "test": "docx_portable_primitive_shapes_are_proved_from_their_complete_records"
+    },
+    "rhwpReleaseBuild": {
+      "result": "PASS",
+      "command": "scripts/build-rhwp-wasm.py (Rust 1.99.1, wasm-bindgen 0.2.127)",
+      "generation": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609",
+      "rhwpJsSha256": "96a212ef1431110b89638c77fefc4236ea705d2deb582791ab151414f76534f6",
+      "rhwpWasmSha256": "432ed8a46ee55f61e888be1de231e8e388857f7c430f9d84240f0d1309ba0b8d",
+      "externalUnchanged": true
+    },
+    "rhwpReleaseProductVerification": {
+      "result": "PASS",
+      "command": "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+      "generation": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609"
+    },
+    "guardedReleaseBuild": {
+      "result": "PASS",
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "appSha256": "09e260887e750c5f3911d7a0c795c6a1bf9b4dc40e276a4c63c23f5ee61d3c67",
+      "bytes": 63630392,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED"
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "case": "P6-HX-H5 attempt07",
+      "environment": "Linux X11/Xvfb, private D-Bus and IBus Hangul",
+      "appSha256": "09e260887e750c5f3911d7a0c795c6a1bf9b4dc40e276a4c63c23f5ee61d3c67",
+      "processAppSha256": "09e260887e750c5f3911d7a0c795c6a1bf9b4dc40e276a4c63c23f5ee61d3c67",
+      "rhwpGeneration": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609",
+      "sourceHwpxSha256": "6d2165c864e830d982518e7e6703708cbdb3b466dd3d02e45d719a1358576b81",
+      "unsupportedRoundedHwpxSha256": "c3c57fae54d722f1adce9547442b1fac5c76128bd2ad688aece57044e3d9a463",
+      "destinationFixtureHwpSha256": "59df8c72c63bdf894257181d19339b09717743c985a4b690bd6dd2b9ea52769e",
+      "savedHwpSha256": "7d86945f73dd0d1fe76f165db151b9f04edaecef1f16a05fffcdec44738b72d0",
+      "trustedPointerClipboard": "PASS; source object selection/copy and destination paste use trusted Native input",
+      "undoRedo": "PASS; Rectangle, Ellipse, Line and Picture paste/Undo/Redo revisions 1–12",
+      "t009": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "12"
+      },
+      "sourceImmutability": "PASS; HWPX bytes and decoded source object model unchanged through copy and destination save",
+      "shapeMapping": "PASS; supported dimensions, rotation/flips, fill/stroke, line type, description, offsets and ownership matched",
+      "idRemapping": {
+        "instanceIds": [
+          2112068672,
+          2112077828,
+          2112080184,
+          2112057740
+        ],
+        "shapeComponentIds": [
+          1038326849,
+          1038336005,
+          1038338361,
+          1038315917
+        ],
+        "allUnique": true
+      },
+      "pictureMapping": {
+        "sourceSha256": "11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63",
+        "targetSha256": "11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63",
+        "sourceProperties": {
+          "width": 2400,
+          "height": 2400,
+          "horzOffset": 0,
+          "vertOffset": 0,
+          "treatAsChar": true,
+          "textWrap": "Square",
+          "borderColor": 0,
+          "borderWidth": 0,
+          "borderType": 0,
+          "description": "HWPX source picture",
+          "cropLeft": 0,
+          "cropTop": 0,
+          "cropRight": 0,
+          "cropBottom": 0
+        },
+        "targetProperties": {
+          "width": 2400,
+          "height": 2400,
+          "horzOffset": 0,
+          "vertOffset": 0,
+          "treatAsChar": true,
+          "textWrap": "Square",
+          "borderColor": 0,
+          "borderWidth": 0,
+          "borderType": 0,
+          "description": "HWPX source picture",
+          "cropLeft": 0,
+          "cropTop": 0,
+          "cropRight": 0,
+          "cropBottom": 0
+        }
+      },
+      "cfbChanges": {
+        "changed": [
+          "BodyText/Section0",
+          "DocInfo",
+          "PrvImage"
+        ],
+        "added": [
+          "BinData/BIN0002.png"
+        ],
+        "existingBinDataUnchanged": true
+      },
+      "independentRecordInspection": {
+        "tool": "scripts/tests/hwp_record_diff.py",
+        "result": "PASS",
+        "changedBodyRecordOperations": 3,
+        "lineComponentTag": 78,
+        "lineComponentLength": 18,
+        "jsonSha256": "021c6d5dd7414c17e5474e03212948b0e044f8be746499aab9c1521e79663b5a"
+      },
+      "freshSessionReopen": "transferred shapes and picture selectable after save/reopen",
+      "negativeCase": {
+        "status": "rejected without mutation",
+        "before": {
+          "revision": "0",
+          "composing": "false",
+          "uncertain": "false",
+          "pages": "1",
+          "testid": "rhwp-status",
+          "status": "ready",
+          "latencyCount": "0",
+          "selection": "",
+          "localRevision": "0",
+          "unpreserved": "false",
+          "caret": "0:0:0",
+          "firstPaintMs": "23.0",
+          "dirty": "false",
+          "latencyMax": "",
+          "latencyP95": ""
+        },
+        "after": {
+          "revision": "0",
+          "composing": "false",
+          "uncertain": "false",
+          "pages": "1",
+          "testid": "rhwp-status",
+          "status": "ready",
+          "latencyCount": "0",
+          "selection": "",
+          "localRevision": "0",
+          "unpreserved": "false",
+          "caret": "0:0:0",
+          "firstPaintMs": "23.0",
+          "dirty": "false",
+          "latencyMax": "",
+          "latencyP95": ""
+        }
+      },
+      "resultJsonSha256": "466fd28f55b6ab3ff0740ddfacc4fadb2159487d2d5388aa2bfc752f306f3c06",
+      "cleanup": {
+        "sha256": "5e7873a8d66e4c7aae913c9c9400de605d8646f9c41d79b78207bf6f80a49434",
+        "complete": true,
+        "exit": 0,
+        "proven": true,
+        "filesystemProven": true,
+        "survivors": [],
+        "processErrors": []
+      }
+    },
+    "fullRhwpEditorSessionSuite": "NOT RUN as a whole in final check; focused acceptance tests passed. A prior run reported two unrelated roundtrip-control failures; this issue does not claim that broad suite passed."
+  },
+  "limitations": [
+    "Only body-owned inline primitive Rectangle/Ellipse/Line and uncropped, uncaptioned, borderless PNG/JPEG pictures are supported.",
+    "Curves, groups, captions/textboxes, cropping, effects and other structures remain fail-closed and require their own format contracts.",
+    "External Hancom/Office interoperability, Wayland, Windows and macOS are NOT RUN.",
+    "Nix-independent release portability is NOT VERIFIED.",
+    "This is structured-object transfer, not full-document conversion."
+  ]
+}
