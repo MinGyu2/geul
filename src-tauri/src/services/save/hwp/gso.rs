@@ -1025,6 +1025,11 @@ pub(super) fn evolved_candidate(
     else {
         return false;
     };
+    if basic_shape_type_conversion_candidate(
+        old, new, old_ctrl, old_off, old_sc_idx, new_ctrl, new_off, new_sc_idx,
+    ) {
+        return true;
+    }
     if old_ctrl != new_ctrl
         || old_off != new_off
         || (old_ctrl != SC_CONTAINER && expected_leaf_tag(old_ctrl).is_none())
@@ -1052,6 +1057,39 @@ pub(super) fn evolved_candidate(
         (picture_bin_id(old), picture_bin_id(new)),
         (Some(a), Some(b)) if a == b && a >= 1 && a <= orig_bins
     )
+}
+
+fn basic_shape_type_conversion_candidate(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    old_ctrl: &[u8; 4],
+    old_off: usize,
+    old_sc_idx: usize,
+    new_ctrl: &[u8; 4],
+    new_off: usize,
+    new_sc_idx: usize,
+) -> bool {
+    let pair = (*old_ctrl == *SC_RECT && *new_ctrl == *SC_ELLIPSE)
+        || (*old_ctrl == *SC_ELLIPSE && *new_ctrl == *SC_RECT);
+    pair && old.len() == 3
+        && new.len() == 3
+        && old_sc_idx == 1
+        && new_sc_idx == 1
+        && old_off == 8
+        && new_off == 8
+        && (old[0].0, old[0].1) == (TAG_CTRL_HEADER, 1)
+        && (new[0].0, new[0].1) == (TAG_CTRL_HEADER, 1)
+        && old[0].2 == new[0].2
+        && (old[1].0, old[1].1) == (TAG_SHAPE_COMPONENT, 2)
+        && (new[1].0, new[1].1) == (TAG_SHAPE_COMPONENT, 2)
+        && old[1].2.len() >= 8
+        && new[1].2.len() >= 8
+        && old[1].2[..4] == old[1].2[4..8]
+        && new[1].2[..4] == new[1].2[4..8]
+        && (old[2].1, new[2].1) == (3, 3)
+        && old[2].0 == expected_leaf_tag(old_ctrl).unwrap_or_default()
+        && new[2].0 == expected_leaf_tag(new_ctrl).unwrap_or_default()
+        && gso_header_id(old).is_some_and(|id| id != 0 && gso_header_id(new) == Some(id))
 }
 
 /// Prove supported geometry/property edits to drawable GSO objects owned by one
@@ -1367,6 +1405,124 @@ fn shape_rendering_end(sc: &[u8], id_off: usize) -> Option<usize> {
     let r_len = 2usize.checked_add(1usize.checked_add(2 * cnt)?.checked_mul(48)?)?;
     let r_end = r_at.checked_add(r_len)?;
     (sc.len() >= r_end).then_some(r_end)
+}
+
+fn canonical_ellipse_leaf(width: usize, height: usize) -> Option<Vec<u8>> {
+    let (width, height) = (i32::try_from(width).ok()?, i32::try_from(height).ok()?);
+    let center = (width / 2, height / 2);
+    let endpoint = (width, center.1);
+    let mut leaf = Vec::with_capacity(60);
+    leaf.extend_from_slice(&0u32.to_le_bytes());
+    for (x, y) in [
+        center,
+        (width, center.1),
+        (center.0, height),
+        endpoint,
+        endpoint,
+        endpoint,
+        endpoint,
+    ] {
+        leaf.extend_from_slice(&x.to_le_bytes());
+        leaf.extend_from_slice(&y.to_le_bytes());
+    }
+    Some(leaf)
+}
+
+fn canonical_rectangle_leaf(width: usize, height: usize) -> Option<Vec<u8>> {
+    let (width, height) = (i32::try_from(width).ok()?, i32::try_from(height).ok()?);
+    let mut leaf = Vec::with_capacity(33);
+    leaf.push(0);
+    for (x, y) in [(0, 0), (width, 0), (width, height), (0, height)] {
+        leaf.extend_from_slice(&x.to_le_bytes());
+        leaf.extend_from_slice(&y.to_le_bytes());
+    }
+    Some(leaf)
+}
+
+/// A shape-type change is the one narrow case where the GSO control ID and
+/// leaf tag may change together. All identity, component/style data, package
+/// definitions, and unrelated records must remain byte-identical.
+fn prove_basic_shape_type_conversion(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    orig_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+    old_ctrl: &[u8; 4],
+    old_off: usize,
+    old_sc_idx: usize,
+    new_ctrl: &[u8; 4],
+    new_off: usize,
+    new_sc_idx: usize,
+) -> Checked<()> {
+    preserved(
+        basic_shape_type_conversion_candidate(
+            old, new, old_ctrl, old_off, old_sc_idx, new_ctrl, new_off, new_sc_idx,
+        ),
+        BODY,
+    )?;
+    preserved(orig_defs == defs, BODY)?;
+    let (old_w, old_h, new_w, new_h, size_changed, has_caption) =
+        check_ctrl_header(old[0].2, new[0].2, false)?;
+    preserved(
+        !size_changed && !has_caption && old_w == new_w && old_h == new_h,
+        BODY,
+    )?;
+    valid(
+        (1..=MAX_DIM_HU).contains(&old_w) && (1..=MAX_DIM_HU).contains(&old_h),
+        BODY,
+    )?;
+
+    let old_sc = old[old_sc_idx].2;
+    let new_sc = new[new_sc_idx].2;
+    preserved(old_sc.len() == new_sc.len() && old_sc.len() >= 8 + 44, BODY)?;
+    preserved(old_sc[..4] == *old_ctrl && new_sc[..4] == *new_ctrl, BODY)?;
+    preserved(old_sc[4..8] == *old_ctrl && new_sc[4..8] == *new_ctrl, BODY)?;
+    preserved(old_sc[8..] == new_sc[8..], BODY)?;
+    preserved(word(old_sc, old_off + 8)? == 0, BODY)?;
+    let orig_w = dword(old_sc, old_off + 12)?;
+    let orig_h = dword(old_sc, old_off + 16)?;
+    let current_w = dword(old_sc, old_off + 20)?;
+    let current_h = dword(old_sc, old_off + 24)?;
+    preserved(
+        orig_w == old_w && orig_h == old_h && current_w == old_w && current_h == old_h,
+        BODY,
+    )?;
+    let rendering_end = shape_rendering_end(old_sc, old_off)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(old_sc.len() >= rendering_end + 13 + 8 + 22, BODY)?;
+    valid(
+        parse_rendering_matrices(&old_sc[old_off + 42..rendering_end]).is_some(),
+        BODY,
+    )?;
+    preserved(
+        old_sc[rendering_end..rendering_end + 13] == new_sc[rendering_end..rendering_end + 13]
+            && old_sc[old_sc.len() - 22..] == new_sc[new_sc.len() - 22..],
+        BODY,
+    )?;
+
+    let old_leaf = old[2].2;
+    let new_leaf = new[2].2;
+    if *old_ctrl == *SC_RECT {
+        preserved(old_leaf.len() == 33 && old_leaf[0] == 0, BODY)?;
+        valid(
+            canonical_rectangle_leaf(old_w, old_h).as_deref() == Some(old_leaf),
+            BODY,
+        )?;
+        valid(
+            canonical_ellipse_leaf(new_w, new_h).as_deref() == Some(new_leaf),
+            BODY,
+        )?;
+    } else {
+        valid(
+            canonical_ellipse_leaf(old_w, old_h).as_deref() == Some(old_leaf),
+            BODY,
+        )?;
+        valid(
+            canonical_rectangle_leaf(new_w, new_h).as_deref() == Some(new_leaf),
+            BODY,
+        )?;
+    }
+    Ok(())
 }
 
 /// Validates a plain, control-free TextBox subtree after `LIST_HEADER` at `base_lvl`.
@@ -2490,6 +2646,18 @@ pub(super) fn prove_evolved_gso(
     orig_defs: &Defs<'_>,
     defs: &Defs<'_>,
 ) -> Checked<()> {
+    if let (Some((old_ctrl, old_off, old_sc_idx)), Some((new_ctrl, new_off, new_sc_idx))) =
+        (shape_ctrl_id(old), shape_ctrl_id(new))
+    {
+        if basic_shape_type_conversion_candidate(
+            old, new, old_ctrl, old_off, old_sc_idx, new_ctrl, new_off, new_sc_idx,
+        ) {
+            return prove_basic_shape_type_conversion(
+                old, new, orig_defs, defs, old_ctrl, old_off, old_sc_idx, new_ctrl, new_off,
+                new_sc_idx,
+            );
+        }
+    }
     preserved(evolved_candidate(old, new, orig_defs), BODY)?;
     let (ctrl_id, id_off, old_sc_idx) = shape_ctrl_id(old).unwrap();
     let (_, _, new_sc_idx) = shape_ctrl_id(new).unwrap();
@@ -5274,6 +5442,103 @@ mod tests {
         assert!(!check_with_preview_refresh(&canonical_file, &file(stale)).is_empty());
         resized[1].2[28..32].copy_from_slice(&8300u32.to_le_bytes());
         assert!(!check_with_preview_refresh(&canonical_file, &file(resized)).is_empty());
+    }
+
+    #[test]
+    fn basic_shape_type_change_requires_exact_identity_style_and_geometry() {
+        let di = doc_info_records(0);
+        let di_ref: Vec<_> = di
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let (width, height) = (4000u32, 3000u32);
+        let component = |ctrl: &[u8; 4]| {
+            let mut bytes = shape_component_drawing(ctrl, width, height, 0, 0, 0, None, 9001);
+            bytes[20..24].copy_from_slice(&width.to_le_bytes());
+            bytes[24..28].copy_from_slice(&height.to_le_bytes());
+            bytes
+        };
+        let ellipse_leaf = || {
+            let (w, h) = (width as i32, height as i32);
+            let center = (w / 2, h / 2);
+            let endpoint = (w, center.1);
+            let mut bytes = Vec::with_capacity(60);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            for (x, y) in [
+                center,
+                endpoint,
+                (center.0, h),
+                endpoint,
+                endpoint,
+                endpoint,
+                endpoint,
+            ] {
+                bytes.extend_from_slice(&x.to_le_bytes());
+                bytes.extend_from_slice(&y.to_le_bytes());
+            }
+            bytes
+        };
+        let rectangle = vec![
+            (
+                71,
+                1,
+                ctrl_header(212, 0x000a_0000, 500, 600, width, height, "", &[]),
+            ),
+            (76, 2, component(super::SC_RECT)),
+            (79, 3, rect_leaf(0, width as i32, height as i32)),
+        ];
+        let ellipse = vec![
+            (
+                71,
+                1,
+                ctrl_header(212, 0x000a_0000, 500, 600, width, height, "", &[]),
+            ),
+            (76, 2, component(super::SC_ELLIPSE)),
+            (80, 3, ellipse_leaf()),
+        ];
+        let file = |shape: &[(u16, u16, Vec<u8>)]| {
+            let section = wrap_section(vec![shape.to_vec()]);
+            let refs: Vec<_> = section
+                .iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect();
+            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+        };
+        let original_rectangle = file(&rectangle);
+        let edited_ellipse = file(&ellipse);
+        assert_eq!(
+            check_with_preview_refresh(&original_rectangle, &edited_ellipse),
+            vec![]
+        );
+        assert_eq!(
+            check_with_preview_refresh(&edited_ellipse, &original_rectangle),
+            vec![]
+        );
+
+        let mut changed_style = ellipse.clone();
+        changed_style[1].2[196] ^= 1;
+        assert!(
+            !check_with_preview_refresh(&original_rectangle, &file(&changed_style)).is_empty(),
+            "type conversion must reject unrelated shape-component changes"
+        );
+        let mut changed_geometry = ellipse.clone();
+        changed_geometry[2].2[5] ^= 1;
+        assert!(
+            !check_with_preview_refresh(&original_rectangle, &file(&changed_geometry)).is_empty(),
+            "type conversion must reject noncanonical ellipse geometry"
+        );
+        let mut extra_record = ellipse.clone();
+        extra_record.push((72, 3, vec![0]));
+        assert!(
+            !check_with_preview_refresh(&original_rectangle, &file(&extra_record)).is_empty(),
+            "type conversion must reject extra records inside the shape owner"
+        );
+        let mut moved_owner = ellipse.clone();
+        moved_owner[0].2[12] ^= 1;
+        assert!(
+            !check_with_preview_refresh(&original_rectangle, &file(&moved_owner)).is_empty(),
+            "type conversion must reject owner changes"
+        );
     }
 
     #[test]

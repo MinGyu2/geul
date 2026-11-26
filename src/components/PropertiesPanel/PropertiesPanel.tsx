@@ -133,7 +133,8 @@ function ObjectTools({ selection, picture, disabled, onEdit }: {
       {selection.graphic?.kind === "smartArt" && can("smartArt") && <SmartArtFields art={selection.graphic} disabled={disabled} onEdit={onEdit} />}
       {selection.groupChildFills && can("groupChildFill") &&
         <GroupChildFields children={selection.groupChildFills} disabled={disabled} onEdit={onEdit} />}
-      {selection.convertShape && can("convertShape") && <button type="button" className="document-bar__button" disabled={disabled}
+      {selection.convertShape && can("convertShape") && <button type="button" className="document-bar__button"
+        data-testid="shape-type-convert" disabled={disabled}
         onClick={() => onEdit({ kind: "convertShape", to: selection.convertShape! })}>
         {t(`properties.shape.convert.${selection.convertShape}`)}
       </button>}

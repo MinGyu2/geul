@@ -36,6 +36,15 @@ const panel = (object: ObjectSelection, extra: Partial<DocumentPanelState> = {})
 const request = (edit: unknown) => ({ command: "object.edit", selectionEpoch: 4, sessionId: 1, loadGeneration: 2, revision: 3, edit });
 
 describe("object tools in the properties panel", () => {
+  it("changes the selected HWP/HWPX basic shape to its proven target type", () => {
+    const onEdit = panel(shapeSelection({
+      address: { engine: "rhwp", path: [0, 0, 2] },
+      operations: ["deselect", "convertShape"], convertShape: "ellipse",
+    }));
+    fireEvent.click(screen.getByTestId("shape-type-convert"));
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(request({ kind: "convertShape", to: "ellipse" }));
+  });
+
   it("sends crop, crop reset, wrap, description, position, size and delete as identity-bound object edits", () => {
     const onEdit = panel(selection());
     fireEvent.change(screen.getByLabelText("Right"), { target: { value: "20" } });

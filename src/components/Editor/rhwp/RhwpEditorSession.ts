@@ -2123,6 +2123,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const shape = resolvedShapeAddress && this.history && shapeSupported
             && (shapeAddress ? !!this.doc.setShapeProperties : !!headerShapeApi || !!cellShapeApi)
             ? inspectRhwpShape(shapePropertiesApi!, resolvedShapeAddress) : undefined;
+          const convertShape = shapeAddress && shape && this.doc.getShapeTypeChangeTarget && this.doc.changeShapeType
+            && (format === "hwp" || format === "hwpx")
+            ? (() => {
+              try {
+                const target = this.doc!.getShapeTypeChangeTarget!(...shapeAddress);
+                return target === "rectangle" || target === "ellipse" ? target : undefined;
+              } catch { return undefined; }
+            })()
+            : undefined;
           const shapePath = shape && shapeAddress && hit.frame.width > 0 && hit.frame.height > 0 && this.doc.moveShapePathPoint
             ? inspectRhwpShapePath(this.doc, shapeAddress) : undefined;
           if (shapePath) operations.push("pathPoint");
@@ -2150,6 +2159,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(!headerFooterShape && !cellShape && this.doc.changeShapeZOrder && (format === "hwpx" || this.hwpShapeLayers(shapeAddress))
                 ? ["zOrder" as const] : []));
           }
+          if (convertShape) operations.push("convertShape");
           const groupAddress = hit.bodyGroup && hit.bodyGroup[1] < this.doc.getParagraphCount(hit.bodyGroup[0]) ? hit.bodyGroup : undefined;
           const groupSupported = format === "hwpx" || (canEditHwp && this.unlockedBodyGso(groupAddress) === "그리기");
           const group = groupAddress && this.history && canEditGso && groupSupported && this.doc.setShapeProperties
@@ -2227,6 +2237,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
                   : cellShape ? format === "hwpx"
                   : this.isEditableHwpGso(shapeAddress, true)) ? { outlineWidthEditable: true } : {}),
               } } : {}),
+              ...(convertShape ? { convertShape } : {}),
             },
           };
           this.emit();
@@ -5604,6 +5615,23 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let props: Record<string, unknown>, expect: Partial<Raw>, keep: (keyof Raw)[];
     let operation: (() => void) | null = null;
     switch (edit.kind) {
+      case "convertShape": {
+        if (headerFooterAddress || cellShapeAddress || !doc.changeShapeType
+          || !doc.getShapeTypeChangeTarget || before.raw.shapeType === edit.to
+          || doc.getShapeTypeChangeTarget(...address) !== edit.to) return false;
+        props = {};
+        expect = { shapeType: edit.to };
+        keep = except("shapeType");
+        operation = () => {
+          const result = JSON.parse(doc.changeShapeType!(...address, edit.to)) as { ok?: boolean };
+          const after = inspect();
+          const inverseTarget = edit.to === "ellipse" ? "rectangle" : "ellipse";
+          if (result.ok !== true || !after || after.raw.shapeType !== edit.to
+            || doc.getShapeTypeChangeTarget!(...address) !== inverseTarget
+            || !unchanged(after.raw, keep)) throw new Error("shape type change did not verify");
+        };
+        break;
+      }
       case "delete":
         if (headerFooterAddress || cellShapeAddress || !doc.deleteShapeControl
           || (format === "hwp" && before.hasCaption && !this.ownsHwpGsoCaption(address, true))) return false;

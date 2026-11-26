@@ -12,8 +12,9 @@ export const hexToBgr = (hex: string) => {
 
 export interface RhwpShapeInspection {
   properties: ShapeProperties;
+  shapeType: string;
   /** Engine values of the fields Stage 3 edits; compared after each edit. */
-  raw: { width: number; height: number; horzOffset: number; vertOffset: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean;
+  raw: { shapeType: string; width: number; height: number; horzOffset: number; vertOffset: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean;
     borderColor: number; borderWidth: number; fillType: string; fillBgColor?: number; treatAsChar: boolean; textWrap: string; description: string };
   /** Floating with a plain left/top offset. */
   movable: boolean;
@@ -33,6 +34,7 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const v = value as Record<string, unknown>;
     const int = (key: string) => Number.isSafeInteger(v[key]) ? v[key] as number : undefined;
+    const shapeType = typeof v.shapeType === "string" ? v.shapeType : "unknown";
     const width = int("width"), height = int("height"), horzOffset = int("horzOffset"), vertOffset = int("vertOffset");
     const rotationAngle = int("rotationAngle"), borderColor = int("borderColor"), borderWidth = int("borderWidth");
     const { treatAsChar, horzFlip, vertFlip, fillType, textWrap } = v;
@@ -42,12 +44,13 @@ export function inspectRhwpShape(doc: Pick<RhwpDocument, "getShapeProperties">, 
     const fillBgColor = int("fillBgColor");
     const description = typeof v.description === "string" ? v.description : "";
     return {
+      shapeType,
       properties: {
         fill: fillType === "solid" && fillBgColor !== undefined ? bgrToHex(fillBgColor) : null,
         outline: bgrToHex(borderColor), outlineWidth: borderWidth / 100,
         rotation: rotationAngle, flipH: horzFlip, flipV: vertFlip, widthPt: width / 100, heightPt: height / 100,
       },
-      raw: { width, height, horzOffset, vertOffset, rotationAngle, horzFlip, vertFlip, borderColor, borderWidth, fillType,
+      raw: { shapeType, width, height, horzOffset, vertOffset, rotationAngle, horzFlip, vertFlip, borderColor, borderWidth, fillType,
         ...(fillBgColor !== undefined ? { fillBgColor } : {}), treatAsChar, textWrap, description },
       movable: !treatAsChar && v.horzAlign === "Left" && v.vertAlign === "Top",
       fillEditable: fillType === "none" || (fillType === "solid" && fillBgColor !== undefined),

@@ -53,6 +53,8 @@ export interface RhwpDocument {
     innerParagraph: number, innerControl: number, properties: string): string;
   deletePictureControl?(section: number, paragraph: number, control: number): string;
   getShapeProperties?(section: number, paragraph: number, control: number): string;
+  getShapeTypeChangeTarget?(section: number, paragraph: number, control: number): string;
+  changeShapeType?(section: number, paragraph: number, control: number, target: "rectangle" | "ellipse"): string;
   getHeaderFooterShapeProperties?(
     section: number, kind: "header" | "footer", outerParagraph: number, outerControl: number,
     innerParagraph: number, cellPathJson: string, innerControl: number,

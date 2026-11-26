@@ -186,6 +186,50 @@ def inspect_hwpx_clip(path):
     """)
 
 
+def inspect_shape_types(path):
+    return c.inspect_rhwp(path, """
+      const all = pages.flatMap((p, page) => p.map(item => ({...item, page})));
+      const shapes = all.filter(x => x.type === 'shape').map(x => ({
+        ...x,
+        props: JSON.parse(doc.getShapeProperties(x.secIdx, x.paraIdx, x.controlIdx)),
+        target: typeof doc.getShapeTypeChangeTarget === 'function'
+          ? doc.getShapeTypeChangeTarget(x.secIdx, x.paraIdx, x.controlIdx) : null,
+      }));
+      console.log(JSON.stringify({body, shapes}));
+    """)
+
+
+def prepare_p6_shape_type_fixtures(out):
+    out.mkdir(parents=True, exist_ok=True)
+    hwp_path = out / "p6-hx-type.fixture.hwp"
+    hwpx_path = out / "p6-hx-type.fixture.hwpx"
+    base = ROOT / "external/rhwp/saved/blank2010.hwp"
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    create = r"""
+const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));
+const result=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+try {
+  const standard=result(doc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
+    shapeType:'rectangle',width:4000,height:3000,treatAsChar:false,textWrap:'Square',horzOffset:3000,vertOffset:3000})), 'standard rectangle');
+  const rounded=result(doc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
+    shapeType:'rectangle',width:3000,height:2200,treatAsChar:false,textWrap:'Square',horzOffset:11000,vertOffset:3000})), 'rounded rectangle');
+  result(doc.setShapeProperties(0,0,rounded.controlIdx,'{"roundRate":35}'), 'rounded rectangle properties');
+  const standardProps=JSON.parse(doc.getShapeProperties(0,0,standard.controlIdx));
+  const roundedProps=JSON.parse(doc.getShapeProperties(0,0,rounded.controlIdx));
+  fs.writeFileSync(process.argv[2],doc.exportHwp());
+  fs.writeFileSync(process.argv[3],doc.exportHwpx());
+  console.log(JSON.stringify({standard:standardProps,rounded:roundedProps}));
+} finally { doc.free(); }
+"""
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 type-change fixture template is stale")
+    script = template.replace(marker, create)
+    output = subprocess.check_output(
+        ["node", "-e", script, str(base), str(hwp_path), str(hwpx_path)], cwd=ROOT, text=True
+    )
+    return hwp_path, hwpx_path, json.loads(output)
+
+
 def prepare_p6_hx_group_fixtures(out):
     source = out / "p6-hx-group-source.fixture.hwpx"
     destination = out / "p6-hx-group-destination.fixture.hwpx"
@@ -534,6 +578,237 @@ def p6_hx_group_fresh(acc, row, b_root, out):
     select_object(acc, group, "group")
     row["freshSession"] = {"sha256": digest(destination), "groupSelectable": True,
                            "pid": row["appPid"], "appSha256": row["processAppSha256"]}
+
+
+def _shape_without_type(props):
+    return {key: value for key, value in props.items() if key not in {"shapeType", "roundRate"}}
+
+
+def _shape_type_element(path, instance_id):
+    with ZipFile(path) as package:
+        root = ElementTree.fromstring(package.read("Contents/section0.xml"))
+    matches = [node for node in root.iter()
+               if node.tag.rsplit("}", 1)[-1] in {"rect", "ellipse"}
+               and node.attrib.get("instid") == str(instance_id)]
+    if not matches:
+        matches = [node for node in root.iter()
+                   if node.tag.rsplit("}", 1)[-1] in {"rect", "ellipse"}
+                   and node.attrib.get("id") == str(instance_id)]
+    require(len(matches) == 1, "HWPX object ID does not resolve to one shape", [instance_id, len(matches)])
+    return matches[0]
+
+
+def _shape_xml_summary(element, normalize_type=False):
+    geometry = {"pt0", "pt1", "pt2", "pt3", "center", "ax1", "ax2",
+                "start1", "end1", "start2", "end2"}
+    namespace, local = (element.tag[1:].split("}", 1) if element.tag.startswith("{") else ("", element.tag))
+    attrs = dict(element.attrib)
+    if normalize_type:
+        for key in ("ratio", "intervalDirty", "hasArcPr", "arcType"):
+            attrs.pop(key, None)
+        local = "basic-shape"
+    children = []
+    for child in list(element):
+        child_local = child.tag.rsplit("}", 1)[-1]
+        if normalize_type and child_local in geometry:
+            continue
+        children.append(_shape_xml_summary(child))
+    return namespace, local, tuple(sorted(attrs.items())), element.text or "", tuple(children)
+
+
+def _prove_hwp_shape_type_package(before_path, after_path, target_id, rounded_id):
+    before_streams = p6.gso.cfb_streams(before_path.read_bytes())
+    after_streams = p6.gso.cfb_streams(after_path.read_bytes())
+    require(before_streams.keys() == after_streams.keys(), "HWP5 conversion added or removed CFB streams")
+    changed = {name for name, data in before_streams.items() if after_streams[name] != data}
+    require(changed <= {"BodyText/Section0", "PrvImage"} and "BodyText/Section0" in changed,
+            "HWP5 conversion changed unauthorized streams", sorted(changed))
+    require(before_streams["DocInfo"] == after_streams["DocInfo"], "HWP5 conversion changed DocInfo")
+    require(all(before_streams[name] == after_streams[name]
+                for name in before_streams if name.startswith("BinData/")),
+            "HWP5 conversion changed embedded media")
+    old_rows, old_objects = p6.gso.section_objects(before_streams)
+    new_rows, new_objects = p6.gso.section_objects(after_streams)
+    old_shapes = {struct.unpack_from("<I", obj[0][2], 36)[0]: obj for obj in old_objects
+                  if len(obj) == 3 and obj[1][0] == 76 and obj[1][2][:4] in (b"cer$", b"lle$")}
+    new_shapes = {struct.unpack_from("<I", obj[0][2], 36)[0]: obj for obj in new_objects
+                  if len(obj) == 3 and obj[1][0] == 76 and obj[1][2][:4] in (b"cer$", b"lle$")}
+    require(set(old_shapes) == set(new_shapes) and target_id in old_shapes and rounded_id in old_shapes,
+            "HWP5 shape identities changed", [sorted(old_shapes), sorted(new_shapes)])
+    require(old_rows and new_rows and old_shapes[rounded_id] == new_shapes[rounded_id],
+            "unconverted HWP5 rounded shape changed")
+    old, new = old_shapes[target_id], new_shapes[target_id]
+    require(len(old) == len(new) == 3 and old[0] == new[0], "HWP5 shape owner or record topology changed")
+    old_component, new_component = old[1][2], new[1][2]
+    require(old[1][:2] == new[1][:2] == (76, 2)
+            and old_component[:4] == old_component[4:8] == b"cer$"
+            and new_component[:4] == new_component[4:8] == b"lle$"
+            and old_component[8:] == new_component[8:],
+            "HWP5 shape identity/style bytes changed beyond type control IDs")
+    width, height = struct.unpack_from("<II", old[0][2], 16)
+    require(struct.unpack_from("<II", new[0][2], 16) == (width, height),
+            "HWP5 shape geometry changed during type conversion")
+    old_leaf, new_leaf = old[2], new[2]
+    rect_points = [(0, 0), (width, 0), (width, height), (0, height)]
+    rect_bytes = b"\x00" + b"".join(struct.pack("<ii", x, y) for x, y in rect_points)
+    center = (width // 2, height // 2)
+    endpoint = (width, center[1])
+    ellipse_points = [center, endpoint, (center[0], height), endpoint, endpoint, endpoint, endpoint]
+    ellipse_bytes = struct.pack("<I", 0) + b"".join(struct.pack("<ii", x, y) for x, y in ellipse_points)
+    require(old_leaf[:2] == (79, 3) and old_leaf[2] == rect_bytes
+            and new_leaf[:2] == (80, 3) and new_leaf[2] == ellipse_bytes,
+            "HWP5 target leaf geometry or type was not serialized canonically")
+    preview_size = p5.hwp_preview_dimensions(after_streams)
+    require(after_streams.get("PrvImage") != before_streams.get("PrvImage")
+            and p5.canonical_preview_png(after_streams["PrvImage"], preview_size) is not None,
+            "HWP5 T009 did not refresh a canonical page preview")
+    return {"changedCfbStreams": sorted(changed), "shapeInstanceIds": sorted(old_shapes),
+            "targetGeometry": [width, height], "previewDimensions": preview_size}
+
+
+def _prove_hwpx_shape_type_package(before_path, after_path, target_id, rounded_id):
+    with ZipFile(before_path) as before_zip, ZipFile(after_path) as after_zip:
+        before = {name: before_zip.read(name) for name in before_zip.namelist() if not name.endswith("/")}
+        after = {name: after_zip.read(name) for name in after_zip.namelist() if not name.endswith("/")}
+    require(before.keys() == after.keys(), "HWPX conversion added or removed OPC parts")
+    changed = {name for name in before if before[name] != after[name]}
+    allowed = {"Contents/section0.xml", "Preview/PrvImage.png", "Preview/PrvText.txt"}
+    require(changed <= allowed and "Contents/section0.xml" in changed,
+            "HWPX conversion changed unauthorized OPC parts", sorted(changed))
+    before_target = _shape_type_element(before_path, target_id)
+    after_target = _shape_type_element(after_path, target_id)
+    before_rounded = _shape_type_element(before_path, rounded_id)
+    after_rounded = _shape_type_element(after_path, rounded_id)
+    require(before_target.tag.rsplit("}", 1)[-1] == "rect"
+            and after_target.tag.rsplit("}", 1)[-1] == "ellipse",
+            "HWPX target shape tag did not change rectangle to ellipse")
+    require(_shape_xml_summary(before_target, normalize_type=True)
+            == _shape_xml_summary(after_target, normalize_type=True),
+            "HWPX common geometry, formatting, ownership, or description changed")
+    require(_shape_xml_summary(before_rounded) == _shape_xml_summary(after_rounded),
+            "unconverted HWPX rounded rectangle changed")
+    return {"changedOpcParts": sorted(changed), "targetId": target_id, "roundedId": rounded_id,
+            "preservedOtherParts": True, "sourceTargetType": "rect", "savedTargetType": "ellipse"}
+
+
+def _shape_type_button_label(acc):
+    return acc.d.js("return document.querySelector('[data-testid=shape-type-convert]')?.textContent.trim()||null")
+
+
+def _run_p6_shape_type_format(acc, fmt, fixture, out, case_row, target_id, rounded_id, fixture_hash):
+    before = inspect_shape_types(fixture)
+    case_row["before"] = before
+    target = next(shape for shape in before["shapes"] if shape["props"].get("instanceId") == target_id)
+    rounded = next(shape for shape in before["shapes"] if shape["props"].get("instanceId") == rounded_id)
+    require(target["props"]["shapeType"] == "rectangle" and target["target"] == "ellipse",
+            f"{fmt} standard rectangle is not safely convertible", target)
+    require(rounded["props"]["shapeType"] == "rectangle" and rounded["target"] == "",
+            f"{fmt} rounded rectangle was not fail-closed", rounded)
+    path = begin(acc, case_row, fixture, out, f"p6-hx-type.{fmt}")
+    require(digest(fixture) == fixture_hash, f"{fmt} source fixture changed after opening")
+    acc.d.js("""
+      window.__p6ShapeTypeEvents=[];
+      document.addEventListener('pointerdown',e=>{
+        if(e.target instanceof Element&&(e.target.closest('.rhwp-page__canvas')||e.target.closest('[data-testid=shape-type-convert]')))
+          window.__p6ShapeTypeEvents.push({type:'pointerdown',trusted:e.isTrusted,control:!!e.target.closest('[data-testid=shape-type-convert]')});
+      },true);
+      document.addEventListener('keydown',e=>{
+        if(e.ctrlKey&&['z','y'].includes(e.key.toLowerCase()))
+          window.__p6ShapeTypeEvents.push({type:'keydown',key:e.key.toLowerCase(),trusted:e.isTrusted});
+      },true);
+    """)
+    select_object(acc, rounded, "shape")
+    require(_shape_type_button_label(acc) is None, f"{fmt} rounded rectangle exposed a conversion control")
+    initial_state = acc.status(fmt)
+    select_object(acc, target, "shape")
+    before_label = _shape_type_button_label(acc)
+    require(before_label, f"{fmt} standard rectangle did not expose its proven target type")
+    before_canvas = _canvas_digest(acc)
+    acc.dom_click("[data-testid=shape-type-convert]")
+    case_row["afterConvert"] = revision(acc, fmt, 1)
+    converted_canvas = _canvas_digest(acc)
+    # Successful object mutations clear the transient selection; reacquire the same
+    # stable object by trusted pointer before inspecting the reverse conversion.
+    select_object(acc, target, "shape")
+    converted_label = _shape_type_button_label(acc)
+    require(converted_label and converted_label != before_label,
+            f"{fmt} conversion did not update the target control", converted_label)
+    require(converted_canvas != before_canvas, f"{fmt} conversion did not change the rendered shape")
+    select_object(acc, target, "shape")
+    acc.key("ctrl+z")
+    case_row["afterUndo"] = revision(acc, fmt, 2)
+    undo_canvas = _canvas_digest(acc)
+    require(undo_canvas == before_canvas, f"{fmt} Undo did not restore the original rendering")
+    select_object(acc, target, "shape")
+    require(_shape_type_button_label(acc) == before_label,
+            f"{fmt} Undo did not restore the type capability")
+    acc.key("ctrl+y")
+    case_row["afterRedo"] = revision(acc, fmt, 3)
+    redo_canvas = _canvas_digest(acc)
+    require(redo_canvas == converted_canvas, f"{fmt} Redo did not restore the converted rendering")
+    select_object(acc, target, "shape")
+    require(_shape_type_button_label(acc) == converted_label,
+            f"{fmt} Redo did not restore the type capability")
+    current_state = acc.status(fmt)
+    require(current_state["revision"] == "3" and current_state["dirty"] == "true",
+            f"{fmt} conversion transaction state is unexpected", current_state)
+    events = case_row["trustedNativeEvents"] = acc.d.js("return window.__p6ShapeTypeEvents.slice()")
+    require(any(event.get("trusted") and event.get("type") == "pointerdown" and event.get("control") for event in events),
+            f"{fmt} conversion control was not used with a trusted pointer", events)
+    require(any(event.get("trusted") and event.get("type") == "pointerdown" and not event.get("control") for event in events),
+            f"{fmt} object selection was not performed with a trusted pointer", events)
+    for key in ("z", "y"):
+        require(any(event.get("trusted") and event.get("type") == "keydown" and event.get("key") == key for event in events),
+                f"{fmt} {key.upper()} was not a trusted Native key", events)
+
+    publish(acc, fmt, case_row)
+    after = case_row["after"] = inspect_shape_types(path)
+    saved_target = next(shape for shape in after["shapes"] if shape["props"].get("instanceId") == target_id)
+    saved_rounded = next(shape for shape in after["shapes"] if shape["props"].get("instanceId") == rounded_id)
+    require(saved_target["props"]["shapeType"] == "ellipse" and saved_target["target"] == "rectangle",
+            f"{fmt} saved object type/identity is wrong", saved_target)
+    require(_shape_without_type(target["props"]) == _shape_without_type(saved_target["props"]),
+            f"{fmt} saved conversion changed object geometry, style, or owner", saved_target["props"])
+    require(saved_rounded["props"] == rounded["props"] and saved_rounded["target"] == "",
+            f"{fmt} saved conversion changed or enabled the rounded sibling", saved_rounded)
+    require(after["body"] == before["body"], f"{fmt} shape conversion changed body text")
+    if fmt == "hwp":
+        case_row["serializedProof"] = _prove_hwp_shape_type_package(fixture, path, target_id, rounded_id)
+    else:
+        case_row["serializedProof"] = _prove_hwpx_shape_type_package(fixture, path, target_id, rounded_id)
+
+    reopen(acc, path, case_row)
+    reopened = case_row["afterReopen"] = inspect_shape_types(path)
+    require(reopened == after, f"{fmt} independent save/reopen changed type or object properties")
+    reopened_target = next(shape for shape in reopened["shapes"] if shape["props"].get("instanceId") == target_id)
+    select_object(acc, reopened_target, "shape")
+    require(_shape_type_button_label(acc) == converted_label,
+            f"{fmt} reopened converted shape is not editable/selectable")
+    select_object(acc, saved_rounded, "shape")
+    require(_shape_type_button_label(acc) is None,
+            f"{fmt} reopened rounded sibling unexpectedly became convertible")
+    require(digest(fixture) == fixture_hash, f"{fmt} conversion changed its source fixture")
+    case_row["preservation"] = {"sourceFixture": True, "bodyText": True, "unconvertedSibling": True,
+                                 "saveReopen": True, "t009": case_row["save"]}
+
+
+def p6_hx_type(acc, row, b_root, out):
+    hwp_fixture, hwpx_fixture, fixture_objects = prepare_p6_shape_type_fixtures(out)
+    hwp_shapes = inspect_shape_types(hwp_fixture)["shapes"]
+    standard = next(item for item in hwp_shapes if item["props"].get("instanceId") == fixture_objects["standard"]["instanceId"])
+    rounded = next(item for item in hwp_shapes if item["props"].get("instanceId") == fixture_objects["rounded"]["instanceId"])
+    require(standard["target"] == "ellipse" and rounded["target"] == "",
+            "HWP5 fixture does not exercise one safe and one rejected type conversion", [standard, rounded])
+    hwp_hash, hwpx_hash = digest(hwp_fixture), digest(hwpx_fixture)
+    row["fixtures"] = {"hwp": hwp_hash, "hwpx": hwpx_hash, "objects": fixture_objects,
+                       "baseSha256": digest(ROOT / "external/rhwp/saved/blank2010.hwp")}
+    _run_p6_shape_type_format(acc, "hwp", hwp_fixture, out, row.setdefault("hwp", {}),
+                              fixture_objects["standard"]["instanceId"],
+                              fixture_objects["rounded"]["instanceId"], hwp_hash)
+    _run_p6_shape_type_format(acc, "hwpx", hwpx_fixture, out, row.setdefault("hwpx", {}),
+                              fixture_objects["standard"]["instanceId"],
+                              fixture_objects["rounded"]["instanceId"], hwpx_hash)
+    row["acceptance"] = "HWP and HWPX: trusted selection/control, conversion, Undo/Redo, T009, independent serialization proof, close/reopen"
 
 
 def prepare_b3_2_fixtures(staging: Path):
@@ -1147,6 +1422,7 @@ CASES = {
     "P6-H5-CLIP": p6_h5_clip,
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
+    "P6-HX-TYPE": p6_hx_type,
     "B1-1": b1_1,
     "B1-2": b1_2,
     "B2-1": b2_1,
@@ -1198,7 +1474,7 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.b_root, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH"} else "hwp")
+                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH", "P6-HX-TYPE"} else "hwp")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

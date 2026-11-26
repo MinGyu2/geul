@@ -1,0 +1,1259 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -8,9 +8,10 @@
+ use crate::model::event::DocumentEvent;
+ use crate::model::paragraph::Paragraph;
+ use crate::model::shape::{
+-    Caption, CaptionDirection, CaptionVertAlign, HwpxCurveSegment, RectangleShape, ShapeObject,
+-    SourceHwpRectGeometry,
++    Caption, CaptionDirection, CaptionVertAlign, EllipseShape, HwpxCurveSegment, RectangleShape,
++    ShapeObject, SourceHwpRectGeometry,
+ };
++use crate::model::Point;
+-
++
+ #[derive(serde::Deserialize)]
+ #[serde(deny_unknown_fields)]
+@@ -145,6 +146,148 @@
+         ));
+     }
+     Ok(())
++}
++
++fn basic_shape_type_change_target(
++    shape: &ShapeObject,
++    format: crate::parser::FileFormat,
++) -> Option<&'static str> {
++    use crate::model::shape::ShapeObject as Shape;
++    use crate::parser::FileFormat;
++
++    if !matches!(format, FileFormat::Hwp | FileFormat::Hwpx) {
++        return None;
++    }
++    let common = shape.common();
++    let drawing = shape.drawing()?;
++    let attr = &drawing.shape_attr;
++    if common.locked
++        || common.instance_id == 0
++        || !(1..=2_000_000).contains(&common.width)
++        || !(1..=2_000_000).contains(&common.height)
++        || attr.group_level != 0
++        || drawing.caption.is_some()
++        || drawing.text_box.is_some()
++        || drawing.fill.image.is_some()
++        || matches!(drawing.fill.fill_type, crate::model::style::FillType::Image)
++        || attr.current_width != 0 && attr.current_width != common.width
++        || attr.current_height != 0 && attr.current_height != common.height
++        || attr.original_width != 0 && attr.original_width != common.width
++        || attr.original_height != 0 && attr.original_height != common.height
++    {
++        return None;
++    }
++    if format == FileFormat::Hwpx && !attr.hwpx_basic_shape_type_change_safe {
++        return None;
++    }
++
++    let (width, height) = (common.width as i32, common.height as i32);
++    match shape {
++        Shape::Rectangle(rect) => {
++            if rect.round_rate != 0
++                || rect.raw_trailing.len() != 0
++                || rect.raw_payload_size.is_some_and(|size| size != 33)
++                || rect.x_coords != [0, width, width, 0]
++                || rect.y_coords != [0, 0, height, height]
++            {
++                None
++            } else {
++                Some("ellipse")
++            }
++        }
++        Shape::Ellipse(ellipse) => {
++            let center_is_canonical = match format {
++                FileFormat::Hwp => ellipse.center.x == width / 2 && ellipse.center.y == height / 2,
++                FileFormat::Hwpx => {
++                    (width / 2..=(width + 1) / 2).contains(&ellipse.center.x)
++                        && (height / 2..=(height + 1) / 2).contains(&ellipse.center.y)
++                }
++                _ => false,
++            };
++            let canonical = center_is_canonical
++                && ellipse.axis1.x == width
++                && ellipse.axis1.y == ellipse.center.y
++                && ellipse.axis2.x == ellipse.center.x
++                && ellipse.axis2.y == height;
++            let format_data_safe = match format {
++                FileFormat::Hwp => {
++                    let end = Point {
++                        x: width,
++                        y: ellipse.center.y,
++                    };
++                    ellipse.attr == 0
++                        && ellipse.raw_trailing.is_empty()
++                        && ellipse.raw_payload_size.is_none_or(|size| size == 60)
++                        && [ellipse.start1, ellipse.end1, ellipse.start2, ellipse.end2]
++                            .into_iter()
++                            .all(|point| point.x == end.x && point.y == end.y)
++                }
++                FileFormat::Hwpx => {
++                    ellipse.hwpx_interval_dirty != Some(true)
++                        && ellipse.hwpx_has_arc_pr != Some(true)
++                        && ellipse
++                            .hwpx_arc_type
++                            .as_deref()
++                            .is_none_or(|kind| kind == "NORMAL")
++                }
++                _ => false,
++            };
++            if canonical && format_data_safe {
++                Some("rectangle")
++            } else {
++                None
++            }
++        }
++        _ => None,
++    }
++}
++
++fn converted_basic_shape(shape: &ShapeObject, target: &str) -> Option<ShapeObject> {
++    use crate::model::shape::ShapeObject as Shape;
++    let (width, height) = (shape.common().width as i32, shape.common().height as i32);
++    let converted = match (shape, target) {
++        (Shape::Rectangle(rect), "ellipse") => {
++            let center = Point {
++                x: width / 2,
++                y: height / 2,
++            };
++            let endpoint = Point {
++                x: width,
++                y: center.y,
++            };
++            Shape::Ellipse(EllipseShape {
++                common: rect.common.clone(),
++                drawing: rect.drawing.clone(),
++                attr: 0,
++                center,
++                axis1: endpoint,
++                axis2: Point {
++                    x: center.x,
++                    y: height,
++                },
++                start1: endpoint,
++                end1: endpoint,
++                start2: endpoint,
++                end2: endpoint,
++                ..Default::default()
++            })
++        }
++        (Shape::Ellipse(ellipse), "rectangle") => Shape::Rectangle(RectangleShape {
++            common: ellipse.common.clone(),
++            drawing: ellipse.drawing.clone(),
++            round_rate: 0,
++            x_coords: [0, width, width, 0],
++            y_coords: [0, 0, height, height],
++            ..Default::default()
++        }),
++        _ => return None,
++    };
++    let mut converted = converted;
++    if let Some(drawing) = converted.drawing_mut() {
++        // The shape-specific HWP5 control ID comes from the enum variant.
++        drawing.shape_attr.ctrl_id = 0;
++    }
++    Some(converted)
+ }
+-
++
+ fn parse_header_footer_cell_path(json: &str) -> Result<Vec<(usize, usize, usize)>, HwpError> {
+@@ -2824,6 +2967,54 @@
+         self.invalidate_page_tree_cache();
+     }
+-
++
++    /// Returns the one supported opposite type for a directly owned standard rectangle/ellipse.
++    pub fn get_shape_type_change_target_native(
++        &self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        control_idx: usize,
++    ) -> Result<String, HwpError> {
++        let shape = self.resolve_shape_control_ref(section_idx, parent_para_idx, control_idx)?;
++        Ok(basic_shape_type_change_target(shape, self.source_format)
++            .unwrap_or("")
++            .to_string())
++    }
++
++    /// Change only the basic rectangle/ellipse leaf while retaining its exact body owner,
++    /// common geometry, transform, line/fill/shadow, and identifiers.
++    pub fn change_shape_type_native(
++        &mut self,
++        section_idx: usize,
++        parent_para_idx: usize,
++        control_idx: usize,
++        target: &str,
++    ) -> Result<String, HwpError> {
++        if !matches!(target, "rectangle" | "ellipse") {
++            return Err(HwpError::RenderError(
++                "지원하지 않는 도형 타입입니다".into(),
++            ));
++        }
++        let converted = {
++            let shape =
++                self.resolve_shape_control_ref(section_idx, parent_para_idx, control_idx)?;
++            if basic_shape_type_change_target(shape, self.source_format) != Some(target) {
++                return Err(HwpError::RenderError(
++                    "도형 타입 변경 계약을 만족하지 않습니다".into(),
++                ));
++            }
++            converted_basic_shape(shape, target).ok_or_else(|| {
++                HwpError::RenderError("도형 타입 변경을 구성할 수 없습니다".into())
++            })?
++        };
++        let shape = self.resolve_shape_control_mut(section_idx, parent_para_idx, control_idx)?;
++        *shape = converted;
++        self.refresh_advanced_shape(section_idx);
++        Ok(crate::document_core::helpers::json_ok_with(&format!(
++            "\"shapeType\":\"{}\"",
++            target
++        )))
++    }
++
+     /// 글상자(Shape) 속성 조회 (네이티브).
+     pub fn get_shape_properties_native(
+         &self,
+@@ -2944,9 +3135,28 @@
+-
++
+         let caption_json = Self::format_shape_caption_props_json(shape);
+         let group_json = Self::format_group_props_json(shape);
++        let shape_type = match shape {
++            crate::model::shape::ShapeObject::Rectangle(_) => "rectangle",
++            crate::model::shape::ShapeObject::Ellipse(_) => "ellipse",
++            crate::model::shape::ShapeObject::Line(_) => "line",
++            crate::model::shape::ShapeObject::Arc(_) => "arc",
++            crate::model::shape::ShapeObject::Polygon(_) => "polygon",
++            crate::model::shape::ShapeObject::Curve(_) => "curve",
++            crate::model::shape::ShapeObject::Group(_) => "group",
++            crate::model::shape::ShapeObject::Picture(_) => "picture",
++            crate::model::shape::ShapeObject::Chart(_) => "chart",
++            crate::model::shape::ShapeObject::Ole(_) => "ole",
++        };
+         Ok(format!(
+-            "{{{}{}{}{}{}{}{}}}",
+-            common_json, tb_json, extra_json, round_json, connector_json, caption_json, group_json
++            "{{{}{}{}{}{}{}{},\"shapeType\":\"{}\"}}",
++            common_json,
++            tb_json,
++            extra_json,
++            round_json,
++            connector_json,
++            caption_json,
++            group_json,
++            shape_type
+         ))
+     }
+     /// Read a Shape through the exact header/footer owner and nested table path.
+@@ -3497,9 +3707,28 @@
+-
++
+         let caption_json = Self::format_shape_caption_props_json(shape);
+         let group_json = Self::format_group_props_json(shape);
++        let shape_type = match shape {
++            crate::model::shape::ShapeObject::Rectangle(_) => "rectangle",
++            crate::model::shape::ShapeObject::Ellipse(_) => "ellipse",
++            crate::model::shape::ShapeObject::Line(_) => "line",
++            crate::model::shape::ShapeObject::Arc(_) => "arc",
++            crate::model::shape::ShapeObject::Polygon(_) => "polygon",
++            crate::model::shape::ShapeObject::Curve(_) => "curve",
++            crate::model::shape::ShapeObject::Group(_) => "group",
++            crate::model::shape::ShapeObject::Picture(_) => "picture",
++            crate::model::shape::ShapeObject::Chart(_) => "chart",
++            crate::model::shape::ShapeObject::Ole(_) => "ole",
++        };
+         Ok(format!(
+-            "{{{}{}{}{}{}{}{}}}",
+-            common_json, tb_json, extra_json, round_json, connector_json, caption_json, group_json
++            "{{{}{}{}{}{}{}{},\"shapeType\":\"{}\"}}",
++            common_json,
++            tb_json,
++            extra_json,
++            round_json,
++            connector_json,
++            caption_json,
++            group_json,
++            shape_type
+         ))
+     }
+     /// [Task #1138] Shape 속성 JSON 적용 (mutation only). 후처리 (recompose /
+@@ -4152,6 +4381,7 @@
+                 end1: crate::model::Point { x: w_i, y: h_i / 2 },
+                 start2: crate::model::Point { x: w_i, y: h_i / 2 },
+                 end2: crate::model::Point { x: w_i, y: h_i / 2 },
++                ..Default::default()
+             }),
+             "polygon" => {
+                 let points = if !polygon_points.is_empty() {
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -288,6 +288,11 @@
+     /// HWPX path edit eligibility when the XML transform could not establish identity.
+     pub hwpx_unproven_path_transform: bool,
+     pub hwpx_unproven_polygon_vertices: bool,
++    /// HWPX rectangle/ellipse source envelope is composed only of fields the
++    /// parser and serializer preserve. Set by the HWPX shape parser; false for
++    /// HWP5 and for HWPX shapes containing unmodeled attributes or children.
++    #[serde(skip)]
++    pub hwpx_basic_shape_type_change_safe: bool,
+     /// The HWP5 curve leaf had a complete command array and four zero padding bytes.
+     pub hwp5_known_curve_leaf: bool,
+     /// 렌더링 변환 합성 결과: 아핀 행렬 [a, b, tx, c, d, ty]
+@@ -333,6 +338,7 @@
+             hwpx_group_child_source_ids: None,
+             hwpx_unproven_path_transform: false,
+             hwpx_unproven_polygon_vertices: false,
++            hwpx_basic_shape_type_change_safe: false,
+             hwp5_known_curve_leaf: false,
+             render_tx: 0.0,
+             render_ty: 0.0,
+@@ -694,6 +700,13 @@
+     pub x_coords: [i32; 4],
+     /// 꼭짓점 Y 좌표 (4개)
+     pub y_coords: [i32; 4],
++    /// Original HWP5 leaf payload size, used to fail closed on truncated or
++    /// extended source records when changing the shape type.
++    #[serde(skip)]
++    pub raw_payload_size: Option<usize>,
++    /// HWP5 rectangle leaf bytes beyond its standard 33-byte payload.
++    #[serde(skip)]
++    pub raw_trailing: Vec<u8>,
+     /// 최초 HWP5 리사이즈 이전 기준 기하 (직렬화 제외).
+     #[serde(skip_serializing)]
+     pub source_hwp_geometry: Option<SourceHwpRectGeometry>,
+@@ -741,6 +754,22 @@
+     pub start2: Point,
+     /// 끝점2 (호일 때)
+     pub end2: Point,
++    /// Original HWP5 leaf payload size, used to fail closed on truncated or
++    /// extended source records when changing the shape type.
++    #[serde(skip)]
++    pub raw_payload_size: Option<usize>,
++    /// HWP5 ellipse leaf bytes beyond its standard 60-byte payload.
++    #[serde(skip)]
++    pub raw_trailing: Vec<u8>,
++    /// Standard HWPX ellipse attributes that do not have HWP5 counterparts.
++    #[serde(skip)]
++    pub hwpx_interval_dirty: Option<bool>,
++    #[serde(skip)]
++    pub hwpx_has_arc_pr: Option<bool>,
++    /// 0=normal, 1=pie, 2=chord. Unknown values are retained as a raw string
++    /// by the HWPX parser and make shape-type conversion ineligible.
++    #[serde(skip)]
++    pub hwpx_arc_type: Option<String>,
+ }
+-
++
+ /// 호 개체 (HWPTAG_SHAPE_COMPONENT_ARC)
+--- a/src/parser/control/shape.rs
++++ b/src/parser/control/shape.rs
+@@ -1107,6 +1107,10 @@
+ /// 사각형 도형 데이터 파싱
+ /// hwplib: 좌표가 (x1,y1),(x2,y2),(x3,y3),(x4,y4) 인터리브 순서로 저장
+ fn parse_rect_shape_data(data: &[u8], rect: &mut RectangleShape) {
++    rect.raw_payload_size = Some(data.len());
++    if let Some(trailing) = data.get(33..) {
++        rect.raw_trailing = trailing.to_vec();
++    }
+     let mut r = ByteReader::new(data);
+     rect.round_rate = r.read_u8().unwrap_or(0);
+     for i in 0..4 {
+@@ -1117,6 +1121,10 @@
+-
++
+ /// 타원 도형 데이터 파싱 (60바이트)
+ fn parse_ellipse_shape_data(data: &[u8], ellipse: &mut EllipseShape) {
++    ellipse.raw_payload_size = Some(data.len());
++    if let Some(trailing) = data.get(60..) {
++        ellipse.raw_trailing = trailing.to_vec();
++    }
+     let mut r = ByteReader::new(data);
+     ellipse.attr = r.read_u32().unwrap_or(0);
+     ellipse.center.x = r.read_i32().unwrap_or(0);
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -4001,6 +4001,173 @@
+     ids
+ }
+-
++
++fn hwpx_basic_shape_root_safe(element: &BytesStart<'_>, shape_type: &[u8]) -> bool {
++    let mut safe = matches!(shape_type, b"rect" | b"ellipse");
++    let mut seen: Vec<Vec<u8>> = Vec::new();
++    for attr in element.attributes() {
++        let Ok(attr) = attr else { return false };
++        let key = attr.key.as_ref().as_bytes();
++        if seen.iter().any(|previous| previous.as_slice() == key) {
++            return false;
++        }
++        seen.push(key.to_vec());
++        let value = match attr.normalized_value(quick_xml::XmlVersion::Implicit1_0) {
++            Ok(value) => value,
++            Err(_) => return false,
++        };
++        let value = value.as_ref();
++        safe &= match attr.key.as_ref().as_bytes() {
++            b"id" | b"instid" => value.parse::<u32>().is_ok(),
++            b"zOrder" => value.parse::<i32>().is_ok(),
++            b"groupLevel" => value.parse::<u16>().is_ok(),
++            b"numberingType" => matches!(value, "NONE" | "PICTURE" | "TABLE" | "EQUATION"),
++            b"textWrap" => matches!(
++                value,
++                "SQUARE"
++                    | "TIGHT"
++                    | "THROUGH"
++                    | "TOP_AND_BOTTOM"
++                    | "BEHIND_TEXT"
++                    | "IN_FRONT_OF_TEXT"
++            ),
++            b"textFlow" => matches!(
++                value,
++                "BOTH_SIDES" | "LEFT_ONLY" | "RIGHT_ONLY" | "LARGEST_ONLY"
++            ),
++            b"lock" => matches!(value, "0" | "1"),
++            // These values are emitted as fixed defaults by the supported writer.
++            b"dropcapstyle" => value == "None",
++            b"href" => value.is_empty(),
++            b"ratio" if shape_type == b"rect" => {
++                value.parse::<u8>().is_ok_and(|ratio| ratio <= 100)
++            }
++            b"intervalDirty" if shape_type == b"ellipse" => {
++                matches!(value, "0" | "1" | "false" | "true")
++            }
++            b"hasArcPr" if shape_type == b"ellipse" => {
++                matches!(value, "0" | "1" | "false" | "true")
++            }
++            b"arcType" if shape_type == b"ellipse" => matches!(value, "NORMAL" | "PIE" | "CHORD"),
++            _ => false,
++        };
++    }
++    safe
++}
++
++fn hwpx_optional_attr(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
++    element.attributes().flatten().find_map(|attr| {
++        (attr.key.as_ref().as_bytes() == key)
++            .then(|| {
++                attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
++                    .ok()
++            })
++            .flatten()
++            .map(|value| value.into_owned())
++    })
++}
++
++fn hwpx_optional_bool_attr(element: &BytesStart<'_>, key: &[u8]) -> Option<bool> {
++    hwpx_optional_attr(element, key).and_then(|value| match value.as_str() {
++        "1" | "true" => Some(true),
++        "0" | "false" => Some(false),
++        _ => None,
++    })
++}
++
++fn hwpx_basic_shape_child_safe(local: &[u8], element: &BytesStart<'_>, shape_type: &[u8]) -> bool {
++    let allowed: &[&[u8]] = match local {
++        b"renderingInfo" | b"fillBrush" | b"shapeComment" => &[],
++        b"pt0" | b"pt1" | b"pt2" | b"pt3" if shape_type == b"rect" => &[b"x", b"y"],
++        b"center" | b"ax1" | b"ax2" | b"start1" | b"end1" | b"start2" | b"end2"
++            if shape_type == b"ellipse" =>
++        {
++            &[b"x", b"y"]
++        }
++        b"offset" => &[b"x", b"y"],
++        b"orgSz" | b"curSz" => &[b"width", b"height"],
++        b"flip" => &[b"horizontal", b"vertical"],
++        b"rotationInfo" => &[b"angle", b"centerX", b"centerY", b"rotateimage"],
++        b"lineShape" => &[
++            b"color",
++            b"width",
++            b"style",
++            b"endCap",
++            b"headStyle",
++            b"tailStyle",
++            b"headfill",
++            b"tailfill",
++            b"headSz",
++            b"tailSz",
++            b"outlineStyle",
++            b"alpha",
++        ],
++        b"shadow" => &[b"type", b"color", b"offsetX", b"offsetY", b"alpha"],
++        b"sz" => &[
++            b"width",
++            b"height",
++            b"widthRelTo",
++            b"heightRelTo",
++            b"protect",
++        ],
++        b"pos" => &[
++            b"treatAsChar",
++            b"affectLSpacing",
++            b"flowWithText",
++            b"allowOverlap",
++            b"holdAnchorAndSO",
++            b"vertRelTo",
++            b"horzRelTo",
++            b"vertAlign",
++            b"horzAlign",
++            b"vertOffset",
++            b"horzOffset",
++        ],
++        b"outMargin" => &[b"left", b"right", b"top", b"bottom"],
++        _ => return false,
++    };
++    let mut seen: Vec<Vec<u8>> = Vec::new();
++    for attr in element.attributes() {
++        let Ok(attr) = attr else { return false };
++        let key = attr.key.as_ref().as_bytes();
++        if seen.iter().any(|previous| previous.as_slice() == key)
++            || !allowed.iter().any(|name| *name == key)
++        {
++            return false;
++        }
++        seen.push(key.to_vec());
++        let value = match attr.normalized_value(quick_xml::XmlVersion::Implicit1_0) {
++            Ok(value) => value,
++            Err(_) => return false,
++        };
++        if local == b"lineShape"
++            && attr.key.as_ref().as_bytes() == b"alpha"
++            && value.as_ref() != "0"
++        {
++            return false;
++        }
++    }
++    true
++}
++
++fn hwpx_basic_shape_child_preserved(
++    local: &[u8],
++    element: &BytesStart<'_>,
++    shape_type: &[u8],
++    self_closing: bool,
++) -> bool {
++    !(self_closing && matches!(local, b"renderingInfo" | b"fillBrush" | b"shapeComment"))
++        && hwpx_basic_shape_child_safe(local, element, shape_type)
++}
++
++fn hwpx_basic_shape_child_once(seen: &mut Vec<Vec<u8>>, local: &[u8]) -> bool {
++    if seen.iter().any(|previous| previous.as_slice() == local) {
++        false
++    } else {
++        seen.push(local.to_vec());
++        true
++    }
++}
++
+ /// 개체 자식 요소에서 공통 레이아웃 속성(pos, sz, curSz, orgSz, offset, outMargin)을 파싱한다.
+ fn parse_object_layout_child(
+     local: &[u8],
+@@ -4587,15 +4754,66 @@
+ }
+-
++
+ /// shape 내부의 `<hp:fillBrush>` 자식 요소를 파싱하여 Fill을 반환한다.
+-fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError> {
++fn parse_shape_fill_brush(
++    reader: &mut Reader<&[u8]>,
++    type_change_safe: &mut bool,
++) -> Result<Fill, HwpxError> {
+     use crate::model::style::{FillType, GradientFill, ImageFill, ImageFillMode, SolidFill};
+     let mut fill = Fill::default();
+     let mut buf = Vec::new();
++    let mut seen_children: Vec<Vec<u8>> = Vec::new();
+     loop {
+         match reader.read_event_into(&mut buf) {
+             Ok(Event::Empty(ref ce)) | Ok(Event::Start(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                if seen_children
++                    .iter()
++                    .any(|previous| previous.as_slice() == local)
++                {
++                    *type_change_safe = false;
++                }
++                seen_children.push(local.to_vec());
++                let allowed_attrs: &[&[u8]] = match local {
++                    b"winBrush" => &[b"faceColor", b"hatchColor", b"hatchStyle", b"alpha"],
++                    b"gradation" => &[
++                        b"type",
++                        b"angle",
++                        b"centerX",
++                        b"centerY",
++                        b"blur",
++                        b"step",
++                        b"stepCenter",
++                        b"alpha",
++                    ],
++                    b"color" => &[b"value"],
++                    b"imgBrush" => &[b"mode"],
++                    b"img" | b"image" => &[
++                        b"binaryItemIDRef",
++                        b"bright",
++                        b"contrast",
++                        b"effect",
++                        b"alpha",
++                    ],
++                    _ => {
++                        *type_change_safe = false;
++                        &[]
++                    }
++                };
++                let mut seen_attrs: Vec<Vec<u8>> = Vec::new();
++                for attr in ce.attributes() {
++                    let Ok(attr) = attr else {
++                        *type_change_safe = false;
++                        continue;
++                    };
++                    let key = attr.key.as_ref().as_bytes();
++                    if seen_attrs.iter().any(|previous| previous.as_slice() == key)
++                        || !allowed_attrs.iter().any(|name| *name == key)
++                    {
++                        *type_change_safe = false;
++                    }
++                    seen_attrs.push(key.to_vec());
++                }
+                 match local {
+                     b"winBrush" => {
+                         fill.fill_type = FillType::Solid;
+@@ -4611,12 +4829,16 @@
+                                     if let Some(pattern_type) = parse_hatch_style(&attr_str(&attr))
+                                     {
+                                         solid.pattern_type = pattern_type;
++                                    } else {
++                                        *type_change_safe = false;
+                                     }
+                                 }
+                                 b"alpha" => {
+                                     let val = attr_str(&attr);
+                                     if let Ok(f) = val.parse::<f64>() {
+                                         fill.alpha = (f.clamp(0.0, 1.0) * 255.0) as u8;
++                                    } else {
++                                        *type_change_safe = false;
+                                     }
+                                 }
+                                 _ => {}
+@@ -4625,6 +4847,9 @@
+                         fill.solid = Some(solid);
+                     }
+                     b"gradation" => {
++                        // Gradient rendering is modeled, but its nested source shape is
++                        // not retained byte-for-byte by the basic shape writer yet.
++                        *type_change_safe = false;
+                         fill.fill_type = FillType::Gradient;
+                         let mut grad = GradientFill::default();
+                         for attr in ce.attributes().flatten() {
+@@ -4658,9 +4883,12 @@
+                                     grad.colors.push(parse_color(&attr));
+                                 }
+                             }
++                        } else {
++                            *type_change_safe = false;
+                         }
+                     }
+                     b"imgBrush" => {
++                        *type_change_safe = false;
+                         fill.fill_type = FillType::Image;
+                         let mut img = ImageFill::default();
+                         for attr in ce.attributes().flatten() {
+@@ -4697,6 +4925,7 @@
+                     // 이미지로 채운 도형이 왕복 후 빈 도형이 됐다.
+                     // 헤더(borderFill) 파서 header.rs 의 b"img" arm 과 동형.
+                     b"img" | b"image" => {
++                        *type_change_safe = false;
+                         if let Some(ref mut img_fill) = fill.image {
+                             for attr in ce.attributes().flatten() {
+                                 match attr.key.as_ref().as_bytes() {
+@@ -4733,9 +4962,15 @@
+                     break;
+                 }
+             }
+-            Ok(Event::Eof) => break,
++            Ok(Event::Text(text))
++                if text.as_ref().bytes().all(|byte| byte.is_ascii_whitespace()) => {}
++            Ok(Event::Comment(_)) => *type_change_safe = false,
++            Ok(Event::Eof) => {
++                *type_change_safe = false;
++                break;
++            }
+             Err(e) => return Err(HwpxError::XmlError(format!("fillBrush: {}", e))),
+-            _ => {}
++            _ => *type_change_safe = false,
+         }
+         buf.clear();
+     }
+@@ -4974,6 +5209,7 @@
+     // 기존 pt0/pt1/pt2/pt3 (rect 의 4 꼭짓점) 와 별개.
+     let mut polygon_points: Vec<crate::model::Point> = Vec::new();
+     let mut hwpx_curve_segments: Vec<HwpxCurveSegment> = Vec::new();
++    let mut hwpx_basic_seen_children: Vec<Vec<u8>> = Vec::new();
+     // [Task #1598] ellipse / arc 전용 지오메트리 (`<hc:center>`/`<hc:ax1>`/...).
+     // 미적재 시 한글이 타원/호를 다르게 렌더 → 누적 레이아웃 변동 → 페이지 붕괴(#1589 잔여).
+     let mut e_center = crate::model::Point::default();
+@@ -4983,6 +5219,11 @@
+     let mut e_end1 = crate::model::Point::default();
+     let mut e_start2 = crate::model::Point::default();
+     let mut e_end2 = crate::model::Point::default();
++
++    shape_attr.hwpx_basic_shape_type_change_safe = hwpx_basic_shape_root_safe(e, shape_type);
++    let ellipse_interval_dirty = hwpx_optional_bool_attr(e, b"intervalDirty");
++    let ellipse_has_arc_pr = hwpx_optional_bool_attr(e, b"hasArcPr");
++    let ellipse_arc_type = hwpx_optional_attr(e, b"arcType");
+-
++
+     let object_ids = parse_object_element_attrs(e, &mut common, &mut shape_attr);
+     let inst_id = if direct_group_child && shape_attr.group_level == 1 && matches!(shape_type, b"rect" | b"ellipse") {
+@@ -5017,15 +5258,35 @@
+         let self_closing = matches!(&event, Ok(Event::Empty(_)));
+         match event {
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
+-                common.description = read_dutmal_text(reader, b"shapeComment")?;
++                let (description, safe_text) = read_plain_shape_comment(reader)?;
++                if matches!(shape_type, b"rect" | b"ellipse") {
++                    shape_attr.hwpx_basic_shape_type_change_safe &= safe_text
++                        && hwpx_basic_shape_child_once(
++                            &mut hwpx_basic_seen_children,
++                            b"shapeComment",
++                        )
++                        && hwpx_basic_shape_child_safe(b"shapeComment", ce, shape_type);
++                }
++                common.description = description;
+             }
+             // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
++                if matches!(shape_type, b"rect" | b"ellipse") {
++                    shape_attr.hwpx_basic_shape_type_change_safe = false;
++                }
+                 caption = Some(parse_caption(ce, reader)?);
+             }
+             Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                if matches!(shape_type, b"rect" | b"ellipse") {
++                    if !hwpx_basic_shape_child_once(&mut hwpx_basic_seen_children, local) {
++                        shape_attr.hwpx_basic_shape_type_change_safe = false;
++                    }
++                    if !hwpx_basic_shape_child_preserved(local, ce, shape_type, self_closing) {
++                        shape_attr.hwpx_basic_shape_type_change_safe = false;
++                    }
++                }
+                 match local {
+                     b"sz" | b"curSz" | b"orgSz" | b"pos" | b"offset" | b"outMargin" | b"flip"
+                     | b"rotationInfo" => {
+@@ -5230,7 +5491,10 @@
+                     }
+                     b"fillBrush" => {
+                         if !self_closing {
+-                            fill = parse_shape_fill_brush(reader)?;
++                            fill = parse_shape_fill_brush(
++                                reader,
++                                &mut shape_attr.hwpx_basic_shape_type_change_safe,
++                            )?;
+                         }
+                     }
+                     b"shadow" => {
+@@ -5298,6 +5562,9 @@
+             end1: e_end1,
+             start2: e_start2,
+             end2: e_end2,
++            hwpx_interval_dirty: ellipse_interval_dirty,
++            hwpx_has_arc_pr: ellipse_has_arc_pr,
++            hwpx_arc_type: ellipse_arc_type,
+             ..Default::default()
+         }),
+         b"line" => ShapeObject::Line(LineShape {
+@@ -7351,6 +7618,46 @@
+     Ok(text)
+ }
+-
++
++/// Read a basic shape's description only when it is plain XML text. The shape writer
++/// serializes this modeled field as escaped text, so nested markup or processing data
++/// must keep the object outside the type-conversion envelope.
++fn read_plain_shape_comment(reader: &mut Reader<&[u8]>) -> Result<(String, bool), HwpxError> {
++    let mut text = String::new();
++    let mut safe = true;
++    let mut buf = Vec::new();
++    loop {
++        match reader.read_event_into(&mut buf) {
++            Ok(Event::Text(value)) => append_xml_line_normalized(&mut text, value.as_ref()),
++            Ok(Event::GeneralRef(value)) => {
++                let predefined = matches!(value.as_ref(), "lt" | "gt" | "amp" | "quot" | "apos");
++                safe &= value.resolve_char_ref().ok().flatten().is_some() || predefined;
++                text.push_str(&decode_xml_general_ref(&value));
++            }
++            Ok(Event::End(ref end)) if local_name(end.name().as_ref()) == b"shapeComment" => {
++                break;
++            }
++            Ok(Event::Start(_)) => {
++                safe = false;
++                skip_element(reader, b"")?;
++            }
++            Ok(Event::Empty(_))
++            | Ok(Event::CData(_))
++            | Ok(Event::Comment(_))
++            | Ok(Event::PI(_))
++            | Ok(Event::DocType(_)) => safe = false,
++            Ok(Event::Eof) => {
++                return Err(HwpxError::XmlError("shapeComment: unexpected EOF".into()));
++            }
++            Err(error) => {
++                return Err(HwpxError::XmlError(format!("shapeComment: {error}")));
++            }
++            _ => safe = false,
++        }
++        buf.clear();
++    }
++    Ok((text, safe))
++}
++
+ /// XML 1.0 normalizes literal CRLF and CR line endings to LF before parsing.
+ /// Character references are handled separately and deliberately keep CR.
+ fn append_xml_line_normalized(target: &mut String, source: &str) {
+@@ -8452,6 +8759,84 @@
+ mod tests {
+     use super::*;
+-
++
++    fn start_or_empty(xml: &str) -> BytesStart<'static> {
++        let mut reader = Reader::from_str(xml);
++        let mut buf = Vec::new();
++        match reader.read_event_into(&mut buf).expect("element") {
++            Event::Start(element) | Event::Empty(element) => element.into_owned(),
++            _ => panic!("expected an element"),
++        }
++    }
++
++    fn parse_comment(xml: &str) -> (String, bool) {
++        let mut reader = Reader::from_str(xml);
++        let mut buf = Vec::new();
++        assert!(matches!(
++            reader.read_event_into(&mut buf).expect("comment start"),
++            Event::Start(_)
++        ));
++        read_plain_shape_comment(&mut reader).expect("read shape comment")
++    }
++
++    #[test]
++    fn basic_shape_type_conversion_rejects_ambiguous_source_envelopes() {
++        let valid_root = start_or_empty(r#"<hp:ellipse id="1" instid="2" groupLevel="0"/>"#);
++        assert!(hwpx_basic_shape_root_safe(&valid_root, b"ellipse"));
++        let duplicate_root = start_or_empty(r#"<hp:ellipse id="1" id="2"/>"#);
++        assert!(!hwpx_basic_shape_root_safe(&duplicate_root, b"ellipse"));
++
++        let center = start_or_empty(r#"<hp:center x="1" y="2"/>"#);
++        assert!(hwpx_basic_shape_child_safe(b"center", &center, b"ellipse"));
++        let extended_center = start_or_empty(r#"<hp:center x="1" y="2" z="3"/>"#);
++        assert!(!hwpx_basic_shape_child_safe(
++            b"center",
++            &extended_center,
++            b"ellipse"
++        ));
++        let comment = start_or_empty(r#"<hp:shapeComment/>"#);
++        assert!(hwpx_basic_shape_child_safe(
++            b"shapeComment",
++            &comment,
++            b"ellipse"
++        ));
++        assert!(!hwpx_basic_shape_child_preserved(
++            b"shapeComment",
++            &comment,
++            b"ellipse",
++            true
++        ));
++        let rendering_info = start_or_empty(r#"<hp:renderingInfo/>"#);
++        let fill_brush = start_or_empty(r#"<hp:fillBrush/>"#);
++        assert!(!hwpx_basic_shape_child_preserved(
++            b"renderingInfo",
++            &rendering_info,
++            b"ellipse",
++            true
++        ));
++        assert!(!hwpx_basic_shape_child_preserved(
++            b"fillBrush",
++            &fill_brush,
++            b"ellipse",
++            true
++        ));
++        let extended_comment = start_or_empty(r#"<hp:shapeComment lang="en"/>"#);
++        assert!(!hwpx_basic_shape_child_safe(
++            b"shapeComment",
++            &extended_comment,
++            b"ellipse"
++        ));
++
++        let mut seen = Vec::new();
++        assert!(hwpx_basic_shape_child_once(&mut seen, b"center"));
++        assert!(!hwpx_basic_shape_child_once(&mut seen, b"center"));
++
++        assert_eq!(
++            parse_comment("<hp:shapeComment>a &amp; b</hp:shapeComment>"),
++            ("a & b".to_string(), true),
++        );
++        assert!(!parse_comment("<hp:shapeComment><hp:t>nested</hp:t></hp:shapeComment>").1);
++    }
++
+     #[test]
+     fn test_parse_simple_section() {
+         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+--- a/src/serializer/control.rs
++++ b/src/serializer/control.rs
+@@ -1496,6 +1496,7 @@
+                 w.write_i32(rect.x_coords[i]).unwrap();
+                 w.write_i32(rect.y_coords[i]).unwrap();
+             }
++            w.write_bytes(&rect.raw_trailing).unwrap();
+             records.push(Record {
+                 tag_id: tags::HWPTAG_SHAPE_COMPONENT_RECTANGLE,
+                 level: level + 2,
+@@ -1542,6 +1543,7 @@
+             w.write_i32(ellipse.start2.y).unwrap();
+             w.write_i32(ellipse.end2.x).unwrap();
+             w.write_i32(ellipse.end2.y).unwrap();
++            w.write_bytes(&ellipse.raw_trailing).unwrap();
+             records.push(Record {
+                 tag_id: tags::HWPTAG_SHAPE_COMPONENT_ELLIPSE,
+                 level: level + 2,
+@@ -1886,6 +1888,7 @@
+                 w.write_i32(rect.x_coords[i]).unwrap();
+                 w.write_i32(rect.y_coords[i]).unwrap();
+             }
++            w.write_bytes(&rect.raw_trailing).unwrap();
+             records.push(Record {
+                 tag_id: tags::HWPTAG_SHAPE_COMPONENT_RECTANGLE,
+                 level: type_level,
+@@ -1921,6 +1924,7 @@
+             w.write_i32(ellipse.start2.y).unwrap();
+             w.write_i32(ellipse.end2.x).unwrap();
+             w.write_i32(ellipse.end2.y).unwrap();
++            w.write_bytes(&ellipse.raw_trailing).unwrap();
+             records.push(Record {
+                 tag_id: tags::HWPTAG_SHAPE_COMPONENT_ELLIPSE,
+                 level: type_level,
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -3321,6 +3321,22 @@
+     // 종전엔 이 속성 자체가 방출되지 않아 `arc_type` 이 항상 0(NORMAL)으로 저장됐다.
+     let extra_attrs = match shape {
+         ShapeObject::Arc(a) => format!(r#" type="{}""#, arc_type_hwpx_str(a.arc_type)),
++        ShapeObject::Ellipse(e) => {
++            let mut attrs = String::new();
++            if let Some(value) = e.hwpx_interval_dirty {
++                attrs.push_str(&format!(
++                    r#" intervalDirty="{}""#,
++                    if value { 1 } else { 0 }
++                ));
++            }
++            if let Some(value) = e.hwpx_has_arc_pr {
++                attrs.push_str(&format!(r#" hasArcPr="{}""#, if value { 1 } else { 0 }));
++            }
++            if let Some(value) = &e.hwpx_arc_type {
++                attrs.push_str(&format!(r#" arcType="{}""#, xml_escape(value)));
++            }
++            attrs
++        }
+         _ => String::new(),
+     };
+     render_common_shape_xml(
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -4888,6 +4888,23 @@
+         .map_err(|error| error.into())
+     }
+-
++
++    /// Returns `rectangle` or `ellipse` only when the current body shape has a lossless
++    /// type-change representation in its source format; otherwise returns an empty string.
++    #[wasm_bindgen(js_name = getShapeTypeChangeTarget)]
++    pub fn get_shape_type_change_target(
++        &self,
++        section_idx: u32,
++        parent_para_idx: u32,
++        control_idx: u32,
++    ) -> Result<String, JsValue> {
++        self.get_shape_type_change_target_native(
++            section_idx as usize,
++            parent_para_idx as usize,
++            control_idx as usize,
++        )
++        .map_err(Into::into)
++    }
++
+     #[wasm_bindgen(js_name = getEditableShapePath)]
+     pub fn get_editable_shape_path(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_shape_path(sec as usize, para as usize, ctrl as usize)
+@@ -5128,6 +5145,25 @@
+             props_json,
+         )
+         .map_err(|e| e.into())
++    }
++
++    /// Change one directly owned HWP/HWPX rectangle or full ellipse using the strict
++    /// format-specific type-change contract.
++    #[wasm_bindgen(js_name = changeShapeType)]
++    pub fn change_shape_type(
++        &mut self,
++        section_idx: u32,
++        parent_para_idx: u32,
++        control_idx: u32,
++        target: &str,
++    ) -> Result<String, JsValue> {
++        self.change_shape_type_native(
++            section_idx as usize,
++            parent_para_idx as usize,
++            control_idx as usize,
++            target,
++        )
++        .map_err(Into::into)
+     }
+-
++
+     /// Shape(글상자) 컨트롤을 문단에서 삭제한다.
+--- a/src/wasm_api/tests.rs
++++ b/src/wasm_api/tests.rs
+@@ -105,6 +105,237 @@
+         section.section_def.outline_numbering_id,
+         &[],
+     )
++}
++
++#[test]
++fn stage3_p6_shape_type_change_roundtrips_hwp_and_hwpx() {
++    fn insert_rectangle(doc: &mut HwpDocument) -> (usize, usize) {
++        let inserted = doc
++            .create_shape_control_native(
++                0,
++                0,
++                0,
++                4_000,
++                3_000,
++                0,
++                0,
++                false,
++                "Square",
++                "rectangle",
++                true,
++                false,
++                &[],
++            )
++            .expect("insert source rectangle");
++        let value: Value = serde_json::from_str(&inserted).expect("insert result JSON");
++        (
++            value["paraIdx"].as_u64().expect("paragraph") as usize,
++            value["controlIdx"].as_u64().expect("control") as usize,
++        )
++    }
++    fn find_shape_by_id(
++        doc: &crate::document_core::DocumentCore,
++        instance_id: u64,
++    ) -> (usize, usize, Value) {
++        let layout: Value =
++            serde_json::from_str(&doc.get_page_control_layout_native(0).expect("shape layout"))
++                .expect("shape layout JSON");
++        for item in layout["controls"].as_array().expect("layout controls") {
++            if item["type"] != "shape" {
++                continue;
++            }
++            let (Some(section), Some(paragraph), Some(control)) = (
++                item["secIdx"].as_u64(),
++                item["paraIdx"].as_u64(),
++                item["controlIdx"].as_u64(),
++            ) else {
++                continue;
++            };
++            let properties: Value = serde_json::from_str(
++                &doc.get_shape_properties_native(
++                    section as usize,
++                    paragraph as usize,
++                    control as usize,
++                )
++                .expect("shape properties"),
++            )
++            .expect("shape properties JSON");
++            if properties["instanceId"].as_u64() == Some(instance_id) {
++                return (paragraph as usize, control as usize, properties);
++            }
++        }
++        panic!("shape instance {instance_id} was not found after reopening");
++    }
++
++    let mut hwp = HwpDocument::create_empty();
++    let (para, ctrl) = insert_rectangle(&mut hwp);
++    let before: Value = serde_json::from_str(
++        &hwp.get_shape_properties_native(0, para, ctrl)
++            .expect("shape before"),
++    )
++    .expect("shape before JSON");
++    assert!(hwp.change_shape_type_native(0, para, ctrl, "line").is_err());
++    assert_eq!(
++        serde_json::from_str::<Value>(&hwp.get_shape_properties_native(0, para, ctrl).unwrap())
++            .unwrap(),
++        before,
++        "unsupported target refusal must not mutate the source shape",
++    );
++    let instance_id = before["instanceId"]
++        .as_u64()
++        .expect("stable shape instance ID");
++    assert_eq!(
++        hwp.get_shape_type_change_target_native(0, para, ctrl)
++            .expect("HWP conversion target"),
++        "ellipse"
++    );
++    let changed: Value = serde_json::from_str(
++        &hwp.change_shape_type_native(0, para, ctrl, "ellipse")
++            .expect("HWP conversion"),
++    )
++    .expect("HWP conversion result JSON");
++    assert_eq!(changed["ok"], true);
++    assert_eq!(changed["shapeType"], "ellipse");
++    let after: Value = serde_json::from_str(
++        &hwp.get_shape_properties_native(0, para, ctrl)
++            .expect("shape after"),
++    )
++    .expect("shape after JSON");
++    assert_eq!(after["shapeType"], "ellipse");
++    assert_eq!(
++        hwp.get_shape_type_change_target_native(0, para, ctrl)
++            .expect("inverse HWP conversion target"),
++        "rectangle"
++    );
++    let mut before_without_type = before;
++    let mut after_without_type = after;
++    before_without_type
++        .as_object_mut()
++        .unwrap()
++        .remove("shapeType");
++    after_without_type
++        .as_object_mut()
++        .unwrap()
++        .remove("shapeType");
++    // `roundRate` exists only on rectangles; zero is the required full-rectangle default.
++    before_without_type
++        .as_object_mut()
++        .unwrap()
++        .remove("roundRate");
++    after_without_type
++        .as_object_mut()
++        .unwrap()
++        .remove("roundRate");
++    assert_eq!(
++        before_without_type, after_without_type,
++        "drawing and owner fields stay unchanged"
++    );
++    let saved_hwp = hwp.export_hwp_with_adapter().expect("save converted HWP");
++    let reopened_hwp =
++        crate::document_core::DocumentCore::from_bytes(&saved_hwp).expect("reopen converted HWP");
++    let (_, _, reopened_shape) = find_shape_by_id(&reopened_hwp, instance_id);
++    assert_eq!(reopened_shape["shapeType"], "ellipse");
++
++    // The authentic HWP base supplies registered paragraph and character styles;
++    // create_empty has no durable HWPX DocInfo ID map.
++    let mut hwpx_source = HwpDocument::from_bytes(include_bytes!("../../saved/blank2010.hwp"))
++        .expect("parse authentic HWP source for HWPX roundtrip");
++    let (hwpx_source_para, hwpx_source_ctrl) = insert_rectangle(&mut hwpx_source);
++    let source_rectangle: Value = serde_json::from_str(
++        &hwpx_source
++            .get_shape_properties_native(0, hwpx_source_para, hwpx_source_ctrl)
++            .expect("source HWP rectangle"),
++    )
++    .expect("source HWP rectangle JSON");
++    let hwpx_instance_id = source_rectangle["instanceId"]
++        .as_u64()
++        .expect("HWPX instance ID");
++    let hwpx_input = hwpx_source
++        .export_hwpx_native()
++        .expect("serialize HWPX source");
++    let mut hwpx =
++        crate::document_core::DocumentCore::from_bytes(&hwpx_input).expect("reopen HWPX source");
++    let (hwpx_para, hwpx_ctrl, _) = find_shape_by_id(&hwpx, hwpx_instance_id);
++    let hwpx_before: Value = serde_json::from_str(
++        &hwpx
++            .get_shape_properties_native(0, hwpx_para, hwpx_ctrl)
++            .expect("HWPX shape before"),
++    )
++    .expect("HWPX shape before JSON");
++    assert_eq!(
++        hwpx.get_shape_type_change_target_native(0, hwpx_para, hwpx_ctrl)
++            .expect("HWPX conversion target"),
++        "ellipse"
++    );
++    hwpx.change_shape_type_native(0, hwpx_para, hwpx_ctrl, "ellipse")
++        .expect("HWPX conversion");
++    let hwpx_after: Value = serde_json::from_str(
++        &hwpx
++            .get_shape_properties_native(0, hwpx_para, hwpx_ctrl)
++            .expect("HWPX shape after"),
++    )
++    .expect("HWPX shape after JSON");
++    assert_eq!(hwpx_after["shapeType"], "ellipse");
++    let normalize = |value: &Value| {
++        let mut normalized = value.clone();
++        normalized.as_object_mut().unwrap().remove("shapeType");
++        normalized.as_object_mut().unwrap().remove("roundRate");
++        normalized
++    };
++    assert_eq!(
++        normalize(&hwpx_before),
++        normalize(&hwpx_after),
++        "HWPX conversion preserves geometry, owner, style, and placement fields",
++    );
++    let saved_hwpx = hwpx.export_hwpx_native().expect("save converted HWPX");
++    let reopened_hwpx =
++        crate::document_core::DocumentCore::from_bytes(&saved_hwpx).expect("reopen converted HWPX");
++    let (reopened_hwpx_para, reopened_hwpx_ctrl, reopened_hwpx_shape) =
++        find_shape_by_id(&reopened_hwpx, hwpx_instance_id);
++    assert_eq!(reopened_hwpx_shape["shapeType"], "ellipse");
++    assert_eq!(
++        normalize(&hwpx_after),
++        normalize(&reopened_hwpx_shape),
++        "HWPX conversion properties survive an independent save and reopen",
++    );
++    assert_eq!(
++        reopened_hwpx
++            .get_shape_type_change_target_native(0, reopened_hwpx_para, reopened_hwpx_ctrl)
++            .expect("inverse HWPX conversion target"),
++        "rectangle"
++    );
++
++    let mut rounded = HwpDocument::create_empty();
++    let (rounded_para, rounded_ctrl) = insert_rectangle(&mut rounded);
++    rounded
++        .set_shape_properties_native(0, rounded_para, rounded_ctrl, r#"{"roundRate":35}"#)
++        .expect("set rounded rectangle source");
++    let rounded_before: Value = serde_json::from_str(
++        &rounded
++            .get_shape_properties_native(0, rounded_para, rounded_ctrl)
++            .unwrap(),
++    )
++    .unwrap();
++    assert_eq!(
++        rounded
++            .get_shape_type_change_target_native(0, rounded_para, rounded_ctrl)
++            .unwrap(),
++        "",
++        "rounded rectangles are outside the lossless conversion contract",
++    );
++    assert!(rounded
++        .change_shape_type_native(0, rounded_para, rounded_ctrl, "ellipse")
++        .is_err());
++    assert_eq!(
++        serde_json::from_str::<Value>(
++            &rounded
++                .get_shape_properties_native(0, rounded_para, rounded_ctrl)
++                .unwrap()
++        )
++        .unwrap(),
++        rounded_before,
++        "unsupported geometry refusal must be atomic",
++    );
+ }
+-
++
+ fn issue_1481_find_table_and_host_mark_y(
