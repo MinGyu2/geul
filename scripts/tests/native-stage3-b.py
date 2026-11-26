@@ -120,6 +120,356 @@ def inspect_hwpx_clip(path):
     """)
 
 
+def prepare_p6_hx_group_fixtures(out):
+    source = out / "p6-hx-group-source.fixture.hwpx"
+    destination = out / "p6-hx-group-destination.fixture.hwpx"
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    create = r"""
+const sourcePath=process.argv[1], destinationPath=process.argv[2];
+const sourceDoc=rhwp.HwpDocument.createEmpty();
+const targetDoc=rhwp.HwpDocument.createEmpty();
+const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+try {
+  sourceDoc.createBlankDocument();
+  sourceDoc.insertText(0,0,0,'source body');
+  const rect=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
+    shapeType:'rectangle',width:4100,height:2600,treatAsChar:true,textWrap:'Square',horzOffset:1700,vertOffset:2200})), 'rectangle');
+  const ellipse=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
+    shapeType:'ellipse',width:2200,height:2200,treatAsChar:true,textWrap:'Square',horzOffset:7600,vertOffset:2500})), 'ellipse');
+  ok(sourceDoc.setShapeProperties(0,0,rect.controlIdx,
+    '{"rotationAngle":23,"horzFlip":true,"fillType":"solid","fillBgColor":1122867}'), 'rectangle properties');
+  const inner=ok(sourceDoc.groupShapes(JSON.stringify({sectionIdx:0,targets:[
+    {paraIdx:0,controlIdx:rect.controlIdx},{paraIdx:0,controlIdx:ellipse.controlIdx}]})), 'inner group');
+  const pictureBytes=fs.readFileSync(path.resolve('src-tauri/icons/32x32.png'));
+  const picture=ok(sourceDoc.insertPicture(0,0,0,'[]',pictureBytes,3200,1800,32,32,'png','group media'), 'group picture');
+  ok(sourceDoc.setPictureProperties(0,0,picture.controlIdx,
+    '{"treatAsChar":true,"textWrap":"Square","horzOffset":10800,"vertOffset":2200}'), 'group picture properties');
+  const controls=JSON.parse(sourceDoc.getPageControlLayout(0)).controls;
+  const nested=controls.find(item=>item.type==='group');
+  const image=controls.find(item=>item.type==='image');
+  if(!nested||!image||!Array.isArray(nested.stableIndex)||!Array.isArray(image.stableIndex))
+    throw Error('nested group or picture owner is missing');
+  ok(sourceDoc.groupShapes(JSON.stringify({sectionIdx:0,targets:[nested,image].map(item=>({
+    paraIdx:item.stableIndex[1],controlIdx:item.stableIndex[2]}))})), 'outer group');
+  fs.writeFileSync(sourcePath,sourceDoc.exportHwpx());
+
+  targetDoc.createBlankDocument();
+  targetDoc.insertText(0,0,0,'destination body');
+  const keep=ok(targetDoc.insertPicture(0,0,0,'[]',fs.readFileSync(path.resolve('src-tauri/icons/128x128.png')),
+    1800,900,128,128,'png','keep me'), 'destination picture');
+  ok(targetDoc.setPictureProperties(0,0,keep.controlIdx,
+    '{"treatAsChar":true,"textWrap":"Square","horzOffset":2200,"vertOffset":3100}'), 'destination picture properties');
+  fs.writeFileSync(destinationPath,targetDoc.exportHwpx());
+} finally { sourceDoc.free(); targetDoc.free(); }
+"""
+    template = p6.ORACLE.split("try {", 1)[0]
+    require(marker in template, "P6 group fixture template is stale")
+    script = template.replace(marker, create)
+    subprocess.run(["node", "-e", script, str(source), str(destination)], cwd=ROOT, check=True)
+    return source, destination
+
+
+def inspect_hwpx_group(path):
+    return c.inspect_rhwp(path, """
+      const all=pages.flatMap((items,page)=>items.map(item=>({...item,page})));
+      const group=all.find(item=>item.type==='group')||null;
+      const children=group?JSON.parse(doc.getEditableGroupChildren(group.secIdx,group.paraIdx,group.controlIdx)):null;
+      const owner=group?controls.filter(item=>item.ctrlId==='gso'&&item.list===0
+        &&item.para===group.paraIdx&&item.controlIndex===group.controlIdx):[];
+      console.log(JSON.stringify({group,children,owner}));
+    """)
+
+
+def _local_xml_name(node):
+    return node.tag.rsplit("}", 1)[-1]
+
+
+def _normalized_group_xml(node):
+    omitted = {"id", "instid", "href", "binaryItemIDRef"}
+    attrs = tuple(sorted((key.rsplit("}", 1)[-1], value) for key, value in node.attrib.items()
+                         if key.rsplit("}", 1)[-1] not in omitted))
+    return (_local_xml_name(node), attrs, (node.text or "").strip(),
+            tuple(_normalized_group_xml(child) for child in node))
+
+
+def hwpx_group_snapshot(path):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    hc = "{http://www.hancom.co.kr/hwpml/2011/core}"
+    opf = "{http://www.idpf.org/2007/opf/}"
+    owned = {"container", "rect", "ellipse", "line", "arc", "polygon", "curve", "pic", "chart", "ole"}
+    with ZipFile(path) as package:
+        names = package.namelist()
+        root = ElementTree.fromstring(package.read("Contents/section0.xml"))
+        content = ElementTree.fromstring(package.read("Contents/content.hpf"))
+        parents = {child: parent for parent in root.iter() for child in list(parent)}
+        containers = [node for node in root.iter(hp + "container")]
+        roots = []
+        for node in containers:
+            ancestor = parents.get(node)
+            nested = False
+            while ancestor is not None:
+                if ancestor.tag == hp + "container":
+                    nested = True
+                    break
+                ancestor = parents.get(ancestor)
+            if not nested:
+                roots.append(node)
+        require(len(roots) == 1, "HWPX package must have one top-level group", len(roots))
+        group = roots[0]
+        picture = group.find(".//" + hp + "pic")
+        require(picture is not None, "group has no embedded picture child")
+        image = picture.find(hc + "img")
+        require(image is not None, "group picture has no image resource reference")
+        resource_id = image.get("binaryItemIDRef")
+        items = [item for item in content.iter(opf + "item") if item.get("id") == resource_id]
+        require(len(items) == 1, "group picture resource relationship is ambiguous", resource_id)
+        resource = items[0].get("href")
+        require(resource in names, "group picture relationship is unresolved", resource)
+        owner = parents.get(group)
+        while owner is not None and owner.tag != hp + "p":
+            owner = parents.get(owner)
+        require(owner is not None, "group has no body paragraph owner")
+        group_nodes = [node for node in group.iter() if _local_xml_name(node) in owned]
+        group_ids = [node.get("id") for node in group.iter() if node.get("id") is not None]
+        group_instids = [node.get("instid") for node in group.iter() if node.get("instid") is not None]
+        object_nodes = [node for node in root.iter() if _local_xml_name(node) in owned]
+        object_ids = [node.get("id") for node in object_nodes if node.get("id") is not None]
+        object_instids = [node.get("instid") for node in object_nodes if node.get("instid") is not None]
+        media = {name: hashlib.sha256(package.read(name)).hexdigest()
+                 for name in names if name.startswith("BinData/")}
+        parts = {name: hashlib.sha256(package.read(name)).hexdigest() for name in names}
+        direct = [_local_xml_name(node) for node in group if _local_xml_name(node) in owned]
+        inner = group.find(hp + "container")
+        inner_direct = ([_local_xml_name(node) for node in inner if _local_xml_name(node) in owned]
+                        if inner is not None else [])
+        return {
+            "groupTree": _normalized_group_xml(group), "directChildren": direct,
+            "nestedChildren": inner_direct, "resource": resource,
+            "assetSha256": hashlib.sha256(package.read(resource)).hexdigest(),
+            "media": media, "parts": parts, "groupIds": group_ids,
+            "groupInstIds": group_instids, "objectIds": object_ids,
+            "objectInstIds": object_instids, "ownerParagraph": owner.get("id"),
+        }
+
+
+def hwpx_object_ids(path):
+    hp = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
+    owned = {"container", "rect", "ellipse", "line", "arc", "polygon", "curve", "pic", "chart", "ole"}
+    with ZipFile(path) as package:
+        ids = []
+        for name in package.namelist():
+            if not name.startswith("Contents/section") or not name.endswith(".xml"):
+                continue
+            root = ElementTree.fromstring(package.read(name))
+            ids.extend(node.get("id") for node in root.iter()
+                       if _local_xml_name(node) in owned and node.get("id") is not None)
+        return ids
+
+
+def hwpx_object_instance_ids(path):
+    owned = {"container", "rect", "ellipse", "line", "arc", "polygon", "curve", "pic", "chart", "ole"}
+    with ZipFile(path) as package:
+        ids = []
+        for name in package.namelist():
+            if not name.startswith("Contents/section") or not name.endswith(".xml"):
+                continue
+            root = ElementTree.fromstring(package.read(name))
+            ids.extend(node.get("instid") for node in root.iter()
+                       if _local_xml_name(node) in owned and node.get("instid") is not None)
+        return ids
+
+
+def prove_p6_hx_group_copy(source, destination_before, destination_after):
+    source_group = hwpx_group_snapshot(source)
+    source_ids = set(source_group["groupIds"]) - {"0"}
+    source_instance_ids = set(source_group["groupInstIds"]) - {"0"}
+    destination_ids_before = hwpx_object_ids(destination_before)
+    destination_ids_after = hwpx_object_ids(destination_after)
+    destination_instance_ids_before = hwpx_object_instance_ids(destination_before)
+    destination_instance_ids_after = hwpx_object_instance_ids(destination_after)
+    # The destination fixture contains no group; inspect its resources and package parts directly.
+    with ZipFile(destination_before) as original, ZipFile(destination_after) as saved:
+        old_names, new_names = set(original.namelist()), set(saved.namelist())
+        require(old_names <= new_names, "group paste removed unrelated OPC parts",
+                {"removed": sorted(old_names - new_names)})
+        old_media = {name: hashlib.sha256(original.read(name)).hexdigest()
+                     for name in old_names if name.startswith("BinData/")}
+        new_media = {name: hashlib.sha256(saved.read(name)).hexdigest()
+                     for name in new_names if name.startswith("BinData/")}
+        require(all(new_media.get(name) == digest for name, digest in old_media.items()),
+                "group paste changed an unrelated destination resource")
+        added = new_names - old_names
+        after = hwpx_group_snapshot(destination_after)
+        require(added == {after["resource"]}, "group paste added an unexpected package part", sorted(added))
+        changed = sorted(name for name in old_names if original.read(name) != saved.read(name))
+        allowed = {"Contents/section0.xml", "Contents/header.xml", "Contents/content.hpf",
+                   "Preview/PrvImage.png", "Preview/PrvText.txt"}
+        require("Contents/section0.xml" in changed and set(changed) <= allowed,
+                "group paste changed unrelated OPC data", changed)
+    require(source_group["directChildren"] == ["container", "pic"]
+            and source_group["nestedChildren"] == ["rect", "ellipse"],
+            "source fixture does not contain the expected nested group", source_group)
+    require(after["groupTree"] == source_group["groupTree"],
+            "saved group hierarchy, geometry, or formatting differs from source")
+    require(after["assetSha256"] == source_group["assetSha256"],
+            "saved group picture does not reference the source media bytes")
+    require(after["resource"] not in old_media, "group picture reused or aliased destination media", after["resource"])
+    require(len(after["media"]) == len(old_media) + 1, "group resource count is incorrect", after["media"])
+    require(len(after["groupIds"]) == len(set(after["groupIds"]))
+            and "0" not in after["groupIds"]
+            and set(after["groupIds"]).isdisjoint(source_ids)
+            and set(after["groupIds"]).isdisjoint(destination_ids_before),
+            "group object identifiers were not independently remapped", after["groupIds"])
+    require(len(destination_ids_after) == len(set(destination_ids_after))
+            and set(destination_ids_before).issubset(destination_ids_after)
+            and set(after["groupIds"]).issubset(destination_ids_after),
+            "destination object identifiers are duplicated or existing objects were reidentified",
+            {"before": destination_ids_before, "after": destination_ids_after,
+             "group": after["groupIds"]})
+    new_group_instance_ids = [item for item in after["groupInstIds"] if item != "0"]
+    existing_instance_ids = set(destination_instance_ids_before) - {"0"}
+    require(len(new_group_instance_ids) == len(set(new_group_instance_ids))
+            and set(new_group_instance_ids).isdisjoint(source_instance_ids)
+            and set(new_group_instance_ids).isdisjoint(existing_instance_ids),
+            "nonzero group instance identifiers were not independently remapped", after["groupInstIds"])
+    nonzero_destination_instance_ids_after = [item for item in destination_instance_ids_after if item != "0"]
+    require(len(nonzero_destination_instance_ids_after) == len(set(nonzero_destination_instance_ids_after)),
+            "destination has duplicate non-default instance identifiers", destination_instance_ids_after)
+    return {"sourceTreeSha256": hashlib.sha256(repr(source_group["groupTree"]).encode()).hexdigest(),
+            "savedTreeSha256": hashlib.sha256(repr(after["groupTree"]).encode()).hexdigest(),
+            "sourcePictureSha256": source_group["assetSha256"], "savedPictureSha256": after["assetSha256"],
+            "sourceGroupIds": source_group["groupIds"], "savedGroupIds": after["groupIds"],
+            "sourceGroupInstIds": source_group["groupInstIds"],
+            "savedGroupInstIds": after["groupInstIds"], "savedPictureResource": after["resource"],
+            "destinationMediaBefore": old_media, "destinationMediaAfter": new_media,
+            "changedOPCParts": changed, "addedOPCParts": sorted(added),
+            "unrelatedDestinationResourcesPreserved": True}
+
+
+def _group_model(path):
+    value = inspect_hwpx_group(path)
+    require(value["group"] is not None and len(value["owner"]) == 1,
+            "editable group has no unique body owner", value)
+    value["editableHierarchy"] = {
+        "nestedGroupAndLeafChildren": True,
+        "flatChildEditorExposesTree": value["children"] is not None,
+    }
+    return value
+
+
+def _canvas_digest(acc):
+    data = acc.d.js("return [...document.querySelectorAll('.rhwp-page__canvas')].map(c=>c.toDataURL('image/png'))")
+    return hashlib.sha256(json.dumps(data, separators=(",", ":")).encode()).hexdigest()
+
+
+def p6_hx_group(acc, row, b_root, out):
+    source_fixture, target_fixture = prepare_p6_hx_group_fixtures(out)
+    source = out / "p6-hx-group-source.hwpx"
+    destination = out / "p6-hx-group-destination.hwpx"
+    shutil.copyfile(source_fixture, source)
+    shutil.copyfile(target_fixture, destination)
+    source_hash = digest(source)
+    before_source = row["beforeSource"] = inspect_hwpx_clip(source)
+    before_destination = row["beforeDestination"] = inspect_hwpx_clip(destination)
+    source_xml = hwpx_group_snapshot(source)
+    row["fixtureHashes"] = {"source": source_hash, "destination": digest(destination)}
+    source_groups = [item for item in before_source["shapes"] if item["type"] == "group"]
+    require(len(source_groups) == 1 and not before_destination["shapes"],
+            "P6 fixture object inventory is unexpected", [before_source, before_destination])
+    source_group = source_groups[0]
+    require(source_xml["directChildren"] == ["container", "pic"]
+            and source_xml["nestedChildren"] == ["rect", "ellipse"],
+            "P6 source fixture lost the nested group tree", source_xml)
+    target_picture, = before_destination["pictures"]
+
+    acc.d.js("""
+      window.p6GroupPointers=[]; window.p6GroupKeys=[];
+      document.addEventListener('pointerdown',e=>{
+        if(e.target instanceof Element&&e.target.closest('.rhwp-page'))
+          window.p6GroupPointers.push({trusted:e.isTrusted,x:e.clientX,y:e.clientY});
+      },true);
+      document.addEventListener('keydown',e=>{
+        if(e.ctrlKey&&['c','v','z','y'].includes(e.key.toLowerCase()))
+          window.p6GroupKeys.push({key:e.key.toLowerCase(),trusted:e.isTrusted});
+      },true);
+    """)
+    acc.open_native("hwpx", source)
+    row["activeGeneration"] = acc.async_js("return (await (await fetch('rhwp/BUILD.json')).json()).generation")["value"]
+    require(row["activeGeneration"] == json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())["generation"],
+            "app and oracle Release generations differ")
+    select_object(acc, source_group, "group")
+    row["trustedPointer"] = acc.d.js("return window.p6GroupPointers.slice()")
+    require(any(item["trusted"] for item in row["trustedPointer"]), "group selection did not use a trusted pointer")
+    acc.key("ctrl+c")
+    acc.open_native("hwpx", destination)
+    c.body_end(acc)
+    before_canvas = _canvas_digest(acc)
+    acc.key("ctrl+v")
+    row["afterPaste"] = revision(acc, "hwpx", 1)
+    pasted_canvas = _canvas_digest(acc)
+    require(pasted_canvas != before_canvas, "trusted paste did not change the rendered destination")
+    acc.key("ctrl+z")
+    row["afterUndo"] = revision(acc, "hwpx", 2)
+    undo_canvas = _canvas_digest(acc)
+    require(undo_canvas == before_canvas, "Undo did not restore the original rendered destination")
+    acc.key("ctrl+y")
+    row["afterRedo"] = revision(acc, "hwpx", 3)
+    redo_canvas = _canvas_digest(acc)
+    require(redo_canvas == pasted_canvas, "Redo did not restore the pasted group rendering")
+    row["trustedClipboardKeys"] = acc.d.js("return window.p6GroupKeys.slice()")
+    for key in ("c", "v", "z", "y"):
+        require(any(item["key"] == key and item["trusted"] for item in row["trustedClipboardKeys"]),
+                f"{key.upper()} did not use a trusted Native key")
+
+    require(digest(source) == source_hash, "cross-document copy changed the source file")
+    publish(acc, "hwpx", row)
+    row["after"] = after = inspect_hwpx_clip(destination)
+    # RHWP inserts copied controls into their own paragraph and appends the
+    # format-required empty paragraph. At body-end that is exactly two empty
+    # paragraphs after the original text; the group's owner is the first one.
+    require(after["body"] == before_destination["body"] + ["", ""],
+            "group paste changed destination body text or paragraph boundary", after["body"])
+    groups = [item for item in after["shapes"] if item["type"] == "group"]
+    require(len(groups) == 1 and groups[0]["paraIdx"] == len(before_destination["body"]),
+            "published destination does not contain one group in its owned insertion paragraph", groups)
+    require(after["pictures"] == [target_picture], "group paste changed the unrelated destination picture")
+    row["opcpProof"] = prove_p6_hx_group_copy(source, target_fixture, destination)
+    row["editableGroup"] = _group_model(destination)
+
+    reopen(acc, destination, row)
+    reopened = inspect_hwpx_clip(destination)
+    require(reopened == after, "same-process save/reopen changed the transferred group")
+    row["sameProcessReopen"] = {"sha256": digest(destination), "objects": reopened}
+    select_object(acc, next(item for item in reopened["shapes"] if item["type"] == "group"), "group")
+    row["sameProcessSelection"] = "group remains selectable"
+
+
+def p6_hx_group_fresh(acc, row, b_root, out):
+    source_fixture = out / "p6-hx-group-source.fixture.hwpx"
+    target_fixture = out / "p6-hx-group-destination.fixture.hwpx"
+    destination = out / "p6-hx-group-destination.hwpx"
+    require(source_fixture.is_file() and target_fixture.is_file() and destination.is_file(),
+            "saved P6 group fixture is missing")
+    previous = json.loads((out / "result.json").read_text())["cases"]["P6-HX-GROUP"]
+    row["previousAppPid"] = previous["appPid"]
+    require(row["appPid"] != row["previousAppPid"], "fresh reopen reused the prior application process")
+    require(digest(destination) == previous["sameProcessReopen"]["sha256"],
+            "fresh-process probe did not open the saved package")
+    row["activeGeneration"] = acc.async_js("return (await (await fetch('rhwp/BUILD.json')).json()).generation")["value"]
+    require(row["activeGeneration"] == json.loads((ROOT / "public/rhwp/RELEASE.json").read_text())["generation"],
+            "fresh process uses a different RHWP generation")
+    before = inspect_hwpx_clip(destination)
+    require(len([item for item in before["shapes"] if item["type"] == "group"]) == 1,
+            "fresh process did not reopen the transferred group")
+    row["opcpProof"] = prove_p6_hx_group_copy(source_fixture, target_fixture, destination)
+    row["editableGroup"] = _group_model(destination)
+    acc.open_native("hwpx", destination)
+    group = next(item for item in before["shapes"] if item["type"] == "group")
+    select_object(acc, group, "group")
+    row["freshSession"] = {"sha256": digest(destination), "groupSelectable": True,
+                           "pid": row["appPid"], "appSha256": row["processAppSha256"]}
+
+
 def prepare_b3_2_fixtures(staging: Path):
     src_path = staging / "b3-2-source.hwpx"
     dst_path = staging / "b3-2-dest.hwpx"
@@ -526,6 +876,8 @@ def b3_2(acc, row, b_root, out):
 
 
 CASES = {
+    "P6-HX-GROUP": p6_hx_group,
+    "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
     "B1-1": b1_1,
     "B1-2": b1_2,
     "B2-1": b2_1,
@@ -554,6 +906,13 @@ def main():
     report = {"appSha256": digest(app), "os": platform.platform(), "rhwp": release["generation"], "cases": {}}
     for case in args.cases:
         row = report["cases"][case] = {}
+        if case == "P6-HX-GROUP-FRESH":
+            previous = report["cases"].get("P6-HX-GROUP")
+            if previous is None or previous.get("status") != "PASS" or "sameProcessReopen" not in previous:
+                row.update(status="BLOCKED", error="P6-HX-GROUP did not complete its same-process save/reopen prerequisites; fresh-process acceptance was not run")
+                (args.out / "result.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+                print(case, row["status"], row["error"], flush=True)
+                continue
         p4.smoke.DRIVER_LOG = str(args.out / (case + "-driver.log"))
         try:
             with tempfile.TemporaryDirectory(prefix="geul-stage3b-") as profile:
@@ -570,7 +929,7 @@ def main():
                         acc.calibrate_pointer()
                         CASES[case](acc, row, args.b_root, args.out)
                     except Exception:
-                        row["failureAppState"] = acc.status("hwpx" if case == "B3-2" else "hwp")
+                        row["failureAppState"] = acc.status("hwpx" if case in {"B3-2", "P6-HX-GROUP", "P6-HX-GROUP-FRESH"} else "hwp")
                         driver.screenshot(args.out / (case + "-error.png"))
                         raise
                     finally:

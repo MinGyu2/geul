@@ -1,0 +1,547 @@
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -621,6 +621,204 @@
+     message
+ }
+-
++
++const MAX_HWPX_GROUP_CLIPBOARD_BYTES: usize = 8 * 1024 * 1024;
++const MAX_HWPX_GROUP_MEDIA_BYTES: usize = 6 * 1024 * 1024;
++const MAX_HWPX_GROUP_NODES: usize = 256;
++const MAX_HWPX_GROUP_DEPTH: usize = 8;
++
++struct HwpxGroupAsset {
++    source_id: u16,
++    descriptor: crate::model::bin_data::BinData,
++    bytes: Vec<u8>,
++    extension: String,
++}
++
++#[derive(Clone)]
++struct GroupClipboardResource {
++    position_id: u16,
++    storage_id: u16,
++    extension: String,
++}
++
++fn inspect_hwpx_group_shape(
++    shape: &ShapeObject,
++    depth: usize,
++    node_count: &mut usize,
++    resources: &mut std::collections::BTreeSet<u16>,
++) -> Result<(), String> {
++    if depth > MAX_HWPX_GROUP_DEPTH {
++        return Err("group clipboard nesting exceeds its depth limit".into());
++    }
++    *node_count = node_count.saturating_add(1);
++    if *node_count > MAX_HWPX_GROUP_NODES {
++        return Err("group clipboard contains too many objects".into());
++    }
++
++    match shape {
++        ShapeObject::Group(group) => {
++            if group.caption.is_some() {
++                return Err("group captions are not supported by portable group transfer".into());
++            }
++            for child in &group.children {
++                inspect_hwpx_group_shape(child, depth + 1, node_count, resources)?;
++            }
++        }
++        ShapeObject::Picture(picture) => {
++            if picture.caption.is_some()
++                || picture.image_attr.external_path.is_some()
++                || picture.image_attr.bin_data_id == 0
++            {
++                return Err("group picture is not an owned embedded image".into());
++            }
++            resources.insert(picture.image_attr.bin_data_id);
++        }
++        ShapeObject::Line(line) => {
++            if line.connector.is_some() {
++                return Err("connected lines are not supported in portable group transfer".into());
++            }
++            inspect_hwpx_group_drawing(&line.drawing, resources)?;
++        }
++        ShapeObject::Rectangle(value) => inspect_hwpx_group_drawing(&value.drawing, resources)?,
++        ShapeObject::Ellipse(value) => inspect_hwpx_group_drawing(&value.drawing, resources)?,
++        ShapeObject::Arc(value) => inspect_hwpx_group_drawing(&value.drawing, resources)?,
++        ShapeObject::Polygon(value) => inspect_hwpx_group_drawing(&value.drawing, resources)?,
++        ShapeObject::Curve(_) => {
++            return Err("curve groups require the unresolved HWPX curve format contract".into())
++        }
++        ShapeObject::Chart(_) | ShapeObject::Ole(_) => {
++            return Err(
++                "chart and OLE children are not supported in portable group transfer".into(),
++            )
++        }
++    }
++    Ok(())
++}
++
++fn inspect_hwpx_group_drawing(
++    drawing: &crate::model::shape::DrawingObjAttr,
++    resources: &mut std::collections::BTreeSet<u16>,
++) -> Result<(), String> {
++    if drawing.text_box.is_some() || drawing.caption.is_some() {
++        return Err(
++            "group text boxes and captions are not supported by portable group transfer".into(),
++        );
++    }
++    if let Some(image) = &drawing.fill.image {
++        if image.bin_data_id == 0 {
++            return Err("group image fill has no owned resource".into());
++        }
++        resources.insert(image.bin_data_id);
++    }
++    Ok(())
++}
++
++fn load_hwpx_group_assets(
++    document: &Document,
++    resource_ids: &std::collections::BTreeSet<u16>,
++) -> Result<Vec<HwpxGroupAsset>, String> {
++    let mut result = Vec::with_capacity(resource_ids.len());
++    let mut total_bytes = 0usize;
++    for &source_id in resource_ids {
++        let mut descriptors = document
++            .doc_info
++            .bin_data_list
++            .iter()
++            .filter(|descriptor| descriptor.storage_id == source_id);
++        let descriptor = descriptors
++            .next()
++            .ok_or_else(|| format!("group resource {} is not registered", source_id))?;
++        if descriptors.next().is_some() {
++            return Err(format!("group resource {} has an ambiguous owner", source_id));
++        }
++        if descriptor.data_type != crate::model::bin_data::BinDataType::Embedding
++            || descriptor.storage_id == 0
++        {
++            return Err(format!(
++                "group resource {} is not an embedded asset",
++                source_id
++            ));
++        }
++        let mut contents = document
++            .bin_data_content
++            .iter()
++            .filter(|content| content.id == descriptor.storage_id);
++        let content = contents
++            .next()
++            .ok_or_else(|| format!("group resource {} has no content", source_id))?;
++        if contents.next().is_some() {
++            return Err(format!("group resource {} has ambiguous content", source_id));
++        }
++        let extension = content.extension.to_ascii_lowercase();
++        if extension.len() > 16
++            || !extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
++            || descriptor
++                .extension
++                .as_deref()
++                .is_some_and(|value| value.to_ascii_lowercase() != extension)
++        {
++            return Err(format!(
++                "group resource {} has an unsupported extension",
++                source_id
++            ));
++        }
++        let bytes = content
++            .data
++            .load_limited(MAX_HWPX_GROUP_MEDIA_BYTES)
++            .filter(|bytes| !bytes.is_empty())
++            .ok_or_else(|| {
++                format!(
++                    "group resource {} is missing or exceeds the size limit",
++                    source_id
++                )
++            })?;
++        total_bytes = total_bytes
++            .checked_add(bytes.len())
++            .filter(|total| *total <= MAX_HWPX_GROUP_MEDIA_BYTES)
++            .ok_or_else(|| "group clipboard media exceeds its size limit".to_string())?;
++        result.push(HwpxGroupAsset {
++            source_id,
++            descriptor: descriptor.clone(),
++            bytes,
++            extension,
++        });
++    }
++    Ok(result)
++}
++
++fn remap_hwpx_group_resources(
++    shape: &mut ShapeObject,
++    resources: &std::collections::BTreeMap<u16, GroupClipboardResource>,
++) -> Result<(), String> {
++    match shape {
++        ShapeObject::Group(group) => {
++            for child in &mut group.children {
++                remap_hwpx_group_resources(child, resources)?;
++            }
++        }
++        ShapeObject::Picture(picture) => {
++            let resource = resources
++                .get(&picture.image_attr.bin_data_id)
++                .ok_or_else(|| "group picture resource was not remapped".to_string())?;
++            picture.image_attr.bin_data_id = resource.position_id;
++            picture.href = Some(format!(
++                "BinData/image{}.{}",
++                resource.storage_id, resource.extension
++            ));
++        }
++        _ => {
++            if let Some(drawing) = shape.drawing_mut() {
++                if let Some(image) = &mut drawing.fill.image {
++                    let resource = resources
++                        .get(&image.bin_data_id)
++                        .ok_or_else(|| "group image fill resource was not remapped".to_string())?;
++                    image.bin_data_id = resource.position_id;
++                }
++            }
++        }
++    }
++    Ok(())
++}
++
+ #[wasm_bindgen]
+ impl HwpDocument {
+     /// HWP 파일 바이트를 로드하여 문서 객체를 생성한다.
+@@ -9663,6 +9861,337 @@
+         .map_err(|e| e.into())
+     }
+-
++
++    /// Export one supported HWPX group as an isolated, bounded HWPX clipboard package.
++    /// The package contains the editable group tree and only the embedded resources it owns.
++    #[wasm_bindgen(js_name = exportHwpxGroupClipboard)]
++    pub fn export_hwpx_group_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++    ) -> Result<Vec<u8>, JsValue> {
++        if self.core.source_format != crate::parser::FileFormat::Hwpx {
++            return Err(JsValue::from_str(
++                "group clipboard requires an HWPX source document",
++            ));
++        }
++
++        let saved_clipboard = self.core.clipboard.take();
++        let saved_cascade = self.core.paste_cascade_count;
++        let copied = self.core.copy_control_native(
++            section_idx as usize,
++            para_idx as usize,
++            &[],
++            control_idx as usize,
++        );
++        let clipboard = self.core.clipboard.take();
++        self.core.clipboard = saved_clipboard;
++        self.core.paste_cascade_count = saved_cascade;
++        copied.map_err(JsValue::from)?;
++
++        let mut clip_para = clipboard
++            .and_then(|mut value| value.paragraphs.drain(..).next())
++            .ok_or_else(|| JsValue::from_str("group clipboard source is empty"))?;
++        match clip_para.controls.first() {
++            Some(Control::Shape(shape)) if matches!(shape.as_ref(), ShapeObject::Group(_)) => {}
++            _ => return Err(JsValue::from_str("selected object is not an HWPX group")),
++        }
++        // The isolated package has its own default DocInfo. The anchor paragraph is only a
++        // carrier for the floating group, so inherit destination formatting at paste time.
++        clip_para.para_shape_id = 0;
++        clip_para.style_id = 0;
++        if let Some(shape) = clip_para.char_shapes.first_mut() {
++            shape.char_shape_id = 0;
++        }
++
++        let mut source_ids = std::collections::BTreeSet::new();
++        let mut node_count = 0;
++        let root = match clip_para.controls.first().unwrap() {
++            Control::Shape(shape) => shape.as_ref(),
++            _ => unreachable!(),
++        };
++        inspect_hwpx_group_shape(root, 0, &mut node_count, &mut source_ids)
++            .map_err(JsValue::from)?;
++        let assets =
++            load_hwpx_group_assets(&self.core.document, &source_ids).map_err(JsValue::from)?;
++        if assets.iter().map(|asset| asset.bytes.len()).sum::<usize>() > MAX_HWPX_GROUP_MEDIA_BYTES
++        {
++            return Err(JsValue::from_str(
++                "group clipboard media exceeds its size limit",
++            ));
++        }
++
++        let mut id_map = std::collections::BTreeMap::new();
++        let mut doc_info_bins = Vec::with_capacity(assets.len());
++        let mut bin_data_content = Vec::with_capacity(assets.len());
++        for (index, asset) in assets.into_iter().enumerate() {
++            let new_id = u16::try_from(index + 1)
++                .map_err(|_| JsValue::from_str("group clipboard has too many resources"))?;
++            id_map.insert(
++                asset.source_id,
++                GroupClipboardResource {
++                    position_id: new_id,
++                    storage_id: new_id,
++                    extension: asset.extension.clone(),
++                },
++            );
++            let mut descriptor = asset.descriptor;
++            descriptor.raw_data = None;
++            descriptor.storage_id = new_id;
++            descriptor.data_type = crate::model::bin_data::BinDataType::Embedding;
++            descriptor.abs_path = None;
++            descriptor.rel_path = None;
++            descriptor.extension = Some(asset.extension.clone());
++            doc_info_bins.push(descriptor);
++            bin_data_content.push(crate::model::bin_data::BinDataContent {
++                id: new_id,
++                data: crate::model::bin_data::BinDataBytes::from_shared(asset.bytes),
++                extension: asset.extension,
++            });
++        }
++        remap_hwpx_group_resources(
++            match clip_para.controls.first_mut().unwrap() {
++                Control::Shape(shape) => shape.as_mut(),
++                _ => unreachable!(),
++            },
++            &id_map,
++        )
++        .map_err(JsValue::from)?;
++
++        let mut isolated = HwpDocument::create_empty();
++        isolated
++            .core
++            .create_blank_document_native()
++            .map_err(JsValue::from)?;
++        let mut section = Section::default();
++        section.section_def.page_def = crate::model::page::PageDef::a4_default();
++        section.paragraphs.push(clip_para);
++        let mut document = isolated.core.document.clone();
++        document.sections.clear();
++        document.sections.push(section);
++        document.doc_info.bin_data_list = doc_info_bins;
++        document.bin_data_content = bin_data_content;
++        isolated.core.set_document(document);
++        let serialized = isolated
++            .core
++            .export_hwpx_native_with_report()
++            .map_err(JsValue::from)?;
++        if !serialized.content_loss().is_empty() {
++            return Err(JsValue::from_str(
++                "group clipboard serialization reports content loss",
++            ));
++        }
++        let (bytes, _) = serialized.into_parts();
++        if bytes.len() > MAX_HWPX_GROUP_CLIPBOARD_BYTES {
++            return Err(JsValue::from_str(
++                "group clipboard package exceeds its size limit",
++            ));
++        }
++        Ok(bytes)
++    }
++
++    /// Paste a bounded HWPX group package into this HWPX document as one undoable control edit.
++    #[wasm_bindgen(js_name = pasteHwpxGroupClipboard)]
++    pub fn paste_hwpx_group_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        char_offset: u32,
++        package: &[u8],
++    ) -> Result<String, JsValue> {
++        if package.is_empty() || package.len() > MAX_HWPX_GROUP_CLIPBOARD_BYTES {
++            return Err(JsValue::from_str("group clipboard package size is invalid"));
++        }
++        if self.core.source_format != crate::parser::FileFormat::Hwpx {
++            return Err(JsValue::from_str(
++                "group clipboard requires an HWPX destination document",
++            ));
++        }
++        let section = self
++            .core
++            .document
++            .sections
++            .get(section_idx as usize)
++            .ok_or_else(|| JsValue::from_str("group clipboard destination section is missing"))?;
++        let paragraph = section
++            .paragraphs
++            .get(para_idx as usize)
++            .ok_or_else(|| JsValue::from_str("group clipboard destination paragraph is missing"))?;
++        if char_offset as usize > paragraph.text.chars().count() {
++            return Err(JsValue::from_str(
++                "group clipboard destination offset is out of range",
++            ));
++        }
++
++        let mut imported = HwpDocument::from_bytes(package).map_err(JsValue::from)?;
++        if imported.core.source_format != crate::parser::FileFormat::Hwpx
++            || imported.core.document.sections.len() != 1
++            || imported.core.document.sections[0].paragraphs.len() != 1
++            || !imported.core.document.sections[0].paragraphs[0]
++                .text
++                .is_empty()
++        {
++            return Err(JsValue::from_str(
++                "group clipboard package structure is invalid",
++            ));
++        }
++        let mut group_control_idx = None;
++        let mut section_def_count = 0usize;
++        let mut column_def_count = 0usize;
++        for (control_idx, control) in imported.core.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .enumerate()
++        {
++            match control {
++                Control::Shape(shape) if matches!(shape.as_ref(), ShapeObject::Group(_)) => {
++                    if group_control_idx.replace(control_idx).is_some() {
++                        return Err(JsValue::from_str(
++                            "group clipboard package has multiple groups",
++                        ));
++                    }
++                }
++                Control::SectionDef(_) => section_def_count += 1,
++                Control::ColumnDef(_) => column_def_count += 1,
++                _ => {
++                    return Err(JsValue::from_str(
++                        "group clipboard package contains an unsupported control",
++                    ))
++                }
++            }
++        }
++        let group_control_idx = group_control_idx
++            .filter(|_| section_def_count == 1 && column_def_count == 1)
++            .ok_or_else(|| {
++                JsValue::from_str("group clipboard package has an ambiguous group owner")
++            })?;
++        let saved_import_clipboard = imported.core.clipboard.take();
++        imported
++            .core
++            .copy_control_native(0, 0, &[], group_control_idx)
++            .map_err(JsValue::from)?;
++        let source_clipboard = imported.core.clipboard.take();
++        imported.core.clipboard = saved_import_clipboard;
++        let mut clip_para = source_clipboard
++            .and_then(|mut value| value.paragraphs.drain(..).next())
++            .ok_or_else(|| JsValue::from_str("group clipboard package has no control"))?;
++        match clip_para.controls.first() {
++            Some(Control::Shape(shape)) if matches!(shape.as_ref(), ShapeObject::Group(_)) => {}
++            _ => {
++                return Err(JsValue::from_str(
++                    "group clipboard package does not contain a group",
++                ))
++            }
++        }
++
++        let mut source_ids = std::collections::BTreeSet::new();
++        let mut node_count = 0;
++        let root = match clip_para.controls.first().unwrap() {
++            Control::Shape(shape) => shape.as_ref(),
++            _ => unreachable!(),
++        };
++        inspect_hwpx_group_shape(root, 0, &mut node_count, &mut source_ids)
++            .map_err(JsValue::from)?;
++        let assets =
++            load_hwpx_group_assets(&imported.core.document, &source_ids).map_err(JsValue::from)?;
++        if imported.core.document.doc_info.bin_data_list.len() != source_ids.len()
++            || imported.core.document.bin_data_content.len() != source_ids.len()
++        {
++            return Err(JsValue::from_str(
++                "group clipboard package contains unowned resources",
++            ));
++        }
++        if assets.iter().map(|asset| asset.bytes.len()).sum::<usize>() > MAX_HWPX_GROUP_MEDIA_BYTES
++        {
++            return Err(JsValue::from_str(
++                "group clipboard media exceeds its size limit",
++            ));
++        }
++
++        let saved_clipboard = self.core.clipboard.take();
++        let saved_cascade = self.core.paste_cascade_count;
++        let document_snapshot = self.core.document.clone();
++        if self
++            .core
++            .document
++            .bin_data_content
++            .len()
++            .saturating_add(assets.len())
++            > u16::MAX as usize
++            || self
++                .core
++                .document
++                .doc_info
++                .bin_data_list
++                .len()
++                .saturating_add(assets.len())
++                > u16::MAX as usize
++        {
++            self.core.clipboard = saved_clipboard;
++            self.core.paste_cascade_count = saved_cascade;
++            return Err(JsValue::from_str(
++                "destination has no room for group resources",
++            ));
++        }
++        let mut id_map = std::collections::BTreeMap::new();
++        let paste_result = (|| -> Result<String, HwpError> {
++            for asset in assets {
++                let position_id = self
++                    .core
++                    .register_embedded_bin_data(&asset.bytes, &asset.extension);
++                let storage_id = self
++                    .core
++                    .document
++                    .bin_data_content
++                    .last()
++                    .map(|item| item.id)
++                    .ok_or_else(|| {
++                        HwpError::RenderError("registered group resource is missing".into())
++                    })?;
++                id_map.insert(
++                    asset.source_id,
++                    GroupClipboardResource {
++                        position_id,
++                        storage_id,
++                        extension: asset.extension,
++                    },
++                );
++            }
++            remap_hwpx_group_resources(
++                match clip_para.controls.first_mut().unwrap() {
++                    Control::Shape(shape) => shape.as_mut(),
++                    _ => unreachable!(),
++                },
++                &id_map,
++            )
++            .map_err(HwpError::RenderError)?;
++            self.core.clipboard = Some(crate::document_core::ClipboardData {
++                paragraphs: vec![clip_para],
++                plain_text: "[그룹]".to_string(),
++                copied_table_text_reflowed: false,
++            });
++            self.core.paste_control_native(
++                section_idx as usize,
++                para_idx as usize,
++                char_offset as usize,
++            )
++        })();
++        self.core.clipboard = saved_clipboard;
++        self.core.paste_cascade_count = saved_cascade;
++
++        match paste_result {
++            Ok(result) if result.contains("\"ok\":true") => Ok(result),
++            Ok(_) => {
++                self.core.set_document(document_snapshot);
++                Err(JsValue::from_str("HWPX group paste was rejected"))
++            }
++            Err(error) => {
++                self.core.set_document(document_snapshot);
++                Err(JsValue::from(error))
++            }
++        }
++    }
++
+     /// 내부 클립보드의 내용을 캐럿 위치에 붙여넣는다 (본문 문단).
+     ///
+     /// 반환값: JSON `{"ok":true,"paraIdx":<idx>,"charOffset":<offset>}`

@@ -42,6 +42,8 @@ export const HWPX_CAPTION_DIRECTIONS = CAPTION_SIDES;
 export const HWPX_CAPTION_VERT_ALIGNS = CAPTION_VERTICAL_ALIGNS;
 
 export const MAX_HWPX_PICTURE_BYTES = 8 * 1024 * 1024;
+/** Isolated HWPX package for one owned group tree; the JSON envelope stays under the 12 MiB clipboard cap. */
+export const MAX_HWPX_GROUP_PACKAGE_BYTES = 8 * 1024 * 1024;
 
 export interface HwpxPortableCharRun {
   start: number;
@@ -119,7 +121,13 @@ export interface HwpxPortablePicture {
   caption?: HwpxPortableCaption;
 }
 
-export type HwpxPortableObject = HwpxPortableShape | HwpxPortablePicture;
+export interface HwpxPortableGroup {
+  kind: "group";
+  /** Base64 HWPX package containing one group and only its referenced embedded resources. */
+  packageBase64: string;
+}
+
+export type HwpxPortableObject = HwpxPortableShape | HwpxPortablePicture | HwpxPortableGroup;
 
 /**
  * v2 (Stage 3 P5): the engine's structural copy of one drawing — a WordCraft fragment with the
@@ -351,7 +359,23 @@ export function validHwpxPortablePictureCrop(
 }
 
 function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is HwpxPortableObject {
-  if (!record(raw) || kind === "group") return false;
+  if (!record(raw)) return false;
+  if (raw.kind === "group") {
+    if (kind !== "group" || typeof raw.packageBase64 !== "string"
+      || raw.packageBase64.length < 8
+      || raw.packageBase64.length > Math.ceil(MAX_HWPX_GROUP_PACKAGE_BYTES * 4 / 3) + 16
+      || raw.packageBase64.length % 4 !== 0
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw.packageBase64)
+      || Object.keys(raw).some(key => key !== "kind" && key !== "packageBase64")) return false;
+    try {
+      const bytes = atob(raw.packageBase64);
+      return bytes.length >= 4 && bytes.length <= MAX_HWPX_GROUP_PACKAGE_BYTES
+        && bytes.charCodeAt(0) === 0x50 && bytes.charCodeAt(1) === 0x4b;
+    } catch {
+      return false;
+    }
+  }
+  if (kind === "group") return false;
   if (raw.kind === "picture") {
     if (kind !== "picture") return false;
     const mime = HWPX_PICTURE_MIMES.find(m => m === raw.mime);

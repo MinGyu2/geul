@@ -1,6 +1,7 @@
 import {
   HWPX_CAPTION_DIRECTIONS, HWPX_CAPTION_VERT_ALIGNS, HWPX_PARA_ALIGNS, HWPX_PICTURE_MIMES,
   HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes, validHwpxPortablePictureCrop,
+  MAX_HWPX_GROUP_PACKAGE_BYTES,
   type HwpxPortableCaption, type HwpxPortableCharRun, type HwpxPortableObject, type HwpxPortableParagraph,
   type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
@@ -332,14 +333,18 @@ function hasPortableLineGeometry(
 export function extractHwpxPortableObject(
   doc: RhwpDocument, address: readonly [number, number, number], kind: RichObjectKind,
 ): HwpxPortableObject | undefined {
+  if (kind === "group") {
+    const portable = readPortableGroup(doc, address);
+    return portable;
+  }
   return readPortableObject(doc, address, kind, true);
 }
 
 function readPortableObject(
   doc: RhwpDocument, address: readonly [number, number, number], kind: RichObjectKind, requireFont: boolean,
-): HwpxPortableObject | undefined {
-  if (kind === "group") return undefined;
+): Exclude<HwpxPortableObject, { kind: "group" }> | undefined {
   const [sec, para, control] = address;
+  if (kind === "group") return undefined;
 
   if (kind === "picture") {
     if (!doc.getPictureProperties || !doc.getControlImageData || !doc.getControlImageMime) return undefined;
@@ -634,10 +639,24 @@ function populateCaption(
   }
 }
 
+function readPortableGroup(
+  doc: RhwpDocument, address: readonly [number, number, number],
+): Extract<HwpxPortableObject, { kind: "group" }> | undefined {
+  if (!doc.exportHwpxGroupClipboard) return undefined;
+  try {
+    const bytes = doc.exportHwpxGroupClipboard(...address);
+    if (!(bytes instanceof Uint8Array) || bytes.length < 4 || bytes.length > MAX_HWPX_GROUP_PACKAGE_BYTES
+      || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return undefined;
+    return { kind: "group", packageBase64: encodeBase64(bytes) };
+  } catch {
+    return undefined;
+  }
+}
+
 function createPortableObject(
   doc: RhwpDocument,
   at: { section: number; paragraph: number; offset: number },
-  portable: HwpxPortableObject,
+  portable: Exclude<HwpxPortableObject, { kind: "group" }>,
   resolvedFonts: Map<string, readonly number[]>,
 ): { paraIdx: number; controlIdx: number } {
   if (portable.kind === "picture") {
@@ -789,6 +808,31 @@ export function insertHwpxPortableObject(
   at: { section: number; paragraph: number; offset: number },
   portable: HwpxPortableObject,
 ): { paraIdx: number; controlIdx: number } {
+  if (portable.kind === "group") {
+    if (!doc.pasteHwpxGroupClipboard) throw new Error("group paste API unavailable");
+    if (typeof portable.packageBase64 !== "string" || portable.packageBase64.length < 8
+      || portable.packageBase64.length > Math.ceil(MAX_HWPX_GROUP_PACKAGE_BYTES * 4 / 3) + 16
+      || portable.packageBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(portable.packageBase64)) {
+      throw new Error("invalid portable group package");
+    }
+    let bytes: Uint8Array;
+    try {
+      const raw = atob(portable.packageBase64);
+      if (raw.length < 4 || raw.length > MAX_HWPX_GROUP_PACKAGE_BYTES
+        || raw.charCodeAt(0) !== 0x50 || raw.charCodeAt(1) !== 0x4b) throw new Error("invalid ZIP signature");
+      bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    } catch {
+      throw new Error("invalid portable group package");
+    }
+    const result = JSON.parse(doc.pasteHwpxGroupClipboard(at.section, at.paragraph, at.offset, bytes)) as {
+      ok?: boolean; paraIdx?: unknown; controlIdx?: unknown;
+    };
+    if (result.ok !== true || !Number.isSafeInteger(result.paraIdx) || !Number.isSafeInteger(result.controlIdx)) {
+      throw new Error("group paste failed");
+    }
+    return { paraIdx: result.paraIdx as number, controlIdx: result.controlIdx as number };
+  }
   const baseline = doc.charShapeCount?.();
   const result = createPortableObject(doc, at, portable, new Map());
   if (baseline !== undefined && doc.compactAppendedCharShapes) {

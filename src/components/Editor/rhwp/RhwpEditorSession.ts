@@ -3564,8 +3564,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
     const portable = !sameDoc && format === "hwpx" ? payload.portable : undefined;
 
-    // HWP5 and non-portable HWPX snapshots (e.g. groups, curves, gradients, or unsafe captions/stories)
-    // remain same-document only.
+    // HWP5 and unsupported HWPX snapshots (e.g. curves, gradients, or unsafe captions/stories)
+    // remain same-document only. Supported HWPX groups carry an isolated structural package.
     if (!sameDoc && !portable) return "rejected";
     this.history.boundary();
     const applied = this.mutate(() => {

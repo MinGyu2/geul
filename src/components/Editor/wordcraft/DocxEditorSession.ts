@@ -1183,7 +1183,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
           if (!object || !view.drawingInsertionAllowed) return "rejected";
           if (object.version === 3) {
             const shape = object.portable;
-            if (object.sourceFormat !== "hwpx" || object.object !== "shape" || !shape || shape.kind === "picture"
+            if (object.sourceFormat !== "hwpx" || object.object !== "shape" || !shape
+              || shape.kind === "picture" || shape.kind === "group"
               || shape.shapeType !== "polygon" || !shape.polygonPoints || !shape.treatAsChar || shape.textWrap !== "Square"
               || shape.horzOffset !== 0 || shape.vertOffset !== 0 || shape.lineType !== 0
               || shape.borderWidth !== 0 || shape.borderColor !== 0 || shape.fillType !== "solid" || shape.fillBgColor === undefined

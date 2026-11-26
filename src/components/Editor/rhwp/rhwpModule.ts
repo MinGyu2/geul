@@ -100,6 +100,10 @@ export interface RhwpDocument {
   copyControl?(section: number, paragraph: number, cellPathJson: string, control: number): string;
   clipboardHasControl?(): boolean;
   pasteControl?(section: number, paragraph: number, offset: number): string;
+  /** Export one owned HWPX group tree and its referenced embedded resources into a bounded package. */
+  exportHwpxGroupClipboard?(section: number, paragraph: number, control: number): Uint8Array;
+  /** Import a bounded HWPX group package as one transactional document control. */
+  pasteHwpxGroupClipboard?(section: number, paragraph: number, offset: number, packageBytes: Uint8Array): string;
   getControlImageData?(section: number, paragraph: number, cellPathJson: string, control: number): Uint8Array;
   getControlImageMime?(section: number, paragraph: number, cellPathJson: string, control: number): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;

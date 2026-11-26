@@ -340,6 +340,158 @@ describe("HWPX object clipboard fidelity boundary", () => {
       try { expect(shapes(reopened)).toHaveLength(2); } finally { reopened.free(); }
     } finally {src.editor.dispose();}
   });
+
+  it("transfers nested HWPX groups and their owned picture resources across documents", async () => {
+    type GroupDoc = RhwpDocument & { groupShapes(json: string): string };
+    const fixture = engine.HwpDocument.createEmpty() as GroupDoc;
+    let sourceBytes: Uint8Array;
+    try {
+      fixture.createBlankDocument();
+      fixture.insertText(0, 0, 0, "group source");
+      const rect = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "rectangle", width: 4100, height: 2600,
+        treatAsChar: true, textWrap: "Square", horzOffset: 1700, vertOffset: 2200,
+      })));
+      const ellipse = JSON.parse(fixture.createShapeControl!(JSON.stringify({
+        sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "ellipse", width: 2200, height: 2200,
+        treatAsChar: true, textWrap: "Square", horzOffset: 7600, vertOffset: 2500,
+      })));
+      expect(JSON.parse(fixture.setShapeProperties!(0, 0, rect.controlIdx,
+        '{"rotationAngle":23,"horzFlip":true,"fillType":"solid","fillBgColor":1122867}')).ok).toBe(true);
+      const inner = JSON.parse(fixture.groupShapes(JSON.stringify({
+        sectionIdx: 0, targets: [{ paraIdx: 0, controlIdx: rect.controlIdx }, { paraIdx: 0, controlIdx: ellipse.controlIdx }],
+      })));
+      expect(inner.ok).toBe(true);
+      const picture = JSON.parse(fixture.insertPicture!(0, 0, 0, "[]", picturePng, 3200, 1800, 48, 64, "png", "group media"));
+      expect(picture.ok).toBe(true);
+      expect(JSON.parse(fixture.setPictureProperties!(0, 0, picture.controlIdx,
+        '{"treatAsChar":true,"textWrap":"Square","horzOffset":10800,"vertOffset":2200}')).ok).toBe(true);
+      const outer = JSON.parse(fixture.groupShapes(JSON.stringify({
+        sectionIdx: 0,
+        targets: (() => {
+          const controls = JSON.parse(fixture.getPageControlLayout!(0)).controls as Array<Frame & { stableIndex: number[] }>;
+          const nestedGroup = controls.find(item => item.type === "group")!;
+          const nestedPicture = controls.find(item => item.type === "image")!;
+          return [nestedGroup, nestedPicture].map(item => ({ paraIdx: item.stableIndex[1], controlIdx: item.stableIndex[2] }));
+        })(),
+      })));
+      expect(outer.ok).toBe(true);
+      sourceBytes = fixture.exportHwpx();
+    } finally { fixture.free(); }
+
+    const targetFixture = engine.HwpDocument.createEmpty();
+    let targetBytes: Uint8Array;
+    try {
+      targetFixture.createBlankDocument();
+      targetFixture.insertText(0, 0, 0, "unrelated destination");
+      expect(JSON.parse(targetFixture.insertPicture!(0, 0, 0, "[]", targetPicturePng, 1800, 900, 48, 64, "png", "keep me")).ok).toBe(true);
+      targetBytes = targetFixture.exportHwpx();
+    } finally { targetFixture.free(); }
+
+    const src = await setup("hwpx", sourceBytes);
+    const dst = await setup("hwpx", targetBytes);
+    const clipboard = objectClip();
+    const layout = (doc: RhwpDocument) => JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[];
+    const inspect = (bytes: Uint8Array) => JSON.parse(execFileSync("python3", ["-c", `
+import io,json,sys,zipfile,xml.etree.ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as z:
+    root=ET.fromstring(z.read('Contents/section0.xml'))
+    hp='{http://www.hancom.co.kr/hwpml/2011/paragraph}'
+    hc='{http://www.hancom.co.kr/hwpml/2011/core}'
+    paragraphs=root.findall(hp+'p')
+    groups=root.findall('.//'+hp+'container')
+    outer=groups[0]
+    inner=groups[1] if len(groups)>1 else None
+    owned=('container','rect','ellipse','line','arc','polygon','curve','pic')
+    direct=lambda e:[x for x in e if x.tag.startswith(hp) and x.tag[len(hp):] in owned]
+    ignored={'id','instid','zOrder','href','binaryItemIDRef'}
+    def norm(e):
+        attrs=tuple(sorted((k,v) for k,v in e.attrib.items() if k.rsplit('}',1)[-1] not in ignored))
+        return (e.tag,attrs,(e.text or '').strip(),tuple(norm(c) for c in e))
+    group_pic=outer.find('.//'+hp+'pic')
+    href=group_pic.get('href') if group_pic is not None else None
+    asset=z.read(href) if href in z.namelist() else b''
+    names=[n for n in z.namelist() if n.startswith('BinData/')]
+    ids=[e.get('id') for e in outer.iter() if e.get('id')]
+    import base64
+    media_bytes=[z.read(name) for name in names]
+    print(json.dumps({'groups':len(groups),'paragraphCount':len(paragraphs),
+      'paragraphText':[''.join(p.itertext()) for p in paragraphs],
+      'outer':[x.tag[len(hp):] for x in direct(outer)],
+      'inner':[x.tag[len(hp):] for x in direct(inner)] if inner is not None else None,
+      'tree':norm(outer), 'ids':ids,
+      'media':names,'groupAssetMatches':asset == base64.b64decode(sys.argv[1]),
+      'unrelatedAssetMatches':base64.b64decode(sys.argv[2]) in media_bytes}))
+`, picturePng.toString("base64"), targetPicturePng.toString("base64")], { input: bytes }).toString());
+    try {
+      const sourceBefore = src.doc.exportHwpx();
+      const targetBefore = dst.doc.exportHwpx();
+      const frame = layout(src.doc).find(item => item.type === "group")!;
+      expect(frame).toBeDefined();
+      const directGroupPackage = src.doc.exportHwpxGroupClipboard!(0, 0, frame.controlIdx);
+      expect(directGroupPackage).toBeInstanceOf(Uint8Array);
+      expect(directGroupPackage.byteLength).toBeGreaterThan(4);
+      src.pick(frame);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clipboard.clipboard)).toBe(true);
+      const payload = parseObjectClipboardPayload(clipboard.payload());
+      expect(payload).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "group", portable: { kind: "group" } });
+      if (!payload || payload.version !== 3 || payload.sourceFormat !== "hwpx"
+        || payload.portable?.kind !== "group") throw new Error("group clipboard payload is unavailable");
+      const isolatedDestination = new engine.HwpDocument(targetBytes) as RhwpDocument;
+      try {
+        const response = isolatedDestination.pasteHwpxGroupClipboard!(
+          0, 0, 0, Buffer.from(payload.portable.packageBase64, "base64"),
+        );
+        expect(JSON.parse(response).ok).toBe(true);
+      } finally { isolatedDestination.free(); }
+
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clipboard.clipboard)).toBe(true);
+      await dst.confirm();
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
+      expect(layout(dst.doc).filter(item => item.type === "group")).toHaveLength(1);
+      const copied = inspect(dst.doc.exportHwpx());
+      const original = inspect(sourceBytes);
+      expect(copied.groups).toBe(2);
+      expect(copied.outer).toEqual(["container", "pic"]);
+      expect(copied.inner).toEqual(["rect", "ellipse"]);
+      expect(copied.tree).toEqual(original.tree);
+      expect(copied.media).toHaveLength(2);
+      expect(copied.groupAssetMatches).toBe(true);
+      expect(copied.unrelatedAssetMatches).toBe(true);
+      expect(new Set(copied.ids).size).toBe(copied.ids.length);
+      expect(copied.ids.some((id: string) => inspect(sourceBytes).ids.includes(id))).toBe(false);
+
+      expect(dst.editor.undo()).toBe(true);
+      await dst.confirm();
+      expect(dst.doc.exportHwpx()).toEqual(targetBefore);
+      expect(layout(dst.doc).filter(item => item.type === "group")).toHaveLength(0);
+      expect(dst.editor.redo()).toBe(true);
+      await dst.confirm();
+      expect(layout(dst.doc).filter(item => item.type === "group")).toHaveLength(1);
+
+      const exported = dst.doc.exportHwpxWithReport();
+      try {
+        expectReopenEvidence(dst.doc, exported.takeBytes(), exported.contentLoss(), reopened => {
+          const tree = inspect(reopened.exportHwpx());
+          expect(tree.groups).toBe(2);
+          expect(tree.outer).toEqual(["container", "pic"]);
+          expect(tree.inner).toEqual(["rect", "ellipse"]);
+          expect(tree.tree).toEqual(original.tree);
+          expect(tree.media).toHaveLength(2);
+          expect(tree.groupAssetMatches).toBe(true);
+          expect(tree.unrelatedAssetMatches).toBe(true);
+        });
+      } finally { exported.free(); }
+
+      const malformed = JSON.parse(clipboard.payload());
+      malformed.portable.packageBase64 = "UEsDBA==";
+      const beforeRejected = dst.doc.exportHwpx();
+      const snapshot = dst.editor.snapshot();
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, objectClip(JSON.stringify(malformed)).clipboard)).toBe(false);
+      expect(dst.doc.exportHwpx()).toEqual(beforeRejected);
+      expect(dst.editor.snapshot()).toEqual(snapshot);
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
   it("routes missing MIME object markers without text downgrade", async () => {
     const src = await setup("hwpx"), dst = await setup("hwpx");
     let plain = "";
@@ -371,6 +523,7 @@ const picturePng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC",
   "base64",
 );
+const targetPicturePng = readFileSync(resolve("src-tauri/icons/128x128.png"));
 
 function pictures(doc: RhwpDocument) {
   type PictureFrame = Frame & { secIdx: number; paraIdx: number };
