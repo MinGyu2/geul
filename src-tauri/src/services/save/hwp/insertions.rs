@@ -1528,7 +1528,11 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                 && super::gso::prove_cloned_gso_from(&old.objects, object, &ac, &original_ids)
             {
             } else if super::gso::is_basic_shape(object) {
-                super::gso::prove_inserted_shape(object, &bc, &ac, &original_ids)?;
+                if super::gso::docx_portable_shape_candidate(object) {
+                    super::gso::prove_docx_portable_shape(object, &original_ids)?;
+                } else {
+                    super::gso::prove_inserted_shape(object, &bc, &ac, &original_ids)?;
+                }
             } else if object[0].2.starts_with(b" osg") {
                 validate_picture(object, 1, &bc, &resources.dimensions, &mut used.pictures)?;
             } else {

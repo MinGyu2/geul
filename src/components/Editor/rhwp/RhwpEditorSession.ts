@@ -4,7 +4,7 @@ import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
-import { extractHwpxPortableObject, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
+import { extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
   OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
@@ -3572,7 +3572,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       && (payload.sourceFormat === "hwpx" || payload.sourceFormat === "hwp")
       && payload.sourceFormat === format;
     const docxHwpxPortable = payload.version === 4 && format === "hwpx" ? payload.portable : undefined;
-    if (!sameFormatPayload && !docxHwpxPortable) return "rejected";
+    const docxHwp5Portable = payload.version === 4 && format === "hwp" && this.canInsertShape() ? payload.portable : undefined;
+    if (!sameFormatPayload && !docxHwpxPortable && !docxHwp5Portable) return "rejected";
     if (!doc || !this.history || !this.editable || this.caret.note || this.imeUnsettled || this.uncertain
       || this.objectSelection || this.hasSelection || this.caret.cell
       || this.pending > 0 || this.committingEpoch === this.epoch || this.saving) return "rejected";
@@ -3588,11 +3589,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
     // Unsupported snapshots (e.g. curves, gradients, or unsafe captions/stories) remain
     // same-document only. Cross-document imports are bounded format-owned fragments.
-    if (!sameDoc && !portable && (!hwpFragment || !doc.pasteHwp5ControlClipboard)) return "rejected";
+    if (!sameDoc && !portable && !docxHwp5Portable && (!hwpFragment || !doc.pasteHwp5ControlClipboard)) return "rejected";
     this.history.boundary();
     const applied = this.mutate(() => {
       const res = sameDoc
         ? JSON.parse(doc.pasteControl!(at.section, at.paragraph, at.offset)) as { ok?: boolean; paraIdx?: unknown; controlIdx?: unknown }
+        : docxHwp5Portable
+          ? insertDocxPortableShapeIntoHwp5(doc, at, docxHwp5Portable)
         : portable
           ? insertHwpxPortableObject(doc, at, portable)
           : JSON.parse(doc.pasteHwp5ControlClipboard!(at.section, at.paragraph, at.offset, hwpFragment!)) as {

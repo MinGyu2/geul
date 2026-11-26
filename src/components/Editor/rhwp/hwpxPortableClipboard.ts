@@ -3,7 +3,7 @@ import {
   HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes, validHwpxPortablePictureCrop,
   MAX_HWPX_GROUP_PACKAGE_BYTES,
   type HwpxPortableCaption, type HwpxPortableCharRun, type HwpxPortableObject, type HwpxPortableParagraph,
-  type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShapeType, type RichObjectKind,
+  type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShape, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import { fontFamilyProblem } from "../../../commands/parameters";
 import { MAX_CAPTION_SPACING_HWPUNIT } from "../../../commands/objectSelection";
@@ -774,6 +774,53 @@ function createPortableObject(
 
   if (portable.caption) populateCaption(doc, at.section, paraIdx, controlIdx, true, portable.caption, resolvedFonts);
   return { paraIdx, controlIdx };
+}
+
+/** Import a validated DOCX primitive into the restricted, T009-gated HWP5 body path. */
+export function insertDocxPortableShapeIntoHwp5(
+  doc: RhwpDocument,
+  at: { section: number; paragraph: number; offset: number },
+  portable: HwpxPortableShape,
+): { paraIdx: number; controlIdx: number } {
+  if (at.section !== 0 || !doc.getShapeProperties || !doc.getControls || !doc.getParagraphCount
+    || !["rectangle", "ellipse", "line"].includes(portable.shapeType)) throw new Error("unsupported HWP5 shape target");
+  const paragraphCount = doc.getParagraphCount(at.section);
+  const inserted = insertHwpxPortableObject(doc, at, portable);
+  if (inserted.paraIdx !== at.paragraph || doc.getParagraphCount(at.section) !== paragraphCount) {
+    throw new Error("HWP5 shape insertion changed paragraph ownership");
+  }
+  const address = [at.section, inserted.paraIdx, inserted.controlIdx] as const;
+  const shape = inspectRhwpShape(doc, address);
+  const raw = shape?.raw;
+  if (!raw || raw.shapeType !== portable.shapeType || raw.width !== portable.width || raw.height !== portable.height
+    || raw.horzOffset !== portable.horzOffset || raw.vertOffset !== portable.vertOffset
+    || raw.treatAsChar !== portable.treatAsChar || raw.textWrap !== portable.textWrap
+    || raw.rotationAngle !== portable.rotationAngle || raw.horzFlip !== portable.horzFlip || raw.vertFlip !== portable.vertFlip
+    || raw.borderColor !== portable.borderColor || raw.borderWidth !== portable.borderWidth || raw.fillType !== portable.fillType
+    || raw.description !== (portable.description ?? "")) throw new Error("HWP5 shape properties did not match the portable mapping");
+  const properties = JSON.parse(doc.getShapeProperties(...address)) as Record<string, unknown>;
+  if (properties.lineType !== portable.lineType
+    || (portable.fillType === "solid" && properties.fillBgColor !== portable.fillBgColor)) {
+    throw new Error("HWP5 shape style did not match the portable mapping");
+  }
+  const controls: unknown = JSON.parse(doc.getControls());
+  if (!Array.isArray(controls)) throw new Error("HWP5 shape ownership is unavailable");
+  const owners = controls.filter((value): value is Record<string, unknown> => !!value && typeof value === "object"
+    && !Array.isArray(value) && value.list === 0 && value.para === inserted.paraIdx && value.controlIndex === inserted.controlIdx);
+  const family = portable.shapeType === "rectangle" ? "사각형"
+    : portable.shapeType === "ellipse" ? "타원"
+      : portable.shapeType === "line" ? "직선" : undefined;
+  if (!family) throw new Error("unsupported HWP5 shape family");
+  const owner = owners[0];
+  const ownerProps = owner?.props;
+  if (owners.length !== 1 || owner?.ctrlId !== "gso" || owner?.userDesc !== family
+    || !ownerProps || typeof ownerProps !== "object" || Array.isArray(ownerProps)
+    || (ownerProps as Record<string, unknown>).Width !== portable.width
+    || (ownerProps as Record<string, unknown>).Height !== portable.height
+    || ((ownerProps as Record<string, unknown>).TreatAsChar === 1) !== portable.treatAsChar) {
+    throw new Error("HWP5 shape owner was not unique or did not match the imported shape");
+  }
+  return inserted;
 }
 
 function verifyPortableParagraphs(

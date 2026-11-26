@@ -8,11 +8,11 @@
 //! Picture caption editing has a separate owned story proof. Caption deletion, groups, charts,
 //! OLE, unknown extensions, and BinData substitutions remain outside this module’s edit proofs.
 
+use super::insertions::{
+    dword, entries, finding, preserved, reference, signed_dword, valid, word, Checked, Defs,
+};
 use super::FindingCode;
 use super::Record;
-use super::insertions::{
-    Checked, Defs, dword, entries, finding, preserved, reference, valid, word,
-};
 
 const BODY: &str = "BodyText/Section0";
 const CTRL_GSO: &[u8; 4] = b" osg";
@@ -858,6 +858,243 @@ pub(super) fn prove_inserted_shape(
             BODY,
         )?;
     }
+    Ok(())
+}
+
+/// Candidate emitted by the pinned RHWP DOCX portable-shape insertion path.
+/// This only selects the strict proof below; it does not authorize the object.
+pub(super) fn docx_portable_shape_candidate(rs: &[Record<'_>]) -> bool {
+    matches!(
+        shape_ctrl_id(rs),
+        Some((SC_LINE | SC_RECT | SC_ELLIPSE, 8, 1))
+    ) && rs.first().is_some_and(|(tag, level, header)| {
+        *tag == TAG_CTRL_HEADER
+            && *level == 1
+            && header.starts_with(CTRL_GSO)
+            && dword(header, 4).is_ok_and(|attr| attr == 0x000a_0001)
+    })
+}
+
+fn expected_portable_rotation(width: f64, height: f64, angle: i16) -> [f64; 6] {
+    if angle.rem_euclid(360) == 0 {
+        return [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    }
+
+    // Matches the pinned RHWP serializer's generated rotation matrix. The
+    // positive-corner correction keeps the local rectangle in its HWP bounds.
+    let theta = f64::from(angle).to_radians();
+    let cos = theta.cos();
+    let sin = theta.sin();
+    let corners = [
+        (0.0, 0.0),
+        (width * cos, width * sin),
+        (-height * sin, height * cos),
+        (width * cos - height * sin, width * sin + height * cos),
+    ];
+    let min_x = corners
+        .iter()
+        .map(|(x, _)| *x)
+        .fold(f64::INFINITY, f64::min);
+    let min_y = corners
+        .iter()
+        .map(|(_, y)| *y)
+        .fold(f64::INFINITY, f64::min);
+    [cos, -sin, -min_x, sin, cos, -min_y]
+}
+
+fn matrix_is_exact(data: &[u8], expected: [f64; 6]) -> bool {
+    data.len() == 48
+        && data.chunks_exact(8).zip(expected).all(|(raw, value)| {
+            let actual = f64::from_le_bytes(raw.try_into().unwrap());
+            actual.is_finite() && actual.to_bits() == value.to_bits()
+        })
+}
+
+/// Prove only the resource-free DOCX primitive subset mapped by
+/// `docxEngineShapeToHwpx` and emitted by the pinned RHWP serializer. This is
+/// deliberately independent of the older default-shape proof: imported
+/// dimensions, rotation, flips, solid/no-fill, stroke, and description are
+/// accepted only when every record field has this modeled representation.
+pub(super) fn prove_docx_portable_shape(
+    rs: &[Record<'_>],
+    original_ids: &std::collections::BTreeSet<usize>,
+) -> Checked<()> {
+    let Some((kind, 8, 1)) = shape_ctrl_id(rs) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let Some(&(TAG_CTRL_HEADER, 1, header)) = rs.first() else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let leaf_tag =
+        expected_leaf_tag(kind).ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+    let Some(&(TAG_SHAPE_COMPONENT, 2, component)) = rs.get(1) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+    let Some(&(actual_leaf_tag, 3, leaf)) = rs.get(2) else {
+        return Err(finding(FindingCode::RecordsChanged, BODY));
+    };
+
+    preserved(
+        rs.len() == 3
+            && header.starts_with(CTRL_GSO)
+            && dword(header, 4)? == 0x000a_0001
+            && actual_leaf_tag == leaf_tag,
+        BODY,
+    )?;
+    let width = dword(header, 16)?;
+    let height = dword(header, 20)?;
+    valid(
+        (1..=MAX_DIM_HU).contains(&width) && (1..=MAX_DIM_HU).contains(&height),
+        BODY,
+    )?;
+    let _z_order = dword(header, 24)?;
+    preserved(
+        header.len() >= 46
+            && header[8..16] == [0; 8]
+            && header[28..36] == [0; 8]
+            && header[40..44] == [0; 4],
+        BODY,
+    )?;
+
+    let desc_units = word(header, 44)?;
+    let desc_bytes = desc_units
+        .checked_mul(2)
+        .and_then(|len| header.get(46..46 + len))
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(
+        desc_units <= 4096 && 46 + desc_bytes.len() == header.len(),
+        BODY,
+    )?;
+    let description: Vec<u16> = desc_bytes
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect();
+    valid(String::from_utf16(&description).is_ok(), BODY)?;
+
+    let instance = u32::try_from(dword(header, 36)?)
+        .map_err(|_| finding(FindingCode::OutputMalformed, BODY))?;
+    reference(
+        instance & 0x4000_0000 != 0
+            && instance != 0
+            && !original_ids.contains(&(instance as usize)),
+        BODY,
+    )?;
+
+    preserved(
+        component.len() >= 52 && component[..4] == component[4..8],
+        BODY,
+    )?;
+    let comp_width = dword(component, 20)?;
+    let comp_height = dword(component, 24)?;
+    preserved(
+        signed_dword(component, 8)? == 0
+            && signed_dword(component, 12)? == 0
+            && word(component, 16)? == 0
+            && word(component, 18)? == 1
+            && comp_width == width
+            && comp_height == height
+            && dword(component, 28)? == width
+            && dword(component, 32)? == height,
+        BODY,
+    )?;
+    let flip = dword(component, 36)? as u32;
+    preserved(flip & !3 == 0x0008_0000, BODY)?;
+    let angle = word(component, 40)? as u16 as i16;
+    valid((0..=359).contains(&angle), BODY)?;
+    preserved(
+        signed_dword(component, 42)? == (width / 2) as i32
+            && signed_dword(component, 46)? == (height / 2) as i32,
+        BODY,
+    )?;
+
+    let rendering_end = shape_rendering_end(component, 8)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    preserved(word(component, 50)? == 1 && rendering_end == 196, BODY)?;
+    let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let rotation = expected_portable_rotation(width as f64, height as f64, angle);
+    preserved(
+        matrix_is_exact(&component[52..100], identity)
+            && matrix_is_exact(&component[100..148], identity)
+            && matrix_is_exact(&component[148..196], rotation),
+        BODY,
+    )?;
+
+    let border_color = dword(component, rendering_end)?;
+    let border_width = signed_dword(component, rendering_end + 4)?;
+    let border_attr = dword(component, rendering_end + 8)? as u32;
+    let outline = *component
+        .get(rendering_end + 12)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    valid(
+        border_color <= 0x00ff_ffff && (0..=7200).contains(&border_width),
+        BODY,
+    )?;
+    let line_type = border_attr & 0x3f;
+    valid(
+        matches!(line_type, 0 | 1)
+            && border_attr & !(0x3f | (0x0f << 6)) == 0xd100_0000
+            && (border_attr >> 6) & 0x0f == 1
+            && outline == 0,
+        BODY,
+    )?;
+    if line_type == 0 {
+        preserved(border_color == 0 && border_width == 0, BODY)?;
+    }
+
+    let fill_at = rendering_end + 13;
+    let fill_type = dword(component, fill_at)? as u32;
+    let fill_len = match fill_type {
+        0 => {
+            preserved(
+                component
+                    .get(fill_at..fill_at + 8)
+                    .is_some_and(|fill| fill == [0; 8]),
+                BODY,
+            )?;
+            8
+        }
+        1 if kind != SC_LINE => {
+            valid(
+                dword(component, fill_at + 4)? <= 0x00ff_ffff
+                    && dword(component, fill_at + 8)? == 0
+                    && signed_dword(component, fill_at + 12)? == -1
+                    && dword(component, fill_at + 16)? == 0
+                    && component.get(fill_at + 20) == Some(&0),
+                BODY,
+            )?;
+            21
+        }
+        _ => return Err(finding(FindingCode::RecordsChanged, BODY)),
+    };
+    let shadow_at = fill_at + fill_len;
+    let tail_at = shadow_at + 16;
+    let subject = (instance & 0x3fff_ffff)
+        .checked_add(1)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    preserved(
+        component.len() == tail_at + 6
+            && component.get(shadow_at..tail_at) == Some(&[0; 16])
+            && dword(component, tail_at)? as u32 == subject
+            && component[tail_at + 4..] == [0, 0],
+        BODY,
+    )?;
+
+    let expected_leaf = match kind {
+        SC_LINE => {
+            let mut expected = Vec::with_capacity(18);
+            for coordinate in [0i32, 0, width as i32, height as i32] {
+                expected.extend_from_slice(&coordinate.to_le_bytes());
+            }
+            expected.extend_from_slice(&0u16.to_le_bytes());
+            expected
+        }
+        SC_RECT => canonical_rectangle_leaf(width, height)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+        SC_ELLIPSE => canonical_ellipse_leaf(width, height)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+        _ => return Err(finding(FindingCode::RecordsChanged, BODY)),
+    };
+    preserved(actual_leaf_tag == leaf_tag && leaf == expected_leaf, BODY)?;
     Ok(())
 }
 
@@ -3291,12 +3528,213 @@ fn differs_by_one_cubic(short: &[CurveStep], long: &[CurveStep]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use super::super::super::preview::PreviewRaster;
     use super::super::{
         Finding, FindingCode, Mode, Side, compare_saved_with_preview, compare_with, open,
         rebuild_preview, refresh_previews,
     };
+    use std::collections::BTreeSet;
     use std::io::{Cursor, Write};
+
+    fn portable_shape(
+        kind: &[u8; 4],
+        width: u32,
+        height: u32,
+        angle: i16,
+        flip: u32,
+        fill: bool,
+        stroke: bool,
+        description: &str,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let mut header = vec![0; 46 + description.encode_utf16().count() * 2];
+        header[..4].copy_from_slice(CTRL_GSO);
+        header[4..8].copy_from_slice(&0x000a_0001u32.to_le_bytes());
+        header[16..20].copy_from_slice(&width.to_le_bytes());
+        header[20..24].copy_from_slice(&height.to_le_bytes());
+        header[24..28].copy_from_slice(&1u32.to_le_bytes());
+        let instance = 0x7de5_01ffu32;
+        header[36..40].copy_from_slice(&instance.to_le_bytes());
+        let description: Vec<u16> = description.encode_utf16().collect();
+        header[44..46].copy_from_slice(&(description.len() as u16).to_le_bytes());
+        for (index, unit) in description.iter().enumerate() {
+            header[46 + index * 2..48 + index * 2].copy_from_slice(&unit.to_le_bytes());
+        }
+
+        let mut component = vec![0; 8];
+        component[..4].copy_from_slice(kind);
+        component[4..8].copy_from_slice(kind);
+        component.extend_from_slice(&0i32.to_le_bytes()); // offset X
+        component.extend_from_slice(&0i32.to_le_bytes()); // offset Y
+        component.extend_from_slice(&0u16.to_le_bytes()); // group level
+        component.extend_from_slice(&1u16.to_le_bytes()); // local version
+        for dimension in [width, height, width, height] {
+            component.extend_from_slice(&dimension.to_le_bytes());
+        }
+        component.extend_from_slice(&(0x0008_0000 | flip).to_le_bytes());
+        component.extend_from_slice(&angle.to_le_bytes());
+        component.extend_from_slice(&((width / 2) as i32).to_le_bytes());
+        component.extend_from_slice(&((height / 2) as i32).to_le_bytes());
+        component.extend_from_slice(&1u16.to_le_bytes());
+        for value in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            component.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            component.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in expected_portable_rotation(width as f64, height as f64, angle) {
+            component.extend_from_slice(&value.to_le_bytes());
+        }
+        component.extend_from_slice(&(if stroke { 0x0033_2211u32 } else { 0 }).to_le_bytes());
+        component.extend_from_slice(&(if stroke { 35i32 } else { 0 }).to_le_bytes());
+        component.extend_from_slice(&(0xd100_0040u32 | u32::from(stroke)).to_le_bytes());
+        component.push(0); // outline
+        if fill && kind != SC_LINE {
+            component.extend_from_slice(&1u32.to_le_bytes());
+            component.extend_from_slice(&0x0044_88ccu32.to_le_bytes());
+            component.extend_from_slice(&0u32.to_le_bytes());
+            component.extend_from_slice(&(-1i32).to_le_bytes());
+            component.extend_from_slice(&0u32.to_le_bytes());
+            component.push(0);
+        } else {
+            component.extend_from_slice(&[0; 8]);
+        }
+        component.extend_from_slice(&[0; 16]); // shadow
+        component.extend_from_slice(&((instance & 0x3fff_ffff) + 1).to_le_bytes());
+        component.extend_from_slice(&[0, 0]); // reserved and shadow alpha
+
+        let leaf = match kind {
+            SC_LINE => {
+                let mut leaf = Vec::new();
+                for coordinate in [0i32, 0, width as i32, height as i32] {
+                    leaf.extend_from_slice(&coordinate.to_le_bytes());
+                }
+                leaf.extend_from_slice(&0u16.to_le_bytes());
+                leaf
+            }
+            SC_RECT => canonical_rectangle_leaf(width as usize, height as usize).unwrap(),
+            SC_ELLIPSE => canonical_ellipse_leaf(width as usize, height as usize).unwrap(),
+            _ => unreachable!(),
+        };
+        (header, component, leaf)
+    }
+
+    fn portable_records<'a>(
+        kind: &[u8; 4],
+        header: &'a [u8],
+        component: &'a [u8],
+        leaf: &'a [u8],
+    ) -> [Record<'a>; 3] {
+        [
+            (TAG_CTRL_HEADER, 1, header),
+            (TAG_SHAPE_COMPONENT, 2, component),
+            (expected_leaf_tag(kind).unwrap(), 3, leaf),
+        ]
+    }
+
+    #[test]
+    fn docx_portable_primitive_shapes_are_proved_from_their_complete_records() {
+        for (kind, width, height, angle, flip, fill, stroke, description) in [
+            (SC_ELLIPSE, 7761, 4586, 90, 2, true, true, "Transfer shape"),
+            (SC_RECT, 2400, 1500, 0, 0, false, false, ""),
+            (SC_LINE, 1200, 600, 37, 1, false, true, "line"),
+        ] {
+            let (header, component, leaf) =
+                portable_shape(kind, width, height, angle, flip, fill, stroke, description);
+            let records = portable_records(kind, &header, &component, &leaf);
+            assert!(docx_portable_shape_candidate(&records));
+            assert!(prove_docx_portable_shape(&records, &BTreeSet::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn docx_portable_primitive_rejects_tampering_unknown_records_and_identity_reuse() {
+        let (mut header, component, leaf) =
+            portable_shape(SC_ELLIPSE, 7761, 4586, 90, 2, true, true, "Transfer shape");
+        let instance = u32::from_le_bytes(header[36..40].try_into().unwrap());
+        let records = portable_records(SC_ELLIPSE, &header, &component, &leaf);
+        assert!(prove_docx_portable_shape(&records, &BTreeSet::from([instance as usize])).is_err());
+
+        let mut changed_component = component.clone();
+        changed_component[20] ^= 1; // original width
+        let records = portable_records(SC_ELLIPSE, &header, &changed_component, &leaf);
+        assert!(prove_docx_portable_shape(&records, &BTreeSet::new()).is_err());
+
+        let mut changed_component = component.clone();
+        changed_component[148] ^= 1; // generated rotation matrix
+        let records = portable_records(SC_ELLIPSE, &header, &changed_component, &leaf);
+        assert!(prove_docx_portable_shape(&records, &BTreeSet::new()).is_err());
+
+        let mut changed_component = component.clone();
+        changed_component[230] = 1; // shadow/effect
+        let records = portable_records(SC_ELLIPSE, &header, &changed_component, &leaf);
+        assert!(prove_docx_portable_shape(&records, &BTreeSet::new()).is_err());
+
+        header[46..48].copy_from_slice(&0xd800u16.to_le_bytes()); // invalid UTF-16 description
+        let records = portable_records(SC_ELLIPSE, &header, &component, &leaf);
+        assert!(prove_docx_portable_shape(&records, &BTreeSet::new()).is_err());
+
+        let (header, component, leaf) =
+            portable_shape(SC_ELLIPSE, 7761, 4586, 90, 2, true, true, "Transfer shape");
+        let records = portable_records(SC_ELLIPSE, &header, &component, &leaf);
+        let with_unknown = [
+            records[0],
+            records[1],
+            records[2],
+            (TAG_PICTURE, 3, b"unowned resource".as_slice()),
+        ];
+        assert!(prove_docx_portable_shape(&with_unknown, &BTreeSet::new()).is_err());
+    }
+
+    #[test]
+    fn docx_portable_primitive_insertion_passes_t009_and_tampered_output_is_rejected() {
+        let definitions = doc_info_records(0);
+        let definition_refs = definitions
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect::<Vec<_>>();
+        let original_section = wrap_section(vec![]);
+        let original_section_refs = original_section
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect::<Vec<_>>();
+        let original = build_hwp(
+            &definition_refs,
+            &original_section_refs,
+            b"\x89PNG\r\n\x1a\n123",
+        );
+
+        let (header, component, leaf) =
+            portable_shape(SC_ELLIPSE, 7761, 4586, 90, 2, true, true, "Transfer shape");
+        let inserted = vec![
+            (TAG_CTRL_HEADER, 1, header.clone()),
+            (TAG_SHAPE_COMPONENT, 2, component.clone()),
+            (TAG_ELLIPSE, 3, leaf.clone()),
+        ];
+        let edited_section = wrap_section(vec![inserted.clone()]);
+        let edited_section_refs = edited_section
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect::<Vec<_>>();
+        let accepted = build_hwp(
+            &definition_refs,
+            &edited_section_refs,
+            b"\x89PNG\r\n\x1a\n123",
+        );
+        assert_eq!(check_with_preview_refresh(&original, &accepted), vec![]);
+
+        let mut tampered = inserted;
+        tampered[1].2[230] = 1; // Unsupported shadow/effect payload.
+        let tampered_section = wrap_section(vec![tampered]);
+        let tampered_refs = tampered_section
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect::<Vec<_>>();
+        let rejected = build_hwp(&definition_refs, &tampered_refs, b"\x89PNG\r\n\x1a\n123");
+        assert!(check_with_preview_refresh(&original, &rejected)
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(BODY)));
+    }
 
     fn pack_records(rs: &[(u16, u16, &[u8])]) -> Vec<u8> {
         let mut out = Vec::new();

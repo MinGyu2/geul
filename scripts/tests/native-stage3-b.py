@@ -330,6 +330,32 @@ try {
     return source_docx, unsupported_docx, destination_hwpx, refusal_hwpx
 
 
+def prepare_p6_dx_h5_fixtures(out):
+    out.mkdir(parents=True, exist_ok=True)
+    source_docx, unsupported_docx, _, _ = prepare_p6_dx_hx_fixtures(out / "docx-source")
+    destination_hwp = out / "p6-dx-h5-destination.fixture.hwp"
+    create = r"""
+const targetPath=process.argv[1];
+const doc=rhwp.HwpDocument.createEmpty();
+const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
+try {
+  doc.createBlankDocument();
+  doc.insertText(0,0,0,'HWP5 destination body');
+  const picture=ok(doc.insertPicture(0,0,0,'[]',fs.readFileSync(path.resolve('src-tauri/icons/128x128.png')),
+    2400,1500,128,128,'png','keep destination'), 'destination picture');
+  ok(doc.setPictureProperties(0,0,picture.controlIdx,
+    '{\"treatAsChar\":true,\"textWrap\":\"Square\",\"horzOffset\":7800,\"vertOffset\":2500}'),
+    'destination picture properties');
+  fs.writeFileSync(targetPath,doc.exportHwp());
+} finally {doc.free();}
+"""
+    template = p6.ORACLE.split("try {", 1)[0]
+    marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
+    require(marker in template, "P6 DOCX-to-HWP5 fixture template is stale")
+    subprocess.run(["node", "-e", template.replace(marker, create), str(destination_hwp)], cwd=ROOT, check=True)
+    return source_docx, unsupported_docx, destination_hwp
+
+
 def prepare_p6_hx_dx_more_fixtures(out):
     fixture_dir = out / "p6-hx-dx-more-fixtures"
     fixture_dir.mkdir(parents=True, exist_ok=True)
@@ -854,6 +880,191 @@ def p6_dx_hx(acc, row, b_root, out):
     require(source_parts == _package_parts(source), "source OPC parts changed during copy/paste")
     row["preservation"] = {"sourceDocxBytesAndParts": True, "destinationUnrelatedOpc": True,
                            "destinationUnrelatedResources": True, "savedTargetReopen": True}
+
+
+def p6_dx_h5(acc, row, b_root, out):
+    fixture_dir = out / "p6-dx-h5-fixtures"
+    source_fixture, unsupported_fixture, destination_fixture = prepare_p6_dx_h5_fixtures(fixture_dir)
+    source = begin(acc, row, source_fixture, out, "p6-dx-h5-source.docx")
+    source_hash = digest(source)
+    source_parts = _package_parts(source)
+    row["fixtureHashes"] = {
+        "sourceDocx": source_hash,
+        "unsupportedDocx": digest(unsupported_fixture),
+        "destinationHwp": digest(destination_fixture),
+    }
+    acc.d.js("""
+      window.p6DxH5Events=[];
+      for(const type of ['pointerdown','keydown']) document.addEventListener(type,e=>{
+        if(type==='pointerdown'||(e.ctrlKey&&['c','v','z','y'].includes(e.key.toLowerCase())))
+          window.p6DxH5Events.push({type,key:e.key||null,trusted:e.isTrusted});
+      },true);
+    """)
+    _, x, y = _docx_shape_viewport_point(acc, "CC8844")
+    p4.rhwp_poc.click(acc.d, x, y)
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+    acc.key("ctrl+c")
+    row["trustedCopyInput"] = acc.d.js("return window.p6DxH5Events.slice()")
+    row["sourceStatusAfterCopy"] = acc.status("docx")
+    require(row["sourceStatusAfterCopy"]["revision"] == "0"
+            and row["sourceStatusAfterCopy"]["status"] == "ready"
+            and row["sourceStatusAfterCopy"]["dirty"] == "false",
+            "cross-format copy changed the DOCX source", row["sourceStatusAfterCopy"])
+    require(any(e["type"] == "pointerdown" and e["trusted"] for e in row["trustedCopyInput"])
+            and any(e["key"] == "c" and e["trusted"] for e in row["trustedCopyInput"]),
+            "DOCX selection/copy did not use trusted Native input", row["trustedCopyInput"])
+    require(digest(source) == source_hash and source_parts == _package_parts(source),
+            "cross-format copy changed source DOCX bytes or OPC parts")
+
+    destination = out / "p6-dx-h5-destination.hwp"
+    shutil.copyfile(destination_fixture, destination)
+    before = row["beforeDestination"] = inspect_hwp(destination)
+    require(not before["shapes"] and len(before["images"]) == 1,
+            "HWP5 destination fixture must contain only its preservation picture", before)
+    destination_streams_before = p6.gso.cfb_streams(destination.read_bytes())
+    before_media = {name: data for name, data in destination_streams_before.items() if name.startswith("BinData/")}
+    require(before_media, "HWP5 destination fixture has no BinData preservation witness")
+
+    acc.open_native("hwp", destination)
+    c.body_end(acc)
+    before_canvas = _canvas_digest(acc)
+    row["destinationInitialState"] = acc.status("hwp")
+    acc.key("ctrl+v")
+    row["afterPaste"] = revision(acc, "hwp", 1)
+    pasted_canvas = _canvas_digest(acc)
+    require(pasted_canvas != before_canvas, "trusted DOCX-to-HWP5 paste did not render a shape")
+    acc.key("ctrl+z")
+    row["afterUndo"] = revision(acc, "hwp", 2)
+    require(_canvas_digest(acc) == before_canvas, "Undo did not restore HWP5 destination rendering")
+    acc.key("ctrl+y")
+    row["afterRedo"] = revision(acc, "hwp", 3)
+    require(_canvas_digest(acc) == pasted_canvas, "Redo did not restore the transferred HWP5 shape")
+    trusted = row["trustedClipboardKeys"] = acc.d.js("return window.p6DxH5Events.slice()")
+    for key in ("v", "z", "y"):
+        require(any(e["key"] == key and e["trusted"] for e in trusted),
+                "clipboard/history action did not use trusted Native input", key)
+    acc.d.js(r"""
+      window.__p6DxH5PreviewRasterEvidence=[];
+      const originalGetContext=HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext=function(type,...args){
+        const context=originalGetContext.call(this,type,...args);
+        if(type==='2d'&&context&&!context.__p6DxH5Wrapped){
+          context.__p6DxH5Wrapped=true;
+          const originalGetImageData=context.getImageData.bind(context);
+          context.getImageData=(...imageArgs)=>{
+            const image=originalGetImageData(...imageArgs), data=image.data;
+            let uniform=true, nonWhite=0;
+            for(let i=0;i<data.length;i+=4){
+              if(i>0&&(data[i]!==data[0]||data[i+1]!==data[1]||data[i+2]!==data[2])) uniform=false;
+              if(data[i]!==255||data[i+1]!==255||data[i+2]!==255) nonWhite++;
+            }
+            window.__p6DxH5PreviewRasterEvidence.push({canvas:[this.width,this.height],read:[image.width,image.height],uniform,nonWhite});
+            return image;
+          };
+        }
+        return context;
+      };
+    """)
+    try:
+        publish(acc, "hwp", row)
+    finally:
+        row["previewRasterEvidence"] = acc.d.js("return window.__p6DxH5PreviewRasterEvidence||[]")
+    require(any(item.get("read", [0, 0])[0] > 0 and item.get("read", [0, 0])[1] > 0
+                and not item.get("uniform", True) and item.get("nonWhite", 0) > 0
+                for item in row["previewRasterEvidence"]),
+            "T009 save did not capture the rendered HWP5 preview raster", row["previewRasterEvidence"])
+
+    after = row["after"] = inspect_hwp(destination)
+    require(len(after["shapes"]) == 1 and len(after["images"]) == 1,
+            "saved HWP5 must contain the transferred shape and original picture", after)
+    require(after["body"] == before["body"], "DOCX-to-HWP5 changed destination body text", after["body"])
+    shape, = after["shapes"]
+    expected = {
+        "shapeType": "ellipse", "width": 7761, "height": 4586, "rotationAngle": 90,
+        "horzFlip": False, "vertFlip": True, "borderColor": 0x00332211,
+        "borderWidth": 35, "lineType": 1, "fillType": "solid", "fillBgColor": 0x004488CC,
+        "treatAsChar": True, "horzOffset": 0, "vertOffset": 0, "description": "Transfer shape",
+    }
+    row["mappedProperties"] = {key: shape["props"].get(key) for key in expected}
+    for key, value in expected.items():
+        require(shape["props"].get(key) == value,
+                "DOCX-to-HWP5 geometry/style mapping differs",
+                {key: shape["props"].get(key), "expected": value, "props": shape["props"]})
+    owner = [control for control in after["controls"] if control.get("list") == 0
+             and control.get("para") == shape["paraIdx"]
+             and control.get("controlIndex") == shape["controlIdx"]]
+    require(len(owner) == 1 and owner[0].get("ctrlId") == "gso" and owner[0].get("userDesc") == "타원"
+            and owner[0].get("props", {}).get("Width") == expected["width"]
+            and owner[0].get("props", {}).get("Height") == expected["height"],
+            "transferred HWP5 shape does not have one matching body control owner", owner)
+    require(after["images"] == before["images"], "DOCX-to-HWP5 changed the original picture or its ownership")
+
+    destination_streams_after = p6.gso.cfb_streams(destination.read_bytes())
+    after_media = {name: data for name, data in destination_streams_after.items() if name.startswith("BinData/")}
+    require(before_media.keys() == after_media.keys()
+            and all(after_media[name] == data for name, data in before_media.items()),
+            "DOCX-to-HWP5 changed, removed, or added an unrelated BinData resource")
+    require(destination_streams_before.keys() <= destination_streams_after.keys(),
+            "DOCX-to-HWP5 removed an unrelated CFB stream",
+            sorted(destination_streams_before.keys() - destination_streams_after.keys()))
+    changed_streams = sorted(name for name, data in destination_streams_before.items()
+                             if destination_streams_after.get(name) != data)
+    row["changedCfbStreams"] = changed_streams
+    require(set(changed_streams) <= {"BodyText/Section0", "PrvImage"}
+            and "BodyText/Section0" in changed_streams and "PrvImage" in changed_streams,
+            "DOCX-to-HWP5 changed unexpected CFB streams", changed_streams)
+    row["cfbPreservation"] = {
+        "retainedBinData": sorted(before_media),
+        "changedStreams": changed_streams,
+        "unrelatedStreamsUnchanged": True,
+    }
+
+    reopen(acc, destination, row)
+    reopened = inspect_hwp(destination)
+    require(reopened == after, "saved HWP5 object or ownership differs after independent reopen", reopened)
+    reopened_shape, = reopened["shapes"]
+    select_object(acc, reopened_shape, "shape")
+    row["reopenedEditableSelection"] = "transferred ellipse selectable"
+    select_object(acc, reopened["images"][0], "picture")
+    row["reopenedEditableSelection"] += "; original picture selectable"
+
+    unsupported = begin(acc, row, unsupported_fixture, out, "p6-dx-h5-triangle.docx")
+    _, x, y = _docx_shape_viewport_point(acc, "CC8844")
+    p4.rhwp_poc.click(acc.d, x, y)
+    acc.wait("return document.querySelector(arguments[0])?.dataset.objectKind==='shape'", FRAME, timeout=10)
+    acc.key("ctrl+c")
+    refusal = out / "p6-dx-h5-refusal.hwp"
+    shutil.copyfile(destination_fixture, refusal)
+    refusal_hash = digest(refusal)
+    acc.open_native("hwp", refusal)
+    initial_refusal = acc.status("hwp")
+    acc.key("ctrl+v")
+    acc.settle("hwp")
+    rejected = row["unsupportedPasteAfter"] = acc.status("hwp")
+    for key in ("status", "revision", "localRevision", "dirty", "unpreserved", "uncertain", "selection", "caret"):
+        require(rejected[key] == initial_refusal[key],
+                "unsupported shape paste mutated HWP5 session", {key: rejected[key], "initial": initial_refusal[key]})
+    require(digest(refusal) == refusal_hash, "unsupported shape paste changed HWP5 file bytes")
+    row["unsupportedShape"] = {"state": "refused without mutation", "kind": "triangle"}
+    invalid_payload = _p6_dx_hx_invalid_v4_payload()
+    c.clipboard_peer(acc, "application/x-geul-object+json", invalid_payload, lambda: (
+        acc.key("ctrl+v"), acc.settle("hwp"), require(
+            acc.status("hwp")["revision"] == initial_refusal["revision"]
+            and acc.status("hwp")["localRevision"] == initial_refusal["localRevision"]
+            and acc.status("hwp")["dirty"] == initial_refusal["dirty"]
+            and digest(refusal) == refusal_hash,
+            "tampered DOCX-to-HWP5 payload was not rejected atomically",
+        )
+    ), plain="Geul shape [" + "a" * 24 + "]")
+    row["tamperedPayload"] = "refused before mutation"
+    require(digest(source) == source_hash and source_parts == _package_parts(source),
+            "cross-format copy changed source DOCX bytes or parts")
+    row["preservation"] = {
+        "sourceDocxBytesAndParts": True,
+        "destinationUnrelatedCfbStreamsAndBinData": True,
+        "unsupportedAndTamperedPayloadsAtomic": True,
+        "savedTargetReopenAndSelection": True,
+    }
 
 
 def inspect_hwpx_group(path):
@@ -2126,6 +2337,7 @@ CASES = {
     "P6-HX-GROUP": p6_hx_group,
     "P6-HX-GROUP-FRESH": p6_hx_group_fresh,
     "P6-DX-HX": p6_dx_hx,
+    "P6-DX-H5": p6_dx_h5,
     "P6-HX-DX-MORE": p6_hx_dx_more,
     "P6-HX-DX-MORE-FRESH": p6_hx_dx_more_fresh,
     "P6-HX-TYPE": p6_hx_type,

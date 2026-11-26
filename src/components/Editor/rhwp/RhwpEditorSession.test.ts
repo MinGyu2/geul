@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
+import { createRichObjectClipboardPayload, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText } from "../../../commands/objectClipboard";
 import { base, CFB_SIGNATURE, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
 
 describe("rhwp 편집 세션: 불러오기", () => {
@@ -68,6 +69,39 @@ describe("rhwp 편집 세션: 불러오기", () => {
     expect(editor.status).toEqual({ kind: "closed" });
     expect(doc.freed).toBe(true);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("HWP5 cross-format shape paste safety", () => {
+  it("rejects a DOCX portable shape before mutation while the HWP5 T009 source gate is unavailable", async () => {
+    const { editor, doc } = await readySession(["destination"]);
+    const createShapeControl = vi.fn(() => '{"ok":true,"paraIdx":0,"controlIdx":0}');
+    (doc as unknown as RhwpDocument).createShapeControl = createShapeControl;
+    const shape = {
+      type: "shape", kind: "rectangle", w: 220, h: 130,
+      fill: [204, 136, 68], stroke: [17, 34, 51], stroke_width: 1,
+      float: {
+        wrap: "inline", hRel: "column", vRel: "column", x: 0, y: 0,
+        dist: 0, distTop: 0, distBottom: 0, effect: [0, 0, 0, 0], rot: 0, flipV: false,
+        alt: { text: "Transfer shape" },
+      },
+      story: null,
+    };
+    const engine = { fragment: { blocks: [{ kind: "para", text: "\uFFFC", runs: [{ len: 3 }], objects: [shape] }] }, media: [] };
+    const payload = createRichObjectClipboardPayload("shape", JSON.stringify(engine));
+    expect(payload?.version).toBe(4);
+    if (!payload) throw new Error("portable shape fixture not admitted");
+    const serialized = JSON.stringify(payload);
+    const clipboard = {
+      readText: async () => objectClipboardPlainText(payload),
+      writeText: async () => undefined,
+      readStructured: async (mime: string) => mime === OBJECT_CLIPBOARD_MIME ? serialized : null,
+    };
+
+    expect(await editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(false);
+    expect(createShapeControl).not.toHaveBeenCalled();
+    expect(editor.localRevision).toBe(0);
+    expect(doc.paragraphs).toEqual(["destination"]);
   });
 });
 
