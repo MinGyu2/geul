@@ -1,0 +1,234 @@
+{
+  "date": "2026-11-26",
+  "issueId": "P5-TB-CONTROL",
+  "category": "A",
+  "status": "IMPLEMENTED_VERIFIED",
+  "implementationCommit": "c2aef1cd517a79ca72cd1d492f64aa786ba4fd76",
+  "implementationCommitMessage": "feat(stage3-p5): edit nested textbox pictures and shapes [P5-TB-CONTROL]",
+  "parentAtAcceptance": "8c8df85f3a0aecace379cfcba544132525d5a801",
+  "supported": "DOCX/HWP/HWPX body-owned text boxes support exact nested picture/shape selection and the supported in-place edits. DOCX nested pictures support resize, crop and alt text; nested shapes support fill. HWP5/HWPX nested pictures support resize and nested shapes support fill. Owner paths carry the textbox parent and child identity; resource identity, parent geometry, text and unrelated siblings are preserved. Undo/Redo, safe save and independent reopen are covered by focused tests and Linux X11 Native acceptance.",
+  "refused": "Ambiguous, stale, locked, unsupported or out-of-range owner paths; mutation of the textbox parent or sibling; unproven resources; and formats/placements outside the supported body-textbox models fail before mutation. HWP5/HWPX edits beyond the verified resize/fill subset and DOCX edit types beyond resize/crop/alt-text/fill remain unsupported.",
+  "wordcraft": {
+    "submodulePin": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee",
+    "publicBaseCommit": "ce77006df77470f044a4f31257b5fec8d58640fc",
+    "verification": "PASS: exact reviewed local WordCraft pin reconstructed from the public base with ordered patch metadata; locked parser/source regression and compile passed. The pin is local and is not asserted to exist on the public remote.",
+    "pinIntegrationParent": "8c8df85f3a0aecace379cfcba544132525d5a801"
+  },
+  "rhwp": {
+    "submodulePin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "orderedPatchCount": 65,
+    "lastPatches": [
+      {
+        "path": "patches/rhwp/stage3a-p5-textbox-nested-paths.patch",
+        "sha256": "2980a89918ab20e82e5742b3fa2561e9b54920817b530c92df13a9ee385ccaf2"
+      },
+      {
+        "path": "patches/rhwp/stage3a-p5-textbox-nested-picture-evidence.patch",
+        "sha256": "9e0b9f9e1cb34ea2063f3c61d09569f5c6105b241056563fcfd7f89067272339"
+      }
+    ],
+    "generation": "5651b4879fb12c12a7ab85e71268101c1b4f1eb17679ad64ecff66369479ec4c",
+    "sourceFingerprint": "5485fed29f5ced9038cd5dbe34f3dfce407ee56561569928535841754049044d",
+    "artifacts": {
+      "rhwp.js": "2b15a5497c60ac040188a33bb668cbd0a00be8928eac6d97fba88dbbcc6ff9bc",
+      "rhwp_bg.wasm": "7d9d2bf4023d18b2e44748184d70d64f6c7e68747b950851b081a104254bcdf5"
+    },
+    "sharedEvaluatorCaveat": "The active build manifest records patches/rhwp/table-calc/evaluator.rs SHA-256 6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1, matching a pre-existing user-owned format-only working-tree edit. That file was not included in this feature commit. A clean committed-root RHWP rebuild without that edit remains NOT VERIFIED."
+  },
+  "checks": {
+    "focusedRustT009": "PASS 1/1: textbox nested GSO T009 proof admits one supported child edit and rejects parent, paragraph, sibling, multiple-child and locked-child changes.",
+    "focusedRustRelease": "PASS 1/1: DOCX nested table/textbox object adapter admits supported in-place edits and preserves exact owner/source envelope.",
+    "typescript": "PASS: npm run typecheck.",
+    "vitest": "PASS: hwpReopenModel.test.ts 90/90; objectHit.test.ts and textBoxOwnerPath.test.ts 15/15.",
+    "wordcraft": "PASS: exact pin reconstruction, nested textbox reader parse/write/reopen regression and locked compile.",
+    "protectedRelease": "PASS: GEUL_SANDBOX=userns-root-bwrap python3 scripts/tauri-geul.py build --no-bundle. Native result files record appSha256 and each live process /proc executable digest matches it. The exact --app path passed to the Native harness was not persisted, so no launch pathname is claimed. A retained Cargo Release bin-geul target at src-tauri/target/release/deps/geul-06bcdc71d016eac5 has the same SHA-256; its fingerprint lists wordcraft_engine and geul_lib dependencies. Privacy/runtime path checks PASS; portability beyond Nix runtime NOT VERIFIED.",
+    "nativeX11": "PASS 10/10 actual Linux X11/Xvfb cases with private IBus Hangul; HWP/HWPX/DOCX nested pictures and shapes selected by trusted pointer input, edited, Undo/Redo, saved and reopened.",
+    "cleanup": "PASS for both X11 sessions: complete/proven/filesystemProven, exit 0 in run summary, no survivors or process errors; post-run scan found no matching test processes.",
+    "externalOffice": "NOT RUN",
+    "waylandWindowsMacOS": "NOT RUN"
+  },
+  "nativeEvidence": {
+    "environment": "Linux X11/Xvfb, private D-Bus and IBus Hangul; real geul Tauri application, trusted Native pointer interaction.",
+    "appSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+    "appBytes": 63480296,
+    "rhwpGeneration": "5651b4879fb12c12a7ab85e71268101c1b4f1eb17679ad64ecff66369479ec4c",
+    "runs": {
+      "hwpHwpx": {
+        "result": "target/p5-tb-control-run-14/hwp-hwpx/result/result.json",
+        "cleanup": "target/p5-tb-control-session-14/hwp-hwpx/session/cleanup.json",
+        "cases": [
+          {
+            "case": "P5-TB-CONTROL-HWP-PICTURE",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwp5-picture.hwp",
+            "fixtureSha256": "e2e9b9e8045df99682934d8fb84a7f47a9d050c5b88197dd43e06e14978a96e9",
+            "savedSha256": "44e930467919250884a1217ebccefb96881b81770fab467d6e7c82edbcbf6dd2",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": {
+              "state": "saved",
+              "synced": "true",
+              "changedSince": "false",
+              "findings": "",
+              "error": ""
+            },
+            "proof": "cfbProof"
+          },
+          {
+            "case": "P5-TB-CONTROL-HWP-PICTURE-FRESH",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwp-picture-edited.hwp",
+            "fixtureSha256": "44e930467919250884a1217ebccefb96881b81770fab467d6e7c82edbcbf6dd2",
+            "savedSha256": "44e930467919250884a1217ebccefb96881b81770fab467d6e7c82edbcbf6dd2",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": null,
+            "proof": null
+          },
+          {
+            "case": "P5-TB-CONTROL-HWPX-PICTURE",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwpx-picture.hwpx",
+            "fixtureSha256": "6568521260de66adf85a189a2a252584da3c893b78cd1a9f5c5dcb83c488c2a5",
+            "savedSha256": "195d0ce82da5ee8b354e49d2fc3143805e2347c6d148f179a1bf8032e61061cf",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": {
+              "state": "saved",
+              "synced": "true",
+              "changedSince": "false",
+              "findings": "",
+              "error": ""
+            },
+            "proof": "packageProof"
+          },
+          {
+            "case": "P5-TB-CONTROL-HWPX-PICTURE-FRESH",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwpx-picture-edited.hwpx",
+            "fixtureSha256": "195d0ce82da5ee8b354e49d2fc3143805e2347c6d148f179a1bf8032e61061cf",
+            "savedSha256": "195d0ce82da5ee8b354e49d2fc3143805e2347c6d148f179a1bf8032e61061cf",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": null,
+            "proof": null
+          },
+          {
+            "case": "P5-TB-CONTROL-HWP",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwp5-shape.hwp",
+            "fixtureSha256": "da6b38e28cf869950ddae9a43ced50ba457b70d8e3f91ce874b92eb6174fcce5",
+            "savedSha256": "a0e10a2f7f66e2550695121ef21b8dd27fca612ba3888f5618d65cad96a76a8f",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": {
+              "state": "saved",
+              "synced": "true",
+              "changedSince": "false",
+              "findings": "",
+              "error": ""
+            },
+            "proof": "packageProof"
+          },
+          {
+            "case": "P5-TB-CONTROL-HWP-FRESH",
+            "status": "PASS",
+            "fixture": null,
+            "fixtureSha256": null,
+            "savedSha256": "a0e10a2f7f66e2550695121ef21b8dd27fca612ba3888f5618d65cad96a76a8f",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": null,
+            "proof": null
+          },
+          {
+            "case": "P5-TB-CONTROL-HWPX",
+            "status": "PASS",
+            "fixture": "p5-tb-control-hwpx-shape.hwpx",
+            "fixtureSha256": "0f7bb5324fafefa2724bfe5a29d0b11e73504f0bfc41e516e327d0792a7b9379",
+            "savedSha256": "55a088c38f6c61be97f0215afff1dae2ac4ce7fd3298ffae39ff50d95eabb08d",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": {
+              "state": "saved",
+              "synced": "true",
+              "changedSince": "false",
+              "findings": "",
+              "error": ""
+            },
+            "proof": "packageProof"
+          },
+          {
+            "case": "P5-TB-CONTROL-HWPX-FRESH",
+            "status": "PASS",
+            "fixture": null,
+            "fixtureSha256": null,
+            "savedSha256": "55a088c38f6c61be97f0215afff1dae2ac4ce7fd3298ffae39ff50d95eabb08d",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": null,
+            "proof": null
+          }
+        ]
+      },
+      "docx": {
+        "result": "target/p5-tb-control-run-14/docx/result/result.json",
+        "cleanup": "target/p5-tb-control-session-14/docx/session/cleanup.json",
+        "cases": [
+          {
+            "case": "P5-TB-CONTROL-DOCX",
+            "status": "PASS",
+            "fixture": "p5-tb-control-docx-original.docx",
+            "fixtureSha256": "d386a10346e8e540c6f424c8f7dc003c874c5a3580a5fa878fdfaada75e5e217",
+            "savedSha256": "4c6e61a7ad84d92c1c340ccf861673305f2659b7b8452050ccca6d1cff2fd0a4",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": {
+              "state": "saved",
+              "synced": "true",
+              "changedSince": "false",
+              "findings": "",
+              "error": ""
+            },
+            "proof": "packageProof"
+          },
+          {
+            "case": "P5-TB-CONTROL-DOCX-FRESH",
+            "status": "PASS",
+            "fixture": "p5-tb-control-docx-edited.docx",
+            "fixtureSha256": "4c6e61a7ad84d92c1c340ccf861673305f2659b7b8452050ccca6d1cff2fd0a4",
+            "savedSha256": "4c6e61a7ad84d92c1c340ccf861673305f2659b7b8452050ccca6d1cff2fd0a4",
+            "processAppSha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+            "save": null,
+            "proof": null
+          }
+        ]
+      }
+    },
+    "fixtureSha256": {
+      "hwpPicture": "e2e9b9e8045df99682934d8fb84a7f47a9d050c5b88197dd43e06e14978a96e9",
+      "hwpxPicture": "6568521260de66adf85a189a2a252584da3c893b78cd1a9f5c5dcb83c488c2a5",
+      "hwpShape": "da6b38e28cf869950ddae9a43ced50ba457b70d8e3f91ce874b92eb6174fcce5",
+      "hwpxShape": "0f7bb5324fafefa2724bfe5a29d0b11e73504f0bfc41e516e327d0792a7b9379",
+      "docx": "d386a10346e8e540c6f424c8f7dc003c874c5a3580a5fa878fdfaada75e5e217"
+    },
+    "savedSha256": {
+      "hwpPicture": "44e930467919250884a1217ebccefb96881b81770fab467d6e7c82edbcbf6dd2",
+      "hwpxPicture": "195d0ce82da5ee8b354e49d2fc3143805e2347c6d148f179a1bf8032e61061cf",
+      "hwpShape": "a0e10a2f7f66e2550695121ef21b8dd27fca612ba3888f5618d65cad96a76a8f",
+      "hwpxShape": "55a088c38f6c61be97f0215afff1dae2ac4ce7fd3298ffae39ff50d95eabb08d",
+      "docx": "4c6e61a7ad84d92c1c340ccf861673305f2659b7b8452050ccca6d1cff2fd0a4"
+    },
+    "preservation": "HWP5 stream inventory and BinData bytes preserved; textbox parent and nested records preserved except the target picture dimensions or selected child shape. HWPX part set/media preserved and only section0.xml expected child geometry/fill changed. DOCX part set, relationships/media and textbox text preserved; only expected drawing fields in word/document.xml changed. Same-session and fresh-process reopening restored supported child identity and edited placement/attributes.",
+    "matchingReleaseTarget": {
+      "path": "src-tauri/target/release/deps/geul-06bcdc71d016eac5",
+      "sha256": "36a657c0cf4d57c114ecfece140dbf62cff48211f73f73792f4902e12e0839a4",
+      "bytes": 63480296,
+      "cargoTarget": "bin-geul (release profile)",
+      "dependencies": [
+        "wordcraft_engine",
+        "geul_lib"
+      ],
+      "launchPath": "NOT RECORDED; the native harness accepts an --app override and the run record stores process hashes, not the command-line path."
+    }
+  },
+  "otherPlatforms": {
+    "linuxWayland": "NOT RUN",
+    "windows": "NOT RUN",
+    "macOS": "NOT RUN",
+    "externalOffice": "NOT RUN",
+    "portability": "NOT VERIFIED outside Nix runtime dependencies."
+  },
+  "push": "NOT PERFORMED"
+}
