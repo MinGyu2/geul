@@ -2,6 +2,7 @@
 """P6 Linux X11 acceptance for transfers, preset conversion and caption position."""
 
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -163,6 +164,7 @@ def preset(acc, row, fixtures, out, rounded=False):
     before_label, after_label = (rect, ellipse) if rounded else (ellipse, rect)
     pick_shape(before_label)
     start = h.frame(acc)
+    row["sourceFrame"] = start
     acc.d.js("""
       const label=arguments[0];
       window.presetClicks=[];
@@ -203,6 +205,59 @@ def preset(acc, row, fixtures, out, rounded=False):
     h.require(ET.tostring(old)==ET.tostring(new), "more than the shape preset changed")
     h.reopen(acc,path,row)
     pick_shape(after_label)
+    row["sameProcessReopenFrame"] = h.frame(acc)
+
+
+def preset_fresh_reopen(acc, row, fixtures, out):
+    fixture = fixtures / "a-p6-floating-round-rect-published.docx"
+    primary_report = json.loads((fixtures / "result.json").read_text())
+    primary = primary_report.get("cases", {}).get("P6-DX-TYPE")
+    h.require(primary is not None and primary.get("status") == "PASS",
+              "primary floating preset acceptance did not pass")
+
+    root = docx_root(fixture)
+    geometry = root.find(f".//{A}prstGeom")
+    anchor = root.find(f".//{WP}anchor")
+    adjustment = geometry.find(f"{A}avLst/{A}gd") if geometry is not None else None
+    glow = root.find(f".//{A}effectLst/{A}glow")
+    h.require(geometry is not None and geometry.get("prst") == "rect",
+              "published preset is not an editable rectangle")
+    h.require(anchor is not None, "published shape lost floating anchor")
+    h.require(adjustment is not None and adjustment.get("name") == "adj"
+              and adjustment.get("fmla") == "val 25000", "published shape lost its custom adjustment")
+    h.require(glow is not None and glow.get("rad") == "25400", "published shape lost its supported glow")
+    docpr = root.find(f".//{WP}docPr")
+    extent = anchor.find(f"{WP}extent")
+    h.require(docpr is not None and extent is not None, "published drawing identity or extent is missing")
+    row["savedDrawing"] = {
+        "docPrId": docpr.get("id"), "name": docpr.get("name"), "description": docpr.get("descr"),
+        "anchor": dict(anchor.attrib), "extentEmu": [extent.get("cx"), extent.get("cy")],
+        "preset": geometry.get("prst"), "adjustment": dict(adjustment.attrib), "glow": dict(glow.attrib),
+    }
+
+    path = h.begin(acc, row, fixture, out, "a-p6-floating-round-rect-fresh.docx")
+    row["freshAppPid"] = row["appPid"]
+    h.require(row["freshAppPid"] != primary.get("appPid"),
+              "fresh reopen reused the primary application process",
+              [primary.get("appPid"), row["freshAppPid"]])
+    point = color_point(acc, "156082")
+    h.require(point is not None, "published rectangle was not rendered in the fresh application")
+    h.p6.pointer(acc, point)
+    selector = "[aria-labelledby=properties-selection] .object-tools button:enabled"
+    acc.wait("return [...document.querySelectorAll(arguments[0])].some(b=>b.textContent.trim()===arguments[1])",
+             selector, "타원으로 변경")
+    fresh_frame = row["freshProcessFrame"] = h.frame(acc)
+    expected_frame = primary.get("sameProcessReopenFrame")
+    h.require(expected_frame is not None, "primary same-process reopen frame is absent")
+    for field in ("left", "top", "width", "height"):
+        h.require(abs(fresh_frame[field] - expected_frame[field]) <= 1.5,
+                  "fresh-process rendered placement differs from saved same-process placement",
+                  [field, expected_frame[field], fresh_frame[field]])
+    row["freshProcessAction"] = "타원으로 변경"
+    row["freshProcessDirty"] = acc.status("docx")["dirty"]
+    h.require(row["freshProcessDirty"] == "false", "fresh reopen changed the saved document")
+    row["freshCopySha256"] = h.digest(path)
+    h.require(row["freshCopySha256"] == row["fixtureSha256"], "fresh reopen changed saved package bytes")
 
 
 def caption(acc, row, fixtures, out):
@@ -342,6 +397,7 @@ h.CASES = {
     "P6.1": lambda *args: paste_polygon(*args, "hwpx"),
     "P6.2-type": preset,
     "P6-DX-TYPE": lambda *args: preset(*args, rounded=True),
+    "P6-DX-TYPE-FRESH": preset_fresh_reopen,
     "P6.2-format": lambda *args: paste_polygon(*args, "docx"),
     "P6.3": caption,
     "P6.7": caption_spacing,
