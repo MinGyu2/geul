@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """P6 Linux X11 acceptance for transfers, preset conversion and caption position."""
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -28,6 +29,11 @@ def hwpx_polygon(path):
 def docx_root(path):
     with zipfile.ZipFile(path) as package:
         return ET.fromstring(package.read("word/document.xml"))
+
+
+def docx_canvas_digest(acc):
+    data = acc.d.js("return [...document.querySelectorAll('.docx-page canvas')].map(c=>c.toDataURL('image/png'))")
+    return hashlib.sha256(json.dumps(data, separators=(",", ":")).encode()).hexdigest()
 
 
 def color_point(acc, rgb, lower_edge=False):
@@ -92,13 +98,38 @@ def paste_polygon(acc, row, fixtures, out, fmt):
         h.body_end(acc)
     initial = acc.status(fmt)
     row["destinationBeforePaste"] = initial
+    initial_canvas = docx_canvas_digest(acc) if fmt == "docx" else None
     acc.key("ctrl+v")
-    h.revision(acc, fmt, 1)
+    pasted = h.revision(acc, fmt, 1)
+    if fmt == "docx":
+        pasted_canvas = docx_canvas_digest(acc)
+        h.require(pasted_canvas != initial_canvas, "DOCX polygon paste did not change the rendered page")
+        row["renderedCanvas"] = {"before": initial_canvas, "pasted": pasted_canvas}
+        row["pasteStatus"] = pasted
     acc.key("ctrl+z")
-    h.revision(acc, fmt, 2)
-    h.require(acc.status(fmt)["paragraphText"] == initial["paragraphText"], "Undo changed destination text")
+    undone = h.revision(acc, fmt, 2)
+    if fmt == "docx":
+        undo_canvas = docx_canvas_digest(acc)
+        h.require(undo_canvas == initial_canvas, "DOCX Undo did not restore destination rendering")
+        h.require(all(undone.get(key) == initial.get(key)
+                      for key in ("caret", "selection", "rejected")),
+                  "DOCX Undo did not restore destination caret/selection", {"before": initial, "after": undone})
+        # WordCraft revisions are monotonic: Undo restores document content/rendering but remains dirty
+        # until the edited session is saved, even when the content equals the original bytes.
+        h.require(undone.get("dirty") == "true" and undone.get("unpreserved") == "true",
+                  "DOCX Undo did not retain its unsaved revision", undone)
+        row["undoUnsavedRevision"] = {"revision": undone["revision"], "dirty": undone["dirty"],
+                                      "unpreserved": undone["unpreserved"]}
+        row["renderedCanvas"]["undo"] = undo_canvas
+    else:
+        h.require(undone["paragraphText"] == initial["paragraphText"], "Undo changed destination text")
     acc.key("ctrl+y")
-    h.revision(acc, fmt, 3)
+    redone = h.revision(acc, fmt, 3)
+    if fmt == "docx":
+        redo_canvas = docx_canvas_digest(acc)
+        h.require(redo_canvas == pasted_canvas, "DOCX Redo did not restore the pasted polygon")
+        row["renderedCanvas"]["redo"] = redo_canvas
+        row["editingStateAfterRedo"] = redone
     h.publish(acc, fmt, row)
     h.require(h.digest(source) == row["fixtureSha256"], "source file changed")
     verify_other_parts(fixture, path, lambda name: name == ("Contents/section0.xml" if fmt == "hwpx" else "word/document.xml")

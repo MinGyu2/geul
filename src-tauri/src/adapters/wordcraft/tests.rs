@@ -10281,6 +10281,7 @@ fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
     use crate::document::Format;
     use crate::services::save::{package, service};
     use super::engine::{BasicShape, HwpxPolygon, ObjectEdit};
+    use wordcraft_engine::doc::freeform::DrawingMlPathCommand as PathCommand;
     use wordcraft_engine::doc::{para::ShapeKind, InlineObject, StoryRef};
     use wordcraft_engine::{io, Session};
 
@@ -10341,14 +10342,61 @@ fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
     let imported = m.export().unwrap();
     assert!(m.same_as(&imported));
     assert!(service::check_saved(Format::Docx, &before_import, &imported, None, true).is_safe());
+    let before_package = package::open(&before_import, package::Side::Original).unwrap();
+    let after_package = package::open(&imported, package::Side::Output).unwrap();
+    assert_eq!(
+        before_package.parts.keys().collect::<Vec<_>>(),
+        after_package.parts.keys().collect::<Vec<_>>()
+    );
+    for name in before_package
+        .parts
+        .keys()
+        .filter(|name| name.as_str() != "word/document.xml")
+    {
+        assert_eq!(
+            before_package.get(name),
+            after_package.get(name),
+            "polygon import changed {name}"
+        );
+    }
     let reopened = io::open_bytes("import.docx", &imported).unwrap();
     let last = reopened.para_at(&reopened.end_of(StoryRef::Body)).unwrap();
-    let Some(InlineObject::Shape { kind: ShapeKind::Freeform, freeform: Some(path), fill: Some(fill), stroke: None, float, .. }) = last.object_at(0)
-        else { panic!("import did not remain an editable freeform"); };
+    let Some(InlineObject::Shape {
+        kind: ShapeKind::Freeform,
+        freeform: Some(path),
+        fill: Some(fill),
+        stroke: None,
+        float,
+        ..
+    }) = last.object_at(0)
+    else {
+        panic!("import did not remain an editable freeform");
+    };
     assert_eq!(fill.hex(), "442277");
     assert_eq!(float.alt.text, "HWPX polygon");
-    assert_eq!(path.paths[0].pts, vec![[16.,13.],[97.,7.],[64.,65.]]);
+    assert_eq!(path.paths[0].pts, vec![[16., 13.], [97., 7.], [64., 65.]]);
     assert!(path.paths[0].closed);
+    let drawingml = path
+        .drawingml
+        .as_ref()
+        .expect("imported freeform has editable DrawingML provenance");
+    assert!(drawingml.editable);
+    assert_eq!(drawingml.paths[0].viewport, [1_371_600, 914_400]);
+    assert_eq!(
+        drawingml.paths[0].commands.as_ref(),
+        Some(&vec![
+            PathCommand::MoveTo {
+                point: [203_200, 165_100]
+            },
+            PathCommand::LineTo {
+                point: [1_231_900, 88_900]
+            },
+            PathCommand::LineTo {
+                point: [812_800, 825_500]
+            },
+            PathCommand::Close,
+        ])
+    );
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(m.export().unwrap(), before_import);
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);

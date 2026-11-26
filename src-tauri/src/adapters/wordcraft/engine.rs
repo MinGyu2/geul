@@ -3089,22 +3089,110 @@ impl DocxModel {
 
     fn paste_hwpx_polygon(&mut self, polygon: &HwpxPolygon) -> Result<bool, Rejected> {
         use wordcraft_engine::doc::{
-            edit::Fragment, freeform::{FreePath, Freeform}, para::{Float, ShapeKind},
-            props::{CharProps, Rgb}, Block, Paragraph,
+            edit::Fragment,
+            freeform::{
+                DrawingMlGeometry, DrawingMlPath, DrawingMlPathCommand, FreePath, Freeform,
+            },
+            para::{Float, ShapeKind},
+            props::{CharProps, Rgb},
+            Block, Paragraph,
         };
         if !polygon.valid() {
             return Err(Rejected);
         }
         let rgb = u32::from_str_radix(&polygon.fill, 16).map_err(|_| Rejected)?;
         let (w, h) = (polygon.width as f32 / 100.0, polygon.height as f32 / 100.0);
+        let paths = vec![FreePath {
+            closed: true,
+            pts: polygon
+                .points
+                .iter()
+                .map(|[x, y]| [*x as f32 / 100.0, *y as f32 / 100.0])
+                .collect(),
+        }];
+        let emu = |point: f32| (f64::from(point) * 12_700.0).round() as i64;
+        let viewport = [emu(w), emu(h)];
+        let before_paths_xml = vec![
+            "<a:avLst/>".to_owned(),
+            "<a:gdLst/>".to_owned(),
+            "<a:ahLst/>".to_owned(),
+            "<a:cxnLst/>".to_owned(),
+            "<a:rect l=\"0\" t=\"0\" r=\"r\" b=\"b\"/>".to_owned(),
+        ];
+        let mut path_xml = String::new();
+        let mut drawingml_paths = Vec::with_capacity(paths.len());
+        for (path_index, path) in paths.iter().enumerate() {
+            let mut attrs = vec![
+                ("w".to_owned(), viewport[0].to_string()),
+                ("h".to_owned(), viewport[1].to_string()),
+            ];
+            let mut xml = format!("<a:path w=\"{}\" h=\"{}\">", viewport[0], viewport[1]);
+            let mut commands = Vec::with_capacity(path.pts.len() + usize::from(path.closed));
+            for (point_index, [x, y]) in path.pts.iter().enumerate() {
+                let point = [emu(*x), emu(*y)];
+                let (tag, command) = if point_index == 0 {
+                    ("moveTo", DrawingMlPathCommand::MoveTo { point })
+                } else {
+                    ("lnTo", DrawingMlPathCommand::LineTo { point })
+                };
+                xml.push_str(&format!(
+                    "<a:{tag}><a:pt x=\"{}\" y=\"{}\"/></a:{tag}>",
+                    point[0], point[1]
+                ));
+                commands.push(command);
+            }
+            if path.closed {
+                xml.push_str("<a:close/>");
+                commands.push(DrawingMlPathCommand::Close);
+            } else {
+                attrs.push(("fill".to_owned(), "none".to_owned()));
+            }
+            xml.push_str("</a:path>");
+            drawingml_paths.push(DrawingMlPath {
+                viewport,
+                attrs,
+                commands: Some(commands),
+                source_xml: xml.clone(),
+                edited: false,
+                render_path_indexes: vec![path_index],
+            });
+            path_xml.push_str(&xml);
+        }
+        let source_xml = format!(
+            "<a:custGeom>{}<a:pathLst>{}</a:pathLst></a:custGeom>",
+            before_paths_xml.concat(),
+            path_xml
+        );
+        // Seed the exact canonical DrawingML projection emitted for these newly-created paths.
+        // Without it the saved DOCX reader adds editable `custGeom` provenance, and T009 correctly
+        // rejects a model that claims to be the same but has no representation for that structure.
+        let freeform = Freeform {
+            w,
+            h,
+            paths,
+            drawingml: Some(DrawingMlGeometry {
+                attrs: Vec::new(),
+                path_list_attrs: Vec::new(),
+                before_paths_xml,
+                after_paths_xml: Vec::new(),
+                paths: drawingml_paths,
+                source_xml,
+                editable: true,
+            }),
+            ..Freeform::default()
+        };
         let mut drawing = InlineObject::Shape {
-            kind: ShapeKind::Freeform, w, h, fill: Some(Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)),
-            stroke: None, stroke_width: 0.0, float: Float::default(), story: None,
-            freeform: Some(std::sync::Arc::new(Freeform {
-                w, h, paths: vec![FreePath { closed: true, pts: polygon.points.iter().map(|[x, y]|
-                    [*x as f32 / 100.0, *y as f32 / 100.0]).collect() }], ..Freeform::default()
-            })),
-            effects: Default::default(), extra: Default::default(),
+            kind: ShapeKind::Freeform,
+            w,
+            h,
+            fill: Some(Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)),
+            stroke: None,
+            stroke_width: 0.0,
+            float: Float::default(),
+            story: None,
+            freeform: Some(std::sync::Arc::new(freeform)),
+            effects: Default::default(),
+            extra: Default::default(),
         };
         drawing.set_alt_text(&polygon.description);
         let mut para = Paragraph::new();
