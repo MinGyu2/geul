@@ -1,0 +1,479 @@
+{
+  "issue": "P6-HX-TYPE",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Provide HWP/HWPX body shape type-change APIs with format-specific safe serialization.",
+  "implementation": {
+    "geulCommit": "127a4161575c0935bb956c0d71aeb03d939a1f4b",
+    "parentCommit": "46f6050c2f197e419843899b3e30e7413cd065b8",
+    "files": [
+      "patches/rhwp/stage3a-p6-hwpx-type-change.patch",
+      "scripts/rhwp-patches.py",
+      "scripts/tests/native-stage3-b.py",
+      "src-tauri/src/services/save/hwp/gso.rs",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/rhwpModule.ts",
+      "src/components/Editor/rhwp/shapeProperties.ts",
+      "src/components/PropertiesPanel/PropertiesPanel.tsx",
+      "src/components/PropertiesPanel/objectTools.test.tsx"
+    ],
+    "api": [
+      "getShapeTypeChangeTarget",
+      "changeShapeType"
+    ],
+    "supportedPairs": [
+      "canonical body Rectangle -> Ellipse",
+      "canonical body Ellipse -> Rectangle"
+    ],
+    "preservation": "Retains exact body owner and object identity, dimensions, common geometry, transform, line/fill/shadow/style, and description. HWP5 conversion requires exact standard leaf geometry/length and unchanged component data. HWPX conversion requires parser provenance for a known, unambiguous source envelope whose represented fields survive serialization.",
+    "rejections": "Rounded rectangles, locked, captioned, grouped, textbox, image/effect, ambiguous or noncanonical shapes expose no target and reject mutation atomically.",
+    "rhwp": {
+      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 68,
+      "patch": "stage3a-p6-hwpx-type-change.patch",
+      "patchSha256": "ac94e0807611a2343cf16a37d1f4916a01aa684473ab3e5d774ed9f4e329b757",
+      "releaseGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "sourceTreeSha256": "7d08720990a789ef91abc31f6f6ab90e7d237f3acb4d95f1bebc36a590cb4c7d",
+      "artifacts": {
+        "rhwp.js": "96a212ef1431110b89638c77fefc4236ea705d2deb582791ab151414f76534f6",
+        "rhwp_bg.wasm": "9bda2bc097ffded47c0ed2948a8b731fb4a0bec92dd1b56b1dbded8ae89f64b4"
+      },
+      "externalPinnedSourceUnchanged": true,
+      "sharedInputs": [
+        {
+          "path": "patches/rhwp/table-calc/evaluator.rs",
+          "sha256": "6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1",
+          "note": "Pre-existing user-owned unstaged content was preserved and included in the local build input; committed-root-only reconstruction of this exact artifact is NOT VERIFIED."
+        }
+      ]
+    },
+    "dependencies": {
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "wordcraftGitlink": "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee"
+    },
+    "releaseApplication": {
+      "path": "src-tauri/target/release/geul",
+      "sha256": "f415e08df52e6c8dd031b6c7ea957c4e17344e3f31adc5e147746da014e86dbf",
+      "bytes": 63513560,
+      "profile": "Release; no bundle",
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED; binary uses Nix store runtime dependencies"
+    },
+    "harnessCommit": "482a4eab3e1271d69eb9bf21dc2165b43a4d9ab1",
+    "commits": [
+      {
+        "role": "implementation",
+        "commit": "127a4161575c0935bb956c0d71aeb03d939a1f4b",
+      "parentCommit": "46f6050c2f197e419843899b3e30e7413cd065b8"
+      },
+      {
+        "role": "bidirectional Native harness",
+        "commit": "482a4eab3e1271d69eb9bf21dc2165b43a4d9ab1",
+        "parentCommit": "127a4161575c0935bb956c0d71aeb03d939a1f4b"
+      }
+    ]
+  },
+  "verification": {
+    "rhwpEngine": {
+      "command": "cargo test --lib shape_type -- --nocapture",
+      "result": "PASS 4/4"
+    },
+    "geulT009": {
+      "command": "python3 scripts/cargo-geul.py test --lib basic_shape_type_change_requires_exact_identity_style_and_geometry",
+      "result": "PASS 1/1"
+    },
+    "uiRegression": {
+      "command": "npm test -- src/components/PropertiesPanel/objectTools.test.tsx",
+      "result": "PASS; 1 file, 14 tests; 0 failed, 0 skipped; exit 0"
+    },
+    "guardedTauriRelease": {
+      "command": "npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "typescript": "PASS; tsc --noEmit",
+      "viteProductionBuild": "PASS",
+      "releaseProductIdentity": "PASS; exact selected Release product in dist/rhwp"
+    },
+    "nativeHarnessSyntax": {
+      "command": "python3 -m py_compile scripts/tests/native-stage3-b.py",
+      "result": "PASS"
+    },
+    "rustFormatting": {
+      "addedHunks": "PASS; targeted formatter comparison found no formatting deltas in new Rust additions",
+      "fullTouchedFiles": "FAIL; existing legacy formatting differences remain outside the added hunks; no mass formatting was applied"
+    },
+    "native": {
+      "status": "PASS",
+      "harness": "scripts/tests/native-stage3-b.py; case P6-HX-TYPE; attempt04",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "f415e08df52e6c8dd031b6c7ea957c4e17344e3f31adc5e147746da014e86dbf",
+      "rhwpGeneration": "2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497",
+      "formats": {
+        "HWP": {
+          "fixtureSha256": "97a6ed7470fd3a8a49231aabcc511c8d78fad25c23583861ace3be761ca21ea4",
+          "directions": {
+            "rectangleToEllipse": {
+              "savedSha256": "4bb9231ddd8b59d0c909b7869ddd3eba9b013eafe7973547d9579346f94095ff",
+              "undoRedoRevisions": [
+                1,
+                2,
+                3
+              ],
+              "t009Save": {
+                "state": "saved",
+                "synced": true,
+                "changedSince": false,
+                "findings": "",
+                "error": ""
+              },
+              "serializedProof": {
+                "sourceTargetType": "rectangle",
+                "savedTargetType": "ellipse",
+                "changedCfbStreams": [
+                  "BodyText/Section0",
+                  "PrvImage"
+                ],
+                "shapeInstanceIds": [
+                  2112143672,
+                  2112145328
+                ],
+                "targetGeometry": [
+                  4000,
+                  3000
+                ],
+                "previewDimensions": [
+                  724,
+                  1024
+                ],
+                "sourceGeometry": {
+                  "pt0": [
+                    0,
+                    0
+                  ],
+                  "pt1": [
+                    4000,
+                    0
+                  ],
+                  "pt2": [
+                    4000,
+                    3000
+                  ],
+                  "pt3": [
+                    0,
+                    3000
+                  ]
+                },
+                "savedGeometry": {
+                  "center": [
+                    2000,
+                    1500
+                  ],
+                  "ax1": [
+                    4000,
+                    1500
+                  ],
+                  "ax2": [
+                    2000,
+                    3000
+                  ],
+                  "start1": [
+                    4000,
+                    1500
+                  ],
+                  "end1": [
+                    4000,
+                    1500
+                  ],
+                  "start2": [
+                    4000,
+                    1500
+                  ],
+                  "end2": [
+                    4000,
+                    1500
+                  ]
+                },
+                "sourceLeafTag": 79,
+                "savedLeafTag": 80
+              },
+              "closeAndReopen": "PASS; shape type, properties, and reverse edit target retained"
+            },
+            "ellipseToRectangle": {
+              "savedSha256": "fadf3755b143af9ad26685a4172c1e474f4ffaf5793629375bc63ffbbecde5b0",
+              "undoRedoRevisions": [
+                1,
+                2,
+                3
+              ],
+              "t009Save": {
+                "state": "saved",
+                "synced": true,
+                "changedSince": false,
+                "findings": "",
+                "error": ""
+              },
+              "serializedProof": {
+                "sourceTargetType": "ellipse",
+                "savedTargetType": "rectangle",
+                "changedCfbStreams": [
+                  "BodyText/Section0",
+                  "PrvImage"
+                ],
+                "shapeInstanceIds": [
+                  2112143672,
+                  2112145328
+                ],
+                "targetGeometry": [
+                  4000,
+                  3000
+                ],
+                "previewDimensions": [
+                  724,
+                  1024
+                ],
+                "sourceGeometry": {
+                  "center": [
+                    2000,
+                    1500
+                  ],
+                  "ax1": [
+                    4000,
+                    1500
+                  ],
+                  "ax2": [
+                    2000,
+                    3000
+                  ],
+                  "start1": [
+                    4000,
+                    1500
+                  ],
+                  "end1": [
+                    4000,
+                    1500
+                  ],
+                  "start2": [
+                    4000,
+                    1500
+                  ],
+                  "end2": [
+                    4000,
+                    1500
+                  ]
+                },
+                "savedGeometry": {
+                  "pt0": [
+                    0,
+                    0
+                  ],
+                  "pt1": [
+                    4000,
+                    0
+                  ],
+                  "pt2": [
+                    4000,
+                    3000
+                  ],
+                  "pt3": [
+                    0,
+                    3000
+                  ]
+                },
+                "sourceLeafTag": 80,
+                "savedLeafTag": 79
+              },
+              "closeAndReopen": "PASS; final rectangle remains selectable and exposes ellipse conversion"
+            }
+          },
+          "preservation": "Across both directions, CFB stream set, DocInfo and BinData stayed unchanged; only BodyText/Section0 and refreshed PrvImage changed. Object IDs, owner/style, 4000x3000 geometry, body text, unconverted sibling and source fixture were preserved."
+        },
+        "HWPX": {
+          "fixtureSha256": "52a8cca86f445bcb768291de2b1100371e7968b5d3096ee73522854605bdc367",
+          "directions": {
+            "rectangleToEllipse": {
+              "savedSha256": "094b04b6df3816b378f7c187f5ebab89b51196c3762ac589bc69adbae8f7a32b",
+              "undoRedoRevisions": [
+                1,
+                2,
+                3
+              ],
+              "t009Save": {
+                "state": "saved",
+                "synced": true,
+                "changedSince": false,
+                "findings": "",
+                "error": ""
+              },
+              "serializedProof": {
+                "sourceTargetType": "rectangle",
+                "savedTargetType": "ellipse",
+                "changedOpcParts": [
+                  "Contents/section0.xml"
+                ],
+                "preservedOtherParts": true,
+                "exactGeometry": "PASS",
+                "sourceGeometry": {
+                  "pt0": [
+                    0,
+                    0
+                  ],
+                  "pt1": [
+                    4000,
+                    0
+                  ],
+                  "pt2": [
+                    4000,
+                    3000
+                  ],
+                  "pt3": [
+                    0,
+                    3000
+                  ]
+                },
+                "savedGeometry": {
+                  "center": [
+                    2000,
+                    1500
+                  ],
+                  "ax1": [
+                    4000,
+                    1500
+                  ],
+                  "ax2": [
+                    2000,
+                    3000
+                  ],
+                  "start1": [
+                    4000,
+                    1500
+                  ],
+                  "end1": [
+                    4000,
+                    1500
+                  ],
+                  "start2": [
+                    4000,
+                    1500
+                  ],
+                  "end2": [
+                    4000,
+                    1500
+                  ]
+                }
+              },
+              "closeAndReopen": "PASS; shape type, properties, and reverse edit target retained"
+            },
+            "ellipseToRectangle": {
+              "savedSha256": "52a8cca86f445bcb768291de2b1100371e7968b5d3096ee73522854605bdc367",
+              "undoRedoRevisions": [
+                1,
+                2,
+                3
+              ],
+              "t009Save": {
+                "state": "saved",
+                "synced": true,
+                "changedSince": false,
+                "findings": "",
+                "error": ""
+              },
+              "serializedProof": {
+                "sourceTargetType": "ellipse",
+                "savedTargetType": "rectangle",
+                "changedOpcParts": [
+                  "Contents/section0.xml"
+                ],
+                "preservedOtherParts": true,
+                "exactGeometry": "PASS",
+                "sourceGeometry": {
+                  "center": [
+                    2000,
+                    1500
+                  ],
+                  "ax1": [
+                    4000,
+                    1500
+                  ],
+                  "ax2": [
+                    2000,
+                    3000
+                  ],
+                  "start1": [
+                    4000,
+                    1500
+                  ],
+                  "end1": [
+                    4000,
+                    1500
+                  ],
+                  "start2": [
+                    4000,
+                    1500
+                  ],
+                  "end2": [
+                    4000,
+                    1500
+                  ]
+                },
+                "savedGeometry": {
+                  "pt0": [
+                    0,
+                    0
+                  ],
+                  "pt1": [
+                    4000,
+                    0
+                  ],
+                  "pt2": [
+                    4000,
+                    3000
+                  ],
+                  "pt3": [
+                    0,
+                    3000
+                  ]
+                }
+              },
+              "closeAndReopen": "PASS; final rectangle remains selectable and exposes ellipse conversion"
+            }
+          },
+          "preservation": "Across both directions, the OPC part set and all parts except Contents/section0.xml stayed unchanged; owner, IDs, exact rectangle/ellipse coordinates, common geometry/style, body text, rounded sibling and source fixture were preserved."
+        }
+      },
+      "trustedNativeInput": "PASS; Rectangle->Ellipse and Ellipse->Rectangle each used a trusted Native conversion control and trusted Ctrl+Z/Ctrl+Y in both HWP and HWPX.",
+      "closeAndReopen": "PASS after each direction; final reopened object is Rectangle and again offers Ellipse conversion.",
+      "cleanup": {
+        "status": "PASS",
+        "complete": true,
+        "exit": 0,
+        "proven": true,
+        "filesystemProven": true,
+        "survivors": [],
+        "processErrors": []
+      },
+      "nativeEvidence": {
+        "result": {
+          "path": "target/p6-hx-type/native/attempt04/results/result.json",
+          "sha256": "78458a66692dc14cc97887e9cf62babd7c5d66135225128f350fa8c5637c8b4b"
+        },
+        "session": {
+          "path": "target/p6-hx-type/native/attempt04/session/session.json",
+          "sha256": "4d88f47a7c9eea5b0b839e99f3a4020a32f3c30bc4049607cac46c88248fc3e0"
+        },
+        "cleanup": {
+          "path": "target/p6-hx-type/native/attempt04/session/cleanup.json",
+          "sha256": "07e2a04b993c2459411d2e1176655c08565c0dff81ddc5e0a8bed20632cc98d8"
+        }
+      }
+    },
+    "otherPlatforms": "Wayland, Windows, macOS NOT RUN",
+    "externalOfficeReopen": "NOT RUN",
+    "wholeWorkspaceTestMatrix": "NOT RUN; no whole-workspace result is claimed"
+  },
+  "remainingLimitations": {
+    "conversionScope": "Only exact canonical HWP/HWPX body Rectangle <-> Ellipse pairs are offered. This is not arbitrary or all-shape conversion.",
+    "unsafeForms": "Rounded rectangles, locked/captioned/group/textbox/image/effect/ambiguous/noncanonical forms fail closed without mutation.",
+    "reproducibility": "Exact local Release build included the preserved user-owned evaluator input. A committed-root-only reconstruction of the exact Release artifact is NOT VERIFIED.",
+    "platforms": "Wayland, Windows, macOS and external Office/Hancom reopen NOT RUN.",
+    "portability": "Nix runtime portability NOT VERIFIED."
+  }
+}

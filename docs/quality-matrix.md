@@ -478,10 +478,21 @@ Engine test는 picture와 rectangle shape의 ID·style·geometry/resource remapp
 
 곡선, 캡션, textbox, connector, chart/OLE, external/ambiguous/unowned resources는 fail-closed다. 곡선 전송은 별도 `P6-HX-CURVE` 요구사항에 남아 있다. Wayland/Windows/macOS와 외부 HWP 앱 재열기는 NOT RUN, Release portability는 NOT VERIFIED다.
 
+#### P6-HX-TYPE HWP/HWPX 기본 도형 타입 변경 (2026-11-26)
+
+**IMPLEMENTED_VERIFIED — canonical 본문 Rectangle↔Ellipse 쌍.** `getShapeTypeChangeTarget`와 `changeShapeType`는 직접 소유된 표준 사각형과 완전 타원만 타입 변경 대상으로 노출한다. object owner/ID, 크기, 공통 geometry/transform, line/fill/shadow/style 및 description을 유지하고 HWP5 leaf 또는 HWPX 원본 envelope가 정확히 표현 가능할 때만 변이한다. 둥근 사각형, 잠금·캡션·그룹·textbox·image/effect 및 모호하거나 비정규 구조는 대상 타입이 제공되지 않고 변경도 원자적으로 거부된다. 임의 또는 모든 도형 타입 변환을 지원한다고 주장하지 않는다.
+
+RHWP pin `1a76570e833917d15817415a53c09ad61ab3203f`에 ordered patch 68을 적용했다. P6 패치 SHA-256 `ac94e0807611a2343cf16a37d1f4916a01aa684473ab3e5d774ed9f4e329b757`, generation `2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497`, JS/WASM SHA-256 `96a212ef1431110b89638c77fefc4236ea705d2deb582791ab151414f76534f6` / `9bda2bc097ffded47c0ed2948a8b731fb4a0bec92dd1b56b1dbded8ae89f64b4`. Focused RHWP tests 4/4, geul T009 1/1, UI regression 14/14, guarded TypeScript/Vite + Tauri Release build PASS. Added Rust hunks pass targeted format comparison; full touched-file rustfmt check FAIL remains due pre-existing legacy formatting deltas.
+
+Linux X11/Xvfb + private D-Bus/IBus Hangul Native attempt04에서 HWP와 HWPX 모두 Rectangle→Ellipse 후 Ellipse→Rectangle을 각각 trusted UI control로 수행했다. 각 방향의 Undo/Redo revision 1/2/3, 별도 T009 `saved/synced=true/changedSince=false`, 독립 저장본 proof, close/reopen이 PASS했고 마지막 재열기에서 Rectangle의 Ellipse 변환을 다시 선택할 수 있었다. 앱 SHA-256 `f415e08df52e6c8dd031b6c7ea957c4e17344e3f31adc5e147746da014e86dbf`, RHWP generation `2947cc2aa88efe93e03cc00c12fffd2bc716c60769b19e9ae485b511b63a4497`. HWP 각 방향에서 `BodyText/Section0`과 refreshed `PrvImage`만 변하고 CFB stream set·DocInfo·BinData는 유지됐다. HWPX 각 방향에서 `Contents/section0.xml`만 변하고 다른 OPC part는 그대로였다. [P6-HX-TYPE acceptance JSON](architecture/stage3-a-p6-hwpx-type-acceptance.json)에 fixture/output/app/generation 및 attempt04 result/session/cleanup hashes와 commit `127a4161575c0935bb956c0d71aeb03d939a1f4b`, harness commit `482a4eab3e1271d69eb9bf21dc2165b43a4d9ab1`이 기록돼 있다.
+
+The local guarded build included the preserved user-owned `patches/rhwp/table-calc/evaluator.rs` input (SHA-256 `6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1`); exact committed-root-only reconstruction is NOT VERIFIED. Nix portability is NOT VERIFIED. Wayland, Windows, macOS and external Office/Hancom reopen are NOT RUN.
+
 | 항목 | 수용 범위 | 증거와 남은 경계 |
 |---|---|---|
 | P6.1 구조 클립보드 | HWPX 본문 폐합 다각형 및 지원되는 중첩 그룹 트리를 다른 HWPX 문서에 붙여넣기 | 새 대상 ID, geometry·속성, 원본과 대상 형제 및 소유 미디어 보존. [그룹 저장·재열기 증거](architecture/stage3-a-p6-hwpx-group-acceptance.json); HWP5 같은 형식의 기본 객체 전송은 P6-H5-CLIP에서 수락했고, HWPX 곡선과 HWPX→HWP5 변환은 남아 있다. |
 | P6.2 개체 유형 변환 | DOCX의 지원 인라인 사각형과 타원 간 변경. 원본 본문 XML 왕복이 일치하는 기본 `roundRect`에서 `rect`로 변환 | 둥근 사각형 변환은 집중 Rust·T009·독립 OPC 검사·재열기 및 X11·Wayland PASS. 사용자 조정·비슷한 프리셋 정규화는 거부한다. [검증 기록](architecture/stage3-a-p6-round-rect-acceptance.json) |
+| P6-HX-TYPE | HWP/HWPX 본문 canonical Rectangle↔Ellipse 타입 변경 | Linux X11 attempt04에서 양방향 각각 trusted UI 조작, Undo/Redo, T009, 독립 CFB/OPC 검사와 save/reopen PASS. 정확한 지원 쌍 외에는 fail-closed. [수락 기록](architecture/stage3-a-p6-hwpx-type-acceptance.json) |
 | P6.2 교차 형식 변환 | 단색 무윤곽 HWPX 인라인 폐합 다각형을 DOCX 편집 가능 자유형으로 붙여넣기 | 정확한 HWPUNIT→EMU, DrawingML 구간, 색·대체 설명과 원본 보존. 역방향, HWP5, 다른 개체에는 별도 매핑 증명이 필요하다. |
 | P6.3 캡션 | HWPX 본문 내장 그림의 기존 캡션 위·아래 위치 변경 | 소유, 단일 `atno`, 서식 및 이미지 바이트 보존. 지원 열 기준 부유 그림에 좌우 위치와 위·가운데·아래 세로 정렬을 제공한다. Linux X11 실제 속성 편집, 각각 Undo/Redo, 안전 게시, 독립 XML/배치 검사와 앱 재열기 PASS다. 인라인 그림의 좌우 배치, 그룹 캡션, DOCX/HWP5 위치 변경은 남아 있다. [좌우 배치·정렬 수락](architecture/stage3-a-p6-caption-lateral-acceptance.json) |
 | P6.7 캡션 간격 | HWPX 본문 그림의 기존 위·아래 캡션에서 간격 0–327.67pt | Linux X11 속성 입력·Undo/Redo·게시·앱 재열기 PASS. 독립 XML에서 `gap`만 바뀌고 번호·서식·이미지 바이트는 보존됐다. [수용 기록](architecture/stage3-a-p6-caption-spacing-acceptance.json) |
