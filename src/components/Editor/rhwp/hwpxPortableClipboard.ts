@@ -823,6 +823,69 @@ export function insertDocxPortableShapeIntoHwp5(
   return inserted;
 }
 
+/** Import the restricted HWPX snapshot subset that the HWP5 T009 insertion proof understands. */
+export function insertHwpxPortableObjectIntoHwp5(
+  doc: RhwpDocument,
+  at: { section: number; paragraph: number; offset: number },
+  portable: HwpxPortableObject,
+): { paraIdx: number; controlIdx: number } {
+  if (at.section !== 0 || !doc.getParagraphCount || !doc.getControls) {
+    throw new Error("unsupported HWP5 object target");
+  }
+  if (portable.kind !== "picture") {
+    if (portable.kind === "group" || !["rectangle", "ellipse", "line"].includes(portable.shapeType)
+      || portable.caption || portable.paragraphs || portable.tbMargins || portable.tbVerticalAlign
+      || portable.polygonPoints) throw new Error("unsupported HWPX shape for HWP5");
+    return insertDocxPortableShapeIntoHwp5(doc, at, portable);
+  }
+
+  const fullImage = portable.cropRect.left === 0 && portable.cropRect.top === 0
+    && portable.cropRect.right === portable.naturalWidth * 75
+    && portable.cropRect.bottom === portable.naturalHeight * 75;
+  if ((portable.mime !== "image/png" && portable.mime !== "image/jpeg")
+    || portable.caption || !fullImage
+    || Object.values(portable.crop).some(value => value !== 0)
+    || portable.borderColor !== 0 || portable.borderWidth !== 0 || portable.borderType !== 0
+    || !doc.insertPicture || !doc.setPictureProperties || !doc.getPictureProperties
+    || !doc.getControlImageData || !doc.getControlImageMime) {
+    throw new Error("unsupported HWPX picture for HWP5");
+  }
+
+  const paragraphCount = doc.getParagraphCount(at.section);
+  const inserted = insertHwpxPortableObject(doc, at, portable);
+  if (inserted.paraIdx !== at.paragraph || doc.getParagraphCount(at.section) !== paragraphCount) {
+    throw new Error("HWP5 picture insertion changed paragraph ownership");
+  }
+  const address = [at.section, inserted.paraIdx, inserted.controlIdx] as const;
+  const applied = readPortableObject(doc, address, "picture", false);
+  const raw = JSON.parse(doc.getPictureProperties(...address)) as Record<string, unknown>;
+  if (!applied || applied.kind !== "picture" || applied.bytesBase64 !== portable.bytesBase64
+    || applied.width !== portable.width || applied.height !== portable.height
+    || applied.naturalWidth !== portable.naturalWidth || applied.naturalHeight !== portable.naturalHeight
+    || applied.horzOffset !== portable.horzOffset || applied.vertOffset !== portable.vertOffset
+    || applied.treatAsChar !== portable.treatAsChar || applied.textWrap !== portable.textWrap
+    || applied.description !== portable.description
+    || ["cropLeft", "cropTop", "cropRight", "cropBottom"].some(key => raw[key] !== 0)
+    || raw.borderColor !== 0 || raw.borderWidth !== 0 || raw.borderType !== 0 || raw.hasCaption !== false) {
+    throw new Error("HWP5 picture properties or media did not match the portable snapshot");
+  }
+
+  const controls: unknown = JSON.parse(doc.getControls());
+  if (!Array.isArray(controls)) throw new Error("HWP5 picture ownership is unavailable");
+  const owners = controls.filter((value): value is Record<string, unknown> => !!value && typeof value === "object"
+    && !Array.isArray(value) && value.list === 0 && value.para === inserted.paraIdx && value.controlIndex === inserted.controlIdx);
+  const owner = owners[0];
+  const ownerProps = owner?.props;
+  if (owners.length !== 1 || owner?.ctrlId !== "gso" || owner?.userDesc !== "그림"
+    || !ownerProps || typeof ownerProps !== "object" || Array.isArray(ownerProps)
+    || (ownerProps as Record<string, unknown>).Width !== portable.width
+    || (ownerProps as Record<string, unknown>).Height !== portable.height
+    || ((ownerProps as Record<string, unknown>).TreatAsChar === 1) !== portable.treatAsChar) {
+    throw new Error("HWP5 picture owner was not unique or did not match the imported picture");
+  }
+  return inserted;
+}
+
 function verifyPortableParagraphs(
   expected: readonly HwpxPortableParagraph[], actual: readonly HwpxPortableParagraph[] | undefined,
 ): void {

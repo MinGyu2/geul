@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
-import { createRichObjectClipboardPayload, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText } from "../../../commands/objectClipboard";
+import {
+  createHwpxObjectClipboardPayload, createRichObjectClipboardPayload, OBJECT_CLIPBOARD_MIME, objectClipboardPlainText,
+} from "../../../commands/objectClipboard";
 import { base, CFB_SIGNATURE, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
 
 describe("rhwp 편집 세션: 불러오기", () => {
@@ -91,6 +93,32 @@ describe("HWP5 cross-format shape paste safety", () => {
     const payload = createRichObjectClipboardPayload("shape", JSON.stringify(engine));
     expect(payload?.version).toBe(4);
     if (!payload) throw new Error("portable shape fixture not admitted");
+    const serialized = JSON.stringify(payload);
+    const clipboard = {
+      readText: async () => objectClipboardPlainText(payload),
+      writeText: async () => undefined,
+      readStructured: async (mime: string) => mime === OBJECT_CLIPBOARD_MIME ? serialized : null,
+    };
+
+    expect(await editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(false);
+    expect(createShapeControl).not.toHaveBeenCalled();
+    expect(editor.localRevision).toBe(0);
+    expect(doc.paragraphs).toEqual(["destination"]);
+  });
+
+  it("rejects an HWPX portable shape before mutation while the HWP5 T009 source gate is unavailable", async () => {
+    const { editor, doc } = await readySession(["destination"]);
+    const createShapeControl = vi.fn(() => '{"ok":true,"paraIdx":0,"controlIdx":0}');
+    (doc as unknown as RhwpDocument).createShapeControl = createShapeControl;
+    const portable = {
+      kind: "shape" as const, shapeType: "rectangle" as const, width: 2200, height: 1400,
+      horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square" as const,
+      rotationAngle: 0, horzFlip: false, vertFlip: false, borderColor: 0x00332211,
+      borderWidth: 25, lineType: 1 as const, fillType: "solid" as const, fillBgColor: 0x004488cc,
+    };
+    const payload = createHwpxObjectClipboardPayload("shape", 8, 1, portable);
+    expect(payload?.version).toBe(3);
+    if (!payload) throw new Error("portable HWPX fixture not admitted");
     const serialized = JSON.stringify(payload);
     const clipboard = {
       readText: async () => objectClipboardPlainText(payload),

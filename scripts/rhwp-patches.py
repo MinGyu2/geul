@@ -71,7 +71,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/stage3a-p5-textbox-nested-picture-evidence.patch",
           "patches/rhwp/stage3a-p6-hwpx-group-clipboard.patch",
           "patches/rhwp/stage3a-p6-hwp5-object-clipboard.patch",
-          "patches/rhwp/stage3a-p6-hwpx-type-change.patch")
+          "patches/rhwp/stage3a-p6-hwpx-type-change.patch",
+          "patches/rhwp/stage3a-hwp5-line-flag-width.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"
