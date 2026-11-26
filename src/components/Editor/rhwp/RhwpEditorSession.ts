@@ -7,7 +7,7 @@ import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGr
 import { extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject, readHwpxPictureCaption } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
-  OBJECT_CLIPBOARD_MIME, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
+  OBJECT_CLIPBOARD_MIME, createHwp5PortableShapeClipboardPayload, createHwpObjectClipboardPayload, createHwpxObjectClipboardPayload,
   decodeHwp5ObjectFragment, encodeHwp5ObjectFragment,
   objectClipboardPlainText, parseObjectClipboardPayload, type RichObjectKind,
 } from "../../../commands/objectClipboard";
@@ -3537,11 +3537,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const portable = format === "hwpx"
         ? extractHwpxPortableObject(doc, copyControl.address, copyControl.kind)
         : undefined;
+      const hwpPortable = format === "hwp" && copyControl.kind === "shape"
+        ? extractHwpxPortableObject(doc, copyControl.address, copyControl.kind)
+        : undefined;
       const hwpFragment = format === "hwp" && doc.exportHwp5ControlClipboard
         ? encodeHwp5ObjectFragment(doc.exportHwp5ControlClipboard(...copyControl.address)) ?? undefined
         : undefined;
       const payload = format === "hwp"
-        ? createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, hwpFragment)
+        ? hwpPortable && "shapeType" in hwpPortable
+          ? createHwp5PortableShapeClipboardPayload(this.sessionId, this.generation, hwpPortable, hwpFragment)
+            ?? createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, hwpFragment)
+          : createHwpObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, hwpFragment)
         : createHwpxObjectClipboardPayload(copyControl.kind, this.sessionId, this.generation, portable);
       if (!payload) return null;
       this.lastCopiedObjectToken = payload.token;
@@ -3568,9 +3574,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const doc = this.doc;
     const format = this.sessions.get(this.sessionId)?.format;
     if (!payload) return "rejected";
-    const sameFormatPayload = payload.version === 3
+    const sameFormatPayload = (payload.version === 3
       && (payload.sourceFormat === "hwpx" || payload.sourceFormat === "hwp")
-      && payload.sourceFormat === format;
+      && payload.sourceFormat === format)
+      || (payload.version === 5 && payload.sourceFormat === "hwp" && format === "hwp");
     const docxHwpxPortable = payload.version === 4 && format === "hwpx" ? payload.portable : undefined;
     const docxHwp5Portable = payload.version === 4 && format === "hwp" && this.canInsertShape() ? payload.portable : undefined;
     if (!sameFormatPayload && !docxHwpxPortable && !docxHwp5Portable) return "rejected";
@@ -3580,10 +3587,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const at = this.caret;
     if (at.paragraph >= doc.getParagraphCount(at.section)) return "rejected";
 
-    const sameDoc = payload.version === 3 && payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
+    const sameDoc = (payload.version === 3 || payload.version === 5)
+      && payload.sourceSessionId === this.sessionId && payload.sourceGeneration === this.generation
       && payload.token === this.lastCopiedObjectToken && !!doc.pasteControl && !!doc.clipboardHasControl?.();
     const portable = !sameDoc && payload.version === 3 && format === "hwpx" ? payload.portable : docxHwpxPortable;
-    const hwpFragment = !sameDoc && payload.version === 3 && format === "hwp" && payload.hwpFragmentBase64 !== undefined
+    const hwpFragment = !sameDoc && (payload.version === 3 || payload.version === 5)
+      && format === "hwp" && payload.hwpFragmentBase64 !== undefined
       ? decodeHwp5ObjectFragment(payload.hwpFragmentBase64)
       : null;
 

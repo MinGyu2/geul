@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { documentCommandState } from "../../../commands/capability";
 import { executeCommand } from "../../../commands/commands";
 import { objectEditRequest } from "../../../commands/objectSelection";
-import { createHwpxObjectClipboardPayload, OBJECT_CLIPBOARD_MIME } from "../../../commands/objectClipboard";
+import { createHwp5PortableShapeClipboardPayload, createHwpxObjectClipboardPayload, OBJECT_CLIPBOARD_MIME } from "../../../commands/objectClipboard";
 import { initialLayout } from "../../../hooks/layoutState";
 import { ImeContext, ImeInput } from "../rhwp/imeInput";
 import { DocxEditorSession } from "./DocxEditorSession";
@@ -58,6 +58,76 @@ describe("DocxEditorSession", () => {
           vertFlip: expected.vertFlip, description: expected.description },
       });
     }
+  });
+
+  it("HWP5 portable inline primitives become editable DOCX shapes", async () => {
+    const cases = [
+      {
+        portable: {
+          kind: "shape" as const, shapeType: "rectangle" as const, width: 2540, height: 1270,
+          horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square" as const,
+          rotationAngle: 0, horzFlip: false, vertFlip: false, borderColor: 0x00332211, borderWidth: 35,
+          lineType: 1 as const, fillType: "solid" as const, fillBgColor: 0x004488cc, description: "HWP5 rectangle",
+        },
+        expected: { kind: "rectangle", width: 2540, height: 1270, fill: "cc8844", stroke: "112233", strokeWidth: 35,
+          rotationAngle: 0, horzFlip: false, vertFlip: false, description: "HWP5 rectangle" },
+      },
+      {
+        portable: {
+          kind: "shape" as const, shapeType: "ellipse" as const, width: 3000, height: 1800,
+          horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square" as const,
+          rotationAngle: 90, horzFlip: true, vertFlip: false, borderColor: 0x00204060, borderWidth: 40,
+          lineType: 1 as const, fillType: "solid" as const, fillBgColor: 0x0060a020, description: "HWP5 ellipse",
+        },
+        expected: { kind: "ellipse", width: 3000, height: 1800, fill: "20a060", stroke: "604020", strokeWidth: 40,
+          rotationAngle: 90, horzFlip: true, vertFlip: false, description: "HWP5 ellipse" },
+      },
+      {
+        portable: {
+          kind: "shape" as const, shapeType: "line" as const, width: 14400, height: 1000,
+          horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square" as const,
+          rotationAngle: 0, horzFlip: false, vertFlip: false, borderColor: 0x0060a0e0, borderWidth: 100,
+          lineType: 1 as const, fillType: "none" as const, description: "HWP5 line",
+        },
+        expected: { kind: "line", width: 14400, height: 1000, fill: null, stroke: "e0a060", strokeWidth: 100,
+          rotationAngle: 0, horzFlip: false, vertFlip: false, description: "HWP5 line" },
+      },
+    ] as const;
+    for (const item of cases) {
+      const payload = createHwp5PortableShapeClipboardPayload(42, 7, item.portable);
+      expect(payload).not.toBeNull();
+      const serialized = JSON.stringify(payload);
+      const { editor, fake } = await readyDocx(undefined, { drawingInsertionAllowed: true });
+      const clipboard = {
+        readText: async () => "",
+        writeText: async () => {},
+        readStructured: async (mime: string) => mime === OBJECT_CLIPBOARD_MIME ? serialized : null,
+      };
+
+      expect(await editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(true);
+      await flush();
+      expect(edits(fake).flatMap(call => call.args[3] as unknown[])).toContainEqual({ op: "pasteHwpxShape", shape: item.expected });
+    }
+  });
+
+  it("rejects an HWP5 portable line whose geometry cannot map to the DOCX constructor", async () => {
+    const { editor, fake } = await readyDocx(undefined, { drawingInsertionAllowed: true });
+    const payload = createHwp5PortableShapeClipboardPayload(42, 7, {
+      kind: "shape", shapeType: "line", width: 2540, height: 1270,
+      horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square",
+      rotationAngle: 20, horzFlip: false, vertFlip: false, borderColor: 0x00332211, borderWidth: 35,
+      lineType: 1, fillType: "none",
+    });
+    expect(payload).not.toBeNull();
+    const clipboard = {
+      readText: async () => "",
+      writeText: async () => {},
+      readStructured: async (mime: string) => mime === OBJECT_CLIPBOARD_MIME ? JSON.stringify(payload) : null,
+    };
+
+    expect(await editor.executeClipboard("edit.paste", () => true, clipboard)).toBe(false);
+    await flush();
+    expect(edits(fake).flatMap(call => call.args[3] as unknown[])).toEqual([]);
   });
 
   it("ambiguous HWPX inline primitive styling is rejected before DOCX mutation", async () => {

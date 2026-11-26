@@ -1181,9 +1181,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
         if (mime === OBJECT_CLIPBOARD_MIME) {
           const object = parseObjectClipboardPayload(data);
           if (!object || !view.drawingInsertionAllowed) return "rejected";
-          if (object.version === 3) {
+          if (object.version === 3 || object.version === 5) {
             const shape = object.portable;
-            if (object.sourceFormat !== "hwpx" || object.object !== "shape" || !shape
+            const portableSource = (object.version === 3 && object.sourceFormat === "hwpx")
+              || (object.version === 5 && object.sourceFormat === "hwp");
+            if (!portableSource || object.object !== "shape" || !shape
               || shape.kind === "picture" || shape.kind === "group"
               || !shape.treatAsChar || shape.textWrap !== "Square" || shape.horzOffset !== 0 || shape.vertOffset !== 0
               || shape.width < 200 || shape.width > 14_400 || shape.height < 200 || shape.height > 14_400

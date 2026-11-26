@@ -4,6 +4,7 @@ import { runClipboard, type ClipboardEditing, type PlainClipboard } from "./clip
 import {
   decodeHwp5ObjectFragment,
   encodeHwp5ObjectFragment,
+  createHwp5PortableShapeClipboardPayload,
   createHwpObjectClipboardPayload,
   createHwpxObjectClipboardPayload,
   createObjectClipboardPayload,
@@ -348,6 +349,20 @@ describe("rich object clipboard (v2)", () => {
     expect(decodeHwp5ObjectFragment(`${encodedFragment!.slice(0, -4)}****`)).toBeNull();
     expect(parseObjectClipboardPayload(JSON.stringify({ ...transferable, sourceFormat: "hwpx" }))).toBeNull();
 
+    const portableShape = {
+      kind: "shape" as const, shapeType: "ellipse" as const, width: 2540, height: 1270,
+      horzOffset: 0, vertOffset: 0, treatAsChar: true, textWrap: "Square" as const,
+      rotationAngle: 90, horzFlip: true, vertFlip: false, borderColor: 0x00332211, borderWidth: 35,
+      lineType: 1 as const, fillType: "solid" as const, fillBgColor: 0x004488cc, description: "HWP5 shape",
+    };
+    const hwpPortable = createHwp5PortableShapeClipboardPayload(7, 3, portableShape, encodedFragment!);
+    expect(hwpPortable).toMatchObject({ version: 5, sourceFormat: "hwp", object: "shape", portable: portableShape });
+    expect(parseObjectClipboardPayload(JSON.stringify(hwpPortable))).toEqual(hwpPortable);
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...hwpPortable, sourceFormat: "hwpx" }))).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...hwpPortable, portable: { ...portableShape, width: 0 } }))).toBeNull();
+    expect(parseObjectClipboardPayload(JSON.stringify({ ...hwpPortable, unexpected: true }))).toBeNull();
+    expect(createHwp5PortableShapeClipboardPayload(7, 3, { ...portableShape, shapeType: "polygon" })).toBeNull();
+
     const pngB64 = "iVBORw0KGgoAAAANSUhEUgAAADAAAABACAIAAADTQmMRAAAATklEQVR4nO3OMQ0AIBAAsVfCjH8pKMIFx9CkAjpnr69MPhASEhKqB0JCQkL1QEhISKgeCAkJCdUDISEhoXogJCQkVA+EhISE6oGQkNBjF4XmIMR3l0LcAAAAAElFTkSuQmCC";
     const picPortable = createHwpxObjectClipboardPayload("picture", 2, 1, {
       kind: "picture",
@@ -378,8 +393,10 @@ describe("rich object clipboard (v2)", () => {
     })!;
     expect(picPortable).not.toBeNull();
     expect(parseObjectClipboardPayload(JSON.stringify(picPortable))).toEqual(picPortable);
+    const portablePicture = picPortable?.portable;
+    if (!portablePicture || portablePicture.kind !== "picture") throw new Error("expected a portable picture");
     expect(createHwpxObjectClipboardPayload("picture", 2, 1, {
-      ...(picPortable.portable as any),
+      ...portablePicture,
       mime: "image/jpeg",
     })).toBeNull();
     expect(createHwpxObjectClipboardPayload("textBox", 2, 1, {
