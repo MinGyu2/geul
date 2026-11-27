@@ -1,32 +1,27 @@
 {
   "issue": "P6-OTHER-CAP",
-  "status": "PARTIAL",
-  "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+  "status": "IMPLEMENTED_VERIFIED",
+  "blocker": null,
   "requirement": "Edit captions owned by DOCX and RHWP group objects while preserving caption association, placement, text, and serialization.",
   "implementation": {
-    "geulCommit": "dd7fc5c1174dddcb612d7600c3fd9a7acd553e9d",
+    "geulCommit": "2a7e769dbd13d588ba71ececff02ecb951cb1fd2",
     "changedFiles": [
-      "src/components/Editor/rhwp/RhwpEditorSession.ts",
-      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
-      "src/components/Editor/rhwp/rhwpText.ts",
+      "scripts/tests/native-stage3-c.py",
       "scripts/tests/native-stage3a-p6.py",
-      "scripts/tests/stage3-p6-group-caption-fixtures.cjs",
-      "scripts/tests/stage3-p6-group-caption.wasm.test.ts",
-      "src-tauri/src/services/save/hwp.rs",
-      "src-tauri/src/services/save/hwp/gso.rs",
-      "src-tauri/src/services/save/hwp/insertions.rs",
-      "src-tauri/src/services/save/tests.rs",
-      "scripts/tests/native-stage3-p6-group-caption-hwp5.py",
-      "scripts/tests/hwp5-fixture-metadata.cjs",
-      "scripts/tests/stage3-p6-group-caption-hwp5-fixtures.cjs",
-      "scripts/tests/fixtures/PROVENANCE.md",
-      "scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-original.hwp",
-      "scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-edited.hwp",
-      "docs/architecture/stage3-a-p6-other-caption-acceptance.json",
-      "docs/architecture/stage3-a-39-item-ledger.md",
-      "docs/architecture/stage3-a-current-inventory.md",
-      "docs/quality-matrix.md",
-      ".sensitive-info-allowlist"
+      "scripts/tests/fixtures/stage3a-p6-group-caption.docx",
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src-tauri/src/adapters/wordcraft/tests.rs",
+      "src/adapters/docx.ts",
+      "src/commands/objectSelection.ts",
+      "src/components/Editor/ObjectSelectionFrame.test.tsx",
+      "src/components/Editor/ObjectSelectionFrame.tsx",
+      "src/components/Editor/wordcraft/DocxEditorSession.test.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.ts",
+      "src/components/Editor/wordcraft/DocxSurface.tsx",
+      "src/components/Editor/wordcraft/testing.ts",
+      "src/language/en.json",
+      "src/language/ko.json",
+      "src/styles/app.css"
     ],
     "rhwp": {
       "gitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
@@ -39,15 +34,19 @@
       "hwpx": "Group-owned caption text is addressable only through the exact group caption cell and verified rich paragraph/atno owner. HWPX group caption side, spacing, and lateral vertical alignment are exposed only for an unlocked, uniquely owned group caption; edits preserve all other group properties and child controls.",
       "hwp5": "Group-owned caption text is editable only through the verified group caption cell after the HWP original passes the safe preflight. T009 accepts only the proven caption paragraphs when the owner/control header, caption LIST_HEADER, group ShapeComponent, complete child tree, IDs, and other body objects remain unchanged. The saved PrvImage must be regenerated and independently validated. This does not enable HWP5 group caption placement editing."
     },
-    "rejected": "DOCX group caption editing stays disabled. No owner is inferred from adjacent Caption/SEQ paragraphs, alt text, visual proximity, or a child shape.",
+    "rejected": "Reject nested or multiple TextBox children, linked/shared/aliased stories, ambiguous/stale ownership, unsupported envelopes, and locked/tracked/non-roundtripping input. Never infer owner from adjacent Caption/SEQ paragraphs, alt text, or visual proximity.",
     "currentWordcraftGitlink": "d714567c4ccc34884809e644676f879ee2008b89",
     "followupGeulCommit": "228e9c530c89da5a1686e4b00126c80eb0119978",
-    "securityExceptionCommit": "c40b0c863201903e007c7ff24b5af36fa196b1d1"
+    "securityExceptionCommit": "c40b0c863201903e007c7ff24b5af36fa196b1d1",
+    "supportedDocxScope": "Only a top-level body group with exactly one direct wps:wsp TextBox child, a globally unique unlinked/unaliased TextBox story, a supported immediately adjacent group anchor, and an unlocked, untracked, losslessly round-tripping package envelope. The explicit action enters that exact child story. Structural parentage and unique story ownership are required; paragraph proximity, Caption/SEQ, alt text, and visible placement are never ownership evidence.",
+    "unsupportedDocx": "Nested or multiple TextBox children, linked/shared/aliased stories, ambiguous or stale identifiers, unsupported group envelopes, locked/tracked/non-roundtripping input, and semantic Microsoft Word caption tagging are unsupported and fail closed. Nearby unowned body paragraphs remain independent.",
+    "lifecycle": "The owner link is derived from the saved standard group-child/textbox-story structure, so no proprietary marker is added. Supported text and placement edits and group movement retain the same child-story owner through undo/redo and geul save/reopen. Copy remaps group/textbox story identity; deletion removes only the selected group and does not delete nearby unowned body text."
   },
   "formatContractEvidence": {
     "officialSchema": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/c89701a2-99ac-4948-b84f-1eaecc69dfa0",
-    "schemaFinding": "Microsoft CT_WordprocessingGroup defines group properties and graphical child elements but no group-caption association or owner field. The current WordCraft InlineObject::Group model stores geometry, float placement, child-coordinate dimensions, children, and optional canvas, with no caption binding (external/wordcraft/crates/doc/src/para.rs).",
-    "decision": "The available contract cannot prove which caption paragraph, SEQ field, or child text shape belongs to a DOCX group. Mutating or serializing an inferred association would risk changing another object or unrelated text, so DOCX group captions remain fail-closed pending an authentic supported contract/sample."
+    "officialTextBoxStory": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/42d8d27f-4406-46d0-8238-3e209656f85f",
+    "schemaFinding": "MS-ODRAWXML CT_WordprocessingGroup defines wps:wsp as a graphical child of the group, establishing standard structural parentage. The Office example documents wps:txbx/w:txbxContent as a text-box story and demonstrates linkedTxbx separately. These sources do not define a semantic group-caption role or a dedicated caption-owner field.",
+    "decision": "Use only the explicit standard group-child relation plus a unique, unlinked, non-aliased textbox story as a durable geul editing association. This is a narrow structural ownership contract, not a claim that Microsoft Word labels the text as a semantic caption. Do not infer ownership from neighboring paragraphs, Caption/SEQ, alt text, or proximity; reject unsupported or ambiguous cases."
   },
   "verification": {
     "focusedReleaseWasm": "PASS 4/4: scripts/tests/stage3-p6-group-caption.wasm.test.ts. HWPX text edit and placement edit with Undo/Redo and export/reopen; locked-group refusal; HWP5 text edit after a mocked SAFE original-preflight response with Undo/Redo and HWP export/reopen (contentLoss count 0).",
@@ -56,10 +55,10 @@
     "harnessSyntax": "PASS: node --check scripts/tests/hwp5-fixture-metadata.cjs; node --check scripts/tests/stage3-p6-group-caption-hwp5-fixtures.cjs; python3 -m py_compile scripts/tests/native-stage3-p6-group-caption-hwp5.py.",
     "diffCheck": "PASS: git diff --check",
     "guardedReleaseBuild": {
-      "command": "npm run tauri -- build --no-bundle",
-      "result": "PASS: TypeScript no-emit, Vite production build, guarded Release, check-release-paths privacy/runtime scan.",
-      "appSha256": "2357d87f446553c21058d56b806d5761c128d4220fda7b55ba12549d4cd934cc",
-      "inputCaveat": "The build used preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Committed-root-only reproduction is NOT VERIFIED; that user file was not committed."
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "result": "PASS: TypeScript/Vite production build, guarded Tauri Release compile, and path/runtime privacy scan.",
+      "appSha256": "b47dbf90d681706d5aa5a0632df31c08cc031e7427e4d9469d444d74f387d8f8",
+      "portability": "UNVERIFIED outside the current Nix runtime."
     },
     "nativeX11Hwpx": {
       "result": "PASS",
@@ -110,10 +109,29 @@
         "result": "PASS: complete, filesystem-proven, exit 0, no survivors or process errors."
       }
     },
-    "nativeDocx": "NOT RUN; mutation remains disabled because the durable group-caption owner contract is unproved.",
-    "externalOffice": "NOT RUN",
-    "waylandWindowsMacos": "NOT RUN",
-    "focusedRustT009Regression": "PASS 1/1 with the sanitized checked-in fixture pair: cargo test --lib hwp5_group_caption_t009_proves_text_only_changes_and_rejects_child_mutation -- --nocapture. Text-only caption change yields only PreviewStale/PrvImage without an image; child geometry mutation remains RecordsChanged/BodyText/Section0.",
+    "nativeDocx": {
+      "result": "PASS: actual Linux X11/Xvfb private D-Bus/IBus Native cases P6-OTHER-CAP-DOCX and P6-OTHER-CAP-DOCX-FRESH.",
+      "applicationSha256": "b47dbf90d681706d5aa5a0632df31c08cc031e7427e4d9469d444d74f387d8f8",
+      "fixtureSha256": "c2fe4450285ebe110773bc653fd057e6d637c55298a442da6a8c5ede2496a2dc",
+      "savedDocxSha256": "ea5cbc28d183b86e9d27951095a31d35d71b5e5694e4f2bfccfd1c8192c46281",
+      "resultSha256": "62d6ca3fba7efe161180b0d3a5f1134769772f25c064c7212bd8b9d9f84de4ad",
+      "cleanupSha256": "1e17c59deb9fcf7630025e7fb8a01a032a86f095a4c3f79b7b0217ba12faf7a2",
+      "appPids": {
+        "primary": 2772344,
+        "freshProcess": 2772679,
+        "distinct": true
+      },
+      "trustedPointer": "PASS: trusted X11 pointer selected the group and activated the caption-entry action.",
+      "operations": "PASS: owned caption story entry/edit, supported child placement change, group move, and Undo/Redo; the structural group-child/textbox-story association remained exact.",
+      "t009": "PASS: saved/synced=true/changedSince=false with no preservation findings.",
+      "opcInspection": "PASS: group/shape identities and hierarchy retained; caption formatting retained; nearby unowned body paragraph unchanged; unrelated 8 OPC parts byte-identical.",
+      "sameAppReopen": "PASS: saved DOCX reopened and ownership/rendered placement remained consistent.",
+      "freshProcessReopen": "PASS: distinct app process reopened the saved DOCX and restored the same owner/story without dirty state.",
+      "cleanup": "PASS: complete, filesystem-proven, exit 0, no surviving test processes."
+    },
+    "externalOffice": "NOT RUN; Microsoft Word semantic caption recognition/interoperability has not been tested.",
+    "waylandWindowsMacos": "NOT RUN.",
+    "focusedRustT009Regression": "PASS 3/3: exact group-caption story ownership, epoch/stale/ambiguous rejection, text Undo/Redo, T009 and saved DOCX parse/reopen; group copy remaps owner/story identity; deleting group preserves unowned nearby body caption.",
     "hwpRustRegressions": "PASS 65, FAIL 0, IGNORE 40 (105 tests, 568 filtered): cargo test --lib hwp_ -- --nocapture, rerun after metadata sanitization.",
     "fixtureMetadataSanitization": {
       "result": "PASS",
@@ -122,12 +140,147 @@
       "originalFixtureSha256": "2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0",
       "editedFixtureSha256": "2ee39992696b27b49c30a26425cfd016c35bfe4c7532b18f0f49c1d76ac1c019",
       "privacyScan": "PASS: strings inspection shows only CFB stream names and synthetic body text; no workstation path or author metadata remains."
-    }
+    },
+    "focusedUiRegression": "PASS 1/1 explicit caption-entry button test and PASS 1/1 selected DOCX group story-entry test.",
+    "nativeDocxPreviousStatus": "NOT RUN in earlier partial records; superseded by the current passing DOCX Native evidence above."
   },
   "limitations": [
-    "The requested DOCX group-caption ownership and editing behavior is unresolved; this issue is not accepted.",
-    "HWP5 Native evidence covers one owned group caption text edit; placement editing and broader authentic samples are not established.",
-    "HWPX and HWP5 Native acceptance is Linux X11/Xvfb only. Wayland, Windows, macOS, and external HWP editor interoperability were NOT RUN.",
-    "Release portability outside the current Nix runtime is NOT VERIFIED."
-  ]
+    "The standard OOXML structure supplies durable parent/child and textbox-story identity, but does not provide a dedicated semantic group-caption role. Geul exposes caption editing only for the exact supported structural envelope described above; Microsoft Word caption recognition is not claimed.",
+    "HWP5 Native evidence covers owned group-caption text only; HWP5 group-caption placement editing is not established. HWPX/HWP5 accepted behavior is unchanged.",
+    "Wayland, Windows, macOS, external Microsoft Word/HWP editor interoperability were NOT RUN. Release portability outside the current Nix runtime is UNVERIFIED."
+  ],
+  "historicalPartialEvidence": {
+    "issue": "P6-OTHER-CAP",
+    "status": "PARTIAL",
+    "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+    "requirement": "Edit captions owned by DOCX and RHWP group objects while preserving caption association, placement, text, and serialization.",
+    "implementation": {
+      "geulCommit": "dd7fc5c1174dddcb612d7600c3fd9a7acd553e9d",
+      "changedFiles": [
+        "src/components/Editor/rhwp/RhwpEditorSession.ts",
+        "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+        "src/components/Editor/rhwp/rhwpText.ts",
+        "scripts/tests/native-stage3a-p6.py",
+        "scripts/tests/stage3-p6-group-caption-fixtures.cjs",
+        "scripts/tests/stage3-p6-group-caption.wasm.test.ts",
+        "src-tauri/src/services/save/hwp.rs",
+        "src-tauri/src/services/save/hwp/gso.rs",
+        "src-tauri/src/services/save/hwp/insertions.rs",
+        "src-tauri/src/services/save/tests.rs",
+        "scripts/tests/native-stage3-p6-group-caption-hwp5.py",
+        "scripts/tests/hwp5-fixture-metadata.cjs",
+        "scripts/tests/stage3-p6-group-caption-hwp5-fixtures.cjs",
+        "scripts/tests/fixtures/PROVENANCE.md",
+        "scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-original.hwp",
+        "scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-edited.hwp",
+        "docs/architecture/stage3-a-p6-other-caption-acceptance.json",
+        "docs/architecture/stage3-a-39-item-ledger.md",
+        "docs/architecture/stage3-a-current-inventory.md",
+        "docs/quality-matrix.md",
+        ".sensitive-info-allowlist"
+      ],
+      "rhwp": {
+        "gitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "orderedPatchCount": 70,
+        "releaseGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+        "hwp5NativeReleaseGeneration": "850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134"
+      },
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "supportedRhwpScope": {
+        "hwpx": "Group-owned caption text is addressable only through the exact group caption cell and verified rich paragraph/atno owner. HWPX group caption side, spacing, and lateral vertical alignment are exposed only for an unlocked, uniquely owned group caption; edits preserve all other group properties and child controls.",
+        "hwp5": "Group-owned caption text is editable only through the verified group caption cell after the HWP original passes the safe preflight. T009 accepts only the proven caption paragraphs when the owner/control header, caption LIST_HEADER, group ShapeComponent, complete child tree, IDs, and other body objects remain unchanged. The saved PrvImage must be regenerated and independently validated. This does not enable HWP5 group caption placement editing."
+      },
+      "rejected": "DOCX group caption editing stays disabled. No owner is inferred from adjacent Caption/SEQ paragraphs, alt text, visual proximity, or a child shape.",
+      "currentWordcraftGitlink": "d714567c4ccc34884809e644676f879ee2008b89",
+      "followupGeulCommit": "228e9c530c89da5a1686e4b00126c80eb0119978",
+      "securityExceptionCommit": "c40b0c863201903e007c7ff24b5af36fa196b1d1"
+    },
+    "formatContractEvidence": {
+      "officialSchema": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/c89701a2-99ac-4948-b84f-1eaecc69dfa0",
+      "schemaFinding": "Microsoft CT_WordprocessingGroup defines group properties and graphical child elements but no group-caption association or owner field. The current WordCraft InlineObject::Group model stores geometry, float placement, child-coordinate dimensions, children, and optional canvas, with no caption binding (external/wordcraft/crates/doc/src/para.rs).",
+      "decision": "The available contract cannot prove which caption paragraph, SEQ field, or child text shape belongs to a DOCX group. Mutating or serializing an inferred association would risk changing another object or unrelated text, so DOCX group captions remain fail-closed pending an authentic supported contract/sample."
+    },
+    "verification": {
+      "focusedReleaseWasm": "PASS 4/4: scripts/tests/stage3-p6-group-caption.wasm.test.ts. HWPX text edit and placement edit with Undo/Redo and export/reopen; locked-group refusal; HWP5 text edit after a mocked SAFE original-preflight response with Undo/Redo and HWP export/reopen (contentLoss count 0).",
+      "typecheck": "PASS: npm run typecheck",
+      "scopedEslint": "PASS: npx eslint src/components/Editor/rhwp/RhwpEditorSession.ts src/components/Editor/rhwp/hwpxPortableClipboard.ts src/components/Editor/rhwp/rhwpText.ts scripts/tests/stage3-p6-group-caption.wasm.test.ts",
+      "harnessSyntax": "PASS: node --check scripts/tests/hwp5-fixture-metadata.cjs; node --check scripts/tests/stage3-p6-group-caption-hwp5-fixtures.cjs; python3 -m py_compile scripts/tests/native-stage3-p6-group-caption-hwp5.py.",
+      "diffCheck": "PASS: git diff --check",
+      "guardedReleaseBuild": {
+        "command": "npm run tauri -- build --no-bundle",
+        "result": "PASS: TypeScript no-emit, Vite production build, guarded Release, check-release-paths privacy/runtime scan.",
+        "appSha256": "2357d87f446553c21058d56b806d5761c128d4220fda7b55ba12549d4cd934cc",
+        "inputCaveat": "The build used preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Committed-root-only reproduction is NOT VERIFIED; that user file was not committed."
+      },
+      "nativeX11Hwpx": {
+        "result": "PASS",
+        "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+        "appSha256": "880f971883ff9e00af87c854f70d7e6572867f17411705e24926f3ac271a6151",
+        "rhwpGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+        "fixtureSha256": "d9d2a33bd967dbf65f34e255702d5cb9b3bde1833c15a8841a68aa2c64a84435",
+        "publishedHwpxSha256": "9bc593a76fa2e9d82672bd3968ee6c168b4dda8c3fb9418f77aaf085caee62f3",
+        "trustedPointer": "PASS: real trusted pointerdown events landed on the HWPX page canvas for caption selection and group selection.",
+        "undoRedo": "PASS: group caption text, caption side Bottom→Right, and vertical alignment Top→Center were undone and redone.",
+        "t009": "PASS: state=saved, synced=true, changedSince=false, findings empty at revision 13.",
+        "serializationProof": "PASS: group owner identity and all child XML/hierarchy/IDs are unchanged; after removing the uniquely owned caption, the rest of section0.xml is identical. Caption atno, text, width, spacing, and subList ownership are checked; only side and vertAlign plus requested text changed. Nine other non-preview OPC parts are byte-identical, and body text is unchanged.",
+        "freshDocumentSessionReopen": "PASS: saved HWPX reopened in a fresh document session; caption text and group placement selection/rendering match the saved state. A separate app-process reopen was NOT RUN.",
+        "resultJson": {
+          "path": "target/p6-other-cap-x11-run-05/result.json",
+          "sha256": "880d5fab7bfe19871a00525858994891b7b9aa4cb40699272e2eefef4ae3acca"
+        },
+        "cleanup": {
+          "path": "target/p6-other-cap-x11-session-05/cleanup.json",
+          "sha256": "fa5ec94f8e3e26832a425e5ed7649c57acb3d34f19fe28e628534f5564505b48",
+          "result": "PASS: complete, filesystem-proven, exit 0, no survivors or process errors."
+        }
+      },
+      "nativeHwp5": {
+        "result": "PASS",
+        "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+        "appSha256": "2357d87f446553c21058d56b806d5761c128d4220fda7b55ba12549d4cd934cc",
+        "appPids": {
+          "primary": 2515239,
+          "freshProcess": 2515456,
+          "distinct": true
+        },
+        "rhwpGeneration": "850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134",
+        "fixtureSha256": "2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0",
+        "trustedPointer": "PASS: trusted canvas pointer selected the exact owned caption caret `0:0:23@caption/2/65534/0`.",
+        "undoRedo": "PASS: caption text edit was undone and redone; saved revision 9.",
+        "t009": "PASS: state=saved, synced=true, changedSince=false, findings empty, revision 9.",
+        "serializationProof": "PASS: only BodyText/Section0 and PrvImage changed. Root group record, all three group ShapeComponents, both child rectangle/ellipse geometry records, FileHeader identity, PrvText, sanitized SummaryInformation, zeroed DocOptions/_LinkDoc, and unrelated CFB streams are preserved. Only group caption PARA_HEADER and PARA_TEXT records changed. PrvImage is canonical RGB8 724x1024 PNG (IHDR/IDAT/IEND, CRC and filter-0 valid; pixel SHA-256 8923198edc36d1ac52514ad3191265f2adee67fc6645b192fa634c607ee7d52a).",
+        "sameProcessReopen": "PASS: saved HWP5 reopened in the same app; caption text, group owner properties and stable address match.",
+        "freshAppProcessReopen": "PASS: distinct app PID reopened the saved HWP5, selected the same group caption via trusted pointer, and showed no dirty state; saved SHA-256 c60d656b8ce13a0684d3ce60390675ab6e7f09775fc03c550d9c988c274c7316.",
+        "resultJson": {
+          "path": "target/p6-other-cap-hwp5-final-sanitized-20261127/run/result.json",
+          "sha256": "54ddc67c315d91dec5a6f32558c824b9e6fe634be73b618b3c3af76e84b736e2"
+        },
+        "cleanup": {
+          "path": "target/p6-other-cap-hwp5-final-sanitized-20261127/session/cleanup.json",
+          "sha256": "6ef72fe5305216897831ee65fdc9bfd7ba30c79830efb72779efdb216555e39c",
+          "result": "PASS: complete, filesystem-proven, exit 0, no survivors or process errors."
+        }
+      },
+      "nativeDocx": "NOT RUN; mutation remains disabled because the durable group-caption owner contract is unproved.",
+      "externalOffice": "NOT RUN",
+      "waylandWindowsMacos": "NOT RUN",
+      "focusedRustT009Regression": "PASS 1/1 with the sanitized checked-in fixture pair: cargo test --lib hwp5_group_caption_t009_proves_text_only_changes_and_rejects_child_mutation -- --nocapture. Text-only caption change yields only PreviewStale/PrvImage without an image; child geometry mutation remains RecordsChanged/BodyText/Section0.",
+      "hwpRustRegressions": "PASS 65, FAIL 0, IGNORE 40 (105 tests, 568 filtered): cargo test --lib hwp_ -- --nocapture, rerun after metadata sanitization.",
+      "fixtureMetadataSanitization": {
+        "result": "PASS",
+        "method": "The fixture generator empties SummaryInformation strings and FILETIMEs, zeros DocOptions/_LinkDoc and CFB directory timestamps, then verifies no workstation path remains.",
+        "independentStreamComparison": "PASS: compared raw pinned-RHWP generated HWP5 with sanitized fixture; only HwpSummaryInformation and DocOptions/_LinkDoc streams changed. BodyText/Section0, DocInfo, FileHeader, PrvImage, PrvText, script streams, and CFB stream inventory are byte-identical.",
+        "originalFixtureSha256": "2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0",
+        "editedFixtureSha256": "2ee39992696b27b49c30a26425cfd016c35bfe4c7532b18f0f49c1d76ac1c019",
+        "privacyScan": "PASS: strings inspection shows only CFB stream names and synthetic body text; no workstation path or author metadata remains."
+      }
+    },
+    "limitations": [
+      "The requested DOCX group-caption ownership and editing behavior is unresolved; this issue is not accepted.",
+      "HWP5 Native evidence covers one owned group caption text edit; placement editing and broader authentic samples are not established.",
+      "HWPX and HWP5 Native acceptance is Linux X11/Xvfb only. Wayland, Windows, macOS, and external HWP editor interoperability were NOT RUN.",
+      "Release portability outside the current Nix runtime is NOT VERIFIED."
+    ]
+  },
+  "currentStatusDate": "2026-11-28"
 }
