@@ -485,9 +485,13 @@ Engine test는 picture와 rectangle shape의 ID·style·geometry/resource remapp
 
 #### P6-HX-CURVE HWPX endpoint-segment 구조 전송 (2026-11-27)
 
-**PARTIAL / BLOCKED_BY_FORMAT_CONTRACT — 런타임 수락 미완료.** RHWP에 bounded package export/import API를 추가해 표준 `hp:seg`의 segment type과 endpoint 좌표, 검증된 공통 속성 및 소유 embedded resource를 보존하도록 했다. 알 수 없는 root/segment 속성, segment child, caption/textbox, 모호하거나 미소유한 resource는 거부한다. 그러나 공식 HWPX `CurveType` 계약과 RHWP 모델에는 별도 Bezier control-point 필드가 없어 원래 요구사항 전체를 만족한다고 주장할 수 없다.
+**PARTIAL / BLOCKED_BY_FORMAT_CONTRACT — endpoint-only 부분집합만 런타임 수락.** RHWP bounded package export/import는 표준 `hp:seg`의 segment type·endpoint 좌표, 검증된 공통 속성과 소유 embedded resource를 다른 HWPX 문서로 전달한다. 알 수 없는 root/segment 속성, segment child, caption/textbox, 외부·모호·미소유 resource는 거부한다. 공식 HWPX `CurveType` 계약과 RHWP 모델에는 별도 Bezier control-point 필드가 없고 안전한 CURVE 삽입/삭제 의미도 확인되지 않아 원 요구 전체는 미충족이며, 이 범위는 fail-closed다.
 
-새 ordered RHWP 패치 71개로 pinned source 재구성 PASS, prepared source와 WASM 타깃 컴파일 source의 파일 해시 전부 일치, Rust host check·WASM Release target compile·TypeScript typecheck·Vite build PASS. Release JavaScript bindings와 focused WASM 런타임 회귀는 `wasm-bindgen` CLI가 없어 NOT RUN; T009·Native X11·Undo/Redo·저장/재열기도 NOT RUN. 세부 해시와 blocker는 [부분 구현 acceptance 기록](architecture/stage3-a-p6-hwpx-curve-acceptance.json)에 남겼다.
+Pinned RHWP와 ordered patch 71개 재구성, 준비 source/WASM target source identity, Rust host/WASM Release target compile, TypeScript typecheck, Vite build가 PASS했다. Focused WASM safety file 73/73 PASS. Guarded RHWP Release generation `850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134` (JS/WASM SHA-256 `b37d14e095d783b9970ea06d873be04c72bdb36b14275a4e405d63e51fab8c81` / `ca2590b5df331bc37d07f62e10c1f4693e577ed87df9f4c880426be5399cdb5c`)와 보호된 Release 앱 SHA-256 `9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390`가 Native에서 일치했다.
+
+실제 private Xvfb Linux X11 Release Native `P6-HX-CURVE-PARTIAL` 및 새 앱 PID `P6-HX-CURVE-PARTIAL-FRESH`가 PASS했다. Trusted pointer/copy/paste/Undo/Redo, render digest 복원, 원본 bytes 불변, 부동 곡선의 기존 RHWP paste cascade(+567 HWP unit), 저장 segment/style/geometry와 ID/resource 검사, OPC preservation, T009 `saved/synced=true/changedSince=false`, same-process close/reopen 및 다른 PID fresh app 재열기·신뢰된 재선택을 확인했다. 앱 PID `2380134`/`2380401`; source fixture SHA `e2c3ba80b8e27d0da124a818373be6ae2a96a0468838aa3a618aed2f4cef5a76`, destination fixture SHA `b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7`, 저장 대상 SHA `622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf`. 저장 시 `Contents/section0.xml`만 변경됐고 기존 미디어와 다른 OPC part는 byte-identical이었다. Session cleanup은 exit 0, proven=true, 프로세스 누출 없이 끝났다. 결과는 [P6-HX-CURVE acceptance 기록](architecture/stage3-a-p6-hwpx-curve-acceptance.json)에 있다.
+
+Wayland, Windows/macOS, 외부 한컴/Office 재열기는 NOT RUN; Nix 외 Release portability와 사용자 소유 table-calc 입력을 제외한 committed-root 재현은 NOT VERIFIED다. 구현 commit `38da56813a1c1c920201784c69fa7b9215426ce9`, 검증 harness/test commit `693bfa9f1a62939435cd306af9c6c015f9cee6f8`.
 
 #### P6-HX-TYPE HWP/HWPX 기본 도형 타입 변경 (2026-11-26)
 

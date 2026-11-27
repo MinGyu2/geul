@@ -5,7 +5,7 @@
   "requirement": "Transfer editable HWPX curves between HWPX documents while preserving segment types, coordinates, control-point representation, ownership, resources, and durable serialization.",
   "implementation": {
     "commit": "38da56813a1c1c920201784c69fa7b9215426ce9",
-    "scope": "Compile-verified endpoint-only HWPX curve package export/import. This is partial work and does not satisfy the editable Bezier control-point requirement.",
+    "scope": "Endpoint-only HWPX curve package export/import is now runtime-verified in WASM and actual Linux X11 Native. This remains partial and does not satisfy the editable Bezier control-point requirement.",
     "files": [
       "patches/rhwp/stage3a-p6-hwpx-curve-clipboard.patch",
       "scripts/rhwp-patches.py",
@@ -21,8 +21,17 @@
       "packageBytes": 8388608,
       "mediaBytes": 6291456,
       "segments": 4096,
-      "supportedSegmentAttributes": ["type", "x1", "y1", "x2", "y2"],
-      "supportedTypes": ["LINE", "CURVE"]
+      "supportedSegmentAttributes": [
+        "type",
+        "x1",
+        "y1",
+        "x2",
+        "y2"
+      ],
+      "supportedTypes": [
+        "LINE",
+        "CURVE"
+      ]
     },
     "rhwp": {
       "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
@@ -43,25 +52,46 @@
   },
   "verification": {
     "orderedPatchReconstruction": "PASS: pinned RHWP source reconstructed with 71 ordered patches; generated tree SHA-256 d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047.",
-    "compiledSourceIdentity": "PASS: all 1,654 prepared-source files match the source used for the WASM target compilation.",
+    "compiledSourceIdentity": "PASS: all 1,654 prepared-source files match the source used for the WASM target compilation. Build input included preserved user-owned patches/rhwp/table-calc/evaluator.rs; committed-root-only reproduction is NOT VERIFIED.",
     "rustHostCheck": "PASS: cargo check --lib on the patched source.",
-    "wasmTargetCompile": "PASS: locked offline Release cargo build for wasm32-unknown-unknown; this did not generate JavaScript bindings or publish a new Release generation.",
+    "wasmTargetCompile": "PASS: locked offline Release cargo build for wasm32-unknown-unknown.",
     "typescriptTypecheck": "PASS: npm run typecheck.",
     "frontendBuild": "PASS: npm run build; Vite reported its existing large-chunk warning.",
-    "diffCheck": "PASS: git diff --check.",
-    "focusedWasmRuntime": "NOT RUN: the repository Release binding build stopped at its tool preflight because wasm-bindgen CLI is unavailable. The new focused regression was added but did not run.",
-    "t009": "NOT RUN.",
-    "undoRedo": "NOT RUN.",
-    "saveAndIndependentReopen": "NOT RUN.",
-    "releaseApplication": "NOT RUN: no new rhwp.js/rhwp_bg.wasm Release generation was published.",
-    "nativeX11": "NOT RUN.",
-    "externalHwpInterop": "NOT RUN."
+    "diffCheck": "PASS: git diff --check; Native harness py_compile PASS.",
+    "focusedWasmRuntime": "PASS: node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts; 73/73 tests passed, including supported endpoint-only curve transfer and malformed/opaque envelope rejection.",
+    "t009": "PASS for the supported endpoint-only Native subset: trusted Ctrl+S reported state=saved, synced=true, changedSince=false at revision 3.",
+    "undoRedo": "PASS: actual trusted Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y. Rendering changed after paste, Undo restored the destination digest, Redo restored the pasted digest; source bytes remained unchanged.",
+    "saveAndIndependentReopen": "PASS for the supported subset: T009 saved HWPX SHA-256 622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf; same-process close/reopen and selection passed. A distinct fresh app PID reopened the exact same package and selected the curve through a trusted pointer.",
+    "releaseApplication": "PASS: guarded RHWP Release binding generation 850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134, JS SHA-256 b37d14e095d783b9970ea06d873be04c72bdb36b14275a4e405d63e51fab8c81, WASM SHA-256 ca2590b5df331bc37d07f62e10c1f4693e577ed87df9f4c880426be5399cdb5c. Guarded Tauri Release app SHA-256 9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390; privacy/runtime-path checks PASS. Nix portability is NOT VERIFIED.",
+    "nativeX11": "PASS for the endpoint-only partial subset in actual private Xvfb/Linux X11. P6-HX-CURVE-PARTIAL and P6-HX-CURVE-PARTIAL-FRESH both PASS under app PIDs 2380134 and 2380401. Trusted pointer and clipboard keys, render/Undo/Redo, +567 HWP-unit floating paste cascade, shape/style/segment and OPC/resource checks, T009, same-process reopen, distinct-process fresh reopen, generation match, and trusted post-reopen selection passed. Cleanup exit 0, proven=true, no survivors/leaks/process errors. Evidence: target/p6-hx-curve-native-run-v4/result.json and target/p6-hx-curve-native-session-v4/cleanup.json.",
+    "externalHwpInterop": "NOT RUN. The endpoint-only fixture is synthetic and no external HWP editor interoperability was tested."
   },
   "limitations": [
-    "No separate Bezier control-point representation is established by the available HWPX contract; the original P6 requirement remains unmet.",
-    "The new clipboard runtime path, resource remapping, transaction rollback, Undo/Redo, T009, save/reopen, and Native X11 acceptance have not been executed.",
-    "The current WASM application binding remains the previously published Release generation; the new API is not available in that app until a guarded binding build succeeds.",
-    "Wayland, Windows, macOS, and external HWP editor interoperability are NOT RUN."
+    "No separate Bezier control-point representation is established by the available HWPX contract. The original P6-HX-CURVE requirement remains unmet even though the endpoint-only subset passed runtime acceptance.",
+    "Safe curve-segment insertion/deletion and preservation of undocumented curve extensions remain unsupported and fail closed.",
+    "The build used the preserved user-owned patches/rhwp/table-calc/evaluator.rs input; committed-root-only artifact reproduction is NOT VERIFIED.",
+    "Wayland, Windows, macOS, external HWP editor interoperability, and non-Nix Release portability are NOT RUN/NOT VERIFIED."
   ],
-  "nextAction": "Provide or restore the pinned wasm-bindgen CLI, build and publish the guarded Release binding, run the focused WASM and actual Linux X11 acceptance, and revisit the original Bezier representation only if an authentic schema extension or sample establishes it."
+  "nextAction": "Keep P6-HX-CURVE PARTIAL / BLOCKED_BY_FORMAT_CONTRACT. Revisit only if an authentic supported HWPX extension or sample establishes editable control-point semantics and safe curve insertion/deletion; do not invent a serialization contract.",
+  "validationCommit": "693bfa9f1a62939435cd306af9c6c015f9cee6f8",
+  "validationFiles": [
+    "scripts/tests/native-stage3-b.py",
+    "scripts/tests/native-stage3-p6-hx-curve.py",
+    "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts"
+  ],
+  "nativeEvidence": {
+    "run": "target/p6-hx-curve-native-run-v4/result.json",
+    "cleanup": "PASS: Xvfb/session teardown proven, temporary directories removed, no process survivors or leaks.",
+    "sourceFixtureSha256": "e2c3ba80b8e27d0da124a818373be6ae2a96a0468838aa3a618aed2f4cef5a76",
+    "destinationFixtureSha256": "b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7",
+    "savedDestinationSha256": "622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf",
+    "releaseAppSha256": "9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390",
+    "rhwpGeneration": "850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134",
+    "partialAppPid": 2380134,
+    "freshAppPid": 2380401,
+    "changedOpcParts": [
+      "Contents/section0.xml"
+    ],
+    "pasteCascadeStepHwpUnits": 567
+  }
 }
