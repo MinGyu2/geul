@@ -3477,13 +3477,13 @@ fn c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_�
             .collect()
     };
     let png = decode(include_str!(
-        "../../../../tests/fixtures/rhwp/blank-preview/prv-image.hex"
+        "../../../tests/fixtures/rhwp/blank-preview/prv-image.hex"
     ));
     let text = decode(include_str!(
-        "../../../../tests/fixtures/rhwp/blank-preview/prv-text-utf8.hex"
+        "../../../tests/fixtures/rhwp/blank-preview/prv-text-utf8.hex"
     ));
     let hwp_text = decode(include_str!(
-        "../../../../tests/fixtures/rhwp/blank-preview/prv-text-utf16le.hex"
+        "../../../tests/fixtures/rhwp/blank-preview/prv-text-utf16le.hex"
     ));
     assert_eq!(png, RHWP_BLANK_PREVIEW_PNG);
     assert_eq!(text, RHWP_BLANK_PREVIEW_TEXT);

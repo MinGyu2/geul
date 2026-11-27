@@ -1,9 +1,9 @@
-//! T008 WordCraft 어댑터 시험. 픽스처는 실행할 때 엔진 명령으로 만든다(tests/fixtures/wordcraft/basic.rs).
+//! T008 WordCraft 어댑터 시험. 픽스처는 실행할 때 엔진 명령으로 만든다.
 
 pub(crate) mod basic {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../tests/fixtures/wordcraft/basic.rs"
+        "/tests/fixtures/wordcraft/basic.rs"
     ));
 }
 
