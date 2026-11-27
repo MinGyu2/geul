@@ -8,12 +8,14 @@
     "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
     "Move a shared endpoint in both adjacent segment records; keep a closed path closed.",
     "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types.",
-    "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts."
+    "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts.",
+    "For the supported standard all-CURVE chain, compute Catmull–Rom-derived Bezier handles inferred from the public authentic sample model observed through its anchors/preview; this interpolation is not guaranteed by KS X 6101 and has no verified durable XML control-point contract. Support anchor insertion/removal; the derived handles are not independently serialized."
   ],
   "unresolvedRequirements": [
     "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
     "Bezier control-point editing has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
-    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed."
+    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed.",
+    "Independent Bezier handle editing/serialization has no verified format contract. Safe, geometry-preserving CURVE segment split/delete remains unresolved; do not infer a serialization contract from derived controls. The supported anchor insertion/removal behavior does not establish either capability."
   ],
   "formatEvidence": {
     "source": "Hancom HWPML 3.0 Revision 1.2, section 5.6.6, table 140 SEGMENT",
@@ -262,5 +264,53 @@
       }
     ],
     "scope": "This official implementation corroborates the current revision 03 schema; it does not rule out private extensions or authentic samples that are not public."
+  },
+  "currentModelEvidence": {
+    "status": "PARTIAL / BLOCKED_BY_FORMAT_CONTRACT",
+    "geulCommit": "9df3dbf1e05e3a227c5d5d4cdb1e097b81f279c7",
+    "orderedRhwpPatch": {
+      "index": 72,
+      "path": "patches/rhwp/stage3a-hwpx-curve-catmull-rom-model.patch",
+      "sha256": "6dd72ecf07dd19798c15fac2ad107542ec283aaae37abfa3be05dea8db7965d5"
+    },
+    "releaseWasm": {
+      "result": "PASS: 1 passed, 87 skipped",
+      "scope": "authentic public-sample-derived HWPX fixture; Catmull–Rom interpolation is an inference from sample anchor/preview evidence, not behavior guaranteed by KS X 6101; supported derived-control model and anchor insertion/removal",
+      "generation": "2af916e8f3c9b9d4b5f2c21e8684231809ffa8ab034688578537e077a182bf61"
+    },
+    "native": {
+      "status": "PASS_FOR_SUPPORTED_DERIVED_MODEL_AND_ANCHOR_INSERT_REMOVE",
+      "case": "P4-HX-CURVE-CATMULL",
+      "run": "target/p4-hx-curve/native-x11-run-11",
+      "resultSha256": "db3609393ebeb2d91ed90d56bba32d49f74469700dc2115979fdeb6a22847dd1",
+      "cleanup": "target/p4-hx-curve/native-session-11/cleanup.json",
+      "cleanupSha256": "79515efa2595092f3737e3ac0829507a49ea5c11d8a851dfdb5862338418f4a7",
+      "appSha256": "2b04af9bf774fd6d20bb3f5e2902ed9de234f538a1efadb99bc52e346f4fd478",
+      "rhwpGeneration": "2af916e8f3c9b9d4b5f2c21e8684231809ffa8ab034688578537e077a182bf61",
+      "checks": [
+        "Trusted Native anchor insertion/removal; Undo/Redo restores the expected 6↔7 handles.",
+        "Both T009 saves report saved, synced, and no findings; both saved states reopen successfully.",
+        "Source fixture remained unchanged; cleanup was proven with no surviving processes/resources.",
+        "Fixture identity: sanitized source sample and canonical fixture hashes are recorded; published file SHA-256 is recorded separately."
+      ],
+      "unresolved": "Independent Bezier handle serialization and safe geometry-preserving CURVE segment split/delete remain unverified and unsupported.",
+      "fixtureIdentity": {
+        "sourceSampleSha256": "cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0",
+        "canonicalFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548"
+      },
+      "publishedSha256": "555866706ff7b7edd800edd31b02e6100492c1d399c69e6e5820756b609242cc"
+    }
+  },
+  "currentModelCommit": {
+    "status": "PARTIAL_IMPLEMENTATION_COMMITTED_UNRESOLVED",
+    "sha": "9df3dbf1e05e3a227c5d5d4cdb1e097b81f279c7",
+    "orderedRhwpPatchSha256": "6dd72ecf07dd19798c15fac2ad107542ec283aaae37abfa3be05dea8db7965d5"
+  },
+  "sampleModelInference": {
+    "sourceSampleCommit": "97670eb2462e106134633acd78a8097d96db0fdd",
+    "originalBlobSha256": "413e41b121779b36a48bfd31117bb88e7edc3ebf0204473afd643787d1346126",
+    "sanitizedSourceSha256": "cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0",
+    "canonicalFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548",
+    "inference": "The Catmull–Rom interpolation model is inferred from the public sample anchor/preview evidence. This does not establish Hancom rendering semantics, a KS X 6101 guarantee, or a durable XML control-point serialization contract."
   }
 }
