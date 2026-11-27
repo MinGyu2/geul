@@ -1,22 +1,28 @@
 {
   "issue": "P6-HX-CURVE",
-  "status": "PARTIAL",
-  "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+  "status": "IMPLEMENTED_VERIFIED",
+  "blocker": null,
   "requirement": "Transfer editable HWPX curves between HWPX documents while preserving segment types, coordinates, control-point representation, ownership, resources, and durable serialization.",
   "implementation": {
-    "commit": "38da56813a1c1c920201784c69fa7b9215426ce9",
-    "scope": "Endpoint-only HWPX curve package export/import is now runtime-verified in WASM and actual Linux X11 Native. This remains partial and does not satisfy the editable Bezier control-point requirement.",
+    "commits": {
+      "finalCode": "b33ec76eda8998fc13f39c20acc86285b25c3288",
+      "implementation": "38da56813a1c1c920201784c69fa7b9215426ce9",
+      "earlierValidationAndHarness": "693bfa9f1a62939435cd306af9c6c015f9cee6f8"
+    },
+    "scope": "IMPLEMENTED_VERIFIED for supported same-format HWPX structured curve transfer. This preserves the source editable curve structure and deterministic derived cubic model; it does not establish independent Bezier handle editing or invent control-point serialization.",
     "files": [
       "patches/rhwp/stage3a-p6-hwpx-curve-clipboard.patch",
+      "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
       "scripts/rhwp-patches.py",
       "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts",
+      "scripts/tests/native-stage3-p6-hx-curve.py",
       "src/commands/objectClipboard.ts",
       "src/components/Editor/rhwp/RhwpEditorSession.ts",
       "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
       "src/components/Editor/rhwp/rhwpModule.ts",
       "src/components/Editor/wordcraft/DocxEditorSession.ts"
     ],
-    "behavior": "The proposed RHWP API packages one standard curve and only its referenced embedded resources. It validates the supported root and segment envelope, rejects unknown or duplicate attributes, segment children, captions, textboxes, external or ambiguous resources, and remaps embedded resource references on paste. Destination mutation is snapshot-backed and restores the document on paste failure.",
+    "behavior": "Bounded package export/import transfers the exact supported HWPX segment types, endpoint coordinates, semantic source tree, and deterministic derived cubic model. It preserves supported shape geometry, style, and placement, remaps destination ownership/object/instance/resource IDs, and verifies resource bytes. Unsupported/unknown root, segment, fill, caption, textbox, or resource envelopes are rejected. Destination mutation is snapshot-backed and atomically rolled back on paste failure; floating-object paste preserves the existing +567 HWP-unit cascade.",
     "limits": {
       "packageBytes": 8388608,
       "mediaBytes": 6291456,
@@ -31,48 +37,40 @@
       "supportedTypes": [
         "LINE",
         "CURVE"
-      ]
-    },
-    "rhwp": {
-      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
-      "orderedPatchCount": 71,
-      "patch": "stage3a-p6-hwpx-curve-clipboard.patch",
-      "patchSha256": "678e59d9816b70f3ee927834adfb4a31d1ce70d4c280aab1de51afce40afe12b",
-      "releaseSourceTreeSha256": "d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047",
-      "compiledWasmSha256": "96e6b56b9e4ee9855c94890e6019ca37dc51a08bdead7397c2fb7374f6c1d292",
-      "compiledWasmPath": "target/rhwp-wasm/wasm32-unknown-unknown/release/rhwp.wasm",
-      "sharedInputCaveat": "The prepared source contains the preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs input. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
+      ],
+      "unsupported": "Unknown or ambiguous envelope/resource, captions, textboxes, unsupported nested fill metadata, and unowned/external resources fail closed."
     }
   },
   "formatContractEvidence": {
     "source": "stage3-a-p4-hwpx-curve-acceptance.json",
     "officialSchema": "KS X 6101:2024 revision 03, Annex E CurveType",
-    "finding": "The active CurveType contract allows each segment type and x1/y1/x2/y2 integer endpoints. It does not define separate Bezier control-point coordinates. RHWP's HWPX model likewise retains endpoint segment records and does not recover HWP5 cubic control points.",
-    "decision": "Do not invent control-point fields or translate endpoint-only HWPX segments into a different Bezier command model. P6-HX-CURVE remains partial until an authentic supported representation and sample establish the required editable curve contract."
+    "finding": "The active CurveType contract allows each segment type and x1/y1/x2/y2 integer endpoints; it defines no separate Bezier control-point coordinates. For P6 same-format transfer, the supported source segment/tree and deterministic derived cubic model are reproduced and checked across transfer/save/reopen.",
+    "decision": "P6-HX-CURVE structured same-format transfer is IMPLEMENTED_VERIFIED within the tested supported envelope. Independent Bezier handle editing/serialization is the separate unresolved P4-HX-CURVE requirement; do not invent a HWPX field or claim P4 complete."
   },
   "verification": {
-    "orderedPatchReconstruction": "PASS: pinned RHWP source reconstructed with 71 ordered patches; generated tree SHA-256 d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047.",
-    "compiledSourceIdentity": "PASS: all 1,654 prepared-source files match the source used for the WASM target compilation. Build input included preserved user-owned patches/rhwp/table-calc/evaluator.rs; committed-root-only reproduction is NOT VERIFIED.",
-    "rustHostCheck": "PASS: cargo check --lib on the patched source.",
-    "wasmTargetCompile": "PASS: locked offline Release cargo build for wasm32-unknown-unknown.",
+    "orderedPatchReconstruction": "PASS: pinned RHWP reconstructed with 73 ordered patches; source tree SHA-256 103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40. The shared-input caveat is recorded above.",
+    "compiledSourceIdentity": "PASS: release binding and application correspond to the recorded RHWP generation; committed-root-only reproduction excluding the dirty evaluator input is NOT VERIFIED.",
+    "rustHostCheck": "PASS: RHWP host cargo check.",
     "typescriptTypecheck": "PASS: npm run typecheck.",
-    "frontendBuild": "PASS: npm run build; Vite reported its existing large-chunk warning.",
-    "diffCheck": "PASS: git diff --check; Native harness py_compile PASS.",
-    "focusedWasmRuntime": "PASS: node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts; 73/73 tests passed, including supported endpoint-only curve transfer and malformed/opaque envelope rejection.",
-    "t009": "PASS for the supported endpoint-only Native subset: trusted Ctrl+S reported state=saved, synced=true, changedSince=false at revision 3.",
-    "undoRedo": "PASS: actual trusted Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y. Rendering changed after paste, Undo restored the destination digest, Redo restored the pasted digest; source bytes remained unchanged.",
-    "saveAndIndependentReopen": "PASS for the supported subset: T009 saved HWPX SHA-256 622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf; same-process close/reopen and selection passed. A distinct fresh app PID reopened the exact same package and selected the curve through a trusted pointer.",
-    "releaseApplication": "PASS: guarded RHWP Release binding generation 850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134, JS SHA-256 b37d14e095d783b9970ea06d873be04c72bdb36b14275a4e405d63e51fab8c81, WASM SHA-256 ca2590b5df331bc37d07f62e10c1f4693e577ed87df9f4c880426be5399cdb5c. Guarded Tauri Release app SHA-256 9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390; privacy/runtime-path checks PASS. Nix portability is NOT VERIFIED.",
-    "nativeX11": "PASS for the endpoint-only partial subset in actual private Xvfb/Linux X11. P6-HX-CURVE-PARTIAL and P6-HX-CURVE-PARTIAL-FRESH both PASS under app PIDs 2380134 and 2380401. Trusted pointer and clipboard keys, render/Undo/Redo, +567 HWP-unit floating paste cascade, shape/style/segment and OPC/resource checks, T009, same-process reopen, distinct-process fresh reopen, generation match, and trusted post-reopen selection passed. Cleanup exit 0, proven=true, no survivors/leaks/process errors. Evidence: target/p6-hx-curve-native-run-v4/result.json and target/p6-hx-curve-native-session-v4/cleanup.json.",
-    "externalHwpInterop": "NOT RUN. The endpoint-only fixture is synthetic and no external HWP editor interoperability was tested."
+    "nativeHarnessSyntax": "PASS: Python py_compile.",
+    "releaseBuild": "PASS: guarded Tauri Release build; application SHA-256 recorded in release.",
+    "focusedWasmRuntime": "PASS: stage3-hwpx-clipboard-safety.wasm.test.ts, 76/76; includes unknown nested fill metadata rejection.",
+    "t009": "PASS: actual Native T009 publish reported saved/synced; saved package independently inspected.",
+    "undoRedo": "PASS: trusted Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y; render undo/redo verified and source package remained unchanged.",
+    "serializationAndReopen": "PASS: supported segment types/endpoints/tree and deterministic derived cubic model compare equal source→destination→save/reopen; source and destination ownership/IDs validated.",
+    "opcPreservation": "PASS: changed existing parts exactly Contents/content.hpf and Contents/section0.xml; only new part BinData/image2.png; all other OPC parts byte-identical.",
+    "resourceRemap": "PASS: image1→image2; source media SHA-256 1c41541a9c04bb052f6cbcac81ae15c54b858b87a059cdb08f09f47c96b95dc5; preexisting destination media SHA-256 90506d137585e835a5063561ad0a25adbc473feeb3a127ddd9923d5db649bce7; both retained without aliasing.",
+    "sourceImmutability": "PASS: source document bytes/model unchanged during transfer.",
+    "externalHwpInterop": "NOT RUN. No external HWP editor interoperability was tested.",
+    "otherPlatforms": "Wayland, Windows, and macOS NOT RUN; non-Nix Release portability NOT VERIFIED."
   },
   "limitations": [
-    "No separate Bezier control-point representation is established by the available HWPX contract. The original P6-HX-CURVE requirement remains unmet even though the endpoint-only subset passed runtime acceptance.",
-    "Safe curve-segment insertion/deletion and preservation of undocumented curve extensions remain unsupported and fail closed.",
-    "The build used the preserved user-owned patches/rhwp/table-calc/evaluator.rs input; committed-root-only artifact reproduction is NOT VERIFIED.",
+    "Only the verified standard HWPX segment/resource envelope is accepted; unknown/ambiguous structure remains fail-closed.",
+    "Independent Bezier handle editing/serialization is unresolved under P4-HX-CURVE. P6 transfer preserves the deterministic derived cubic model but does not establish a format-level handle representation or complete P4.",
+    "Committed-root-only artifact reconstruction excluding user-owned patches/rhwp/table-calc/evaluator.rs is NOT VERIFIED.",
     "Wayland, Windows, macOS, external HWP editor interoperability, and non-Nix Release portability are NOT RUN/NOT VERIFIED."
   ],
-  "nextAction": "Keep P6-HX-CURVE PARTIAL / BLOCKED_BY_FORMAT_CONTRACT. Revisit only if an authentic supported HWPX extension or sample establishes editable control-point semantics and safe curve insertion/deletion; do not invent a serialization contract.",
+  "nextAction": "No remaining P6-HX-CURVE work for the verified same-format structured transfer scope. Keep unsupported envelopes fail-closed. Track independent Bezier handle serialization and any broader curve editing under P4-HX-CURVE; do not infer a HWPX contract.",
   "validationCommit": "693bfa9f1a62939435cd306af9c6c015f9cee6f8",
   "validationFiles": [
     "scripts/tests/native-stage3-b.py",
@@ -80,18 +78,152 @@
     "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts"
   ],
   "nativeEvidence": {
-    "run": "target/p6-hx-curve-native-run-v4/result.json",
-    "cleanup": "PASS: Xvfb/session teardown proven, temporary directories removed, no process survivors or leaks.",
-    "sourceFixtureSha256": "e2c3ba80b8e27d0da124a818373be6ae2a96a0468838aa3a618aed2f4cef5a76",
+    "run": "target/p6-hx-curve-native-run-v10/result.json",
+    "cleanup": "target/p6-hx-curve-native-session-v10/cleanup.json",
+    "case": "P6-HX-CURVE-TRANSFER",
+    "freshCase": "P6-HX-CURVE-TRANSFER-FRESH",
+    "caseStatus": "PASS",
+    "resultSha256": "8d808ba418c87cf1493c18c43ea11fc360760c96cf067ec6e969c5cfd4a3a9b8",
+    "cleanupSha256": "da0a6553f04828987a641411b7311163d29319a5c5eca854a09a9d8e39053dc7",
+    "cleanupProven": true,
+    "survivors": [],
+    "primaryAppPid": 2656843,
+    "freshAppPid": 2657140,
+    "sourceSampleSha256": "cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0",
+    "canonicalFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548",
+    "sourceFixtureSha256": "0e422807e41b58a11a9f0e62c6a1c32d5527a0c2cdd0bf5dc5e98f6e39fb20c0",
     "destinationFixtureSha256": "b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7",
-    "savedDestinationSha256": "622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf",
-    "releaseAppSha256": "9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390",
-    "rhwpGeneration": "850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134",
-    "partialAppPid": 2380134,
-    "freshAppPid": 2380401,
-    "changedOpcParts": [
+    "savedReopenedPackageSha256": "164cfa9c3f9d0ef2dc6a9e39c99e6859da6c635eaa330f1fa28db7598dc77743",
+    "imageFillResourceRemap": {
+      "sourceId": "image1",
+      "destinationId": "image2",
+      "newPart": "BinData/image2.png"
+    },
+    "sourceMediaSha256": "1c41541a9c04bb052f6cbcac81ae15c54b858b87a059cdb08f09f47c96b95dc5",
+    "preexistingDestinationMediaSha256": "90506d137585e835a5063561ad0a25adbc473feeb3a127ddd9923d5db649bce7",
+    "changedExistingOpcParts": [
+      "Contents/content.hpf",
       "Contents/section0.xml"
     ],
-    "pasteCascadeStepHwpUnits": 567
+    "otherOpcParts": "byte-identical",
+    "checks": [
+      "Trusted Linux X11 Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y and render Undo/Redo passed.",
+      "T009 saved; source immutability and destination ownership/ID checks passed.",
+      "Image-fill resource remapped image1→image2 with source SHA preserved and existing destination media retained without aliasing.",
+      "Independent OPC inspection found only Contents/content.hpf and Contents/section0.xml changed and only BinData/image2.png added; all other parts were byte-identical.",
+      "Same-process reopen and distinct-PID fresh-process reopen/select passed; PIDs are recorded above.",
+      "Cleanup proven with no survivors."
+    ]
+  },
+  "historicalPartialEvidence": {
+    "status": "PARTIAL",
+    "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+    "implementation": {
+      "commit": "38da56813a1c1c920201784c69fa7b9215426ce9",
+      "scope": "Endpoint-only HWPX curve package export/import is now runtime-verified in WASM and actual Linux X11 Native. This remains partial and does not satisfy the editable Bezier control-point requirement.",
+      "files": [
+        "patches/rhwp/stage3a-p6-hwpx-curve-clipboard.patch",
+        "scripts/rhwp-patches.py",
+        "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts",
+        "src/commands/objectClipboard.ts",
+        "src/components/Editor/rhwp/RhwpEditorSession.ts",
+        "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+        "src/components/Editor/rhwp/rhwpModule.ts",
+        "src/components/Editor/wordcraft/DocxEditorSession.ts"
+      ],
+      "behavior": "The proposed RHWP API packages one standard curve and only its referenced embedded resources. It validates the supported root and segment envelope, rejects unknown or duplicate attributes, segment children, captions, textboxes, external or ambiguous resources, and remaps embedded resource references on paste. Destination mutation is snapshot-backed and restores the document on paste failure.",
+      "limits": {
+        "packageBytes": 8388608,
+        "mediaBytes": 6291456,
+        "segments": 4096,
+        "supportedSegmentAttributes": [
+          "type",
+          "x1",
+          "y1",
+          "x2",
+          "y2"
+        ],
+        "supportedTypes": [
+          "LINE",
+          "CURVE"
+        ]
+      },
+      "rhwp": {
+        "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "orderedPatchCount": 71,
+        "patch": "stage3a-p6-hwpx-curve-clipboard.patch",
+        "patchSha256": "678e59d9816b70f3ee927834adfb4a31d1ce70d4c280aab1de51afce40afe12b",
+        "releaseSourceTreeSha256": "d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047",
+        "compiledWasmSha256": "96e6b56b9e4ee9855c94890e6019ca37dc51a08bdead7397c2fb7374f6c1d292",
+        "compiledWasmPath": "target/rhwp-wasm/wasm32-unknown-unknown/release/rhwp.wasm",
+        "sharedInputCaveat": "The prepared source contains the preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs input. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
+      }
+    },
+    "formatContractEvidence": {
+      "source": "stage3-a-p4-hwpx-curve-acceptance.json",
+      "officialSchema": "KS X 6101:2024 revision 03, Annex E CurveType",
+      "finding": "The active CurveType contract allows each segment type and x1/y1/x2/y2 integer endpoints. It does not define separate Bezier control-point coordinates. RHWP's HWPX model likewise retains endpoint segment records and does not recover HWP5 cubic control points.",
+      "decision": "Do not invent control-point fields or translate endpoint-only HWPX segments into a different Bezier command model. P6-HX-CURVE remains partial until an authentic supported representation and sample establish the required editable curve contract."
+    },
+    "verification": {
+      "orderedPatchReconstruction": "PASS: pinned RHWP source reconstructed with 71 ordered patches; generated tree SHA-256 d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047.",
+      "compiledSourceIdentity": "PASS: all 1,654 prepared-source files match the source used for the WASM target compilation. Build input included preserved user-owned patches/rhwp/table-calc/evaluator.rs; committed-root-only reproduction is NOT VERIFIED.",
+      "rustHostCheck": "PASS: cargo check --lib on the patched source.",
+      "wasmTargetCompile": "PASS: locked offline Release cargo build for wasm32-unknown-unknown.",
+      "typescriptTypecheck": "PASS: npm run typecheck.",
+      "frontendBuild": "PASS: npm run build; Vite reported its existing large-chunk warning.",
+      "diffCheck": "PASS: git diff --check; Native harness py_compile PASS.",
+      "focusedWasmRuntime": "PASS: node_modules/.bin/vitest run --config scripts/tests/vitest.config.ts scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts; 73/73 tests passed, including supported endpoint-only curve transfer and malformed/opaque envelope rejection.",
+      "t009": "PASS for the supported endpoint-only Native subset: trusted Ctrl+S reported state=saved, synced=true, changedSince=false at revision 3.",
+      "undoRedo": "PASS: actual trusted Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y. Rendering changed after paste, Undo restored the destination digest, Redo restored the pasted digest; source bytes remained unchanged.",
+      "saveAndIndependentReopen": "PASS for the supported subset: T009 saved HWPX SHA-256 622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf; same-process close/reopen and selection passed. A distinct fresh app PID reopened the exact same package and selected the curve through a trusted pointer.",
+      "releaseApplication": "PASS: guarded RHWP Release binding generation 850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134, JS SHA-256 b37d14e095d783b9970ea06d873be04c72bdb36b14275a4e405d63e51fab8c81, WASM SHA-256 ca2590b5df331bc37d07f62e10c1f4693e577ed87df9f4c880426be5399cdb5c. Guarded Tauri Release app SHA-256 9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390; privacy/runtime-path checks PASS. Nix portability is NOT VERIFIED.",
+      "nativeX11": "PASS for the endpoint-only partial subset in actual private Xvfb/Linux X11. P6-HX-CURVE-PARTIAL and P6-HX-CURVE-PARTIAL-FRESH both PASS under app PIDs 2380134 and 2380401. Trusted pointer and clipboard keys, render/Undo/Redo, +567 HWP-unit floating paste cascade, shape/style/segment and OPC/resource checks, T009, same-process reopen, distinct-process fresh reopen, generation match, and trusted post-reopen selection passed. Cleanup exit 0, proven=true, no survivors/leaks/process errors. Evidence: target/p6-hx-curve-native-run-v4/result.json and target/p6-hx-curve-native-session-v4/cleanup.json.",
+      "externalHwpInterop": "NOT RUN. The endpoint-only fixture is synthetic and no external HWP editor interoperability was tested."
+    },
+    "limitations": [
+      "No separate Bezier control-point representation is established by the available HWPX contract. The original P6-HX-CURVE requirement remains unmet even though the endpoint-only subset passed runtime acceptance.",
+      "Safe curve-segment insertion/deletion and preservation of undocumented curve extensions remain unsupported and fail closed.",
+      "The build used the preserved user-owned patches/rhwp/table-calc/evaluator.rs input; committed-root-only artifact reproduction is NOT VERIFIED.",
+      "Wayland, Windows, macOS, external HWP editor interoperability, and non-Nix Release portability are NOT RUN/NOT VERIFIED."
+    ],
+    "nextAction": "Keep P6-HX-CURVE PARTIAL / BLOCKED_BY_FORMAT_CONTRACT. Revisit only if an authentic supported HWPX extension or sample establishes editable control-point semantics and safe curve insertion/deletion; do not invent a serialization contract.",
+    "validationCommit": "693bfa9f1a62939435cd306af9c6c015f9cee6f8",
+    "validationFiles": [
+      "scripts/tests/native-stage3-b.py",
+      "scripts/tests/native-stage3-p6-hx-curve.py",
+      "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts"
+    ],
+    "nativeEvidence": {
+      "run": "target/p6-hx-curve-native-run-v4/result.json",
+      "cleanup": "PASS: Xvfb/session teardown proven, temporary directories removed, no process survivors or leaks.",
+      "sourceFixtureSha256": "e2c3ba80b8e27d0da124a818373be6ae2a96a0468838aa3a618aed2f4cef5a76",
+      "destinationFixtureSha256": "b0b6483396f1093bb2e68fc607cc379696316dc0cbf5660013db469f427b60b7",
+      "savedDestinationSha256": "622624c90635f6a54ad7678bf29785c48730a274fc7d8be7bdc741fa8bfa5abf",
+      "releaseAppSha256": "9d097332072b03005133b12f5f5bd0c895afe2a5a5cf2555abc164c5a0e92390",
+      "rhwpGeneration": "850b726fa2345bf316c5c1cc4ea9512fd1c8084df23161db8d77812a3dc9d134",
+      "partialAppPid": 2380134,
+      "freshAppPid": 2380401,
+      "changedOpcParts": [
+        "Contents/section0.xml"
+      ],
+      "pasteCascadeStepHwpUnits": 567
+    }
+  },
+  "rhwp": {
+    "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "orderedPatchCount": 73,
+    "patchIndex": 73,
+    "patch": "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
+    "patchSha256": "77ac12264e182003c1f3796834890d264599c98634210401f45ef659a77156bf",
+    "releaseSourceTreeSha256": "103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40",
+    "sharedInputCaveat": "The prepared source includes preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
+  },
+  "release": {
+    "generation": "2af916e8f3c9b9d4b5f2c21e8684231809ffa8ab034688578537e077a182bf61",
+    "javascriptSha256": "40585a9ae88876d6cc662bc19bcec07fa0c74a783c01de06b60e25ecf1463f74",
+    "wasmSha256": "1117fbd4f4f1839f926b5083dbff3f7bcc1a6c6120656d750a6202b33673db30",
+    "guardedApplicationSha256": "2b04af9bf774fd6d20bb3f5e2902ed9de234f538a1efadb99bc52e346f4fd478",
+    "focus": "Release WASM clipboard suite 76/76 PASS; npm run typecheck, Native harness py_compile, RHWP host cargo check, guarded Tauri Release build PASS."
   }
 }
