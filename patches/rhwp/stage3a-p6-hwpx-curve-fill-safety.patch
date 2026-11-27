@@ -1,0 +1,217 @@
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -4835,11 +4835,13 @@
+ fn parse_shape_fill_brush(
+     reader: &mut Reader<&[u8]>,
+     type_change_safe: &mut bool,
++    curve_clipboard_safe: &mut bool,
+ ) -> Result<Fill, HwpxError> {
+     use crate::model::style::{FillType, GradientFill, ImageFill, ImageFillMode, SolidFill};
+     let mut fill = Fill::default();
+     let mut buf = Vec::new();
+     let mut seen_children: Vec<Vec<u8>> = Vec::new();
++    let mut fill_variant_count = 0usize;
+     loop {
+         match reader.read_event_into(&mut buf) {
+             Ok(Event::Empty(ref ce)) | Ok(Event::Start(ref ce)) => {
+@@ -4850,8 +4852,21 @@
+                     .any(|previous| previous.as_slice() == local)
+                 {
+                     *type_change_safe = false;
++                    *curve_clipboard_safe = false;
+                 }
+                 seen_children.push(local.to_vec());
++                if matches!(local, b"winBrush" | b"gradation" | b"imgBrush") {
++                    fill_variant_count += 1;
++                    if fill_variant_count > 1 {
++                        *curve_clipboard_safe = false;
++                    }
++                }
++                if !matches!(
++                    local,
++                    b"winBrush" | b"gradation" | b"color" | b"imgBrush" | b"img" | b"image"
++                ) {
++                    *curve_clipboard_safe = false;
++                }
+                 let allowed_attrs: &[&[u8]] = match local {
+                     b"winBrush" => &[b"faceColor", b"hatchColor", b"hatchStyle", b"alpha"],
+                     b"gradation" => &[
+@@ -4882,6 +4897,7 @@
+                 for attr in ce.attributes() {
+                     let Ok(attr) = attr else {
+                         *type_change_safe = false;
++                        *curve_clipboard_safe = false;
+                         continue;
+                     };
+                     let key = attr.key.as_ref().as_bytes();
+@@ -4889,8 +4905,94 @@
+                         || !allowed_attrs.iter().any(|name| *name == key)
+                     {
+                         *type_change_safe = false;
++                        *curve_clipboard_safe = false;
+                     }
+                     seen_attrs.push(key.to_vec());
++                    let value = attr_str(&attr);
++                    match local {
++                        b"winBrush" => match key {
++                            b"faceColor" | b"hatchColor" => {
++                                let hex = value.strip_prefix('#').unwrap_or(&value);
++                                let valid_color = value.is_empty()
++                                    || value == "none"
++                                    || (matches!(hex.len(), 6 | 8)
++                                        && hex.bytes().all(|b| b.is_ascii_hexdigit()));
++                                if !valid_color {
++                                    *curve_clipboard_safe = false;
++                                }
++                            }
++                            b"hatchStyle" if parse_hatch_style(&value).is_none() => {
++                                *curve_clipboard_safe = false;
++                            }
++                            b"alpha" => {
++                                let valid_alpha = value.parse::<f64>().is_ok_and(|alpha| {
++                                    alpha.is_finite() && (0.0..=1.0).contains(&alpha)
++                                });
++                                if !valid_alpha {
++                                    *curve_clipboard_safe = false;
++                                }
++                            }
++                            _ => {}
++                        },
++                        b"gradation" | b"color" => *curve_clipboard_safe = false,
++                        b"imgBrush" if key == b"mode" => {
++                            let valid_mode = matches!(
++                                value.as_str(),
++                                "TILE"
++                                    | "TILE_ALL"
++                                    | "TILE_HORZ_TOP"
++                                    | "TILE_HORZ_BOTTOM"
++                                    | "TILE_VERT_LEFT"
++                                    | "TILE_VERT_RIGHT"
++                                    | "CENTER"
++                                    | "CENTER_TOP"
++                                    | "CENTER_BOTTOM"
++                                    | "FIT"
++                                    | "FIT_TO_SIZE"
++                                    | "STRETCH"
++                                    | "ZOOM"
++                                    | "TOTAL"
++                                    | "TOP_LEFT_ALIGN"
++                            );
++                            if !valid_mode {
++                                *curve_clipboard_safe = false;
++                            }
++                        }
++                        b"img" | b"image" => match key {
++                            b"binaryItemIDRef" => {
++                                let valid_id = value
++                                    .strip_prefix("image")
++                                    .and_then(|digits| {
++                                        let id = digits.parse::<u16>().ok()?;
++                                        (id > 0 && digits == id.to_string()).then_some(id)
++                                    })
++                                    .is_some();
++                                if !valid_id {
++                                    *curve_clipboard_safe = false;
++                                }
++                            }
++                            b"bright" | b"contrast" if value.parse::<i8>().is_err() => {
++                                *curve_clipboard_safe = false;
++                            }
++                            b"effect"
++                                if !matches!(
++                                    value.as_str(),
++                                    "REAL_PIC" | "GRAY_SCALE" | "BLACK_WHITE"
++                                ) =>
++                            {
++                                *curve_clipboard_safe = false
++                            }
++                            b"alpha"
++                                if !value
++                                    .parse::<f64>()
++                                    .is_ok_and(|alpha| alpha.is_finite() && alpha == 0.0) =>
++                            {
++                                *curve_clipboard_safe = false
++                            }
++                            _ => {}
++                        },
++                        _ => {}
++                    }
+                 }
+                 match local {
+                     b"winBrush" => {
+@@ -4925,6 +5027,7 @@
+                         fill.solid = Some(solid);
+                     }
+                     b"gradation" => {
++                        *curve_clipboard_safe = false;
+                         // Gradient rendering is modeled, but its nested source shape is
+                         // not retained byte-for-byte by the basic shape writer yet.
+                         *type_change_safe = false;
+@@ -4952,6 +5055,7 @@
+                         fill.gradient = Some(grad);
+                     }
+                     b"color" => {
++                        *curve_clipboard_safe = false;
+                         // <hc:color value="#RRGGBB"/> -- shape gradation child.
+                         // Header BorderFill already handles the same construct; shape-local
+                         // fillBrush needs the same color stop materialization for rendering.
+@@ -5003,6 +5107,9 @@
+                     // 이미지로 채운 도형이 왕복 후 빈 도형이 됐다.
+                     // 헤더(borderFill) 파서 header.rs 의 b"img" arm 과 동형.
+                     b"img" | b"image" => {
++                        if fill.image.is_none() {
++                            *curve_clipboard_safe = false;
++                        }
+                         *type_change_safe = false;
+                         if let Some(ref mut img_fill) = fill.image {
+                             for attr in ce.attributes().flatten() {
+@@ -5042,15 +5149,25 @@
+             }
+             Ok(Event::Text(text))
+                 if text.as_ref().bytes().all(|byte| byte.is_ascii_whitespace()) => {}
+-            Ok(Event::Comment(_)) => *type_change_safe = false,
++            Ok(Event::Comment(_)) => {
++                *type_change_safe = false;
++                *curve_clipboard_safe = false;
++            }
+             Ok(Event::Eof) => {
+                 *type_change_safe = false;
++                *curve_clipboard_safe = false;
+                 break;
+             }
+             Err(e) => return Err(HwpxError::XmlError(format!("fillBrush: {}", e))),
+-            _ => *type_change_safe = false,
++            _ => {
++                *type_change_safe = false;
++                *curve_clipboard_safe = false;
++            }
+         }
+         buf.clear();
++    }
++    if fill_variant_count != 1 {
++        *curve_clipboard_safe = false;
+     }
+     Ok(fill)
+ }
+@@ -5289,6 +5406,7 @@
+     let mut hwpx_curve_segments: Vec<HwpxCurveSegment> = Vec::new();
+     let mut hwpx_basic_seen_children: Vec<Vec<u8>> = Vec::new();
+     let mut hwpx_curve_transfer_safe = shape_type == b"curve" && hwpx_curve_root_safe(e);
++    let mut hwpx_curve_fill_safe = true;
+     // [Task #1598] ellipse / arc 전용 지오메트리 (`<hc:center>`/`<hc:ax1>`/...).
+     // 미적재 시 한글이 타원/호를 다르게 렌더 → 누적 레이아웃 변동 → 페이지 붕괴(#1589 잔여).
+     let mut e_center = crate::model::Point::default();
+@@ -5592,6 +5710,7 @@
+                             fill = parse_shape_fill_brush(
+                                 reader,
+                                 &mut shape_attr.hwpx_basic_shape_type_change_safe,
++                                &mut hwpx_curve_fill_safe,
+                             )?;
+                         }
+                     }
+@@ -5624,4 +5743,5 @@
+     shape_attr.hwpx_curve_clipboard_safe = shape_type == b"curve"
+         && hwpx_curve_transfer_safe
++        && hwpx_curve_fill_safe
+         && !hwpx_curve_segments.is_empty()
+         && hwpx_curve_segments.iter().all(|segment| !segment.has_children);

@@ -32,7 +32,7 @@ function expectReopenEvidence(doc: RhwpDocument, bytes: Uint8Array, report: stri
     verify(reopened);
   } finally { reopened.free(); }
 }
-type Frame = { type: string; x: number; y: number; w: number; h: number; controlIdx: number };
+type Frame = { type: string; x: number; y: number; w: number; h: number; secIdx: number; paraIdx: number; controlIdx: number };
 const shapes = (doc: RhwpDocument) => (JSON.parse(doc.getPageControlLayout!(0)).controls as Frame[]).filter(c => c.type === "shape" || c.type === "line");
 
 function source(format: "hwp" | "hwpx"): Uint8Array {
@@ -84,18 +84,96 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
 
 function curveSummary(bytes: Uint8Array) {
   return JSON.parse(execFileSync("python3", ["-c", `
+import hashlib
 import io, json, sys, zipfile
 from xml.etree import ElementTree as ET
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as package:
     root = ET.fromstring(package.read('Contents/section0.xml'))
     curve = root.find('.//{*}curve')
     assert curve is not None
+    image = next((node for node in curve.iter() if node.tag.rsplit('}', 1)[-1] == 'img'), None)
+    image_ref = image.get('binaryItemIDRef') if image is not None else None
+    manifest = ET.fromstring(package.read('Contents/content.hpf'))
+    image_item = next((node for node in manifest.iter() if node.tag.rsplit('}', 1)[-1] == 'item'
+                       and node.get('id') == image_ref), None) if image_ref else None
+    media = sorted(name for name in package.namelist() if name.startswith('BinData/'))
     print(json.dumps({
       'id': curve.get('id'), 'instid': curve.get('instid'),
       'shape': {key:value for key,value in curve.attrib.items() if key not in {'id','instid','zOrder'}},
       'segments': [dict(segment.attrib) for segment in curve.findall('{*}seg')],
-      'media': sorted(name for name in package.namelist() if name.startswith('BinData/')),
+      'fillImageRef': image_ref,
+      'fillImagePart': image_item.get('href') if image_item is not None else None,
+      'media': media,
+      'mediaSha256': {name:hashlib.sha256(package.read(name)).hexdigest() for name in media},
     }))
+`], { input: bytes, encoding: "utf8" }));
+}
+
+function addCurveImageFill(curveBytes: Uint8Array, resourceDocument: Uint8Array): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import base64, copy, io, json, re, sys, zipfile
+from xml.etree import ElementTree as ET
+opf = '{http://www.idpf.org/2007/opf/}'
+curve_bytes, resource_bytes = (base64.b64decode(value) for value in json.load(sys.stdin))
+with zipfile.ZipFile(io.BytesIO(curve_bytes)) as source, zipfile.ZipFile(io.BytesIO(resource_bytes)) as resource:
+    resource_manifest = ET.fromstring(resource.read('Contents/content.hpf'))
+    owned = [item for item in resource_manifest.iter(opf + 'item') if item.get('href', '').startswith('BinData/')]
+    assert len(owned) == 1
+    asset = owned[0]
+    ref, part = asset.get('id'), asset.get('href')
+    assert re.fullmatch(r'image[1-9][0-9]*', ref or '') and part and part not in source.namelist()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == 'Contents/section0.xml':
+                text = data.decode('utf-8')
+                assert '<hp:curve' in text and '<hc:img ' not in text
+                replacement = (
+                    '<hc:fillBrush><hc:imgBrush mode="FIT_TO_SIZE">'
+                    f'<hc:img binaryItemIDRef="{ref}" bright="0" contrast="0" effect="REAL_PIC"/>'
+                    '</hc:imgBrush></hc:fillBrush>'
+                )
+                text, count = re.subn(r'<hc:fillBrush[^>]*>.*?</hc:fillBrush>', replacement, text, count=1)
+                assert count == 1
+                data = text.encode('utf-8')
+            elif entry.filename == 'Contents/content.hpf':
+                root = ET.fromstring(data)
+                manifest = root.find('.//' + opf + 'manifest')
+                assert manifest is not None and not any(node.get('id') == ref for node in manifest)
+                manifest.append(copy.deepcopy(asset))
+                data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+            destination.writestr(entry, data)
+        destination.writestr(part, resource.read(part))
+    sys.stdout.buffer.write(output.getvalue())
+`], { input: JSON.stringify([Buffer.from(curveBytes).toString("base64"), Buffer.from(resourceDocument).toString("base64")]) });
+}
+
+function addUnsupportedCurveFill(curveBytes: Uint8Array): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+source_bytes = sys.stdin.buffer.read()
+output = io.BytesIO()
+with zipfile.ZipFile(io.BytesIO(source_bytes)) as source, zipfile.ZipFile(output, 'w') as destination:
+    for entry in source.infolist():
+        data = source.read(entry.filename)
+        if entry.filename == 'Contents/section0.xml':
+            text = data.decode('utf-8')
+            replacement = '<hc:fillBrush><hc:futureFill vendor="unknown"/></hc:fillBrush>'
+            text, count = re.subn(r'<hc:fillBrush[^>]*>.*?</hc:fillBrush>', replacement, text, count=1)
+            assert count == 1
+            data = text.encode('utf-8')
+        destination.writestr(entry, data)
+sys.stdout.buffer.write(output.getvalue())
+`], { input: curveBytes });
+}
+
+function packageMediaSha256(bytes: Uint8Array): Record<string, string> {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import hashlib, io, json, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as package:
+    print(json.dumps({name:hashlib.sha256(package.read(name)).hexdigest()
+                      for name in package.namelist() if name.startswith('BinData/')}))
 `], { input: bytes, encoding: "utf8" }));
 }
 
@@ -631,6 +709,155 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
         expect(unsafeDoc.exportHwpx()).toEqual(unsafeBefore);
       } finally { unsafeDoc.free(); }
     } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+
+  it("preserves authentic HWPX Catmull-Rom-derived Bezier geometry across HWPX clipboard transfer", async () => {
+    const authentic = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"));
+    const original = curveSummary(authentic);
+    expect(original.segments).toHaveLength(6);
+    expect(original.segments.map((segment: { type: string }) => segment.type)).toEqual(Array(6).fill("CURVE"));
+    const src = await setup("hwpx", authentic);
+    const dst = await setup("hwpx");
+    const clipboard = objectClip();
+    try {
+      const sourceBefore = src.doc.exportHwpx();
+      const frame = shapes(src.doc).find(shape => shape.type === "shape");
+      expect(frame).toBeDefined();
+      const sourcePath = JSON.parse(src.doc.getEditableShapePath!(frame!.secIdx, frame!.paraIdx, frame!.controlIdx));
+      expect(sourcePath).toMatchObject({ kind: "curve", closed: true, curveModel: "catmull-rom-derived-bezier" });
+      expect(sourcePath.bezierSegments).toHaveLength(6);
+      expect(sourcePath.bezierSegments[0]).toMatchObject({
+        start: { x: 450, y: 6140 }, end: { x: 8000, y: 11215 },
+        control1: { x: 1370.8333333333335, y: 8006.666666666667 },
+        control2: { x: 7658.333333333333, y: 9015 },
+      });
+      src.pick(frame!);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clipboard.clipboard)).toBe(true);
+      const payload = parseObjectClipboardPayload(clipboard.payload());
+      expect(payload).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "shape", portable: { kind: "curve" } });
+      if (!payload || payload.version !== 3 || payload.sourceFormat !== "hwpx" || payload.portable?.kind !== "curve") {
+        throw new Error("authentic curve clipboard payload is unavailable");
+      }
+
+      const destinationBefore = dst.doc.exportHwpx();
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clipboard.clipboard)).toBe(true);
+      await dst.confirm();
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
+      const transferredBytes = dst.doc.exportHwpx();
+      const transferred = curveSummary(transferredBytes);
+      expect(transferred.shape).toEqual(original.shape);
+      expect(transferred.segments).toEqual(original.segments);
+      expect(transferred.media).toEqual(original.media);
+      expect(transferred.id).not.toBe(original.id);
+      expect(transferred.instid).not.toBe(original.instid);
+      const transferredFrame = shapes(dst.doc).find(shape => shape.type === "shape");
+      expect(transferredFrame).toBeDefined();
+      expect(JSON.parse(dst.doc.getEditableShapePath!(transferredFrame!.secIdx, transferredFrame!.paraIdx,
+        transferredFrame!.controlIdx)).bezierSegments)
+        .toEqual(sourcePath.bezierSegments);
+
+      expect(dst.editor.undo()).toBe(true);
+      await dst.confirm();
+      expect(dst.doc.exportHwpx()).toEqual(destinationBefore);
+      expect(shapes(dst.doc).some(shape => shape.type === "shape")).toBe(false);
+      expect(dst.editor.redo()).toBe(true);
+      await dst.confirm();
+      expect(curveSummary(dst.doc.exportHwpx()).segments).toEqual(original.segments);
+
+      const exported = dst.doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss();
+        const saved = exported.takeBytes();
+        expectReopenEvidence(dst.doc, saved, report, reopened => {
+          const reopenedCurve = curveSummary(reopened.exportHwpx());
+          expect(reopenedCurve.shape).toEqual(original.shape);
+          expect(reopenedCurve.segments).toEqual(original.segments);
+          expect(reopenedCurve.media).toEqual(original.media);
+          const reopenedFrame = shapes(reopened).find(shape => shape.type === "shape");
+          expect(reopenedFrame).toBeDefined();
+          expect(JSON.parse(reopened.getEditableShapePath!(reopenedFrame!.secIdx, reopenedFrame!.paraIdx,
+            reopenedFrame!.controlIdx)).bezierSegments)
+            .toEqual(sourcePath.bezierSegments);
+        });
+      } finally { exported.free(); }
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+
+  it("remaps an HWPX curve image-fill resource without aliasing destination media", async () => {
+    const authentic = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"));
+    const sourceBytes = addCurveImageFill(authentic, pictureFixture());
+    const original = curveSummary(sourceBytes);
+    const sourceMedia = packageMediaSha256(sourceBytes);
+    expect(original.fillImageRef).toMatch(/^image[1-9][0-9]*$/);
+    expect(Object.keys(sourceMedia)).toHaveLength(1);
+
+    const destinationDocument = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+    let destinationBytes: Uint8Array;
+    try {
+      const picture = JSON.parse(destinationDocument.insertPicture!(0, 0, 0, "[]", targetPicturePng,
+        1800, 900, 128, 128, "png", "unrelated destination media"));
+      expect(picture.ok).toBe(true);
+      destinationBytes = destinationDocument.exportHwpx();
+    } finally { destinationDocument.free(); }
+
+    const src = await setup("hwpx", sourceBytes);
+    const dst = await setup("hwpx", destinationBytes);
+    const clipboard = objectClip();
+    try {
+      const sourceBefore = src.doc.exportHwpx();
+      const destinationBefore = dst.doc.exportHwpx();
+      const destinationMedia = packageMediaSha256(destinationBefore);
+      expect(Object.keys(destinationMedia)).toHaveLength(1);
+      const frame = shapes(src.doc).find(shape => shape.type === "shape");
+      expect(frame).toBeDefined();
+      src.pick(frame!);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clipboard.clipboard)).toBe(true);
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clipboard.clipboard)).toBe(true);
+      await dst.confirm();
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
+
+      const transferredBytes = dst.doc.exportHwpx();
+      const transferred = curveSummary(transferredBytes);
+      const transferredMedia = packageMediaSha256(transferredBytes);
+      expect(transferred.segments).toEqual(original.segments);
+      expect(transferred.fillImageRef).not.toBe(original.fillImageRef);
+      expect(transferred.fillImagePart).not.toBe(original.fillImagePart);
+      expect(Object.keys(transferredMedia)).toHaveLength(2);
+      expect(Object.values(transferredMedia)).toContain(Object.values(sourceMedia)[0]);
+      expect(Object.values(transferredMedia)).toContain(Object.values(destinationMedia)[0]);
+      expect(transferred.mediaSha256[transferred.fillImagePart]).toBe(Object.values(sourceMedia)[0]);
+
+      expect(dst.editor.undo()).toBe(true);
+      await dst.confirm();
+      expect(dst.doc.exportHwpx()).toEqual(destinationBefore);
+      expect(dst.editor.redo()).toBe(true);
+      await dst.confirm();
+      expect(packageMediaSha256(dst.doc.exportHwpx())).toEqual(transferredMedia);
+
+      const exported = dst.doc.exportHwpxWithReport();
+      try {
+        const saved = exported.takeBytes();
+        expect(JSON.parse(exported.contentLoss())).toMatchObject({ count: 0 });
+        expectReopenEvidence(dst.doc, saved, exported.contentLoss(), reopened => {
+          const reopenedCurve = curveSummary(reopened.exportHwpx());
+          expect(reopenedCurve.fillImageRef).toBe(transferred.fillImageRef);
+          expect(reopenedCurve.mediaSha256).toEqual(transferred.mediaSha256);
+          expect(packageMediaSha256(reopened.exportHwpx())).toEqual(transferredMedia);
+        });
+      } finally { exported.free(); }
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+
+  it("rejects unsupported nested curve fill metadata instead of dropping it", () => {
+    const authentic = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"));
+    const bytes = addUnsupportedCurveFill(authentic);
+    const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+    try {
+      const frame = shapes(doc).find(shape => shape.type === "shape");
+      expect(frame).toBeDefined();
+      expect(() => doc.exportHwpxCurveClipboard!(frame!.secIdx, frame!.paraIdx, frame!.controlIdx))
+        .toThrow(/unsupported|incomplete|content loss/i);
+    } finally { doc.free(); }
   });
 
   it("routes missing MIME object markers without text downgrade", async () => {

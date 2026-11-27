@@ -4,6 +4,8 @@
 import hashlib
 import json
 import re
+import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import shutil
 import subprocess
@@ -24,6 +26,8 @@ require = b.require
 inspect_hwpx_clip = b.inspect_hwpx_clip
 HP = "{http://www.hancom.co.kr/hwpml/2011/paragraph}"
 CONTROL_TAGS = {"container", "rect", "ellipse", "line", "arc", "polygon", "curve", "pic", "chart", "ole"}
+OPF = "{http://www.idpf.org/2007/opf/}"
+HC = "{http://www.hancom.co.kr/hwpml/2011/core}"
 PASTE_CASCADE_STEP_HU = 567
 
 
@@ -41,8 +45,19 @@ def normalize_curve(node):
         # Floating-object paste applies RHWP's documented one-step cascade to
         # the destination anchor. All other position semantics remain exact.
         omitted.update({"horzOffset", "vertOffset"})
-    attrs = sorted((key.rsplit("}", 1)[-1], value) for key, value in node.attrib.items()
-                   if key.rsplit("}", 1)[-1] not in omitted)
+    if local(node) in {"img", "image"}:
+        # Resource IDs are remapped per destination document and are checked below
+        # against the manifest and exact media hashes.
+        omitted.add("binaryItemIDRef")
+    attributes = {key.rsplit("}", 1)[-1]: value for key, value in node.attrib.items()
+                  if key.rsplit("}", 1)[-1] not in omitted}
+    if local(node) == "imgBrush" and attributes.get("mode") == "FIT_TO_SIZE":
+        # These are aliases in RHWP's HWPX fill model. The writer emits FIT.
+        attributes["mode"] = "FIT"
+    if local(node) in {"img", "image"}:
+        # Omitted HWPX image alpha has the same zero/default value emitted by RHWP.
+        attributes.setdefault("alpha", "0")
+    attrs = sorted(attributes.items())
     return [local(node), attrs, (node.text or "").strip(), [normalize_curve(child) for child in node]]
 
 
@@ -51,6 +66,8 @@ def package_inventory(path):
         names = package.namelist()
         section_names = sorted(name for name in names if name.startswith("Contents/section") and name.endswith(".xml"))
         roots = {name: ET.fromstring(package.read(name)) for name in section_names}
+        manifest = ET.fromstring(package.read("Contents/content.hpf"))
+        manifest_items = {item.get("id"): item.get("href") for item in manifest.iter(OPF + "item")}
         ids, instids = [], []
         for root in roots.values():
             for node in root.iter():
@@ -65,6 +82,7 @@ def package_inventory(path):
             "objectIds": ids,
             "objectInstIds": instids,
             "media": {name: value for name, value in parts.items() if name.startswith("BinData/")},
+            "manifestItems": manifest_items,
             "parts": parts,
         }
 
@@ -91,6 +109,17 @@ def curve_snapshot(path):
         owner = parents.get(owner)
     if owner is None:
         raise ValueError("curve has no paragraph owner")
+    image_nodes = [node for node in curve.iter() if local(node) == "img"]
+    if len(image_nodes) > 1:
+        raise ValueError("curve has multiple image-fill resources")
+    image_fill = None
+    if image_nodes:
+        image_ref = image_nodes[0].get("binaryItemIDRef")
+        image_part = inventory["manifestItems"].get(image_ref)
+        if not image_ref or not image_part or image_part not in inventory["parts"]:
+            raise ValueError("curve image-fill resource is not owned by its OPC manifest")
+        image_fill = {"id": image_ref, "part": image_part,
+                      "sha256": inventory["parts"][image_part]}
     return {
         "section": section,
         "id": curve.get("id"),
@@ -98,6 +127,7 @@ def curve_snapshot(path):
         "normalized": normalize_curve(curve),
         "placement": placement,
         "segments": [dict(segment.attrib) for segment in curve.findall(HP + "seg")],
+        "imageFill": image_fill,
         "ownerParagraphText": "".join(text.text or "" for text in owner.iter() if local(text) == "t"),
         "objectIds": inventory["objectIds"],
         "objectInstIds": inventory["objectInstIds"],
@@ -108,22 +138,19 @@ def curve_snapshot(path):
 
 def prepare_curve_fixtures(out):
     out.mkdir(parents=True, exist_ok=True)
-    source_raw = out / "p6-hx-curve-source.raw.hwpx"
     source = out / "p6-hx-curve-source.fixture.hwpx"
     destination = out / "p6-hx-curve-destination.fixture.hwpx"
+    canonical = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"
+    source_sample = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx"
+    if not canonical.is_file() or not source_sample.is_file():
+        raise ValueError("authentic and canonical HWPX Catmull-Rom fixtures are required")
+    shutil.copyfile(canonical, source)
     marker = "const doc = new rhwp.HwpDocument(fs.readFileSync(process.argv[1]));"
     create = r"""
-const sourcePath=process.argv[1], destinationPath=process.argv[2];
-const sourceDoc=rhwp.HwpDocument.createEmpty();
+const destinationPath=process.argv[1];
 const targetDoc=rhwp.HwpDocument.createEmpty();
 const ok=(raw,label)=>{const value=JSON.parse(raw);if(value.ok!==true)throw Error(label+': '+JSON.stringify(value));return value;};
 try {
-  sourceDoc.createBlankDocument();
-  sourceDoc.insertText(0,0,0,'endpoint curve source body');
-  const shape=ok(sourceDoc.createShapeControl(JSON.stringify({sectionIdx:0,paraIdx:0,charOffset:0,
-    shapeType:'rectangle',width:5000,height:3000,treatAsChar:false,textWrap:'Square',horzOffset:2000,vertOffset:2000})), 'curve envelope');
-  fs.writeFileSync(sourcePath,sourceDoc.exportHwpx());
-
   targetDoc.createBlankDocument();
   targetDoc.insertText(0,0,0,'curve destination baseline');
   const keep=ok(targetDoc.insertPicture(0,0,0,'[]',fs.readFileSync(path.resolve('src-tauri/icons/128x128.png')),
@@ -131,47 +158,92 @@ try {
   ok(targetDoc.setPictureProperties(0,0,keep.controlIdx,
     '{"treatAsChar":true,"textWrap":"Square","horzOffset":7800,"vertOffset":2500}'), 'destination picture properties');
   fs.writeFileSync(destinationPath,targetDoc.exportHwpx());
-} finally { sourceDoc.free(); targetDoc.free(); }
+} finally { targetDoc.free(); }
 """
     template = b.p6.ORACLE.split("try {", 1)[0]
     if marker not in template:
         raise ValueError("P6 curve fixture template no longer matches the RHWP oracle")
-    subprocess.run(["node", "-e", template.replace(marker, create), str(source_raw), str(destination)],
-                   cwd=ROOT, check=True)
+    subprocess.run(["node", "-e", template.replace(marker, create), str(destination)], cwd=ROOT, check=True)
 
-    replacement = (
-        b'<hp:seg type="CURVE" x1="0" y1="0" x2="2400" y2="1300"/>'
-        b'<hp:seg type="LINE" x1="2400" y1="1300" x2="5000" y2="0"/>'
-    )
-    with ZipFile(source_raw) as original, ZipFile(source, "w") as output:
-        for entry in original.infolist():
-            payload = original.read(entry.filename)
-            if entry.filename == "Contents/section0.xml":
-                def convert(match):
-                    shape = match[0].replace(b"<hp:rect", b"<hp:curve", 1).replace(b"</hp:rect>", b"</hp:curve>", 1)
-                    shape, ratio_count = re.subn(rb' ratio="[0-9]+"', b"", shape, count=1)
-                    if ratio_count != 1:
-                        raise ValueError("rectangle fixture did not contain its shape-only ratio attribute")
-                    shape, point_count = re.subn(rb"<(?:hp|hc):pt[0-3]\b[^>]*/>", b"", shape)
-                    if point_count != 4 or shape.count(b"<hp:sz") != 1:
-                        raise ValueError("rectangle fixture envelope differs from the expected HWPX source")
-                    return shape.replace(b"<hp:sz", replacement + b"<hp:sz", 1)
+    if digest(source) != "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548":
+        raise ValueError("canonical authentic HWPX fixture hash changed")
+    resource_bytes = (ROOT / "src-tauri/icons/icon.png").read_bytes()
+    resource_part = "BinData/image1.png"
+    image_ref = "image1"
+    with ZipFile(source) as original_package:
+        if resource_part in original_package.namelist():
+            raise ValueError("canonical curve fixture unexpectedly owns image-fill media")
+        entries = [(entry, original_package.read(entry.filename)) for entry in original_package.infolist()]
+    patched_entries = []
+    section_count = manifest_count = 0
+    for entry, data in entries:
+        if entry.filename == "Contents/section0.xml":
+            text = data.decode("utf-8")
+            replacement = (
+                '<hc:fillBrush><hc:imgBrush mode="FIT_TO_SIZE">'
+                '<hc:img binaryItemIDRef="image1" bright="0" contrast="0" effect="REAL_PIC"/>'
+                '</hc:imgBrush></hc:fillBrush>'
+            )
+            text, section_count = re.subn(r"<hc:fillBrush[^>]*>.*?</hc:fillBrush>",
+                                          replacement, text, count=1)
+            data = text.encode("utf-8")
+        elif entry.filename == "Contents/content.hpf":
+            manifest = ET.fromstring(data)
+            if image_ref in {item.get("id") for item in manifest.iter(OPF + "item")}:
+                raise ValueError("canonical curve manifest unexpectedly owns image1")
+            item = ET.Element(OPF + "item", {"id": image_ref, "href": resource_part,
+                                               "media-type": "image/png", "isEmbeded": "1"})
+            manifest_node = manifest.find(OPF + "manifest")
+            if manifest_node is None:
+                raise ValueError("canonical curve manifest has no resource owner")
+            manifest_node.append(item)
+            data = ET.tostring(manifest, encoding="utf-8", xml_declaration=True)
+            manifest_count += 1
+        patched_entries.append((entry, data))
+    if section_count != 1 or manifest_count != 1:
+        raise ValueError("canonical curve resource injection did not match one fill and manifest")
+    with tempfile.NamedTemporaryFile(dir=out, prefix="p6-curve-resource-", suffix=".hwpx", delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        with ZipFile(temporary, "w") as output_package:
+            for entry, data in patched_entries:
+                output_package.writestr(entry, data)
+            output_package.writestr(resource_part, resource_bytes)
+        temporary.replace(source)
+    finally:
+        temporary.unlink(missing_ok=True)
 
-                payload, count = re.subn(rb"<hp:rect\b.*?</hp:rect>", convert, payload, count=1, flags=re.S)
-                if count != 1:
-                    raise ValueError("fixture document did not contain exactly one rectangle envelope")
-            output.writestr(entry, payload)
-    source_raw.unlink()
     source_snapshot = curve_snapshot(source)
-    if source_snapshot["segments"] != [
-        {"type": "CURVE", "x1": "0", "y1": "0", "x2": "2400", "y2": "1300"},
-        {"type": "LINE", "x1": "2400", "y1": "1300", "x2": "5000", "y2": "0"},
-    ]:
-        raise ValueError("generated HWPX fixture has unexpected curve segments")
+    expected = [
+        ("450", "6140", "8000", "11215"),
+        ("8000", "11215", "2500", "19340"),
+        ("2500", "19340", "14175", "20515"),
+        ("14175", "20515", "15675", "8440"),
+        ("15675", "8440", "2475", "15"),
+        ("2475", "15", "450", "6140"),
+    ]
+    actual = [tuple(segment.get(key) for key in ("x1", "y1", "x2", "y2"))
+              for segment in source_snapshot["segments"]]
+    if len(actual) != 6 or actual != expected or any(segment.get("type") != "CURVE"
+                                                       for segment in source_snapshot["segments"]):
+        raise ValueError("authentic HWPX fixture does not contain its six standard CURVE records")
+    if digest(source_sample) != "cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0":
+        raise ValueError("authentic upstream curve sample hash changed")
     return source, destination
 
 
-def p6_hx_curve_partial(acc, row, _b_root, out):
+def editable_curve_path(path):
+    return b.c.inspect_rhwp(path, """
+      const all=pages.flatMap(items=>items);
+      const curve=all.find(item=>item.type==='shape'&&JSON.parse(doc.getShapeProperties(
+        item.secIdx,item.paraIdx,item.controlIdx)).shapeType==='curve');
+      if(!curve)throw Error('editable curve shape is missing');
+      const model=JSON.parse(doc.getEditableShapePath(curve.secIdx,curve.paraIdx,curve.controlIdx));
+      console.log(JSON.stringify(model));
+    """)
+
+
+def p6_hx_curve_transfer(acc, row, _b_root, out):
     source_fixture, destination_fixture = prepare_curve_fixtures(out)
     source = out / "p6-hx-curve-source.hwpx"
     destination = out / "p6-hx-curve-destination.hwpx"
@@ -183,13 +255,27 @@ def p6_hx_curve_partial(acc, row, _b_root, out):
     source_before = row["beforeSource"] = b.inspect_hwpx_clip(source)
     destination_before = row["beforeDestination"] = b.inspect_hwpx_clip(destination)
     source_curve = curve_snapshot(source)
+    source_path = editable_curve_path(source)
     destination_package = package_inventory(destination)
     row["fixtureHashes"] = {"source": source_fixture_hash, "destination": destination_fixture_hash}
+    row["authenticCurveSample"] = {
+        "sourceSampleSha256": digest(ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx"),
+        "canonicalFixtureSha256": digest(ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"),
+        "resourceFilledFixtureSha256": source_fixture_hash,
+    }
     curve_model = next((shape for shape in source_before["shapes"] if shape["props"].get("shapeType") == "curve"), None)
     if curve_model is None or destination_before["shapes"] or len(destination_before["pictures"]) != 1:
         raise ValueError("Native fixture object inventory is unexpected")
     if source_curve["id"] is None or source_curve["instid"] is None:
         raise ValueError("source curve has no stable object/instance identity")
+    if (source_curve["imageFill"] is None
+            or source_curve["imageFill"]["sha256"] != digest(ROOT / "src-tauri/icons/icon.png")
+            or len(source_curve["media"]) != 1):
+        raise ValueError("authentic source curve image-fill resource is not durably owned")
+    if (source_path.get("curveModel") != "catmull-rom-derived-bezier"
+            or source_path.get("closed") is not True
+            or len(source_path.get("bezierSegments", [])) != 6):
+        raise ValueError("authentic source curve does not expose the expected derived cubic model")
 
     acc.d.js("""
       window.p6CurvePointers=[]; window.p6CurveKeys=[];
@@ -237,6 +323,7 @@ def p6_hx_curve_partial(acc, row, _b_root, out):
     b.publish(acc, "hwpx", row)
     after_model = row["after"] = b.inspect_hwpx_clip(destination)
     after_curve = curve_snapshot(destination)
+    after_path = editable_curve_path(destination)
     source_after = curve_snapshot(source)
     if digest(source) != source_hash or source_after != source_curve:
         raise ValueError("source curve or source package changed")
@@ -250,6 +337,8 @@ def p6_hx_curve_partial(acc, row, _b_root, out):
         raise ValueError("curve paste changed destination body text")
     if after_curve["normalized"] != source_curve["normalized"] or after_curve["segments"] != source_curve["segments"]:
         raise ValueError("saved curve geometry, formatting, or segment records differ from source")
+    if after_path != source_path:
+        raise ValueError("saved destination did not preserve the derived Catmull-Rom Bezier control-point model")
     pasted_shape, = after_model["shapes"]
     source_props = curve_model["props"]
     pasted_props = pasted_shape["props"]
@@ -271,29 +360,53 @@ def p6_hx_curve_partial(acc, row, _b_root, out):
         raise ValueError("destination curve reused a source or pre-existing instance identifier")
     if len(after_curve["objectIds"]) != len(set(after_curve["objectIds"])):
         raise ValueError("saved destination contains duplicate object IDs")
-    if after_curve["media"] != destination_package["media"]:
+    if not all(after_curve["media"].get(name) == value
+               for name, value in destination_package["media"].items()):
         raise ValueError("curve paste changed an existing destination media resource")
+    destination_resource_ids = {resource_id for resource_id, part in destination_package["manifestItems"].items()
+                                if part and part.startswith("BinData/")}
+    if (after_curve["imageFill"] is None
+            or after_curve["imageFill"]["id"] == source_curve["imageFill"]["id"]
+            or after_curve["imageFill"]["id"] in destination_resource_ids
+            or after_curve["imageFill"]["sha256"] != source_curve["imageFill"]["sha256"]
+            or len(after_curve["media"]) != len(destination_package["media"]) + 1):
+        raise ValueError("curve image-fill was not independently remapped into destination media")
     old_parts, new_parts = set(destination_package["parts"]), set(after_curve["parts"])
     if not old_parts.issubset(new_parts):
         raise ValueError("curve paste removed unrelated OPC parts")
     changed = sorted(name for name in old_parts if after_curve["parts"].get(name) != destination_package["parts"].get(name))
     allowed = {"Contents/section0.xml", "Preview/PrvImage.png", "Preview/PrvText.txt"}
-    if "Contents/section0.xml" not in changed or not set(changed).issubset(allowed) or new_parts != old_parts:
-        raise ValueError(f"curve paste changed unexpected OPC parts: {changed}")
+    expected_new_media = after_curve["imageFill"]["part"]
+    allowed_new = {expected_new_media}
+    allowed_changed = allowed | {"Contents/content.hpf"}
+    if ("Contents/section0.xml" not in changed or not set(changed).issubset(allowed_changed)
+            or new_parts - old_parts != allowed_new):
+        raise ValueError(f"curve paste changed unexpected OPC parts: {changed}, new={sorted(new_parts-old_parts)}")
     row["serializedOpc"] = {"changedParts": changed, "allOtherPartsByteIdentical": True,
+                             "newOwnedResource": expected_new_media,
                              "existingDestinationMediaPreserved": True, "sourceBytesUnchanged": True}
     row["savedCurve"] = after_curve
+    row["derivedControlPointRepresentation"] = {
+        "curveModel": source_path["curveModel"],
+        "source": source_path["bezierSegments"],
+        "savedDestination": after_path["bezierSegments"],
+        "identical": True,
+    }
     row["floatingPlacement"] = {
         "source": {key: source_curve["placement"][key] for key in expected_offsets},
         "savedDestination": actual_offsets,
         "pasteCascadeStepHwpUnits": PASTE_CASCADE_STEP_HU,
         "shapeStyleAndInternalGeometryPreserved": True,
     }
-    row["acceptanceScope"] = "Endpoint-only HWPX segment transfer subset; P6-HX-CURVE remains PARTIAL / BLOCKED_BY_FORMAT_CONTRACT."
+    row["acceptanceScope"] = (
+        "Standard HWPX curve transfer preserves exact segment envelopes and deterministic derived cubic controls, "
+        "remaps owned resources, and rejects unknown metadata."
+    )
 
     b.reopen(acc, destination, row)
     reopened = curve_snapshot(destination)
-    if reopened != after_curve or b.inspect_hwpx_clip(destination) != after_model:
+    reopened_path = editable_curve_path(destination)
+    if reopened != after_curve or b.inspect_hwpx_clip(destination) != after_model or reopened_path != source_path:
         raise ValueError("same-process save/reopen changed the curve or destination model")
     row["sameProcessReopen"] = {"sha256": digest(destination), "curve": reopened}
     reopened_model = next(shape for shape in b.inspect_hwpx_clip(destination)["shapes"]
@@ -302,8 +415,8 @@ def p6_hx_curve_partial(acc, row, _b_root, out):
     row["reopenedCurveSelectable"] = True
 
 
-def p6_hx_curve_partial_fresh(acc, row, _b_root, out):
-    previous = json.loads((out / "result.json").read_text())["cases"]["P6-HX-CURVE-PARTIAL"]
+def p6_hx_curve_transfer_fresh(acc, row, _b_root, out):
+    previous = json.loads((out / "result.json").read_text())["cases"]["P6-HX-CURVE-TRANSFER"]
     require(previous.get("status") == "PASS" and "sameProcessReopen" in previous,
             "endpoint-only curve save/reopen prerequisites did not pass")
     destination = out / "p6-hx-curve-destination.hwpx"
@@ -314,6 +427,11 @@ def p6_hx_curve_partial_fresh(acc, row, _b_root, out):
     require(saved_hash == previous["sameProcessReopen"]["sha256"],
             "fresh-process probe did not open the verified saved package")
     saved_curve = curve_snapshot(destination)
+    saved_path = editable_curve_path(destination)
+    require(saved_path.get("curveModel") == "catmull-rom-derived-bezier"
+            and saved_path.get("bezierSegments")
+            == previous.get("derivedControlPointRepresentation", {}).get("source"),
+            "fresh-process derived curve control model differs from the transferred source")
     require(json.loads(json.dumps(saved_curve)) == previous["sameProcessReopen"]["curve"],
             "independent fresh-process probe sees a different saved curve package")
     model = inspect_hwpx_clip(destination)
@@ -342,14 +460,15 @@ def p6_hx_curve_partial_fresh(acc, row, _b_root, out):
         "curveId": saved_curve["id"],
         "curveInstanceId": saved_curve["instid"],
         "segments": saved_curve["segments"],
+        "derivedControlPointRepresentation": saved_path["bezierSegments"],
         "placement": saved_curve["placement"],
         "trustedPointer": pointers,
         "selectable": True,
     }
 
 
-b.CASES["P6-HX-CURVE-PARTIAL"] = p6_hx_curve_partial
-b.CASES["P6-HX-CURVE-PARTIAL-FRESH"] = p6_hx_curve_partial_fresh
+b.CASES["P6-HX-CURVE-TRANSFER"] = p6_hx_curve_transfer
+b.CASES["P6-HX-CURVE-TRANSFER-FRESH"] = p6_hx_curve_transfer_fresh
 
 if __name__ == "__main__":
     sys.exit(b.main())
