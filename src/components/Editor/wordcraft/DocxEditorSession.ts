@@ -1186,7 +1186,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
             const portableSource = (object.version === 3 && object.sourceFormat === "hwpx")
               || (object.version === 5 && object.sourceFormat === "hwp");
             if (!portableSource || object.object !== "shape" || !shape
-              || shape.kind === "picture" || shape.kind === "group"
+              || shape.kind === "picture" || shape.kind === "group" || shape.kind === "curve"
               || !shape.treatAsChar || shape.textWrap !== "Square" || shape.horzOffset !== 0 || shape.vertOffset !== 0
               || shape.width < 200 || shape.width > 14_400 || shape.height < 200 || shape.height > 14_400
               || shape.caption !== undefined || shape.tbMargins !== undefined || shape.tbVerticalAlign !== undefined

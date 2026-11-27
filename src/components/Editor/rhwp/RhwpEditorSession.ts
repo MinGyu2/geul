@@ -3582,7 +3582,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const hwpPortable = format === "hwp" && hwpPortableKind
         ? extractHwpxPortableObject(doc, copyControl.address, hwpPortableKind)
         : undefined;
-      const hwpPortableObject = hwpPortable?.kind === "group" ? undefined : hwpPortable;
+      const hwpPortableObject = hwpPortable?.kind === "group" || hwpPortable?.kind === "curve" ? undefined : hwpPortable;
       const hwpFragment = format === "hwp" && doc.exportHwp5ControlClipboard
         ? encodeHwp5ObjectFragment(doc.exportHwp5ControlClipboard(...copyControl.address)) ?? undefined
         : undefined;
@@ -3629,7 +3629,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const docxHwpxPortable = payload.version === 4 && format === "hwpx" ? payload.portable : undefined;
     const docxHwp5Portable = payload.version === 4 && hwp5InsertReady ? payload.portable : undefined;
     const hwpxHwp5Portable = payload.version === 3 && payload.sourceFormat === "hwpx" && format === "hwp"
-      && hwp5InsertReady
+      && hwp5InsertReady && payload.portable !== undefined && payload.portable.kind !== "curve"
       ? payload.portable : undefined;
     const hwp5HwpxPortable = format === "hwpx" && payload.sourceFormat === "hwp"
       && (payload.version === 5 || payload.version === 6) ? payload.portable : undefined;

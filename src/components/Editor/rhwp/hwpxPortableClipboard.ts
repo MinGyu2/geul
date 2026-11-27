@@ -1,9 +1,10 @@
 import {
   HWPX_CAPTION_DIRECTIONS, HWPX_CAPTION_VERT_ALIGNS, HWPX_PARA_ALIGNS, HWPX_PICTURE_MIMES,
   HWPX_TB_VERTICAL_ALIGNS, HWPX_WRAP_VALUES, MAX_HWPX_PICTURE_BYTES, coversHwpxPortableText, decodePortableImageBytes, validHwpxPortablePictureCrop,
-  MAX_HWPX_GROUP_PACKAGE_BYTES,
+  MAX_HWPX_GROUP_PACKAGE_BYTES, MAX_HWPX_CURVE_PACKAGE_BYTES,
   type HwpxPortableCaption, type HwpxPortableCharRun, type HwpxPortableObject, type HwpxPortableParagraph,
-  type HwpxPortablePicture, type HwpxPortablePictureMime, type HwpxPortableShape, type HwpxPortableShapeType, type RichObjectKind,
+  type HwpxPortableClipboardObject, type HwpxPortablePicture, type HwpxPortablePictureMime,
+  type HwpxPortableShape, type HwpxPortableShapeType, type RichObjectKind,
 } from "../../../commands/objectClipboard";
 import { fontFamilyProblem } from "../../../commands/parameters";
 import { MAX_CAPTION_SPACING_HWPUNIT } from "../../../commands/objectSelection";
@@ -349,10 +350,14 @@ function hasPortableLineGeometry(
 
 export function extractHwpxPortableObject(
   doc: RhwpDocument, address: readonly [number, number, number], kind: RichObjectKind,
-): HwpxPortableObject | undefined {
+): HwpxPortableClipboardObject | undefined {
   if (kind === "group") {
     const portable = readPortableGroup(doc, address);
     return portable;
+  }
+  if (kind === "shape") {
+    const shape = inspectRhwpShape(doc, address);
+    if (shape?.raw.shapeType === "curve") return readPortableCurve(doc, address);
   }
   return readPortableObject(doc, address, kind, true);
 }
@@ -670,6 +675,20 @@ function readPortableGroup(
   }
 }
 
+function readPortableCurve(
+  doc: RhwpDocument, address: readonly [number, number, number],
+): Extract<HwpxPortableClipboardObject, { kind: "curve" }> | undefined {
+  if (!doc.exportHwpxCurveClipboard) return undefined;
+  try {
+    const bytes = doc.exportHwpxCurveClipboard(...address);
+    if (!(bytes instanceof Uint8Array) || bytes.length < 4 || bytes.length > MAX_HWPX_CURVE_PACKAGE_BYTES
+      || bytes[0] !== 0x50 || bytes[1] !== 0x4b) return undefined;
+    return { kind: "curve", packageBase64: encodeBase64(bytes) };
+  } catch {
+    return undefined;
+  }
+}
+
 function createPortableObject(
   doc: RhwpDocument,
   at: { section: number; paragraph: number; offset: number },
@@ -933,8 +952,33 @@ function verifyPortableParagraphs(
 export function insertHwpxPortableObject(
   doc: RhwpDocument,
   at: { section: number; paragraph: number; offset: number },
-  portable: HwpxPortableObject,
+  portable: HwpxPortableClipboardObject,
 ): { paraIdx: number; controlIdx: number } {
+  if (portable.kind === "curve") {
+    if (!doc.pasteHwpxCurveClipboard) throw new Error("curve paste API unavailable");
+    if (typeof portable.packageBase64 !== "string" || portable.packageBase64.length < 8
+      || portable.packageBase64.length > Math.ceil(MAX_HWPX_CURVE_PACKAGE_BYTES * 4 / 3) + 16
+      || portable.packageBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(portable.packageBase64)) {
+      throw new Error("invalid portable curve package");
+    }
+    let bytes: Uint8Array;
+    try {
+      const raw = atob(portable.packageBase64);
+      if (raw.length < 4 || raw.length > MAX_HWPX_CURVE_PACKAGE_BYTES
+        || raw.charCodeAt(0) !== 0x50 || raw.charCodeAt(1) !== 0x4b) throw new Error("invalid ZIP signature");
+      bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+    } catch {
+      throw new Error("invalid portable curve package");
+    }
+    const result = JSON.parse(doc.pasteHwpxCurveClipboard(at.section, at.paragraph, at.offset, bytes)) as {
+      ok?: boolean; paraIdx?: unknown; controlIdx?: unknown;
+    };
+    if (result.ok !== true || !Number.isSafeInteger(result.paraIdx) || !Number.isSafeInteger(result.controlIdx)) {
+      throw new Error("curve paste failed");
+    }
+    return { paraIdx: result.paraIdx as number, controlIdx: result.controlIdx as number };
+  }
   if (portable.kind === "group") {
     if (!doc.pasteHwpxGroupClipboard) throw new Error("group paste API unavailable");
     if (typeof portable.packageBase64 !== "string" || portable.packageBase64.length < 8

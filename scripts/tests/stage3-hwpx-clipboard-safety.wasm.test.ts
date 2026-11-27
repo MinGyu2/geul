@@ -44,6 +44,59 @@ function source(format: "hwp" | "hwpx"): Uint8Array {
   } finally { doc.free(); }
 }
 
+function curveFixture(segmentMarker = false): Uint8Array {
+  const doc = new engine.HwpDocument(source("hwpx")) as RhwpDocument;
+  try {
+    const created = JSON.parse(doc.createShapeControl!(JSON.stringify({
+      sectionIdx: 0, paraIdx: 0, charOffset: 0, shapeType: "rectangle", width: 5000, height: 3000,
+      treatAsChar: false, textWrap: "Square", horzOffset: 2000, vertOffset: 2000,
+    })));
+    expect(created.ok).toBe(true);
+    return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+marker = ' marker="opaque &amp; source"' if sys.argv[1] == '1' else ''
+segments = (
+    f'<hp:seg type="CURVE" x1="0" y1="0" x2="2400" y2="1300"{marker}/>'
+    '<hp:seg type="LINE" x1="2400" y1="1300" x2="5000" y2="0"/>'
+)
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == 'Contents/section0.xml':
+                def convert(match):
+                    shape = match[0].decode('utf-8')
+                    shape = shape.replace('<hp:rect', '<hp:curve', 1).replace('</hp:rect>', '</hp:curve>', 1)
+                    shape, count = re.subn(r'<(?:hp|hc):pt[0-3]\\b[^>]*/>', '', shape)
+                    assert count == 4
+                    assert shape.count('<hp:sz') == 1
+                    return shape.replace('<hp:sz', segments + '<hp:sz', 1).encode('utf-8')
+                data, count = re.subn(rb'<hp:rect\\b.*?</hp:rect>', convert, data, flags=re.S)
+                assert count == 1
+            destination.writestr(entry, data)
+    sys.stdout.buffer.write(output.getvalue())
+`, segmentMarker ? "1" : "0"], { input: doc.exportHwpx() });
+  } finally { doc.free(); }
+}
+
+function curveSummary(bytes: Uint8Array) {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as package:
+    root = ET.fromstring(package.read('Contents/section0.xml'))
+    curve = root.find('.//{*}curve')
+    assert curve is not None
+    print(json.dumps({
+      'id': curve.get('id'), 'instid': curve.get('instid'),
+      'shape': {key:value for key,value in curve.attrib.items() if key not in {'id','instid','zOrder'}},
+      'segments': [dict(segment.attrib) for segment in curve.findall('{*}seg')],
+      'media': sorted(name for name in package.namelist() if name.startswith('BinData/')),
+    }))
+`], { input: bytes, encoding: "utf8" }));
+}
+
 async function setup(format: "hwp" | "hwpx", initial?: Uint8Array) {
   const control = controlledBackend();
   const sessions = new DocumentSessions(control.backend);
@@ -492,6 +545,92 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as z:
       expect(dst.editor.snapshot()).toEqual(snapshot);
     } finally { src.editor.dispose(); dst.editor.dispose(); }
   });
+
+  it("transfers supported HWPX curve segment trees atomically and rejects opaque segment metadata", async () => {
+    const sourceBytes = curveFixture();
+    const original = curveSummary(sourceBytes);
+    expect(original.segments).toEqual([
+      { type: "CURVE", x1: "0", y1: "0", x2: "2400", y2: "1300" },
+      { type: "LINE", x1: "2400", y1: "1300", x2: "5000", y2: "0" },
+    ]);
+    const src = await setup("hwpx", sourceBytes);
+    const dst = await setup("hwpx");
+    const clipboard = objectClip();
+    try {
+      const sourceBefore = src.doc.exportHwpx();
+      const frame = shapes(src.doc).find(shape => shape.type === "shape");
+      expect(frame).toBeDefined();
+      src.pick(frame!);
+      expect(await src.editor.executeClipboard("edit.copy", () => true, clipboard.clipboard)).toBe(true);
+      const payload = parseObjectClipboardPayload(clipboard.payload());
+      expect(payload).toMatchObject({ version: 3, sourceFormat: "hwpx", object: "shape", portable: { kind: "curve" } });
+      if (!payload || payload.version !== 3 || payload.sourceFormat !== "hwpx" || payload.portable?.kind !== "curve") {
+        throw new Error("curve clipboard payload is unavailable");
+      }
+
+      const destinationBefore = dst.doc.exportHwpx();
+      expect(await dst.editor.executeClipboard("edit.paste", () => true, clipboard.clipboard)).toBe(true);
+      await dst.confirm();
+      expect(src.doc.exportHwpx()).toEqual(sourceBefore);
+      const transferred = curveSummary(dst.doc.exportHwpx());
+      expect(transferred.shape).toEqual(original.shape);
+      expect(transferred.segments).toEqual(original.segments);
+      expect(transferred.media).toEqual(original.media);
+      expect(transferred.id).not.toBe(original.id);
+      expect(transferred.instid).not.toBe(original.instid);
+
+      expect(dst.editor.undo()).toBe(true);
+      await dst.confirm();
+      expect(dst.doc.exportHwpx()).toEqual(destinationBefore);
+      expect(shapes(dst.doc).some(shape => shape.type === "shape")).toBe(false);
+      expect(dst.editor.redo()).toBe(true);
+      await dst.confirm();
+      expect(curveSummary(dst.doc.exportHwpx()).segments).toEqual(original.segments);
+
+      const exported = dst.doc.exportHwpxWithReport();
+      try {
+        const report = exported.contentLoss();
+        const saved = exported.takeBytes();
+        expectReopenEvidence(dst.doc, saved, report, reopened => {
+          const reopenedCurve = curveSummary(reopened.exportHwpx());
+          expect(reopenedCurve.shape).toEqual(original.shape);
+          expect(reopenedCurve.segments).toEqual(original.segments);
+          expect(reopenedCurve.media).toEqual(original.media);
+        });
+      } finally { exported.free(); }
+
+      const beforeRejected = dst.doc.exportHwpx();
+      const truncated = Buffer.from("UEsDBA==", "base64");
+      expect(() => dst.doc.pasteHwpxCurveClipboard!(0, 0, 0, truncated)).toThrow();
+      const opaquePackage = execFileSync("python3", ["-c", `
+import io, sys, zipfile
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == 'Contents/section0.xml':
+                marker = b'<hp:seg type="CURVE"'
+                assert data.count(marker) == 1
+                data = data.replace(marker, b'<hp:seg opaque="unowned" type="CURVE"', 1)
+            destination.writestr(entry, data)
+    sys.stdout.buffer.write(output.getvalue())
+`, { input: Buffer.from(payload.portable.packageBase64, "base64") });
+      expect(() => dst.doc.pasteHwpxCurveClipboard!(0, 0, 0, opaquePackage)).toThrow();
+      expect(dst.doc.exportHwpx()).toEqual(beforeRejected);
+      expect(dst.editor.snapshot().history).toMatchObject({ undo: true, redo: false });
+
+      const unsafeDoc = new engine.HwpDocument(curveFixture(true)) as RhwpDocument;
+      try {
+        const unsafeFrame = shapes(unsafeDoc).find(shape => shape.type === "shape");
+        expect(unsafeFrame).toBeDefined();
+        const unsafeBefore = unsafeDoc.exportHwpx();
+        expect(() => unsafeDoc.exportHwpxCurveClipboard!(0, 0, unsafeFrame!.controlIdx)).toThrow();
+        expect(unsafeDoc.exportHwpx()).toEqual(unsafeBefore);
+      } finally { unsafeDoc.free(); }
+    } finally { src.editor.dispose(); dst.editor.dispose(); }
+  });
+
   it("routes missing MIME object markers without text downgrade", async () => {
     const src = await setup("hwpx"), dst = await setup("hwpx");
     let plain = "";

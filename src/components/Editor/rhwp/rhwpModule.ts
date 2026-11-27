@@ -110,6 +110,10 @@ export interface RhwpDocument {
   exportHwpxGroupClipboard?(section: number, paragraph: number, control: number): Uint8Array;
   /** Import a bounded HWPX group package as one transactional document control. */
   pasteHwpxGroupClipboard?(section: number, paragraph: number, offset: number, packageBytes: Uint8Array): string;
+  /** Export one supported endpoint-segment HWPX curve and its owned resources. */
+  exportHwpxCurveClipboard?(section: number, paragraph: number, control: number): Uint8Array;
+  /** Import a bounded endpoint-segment HWPX curve package as one transactional control. */
+  pasteHwpxCurveClipboard?(section: number, paragraph: number, offset: number, packageBytes: Uint8Array): string;
   getControlImageData?(section: number, paragraph: number, cellPathJson: string, control: number): Uint8Array;
   getControlImageMime?(section: number, paragraph: number, cellPathJson: string, control: number): string;
   setTableProperties?(section: number, paragraph: number, control: number, properties: string): string;

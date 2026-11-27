@@ -44,6 +44,8 @@ export const HWPX_CAPTION_VERT_ALIGNS = CAPTION_VERTICAL_ALIGNS;
 export const MAX_HWPX_PICTURE_BYTES = 8 * 1024 * 1024;
 /** Isolated HWPX package for one owned group tree; the JSON envelope stays under the 12 MiB clipboard cap. */
 export const MAX_HWPX_GROUP_PACKAGE_BYTES = 8 * 1024 * 1024;
+/** Isolated HWPX package for one endpoint-segment curve and its owned resources. */
+export const MAX_HWPX_CURVE_PACKAGE_BYTES = 8 * 1024 * 1024;
 /** Standalone HWP5 object fragments fit the same bounded 12 MiB clipboard envelope. */
 export const MAX_HWP5_OBJECT_FRAGMENT_BYTES = 8 * 1024 * 1024;
 
@@ -129,7 +131,14 @@ export interface HwpxPortableGroup {
   packageBase64: string;
 }
 
+export interface HwpxPortableCurve {
+  kind: "curve";
+  /** Base64 HWPX package containing one endpoint-segment curve and its owned resources. */
+  packageBase64: string;
+}
+
 export type HwpxPortableObject = HwpxPortableShape | HwpxPortablePicture | HwpxPortableGroup;
+export type HwpxPortableClipboardObject = HwpxPortableObject | HwpxPortableCurve;
 
 /**
  * v2 (Stage 3 P5): the engine's structural copy of one drawing — a WordCraft fragment with the
@@ -157,7 +166,7 @@ export interface ObjectClipboardPayloadV3 {
   object: RichObjectKind;
   sourceSessionId: number;
   sourceGeneration: number;
-  portable?: HwpxPortableObject;
+  portable?: HwpxPortableClipboardObject;
   /** Bounded standalone HWP5 CFB fragment for cross-document object transfer. */
   hwpFragmentBase64?: string;
   token: string;
@@ -249,7 +258,7 @@ export function createHwpxObjectClipboardPayload(
   object: RichObjectKind,
   sourceSessionId: number,
   sourceGeneration: number,
-  portable?: HwpxPortableObject,
+  portable?: HwpxPortableClipboardObject,
 ): ObjectClipboardPayloadV3 | null {
   if (!intInRange(sourceSessionId, 0, Number.MAX_SAFE_INTEGER) || !intInRange(sourceGeneration, 0, Number.MAX_SAFE_INTEGER)) {
     return null;
@@ -628,18 +637,20 @@ export function validHwpxPortablePictureCrop(
     && crop.bottom === (empty ? 0 : Math.max(0, height - rect.bottom));
 }
 
-function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is HwpxPortableObject {
+function validHwpxPortableObject(raw: unknown, kind: RichObjectKind): raw is HwpxPortableClipboardObject {
   if (!record(raw)) return false;
-  if (raw.kind === "group") {
-    if (kind !== "group" || typeof raw.packageBase64 !== "string"
+  if (raw.kind === "group" || raw.kind === "curve") {
+    const isGroup = raw.kind === "group";
+    const maxBytes = isGroup ? MAX_HWPX_GROUP_PACKAGE_BYTES : MAX_HWPX_CURVE_PACKAGE_BYTES;
+    if (kind !== (isGroup ? "group" : "shape") || typeof raw.packageBase64 !== "string"
       || raw.packageBase64.length < 8
-      || raw.packageBase64.length > Math.ceil(MAX_HWPX_GROUP_PACKAGE_BYTES * 4 / 3) + 16
+      || raw.packageBase64.length > Math.ceil(maxBytes * 4 / 3) + 16
       || raw.packageBase64.length % 4 !== 0
       || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw.packageBase64)
       || Object.keys(raw).some(key => key !== "kind" && key !== "packageBase64")) return false;
     try {
       const bytes = atob(raw.packageBase64);
-      return bytes.length >= 4 && bytes.length <= MAX_HWPX_GROUP_PACKAGE_BYTES
+      return bytes.length >= 4 && bytes.length <= maxBytes
         && bytes.charCodeAt(0) === 0x50 && bytes.charCodeAt(1) === 0x4b;
     } catch {
       return false;
@@ -742,6 +753,7 @@ export function parseObjectClipboardPayload(serialized: string): ObjectClipboard
         || !intInRange(raw.sourceSessionId, 0, Number.MAX_SAFE_INTEGER)
         || !intInRange(raw.sourceGeneration, 0, Number.MAX_SAFE_INTEGER)
         || !validHwpxPortableObject(raw.portable, object)
+        || (record(raw.portable) && raw.portable.kind === "curve")
         || (raw.hwpFragmentBase64 !== undefined && !validHwp5ObjectFragmentBase64(raw.hwpFragmentBase64))) return null;
       return {
         kind: "geul.object", version: 6, sourceFormat: "hwp", object,
@@ -777,7 +789,8 @@ export function parseObjectClipboardPayload(serialized: string): ObjectClipboard
     if (raw.sourceFormat !== "docx") return null;
     if (raw.version === 4) {
       if (raw.object !== "shape" || Object.keys(raw).sort().join(",") !== "engine,kind,object,portable,sourceFormat,token,version"
-        || !record(raw.engine) || !validHwpxPortableObject(raw.portable, "shape")) return null;
+        || !record(raw.engine) || !validHwpxPortableObject(raw.portable, "shape")
+        || (record(raw.portable) && raw.portable.kind === "curve")) return null;
       const mapped = docxEngineShapeToHwpx(raw.engine);
       if (!mapped || stableJson(mapped) !== stableJson(raw.portable)) return null;
       return {

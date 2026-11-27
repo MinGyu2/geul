@@ -1,0 +1,557 @@
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -293,6 +293,11 @@
+     /// HWP5 and for HWPX shapes containing unmodeled attributes or children.
+     #[serde(skip)]
+     pub hwpx_basic_shape_type_change_safe: bool,
++    /// HWPX curve source envelope is represented by supported common fields and
++    /// endpoint-only standard `hp:seg` records. Used only for same-format
++    /// structural clipboard transfer; HWP5 and unsupported source envelopes fail closed.
++    #[serde(skip)]
++    pub hwpx_curve_clipboard_safe: bool,
+     /// The HWP5 curve leaf had a complete command array and four zero padding bytes.
+     pub hwp5_known_curve_leaf: bool,
+     /// 렌더링 변환 합성 결과: 아핀 행렬 [a, b, tx, c, d, ty]
+@@ -339,6 +344,7 @@
+             hwpx_unproven_path_transform: false,
+             hwpx_unproven_polygon_vertices: false,
+             hwpx_basic_shape_type_change_safe: false,
++            hwpx_curve_clipboard_safe: false,
+             hwp5_known_curve_leaf: false,
+             render_tx: 0.0,
+             render_ty: 0.0,
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -4054,6 +4054,84 @@
+     safe
+ }
+
++fn hwpx_curve_root_safe(element: &BytesStart<'_>) -> bool {
++    let mut seen: Vec<Vec<u8>> = Vec::new();
++    for attr in element.attributes() {
++        let Ok(attr) = attr else { return false };
++        let key = attr.key.as_ref().as_bytes();
++        if seen.iter().any(|previous| previous.as_slice() == key) {
++            return false;
++        }
++        seen.push(key.to_vec());
++        let value = match attr.normalized_value(quick_xml::XmlVersion::Implicit1_0) {
++            Ok(value) => value,
++            Err(_) => return false,
++        };
++        let value = value.as_ref();
++        let safe = match key {
++            b"id" | b"instid" => value.parse::<u32>().is_ok(),
++            b"zOrder" => value.parse::<i32>().is_ok(),
++            b"groupLevel" => value.parse::<u16>().is_ok(),
++            b"numberingType" => matches!(value, "NONE" | "PICTURE" | "TABLE" | "EQUATION"),
++            b"textWrap" => matches!(value, "SQUARE" | "TIGHT" | "THROUGH" | "TOP_AND_BOTTOM" | "BEHIND_TEXT" | "IN_FRONT_OF_TEXT"),
++            b"textFlow" => matches!(value, "BOTH_SIDES" | "LEFT_ONLY" | "RIGHT_ONLY" | "LARGEST_ONLY"),
++            b"lock" => matches!(value, "0" | "1"),
++            b"dropcapstyle" => value == "None",
++            b"href" => value.is_empty(),
++            _ => false,
++        };
++        if !safe {
++            return false;
++        }
++    }
++    true
++}
++
++fn hwpx_curve_segment_safe(element: &BytesStart<'_>, self_closing: bool) -> bool {
++    if !self_closing {
++        return false;
++    }
++    let mut seen: Vec<Vec<u8>> = Vec::new();
++    let mut coordinates = 0u8;
++    let mut has_type = false;
++    let mut count = 0usize;
++    for attr in element.attributes() {
++        let Ok(attr) = attr else { return false };
++        let key = attr.key.as_ref().as_bytes();
++        if seen.iter().any(|previous| previous.as_slice() == key) {
++            return false;
++        }
++        seen.push(key.to_vec());
++        let value = match attr.normalized_value(quick_xml::XmlVersion::Implicit1_0) {
++            Ok(value) => value,
++            Err(_) => return false,
++        };
++        let value = value.as_ref();
++        count += 1;
++        match key {
++            b"type" => {
++                has_type = true;
++                if !matches!(value, "LINE" | "CURVE") {
++                    return false;
++                }
++            }
++            b"x1" | b"y1" | b"x2" | b"y2" => {
++                if value.parse::<i32>().is_err() {
++                    return false;
++                }
++                coordinates |= match key {
++                    b"x1" => 1,
++                    b"y1" => 2,
++                    b"x2" => 4,
++                    _ => 8,
++                };
++            }
++            _ => return false,
++        }
++    }
++    coordinates == 0b1111 && count == if has_type { 5 } else { 4 }
++}
++
+ fn hwpx_optional_attr(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+     element.attributes().flatten().find_map(|attr| {
+         (attr.key.as_ref().as_bytes() == key)
+@@ -5210,6 +5288,7 @@
+     let mut polygon_points: Vec<crate::model::Point> = Vec::new();
+     let mut hwpx_curve_segments: Vec<HwpxCurveSegment> = Vec::new();
+     let mut hwpx_basic_seen_children: Vec<Vec<u8>> = Vec::new();
++    let mut hwpx_curve_transfer_safe = shape_type == b"curve" && hwpx_curve_root_safe(e);
+     // [Task #1598] ellipse / arc 전용 지오메트리 (`<hc:center>`/`<hc:ax1>`/...).
+     // 미적재 시 한글이 타원/호를 다르게 렌더 → 누적 레이아웃 변동 → 페이지 붕괴(#1589 잔여).
+     let mut e_center = crate::model::Point::default();
+@@ -5259,6 +5338,11 @@
+         match event {
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
+                 let (description, safe_text) = read_plain_shape_comment(reader)?;
++                if shape_type == b"curve" {
++                    hwpx_curve_transfer_safe &= safe_text
++                        && hwpx_basic_shape_child_once(&mut hwpx_basic_seen_children, b"shapeComment")
++                        && hwpx_basic_shape_child_safe(b"shapeComment", ce, shape_type);
++                }
+                 if matches!(shape_type, b"rect" | b"ellipse") {
+                     shape_attr.hwpx_basic_shape_type_change_safe &= safe_text
+                         && hwpx_basic_shape_child_once(
+@@ -5271,6 +5355,9 @@
+             }
+             // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
+             Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
++                if shape_type == b"curve" {
++                    hwpx_curve_transfer_safe = false;
++                }
+                 if matches!(shape_type, b"rect" | b"ellipse") {
+                     shape_attr.hwpx_basic_shape_type_change_safe = false;
+                 }
+@@ -5279,6 +5366,17 @@
+             Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                if shape_type == b"curve" {
++                    if local == b"seg" {
++                        hwpx_curve_transfer_safe &= hwpx_curve_segment_safe(ce, self_closing);
++                    } else {
++                        if !hwpx_basic_shape_child_once(&mut hwpx_basic_seen_children, local)
++                            || !hwpx_basic_shape_child_preserved(local, ce, shape_type, self_closing)
++                        {
++                            hwpx_curve_transfer_safe = false;
++                        }
++                    }
++                }
+                 if matches!(shape_type, b"rect" | b"ellipse") {
+                     if !hwpx_basic_shape_child_once(&mut hwpx_basic_seen_children, local) {
+                         shape_attr.hwpx_basic_shape_type_change_safe = false;
+@@ -5522,6 +5620,11 @@
+         ShapeStorageKind::Drawing
+     };
+     materialize_shape_hwp_storage_defaults(&mut common, &mut shape_attr, storage_kind);
++
++    shape_attr.hwpx_curve_clipboard_safe = shape_type == b"curve"
++        && hwpx_curve_transfer_safe
++        && !hwpx_curve_segments.is_empty()
++        && hwpx_curve_segments.iter().all(|segment| !segment.has_children);
+
+     let hwpx_shadow_present = shadow_acc.is_some();
+     let (shadow_type, shadow_color, shadow_offset_x, shadow_offset_y, shadow_alpha) =
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -625,6 +625,7 @@
+ const MAX_HWPX_GROUP_MEDIA_BYTES: usize = 6 * 1024 * 1024;
+ const MAX_HWPX_GROUP_NODES: usize = 256;
+ const MAX_HWPX_GROUP_DEPTH: usize = 8;
++const MAX_HWPX_CURVE_SEGMENTS: usize = 4096;
+
+ struct HwpxGroupAsset {
+     source_id: u16,
+@@ -690,6 +691,71 @@
+                 "chart and OLE children are not supported in portable group transfer".into(),
+             )
+         }
++    }
++    Ok(())
++}
++
++fn inspect_hwpx_curve_shape(
++    shape: &ShapeObject,
++    resources: &mut std::collections::BTreeSet<u16>,
++) -> Result<(), String> {
++    let ShapeObject::Curve(curve) = shape else {
++        return Err("portable curve package must contain one curve".into());
++    };
++    if !curve.drawing.shape_attr.hwpx_curve_clipboard_safe
++        || curve.drawing.caption.is_some()
++        || curve.drawing.text_box.is_some()
++        || curve.hwpx_segments.is_empty()
++        || curve.hwpx_segments.len() > MAX_HWPX_CURVE_SEGMENTS
++        || curve.segment_types.len() != 0
++        || curve.points.len() != curve.hwpx_segments.len() + 1
++    {
++        return Err("curve source envelope is unsupported or incomplete".into());
++    }
++
++    for (index, segment) in curve.hwpx_segments.iter().enumerate() {
++        if segment.has_children {
++            return Err("curve segment children are not represented by the portable model".into());
++        }
++        let mut keys = std::collections::BTreeSet::new();
++        let mut points = [None; 4];
++        let mut segment_type = None;
++        for (name, value) in &segment.attributes {
++            if !keys.insert(name.as_str()) {
++                return Err("curve segment has duplicate attributes".into());
++            }
++            match name.as_str() {
++                "type" if matches!(value.as_str(), "LINE" | "CURVE") => {
++                    segment_type = Some(value.as_str());
++                }
++                "type" => return Err("curve segment type is unsupported".into()),
++                "x1" => points[0] = value.parse::<i32>().ok(),
++                "y1" => points[1] = value.parse::<i32>().ok(),
++                "x2" => points[2] = value.parse::<i32>().ok(),
++                "y2" => points[3] = value.parse::<i32>().ok(),
++                _ => return Err("curve segment has unsupported attributes".into()),
++            }
++        }
++        if keys.len() != if segment_type.is_some() { 5 } else { 4 }
++            || points.iter().any(Option::is_none)
++            || points[0] != Some(segment.start.x)
++            || points[1] != Some(segment.start.y)
++            || points[2] != Some(segment.end.x)
++            || points[3] != Some(segment.end.y)
++            || curve.points[index].x != segment.start.x
++            || curve.points[index].y != segment.start.y
++            || curve.points[index + 1].x != segment.end.x
++            || curve.points[index + 1].y != segment.end.y
++        {
++            return Err("curve endpoint chain does not match its source segments".into());
++        }
++    }
++
++    if let Some(image) = &curve.drawing.fill.image {
++        if image.bin_data_id == 0 {
++            return Err("curve image fill has no owned resource".into());
++        }
++        resources.insert(image.bin_data_id);
+     }
+     Ok(())
+ }
+@@ -10264,6 +10330,305 @@
+         }
+     }
+
++    /// Export one supported HWPX curve as an isolated package with only its owned resources.
++    #[wasm_bindgen(js_name = exportHwpxCurveClipboard)]
++    pub fn export_hwpx_curve_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        control_idx: u32,
++    ) -> Result<Vec<u8>, JsValue> {
++        if self.core.source_format != crate::parser::FileFormat::Hwpx {
++            return Err(JsValue::from_str(
++                "curve clipboard requires an HWPX source document",
++            ));
++        }
++
++        let saved_clipboard = self.core.clipboard.take();
++        let saved_cascade = self.core.paste_cascade_count;
++        let copied = self.core.copy_control_native(
++            section_idx as usize,
++            para_idx as usize,
++            &[],
++            control_idx as usize,
++        );
++        let clipboard = self.core.clipboard.take();
++        self.core.clipboard = saved_clipboard;
++        self.core.paste_cascade_count = saved_cascade;
++        copied.map_err(JsValue::from)?;
++
++        let mut clip_para = clipboard
++            .and_then(|mut value| value.paragraphs.drain(..).next())
++            .ok_or_else(|| JsValue::from_str("curve clipboard source is empty"))?;
++        let root = match clip_para.controls.first() {
++            Some(Control::Shape(shape)) => shape.as_ref(),
++            _ => return Err(JsValue::from_str("selected object is not an HWPX curve")),
++        };
++        let mut source_ids = std::collections::BTreeSet::new();
++        inspect_hwpx_curve_shape(root, &mut source_ids).map_err(JsValue::from)?;
++
++        // The isolated package supplies its own default paragraph formatting.
++        clip_para.para_shape_id = 0;
++        clip_para.style_id = 0;
++        if let Some(shape) = clip_para.char_shapes.first_mut() {
++            shape.char_shape_id = 0;
++        }
++        let assets =
++            load_hwpx_group_assets(&self.core.document, &source_ids).map_err(JsValue::from)?;
++        let mut id_map = std::collections::BTreeMap::new();
++        let mut doc_info_bins = Vec::with_capacity(assets.len());
++        let mut bin_data_content = Vec::with_capacity(assets.len());
++        for (index, asset) in assets.into_iter().enumerate() {
++            let new_id = u16::try_from(index + 1)
++                .map_err(|_| JsValue::from_str("curve has too many owned resources"))?;
++            id_map.insert(
++                asset.source_id,
++                GroupClipboardResource {
++                    position_id: new_id,
++                    storage_id: new_id,
++                    extension: asset.extension.clone(),
++                },
++            );
++            let mut descriptor = asset.descriptor;
++            descriptor.raw_data = None;
++            descriptor.storage_id = new_id;
++            descriptor.data_type = crate::model::bin_data::BinDataType::Embedding;
++            descriptor.abs_path = None;
++            descriptor.rel_path = None;
++            descriptor.extension = Some(asset.extension.clone());
++            doc_info_bins.push(descriptor);
++            bin_data_content.push(crate::model::bin_data::BinDataContent {
++                id: new_id,
++                data: crate::model::bin_data::BinDataBytes::from_shared(asset.bytes),
++                extension: asset.extension,
++            });
++        }
++        remap_hwpx_group_resources(
++            match clip_para.controls.first_mut().unwrap() {
++                Control::Shape(shape) => shape.as_mut(),
++                _ => unreachable!(),
++            },
++            &id_map,
++        )
++        .map_err(JsValue::from)?;
++
++        let mut isolated = HwpDocument::create_empty();
++        isolated
++            .core
++            .create_blank_document_native()
++            .map_err(JsValue::from)?;
++        let mut section = Section::default();
++        section.section_def.page_def = crate::model::page::PageDef::a4_default();
++        section.paragraphs.push(clip_para);
++        let mut document = isolated.core.document.clone();
++        document.sections.clear();
++        document.sections.push(section);
++        document.doc_info.bin_data_list = doc_info_bins;
++        document.bin_data_content = bin_data_content;
++        isolated.core.set_document(document);
++        let serialized = isolated
++            .core
++            .export_hwpx_native_with_report()
++            .map_err(JsValue::from)?;
++        if !serialized.content_loss().is_empty() {
++            return Err(JsValue::from_str(
++                "curve clipboard serialization reports content loss",
++            ));
++        }
++        let (bytes, _) = serialized.into_parts();
++        if bytes.len() > MAX_HWPX_GROUP_CLIPBOARD_BYTES {
++            return Err(JsValue::from_str(
++                "curve clipboard package exceeds its size limit",
++            ));
++        }
++        Ok(bytes)
++    }
++
++    /// Import one bounded HWPX curve package as an atomic, undoable control edit.
++    #[wasm_bindgen(js_name = pasteHwpxCurveClipboard)]
++    pub fn paste_hwpx_curve_clipboard(
++        &mut self,
++        section_idx: u32,
++        para_idx: u32,
++        char_offset: u32,
++        package: &[u8],
++    ) -> Result<String, JsValue> {
++        if package.is_empty() || package.len() > MAX_HWPX_GROUP_CLIPBOARD_BYTES {
++            return Err(JsValue::from_str("curve clipboard package size is invalid"));
++        }
++        if self.core.source_format != crate::parser::FileFormat::Hwpx {
++            return Err(JsValue::from_str(
++                "curve clipboard requires an HWPX destination document",
++            ));
++        }
++        let section = self
++            .core
++            .document
++            .sections
++            .get(section_idx as usize)
++            .ok_or_else(|| JsValue::from_str("curve clipboard destination section is missing"))?;
++        let paragraph = section
++            .paragraphs
++            .get(para_idx as usize)
++            .ok_or_else(|| JsValue::from_str("curve clipboard destination paragraph is missing"))?;
++        if char_offset as usize > paragraph.text.chars().count() {
++            return Err(JsValue::from_str(
++                "curve clipboard destination offset is out of range",
++            ));
++        }
++
++        let mut imported = HwpDocument::from_bytes(package).map_err(JsValue::from)?;
++        if imported.core.source_format != crate::parser::FileFormat::Hwpx
++            || imported.core.document.sections.len() != 1
++            || imported.core.document.sections[0].paragraphs.len() != 1
++            || !imported.core.document.sections[0].paragraphs[0]
++                .text
++                .is_empty()
++        {
++            return Err(JsValue::from_str(
++                "curve clipboard package structure is invalid",
++            ));
++        }
++        let mut curve_control_idx = None;
++        let mut section_def_count = 0usize;
++        let mut column_def_count = 0usize;
++        for (control_idx, control) in imported.core.document.sections[0].paragraphs[0]
++            .controls
++            .iter()
++            .enumerate()
++        {
++            match control {
++                Control::Shape(shape) if matches!(shape.as_ref(), ShapeObject::Curve(_)) => {
++                    if curve_control_idx.replace(control_idx).is_some() {
++                        return Err(JsValue::from_str(
++                            "curve clipboard package has multiple curves",
++                        ));
++                    }
++                }
++                Control::SectionDef(_) => section_def_count += 1,
++                Control::ColumnDef(_) => column_def_count += 1,
++                _ => {
++                    return Err(JsValue::from_str(
++                        "curve clipboard package contains an unsupported control",
++                    ))
++                }
++            }
++        }
++        let curve_control_idx = curve_control_idx
++            .filter(|_| section_def_count == 1 && column_def_count == 1)
++            .ok_or_else(|| {
++                JsValue::from_str("curve clipboard package has an ambiguous curve owner")
++            })?;
++        let saved_import_clipboard = imported.core.clipboard.take();
++        imported
++            .core
++            .copy_control_native(0, 0, &[], curve_control_idx)
++            .map_err(JsValue::from)?;
++        let source_clipboard = imported.core.clipboard.take();
++        imported.core.clipboard = saved_import_clipboard;
++        let mut clip_para = source_clipboard
++            .and_then(|mut value| value.paragraphs.drain(..).next())
++            .ok_or_else(|| JsValue::from_str("curve clipboard package has no control"))?;
++        let mut source_ids = std::collections::BTreeSet::new();
++        let root = match clip_para.controls.first() {
++            Some(Control::Shape(shape)) => shape.as_ref(),
++            _ => return Err(JsValue::from_str("curve clipboard package has no curve")),
++        };
++        inspect_hwpx_curve_shape(root, &mut source_ids).map_err(JsValue::from)?;
++        let assets =
++            load_hwpx_group_assets(&imported.core.document, &source_ids).map_err(JsValue::from)?;
++        if imported.core.document.doc_info.bin_data_list.len() != source_ids.len()
++            || imported.core.document.bin_data_content.len() != source_ids.len()
++        {
++            return Err(JsValue::from_str(
++                "curve clipboard package contains unowned resources",
++            ));
++        }
++
++        let saved_clipboard = self.core.clipboard.take();
++        let saved_cascade = self.core.paste_cascade_count;
++        let document_snapshot = self.core.document.clone();
++        if self
++            .core
++            .document
++            .bin_data_content
++            .len()
++            .saturating_add(assets.len())
++            > u16::MAX as usize
++            || self
++                .core
++                .document
++                .doc_info
++                .bin_data_list
++                .len()
++                .saturating_add(assets.len())
++                > u16::MAX as usize
++        {
++            self.core.clipboard = saved_clipboard;
++            self.core.paste_cascade_count = saved_cascade;
++            return Err(JsValue::from_str(
++                "destination has no room for curve resources",
++            ));
++        }
++        let mut id_map = std::collections::BTreeMap::new();
++        let paste_result = (|| -> Result<String, HwpError> {
++            for asset in assets {
++                let position_id = self
++                    .core
++                    .register_embedded_bin_data(&asset.bytes, &asset.extension);
++                let storage_id = self
++                    .core
++                    .document
++                    .bin_data_content
++                    .last()
++                    .map(|item| item.id)
++                    .ok_or_else(|| {
++                        HwpError::RenderError("registered curve resource is missing".into())
++                    })?;
++                id_map.insert(
++                    asset.source_id,
++                    GroupClipboardResource {
++                        position_id,
++                        storage_id,
++                        extension: asset.extension,
++                    },
++                );
++            }
++            remap_hwpx_group_resources(
++                match clip_para.controls.first_mut().unwrap() {
++                    Control::Shape(shape) => shape.as_mut(),
++                    _ => unreachable!(),
++                },
++                &id_map,
++            )
++            .map_err(HwpError::RenderError)?;
++            self.core.clipboard = Some(crate::document_core::ClipboardData {
++                paragraphs: vec![clip_para],
++                plain_text: "[곡선]".to_string(),
++                copied_table_text_reflowed: false,
++            });
++            self.core.paste_control_native(
++                section_idx as usize,
++                para_idx as usize,
++                char_offset as usize,
++            )
++        })();
++        self.core.clipboard = saved_clipboard;
++        self.core.paste_cascade_count = saved_cascade;
++
++        match paste_result {
++            Ok(result) if result.contains("\"ok\":true") => Ok(result),
++            Ok(_) => {
++                self.core.set_document(document_snapshot);
++                Err(JsValue::from_str("HWPX curve paste was rejected"))
++            }
++            Err(error) => {
++                self.core.set_document(document_snapshot);
++                Err(JsValue::from(error))
++            }
++        }
++    }
++
+     /// 내부 클립보드의 내용을 캐럿 위치에 붙여넣는다 (본문 문단).
+     ///
+     /// 반환값: JSON `{"ok":true,"paraIdx":<idx>,"charOffset":<offset>}`
