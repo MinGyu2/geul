@@ -99,7 +99,11 @@ pub fn preflight(
         ) {
             (Ok(before), Ok(after)) => {
                 findings.extend(package::malformed_xml(&before, package::Side::Original));
-                findings.extend(package::compare(&before, &after, &|_| false));
+                if format == Format::Docx {
+                    findings.extend(package::compare_preflight_docx(&before, &after));
+                } else {
+                    findings.extend(package::compare(&before, &after, &|_| false));
+                }
             }
             (Err(finding), _) | (_, Err(finding)) => findings.push(finding),
         },

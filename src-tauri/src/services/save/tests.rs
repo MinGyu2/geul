@@ -14204,21 +14204,43 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     );
     assert!(!service::check_saved(Format::Docx, &base_bytes, &unauthorized_drawing_style, None, true).is_safe());
 
-    // Two actual DrawingML owners may legally reference the same SmartArt data/layout/style/color
-    // relationships. Until copy-on-write exists, changing a shared generated part must fail closed.
+    // Multiple actual DrawingML owners may legally reference the same SmartArt data/layout/style/color
+    // relationships. Editing one owner must not be accepted while both still share changed parts.
     let duplicate_smart_art_owner = |pkg_src: &package::Package| -> Vec<u8> {
         let source = std::str::from_utf8(pkg_src.get("word/document.xml").unwrap()).unwrap();
-        let rel_ids = source.find("<dgm:relIds ").unwrap();
+        let rel_ids = source.rfind("<dgm:relIds ").unwrap();
         let paragraph_start = source[..rel_ids].rfind("<w:p>").unwrap();
         let paragraph_end = source[rel_ids..].find("</w:p>").unwrap() + rel_ids + "</w:p>".len();
         let paragraph = &source[paragraph_start..paragraph_end];
         let id_start = paragraph.find("<wp:docPr id=\"").unwrap() + "<wp:docPr id=\"".len();
         let id_end = paragraph[id_start..].find('\"').unwrap() + id_start;
         let id: u32 = paragraph[id_start..id_end].parse().unwrap();
-        let next_id = (id + 1).to_string();
-        let duplicate = paragraph.replacen(
+        let max_id = source
+            .match_indices("<wp:docPr id=\"")
+            .filter_map(|(start, marker)| {
+                let value_start = start + marker.len();
+                let value_end = source[value_start..].find('"')? + value_start;
+                source[value_start..value_end].parse::<u32>().ok()
+            })
+            .max()
+            .unwrap();
+        let next_id = (max_id + 1).to_string();
+        let old_name_start = paragraph.find("name=\"").unwrap() + "name=\"".len();
+        let old_name_end = paragraph[old_name_start..].find('"').unwrap() + old_name_start;
+        let old_name = &paragraph[old_name_start..old_name_end];
+        let new_name = if old_name.starts_with("Diagram ") {
+            format!("Diagram {next_id}")
+        } else {
+            format!("{old_name} copy {next_id}")
+        };
+        let duplicate_with_id = paragraph.replacen(
             &format!("<wp:docPr id=\"{id}\""),
             &format!("<wp:docPr id=\"{next_id}\""),
+            1,
+        );
+        let duplicate = duplicate_with_id.replacen(
+            &format!("name=\"{old_name}\""),
+            &format!("name=\"{new_name}\""),
             1,
         );
         let document = format!("{}{}{}", &source[..paragraph_end], duplicate, &source[paragraph_end..]);
@@ -14228,9 +14250,157 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         zip(&entries, false)
     };
     let shared_original = duplicate_smart_art_owner(&base_pkg);
+    let shared_unedited_session = Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
+    let shared_unedited_output = io::save_bytes("fixture.docx", &shared_unedited_session.doc).unwrap();
+    let shared_unedited_reopened = io::open_bytes("fixture.docx", &shared_unedited_output).unwrap();
+    assert!(matches!(
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(
+            &shared_unedited_session.doc,
+            &shared_unedited_reopened,
+        ),
+        Ok(true)
+    ));
+    let shared_preflight = service::preflight(Format::Docx, &shared_original, &shared_unedited_output, None);
+    assert!(shared_preflight.is_safe(),
+        "lossless shared SmartArt graph de-sharing during an unedited roundtrip must pass preflight: {shared_preflight:?}");
+    let shared_unedited_pkg = package::open(&shared_unedited_output, package::Side::Output).unwrap();
+    let mut shared_preflight_with_extra: Vec<ZipEntry> = shared_unedited_pkg
+        .parts
+        .iter()
+        .map(|(name, (_, bytes))| entry(name, bytes))
+        .collect();
+    shared_preflight_with_extra.push(entry("customXml/item99.xml", b"<unrelated/>"));
+    let shared_unedited_with_extra = zip(&shared_preflight_with_extra, false);
+    assert!(!service::preflight(Format::Docx, &shared_original, &shared_unedited_with_extra, None).is_safe(),
+        "no-op SmartArt de-sharing must not admit unrelated OPC parts");
     let shared_output = duplicate_smart_art_owner(&edited_pkg);
     assert!(!service::check_saved(Format::Docx, &shared_original, &shared_output, None, true).is_safe(),
         "node-style mutation must reject a SmartArt part shared by two drawing owners");
+
+    // Composite acceptance: edit only the second real owner of a shared source diagram. WordCraft
+    // should write independent diagram parts and reconnect that owner's relationships; T009 must
+    // prove this copy-on-write and leave the first owner's model unchanged.
+    let mut shared_session = Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
+    shared_session.run("select.objects", &json!({"index": 2})).unwrap();
+    shared_session.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
+        "fill": "A1B2C3", "line": "223344", "lineWidth": 19050,
+        "text": {"color": "DDEEFF", "bold": true, "italic": false, "fontSize": 1400, "language": "ko-KR"}
+    }})).unwrap();
+    let shared_cow_output = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
+    let shared_cow_pkg = package::open(&shared_cow_output, package::Side::Output).unwrap();
+    let shared_cow_findings = service::check_saved(Format::Docx, &shared_original, &shared_cow_output, None, true);
+    assert!(shared_cow_findings.is_safe(), "valid SmartArt copy-on-write must pass T009: {shared_cow_findings:?}");
+    let shared_original_pkg = package::open(&shared_original, package::Side::Original).unwrap();
+    for part in [
+        "word/diagrams/data1.xml",
+        "word/diagrams/layout1.xml",
+        "word/diagrams/quickStyle1.xml",
+        "word/diagrams/colors1.xml",
+        "word/diagrams/drawing1.xml",
+    ] {
+        assert_eq!(shared_cow_pkg.get(part), shared_original_pkg.get(part), "first owner changed: {part}");
+    }
+    assert!(std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data2.xml").unwrap()).unwrap().contains("A1B2C3"));
+    assert!(!std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data1.xml").unwrap()).unwrap().contains("A1B2C3"));
+    assert!(std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap()).unwrap().contains(
+        "<wp:docPr id=\"3\" name=\"Diagram 3\" descr=\"\"/>"
+    ));
+    let shared_cow_reopened = io::open_bytes("fixture.docx", &shared_cow_output).unwrap();
+    let shared_cow_equivalence = wordcraft_engine::doc::roundtrip::compare_roundtrip(
+        &shared_session.doc,
+        &shared_cow_reopened,
+        &wordcraft_engine::doc::roundtrip::RoundTripLimits::default(),
+    );
+    assert!(
+        shared_cow_equivalence
+            .as_ref()
+            .is_ok_and(|result| matches!(result, wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_))),
+        "copy-on-write save/reopen changed the edited model: {shared_cow_equivalence:?}"
+    );
+
+    // Keep data-node identity and the connection destination stable. Replacing one node ID while
+    // preserving its visible text and drawing used to pass the permissive shared-model check.
+    let changed_node_id = mutate_part(
+        &shared_cow_pkg,
+        "word/diagrams/data2.xml",
+        "modelId=\"{5743A57A-0000-4000-8000-000000000005}\"",
+        "modelId=\"{5743A57A-0000-4000-8000-000000000015}\"",
+    );
+    let changed_node_id_pkg = package::open(&changed_node_id, package::Side::Output).unwrap();
+    let changed_connection = mutate_part(
+        &changed_node_id_pkg,
+        "word/diagrams/data2.xml",
+        "destId=\"{5743A57A-0000-4000-8000-000000000005}\"",
+        "destId=\"{5743A57A-0000-4000-8000-000000000015}\"",
+    );
+    let changed_connection_pkg = package::open(&changed_connection, package::Side::Output).unwrap();
+    assert_eq!(
+        super::docx_graphics::smart_art_data_mutation_preserves_identity_for_test(
+            shared_cow_pkg.get("word/diagrams/data2.xml").unwrap(),
+            changed_connection_pkg.get("word/diagrams/data2.xml").unwrap(),
+        ),
+        Some(false),
+        "changed owner model must parse, then reject the changed node identity",
+    );
+    assert!(!service::check_saved(Format::Docx, &shared_original, &changed_connection, None, true).is_safe(),
+        "shared SmartArt copy-on-write must reject replacing a node identity");
+
+    shared_session.run("edit.undo", &json!({})).unwrap();
+    let shared_undo = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
+    assert!(service::check_saved(Format::Docx, &shared_original, &shared_undo, None, true).is_safe());
+    let shared_undo_reopened = io::open_bytes("fixture.docx", &shared_undo).unwrap();
+    assert!(matches!(
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&shared_session.doc, &shared_undo_reopened),
+        Ok(true)
+    ));
+    shared_session.run("edit.redo", &json!({})).unwrap();
+    let shared_redo = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
+    assert!(service::check_saved(Format::Docx, &shared_original, &shared_redo, None, true).is_safe());
+    let shared_redo_reopened = io::open_bytes("fixture.docx", &shared_redo).unwrap();
+    assert!(matches!(
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&shared_session.doc, &shared_redo_reopened),
+        Ok(true)
+    ));
+
+    // Existing owners may continue to share their unchanged source rows while the selected third
+    // owner receives one independent graph; those duplicate original references are authorized.
+    let shared_two_pkg = package::open(&shared_original, package::Side::Original).unwrap();
+    let shared_three_original = duplicate_smart_art_owner(&shared_two_pkg);
+    let mut shared_three_session = Session::new(io::open_bytes("fixture.docx", &shared_three_original).unwrap());
+    shared_three_session.run("select.objects", &json!({"index": 3})).unwrap();
+    shared_three_session.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
+        "fill": "B2C3D4", "line": "334455", "lineWidth": 19050,
+        "text": {"color": "EEFFAA", "bold": true, "italic": false, "fontSize": 1400, "language": "ko-KR"}
+    }})).unwrap();
+    let shared_three_output = io::save_bytes("fixture.docx", &shared_three_session.doc).unwrap();
+    let shared_three_findings = service::check_saved(Format::Docx, &shared_three_original, &shared_three_output, None, true);
+    assert!(shared_three_findings.is_safe(),
+        "copy-on-write must permit unaffected owners to share unchanged original relationship rows: {shared_three_findings:?}");
+
+    let mut cross_owner_document = std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap()).unwrap().to_string();
+    assert!(cross_owner_document.contains("r:dm=\"rId8\""));
+    cross_owner_document = cross_owner_document.replacen("r:dm=\"rId8\"", "r:dm=\"rId3\"", 1);
+    let cross_owner_entries: Vec<ZipEntry> = shared_cow_pkg.parts.iter().map(|(name, (_, bytes))| {
+        if name == "word/document.xml" { entry(name, cross_owner_document.as_bytes()) } else { entry(name, bytes) }
+    }).collect();
+    let cross_owner_output = zip(&cross_owner_entries, false);
+    assert!(!service::check_saved(Format::Docx, &shared_original, &cross_owner_output, None, true).is_safe(),
+        "two owners must not be allowed to alias the first owner's copied relationship");
+
+    let shifted_copy = mutate_part(
+        &shared_cow_pkg,
+        "word/diagrams/drawing2.xml",
+        "x=\"1113175\"",
+        "x=\"1113176\"",
+    );
+    assert!(!service::check_saved(Format::Docx, &shared_original, &shifted_copy, None, true).is_safe(),
+        "style-only SmartArt edits must preserve the copied drawing geometry");
+
+    let mut with_unrelated_part: Vec<ZipEntry> = shared_cow_pkg.parts.iter().map(|(name, (_, bytes))| entry(name, bytes)).collect();
+    with_unrelated_part.push(entry("customXml/item99.xml", b"<unrelated/>"));
+    let unrelated_output = zip(&with_unrelated_part, false);
+    assert!(!service::check_saved(Format::Docx, &shared_original, &unrelated_output, None, true).is_safe(),
+        "copy-on-write proof must reject unrelated OPC part additions");
 
     // Venn nodes consist of overlapping fill, outline and text shapes. A node style must follow
     // its semantic node across all three shapes, rather than painting the transparent text box.
@@ -14602,6 +14772,8 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     ));
     assert!(!package::regenerated_graphic_part("word/charts/chartX.xml"));
     assert!(!package::regenerated_graphic_part("word/charts/style1.xml"));
+
+
 }
 
 #[test]

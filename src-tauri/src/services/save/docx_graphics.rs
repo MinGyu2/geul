@@ -29,6 +29,7 @@ const DOCUMENT_RELS: &str = "word/_rels/document.xml.rels";
 const NS_C: &str = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 const NS_A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const NS_WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const NS_DGM: &str = "http://schemas.openxmlformats.org/drawingml/2006/diagram";
 const NS_DSP: &str = "http://schemas.microsoft.com/office/drawing/2008/diagram";
 
@@ -1786,8 +1787,10 @@ fn parse_layout_model(bytes: &[u8]) -> Option<SmartArtLayoutKind> {
     Some(kind)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct DrawingShape {
+    geometry: DrawingGeometry,
+    text_geometry: Option<DrawingGeometry>,
     prst: String,
     has_adj: bool,
     accents: Vec<u8>,
@@ -1799,13 +1802,34 @@ struct DrawingShape {
     paragraph_styles: Vec<DrawingTextStyle>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct DrawingTextStyle {
     color: Option<String>,
     bold: Option<bool>,
     italic: Option<bool>,
     size: Option<u16>,
     language: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DrawingGeometry {
+    x: String,
+    y: String,
+    cx: String,
+    cy: String,
+    rotation: Option<String>,
+    flip_h: bool,
+}
+
+fn drawing_geometry(element: &XmlEl) -> Option<DrawingGeometry> {
+    Some(DrawingGeometry {
+        x: element.children.first()?.attr(None, "x")?.to_string(),
+        y: element.children.first()?.attr(None, "y")?.to_string(),
+        cx: element.children.get(1)?.attr(None, "cx")?.to_string(),
+        cy: element.children.get(1)?.attr(None, "cy")?.to_string(),
+        rotation: element.attr(None, "rot").map(str::to_string),
+        flip_h: element.attr(None, "flipH") == Some("1"),
+    })
 }
 
 fn check_emu_int(s: &str, min: i64, max: i64) -> bool {
@@ -2018,6 +2042,7 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
         if !check_off_ext(xfrm, "xfrm", -1_000_000_000) {
             return None;
         }
+        let geometry = drawing_geometry(xfrm)?;
         // a:prstGeom
         let geom = &sp_pr.children[1];
         if !geom.is(NS_A, "prstGeom") || !geom.no_text() || geom.children.len() != 1 {
@@ -2108,6 +2133,7 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
         let font_color = parse_drawing_color(&font_ref.children[0], &mut accents)?;
 
         // Optional dsp:txBody + dsp:txXfrm
+        let mut text_geometry = None;
         let mut paras = Vec::new();
         let mut paragraph_styles = Vec::new();
         if sp.children.len() == 5 {
@@ -2191,8 +2217,11 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
             {
                 return None;
             }
+            text_geometry = Some(drawing_geometry(tx_xfrm)?);
         }
         shapes.push(DrawingShape {
+            geometry,
+            text_geometry,
             prst,
             has_adj,
             accents,
@@ -2522,12 +2551,19 @@ struct DiagramBinding {
     colors: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct RelEntry {
     id: String,
     kind: String,
     target: String,
     external: bool,
+}
+
+#[derive(Clone)]
+struct SmartArtOwnerBinding {
+    owner_id: String,
+    relationship_ids: [String; 4],
+    binding: DiagramBinding,
 }
 
 fn parse_rels(bytes: &[u8]) -> Option<Vec<RelEntry>> {
@@ -2620,6 +2656,127 @@ fn scan_document_bindings(bytes: &[u8], rels: &[RelEntry]) -> Option<DocumentBin
     Some(DocumentBindings { charts, diagrams, diagrams_complete })
 }
 
+fn collect_smart_art_rel_ids<'a>(element: &'a XmlEl, out: &mut Vec<&'a XmlEl>) {
+    if element.is(NS_DGM, "relIds") {
+        out.push(element);
+    }
+    for child in &element.children {
+        collect_smart_art_rel_ids(child, out);
+    }
+}
+
+fn count_smart_art_rel_ids(element: &XmlEl) -> usize {
+    let mut ids = Vec::new();
+    collect_smart_art_rel_ids(element, &mut ids);
+    ids.len()
+}
+
+fn relationship_target(rels: &[RelEntry], id: &str, kind: &str) -> Option<String> {
+    let mut matches = rels
+        .iter()
+        .filter(|rel| rel.id == id && rel.kind == kind && !rel.external);
+    let rel = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    package::resolve(DOCUMENT_RELS, &rel.target)
+}
+
+fn collect_smart_art_owners(
+    element: &XmlEl,
+    rels: &[RelEntry],
+    out: &mut Vec<SmartArtOwnerBinding>,
+) -> Option<()> {
+    if element.is(NS_WP, "inline") || element.is(NS_WP, "anchor") {
+        let mut rel_id_nodes = Vec::new();
+        collect_smart_art_rel_ids(element, &mut rel_id_nodes);
+        if !rel_id_nodes.is_empty() {
+            if rel_id_nodes.len() != 1 {
+                return None;
+            }
+            let owner = element
+                .children
+                .iter()
+                .find(|child| child.is(NS_WP, "docPr"))?;
+            let owner_id = owner.attr(None, "id")?.to_string();
+            let numeric_id = owner_id.parse::<u32>().ok()?;
+            if numeric_id == 0 || owner_id != numeric_id.to_string()
+                || out.iter().any(|existing| existing.owner_id == owner_id)
+            {
+                return None;
+            }
+            let rel_ids = rel_id_nodes[0];
+            let relationship_ids = [
+                rel_ids.attr(Some(NS_R), "dm")?.to_string(),
+                rel_ids.attr(Some(NS_R), "lo")?.to_string(),
+                rel_ids.attr(Some(NS_R), "qs")?.to_string(),
+                rel_ids.attr(Some(NS_R), "cs")?.to_string(),
+            ];
+            let (Some(data), Some(layout), Some(quick_style), Some(colors)) = (
+                relationship_target(rels, &relationship_ids[0], DIAGRAM_DATA_REL),
+                relationship_target(rels, &relationship_ids[1], DIAGRAM_LAYOUT_REL),
+                relationship_target(rels, &relationship_ids[2], DIAGRAM_QUICK_STYLE_REL),
+                relationship_target(rels, &relationship_ids[3], DIAGRAM_COLORS_REL),
+            ) else {
+                return None;
+            };
+            out.push(SmartArtOwnerBinding {
+                owner_id,
+                relationship_ids,
+                binding: DiagramBinding { data, layout, quick_style, colors },
+            });
+            return Some(());
+        }
+    }
+    for child in &element.children {
+        collect_smart_art_owners(child, rels, out)?;
+    }
+    Some(())
+}
+
+fn scan_smart_art_owners(bytes: &[u8], rels: &[RelEntry]) -> Option<Vec<SmartArtOwnerBinding>> {
+    let root = XmlEl::parse(bytes)?;
+    let expected_count = count_smart_art_rel_ids(&root);
+    let mut owners = Vec::new();
+    collect_smart_art_owners(&root, rels, &mut owners)?;
+    (owners.len() == expected_count).then_some(owners)
+}
+
+fn document_equal_except_smart_art_relationship_ids(before: &[u8], after: &[u8]) -> bool {
+    let (Some(mut before_events), Some(mut after_events)) =
+        (xml::canonical(before).ok(), xml::canonical(after).ok())
+    else {
+        return false;
+    };
+    let normalize = |events: &mut [Canonical]| -> Option<usize> {
+        let mut count = 0;
+        for event in events {
+            let Canonical::Start { namespace: Some(ns), name, attributes } = event else { continue };
+            if ns.as_str() != NS_DGM || name.as_str() != "relIds" {
+                continue;
+            }
+            let relationship_attributes: Vec<_> = attributes.iter().filter(|(ans, key, _)| {
+                ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str())
+            }).collect();
+            let keys: BTreeSet<_> = relationship_attributes.iter().map(|(_, key, _)| key.as_str()).collect();
+            if relationship_attributes.len() != 4 || keys.len() != 4
+                || relationship_attributes.iter().any(|(_, _, value)| value.is_empty())
+            {
+                return None;
+            }
+            attributes.retain(|(ans, key, _)| !(
+                ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str())
+            ));
+            count += 1;
+        }
+        Some(count)
+    };
+    let (Some(before_count), Some(after_count)) = (normalize(&mut before_events), normalize(&mut after_events)) else {
+        return false;
+    };
+    before_count > 0 && before_count == after_count && before_events == after_events
+}
+
 fn diagram_part_exclusively_owned(
     part: &str,
     bindings: &[DiagramBinding],
@@ -2667,14 +2824,518 @@ fn has_no_part_rels(original: &Package, output: &Package, name: &str) -> bool {
     !original.parts.contains_key(&rels_part) && !output.parts.contains_key(&rels_part)
 }
 
+fn is_diagram_relationship(kind: &str) -> bool {
+    matches!(
+        kind,
+        DIAGRAM_DATA_REL
+            | DIAGRAM_LAYOUT_REL
+            | DIAGRAM_QUICK_STYLE_REL
+            | DIAGRAM_COLORS_REL
+            | DIAGRAM_DRAWING_REL
+    )
+}
+
+fn expected_diagram_content_type(kind: &str) -> Option<&'static str> {
+    match kind {
+        DIAGRAM_DATA_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"),
+        DIAGRAM_LAYOUT_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml"),
+        DIAGRAM_QUICK_STYLE_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"),
+        DIAGRAM_COLORS_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"),
+        DIAGRAM_DRAWING_REL => Some("application/vnd.ms-office.drawingml.diagramDrawing+xml"),
+        _ => None,
+    }
+}
+
+fn smart_art_owner_parts(
+    owner: &SmartArtOwnerBinding,
+    package: &Package,
+    rels: &[RelEntry],
+) -> Option<Vec<(String, &'static str)>> {
+    let mut parts = Vec::with_capacity(5);
+    for ((id, kind), target) in [
+        (&owner.relationship_ids[0], DIAGRAM_DATA_REL),
+        (&owner.relationship_ids[1], DIAGRAM_LAYOUT_REL),
+        (&owner.relationship_ids[2], DIAGRAM_QUICK_STYLE_REL),
+        (&owner.relationship_ids[3], DIAGRAM_COLORS_REL),
+    ]
+    .into_iter()
+    .zip([
+        owner.binding.data.as_str(),
+        owner.binding.layout.as_str(),
+        owner.binding.quick_style.as_str(),
+        owner.binding.colors.as_str(),
+    ])
+    {
+        let part = relationship_target(rels, id, kind)?;
+        if part != target {
+            return None;
+        }
+        parts.push((part, expected_diagram_content_type(kind)?));
+    }
+    let data = parse_diagram_data_model(package.get(&owner.binding.data)?)?;
+    let drawing = relationship_target(rels, &data.drawing_rel, DIAGRAM_DRAWING_REL)?;
+    parts.push((drawing, expected_diagram_content_type(DIAGRAM_DRAWING_REL)?));
+    Some(parts)
+}
+
+fn unique_relationship_map(rels: &[RelEntry]) -> Option<BTreeMap<String, RelEntry>> {
+    let mut out = BTreeMap::new();
+    for rel in rels {
+        if out.insert(rel.id.clone(), rel.clone()).is_some() {
+            return None;
+        }
+    }
+    Some(out)
+}
+
+fn smart_art_owner_references(
+    owner: &SmartArtOwnerBinding,
+    package: &Package,
+) -> Option<Vec<(String, &'static str)>> {
+    let data = parse_diagram_data_model(package.get(&owner.binding.data)?)?;
+    Some(vec![
+        (owner.relationship_ids[0].clone(), DIAGRAM_DATA_REL),
+        (owner.relationship_ids[1].clone(), DIAGRAM_LAYOUT_REL),
+        (owner.relationship_ids[2].clone(), DIAGRAM_QUICK_STYLE_REL),
+        (owner.relationship_ids[3].clone(), DIAGRAM_COLORS_REL),
+        (data.drawing_rel, DIAGRAM_DRAWING_REL),
+    ])
+}
+
+fn smart_art_relationships_are_copy_on_write(
+    original_rels: &[RelEntry],
+    output_rels: &[RelEntry],
+    output_owners: &[SmartArtOwnerBinding],
+    original_document: &[u8],
+    output_document: &[u8],
+    output: &Package,
+) -> bool {
+    let (Some(before), Some(after)) = (
+        unique_relationship_map(original_rels),
+        unique_relationship_map(output_rels),
+    ) else {
+        return false;
+    };
+    // Keep old diagram edges stable because at least one original owner still points to them.
+    // WordCraft may renumber unreferenced story-wide style/settings/theme edges when it inserts
+    // the new diagram edges, so compare those rows as a multiset and resolve every body reference.
+    if before.values().filter(|rel| is_diagram_relationship(&rel.kind)).any(|rel| after.get(&rel.id) != Some(rel)) {
+        return false;
+    }
+    let mut old_non_diagram: Vec<_> = before.values().filter(|rel| !is_diagram_relationship(&rel.kind))
+        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external)).collect();
+    let mut new_non_diagram: Vec<_> = after.values().filter(|rel| !is_diagram_relationship(&rel.kind))
+        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external)).collect();
+    old_non_diagram.sort();
+    new_non_diagram.sort();
+    if old_non_diagram != new_non_diagram {
+        return false;
+    }
+    let (Ok(old_events), Ok(new_events)) = (xml::canonical(original_document), xml::canonical(output_document)) else {
+        return false;
+    };
+    let body_relationship_ids = |events: &[Canonical]| -> Option<BTreeSet<String>> {
+        let mut ids = BTreeSet::new();
+        for event in events {
+            let Canonical::Start { namespace: Some(ns), name, attributes } = event else { continue };
+            for (attribute_ns, attribute_name, value) in attributes {
+                if attribute_ns.as_deref() != Some(NS_R) {
+                    continue;
+                }
+                if ns.as_str() == NS_DGM && name.as_str() == "relIds"
+                    && ["dm", "lo", "qs", "cs"].contains(&attribute_name.as_str())
+                {
+                    continue;
+                }
+                ids.insert(value.to_string());
+            }
+        }
+        Some(ids)
+    };
+    let (Some(old_body_ids), Some(new_body_ids)) = (body_relationship_ids(&old_events), body_relationship_ids(&new_events)) else {
+        return false;
+    };
+    if old_body_ids != new_body_ids || old_body_ids.iter().any(|id| before.get(id) != after.get(id)) {
+        return false;
+    }
+    let old_diagram_rows: BTreeSet<_> = before.values()
+        .filter(|rel| is_diagram_relationship(&rel.kind))
+        .cloned()
+        .collect();
+    let mut referenced = BTreeMap::<String, usize>::new();
+    let mut referenced_rows = BTreeSet::new();
+    for owner in output_owners {
+        let Some(references) = smart_art_owner_references(owner, output) else {
+            return false;
+        };
+        for (id, kind) in references {
+            *referenced.entry(id.clone()).or_default() += 1;
+            let Some(row) = after.get(&id) else { return false };
+            if row.external || row.kind != kind {
+                return false;
+            }
+            referenced_rows.insert(row.clone());
+        }
+    }
+    let added_diagram_rows: BTreeSet<_> = after.values()
+        .filter(|rel| is_diagram_relationship(&rel.kind) && !old_diagram_rows.contains(*rel))
+        .cloned()
+        .collect();
+    let new_referenced_rows: BTreeSet<_> = referenced_rows.iter()
+        .filter(|rel| !old_diagram_rows.contains(*rel))
+        .cloned()
+        .collect();
+    added_diagram_rows == new_referenced_rows
+        && added_diagram_rows.iter().all(|row| {
+            let valid_kind = is_diagram_relationship(&row.kind);
+            valid_kind
+                && referenced.get(&row.id) == Some(&1)
+        })
+}
+
+fn content_types_match_copy_on_write(
+    original: &Package,
+    output: &Package,
+    added_parts: &BTreeMap<String, &'static str>,
+) -> bool {
+    let (Some(before_bytes), Some(after_bytes)) =
+        (original.get("[Content_Types].xml"), output.get("[Content_Types].xml"))
+    else {
+        return false;
+    };
+    let (Ok(before), Ok(after)) = (xml::content_types(before_bytes), xml::content_types(after_bytes)) else {
+        return false;
+    };
+    let normalize = |items: &[(String, String)]| -> BTreeMap<String, String> {
+        items.iter().map(|(name, kind)| (name.to_ascii_lowercase(), kind.clone())).collect()
+    };
+    let old_defaults = normalize(&before.defaults);
+    let new_defaults = normalize(&after.defaults);
+    let old_overrides = normalize(&before.overrides);
+    let new_overrides = normalize(&after.overrides);
+    if old_defaults != new_defaults
+        || old_overrides.iter().any(|(name, kind)| new_overrides.get(name) != Some(kind))
+    {
+        return false;
+    }
+    let added_overrides: BTreeMap<_, _> = new_overrides
+        .iter()
+        .filter(|(name, _)| !old_overrides.contains_key(*name))
+        .map(|(name, kind)| (name.clone(), kind.clone()))
+        .collect();
+    let expected_overrides: BTreeMap<_, _> = added_parts
+        .iter()
+        .map(|(part, kind)| (format!("/{part}").to_ascii_lowercase(), (*kind).to_string()))
+        .collect();
+    if added_overrides != expected_overrides {
+        return false;
+    }
+    added_parts.iter().all(|(part, kind)| {
+        after.of(&format!("/{part}")).is_some_and(|actual| actual == *kind)
+    })
+}
+
+fn no_foreign_smart_art_relationships(package: &Package, paths: &BTreeSet<String>) -> bool {
+    for (name, (_, bytes)) in &package.parts {
+        if !name.ends_with(".rels") || name == DOCUMENT_RELS {
+            continue;
+        }
+        let Some(rels) = parse_rels(bytes) else {
+            return false;
+        };
+        for rel in rels.iter().filter(|rel| !rel.external) {
+            if package::resolve(name, &rel.target).is_some_and(|path| paths.contains(&path)) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn smart_art_data_is_mutation_allowed(before: &DiagramDataModel, after: &DiagramDataModel) -> bool {
+    before.model_id == after.model_id
+        && before.colors == after.colors
+        && before.items.len() == after.items.len()
+        && before
+            .items
+            .iter()
+            .zip(&after.items)
+            .all(|(before_item, after_item)| {
+                before_item.text == after_item.text
+                    && before_item.level == after_item.level
+                    && before_item.model_id == after_item.model_id
+                    && before_item.connection_id == after_item.connection_id
+                    && before_item.parent_transition_id == after_item.parent_transition_id
+                    && before_item.sibling_transition_id == after_item.sibling_transition_id
+                    && before_item.properties == after_item.properties
+            })
+}
+
+#[cfg(test)]
+pub(super) fn smart_art_data_mutation_preserves_identity_for_test(
+    before: &[u8],
+    after: &[u8],
+) -> Option<bool> {
+    let before = parse_diagram_data_model(before)?;
+    let after = parse_diagram_data_model(after)?;
+    Some(smart_art_data_is_mutation_allowed(&before, &after))
+}
+
+fn diagram_data_equal_except_drawing_rel(before: &DiagramDataModel, after: &DiagramDataModel) -> bool {
+    before.model_id == after.model_id
+        && before.layout == after.layout
+        && before.colors == after.colors
+        && before.items == after.items
+}
+
+fn smart_art_node_style_only_change(before: &DiagramDataModel, after: &DiagramDataModel) -> bool {
+    if before.model_id != after.model_id
+        || before.layout != after.layout
+        || before.colors != after.colors
+        || before.items.len() != after.items.len()
+    {
+        return false;
+    }
+    let mut changed = false;
+    for (old, new) in before.items.iter().zip(&after.items) {
+        if old.text != new.text
+            || old.level != new.level
+            || old.model_id != new.model_id
+            || old.connection_id != new.connection_id
+            || old.parent_transition_id != new.parent_transition_id
+            || old.sibling_transition_id != new.sibling_transition_id
+            || old.properties != new.properties
+        {
+            return false;
+        }
+        changed |= old.style != new.style;
+    }
+    changed
+}
+
+fn smart_art_style_drawing_geometry_preserved(before: &[DrawingShape], after: &[DrawingShape]) -> bool {
+    before.len() == after.len()
+        && before.iter().zip(after).all(|(old, new)| {
+            old.geometry == new.geometry
+                && old.text_geometry == new.text_geometry
+                && old.prst == new.prst
+                && old.has_adj == new.has_adj
+                && old.paras == new.paras
+        })
+}
+
+fn drawing_bounds(shapes: &[DrawingShape]) -> Option<(i64, i64, i64, i64)> {
+    let mut bounds: Option<(i64, i64, i64, i64)> = None;
+    for shape in shapes {
+        let x = shape.geometry.x.parse::<i64>().ok()?;
+        let y = shape.geometry.y.parse::<i64>().ok()?;
+        let right = x.checked_add(shape.geometry.cx.parse::<i64>().ok()?)?;
+        let bottom = y.checked_add(shape.geometry.cy.parse::<i64>().ok()?)?;
+        bounds = Some(match bounds {
+            None => (x, y, right, bottom),
+            Some((left, top, old_right, old_bottom)) => (
+                left.min(x),
+                top.min(y),
+                old_right.max(right),
+                old_bottom.max(bottom),
+            ),
+        });
+    }
+    bounds
+}
+
+/// Narrow proof for WordCraft copy-on-write of a shared SmartArt owner. It accepts only a body
+/// whose XML is otherwise unchanged, stable `wp:docPr` identities, independent output part sets,
+/// preserved existing relationship rows, and exact content-type additions. Every copy is parsed
+/// as a complete supported SmartArt model and checked against its regenerated drawing.
+fn smart_art_shared_copy_on_write_parts(
+    original: &Package,
+    output: &Package,
+    allow_one_changed_owner: bool,
+) -> Option<BTreeSet<String>> {
+    let (original_rels, output_rels) = (
+        parse_rels(original.get(DOCUMENT_RELS)?),
+        parse_rels(output.get(DOCUMENT_RELS)?),
+    );
+    let (original_rels, output_rels) = (original_rels?, output_rels?);
+    let (original_xml, output_xml) = (original.get(DOCUMENT_XML)?, output.get(DOCUMENT_XML)?);
+    if !document_equal_except_smart_art_relationship_ids(original_xml, output_xml) {
+        return None;
+    }
+    let (original_owners, output_owners) = (
+        scan_smart_art_owners(original_xml, &original_rels)?,
+        scan_smart_art_owners(output_xml, &output_rels)?,
+    );
+    if original_owners.len() < 2 || original_owners.len() != output_owners.len() {
+        return None;
+    }
+    let old_by_id: BTreeMap<_, _> = original_owners.iter().map(|owner| (owner.owner_id.as_str(), owner)).collect();
+    let new_by_id: BTreeMap<_, _> = output_owners.iter().map(|owner| (owner.owner_id.as_str(), owner)).collect();
+    if old_by_id.len() != original_owners.len()
+        || new_by_id.len() != output_owners.len()
+        || old_by_id.keys().ne(new_by_id.keys())
+    {
+        return None;
+    }
+    let original_owner_parts: BTreeMap<_, _> = original_owners
+        .iter()
+        .map(|owner| smart_art_owner_parts(owner, original, &original_rels).map(|parts| (owner.owner_id.as_str(), parts)))
+        .collect::<Option<_>>()?;
+    let output_owner_parts: BTreeMap<_, _> = output_owners
+        .iter()
+        .map(|owner| smart_art_owner_parts(owner, output, &output_rels).map(|parts| (owner.owner_id.as_str(), parts)))
+        .collect::<Option<_>>()?;
+    let mut old_part_uses = BTreeMap::<String, usize>::new();
+    for parts in original_owner_parts.values() {
+        for (part, _) in parts {
+            *old_part_uses.entry(part.clone()).or_default() += 1;
+        }
+    }
+    if !old_part_uses.values().any(|count| *count > 1) {
+        return None;
+    }
+    let mut output_parts = BTreeSet::new();
+    let mut original_parts = BTreeSet::new();
+    let mut expected_added_types = BTreeMap::new();
+    let mut changed_owners = 0usize;
+    let mut admitted = BTreeSet::from([DOCUMENT_RELS.to_string(), "[Content_Types].xml".to_string()]);
+    for (owner_id, old_owner) in &old_by_id {
+        let new_owner = new_by_id.get(owner_id)?;
+        let old_parts = original_owner_parts.get(owner_id)?;
+        let new_parts = output_owner_parts.get(owner_id)?;
+        if old_parts.len() != 5 || new_parts.len() != 5 {
+            return None;
+        }
+        for (part, _) in old_parts {
+            original_parts.insert(part.clone());
+        }
+        for (part, kind) in new_parts {
+            if !package::regenerated_graphic_part(part)
+                || !part.starts_with("word/diagrams/")
+                || !output_parts.insert(part.clone())
+                || !has_no_part_rels(original, output, part)
+            {
+                return None;
+            }
+            if !original.parts.contains_key(part) {
+                expected_added_types.insert(part.clone(), *kind);
+            }
+        }
+        let before_data_bytes = original.get(&old_owner.binding.data)?;
+        let after_data_bytes = output.get(&new_owner.binding.data)?;
+        let before_layout_bytes = original.get(&old_owner.binding.layout)?;
+        let after_layout_bytes = output.get(&new_owner.binding.layout)?;
+        let before_quick_style = original.get(&old_owner.binding.quick_style)?;
+        let after_quick_style = output.get(&new_owner.binding.quick_style)?;
+        let before_colors = original.get(&old_owner.binding.colors)?;
+        let after_colors = output.get(&new_owner.binding.colors)?;
+        if before_quick_style != after_quick_style || before_colors != after_colors {
+            return None;
+        }
+        let (before_data, after_data, before_layout, after_layout) = (
+            parse_diagram_data_model(before_data_bytes)?,
+            parse_diagram_data_model(after_data_bytes)?,
+            parse_layout_model(before_layout_bytes)?,
+            parse_layout_model(after_layout_bytes)?,
+        );
+        if before_layout != before_data.layout
+            || after_layout != after_data.layout
+            || !smart_art_data_is_mutation_allowed(&before_data, &after_data)
+        {
+            return None;
+        }
+        if !diagram_data_equal_except_drawing_rel(&before_data, &after_data) {
+            changed_owners += 1;
+        }
+        let before_drawing = relationship_target(&original_rels, &before_data.drawing_rel, DIAGRAM_DRAWING_REL)?;
+        let after_drawing = relationship_target(&output_rels, &after_data.drawing_rel, DIAGRAM_DRAWING_REL)?;
+        let before_drawing_bytes = original.get(&before_drawing)?;
+        let after_drawing_bytes = output.get(&after_drawing)?;
+        let (before_shapes, after_shapes) = (
+            parse_drawing_shapes(before_drawing_bytes)?,
+            parse_drawing_shapes(after_drawing_bytes)?,
+        );
+        if !drawing_matches_data(&before_shapes, &before_data)
+            || !drawing_matches_data(&after_shapes, &after_data)
+        {
+            return None;
+        }
+        if !diagram_data_equal_except_drawing_rel(&before_data, &after_data) {
+            if smart_art_node_style_only_change(&before_data, &after_data) {
+                if !smart_art_style_drawing_geometry_preserved(&before_shapes, &after_shapes) {
+                    return None;
+                }
+            } else if drawing_bounds(&before_shapes) != drawing_bounds(&after_shapes) {
+                return None;
+            }
+        }
+        if diagram_data_equal_except_drawing_rel(&before_data, &after_data)
+            && (before_layout_bytes != after_layout_bytes
+                || before_drawing_bytes != after_drawing_bytes)
+        {
+            return None;
+        }
+        admitted.extend(old_parts.iter().map(|(part, _)| part.clone()));
+        admitted.extend(new_parts.iter().map(|(part, _)| part.clone()));
+    }
+    if changed_owners > usize::from(allow_one_changed_owner) {
+        return None;
+    }
+    let actual_added: BTreeSet<_> = output.parts.keys().filter(|part| !original.parts.contains_key(*part)).cloned().collect();
+    let expected_added: BTreeSet<_> = expected_added_types.keys().cloned().collect();
+    if actual_added != expected_added
+        || original.parts.keys().any(|part| !output.parts.contains_key(part))
+    {
+        return None;
+    }
+    for path in original_parts.union(&output_parts) {
+        if !has_no_part_rels(original, output, path) {
+            return None;
+        }
+    }
+    if !smart_art_relationships_are_copy_on_write(
+        &original_rels,
+        &output_rels,
+        &output_owners,
+        original_xml,
+        output_xml,
+        output,
+    ) {
+        return None;
+    }
+    let all_paths: BTreeSet<_> = original_parts.union(&output_parts).cloned().collect();
+    if !no_foreign_smart_art_relationships(original, &all_paths)
+        || !no_foreign_smart_art_relationships(output, &all_paths)
+        || !content_types_match_copy_on_write(original, output, &expected_added_types)
+    {
+        return None;
+    }
+    for path in actual_added {
+        admitted.insert(path);
+    }
+    Some(admitted)
+}
+
 /// Admitted regenerated chart/SmartArt parts for `compare_saved_docx`.
+pub(super) fn graphic_parts_unchanged_regenerated(
+    original: &Package,
+    output: &Package,
+) -> Option<BTreeSet<String>> {
+    if original.get(DOCUMENT_RELS) == output.get(DOCUMENT_RELS) {
+        return None;
+    }
+    let mut admitted = smart_art_shared_copy_on_write_parts(original, output, false)?;
+    admitted.insert(DOCUMENT_XML.to_string());
+    Some(admitted)
+}
+
 pub(super) fn graphic_parts_regenerated(
     original: &Package,
     output: &Package,
 ) -> BTreeSet<String> {
     let mut admitted = BTreeSet::new();
     if original.get(DOCUMENT_RELS) != output.get(DOCUMENT_RELS) {
-        return admitted;
+        return smart_art_shared_copy_on_write_parts(original, output, true).unwrap_or_default();
     }
     let Some(rels) = original.get(DOCUMENT_RELS).and_then(parse_rels) else {
         return admitted;

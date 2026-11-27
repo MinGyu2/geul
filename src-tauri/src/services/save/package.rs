@@ -376,6 +376,29 @@ pub fn hwpx_body(name: &str) -> bool {
         .is_some_and(super::hwp::canonical_number)
 }
 
+/// DOCX load preflight remains exact except for WordCraft's proven no-op de-sharing of a shared
+/// SmartArt graph and application statistics that it recomputes from that unchanged document.
+pub(super) fn compare_preflight_docx(original: &Package, output: &Package) -> Vec<Finding> {
+    const BODY: &str = "word/document.xml";
+    const APP: &str = "docProps/app.xml";
+    let graphics = super::docx_graphics::graphic_parts_unchanged_regenerated(original, output)
+        .unwrap_or_default();
+    let app_statistics_only = original
+        .get(APP)
+        .zip(output.get(APP))
+        .is_some_and(|(before, after)| same_except_statistics(before, after) == Some(true));
+    let mut findings = compare(original, output, &|name| {
+        graphics.contains(name)
+            || (graphics.contains(BODY) && name == BODY)
+            || (app_statistics_only && name == APP)
+    });
+    findings.retain(|finding| {
+        !(finding.code == FindingCode::PartAdded
+            && finding.part.as_deref().is_some_and(|name| graphics.contains(name)))
+    });
+    findings
+}
+
 /// DOCX 편집 저장 비교: `word/document.xml`(본문, 엔진 다시 읽기가 확인)을 빼고 원본과 같아야 하며, `docProps/app.xml`은
 /// 통계 값만 다를 수 있다.
 pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> {
@@ -458,6 +481,10 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
                 .part
                 .as_deref()
                 .is_some_and(|name| story_drawing_edits.contains(name)))
+    });
+    findings.retain(|finding| {
+        !(finding.code == FindingCode::PartAdded
+            && finding.part.as_deref().is_some_and(|name| graphics.contains(name)))
     });
     if let Some(media) = &media_removed {
         findings.retain(|f| {
