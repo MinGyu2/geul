@@ -309,6 +309,12 @@
         "result": "Not accepted as interoperable completion without a standard contract and authentic cross-editor roundtrip evidence."
       }
     ],
+    "connectorCandidateInvestigation": {
+      "reviewedAt": "2026-11-28",
+      "documented": "현행 e나라 KS X 6101:2024 rev03 CurveType의 childless seg는 type/x1/y1/x2/y2만 정의한다. Hancom 공개 모델 commit 1453388472c703a4b299a0834f425cdac16644b9에서 CSeg parser/writer도 이 다섯 필드만 다루며, CConnectLineType은 별도의 startPt/endPt/controlPoints 모델이다. 공식 도움말(https://help.hancom.com/hoffice110/en-US/HShow/drawing/edit_points_line.htm)은 일반 선의 Edit Points 기능과 곡선 segment 전환/삭제를 설명하지만 HWPX curve serialization contract를 정하지 않는다. 다른 공식 도움말(https://help.hancom.com/hoffice100/en-US/Hwp/draw/drawing%28polygon%29.htm)은 Curve와 Object Connector를 별도 도형으로 설명하고 connector가 다른 도형에 붙어 대상 이동 시 따라간다고 설명한다.",
+      "empirical": "external/rhwp/samples/**/*.hwpx에서 connector 20개를 확인했다: 18 STRAIGHT_ONEWAY(point type 3,26), 2 STROKE_ONEWAY(point type 3,2,2,26), ARC는 0개다. Authentic public SimpleCurve fixture에서 현재 추론한 Catmull–Rom handles에는 소수 좌표가 있고 connector point x/y는 정수다; 따라서 이 추론 geometry를 connector로 정확히 변환할 수 없다.",
+      "inferenceAndLimitations": "SimpleCurve의 Catmull–Rom handle 모델은 sample geometry에서 도출한 inference이며 KS가 보장하는 semantics가 아니다. Connector는 연결 대상과 이동 결합을 갖는 별도 object semantics/type change다. detached ARC_NOARROW의 Hancom save/reopen 호환성에 대한 증거도 없다. 따라서 connector는 독립 Bezier controls를 저장하는 대체 CurveType으로 인정하지 않으며, 기존 partial 편집 동작을 유지한다. 이는 검토한 표준·공개 모델·samples의 범위에 한정되며 미공개 proprietary extension의 부재를 보편적으로 증명하지 않는다."
+    },
     "decision": "Retain the previously accepted endpoint, derived-handle display, anchor insertion/removal, strict LINE split/join, preservation, and Native subset. Keep independent Bezier control editing/serialization and geometry-preserving CURVE split/delete blocked by the reviewed format contract; do not infer universal extension absence or claim full P4 acceptance."
   },
   "currentModelEvidence": {
