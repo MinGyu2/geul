@@ -1,0 +1,78 @@
+{
+  "issue": "P6-OTHER-CAP",
+  "status": "PARTIAL",
+  "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+  "requirement": "Edit captions owned by DOCX and RHWP group objects while preserving caption association, placement, text, and serialization.",
+  "implementation": {
+    "geulCommit": "dd7fc5c1174dddcb612d7600c3fd9a7acd553e9d",
+    "changedFiles": [
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+      "src/components/Editor/rhwp/rhwpText.ts",
+      "scripts/tests/native-stage3a-p6.py",
+      "scripts/tests/stage3-p6-group-caption-fixtures.cjs",
+      "scripts/tests/stage3-p6-group-caption.wasm.test.ts"
+    ],
+    "rhwp": {
+      "gitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 70,
+      "releaseGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375"
+    },
+    "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+    "supportedRhwpScope": {
+      "hwpx": "Group-owned caption text is addressable only through the exact group caption cell and verified rich paragraph/atno owner. HWPX group caption side, spacing, and lateral vertical alignment are exposed only for an unlocked, uniquely owned group caption; edits preserve all other group properties and child controls.",
+      "hwp5": "Group-owned caption text is editable only through the verified group caption cell after the HWP original passes the safe preflight. This change does not enable HWP5 group caption placement editing."
+    },
+    "rejected": "DOCX group caption editing stays disabled. No owner is inferred from adjacent Caption/SEQ paragraphs, alt text, visual proximity, or a child shape."
+  },
+  "formatContractEvidence": {
+    "officialSchema": "https://learn.microsoft.com/en-us/openspecs/office_standards/ms-odrawxml/c89701a2-99ac-4948-b84f-1eaecc69dfa0",
+    "schemaFinding": "Microsoft CT_WordprocessingGroup defines group properties and graphical child elements but no group-caption association or owner field. The current WordCraft InlineObject::Group model stores geometry, float placement, child-coordinate dimensions, children, and optional canvas, with no caption binding (external/wordcraft/crates/doc/src/para.rs).",
+    "decision": "The available contract cannot prove which caption paragraph, SEQ field, or child text shape belongs to a DOCX group. Mutating or serializing an inferred association would risk changing another object or unrelated text, so DOCX group captions remain fail-closed pending an authentic supported contract/sample."
+  },
+  "verification": {
+    "focusedReleaseWasm": "PASS 4/4: scripts/tests/stage3-p6-group-caption.wasm.test.ts. HWPX text edit and placement edit with Undo/Redo and export/reopen; locked-group refusal; HWP5 text edit after a mocked SAFE original-preflight response with Undo/Redo and HWP export/reopen (contentLoss count 0).",
+    "typecheck": "PASS: npm run typecheck",
+    "scopedEslint": "PASS: npx eslint src/components/Editor/rhwp/RhwpEditorSession.ts src/components/Editor/rhwp/hwpxPortableClipboard.ts src/components/Editor/rhwp/rhwpText.ts scripts/tests/stage3-p6-group-caption.wasm.test.ts",
+    "harnessSyntax": "PASS: node --check scripts/tests/stage3-p6-group-caption-fixtures.cjs; python3 -m py_compile scripts/tests/native-stage3a-p6.py",
+    "diffCheck": "PASS: git diff --check",
+    "guardedReleaseBuild": {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "appSha256": "880f971883ff9e00af87c854f70d7e6572867f17411705e24926f3ac271a6151",
+      "inputCaveat": "The build used the preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Committed-root-only reproduction is NOT VERIFIED; that user file was not committed."
+    },
+    "nativeX11Hwpx": {
+      "result": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "880f971883ff9e00af87c854f70d7e6572867f17411705e24926f3ac271a6151",
+      "rhwpGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+      "fixtureSha256": "d9d2a33bd967dbf65f34e255702d5cb9b3bde1833c15a8841a68aa2c64a84435",
+      "publishedHwpxSha256": "9bc593a76fa2e9d82672bd3968ee6c168b4dda8c3fb9418f77aaf085caee62f3",
+      "trustedPointer": "PASS: real trusted pointerdown events landed on the HWPX page canvas for caption selection and group selection.",
+      "undoRedo": "PASS: group caption text, caption side Bottom→Right, and vertical alignment Top→Center were undone and redone.",
+      "t009": "PASS: state=saved, synced=true, changedSince=false, findings empty at revision 13.",
+      "serializationProof": "PASS: group owner identity and all child XML/hierarchy/IDs are unchanged; after removing the uniquely owned caption, the rest of section0.xml is identical. Caption atno, text, width, spacing, and subList ownership are checked; only side and vertAlign plus requested text changed. Nine other non-preview OPC parts are byte-identical, and body text is unchanged.",
+      "freshDocumentSessionReopen": "PASS: saved HWPX reopened in a fresh document session; caption text and group placement selection/rendering match the saved state. A separate app-process reopen was NOT RUN.",
+      "resultJson": {
+        "path": "target/p6-other-cap-x11-run-05/result.json",
+        "sha256": "880d5fab7bfe19871a00525858994891b7b9aa4cb40699272e2eefef4ae3acca"
+      },
+      "cleanup": {
+        "path": "target/p6-other-cap-x11-session-05/cleanup.json",
+        "sha256": "fa5ec94f8e3e26832a425e5ed7649c57acb3d34f19fe28e628534f5564505b48",
+        "result": "PASS: complete, filesystem-proven, exit 0, no survivors or process errors."
+      }
+    },
+    "nativeHwp5": "NOT RUN",
+    "nativeDocx": "NOT RUN; mutation remains disabled because the durable group-caption owner contract is unproved.",
+    "externalOffice": "NOT RUN",
+    "waylandWindowsMacos": "NOT RUN"
+  },
+  "limitations": [
+    "The requested DOCX group-caption ownership and editing behavior is unresolved; this issue is not accepted.",
+    "HWP5 group caption editing has focused Release-WASM evidence only; Native X11/T009 save/reopen was NOT RUN.",
+    "HWPX Native acceptance is Linux X11/Xvfb only. Wayland, Windows, macOS, separate app-process reopen, and external HWP editor interoperability were NOT RUN.",
+    "Release portability outside the current Nix runtime is NOT VERIFIED."
+  ]
+}
