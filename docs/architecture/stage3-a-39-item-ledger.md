@@ -5,7 +5,7 @@
 P4-DX-CURVE 구현·IPC 회귀 보완 포함 기준 HEAD: `4050b8960fda0ba868aed4be0aa4467da17341d8`
 범위: P0 회귀 1 + P4 9 + P5 13 + P6 16 = **39개** (A 24, B 14, 회귀 1). 이 원장은 사용자 지정 ID를 모두 유지한다. 기존 [현행 인벤토리](stage3-a-current-inventory.md)와 [품질 매트릭스](../quality-matrix.md)는 관련 역사·구현 정보를 계속 보존한다.
 
-현재 수락 집계(2026-11-27): **35/39 IMPLEMENTED_VERIFIED** — P0 1/1, P4 8/9, P5 13/13, P6 13/16. 미완료 4개는 OPEN 2개와 PARTIAL / BLOCKED_BY_FORMAT_CONTRACT 2개(P4-HX-CURVE, P6-OTHER-CAP)다.
+현재 수락 집계(2026-11-27): **36/39 IMPLEMENTED_VERIFIED** — P0 1/1, P4 8/9, P5 13/13, P6 14/16. 미완료 3개는 OPEN 1개와 PARTIAL / BLOCKED_BY_FORMAT_CONTRACT 2개(P4-HX-CURVE, P6-OTHER-CAP)다.
 
 `IMPLEMENTED_VERIFIED`는 명시된 기능과 해당 저장/Undo/Redo/재열기 조건을 실제로 확인한 경우에만 사용한다. `IN_PROGRESS`는 증거가 일부 있어도 요구사항의 일부가 빠져 있음을 뜻한다. `OPEN`은 이 요구사항 자체에 대한 완료 증명이 아직 없다는 뜻이며, 현재 코드에 관련 기능이 전혀 없다고 단정하지 않는다. Native 수락과 개발 구현은 별도로 기록한다.
 
