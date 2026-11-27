@@ -68,6 +68,8 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
                 def convert(match):
                     shape = match[0].decode('utf-8')
                     shape = shape.replace('<hp:rect', '<hp:curve', 1).replace('</hp:rect>', '</hp:curve>', 1)
+                    shape, ratio_count = re.subn(r' ratio="[0-9]+"', '', shape, count=1)
+                    assert ratio_count == 1
                     shape, count = re.subn(r'<(?:hp|hc):pt[0-3]\\b[^>]*/>', '', shape)
                     assert count == 4
                     assert shape.count('<hp:sz') == 1
@@ -615,7 +617,7 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
                 data = data.replace(marker, b'<hp:seg opaque="unowned" type="CURVE"', 1)
             destination.writestr(entry, data)
     sys.stdout.buffer.write(output.getvalue())
-`, { input: Buffer.from(payload.portable.packageBase64, "base64") });
+      `], { input: Buffer.from(payload.portable.packageBase64, "base64") });
       expect(() => dst.doc.pasteHwpxCurveClipboard!(0, 0, 0, opaquePackage)).toThrow();
       expect(dst.doc.exportHwpx()).toEqual(beforeRejected);
       expect(dst.editor.snapshot().history).toMatchObject({ undo: true, redo: false });
