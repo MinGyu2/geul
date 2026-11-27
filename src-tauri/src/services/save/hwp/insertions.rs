@@ -33,6 +33,9 @@ pub(super) struct Proof {
     /// Stage 2 Phase 2: digests (`object_digest`) of original cell child objects that a proven
     /// `evolved_table` correspondence dropped together with the cells it deleted, as a multiset.
     pub removed: BTreeMap<Vec<u8>, usize>,
+    /// Exact old/new GSO digests whose group-owned caption text was separately
+    /// proved while every group shape/child record remained byte-identical.
+    pub group_caption_subtrees: BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>>,
 }
 pub(super) fn finding(code: FindingCode, part: &str) -> Finding {
     Finding::at(code, part)
@@ -446,6 +449,7 @@ pub(super) fn assess_header_objects(a: &Container, b: &Container) -> Option<Proo
         header_streams: changed_streams,
         allow_docinfo_change: false,
         removed: BTreeMap::new(),
+        group_caption_subtrees: BTreeMap::new(),
     })
 }
 
@@ -1385,6 +1389,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
     }
     let original_ids = table_ids.clone();
     let mut table_total = 0;
+    let mut group_caption_subtrees = BTreeMap::<String, Vec<(Vec<u8>, Vec<u8>)>>::new();
     for (name, data) in &b.streams {
         if !section_stream(name) {
             continue;
@@ -1444,6 +1449,20 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                     preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
                     super::gso::prove_picture_caption(o, object, &ac, &bc)?;
                     restructured.push((object_digest(o), object_digest(object)));
+                    cursor += 1;
+                    matched = true;
+                    break;
+                }
+                if !exact_later && super::gso::group_caption_candidate(o, object) {
+                    preserved(cursor == ni && old.objects.len() == new.objects.len(), name)?;
+                    super::gso::prove_group_caption(o, object, &ac, &bc)?;
+                    let before = object_digest(o);
+                    let after = object_digest(object);
+                    group_caption_subtrees
+                        .entry(name.clone())
+                        .or_default()
+                        .push((before.clone(), after.clone()));
+                    restructured.push((before, after));
                     cursor += 1;
                     matched = true;
                     break;
@@ -1510,6 +1529,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
                         || super::gso::textbox_edit_candidate(o, later)
                         || super::gso::textbox_nested_gso_candidate(o, later)
                         || super::gso::picture_caption_candidate(o, later)
+                        || super::gso::group_caption_candidate(o, later)
                 });
                 if survives_later {
                     break;
@@ -1592,6 +1612,7 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         header_streams: BTreeSet::new(),
         allow_docinfo_change: true,
         removed: used.removed,
+        group_caption_subtrees,
     })
 }
 

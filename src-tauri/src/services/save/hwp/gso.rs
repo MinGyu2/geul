@@ -5,8 +5,10 @@
 //! whose identity matches unambiguously may evolve within the exact fields owned
 //! by supported editor commands, or be deleted when unlocked, uncaptioned,
 //! non-grouped, and free of opaque/nested controls.
-//! Picture caption editing has a separate owned story proof. Caption deletion, groups, charts,
-//! OLE, unknown extensions, and BinData substitutions remain outside this module’s edit proofs.
+//! Picture caption editing has a separate owned story proof. Group captions permit only a
+//! text-story edit with the group owner, layout, shape component, and every child record unchanged.
+//! Caption deletion, group geometry, charts, OLE, unknown extensions, and BinData substitutions
+//! remain outside this module’s edit proofs.
 
 use super::insertions::{
     dword, entries, finding, preserved, reference, signed_dword, valid, word, Checked, Defs,
@@ -769,6 +771,74 @@ pub(super) fn prove_picture_caption(
     super::insertions::prove_caption_paragraphs(
         &old[2..a],
         &new[2..b],
+        old_count,
+        new_count,
+        original_defs,
+        defs,
+    )
+}
+
+/// An HWP5 group caption may change its text only when its exact group owner,
+/// caption layout, group shape component, and complete child tree are retained.
+/// The caption paragraph parser below proves the changed text and its atno slot.
+pub(super) fn group_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
+    let (Some((old_kind, _, old_sc)), Some((new_kind, _, new_sc))) =
+        (shape_ctrl_id(old), shape_ctrl_id(new))
+    else {
+        return false;
+    };
+    let valid_owner = |records: &[Record<'_>], kind: &[u8; 4], sc: usize| {
+        let Some(owner) = records.first() else { return false };
+        let Some(list) = records.get(1) else { return false };
+        kind == SC_CONTAINER
+            && owner.0 == TAG_CTRL_HEADER
+            && owner.1 == 1
+            && owner.2.starts_with(CTRL_GSO)
+            && dword(owner.2, 4).is_ok_and(|attr| {
+                attr as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION
+            })
+            && list.0 == TAG_LIST_HEADER
+            && list.1 == 2
+            && list.2.len() == 30
+            && (1..=64).contains(&word(list.2, 0).unwrap_or(0))
+            && sc >= 3
+            && sc < records.len()
+    };
+    valid_owner(old, old_kind, old_sc)
+        && valid_owner(new, new_kind, new_sc)
+        && old[0] == new[0]
+        && old[1] == new[1]
+        && old[2..old_sc] != new[2..new_sc]
+        && old[old_sc..] == new[new_sc..]
+}
+
+pub(super) fn prove_group_caption(
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> Checked<()> {
+    preserved(group_caption_candidate(old, new), BODY)?;
+    let (_, _, old_sc) = shape_ctrl_id(old).unwrap();
+    let (_, _, new_sc) = shape_ctrl_id(new).unwrap();
+    let old_list = old[1].2;
+    let new_list = new[1].2;
+    let old_count = word(old_list, 0)?;
+    let new_count = word(new_list, 0)?;
+    preserved(
+        old_list.len() == 30
+            && new_list.len() == 30
+            && old_list == new_list
+            && (1..=64).contains(&old_count)
+            && (1..=64).contains(&new_count),
+        BODY,
+    )?;
+    // The suffix begins at the owning group ShapeComponent. Exact equality
+    // preserves its identity, transforms, child IDs, geometry, and nested data.
+    preserved(old[old_sc..] == new[new_sc..], BODY)?;
+    super::insertions::prove_caption_paragraphs(
+        &old[2..old_sc],
+        &new[2..new_sc],
         old_count,
         new_count,
         original_defs,

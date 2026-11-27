@@ -177,6 +177,7 @@ fn opaque_owners_preserved(
     after: &[Record<'_>],
     structural_proof: bool,
     removed: Option<&BTreeMap<Vec<u8>, usize>>,
+    proven_group_captions: &[(Vec<u8>, Vec<u8>)],
 ) -> bool {
     // Pinned RHWP: LineSeg is u32 + i32×7 + u32, HWPUNIT (1/7200 inch).
     // vpos is a stored flow/page/column coordinate, NOT paragraph-local. A reset may
@@ -417,7 +418,64 @@ fn opaque_owners_preserved(
             _ => false,
         }
     }
-    match (opaque_owners(before), opaque_owners(after)) {
+    fn owners_with_proven_group_captions<'a>(
+        records: &'a [Record<'_>],
+        proven: &[Vec<u8>],
+    ) -> Option<Vec<&'a [Record<'a>]>> {
+        if proven.is_empty() {
+            return opaque_owners(records);
+        }
+        let mut remaining = BTreeMap::<Vec<u8>, usize>::new();
+        for digest in proven {
+            *remaining.entry(digest.clone()).or_default() += 1;
+        }
+        let mut roots = Vec::new();
+        for subtree in gso::caption_subtrees(records) {
+            let digest = insertions::object_digest(subtree);
+            if let Some(count) = remaining.get_mut(&digest) {
+                if *count > 0 {
+                    *count -= 1;
+                    roots.push(subtree);
+                }
+            }
+        }
+        if remaining.values().any(|count| *count != 0) {
+            return None;
+        }
+        let ranges: Vec<_> = roots
+            .iter()
+            .map(|root| {
+                let start = records
+                    .iter()
+                    .position(|record| std::ptr::eq(record, &root[0]))?;
+                Some((start, start + root.len()))
+            })
+            .collect::<Option<_>>()?;
+        let mut owners = opaque_owners(records)?;
+        owners.retain(|owner| {
+            let Some(first) = owner.first() else { return false };
+            let Some(start) = records.iter().position(|record| std::ptr::eq(record, first)) else {
+                return false;
+            };
+            let end = start + owner.len();
+            !ranges
+                .iter()
+                .any(|(root_start, root_end)| start >= *root_start && end <= *root_end)
+        });
+        Some(owners)
+    }
+    let before_captions: Vec<_> = proven_group_captions
+        .iter()
+        .map(|(before, _)| before.clone())
+        .collect();
+    let after_captions: Vec<_> = proven_group_captions
+        .iter()
+        .map(|(_, after)| after.clone())
+        .collect();
+    match (
+        owners_with_proven_group_captions(before, &before_captions),
+        owners_with_proven_group_captions(after, &after_captions),
+    ) {
         (Some(mut a), Some(b)) => {
             // Stage 2 Phase 2: an original opaque owner whose whole subtree is exactly a cell child object that
             // the structural proof dropped together with its deleted cell (multiset, never one present in the
@@ -433,7 +491,7 @@ fn opaque_owners_preserved(
                     _ => true,
                 });
             }
-            original_owners > 0
+            (original_owners > 0 || !proven_group_captions.is_empty())
                 && a.len() == b.len()
                 // Replay/provenance-check the longest changed prefix once per stream,
                 // rather than rescanning all prefixes for every opaque owner.
@@ -1311,6 +1369,10 @@ fn compare_with(
                     &after_records,
                     proof.is_some(),
                     proof.map(|p| &p.removed),
+                    proof
+                        .and_then(|p| p.group_caption_subtrees.get(name))
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
                 )
             {
                 findings.push(Finding::at(FindingCode::RecordsChanged, name));

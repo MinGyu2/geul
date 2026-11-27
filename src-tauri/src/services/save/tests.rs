@@ -11961,6 +11961,43 @@ const ALIGN_LEFT: &[u8] = include_bytes!(concat!(
     "/../external/rhwp/samples/re-align-left-hancom.hwp"
 ));
 
+const GROUP_CAPTION_ORIGINAL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-original.hwp"
+));
+const GROUP_CAPTION_EDITED: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-edited.hwp"
+));
+
+#[test]
+fn hwp5_group_caption_t009_proves_text_only_changes_and_rejects_child_mutation() {
+    let findings = hwp::compare_saved(GROUP_CAPTION_ORIGINAL, GROUP_CAPTION_EDITED);
+    assert_eq!(
+        findings,
+        vec![Finding::at(FindingCode::PreviewStale, "PrvImage")],
+        "caption text is the only body change; a fresh render is still required"
+    );
+
+    let changed_child = edit_compressed_section0(GROUP_CAPTION_EDITED, |mut records| {
+        let rectangle = records
+            .iter_mut()
+            .find(|(tag, _, _)| *tag == 79)
+            .expect("group's child rectangle record");
+        assert!(!rectangle.2.is_empty());
+        rectangle.2[0] ^= 1;
+        records
+    });
+    let findings = hwp::compare_saved(GROUP_CAPTION_ORIGINAL, &changed_child);
+    assert!(
+        findings.contains(&Finding::at(
+            FindingCode::RecordsChanged,
+            "BodyText/Section0"
+        )),
+        "caption proof must not authorize a group-child edit: {findings:?}"
+    );
+}
+
 fn hwp_record(tag: u16, level: u16, body: &[u8]) -> Vec<u8> {
     let size = body.len();
     let mut out = Vec::new();
