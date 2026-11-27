@@ -2933,11 +2933,20 @@ fn stage3_docx_shapes_and_owned_text_box_publish_and_reopen() {
 
     let original = basic::basic_ko().unwrap();
     let mut doc = open_docx(&original);
-    let end = DocxOp::Move { to: MoveTarget::DocEnd, extend: false };
+    let end = DocxOp::Move {
+        to: MoveTarget::DocEnd,
+        extend: false,
+    };
     let shape = |kind| DocxOp::Shape { kind };
     let edit = |doc: &mut Docx, ops| {
-        let edited = block_on(docx::edit(&doc.state, doc.info.session_id, doc.info.load_generation,
-            doc.info.revision, ops)).unwrap();
+        let edited = block_on(docx::edit(
+            &doc.state,
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+            ops,
+        ))
+        .unwrap();
         doc.info = edited.session.clone();
         edited
     };
@@ -2945,13 +2954,33 @@ fn stage3_docx_shapes_and_owned_text_box_publish_and_reopen() {
     assert_eq!(refused.rejected, vec![0]);
     assert_eq!(doc.info.revision, 0);
 
-    let shapes = edit(&mut doc, vec![end, shape(BasicShape::Rectangle), shape(BasicShape::Ellipse), shape(BasicShape::Line)]);
+    let shapes = edit(
+        &mut doc,
+        vec![
+            end,
+            shape(BasicShape::Rectangle),
+            shape(BasicShape::Ellipse),
+            shape(BasicShape::Line),
+        ],
+    );
     assert!(shapes.rejected.is_empty(), "{:?}", shapes.rejected);
     let created = edit(&mut doc, vec![DocxOp::TextBox {}]);
-    assert!(created.rejected.is_empty() && created.view.text_box_editing, "{:?}", created.rejected);
-    let nested = edit(&mut doc, vec![DocxOp::TextBox {}, shape(BasicShape::Rectangle)]);
+    assert!(
+        created.rejected.is_empty() && created.view.text_box_editing,
+        "{:?}",
+        created.rejected
+    );
+    let nested = edit(
+        &mut doc,
+        vec![DocxOp::TextBox {}, shape(BasicShape::Rectangle)],
+    );
     assert_eq!(nested.rejected, vec![0, 1]);
-    let typed = edit(&mut doc, vec![DocxOp::InsertText { text: "글상자 안 한글".into() }]);
+    let typed = edit(
+        &mut doc,
+        vec![DocxOp::InsertText {
+            text: "글상자 안 한글".into(),
+        }],
+    );
     assert!(typed.rejected.is_empty() && typed.view.text_box_editing);
     let undone = edit(&mut doc, vec![DocxOp::Undo {}]);
     assert!(undone.rejected.is_empty() && undone.view.text_box_editing);
@@ -2968,16 +2997,46 @@ fn stage3_docx_shapes_and_owned_text_box_publish_and_reopen() {
     assert!(doc.save().is_ok());
     let written = doc.bytes();
     let reopened = reopen(&written);
-    let shapes: Vec<_> = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|p| &p.objects)
-        .filter_map(|obj| if let InlineObject::Shape { kind, .. } = obj { Some(*kind) } else { None }).collect();
-    assert_eq!(shapes, [ShapeKind::Rectangle, ShapeKind::Ellipse, ShapeKind::Line, ShapeKind::TextBox]);
-    let (&id, _) = reopened.parts.iter().find(|(_, part)| part.kind == PartKind::TextBox).unwrap();
+    let shapes: Vec<_> = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|p| &p.objects)
+        .filter_map(|obj| {
+            if let InlineObject::Shape { kind, .. } = obj {
+                Some(*kind)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        shapes,
+        [
+            ShapeKind::Rectangle,
+            ShapeKind::Ellipse,
+            ShapeKind::Line,
+            ShapeKind::TextBox
+        ]
+    );
+    let (&id, _) = reopened
+        .parts
+        .iter()
+        .find(|(_, part)| part.kind == PartKind::TextBox)
+        .unwrap();
     assert_eq!(reopened.plain_text(StoryRef::Part(id)), "글상자 안 한글");
     let expected_body = reopen(&original).plain_text(StoryRef::Body);
-    assert_eq!(reopened.plain_text(StoryRef::Body).replace('\u{fffc}', ""), expected_body);
+    assert_eq!(
+        reopened.plain_text(StoryRef::Body).replace('\u{fffc}', ""),
+        expected_body
+    );
     let before = package::open(&original, package::Side::Original).unwrap();
     let after = package::open(&written, package::Side::Output).unwrap();
-    assert!(package::compare(&before, &after, &|name| name == "word/document.xml" || name == "docProps/app.xml").is_empty());
+    assert!(
+        package::compare(&before, &after, &|name| name == "word/document.xml"
+            || name == "docProps/app.xml")
+        .is_empty()
+    );
 }
 
 /// Stage 3 P1: objects that already exist in a published file are moved, resized and deleted

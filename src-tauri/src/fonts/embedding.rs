@@ -86,7 +86,12 @@ fn be16(b: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_be_bytes([*b.get(o)?, *b.get(o + 1)?]))
 }
 fn be32(b: &[u8], o: usize) -> Option<u32> {
-    Some(u32::from_be_bytes([*b.get(o)?, *b.get(o + 1)?, *b.get(o + 2)?, *b.get(o + 3)?]))
+    Some(u32::from_be_bytes([
+        *b.get(o)?,
+        *b.get(o + 1)?,
+        *b.get(o + 2)?,
+        *b.get(o + 3)?,
+    ]))
 }
 
 /// Decode the `fsType` usage field (OpenType `OS/2` table).
@@ -126,10 +131,17 @@ pub fn inspect(bytes: &[u8]) -> Result<FontProgram, Refusal> {
     let mut tables = std::collections::HashMap::new();
     for i in 0..count {
         let rec = 12 + i * 16;
-        let tag: [u8; 4] = bytes.get(rec..rec + 4).ok_or(Refusal::Damaged)?.try_into().map_err(|_| Refusal::Damaged)?;
+        let tag: [u8; 4] = bytes
+            .get(rec..rec + 4)
+            .ok_or(Refusal::Damaged)?
+            .try_into()
+            .map_err(|_| Refusal::Damaged)?;
         let offset = be32(bytes, rec + 8).ok_or(Refusal::Damaged)? as usize;
         let length = be32(bytes, rec + 12).ok_or(Refusal::Damaged)? as usize;
-        if offset.checked_add(length).is_none_or(|end| end > bytes.len()) {
+        if offset
+            .checked_add(length)
+            .is_none_or(|end| end > bytes.len())
+        {
             return Err(Refusal::Damaged);
         }
         tables.insert(tag, (offset, length));
@@ -140,7 +152,9 @@ pub fn inspect(bytes: &[u8]) -> Result<FontProgram, Refusal> {
     if tables.contains_key(b"CFF ") || tables.contains_key(b"CFF2") {
         return Err(Refusal::CffOutlines);
     }
-    for tag in [b"glyf", b"loca", b"head", b"maxp", b"cmap", b"name", b"OS/2"] {
+    for tag in [
+        b"glyf", b"loca", b"head", b"maxp", b"cmap", b"name", b"OS/2",
+    ] {
         if !tables.contains_key(tag) {
             return Err(Refusal::Damaged);
         }
@@ -164,13 +178,24 @@ pub fn inspect(bytes: &[u8]) -> Result<FontProgram, Refusal> {
         if ![1, 13, 14, 16].contains(&name_id) {
             continue;
         }
-        let (len, off) = (usize::from(be16(bytes, r + 8).unwrap_or(0)), usize::from(be16(bytes, r + 10).unwrap_or(0)));
-        let Some(raw) = bytes.get(storage + off..storage + off + len).filter(|_| storage + off + len <= end) else {
+        let (len, off) = (
+            usize::from(be16(bytes, r + 8).unwrap_or(0)),
+            usize::from(be16(bytes, r + 10).unwrap_or(0)),
+        );
+        let Some(raw) = bytes
+            .get(storage + off..storage + off + len)
+            .filter(|_| storage + off + len <= end)
+        else {
             continue;
         };
         let text: String = match platform {
             0 | 3 => {
-                let units: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes(*c)).collect();
+                let units: Vec<u16> = raw
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_be_bytes(*c))
+                    .collect();
                 String::from_utf16_lossy(&units)
             }
             1 => raw.iter().map(|&b| char::from(b)).collect(),
@@ -237,10 +262,19 @@ pub fn candidate(family: &str, style: &str) -> Result<Candidate, Refusal> {
     }
     let bytes = face.data().to_vec();
     let program = inspect(&bytes)?;
-    if !program.families.iter().any(|f| f.eq_ignore_ascii_case(family)) {
+    if !program
+        .families
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case(family))
+    {
         return Err(Refusal::Unavailable);
     }
-    Ok(Candidate { family: face.family.clone(), style: face.style.clone(), bytes, program })
+    Ok(Candidate {
+        family: face.family.clone(),
+        style: face.style.clone(),
+        bytes,
+        program,
+    })
 }
 
 /// The face's embedding status for the UI (no bytes).
@@ -309,13 +343,23 @@ pub fn font_key(bytes: &[u8]) -> String {
     b[6] = (b[6] & 0x0F) | 0x40;
     b[8] = (b[8] & 0x3F) | 0x80;
     let h: String = b.iter().map(|x| format!("{x:02X}")).collect();
-    format!("{{{}-{}-{}-{}-{}}}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{{{}-{}-{}-{}-{}}}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }
 
 /// The 16-byte XOR key of a font key GUID: its 32 hexadecimal digits read from the last byte to the first.
 fn xor_key(guid: &str) -> Option<[u8; 16]> {
     let hex: String = guid.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-    let stripped: String = guid.chars().filter(|c| !matches!(c, '{' | '}' | '-')).collect();
+    let stripped: String = guid
+        .chars()
+        .filter(|c| !matches!(c, '{' | '}' | '-'))
+        .collect();
     if hex.len() != 32 || stripped.len() != 32 {
         return None;
     }
@@ -345,7 +389,11 @@ pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn fixture() -> Vec<u8> {
-        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../external/wordcraft/assets/fonts/Inter-Regular.ttf")).unwrap()
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../external/wordcraft/assets/fonts/Inter-Regular.ttf"
+        ))
+        .unwrap()
     }
 
     /// The same font with a different `fsType` (generated in memory for negative tests; never written to disk).
@@ -382,14 +430,25 @@ pub(crate) mod tests {
         let p = inspect(&inter).unwrap();
         assert_eq!(p.permission, Permission::Installable);
         assert!(p.families.iter().any(|f| f == "Inter"));
-        assert!(p.license.as_ref().is_some_and(|l| l.contains("Open Font License")));
+        assert!(p
+            .license
+            .as_ref()
+            .is_some_and(|l| l.contains("Open Font License")));
         assert_eq!(embeddable(&p), Ok(()));
-        for (fs, expected) in [(0x0002, Permission::Restricted), (0x0004, Permission::PreviewPrint), (0x0200, Permission::BitmapOnly), (0x0006, Permission::Malformed)] {
+        for (fs, expected) in [
+            (0x0002, Permission::Restricted),
+            (0x0004, Permission::PreviewPrint),
+            (0x0200, Permission::BitmapOnly),
+            (0x0006, Permission::Malformed),
+        ] {
             let p = inspect(&with_fs_type(&inter, fs)).unwrap();
             assert_eq!(p.permission, expected);
             assert_eq!(embeddable(&p), Err(Refusal::Permission));
         }
-        assert_eq!(embeddable(&inspect(&with_fs_type(&inter, 0x0008)).unwrap()), Ok(()));
+        assert_eq!(
+            embeddable(&inspect(&with_fs_type(&inter, 0x0008)).unwrap()),
+            Ok(())
+        );
         let mut cff = inter.clone();
         cff[..4].copy_from_slice(b"OTTO");
         assert_eq!(inspect(&cff), Err(Refusal::CffOutlines));

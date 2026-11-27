@@ -259,7 +259,12 @@ fn stage1_docx_collapsed_font_size_survives_focus_return_at_same_caret() {
     assert!(view.chars.superscript && !view.chars.subscript);
     assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
 
-    let (_, rejected) = run(&mut doc, vec![DocxOp::InsertText { text: "한글".into() }]);
+    let (_, rejected) = run(
+        &mut doc,
+        vec![DocxOp::InsertText {
+            text: "한글".into(),
+        }],
+    );
     assert!(rejected.is_empty());
     let (view, rejected) = run(
         &mut doc,
@@ -294,7 +299,12 @@ fn stage1_docx_collapsed_font_size_survives_focus_return_at_same_caret() {
     assert_eq!(view.chars.color.as_deref(), Some("C00000"));
     assert_eq!(view.chars.highlight.as_deref(), Some("FFFF00"));
     assert!(!view.chars.superscript && view.chars.subscript);
-    let (view, rejected) = run(&mut doc, vec![DocxOp::InsertText { text: " ABC".into() }]);
+    let (view, rejected) = run(
+        &mut doc,
+        vec![DocxOp::InsertText {
+            text: " ABC".into(),
+        }],
+    );
     assert!(rejected.is_empty());
     assert!(view.paragraph_text.contains("한글 ABC"));
     assert_eq!(view.format.font.as_deref(), Some(PENDING_FONT));
@@ -314,22 +324,43 @@ fn stage1_docx_collapsed_font_size_survives_focus_return_at_same_caret() {
     for (range, props) in paragraph.run_ranges() {
         if range.start < byte_end && range.end > byte_start {
             assert_eq!(props.size, Some(24.0), "run {range:?}");
-            assert_eq!(props.color, Some(TextColor::Rgb(Rgb(0xC0, 0, 0))), "run {range:?}");
+            assert_eq!(
+                props.color,
+                Some(TextColor::Rgb(Rgb(0xC0, 0, 0))),
+                "run {range:?}"
+            );
             assert!(props.highlight.is_some(), "run {range:?}");
             assert_eq!(props.font.as_deref(), Some(PENDING_FONT), "run {range:?}");
             if range.start < byte_start + "한글".len() {
-                assert_eq!(props.vert_align, Some(VertAlign::Superscript), "run {range:?}");
+                assert_eq!(
+                    props.vert_align,
+                    Some(VertAlign::Superscript),
+                    "run {range:?}"
+                );
             } else {
-                assert_eq!(props.vert_align, Some(VertAlign::Subscript), "run {range:?}");
+                assert_eq!(
+                    props.vert_align,
+                    Some(VertAlign::Subscript),
+                    "run {range:?}"
+                );
             }
             covered = covered.max(range.end.min(byte_end));
         }
     }
-    assert_eq!(covered, byte_end, "all typed bytes have reopened character formatting");
+    assert_eq!(
+        covered, byte_end,
+        "all typed bytes have reopened character formatting"
+    );
 
     // Inspect the actual durable DrawingML run properties instead of relying on appearance.
     let output = package::open(&doc.bytes(), package::Side::Output).expect("saved OPC package");
-    let xml = String::from_utf8(output.get("word/document.xml").expect("document part").to_vec()).unwrap();
+    let xml = String::from_utf8(
+        output
+            .get("word/document.xml")
+            .expect("document part")
+            .to_vec(),
+    )
+    .unwrap();
     for (marker, script) in [("한글", "superscript"), (" ABC", "subscript")] {
         let text_at = xml.rfind(marker).expect("serialized typed text");
         let run_start = xml[..text_at]
@@ -337,13 +368,23 @@ fn stage1_docx_collapsed_font_size_survives_focus_return_at_same_caret() {
             .find(|(at, _)| matches!(xml.as_bytes().get(at + 4), Some(b'>' | b' ')))
             .map(|(at, _)| at)
             .expect("serialized run start");
-        let run_end = text_at + xml[text_at..].find("</w:r>").expect("serialized run end") + "</w:r>".len();
+        let run_end =
+            text_at + xml[text_at..].find("</w:r>").expect("serialized run end") + "</w:r>".len();
         let run = &xml[run_start..run_end];
         assert!(run.contains("w:sz w:val=\"48\""), "{marker}: {run}");
         assert!(run.contains("w:color w:val=\"C00000\""), "{marker}: {run}");
-        assert!(run.contains("w:highlight w:val=\"yellow\""), "{marker}: {run}");
-        assert!(run.contains(&format!("w:ascii=\"{PENDING_FONT}\"")), "{marker}: {run}");
-        assert!(run.contains(&format!("w:val=\"{script}\"")), "{marker}: {run}");
+        assert!(
+            run.contains("w:highlight w:val=\"yellow\""),
+            "{marker}: {run}"
+        );
+        assert!(
+            run.contains(&format!("w:ascii=\"{PENDING_FONT}\"")),
+            "{marker}: {run}"
+        );
+        assert!(
+            run.contains(&format!("w:val=\"{script}\"")),
+            "{marker}: {run}"
+        );
     }
 }
 
@@ -367,12 +408,17 @@ fn stage1_docx_selection_font_size_replaces_only_selected_text_and_navigation_cl
                 extend: true,
             },
             DocxOp::FontSize { size: 24.0 },
-            DocxOp::InsertText { text: "대체".into() },
+            DocxOp::InsertText {
+                text: "대체".into(),
+            },
         ],
     );
     assert!(rejected.is_empty());
     assert!(view.paragraph_text.starts_with("대체"));
-    assert_eq!(doc.info.revision, 2, "selection formatting plus replacement");
+    assert_eq!(
+        doc.info.revision, 2,
+        "selection formatting plus replacement"
+    );
     let reopened = save_reopen(&mut doc, &original);
     let first = &paras(&reopened)[0];
     let end = "대체".len();
@@ -441,8 +487,14 @@ fn stage1_docx_next_input_size_changes_layout_and_rendered_page() {
 
     let (ten_pt_x, ten_pt_page) = typed_width(10.0);
     let (twenty_four_pt_x, twenty_four_pt_page) = typed_width(24.0);
-    assert!(twenty_four_pt_x > ten_pt_x + 20.0, "caret geometry: {ten_pt_x} → {twenty_four_pt_x}");
-    assert_ne!(ten_pt_page, twenty_four_pt_page, "rendered page raster reflects the effective font size");
+    assert!(
+        twenty_four_pt_x > ten_pt_x + 20.0,
+        "caret geometry: {ten_pt_x} → {twenty_four_pt_x}"
+    );
+    assert_ne!(
+        ten_pt_page, twenty_four_pt_page,
+        "rendered page raster reflects the effective font size"
+    );
 }
 
 #[test]

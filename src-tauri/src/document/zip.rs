@@ -12,8 +12,8 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use flate2::read::DeflateDecoder;
 use flate2::write::DeflateEncoder;
-use flate2::Crc;
 use flate2::Compression;
+use flate2::Crc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ZipProblem {
@@ -548,13 +548,19 @@ pub fn write_archive(entries: &[WriteEntry<'_>], max_bytes: u64) -> Result<Vec<u
         max_capacity,
     };
     let mut names = HashSet::new();
-    names.try_reserve(entries.len()).map_err(|_| ZipProblem::PartSize)?;
+    names
+        .try_reserve(entries.len())
+        .map_err(|_| ZipProblem::PartSize)?;
     let mut central = Vec::new();
-    central.try_reserve(entries.len()).map_err(|_| ZipProblem::PartSize)?;
+    central
+        .try_reserve(entries.len())
+        .map_err(|_| ZipProblem::PartSize)?;
 
     for entry in entries {
         let name = entry.name.as_bytes();
-        if name.is_empty() || name.len() > u16::MAX as usize || name.contains(&0)
+        if name.is_empty()
+            || name.len() > u16::MAX as usize
+            || name.contains(&0)
             || !names.insert(entry.name.to_ascii_lowercase())
         {
             return Err(ZipProblem::Corrupt);
@@ -590,13 +596,20 @@ pub fn write_archive(entries: &[WriteEntry<'_>], max_bytes: u64) -> Result<Vec<u
             }
             _ => unreachable!("method checked above"),
         }
-        let compressed = u32::try_from(out.bytes.len() - compressed_at)
-            .map_err(|_| ZipProblem::PartSize)?;
+        let compressed =
+            u32::try_from(out.bytes.len() - compressed_at).map_err(|_| ZipProblem::PartSize)?;
         let crc = crc.sum();
         out.bytes[local_at + 14..local_at + 18].copy_from_slice(&crc.to_le_bytes());
         out.bytes[local_at + 18..local_at + 22].copy_from_slice(&compressed.to_le_bytes());
         out.bytes[local_at + 22..local_at + 26].copy_from_slice(&uncompressed.to_le_bytes());
-        central.push((name.to_vec(), entry.method, crc, compressed, uncompressed, local_offset));
+        central.push((
+            name.to_vec(),
+            entry.method,
+            crc,
+            compressed,
+            uncompressed,
+            local_offset,
+        ));
     }
 
     let directory_offset = u32::try_from(out.bytes.len()).map_err(|_| ZipProblem::MetadataSize)?;
@@ -703,8 +716,16 @@ mod archive_writer_tests {
     #[test]
     fn writer_roundtrips_stored_and_deflated_utf8_entries_in_order() {
         let entries = [
-            WriteEntry { name: "mimetype", data: b"application/hwp+zip", method: 0 },
-            WriteEntry { name: "Contents/섹션.xml", data: b"<root>body</root>", method: 8 },
+            WriteEntry {
+                name: "mimetype",
+                data: b"application/hwp+zip",
+                method: 0,
+            },
+            WriteEntry {
+                name: "Contents/섹션.xml",
+                data: b"<root>body</root>",
+                method: 8,
+            },
         ];
         let bytes = write_archive(&entries, 64 * 1024).unwrap();
         let mut reader = Cursor::new(bytes.as_slice());
@@ -714,20 +735,55 @@ mod archive_writer_tests {
         assert_eq!(archive.entries()[1].method(), 8);
         assert_eq!(archive.entries()[0].name(), b"mimetype");
         assert_eq!(archive.entries()[1].name(), "Contents/섹션.xml".as_bytes());
-        assert_eq!(archive.read(&mut reader, &archive.entries()[0], 1024).unwrap(), b"application/hwp+zip");
-        assert_eq!(archive.read(&mut reader, &archive.entries()[1], 1024).unwrap(), b"<root>body</root>");
+        assert_eq!(
+            archive
+                .read(&mut reader, &archive.entries()[0], 1024)
+                .unwrap(),
+            b"application/hwp+zip"
+        );
+        assert_eq!(
+            archive
+                .read(&mut reader, &archive.entries()[1], 1024)
+                .unwrap(),
+            b"<root>body</root>"
+        );
     }
 
     #[test]
     fn writer_refuses_duplicates_unsupported_methods_and_size_overflow() {
         let duplicate = [
-            WriteEntry { name: "Contents/a.xml", data: b"a", method: 0 },
-            WriteEntry { name: "contents/A.xml", data: b"b", method: 0 },
+            WriteEntry {
+                name: "Contents/a.xml",
+                data: b"a",
+                method: 0,
+            },
+            WriteEntry {
+                name: "contents/A.xml",
+                data: b"b",
+                method: 0,
+            },
         ];
-        assert_eq!(write_archive(&duplicate, 1024).unwrap_err(), ZipProblem::Corrupt);
-        let unsupported = [WriteEntry { name: "a", data: b"a", method: 12 }];
-        assert_eq!(write_archive(&unsupported, 1024).unwrap_err(), ZipProblem::UnsupportedMethod);
-        let too_small = [WriteEntry { name: "a", data: b"a", method: 0 }];
-        assert_eq!(write_archive(&too_small, 8).unwrap_err(), ZipProblem::PartSize);
+        assert_eq!(
+            write_archive(&duplicate, 1024).unwrap_err(),
+            ZipProblem::Corrupt
+        );
+        let unsupported = [WriteEntry {
+            name: "a",
+            data: b"a",
+            method: 12,
+        }];
+        assert_eq!(
+            write_archive(&unsupported, 1024).unwrap_err(),
+            ZipProblem::UnsupportedMethod
+        );
+        let too_small = [WriteEntry {
+            name: "a",
+            data: b"a",
+            method: 0,
+        }];
+        assert_eq!(
+            write_archive(&too_small, 8).unwrap_err(),
+            ZipProblem::PartSize
+        );
     }
 }

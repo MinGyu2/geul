@@ -27,12 +27,12 @@ use wordcraft_engine::{io, Session};
 
 use crate::document::EngineStage;
 
+#[path = "embed_font.rs"]
+pub mod embed_font;
 #[path = "stage1.rs"]
 pub mod stage1;
 #[path = "table.rs"]
 pub mod table;
-#[path = "embed_font.rs"]
-pub mod embed_font;
 
 /// WordCraft 입출력은 이름의 확장자로 형식을 고른다. 형식은 판별(T006)이 DOCX로 확정했다.
 const DOCX_NAME: &str = "document.docx";
@@ -172,7 +172,10 @@ pub enum DocxOp {
         kind: BasicShape,
     },
     TextBox {},
-    CutShape { position: String, epoch: u64 },
+    CutShape {
+        position: String,
+        epoch: u64,
+    },
     /// Stage 3 P5: paste a structured object payload (validated before any mutation).
     PasteObject {
         payload: Box<ObjectPayload>,
@@ -482,16 +485,28 @@ impl HwpxPolygon {
         if !(200..=14_400).contains(&self.width)
             || !(200..=14_400).contains(&self.height)
             || !(3..=256).contains(&self.points.len())
-            || self.fill.len() != 6 || !self.fill.bytes().all(|b| b.is_ascii_hexdigit())
+            || self.fill.len() != 6
+            || !self.fill.bytes().all(|b| b.is_ascii_hexdigit())
             || !valid_object_alt_text(&self.description)
-            || self.points.iter().any(|[x, y]| *x > self.width || *y > self.height)
-            || self.points.iter().collect::<std::collections::BTreeSet<_>>().len() != self.points.len()
+            || self
+                .points
+                .iter()
+                .any(|[x, y]| *x > self.width || *y > self.height)
+            || self
+                .points
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != self.points.len()
         {
             return false;
         }
-        self.points.iter().zip(self.points.iter().cycle().skip(1))
+        self.points
+            .iter()
+            .zip(self.points.iter().cycle().skip(1))
             .map(|([a, b], [c, d])| i64::from(*a) * i64::from(*d) - i64::from(*b) * i64::from(*c))
-            .sum::<i64>() != 0
+            .sum::<i64>()
+            != 0
     }
 }
 
@@ -646,7 +661,8 @@ impl ObjectPayload {
         // Every text box (standalone or inside a flat group) brings its own plain-paragraph story.
         let stories = object.text_boxes();
         let unique_stories: BTreeSet<u32> = stories.iter().copied().collect();
-        if stories.len() != unique_stories.len() || self.fragment.parts.len() != unique_stories.len()
+        if stories.len() != unique_stories.len()
+            || self.fragment.parts.len() != unique_stories.len()
         {
             return None;
         }
@@ -786,9 +802,21 @@ pub enum ObjectEdit {
         y: Option<i64>,
     },
     /// Move a direct child of a selected DOCX group in its local point coordinate space.
-    DocxGroupChildMove { index: usize, id: u32, inst_id: u32, x: f32, y: f32 },
+    DocxGroupChildMove {
+        index: usize,
+        id: u32,
+        inst_id: u32,
+        x: f32,
+        y: f32,
+    },
     /// Resize a direct child of a selected DOCX group in its local point coordinate space.
-    DocxGroupChildResize { index: usize, id: u32, inst_id: u32, width: f32, height: f32 },
+    DocxGroupChildResize {
+        index: usize,
+        id: u32,
+        inst_id: u32,
+        width: f32,
+        height: f32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -962,47 +990,91 @@ impl ObjectEdit {
             }
             Self::SmartArtNodeStyle { index, style } => {
                 *index < wordcraft_engine::doc::smart_art::MAX_ITEMS
-                    && [&style.fill, &style.line, &style.text.color].into_iter().flatten()
-                        .all(|color| wordcraft_engine::doc::smart_art::valid_smart_art_color(color)
-                            && !(color == "none" && style.text.color.as_ref() == Some(color)))
-                    && style.text.font_size.is_none_or(|size| (500..=2400).contains(&size))
-                    && style.line_width.is_none_or(|width| (1..=1_000_000_000).contains(&width))
-                    && (style.line_width.is_none() || style.line.as_deref().is_some_and(|line| line != "none"))
+                    && [&style.fill, &style.line, &style.text.color]
+                        .into_iter()
+                        .flatten()
+                        .all(|color| {
+                            wordcraft_engine::doc::smart_art::valid_smart_art_color(color)
+                                && !(color == "none" && style.text.color.as_ref() == Some(color))
+                        })
+                    && style
+                        .text
+                        .font_size
+                        .is_none_or(|size| (500..=2400).contains(&size))
+                    && style
+                        .line_width
+                        .is_none_or(|width| (1..=1_000_000_000).contains(&width))
+                    && (style.line_width.is_none()
+                        || style.line.as_deref().is_some_and(|line| line != "none"))
                     && style.text.language.as_deref().is_none_or(|lang| {
-                        !lang.is_empty() && lang.len() <= 64 && lang.is_ascii() && !lang.chars().any(char::is_control)
+                        !lang.is_empty()
+                            && lang.len() <= 64
+                            && lang.is_ascii()
+                            && !lang.chars().any(char::is_control)
                     })
             }
             Self::SmartArtLayout { layout } => SMART_ART_LAYOUTS.contains(&layout.as_str()),
-            Self::DocxPathPoint { path, segment, point, x, y } => {
+            Self::DocxPathPoint {
+                path,
+                segment,
+                point,
+                x,
+                y,
+            } => {
                 *path < wordcraft_engine::doc::freeform::MAX_PATHS
                     && *segment < wordcraft_engine::doc::freeform::MAX_POINTS
                     && *point < 3
                     && (-1_000_000_000_000..=1_000_000_000_000).contains(x)
                     && (-1_000_000_000_000..=1_000_000_000_000).contains(y)
             }
-            Self::DocxPathVertex { path, segment, action, x, y } => {
+            Self::DocxPathVertex {
+                path,
+                segment,
+                action,
+                x,
+                y,
+            } => {
                 *path < wordcraft_engine::doc::freeform::MAX_PATHS
                     && *segment < wordcraft_engine::doc::freeform::MAX_POINTS
                     && match action {
-                        DocxPathVertexAction::Insert => (*x).zip(*y).is_some_and(|(x, y)|
-                            (0..=1_000_000_000_000).contains(&x) && (0..=1_000_000_000_000).contains(&y)),
+                        DocxPathVertexAction::Insert => (*x).zip(*y).is_some_and(|(x, y)| {
+                            (0..=1_000_000_000_000).contains(&x)
+                                && (0..=1_000_000_000_000).contains(&y)
+                        }),
                         DocxPathVertexAction::Remove => x.is_none() && y.is_none(),
                     }
             }
-            Self::DocxGroupChildMove { index, id, inst_id, x, y } => {
+            Self::DocxGroupChildMove {
+                index,
+                id,
+                inst_id,
+                x,
+                y,
+            } => {
                 *index < wordcraft_engine::doc::para::MAX_GROUP_CHILDREN
                     && *id == (*index as u32).saturating_add(1)
                     && *inst_id == 0
-                    && x.is_finite() && y.is_finite()
-                    && (0.0..=14_400.0).contains(x) && (0.0..=14_400.0).contains(y)
+                    && x.is_finite()
+                    && y.is_finite()
+                    && (0.0..=14_400.0).contains(x)
+                    && (0.0..=14_400.0).contains(y)
             }
-            Self::DocxGroupChildResize { index, id, inst_id, width, height } => {
+            Self::DocxGroupChildResize {
+                index,
+                id,
+                inst_id,
+                width,
+                height,
+            } => {
                 *index < wordcraft_engine::doc::para::MAX_GROUP_CHILDREN
                     && *id == (*index as u32).saturating_add(1)
                     && *inst_id == 0
-                    && width.is_finite() && height.is_finite()
-                    && (0.0..=14_400.0).contains(width) && (0.0..=14_400.0).contains(height)
-                    && *width > 0.0 && *height > 0.0
+                    && width.is_finite()
+                    && height.is_finite()
+                    && (0.0..=14_400.0).contains(width)
+                    && (0.0..=14_400.0).contains(height)
+                    && *width > 0.0
+                    && *height > 0.0
             }
             Self::AltText { text } => valid_object_alt_text(text),
         }
@@ -1022,10 +1094,14 @@ impl ObjectEdit {
             Self::Rotate { .. } => "rotate",
             Self::Layer { .. } => "zOrder",
             Self::ChartTitle { .. } | Self::ChartType { .. } | Self::ChartData { .. } => "chart",
-            Self::SmartArtItems { .. } | Self::SmartArtNodeStyle { .. } | Self::SmartArtLayout { .. } => "smartArt",
+            Self::SmartArtItems { .. }
+            | Self::SmartArtNodeStyle { .. }
+            | Self::SmartArtLayout { .. } => "smartArt",
             Self::DocxPathPoint { .. } => "pathPoint",
             Self::DocxPathVertex { .. } => "pathVertex",
-            Self::DocxGroupChildMove { .. } | Self::DocxGroupChildResize { .. } => "groupChildGeometry",
+            Self::DocxGroupChildMove { .. } | Self::DocxGroupChildResize { .. } => {
+                "groupChildGeometry"
+            }
         }
     }
 }
@@ -1132,7 +1208,10 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             }
             DocxOp::Highlight { color } => stage1::HIGHLIGHTS.contains(&color.as_str()),
             DocxOp::EmbedFont { family, style } => {
-                valid_font_name(family) && !style.is_empty() && style.len() <= 128 && !style.chars().any(char::is_control)
+                valid_font_name(family)
+                    && !style.is_empty()
+                    && style.len() <= 128
+                    && !style.chars().any(char::is_control)
             }
             DocxOp::Paragraph { format } => format.valid(),
             DocxOp::PageSetup { setup } => setup.valid(),
@@ -1140,8 +1219,14 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::Replace { query, with } | DocxOp::ReplaceAll { query, with } => {
                 query.valid() && stage1::valid_replacement(with)
             }
-            DocxOp::TableStructure { action, target, rows, columns } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TableStructure {
+                action,
+                target,
+                rows,
+                columns,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 let dims_ok = match (action, rows, columns) {
                     (table::TableStructureAction::SplitCell, None, None) => true,
                     (table::TableStructureAction::SplitCell, Some(r), Some(c)) => {
@@ -1153,14 +1238,22 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dims_ok
             }
             DocxOp::TableShading { target, color } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 let color_ok = color
                     .as_deref()
                     .map_or(true, |c| table::normalize_hex_color(c).is_some());
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && color_ok
             }
-            DocxOp::TableBorders { target, kind: _, style, width, color } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TableBorders {
+                target,
+                kind: _,
+                style,
+                width,
+                color,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 let style_ok = style
                     .as_deref()
                     .map_or(true, table::valid_docx_border_style);
@@ -1174,14 +1267,24 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                     && width_ok
                     && color_ok
             }
-            DocxOp::TableAlignment { target, horizontal, vertical } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TableAlignment {
+                target,
+                horizontal,
+                vertical,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key)
                     && ok_key(&target.caret_key)
                     && (horizontal.is_some() || vertical.is_some())
             }
-            DocxOp::TableColumnWidth { target, width, distribute } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TableColumnWidth {
+                target,
+                width,
+                distribute,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 let dim_ok = match (*distribute, *width) {
                     (true, None) => true,
                     (false, Some(w)) => table::valid_docx_col_width(w),
@@ -1189,8 +1292,15 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 };
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dim_ok
             }
-            DocxOp::TableRowHeight { target, height, rule, clear, distribute } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TableRowHeight {
+                target,
+                height,
+                rule,
+                clear,
+                distribute,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 let dim_ok = if *distribute {
                     height.is_none() && rule.is_none() && !*clear
                 } else if *clear {
@@ -1201,32 +1311,52 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && dim_ok
             }
             DocxOp::CutTableCells { target } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key)
             }
             DocxOp::PasteTableCells { target, payload } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && payload.valid()
             }
-            DocxOp::TableCellMargins { target, scope, top, right, bottom, left, reset } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
-                let sides_ok = [top, right, bottom, left].into_iter().all(|s| s.is_none_or(table::valid_docx_margin_pt));
+            DocxOp::TableCellMargins {
+                target,
+                scope,
+                top,
+                right,
+                bottom,
+                left,
+                reset,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let sides_ok = [top, right, bottom, left]
+                    .into_iter()
+                    .all(|s| s.is_none_or(table::valid_docx_margin_pt));
                 let mode_ok = if *reset {
-                    *scope == table::TableMarginScope::Cell && [top, right, bottom, left].into_iter().all(|s| s.is_none())
+                    *scope == table::TableMarginScope::Cell
+                        && [top, right, bottom, left].into_iter().all(|s| s.is_none())
                 } else {
                     [top, right, bottom, left].into_iter().any(|s| s.is_some())
                 };
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key) && sides_ok && mode_ok
             }
-            DocxOp::TablePositioning { target, align, indent_pt } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+            DocxOp::TablePositioning {
+                target,
+                align,
+                indent_pt,
+            } => {
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key)
                     && ok_key(&target.caret_key)
                     && (align.is_some() || indent_pt.is_some())
                     && indent_pt.is_none_or(table::valid_docx_indent_pt)
             }
             DocxOp::TableRepeatHeader { target, .. } | DocxOp::TableRowBreak { target, .. } => {
-                let ok_key = |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
+                let ok_key =
+                    |k: &str| !k.is_empty() && k.len() <= 256 && !k.chars().any(char::is_control);
                 ok_key(&target.anchor_key) && ok_key(&target.caret_key)
             }
             _ => true,
@@ -1689,11 +1819,23 @@ impl DocxModel {
         let (note_picture_count, _) = model.note_story_picture_counts();
         let (header_footer_picture_count, movable_header_footer_picture_count) =
             model.header_footer_story_picture_counts();
-        let has_rounded_rectangle = model.session.doc.body.iter().filter_map(|block| block.as_para()).any(|para| {
-            para.objects.iter().any(|object| matches!(object, InlineObject::Shape {
-                kind: wordcraft_engine::doc::para::ShapeKind::RoundedRectangle, ..
-            }))
-        });
+        let has_rounded_rectangle = model
+            .session
+            .doc
+            .body
+            .iter()
+            .filter_map(|block| block.as_para())
+            .any(|para| {
+                para.objects.iter().any(|object| {
+                    matches!(
+                        object,
+                        InlineObject::Shape {
+                            kind: wordcraft_engine::doc::para::ShapeKind::RoundedRectangle,
+                            ..
+                        }
+                    )
+                })
+            });
         if count != 0
             || note_picture_count != 0
             || deletable_story_picture_count != 0
@@ -1702,9 +1844,15 @@ impl DocxModel {
         {
             if let Some(export) = model.export() {
                 model.story_picture_resize = count != 0
-                    && crate::services::save::docx_story_drawings::resize_source_supported(bytes, &export, count);
+                    && crate::services::save::docx_story_drawings::resize_source_supported(
+                        bytes, &export, count,
+                    );
                 model.story_picture_move = note_picture_count != 0
-                    && crate::services::save::docx_story_drawings::move_source_supported(bytes, &export, note_picture_count);
+                    && crate::services::save::docx_story_drawings::move_source_supported(
+                        bytes,
+                        &export,
+                        note_picture_count,
+                    );
                 model.story_picture_delete = deletable_story_picture_count != 0
                     && crate::services::save::docx_story_drawings::delete_source_supported(
                         bytes,
@@ -1723,7 +1871,8 @@ impl DocxModel {
             }
         }
         if let Some(export) = model.export() {
-            model.body_roundtrips = crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
+            model.body_roundtrips =
+                crate::services::save::package::docx_body_source_roundtrips(bytes, &export);
         }
         Ok(model)
     }
@@ -1805,7 +1954,8 @@ impl DocxModel {
                                 self.created_shapes.push(pos);
                             }
                             DocxOp::CutShape { position, .. } => {
-                                self.created_shapes.retain(|pos| position_key(pos) != *position);
+                                self.created_shapes
+                                    .retain(|pos| position_key(pos) != *position);
                             }
                             // Existing shape XML may contain attributes the model does
                             // not project. Discard this transient provenance whenever
@@ -1901,7 +2051,9 @@ impl DocxModel {
                 let anchor = self.session.doc.text_box_anchor(id).ok_or(Rejected)?;
                 self.run("caret.set", json!({"pos": anchor}))
             }
-            DocxOp::EnterGroupCaption { position, epoch } => self.enter_group_caption(position, *epoch),
+            DocxOp::EnterGroupCaption { position, epoch } => {
+                self.enter_group_caption(position, *epoch)
+            }
             DocxOp::SelectAll => self.run("select.all", json!({})),
             DocxOp::Pointer {
                 page,
@@ -1930,7 +2082,7 @@ impl DocxModel {
                             (self.story_inline_picture(&hit.pos())
                                 || self.story_picture_move_allowed(&hit.pos())
                                 || self.deletable_story_picture(&hit.pos()))
-                                .then_some(hit)
+                            .then_some(hit)
                         });
                     if let Some(hit) = hit {
                         let pos = hit.pos();
@@ -2000,7 +2152,9 @@ impl DocxModel {
                 }
                 self.run("para.bullets", json!({}))
             }
-            DocxOp::Shape { kind } => self.insert_drawing("insert.shape", json!({"kind": kind.name()}), true),
+            DocxOp::Shape { kind } => {
+                self.insert_drawing("insert.shape", json!({"kind": kind.name()}), true)
+            }
             DocxOp::TextBox {} => self.insert_drawing("insert.textBox", json!({}), false),
             DocxOp::CutShape { position, epoch } => self.cut_clipboard_shape(position, *epoch),
             DocxOp::ObjectEdit {
@@ -2063,39 +2217,56 @@ impl DocxModel {
                 self.stage1_clear_search();
                 Ok(false)
             }
-            DocxOp::TableStructure { action, target, rows, columns } => {
-                self.table_structure(*action, target, *rows, *columns)
-            }
-            DocxOp::TableShading { target, color } => {
-                self.table_shading(target, color.as_deref())
-            }
-            DocxOp::TableBorders { target, kind, style, width, color } => {
-                self.table_cell_borders(
-                    target,
-                    *kind,
-                    style.as_deref(),
-                    *width,
-                    color.as_deref(),
-                )
-            }
-            DocxOp::TableAlignment { target, horizontal, vertical } => {
-                self.table_cell_alignment(target, *horizontal, *vertical)
-            }
-            DocxOp::TableColumnWidth { target, width, distribute } => {
-                self.table_column_width(target, *width, *distribute)
-            }
-            DocxOp::TableRowHeight { target, height, rule, clear, distribute } => {
-                self.table_row_height(target, *height, *rule, *clear, *distribute)
-            }
+            DocxOp::TableStructure {
+                action,
+                target,
+                rows,
+                columns,
+            } => self.table_structure(*action, target, *rows, *columns),
+            DocxOp::TableShading { target, color } => self.table_shading(target, color.as_deref()),
+            DocxOp::TableBorders {
+                target,
+                kind,
+                style,
+                width,
+                color,
+            } => self.table_cell_borders(target, *kind, style.as_deref(), *width, color.as_deref()),
+            DocxOp::TableAlignment {
+                target,
+                horizontal,
+                vertical,
+            } => self.table_cell_alignment(target, *horizontal, *vertical),
+            DocxOp::TableColumnWidth {
+                target,
+                width,
+                distribute,
+            } => self.table_column_width(target, *width, *distribute),
+            DocxOp::TableRowHeight {
+                target,
+                height,
+                rule,
+                clear,
+                distribute,
+            } => self.table_row_height(target, *height, *rule, *clear, *distribute),
             DocxOp::CutTableCells { target } => self.cut_table_cells(target),
             DocxOp::PasteTableCells { target, payload } => self.paste_table_cells(target, payload),
-            DocxOp::TableCellMargins { target, scope, top, right, bottom, left, reset } => {
-                self.table_cell_margins(target, *scope, *top, *right, *bottom, *left, *reset)
+            DocxOp::TableCellMargins {
+                target,
+                scope,
+                top,
+                right,
+                bottom,
+                left,
+                reset,
+            } => self.table_cell_margins(target, *scope, *top, *right, *bottom, *left, *reset),
+            DocxOp::TablePositioning {
+                target,
+                align,
+                indent_pt,
+            } => self.table_positioning(target, *align, *indent_pt),
+            DocxOp::TableRepeatHeader { target, repeat } => {
+                self.table_repeat_header(target, *repeat)
             }
-            DocxOp::TablePositioning { target, align, indent_pt } => {
-                self.table_positioning(target, *align, *indent_pt)
-            }
-            DocxOp::TableRepeatHeader { target, repeat } => self.table_repeat_header(target, *repeat),
             DocxOp::TableRowBreak { target, mode } => self.table_row_break(target, *mode),
         }
     }
@@ -2441,13 +2612,23 @@ impl DocxModel {
     }
 
     fn editing_text_box(&self) -> Option<u32> {
-        let StoryRef::Part(id) = self.session.sel.focus.story else { return None };
-        self.session.doc.parts.get(&id)
+        let StoryRef::Part(id) = self.session.sel.focus.story else {
+            return None;
+        };
+        self.session
+            .doc
+            .parts
+            .get(&id)
             .is_some_and(|part| part.kind == wordcraft_engine::doc::PartKind::TextBox)
             .then_some(id)
     }
 
-    fn insert_drawing(&mut self, command: &str, params: Value, collapse: bool) -> Result<bool, Rejected> {
+    fn insert_drawing(
+        &mut self,
+        command: &str,
+        params: Value,
+        collapse: bool,
+    ) -> Result<bool, Rejected> {
         if !self.drawing_insertion_allowed() {
             return Err(Rejected);
         }
@@ -2522,7 +2703,9 @@ impl DocxModel {
 
     fn linked_picture_story(&self, story: StoryRef) -> bool {
         use wordcraft_engine::doc::PartKind;
-        let StoryRef::Part(id) = story else { return false };
+        let StoryRef::Part(id) = story else {
+            return false;
+        };
         let doc = &self.session.doc;
         doc.parts.get(&id).is_some_and(|part| {
             matches!(part.kind, PartKind::Header | PartKind::Footer)
@@ -2539,7 +2722,8 @@ impl DocxModel {
     }
 
     fn story_inline_picture(&self, pos: &Pos) -> bool {
-        pos.path.0.len() == 1 && self.linked_picture_story(pos.story)
+        pos.path.0.len() == 1
+            && self.linked_picture_story(pos.story)
             && self.embedded_inline_picture(self.object_at(pos))
     }
 
@@ -2551,20 +2735,29 @@ impl DocxModel {
 
     fn sizable_story_picture_count(&self) -> usize {
         use wordcraft_engine::doc::Block;
-        if self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes {
+        if self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes
+        {
             return 0;
         }
-        self.session.doc.parts.iter()
+        self.session
+            .doc
+            .parts
+            .iter()
             .filter(|(id, _)| self.linked_picture_story(StoryRef::Part(**id)))
             .flat_map(|(_, part)| &part.blocks)
             .filter_map(|block| match block.as_ref() {
                 Block::Para(para) => Some(para),
                 _ => None,
             })
-            .map(|para| para.object_offsets().into_iter().filter(|&off| {
-                let object = para.object_at(off);
-                self.embedded_inline_picture(object) && Self::plain_picture_size(object)
-            }).count())
+            .map(|para| {
+                para.object_offsets()
+                    .into_iter()
+                    .filter(|&off| {
+                        let object = para.object_at(off);
+                        self.embedded_inline_picture(object) && Self::plain_picture_size(object)
+                    })
+                    .count()
+            })
             .sum()
     }
 
@@ -2575,8 +2768,10 @@ impl DocxModel {
             .parts
             .iter()
             .filter(|(id, part)| {
-                matches!(part.kind, PartKind::Header | PartKind::Footer | PartKind::Footnote | PartKind::Endnote)
-                    && self.linked_picture_story(StoryRef::Part(**id))
+                matches!(
+                    part.kind,
+                    PartKind::Header | PartKind::Footer | PartKind::Footnote | PartKind::Endnote
+                ) && self.linked_picture_story(StoryRef::Part(**id))
             })
             .flat_map(|(id, _)| {
                 self.session
@@ -2793,40 +2988,79 @@ impl DocxModel {
     /// The clipboard can faithfully recreate precisely the basic inline
     /// objects the ordinary insert command produces. Reject all extensions.
     fn clipboard_shape(&self, pos: &Pos) -> Option<ClipboardShapeView> {
-        use wordcraft_engine::doc::{para::{Float, ShapeKind, OBJ}, props::Rgb};
+        use wordcraft_engine::doc::{
+            para::{Float, ShapeKind, OBJ},
+            props::Rgb,
+        };
         if !self.created_shapes.contains(pos) {
             return None;
         }
-        let InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform, effects, extra }
-            = self.object_at(pos)? else { return None };
+        let InlineObject::Shape {
+            kind,
+            w,
+            h,
+            fill,
+            stroke,
+            stroke_width,
+            float,
+            story,
+            freeform,
+            effects,
+            extra,
+        } = self.object_at(pos)?
+        else {
+            return None;
+        };
         let shape = match kind {
             ShapeKind::Rectangle => BasicShape::Rectangle,
             ShapeKind::Ellipse => BasicShape::Ellipse,
             ShapeKind::Line => BasicShape::Line,
             _ => return None,
         };
-        let expected_fill = if shape == BasicShape::Line { None } else { Some(Rgb(0x15, 0x60, 0x82)) };
+        let expected_fill = if shape == BasicShape::Line {
+            None
+        } else {
+            Some(Rgb(0x15, 0x60, 0x82))
+        };
         let expected_height = if shape == BasicShape::Line { 1.0 } else { 72.0 };
-        if pos.story != StoryRef::Body || pos.path.0.len() != 1 || *w != 108.0 || *h != expected_height
-            || *fill != expected_fill || *stroke != Some(Rgb(0x0e, 0x40, 0x5a)) || *stroke_width != 1.0
-            || *float != Float::default() || story.is_some() || freeform.is_some() || !effects.is_empty() || !extra.is_empty()
+        if pos.story != StoryRef::Body
+            || pos.path.0.len() != 1
+            || *w != 108.0
+            || *h != expected_height
+            || *fill != expected_fill
+            || *stroke != Some(Rgb(0x0e, 0x40, 0x5a))
+            || *stroke_width != 1.0
+            || *float != Float::default()
+            || story.is_some()
+            || freeform.is_some()
+            || !effects.is_empty()
+            || !extra.is_empty()
         {
             return None;
         }
         let end = self.session.doc.end_of(StoryRef::Body);
-        let cut_allowed = end.path == pos.path && end.off == pos.off + OBJ.len_utf8()
+        let cut_allowed = end.path == pos.path
+            && end.off == pos.off + OBJ.len_utf8()
             && self.session.doc.settings.protection.is_none()
-            && !self.session.doc.settings.track_changes && self.image_insertion_allowed();
+            && !self.session.doc.settings.track_changes
+            && self.image_insertion_allowed();
         Some(ClipboardShapeView { shape, cut_allowed })
     }
 
     fn cut_clipboard_shape(&mut self, position: &str, epoch: u64) -> Result<bool, Rejected> {
         let (pos, _) = self.selected_object.clone().ok_or(Rejected)?;
-        if epoch != self.object_epoch || position_key(&pos) != position
-            || !self.clipboard_shape(&pos).is_some_and(|shape| shape.cut_allowed) {
+        if epoch != self.object_epoch
+            || position_key(&pos) != position
+            || !self
+                .clipboard_shape(&pos)
+                .is_some_and(|shape| shape.cut_allowed)
+        {
             return Err(Rejected);
         }
-        let end = Pos { off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(), ..pos.clone() };
+        let end = Pos {
+            off: pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+            ..pos.clone()
+        };
         self.atomic(|model| {
             model.select(&pos, &end)?;
             let changed = model.run("text.delete", json!({}))?;
@@ -2867,7 +3101,10 @@ impl DocxModel {
             }
             if self.story_picture_delete && self.deletable_story_picture(pos) {
                 let index = usize::from(operations.first() == Some(&"move"));
-                operations.insert(index + usize::from(operations.get(index) == Some(&"resize")), "delete");
+                operations.insert(
+                    index + usize::from(operations.get(index) == Some(&"resize")),
+                    "delete",
+                );
             }
             return operations;
         }
@@ -2927,7 +3164,14 @@ impl DocxModel {
         if matches!(self.object_kind(pos), Some("shape" | "textBox")) {
             ops.extend(["fill", "outline"]);
         }
-        if top_level && self.editable_group_children(pos).is_some_and(|group| group.children.iter().any(|child| child.can_move || child.can_resize)) {
+        if top_level
+            && self.editable_group_children(pos).is_some_and(|group| {
+                group
+                    .children
+                    .iter()
+                    .any(|child| child.can_move || child.can_resize)
+            })
+        {
             ops.push("groupChildGeometry");
         }
         if self.group_caption_story(pos).is_some() {
@@ -2935,7 +3179,11 @@ impl DocxModel {
         }
         if top_level && self.drawingml_paths(pos).is_some() {
             ops.push("pathPoint");
-            if let InlineObject::Shape { freeform: Some(freeform), .. } = object {
+            if let InlineObject::Shape {
+                freeform: Some(freeform),
+                ..
+            } = object
+            {
                 if freeform.can_edit_drawingml_vertices() {
                     ops.push("pathVertex");
                 }
@@ -2966,14 +3214,23 @@ impl DocxModel {
         {
             return None;
         }
-        let InlineObject::Group { children, .. } = self.object_at(pos)? else { return None };
+        let InlineObject::Group { children, .. } = self.object_at(pos)? else {
+            return None;
+        };
         let mut direct = children.iter().filter_map(|child| match &child.obj {
-            InlineObject::Shape { kind: ShapeKind::TextBox, story: Some(id), .. } => Some(*id),
+            InlineObject::Shape {
+                kind: ShapeKind::TextBox,
+                story: Some(id),
+                ..
+            } => Some(*id),
             _ => None,
         });
         let id = direct.next()?;
         if direct.next().is_some()
-            || !doc.parts.get(&id).is_some_and(|part| part.kind == PartKind::TextBox)
+            || !doc
+                .parts
+                .get(&id)
+                .is_some_and(|part| part.kind == PartKind::TextBox)
             || doc.text_box_chain(id).is_some()
             || self.text_box_reference_count(id) != 1
         {
@@ -2983,21 +3240,26 @@ impl DocxModel {
         (anchor.story == pos.story
             && anchor.path == pos.path
             && anchor.off == pos.off + wordcraft_engine::doc::para::OBJ.len_utf8())
-            .then_some(id)
+        .then_some(id)
     }
 
     /// Count all modeled references, including objects in other stories, and stop as soon as
     /// aliasing is proven. The selected group must be the sole owner of the target TextBox part.
     fn text_box_reference_count(&self, target: u32) -> usize {
         let doc = &self.session.doc;
-        let stories = std::iter::once(StoryRef::Body)
-            .chain(doc.parts.keys().copied().map(StoryRef::Part));
+        let stories =
+            std::iter::once(StoryRef::Body).chain(doc.parts.keys().copied().map(StoryRef::Part));
         let mut count = 0usize;
         for story in stories {
             for path in doc.para_paths(story) {
-                let Some(para) = doc.para(story, &path) else { continue };
+                let Some(para) = doc.para(story, &path) else {
+                    continue;
+                };
                 for offset in para.object_offsets() {
-                    if para.object_at(offset).is_some_and(|object| object.text_boxes().contains(&target)) {
+                    if para
+                        .object_at(offset)
+                        .is_some_and(|object| object.text_boxes().contains(&target))
+                    {
                         count += 1;
                         if count > 1 {
                             return count;
@@ -3011,9 +3273,7 @@ impl DocxModel {
 
     fn enter_group_caption(&mut self, position: &str, epoch: u64) -> Result<bool, Rejected> {
         let (pos, _) = self.selected_object.clone().ok_or(Rejected)?;
-        if epoch != self.object_epoch
-            || position_key(&pos) != position
-        {
+        if epoch != self.object_epoch || position_key(&pos) != position {
             return Err(Rejected);
         }
         let story = self.group_caption_story(&pos).ok_or(Rejected)?;
@@ -3030,50 +3290,101 @@ impl DocxModel {
     /// exact. Unsupported or out-of-frame children remain in the model and are not exposed here.
     fn editable_group_children(&self, pos: &Pos) -> Option<EditableGroupChildrenView> {
         use wordcraft_engine::doc::para::{GroupChild, ShapeKind};
-        if !self.body_roundtrips || pos.story != StoryRef::Body || pos.path.0.len() != 1
-            || self.session.doc.settings.protection.is_some() || self.session.doc.settings.track_changes
+        if !self.body_roundtrips
+            || pos.story != StoryRef::Body
+            || pos.path.0.len() != 1
+            || self.session.doc.settings.protection.is_some()
+            || self.session.doc.settings.track_changes
         {
             return None;
         }
-        let InlineObject::Group { w: owner_w, h: owner_h, float, ch_w, ch_h, children, canvas: None, .. } = self.object_at(pos)? else {
+        let InlineObject::Group {
+            w: owner_w,
+            h: owner_h,
+            float,
+            ch_w,
+            ch_h,
+            children,
+            canvas: None,
+            ..
+        } = self.object_at(pos)?
+        else {
             return None;
         };
-        if float.hidden || float.rot != 0.0 || float.flip_h || float.flip_v
-            || !ch_w.is_finite() || !ch_h.is_finite() || *ch_w <= 0.0 || *ch_h <= 0.0
+        if float.hidden
+            || float.rot != 0.0
+            || float.flip_h
+            || float.flip_v
+            || !ch_w.is_finite()
+            || !ch_h.is_finite()
+            || *ch_w <= 0.0
+            || *ch_h <= 0.0
         {
             return None;
         }
         let units = |pt: f32| -> Option<f32> {
-            if !pt.is_finite() || !(0.0..=14_400.0).contains(&pt) { return None; }
-            Some(((f64::from(pt) * DOCX_GROUP_COORD_UNITS_PER_PT).round() / DOCX_GROUP_COORD_UNITS_PER_PT) as f32)
+            if !pt.is_finite() || !(0.0..=14_400.0).contains(&pt) {
+                return None;
+            }
+            Some(
+                ((f64::from(pt) * DOCX_GROUP_COORD_UNITS_PER_PT).round()
+                    / DOCX_GROUP_COORD_UNITS_PER_PT) as f32,
+            )
         };
         let (owner_width, owner_height, width, height) = (
-            units(*owner_w)?, units(*owner_h)?, units(*ch_w)?, units(*ch_h)?,
+            units(*owner_w)?,
+            units(*owner_h)?,
+            units(*ch_w)?,
+            units(*ch_h)?,
         );
         if width == 0.0 || height == 0.0 || owner_width != width || owner_height != height {
             return None;
         }
         let mut visible = Vec::new();
-        for (index, GroupChild { x, y, obj }) in children.iter().take(wordcraft_engine::doc::para::MAX_GROUP_CHILDREN).enumerate() {
-            let Some((w, h, child_float)) = obj.frame() else { continue };
-            let (Some(x), Some(y), Some(w), Some(h)) = (units(*x), units(*y), units(w), units(h)) else { continue };
+        for (index, GroupChild { x, y, obj }) in children
+            .iter()
+            .take(wordcraft_engine::doc::para::MAX_GROUP_CHILDREN)
+            .enumerate()
+        {
+            let Some((w, h, child_float)) = obj.frame() else {
+                continue;
+            };
+            let (Some(x), Some(y), Some(w), Some(h)) = (units(*x), units(*y), units(w), units(h))
+            else {
+                continue;
+            };
             if w == 0.0 || h == 0.0 || x + w > width + 0.001 || y + h > height + 0.001 {
                 continue;
             }
             let kind = match obj {
                 InlineObject::Image { ole: None, .. } => "picture",
-                InlineObject::Shape { kind: ShapeKind::Rectangle, .. } => "rectangle",
-                InlineObject::Shape { kind: ShapeKind::Ellipse, .. } => "ellipse",
-            InlineObject::Shape { kind: ShapeKind::TextBox, .. } => "textBox",
+                InlineObject::Shape {
+                    kind: ShapeKind::Rectangle,
+                    ..
+                } => "rectangle",
+                InlineObject::Shape {
+                    kind: ShapeKind::Ellipse,
+                    ..
+                } => "ellipse",
+                InlineObject::Shape {
+                    kind: ShapeKind::TextBox,
+                    ..
+                } => "textBox",
                 InlineObject::Shape { .. } => "shape",
                 InlineObject::Group { .. } => "group",
                 _ => continue,
             };
-            let simple_transform = !child_float.hidden && child_float.rot == 0.0 && !child_float.flip_h && !child_float.flip_v;
-            let can_edit = simple_transform && matches!(obj,
-                InlineObject::Image { ole: None, .. }
-                    | InlineObject::Shape { .. }
-                    | InlineObject::Group { canvas: None, .. });
+            let simple_transform = !child_float.hidden
+                && child_float.rot == 0.0
+                && !child_float.flip_h
+                && !child_float.flip_v;
+            let can_edit = simple_transform
+                && matches!(
+                    obj,
+                    InlineObject::Image { ole: None, .. }
+                        | InlineObject::Shape { .. }
+                        | InlineObject::Group { canvas: None, .. }
+                );
             visible.push(GroupChildGeometryView {
                 index,
                 kind,
@@ -3089,12 +3400,15 @@ impl DocxModel {
                 can_resize: can_edit,
             });
         }
-        visible.iter().any(|child| child.can_move || child.can_resize).then_some(EditableGroupChildrenView {
-            parent_id: 0,
-            width,
-            height,
-            children: visible,
-        })
+        visible
+            .iter()
+            .any(|child| child.can_move || child.can_resize)
+            .then_some(EditableGroupChildrenView {
+                parent_id: 0,
+                width,
+                height,
+                children: visible,
+            })
     }
 
     /// Original integer DrawingML commands whose selected frame and modeled orthogonal object
@@ -3106,10 +3420,14 @@ impl DocxModel {
             freeform: Some(freeform),
             float,
             ..
-        } = self.object_at(pos)? else {
+        } = self.object_at(pos)?
+        else {
             return None;
         };
-        if freeform.ink.is_some() || !float.rot.is_finite() || !(-360.0..=360.0).contains(&float.rot) {
+        if freeform.ink.is_some()
+            || !float.rot.is_finite()
+            || !(-360.0..=360.0).contains(&float.rot)
+        {
             return None;
         }
         let geometry = freeform.drawingml.as_ref()?;
@@ -3139,14 +3457,24 @@ impl DocxModel {
             }
             let mut segments = Vec::with_capacity(commands.len());
             for command in commands {
-                let (name, points, controls): (&'static str, Vec<[i64; 2]>, &[usize]) = match command {
-                    Command::MoveTo { point } => ("moveTo", vec![*point], &[]),
-                    Command::LineTo { point } => ("lnTo", vec![*point], &[]),
-                    Command::QuadraticTo { control, end } => ("quadBezTo", vec![*control, *end], &[0]),
-                    Command::CubicTo { control1, control2, end } => ("cubicBezTo", vec![*control1, *control2, *end], &[0, 1]),
-                    Command::Close => ("close", Vec::new(), &[]),
-                };
-                if points.iter().any(|[x, y]| *x < 0 || *x > viewport_width || *y < 0 || *y > viewport_height) {
+                let (name, points, controls): (&'static str, Vec<[i64; 2]>, &[usize]) =
+                    match command {
+                        Command::MoveTo { point } => ("moveTo", vec![*point], &[]),
+                        Command::LineTo { point } => ("lnTo", vec![*point], &[]),
+                        Command::QuadraticTo { control, end } => {
+                            ("quadBezTo", vec![*control, *end], &[0])
+                        }
+                        Command::CubicTo {
+                            control1,
+                            control2,
+                            end,
+                        } => ("cubicBezTo", vec![*control1, *control2, *end], &[0, 1]),
+                        Command::Close => ("close", Vec::new(), &[]),
+                    };
+                if points
+                    .iter()
+                    .any(|[x, y]| *x < 0 || *x > viewport_width || *y < 0 || *y > viewport_height)
+                {
                     return None;
                 }
                 total_points = total_points.saturating_add(points.len());
@@ -3155,22 +3483,40 @@ impl DocxModel {
                 }
                 segments.push(DocxPathSegmentView {
                     command: name,
-                    points: points.into_iter().enumerate().map(|(index, [x, y])| DocxPathPointView {
-                        x,
-                        y,
-                        control: controls.contains(&index),
-                    }).collect(),
+                    points: points
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, [x, y])| DocxPathPointView {
+                            x,
+                            y,
+                            control: controls.contains(&index),
+                        })
+                        .collect(),
                 });
             }
-            views.push(DocxPathView { viewport_width, viewport_height, segments });
+            views.push(DocxPathView {
+                viewport_width,
+                viewport_height,
+                segments,
+            });
         }
         Some(views)
     }
 
     fn conversion_target(&self, pos: &Pos) -> Option<BasicShape> {
         use wordcraft_engine::doc::para::ShapeKind;
-        let InlineObject::Shape { kind, story: None, freeform: None, effects, extra, float, .. }
-            = self.object_at(pos)? else { return None };
+        let InlineObject::Shape {
+            kind,
+            story: None,
+            freeform: None,
+            effects,
+            extra,
+            float,
+            ..
+        } = self.object_at(pos)?
+        else {
+            return None;
+        };
         let extended_envelope = float.wrap != wordcraft_engine::doc::para::Wrap::Inline
             || !effects.is_empty()
             || !extra.preset_adjustments.is_empty();
@@ -3180,15 +3526,19 @@ impl DocxModel {
             || extra.end.is_some()
             || extra.arrow_start
             || extra.arrow_end;
-        if pos.story != StoryRef::Body || pos.path.0.len() != 1
+        if pos.story != StoryRef::Body
+            || pos.path.0.len() != 1
             || (extended_envelope && !self.body_roundtrips)
-            || unsupported_extra {
+            || unsupported_extra
+        {
             return None;
         }
         match kind {
             ShapeKind::Rectangle => Some(BasicShape::Ellipse),
             ShapeKind::Ellipse => Some(BasicShape::Rectangle),
-            ShapeKind::RoundedRectangle if self.rounded_rectangle_conversion => Some(BasicShape::Rectangle),
+            ShapeKind::RoundedRectangle if self.rounded_rectangle_conversion => {
+                Some(BasicShape::Rectangle)
+            }
             _ => None,
         }
     }
@@ -3302,9 +3652,13 @@ impl DocxModel {
         };
         drawing.set_alt_text(&polygon.description);
         let mut para = Paragraph::new();
-        para.insert_object(0, drawing, &CharProps::default()).map_err(|_| Rejected)?;
+        para.insert_object(0, drawing, &CharProps::default())
+            .map_err(|_| Rejected)?;
         self.paste_object(&ObjectPayload {
-            fragment: Fragment { blocks: vec![Block::Para(para)], ..Fragment::default() },
+            fragment: Fragment {
+                blocks: vec![Block::Para(para)],
+                ..Fragment::default()
+            },
             media: Vec::new(),
         })
     }
@@ -3397,8 +3751,16 @@ impl DocxModel {
         {
             if (freeform.w, freeform.h) != (nw, nh) {
                 let f = std::sync::Arc::make_mut(freeform);
-                let sx = if f.w > 0.0 { f64::from(nw) / f64::from(f.w) } else { 1.0 };
-                let sy = if f.h > 0.0 { f64::from(nh) / f64::from(f.h) } else { 1.0 };
+                let sx = if f.w > 0.0 {
+                    f64::from(nw) / f64::from(f.w)
+                } else {
+                    1.0
+                };
+                let sy = if f.h > 0.0 {
+                    f64::from(nh) / f64::from(f.h)
+                } else {
+                    1.0
+                };
                 for path in &mut f.paths {
                     for pt in &mut path.pts {
                         pt[0] = snap((f64::from(pt[0]) * sx) as f32);
@@ -3574,10 +3936,7 @@ impl DocxModel {
                 }
                 renamed.insert(name.clone(), key);
             }
-            fn collect_obj_ids(
-                object: &InlineObject,
-                used: &mut std::collections::BTreeSet<u32>,
-            ) {
+            fn collect_obj_ids(object: &InlineObject, used: &mut std::collections::BTreeSet<u32>) {
                 match object {
                     InlineObject::Shape { extra, .. } if extra.id != 0 => {
                         used.insert(extra.id);
@@ -3627,7 +3986,10 @@ impl DocxModel {
                 .unwrap_or(0)
                 .saturating_add(1)
                 .max(1);
-            fn collect_glued_targets(object: &InlineObject, out: &mut std::collections::BTreeSet<u32>) {
+            fn collect_glued_targets(
+                object: &InlineObject,
+                out: &mut std::collections::BTreeSet<u32>,
+            ) {
                 match object {
                     InlineObject::Shape { extra, .. } => {
                         if let Some(s) = extra.start {
@@ -3806,8 +4168,7 @@ impl DocxModel {
         {
             return Err(Rejected);
         }
-        if owned_story_delete
-            && (!self.story_picture_delete || !self.deletable_story_picture(&pos))
+        if owned_story_delete && (!self.story_picture_delete || !self.deletable_story_picture(&pos))
         {
             return Err(Rejected);
         }
@@ -3816,7 +4177,14 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
-        if let ObjectEdit::DocxPathPoint { path, segment, point, x, y } = edit {
+        if let ObjectEdit::DocxPathPoint {
+            path,
+            segment,
+            point,
+            x,
+            y,
+        } = edit
+        {
             let paths = self.drawingml_paths(&pos).ok_or(Rejected)?;
             let target = paths
                 .get(*path)
@@ -3833,7 +4201,14 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
-        if let ObjectEdit::DocxPathVertex { path, segment, action, x, y } = edit {
+        if let ObjectEdit::DocxPathVertex {
+            path,
+            segment,
+            action,
+            x,
+            y,
+        } = edit
+        {
             let paths = self.drawingml_paths(&pos).ok_or(Rejected)?;
             let source = paths.get(*path).ok_or(Rejected)?;
             let target = source.segments.get(*segment).ok_or(Rejected)?;
@@ -3842,8 +4217,11 @@ impl DocxModel {
                     if !matches!(target.command, "lnTo" | "close") {
                         return Err(Rejected);
                     }
-                    let (Some(x), Some(y)) = (x, y) else { return Err(Rejected) };
-                    if *x < 0 || *x > source.viewport_width || *y < 0 || *y > source.viewport_height {
+                    let (Some(x), Some(y)) = (x, y) else {
+                        return Err(Rejected);
+                    };
+                    if *x < 0 || *x > source.viewport_width || *y < 0 || *y > source.viewport_height
+                    {
                         return Err(Rejected);
                     }
                 }
@@ -3854,9 +4232,25 @@ impl DocxModel {
                 }
             }
         }
-        if let ObjectEdit::DocxGroupChildMove { index, id, inst_id, x, y } = edit {
+        if let ObjectEdit::DocxGroupChildMove {
+            index,
+            id,
+            inst_id,
+            x,
+            y,
+        } = edit
+        {
             let group = self.editable_group_children(&pos).ok_or(Rejected)?;
-            let child = group.children.iter().find(|child| child.index == *index && child.id == *id && child.inst_id == *inst_id && child.can_move).ok_or(Rejected)?;
+            let child = group
+                .children
+                .iter()
+                .find(|child| {
+                    child.index == *index
+                        && child.id == *id
+                        && child.inst_id == *inst_id
+                        && child.can_move
+                })
+                .ok_or(Rejected)?;
             if *x == child.x && *y == child.y
                 || *x + child.width > group.width + 0.001
                 || *y + child.height > group.height + 0.001
@@ -3864,9 +4258,25 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
-        if let ObjectEdit::DocxGroupChildResize { index, id, inst_id, width, height } = edit {
+        if let ObjectEdit::DocxGroupChildResize {
+            index,
+            id,
+            inst_id,
+            width,
+            height,
+        } = edit
+        {
             let group = self.editable_group_children(&pos).ok_or(Rejected)?;
-            let child = group.children.iter().find(|child| child.index == *index && child.id == *id && child.inst_id == *inst_id && child.can_resize).ok_or(Rejected)?;
+            let child = group
+                .children
+                .iter()
+                .find(|child| {
+                    child.index == *index
+                        && child.id == *id
+                        && child.inst_id == *inst_id
+                        && child.can_resize
+                })
+                .ok_or(Rejected)?;
             if (*width == child.width && *height == child.height)
                 || child.x + *width > group.width + 0.001
                 || child.y + *height > group.height + 0.001
@@ -3998,18 +4408,36 @@ impl DocxModel {
                     Some(pos.clone()),
                 ),
                 ObjectEdit::SmartArtNodeStyle { index, style } => (
-                    model.run("smartArt.nodeStyle", json!({ "index": index, "style": style }))?,
+                    model.run(
+                        "smartArt.nodeStyle",
+                        json!({ "index": index, "style": style }),
+                    )?,
                     Some(pos.clone()),
                 ),
                 ObjectEdit::SmartArtLayout { layout } => (
                     model.run("smartArt.layout", json!({ "layout": layout }))?,
                     Some(pos.clone()),
                 ),
-                ObjectEdit::DocxPathPoint { path, segment, point, x, y } => (
-                    model.run("shape.pathPoint", json!({ "path": path, "segment": segment, "point": point, "x": x, "y": y }))?,
+                ObjectEdit::DocxPathPoint {
+                    path,
+                    segment,
+                    point,
+                    x,
+                    y,
+                } => (
+                    model.run(
+                        "shape.pathPoint",
+                        json!({ "path": path, "segment": segment, "point": point, "x": x, "y": y }),
+                    )?,
                     Some(pos.clone()),
                 ),
-                ObjectEdit::DocxPathVertex { path, segment, action, x, y } => {
+                ObjectEdit::DocxPathVertex {
+                    path,
+                    segment,
+                    action,
+                    x,
+                    y,
+                } => {
                     let mut params = json!({ "path": path, "segment": segment, "action": action });
                     if let (Some(x), Some(y)) = (x, y) {
                         params["x"] = json!(x);
@@ -4017,24 +4445,42 @@ impl DocxModel {
                     }
                     (model.run("shape.pathVertex", params)?, Some(pos.clone()))
                 }
-                ObjectEdit::DocxGroupChildMove { index, id, inst_id, x, y } => (
-                    model.run("group.childBounds", json!({
-                        "index": index,
-                        "id": id,
-                        "instId": inst_id,
-                        "x": x,
-                        "y": y,
-                    }))?,
+                ObjectEdit::DocxGroupChildMove {
+                    index,
+                    id,
+                    inst_id,
+                    x,
+                    y,
+                } => (
+                    model.run(
+                        "group.childBounds",
+                        json!({
+                            "index": index,
+                            "id": id,
+                            "instId": inst_id,
+                            "x": x,
+                            "y": y,
+                        }),
+                    )?,
                     Some(pos.clone()),
                 ),
-                ObjectEdit::DocxGroupChildResize { index, id, inst_id, width, height } => (
-                    model.run("group.childBounds", json!({
-                        "index": index,
-                        "id": id,
-                        "instId": inst_id,
-                        "width": width,
-                        "height": height,
-                    }))?,
+                ObjectEdit::DocxGroupChildResize {
+                    index,
+                    id,
+                    inst_id,
+                    width,
+                    height,
+                } => (
+                    model.run(
+                        "group.childBounds",
+                        json!({
+                            "index": index,
+                            "id": id,
+                            "instId": inst_id,
+                            "width": width,
+                            "height": height,
+                        }),
+                    )?,
                     Some(pos.clone()),
                 ),
                 ObjectEdit::Layer { front } => (
@@ -4053,8 +4499,11 @@ impl DocxModel {
                 return Err(Rejected);
             }
             if let Some(at) = at.as_ref().filter(|at| {
-                !matches!(edit, ObjectEdit::DocxPathPoint { .. } | ObjectEdit::DocxPathVertex { .. })
-                    && (!matches!(edit, ObjectEdit::AltText { .. }) || !model.story_inline_picture(at))
+                !matches!(
+                    edit,
+                    ObjectEdit::DocxPathPoint { .. } | ObjectEdit::DocxPathVertex { .. }
+                ) && (!matches!(edit, ObjectEdit::AltText { .. })
+                    || !model.story_inline_picture(at))
             }) {
                 model.snap_to_emu(at)?;
             }
@@ -4093,30 +4542,44 @@ impl DocxModel {
     }
 
     fn graphic_properties(&self, pos: &Pos) -> Option<Value> {
-        let InlineObject::Graphic { graphic, .. } = self.object_at(pos)? else { return None };
+        let InlineObject::Graphic { graphic, .. } = self.object_at(pos)? else {
+            return None;
+        };
         if let Some(chart) = &graphic.chart {
             let bounded = |s: &str| s.len() <= 1024;
             if chart.categories.len() > 128
                 || !chart.categories.iter().all(|s| bounded(s))
                 || chart.title.as_deref().is_some_and(|s| !bounded(s))
                 || chart.series.len() > 16
-                || chart.series.iter().any(|s| !bounded(&s.name) || s.values.len() > 128)
+                || chart
+                    .series
+                    .iter()
+                    .any(|s| !bounded(&s.name) || s.values.len() > 128)
             {
                 return None;
             }
-            let series: Vec<Value> = chart.series.iter().map(|s| {
-                let values: Vec<Option<String>> = s.values.iter().map(|v| v.map(|n| n.to_string())).collect();
-                json!({"name": s.name, "values": values})
-            }).collect();
-            return Some(json!({"kind": "chart", "plot": chart.kind.id(), "title": chart.title,
-                "labels": chart.categories, "series": series}));
+            let series: Vec<Value> = chart
+                .series
+                .iter()
+                .map(|s| {
+                    let values: Vec<Option<String>> =
+                        s.values.iter().map(|v| v.map(|n| n.to_string())).collect();
+                    json!({"name": s.name, "values": values})
+                })
+                .collect();
+            return Some(
+                json!({"kind": "chart", "plot": chart.kind.id(), "title": chart.title,
+                "labels": chart.categories, "series": series}),
+            );
         }
         let art = graphic.smart_art.as_ref()?;
         if art.items.len() > 128 || art.items.iter().any(|i| i.text.len() > 1024 || i.level > 7) {
             return None;
         }
-        Some(json!({"kind": "smartArt", "layout": art.layout.id(), "modelId": art.model_id,
-            "colors": art.colors.id(), "items": art.items}))
+        Some(
+            json!({"kind": "smartArt", "layout": art.layout.id(), "modelId": art.model_id,
+            "colors": art.colors.id(), "items": art.items}),
+        )
     }
 
     pub fn view(&mut self) -> DocxView {
@@ -4151,7 +4614,13 @@ impl DocxModel {
             Some(ObjectView {
                 kind,
                 position: position_key(pos),
-                frame: RectView { page: hit.page, x: bounds.x, y: bounds.y, width: bounds.w, height: bounds.h },
+                frame: RectView {
+                    page: hit.page,
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.w,
+                    height: bounds.h,
+                },
                 epoch: self.object_epoch,
                 picture,
                 graphic: self.graphic_properties(pos),
@@ -4177,12 +4646,7 @@ impl DocxModel {
                         width_pt: *w,
                         height_pt: *h,
                     }),
-                    InlineObject::Group {
-                        w,
-                        h,
-                        float,
-                        ..
-                    } => Some(ShapeView {
+                    InlineObject::Group { w, h, float, .. } => Some(ShapeView {
                         fill: None,
                         outline: None,
                         outline_width: 0.0,
@@ -4201,12 +4665,15 @@ impl DocxModel {
         if object.is_none() {
             self.selected_object = None;
         }
-        let caret = layout.caret_on(&sel.focus, hint).filter(|_| object.is_none()).map(|c| CaretView {
-            page: c.page,
-            x: c.x,
-            y: c.top,
-            height: c.height.max(c.width),
-        });
+        let caret = layout
+            .caret_on(&sel.focus, hint)
+            .filter(|_| object.is_none())
+            .map(|c| CaretView {
+                page: c.page,
+                x: c.x,
+                y: c.top,
+                height: c.height.max(c.width),
+            });
         let collapsed = sel.is_collapsed();
         let selection = if object.is_some() {
             Vec::new()
@@ -4323,7 +4790,11 @@ impl DocxModel {
             page: self.page_view(),
             search,
             embedded_fonts: embed_font::embedded(&self.session.doc),
-            table: if object.is_none() { self.table_view() } else { None },
+            table: if object.is_none() {
+                self.table_view()
+            } else {
+                None
+            },
             object,
         }
     }
@@ -4472,10 +4943,12 @@ impl DocxModel {
         }
         let bytes = io::save_bytes(DOCX_NAME, &doc).map_err(|_| Rejected)?;
         let reopened = io::open_bytes(DOCX_NAME, &bytes).map_err(|_| Rejected)?;
-        if !matches!(wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&doc, &reopened), Ok(true))
-            || !embed_font::embedded(&reopened)
-                .iter()
-                .any(|e| e.family == family.trim() && e.slot == slot && e.part.is_some())
+        if !matches!(
+            wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&doc, &reopened),
+            Ok(true)
+        ) || !embed_font::embedded(&reopened)
+            .iter()
+            .any(|e| e.family == family.trim() && e.slot == slot && e.part.is_some())
         {
             return Err(Rejected);
         }

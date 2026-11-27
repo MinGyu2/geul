@@ -139,9 +139,9 @@ impl XmlEl {
             return false;
         }
         expected.iter().all(|(ns, k, v)| {
-            self.attrs
-                .iter()
-                .any(|(ans, ak, av)| ans.as_deref() == *ns && ak.as_str() == *k && av.as_str() == *v)
+            self.attrs.iter().any(|(ans, ak, av)| {
+                ans.as_deref() == *ns && ak.as_str() == *k && av.as_str() == *v
+            })
         })
     }
 
@@ -161,7 +161,10 @@ impl XmlEl {
     }
 
     fn leaf(&self, ns: &str, local: &str, expected_attrs: &[(Option<&str>, &str, &str)]) -> bool {
-        self.is(ns, local) && self.children.is_empty() && self.no_text() && self.exact_attrs(expected_attrs)
+        self.is(ns, local)
+            && self.children.is_empty()
+            && self.no_text()
+            && self.exact_attrs(expected_attrs)
     }
 
     fn leaf_val(&self, ns: &str, local: &str, val: &str) -> bool {
@@ -333,7 +336,14 @@ fn check_cat_ax_exact(el: &XmlEl, pos: &str) -> bool {
         && c[12].leaf_val(NS_C, "noMultiLvlLbl", "0")
 }
 
-fn check_val_ax_exact(el: &XmlEl, id: &str, cross: &str, pos: &str, grid: bool, between: &str) -> bool {
+fn check_val_ax_exact(
+    el: &XmlEl,
+    id: &str,
+    cross: &str,
+    pos: &str,
+    grid: bool,
+    between: &str,
+) -> bool {
     let expected_len = if grid { 12 } else { 10 };
     if !el.is(NS_C, "valAx")
         || !el.attrs.is_empty()
@@ -569,7 +579,11 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
         "pieChart" => ChartKind::Pie,
         "doughnutChart" => ChartKind::Doughnut,
         "scatterChart" => {
-            if !ty.children.get(ti)?.leaf_val(NS_C, "scatterStyle", "lineMarker") {
+            if !ty
+                .children
+                .get(ti)?
+                .leaf_val(NS_C, "scatterStyle", "lineMarker")
+            {
                 return None;
             }
             ti += 1;
@@ -617,7 +631,10 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
                 return None;
             }
             let v = &tx.children[0];
-            if !v.is(NS_C, "v") || !v.attrs.is_empty() || !v.children.is_empty() || v.text.is_empty()
+            if !v.is(NS_C, "v")
+                || !v.attrs.is_empty()
+                || !v.children.is_empty()
+                || v.text.is_empty()
             {
                 return None;
             }
@@ -642,7 +659,11 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
                 return None;
             }
         } else if kind.is_bar() {
-            if !ser.children.get(si)?.leaf_val(NS_C, "invertIfNegative", "0") {
+            if !ser
+                .children
+                .get(si)?
+                .leaf_val(NS_C, "invertIfNegative", "0")
+            {
                 return None;
             }
             si += 1;
@@ -659,8 +680,16 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
             }
         }
 
-        let cat_tag = if kind == ChartKind::Scatter { "xVal" } else { "cat" };
-        let val_tag = if kind == ChartKind::Scatter { "yVal" } else { "val" };
+        let cat_tag = if kind == ChartKind::Scatter {
+            "xVal"
+        } else {
+            "cat"
+        };
+        let val_tag = if kind == ChartKind::Scatter {
+            "yVal"
+        } else {
+            "val"
+        };
         let cat_el = ser.children.get(si)?;
         si += 1;
         if !cat_el.is(NS_C, cat_tag)
@@ -705,11 +734,7 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
             return None;
         }
         let values = parse_num_lit(&val_el.children[0])?;
-        if values.len()
-            != shared_categories
-                .as_ref()
-                .map_or(0, |c| c.len())
-        {
+        if values.len() != shared_categories.as_ref().map_or(0, |c| c.len()) {
             return None;
         }
 
@@ -809,7 +834,14 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
             let val_pos = if kind.is_horizontal() { "b" } else { "l" };
             if plot_area.children.len() != 4
                 || !check_cat_ax_exact(&plot_area.children[2], cat_pos)
-                || !check_val_ax_exact(&plot_area.children[3], VAL_AX, CAT_AX, val_pos, true, "between")
+                || !check_val_ax_exact(
+                    &plot_area.children[3],
+                    VAL_AX,
+                    CAT_AX,
+                    val_pos,
+                    true,
+                    "between",
+                )
             {
                 return None;
             }
@@ -842,7 +874,11 @@ fn parse_chart_model(bytes: &[u8]) -> Option<ChartModel> {
         return None;
     }
     ci += 1;
-    if !chart.children.get(ci)?.leaf_val(NS_C, "dispBlanksAs", "gap") {
+    if !chart
+        .children
+        .get(ci)?
+        .leaf_val(NS_C, "dispBlanksAs", "gap")
+    {
         return None;
     }
     ci += 1;
@@ -891,7 +927,9 @@ impl SmartArtLayoutKind {
             ("urn:microsoft.com/office/officeart/2005/8/layout/process1", "process") => {
                 Some(Self::Process)
             }
-            ("urn:microsoft.com/office/officeart/2005/8/layout/cycle2", "cycle") => Some(Self::Cycle),
+            ("urn:microsoft.com/office/officeart/2005/8/layout/cycle2", "cycle") => {
+                Some(Self::Cycle)
+            }
             ("urn:microsoft.com/office/officeart/2005/8/layout/hierarchy1", "hierarchy") => {
                 Some(Self::Hierarchy)
             }
@@ -1023,21 +1061,40 @@ fn smart_art_model_id(n: usize) -> String {
 fn smart_art_valid_id(value: &str) -> bool {
     let b = value.as_bytes();
     b.len() == 38
-        && b[0] == b'{' && b[37] == b'}'
-        && b[9] == b'-' && b[14] == b'-' && b[19] == b'-' && b[24] == b'-'
-        && b.iter().enumerate().all(|(i, c)| matches!(i, 0 | 9 | 14 | 19 | 24 | 37) || c.is_ascii_hexdigit())
+        && b[0] == b'{'
+        && b[37] == b'}'
+        && b[9] == b'-'
+        && b[14] == b'-'
+        && b[19] == b'-'
+        && b[24] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| matches!(i, 0 | 9 | 14 | 19 | 24 | 37) || c.is_ascii_hexdigit())
 }
 
 fn smart_art_node_property(key: &str, value: &str) -> bool {
     let string = matches!(key, "presName" | "presStyleLbl" | "phldrT");
     let model = key == "presAssocID" && smart_art_valid_id(value);
-    let boolean = matches!(key, "phldr" | "coherent3DOff" | "custFlipVert" | "custFlipHor")
-        && matches!(value, "0" | "1" | "true" | "false");
+    let boolean = matches!(
+        key,
+        "phldr" | "coherent3DOff" | "custFlipVert" | "custFlipHor"
+    ) && matches!(value, "0" | "1" | "true" | "false");
     let integer = matches!(
         key,
-        "presStyleIdx" | "presStyleCnt" | "custAng" | "custSzX" | "custSzY" | "custScaleX" | "custScaleY"
-            | "custT" | "custLinFactX" | "custLinFactY" | "custLinFactNeighborX" | "custLinFactNeighborY"
-            | "custRadScaleRad" | "custRadScaleInc"
+        "presStyleIdx"
+            | "presStyleCnt"
+            | "custAng"
+            | "custSzX"
+            | "custSzY"
+            | "custScaleX"
+            | "custScaleY"
+            | "custT"
+            | "custLinFactX"
+            | "custLinFactY"
+            | "custLinFactNeighborX"
+            | "custLinFactNeighborY"
+            | "custRadScaleRad"
+            | "custRadScaleInc"
     ) && value.parse::<i32>().is_ok_and(|n| n.to_string() == value);
     (string && value.chars().count() <= 255) || model || boolean || integer
 }
@@ -1048,10 +1105,13 @@ fn parse_smart_art_color(el: &XmlEl) -> Option<String> {
     }
     let value = el.attr(None, "val")?;
     match (el.name.as_str(), value) {
-        ("srgbClr", v) if v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit()) => Some(v.to_string()),
-        ("schemeClr", "accent1" | "accent2" | "accent3" | "accent4" | "accent5" | "accent6" | "lt1" | "tx1") => {
-            Some(format!("scheme:{value}"))
+        ("srgbClr", v) if v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit()) => {
+            Some(v.to_string())
         }
+        (
+            "schemeClr",
+            "accent1" | "accent2" | "accent3" | "accent4" | "accent5" | "accent6" | "lt1" | "tx1",
+        ) => Some(format!("scheme:{value}")),
         _ => None,
     }
 }
@@ -1078,7 +1138,11 @@ fn parse_smart_art_node_style(el: &XmlEl) -> Option<SmartArtNodeStyleData> {
             }
             style.fill = Some(parse_smart_art_fill(child)?);
         } else if child.is(NS_A, "ln") {
-            if style.line.is_some() || child.attrs.len() > 1 || !child.no_text() || child.children.len() != 1 {
+            if style.line.is_some()
+                || child.attrs.len() > 1
+                || !child.no_text()
+                || child.children.len() != 1
+            {
                 return None;
             }
             if let Some(width) = child.attr(None, "w") {
@@ -1103,7 +1167,10 @@ fn parse_smart_art_text(el: &XmlEl) -> Option<(String, SmartArtNodeStyleData)> {
     let (body, list, para) = (&el.children[0], &el.children[1], &el.children[2]);
     if !body.leaf(NS_A, "bodyPr", &[])
         || !list.leaf(NS_A, "lstStyle", &[])
-        || !para.is(NS_A, "p") || !para.attrs.is_empty() || !para.no_text() || para.children.len() != 1
+        || !para.is(NS_A, "p")
+        || !para.attrs.is_empty()
+        || !para.no_text()
+        || para.children.len() != 1
     {
         return None;
     }
@@ -1112,7 +1179,12 @@ fn parse_smart_art_text(el: &XmlEl) -> Option<(String, SmartArtNodeStyleData)> {
         return None;
     }
     let (properties, text) = (&run.children[0], &run.children[1]);
-    if !properties.is(NS_A, "rPr") || !properties.no_text() || !text.is(NS_A, "t") || !text.attrs.is_empty() || !text.children.is_empty() {
+    if !properties.is(NS_A, "rPr")
+        || !properties.no_text()
+        || !text.is(NS_A, "t")
+        || !text.attrs.is_empty()
+        || !text.children.is_empty()
+    {
         return None;
     }
     let mut style = SmartArtNodeStyleData::default();
@@ -1122,11 +1194,20 @@ fn parse_smart_art_text(el: &XmlEl) -> Option<(String, SmartArtNodeStyleData)> {
         }
         let value = value.as_str();
         match key.as_str() {
-            "lang" if value != "en-US" && !value.is_empty() && value.len() <= 64 && value.is_ascii() => style.text_language = Some(value.to_string()),
+            "lang"
+                if value != "en-US"
+                    && !value.is_empty()
+                    && value.len() <= 64
+                    && value.is_ascii() =>
+            {
+                style.text_language = Some(value.to_string())
+            }
             "lang" if value == "en-US" => {}
             "sz" => {
                 let size = value.parse::<u16>().ok()?;
-                if !(500..=2400).contains(&size) || size.to_string() != value { return None; }
+                if !(500..=2400).contains(&size) || size.to_string() != value {
+                    return None;
+                }
                 style.text_size = Some(size);
             }
             "b" if value == "0" || value == "1" => style.text_bold = Some(value == "1"),
@@ -1138,7 +1219,11 @@ fn parse_smart_art_text(el: &XmlEl) -> Option<(String, SmartArtNodeStyleData)> {
         return None;
     }
     if let Some(fill) = properties.children.first() {
-        if !fill.is(NS_A, "solidFill") || fill.attrs.len() != 0 || !fill.no_text() || fill.children.len() != 1 {
+        if !fill.is(NS_A, "solidFill")
+            || fill.attrs.len() != 0
+            || !fill.no_text()
+            || fill.children.len() != 1
+        {
             return None;
         }
         style.text_color = Some(parse_smart_art_color(&fill.children[0])?);
@@ -1229,9 +1314,7 @@ fn parse_diagram_data_model(bytes: &[u8]) -> Option<DiagramDataModel> {
     }
     let pt_lst = &root.children[0];
     let cxn_lst = &root.children[1];
-    if !root.children[2].leaf(NS_DGM, "bg", &[])
-        || !root.children[3].leaf(NS_DGM, "whole", &[])
-    {
+    if !root.children[2].leaf(NS_DGM, "bg", &[]) || !root.children[3].leaf(NS_DGM, "whole", &[]) {
         return None;
     }
     let ext_lst = &root.children[4];
@@ -1306,8 +1389,10 @@ fn parse_diagram_data_model(bytes: &[u8]) -> Option<DiagramDataModel> {
     {
         return None;
     }
-    let colors =
-        SmartArtColorScheme::from_type_and_cat(pr.attr(None, "csTypeId")?, pr.attr(None, "csCatId")?)?;
+    let colors = SmartArtColorScheme::from_type_and_cat(
+        pr.attr(None, "csTypeId")?,
+        pr.attr(None, "csCatId")?,
+    )?;
     if !doc_pt.children[1].leaf(NS_DGM, "spPr", &[]) || !check_empty_dgm_t(&doc_pt.children[2]) {
         return None;
     }
@@ -1322,8 +1407,7 @@ fn parse_diagram_data_model(bytes: &[u8]) -> Option<DiagramDataModel> {
             && node.is(NS_DGM, "pt")
             && node.attrs.len() == 1
             && node.no_text()
-            && node.children.len() == 3
-        )
+            && node.children.len() == 3)
         {
             return None;
         }
@@ -1333,8 +1417,11 @@ fn parse_diagram_data_model(bytes: &[u8]) -> Option<DiagramDataModel> {
         }
         let mut properties = BTreeMap::new();
         for (ns, key, value) in &pr.attrs {
-            if ns.is_some() || !smart_art_node_property(key.as_str(), value.as_str())
-                || properties.insert(key.to_string(), value.to_string()).is_some()
+            if ns.is_some()
+                || !smart_art_node_property(key.as_str(), value.as_str())
+                || properties
+                    .insert(key.to_string(), value.to_string())
+                    .is_some()
             {
                 return None;
             }
@@ -1367,7 +1454,9 @@ fn parse_diagram_data_model(bytes: &[u8]) -> Option<DiagramDataModel> {
             if !smart_art_valid_id(transition_id)
                 || !smart_art_valid_id(transition_cxn)
                 || !used_ids.insert(transition_id.to_string())
-                || connection_id.as_deref().is_some_and(|saved| saved != transition_cxn)
+                || connection_id
+                    .as_deref()
+                    .is_some_and(|saved| saved != transition_cxn)
             {
                 return None;
             }
@@ -1525,10 +1614,7 @@ const ITEM_TEXT_PRES: [(&str, &str); 4] = [
 
 fn parse_layout_model(bytes: &[u8]) -> Option<SmartArtLayoutKind> {
     let root = XmlEl::parse(bytes)?;
-    if !root.is(NS_DGM, "layoutDef")
-        || !root.no_text()
-        || root.children.len() != 4
-    {
+    if !root.is(NS_DGM, "layoutDef") || !root.no_text() || root.children.len() != 4 {
         return None;
     }
     let uid = root.single_unqualified_attr("uniqueId")?;
@@ -1594,7 +1680,8 @@ fn parse_layout_model(bytes: &[u8]) -> Option<SmartArtLayoutKind> {
                 return None;
             }
             let br = &fe.children[0];
-            let br_body = check_layout_node_header(br, "branch", None, "hierRoot", &[], None, &[], 7)?;
+            let br_body =
+                check_layout_node_header(br, "branch", None, "hierRoot", &[], None, &[], 7)?;
             if br.children.len() != br_body + 2 {
                 return None;
             }
@@ -1720,8 +1807,10 @@ fn parse_layout_model(bytes: &[u8]) -> Option<SmartArtLayoutKind> {
             }
         }
         _ => {
-            let has_arrows =
-                matches!(kind, SmartArtLayoutKind::Process | SmartArtLayoutKind::Cycle);
+            let has_arrows = matches!(
+                kind,
+                SmartArtLayoutKind::Process | SmartArtLayoutKind::Cycle
+            );
             let expected_fe_children = if has_arrows { 2 } else { 1 };
             if !(fe.is(NS_DGM, "forEach")
                 && fe.exact_attrs(&[
@@ -1851,14 +1940,22 @@ fn check_off_ext(el: &XmlEl, expected_name: &str, min_xy: i64) -> bool {
         && off.attrs.len() == 2
         && off.children.is_empty()
         && off.no_text()
-        && off.attr(None, "x").is_some_and(|v| check_emu_int(v, min_xy, 1_000_000_000))
-        && off.attr(None, "y").is_some_and(|v| check_emu_int(v, min_xy, 1_000_000_000))
+        && off
+            .attr(None, "x")
+            .is_some_and(|v| check_emu_int(v, min_xy, 1_000_000_000))
+        && off
+            .attr(None, "y")
+            .is_some_and(|v| check_emu_int(v, min_xy, 1_000_000_000))
         && ext.is(NS_A, "ext")
         && ext.attrs.len() == 2
         && ext.children.is_empty()
         && ext.no_text()
-        && ext.attr(None, "cx").is_some_and(|v| check_emu_int(v, 0, 1_000_000_000))
-        && ext.attr(None, "cy").is_some_and(|v| check_emu_int(v, 0, 1_000_000_000))
+        && ext
+            .attr(None, "cx")
+            .is_some_and(|v| check_emu_int(v, 0, 1_000_000_000))
+        && ext
+            .attr(None, "cy")
+            .is_some_and(|v| check_emu_int(v, 0, 1_000_000_000))
 }
 
 fn parse_scheme_clr(el: &XmlEl, accents: &mut Vec<u8>, allow_tint_alpha: bool) -> Option<String> {
@@ -1904,7 +2001,8 @@ fn parse_paint(el: &XmlEl, accents: &mut Vec<u8>) -> Option<String> {
     if el.leaf(NS_A, "noFill", &[]) {
         return Some("none".into());
     }
-    if !el.is(NS_A, "solidFill") || !el.attrs.is_empty() || !el.no_text() || el.children.len() != 1 {
+    if !el.is(NS_A, "solidFill") || !el.attrs.is_empty() || !el.no_text() || el.children.len() != 1
+    {
         return None;
     }
     let color = &el.children[0];
@@ -1913,7 +2011,8 @@ fn parse_paint(el: &XmlEl, accents: &mut Vec<u8>) -> Option<String> {
             return None;
         }
         let value = color.attr(None, "val")?;
-        return (value.len() == 6 && value.bytes().all(|b| b.is_ascii_hexdigit())).then(|| value.to_string());
+        return (value.len() == 6 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| value.to_string());
     }
     let value = parse_scheme_clr(color, accents, true)?;
     (value == "lt1" || value == "tx1" || value.starts_with("accent"))
@@ -1925,11 +2024,18 @@ fn parse_drawing_color(el: &XmlEl, accents: &mut Vec<u8>) -> Option<String> {
         return parse_smart_art_color(el);
     }
     let color = parse_scheme_clr(el, accents, false)?;
-    matches!(color.as_str(), "lt1" | "tx1" | "accent1" | "accent2" | "accent3" | "accent4" | "accent5" | "accent6")
-        .then(|| format!("scheme:{color}"))
+    matches!(
+        color.as_str(),
+        "lt1" | "tx1" | "accent1" | "accent2" | "accent3" | "accent4" | "accent5" | "accent6"
+    )
+    .then(|| format!("scheme:{color}"))
 }
 
-fn parse_drawing_text_style(el: &XmlEl, accents: &mut Vec<u8>, allow_color: bool) -> Option<DrawingTextStyle> {
+fn parse_drawing_text_style(
+    el: &XmlEl,
+    accents: &mut Vec<u8>,
+    allow_color: bool,
+) -> Option<DrawingTextStyle> {
     if (!el.is(NS_A, "rPr") && !el.is(NS_A, "endParaRPr"))
         || !el.no_text()
         || (!allow_color && !el.children.is_empty())
@@ -1937,14 +2043,22 @@ fn parse_drawing_text_style(el: &XmlEl, accents: &mut Vec<u8>, allow_color: bool
     {
         return None;
     }
-    let mut style = DrawingTextStyle { color: None, bold: None, italic: None, size: None, language: None };
+    let mut style = DrawingTextStyle {
+        color: None,
+        bold: None,
+        italic: None,
+        size: None,
+        language: None,
+    };
     for (ns, key, value) in &el.attrs {
         if ns.is_some() {
             return None;
         }
         match key.as_str() {
             "lang" if value == "en-US" => {}
-            "lang" if !value.is_empty() && value.len() <= 64 && value.is_ascii() => style.language = Some(value.to_string()),
+            "lang" if !value.is_empty() && value.len() <= 64 && value.is_ascii() => {
+                style.language = Some(value.to_string())
+            }
             "sz" if check_emu_int(value, 100, 10_000) => style.size = value.parse().ok(),
             "b" if value == "0" || value == "1" => style.bold = Some(value == "1"),
             "i" if value == "0" || value == "1" => style.italic = Some(value == "1"),
@@ -1953,13 +2067,20 @@ fn parse_drawing_text_style(el: &XmlEl, accents: &mut Vec<u8>, allow_color: bool
     }
     if allow_color {
         if let Some(fill) = el.children.first() {
-            if !fill.is(NS_A, "solidFill") || !fill.attrs.is_empty() || !fill.no_text() || fill.children.len() != 1 {
+            if !fill.is(NS_A, "solidFill")
+                || !fill.attrs.is_empty()
+                || !fill.no_text()
+                || fill.children.len() != 1
+            {
                 return None;
             }
             style.color = Some(parse_drawing_color(&fill.children[0], accents)?);
         }
     }
-    if el.attr(None, "lang").is_none() || style.size.is_none() || (allow_color && style.color.is_none()) {
+    if el.attr(None, "lang").is_none()
+        || style.size.is_none()
+        || (allow_color && style.color.is_none())
+    {
         return None;
     }
     Some(style)
@@ -2089,9 +2210,13 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
         }
         let line_width = if ln.attrs.len() == 1 {
             let width = ln.single_unqualified_attr("w")?;
-            if !check_emu_int(width, 1, 1_000_000_000) { return None; }
+            if !check_emu_int(width, 1, 1_000_000_000) {
+                return None;
+            }
             Some(width.parse::<u32>().ok()?)
-        } else { None };
+        } else {
+            None
+        };
         let line_color = parse_paint(&ln.children[0], &mut accents)?;
 
         // dsp:style
@@ -2125,8 +2250,7 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
         if !(font_ref.is(NS_A, "fontRef")
             && font_ref.exact_attrs(&[(None, "idx", "minor")])
             && font_ref.no_text()
-            && font_ref.children.len() == 1
-        )
+            && font_ref.children.len() == 1)
         {
             return None;
         }
@@ -2193,7 +2317,10 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
                 };
                 let run = &p.children[1];
                 let (text, paragraph_style) = if run.is(NS_A, "endParaRPr") {
-                    (String::new(), parse_drawing_text_style(run, &mut accents, false)?)
+                    (
+                        String::new(),
+                        parse_drawing_text_style(run, &mut accents, false)?,
+                    )
                 } else if run.is(NS_A, "r") {
                     if !run.attrs.is_empty() || !run.no_text() || run.children.len() != 2 {
                         return None;
@@ -2236,7 +2363,11 @@ fn parse_drawing_shapes(bytes: &[u8]) -> Option<Vec<DrawingShape>> {
     Some(shapes)
 }
 
-fn expected_item_paras(items: &[SmartArtItemData], i: usize, with_children: bool) -> Vec<(String, bool)> {
+fn expected_item_paras(
+    items: &[SmartArtItemData],
+    i: usize,
+    with_children: bool,
+) -> Vec<(String, bool)> {
     let mut out = vec![(items[i].text.clone(), false)];
     if with_children {
         for j in item_descendants(items, i) {
@@ -2246,7 +2377,12 @@ fn expected_item_paras(items: &[SmartArtItemData], i: usize, with_children: bool
     out
 }
 
-fn drawing_node_fill_matches(shape: &DrawingShape, item: &SmartArtItemData, default_color: &str, styled: bool) -> bool {
+fn drawing_node_fill_matches(
+    shape: &DrawingShape,
+    item: &SmartArtItemData,
+    default_color: &str,
+    styled: bool,
+) -> bool {
     match styled.then_some(item.style.fill.as_deref()).flatten() {
         Some(color) => shape.fill_color == color,
         None => shape.fill_color == default_color,
@@ -2260,9 +2396,20 @@ fn drawing_node_line_matches(
     default_width: u32,
     styled: bool,
 ) -> bool {
-    let expected = styled.then_some(item.style.line.as_deref()).flatten().unwrap_or(default_color);
-    let width = styled.then_some(item.style.line_width).flatten().unwrap_or(default_width);
-    shape.line_color == expected && if expected == "none" { shape.line_width.is_none() } else { shape.line_width == Some(width) }
+    let expected = styled
+        .then_some(item.style.line.as_deref())
+        .flatten()
+        .unwrap_or(default_color);
+    let width = styled
+        .then_some(item.style.line_width)
+        .flatten()
+        .unwrap_or(default_width);
+    shape.line_color == expected
+        && if expected == "none" {
+            shape.line_width.is_none()
+        } else {
+            shape.line_width == Some(width)
+        }
 }
 
 fn drawing_node_text_matches(shape: &DrawingShape, item: &SmartArtItemData) -> bool {
@@ -2272,7 +2419,9 @@ fn drawing_node_text_matches(shape: &DrawingShape, item: &SmartArtItemData) -> b
         matches!(shape.font_color.as_str(), "scheme:lt1" | "scheme:tx1"),
         |expected| shape.font_color == expected,
     );
-    let Some(run) = shape.paragraph_styles.first() else { return false };
+    let Some(run) = shape.paragraph_styles.first() else {
+        return false;
+    };
     let run_color_ok = style.text_color.as_deref().map_or(
         matches!(run.color.as_deref(), Some("scheme:lt1" | "scheme:tx1")),
         |expected| run.color.as_deref() == Some(expected),
@@ -2484,20 +2633,30 @@ fn drawing_matches_data(shapes: &[DrawingShape], data: &DiagramDataModel) -> boo
     }
     let mut node_shapes: BTreeMap<usize, (usize, SmartArtNodeDrawingRole, usize)> = BTreeMap::new();
     match data.layout {
-        SmartArtLayoutKind::BasicList | SmartArtLayoutKind::Pyramid | SmartArtLayoutKind::Matrix => {
-            for (shape, &item) in tops.iter().enumerate() { node_shapes.insert(shape, (item, SmartArtNodeDrawingRole::Standard, shape)); }
+        SmartArtLayoutKind::BasicList
+        | SmartArtLayoutKind::Pyramid
+        | SmartArtLayoutKind::Matrix => {
+            for (shape, &item) in tops.iter().enumerate() {
+                node_shapes.insert(shape, (item, SmartArtNodeDrawingRole::Standard, shape));
+            }
         }
         SmartArtLayoutKind::Process => {
             let offset = tops.len() - 1;
-            for (k, &item) in tops.iter().enumerate() { node_shapes.insert(offset + k, (item, SmartArtNodeDrawingRole::Standard, k)); }
+            for (k, &item) in tops.iter().enumerate() {
+                node_shapes.insert(offset + k, (item, SmartArtNodeDrawingRole::Standard, k));
+            }
         }
         SmartArtLayoutKind::Cycle => {
             let offset = shapes.len() - tops.len();
-            for (k, &item) in tops.iter().enumerate() { node_shapes.insert(offset + k, (item, SmartArtNodeDrawingRole::Standard, k)); }
+            for (k, &item) in tops.iter().enumerate() {
+                node_shapes.insert(offset + k, (item, SmartArtNodeDrawingRole::Standard, k));
+            }
         }
         SmartArtLayoutKind::Hierarchy => {
             let offset = shapes.len() - data.items.len();
-            for i in 0..data.items.len() { node_shapes.insert(offset + i, (i, SmartArtNodeDrawingRole::Standard, i)); }
+            for i in 0..data.items.len() {
+                node_shapes.insert(offset + i, (i, SmartArtNodeDrawingRole::Standard, i));
+            }
         }
         SmartArtLayoutKind::Radial => {
             let parents = item_parents(&data.items);
@@ -2508,30 +2667,56 @@ fn drawing_matches_data(shapes: &[DrawingShape], data: &DiagramDataModel) -> boo
                 node_shapes.insert(0, (0, SmartArtNodeDrawingRole::Standard, 0));
             } else {
                 node_shapes.insert(spokes.len(), (0, SmartArtNodeDrawingRole::Standard, 0));
-                for (k, &item) in spokes.iter().enumerate() { node_shapes.insert(spokes.len() + 1 + k, (item, SmartArtNodeDrawingRole::Standard, k + 1)); }
+                for (k, &item) in spokes.iter().enumerate() {
+                    node_shapes.insert(
+                        spokes.len() + 1 + k,
+                        (item, SmartArtNodeDrawingRole::Standard, k + 1),
+                    );
+                }
             }
         }
         SmartArtLayoutKind::Venn => {
             for (k, &item) in tops.iter().enumerate() {
                 node_shapes.insert(k, (item, SmartArtNodeDrawingRole::VennFill, k));
-                node_shapes.insert(tops.len() + k, (item, SmartArtNodeDrawingRole::VennOutline, k));
-                node_shapes.insert(2 * tops.len() + k, (item, SmartArtNodeDrawingRole::VennText, k));
+                node_shapes.insert(
+                    tops.len() + k,
+                    (item, SmartArtNodeDrawingRole::VennOutline, k),
+                );
+                node_shapes.insert(
+                    2 * tops.len() + k,
+                    (item, SmartArtNodeDrawingRole::VennText, k),
+                );
             }
         }
     }
     shapes.iter().enumerate().all(|(index, shape)| {
-        node_shapes.get(&index).map_or_else(|| drawing_unstyled_shape_is_safe(shape), |&(item, role, accent_index)| {
-            let default_fill = match role {
-                SmartArtNodeDrawingRole::VennOutline | SmartArtNodeDrawingRole::VennText => "none".to_string(),
-                _ => format!("scheme:accent{}", data.colors.accent(accent_index)),
-            };
-            let default_line = match role {
-                SmartArtNodeDrawingRole::Standard => "scheme:lt1".to_string(),
-                SmartArtNodeDrawingRole::VennFill | SmartArtNodeDrawingRole::VennText => "none".to_string(),
-                SmartArtNodeDrawingRole::VennOutline => format!("scheme:accent{}", data.colors.accent(accent_index)),
-            };
-            drawing_node_style_matches(shape, &data.items[item], role, &default_fill, &default_line)
-        })
+        node_shapes.get(&index).map_or_else(
+            || drawing_unstyled_shape_is_safe(shape),
+            |&(item, role, accent_index)| {
+                let default_fill = match role {
+                    SmartArtNodeDrawingRole::VennOutline | SmartArtNodeDrawingRole::VennText => {
+                        "none".to_string()
+                    }
+                    _ => format!("scheme:accent{}", data.colors.accent(accent_index)),
+                };
+                let default_line = match role {
+                    SmartArtNodeDrawingRole::Standard => "scheme:lt1".to_string(),
+                    SmartArtNodeDrawingRole::VennFill | SmartArtNodeDrawingRole::VennText => {
+                        "none".to_string()
+                    }
+                    SmartArtNodeDrawingRole::VennOutline => {
+                        format!("scheme:accent{}", data.colors.accent(accent_index))
+                    }
+                };
+                drawing_node_style_matches(
+                    shape,
+                    &data.items[item],
+                    role,
+                    &default_fill,
+                    &default_line,
+                )
+            },
+        )
     })
 }
 
@@ -2653,7 +2838,11 @@ fn scan_document_bindings(bytes: &[u8], rels: &[RelEntry]) -> Option<DocumentBin
     // Keep repeated SmartArt bindings: they represent distinct drawing owners and are required
     // for the copy-on-write safety check below.
     diagrams.sort();
-    Some(DocumentBindings { charts, diagrams, diagrams_complete })
+    Some(DocumentBindings {
+        charts,
+        diagrams,
+        diagrams_complete,
+    })
 }
 
 fn collect_smart_art_rel_ids<'a>(element: &'a XmlEl, out: &mut Vec<&'a XmlEl>) {
@@ -2700,7 +2889,8 @@ fn collect_smart_art_owners(
                 .find(|child| child.is(NS_WP, "docPr"))?;
             let owner_id = owner.attr(None, "id")?.to_string();
             let numeric_id = owner_id.parse::<u32>().ok()?;
-            if numeric_id == 0 || owner_id != numeric_id.to_string()
+            if numeric_id == 0
+                || owner_id != numeric_id.to_string()
                 || out.iter().any(|existing| existing.owner_id == owner_id)
             {
                 return None;
@@ -2723,7 +2913,12 @@ fn collect_smart_art_owners(
             out.push(SmartArtOwnerBinding {
                 owner_id,
                 relationship_ids,
-                binding: DiagramBinding { data, layout, quick_style, colors },
+                binding: DiagramBinding {
+                    data,
+                    layout,
+                    quick_style,
+                    colors,
+                },
             });
             return Some(());
         }
@@ -2751,27 +2946,45 @@ fn document_equal_except_smart_art_relationship_ids(before: &[u8], after: &[u8])
     let normalize = |events: &mut [Canonical]| -> Option<usize> {
         let mut count = 0;
         for event in events {
-            let Canonical::Start { namespace: Some(ns), name, attributes } = event else { continue };
+            let Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } = event
+            else {
+                continue;
+            };
             if ns.as_str() != NS_DGM || name.as_str() != "relIds" {
                 continue;
             }
-            let relationship_attributes: Vec<_> = attributes.iter().filter(|(ans, key, _)| {
-                ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str())
-            }).collect();
-            let keys: BTreeSet<_> = relationship_attributes.iter().map(|(_, key, _)| key.as_str()).collect();
-            if relationship_attributes.len() != 4 || keys.len() != 4
-                || relationship_attributes.iter().any(|(_, _, value)| value.is_empty())
+            let relationship_attributes: Vec<_> = attributes
+                .iter()
+                .filter(|(ans, key, _)| {
+                    ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str())
+                })
+                .collect();
+            let keys: BTreeSet<_> = relationship_attributes
+                .iter()
+                .map(|(_, key, _)| key.as_str())
+                .collect();
+            if relationship_attributes.len() != 4
+                || keys.len() != 4
+                || relationship_attributes
+                    .iter()
+                    .any(|(_, _, value)| value.is_empty())
             {
                 return None;
             }
-            attributes.retain(|(ans, key, _)| !(
-                ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str())
-            ));
+            attributes.retain(|(ans, key, _)| {
+                !(ans.as_deref() == Some(NS_R) && ["dm", "lo", "qs", "cs"].contains(&key.as_str()))
+            });
             count += 1;
         }
         Some(count)
     };
-    let (Some(before_count), Some(after_count)) = (normalize(&mut before_events), normalize(&mut after_events)) else {
+    let (Some(before_count), Some(after_count)) =
+        (normalize(&mut before_events), normalize(&mut after_events))
+    else {
         return false;
     };
     before_count > 0 && before_count == after_count && before_events == after_events
@@ -2837,10 +3050,18 @@ fn is_diagram_relationship(kind: &str) -> bool {
 
 fn expected_diagram_content_type(kind: &str) -> Option<&'static str> {
     match kind {
-        DIAGRAM_DATA_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"),
-        DIAGRAM_LAYOUT_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml"),
-        DIAGRAM_QUICK_STYLE_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"),
-        DIAGRAM_COLORS_REL => Some("application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"),
+        DIAGRAM_DATA_REL => {
+            Some("application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml")
+        }
+        DIAGRAM_LAYOUT_REL => {
+            Some("application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml")
+        }
+        DIAGRAM_QUICK_STYLE_REL => {
+            Some("application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml")
+        }
+        DIAGRAM_COLORS_REL => {
+            Some("application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml")
+        }
         DIAGRAM_DRAWING_REL => Some("application/vnd.ms-office.drawingml.diagramDrawing+xml"),
         _ => None,
     }
@@ -2864,8 +3085,7 @@ fn smart_art_owner_parts(
         owner.binding.layout.as_str(),
         owner.binding.quick_style.as_str(),
         owner.binding.colors.as_str(),
-    ])
-    {
+    ]) {
         let part = relationship_target(rels, id, kind)?;
         if part != target {
             return None;
@@ -2919,30 +3139,51 @@ fn smart_art_relationships_are_copy_on_write(
     // Keep old diagram edges stable because at least one original owner still points to them.
     // WordCraft may renumber unreferenced story-wide style/settings/theme edges when it inserts
     // the new diagram edges, so compare those rows as a multiset and resolve every body reference.
-    if before.values().filter(|rel| is_diagram_relationship(&rel.kind)).any(|rel| after.get(&rel.id) != Some(rel)) {
+    if before
+        .values()
+        .filter(|rel| is_diagram_relationship(&rel.kind))
+        .any(|rel| after.get(&rel.id) != Some(rel))
+    {
         return false;
     }
-    let mut old_non_diagram: Vec<_> = before.values().filter(|rel| !is_diagram_relationship(&rel.kind))
-        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external)).collect();
-    let mut new_non_diagram: Vec<_> = after.values().filter(|rel| !is_diagram_relationship(&rel.kind))
-        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external)).collect();
+    let mut old_non_diagram: Vec<_> = before
+        .values()
+        .filter(|rel| !is_diagram_relationship(&rel.kind))
+        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external))
+        .collect();
+    let mut new_non_diagram: Vec<_> = after
+        .values()
+        .filter(|rel| !is_diagram_relationship(&rel.kind))
+        .map(|rel| (rel.kind.clone(), rel.target.clone(), rel.external))
+        .collect();
     old_non_diagram.sort();
     new_non_diagram.sort();
     if old_non_diagram != new_non_diagram {
         return false;
     }
-    let (Ok(old_events), Ok(new_events)) = (xml::canonical(original_document), xml::canonical(output_document)) else {
+    let (Ok(old_events), Ok(new_events)) = (
+        xml::canonical(original_document),
+        xml::canonical(output_document),
+    ) else {
         return false;
     };
     let body_relationship_ids = |events: &[Canonical]| -> Option<BTreeSet<String>> {
         let mut ids = BTreeSet::new();
         for event in events {
-            let Canonical::Start { namespace: Some(ns), name, attributes } = event else { continue };
+            let Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } = event
+            else {
+                continue;
+            };
             for (attribute_ns, attribute_name, value) in attributes {
                 if attribute_ns.as_deref() != Some(NS_R) {
                     continue;
                 }
-                if ns.as_str() == NS_DGM && name.as_str() == "relIds"
+                if ns.as_str() == NS_DGM
+                    && name.as_str() == "relIds"
                     && ["dm", "lo", "qs", "cs"].contains(&attribute_name.as_str())
                 {
                     continue;
@@ -2952,13 +3193,21 @@ fn smart_art_relationships_are_copy_on_write(
         }
         Some(ids)
     };
-    let (Some(old_body_ids), Some(new_body_ids)) = (body_relationship_ids(&old_events), body_relationship_ids(&new_events)) else {
+    let (Some(old_body_ids), Some(new_body_ids)) = (
+        body_relationship_ids(&old_events),
+        body_relationship_ids(&new_events),
+    ) else {
         return false;
     };
-    if old_body_ids != new_body_ids || old_body_ids.iter().any(|id| before.get(id) != after.get(id)) {
+    if old_body_ids != new_body_ids
+        || old_body_ids
+            .iter()
+            .any(|id| before.get(id) != after.get(id))
+    {
         return false;
     }
-    let old_diagram_rows: BTreeSet<_> = before.values()
+    let old_diagram_rows: BTreeSet<_> = before
+        .values()
         .filter(|rel| is_diagram_relationship(&rel.kind))
         .cloned()
         .collect();
@@ -2970,26 +3219,29 @@ fn smart_art_relationships_are_copy_on_write(
         };
         for (id, kind) in references {
             *referenced.entry(id.clone()).or_default() += 1;
-            let Some(row) = after.get(&id) else { return false };
+            let Some(row) = after.get(&id) else {
+                return false;
+            };
             if row.external || row.kind != kind {
                 return false;
             }
             referenced_rows.insert(row.clone());
         }
     }
-    let added_diagram_rows: BTreeSet<_> = after.values()
+    let added_diagram_rows: BTreeSet<_> = after
+        .values()
         .filter(|rel| is_diagram_relationship(&rel.kind) && !old_diagram_rows.contains(*rel))
         .cloned()
         .collect();
-    let new_referenced_rows: BTreeSet<_> = referenced_rows.iter()
+    let new_referenced_rows: BTreeSet<_> = referenced_rows
+        .iter()
         .filter(|rel| !old_diagram_rows.contains(*rel))
         .cloned()
         .collect();
     added_diagram_rows == new_referenced_rows
         && added_diagram_rows.iter().all(|row| {
             let valid_kind = is_diagram_relationship(&row.kind);
-            valid_kind
-                && referenced.get(&row.id) == Some(&1)
+            valid_kind && referenced.get(&row.id) == Some(&1)
         })
 }
 
@@ -2998,23 +3250,32 @@ fn content_types_match_copy_on_write(
     output: &Package,
     added_parts: &BTreeMap<String, &'static str>,
 ) -> bool {
-    let (Some(before_bytes), Some(after_bytes)) =
-        (original.get("[Content_Types].xml"), output.get("[Content_Types].xml"))
-    else {
+    let (Some(before_bytes), Some(after_bytes)) = (
+        original.get("[Content_Types].xml"),
+        output.get("[Content_Types].xml"),
+    ) else {
         return false;
     };
-    let (Ok(before), Ok(after)) = (xml::content_types(before_bytes), xml::content_types(after_bytes)) else {
+    let (Ok(before), Ok(after)) = (
+        xml::content_types(before_bytes),
+        xml::content_types(after_bytes),
+    ) else {
         return false;
     };
     let normalize = |items: &[(String, String)]| -> BTreeMap<String, String> {
-        items.iter().map(|(name, kind)| (name.to_ascii_lowercase(), kind.clone())).collect()
+        items
+            .iter()
+            .map(|(name, kind)| (name.to_ascii_lowercase(), kind.clone()))
+            .collect()
     };
     let old_defaults = normalize(&before.defaults);
     let new_defaults = normalize(&after.defaults);
     let old_overrides = normalize(&before.overrides);
     let new_overrides = normalize(&after.overrides);
     if old_defaults != new_defaults
-        || old_overrides.iter().any(|(name, kind)| new_overrides.get(name) != Some(kind))
+        || old_overrides
+            .iter()
+            .any(|(name, kind)| new_overrides.get(name) != Some(kind))
     {
         return false;
     }
@@ -3031,7 +3292,9 @@ fn content_types_match_copy_on_write(
         return false;
     }
     added_parts.iter().all(|(part, kind)| {
-        after.of(&format!("/{part}")).is_some_and(|actual| actual == *kind)
+        after
+            .of(&format!("/{part}"))
+            .is_some_and(|actual| actual == *kind)
     })
 }
 
@@ -3081,7 +3344,10 @@ pub(super) fn smart_art_data_mutation_preserves_identity_for_test(
     Some(smart_art_data_is_mutation_allowed(&before, &after))
 }
 
-fn diagram_data_equal_except_drawing_rel(before: &DiagramDataModel, after: &DiagramDataModel) -> bool {
+fn diagram_data_equal_except_drawing_rel(
+    before: &DiagramDataModel,
+    after: &DiagramDataModel,
+) -> bool {
     before.model_id == after.model_id
         && before.layout == after.layout
         && before.colors == after.colors
@@ -3113,7 +3379,10 @@ fn smart_art_node_style_only_change(before: &DiagramDataModel, after: &DiagramDa
     changed
 }
 
-fn smart_art_style_drawing_geometry_preserved(before: &[DrawingShape], after: &[DrawingShape]) -> bool {
+fn smart_art_style_drawing_geometry_preserved(
+    before: &[DrawingShape],
+    after: &[DrawingShape],
+) -> bool {
     before.len() == after.len()
         && before.iter().zip(after).all(|(old, new)| {
             old.geometry == new.geometry
@@ -3169,8 +3438,14 @@ fn smart_art_shared_copy_on_write_parts(
     if original_owners.len() < 2 || original_owners.len() != output_owners.len() {
         return None;
     }
-    let old_by_id: BTreeMap<_, _> = original_owners.iter().map(|owner| (owner.owner_id.as_str(), owner)).collect();
-    let new_by_id: BTreeMap<_, _> = output_owners.iter().map(|owner| (owner.owner_id.as_str(), owner)).collect();
+    let old_by_id: BTreeMap<_, _> = original_owners
+        .iter()
+        .map(|owner| (owner.owner_id.as_str(), owner))
+        .collect();
+    let new_by_id: BTreeMap<_, _> = output_owners
+        .iter()
+        .map(|owner| (owner.owner_id.as_str(), owner))
+        .collect();
     if old_by_id.len() != original_owners.len()
         || new_by_id.len() != output_owners.len()
         || old_by_id.keys().ne(new_by_id.keys())
@@ -3179,11 +3454,17 @@ fn smart_art_shared_copy_on_write_parts(
     }
     let original_owner_parts: BTreeMap<_, _> = original_owners
         .iter()
-        .map(|owner| smart_art_owner_parts(owner, original, &original_rels).map(|parts| (owner.owner_id.as_str(), parts)))
+        .map(|owner| {
+            smart_art_owner_parts(owner, original, &original_rels)
+                .map(|parts| (owner.owner_id.as_str(), parts))
+        })
         .collect::<Option<_>>()?;
     let output_owner_parts: BTreeMap<_, _> = output_owners
         .iter()
-        .map(|owner| smart_art_owner_parts(owner, output, &output_rels).map(|parts| (owner.owner_id.as_str(), parts)))
+        .map(|owner| {
+            smart_art_owner_parts(owner, output, &output_rels)
+                .map(|parts| (owner.owner_id.as_str(), parts))
+        })
         .collect::<Option<_>>()?;
     let mut old_part_uses = BTreeMap::<String, usize>::new();
     for parts in original_owner_parts.values() {
@@ -3198,7 +3479,8 @@ fn smart_art_shared_copy_on_write_parts(
     let mut original_parts = BTreeSet::new();
     let mut expected_added_types = BTreeMap::new();
     let mut changed_owners = 0usize;
-    let mut admitted = BTreeSet::from([DOCUMENT_RELS.to_string(), "[Content_Types].xml".to_string()]);
+    let mut admitted =
+        BTreeSet::from([DOCUMENT_RELS.to_string(), "[Content_Types].xml".to_string()]);
     for (owner_id, old_owner) in &old_by_id {
         let new_owner = new_by_id.get(owner_id)?;
         let old_parts = original_owner_parts.get(owner_id)?;
@@ -3247,8 +3529,13 @@ fn smart_art_shared_copy_on_write_parts(
         if !diagram_data_equal_except_drawing_rel(&before_data, &after_data) {
             changed_owners += 1;
         }
-        let before_drawing = relationship_target(&original_rels, &before_data.drawing_rel, DIAGRAM_DRAWING_REL)?;
-        let after_drawing = relationship_target(&output_rels, &after_data.drawing_rel, DIAGRAM_DRAWING_REL)?;
+        let before_drawing = relationship_target(
+            &original_rels,
+            &before_data.drawing_rel,
+            DIAGRAM_DRAWING_REL,
+        )?;
+        let after_drawing =
+            relationship_target(&output_rels, &after_data.drawing_rel, DIAGRAM_DRAWING_REL)?;
         let before_drawing_bytes = original.get(&before_drawing)?;
         let after_drawing_bytes = output.get(&after_drawing)?;
         let (before_shapes, after_shapes) = (
@@ -3281,10 +3568,18 @@ fn smart_art_shared_copy_on_write_parts(
     if changed_owners > usize::from(allow_one_changed_owner) {
         return None;
     }
-    let actual_added: BTreeSet<_> = output.parts.keys().filter(|part| !original.parts.contains_key(*part)).cloned().collect();
+    let actual_added: BTreeSet<_> = output
+        .parts
+        .keys()
+        .filter(|part| !original.parts.contains_key(*part))
+        .cloned()
+        .collect();
     let expected_added: BTreeSet<_> = expected_added_types.keys().cloned().collect();
     if actual_added != expected_added
-        || original.parts.keys().any(|part| !output.parts.contains_key(part))
+        || original
+            .parts
+            .keys()
+            .any(|part| !output.parts.contains_key(part))
     {
         return None;
     }
@@ -3329,10 +3624,7 @@ pub(super) fn graphic_parts_unchanged_regenerated(
     Some(admitted)
 }
 
-pub(super) fn graphic_parts_regenerated(
-    original: &Package,
-    output: &Package,
-) -> BTreeSet<String> {
+pub(super) fn graphic_parts_regenerated(original: &Package, output: &Package) -> BTreeSet<String> {
     let mut admitted = BTreeSet::new();
     if original.get(DOCUMENT_RELS) != output.get(DOCUMENT_RELS) {
         return smart_art_shared_copy_on_write_parts(original, output, true).unwrap_or_default();
@@ -3341,8 +3633,12 @@ pub(super) fn graphic_parts_regenerated(
         return admitted;
     };
     let (Some(orig_doc), Some(out_doc)) = (
-        original.get(DOCUMENT_XML).and_then(|b| scan_document_bindings(b, &rels)),
-        output.get(DOCUMENT_XML).and_then(|b| scan_document_bindings(b, &rels)),
+        original
+            .get(DOCUMENT_XML)
+            .and_then(|b| scan_document_bindings(b, &rels)),
+        output
+            .get(DOCUMENT_XML)
+            .and_then(|b| scan_document_bindings(b, &rels)),
     ) else {
         return admitted;
     };
@@ -3378,13 +3674,22 @@ pub(super) fn graphic_parts_regenerated(
     }
 
     for binding in &orig_doc.diagrams {
-        if !orig_doc.diagrams_complete || !out_doc.diagrams_complete || !out_doc.diagrams.contains(binding) {
+        if !orig_doc.diagrams_complete
+            || !out_doc.diagrams_complete
+            || !out_doc.diagrams.contains(binding)
+        {
             continue;
         }
-        let parts = [&binding.data, &binding.layout, &binding.quick_style, &binding.colors];
-        if !parts.iter().all(|p| {
-            package::regenerated_graphic_part(p) && has_no_part_rels(original, output, p)
-        }) {
+        let parts = [
+            &binding.data,
+            &binding.layout,
+            &binding.quick_style,
+            &binding.colors,
+        ];
+        if !parts
+            .iter()
+            .all(|p| package::regenerated_graphic_part(p) && has_no_part_rels(original, output, p))
+        {
             continue;
         }
         let (
@@ -3441,19 +3746,44 @@ pub(super) fn graphic_parts_regenerated(
         {
             continue;
         }
-        let Some(before_drawing_bytes) = original.get(drawing_part) else { continue; };
-        let Some(after_drawing_bytes) = output.get(drawing_part) else { continue; };
+        let Some(before_drawing_bytes) = original.get(drawing_part) else {
+            continue;
+        };
+        let Some(after_drawing_bytes) = output.get(drawing_part) else {
+            continue;
+        };
         // Shared data, layout, or drawing parts remain read-only until relationship copy-on-write
         // exists. Unchanged shared quickStyle/colors are safe because this operation never writes them.
         let changed_parts = [
-            (binding.data.as_str(), original.get(&binding.data), output.get(&binding.data)),
-            (binding.layout.as_str(), original.get(&binding.layout), output.get(&binding.layout)),
-            (drawing_part.as_str(), Some(before_drawing_bytes), Some(after_drawing_bytes)),
+            (
+                binding.data.as_str(),
+                original.get(&binding.data),
+                output.get(&binding.data),
+            ),
+            (
+                binding.layout.as_str(),
+                original.get(&binding.layout),
+                output.get(&binding.layout),
+            ),
+            (
+                drawing_part.as_str(),
+                Some(before_drawing_bytes),
+                Some(after_drawing_bytes),
+            ),
         ];
         if changed_parts.iter().any(|(part, before, after)| {
             before != after
-                && (!diagram_part_exclusively_owned(*part, &orig_doc.diagrams, original, &drawing_rel_targets)
-                    || !diagram_part_exclusively_owned(*part, &out_doc.diagrams, output, &drawing_rel_targets))
+                && (!diagram_part_exclusively_owned(
+                    *part,
+                    &orig_doc.diagrams,
+                    original,
+                    &drawing_rel_targets,
+                ) || !diagram_part_exclusively_owned(
+                    *part,
+                    &out_doc.diagrams,
+                    output,
+                    &drawing_rel_targets,
+                ))
         }) {
             continue;
         }

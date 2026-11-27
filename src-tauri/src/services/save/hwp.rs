@@ -453,8 +453,13 @@ fn opaque_owners_preserved(
             .collect::<Option<_>>()?;
         let mut owners = opaque_owners(records)?;
         owners.retain(|owner| {
-            let Some(first) = owner.first() else { return false };
-            let Some(start) = records.iter().position(|record| std::ptr::eq(record, first)) else {
+            let Some(first) = owner.first() else {
+                return false;
+            };
+            let Some(start) = records
+                .iter()
+                .position(|record| std::ptr::eq(record, first))
+            else {
                 return false;
             };
             let end = start + owner.len();
@@ -1286,13 +1291,16 @@ fn compare_with(
                         && key.starts_with(BIN_DATA_PREFIX)
                         && key.ends_with(".OLE")
                         && {
-                            let (original_owners, output_owners) = ole_owners.get_or_insert_with(|| {
-                                (
-                                    ole::exclusive_chart_owners(&original).unwrap_or_default(),
-                                    ole::exclusive_chart_owners(&output).unwrap_or_default(),
-                                )
-                            });
-                            original_owners.get(&key).zip(output_owners.get(&key))
+                            let (original_owners, output_owners) =
+                                ole_owners.get_or_insert_with(|| {
+                                    (
+                                        ole::exclusive_chart_owners(&original).unwrap_or_default(),
+                                        ole::exclusive_chart_owners(&output).unwrap_or_default(),
+                                    )
+                                });
+                            original_owners
+                                .get(&key)
+                                .zip(output_owners.get(&key))
                                 .is_some_and(|(before, after)| before == after)
                         }
                         && super::hwpx_charts::prove_nested_ole_chart_cfb(
@@ -1971,7 +1979,9 @@ pub fn refresh_previews(
     else {
         return refused;
     };
-    let text_requires_refresh = findings.iter().any(|finding| finding.part.as_deref() == Some("PrvText"));
+    let text_requires_refresh = findings
+        .iter()
+        .any(|finding| finding.part.as_deref() == Some("PrvText"));
     let text = if text_requires_refresh {
         let Some(text) = text_preview(&container) else {
             return refused;
@@ -2028,7 +2038,10 @@ pub fn refresh_previews(
     if !findings.is_empty() {
         return Ok(RefreshedPreviews::default());
     }
-    Ok(RefreshedPreviews { output: Some(bytes), image: Some(png) })
+    Ok(RefreshedPreviews {
+        output: Some(bytes),
+        image: Some(png),
+    })
 }
 
 fn rebuild_preview(
@@ -2333,13 +2346,17 @@ mod font_preservation_tests {
 
 #[cfg(test)]
 mod chart_tests {
-    use super::*;
     use super::ole::TAG_OLE;
+    use super::*;
     use std::io::Write;
 
     fn pack_rec(tag: u16, level: u16, payload: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
-        let size = if payload.len() >= 0xfff { 0xfff } else { payload.len() };
+        let size = if payload.len() >= 0xfff {
+            0xfff
+        } else {
+            payload.len()
+        };
         let hdr = (u32::from(tag) & 0x3ff)
             | ((u32::from(level) & 0x3ff) << 10)
             | ((size as u32 & 0xfff) << 20);
@@ -2369,7 +2386,12 @@ mod chart_tests {
         .into_bytes()
     }
 
-    fn make_ole_stream(chart_bytes: &[u8], extra_contents: &[u8], zero_clsid: bool, with_prefix: bool) -> Vec<u8> {
+    fn make_ole_stream(
+        chart_bytes: &[u8],
+        extra_contents: &[u8],
+        zero_clsid: bool,
+        with_prefix: bool,
+    ) -> Vec<u8> {
         let mut cur = Cursor::new(Vec::new());
         {
             let mut cf = cfb::CompoundFile::create(&mut cur).unwrap();
@@ -2377,8 +2399,14 @@ mod chart_tests {
                 cf.set_storage_clsid("/", "12345678-1234-5678-1234-567812345678".parse().unwrap())
                     .unwrap();
             }
-            cf.create_stream("/OOXMLChartContents").unwrap().write_all(chart_bytes).unwrap();
-            cf.create_stream("/Contents").unwrap().write_all(extra_contents).unwrap();
+            cf.create_stream("/OOXMLChartContents")
+                .unwrap()
+                .write_all(chart_bytes)
+                .unwrap();
+            cf.create_stream("/Contents")
+                .unwrap()
+                .write_all(extra_contents)
+                .unwrap();
         }
         let raw = cur.into_inner();
         let prefixed = if with_prefix {
@@ -2389,7 +2417,8 @@ mod chart_tests {
         } else {
             raw
         };
-        let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut enc =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
         enc.write_all(&prefixed).unwrap();
         enc.finish().unwrap()
     }
@@ -2404,9 +2433,15 @@ mod chart_tests {
 
     fn append_doc_info(cf: &mut cfb::CompoundFile<Cursor<Vec<u8>>>, record: &[u8]) {
         let mut doc_info = Vec::new();
-        cf.open_stream("DocInfo").unwrap().read_to_end(&mut doc_info).unwrap();
+        cf.open_stream("DocInfo")
+            .unwrap()
+            .read_to_end(&mut doc_info)
+            .unwrap();
         doc_info.extend_from_slice(record);
-        cf.create_stream("DocInfo").unwrap().write_all(&doc_info).unwrap();
+        cf.create_stream("DocInfo")
+            .unwrap()
+            .write_all(&doc_info)
+            .unwrap();
     }
 
     fn ole_records(locked: bool) -> [(u16, u16, Vec<u8>); 3] {
@@ -2437,22 +2472,37 @@ mod chart_tests {
             let mut fh = vec![0u8; 256];
             fh[..17].copy_from_slice(b"HWP Document File");
             fh[35] = 5;
-            cf.create_stream("/FileHeader").unwrap().write_all(&fh).unwrap();
+            cf.create_stream("/FileHeader")
+                .unwrap()
+                .write_all(&fh)
+                .unwrap();
 
             // DocInfo: ID_MAPPINGS(17) + BIN_DATA(18) id=1 Storage Compressed ext="OLE" + PARA_SHAPE(25)
             let mut docinfo = pack_rec(17, 0, &[0u8; 72]);
             docinfo.extend_from_slice(&ole_declaration(1));
             docinfo.extend_from_slice(&pack_rec(TAG_PARA_SHAPE, 1, &[0u8; 54]));
-            cf.create_stream("/DocInfo").unwrap().write_all(&docinfo).unwrap();
+            cf.create_stream("/DocInfo")
+                .unwrap()
+                .write_all(&docinfo)
+                .unwrap();
 
             let mut sec = pack_rec(TAG_PARA_HEADER, 0, &[0u8; 22]);
             write_ole_records(&mut sec, &ole_records(locked));
             cf.create_storage("/BodyText").unwrap();
-            cf.create_stream("/BodyText/Section0").unwrap().write_all(&sec).unwrap();
+            cf.create_stream("/BodyText/Section0")
+                .unwrap()
+                .write_all(&sec)
+                .unwrap();
 
             cf.create_storage("/BinData").unwrap();
-            cf.create_stream("/BinData/BIN0001.OLE").unwrap().write_all(ole_compressed).unwrap();
-            cf.create_stream("/PrvText").unwrap().write_all(&[0x0d, 0x00, 0x0a, 0x00]).unwrap();
+            cf.create_stream("/BinData/BIN0001.OLE")
+                .unwrap()
+                .write_all(ole_compressed)
+                .unwrap();
+            cf.create_stream("/PrvText")
+                .unwrap()
+                .write_all(&[0x0d, 0x00, 0x0a, 0x00])
+                .unwrap();
         }
         cur.into_inner()
     }
@@ -2514,7 +2564,9 @@ mod chart_tests {
 
         let refreshed = refresh_previews(&original, &output, Some(&raster)).unwrap();
         let final_bytes = refreshed.output.expect("the rendered image should refresh");
-        let image = refreshed.image.expect("the refreshed PNG is part of the proof");
+        let image = refreshed
+            .image
+            .expect("the refreshed PNG is part of the proof");
         let final_container = open(&final_bytes, Side::Output).unwrap();
         assert_eq!(
             final_container.streams.get("PrvText"),
@@ -2522,7 +2574,10 @@ mod chart_tests {
             "an image-only refresh must preserve the exact existing PrvText stream"
         );
         assert_eq!(final_container.streams.get("PrvImage"), Some(&image));
-        assert_eq!(compare_saved_with_preview(&original, &final_bytes, Some(&image)), vec![]);
+        assert_eq!(
+            compare_saved_with_preview(&original, &final_bytes, Some(&image)),
+            vec![]
+        );
     }
 
     #[test]
@@ -2592,11 +2647,10 @@ mod chart_tests {
             make_ole_stream(&chart_xml("12.75", "Title"), b"OLE-ORIG", false, false),
         ] {
             let bad = build_hwp_with_ole(&bad_ole, false);
-            assert!(
-                compare_saved(&orig, &bad)
-                    .iter()
-                    .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
-            );
+            assert!(compare_saved(&orig, &bad)
+                .iter()
+                .any(|f| f.code == FindingCode::PartChanged
+                    && f.part.as_deref() == Some("BinData/BIN0001.OLE")));
         }
     }
 
@@ -2614,7 +2668,10 @@ mod chart_tests {
                 border_fill[40..42].copy_from_slice(&id.to_le_bytes());
                 append_doc_info(&mut cf, &pack_rec(20, 1, &border_fill));
             }
-            cf.create_stream("BinData/BIN0002.OLE").unwrap().write_all(unbound_ole).unwrap();
+            cf.create_stream("BinData/BIN0002.OLE")
+                .unwrap()
+                .write_all(unbound_ole)
+                .unwrap();
             cf.into_inner().into_inner()
         };
 
@@ -2622,14 +2679,18 @@ mod chart_tests {
         let edit = build(&edit_ole, &orig_ole, None);
         assert_eq!(compare_saved(&orig, &edit), vec![]);
         let unbound_edit = build(&orig_ole, &edit_ole, None);
-        assert!(compare_saved(&orig, &unbound_edit)
-            .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0002.OLE")));
+        assert!(compare_saved(&orig, &unbound_edit).contains(&Finding::at(
+            FindingCode::PartChanged,
+            "BinData/BIN0002.OLE"
+        )));
 
         let fill_orig = build(&orig_ole, &orig_ole, Some(1));
         let fill_edit = build(&edit_ole, &orig_ole, Some(1));
         assert_eq!(compare_saved(&fill_orig, &fill_orig), vec![]);
-        assert!(compare_saved(&fill_orig, &fill_edit)
-            .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.OLE")));
+        assert!(compare_saved(&fill_orig, &fill_edit).contains(&Finding::at(
+            FindingCode::PartChanged,
+            "BinData/BIN0001.OLE"
+        )));
     }
 
     #[test]
@@ -2642,13 +2703,17 @@ mod chart_tests {
             let mut cf = cfb::CompoundFile::open(Cursor::new(file.to_vec())).unwrap();
             let mut section = pack_rec(TAG_PARA_HEADER, 0, &[0u8; 22]);
             write_ole_records(&mut section, records);
-            cf.create_stream("/BodyText/Section1").unwrap().write_all(&section).unwrap();
+            cf.create_stream("/BodyText/Section1")
+                .unwrap()
+                .write_all(&section)
+                .unwrap();
             cf.into_inner().into_inner()
         };
 
         // A properly nested group uses a level-2 group component, then a
         // level-3 child component and its level-4 OLE leaf.
-        let [(header_tag, header_level, header), (_, _, _), (leaf_tag, _, leaf)] = ole_records(false);
+        let [(header_tag, header_level, header), (_, _, _), (leaf_tag, _, leaf)] =
+            ole_records(false);
         let mut group = vec![0; 206];
         group[..8].copy_from_slice(b"noc$noc$");
         group[50..52].copy_from_slice(&1u16.to_le_bytes());
@@ -2658,7 +2723,12 @@ mod chart_tests {
         child[..4].copy_from_slice(b"elo$");
         child[12..14].copy_from_slice(&1u16.to_le_bytes()); // group level
         child[46..48].copy_from_slice(&2u16.to_le_bytes()); // matrix pairs
-        let grouped = vec![(header_tag, header_level, header), (76, 2, group), (76, 3, child), (leaf_tag, 4, leaf)];
+        let grouped = vec![
+            (header_tag, header_level, header),
+            (76, 2, group),
+            (76, 3, child),
+            (leaf_tag, 4, leaf),
+        ];
 
         let mut picture = ole_records(false);
         picture[1].2[..8].copy_from_slice(b"cip$cip$");
@@ -2669,15 +2739,26 @@ mod chart_tests {
         truncated[2].2.truncate(15);
         let mut alias = ole_records(false);
         alias[2].2[12..16].copy_from_slice(&65537u32.to_le_bytes());
-        let unknown = vec![(71, 1, b"????".to_vec()), (511, 2, 1u16.to_le_bytes().to_vec())];
+        let unknown = vec![
+            (71, 1, b"????".to_vec()),
+            (511, 2, 1u16.to_le_bytes().to_vec()),
+        ];
 
         let rejected = |before: &[u8], after: &[u8], label| {
             let findings = compare_saved(before, after);
-            assert!(findings.contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.OLE")),
-                "{label}: {findings:?}");
+            assert!(
+                findings.contains(&Finding::at(
+                    FindingCode::PartChanged,
+                    "BinData/BIN0001.OLE"
+                )),
+                "{label}: {findings:?}"
+            );
         };
         for (label, records) in [
-            ("locked owner in second section", Vec::from(ole_records(true))),
+            (
+                "locked owner in second section",
+                Vec::from(ole_records(true)),
+            ),
             ("second editable chart", Vec::from(ole_records(false))),
             ("unsupported nested OLE", grouped),
             ("picture reference", Vec::from(picture)),
@@ -2687,7 +2768,11 @@ mod chart_tests {
         ] {
             let shared_before = add_section(&exclusive_before, &records);
             let shared_after = add_section(&exclusive_after, &records);
-            assert_eq!(compare_saved(&shared_before, &shared_before), vec![], "{label}");
+            assert_eq!(
+                compare_saved(&shared_before, &shared_before),
+                vec![],
+                "{label}"
+            );
             rejected(&shared_before, &shared_after, label);
             rejected(&shared_before, &exclusive_after, label);
             rejected(&exclusive_before, &shared_after, label);
@@ -2728,28 +2813,40 @@ mod chart_tests {
         // Mutating an extraneous stream inside BIN0001.OLE must still be rejected.
         let mut cfb = cfb::CompoundFile::open(Cursor::new(edited)).unwrap();
         let mut stream = Vec::new();
-        cfb.open_stream("/BinData/BIN0001.OLE").unwrap().read_to_end(&mut stream).unwrap();
+        cfb.open_stream("/BinData/BIN0001.OLE")
+            .unwrap()
+            .read_to_end(&mut stream)
+            .unwrap();
         let inflated = inflate(&stream).map_err(|_| ()).unwrap();
         let mut nested = cfb::CompoundFile::open(Cursor::new(&inflated[4..])).unwrap();
         let xml_bytes = {
             let mut b = Vec::new();
-            nested.open_stream("/OOXMLChartContents").unwrap().read_to_end(&mut b).unwrap();
+            nested
+                .open_stream("/OOXMLChartContents")
+                .unwrap()
+                .read_to_end(&mut b)
+                .unwrap();
             b
         };
         let tampered_ole = make_ole_stream(&xml_bytes, b"TAMPERED-CONTENTS", false, true);
         let mut tampered_cfb = Vec::new();
         {
-            let mut cf = cfb::CompoundFile::open(Cursor::new(std::fs::read(dir.join("hwp-chart-7406-edited.hwp")).unwrap())).unwrap();
+            let mut cf = cfb::CompoundFile::open(Cursor::new(
+                std::fs::read(dir.join("hwp-chart-7406-edited.hwp")).unwrap(),
+            ))
+            .unwrap();
             let mut s = cf.create_stream("/BinData/BIN0001.OLE").unwrap();
             s.write_all(&tampered_ole).unwrap();
             drop(s);
-            cf.into_inner().into_inner().into_iter().for_each(|b| tampered_cfb.push(b));
+            cf.into_inner()
+                .into_inner()
+                .into_iter()
+                .for_each(|b| tampered_cfb.push(b));
         }
-        assert!(
-            compare_saved(&orig, &tampered_cfb)
-                .iter()
-                .any(|f| f.code == FindingCode::PartChanged && f.part.as_deref() == Some("BinData/BIN0001.OLE"))
-        );
+        assert!(compare_saved(&orig, &tampered_cfb)
+            .iter()
+            .any(|f| f.code == FindingCode::PartChanged
+                && f.part.as_deref() == Some("BinData/BIN0001.OLE")));
     }
 }
 

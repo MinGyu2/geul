@@ -1627,7 +1627,10 @@ mod resource_tests {
         let prefix = "x".repeat(TEXT_CHUNK - 1);
         let before = format!("<r>{prefix}\r\nz</r>");
         let after = format!("<r>{prefix}\nz</r>");
-        assert_eq!(canonical_equal(before.as_bytes(), after.as_bytes()), Ok(true));
+        assert_eq!(
+            canonical_equal(before.as_bytes(), after.as_bytes()),
+            Ok(true)
+        );
     }
 
     fn differential(bytes: &[u8]) {

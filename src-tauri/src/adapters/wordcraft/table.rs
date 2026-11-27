@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wordcraft_engine::doc::props::{Align, Border, BorderStyle, HeightRule, TextColor, Underline, VAlign, VMerge};
+use wordcraft_engine::doc::props::{
+    Align, Border, BorderStyle, HeightRule, TextColor, Underline, VAlign, VMerge,
+};
 use wordcraft_engine::doc::table::{MAX_COLS, MAX_ROWS};
 use wordcraft_engine::doc::{Block, Cell, Document, InlineObject, Paragraph, StoryRef, Table};
 
@@ -298,11 +300,19 @@ enum MultiCellState {
 
 fn grid_cols(t: &Table, r: usize, c: usize) -> (usize, usize) {
     let g = t.grid_col(r, c);
-    let span = t.rows.get(r).and_then(|row| row.cells.get(c)).map_or(1, Cell::span);
+    let span = t
+        .rows
+        .get(r)
+        .and_then(|row| row.cells.get(c))
+        .map_or(1, Cell::span);
     (g, g + span - 1)
 }
 
-fn inspect_selection(model: &DocxModel, tp: &wordcraft_engine::doc::Path, t: &Table) -> MultiCellState {
+fn inspect_selection(
+    model: &DocxModel,
+    tp: &wordcraft_engine::doc::Path,
+    t: &Table,
+) -> MultiCellState {
     let sel = &model.session.sel;
     if let Some(range) = model
         .session
@@ -478,7 +488,9 @@ fn refusal_for(
                 MultiCellState::Rect(ar0, ar1, ag0, ag1, _) => {
                     let mut set = BTreeSet::new();
                     for rr in *ar0..=*ar1 {
-                        if let (Some(ca), Some(cb)) = (t.cell_at_grid(rr, *ag0), t.cell_at_grid(rr, *ag1)) {
+                        if let (Some(ca), Some(cb)) =
+                            (t.cell_at_grid(rr, *ag0), t.cell_at_grid(rr, *ag1))
+                        {
                             for cc in ca..=cb {
                                 let (a, b) = grid_cols(t, rr, cc);
                                 set.extend(a..=b);
@@ -539,7 +551,9 @@ fn refusal_for(
         }
         TableStructureAction::MergeCells => match multi {
             MultiCellState::Rect(ar0, ar1, ag0, ag1, count) if *count >= 2 => {
-                if t.rect_has_controls(*ar0, *ar1, *ag0, *ag1) || !t.can_merge_rect(*ar0, *ar1, *ag0, *ag1) {
+                if t.rect_has_controls(*ar0, *ar1, *ag0, *ag1)
+                    || !t.can_merge_rect(*ar0, *ar1, *ag0, *ag1)
+                {
                     Some("tableContent")
                 } else {
                     None
@@ -573,7 +587,11 @@ fn refusal_for(
             let Some((mr, mc)) = t.unmerged_split_limits(r0, ci) else {
                 let controls_block = t.rect_has_controls(r0, r0, 0, ncols.saturating_sub(1))
                     || t.rect_has_controls(0, nrows.saturating_sub(1), g0, g0);
-                return Some(if controls_block { "tableContent" } else { "limit" });
+                return Some(if controls_block {
+                    "tableContent"
+                } else {
+                    "limit"
+                });
             };
             if let Some((sr, sc)) = split_dims {
                 if sr == 0 || sc == 0 || sr * sc < 2 || sr as usize > mr || sc as usize > mc {
@@ -714,8 +732,12 @@ fn inspect_cell_shading(
     let mut mixed = false;
     for r in r0..=r1 {
         for g in g0..=g1 {
-            let Some(ci) = t.cell_at_grid(r, g) else { continue };
-            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else { continue };
+            let Some(ci) = t.cell_at_grid(r, g) else {
+                continue;
+            };
+            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else {
+                continue;
+            };
             if cell.props.vmerge == VMerge::Continue {
                 continue;
             }
@@ -751,8 +773,12 @@ fn inspect_cell_alignment(
     let mut v_mixed = false;
     for r in r0..=r1 {
         for g in g0..=g1 {
-            let Some(ci) = t.cell_at_grid(r, g) else { continue };
-            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else { continue };
+            let Some(ci) = t.cell_at_grid(r, g) else {
+                continue;
+            };
+            let Some(cell) = t.rows.get(r).and_then(|row| row.cells.get(ci)) else {
+                continue;
+            };
             if cell.props.vmerge == VMerge::Continue {
                 continue;
             }
@@ -853,7 +879,11 @@ fn inspect_dimensions(
     (
         if w_mixed { None } else { w_first.map(round_pt) },
         w_mixed,
-        if h_mixed { None } else { h_first.flatten().map(round_pt) },
+        if h_mixed {
+            None
+        } else {
+            h_first.flatten().map(round_pt)
+        },
         h_mixed,
         if h_mixed { None } else { rule_first },
     )
@@ -877,7 +907,12 @@ fn inspect_cell_margins(
     g0: usize,
     g1: usize,
 ) -> (DocxMargins, Option<DocxMargins>, bool, bool, bool) {
-    let table_default = margins_to_view(wordcraft_engine::layout::cell_margins(doc, t, usize::MAX, 0));
+    let table_default = margins_to_view(wordcraft_engine::layout::cell_margins(
+        doc,
+        t,
+        usize::MAX,
+        0,
+    ));
     let mut seen = BTreeSet::new();
     let mut first: Option<DocxMargins> = None;
     let mut mixed = false;
@@ -930,7 +965,11 @@ impl DocxModel {
         }
         let (tp, r, c) = focus.path.cell()?;
         let t = self.session.doc.table(StoryRef::Body, &tp)?;
-        let Some(ext) = (if t.is_grid_consistent() { t.cell_extent(r, c) } else { None }) else {
+        let Some(ext) = (if t.is_grid_consistent() {
+            t.cell_extent(r, c)
+        } else {
+            None
+        }) else {
             return Some(DocxTableView {
                 rows: t.rows.len(),
                 cols: t.cols(),
@@ -973,7 +1012,12 @@ impl DocxModel {
                 selected_rows: 1,
                 column_width_refusal: Some("tableShape"),
                 row_height_refusal: Some("tableShape"),
-                table_cell_margins: DocxMargins { top: 0.0, right: 5.4, bottom: 0.0, left: 5.4 },
+                table_cell_margins: DocxMargins {
+                    top: 0.0,
+                    right: 5.4,
+                    bottom: 0.0,
+                    left: 5.4,
+                },
                 cell_margins: None,
                 cell_margins_mixed: false,
                 cell_margins_uses_default: true,
@@ -997,7 +1041,8 @@ impl DocxModel {
             MultiCellState::Rect(_, _, _, _, count) => count,
             _ => 1,
         };
-        let has_inside_borders = matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count >= 2);
+        let has_inside_borders =
+            matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count >= 2);
         let format_refusal = cell_format_refusal(self, &multi);
         let (r0, r1, g0, g1) = selected_rect_bounds(ext, &multi);
         let (cell_shading, cell_shading_mixed, has_cell_shading) = if format_refusal.is_some() {
@@ -1034,7 +1079,12 @@ impl DocxModel {
             cell_margins_override_mixed,
         ) = if format_refusal.is_some() {
             (
-                margins_to_view(wordcraft_engine::layout::cell_margins(&self.session.doc, t, usize::MAX, 0)),
+                margins_to_view(wordcraft_engine::layout::cell_margins(
+                    &self.session.doc,
+                    t,
+                    usize::MAX,
+                    0,
+                )),
                 None,
                 false,
                 true,
@@ -1049,7 +1099,10 @@ impl DocxModel {
             _ => "left",
         };
         let table_indent_pt = round_pt(t.props.indent.unwrap_or(0.0));
-        let table_positioning_refusal = if FormatAccess::of(&self.session) == FormatAccess::Protected || super::TRACKED_READ_ONLY {
+        let table_positioning_refusal = if FormatAccess::of(&self.session)
+            == FormatAccess::Protected
+            || super::TRACKED_READ_ONLY
+        {
             Some("protected")
         } else if t.props.float.is_some() {
             Some("tableContent")
@@ -1101,7 +1154,10 @@ impl DocxModel {
         let reason = |a| refusal_for(self, t, ext, &multi, a, None);
         let is_merged = ext.1 > ext.0 || ext.3 > ext.2;
         let (max_split_rows, max_split_columns) = if is_merged
-            || matches!(multi, MultiCellState::CrossTable | MultiCellState::PartialOverhang)
+            || matches!(
+                multi,
+                MultiCellState::CrossTable | MultiCellState::PartialOverhang
+            )
             || matches!(multi, MultiCellState::Rect(_, _, _, _, count) if count > 1)
         {
             (0, 0)
@@ -1194,7 +1250,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, r, c) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1212,7 +1272,10 @@ impl DocxModel {
             if !changed {
                 return Err(Rejected);
             }
-            if matches!(action, TableStructureAction::DeleteRow | TableStructureAction::DeleteColumn) {
+            if matches!(
+                action,
+                TableStructureAction::DeleteRow | TableStructureAction::DeleteColumn
+            ) {
                 retain_used_media(&mut model.session.doc);
             }
             let updated_tp = model
@@ -1264,7 +1327,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1320,7 +1387,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1373,7 +1444,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1421,7 +1496,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1483,7 +1562,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1528,7 +1611,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, fr, fc) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1607,7 +1694,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() || t.props.float.is_some() {
             return Err(Rejected);
         }
@@ -1654,7 +1745,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, fr, fc) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1705,7 +1800,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, _, _) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1787,8 +1886,14 @@ impl DocxModel {
                                     run.insert("fontFamily".into(), json!(trimmed));
                                 }
                             }
-                            if let Some(sz) = props.size.filter(|s| s.is_finite() && (1.0..=1638.0).contains(s)) {
-                                run.insert("fontSizePt".into(), json!((sz * 100.0).round() / 100.0));
+                            if let Some(sz) = props
+                                .size
+                                .filter(|s| s.is_finite() && (1.0..=1638.0).contains(s))
+                            {
+                                run.insert(
+                                    "fontSizePt".into(),
+                                    json!((sz * 100.0).round() / 100.0),
+                                );
                             }
                             if let Some(TextColor::Rgb(rgb)) = props.color {
                                 run.insert("color".into(), json!(format!("#{}", rgb.hex())));
@@ -1837,10 +1942,18 @@ impl DocxModel {
                             }))
                         };
                         let mut bmap = serde_json::Map::new();
-                        if let Some(v) = edge(bs.top) { bmap.insert("top".into(), v); }
-                        if let Some(v) = edge(bs.bottom) { bmap.insert("bottom".into(), v); }
-                        if let Some(v) = edge(bs.left) { bmap.insert("left".into(), v); }
-                        if let Some(v) = edge(bs.right) { bmap.insert("right".into(), v); }
+                        if let Some(v) = edge(bs.top) {
+                            bmap.insert("top".into(), v);
+                        }
+                        if let Some(v) = edge(bs.bottom) {
+                            bmap.insert("bottom".into(), v);
+                        }
+                        if let Some(v) = edge(bs.left) {
+                            bmap.insert("left".into(), v);
+                        }
+                        if let Some(v) = edge(bs.right) {
+                            bmap.insert("right".into(), v);
+                        }
                         if !bmap.is_empty() {
                             fmt.insert("borders".into(), serde_json::Value::Object(bmap));
                         }
@@ -1931,7 +2044,11 @@ impl DocxModel {
             return Err(Rejected);
         }
         let (tp, r, c) = focus.path.cell().ok_or(Rejected)?;
-        let t = self.session.doc.table(StoryRef::Body, &tp).ok_or(Rejected)?;
+        let t = self
+            .session
+            .doc
+            .table(StoryRef::Body, &tp)
+            .ok_or(Rejected)?;
         if !t.is_grid_consistent() {
             return Err(Rejected);
         }
@@ -1953,7 +2070,8 @@ impl DocxModel {
         let end_col = start_col.checked_add(payload.cols - 1).ok_or(Rejected)?;
         if end_row >= t.rows.len()
             || end_col >= t.cols()
-            || t.logical_rect_valid(start_row, end_row, start_col, end_col).is_none()
+            || t.logical_rect_valid(start_row, end_row, start_col, end_col)
+                .is_none()
             || !rect_plain_editable(t, start_row, end_row, start_col, end_col)
         {
             return Err(Rejected);
@@ -2014,7 +2132,10 @@ fn rect_plain_editable(t: &Table, r0: usize, r1: usize, g0: usize, g1: usize) ->
             let cell = &t.rows[r].cells[ci];
             if !cell.controls.is_empty()
                 || cell.props.fmt_change.is_some()
-                || !cell.blocks.iter().all(|blk| blk.as_para().is_some_and(para_plain_editable))
+                || !cell
+                    .blocks
+                    .iter()
+                    .all(|blk| blk.as_para().is_some_and(para_plain_editable))
             {
                 return false;
             }

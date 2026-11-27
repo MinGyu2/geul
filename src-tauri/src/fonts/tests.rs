@@ -416,7 +416,11 @@ fn user_fonts_register_in_all_formats_persist_and_remove() {
     let data = commands::face_data_bytes("GeulTest TTF1", "Regular").unwrap();
     assert_eq!(data, bytes);
     let web = commands::face_data_bytes("GeulTest WOF1", "Regular").unwrap();
-    assert_ne!(&web[4..8], b"wOFF", "web fonts are served as the decoded sfnt the engines use");
+    assert_ne!(
+        &web[4..8],
+        b"wOFF",
+        "web fonts are served as the decoded sfnt the engines use"
+    );
     assert!(commands::face_data_bytes("Source Sans 3", "Regular").is_ok());
     assert!(matches!(
         commands::face_data_bytes("No Such Family 42", "Regular"),

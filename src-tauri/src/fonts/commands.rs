@@ -258,7 +258,10 @@ pub async fn font_face_data(family: String, style: String) -> Result<Response, F
 /// Stage 1 F: whether a face (`family`, `style`) of the shared font database may be embedded, and why not, per
 /// document format (no bytes; no path).
 #[tauri::command]
-pub async fn font_embed_info(family: String, style: String) -> Result<super::embedding::EmbedInfo, FontError> {
+pub async fn font_embed_info(
+    family: String,
+    style: String,
+) -> Result<super::embedding::EmbedInfo, FontError> {
     if family.is_empty() || family.len() > 256 || style.is_empty() || style.len() > 256 {
         return Err(FontError::InvalidRequest);
     }

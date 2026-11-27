@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use super::insertions::{definitions, dword, entries, resource_paths, word};
 use super::{
-    Container, MAX_INFLATED_BYTES, Record, TAG_BIN_DATA, TAG_PARA_HEADER, gso, records,
-    section_stream, unpack,
+    gso, records, section_stream, unpack, Container, Record, MAX_INFLATED_BYTES, TAG_BIN_DATA,
+    TAG_PARA_HEADER,
 };
 
 const TAG_CTRL_HEADER: u16 = 71;

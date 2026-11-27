@@ -364,39 +364,80 @@ fn hwp_contract_cell_inline_picture_preservation() {
     let png = encoded_image(image::ImageFormat::Png);
     let build = |insert: bool, target: usize| {
         let mut table = table_control();
-        let start = table.iter().enumerate().filter(|(_, r)| r.0 == 66).nth(target).unwrap().0;
+        let start = table
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.0 == 66)
+            .nth(target)
+            .unwrap()
+            .0;
         let stop = table[start..].iter().position(|r| r.0 == 72).unwrap() + start;
         let mut picture = picture_control();
         d(&mut picture[0].2, 36, 7);
-        for r in &mut picture { r.1 += 2; }
-        table.splice(start..stop, paragraph_records(2, 0, &format!("cell {target}"), &if insert { vec![picture] } else { vec![] }));
-        let body = pack(&paragraph_records(0, 0, "Keep 한글", &[section_control(), table]));
+        for r in &mut picture {
+            r.1 += 2;
+        }
+        table.splice(
+            start..stop,
+            paragraph_records(
+                2,
+                0,
+                &format!("cell {target}"),
+                &if insert { vec![picture] } else { vec![] },
+            ),
+        );
+        let body = pack(&paragraph_records(
+            0,
+            0,
+            "Keep 한글",
+            &[section_control(), table],
+        ));
         let mut defs = info.clone();
         if insert {
             defs.insert(3, (18, 1, bin(2)));
             d(&mut nth(&mut defs, 17, 0).2, 0, 2);
         }
-        let mut extras = vec![("/PrvText", b"\r\0\n\0".as_slice()), ("/PrvImage", b"".as_slice()),
-            ("/BinData/BIN0001.png", png.as_slice())];
-        if insert { extras.push(("/BinData/BIN0002.png", png.as_slice())); }
+        let mut extras = vec![
+            ("/PrvText", b"\r\0\n\0".as_slice()),
+            ("/PrvImage", b"".as_slice()),
+            ("/BinData/BIN0001.png", png.as_slice()),
+        ];
+        if insert {
+            extras.push(("/BinData/BIN0002.png", png.as_slice()));
+        }
         hwp_doc(0, &pack(&defs), &body, &extras)
     };
     let original = build(false, 0);
     let output = build(true, 0);
     let loss = report("hwp", json!([]));
     let safe = service::check_saved(Format::Hwp, &original, &output, Some(&loss), true);
-    assert!(safe.findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{safe:?}");
+    assert!(
+        safe.findings
+            .iter()
+            .all(|f| f.code == FindingCode::PreviewStale),
+        "{safe:?}"
+    );
     // The same original picture may not migrate to another surviving cell.
     let moved = build(true, 1);
     let verdict = service::check_saved(Format::Hwp, &output, &moved, Some(&loss), true);
-    assert_eq!(verdict.outcome, Outcome::Unsafe, "wrong surviving cell: {verdict:?}");
+    assert_eq!(
+        verdict.outcome,
+        Outcome::Unsafe,
+        "wrong surviving cell: {verdict:?}"
+    );
     let (result, bytes, _) = publish(&output, &moved, Some(&raster()));
     assert!(matches!(result, Err(DocumentError::UnsafeSave { .. })));
     assert_eq!(bytes, output);
     let mutations: [(&str, fn(&mut Records)); 5] = [
-        ("floating cell control", |rs| d(&mut nth(rs, 71, 2).2, 4, 0xa0310)),
-        ("colliding original identity", |rs| d(&mut nth(rs, 71, 2).2, 36, 1)),
-        ("missing BinData reference", |rs| w(&mut nth(rs, 85, 0).2, 71, 99)),
+        ("floating cell control", |rs| {
+            d(&mut nth(rs, 71, 2).2, 4, 0xa0310)
+        }),
+        ("colliding original identity", |rs| {
+            d(&mut nth(rs, 71, 2).2, 36, 1)
+        }),
+        ("missing BinData reference", |rs| {
+            w(&mut nth(rs, 85, 0).2, 71, 99)
+        }),
         ("malformed hierarchy", |rs| nth(rs, 85, 0).1 -= 1),
         ("malformed picture geometry", |rs| nth(rs, 85, 0).2[20] ^= 1),
     ];
@@ -405,12 +446,21 @@ fn hwp_contract_cell_inline_picture_preservation() {
         let verdict = service::check_saved(Format::Hwp, &original, &invalid, Some(&loss), true);
         assert_eq!(verdict.outcome, Outcome::Unsafe, "{name}: {verdict:?}");
         let (result, bytes, _) = publish(&original, &invalid, Some(&raster()));
-        assert!(matches!(result, Err(DocumentError::UnsafeSave { .. })), "{name}");
+        assert!(
+            matches!(result, Err(DocumentError::UnsafeSave { .. })),
+            "{name}"
+        );
         assert_eq!(bytes, original, "{name}: original publication changed");
     }
     let mut missing = stream_map(&output);
     missing.remove("/BinData/BIN0002.png");
-    let verdict = service::check_saved(Format::Hwp, &original, &from_map(&missing), Some(&loss), true);
+    let verdict = service::check_saved(
+        Format::Hwp,
+        &original,
+        &from_map(&missing),
+        Some(&loss),
+        true,
+    );
     assert_eq!(verdict.outcome, Outcome::Unsafe);
 }
 
@@ -546,8 +596,10 @@ fn hwp_contract_mutations_cannot_publish_even_with_reopen_true() {
         9
     ));
     // Stage 1 allows alignment/spacing/indent values; keep-with-next (attr1 bit 17) stays owned.
-    doc!("para unrelated keep-with-next", Changed, |r| nth(r, 25, 2).2
-        [2] ^= 0x02);
+    doc!("para unrelated keep-with-next", Changed, |r| nth(
+        r, 25, 2
+    )
+    .2[2] ^= 0x02);
     body!("zero rows", Bad, |r| w(&mut nth(r, 77, 0).2, 4, 0));
     body!("columns out of range", Bad, |r| w(
         &mut nth(r, 77, 0).2,
@@ -2323,14 +2375,28 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
         let mut aligned_same = existing_nonbasic_table();
         let h = &mut aligned_same.iter_mut().find(|r| r.0 == 72).unwrap().2;
         h[4] = (h[4] & !0x60) | (code << 5);
-        let findings = raw_findings(&original, &fixture_with(true, &[aligned_same], "Keep 한글"), true);
-        assert!(only_stale_preview(&findings), "code {code} (same grid): {findings:?}");
+        let findings = raw_findings(
+            &original,
+            &fixture_with(true, &[aligned_same], "Keep 한글"),
+            true,
+        );
+        assert!(
+            only_stale_preview(&findings),
+            "code {code} (same grid): {findings:?}"
+        );
 
         let mut aligned_restruct = existing_table_without_second_row();
         let h2 = &mut aligned_restruct.iter_mut().find(|r| r.0 == 72).unwrap().2;
         h2[4] = (h2[4] & !0x60) | (code << 5);
-        let findings2 = raw_findings(&original, &fixture_with(true, &[aligned_restruct], "Keep 한글"), true);
-        assert!(only_stale_preview(&findings2), "code {code} (restructured): {findings2:?}");
+        let findings2 = raw_findings(
+            &original,
+            &fixture_with(true, &[aligned_restruct], "Keep 한글"),
+            true,
+        );
+        assert!(
+            only_stale_preview(&findings2),
+            "code {code} (restructured): {findings2:?}"
+        );
     }
     for (label, mut_byte) in [
         ("invalid vertical_align=3", 0x60u8),
@@ -2340,7 +2406,11 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
     ] {
         let mut bad_same = existing_nonbasic_table();
         let h = &mut bad_same.iter_mut().find(|r| r.0 == 72).unwrap().2;
-        h[4] = if mut_byte == 0x60 { (h[4] & !0x60) | 0x60 } else { h[4] ^ mut_byte };
+        h[4] = if mut_byte == 0x60 {
+            (h[4] & !0x60) | 0x60
+        } else {
+            h[4] ^ mut_byte
+        };
         refused(label, bad_same);
     }
 
@@ -2353,11 +2423,22 @@ fn hwp_restructured_original_table_is_proven_or_refused() {
         d(&mut rec.2, 16, 9000);
         d(&mut rec.2, 20, 2400);
     }
-    let findings_p3_3 = raw_findings(&original, &fixture_with(true, &[resized], "Keep 한글"), true);
-    assert!(only_stale_preview(&findings_p3_3), "p3-3 resize: {findings_p3_3:?}");
+    let findings_p3_3 = raw_findings(
+        &original,
+        &fixture_with(true, &[resized], "Keep 한글"),
+        true,
+    );
+    assert!(
+        only_stale_preview(&findings_p3_3),
+        "p3-3 resize: {findings_p3_3:?}"
+    );
 
     let mut zero_cell_w = existing_nonbasic_table();
-    d(&mut zero_cell_w.iter_mut().find(|r| r.0 == 72).unwrap().2, 16, 0);
+    d(
+        &mut zero_cell_w.iter_mut().find(|r| r.0 == 72).unwrap().2,
+        16,
+        0,
+    );
     refused("zero cell width", zero_cell_w);
 
     let mut zero_tbl_h = existing_nonbasic_table();
@@ -2685,16 +2766,28 @@ fn hwp_inline_formulas_publish_and_negative_proof() {
     let (result, disk, _) = publish(&legacy, &dependent, Some(&raster()));
     assert!(result.is_err());
     assert_eq!(disk, legacy);
-    let mixed_source=|| {
-        let mut rs=paragraph_records(2,0,"10",&[]);
-        rs.extend(safety_field_paragraph(&[(30,"=2??%g,;;2","2",false)]));rs
+    let mixed_source = || {
+        let mut rs = paragraph_records(2, 0, "10", &[]);
+        rs.extend(safety_field_paragraph(&[(30, "=2??%g,;;2", "2", false)]));
+        rs
     };
-    let mixed_original=safety_document(vec![mixed_source(),paragraph_records(2,0,"",&[])],1,2);
-    let mixed_reference=safety_document(vec![mixed_source(),safety_field_paragraph(&[(31,"=A1*2??%g,;;20","20",false)])],1,2);
-    assert!(!only_stale_preview(&raw_findings(&mixed_original,&mixed_reference,true)),"later-paragraph formulas are ambiguous operands too");
-    let (result,disk,_)=publish(&mixed_original,&mixed_reference,Some(&raster()));
-    assert!(result.is_err());assert_eq!(disk,mixed_original);
-
+    let mixed_original =
+        safety_document(vec![mixed_source(), paragraph_records(2, 0, "", &[])], 1, 2);
+    let mixed_reference = safety_document(
+        vec![
+            mixed_source(),
+            safety_field_paragraph(&[(31, "=A1*2??%g,;;20", "20", false)]),
+        ],
+        1,
+        2,
+    );
+    assert!(
+        !only_stale_preview(&raw_findings(&mixed_original, &mixed_reference, true)),
+        "later-paragraph formulas are ambiguous operands too"
+    );
+    let (result, disk, _) = publish(&mixed_original, &mixed_reference, Some(&raster()));
+    assert!(result.is_err());
+    assert_eq!(disk, mixed_original);
 }
 
 #[test]
@@ -2912,81 +3005,158 @@ fn hwp_dependent_cache_source_only_edit_cannot_publish() {
 #[test]
 #[ignore = "requires the Stage 1 Release-WASM exports (GEUL_FORMAT_DIR)"]
 fn stage1_hwp_list_paragraph_proof_rejects_invalid_appends() {
-    let root = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+    let root =
+        std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
     let folder = root.join("hwp-stage1-lists");
     let original = std::fs::read(folder.join("original.hwp")).unwrap();
     let good = std::fs::read(folder.join("edited.hwp")).unwrap();
     let loss = report("hwp", json!([]));
-    let check = |output: &[u8]| service::check_saved(Format::Hwp, &original, output, Some(&loss), true);
+    let check =
+        |output: &[u8]| service::check_saved(Format::Hwp, &original, output, Some(&loss), true);
     let base = check(&good);
-    assert!(base.findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{base:?}");
+    assert!(
+        base.findings
+            .iter()
+            .all(|f| f.code == FindingCode::PreviewStale),
+        "{base:?}"
+    );
     let count = |tag: u16| {
         let mut n = 0;
-        edit_records(&good, "/DocInfo", |r| n = r.iter().filter(|x| x.0 == tag).count());
+        edit_records(&good, "/DocInfo", |r| {
+            n = r.iter().filter(|x| x.0 == tag).count()
+        });
         n
     };
     let (numberings, shapes) = (count(23), count(25));
     let cases: Vec<(&str, Vec<u8>)> = vec![
-        ("numbering format text", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 23, numberings - 1).2; w(b, 14, u16::from(b'x'));
-        })),
-        ("numbering unknown number format", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 23, numberings - 1).2; d(b, 0, (1 << 3) | (15 << 5));
-        })),
-        ("numbering start number", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 23, numberings - 1).2; let n = b.len(); w(b, n - 30, 5);
-        })),
-        ("paragraph shape outline heading", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2;
-            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23)) | (1 << 23));
-        })),
-        ("paragraph shape level 7", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2;
-            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(7 << 25)) | (7 << 25) | (2 << 23));
-        })),
-        ("paragraph shape negative spacing", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; d(b, 16, (-5i32) as u32);
-        })),
-        ("paragraph shape alignment 7", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; b[0] |= 7 << 2;
-        })),
-        ("paragraph shape tab definition", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; w(b, 28, 0x7fff);
-        })),
-        ("paragraph shape border spacing", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; b[34] ^= 1;
-        })),
-        ("paragraph shape attr3 high bit", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; b[49] ^= 0x40;
-        })),
-        ("paragraph shape extended line spacing", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2; d(b, 50, 9_000_000);
-        })),
+        (
+            "numbering format text",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 23, numberings - 1).2;
+                w(b, 14, u16::from(b'x'));
+            }),
+        ),
+        (
+            "numbering unknown number format",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 23, numberings - 1).2;
+                d(b, 0, (1 << 3) | (15 << 5));
+            }),
+        ),
+        (
+            "numbering start number",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 23, numberings - 1).2;
+                let n = b.len();
+                w(b, n - 30, 5);
+            }),
+        ),
+        (
+            "paragraph shape outline heading",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                let a = u32::from_le_bytes(b[0..4].try_into().unwrap());
+                d(b, 0, (a & !(3 << 23)) | (1 << 23));
+            }),
+        ),
+        (
+            "paragraph shape level 7",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                let a = u32::from_le_bytes(b[0..4].try_into().unwrap());
+                d(b, 0, (a & !(7 << 25)) | (7 << 25) | (2 << 23));
+            }),
+        ),
+        (
+            "paragraph shape negative spacing",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                d(b, 16, (-5i32) as u32);
+            }),
+        ),
+        (
+            "paragraph shape alignment 7",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                b[0] |= 7 << 2;
+            }),
+        ),
+        (
+            "paragraph shape tab definition",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                w(b, 28, 0x7fff);
+            }),
+        ),
+        (
+            "paragraph shape border spacing",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                b[34] ^= 1;
+            }),
+        ),
+        (
+            "paragraph shape attr3 high bit",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                b[49] ^= 0x40;
+            }),
+        ),
+        (
+            "paragraph shape extended line spacing",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                d(b, 50, 9_000_000);
+            }),
+        ),
         // P1-D: a numbered appended shape must reference an existing numbering definition.
-        ("numbered paragraph shape with numbering id 0", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2;
-            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23)); w(b, 30, 0);
-            if b.len() == 58 { d(b, 54, 0); }
-        })),
-        ("numbered paragraph shape beyond the numbering count", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 25, shapes - 1).2;
-            let a = u32::from_le_bytes(b[0..4].try_into().unwrap()); d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23));
-            w(b, 30, numberings as u16 + 1);
-            if b.len() == 58 { d(b, 54, 0); }
-        })),
-        ("appended numbering without its ID_MAPPINGS count", edit_records(&good, "/DocInfo", |r| {
-            let extra = nth(r, 23, numberings - 1).clone();
-            let at = r.iter().rposition(|x| x.0 == 23).unwrap();
-            r.insert(at + 1, extra);
-        })),
-        ("numbering paragraph-head attribute bit", edit_records(&good, "/DocInfo", |r| {
-            let b = &mut nth(r, 23, numberings - 1).2; b[0] |= 1;
-        })),
+        (
+            "numbered paragraph shape with numbering id 0",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                let a = u32::from_le_bytes(b[0..4].try_into().unwrap());
+                d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23));
+                w(b, 30, 0);
+                if b.len() == 58 {
+                    d(b, 54, 0);
+                }
+            }),
+        ),
+        (
+            "numbered paragraph shape beyond the numbering count",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 25, shapes - 1).2;
+                let a = u32::from_le_bytes(b[0..4].try_into().unwrap());
+                d(b, 0, (a & !(3 << 23) & !(7 << 25)) | (2 << 23));
+                w(b, 30, numberings as u16 + 1);
+                if b.len() == 58 {
+                    d(b, 54, 0);
+                }
+            }),
+        ),
+        (
+            "appended numbering without its ID_MAPPINGS count",
+            edit_records(&good, "/DocInfo", |r| {
+                let extra = nth(r, 23, numberings - 1).clone();
+                let at = r.iter().rposition(|x| x.0 == 23).unwrap();
+                r.insert(at + 1, extra);
+            }),
+        ),
+        (
+            "numbering paragraph-head attribute bit",
+            edit_records(&good, "/DocInfo", |r| {
+                let b = &mut nth(r, 23, numberings - 1).2;
+                b[0] |= 1;
+            }),
+        ),
     ];
     for (name, output) in &cases {
         let result = check(output);
         assert!(
-            result.findings.iter().any(|f| f.code != FindingCode::PreviewStale),
+            result
+                .findings
+                .iter()
+                .any(|f| f.code != FindingCode::PreviewStale),
             "{name}: accepted {result:?}"
         );
     }
@@ -3045,7 +3215,11 @@ fn stage2_p3_new_table_border_fill_and_vertical_align_proven_or_refused() {
         let c0 = r.iter_mut().find(|rec| rec.0 == 72).unwrap();
         d(&mut c0.2, 2, 0x0001_0000); // non-v_align list_attr bit
     });
-    assert!(!only_stale_preview(&raw_findings(&orig, &bad_list_attr, true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &orig,
+        &bad_list_attr,
+        true
+    )));
 
     let bad_diag = edit_records(&good, "/DocInfo", |r| {
         let bf = &mut r.iter_mut().filter(|rec| rec.0 == 20).nth(1).unwrap().2;
@@ -3065,7 +3239,10 @@ fn stage2_p4_1_evolved_table_cell_formatted_edit_proven_or_refused() {
         d(&mut c0.2, 2, 0x0040_0000); // vertical_align = bottom
     }
     if let Some(txt) = pasted.iter_mut().find(|r| r.0 == 67) {
-        txt.2 = "cell B\r".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        txt.2 = "cell B\r"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
     }
     let output_ok = fixture_with(true, &[pasted.clone()], "Keep 한글");
     let ok_findings = raw_findings(&original, &output_ok, true);
@@ -3077,7 +3254,11 @@ fn stage2_p4_1_evolved_table_cell_formatted_edit_proven_or_refused() {
         txt.2[0] ^= 1;
     }
     let output_bad_text = fixture_with(true, &[unformatted], "Keep 한글");
-    assert!(!only_stale_preview(&raw_findings(&original, &output_bad_text, true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &output_bad_text,
+        true
+    )));
 
     // Negative: cell header changed with corrupted list_attr non-valign bits stays refused.
     let mut bad_attr = existing_nonbasic_table();
@@ -3086,7 +3267,11 @@ fn stage2_p4_1_evolved_table_cell_formatted_edit_proven_or_refused() {
         d(&mut c0.2, 2, 0x0001_0000);
     }
     let output_bad_attr = fixture_with(true, &[bad_attr], "Keep 한글");
-    assert!(!only_stale_preview(&raw_findings(&original, &output_bad_attr, true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &output_bad_attr,
+        true
+    )));
 }
 
 #[test]
@@ -3125,19 +3310,43 @@ fn stage2_p4_2_table_margins_and_positioning_proven_or_refused() {
     let mut bad_attr = updated.clone();
     let orig_attr = u32::from_le_bytes(bad_attr[0].2[4..8].try_into().unwrap());
     d(&mut bad_attr[0].2, 4, orig_attr ^ (1 << 21));
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_attr], "Keep 한글"), true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_attr], "Keep 한글"),
+        true
+    )));
 
     let mut bad_offset = updated.clone();
     d(&mut bad_offset[0].2, 12, 40_000);
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_offset], "Keep 한글"), true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_offset], "Keep 한글"),
+        true
+    )));
 
     let mut bad_tbl_pad = updated.clone();
-    w(&mut bad_tbl_pad.iter_mut().find(|r| r.0 == 77).unwrap().2, 10, (-100i16) as u16);
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_tbl_pad], "Keep 한글"), true)));
+    w(
+        &mut bad_tbl_pad.iter_mut().find(|r| r.0 == 77).unwrap().2,
+        10,
+        (-100i16) as u16,
+    );
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_tbl_pad], "Keep 한글"),
+        true
+    )));
 
     let mut bad_cell_pad = updated.clone();
-    w(&mut bad_cell_pad.iter_mut().find(|r| r.0 == 72).unwrap().2, 24, (-50i16) as u16);
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_cell_pad], "Keep 한글"), true)));
+    w(
+        &mut bad_cell_pad.iter_mut().find(|r| r.0 == 72).unwrap().2,
+        24,
+        (-50i16) as u16,
+    );
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_cell_pad], "Keep 한글"),
+        true
+    )));
 
     // 2. Newly inserted basic table with bounded positioning & padding passes T009, out-of-range align fails.
     let base = fixture_with(false, &[], "Keep 한글");
@@ -3180,7 +3389,11 @@ fn stage2_p4_2_table_margins_and_positioning_proven_or_refused() {
         let hdr = r.iter_mut().find(|rec| rec.0 == 71).unwrap();
         d(&mut hdr.2, 4, 0x082a2210 | (4 << 10));
     });
-    assert!(!only_stale_preview(&raw_findings(&orig_basic, &new_bad_align, true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &orig_basic,
+        &new_bad_align,
+        true
+    )));
 }
 
 #[test]
@@ -3204,19 +3417,43 @@ fn stage2_p4_3_repeating_headers_and_pagination_proven_or_refused() {
 
     // Negatives: pageBreak=3 unsupported, unknown attr bit 1<<3 refused, unknown width_ref bit 0x02 refused
     let mut bad_pb = updated.clone();
-    d(&mut bad_pb.iter_mut().find(|r| r.0 == 77).unwrap().2, 0, 3 | 4);
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_pb], "Keep 한글"), true)));
+    d(
+        &mut bad_pb.iter_mut().find(|r| r.0 == 77).unwrap().2,
+        0,
+        3 | 4,
+    );
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_pb], "Keep 한글"),
+        true
+    )));
 
     let mut bad_tbl_bit = updated.clone();
-    let orig_attr = u32::from_le_bytes(bad_tbl_bit.iter().find(|r| r.0 == 77).unwrap().2[0..4].try_into().unwrap());
-    d(&mut bad_tbl_bit.iter_mut().find(|r| r.0 == 77).unwrap().2, 0, orig_attr ^ (1 << 3));
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_tbl_bit], "Keep 한글"), true)));
+    let orig_attr = u32::from_le_bytes(
+        bad_tbl_bit.iter().find(|r| r.0 == 77).unwrap().2[0..4]
+            .try_into()
+            .unwrap(),
+    );
+    d(
+        &mut bad_tbl_bit.iter_mut().find(|r| r.0 == 77).unwrap().2,
+        0,
+        orig_attr ^ (1 << 3),
+    );
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_tbl_bit], "Keep 한글"),
+        true
+    )));
 
     let mut bad_cell_flag = updated.clone();
     let c0 = bad_cell_flag.iter_mut().find(|r| r.0 == 72).unwrap();
     let wref = u16::from_le_bytes(c0.2[6..8].try_into().unwrap());
     w(&mut c0.2, 6, wref | 0x0002);
-    assert!(!only_stale_preview(&raw_findings(&original, &fixture_with(true, &[bad_cell_flag], "Keep 한글"), true)));
+    assert!(!only_stale_preview(&raw_findings(
+        &original,
+        &fixture_with(true, &[bad_cell_flag], "Keep 한글"),
+        true
+    )));
 
     // 2. Newly inserted basic table with repeatHeader + RowBreak + CELL_FLAG_HEADER passes T009
     let base = fixture_with(false, &[], "Keep 한글");
@@ -3278,19 +3515,23 @@ fn stage2_new_table_multi_paragraph_cell_proven_or_refused() {
         tbl
     };
     let document = |tbl: Records| {
-        edit_records(&fixture_with(false, &[tbl], "Keep 한글"), "/DocInfo", |r| {
-            let mut basic = vec![0u8; 40];
-            for at in [2, 8, 14, 20] {
-                basic[at] = 1;
-                basic[at + 1] = 1;
-            }
-            basic[26] = 1;
-            r.retain(|rec| rec.0 != 20);
-            let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
-            r.insert(insert_at, (20, 1, basic));
-            let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
-            d(id_map, 32, 1);
-        })
+        edit_records(
+            &fixture_with(false, &[tbl], "Keep 한글"),
+            "/DocInfo",
+            |r| {
+                let mut basic = vec![0u8; 40];
+                for at in [2, 8, 14, 20] {
+                    basic[at] = 1;
+                    basic[at + 1] = 1;
+                }
+                basic[26] = 1;
+                r.retain(|rec| rec.0 != 20);
+                let insert_at = r.iter().position(|rec| rec.0 == 21).unwrap();
+                r.insert(insert_at, (20, 1, basic));
+                let id_map = &mut r.iter_mut().find(|rec| rec.0 == 17).unwrap().2;
+                d(id_map, 32, 1);
+            },
+        )
     };
     let single = document(table(false));
     let f = raw_findings(&orig, &single, true);
@@ -3301,10 +3542,34 @@ fn stage2_new_table_multi_paragraph_cell_proven_or_refused() {
 
     let first_cell = |r: &mut Records| r.iter().position(|rec| rec.0 == 72).unwrap();
     for (name, change) in [
-        ("count says 3", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 0, 3); }) as Box<dyn Fn(&mut Records)>),
-        ("count says 1", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 0, 1); })),
-        ("paragraph shape out of range", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at + 5].2, 8, 99); })),
-        ("pristine geometry: span 2", Box::new(|r: &mut Records| { let at = first_cell(r); w(&mut r[at].2, 12, 2); })),
+        (
+            "count says 3",
+            Box::new(|r: &mut Records| {
+                let at = first_cell(r);
+                w(&mut r[at].2, 0, 3);
+            }) as Box<dyn Fn(&mut Records)>,
+        ),
+        (
+            "count says 1",
+            Box::new(|r: &mut Records| {
+                let at = first_cell(r);
+                w(&mut r[at].2, 0, 1);
+            }),
+        ),
+        (
+            "paragraph shape out of range",
+            Box::new(|r: &mut Records| {
+                let at = first_cell(r);
+                w(&mut r[at + 5].2, 8, 99);
+            }),
+        ),
+        (
+            "pristine geometry: span 2",
+            Box::new(|r: &mut Records| {
+                let at = first_cell(r);
+                w(&mut r[at].2, 12, 2);
+            }),
+        ),
     ] {
         let bad = edit_records(&good, "/BodyText/Section0", |r| change(r));
         let f = raw_findings(&orig, &bad, true);
@@ -3314,5 +3579,8 @@ fn stage2_new_table_multi_paragraph_cell_proven_or_refused() {
         let cs = &mut r.iter_mut().find(|rec| rec.0 == 21).unwrap().2;
         cs[42] ^= 0x01; // flip an existing char shape's attribute bit
     });
-    assert!(!only_stale_preview(&raw_findings(&orig, &unrelated, true)), "unrelated DocInfo change published");
+    assert!(
+        !only_stale_preview(&raw_findings(&orig, &unrelated, true)),
+        "unrelated DocInfo change published"
+    );
 }

@@ -3618,7 +3618,10 @@ fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen
     use super::engine::table::TableStructureAction as A;
 
     let mut m = model();
-    assert!(m.view().table.is_none(), "body paragraph has no table state");
+    assert!(
+        m.view().table.is_none(),
+        "body paragraph has no table state"
+    );
     assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false)]).changed, 0);
     assert_eq!(m.apply(&[DocxOp::NewParagraph]).changed, 1);
     assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
@@ -3631,16 +3634,19 @@ fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen
     // Fill cells: A1 (bold), B1 (with inline image), A2, B2
     assert_eq!(m.apply(&[insert("A1")]).changed, 1);
     assert_eq!(
-        m.apply(&[DocxOp::Tab { back: false }, insert("B1")]).changed,
+        m.apply(&[DocxOp::Tab { back: false }, insert("B1")])
+            .changed,
         1
     );
     assert!(m.run_engine("insert.picture", json!({ "data": img_b64 })));
     assert_eq!(
-        m.apply(&[DocxOp::Tab { back: false }, insert("A2")]).changed,
+        m.apply(&[DocxOp::Tab { back: false }, insert("A2")])
+            .changed,
         1
     );
     assert_eq!(
-        m.apply(&[DocxOp::Tab { back: false }, insert("B2")]).changed,
+        m.apply(&[DocxOp::Tab { back: false }, insert("B2")])
+            .changed,
         1
     );
 
@@ -3694,8 +3700,7 @@ fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen
         vec![vec![vec!["A1"], vec!["B1"]], vec![vec!["A2"], vec!["B2"]]]
     );
     assert_eq!(
-        m.diagnostic_document()
-            .body[tp as usize]
+        m.diagnostic_document().body[tp as usize]
             .as_table()
             .unwrap()
             .rows[0]
@@ -3717,8 +3722,7 @@ fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen
     assert_eq!(table_op(&mut m, A::MergeRight).changed, 1);
     assert_eq!(body_table_texts(&m)[0], vec![vec!["A1", "B1"]]);
     assert_eq!(
-        m.diagnostic_document()
-            .body[tp as usize]
+        m.diagnostic_document().body[tp as usize]
             .as_table()
             .unwrap()
             .rows[0]
@@ -3772,10 +3776,7 @@ fn stage2_p1_all_ten_docx_table_commands_preserve_content_undo_layout_and_reopen
         "cell range selection rectangles must be exposed"
     );
     assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
-    assert_eq!(
-        body_table_texts(&m)[0][0],
-        vec!["A1", "B1", "A2", "B2"]
-    );
+    assert_eq!(body_table_texts(&m)[0][0], vec!["A1", "B1", "A2", "B2"]);
     assert_eq!(table_op(&mut m, A::SplitCell).changed, 1);
     assert!(m.render_png(0, 1.0).is_some());
     let exported = m.export().unwrap();
@@ -3835,11 +3836,19 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
     }]));
 
     // Build a document with a body table, an existing 2x1 vertical merge in col 0, and a nested table in (1,1)
-    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]).changed, 1);
+    assert_eq!(
+        m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph])
+            .changed,
+        1
+    );
     assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
     assert_eq!(m.apply(&[insert("Outer00")]).changed, 1);
     let stale_target = table_target(&mut m);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Outer01")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Outer01")])
+            .changed,
+        1
+    );
     // Stale target rejected without changing model
     let rev_before = m.adapter_state().2;
     assert_eq!(
@@ -3856,7 +3865,10 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
 
     // Ordinary text selection inside a single cell does NOT enable mergeCells
     assert_eq!(m.apply(&[mv(MoveTarget::Left, true)]).changed, 0);
-    assert_eq!(m.view().table.as_ref().unwrap().merge_cells, Some("tableShape"));
+    assert_eq!(
+        m.view().table.as_ref().unwrap().merge_cells,
+        Some("tableShape")
+    );
     assert_eq!(table_op(&mut m, A::MergeCells).rejected, vec![0]);
 
     // Insert nested 2x2 table inside (1, 1), test nested table edit + reopen
@@ -3877,9 +3889,7 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
     assert_eq!(table_op(&mut m, A::InsertRowBelow).changed, 1);
     assert!(m.round_trip().unwrap().passed);
 
-    let nested_b = m
-        .diagnostic_document()
-        .body[tp as usize]
+    let nested_b = m.diagnostic_document().body[tp as usize]
         .as_table()
         .unwrap()
         .rows[1]
@@ -3913,7 +3923,10 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
         "caret.set",
         json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 }, "extend": true })
     ));
-    assert_eq!(m.view().table.as_ref().unwrap().merge_cells, Some("tableShape"));
+    assert_eq!(
+        m.view().table.as_ref().unwrap().merge_cells,
+        Some("tableShape")
+    );
     assert_eq!(table_op(&mut m, A::MergeCells).rejected, vec![0]);
 
     // Content controls (SDT around row) -> refused with tableContent and 0 mutation
@@ -3929,16 +3942,17 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
         "caret.set",
         json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 }, "extend": false })
     ));
-    assert_eq!(m.view().table.as_ref().unwrap().delete_row, Some("tableContent"));
+    assert_eq!(
+        m.view().table.as_ref().unwrap().delete_row,
+        Some("tableContent")
+    );
     assert_eq!(table_op(&mut m, A::DeleteRow).rejected, vec![0]);
 
     // Read-only protected document with table rejects structure ops cleanly
     let mut ro = DocxModel::open(&basic::protected_ko("readOnly", false).unwrap()).unwrap();
-    ro.diagnostic_document_mut()
-        .body
-        .push(std::sync::Arc::new(wordcraft_engine::doc::Block::Table(
-            wordcraft_engine::doc::table::Table::new(2, 2, 200.0),
-        )));
+    ro.diagnostic_document_mut().body.push(std::sync::Arc::new(
+        wordcraft_engine::doc::Block::Table(wordcraft_engine::doc::table::Table::new(2, 2, 200.0)),
+    ));
     let ro_tp = (ro.diagnostic_document().body.len() - 1) as u32;
     assert!(ro.run_engine(
         "caret.set",
@@ -3950,7 +3964,11 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
     let mut seed_model = model();
     assert_eq!(
         seed_model
-            .apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph, DocxOp::Table { rows: 2, cols: 2 }])
+            .apply(&[
+                mv(MoveTarget::DocEnd, false),
+                DocxOp::NewParagraph,
+                DocxOp::Table { rows: 2, cols: 2 }
+            ])
             .changed,
         2
     );
@@ -4015,7 +4033,10 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
         json!({ "pos": { "story": "body", "path": [otp, 0, 0, 0], "off": 0 } })
     ));
     assert_eq!(table_op(&mut one_by_two, A::DeleteRow).changed, 1);
-    assert_eq!(one_by_two.view().table.as_ref().unwrap().delete_row, Some("tableShape"));
+    assert_eq!(
+        one_by_two.view().table.as_ref().unwrap().delete_row,
+        Some("tableShape")
+    );
     assert_eq!(table_op(&mut one_by_two, A::DeleteRow).rejected, vec![0]);
 
     // Real T009 save publication
@@ -4044,8 +4065,20 @@ fn stage2_p1_docx_table_nested_negatives_and_t009_publication() {
         .find_map(|b| b.as_table())
         .unwrap();
     assert_eq!(rt.rows.len(), 3);
-    assert_eq!(rt.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Cell1");
-    assert_eq!(rt.rows[1].cells[0].blocks[0].as_para().unwrap().plain_text(), "Row2");
+    assert_eq!(
+        rt.rows[0].cells[0].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Cell1"
+    );
+    assert_eq!(
+        rt.rows[1].cells[0].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Row2"
+    );
 }
 
 fn table_split_op(
@@ -4077,12 +4110,28 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
     use crate::services::save::package;
 
     let mut m = model();
-    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]).changed, 1);
+    assert_eq!(
+        m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph])
+            .changed,
+        1
+    );
     assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
     assert_eq!(m.apply(&[insert("Orig00")]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Orig01")]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Orig10")]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Orig11")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Orig01")])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Orig10")])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Orig11")])
+            .changed,
+        1
+    );
 
     // Move back to (0, 0) unmerged 1x1 cell
     let tp = m
@@ -4093,7 +4142,10 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
         .rev()
         .find_map(|(i, b)| b.as_table().map(|_| i as u32))
         .expect("table");
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })
+    ));
     let tv = m.view().table.expect("in table");
     assert_eq!(tv.split_cell, None);
     assert!(tv.max_split_columns >= 3);
@@ -4130,8 +4182,14 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
         assert_eq!(t.rows[0].cells.len(), 4);
         assert_eq!(t.rows[1].cells.len(), 2);
         assert_eq!(t.rows[1].cells[0].props.span, 3);
-        assert_eq!(t.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Orig00");
-        assert_eq!(t.rows[0].cells[1].blocks[0].as_para().unwrap().plain_text(), "");
+        assert_eq!(
+            t.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(),
+            "Orig00"
+        );
+        assert_eq!(
+            t.rows[0].cells[1].blocks[0].as_para().unwrap().plain_text(),
+            ""
+        );
     }
 
     // Undo / Redo restores 1x1 then 1x3 cleanly
@@ -4141,8 +4199,16 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
     assert_eq!(body_table_texts(&m)[0].len(), 4);
 
     // Continue typing into newly created cell (0,1), then split (0,2) vertically 2x1
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Split1")]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Split2")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Split1")])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Split2")])
+            .changed,
+        1
+    );
     assert_eq!(table_split_op(&mut m, Some(2), Some(1)).changed, 1);
     assert_eq!(body_table_texts(&m).len(), 3);
     assert_eq!(body_table_texts(&m)[0][2], vec!["Split2".to_string()]);
@@ -4159,7 +4225,10 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
     assert_eq!(table_split_op(&mut m, None, None).changed, 1);
 
     // Real T009 save publication via session commands::preflight + commands::save + independent reopen
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp, 2, 1, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 2, 1, 0], "off": 0 } })
+    ));
     let target_caret = m.view().caret.expect("caret");
     let seed_bytes = m.export().unwrap();
     let dir = TempDir::new();
@@ -4175,7 +4244,11 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
         info.session_id,
         1,
         0,
-        vec![pointer(target_caret.page as u32, target_caret.x, target_caret.y)],
+        vec![pointer(
+            target_caret.page as u32,
+            target_caret.x,
+            target_caret.y,
+        )],
     ))
     .unwrap();
     let view_before = clicked.view;
@@ -4203,7 +4276,13 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
     assert!(edited.rejected.is_empty());
     let check = block_on(commands::preflight(&state, info.session_id, 1)).unwrap();
     assert!(check.preservation.is_safe());
-    let published = block_on(commands::save(&state, info.session_id, 1, edited.session.revision)).unwrap();
+    let published = block_on(commands::save(
+        &state,
+        info.session_id,
+        1,
+        edited.session.revision,
+    ))
+    .unwrap();
     assert!(published.durable);
 
     let disk_bytes = std::fs::read(&doc_path).unwrap();
@@ -4217,14 +4296,36 @@ fn stage2_p1_unmerged_cell_split_geometry_undo_layout_and_reopen() {
         .unwrap();
     assert!(reopened_table.is_grid_consistent());
     assert_eq!(reopened_table.rows.len(), 4);
-    assert_eq!(reopened_table.rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "Orig00");
-    assert_eq!(reopened_table.rows[0].cells[1].blocks[0].as_para().unwrap().plain_text(), "Split1");
-    assert_eq!(reopened_table.rows[0].cells[2].blocks[0].as_para().unwrap().plain_text(), "Split2");
-    assert!(package::validate_docx(&package::open(&disk_bytes, package::Side::Output).unwrap()).is_empty());
+    assert_eq!(
+        reopened_table.rows[0].cells[0].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Orig00"
+    );
+    assert_eq!(
+        reopened_table.rows[0].cells[1].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Split1"
+    );
+    assert_eq!(
+        reopened_table.rows[0].cells[2].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Split2"
+    );
+    assert!(
+        package::validate_docx(&package::open(&disk_bytes, package::Side::Output).unwrap())
+            .is_empty()
+    );
     assert!(package::compare_saved_docx(
         &package::open(&seed_bytes, package::Side::Original).unwrap(),
         &package::open(&disk_bytes, package::Side::Output).unwrap(),
-    ).is_empty());
+    )
+    .is_empty());
 }
 
 #[test]
@@ -4234,11 +4335,21 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
     use wordcraft_engine::doc::props::VMerge;
 
     let mut base = model();
-    assert_eq!(base.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]).changed, 1);
+    assert_eq!(
+        base.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph])
+            .changed,
+        1
+    );
     assert_eq!(base.apply(&[DocxOp::Table { rows: 3, cols: 2 }]).changed, 1);
-    for (i, txt) in ["RowA", "R0", "RowB", "R1", "RowC", "R2"].iter().enumerate() {
+    for (i, txt) in ["RowA", "R0", "RowB", "R1", "RowC", "R2"]
+        .iter()
+        .enumerate()
+    {
         if i > 0 {
-            assert!(base.apply(&[DocxOp::Tab { back: false }]).rejected.is_empty());
+            assert!(base
+                .apply(&[DocxOp::Tab { back: false }])
+                .rejected
+                .is_empty());
         }
         assert_eq!(base.apply(&[insert(txt)]).changed, 1);
     }
@@ -4250,7 +4361,9 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
         .rev()
         .find_map(|(i, b)| b.as_table().map(|_| i))
         .expect("table");
-    if let Some(wordcraft_engine::doc::Block::Table(t)) = doc.body.get_mut(t_idx).map(std::sync::Arc::make_mut) {
+    if let Some(wordcraft_engine::doc::Block::Table(t)) =
+        doc.body.get_mut(t_idx).map(std::sync::Arc::make_mut)
+    {
         t.rows[0].cells[0].props.vmerge = VMerge::Restart;
         t.rows[1].cells[0].props.vmerge = VMerge::Continue;
         t.rows[2].cells[0].props.vmerge = VMerge::Continue;
@@ -4259,11 +4372,17 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
 
     // Case 1: Delete middle row (row 1) -> RowB preserved into RowA, RowC intact, Undo/Redo
     let mut m_mid = DocxModel::open(&seed_bytes).unwrap();
-    assert!(m_mid.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [t_idx, 1, 0, 0], "off": 0 } })));
+    assert!(m_mid.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [t_idx, 1, 0, 0], "off": 0 } })
+    ));
     assert_eq!(table_op(&mut m_mid, A::DeleteRow).changed, 1);
     let mid_texts = body_table_texts(&m_mid);
     assert_eq!(mid_texts.len(), 2);
-    assert_eq!(mid_texts[0][0], vec!["RowA".to_string(), "RowB".to_string()]);
+    assert_eq!(
+        mid_texts[0][0],
+        vec!["RowA".to_string(), "RowB".to_string()]
+    );
     assert_eq!(mid_texts[1][0], vec!["RowC".to_string()]);
     assert_eq!(m_mid.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(body_table_texts(&m_mid)[1][0], vec!["RowB".to_string()]);
@@ -4271,7 +4390,10 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
 
     // Case 2: Delete row 0 via real session commands::edit + commands::preflight + commands::save + reopen
     let mut m_top_probe = DocxModel::open(&seed_bytes).unwrap();
-    assert!(m_top_probe.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [t_idx, 0, 1, 0], "off": 0 } })));
+    assert!(m_top_probe.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [t_idx, 0, 1, 0], "off": 0 } })
+    ));
     let row0_caret = m_top_probe.view().caret.expect("row0 caret");
 
     let dir = TempDir::new();
@@ -4311,7 +4433,13 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
     assert_eq!(deleted.view.table.as_ref().unwrap().rows, 2);
     let check = block_on(commands::preflight(&state, info.session_id, 1)).unwrap();
     assert!(check.preservation.is_safe());
-    let published = block_on(commands::save(&state, info.session_id, 1, deleted.session.revision)).unwrap();
+    let published = block_on(commands::save(
+        &state,
+        info.session_id,
+        1,
+        deleted.session.revision,
+    ))
+    .unwrap();
     assert!(published.durable);
 
     let disk_bytes = std::fs::read(&doc_path).unwrap();
@@ -4320,18 +4448,26 @@ fn stage2_p1_vmerge_nonempty_continuation_preservation_and_fail_closed() {
     assert!(package::validate_docx(&out_pkg).is_empty());
     assert!(package::compare_saved_docx(&orig_pkg, &out_pkg).is_empty());
     let reopened = DocxModel::open(&disk_bytes).unwrap();
-    assert_eq!(body_table_texts(&reopened)[0][0], vec!["RowA".to_string(), "RowB".to_string()]);
+    assert_eq!(
+        body_table_texts(&reopened)[0][0],
+        vec!["RowA".to_string(), "RowB".to_string()]
+    );
     assert_eq!(body_table_texts(&reopened)[1][0], vec!["RowC".to_string()]);
 
     // Case 3: Fail-closed when continuation row contains broken vMerge chain without Restart
     let mut broken_doc = base.diagnostic_document().clone();
-    if let Some(wordcraft_engine::doc::Block::Table(t)) = broken_doc.body.get_mut(t_idx).map(std::sync::Arc::make_mut) {
+    if let Some(wordcraft_engine::doc::Block::Table(t)) =
+        broken_doc.body.get_mut(t_idx).map(std::sync::Arc::make_mut)
+    {
         t.rows[0].cells[0].props.vmerge = VMerge::None;
         t.rows[1].cells[0].props.vmerge = VMerge::Continue;
     }
     let broken_bytes = wordcraft_engine::io::save_bytes("broken.docx", &broken_doc).unwrap();
     let mut m_broken = DocxModel::open(&broken_bytes).unwrap();
-    assert!(m_broken.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [t_idx, 1, 0, 0], "off": 0 } })));
+    assert!(m_broken.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [t_idx, 1, 0, 0], "off": 0 } })
+    ));
     let tv_broken = m_broken.view().table.unwrap();
     assert_eq!(tv_broken.delete_row, Some("tableShape"));
     assert_eq!(table_op(&mut m_broken, A::DeleteRow).rejected, vec![0]);
@@ -4349,20 +4485,52 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
     let shared_png = tiny_png_b64(4, 4, [10, 10, 200]);
     let row1_png = tiny_png_b64(5, 5, [200, 200, 10]);
 
-    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Image { data: body_png }, mv(MoveTarget::Right, false), DocxOp::NewParagraph]).changed, 2);
+    assert_eq!(
+        m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[
+            DocxOp::Image { data: body_png },
+            mv(MoveTarget::Right, false),
+            DocxOp::NewParagraph
+        ])
+        .changed,
+        2
+    );
     assert_eq!(m.apply(&[DocxOp::Table { rows: 3, cols: 2 }]).changed, 1);
 
     assert_eq!(m.apply(&[insert("R0C0")]).changed, 1);
     assert!(m.run_engine("insert.picture", json!({ "data": row0_png })));
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("R0C1")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("R0C1")])
+            .changed,
+        1
+    );
     assert!(m.run_engine("insert.picture", json!({ "data": shared_png })));
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("R1C0")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("R1C0")])
+            .changed,
+        1
+    );
     assert!(m.run_engine("insert.picture", json!({ "data": row1_png })));
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("R1C1")]).changed, 1);
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("Keep")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("R1C1")])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("Keep")])
+            .changed,
+        1
+    );
     assert!(m.run_engine("insert.picture", json!({ "data": shared_png })));
-    assert_eq!(m.apply(&[DocxOp::Tab { back: false }, insert("R2C1")]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::Tab { back: false }, insert("R2C1")])
+            .changed,
+        1
+    );
 
     let seed_bytes = m.export().unwrap();
     let orig_pkg = package::open(&seed_bytes, package::Side::Original).unwrap();
@@ -4372,7 +4540,10 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
         .filter(|k| k.starts_with("word/media/"))
         .cloned()
         .collect();
-    assert!(orig_media.len() >= 4, "expected 4+ media parts in seed: {orig_media:?}");
+    assert!(
+        orig_media.len() >= 4,
+        "expected 4+ media parts in seed: {orig_media:?}"
+    );
 
     // Locate Row 0 Col 1 caret coordinate for real IPC DeleteRow
     let mut m_probe = DocxModel::open(&seed_bytes).unwrap();
@@ -4384,7 +4555,10 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
         .rev()
         .find_map(|(i, b)| b.as_table().map(|_| i as u32))
         .unwrap();
-    assert!(m_probe.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 } })));
+    assert!(m_probe.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 1, 0], "off": 0 } })
+    ));
     let r0_caret = m_probe.view().caret.expect("r0 caret");
 
     // Scenario A & B via real IPC session: delete Row 0, verify T009 save & reopen, then Undo and delete Column 0!
@@ -4424,7 +4598,13 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
     assert!(deleted_row.rejected.is_empty());
     let check = block_on(commands::preflight(&state, info.session_id, 1)).unwrap();
     assert!(check.preservation.is_safe(), "{:?}", check.preservation);
-    let saved = block_on(commands::save(&state, info.session_id, 1, deleted_row.session.revision)).unwrap();
+    let saved = block_on(commands::save(
+        &state,
+        info.session_id,
+        1,
+        deleted_row.session.revision,
+    ))
+    .unwrap();
     assert!(saved.durable);
 
     let after0_bytes = std::fs::read(&doc_path).unwrap();
@@ -4432,8 +4612,17 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
     assert!(package::validate_docx(&after0_pkg).is_empty());
     let f0 = package::compare_saved_docx(&orig_pkg, &after0_pkg);
     assert!(f0.is_empty(), "delete row 0 should pass T009: {f0:?}");
-    let after0_media: Vec<String> = after0_pkg.parts.keys().filter(|k| k.starts_with("word/media/")).cloned().collect();
-    assert_eq!(after0_media.len(), orig_media.len() - 1, "only row0 unique image removed");
+    let after0_media: Vec<String> = after0_pkg
+        .parts
+        .keys()
+        .filter(|k| k.starts_with("word/media/"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        after0_media.len(),
+        orig_media.len() - 1,
+        "only row0 unique image removed"
+    );
 
     // Scenario C: Undo restores row 0 & T009 save still passes, Redo deletes row 0 again
     let undone = block_on(commands::edit(
@@ -4446,19 +4635,38 @@ fn stage2_p1_table_image_deletion_safe_save_and_reopen() {
     .unwrap();
     assert!(undone.rejected.is_empty());
     assert_eq!(undone.view.table.as_ref().unwrap().rows, 3);
-    assert!(block_on(commands::preflight(&state, info.session_id, 1)).unwrap().preservation.is_safe());
+    assert!(block_on(commands::preflight(&state, info.session_id, 1))
+        .unwrap()
+        .preservation
+        .is_safe());
 
     // Scenario D: Delete Column 0 (removes row0_png & row1_png while keeping R0C1 shared_png + body image!)
     let mut m_col = DocxModel::open(&seed_bytes).unwrap();
-    assert!(m_col.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })));
+    assert!(m_col.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp, 0, 0, 0], "off": 0 } })
+    ));
     assert_eq!(table_op(&mut m_col, A::DeleteColumn).changed, 1);
-    let col_bytes = wordcraft_engine::io::save_bytes("col-del.docx", m_col.diagnostic_document()).unwrap();
+    let col_bytes =
+        wordcraft_engine::io::save_bytes("col-del.docx", m_col.diagnostic_document()).unwrap();
     let col_pkg = package::open(&col_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&col_pkg).is_empty());
     let fc = package::compare_saved_docx(&orig_pkg, &col_pkg);
-    assert!(fc.is_empty(), "delete col with images should pass T009: {fc:?}");
-    let kept_media: Vec<String> = col_pkg.parts.keys().filter(|k| k.starts_with("word/media/")).cloned().collect();
-    assert_eq!(kept_media.len(), orig_media.len() - 2, "row0+row1 unique images removed, shared+body images preserved: {kept_media:?}");
+    assert!(
+        fc.is_empty(),
+        "delete col with images should pass T009: {fc:?}"
+    );
+    let kept_media: Vec<String> = col_pkg
+        .parts
+        .keys()
+        .filter(|k| k.starts_with("word/media/"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        kept_media.len(),
+        orig_media.len() - 2,
+        "row0+row1 unique images removed, shared+body images preserved: {kept_media:?}"
+    );
     let reopened = DocxModel::open(&col_bytes).unwrap();
     assert_eq!(body_table_texts(&reopened).len(), 3);
     assert!(body_table_texts(&reopened)[2][0][0].starts_with("R2C1"));
@@ -4471,7 +4679,10 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
     use crate::services::save::package;
 
     let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
-    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
+    assert!(m
+        .apply(&[DocxOp::Table { rows: 3, cols: 3 }])
+        .rejected
+        .is_empty());
     let v_init = m.view();
     let tp = v_init.table.as_ref().unwrap();
     assert_eq!((tp.rows, tp.cols), (3, 3));
@@ -4480,17 +4691,29 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
     assert!(tp.cell_borders_refusal.is_none());
 
     // Populate unique cell text to verify zero silent content mutation.
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
     for r in 0..3 {
         for c in 0..3 {
-            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
+            assert!(m.run_engine(
+                "caret.set",
+                json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })
+            ));
             let label = format!("R{r}C{c}");
-            assert!(m.apply(&[DocxOp::InsertText { text: label }]).rejected.is_empty());
+            assert!(m
+                .apply(&[DocxOp::InsertText { text: label }])
+                .rejected
+                .is_empty());
         }
     }
 
     // Export baseline DOCX for T009 compare_saved_docx later.
-    let orig_bytes = wordcraft_engine::io::save_bytes("p3-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_bytes =
+        wordcraft_engine::io::save_bytes("p3-orig.docx", m.diagnostic_document()).unwrap();
     let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
 
     // Negative: `inside` border on single cell must be rejected before mutating.
@@ -4537,32 +4760,58 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
     );
 
     // Format cell (0,0): shading #FEF08A, Undo restores None, Redo restores #FEF08A.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })
+    ));
     let t00 = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableShading { target: t00.clone(), color: Some("#FEF08A".into()) }]).changed,
+        m.apply(&[DocxOp::TableShading {
+            target: t00.clone(),
+            color: Some("#FEF08A".into())
+        }])
+        .changed,
         1
     );
-    assert_eq!(m.view().table.as_ref().unwrap().cell_shading.as_deref(), Some("#FEF08A"));
+    assert_eq!(
+        m.view().table.as_ref().unwrap().cell_shading.as_deref(),
+        Some("#FEF08A")
+    );
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(m.view().table.as_ref().unwrap().cell_shading, None);
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
-    assert_eq!(m.view().table.as_ref().unwrap().cell_shading.as_deref(), Some("#FEF08A"));
+    assert_eq!(
+        m.view().table.as_ref().unwrap().cell_shading.as_deref(),
+        Some("#FEF08A")
+    );
 
     // Clear shading on (0,0) then set it on rectangular range (0,0)..=(1,1) along with inside+outside borders.
     let t00_clear = table_target(&mut m);
-    assert_eq!(m.apply(&[DocxOp::TableShading { target: t00_clear, color: None }]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::TableShading {
+            target: t00_clear,
+            color: None
+        }])
+        .changed,
+        1
+    );
     assert_eq!(m.view().table.as_ref().unwrap().cell_shading, None);
 
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     assert!(m.view().table.as_ref().unwrap().has_inside_borders);
     let t_rect = table_target(&mut m);
     assert_eq!(
         m.apply(&[
-            DocxOp::TableShading { target: t_rect.clone(), color: Some("#DBEAFE".into()) },
+            DocxOp::TableShading {
+                target: t_rect.clone(),
+                color: Some("#DBEAFE".into())
+            },
             DocxOp::TableBorders {
                 target: t_rect.clone(),
                 kind: K::Outside,
@@ -4583,16 +4832,22 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
     );
 
     // Vertically merge (0,2)..=(1,2), then format merged cell bottom border & shading.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+        })
+    ));
     assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
     let t_merged = table_target(&mut m);
     assert!(!m.view().table.as_ref().unwrap().has_inside_borders);
     assert_eq!(
         m.apply(&[
-            DocxOp::TableShading { target: t_merged.clone(), color: Some("#DCFCE7".into()) },
+            DocxOp::TableShading {
+                target: t_merged.clone(),
+                color: Some("#DCFCE7".into())
+            },
             DocxOp::TableBorders {
                 target: t_merged,
                 kind: K::Bottom,
@@ -4606,42 +4861,86 @@ fn stage2_p3_1_docx_cell_shading_and_borders_preserve_content_undo_reopen_and_ne
     );
 
     // Partial overhang over merged cell (0,2)..=(1,2) by selecting (0,1)..=(0,2) must reject cell formatting.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-    })));
-    assert!(m.view().table.as_ref().unwrap().cell_shading_refusal.is_some());
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        })
+    ));
+    assert!(m
+        .view()
+        .table
+        .as_ref()
+        .unwrap()
+        .cell_shading_refusal
+        .is_some());
     let t_over = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableShading { target: t_over, color: Some("#FF0000".into()) }]).rejected,
+        m.apply(&[DocxOp::TableShading {
+            target: t_over,
+            color: Some("#FF0000".into())
+        }])
+        .rejected,
         vec![0]
     );
 
     // Nested table inside cell (2,0) formats safely.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
     let nested_t = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableShading { target: nested_t, color: Some("#F3E8FF".into()) }]).changed,
+        m.apply(&[DocxOp::TableShading {
+            target: nested_t,
+            color: Some("#F3E8FF".into())
+        }])
+        .changed,
         1
     );
 
     // T009 save check + independent reopen verification.
-    let saved_bytes = wordcraft_engine::io::save_bytes("p3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p3-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
-    assert!(findings.is_empty(), "DOCX table cell formatting must pass T009: {findings:?}");
+    assert!(
+        findings.is_empty(),
+        "DOCX table cell formatting must pass T009: {findings:?}"
+    );
 
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
-    assert_eq!(tbl.rows[0].cells[0].props.shading, Some(wordcraft_engine::doc::props::Rgb(0xDB, 0xEA, 0xFE)));
-    assert!(tbl.rows[0].cells[0].props.borders.as_ref().unwrap().top.is_some());
-    assert!(tbl.rows[2].cells[1].props.shading.is_none()); // untouched cell preserved!
-    // Vertical merge continuation row holds the bottom border, and header holds green shading.
-    assert_eq!(tbl.rows[0].cells[2].props.shading, Some(wordcraft_engine::doc::props::Rgb(0xDC, 0xFC, 0xE7)));
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert_eq!(
-        tbl.rows[1].cells[2].props.borders.as_ref().and_then(|b| b.bottom).unwrap().color,
+        tbl.rows[0].cells[0].props.shading,
+        Some(wordcraft_engine::doc::props::Rgb(0xDB, 0xEA, 0xFE))
+    );
+    assert!(tbl.rows[0].cells[0]
+        .props
+        .borders
+        .as_ref()
+        .unwrap()
+        .top
+        .is_some());
+    assert!(tbl.rows[2].cells[1].props.shading.is_none()); // untouched cell preserved!
+                                                           // Vertical merge continuation row holds the bottom border, and header holds green shading.
+    assert_eq!(
+        tbl.rows[0].cells[2].props.shading,
+        Some(wordcraft_engine::doc::props::Rgb(0xDC, 0xFC, 0xE7))
+    );
+    assert_eq!(
+        tbl.rows[1].cells[2]
+            .props
+            .borders
+            .as_ref()
+            .and_then(|b| b.bottom)
+            .unwrap()
+            .color,
         Some(wordcraft_engine::doc::props::Rgb(0x15, 0x80, 0x3D))
     );
 }
@@ -4653,15 +4952,32 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     use wordcraft_engine::doc::props::{Align, VAlign};
 
     let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
-    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    assert!(m
+        .apply(&[DocxOp::Table { rows: 3, cols: 3 }])
+        .rejected
+        .is_empty());
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
     for r in 0..3 {
         for c in 0..3 {
-            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
-            assert!(m.apply(&[DocxOp::InsertText { text: format!("A{r}{c}") }]).rejected.is_empty());
+            assert!(m.run_engine(
+                "caret.set",
+                json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })
+            ));
+            assert!(m
+                .apply(&[DocxOp::InsertText {
+                    text: format!("A{r}{c}")
+                }])
+                .rejected
+                .is_empty());
         }
     }
-    let orig_bytes = wordcraft_engine::io::save_bytes("p3-2-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_bytes =
+        wordcraft_engine::io::save_bytes("p3-2-orig.docx", m.diagnostic_document()).unwrap();
     let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
 
     // Empty alignment payload rejected in validation; stale target rejected at apply.
@@ -4673,7 +4989,10 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     }]));
     assert_eq!(
         m.apply(&[DocxOp::TableAlignment {
-            target: super::engine::SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() },
+            target: super::engine::SelectionIdentity {
+                anchor_key: "stale".into(),
+                caret_key: "stale".into()
+            },
             horizontal: Some(H::Center),
             vertical: None,
         }])
@@ -4682,10 +5001,18 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     );
 
     // Single cell horizontal justify then vertical middle; Undo restores step-by-step.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })
+    ));
     let t00 = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableAlignment { target: t00, horizontal: Some(H::Justify), vertical: None }]).changed,
+        m.apply(&[DocxOp::TableAlignment {
+            target: t00,
+            horizontal: Some(H::Justify),
+            vertical: None
+        }])
+        .changed,
         1
     );
     let tv = m.view().table.unwrap();
@@ -4693,7 +5020,12 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     assert_eq!(tv.cell_align_vertical, Some("top"));
     let t00_v = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableAlignment { target: t00_v, horizontal: None, vertical: Some(V::Middle) }]).changed,
+        m.apply(&[DocxOp::TableAlignment {
+            target: t00_v,
+            horizontal: None,
+            vertical: Some(V::Middle)
+        }])
+        .changed,
         1
     );
     let tv2 = m.view().table.unwrap();
@@ -4705,17 +5037,25 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     assert_eq!(m.view().table.unwrap().cell_align_vertical, Some("middle"));
 
     // Mixed state when selecting (0,0)..=(0,1): (0,0) is justify+middle, (0,1) is left+top.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        })
+    ));
     let tv_mix = m.view().table.unwrap();
     assert!(tv_mix.cell_align_horizontal_mixed);
     assert!(tv_mix.cell_align_vertical_mixed);
     // Applying only vertical=bottom updates both cells' vertical while preserving (0,0) justify and (0,1) left!
     let t_row = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableAlignment { target: t_row, horizontal: None, vertical: Some(V::Bottom) }]).changed,
+        m.apply(&[DocxOp::TableAlignment {
+            target: t_row,
+            horizontal: None,
+            vertical: Some(V::Bottom)
+        }])
+        .changed,
         1
     );
     let tv_after = m.view().table.unwrap();
@@ -4723,10 +5063,13 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
     assert!(tv_after.cell_align_horizontal_mixed);
 
     // Merged cell (0,2)..=(1,2) formats safely; partial overhang rejects.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+        })
+    ));
     assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
     let t_merged = table_target(&mut m);
     assert_eq!(
@@ -4738,41 +5081,84 @@ fn stage2_p3_2_docx_cell_alignment_preserves_content_undo_reopen_and_negatives()
         .changed,
         1
     );
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        })
+    ));
     assert!(m.view().table.unwrap().cell_alignment_refusal.is_some());
     let t_over = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableAlignment { target: t_over, horizontal: Some(H::Center), vertical: None }]).rejected,
+        m.apply(&[DocxOp::TableAlignment {
+            target: t_over,
+            horizontal: Some(H::Center),
+            vertical: None
+        }])
+        .rejected,
         vec![0]
     );
 
     // Nested table cell formats independently from outer cell.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
     let nested_t = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableAlignment { target: nested_t, horizontal: Some(H::Center), vertical: Some(V::Bottom) }]).changed,
+        m.apply(&[DocxOp::TableAlignment {
+            target: nested_t,
+            horizontal: Some(H::Center),
+            vertical: Some(V::Bottom)
+        }])
+        .changed,
         1
     );
 
     // T009 save check & independent reopen.
-    let saved_bytes = wordcraft_engine::io::save_bytes("p3-2-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p3-2-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
-    assert!(findings.is_empty(), "DOCX cell alignment must pass T009: {findings:?}");
+    assert!(
+        findings.is_empty(),
+        "DOCX cell alignment must pass T009: {findings:?}"
+    );
 
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert_eq!(tbl.rows[0].cells[0].props.valign, VAlign::Bottom);
-    assert_eq!(tbl.rows[0].cells[0].blocks[0].as_para().unwrap().props.align, Some(Align::Justify));
+    assert_eq!(
+        tbl.rows[0].cells[0].blocks[0]
+            .as_para()
+            .unwrap()
+            .props
+            .align,
+        Some(Align::Justify)
+    );
     assert_eq!(tbl.rows[0].cells[1].props.valign, VAlign::Bottom);
-    assert_eq!(tbl.rows[0].cells[1].blocks[0].as_para().unwrap().props.align, None);
+    assert_eq!(
+        tbl.rows[0].cells[1].blocks[0]
+            .as_para()
+            .unwrap()
+            .props
+            .align,
+        None
+    );
     assert_eq!(tbl.rows[0].cells[2].props.valign, VAlign::Center);
-    assert_eq!(tbl.rows[0].cells[2].blocks[0].as_para().unwrap().props.align, Some(Align::Right));
+    assert_eq!(
+        tbl.rows[0].cells[2].blocks[0]
+            .as_para()
+            .unwrap()
+            .props
+            .align,
+        Some(Align::Right)
+    );
     assert_eq!(tbl.rows[2].cells[2].props.valign, VAlign::Top);
 }
 
@@ -4783,15 +5169,32 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     use wordcraft_engine::doc::props::HeightRule;
 
     let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
-    assert!(m.apply(&[DocxOp::Table { rows: 3, cols: 3 }]).rejected.is_empty());
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    assert!(m
+        .apply(&[DocxOp::Table { rows: 3, cols: 3 }])
+        .rejected
+        .is_empty());
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
     for r in 0..3 {
         for c in 0..3 {
-            assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })));
-            assert!(m.apply(&[DocxOp::InsertText { text: format!("D{r}{c}") }]).rejected.is_empty());
+            assert!(m.run_engine(
+                "caret.set",
+                json!({ "pos": { "story": "body", "path": [tp_idx, r, c, 0], "off": 0 } })
+            ));
+            assert!(m
+                .apply(&[DocxOp::InsertText {
+                    text: format!("D{r}{c}")
+                }])
+                .rejected
+                .is_empty());
         }
     }
-    let orig_bytes = wordcraft_engine::io::save_bytes("p3-3-orig.docx", m.diagnostic_document()).unwrap();
+    let orig_bytes =
+        wordcraft_engine::io::save_bytes("p3-3-orig.docx", m.diagnostic_document()).unwrap();
     let orig_pkg = package::open(&orig_bytes, package::Side::Original).unwrap();
 
     // Negative validations: out-of-range widths/heights and conflicting flags must fail validation or reject.
@@ -4815,7 +5218,10 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     }]));
     assert_eq!(
         m.apply(&[DocxOp::TableColumnWidth {
-            target: super::engine::SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() },
+            target: super::engine::SelectionIdentity {
+                anchor_key: "stale".into(),
+                caret_key: "stale".into()
+            },
             width: Some(90.0),
             distribute: false,
         }])
@@ -4824,12 +5230,23 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     );
 
     // Single column width 140pt -> Undo restores -> Redo reapplies.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })
+    ));
     let orig_col0 = m.view().table.as_ref().unwrap().col_width.unwrap();
-    let orig_col2 = m.diagnostic_document().body[tp_idx].as_table().unwrap().grid[2];
+    let orig_col2 = m.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap()
+        .grid[2];
     let t00 = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableColumnWidth { target: t00, width: Some(140.0), distribute: false }]).changed,
+        m.apply(&[DocxOp::TableColumnWidth {
+            target: t00,
+            width: Some(140.0),
+            distribute: false
+        }])
+        .changed,
         1
     );
     assert_eq!(m.view().table.as_ref().unwrap().col_width, Some(140.0));
@@ -4837,13 +5254,24 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     assert!((m.view().table.as_ref().unwrap().col_width.unwrap() - orig_col0).abs() < 0.05);
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(m.view().table.as_ref().unwrap().col_width, Some(140.0));
-    assert!((m.diagnostic_document().body[tp_idx].as_table().unwrap().grid[2] - orig_col2).abs() < 0.05);
+    assert!(
+        (m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .grid[2]
+            - orig_col2)
+            .abs()
+            < 0.05
+    );
 
     // Multi-row exact height 42pt on rows 0..=1; row 2 untouched.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     assert!(m.view().table.as_ref().unwrap().col_width_mixed);
     let t_rect = table_target(&mut m);
     assert_eq!(
@@ -4862,35 +5290,67 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     assert_eq!(tv_rows.row_height_rule, Some("exact"));
 
     // Merged cell (0,2)..=(1,2): partial overhang rejects dimension changes.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 2, 0], "off": 0 },
+        })
+    ));
     assert_eq!(table_op(&mut m, A::MergeCells).changed, 1);
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-    })));
-    assert!(m.view().table.as_ref().unwrap().column_width_refusal.is_some());
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        })
+    ));
+    assert!(m
+        .view()
+        .table
+        .as_ref()
+        .unwrap()
+        .column_width_refusal
+        .is_some());
     let t_over = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableColumnWidth { target: t_over, width: Some(110.0), distribute: false }]).rejected,
+        m.apply(&[DocxOp::TableColumnWidth {
+            target: t_over,
+            width: Some(110.0),
+            distribute: false
+        }])
+        .rejected,
         vec![0]
     );
 
     // Distribute columns evenly from cell (2,2), then nested table resize.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 2, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 2, 2, 0], "off": 0 } })
+    ));
     let t_dist = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableColumnWidth { target: t_dist, width: None, distribute: true }]).changed,
+        m.apply(&[DocxOp::TableColumnWidth {
+            target: t_dist,
+            width: None,
+            distribute: true
+        }])
+        .changed,
         1
     );
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 2, 0, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("insert.table", json!({ "rows": 1, "cols": 2 })));
     let nested_t = table_target(&mut m);
     assert_eq!(
         m.apply(&[
-            DocxOp::TableColumnWidth { target: nested_t.clone(), width: Some(80.0), distribute: false },
+            DocxOp::TableColumnWidth {
+                target: nested_t.clone(),
+                width: Some(80.0),
+                distribute: false
+            },
             DocxOp::TableRowHeight {
                 target: nested_t,
                 height: Some(28.0),
@@ -4904,14 +5364,20 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
     );
 
     // T009 save check + independent reopen.
-    let saved_bytes = wordcraft_engine::io::save_bytes("p3-3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p3-3-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     let findings = package::compare_saved_docx(&orig_pkg, &saved_pkg);
-    assert!(findings.is_empty(), "DOCX table dimensions must pass T009: {findings:?}");
+    assert!(
+        findings.is_empty(),
+        "DOCX table dimensions must pass T009: {findings:?}"
+    );
 
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert!((tbl.grid[0] - tbl.grid[1]).abs() < 0.05);
     assert_eq!(tbl.rows[0].props.height, Some(42.0));
     assert_eq!(tbl.rows[0].props.height_rule, HeightRule::Exact);
@@ -4920,134 +5386,278 @@ fn stage2_p3_3_docx_column_widths_and_row_heights_preserve_content_undo_reopen_a
 
 #[test]
 fn stage2_p4_1_docx_multi_cell_clipboard_and_t009() {
-    use super::engine::table::{CellHAlign, CellVAlign, PasteTableCellsPayload, TableStructureAction};
+    use super::engine::table::{
+        CellHAlign, CellVAlign, PasteTableCellsPayload, TableStructureAction,
+    };
     use super::engine::SelectionIdentity;
     use crate::services::save::package;
     let base = crate::services::files::blank_docx().unwrap();
     let orig_pkg = package::open(&base, package::Side::Original).unwrap();
     let mut m = DocxModel::open(&base).unwrap();
     assert!(m.run_engine("insert.table", json!({ "rows": 4, "cols": 3 })));
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
 
     // Populate (0,0)..=(1,1) with text, formatting, and a 1x2 merge in row 0.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("text.insert", json!({ "text": "MergedHead" })));
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 1, 0, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("text.insert", json!({ "text": "Left" })));
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })
+    ));
     assert!(m.run_engine("text.insert", json!({ "text": "Right" })));
 
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-    })));
-    assert_eq!(table_op(&mut m, TableStructureAction::MergeCells).changed, 1);
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+        })
+    ));
+    assert_eq!(
+        table_op(&mut m, TableStructureAction::MergeCells).changed,
+        1
+    );
 
     // Format the 2x2 region (0,0)..=(1,1) with shading and alignment.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     let t_fmt = table_target(&mut m);
     assert_eq!(
         m.apply(&[
-            DocxOp::TableShading { target: t_fmt.clone(), color: Some("#FEF08A".into()) },
+            DocxOp::TableShading {
+                target: t_fmt.clone(),
+                color: Some("#FEF08A".into())
+            },
             DocxOp::TableAlignment {
                 target: t_fmt,
                 horizontal: Some(CellHAlign::Center),
                 vertical: Some(CellVAlign::Middle),
             },
-        ]).changed,
+        ])
+        .changed,
         2
     );
 
     // Select 2x2 region (0,0)..=(1,1) -> clipboard_table_cells_available + extract.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     assert!(m.view().clipboard_table_cells_available);
     let extracted_raw = m.clipboard_table_cells().expect("multi-cell payload");
     let extracted: PasteTableCellsPayload = serde_json::from_str(&extracted_raw).unwrap();
-    assert_eq!((extracted.rows, extracted.cols, extracted.cells.len()), (2, 2, 3));
+    assert_eq!(
+        (extracted.rows, extracted.cols, extracted.cells.len()),
+        (2, 2, 3)
+    );
     assert_eq!(extracted.cells[0].col_span, 2);
 
     // Partial merge overhang (0,1)..=(0,2) must reject clipboard extraction.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 1, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 0, 2, 0], "off": 0 },
+        })
+    ));
     assert!(!m.view().clipboard_table_cells_available);
     assert!(m.clipboard_table_cells().is_none());
 
     // Paste into unmerged 2x2 target anchored at (2, 1): creates merge + copies text & formatting.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 2, 1, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 2, 1, 0], "off": 0 } })
+    ));
     let paste_target = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::PasteTableCells { target: paste_target, payload: extracted.clone() }]).changed,
+        m.apply(&[DocxOp::PasteTableCells {
+            target: paste_target,
+            payload: extracted.clone()
+        }])
+        .changed,
         1
     );
     {
         let tbl = m.diagnostic_document().body[tp_idx].as_table().unwrap();
         assert_eq!(tbl.rows[2].cells.len(), 2); // col 0 + merged (1..=2)
         assert_eq!(tbl.rows[2].cells[1].span(), 2);
-        assert_eq!(tbl.rows[2].cells[1].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
-        assert_eq!(tbl.rows[3].cells[1].blocks[0].as_para().unwrap().plain_text(), "Left");
-        assert_eq!(tbl.rows[3].cells[2].blocks[0].as_para().unwrap().plain_text(), "Right");
+        assert_eq!(
+            tbl.rows[2].cells[1].blocks[0]
+                .as_para()
+                .unwrap()
+                .plain_text(),
+            "MergedHead"
+        );
+        assert_eq!(
+            tbl.rows[3].cells[1].blocks[0]
+                .as_para()
+                .unwrap()
+                .plain_text(),
+            "Left"
+        );
+        assert_eq!(
+            tbl.rows[3].cells[2].blocks[0]
+                .as_para()
+                .unwrap()
+                .plain_text(),
+            "Right"
+        );
     }
 
     // Undo / Redo structural paste in one step.
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
-    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[2].cells.len(), 3);
+    assert_eq!(
+        m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .rows[2]
+            .cells
+            .len(),
+        3
+    );
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
-    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[2].cells[1].span(), 2);
+    assert_eq!(
+        m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .rows[2]
+            .cells[1]
+            .span(),
+        2
+    );
 
     // Out-of-bounds paste target at (3, 2) must reject without partial mutation.
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 3, 2, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 3, 2, 0], "off": 0 } })
+    ));
     let bad_target = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::PasteTableCells { target: bad_target, payload: extracted.clone() }]).rejected,
+        m.apply(&[DocxOp::PasteTableCells {
+            target: bad_target,
+            payload: extracted.clone()
+        }])
+        .rejected,
         vec![0]
     );
 
     // Cut (0,0)..=(1,1) with stale selection rejected, valid selection clears in one Undo step.
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     assert_eq!(
-        m.apply(&[DocxOp::CutTableCells { target: SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() } }]).rejected,
+        m.apply(&[DocxOp::CutTableCells {
+            target: SelectionIdentity {
+                anchor_key: "stale".into(),
+                caret_key: "stale".into()
+            }
+        }])
+        .rejected,
         vec![0]
     );
     let cut_target = table_target(&mut m);
-    assert_eq!(m.apply(&[DocxOp::CutTableCells { target: cut_target }]).changed, 1);
-    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "");
+    assert_eq!(
+        m.apply(&[DocxOp::CutTableCells { target: cut_target }])
+            .changed,
+        1
+    );
+    assert_eq!(
+        m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .rows[0]
+            .cells[0]
+            .blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        ""
+    );
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
-    assert_eq!(m.diagnostic_document().body[tp_idx].as_table().unwrap().rows[0].cells[0].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
+    assert_eq!(
+        m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .rows[0]
+            .cells[0]
+            .blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "MergedHead"
+    );
 
     // T009 save + independent reopen.
-    let saved_bytes = wordcraft_engine::io::save_bytes("p4-1-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p4-1-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert_eq!(tbl.rows[2].cells[1].span(), 2);
-    assert_eq!(tbl.rows[2].cells[1].blocks[0].as_para().unwrap().plain_text(), "MergedHead");
-    assert_eq!(tbl.rows[3].cells[2].blocks[0].as_para().unwrap().plain_text(), "Right");
+    assert_eq!(
+        tbl.rows[2].cells[1].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "MergedHead"
+    );
+    assert_eq!(
+        tbl.rows[3].cells[2].blocks[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Right"
+    );
 }
 
 #[test]
 fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
-    use super::engine::SelectionIdentity;
     use super::engine::table::{TableAlign, TableMarginScope};
+    use super::engine::SelectionIdentity;
     use crate::services::save::package;
     let doc = crate::services::files::blank_docx().unwrap();
     let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
     let mut m = DocxModel::open(&doc).unwrap();
-    assert!(m.run_engine("text.insert", json!({ "text": "Unrelated body paragraph." })));
+    assert!(m.run_engine(
+        "text.insert",
+        json!({ "text": "Unrelated body paragraph." })
+    ));
     assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
     let target = table_target(&mut m);
 
     // Table-wide default cell margins + center align + indent (18pt).
@@ -5060,7 +5670,8 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
             bottom: Some(4.0),
             left: Some(8.0),
             reset: false,
-        }]).changed,
+        }])
+        .changed,
         1
     );
     assert_eq!(
@@ -5068,7 +5679,8 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
             target: target.clone(),
             align: Some(TableAlign::Center),
             indent_pt: Some(18.0),
-        }]).changed,
+        }])
+        .changed,
         1
     );
 
@@ -5083,7 +5695,8 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
             bottom: Some(12.0),
             left: Some(14.0),
             reset: false,
-        }]).changed,
+        }])
+        .changed,
         1
     );
     let v = m.view().table.unwrap();
@@ -5101,9 +5714,17 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
 
     // Stale target and invalid margin rejected before mutation.
-    let stale = SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() };
+    let stale = SelectionIdentity {
+        anchor_key: "stale".into(),
+        caret_key: "stale".into(),
+    };
     assert_eq!(
-        m.apply(&[DocxOp::TablePositioning { target: stale, align: Some(TableAlign::Right), indent_pt: None }]).rejected,
+        m.apply(&[DocxOp::TablePositioning {
+            target: stale,
+            align: Some(TableAlign::Right),
+            indent_pt: None
+        }])
+        .rejected,
         vec![0]
     );
     let cur = table_target(&mut m);
@@ -5116,77 +5737,135 @@ fn stage2_p4_2_docx_cell_margins_and_positioning_and_t009() {
             bottom: None,
             left: None,
             reset: false,
-        }]).rejected,
+        }])
+        .rejected,
         vec![0]
     );
 
     // T009 save & independent reopen
-    let saved_bytes = wordcraft_engine::io::save_bytes("p4-2-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p4-2-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    assert_eq!(reopened.diagnostic_document().body[0].as_para().unwrap().plain_text(), "Unrelated body paragraph.");
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    assert_eq!(
+        reopened.diagnostic_document().body[0]
+            .as_para()
+            .unwrap()
+            .plain_text(),
+        "Unrelated body paragraph."
+    );
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert_eq!(tbl.props.cell_margins, Some([4.0, 8.0, 4.0, 8.0]));
     assert_eq!(tbl.props.indent, Some(18.0));
-    assert_eq!(tbl.rows[0].cells[0].props.margins, Some([12.0, 14.0, 12.0, 14.0]));
+    assert_eq!(
+        tbl.rows[0].cells[0].props.margins,
+        Some([12.0, 14.0, 12.0, 14.0])
+    );
     assert_eq!(tbl.rows[0].cells[1].props.margins, None);
 }
 
 #[test]
 fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
-    use super::engine::SelectionIdentity;
     use super::engine::table::{RowHeightRule, TableBreakMode};
+    use super::engine::SelectionIdentity;
     use crate::services::save::package;
     let doc = crate::services::files::blank_docx().unwrap();
     let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
     let mut m = DocxModel::open(&doc).unwrap();
-    assert!(m.apply(&[DocxOp::Table { rows: 14, cols: 2 }]).rejected.is_empty());
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    assert!(m
+        .apply(&[DocxOp::Table { rows: 14, cols: 2 }])
+        .rejected
+        .is_empty());
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
 
     // Populate 2 header rows + 12 tall body rows spanning 2+ pages
     for (r, label) in [(0usize, "HDR_A"), (1usize, "HDR_B")] {
-        assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })));
+        assert!(m.run_engine(
+            "caret.set",
+            json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })
+        ));
         assert!(m.run_engine("text.insert", json!({ "text": label })));
         let t = table_target(&mut m);
         assert_eq!(
-            m.apply(&[DocxOp::TableRowHeight { target: t, height: Some(40.0), rule: Some(RowHeightRule::Exact), clear: false, distribute: false }]).changed,
+            m.apply(&[DocxOp::TableRowHeight {
+                target: t,
+                height: Some(40.0),
+                rule: Some(RowHeightRule::Exact),
+                clear: false,
+                distribute: false
+            }])
+            .changed,
             1
         );
     }
     for r in 2..14 {
-        assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })));
+        assert!(m.run_engine(
+            "caret.set",
+            json!({ "pos": { "story": "body", "path": [tp_idx, r, 0, 0], "off": 0 } })
+        ));
         let t = table_target(&mut m);
         assert_eq!(
-            m.apply(&[DocxOp::TableRowHeight { target: t, height: Some(80.0), rule: Some(RowHeightRule::AtLeast), clear: false, distribute: false }]).changed,
+            m.apply(&[DocxOp::TableRowHeight {
+                target: t,
+                height: Some(80.0),
+                rule: Some(RowHeightRule::AtLeast),
+                clear: false,
+                distribute: false
+            }])
+            .changed,
             1
         );
     }
 
     // Non-leading row 3 rejected when row 0..2 are not headers
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 3, 0, 0], "off": 0 } })));
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 3, 0, 0], "off": 0 } })
+    ));
     assert!(!m.view().table.as_ref().unwrap().can_enable_header);
     let non_leading = table_target(&mut m);
     assert_eq!(
-        m.apply(&[DocxOp::TableRepeatHeader { target: non_leading, repeat: true }]).rejected,
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: non_leading,
+            repeat: true
+        }])
+        .rejected,
         vec![0]
     );
 
     // Select rows 0..=1 and enable repeating header + row-level break prevention
-    assert!(m.run_engine("select.range", json!({
-        "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
-        "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
-    })));
+    assert!(m.run_engine(
+        "select.range",
+        json!({
+            "anchor": { "story": "body", "path": [tp_idx, 0, 0, 0], "off": 0 },
+            "focus": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 },
+        })
+    ));
     let tv = m.view().table.unwrap();
     assert!(tv.can_enable_header);
     assert_eq!(tv.leading_header_rows, 0);
     let hdr_target = table_target(&mut m);
     assert_eq!(
         m.apply(&[
-            DocxOp::TableRepeatHeader { target: hdr_target.clone(), repeat: true },
-            DocxOp::TableRowBreak { target: hdr_target, mode: TableBreakMode::Row },
-        ]).changed,
+            DocxOp::TableRepeatHeader {
+                target: hdr_target.clone(),
+                repeat: true
+            },
+            DocxOp::TableRowBreak {
+                target: hdr_target,
+                mode: TableBreakMode::Row
+            },
+        ])
+        .changed,
         2
     );
     let tv_after = m.view().table.unwrap();
@@ -5197,7 +5876,11 @@ fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
     // Rendered layout repeats BOTH header rows on page 2!
     let mut check_sess = wordcraft_engine::Session::new(m.diagnostic_document().clone());
     let layout = check_sess.layout();
-    assert!(layout.pages.len() >= 2, "expected >=2 pages, got {}", layout.pages.len());
+    assert!(
+        layout.pages.len() >= 2,
+        "expected >=2 pages, got {}",
+        layout.pages.len()
+    );
     let p2_paths: Vec<Vec<u32>> = layout.pages[1]
         .items
         .iter()
@@ -5206,8 +5889,14 @@ fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
             _ => None,
         })
         .collect();
-    assert!(p2_paths.contains(&vec![tp_idx as u32, 0, 0, 0]), "page 2 missing header row 0: {p2_paths:?}");
-    assert!(p2_paths.contains(&vec![tp_idx as u32, 1, 0, 0]), "page 2 missing header row 1: {p2_paths:?}");
+    assert!(
+        p2_paths.contains(&vec![tp_idx as u32, 0, 0, 0]),
+        "page 2 missing header row 0: {p2_paths:?}"
+    );
+    assert!(
+        p2_paths.contains(&vec![tp_idx as u32, 1, 0, 0]),
+        "page 2 missing header row 1: {p2_paths:?}"
+    );
 
     // Undo / Redo check
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
@@ -5216,19 +5905,29 @@ fn stage2_p4_3_docx_repeating_headers_pagination_and_t009() {
     assert_eq!(m.view().table.unwrap().row_break_mode, Some("row"));
 
     // Stale target rejected
-    let stale = SelectionIdentity { anchor_key: "stale".into(), caret_key: "stale".into() };
+    let stale = SelectionIdentity {
+        anchor_key: "stale".into(),
+        caret_key: "stale".into(),
+    };
     assert_eq!(
-        m.apply(&[DocxOp::TableRepeatHeader { target: stale, repeat: false }]).rejected,
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: stale,
+            repeat: false
+        }])
+        .rejected,
         vec![0]
     );
 
     // T009 save & independent reopen
-    let saved_bytes = wordcraft_engine::io::save_bytes("p4-3-saved.docx", m.diagnostic_document()).unwrap();
+    let saved_bytes =
+        wordcraft_engine::io::save_bytes("p4-3-saved.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved_bytes, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
     let reopened = DocxModel::open(&saved_bytes).unwrap();
-    let tbl = reopened.diagnostic_document().body[tp_idx].as_table().unwrap();
+    let tbl = reopened.diagnostic_document().body[tp_idx]
+        .as_table()
+        .unwrap();
     assert!(tbl.rows[0].props.header && tbl.rows[1].props.header);
     assert!(tbl.rows[0].props.cant_split && tbl.rows[1].props.cant_split);
 }
@@ -5239,35 +5938,74 @@ fn stage2_p4_stab_docx_header_clear_is_limited_to_selected_trailing_rows() {
     let doc = crate::services::files::blank_docx().unwrap();
     let orig_pkg = package::open(&doc, package::Side::Original).unwrap();
     let mut m = DocxModel::open(&doc).unwrap();
-    assert!(m.apply(&[DocxOp::Table { rows: 4, cols: 2 }]).rejected.is_empty());
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
+    assert!(m
+        .apply(&[DocxOp::Table { rows: 4, cols: 2 }])
+        .rejected
+        .is_empty());
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
     let select_rows = |m: &mut DocxModel, r0: usize, r1: usize| {
-        assert!(m.run_engine("select.range", json!({
-            "anchor": { "story": "body", "path": [tp_idx, r0, 0, 0], "off": 0 },
-            "focus": { "story": "body", "path": [tp_idx, r1, 1, 0], "off": 0 },
-        })));
+        assert!(m.run_engine(
+            "select.range",
+            json!({
+                "anchor": { "story": "body", "path": [tp_idx, r0, 0, 0], "off": 0 },
+                "focus": { "story": "body", "path": [tp_idx, r1, 1, 0], "off": 0 },
+            })
+        ));
         table_target(m)
     };
     let headers = |m: &DocxModel| -> Vec<bool> {
-        m.diagnostic_document().body[tp_idx].as_table().unwrap().rows.iter().map(|r| r.props.header).collect()
+        m.diagnostic_document().body[tp_idx]
+            .as_table()
+            .unwrap()
+            .rows
+            .iter()
+            .map(|r| r.props.header)
+            .collect()
     };
     let t = select_rows(&mut m, 0, 1);
-    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: true }]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: t,
+            repeat: true
+        }])
+        .changed,
+        1
+    );
     assert_eq!(headers(&m), vec![true, true, false, false]);
     // Clearing only the first header row would silently clear (or orphan) row 1: refused, unchanged.
     let t = select_rows(&mut m, 0, 0);
-    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).rejected, vec![0]);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: t,
+            repeat: false
+        }])
+        .rejected,
+        vec![0]
+    );
     assert_eq!(headers(&m), vec![true, true, false, false]);
     // Clearing the trailing header row keeps the leading block contiguous.
     let t = select_rows(&mut m, 1, 1);
-    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: t,
+            repeat: false
+        }])
+        .changed,
+        1
+    );
     assert_eq!(headers(&m), vec![true, false, false, false]);
     assert_eq!(m.view().table.unwrap().leading_header_rows, 1);
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(headers(&m), vec![true, true, false, false]);
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(headers(&m), vec![true, false, false, false]);
-    let saved = wordcraft_engine::io::save_bytes("p4-stab-headers.docx", m.diagnostic_document()).unwrap();
+    let saved =
+        wordcraft_engine::io::save_bytes("p4-stab-headers.docx", m.diagnostic_document()).unwrap();
     let saved_pkg = package::open(&saved, package::Side::Output).unwrap();
     assert!(package::validate_docx(&saved_pkg).is_empty());
     assert!(package::compare_saved_docx(&orig_pkg, &saved_pkg).is_empty());
@@ -5275,7 +6013,14 @@ fn stage2_p4_stab_docx_header_clear_is_limited_to_selected_trailing_rows() {
     assert_eq!(headers(&reopened), vec![true, false, false, false]);
     // Clearing the last remaining header row turns repetition off.
     let t = select_rows(&mut m, 0, 0);
-    assert_eq!(m.apply(&[DocxOp::TableRepeatHeader { target: t, repeat: false }]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::TableRepeatHeader {
+            target: t,
+            repeat: false
+        }])
+        .changed,
+        1
+    );
     assert_eq!(headers(&m), vec![false; 4]);
     assert_eq!(m.view().table.unwrap().leading_header_rows, 0);
 }
@@ -5285,8 +6030,16 @@ fn stage2_p4_stab_docx_paste_rejects_overflowing_geometry_without_mutation() {
     use super::engine::table::PasteTableCellsPayload;
     let mut m = DocxModel::open(&crate::services::files::blank_docx().unwrap()).unwrap();
     assert!(m.run_engine("insert.table", json!({ "rows": 3, "cols": 3 })));
-    let tp_idx = m.diagnostic_document().body.iter().position(|b| b.as_table().is_some()).unwrap();
-    assert!(m.run_engine("caret.set", json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })));
+    let tp_idx = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| b.as_table().is_some())
+        .unwrap();
+    assert!(m.run_engine(
+        "caret.set",
+        json!({ "pos": { "story": "body", "path": [tp_idx, 1, 1, 0], "off": 0 } })
+    ));
     let big = usize::MAX as u64;
     let cell = |row: u64, col: u64, rs: u64, cs: u64| json!({ "row": row, "col": col, "rowSpan": rs, "colSpan": cs, "paragraphs": [{ "runs": [{ "text": "x" }] }] });
     let payload = |rows: u64, cols: u64, cells: serde_json::Value| json!({ "rows": rows, "cols": cols, "cells": cells });
@@ -5294,8 +6047,8 @@ fn stage2_p4_stab_docx_paste_rejects_overflowing_geometry_without_mutation() {
         payload(2, 1, json!([cell(0, 0, 1, 1), cell(1, 0, big, 1)])), // rowSpan wraps near the end row
         payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, big)])), // colSpan wraps near the end column
         payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 0)])),   // zero span
-        payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 2)])),   // span past the remaining extent
-        payload(1, 2, json!([cell(0, 0, 1, 1), cell(1, 0, 1, 1)])),   // row outside the payload
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 2)])), // span past the remaining extent
+        payload(1, 2, json!([cell(0, 0, 1, 1), cell(1, 0, 1, 1)])), // row outside the payload
         payload(big, 2, json!([cell(0, 0, 1, 1), cell(0, 1, 1, 1)])), // oversized grid
     ];
     let before = m.diagnostic_document().clone();
@@ -5304,16 +6057,34 @@ fn stage2_p4_stab_docx_paste_rejects_overflowing_geometry_without_mutation() {
         let parsed: PasteTableCellsPayload = serde_json::from_value(raw.clone()).unwrap();
         assert!(!parsed.valid(), "case {i} validated");
         let target = table_target(&mut m);
-        let r = m.apply(&[DocxOp::PasteTableCells { target, payload: parsed }]);
+        let r = m.apply(&[DocxOp::PasteTableCells {
+            target,
+            payload: parsed,
+        }]);
         assert_eq!(r.rejected, vec![0], "case {i} applied");
-        assert!(*m.diagnostic_document() == before, "case {i} mutated the document");
+        assert!(
+            *m.diagnostic_document() == before,
+            "case {i} mutated the document"
+        );
         assert_eq!(m.view().history, history, "case {i} recorded history");
     }
     // Boundary-valid: a vertical merge reaching the last target row, and single cells at the last column.
-    let ok: PasteTableCellsPayload = serde_json::from_value(payload(2, 2, json!([cell(0, 0, 2, 1), cell(0, 1, 1, 1), cell(1, 1, 1, 1)]))).unwrap();
+    let ok: PasteTableCellsPayload = serde_json::from_value(payload(
+        2,
+        2,
+        json!([cell(0, 0, 2, 1), cell(0, 1, 1, 1), cell(1, 1, 1, 1)]),
+    ))
+    .unwrap();
     assert!(ok.valid());
     let target = table_target(&mut m);
-    assert_eq!(m.apply(&[DocxOp::PasteTableCells { target, payload: ok }]).changed, 1);
+    assert_eq!(
+        m.apply(&[DocxOp::PasteTableCells {
+            target,
+            payload: ok
+        }])
+        .changed,
+        1
+    );
 }
 
 #[test]
@@ -5326,14 +6097,22 @@ fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document()
     source.run("text.newParagraph", &json!({})).unwrap();
     for n in [1, 2] {
         source.run("insert.picture", &json!({"data": png})).unwrap();
-        source.run("picture.size", &json!({"width": 30*n, "height": 20*n})).unwrap();
-        source.run("select.collapse", &json!({"end": true})).unwrap();
+        source
+            .run("picture.size", &json!({"width": 30*n, "height": 20*n}))
+            .unwrap();
+        source
+            .run("select.collapse", &json!({"end": true}))
+            .unwrap();
     }
     let bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
     let layout = reader.layout();
-    let first = layout.find_object(0, |object| object.rect.w == 30.0).unwrap();
-    let second = layout.find_object(first.page, |object| object.rect.w == 60.0).unwrap();
+    let first = layout
+        .find_object(0, |object| object.rect.w == 30.0)
+        .unwrap();
+    let second = layout
+        .find_object(first.page, |object| object.rect.w == 60.0)
+        .unwrap();
     let click = |hit: &wordcraft_engine::layout::hit::ObjectHit| DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + hit.rect.w / 2.0,
@@ -5367,7 +6146,15 @@ fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document()
     assert_eq!(model.apply(&[DocxOp::DeselectObject {}]).changed, 0);
     assert!(model.view().object.is_none());
 
-    assert_eq!(model.apply(&[click(&first), pointer(text_caret.page as u32, text_caret.x, text_caret.y + 2.0)]).changed, 0);
+    assert_eq!(
+        model
+            .apply(&[
+                click(&first),
+                pointer(text_caret.page as u32, text_caret.x, text_caret.y + 2.0)
+            ])
+            .changed,
+        0
+    );
     assert!(model.view().object.is_none());
     assert!(model.view().caret.is_some());
     assert_eq!(model.export().unwrap(), baseline);
@@ -5376,17 +6163,21 @@ fn stage3_object_selection_uses_owned_picture_positions_and_preserves_document()
 
 #[test]
 fn stage3_docx_graphic_inspection_preserves_models_and_package() {
+    use crate::services::save::service;
     use wordcraft_engine::doc::{InlineObject, PartKind};
     use wordcraft_engine::{io, Session};
-    use crate::services::save::service;
 
     let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     source.run("caret.docEnd", &json!({})).unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("insert.chart", &json!({"type":"line", "title":"Revenue"})).unwrap();
+    source
+        .run("insert.chart", &json!({"type":"line", "title":"Revenue"}))
+        .unwrap();
     source.run("select.collapse", &json!({"end":true})).unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("insert.smartArt", &json!({"layout":"process"})).unwrap();
+    source
+        .run("insert.smartArt", &json!({"layout":"process"}))
+        .unwrap();
     let bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
     let mut reopen = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
     let mut model = DocxModel::open(&bytes).unwrap();
@@ -5402,7 +6193,13 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
         let x = object.rect.x + object.rect.w / 2.0;
         let y = object.rect.y + object.rect.h / 2.0;
         let result = model.apply(&[DocxOp::Pointer {
-            page: object.page as u32, x, y, extend: false, before_insert: false, drag: false, select_object: true,
+            page: object.page as u32,
+            x,
+            y,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
         }]);
         assert_eq!(result.changed, 0);
         let view = serde_json::to_value(model.view()).unwrap();
@@ -5420,10 +6217,16 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
     }
     assert_eq!(model.export().unwrap(), original);
     assert!(model.same_as(&original));
-    assert!(reopen.doc.parts.values().all(|p| p.kind != PartKind::TextBox));
+    assert!(reopen
+        .doc
+        .parts
+        .values()
+        .all(|p| p.kind != PartKind::TextBox));
 
     reopen.run("select.objects", &json!({"index":0})).unwrap();
-    reopen.run("chart.title", &json!({"text":"Changed"})).unwrap();
+    reopen
+        .run("chart.title", &json!({"text":"Changed"}))
+        .unwrap();
     let changed = io::save_bytes("fixture.docx", &reopen.doc).unwrap();
     // Stage 3 P4: the bound chart part may be regenerated (package proof), but a raw engine edit
     // leaves the model's kept part bytes stale, so the real reopen comparison still refuses it.
@@ -5447,7 +6250,9 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
 
     let mut diagram = Session::new(io::open_bytes("fixture.docx", &bytes).unwrap());
     diagram.run("select.objects", &json!({"index":1})).unwrap();
-    diagram.run("smartArt.items", &json!({"items":["Changed", "Original"]})).unwrap();
+    diagram
+        .run("smartArt.items", &json!({"items":["Changed", "Original"]}))
+        .unwrap();
     let changed = io::save_bytes("fixture.docx", &diagram.doc).unwrap();
     let reopened = io::open_bytes("fixture.docx", &changed).unwrap();
     let same = matches!(
@@ -5468,37 +6273,61 @@ fn stage3_docx_graphic_inspection_preserves_models_and_package() {
         let dir = std::path::PathBuf::from(out);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("graphics.docx"), bytes).unwrap();
-        std::fs::write(dir.join("graphics-frames.json"), serde_json::to_vec(&frames).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("graphics-frames.json"),
+            serde_json::to_vec(&frames).unwrap(),
+        )
+        .unwrap();
     }
 }
 
 #[test]
 fn stage3_shape_clipboard_cut_refuses_stale_or_unowned_objects_and_roundtrips() {
+    use super::engine::BasicShape;
+    use crate::services::save::service;
     use wordcraft_engine::doc::{InlineObject, StoryRef};
     use wordcraft_engine::{io, Session};
-    use crate::services::save::service;
-    use super::engine::BasicShape;
 
     let source = fixture();
     let mut model = DocxModel::open(&source).unwrap();
-    let append = DocxOp::Shape { kind: BasicShape::Rectangle };
-    assert_eq!(model.apply(&[mv(MoveTarget::DocEnd, false), append.clone(), append]).changed, 2);
+    let append = DocxOp::Shape {
+        kind: BasicShape::Rectangle,
+    };
+    assert_eq!(
+        model
+            .apply(&[mv(MoveTarget::DocEnd, false), append.clone(), append])
+            .changed,
+        2
+    );
     let after_paste = model.export().unwrap();
     let mut independent = Session::new(io::open_bytes("fixture.docx", &after_paste).unwrap());
     let layout = independent.layout();
     let mut offsets = Vec::new();
     for path in independent.doc.para_paths(StoryRef::Body) {
         let para = independent.doc.para(StoryRef::Body, &path).unwrap();
-        for off in para.object_offsets().into_iter().filter(|&off| matches!(para.object_at(off), Some(InlineObject::Shape { .. }))) {
-            offsets.push(wordcraft_engine::doc::Pos { story: StoryRef::Body, path: path.clone(), off });
+        for off in para
+            .object_offsets()
+            .into_iter()
+            .filter(|&off| matches!(para.object_at(off), Some(InlineObject::Shape { .. })))
+        {
+            offsets.push(wordcraft_engine::doc::Pos {
+                story: StoryRef::Body,
+                path: path.clone(),
+                off,
+            });
         }
     }
     assert_eq!(offsets.len(), 2);
     let select = |i: usize| {
         let frame = layout.object(&offsets[i], 0).unwrap();
         DocxOp::Pointer {
-            page: frame.page as u32, x: frame.rect.x + frame.rect.w / 2.0, y: frame.rect.y + frame.rect.h / 2.0,
-            extend: false, before_insert: false, drag: false, select_object: true,
+            page: frame.page as u32,
+            x: frame.rect.x + frame.rect.w / 2.0,
+            y: frame.rect.y + frame.rect.h / 2.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
         }
     };
     model.apply(&[select(0)]);
@@ -5509,17 +6338,31 @@ fn stage3_shape_clipboard_cut_refuses_stale_or_unowned_objects_and_roundtrips() 
     let last = serde_json::to_value(model.view()).unwrap()["object"].clone();
     assert_eq!(last["clipboardShape"]["cutAllowed"], true);
     let cut = |key: &serde_json::Value| DocxOp::CutShape {
-        position: key["position"].as_str().unwrap().into(), epoch: key["epoch"].as_u64().unwrap(),
+        position: key["position"].as_str().unwrap().into(),
+        epoch: key["epoch"].as_u64().unwrap(),
     };
     assert_eq!(model.apply(&[cut(&first)]).rejected, vec![0]);
     assert_eq!(model.export().unwrap(), after_paste);
     assert_eq!(model.apply(&[cut(&last)]).changed, 1);
     let after_cut = model.export().unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &source, &after_cut, None, model.same_as(&after_cut));
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &source,
+        &after_cut,
+        None,
+        model.same_as(&after_cut),
+    );
     assert!(gate.is_safe(), "{gate:?}");
     let read = io::open_bytes("fixture.docx", &after_cut).unwrap();
-    assert_eq!(read.body.iter().filter_map(|b| b.as_para()).flat_map(|p| &p.objects)
-        .filter(|o| matches!(o, InlineObject::Shape { .. })).count(), 1);
+    assert_eq!(
+        read.body
+            .iter()
+            .filter_map(|b| b.as_para())
+            .flat_map(|p| &p.objects)
+            .filter(|o| matches!(o, InlineObject::Shape { .. }))
+            .count(),
+        1
+    );
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), after_paste);
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
@@ -6255,7 +7098,16 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
     let mut freeform = Freeform {
         w: 100.0,
         h: 50.0,
-        paths: vec![FreePath { pts: Vec::new(), closed: false }, FreePath { pts: Vec::new(), closed: false }],
+        paths: vec![
+            FreePath {
+                pts: Vec::new(),
+                closed: false,
+            },
+            FreePath {
+                pts: Vec::new(),
+                closed: false,
+            },
+        ],
         drawingml: Some(geometry),
         ..Default::default()
     };
@@ -6267,22 +7119,36 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
         fill: Some(Rgb(0x11, 0x22, 0x33)),
         stroke: Some(Rgb(0x44, 0x55, 0x66)),
         stroke_width: 1.0,
-        float: Float { rot: 30.0, flip_h: true, flip_v: false, ..Float::default() },
+        float: Float {
+            rot: 30.0,
+            flip_h: true,
+            flip_v: false,
+            ..Float::default()
+        },
         story: None,
         freeform: Some(std::sync::Arc::new(freeform)),
         effects: Default::default(),
         extra: Default::default(),
     };
     let at = seed.sel.focus.clone();
-    seed.doc.insert_object(&at, object, &CharProps::default()).unwrap();
+    seed.doc
+        .insert_object(&at, object, &CharProps::default())
+        .unwrap();
     let original = io::save_bytes("fixture.docx", &seed.doc).unwrap();
 
     let mut model = DocxModel::open(&original).unwrap();
-    assert!(model.render_png(0, 1.0).is_some(), "a document with editable DrawingML Bézier paths renders");
+    assert!(
+        model.render_png(0, 1.0).is_some(),
+        "a document with editable DrawingML Bézier paths renders"
+    );
     if let Some(path) = std::env::var_os("GEUL_STAGE3_DOCX_CURVE_FIXTURE") {
         let bytes = std::fs::read(path).expect("generated Native DOCX fixture");
-        let mut parsed = DocxModel::open(&bytes).expect("generated Native DOCX fixture parses in WordCraft");
-        assert!(parsed.render_png(0, 1.0).is_some(), "generated quadratic/cubic fixture renders");
+        let mut parsed =
+            DocxModel::open(&bytes).expect("generated Native DOCX fixture parses in WordCraft");
+        assert!(
+            parsed.render_png(0, 1.0).is_some(),
+            "generated quadratic/cubic fixture renders"
+        );
     }
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
     let hit = reader.layout().find_object(0, |_| true).unwrap();
@@ -6299,16 +7165,33 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
 
     let state = |model: &mut DocxModel| {
         let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
-        (object["position"].as_str().unwrap().to_owned(), object["epoch"].as_u64().unwrap(), object)
+        (
+            object["position"].as_str().unwrap().to_owned(),
+            object["epoch"].as_u64().unwrap(),
+            object,
+        )
     };
     let (position, epoch, selected) = state(&mut model);
-    assert!(selected["operations"].as_array().unwrap().iter().any(|op| op == "pathPoint"));
+    assert!(selected["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "pathPoint"));
     assert_eq!(selected["shape"]["rotation"], 30.0);
     assert_eq!(selected["shape"]["flipH"], true);
     assert_eq!(selected["shape"]["flipV"], false);
-    assert_eq!(selected["drawingMlPaths"][0]["segments"][1]["command"], "quadBezTo");
-    assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["command"], "cubicBezTo");
-    assert_eq!(selected["drawingMlPaths"][1]["segments"][1]["points"][0]["x"], 254000);
+    assert_eq!(
+        selected["drawingMlPaths"][0]["segments"][1]["command"],
+        "quadBezTo"
+    );
+    assert_eq!(
+        selected["drawingMlPaths"][1]["segments"][1]["command"],
+        "cubicBezTo"
+    );
+    assert_eq!(
+        selected["drawingMlPaths"][1]["segments"][1]["points"][0]["x"],
+        254000
+    );
     let baseline = model.export().unwrap();
     let history = serde_json::to_value(model.view()).unwrap()["history"].clone();
     let mut direct = DocxModel::open(&original).unwrap();
@@ -6318,55 +7201,146 @@ fn stage3_docx_bezier_path_point_edit_preserves_source_structure_t009_and_histor
         off: selected_start.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
         ..selected_start.clone()
     };
-    let direct_select = direct.run_engine("select.range", json!({"anchor": selected_start, "focus": selected_end}));
-    let direct_ok = direct.run_engine("shape.pathPoint", json!({"path": 1, "segment": 1, "point": 0, "x": 300_000, "y": 100_000}));
+    let direct_select = direct.run_engine(
+        "select.range",
+        json!({"anchor": selected_start, "focus": selected_end}),
+    );
+    let direct_ok = direct.run_engine(
+        "shape.pathPoint",
+        json!({"path": 1, "segment": 1, "point": 0, "x": 300_000, "y": 100_000}),
+    );
     let direct_bytes = direct.export().unwrap();
     let direct_same = direct.same_as(&direct_bytes);
-    let direct_gate = service::check_saved(crate::document::Format::Docx, &original, &direct_bytes, None, direct_same);
-    assert!(direct_select && direct_ok, "the engine path-point command selects and edits this freeform");
-    assert!(direct_same && direct_gate.is_safe(), "the direct engine edit passes T009: {direct_gate:?}");
+    let direct_gate = service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &direct_bytes,
+        None,
+        direct_same,
+    );
+    assert!(
+        direct_select && direct_ok,
+        "the engine path-point command selects and edits this freeform"
+    );
+    assert!(
+        direct_same && direct_gate.is_safe(),
+        "the direct engine edit passes T009: {direct_gate:?}"
+    );
     let rejected = model.apply(&[DocxOp::ObjectEdit {
         position: position.clone(),
         epoch,
-        edit: ObjectEdit::DocxPathPoint { path: 1, segment: 1, point: 0, x: 2_540_001, y: 100_000 },
+        edit: ObjectEdit::DocxPathPoint {
+            path: 1,
+            segment: 1,
+            point: 0,
+            x: 2_540_001,
+            y: 100_000,
+        },
     }]);
-    assert_eq!(rejected.rejected, vec![0], "coordinates outside the path viewport fail closed");
+    assert_eq!(
+        rejected.rejected,
+        vec![0],
+        "coordinates outside the path viewport fail closed"
+    );
     assert_eq!(model.export().unwrap(), baseline);
-    assert_eq!(serde_json::to_value(model.view()).unwrap()["history"], history);
+    assert_eq!(
+        serde_json::to_value(model.view()).unwrap()["history"],
+        history
+    );
 
     let edit = model.apply(&[DocxOp::ObjectEdit {
         position,
         epoch,
-        edit: ObjectEdit::DocxPathPoint { path: 1, segment: 1, point: 0, x: 300_000, y: 100_000 },
+        edit: ObjectEdit::DocxPathPoint {
+            path: 1,
+            segment: 1,
+            point: 0,
+            x: 300_000,
+            y: 100_000,
+        },
     }]);
     assert_eq!((edit.changed, edit.rejected), (1, Vec::new()));
     let after = model.export().unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &original, &after, None, model.same_as(&after));
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &after,
+        None,
+        model.same_as(&after),
+    );
     assert!(gate.is_safe(), "{gate:?}");
 
     let reopened = io::open_bytes("fixture.docx", &after).unwrap();
-    let reopened_freeform = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects).find_map(|object| match object {
-        InlineObject::Shape { kind: ShapeKind::Freeform, freeform: Some(freeform), .. } => Some(freeform),
-        _ => None,
-    }).expect("independent saved file contains its editable custom geometry");
+    let reopened_freeform = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|para| &para.objects)
+        .find_map(|object| match object {
+            InlineObject::Shape {
+                kind: ShapeKind::Freeform,
+                freeform: Some(freeform),
+                ..
+            } => Some(freeform),
+            _ => None,
+        })
+        .expect("independent saved file contains its editable custom geometry");
     let reopened_geometry = reopened_freeform.drawingml.as_ref().unwrap();
-    assert_eq!(reopened_geometry.paths[0].commands.as_ref().unwrap()[1], Command::QuadraticTo { control: [127_000, 63_500], end: [254_000, 127_000] });
-    assert_eq!(reopened_geometry.paths[1].commands.as_ref().unwrap()[1], Command::CubicTo { control1: [300_000, 100_000], control2: [508_000, 127_000], end: [762_000, 381_000] });
-    assert_eq!(reopened_geometry.paths[0].attrs, vec![("w".into(), "1270000".into()), ("h".into(), "635000".into()), ("fill".into(), "norm".into()), ("stroke".into(), "1".into())]);
-    let reopened_spin = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects).find_map(|object| match object {
-        InlineObject::Shape { kind: ShapeKind::Freeform, float, .. } => Some(float),
-        _ => None,
-    }).expect("independent saved file preserves freeform rotation and flips");
+    assert_eq!(
+        reopened_geometry.paths[0].commands.as_ref().unwrap()[1],
+        Command::QuadraticTo {
+            control: [127_000, 63_500],
+            end: [254_000, 127_000]
+        }
+    );
+    assert_eq!(
+        reopened_geometry.paths[1].commands.as_ref().unwrap()[1],
+        Command::CubicTo {
+            control1: [300_000, 100_000],
+            control2: [508_000, 127_000],
+            end: [762_000, 381_000]
+        }
+    );
+    assert_eq!(
+        reopened_geometry.paths[0].attrs,
+        vec![
+            ("w".into(), "1270000".into()),
+            ("h".into(), "635000".into()),
+            ("fill".into(), "norm".into()),
+            ("stroke".into(), "1".into())
+        ]
+    );
+    let reopened_spin = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|para| &para.objects)
+        .find_map(|object| match object {
+            InlineObject::Shape {
+                kind: ShapeKind::Freeform,
+                float,
+                ..
+            } => Some(float),
+            _ => None,
+        })
+        .expect("independent saved file preserves freeform rotation and flips");
     assert_eq!(reopened_spin.rot, 30.0);
     assert!(reopened_spin.flip_h);
     assert!(!reopened_spin.flip_v);
 
     assert!(model.apply(&[DocxOp::Undo {}]).rejected.is_empty());
-    assert_eq!(model.export().unwrap(), baseline, "undo restores the complete original custom geometry");
+    assert_eq!(
+        model.export().unwrap(),
+        baseline,
+        "undo restores the complete original custom geometry"
+    );
     assert!(model.apply(&[DocxOp::Redo {}]).rejected.is_empty());
-    assert_eq!(model.export().unwrap(), after, "redo restores the accepted serialized edit");
+    assert_eq!(
+        model.export().unwrap(),
+        after,
+        "redo restores the accepted serialized edit"
+    );
 }
-
 
 #[test]
 fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
@@ -6376,7 +7350,10 @@ fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
     use wordcraft_engine::doc::InlineObject;
     use wordcraft_engine::{io, Session};
 
-    let fixture_dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_DOCX_PATH_FIXTURES").expect("generated DOCX line-path fixtures"));
+    let fixture_dir = std::path::PathBuf::from(
+        std::env::var_os("GEUL_STAGE3_DOCX_PATH_FIXTURES")
+            .expect("generated DOCX line-path fixtures"),
+    );
     let select = |model: &mut DocxModel, bytes: &[u8]| {
         let mut reader = Session::new(io::open_bytes("path.docx", bytes).unwrap());
         let hit = reader.layout().find_object(0, |_| true).unwrap();
@@ -6391,60 +7368,131 @@ fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
         }]);
         assert!(result.rejected.is_empty());
         let object = serde_json::to_value(model.view()).unwrap()["object"].clone();
-        (object["position"].as_str().unwrap().to_owned(), object["epoch"].as_u64().unwrap(), object)
+        (
+            object["position"].as_str().unwrap().to_owned(),
+            object["epoch"].as_u64().unwrap(),
+            object,
+        )
     };
     let saved_freeform = |bytes: &[u8]| {
         let document = io::open_bytes("path.docx", bytes).unwrap();
-        document.body.iter().filter_map(|block| block.as_para()).flat_map(|paragraph| &paragraph.objects).find_map(|object| match object {
-            InlineObject::Shape { kind: wordcraft_engine::doc::para::ShapeKind::Freeform, freeform: Some(freeform), .. } => Some(freeform.clone()),
-            _ => None,
-        }).expect("saved document contains the editable freeform")
+        document
+            .body
+            .iter()
+            .filter_map(|block| block.as_para())
+            .flat_map(|paragraph| &paragraph.objects)
+            .find_map(|object| match object {
+                InlineObject::Shape {
+                    kind: wordcraft_engine::doc::para::ShapeKind::Freeform,
+                    freeform: Some(freeform),
+                    ..
+                } => Some(freeform.clone()),
+                _ => None,
+            })
+            .expect("saved document contains the editable freeform")
     };
 
     let open_bytes = std::fs::read(fixture_dir.join("open.docx")).expect("open-path fixture");
     let mut open_model = DocxModel::open(&open_bytes).unwrap();
     assert!(open_model.render_png(0, 1.0).is_some());
     let (position, epoch, selected) = select(&mut open_model, &open_bytes);
-    assert!(selected["operations"].as_array().unwrap().iter().any(|operation| operation == "pathVertex"));
+    assert!(selected["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|operation| operation == "pathVertex"));
     let open_baseline = open_model.export().unwrap();
     let edit = open_model.apply(&[DocxOp::ObjectEdit {
-        position: position.clone(), epoch,
-        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Insert, x: Some(50), y: Some(0) },
+        position: position.clone(),
+        epoch,
+        edit: ObjectEdit::DocxPathVertex {
+            path: 0,
+            segment: 1,
+            action: DocxPathVertexAction::Insert,
+            x: Some(50),
+            y: Some(0),
+        },
     }]);
     assert_eq!((edit.changed, edit.rejected), (1, Vec::new()));
     let open_inserted = open_model.export().unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &open_bytes, &open_inserted, None, open_model.same_as(&open_inserted));
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &open_bytes,
+        &open_inserted,
+        None,
+        open_model.same_as(&open_inserted),
+    );
     assert!(gate.is_safe(), "{gate:?}");
     let reopened = DocxModel::open(&open_inserted).unwrap();
-    let commands = reopened.diagnostic_document().body.iter().filter_map(|block| block.as_para()).flat_map(|paragraph| &paragraph.objects).find_map(|object| match object {
-        InlineObject::Shape { freeform: Some(freeform), .. } => Some(&freeform.drawingml.as_ref().unwrap().paths[0].commands),
-        _ => None,
-    }).unwrap().as_ref().unwrap();
-    assert_eq!(commands, &[
-        Command::MoveTo { point: [0, 0] },
-        Command::LineTo { point: [50, 0] },
-        Command::LineTo { point: [100, 0] },
-        Command::LineTo { point: [200, 0] },
-    ]);
-    assert_eq!(open_model.apply(&[DocxOp::Undo {}]).rejected, Vec::<usize>::new());
+    let commands = reopened
+        .diagnostic_document()
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|paragraph| &paragraph.objects)
+        .find_map(|object| match object {
+            InlineObject::Shape {
+                freeform: Some(freeform),
+                ..
+            } => Some(&freeform.drawingml.as_ref().unwrap().paths[0].commands),
+            _ => None,
+        })
+        .unwrap()
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        commands,
+        &[
+            Command::MoveTo { point: [0, 0] },
+            Command::LineTo { point: [50, 0] },
+            Command::LineTo { point: [100, 0] },
+            Command::LineTo { point: [200, 0] },
+        ]
+    );
+    assert_eq!(
+        open_model.apply(&[DocxOp::Undo {}]).rejected,
+        Vec::<usize>::new()
+    );
     assert_eq!(open_model.export().unwrap(), open_baseline);
-    assert_eq!(open_model.apply(&[DocxOp::Redo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(
+        open_model.apply(&[DocxOp::Redo {}]).rejected,
+        Vec::<usize>::new()
+    );
     assert_eq!(open_model.export().unwrap(), open_inserted);
-    let open_history_after_redo = serde_json::to_value(open_model.view()).unwrap()["history"].clone();
+    let open_history_after_redo =
+        serde_json::to_value(open_model.view()).unwrap()["history"].clone();
     let (position, current_epoch, _) = select(&mut open_model, &open_inserted);
     let rejected = open_model.apply(&[DocxOp::ObjectEdit {
         position,
         epoch: current_epoch,
-        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Insert, x: Some(75), y: Some(1) },
+        edit: ObjectEdit::DocxPathVertex {
+            path: 0,
+            segment: 1,
+            action: DocxPathVertexAction::Insert,
+            x: Some(75),
+            y: Some(1),
+        },
     }]);
-    assert_eq!(rejected.rejected, vec![0], "a non-collinear insertion is rejected before serialization");
+    assert_eq!(
+        rejected.rejected,
+        vec![0],
+        "a non-collinear insertion is rejected before serialization"
+    );
     assert_eq!(open_model.export().unwrap(), open_inserted);
-    assert_eq!(serde_json::to_value(open_model.view()).unwrap()["history"], open_history_after_redo);
+    assert_eq!(
+        serde_json::to_value(open_model.view()).unwrap()["history"],
+        open_history_after_redo
+    );
 
     let closed_bytes = std::fs::read(fixture_dir.join("closed.docx")).expect("closed-path fixture");
     let mut direct = Session::new(io::open_bytes("path.docx", &closed_bytes).unwrap());
     direct.run("select.objects", &json!({"index": 0})).unwrap();
-    direct.run("shape.pathVertex", &json!({"path": 0, "segment": 1, "action": "remove"})).unwrap();
+    direct
+        .run(
+            "shape.pathVertex",
+            &json!({"path": 0, "segment": 1, "action": "remove"}),
+        )
+        .unwrap();
     let direct_output = io::save_bytes("path.docx", &direct.doc).unwrap();
     let direct_reopened = io::open_bytes("path.docx", &direct_output).unwrap();
     let direct_same = wordcraft_engine::doc::roundtrip::compare_roundtrip(
@@ -6452,7 +7500,10 @@ fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
         &direct_reopened,
         &wordcraft_engine::doc::roundtrip::RoundTripLimits::default(),
     );
-    let direct_equal = matches!(direct_same, Ok(wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_)));
+    let direct_equal = matches!(
+        direct_same,
+        Ok(wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_))
+    );
     let direct_gate = service::check_saved(
         crate::document::Format::Docx,
         &closed_bytes,
@@ -6460,39 +7511,88 @@ fn stage3_docx_path_vertex_edits_preserve_open_closed_t009_and_history() {
         None,
         direct_equal,
     );
-    assert!(direct_equal, "direct WordCraft path removal roundtrip: {direct_same:?}");
-    assert!(direct_gate.is_safe(), "direct WordCraft path removal T009: {direct_gate:?}");
+    assert!(
+        direct_equal,
+        "direct WordCraft path removal roundtrip: {direct_same:?}"
+    );
+    assert!(
+        direct_gate.is_safe(),
+        "direct WordCraft path removal T009: {direct_gate:?}"
+    );
     let mut closed_model = DocxModel::open(&closed_bytes).unwrap();
     let (position, epoch, selected) = select(&mut closed_model, &closed_bytes);
-    assert!(selected["operations"].as_array().unwrap().iter().any(|operation| operation == "pathVertex"));
+    assert!(selected["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|operation| operation == "pathVertex"));
     let closed_baseline = closed_model.export().unwrap();
     let remove = closed_model.apply(&[DocxOp::ObjectEdit {
-        position: position.clone(), epoch,
-        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Remove, x: None, y: None },
+        position: position.clone(),
+        epoch,
+        edit: ObjectEdit::DocxPathVertex {
+            path: 0,
+            segment: 1,
+            action: DocxPathVertexAction::Remove,
+            x: None,
+            y: None,
+        },
     }]);
-    assert_eq!((remove.changed, remove.rejected), (1, Vec::new()), "selected closed-path shape: {selected:?}");
+    assert_eq!(
+        (remove.changed, remove.rejected),
+        (1, Vec::new()),
+        "selected closed-path shape: {selected:?}"
+    );
     let closed_removed = closed_model.export().unwrap();
-    let gate = service::check_saved(crate::document::Format::Docx, &closed_bytes, &closed_removed, None, closed_model.same_as(&closed_removed));
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &closed_bytes,
+        &closed_removed,
+        None,
+        closed_model.same_as(&closed_removed),
+    );
     assert!(gate.is_safe(), "{gate:?}");
     let reopened_freeform = saved_freeform(&closed_removed);
-    let commands = reopened_freeform.drawingml.as_ref().unwrap().paths[0].commands.as_ref().unwrap();
-    assert_eq!(commands, &[
-        Command::MoveTo { point: [0, 0] },
-        Command::LineTo { point: [100, 100] },
-        Command::LineTo { point: [0, 100] },
-        Command::Close,
-    ]);
-    assert_eq!(closed_model.apply(&[DocxOp::Undo {}]).rejected, Vec::<usize>::new());
+    let commands = reopened_freeform.drawingml.as_ref().unwrap().paths[0]
+        .commands
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        commands,
+        &[
+            Command::MoveTo { point: [0, 0] },
+            Command::LineTo { point: [100, 100] },
+            Command::LineTo { point: [0, 100] },
+            Command::Close,
+        ]
+    );
+    assert_eq!(
+        closed_model.apply(&[DocxOp::Undo {}]).rejected,
+        Vec::<usize>::new()
+    );
     assert_eq!(closed_model.export().unwrap(), closed_baseline);
-    assert_eq!(closed_model.apply(&[DocxOp::Redo {}]).rejected, Vec::<usize>::new());
+    assert_eq!(
+        closed_model.apply(&[DocxOp::Redo {}]).rejected,
+        Vec::<usize>::new()
+    );
     assert_eq!(closed_model.export().unwrap(), closed_removed);
     let (position, current_epoch, _) = select(&mut closed_model, &closed_removed);
     let rejected = closed_model.apply(&[DocxOp::ObjectEdit {
         position,
         epoch: current_epoch,
-        edit: ObjectEdit::DocxPathVertex { path: 0, segment: 1, action: DocxPathVertexAction::Remove, x: None, y: None },
+        edit: ObjectEdit::DocxPathVertex {
+            path: 0,
+            segment: 1,
+            action: DocxPathVertexAction::Remove,
+            x: None,
+            y: None,
+        },
     }]);
-    assert_eq!(rejected.rejected, vec![0], "a closed path retains at least three vertices");
+    assert_eq!(
+        rejected.rejected,
+        vec![0],
+        "a closed path retains at least three vertices"
+    );
     assert_eq!(closed_model.export().unwrap(), closed_removed);
 }
 
@@ -6640,15 +7740,30 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     let mut nested = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     nested.run("caret.docEnd", &json!({})).unwrap();
     nested.run("text.newParagraph", &json!({})).unwrap();
-    nested.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
-    nested.run("insert.table", &json!({"rows": 1, "cols": 2})).unwrap();
     nested
-        .run("insert.picture", &json!({"data": tiny_png_b64(2, 2, [4, 5, 6])}))
+        .run("insert.table", &json!({"rows": 1, "cols": 2}))
         .unwrap();
-    nested.run("picture.size", &json!({"width": 44, "height": 22})).unwrap();
-    nested.run("select.collapse", &json!({"end": true})).unwrap();
-    nested.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
-    nested.run("picture.size", &json!({"width": 36, "height": 18})).unwrap();
+    nested
+        .run("insert.table", &json!({"rows": 1, "cols": 2}))
+        .unwrap();
+    nested
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(2, 2, [4, 5, 6])}),
+        )
+        .unwrap();
+    nested
+        .run("picture.size", &json!({"width": 44, "height": 22}))
+        .unwrap();
+    nested
+        .run("select.collapse", &json!({"end": true}))
+        .unwrap();
+    nested
+        .run("insert.shape", &json!({"kind": "rectangle"}))
+        .unwrap();
+    nested
+        .run("picture.size", &json!({"width": 36, "height": 18}))
+        .unwrap();
     let nested_original = io::save_bytes("fixture.docx", &nested.doc).unwrap();
 
     let mut reader = Session::new(io::open_bytes("fixture.docx", &nested_original).unwrap());
@@ -6671,27 +7786,53 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     model.apply(&[pic_hit.clone()]);
     let obj_view = |m: &mut DocxModel| serde_json::to_value(m.view()).unwrap()["object"].clone();
     let v = obj_view(&mut model);
-    assert_eq!(v["operations"], json!(["resize", "delete", "crop", "altText"]));
-    let (pos_p, ep_p) = (v["position"].as_str().unwrap().to_owned(), v["epoch"].as_u64().unwrap());
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit { position: pos_p.clone(), epoch: ep_p, edit: ObjectEdit::Nudge { dx: 2.0, dy: 0.0 } }]).rejected,
+        v["operations"],
+        json!(["resize", "delete", "crop", "altText"])
+    );
+    let (pos_p, ep_p) = (
+        v["position"].as_str().unwrap().to_owned(),
+        v["epoch"].as_u64().unwrap(),
+    );
+    assert_eq!(
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: pos_p.clone(),
+                epoch: ep_p,
+                edit: ObjectEdit::Nudge { dx: 2.0, dy: 0.0 }
+            }])
+            .rejected,
         vec![0]
     );
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit {
-            position: pos_p.clone(),
-            epoch: ep_p,
-            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(66.0), height: Some(33.0) },
-        }]).changed,
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: pos_p.clone(),
+                epoch: ep_p,
+                edit: ObjectEdit::Bounds {
+                    x: None,
+                    y: None,
+                    width: Some(66.0),
+                    height: Some(33.0)
+                },
+            }])
+            .changed,
         1
     );
     let v = obj_view(&mut model);
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Crop { left: 0.1, top: 0.0, right: 0.0, bottom: 0.0 },
-        }]).changed,
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Crop {
+                    left: 0.1,
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 0.0
+                },
+            }])
+            .changed,
         1
     );
     let mid_nested = model.export().unwrap();
@@ -6703,17 +7844,31 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
         .unwrap();
     model.apply(&[shape_hit]);
     let v = obj_view(&mut model);
-    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Fill { color: Some("336699".into()) },
-        }]).changed,
+        v["operations"],
+        json!(["resize", "delete", "altText", "fill", "outline"])
+    );
+    assert_eq!(
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Fill {
+                    color: Some("336699".into())
+                },
+            }])
+            .changed,
         1
     );
     let saved_nested = model.export().unwrap();
-    assert!(service::check_saved(crate::document::Format::Docx, &nested_original, &saved_nested, None, model.same_as(&saved_nested)).is_safe());
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &nested_original,
+        &saved_nested,
+        None,
+        model.same_as(&saved_nested)
+    )
+    .is_safe());
     let reopened = io::open_bytes("fixture.docx", &saved_nested).unwrap();
     assert!(reopened.para_paths(StoryRef::Body).iter().any(|path| {
         path.0.len() > 4 && reopened.para(StoryRef::Body, path).is_some_and(|p| {
@@ -6725,16 +7880,28 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     model.apply(&[pic_hit]);
     let v = obj_view(&mut model);
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Delete {},
-        }]).changed,
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Delete {},
+            }])
+            .changed,
         1
     );
     let deleted_nested = model.export().unwrap();
-    assert!(service::check_saved(crate::document::Format::Docx, &nested_original, &deleted_nested, None, model.same_as(&deleted_nested)).is_safe());
-    assert!(io::open_bytes("fixture.docx", &deleted_nested).unwrap().media.is_empty());
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &nested_original,
+        &deleted_nested,
+        None,
+        model.same_as(&deleted_nested)
+    )
+    .is_safe());
+    assert!(io::open_bytes("fixture.docx", &deleted_nested)
+        .unwrap()
+        .media
+        .is_empty());
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(model.diagnostic_document().media.len(), 1);
 
@@ -6742,79 +7909,149 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     let mut boxed = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     boxed.run("caret.docEnd", &json!({})).unwrap();
     boxed.run("text.newParagraph", &json!({})).unwrap();
-    boxed.run("insert.textBox", &json!({"width": 240, "height": 180})).unwrap();
-    boxed.run("text.insert", &json!({"text": "상자안"})).unwrap();
-    boxed.run("insert.picture", &json!({"data": tiny_png_b64(16, 16, [140, 90, 40])})).unwrap();
-    boxed.run("picture.size", &json!({"width": 40, "height": 20})).unwrap();
+    boxed
+        .run("insert.textBox", &json!({"width": 240, "height": 180}))
+        .unwrap();
+    boxed
+        .run("text.insert", &json!({"text": "상자안"}))
+        .unwrap();
+    boxed
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(16, 16, [140, 90, 40])}),
+        )
+        .unwrap();
+    boxed
+        .run("picture.size", &json!({"width": 40, "height": 20}))
+        .unwrap();
     boxed.run("select.collapse", &json!({"end": true})).unwrap();
-    boxed.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
-    boxed.run("picture.size", &json!({"width": 48, "height": 24})).unwrap();
-    boxed.run("shape.fill", &json!({"color": "7A47A8"})).unwrap();
+    boxed
+        .run("insert.shape", &json!({"kind": "rectangle"}))
+        .unwrap();
+    boxed
+        .run("picture.size", &json!({"width": 48, "height": 24}))
+        .unwrap();
+    boxed
+        .run("shape.fill", &json!({"color": "7A47A8"}))
+        .unwrap();
     boxed.run("select.collapse", &json!({"end": true})).unwrap();
-    boxed.run("insert.shape", &json!({"kind": "ellipse"})).unwrap();
-    boxed.run("picture.size", &json!({"width": 32, "height": 16})).unwrap();
+    boxed
+        .run("insert.shape", &json!({"kind": "ellipse"}))
+        .unwrap();
+    boxed
+        .run("picture.size", &json!({"width": 32, "height": 16}))
+        .unwrap();
     let boxed_draft = io::save_bytes("fixture.docx", &boxed.doc).unwrap();
     let boxed_original = io::save_bytes(
         "fixture.docx",
         &io::open_bytes("fixture.docx", &boxed_draft).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut box_reader = Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
     let box_layout = box_reader.layout();
     let tb_rect = box_layout
-        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 48.0).abs() < 0.5)
+        .find_object(0, |o| {
+            matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 48.0).abs() < 0.5
+        })
         .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
         .unwrap();
 
     let mut tb_model = DocxModel::open(&boxed_original).unwrap();
     tb_model.apply(&[tb_rect.clone()]);
     let v = obj_view(&mut tb_model);
-    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
-    let (r_pos, r_ep) = (v["position"].as_str().unwrap().to_owned(), v["epoch"].as_u64().unwrap());
+    assert_eq!(
+        v["operations"],
+        json!(["resize", "delete", "altText", "fill", "outline"])
+    );
+    let (r_pos, r_ep) = (
+        v["position"].as_str().unwrap().to_owned(),
+        v["epoch"].as_u64().unwrap(),
+    );
     assert!(r_pos.starts_with("part"), "{r_pos}");
     assert_eq!(
-        tb_model.apply(&[DocxOp::ObjectEdit { position: r_pos.clone(), epoch: r_ep, edit: ObjectEdit::Wrap { wrap: wordcraft_engine::doc::para::Wrap::Square } }]).rejected,
+        tb_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: r_pos.clone(),
+                epoch: r_ep,
+                edit: ObjectEdit::Wrap {
+                    wrap: wordcraft_engine::doc::para::Wrap::Square
+                }
+            }])
+            .rejected,
         vec![0]
     );
     assert_eq!(
-        tb_model.apply(&[DocxOp::ObjectEdit {
-            position: r_pos.clone(),
-            epoch: r_ep,
-            edit: ObjectEdit::AltText { text: "상자 도형".into() },
-        }]).changed,
+        tb_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: r_pos.clone(),
+                epoch: r_ep,
+                edit: ObjectEdit::AltText {
+                    text: "상자 도형".into()
+                },
+            }])
+            .changed,
         1
     );
     let v = obj_view(&mut tb_model);
     assert_eq!(
-        tb_model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(60.0), height: Some(30.0) },
-        }]).changed,
+        tb_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Bounds {
+                    x: None,
+                    y: None,
+                    width: Some(60.0),
+                    height: Some(30.0)
+                },
+            }])
+            .changed,
         1
     );
     let mid_boxed = tb_model.export().unwrap();
     let mut mid_box_reader = Session::new(io::open_bytes("fixture.docx", &mid_boxed).unwrap());
     let tb_shape = mid_box_reader
         .layout()
-        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 32.0).abs() < 0.5)
+        .find_object(0, |o| {
+            matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 32.0).abs() < 0.5
+        })
         .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
         .unwrap();
     tb_model.apply(&[tb_shape]);
     let v = obj_view(&mut tb_model);
-    assert_eq!(v["operations"], json!(["resize", "delete", "altText", "fill", "outline"]));
     assert_eq!(
-        tb_model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Outline { color: Some("114488".into()), width: Some(2.0) },
-        }]).changed,
+        v["operations"],
+        json!(["resize", "delete", "altText", "fill", "outline"])
+    );
+    assert_eq!(
+        tb_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Outline {
+                    color: Some("114488".into()),
+                    width: Some(2.0)
+                },
+            }])
+            .changed,
         1
     );
     let saved_boxed = tb_model.export().unwrap();
-    assert!(service::check_saved(crate::document::Format::Docx, &boxed_original, &saved_boxed, None, tb_model.same_as(&saved_boxed)).is_safe());
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &boxed_original,
+        &saved_boxed,
+        None,
+        tb_model.same_as(&saved_boxed)
+    )
+    .is_safe());
     let reopened_box = io::open_bytes("fixture.docx", &saved_boxed).unwrap();
-    let (&tb_id, _) = reopened_box.parts.iter().find(|(_, p)| p.kind == PartKind::TextBox).unwrap();
+    let (&tb_id, _) = reopened_box
+        .parts
+        .iter()
+        .find(|(_, p)| p.kind == PartKind::TextBox)
+        .unwrap();
     let tb_story = StoryRef::Part(tb_id);
     assert!(reopened_box.para_paths(tb_story).iter().any(|path| {
         reopened_box.para(tb_story, path).is_some_and(|p| {
@@ -6826,19 +8063,34 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     tb_model.apply(&[tb_rect]);
     let v = obj_view(&mut tb_model);
     assert_eq!(
-        tb_model.apply(&[DocxOp::ObjectEdit {
-            position: v["position"].as_str().unwrap().to_owned(),
-            epoch: v["epoch"].as_u64().unwrap(),
-            edit: ObjectEdit::Delete {},
-        }]).changed,
+        tb_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: v["position"].as_str().unwrap().to_owned(),
+                epoch: v["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Delete {},
+            }])
+            .changed,
         1
     );
     let deleted_boxed = tb_model.export().unwrap();
-    assert!(service::check_saved(crate::document::Format::Docx, &boxed_original, &deleted_boxed, None, tb_model.same_as(&deleted_boxed)).is_safe());
+    assert!(service::check_saved(
+        crate::document::Format::Docx,
+        &boxed_original,
+        &deleted_boxed,
+        None,
+        tb_model.same_as(&deleted_boxed)
+    )
+    .is_safe());
     let reopened_deleted = io::open_bytes("fixture.docx", &deleted_boxed).unwrap();
-    let (&del_tb_id, _) = reopened_deleted.parts.iter().find(|(_, p)| p.kind == PartKind::TextBox).unwrap();
+    let (&del_tb_id, _) = reopened_deleted
+        .parts
+        .iter()
+        .find(|(_, p)| p.kind == PartKind::TextBox)
+        .unwrap();
     assert_eq!(
-        reopened_deleted.para_paths(StoryRef::Part(del_tb_id)).iter()
+        reopened_deleted
+            .para_paths(StoryRef::Part(del_tb_id))
+            .iter()
             .filter_map(|p| reopened_deleted.para(StoryRef::Part(del_tb_id), p))
             .map(|p| p.objects.len())
             .sum::<usize>(),
@@ -6850,41 +8102,65 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     // the enclosing TextBox frame. Its media-backed edits stay fail-closed until that ownership
     // is explicitly admitted by the adapter.
     let nested_picture_hit = box_layout
-        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 40.0).abs() < 0.5)
+        .find_object(0, |o| {
+            matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 40.0).abs() < 0.5
+        })
         .map(|h| click(h.page, h.rect.x + h.rect.w / 2.0, h.rect.y + h.rect.h / 2.0))
         .unwrap();
     let mut nested_picture_model = DocxModel::open(&boxed_original).unwrap();
     nested_picture_model.apply(&[nested_picture_hit]);
     let v = obj_view(&mut nested_picture_model);
     assert_eq!(v["kind"], "picture");
-    assert_eq!(v["operations"], json!(["resize", "delete", "crop", "altText"]));
+    assert_eq!(
+        v["operations"],
+        json!(["resize", "delete", "crop", "altText"])
+    );
     let stale_position = v["position"].as_str().unwrap().to_owned();
     let stale_epoch = v["epoch"].as_u64().unwrap();
     let resized = nested_picture_model.apply(&[DocxOp::ObjectEdit {
         position: stale_position.clone(),
         epoch: stale_epoch,
-        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(54.0), height: Some(27.0) },
+        edit: ObjectEdit::Bounds {
+            x: None,
+            y: None,
+            width: Some(54.0),
+            height: Some(27.0),
+        },
     }]);
     assert_eq!((resized.changed, resized.rejected), (1, vec![]));
     let v = obj_view(&mut nested_picture_model);
     let before_stale_edit = nested_picture_model.export().unwrap();
-    assert_eq!(nested_picture_model.apply(&[DocxOp::ObjectEdit {
-        position: stale_position,
-        epoch: stale_epoch,
-        edit: ObjectEdit::AltText { text: "stale edit".into() },
-    }]).rejected, vec![0]);
+    assert_eq!(
+        nested_picture_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: stale_position,
+                epoch: stale_epoch,
+                edit: ObjectEdit::AltText {
+                    text: "stale edit".into()
+                },
+            }])
+            .rejected,
+        vec![0]
+    );
     assert_eq!(nested_picture_model.export().unwrap(), before_stale_edit);
     let cropped = nested_picture_model.apply(&[DocxOp::ObjectEdit {
         position: v["position"].as_str().unwrap().to_owned(),
         epoch: v["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::Crop { left: 0.1, top: 0.05, right: 0.0, bottom: 0.0 },
+        edit: ObjectEdit::Crop {
+            left: 0.1,
+            top: 0.05,
+            right: 0.0,
+            bottom: 0.0,
+        },
     }]);
     assert_eq!((cropped.changed, cropped.rejected), (1, vec![]));
     let v = obj_view(&mut nested_picture_model);
     let described = nested_picture_model.apply(&[DocxOp::ObjectEdit {
         position: v["position"].as_str().unwrap().to_owned(),
         epoch: v["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::AltText { text: "텍스트 상자 안 그림".into() },
+        edit: ObjectEdit::AltText {
+            text: "텍스트 상자 안 그림".into(),
+        },
     }]);
     assert_eq!((described.changed, described.rejected), (1, vec![]));
 
@@ -6895,32 +8171,61 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
         &nested_picture_saved,
         None,
         nested_picture_model.same_as(&nested_picture_saved),
-    ).is_safe());
+    )
+    .is_safe());
     let before_pkg = crate::services::save::package::open(
         &boxed_original,
         crate::services::save::package::Side::Original,
-    ).unwrap();
+    )
+    .unwrap();
     let after_pkg = crate::services::save::package::open(
         &nested_picture_saved,
         crate::services::save::package::Side::Output,
-    ).unwrap();
-    assert_eq!(before_pkg.parts.keys().collect::<Vec<_>>(), after_pkg.parts.keys().collect::<Vec<_>>());
-    for name in before_pkg.parts.keys().filter(|name| name.as_str() != "word/document.xml" && name.as_str() != "docProps/app.xml") {
-        assert_eq!(before_pkg.get(name), after_pkg.get(name), "unrelated OPC part changed: {name}");
+    )
+    .unwrap();
+    assert_eq!(
+        before_pkg.parts.keys().collect::<Vec<_>>(),
+        after_pkg.parts.keys().collect::<Vec<_>>()
+    );
+    for name in before_pkg
+        .parts
+        .keys()
+        .filter(|name| name.as_str() != "word/document.xml" && name.as_str() != "docProps/app.xml")
+    {
+        assert_eq!(
+            before_pkg.get(name),
+            after_pkg.get(name),
+            "unrelated OPC part changed: {name}"
+        );
     }
     let reopened_picture = io::open_bytes("fixture.docx", &nested_picture_saved).unwrap();
-    let (&textbox_id, textbox_part) = reopened_picture.parts.iter()
+    let (&textbox_id, textbox_part) = reopened_picture
+        .parts
+        .iter()
         .find(|(_, part)| part.kind == PartKind::TextBox)
         .unwrap();
     assert_eq!(textbox_part.kind, PartKind::TextBox);
-    assert_eq!(reopened_picture.plain_text(StoryRef::Part(textbox_id)), "상자안");
-    let nested_picture = reopened_picture.para_paths(StoryRef::Part(textbox_id)).iter()
+    assert_eq!(
+        reopened_picture.plain_text(StoryRef::Part(textbox_id)),
+        "상자안"
+    );
+    let nested_picture = reopened_picture
+        .para_paths(StoryRef::Part(textbox_id))
+        .iter()
         .filter_map(|path| reopened_picture.para(StoryRef::Part(textbox_id), path))
         .flat_map(|paragraph| paragraph.objects.iter())
         .find_map(|object| match object {
-            InlineObject::Image { media, w, h, crop, alt, .. } => Some((media, *w, *h, *crop, alt.as_str())),
+            InlineObject::Image {
+                media,
+                w,
+                h,
+                crop,
+                alt,
+                ..
+            } => Some((media, *w, *h, *crop, alt.as_str())),
             _ => None,
-        }).unwrap();
+        })
+        .unwrap();
     assert_eq!((nested_picture.1, nested_picture.2), (54.0, 27.0));
     assert!((nested_picture.3[0] - 0.1).abs() < 1e-4 && (nested_picture.3[1] - 0.05).abs() < 1e-4);
     assert_eq!(nested_picture.4, "텍스트 상자 안 그림");
@@ -6929,29 +8234,44 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     // Undo and redo restore the nested picture metadata without changing story ownership.
     assert_eq!(nested_picture_model.apply(&[DocxOp::Undo {}]).changed, 1);
     let undone = nested_picture_model.diagnostic_document();
-    let undone_picture = undone.para_paths(StoryRef::Part(textbox_id)).iter()
+    let undone_picture = undone
+        .para_paths(StoryRef::Part(textbox_id))
+        .iter()
         .filter_map(|path| undone.para(StoryRef::Part(textbox_id), path))
         .flat_map(|paragraph| paragraph.objects.iter())
         .find_map(|object| match object {
             InlineObject::Image { alt, .. } => Some(alt.as_str()),
             _ => None,
-        }).unwrap();
+        })
+        .unwrap();
     assert_ne!(undone_picture, "텍스트 상자 안 그림");
     assert_eq!(nested_picture_model.apply(&[DocxOp::Redo {}]).changed, 1);
     let redone = nested_picture_model.diagnostic_document();
-    let redone_picture = redone.para_paths(StoryRef::Part(textbox_id)).iter()
+    let redone_picture = redone
+        .para_paths(StoryRef::Part(textbox_id))
+        .iter()
         .filter_map(|path| redone.para(StoryRef::Part(textbox_id), path))
         .flat_map(|paragraph| paragraph.objects.iter())
         .find_map(|object| match object {
             InlineObject::Image { alt, .. } => Some(alt.as_str()),
             _ => None,
-        }).unwrap();
+        })
+        .unwrap();
     assert_eq!(redone_picture, "텍스트 상자 안 그림");
     let redone_bytes = nested_picture_model.export().unwrap();
     let mut redone_reader = Session::new(io::open_bytes("fixture.docx", &redone_bytes).unwrap());
-    let redone_hit = redone_reader.layout()
-        .find_object(0, |object| object.story == StoryRef::Part(textbox_id) && (object.rect.w - 54.0).abs() < 0.5)
-        .map(|hit| click(hit.page, hit.rect.x + hit.rect.w / 2.0, hit.rect.y + hit.rect.h / 2.0))
+    let redone_hit = redone_reader
+        .layout()
+        .find_object(0, |object| {
+            object.story == StoryRef::Part(textbox_id) && (object.rect.w - 54.0).abs() < 0.5
+        })
+        .map(|hit| {
+            click(
+                hit.page,
+                hit.rect.x + hit.rect.w / 2.0,
+                hit.rect.y + hit.rect.h / 2.0,
+            )
+        })
         .unwrap();
     nested_picture_model.apply(&[redone_hit]);
     let v = obj_view(&mut nested_picture_model);
@@ -6968,17 +8288,25 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
         &nested_picture_deleted,
         None,
         nested_picture_model.same_as(&nested_picture_deleted),
-    ).is_safe());
+    )
+    .is_safe());
     let reopened_deleted_picture = io::open_bytes("fixture.docx", &nested_picture_deleted).unwrap();
-    let deleted_textbox_id = *reopened_deleted_picture.parts.iter()
+    let deleted_textbox_id = *reopened_deleted_picture
+        .parts
+        .iter()
         .find(|(_, part)| part.kind == PartKind::TextBox)
-        .unwrap().0;
-    let deleted_textbox_objects = reopened_deleted_picture.para_paths(StoryRef::Part(deleted_textbox_id)).iter()
+        .unwrap()
+        .0;
+    let deleted_textbox_objects = reopened_deleted_picture
+        .para_paths(StoryRef::Part(deleted_textbox_id))
+        .iter()
         .filter_map(|path| reopened_deleted_picture.para(StoryRef::Part(deleted_textbox_id), path))
         .flat_map(|paragraph| paragraph.objects.iter())
         .collect::<Vec<_>>();
     assert_eq!(deleted_textbox_objects.len(), 2);
-    assert!(deleted_textbox_objects.iter().all(|object| !matches!(object, InlineObject::Image { .. })));
+    assert!(deleted_textbox_objects
+        .iter()
+        .all(|object| !matches!(object, InlineObject::Image { .. })));
     assert_eq!(nested_picture_model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(nested_picture_model.diagnostic_document().media.len(), 1);
     assert_eq!(nested_picture_model.apply(&[DocxOp::Redo {}]).changed, 1);
@@ -6988,19 +8316,25 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     let source_package = crate::services::save::package::open(
         &boxed_original,
         crate::services::save::package::Side::Original,
-    ).unwrap();
+    )
+    .unwrap();
     let body_xml = std::str::from_utf8(source_package.get("word/document.xml").unwrap()).unwrap();
     let unknown_body = body_xml.replace("</w:txbxContent>", "<w:alien/></w:txbxContent>");
     assert_ne!(unknown_body, body_xml);
-    let unsupported_entries = source_package.order.iter().map(|name| {
-        if name == "word/document.xml" {
-            entry(name, unknown_body.as_bytes())
-        } else {
-            entry(name, source_package.get(name).unwrap())
-        }
-    }).collect::<Vec<_>>();
+    let unsupported_entries = source_package
+        .order
+        .iter()
+        .map(|name| {
+            if name == "word/document.xml" {
+                entry(name, unknown_body.as_bytes())
+            } else {
+                entry(name, source_package.get(name).unwrap())
+            }
+        })
+        .collect::<Vec<_>>();
     let unsupported_body = zip(&unsupported_entries, false);
-    let mut unsupported_reader = Session::new(io::open_bytes("fixture.docx", &unsupported_body).unwrap());
+    let mut unsupported_reader =
+        Session::new(io::open_bytes("fixture.docx", &unsupported_body).unwrap());
     let unsupported_hit = unsupported_reader.layout()
         .find_object(0, |object| matches!(object.story, StoryRef::Part(id)
             if unsupported_reader.doc.parts.get(&id).is_some_and(|part| part.kind == PartKind::TextBox))
@@ -7013,11 +8347,21 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     assert_eq!(unsupported_view["kind"], "picture");
     assert_eq!(unsupported_view["operations"], json!([]));
     let unsupported_before = unsupported_model.export().unwrap();
-    assert_eq!(unsupported_model.apply(&[DocxOp::ObjectEdit {
-        position: unsupported_view["position"].as_str().unwrap().to_owned(),
-        epoch: unsupported_view["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(55.0), height: Some(28.0) },
-    }]).rejected, vec![0]);
+    assert_eq!(
+        unsupported_model
+            .apply(&[DocxOp::ObjectEdit {
+                position: unsupported_view["position"].as_str().unwrap().to_owned(),
+                epoch: unsupported_view["epoch"].as_u64().unwrap(),
+                edit: ObjectEdit::Bounds {
+                    x: None,
+                    y: None,
+                    width: Some(55.0),
+                    height: Some(28.0)
+                },
+            }])
+            .rejected,
+        vec![0]
+    );
     assert_eq!(unsupported_model.export().unwrap(), unsupported_before);
 
     // 3. Negative boundary: a drawing in a separate OPC Header part still prevents delete/renumbering
@@ -7025,13 +8369,20 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     let mut with_hdr = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     with_hdr.run("insert.editHeader", &json!({})).unwrap();
     with_hdr
-        .run("insert.picture", &json!({"data": tiny_png_b64(2, 2, [1, 2, 3])}))
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(2, 2, [1, 2, 3])}),
+        )
         .unwrap();
-    with_hdr.run("picture.size", &json!({"width": 40, "height": 20})).unwrap();
+    with_hdr
+        .run("picture.size", &json!({"width": 40, "height": 20}))
+        .unwrap();
     with_hdr.run("insert.closeHeader", &json!({})).unwrap();
     with_hdr.run("caret.docEnd", &json!({})).unwrap();
     with_hdr.run("text.newParagraph", &json!({})).unwrap();
-    with_hdr.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    with_hdr
+        .run("insert.shape", &json!({"kind": "rectangle"}))
+        .unwrap();
     let hdr_bytes = io::save_bytes("fixture.docx", &with_hdr.doc).unwrap();
     let mut hdr_reader = Session::new(io::open_bytes("fixture.docx", &hdr_bytes).unwrap());
     let hdr_lay = hdr_reader.layout();
@@ -7047,12 +8398,18 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
     hdr_model.apply(&[hdr_pic]);
     let header_object = serde_json::to_value(hdr_model.view()).unwrap()["object"].clone();
     assert_eq!(header_object["kind"], "picture");
-    assert!(header_object["position"].as_str().unwrap().starts_with("part"));
+    assert!(header_object["position"]
+        .as_str()
+        .unwrap()
+        .starts_with("part"));
     assert_eq!(header_object["operations"], json!(["resize", "altText"]));
     // Body shape still admits in-place resize/fill/outline/altText, but blocks delete/move when Header has a drawing.
     hdr_model.apply(&[body_shape]);
     let v = obj_view(&mut hdr_model);
-    assert_eq!(v["operations"], json!(["resize", "altText", "fill", "outline", "convertShape"]));
+    assert_eq!(
+        v["operations"],
+        json!(["resize", "altText", "fill", "outline", "convertShape"])
+    );
     let no_op_export = hdr_model.export().unwrap();
     assert!(service::check_saved(
         crate::document::Format::Docx,
@@ -7060,22 +8417,30 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
         &no_op_export,
         None,
         hdr_model.same_as(&no_op_export),
-    ).is_safe());
+    )
+    .is_safe());
     let before = crate::services::save::package::open(
         &hdr_bytes,
         crate::services::save::package::Side::Original,
-    ).unwrap();
+    )
+    .unwrap();
     let after = crate::services::save::package::open(
         &no_op_export,
         crate::services::save::package::Side::Output,
-    ).unwrap();
-    assert_eq!(before.get("word/header1.xml"), after.get("word/header1.xml"));
+    )
+    .unwrap();
+    assert_eq!(
+        before.get("word/header1.xml"),
+        after.get("word/header1.xml")
+    );
 
     // Keep a deterministic, WordCraft-authored fixture available to the focused Native test.
     // Exporting it again must preserve document.xml before media-backed child edits are admitted
     // by the adapter's T009 source-envelope gate.
-    let native_fixture_reader = Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
-    let native_fixture_roundtrip = io::save_bytes("fixture.docx", &native_fixture_reader.doc).unwrap();
+    let native_fixture_reader =
+        Session::new(io::open_bytes("fixture.docx", &boxed_original).unwrap());
+    let native_fixture_roundtrip =
+        io::save_bytes("fixture.docx", &native_fixture_reader.doc).unwrap();
     assert!(crate::services::save::package::docx_body_source_roundtrips(
         &boxed_original,
         &native_fixture_roundtrip,
@@ -7089,7 +8454,8 @@ fn stage3_docx_nested_cell_and_textbox_objects_admit_only_in_place_edits() {
             .expect("create requested P5 textbox DOCX fixture");
         file.write_all(&boxed_original)
             .expect("write requested P5 textbox DOCX fixture");
-        file.sync_all().expect("sync requested P5 textbox DOCX fixture");
+        file.sync_all()
+            .expect("sync requested P5 textbox DOCX fixture");
     }
 }
 
@@ -7286,15 +8652,25 @@ fn stage3_docx_chart_and_smart_art_model_edits_save_and_reopen() {
     let (diagram_position, diagram_epoch, view) = state(&mut model);
     assert_eq!(view["operations"], json!(["smartArt"]));
     assert_eq!(
-        model.apply(&[DocxOp::ObjectEdit {
-            position: diagram_position,
-            epoch: diagram_epoch.saturating_sub(1),
-            edit: ObjectEdit::SmartArtLayout { layout: "cycle".into() },
-        }]).rejected,
+        model
+            .apply(&[DocxOp::ObjectEdit {
+                position: diagram_position,
+                epoch: diagram_epoch.saturating_sub(1),
+                edit: ObjectEdit::SmartArtLayout {
+                    layout: "cycle".into()
+                },
+            }])
+            .rejected,
         vec![0]
     );
     assert_eq!(
-        apply(&mut model, ObjectEdit::SmartArtLayout { layout: "unsupported".into() }).rejected,
+        apply(
+            &mut model,
+            ObjectEdit::SmartArtLayout {
+                layout: "unsupported".into()
+            }
+        )
+        .rejected,
         vec![0]
     );
     assert_eq!(
@@ -7697,9 +9073,7 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
     use crate::services::save::service;
     use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
     use wordcraft_engine::doc::props::Rgb;
-    use wordcraft_engine::doc::{
-        Block, CharProps, InlineObject, Paragraph, PartKind, StoryRef,
-    };
+    use wordcraft_engine::doc::{Block, CharProps, InlineObject, Paragraph, PartKind, StoryRef};
     use wordcraft_engine::{io, Session};
 
     let group_media_b64 = tiny_png_b64(4, 3, [30, 140, 210]);
@@ -7716,11 +9090,7 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
     let child_media_key = src_sess.doc.add_media(child_img_bytes.clone(), "png");
     let tb_story = src_sess.doc.add_part(
         PartKind::TextBox,
-        vec![Block::Para(Paragraph::with_text(
-            "그룹 글상자",
-            CharProps::default(),
-        ))
-        .into()],
+        vec![Block::Para(Paragraph::with_text("그룹 글상자", CharProps::default())).into()],
     );
     let mut shape_float = Float::default();
     let mut spin = shape_float.spin();
@@ -7854,7 +9224,8 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
         .run("insert.picture", &json!({"data": unrelated_media_b64}))
         .unwrap();
     let dst_baseline_bytes = io::save_bytes("fixture.docx", &dst_sess.doc).unwrap();
-    let dst_unrelated_bytes = wordcraft_engine::cmd::insert::base64_decode(&unrelated_media_b64).unwrap();
+    let dst_unrelated_bytes =
+        wordcraft_engine::cmd::insert::base64_decode(&unrelated_media_b64).unwrap();
     let mut dest = DocxModel::open(&dst_baseline_bytes).unwrap();
     let orig_media_keys: Vec<String> = dest.diagnostic_document().media.keys().cloned().collect();
     assert_eq!(orig_media_keys.len(), 1);
@@ -7889,7 +9260,10 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
     // child picture media bytes, destination-owned key, nested text-box content, and unrelated media.
     let reopened = io::open_bytes("fixture.docx", &pasted_bytes).unwrap();
     assert_eq!(
-        reopened.media.get(&orig_media_keys[0]).map(|b| b.as_slice()),
+        reopened
+            .media
+            .get(&orig_media_keys[0])
+            .map(|b| b.as_slice()),
         Some(dst_unrelated_bytes.as_slice())
     );
     assert_eq!(
@@ -7913,7 +9287,15 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
             _ => None,
         })
         .unwrap();
-    assert_eq!((pasted_group.0, pasted_group.1, pasted_group.2, pasted_group.3), (240.0, 160.0, 240.0, 160.0));
+    assert_eq!(
+        (
+            pasted_group.0,
+            pasted_group.1,
+            pasted_group.2,
+            pasted_group.3
+        ),
+        (240.0, 160.0, 240.0, 160.0)
+    );
     assert_eq!(pasted_group.4.len(), 3);
     assert!((pasted_group.4[0].x - 10.0).abs() < 0.05 && (pasted_group.4[0].y - 12.0).abs() < 0.05);
     assert!(matches!(
@@ -7932,10 +9314,15 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
         InlineObject::Image { media, alt, .. } if media == &pasted_media_key && alt == "그룹 그림"
     ));
     let pasted_story = match &pasted_group.4[2].obj {
-        InlineObject::Shape { story: Some(id), .. } => *id,
+        InlineObject::Shape {
+            story: Some(id), ..
+        } => *id,
         other => panic!("expected grouped text box, got {other:?}"),
     };
-    assert_eq!(reopened.plain_text(StoryRef::Part(pasted_story)), "그룹 글상자");
+    assert_eq!(
+        reopened.plain_text(StoryRef::Part(pasted_story)),
+        "그룹 글상자"
+    );
 
     // Undo restores object & resource state (removes pasted group/media/story while keeping unrelated media); Redo restores it.
     assert_eq!(dest.apply(&[DocxOp::Undo {}]).changed, 1);
@@ -7986,11 +9373,8 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
     let mut p = group_payload.clone();
     let sid = *p.fragment.parts.keys().next().unwrap();
     let bad_text = format!("bad {}", wordcraft_engine::doc::para::OBJ);
-    p.fragment.parts.get_mut(&sid).unwrap().blocks = vec![Block::Para(Paragraph::with_text(
-        &bad_text,
-        CharProps::default(),
-    ))
-    .into()];
+    p.fragment.parts.get_mut(&sid).unwrap().blocks =
+        vec![Block::Para(Paragraph::with_text(&bad_text, CharProps::default())).into()];
     bad_cases.push(("invalid nested object reference in story", p));
     // 6. Unsupported grouped child type (Graphic inside Group)
     let mut p = group_payload.clone();
@@ -8055,9 +9439,21 @@ fn stage3_grouped_rich_clipboard_roundtrip_and_negative_acceptance() {
         assert_eq!(res.changed, 0, "{label} changed");
         assert_eq!(res.rejected, vec![0], "{label}");
         assert!(!clean.view().history.undo, "{label} undo history");
-        assert_eq!(clean.diagnostic_document().media, baseline_media, "{label} media");
-        assert_eq!(clean.diagnostic_document().parts.len(), baseline_parts, "{label} parts");
-        assert_eq!(clean.export().unwrap(), baseline_export, "{label} export bytes");
+        assert_eq!(
+            clean.diagnostic_document().media,
+            baseline_media,
+            "{label} media"
+        );
+        assert_eq!(
+            clean.diagnostic_document().parts.len(),
+            baseline_parts,
+            "{label} parts"
+        );
+        assert_eq!(
+            clean.export().unwrap(),
+            baseline_export,
+            "{label} export bytes"
+        );
     }
 
     // 9. Unsupported paste destination (non-collapsed selection)
@@ -8113,13 +9509,17 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
         extra: Default::default(),
     };
     let at = sess.sel.focus.clone();
-    sess.doc.insert_object(&at, obj, &CharProps::default()).unwrap();
+    sess.doc
+        .insert_object(&at, obj, &CharProps::default())
+        .unwrap();
     let original_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
 
     let mut model = DocxModel::open(&original_bytes).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
     let layout = reader.layout();
-    let hit = layout.find_object(0, |o| (o.rect.w - 120.0).abs() < 0.5).unwrap();
+    let hit = layout
+        .find_object(0, |o| (o.rect.w - 120.0).abs() < 0.5)
+        .unwrap();
     model.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + 10.0,
@@ -8132,8 +9532,13 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
     let view = serde_json::to_value(model.view()).unwrap();
     assert_eq!(view["object"]["kind"], "shape");
     let ops = view["object"]["operations"].as_array().unwrap();
-    for required in ["move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder"] {
-        assert!(ops.iter().any(|v| v == required), "missing op {required}: {ops:?}");
+    for required in [
+        "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "zOrder",
+    ] {
+        assert!(
+            ops.iter().any(|v| v == required),
+            "missing op {required}: {ops:?}"
+        );
     }
     let pos = view["object"]["position"].as_str().unwrap().to_owned();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
@@ -8142,17 +9547,28 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
         DocxOp::ObjectEdit {
             position: pos.clone(),
             epoch,
-            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(180.0), height: Some(110.0) },
+            edit: ObjectEdit::Bounds {
+                x: None,
+                y: None,
+                width: Some(180.0),
+                height: Some(110.0),
+            },
         },
         DocxOp::ObjectEdit {
             position: pos.clone(),
             epoch: epoch + 1,
-            edit: ObjectEdit::Rotate { degrees: 35.0, flip_h: true, flip_v: false },
+            edit: ObjectEdit::Rotate {
+                degrees: 35.0,
+                flip_h: true,
+                flip_v: false,
+            },
         },
         DocxOp::ObjectEdit {
             position: pos,
             epoch: epoch + 2,
-            edit: ObjectEdit::Fill { color: Some("44AA88".into()) },
+            edit: ObjectEdit::Fill {
+                color: Some("44AA88".into()),
+            },
         },
     ]);
     assert_eq!(edits.changed, 3, "{:?}", edits.rejected);
@@ -8172,10 +9588,25 @@ fn stage3_docx_freeform_geometry_edit_preserves_paths_and_roundtrips() {
         .iter()
         .filter_map(|b| b.as_para())
         .flat_map(|p| &p.objects)
-        .find(|o| matches!(o, InlineObject::Shape { kind: ShapeKind::Freeform, .. }))
+        .find(|o| {
+            matches!(
+                o,
+                InlineObject::Shape {
+                    kind: ShapeKind::Freeform,
+                    ..
+                }
+            )
+        })
         .unwrap();
     match freeform_after {
-        InlineObject::Shape { w, h, fill, float, freeform: Some(f), .. } => {
+        InlineObject::Shape {
+            w,
+            h,
+            fill,
+            float,
+            freeform: Some(f),
+            ..
+        } => {
             assert!((*w - 180.0).abs() < 0.01 && (*h - 110.0).abs() < 0.01);
             assert_eq!(fill.map(|c| c.hex()), Some("44AA88".into()));
             assert!((float.rot - 35.0).abs() < 0.01 && float.flip_h && !float.flip_v);
@@ -8245,13 +9676,17 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         ],
     };
     let at = sess.sel.focus.clone();
-    sess.doc.insert_object(&at, group_obj, &CharProps::default()).unwrap();
+    sess.doc
+        .insert_object(&at, group_obj, &CharProps::default())
+        .unwrap();
     let original_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
 
     let mut model = DocxModel::open(&original_bytes).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
     let layout = reader.layout();
-    let hit = layout.find_object(0, |o| (o.rect.w - 200.0).abs() < 0.5).unwrap();
+    let hit = layout
+        .find_object(0, |o| (o.rect.w - 200.0).abs() < 0.5)
+        .unwrap();
     model.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + 20.0,
@@ -8265,8 +9700,13 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
     assert_eq!(view["object"]["kind"], "group");
     assert_eq!(view["object"]["shape"]["widthPt"], 200.0);
     let ops = view["object"]["operations"].as_array().unwrap();
-    for required in ["move", "resize", "delete", "wrap", "altText", "rotate", "zOrder"] {
-        assert!(ops.iter().any(|v| v == required), "missing group op {required}: {ops:?}");
+    for required in [
+        "move", "resize", "delete", "wrap", "altText", "rotate", "zOrder",
+    ] {
+        assert!(
+            ops.iter().any(|v| v == required),
+            "missing group op {required}: {ops:?}"
+        );
     }
     let pos = view["object"]["position"].as_str().unwrap().to_owned();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
@@ -8275,7 +9715,12 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         DocxOp::ObjectEdit {
             position: pos.clone(),
             epoch,
-            edit: ObjectEdit::Bounds { x: None, y: None, width: Some(260.0), height: Some(150.0) },
+            edit: ObjectEdit::Bounds {
+                x: None,
+                y: None,
+                width: Some(260.0),
+                height: Some(150.0),
+            },
         },
         DocxOp::ObjectEdit {
             position: pos.clone(),
@@ -8285,7 +9730,11 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         DocxOp::ObjectEdit {
             position: pos.clone(),
             epoch: epoch + 2,
-            edit: ObjectEdit::Rotate { degrees: 25.0, flip_h: true, flip_v: false },
+            edit: ObjectEdit::Rotate {
+                degrees: 25.0,
+                flip_h: true,
+                flip_v: false,
+            },
         },
         DocxOp::ObjectEdit {
             position: pos.clone(),
@@ -8295,12 +9744,20 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         DocxOp::ObjectEdit {
             position: pos,
             epoch: epoch + 4,
-            edit: ObjectEdit::Bounds { x: Some(90.0), y: Some(140.0), width: None, height: None },
+            edit: ObjectEdit::Bounds {
+                x: Some(90.0),
+                y: Some(140.0),
+                width: None,
+                height: None,
+            },
         },
     ]);
     assert_eq!(res.changed, 5, "{:?}", res.rejected);
     let view_after = serde_json::to_value(model.view()).unwrap();
-    let pos_after = view_after["object"]["position"].as_str().unwrap().to_owned();
+    let pos_after = view_after["object"]["position"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let epoch_after = view_after["object"]["epoch"].as_u64().unwrap();
     assert_eq!(view_after["object"]["shape"]["rotation"], 25.0);
     assert_eq!(view_after["object"]["shape"]["flipH"], true);
@@ -8332,7 +9789,15 @@ fn stage3_docx_group_geometry_rotate_layer_roundtrips() {
         .find(|o| matches!(o, InlineObject::Group { .. }))
         .unwrap();
     match group_after {
-        InlineObject::Group { w, h, ch_w, ch_h, float, children, .. } => {
+        InlineObject::Group {
+            w,
+            h,
+            ch_w,
+            ch_h,
+            float,
+            children,
+            ..
+        } => {
             assert!((*w - 260.0).abs() < 0.01 && (*h - 150.0).abs() < 0.01);
             assert!((*ch_w - 200.0).abs() < 0.01 && (*ch_h - 120.0).abs() < 0.01);
             assert_eq!(float.wrap, Wrap::BehindText);
@@ -8356,13 +9821,27 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
     let body_end = source.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
     source.run("caret.set", &json!({"pos": body_end})).unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("insert.picture", &json!({"data": tiny_png_b64(3, 2, [40, 90, 170]), "width": 24.0})).unwrap();
-    let (picture_pos, mut picture) = wordcraft_engine::cmd::objects::selected(&source).expect("inserted picture");
-    source.doc.delete_range(&picture_pos, &wordcraft_engine::doc::Pos {
-        off: picture_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
-        ..picture_pos.clone()
-    }).unwrap();
-    let InlineObject::Image { w, h, float, .. } = &mut picture else { panic!("expected image child") };
+    source
+        .run(
+            "insert.picture",
+            &json!({"data": tiny_png_b64(3, 2, [40, 90, 170]), "width": 24.0}),
+        )
+        .unwrap();
+    let (picture_pos, mut picture) =
+        wordcraft_engine::cmd::objects::selected(&source).expect("inserted picture");
+    source
+        .doc
+        .delete_range(
+            &picture_pos,
+            &wordcraft_engine::doc::Pos {
+                off: picture_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+                ..picture_pos.clone()
+            },
+        )
+        .unwrap();
+    let InlineObject::Image { w, h, float, .. } = &mut picture else {
+        panic!("expected image child")
+    };
     *w = 30.0;
     *h = 20.0;
     *float = Float::default();
@@ -8388,8 +9867,16 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
         ch_h: 60.0,
         canvas: None,
         children: vec![
-            GroupChild { x: 5.0, y: 6.0, obj: shape },
-            GroupChild { x: 42.0, y: 20.0, obj: picture },
+            GroupChild {
+                x: 5.0,
+                y: 6.0,
+                obj: shape,
+            },
+            GroupChild {
+                x: 42.0,
+                y: 20.0,
+                obj: picture,
+            },
         ],
     };
     let sibling = InlineObject::Shape {
@@ -8413,12 +9900,23 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
         ch_h: 130.0,
         canvas: None,
         children: vec![
-            GroupChild { x: 10.0, y: 10.0, obj: nested },
-            GroupChild { x: 120.0, y: 35.0, obj: sibling.clone() },
+            GroupChild {
+                x: 10.0,
+                y: 10.0,
+                obj: nested,
+            },
+            GroupChild {
+                x: 120.0,
+                y: 35.0,
+                obj: sibling.clone(),
+            },
         ],
     };
     let insert_at = source.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
-    source.doc.insert_object(&insert_at, root_group, &CharProps::default()).unwrap();
+    source
+        .doc
+        .insert_object(&insert_at, root_group, &CharProps::default())
+        .unwrap();
     let generated_bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
     let native_fixture: &[u8] = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -8426,15 +9924,24 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
     ));
     let generated = package::open(&generated_bytes, package::Side::Original).unwrap();
     let fixture_package = package::open(native_fixture, package::Side::Original).unwrap();
-    assert_eq!(generated.parts.keys().collect::<Vec<_>>(), fixture_package.parts.keys().collect::<Vec<_>>());
+    assert_eq!(
+        generated.parts.keys().collect::<Vec<_>>(),
+        fixture_package.parts.keys().collect::<Vec<_>>()
+    );
     for name in generated.parts.keys() {
-        assert_eq!(generated.get(name), fixture_package.get(name), "native fixture differs from generated source part: {name}");
+        assert_eq!(
+            generated.get(name),
+            fixture_package.get(name),
+            "native fixture differs from generated source part: {name}"
+        );
     }
     let original_bytes = native_fixture.to_vec();
     let mut model = DocxModel::open(&original_bytes).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
     let layout = reader.layout();
-    let hit = layout.find_object(0, |object| (object.rect.w - 220.0).abs() < 0.5).expect("outer group layout");
+    let hit = layout
+        .find_object(0, |object| (object.rect.w - 220.0).abs() < 0.5)
+        .expect("outer group layout");
     let select_group = || DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + 1.0,
@@ -8448,72 +9955,169 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
     assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
     let view = serde_json::to_value(model.view()).unwrap();
     assert_eq!(view["object"]["kind"], "group");
-    assert_eq!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "groupChildGeometry"), true);
-    assert_eq!(view["object"]["groupChildren"]["children"].as_array().unwrap().len(), 2);
-    assert_eq!(view["object"]["groupChildren"]["children"][0]["kind"], "group");
-    assert_eq!(view["object"]["groupChildren"]["children"][1]["kind"], "ellipse");
+    assert_eq!(
+        view["object"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|op| op == "groupChildGeometry"),
+        true
+    );
+    assert_eq!(
+        view["object"]["groupChildren"]["children"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        view["object"]["groupChildren"]["children"][0]["kind"],
+        "group"
+    );
+    assert_eq!(
+        view["object"]["groupChildren"]["children"][1]["kind"],
+        "ellipse"
+    );
 
     let position = view["object"]["position"].as_str().unwrap().to_owned();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
     let moved = model.apply(&[DocxOp::ObjectEdit {
         position: position.clone(),
         epoch,
-        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+        edit: ObjectEdit::DocxGroupChildMove {
+            index: 0,
+            id: 1,
+            inst_id: 0,
+            x: 20.0,
+            y: 15.0,
+        },
     }]);
     assert_eq!(moved.changed, 1, "{:?}", moved.rejected);
-    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 20.0);
+    assert_eq!(
+        serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"],
+        20.0
+    );
 
     let undone = model.apply(&[DocxOp::Undo {}]);
     assert_eq!(undone.changed, 1, "{:?}", undone.rejected);
     assert_eq!(model.apply(&[select_group()]).applied, 1);
-    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 10.0);
+    assert_eq!(
+        serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"],
+        10.0
+    );
     let redone = model.apply(&[DocxOp::Redo {}]);
     assert_eq!(redone.changed, 1, "{:?}", redone.rejected);
     assert_eq!(model.apply(&[select_group()]).applied, 1);
-    assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"], 20.0);
+    assert_eq!(
+        serde_json::to_value(model.view()).unwrap()["object"]["groupChildren"]["children"][0]["x"],
+        20.0
+    );
 
     let current = serde_json::to_value(model.view()).unwrap();
     let resize = model.apply(&[DocxOp::ObjectEdit {
         position: current["object"]["position"].as_str().unwrap().to_owned(),
         epoch: current["object"]["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::DocxGroupChildResize { index: 0, id: 1, inst_id: 0, width: 70.0, height: 50.0 },
+        edit: ObjectEdit::DocxGroupChildResize {
+            index: 0,
+            id: 1,
+            inst_id: 0,
+            width: 70.0,
+            height: 50.0,
+        },
     }]);
     assert_eq!(resize.changed, 1, "{:?}", resize.rejected);
     let edited_bytes = model.export().unwrap();
-    assert!(model.same_as(&edited_bytes), "edited WordCraft model must match independent reopen");
+    assert!(
+        model.same_as(&edited_bytes),
+        "edited WordCraft model must match independent reopen"
+    );
     assert!(service::check_saved(
         crate::document::Format::Docx,
         &original_bytes,
         &edited_bytes,
         None,
         model.same_as(&edited_bytes),
-    ).is_safe());
+    )
+    .is_safe());
 
     let before_package = package::open(&original_bytes, package::Side::Original).unwrap();
     let after_package = package::open(&edited_bytes, package::Side::Output).unwrap();
-    assert_eq!(before_package.parts.keys().collect::<Vec<_>>(), after_package.parts.keys().collect::<Vec<_>>());
+    assert_eq!(
+        before_package.parts.keys().collect::<Vec<_>>(),
+        after_package.parts.keys().collect::<Vec<_>>()
+    );
     for name in before_package.parts.keys() {
         if name != "word/document.xml" && name != "docProps/app.xml" {
-            assert_eq!(before_package.get(name), after_package.get(name), "unrelated OPC part changed: {name}");
+            assert_eq!(
+                before_package.get(name),
+                after_package.get(name),
+                "unrelated OPC part changed: {name}"
+            );
         }
     }
-    assert_eq!(before_package.get("word/_rels/document.xml.rels"), after_package.get("word/_rels/document.xml.rels"));
+    assert_eq!(
+        before_package.get("word/_rels/document.xml.rels"),
+        after_package.get("word/_rels/document.xml.rels")
+    );
 
     let reopened = io::open_bytes("fixture.docx", &edited_bytes).unwrap();
-    let persisted = reopened.body.iter().filter_map(|block| block.as_para()).flat_map(|para| &para.objects)
-        .find(|object| matches!(object, InlineObject::Group { .. })).expect("group after reopen");
-    let InlineObject::Group { children, .. } = persisted else { unreachable!() };
+    let persisted = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .flat_map(|para| &para.objects)
+        .find(|object| matches!(object, InlineObject::Group { .. }))
+        .expect("group after reopen");
+    let InlineObject::Group { children, .. } = persisted else {
+        unreachable!()
+    };
     assert_eq!(children.len(), 2);
-    assert_eq!((children[1].x, children[1].y), (120.0, 35.0), "unrelated sibling placement remains unchanged");
-    let InlineObject::Shape { kind, w, h, fill, stroke, .. } = &children[1].obj else { panic!("sibling shape changed kind") };
-    assert_eq!((*kind, *w, *h, *fill, *stroke), (ShapeKind::Ellipse, 42.0, 32.0, Some(Rgb(0xCC, 0x88, 0x44)), None));
+    assert_eq!(
+        (children[1].x, children[1].y),
+        (120.0, 35.0),
+        "unrelated sibling placement remains unchanged"
+    );
+    let InlineObject::Shape {
+        kind,
+        w,
+        h,
+        fill,
+        stroke,
+        ..
+    } = &children[1].obj
+    else {
+        panic!("sibling shape changed kind")
+    };
+    assert_eq!(
+        (*kind, *w, *h, *fill, *stroke),
+        (
+            ShapeKind::Ellipse,
+            42.0,
+            32.0,
+            Some(Rgb(0xCC, 0x88, 0x44)),
+            None
+        )
+    );
     assert_eq!((children[0].x, children[0].y), (20.0, 15.0));
-    let InlineObject::Group { w, h, children: descendants, .. } = &children[0].obj else { panic!("nested group was flattened") };
+    let InlineObject::Group {
+        w,
+        h,
+        children: descendants,
+        ..
+    } = &children[0].obj
+    else {
+        panic!("nested group was flattened")
+    };
     assert_eq!((*w, *h), (70.0, 50.0));
     assert_eq!(descendants.len(), 2);
     assert!(matches!(descendants[0].obj, InlineObject::Shape { .. }));
-    let InlineObject::Image { media, .. } = &descendants[1].obj else { panic!("nested picture lost") };
-    assert!(reopened.media.contains_key(media), "nested picture relationship resolves to its media");
+    let InlineObject::Image { media, .. } = &descendants[1].obj else {
+        panic!("nested picture lost")
+    };
+    assert!(
+        reopened.media.contains_key(media),
+        "nested picture relationship resolves to its media"
+    );
 
     let mut source_package = package::open(&original_bytes, package::Side::Original).unwrap();
     let body = source_package.parts.get_mut("word/document.xml").unwrap();
@@ -8522,50 +10126,92 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
     let mut with_unknown = xml.to_owned();
     with_unknown.insert_str(at, "<wpg:unsupportedMember/>\n");
     body.1 = with_unknown.into_bytes();
-    let entries: Vec<_> = source_package.order.iter().map(|name| {
-        crate::document::testutil::entry(name, source_package.get(name).unwrap())
-    }).collect();
+    let entries: Vec<_> = source_package
+        .order
+        .iter()
+        .map(|name| crate::document::testutil::entry(name, source_package.get(name).unwrap()))
+        .collect();
     let unsupported_bytes = zip(&entries, false);
     let mut guarded = DocxModel::open(&unsupported_bytes).unwrap();
     let selected = guarded.apply(&[select_group()]);
     assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
     let guarded_view = serde_json::to_value(guarded.view()).unwrap();
-    assert!(!guarded_view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "groupChildGeometry"));
+    assert!(!guarded_view["object"]["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "groupChildGeometry"));
     assert!(guarded_view["object"].get("groupChildren").is_none());
     let guarded_before = guarded.export().unwrap();
     let edit = guarded.apply(&[DocxOp::ObjectEdit {
-        position: guarded_view["object"]["position"].as_str().unwrap().to_owned(),
+        position: guarded_view["object"]["position"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
         epoch: guarded_view["object"]["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+        edit: ObjectEdit::DocxGroupChildMove {
+            index: 0,
+            id: 1,
+            inst_id: 0,
+            x: 20.0,
+            y: 15.0,
+        },
     }]);
     assert_eq!(edit.changed, 0);
     assert_eq!(edit.rejected, vec![0]);
-    assert_eq!(guarded.export().unwrap(), guarded_before, "unsupported original member blocks child mutation atomically");
+    assert_eq!(
+        guarded.export().unwrap(),
+        guarded_before,
+        "unsupported original member blocks child mutation atomically"
+    );
 
     let mut scaled_package = package::open(&original_bytes, package::Side::Original).unwrap();
     let body = scaled_package.parts.get_mut("word/document.xml").unwrap();
     let xml = std::str::from_utf8(&body.1).unwrap();
     let identity_axes = "<a:chExt cx=\"2794000\" cy=\"1651000\"/>";
-    assert!(xml.contains(identity_axes), "native fixture must use an identity group coordinate space");
-    body.1 = xml.replacen(identity_axes, "<a:chExt cx=\"5588000\" cy=\"1651000\"/>", 1).into_bytes();
-    let entries: Vec<_> = scaled_package.order.iter().map(|name| {
-        crate::document::testutil::entry(name, scaled_package.get(name).unwrap())
-    }).collect();
+    assert!(
+        xml.contains(identity_axes),
+        "native fixture must use an identity group coordinate space"
+    );
+    body.1 = xml
+        .replacen(identity_axes, "<a:chExt cx=\"5588000\" cy=\"1651000\"/>", 1)
+        .into_bytes();
+    let entries: Vec<_> = scaled_package
+        .order
+        .iter()
+        .map(|name| crate::document::testutil::entry(name, scaled_package.get(name).unwrap()))
+        .collect();
     let scaled_bytes = zip(&entries, false);
     let mut scaled = DocxModel::open(&scaled_bytes).unwrap();
     let selected = scaled.apply(&[select_group()]);
     assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
     let scaled_view = serde_json::to_value(scaled.view()).unwrap();
-    assert!(scaled_view["object"].get("groupChildren").is_none(), "scaled group coordinates stay fail-closed");
+    assert!(
+        scaled_view["object"].get("groupChildren").is_none(),
+        "scaled group coordinates stay fail-closed"
+    );
     let scaled_before = scaled.export().unwrap();
     let edit = scaled.apply(&[DocxOp::ObjectEdit {
-        position: scaled_view["object"]["position"].as_str().unwrap().to_owned(),
+        position: scaled_view["object"]["position"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
         epoch: scaled_view["object"]["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::DocxGroupChildMove { index: 0, id: 1, inst_id: 0, x: 20.0, y: 15.0 },
+        edit: ObjectEdit::DocxGroupChildMove {
+            index: 0,
+            id: 1,
+            inst_id: 0,
+            x: 20.0,
+            y: 15.0,
+        },
     }]);
     assert_eq!(edit.changed, 0);
     assert_eq!(edit.rejected, vec![0]);
-    assert_eq!(scaled.export().unwrap(), scaled_before, "scaled group rejection is atomic");
+    assert_eq!(
+        scaled.export().unwrap(),
+        scaled_before,
+        "scaled group rejection is atomic"
+    );
 }
 
 #[test]
@@ -8580,7 +10226,11 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
     source.run("text.newParagraph", &json!({})).unwrap();
     let caption_story = source.doc.add_part(
         PartKind::TextBox,
-        vec![Block::Para(Paragraph::with_text("Owned group caption", CharProps::default())).into()],
+        vec![Block::Para(Paragraph::with_text(
+            "Owned group caption",
+            CharProps::default(),
+        ))
+        .into()],
     );
     let group = InlineObject::Group {
         w: 200.0,
@@ -8608,15 +10258,30 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
         }],
     };
     let group_pos = source.sel.focus.clone();
-    source.doc.insert_object(&group_pos, group, &CharProps::default()).unwrap();
-    source.run("caret.set", &json!({"pos": wordcraft_engine::doc::Pos {
-        off: group_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(), ..group_pos
-    }})).unwrap();
+    source
+        .doc
+        .insert_object(&group_pos, group, &CharProps::default())
+        .unwrap();
+    source
+        .run(
+            "caret.set",
+            &json!({"pos": wordcraft_engine::doc::Pos {
+                off: group_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(), ..group_pos
+            }}),
+        )
+        .unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("text.insert", &json!({"text":"Nearby Caption 9", "raw":true})).unwrap();
+    source
+        .run(
+            "text.insert",
+            &json!({"text":"Nearby Caption 9", "raw":true}),
+        )
+        .unwrap();
     let original_bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
-    let hit = reader.layout().find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01)
+    let hit = reader
+        .layout()
+        .find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01)
         .expect("the group with a text-box child is laid out");
     let mut model = DocxModel::open(&original_bytes).unwrap();
     let unowned_body_text = model.body_text();
@@ -8634,30 +10299,65 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
     assert_eq!(view["object"]["kind"], "group");
     let position = view["object"]["position"].as_str().unwrap().to_owned();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
-    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
-        "a uniquely owned direct text-box child needs an explicit caption-edit entry");
+    assert!(
+        view["object"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|op| op == "editCaption"),
+        "a uniquely owned direct text-box child needs an explicit caption-edit entry"
+    );
 
     let before = model.export().unwrap();
-    let stale = model.apply(&[DocxOp::EnterGroupCaption { position: position.clone(), epoch: epoch + 1 }]);
-    assert_eq!((stale.applied, stale.changed, stale.rejected), (0, 0, vec![0]));
-    assert_eq!(model.export().unwrap(), before, "stale caption ownership must reject atomically");
+    let stale = model.apply(&[DocxOp::EnterGroupCaption {
+        position: position.clone(),
+        epoch: epoch + 1,
+    }]);
+    assert_eq!(
+        (stale.applied, stale.changed, stale.rejected),
+        (0, 0, vec![0])
+    );
+    assert_eq!(
+        model.export().unwrap(),
+        before,
+        "stale caption ownership must reject atomically"
+    );
 
     let entered = model.apply(&[DocxOp::EnterGroupCaption { position, epoch }]);
     assert_eq!(entered.applied, 1, "{:?}", entered.rejected);
     assert!(entered.rejected.is_empty());
-    assert!(model.view().caret_key.starts_with(&format!("part{caption_story}:")),
-        "the caret must move into the group's exact TextBox story");
-    assert!(model.view().object.is_none(), "the group selection ends when its owned story gets focus");
+    assert!(
+        model
+            .view()
+            .caret_key
+            .starts_with(&format!("part{caption_story}:")),
+        "the caret must move into the group's exact TextBox story"
+    );
+    assert!(
+        model.view().object.is_none(),
+        "the group selection ends when its owned story gets focus"
+    );
 
     let typed = model.apply(&[DocxOp::InsertText { text: "!".into() }]);
-    assert_eq!((typed.applied, typed.changed, typed.rejected), (1, 1, vec![]));
+    assert_eq!(
+        (typed.applied, typed.changed, typed.rejected),
+        (1, 1, vec![])
+    );
     let story_text = |bytes: &[u8]| {
         let doc = io::open_bytes("fixture.docx", bytes).unwrap();
-        doc.parts[&caption_story].blocks.iter().filter_map(|block| block.as_para())
-            .map(|para| para.plain_text().to_owned()).collect::<String>()
+        doc.parts[&caption_story]
+            .blocks
+            .iter()
+            .filter_map(|block| block.as_para())
+            .map(|para| para.plain_text().to_owned())
+            .collect::<String>()
     };
     assert_eq!(story_text(&model.export().unwrap()), "!Owned group caption");
-    assert_eq!(model.body_text(), unowned_body_text, "a nearby unowned body caption is not edited with the group");
+    assert_eq!(
+        model.body_text(),
+        unowned_body_text,
+        "a nearby unowned body caption is not edited with the group"
+    );
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(story_text(&model.export().unwrap()), "Owned group caption");
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
@@ -8666,16 +10366,32 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
     let after = model.export().unwrap();
     let same = model.same_as(&after);
     let gate = crate::services::save::service::check_saved(
-        crate::document::Format::Docx, &before, &after, None, same,
+        crate::document::Format::Docx,
+        &before,
+        &after,
+        None,
+        same,
     );
-    assert!(same && gate.is_safe(), "T009 must prove only the modeled group-child story edit: {gate:?}");
-    assert_eq!(story_text(&after), "!Owned group caption", "independently parsed DOCX keeps the edited caption story");
+    assert!(
+        same && gate.is_safe(),
+        "T009 must prove only the modeled group-child story edit: {gate:?}"
+    );
+    assert_eq!(
+        story_text(&after),
+        "!Owned group caption",
+        "independently parsed DOCX keeps the edited caption story"
+    );
 
     let saved_doc = io::open_bytes("fixture.docx", &after).unwrap();
-    let mut group_pos = saved_doc.text_box_anchor(caption_story).expect("saved caption has one group owner");
+    let mut group_pos = saved_doc
+        .text_box_anchor(caption_story)
+        .expect("saved caption has one group owner");
     group_pos.off -= wordcraft_engine::doc::para::OBJ.len_utf8();
     let mut saved_session = Session::new(saved_doc);
-    let hit = saved_session.layout().object(&group_pos, 0).expect("saved group remains laid out");
+    let hit = saved_session
+        .layout()
+        .object(&group_pos, 0)
+        .expect("saved group remains laid out");
     let mut deleter = DocxModel::open(&after).unwrap();
     let selected = deleter.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
@@ -8689,7 +10405,10 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
     assert!(selected.rejected.is_empty());
     let delete_view = serde_json::to_value(deleter.view()).unwrap();
     let delete = deleter.apply(&[DocxOp::ObjectEdit {
-        position: delete_view["object"]["position"].as_str().unwrap().to_owned(),
+        position: delete_view["object"]["position"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
         epoch: delete_view["object"]["epoch"].as_u64().unwrap(),
         edit: ObjectEdit::Delete {},
     }]);
@@ -8697,13 +10416,27 @@ fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
     let deleted = deleter.export().unwrap();
     let same = deleter.same_as(&deleted);
     let gate = crate::services::save::service::check_saved(
-        crate::document::Format::Docx, &after, &deleted, None, same,
+        crate::document::Format::Docx,
+        &after,
+        &deleted,
+        None,
+        same,
     );
-    assert!(same && gate.is_safe(), "T009 must prove intentional deletion of the owner and its nested caption: {gate:?}");
+    assert!(
+        same && gate.is_safe(),
+        "T009 must prove intentional deletion of the owner and its nested caption: {gate:?}"
+    );
     let deleted_doc = io::open_bytes("fixture.docx", &deleted).unwrap();
-    assert!(deleted_doc.text_box_anchor(caption_story).is_none(), "deleting the owner cannot orphan or reassign its caption story");
-    assert!(deleted_doc.plain_text(wordcraft_engine::doc::StoryRef::Body).contains("Nearby Caption 9"),
-        "unowned nearby caption content must survive group deletion");
+    assert!(
+        deleted_doc.text_box_anchor(caption_story).is_none(),
+        "deleting the owner cannot orphan or reassign its caption story"
+    );
+    assert!(
+        deleted_doc
+            .plain_text(wordcraft_engine::doc::StoryRef::Body)
+            .contains("Nearby Caption 9"),
+        "unowned nearby caption content must survive group deletion"
+    );
 }
 
 #[test]
@@ -8745,31 +10478,84 @@ fn stage3_docx_group_caption_tracks_multiple_owners_and_rejects_ambiguity() {
         canvas: None,
         children,
     };
-    let child = |x, story| GroupChild { x, y: 55.0, obj: text_box(story) };
+    let child = |x, story| GroupChild {
+        x,
+        y: 55.0,
+        obj: text_box(story),
+    };
 
     // Two groups with identical visible caption text retain separate structural story owners.
     let first_pos = source.sel.focus.clone();
-    source.doc.insert_object(&first_pos, group(vec![child(10.0, first_story)]), &CharProps::default()).unwrap();
+    source
+        .doc
+        .insert_object(
+            &first_pos,
+            group(vec![child(10.0, first_story)]),
+            &CharProps::default(),
+        )
+        .unwrap();
     let second_pos = wordcraft_engine::doc::Pos {
         off: first_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
         ..first_pos.clone()
     };
-    source.doc.insert_object(&second_pos, group(vec![child(10.0, second_story)]), &CharProps::default()).unwrap();
-    let refs = |id| source.doc.para_paths(StoryRef::Body).iter().map(|path| {
-        source.doc.para(StoryRef::Body, path).unwrap().object_offsets().iter().filter(|offset|
-            source.doc.para(StoryRef::Body, path).unwrap().object_at(**offset)
-                .is_some_and(|object| object.text_boxes().contains(&id))).count()
-    }).sum::<usize>();
-    assert_eq!((refs(first_story), refs(second_story)), (1, 1), "both group-owner references must exist before serialization");
+    source
+        .doc
+        .insert_object(
+            &second_pos,
+            group(vec![child(10.0, second_story)]),
+            &CharProps::default(),
+        )
+        .unwrap();
+    let refs = |id| {
+        source
+            .doc
+            .para_paths(StoryRef::Body)
+            .iter()
+            .map(|path| {
+                source
+                    .doc
+                    .para(StoryRef::Body, path)
+                    .unwrap()
+                    .object_offsets()
+                    .iter()
+                    .filter(|offset| {
+                        source
+                            .doc
+                            .para(StoryRef::Body, path)
+                            .unwrap()
+                            .object_at(**offset)
+                            .is_some_and(|object| object.text_boxes().contains(&id))
+                    })
+                    .count()
+            })
+            .sum::<usize>()
+    };
+    assert_eq!(
+        (refs(first_story), refs(second_story)),
+        (1, 1),
+        "both group-owner references must exist before serialization"
+    );
     let two_owners = io::save_bytes("fixture.docx", &source.doc).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &two_owners).unwrap());
     let mut owner_positions = Vec::new();
     for (id, part) in &reader.doc.parts {
         let same_caption = part.kind == PartKind::TextBox
-            && part.blocks.iter().filter_map(|block| block.as_para()).map(|para| para.plain_text()).collect::<String>() == "Same caption";
-        if !same_caption { continue; }
-        let Some(mut anchor) = reader.doc.text_box_anchor(*id) else { continue };
-        anchor.off = anchor.off.saturating_sub(wordcraft_engine::doc::para::OBJ.len_utf8());
+            && part
+                .blocks
+                .iter()
+                .filter_map(|block| block.as_para())
+                .map(|para| para.plain_text())
+                .collect::<String>()
+                == "Same caption";
+        if !same_caption {
+            continue;
+        }
+        let Some(mut anchor) = reader.doc.text_box_anchor(*id) else {
+            continue;
+        };
+        anchor.off = anchor
+            .off
+            .saturating_sub(wordcraft_engine::doc::para::OBJ.len_utf8());
         if matches!(reader.doc.para_at(&anchor).and_then(|para| para.object_at(anchor.off)),
             Some(InlineObject::Group { children, .. }) if children.iter().any(|child| matches!(&child.obj,
                 InlineObject::Shape { kind: ShapeKind::TextBox, story: Some(story), .. } if story == id)))
@@ -8777,29 +10563,59 @@ fn stage3_docx_group_caption_tracks_multiple_owners_and_rejects_ambiguity() {
             owner_positions.push(anchor);
         }
     }
-    let parsed_stories: Vec<_> = reader.doc.parts.iter().map(|(id, part)| (*id, part.kind, part.blocks.iter()
-        .filter_map(|block| block.as_para()).map(|para| para.plain_text().to_owned()).collect::<String>())).collect();
-    assert_eq!(owner_positions.len(), 2, "the two identical captions have separate group-child owners; stories={parsed_stories:?}");
+    let parsed_stories: Vec<_> = reader
+        .doc
+        .parts
+        .iter()
+        .map(|(id, part)| {
+            (
+                *id,
+                part.kind,
+                part.blocks
+                    .iter()
+                    .filter_map(|block| block.as_para())
+                    .map(|para| para.plain_text().to_owned())
+                    .collect::<String>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        owner_positions.len(),
+        2,
+        "the two identical captions have separate group-child owners; stories={parsed_stories:?}"
+    );
     let layout = reader.layout();
     let first_hit = layout.object(&owner_positions[0], 0).unwrap();
     let second_hit = layout.object(&owner_positions[1], 0).unwrap();
     let mut model = DocxModel::open(&two_owners).unwrap();
-    let select = |model: &mut DocxModel, hit: wordcraft_engine::layout::hit::ObjectHit| model.apply(&[DocxOp::Pointer {
-        page: hit.page as u32,
-        x: hit.rect.x + 1.0,
-        y: hit.rect.y + 1.0,
-        extend: false,
-        before_insert: false,
-        drag: false,
-        select_object: true,
-    }]);
+    let select = |model: &mut DocxModel, hit: wordcraft_engine::layout::hit::ObjectHit| {
+        model.apply(&[DocxOp::Pointer {
+            page: hit.page as u32,
+            x: hit.rect.x + 1.0,
+            y: hit.rect.y + 1.0,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        }])
+    };
     let selected = select(&mut model, first_hit);
     assert!(selected.rejected.is_empty());
     let view = serde_json::to_value(model.view()).unwrap();
     let first_position = view["object"]["position"].as_str().unwrap().to_owned();
     let first_epoch = view["object"]["epoch"].as_u64().unwrap();
-    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"));
-    assert!(model.apply(&[DocxOp::EnterGroupCaption { position: first_position, epoch: first_epoch }]).rejected.is_empty());
+    assert!(view["object"]["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "editCaption"));
+    assert!(model
+        .apply(&[DocxOp::EnterGroupCaption {
+            position: first_position,
+            epoch: first_epoch
+        }])
+        .rejected
+        .is_empty());
     let first_caret = model.view().caret_key;
     assert!(first_caret.starts_with(&format!("part{first_story}:")));
 
@@ -8808,24 +10624,52 @@ fn stage3_docx_group_caption_tracks_multiple_owners_and_rejects_ambiguity() {
     let view = serde_json::to_value(model.view()).unwrap();
     let second_position = view["object"]["position"].as_str().unwrap().to_owned();
     let second_epoch = view["object"]["epoch"].as_u64().unwrap();
-    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"));
-    assert!(model.apply(&[DocxOp::EnterGroupCaption { position: second_position, epoch: second_epoch }]).rejected.is_empty());
+    assert!(view["object"]["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "editCaption"));
+    assert!(model
+        .apply(&[DocxOp::EnterGroupCaption {
+            position: second_position,
+            epoch: second_epoch
+        }])
+        .rejected
+        .is_empty());
     let second_caret = model.view().caret_key;
     assert!(second_caret.starts_with(&format!("part{second_story}:")));
-    assert_ne!(first_caret, second_caret, "identical caption text does not alias group owners");
+    assert_ne!(
+        first_caret, second_caret,
+        "identical caption text does not alias group owners"
+    );
 
     // A single group with two direct text boxes has no provable single caption child.
     let mut ambiguous = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     ambiguous.run("caret.docEnd", &json!({})).unwrap();
     ambiguous.run("text.newParagraph", &json!({})).unwrap();
-    let first = ambiguous.doc.add_part(PartKind::TextBox, vec![Block::Para(Paragraph::with_text("One", CharProps::default())).into()]);
-    let second = ambiguous.doc.add_part(PartKind::TextBox, vec![Block::Para(Paragraph::with_text("Two", CharProps::default())).into()]);
-    ambiguous.doc.insert_object(&ambiguous.sel.focus,
-        group(vec![child(5.0, first), child(105.0, second)]), &CharProps::default()).unwrap();
+    let first = ambiguous.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text("One", CharProps::default())).into()],
+    );
+    let second = ambiguous.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text("Two", CharProps::default())).into()],
+    );
+    ambiguous
+        .doc
+        .insert_object(
+            &ambiguous.sel.focus,
+            group(vec![child(5.0, first), child(105.0, second)]),
+            &CharProps::default(),
+        )
+        .unwrap();
     let ambiguous_bytes = io::save_bytes("fixture.docx", &ambiguous.doc).unwrap();
     let mut model = DocxModel::open(&ambiguous_bytes).unwrap();
     let mut reader = Session::new(io::open_bytes("fixture.docx", &ambiguous_bytes).unwrap());
-    let hit = reader.layout().find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01)
+        .unwrap();
     let selected = model.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + 1.0,
@@ -8837,12 +10681,24 @@ fn stage3_docx_group_caption_tracks_multiple_owners_and_rejects_ambiguity() {
     }]);
     assert!(selected.rejected.is_empty());
     let view = serde_json::to_value(model.view()).unwrap();
-    assert!(!view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
-        "multiple direct text boxes are ambiguous and must remain unopened");
-    assert!(model.apply(&[DocxOp::EnterGroupCaption {
-        position: view["object"]["position"].as_str().unwrap().to_owned(),
-        epoch: view["object"]["epoch"].as_u64().unwrap(),
-    }]).rejected == vec![0], "forged entry is rejected even if the UI hides the action");
+    assert!(
+        !view["object"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|op| op == "editCaption"),
+        "multiple direct text boxes are ambiguous and must remain unopened"
+    );
+    assert!(
+        model
+            .apply(&[DocxOp::EnterGroupCaption {
+                position: view["object"]["position"].as_str().unwrap().to_owned(),
+                epoch: view["object"]["epoch"].as_u64().unwrap(),
+            }])
+            .rejected
+            == vec![0],
+        "forged entry is rejected even if the UI hides the action"
+    );
 }
 
 #[test]
@@ -8857,11 +10713,15 @@ fn stage3_docx_group_caption_parses_saved_group_child_fixture() {
         "/../scripts/tests/fixtures/stage3a-p6-group-caption.docx"
     ));
     let mut reader = Session::new(io::open_bytes("fixture.docx", bytes).unwrap());
-    let hit = reader.layout().find_object(0, |object| (object.rect.w - 220.0).abs() < 0.1)
+    let hit = reader
+        .layout()
+        .find_object(0, |object| (object.rect.w - 220.0).abs() < 0.1)
         .expect("the saved DOCX fixture contains the expected group");
     let mut model = DocxModel::open(bytes).unwrap();
-    assert!(model.body_text().contains("Nearby Caption 9"),
-        "the nearby ordinary caption paragraph must remain an unowned body story");
+    assert!(
+        model.body_text().contains("Nearby Caption 9"),
+        "the nearby ordinary caption paragraph must remain an unowned body story"
+    );
     let selected = model.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + 1.0,
@@ -8874,24 +10734,44 @@ fn stage3_docx_group_caption_parses_saved_group_child_fixture() {
     assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
     let view = serde_json::to_value(model.view()).unwrap();
     assert_eq!(view["object"]["kind"], "group");
-    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
-        "the serialized direct text-box child must expose its owning group entry");
+    assert!(
+        view["object"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|op| op == "editCaption"),
+        "the serialized direct text-box child must expose its owning group entry"
+    );
     let position = view["object"]["position"].as_str().unwrap().to_owned();
     let epoch = view["object"]["epoch"].as_u64().unwrap();
-    let owner = model.diagnostic_document().text_box_anchor(
-        model.diagnostic_document().parts.iter()
-            .find(|(_, part)| part.kind == wordcraft_engine::doc::PartKind::TextBox)
-            .map(|(id, _)| *id).expect("the fixture has a text-box story"),
-    ).expect("the fixture's text-box story has a single group owner");
+    let owner = model
+        .diagnostic_document()
+        .text_box_anchor(
+            model
+                .diagnostic_document()
+                .parts
+                .iter()
+                .find(|(_, part)| part.kind == wordcraft_engine::doc::PartKind::TextBox)
+                .map(|(id, _)| *id)
+                .expect("the fixture has a text-box story"),
+        )
+        .expect("the fixture's text-box story has a single group owner");
     assert_eq!(owner.story, StoryRef::Body);
     assert!(model.body_text().contains("Nearby Caption 9"));
 
     let original = model.export().unwrap();
-    let payload: ObjectPayload = serde_json::from_str(&model.clipboard_object(&position, epoch).unwrap()).unwrap();
+    let payload: ObjectPayload =
+        serde_json::from_str(&model.clipboard_object(&position, epoch).unwrap()).unwrap();
     model.apply(&[mv(MoveTarget::DocEnd, false)]);
     model.apply(&[DocxOp::NewParagraph]);
-    let pasted = model.apply(&[DocxOp::PasteObject { payload: Box::new(payload) }]);
-    assert_eq!(pasted.changed, 1, "group-caption copy/paste rejected: {:?}", pasted.rejected);
+    let pasted = model.apply(&[DocxOp::PasteObject {
+        payload: Box::new(payload),
+    }]);
+    assert_eq!(
+        pasted.changed, 1,
+        "group-caption copy/paste rejected: {:?}",
+        pasted.rejected
+    );
     let copied = model.export().unwrap();
     let gate = service::check_saved(
         crate::document::Format::Docx,
@@ -8900,20 +10780,40 @@ fn stage3_docx_group_caption_parses_saved_group_child_fixture() {
         None,
         model.same_as(&copied),
     );
-    assert!(gate.is_safe(), "T009 must prove the copied group and caption story atomically: {gate:?}");
+    assert!(
+        gate.is_safe(),
+        "T009 must prove the copied group and caption story atomically: {gate:?}"
+    );
     let reopened = io::open_bytes("fixture.docx", &copied).unwrap();
-    let caption_stories: Vec<_> = reopened.parts.iter()
+    let caption_stories: Vec<_> = reopened
+        .parts
+        .iter()
         .filter(|(_, part)| part.kind == wordcraft_engine::doc::PartKind::TextBox)
         .map(|(id, part)| {
-            let text = part.blocks.iter().filter_map(|block| block.as_para())
-                .map(|para| para.plain_text().to_owned()).collect::<String>();
-            let anchor = reopened.text_box_anchor(*id).expect("copied textbox remains attached to a group");
+            let text = part
+                .blocks
+                .iter()
+                .filter_map(|block| block.as_para())
+                .map(|para| para.plain_text().to_owned())
+                .collect::<String>();
+            let anchor = reopened
+                .text_box_anchor(*id)
+                .expect("copied textbox remains attached to a group");
             (text, format!("{anchor:?}"))
-        }).collect();
-    assert_eq!(caption_stories.len(), 2, "the paste must allocate a distinct owned caption story");
-    assert!(caption_stories.iter().all(|(text, _)| text == "Group-owned caption"));
-    assert_ne!(caption_stories[0].1, caption_stories[1].1,
-        "the copied caption must resolve to a distinct group owner address");
+        })
+        .collect();
+    assert_eq!(
+        caption_stories.len(),
+        2,
+        "the paste must allocate a distinct owned caption story"
+    );
+    assert!(caption_stories
+        .iter()
+        .all(|(text, _)| text == "Group-owned caption"));
+    assert_ne!(
+        caption_stories[0].1, caption_stories[1].1,
+        "the copied caption must resolve to a distinct group owner address"
+    );
 }
 
 #[test]
@@ -8932,10 +10832,14 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
     let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
     sess.run("caret.set", &json!({"pos": body_end})).unwrap();
     sess.run("text.newParagraph", &json!({})).unwrap();
-    sess.run("insert.textBox", &json!({"width": 200, "height": 120})).unwrap();
-    sess.run("text.insert", &json!({"text": "상자안:"})).unwrap();
-    sess.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
-    sess.run("picture.size", &json!({"width": 60, "height": 40})).unwrap();
+    sess.run("insert.textBox", &json!({"width": 200, "height": 120}))
+        .unwrap();
+    sess.run("text.insert", &json!({"text": "상자안:"}))
+        .unwrap();
+    sess.run("insert.shape", &json!({"kind": "rectangle"}))
+        .unwrap();
+    sess.run("picture.size", &json!({"width": 60, "height": 40}))
+        .unwrap();
 
     let body_end = sess.doc.end_of(wordcraft_engine::doc::StoryRef::Body);
     sess.run("caret.set", &json!({"pos": body_end})).unwrap();
@@ -8962,7 +10866,10 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
                     story: None,
                     freeform: None,
                     effects: Default::default(),
-                    extra: ShapeExtra { id: 42, ..Default::default() },
+                    extra: ShapeExtra {
+                        id: 42,
+                        ..Default::default()
+                    },
                 },
             },
             GroupChild {
@@ -8989,13 +10896,17 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
         ],
     };
     let at2 = sess.sel.focus.clone();
-    sess.doc.insert_object(&at2, group_with_ids, &CharProps::default()).unwrap();
+    sess.doc
+        .insert_object(&at2, group_with_ids, &CharProps::default())
+        .unwrap();
     let src_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
 
     // Copying a Header object must remain refused.
     let mut hdr_sess = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     hdr_sess.run("insert.editHeader", &json!({})).unwrap();
-    hdr_sess.run("insert.shape", &json!({"kind": "rectangle"})).unwrap();
+    hdr_sess
+        .run("insert.shape", &json!({"kind": "rectangle"}))
+        .unwrap();
     hdr_sess.run("insert.closeHeader", &json!({})).unwrap();
     let hdr_bytes = io::save_bytes("fixture.docx", &hdr_sess.doc).unwrap();
     let mut hdr_model = DocxModel::open(&hdr_bytes).unwrap();
@@ -9020,7 +10931,9 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
 
     // 2. Copy the shape INSIDE the Body TextBox story (`PartKind::TextBox`) and paste at Body end.
     let inner_hit = layout
-        .find_object(0, |o| matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 60.0).abs() < 0.5)
+        .find_object(0, |o| {
+            matches!(o.story, StoryRef::Part(_)) && (o.rect.w - 60.0).abs() < 0.5
+        })
         .unwrap();
     model.apply(&[DocxOp::Pointer {
         page: inner_hit.page as u32,
@@ -9038,11 +10951,15 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
     let tb_payload: ObjectPayload =
         serde_json::from_str(&model.clipboard_object(&tb_pos_str, tb_epoch).unwrap()).unwrap();
     model.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
-    let p_res = model.apply(&[DocxOp::PasteObject { payload: Box::new(tb_payload) }]);
+    let p_res = model.apply(&[DocxOp::PasteObject {
+        payload: Box::new(tb_payload),
+    }]);
     assert_eq!(p_res.changed, 1, "{:?}", p_res.rejected);
 
     // 3. Copy the Group with colliding `extra.id = 42` & connector glue and paste into the SAME doc.
-    let grp_hit = layout.find_object(0, |o| (o.rect.w - 180.0).abs() < 0.5).unwrap();
+    let grp_hit = layout
+        .find_object(0, |o| (o.rect.w - 180.0).abs() < 0.5)
+        .unwrap();
     model.apply(&[DocxOp::Pointer {
         page: grp_hit.page as u32,
         x: grp_hit.rect.x + 20.0,
@@ -9058,7 +10975,9 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
     let grp_payload: ObjectPayload =
         serde_json::from_str(&model.clipboard_object(&grp_pos, grp_epoch).unwrap()).unwrap();
     model.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
-    let g_res = model.apply(&[DocxOp::PasteObject { payload: Box::new(grp_payload) }]);
+    let g_res = model.apply(&[DocxOp::PasteObject {
+        payload: Box::new(grp_payload),
+    }]);
     assert_eq!(g_res.changed, 1, "{:?}", g_res.rejected);
 
     let out_bytes = model.export().unwrap();
@@ -9101,36 +11020,64 @@ fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() 
     assert_ne!(group_ids[1].0, 0);
     assert_ne!(group_ids[1].0, 42);
     assert_eq!(group_ids[1].1, Some(group_ids[1].0));
-    assert!(group_ids[1].2, "external connector glue must be cleared on paste");
+    assert!(
+        group_ids[1].2,
+        "external connector glue must be cleared on paste"
+    );
 }
 
 #[test]
 fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
+    use super::engine::ObjectEdit;
     use crate::document::Format;
     use crate::services::save::{package, service};
-    use super::engine::ObjectEdit;
-    use wordcraft_engine::doc::{para::NoteKind, para_block, props::CharProps, InlineObject, Paragraph, PartKind, StoryRef};
+    use wordcraft_engine::doc::{
+        para::NoteKind, para_block, props::CharProps, InlineObject, Paragraph, PartKind, StoryRef,
+    };
     use wordcraft_engine::{io, Session};
 
     let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     source.run("caret.docEnd", &json!({})).unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("insert.picture", &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) })).unwrap();
-    source.run("picture.size", &json!({ "width": 28, "height": 22 })).unwrap();
-    source.run("object.altText", &json!({ "text": "body picture" })).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) }),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({ "width": 28, "height": 22 }))
+        .unwrap();
+    source
+        .run("object.altText", &json!({ "text": "body picture" }))
+        .unwrap();
     let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
     let props = CharProps::default();
     let stories = [
         (PartKind::Header, "header", None, "word/header1.xml"),
         (PartKind::Footer, "footer", None, "word/footer1.xml"),
-        (PartKind::Footnote, "footnote", Some(NoteKind::Footnote), "word/footnotes.xml"),
-        (PartKind::Endnote, "endnote", Some(NoteKind::Endnote), "word/endnotes.xml"),
+        (
+            PartKind::Footnote,
+            "footnote",
+            Some(NoteKind::Footnote),
+            "word/footnotes.xml",
+        ),
+        (
+            PartKind::Endnote,
+            "endnote",
+            Some(NoteKind::Endnote),
+            "word/endnotes.xml",
+        ),
     ];
     for (kind, label, note, _) in stories {
         let id = source.doc.add_part(kind, Vec::new());
         let mut para = Paragraph::with_text(&format!("{label} text "), props.clone());
         if let Some(kind) = note {
-            let marker = InlineObject::NoteRef { kind, id, custom: String::new() };
+            let marker = InlineObject::NoteRef {
+                kind,
+                id,
+                custom: String::new(),
+            };
             para.insert_object(0, marker.clone(), &props).unwrap();
             let end = source.doc.end_of(StoryRef::Body);
             source.doc.insert_object(&end, marker, &props).unwrap();
@@ -9138,7 +11085,10 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let mut picture = picture.clone();
         picture.set_alt_text(label);
         para.insert_object(para.len(), picture, &props).unwrap();
-        source.doc.set_story(StoryRef::Part(id), vec![para_block(para)]).unwrap();
+        source
+            .doc
+            .set_story(StoryRef::Part(id), vec![para_block(para)])
+            .unwrap();
         match kind {
             PartKind::Header => source.doc.last_section.headers.default = Some(id),
             PartKind::Footer => source.doc.last_section.footers.default = Some(id),
@@ -9147,23 +11097,45 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
     }
     let draft = io::save_bytes("story.docx", &source.doc).unwrap();
     // Use the pinned writer's canonical OPC identities in the publication tests.
-    let original = io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
+    let original =
+        io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
     let mut baseline = Session::new(io::open_bytes("story.docx", &original).unwrap());
     let layout = baseline.layout();
     let mut positions = serde_json::Map::new();
     for (kind, label, note, part) in stories {
-        let id = *baseline.doc.parts.iter().find(|(_, p)| p.kind == kind).unwrap().0;
+        let id = *baseline
+            .doc
+            .parts
+            .iter()
+            .find(|(_, p)| p.kind == kind)
+            .unwrap()
+            .0;
         let story = StoryRef::Part(id);
-        let hit = layout.find_object(0, |object| object.story == story).unwrap_or_else(|| panic!("missing displayed {label} picture"));
+        let hit = layout
+            .find_object(0, |object| object.story == story)
+            .unwrap_or_else(|| panic!("missing displayed {label} picture"));
         let (x, y) = (hit.rect.x + hit.rect.w / 2.0, hit.rect.y + hit.rect.h / 2.0);
-        positions.insert(label.into(), json!({"page":hit.page,"x":x,"y":y,"part":part}));
-        let click = DocxOp::Pointer { page: hit.page as u32, x, y,
-            extend: false, before_insert: false, drag: false, select_object: true };
+        positions.insert(
+            label.into(),
+            json!({"page":hit.page,"x":x,"y":y,"part":part}),
+        );
+        let click = DocxOp::Pointer {
+            page: hit.page as u32,
+            x,
+            y,
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
         let mut model = DocxModel::open(&original).unwrap();
         assert_eq!(model.apply(&[click.clone()]).changed, 0);
         let selected = serde_json::to_value(model.view()).unwrap();
         let selected = &selected["object"];
-        assert_eq!(selected["position"], format!("part{id}:{}:{}", hit.path, hit.off));
+        assert_eq!(
+            selected["position"],
+            format!("part{id}:{}:{}", hit.path, hit.off)
+        );
         let expected_operations =
             if note.is_some() || matches!(kind, PartKind::Header | PartKind::Footer) {
                 json!(["move", "resize", "delete", "altText"])
@@ -9175,13 +11147,28 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
 
         let position = selected["position"].as_str().unwrap().to_owned();
         let epoch = selected["epoch"].as_u64().unwrap();
-        let command = DocxOp::ObjectEdit { position: position.clone(), epoch,
-            edit: ObjectEdit::AltText { text: format!("{label} edited") } };
+        let command = DocxOp::ObjectEdit {
+            position: position.clone(),
+            epoch,
+            edit: ObjectEdit::AltText {
+                text: format!("{label} edited"),
+            },
+        };
         let before = model.export().unwrap();
-        let wrong = DocxOp::ObjectEdit { position: "body:0:0".into(), epoch,
-            edit: ObjectEdit::AltText { text: "wrong owner".into() } };
-        let stale = DocxOp::ObjectEdit { position, epoch: epoch - 1,
-            edit: ObjectEdit::AltText { text: "stale owner".into() } };
+        let wrong = DocxOp::ObjectEdit {
+            position: "body:0:0".into(),
+            epoch,
+            edit: ObjectEdit::AltText {
+                text: "wrong owner".into(),
+            },
+        };
+        let stale = DocxOp::ObjectEdit {
+            position,
+            epoch: epoch - 1,
+            edit: ObjectEdit::AltText {
+                text: "stale owner".into(),
+            },
+        };
         assert_eq!(model.apply(&[wrong, stale]).rejected, vec![0, 1]);
         assert_eq!(model.export().unwrap(), before);
         assert!(!model.view().history.undo);
@@ -9189,13 +11176,27 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         if result.changed != 1 {
             let mut isolated = Session::new(io::open_bytes("story.docx", &original).unwrap());
             let at = hit.pos();
-            let end = wordcraft_engine::doc::Pos { off: at.off + 3, ..at.clone() };
-            isolated.run("select.range", &json!({"anchor":at,"focus":end})).unwrap();
-            isolated.run("object.altText", &json!({"text":format!("{label} edited")})).unwrap();
+            let end = wordcraft_engine::doc::Pos {
+                off: at.off + 3,
+                ..at.clone()
+            };
+            isolated
+                .run("select.range", &json!({"anchor":at,"focus":end}))
+                .unwrap();
+            isolated
+                .run("object.altText", &json!({"text":format!("{label} edited")}))
+                .unwrap();
             let candidate = io::save_bytes("story.docx", &isolated.doc).unwrap();
             let restored = io::open_bytes("story.docx", &candidate).unwrap();
-            let same = wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&isolated.doc, &restored);
-            let gate = service::check_saved(Format::Docx, &original, &candidate, None, matches!(same, Ok(true)));
+            let same =
+                wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&isolated.doc, &restored);
+            let gate = service::check_saved(
+                Format::Docx,
+                &original,
+                &candidate,
+                None,
+                matches!(same, Ok(true)),
+            );
             panic!("{label} edit rejected: {same:?} with {gate:?}");
         }
         let after = model.export().unwrap();
@@ -9203,9 +11204,16 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         assert!(service::check_saved(Format::Docx, &original, &after, None, true).is_safe());
         let left = package::open(&original, package::Side::Original).unwrap();
         let mut right = package::open(&after, package::Side::Output).unwrap();
-        assert_eq!(left.parts.keys().collect::<Vec<_>>(), right.parts.keys().collect::<Vec<_>>());
+        assert_eq!(
+            left.parts.keys().collect::<Vec<_>>(),
+            right.parts.keys().collect::<Vec<_>>()
+        );
         for name in left.parts.keys().filter(|name| name.as_str() != part) {
-            assert_eq!(left.get(name), right.get(name), "unrelated part changed: {name}");
+            assert_eq!(
+                left.get(name),
+                right.get(name),
+                "unrelated part changed: {name}"
+            );
         }
         let edited = io::open_bytes("story.docx", &after).unwrap();
         let reopened = edited.parts.values().find(|p| p.kind == kind).unwrap();
@@ -9213,10 +11221,13 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
             wordcraft_engine::doc::Block::Para(p) => p,
             _ => panic!("picture left its paragraph"),
         };
-        let alt = p.object_offsets().iter().find_map(|off| match p.object_at(*off) {
-            Some(InlineObject::Image { alt, .. }) => Some(alt.as_str()),
-            _ => None,
-        });
+        let alt = p
+            .object_offsets()
+            .iter()
+            .find_map(|off| match p.object_at(*off) {
+                Some(InlineObject::Image { alt, .. }) => Some(alt.as_str()),
+                _ => None,
+            });
         assert_eq!(alt, Some(format!("{label} edited").as_str()));
         assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
         assert_eq!(model.export().unwrap(), before);
@@ -9230,7 +11241,9 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let descr = format!("descr=\"{label} edited\"");
         assert_eq!(xml.matches(&descr).count(), 2);
         *part_bytes = xml.replacen(&descr, "descr=\"unpaired\"", 1).into_bytes();
-        assert!(package::compare_saved_docx(&left, &right).iter().any(|f| f.part.as_deref() == Some(part)));
+        assert!(package::compare_saved_docx(&left, &right)
+            .iter()
+            .any(|f| f.part.as_deref() == Some(part)));
 
         let mut model = DocxModel::open(&after).unwrap();
         assert!(model.apply(&[click]).rejected.is_empty());
@@ -9242,13 +11255,19 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
             edit,
         };
         let moved = resize(ObjectEdit::Bounds {
-            x: Some(20.0), y: Some(30.0), width: Some(35.0), height: Some(27.5),
+            x: Some(20.0),
+            y: Some(30.0),
+            width: Some(35.0),
+            height: Some(27.5),
         });
         assert_eq!(model.apply(&[moved]).rejected, vec![0]);
         assert_eq!(model.export().unwrap(), after);
         assert!(!model.view().history.undo);
         let size = resize(ObjectEdit::Bounds {
-            x: None, y: None, width: Some(35.0), height: Some(27.5),
+            x: None,
+            y: None,
+            width: Some(35.0),
+            height: Some(27.5),
         });
         assert_eq!(model.apply(&[size]).changed, 1, "{label} resize refused");
         let resized = model.export().unwrap();
@@ -9256,7 +11275,10 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         assert!(service::check_saved(Format::Docx, &original, &resized, None, true).is_safe());
         let before_size = package::open(&after, package::Side::Original).unwrap();
         let mut after_size = package::open(&resized, package::Side::Output).unwrap();
-        assert_eq!(before_size.parts.keys().collect::<Vec<_>>(), after_size.parts.keys().collect::<Vec<_>>());
+        assert_eq!(
+            before_size.parts.keys().collect::<Vec<_>>(),
+            after_size.parts.keys().collect::<Vec<_>>()
+        );
         let from = "cx=\"355600\" cy=\"279400\"";
         let to = "cx=\"444500\" cy=\"349250\"";
         let before_xml = std::str::from_utf8(before_size.get(part).unwrap()).unwrap();
@@ -9268,8 +11290,13 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         }
         let (_, part_bytes) = after_size.parts.get_mut(part).unwrap();
         *part_bytes = target.replacen(to, from, 1).into_bytes();
-        assert!(package::compare_saved_docx(&before_size, &after_size).iter().any(|f| f.part.as_deref() == Some(part)));
-        assert_eq!(serde_json::to_value(model.view()).unwrap()["object"]["picture"]["widthPt"], 35.0);
+        assert!(package::compare_saved_docx(&before_size, &after_size)
+            .iter()
+            .any(|f| f.part.as_deref() == Some(part)));
+        assert_eq!(
+            serde_json::to_value(model.view()).unwrap()["object"]["picture"]["widthPt"],
+            35.0
+        );
         assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
         assert_eq!(model.export().unwrap(), after);
         assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
@@ -9279,15 +11306,19 @@ fn stage3a_edits_docx_story_picture_descriptions_without_moving_owners() {
         let out = std::path::PathBuf::from(out);
         std::fs::create_dir_all(&out).unwrap();
         std::fs::write(out.join("a-p5-story-original.docx"), original).unwrap();
-        std::fs::write(out.join("a-p5-story-layout.json"), serde_json::to_vec(&positions).unwrap()).unwrap();
+        std::fs::write(
+            out.join("a-p5-story-layout.json"),
+            serde_json::to_vec(&positions).unwrap(),
+        )
+        .unwrap();
     }
 }
 
 #[test]
 fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
     use super::engine::ObjectEdit;
-    use crate::document::Format;
     use crate::document::testutil::{entry, zip};
+    use crate::document::Format;
     use crate::services::save::{package, service};
     use wordcraft_engine::doc::{para_block, props::CharProps, Paragraph, PartKind, StoryRef};
     use wordcraft_engine::{io, Session};
@@ -9295,8 +11326,15 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
     let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
     source.run("caret.docEnd", &json!({})).unwrap();
     source.run("text.newParagraph", &json!({})).unwrap();
-    source.run("insert.picture", &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) })).unwrap();
-    source.run("picture.size", &json!({ "width": 28, "height": 22 })).unwrap();
+    source
+        .run(
+            "insert.picture",
+            &json!({ "data": tiny_png_b64(2, 2, [140, 90, 40]) }),
+        )
+        .unwrap();
+    source
+        .run("picture.size", &json!({ "width": 28, "height": 22 }))
+        .unwrap();
     let (_, picture) = wordcraft_engine::cmd::objects::selected(&source).unwrap();
     let props = CharProps::default();
     let mut story_ids = Vec::new();
@@ -9305,8 +11343,12 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
         let mut para = Paragraph::with_text(&format!("{label} "), props.clone());
         let mut story_picture = picture.clone();
         story_picture.set_alt_text(label);
-        para.insert_object(para.len(), story_picture, &props).unwrap();
-        source.doc.set_story(StoryRef::Part(id), vec![para_block(para)]).unwrap();
+        para.insert_object(para.len(), story_picture, &props)
+            .unwrap();
+        source
+            .doc
+            .set_story(StoryRef::Part(id), vec![para_block(para)])
+            .unwrap();
         match kind {
             PartKind::Header => source.doc.last_section.headers.default = Some(id),
             PartKind::Footer => source.doc.last_section.footers.default = Some(id),
@@ -9315,7 +11357,8 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
         story_ids.push((kind, id, label));
     }
     let draft = io::save_bytes("story.docx", &source.doc).unwrap();
-    let canonical = io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
+    let canonical =
+        io::save_bytes("story.docx", &io::open_bytes("story.docx", &draft).unwrap()).unwrap();
     let source_package = package::open(&canonical, package::Side::Original).unwrap();
     let mut entries = Vec::new();
     for name in &source_package.order {
@@ -9323,22 +11366,34 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
         if name == "word/header1.xml" {
             let xml = std::str::from_utf8(&data).unwrap();
             let original = r#"<a:ext cx="355600" cy="279400"/>"#;
-            assert_eq!(xml.matches(original).count(), 1, "expected one header picture transform extent");
-            data = xml.replace(original, r#"<a:ext cx="711200" cy="558800"/>"#).into_bytes();
+            assert_eq!(
+                xml.matches(original).count(),
+                1,
+                "expected one header picture transform extent"
+            );
+            data = xml
+                .replace(original, r#"<a:ext cx="711200" cy="558800"/>"#)
+                .into_bytes();
         }
         entries.push(entry(name, &data));
     }
     let noncanonical = zip(&entries, false);
     let original_package = package::open(&noncanonical, package::Side::Original).unwrap();
-    let original_header = std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
+    let original_header =
+        std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
     assert!(original_header.contains(r#"<wp:extent cx="355600" cy="279400"/>"#));
     assert!(original_header.contains(r#"<a:ext cx="711200" cy="558800"/>"#));
     let original_footer = original_package.get("word/footer1.xml").unwrap().to_vec();
 
     let mut view_session = Session::new(io::open_bytes("story.docx", &noncanonical).unwrap());
     let layout = view_session.layout();
-    let (_, header_id, _) = story_ids.iter().find(|(kind, _, _)| *kind == PartKind::Header).unwrap();
-    let header_hit = layout.find_object(0, |object| object.story == StoryRef::Part(*header_id)).unwrap();
+    let (_, header_id, _) = story_ids
+        .iter()
+        .find(|(kind, _, _)| *kind == PartKind::Header)
+        .unwrap();
+    let header_hit = layout
+        .find_object(0, |object| object.story == StoryRef::Part(*header_id))
+        .unwrap();
     let mut model = DocxModel::open(&noncanonical).unwrap();
     let click = DocxOp::Pointer {
         page: header_hit.page as u32,
@@ -9350,35 +11405,85 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
         select_object: true,
     };
     let initial_export = model.export().unwrap();
-    assert!(crate::services::save::docx_story_drawings::resize_source_supported(&noncanonical, &initial_export, 2));
+    assert!(
+        crate::services::save::docx_story_drawings::resize_source_supported(
+            &noncanonical,
+            &initial_export,
+            2
+        )
+    );
     let initial_package = package::open(&initial_export, package::Side::Output).unwrap();
-    assert_eq!(original_package.get("word/header1.xml"), initial_package.get("word/header1.xml"));
-    assert_eq!(original_package.get("word/footer1.xml"), initial_package.get("word/footer1.xml"));
+    assert_eq!(
+        original_package.get("word/header1.xml"),
+        initial_package.get("word/header1.xml")
+    );
+    assert_eq!(
+        original_package.get("word/footer1.xml"),
+        initial_package.get("word/footer1.xml")
+    );
     assert_eq!(model.apply(&[click]).changed, 0);
     let selected = serde_json::to_value(model.view()).unwrap();
-    assert!(selected["object"]["operations"].as_array().unwrap().contains(&json!("resize")),
-        "a noncanonical header extent pair should keep resize available");
+    assert!(
+        selected["object"]["operations"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("resize")),
+        "a noncanonical header extent pair should keep resize available"
+    );
     let before = model.export().unwrap();
     let edit = DocxOp::ObjectEdit {
         position: selected["object"]["position"].as_str().unwrap().into(),
         epoch: selected["object"]["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::Bounds { x: None, y: None, width: Some(35.0), height: Some(27.5) },
+        edit: ObjectEdit::Bounds {
+            x: None,
+            y: None,
+            width: Some(35.0),
+            height: Some(27.5),
+        },
     };
-    assert_eq!(model.apply(&[edit]).changed, 1, "noncanonical owned picture resize refused");
+    assert_eq!(
+        model.apply(&[edit]).changed,
+        1,
+        "noncanonical owned picture resize refused"
+    );
     let resized = model.export().unwrap();
     assert!(model.same_as(&resized));
     let reopened = DocxModel::open(&resized).unwrap();
-    assert!(reopened.same_as(&resized), "a fresh model must accept the saved story-picture transform");
+    assert!(
+        reopened.same_as(&resized),
+        "a fresh model must accept the saved story-picture transform"
+    );
     assert!(service::check_saved(Format::Docx, &noncanonical, &resized, None, true).is_safe());
     let after_package = package::open(&resized, package::Side::Output).unwrap();
-    let before_xml = std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
+    let before_xml =
+        std::str::from_utf8(original_package.get("word/header1.xml").unwrap()).unwrap();
     let expected = before_xml
-        .replace(r#"<wp:extent cx="355600" cy="279400"/>"#, r#"<wp:extent cx="444500" cy="349250"/>"#)
-        .replace(r#"<a:ext cx="711200" cy="558800"/>"#, r#"<a:ext cx="889000" cy="698500"/>"#);
-    assert_eq!(after_package.get("word/header1.xml"), Some(expected.as_bytes()));
-    assert_eq!(after_package.get("word/footer1.xml"), Some(original_footer.as_slice()));
-    for name in original_package.parts.keys().filter(|name| name.as_str() != "word/header1.xml") {
-        assert_eq!(original_package.get(name), after_package.get(name), "unrelated part changed: {name}");
+        .replace(
+            r#"<wp:extent cx="355600" cy="279400"/>"#,
+            r#"<wp:extent cx="444500" cy="349250"/>"#,
+        )
+        .replace(
+            r#"<a:ext cx="711200" cy="558800"/>"#,
+            r#"<a:ext cx="889000" cy="698500"/>"#,
+        );
+    assert_eq!(
+        after_package.get("word/header1.xml"),
+        Some(expected.as_bytes())
+    );
+    assert_eq!(
+        after_package.get("word/footer1.xml"),
+        Some(original_footer.as_slice())
+    );
+    for name in original_package
+        .parts
+        .keys()
+        .filter(|name| name.as_str() != "word/header1.xml")
+    {
+        assert_eq!(
+            original_package.get(name),
+            after_package.get(name),
+            "unrelated part changed: {name}"
+        );
     }
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), before);
@@ -9388,14 +11493,28 @@ fn stage3a_resizes_noncanonical_docx_story_picture_extents_losslessly() {
     let mut unauthorized = package::open(&resized, package::Side::Output).unwrap();
     let (_, header) = unauthorized.parts.get_mut("word/header1.xml").unwrap();
     let xml = std::str::from_utf8(header).unwrap();
-    let wrong_inner = xml.replace(r#"<a:ext cx="889000" cy="698500"/>"#, r#"<a:ext cx="889001" cy="698500"/>"#);
+    let wrong_inner = xml.replace(
+        r#"<a:ext cx="889000" cy="698500"/>"#,
+        r#"<a:ext cx="889001" cy="698500"/>"#,
+    );
     assert_ne!(wrong_inner, xml);
     *header = wrong_inner.into_bytes();
-    let unauthorized_entries: Vec<_> = unauthorized.order.iter().map(|name| {
-        entry(name, unauthorized.get(name).unwrap())
-    }).collect();
-    assert!(!service::check_saved(Format::Docx, &noncanonical, &zip(&unauthorized_entries, false), None, true).is_safe(),
-        "a changed inner extent with no corresponding size transform must be rejected");
+    let unauthorized_entries: Vec<_> = unauthorized
+        .order
+        .iter()
+        .map(|name| entry(name, unauthorized.get(name).unwrap()))
+        .collect();
+    assert!(
+        !service::check_saved(
+            Format::Docx,
+            &noncanonical,
+            &zip(&unauthorized_entries, false),
+            None,
+            true
+        )
+        .is_safe(),
+        "a changed inner extent with no corresponding size transform must be rejected"
+    );
 }
 
 #[test]
@@ -9451,7 +11570,10 @@ fn stage3a_deletes_docx_pictures_from_owned_stories() {
             para.insert_object(0, marker.clone(), &CharProps::default())
                 .unwrap();
             let end = source.doc.end_of(StoryRef::Body);
-            source.doc.insert_object(&end, marker, &CharProps::default()).unwrap();
+            source
+                .doc
+                .insert_object(&end, marker, &CharProps::default())
+                .unwrap();
         }
         let mut owned_picture = picture.clone();
         owned_picture.set_alt_text(label);
@@ -9520,7 +11642,10 @@ fn stage3a_deletes_docx_pictures_from_owned_stories() {
         if kind == PartKind::Footer {
             assert!(position.starts_with(&format!("part{id}:")));
             let path = position.split(':').nth(1).unwrap();
-            assert!(path.split('.').count() > 1, "footer fixture picture must be table-owned: {position}");
+            assert!(
+                path.split('.').count() > 1,
+                "footer fixture picture must be table-owned: {position}"
+            );
         }
         let epoch = selected["epoch"].as_u64().unwrap();
         let undo_before_rejection = model.view().history.undo;
@@ -9564,7 +11689,10 @@ fn stage3a_deletes_docx_pictures_from_owned_stories() {
             .filter(|name| !original_package.parts.contains_key(*name))
             .map(|name| name.as_str())
             .collect();
-        assert!(added_parts.is_empty(), "story deletion added OPC parts: {added_parts:?}");
+        assert!(
+            added_parts.is_empty(),
+            "story deletion added OPC parts: {added_parts:?}"
+        );
         assert!(
             missing_parts.iter().all(|name| name.ends_with(".rels")
                 && changed_parts.iter().copied().chain(std::iter::once(part)).any(|part| {
@@ -9580,14 +11708,19 @@ fn stage3a_deletes_docx_pictures_from_owned_stories() {
             output_package.get("word/document.xml"),
             "story deletion preserves body content and all note references"
         );
-        for name in original_package.parts.keys().filter(|name| {
-            name.ends_with(".rels") || name.starts_with("word/media/")
-        }) {
+        for name in original_package
+            .parts
+            .keys()
+            .filter(|name| name.ends_with(".rels") || name.starts_with("word/media/"))
+        {
             if missing_parts.contains(name.as_str()) {
                 continue;
             }
-            assert_eq!(original_package.get(name), output_package.get(name),
-                "story deletion preserves surviving relationship/media resource {name}");
+            assert_eq!(
+                original_package.get(name),
+                output_package.get(name),
+                "story deletion preserves surviving relationship/media resource {name}"
+            );
         }
         changed_parts.insert(part);
         for name in original_package.parts.keys().filter(|name| {
@@ -9603,18 +11736,25 @@ fn stage3a_deletes_docx_pictures_from_owned_stories() {
         }
         let reopened = io::open_bytes("story-delete.docx", &after).unwrap();
         let story = reopened.parts.get(&id).expect("same story owner reopens");
-        assert!(story.blocks.iter().any(|block| block.as_table().is_some()) || kind != PartKind::Footer);
+        assert!(
+            story.blocks.iter().any(|block| block.as_table().is_some()) || kind != PartKind::Footer
+        );
         let paragraphs = reopened
             .para_paths(StoryRef::Part(id))
             .into_iter()
             .map(|path| reopened.para(StoryRef::Part(id), &path).unwrap())
             .collect::<Vec<_>>();
-        assert!(paragraphs.iter().any(|para| para.text_without(&[]).contains(&format!("{label} text"))));
-        assert!(paragraphs.iter().all(|para| {
-            para.object_offsets().iter().all(|&off| {
-                !matches!(para.object_at(off), Some(InlineObject::Image { .. }))
-            })
-        }), "deleted {label} picture remains in its owning story");
+        assert!(paragraphs
+            .iter()
+            .any(|para| para.text_without(&[]).contains(&format!("{label} text"))));
+        assert!(
+            paragraphs.iter().all(|para| {
+                para.object_offsets()
+                    .iter()
+                    .all(|&off| !matches!(para.object_at(off), Some(InlineObject::Image { .. })))
+            }),
+            "deleted {label} picture remains in its owning story"
+        );
         assert!(reopened.media.len() >= 1, "shared body media must remain");
         snapshots.push(after);
     }
@@ -10169,22 +12309,48 @@ fn stage3a_moves_docx_pictures_within_owned_notes() {
         assert_eq!(model.export().unwrap(), after);
 
         let mut reopened_reader = Session::new(io::open_bytes("note-move.docx", &after).unwrap());
-        let reopened_hit = reopened_reader.layout().find_object(0, |object| object.story == story)
+        let reopened_hit = reopened_reader
+            .layout()
+            .find_object(0, |object| object.story == story)
             .expect("saved note picture reopens in the same story");
-        let reopened_click = DocxOp::Pointer { page: reopened_hit.page as u32,
+        let reopened_click = DocxOp::Pointer {
+            page: reopened_hit.page as u32,
             x: reopened_hit.rect.x + reopened_hit.rect.w / 2.0,
             y: reopened_hit.rect.y + reopened_hit.rect.h / 2.0,
-            extend: false, before_insert: false, drag: false, select_object: true };
+            extend: false,
+            before_insert: false,
+            drag: false,
+            select_object: true,
+        };
         let mut reopened_model = DocxModel::open(&after).unwrap();
         assert_eq!(reopened_model.apply(&[reopened_click]).changed, 0);
-        let reopened_object = serde_json::to_value(reopened_model.view()).unwrap()["object"].clone();
-        assert!(reopened_object["operations"].as_array().unwrap().iter().any(|operation| operation == "move"),
-            "saved square anchor remains safely movable");
+        let reopened_object =
+            serde_json::to_value(reopened_model.view()).unwrap()["object"].clone();
+        assert!(
+            reopened_object["operations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|operation| operation == "move"),
+            "saved square anchor remains safely movable"
+        );
         let reopened_position = reopened_object["position"].as_str().unwrap().to_owned();
         let reopened_epoch = reopened_object["epoch"].as_u64().unwrap();
-        let nudge = DocxOp::ObjectEdit { position: reopened_position, epoch: reopened_epoch,
-            edit: ObjectEdit::Bounds { x: Some(reopened_hit.rect.x + 5.0), y: Some(reopened_hit.rect.y + 5.0), width: None, height: None } };
-        assert_eq!(reopened_model.apply(&[nudge]).changed, 1, "a saved note anchor can move again");
+        let nudge = DocxOp::ObjectEdit {
+            position: reopened_position,
+            epoch: reopened_epoch,
+            edit: ObjectEdit::Bounds {
+                x: Some(reopened_hit.rect.x + 5.0),
+                y: Some(reopened_hit.rect.y + 5.0),
+                width: None,
+                height: None,
+            },
+        };
+        assert_eq!(
+            reopened_model.apply(&[nudge]).changed,
+            1,
+            "a saved note anchor can move again"
+        );
         let moved_again = reopened_model.export().unwrap();
         assert!(reopened_model.same_as(&moved_again));
         assert!(service::check_saved(Format::Docx, &after, &moved_again, None, true).is_safe());
@@ -10278,7 +12444,11 @@ fn stage3a_moves_docx_pictures_within_owned_notes() {
                 height: None,
             },
         };
-        assert_eq!(composite.apply(&[movement]).changed, 1, "{label} composite move rejected");
+        assert_eq!(
+            composite.apply(&[movement]).changed,
+            1,
+            "{label} composite move rejected"
+        );
         if part_kind == PartKind::Footnote {
             after_footnote = Some(composite.export().unwrap());
         }
@@ -10315,7 +12485,10 @@ fn stage3a_moves_docx_pictures_within_owned_notes() {
             .unwrap()
             .0;
         let reopened = io::open_bytes("note-move.docx", &combined).unwrap();
-        let note = reopened.parts.get(&id).expect("the same note id must reopen");
+        let note = reopened
+            .parts
+            .get(&id)
+            .expect("the same note id must reopen");
         let target = match note.blocks[1].as_ref() {
             wordcraft_engine::doc::Block::Para(para) => para,
             _ => panic!("the composite note target paragraph changed shape"),
@@ -10352,9 +12525,9 @@ fn stage3a_moves_docx_pictures_within_owned_notes() {
 
 #[test]
 fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
+    use super::engine::{BasicShape, ObjectEdit};
     use crate::document::Format;
     use crate::services::save::{package, service};
-    use super::engine::{BasicShape, ObjectEdit};
     use wordcraft_engine::doc::para::ShapeKind;
     use wordcraft_engine::{io, Session};
 
@@ -10362,32 +12535,57 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
     const RECT: &str = "prst=\"rect\"><a:avLst/>";
     const ROUND: &str = "prst=\"roundRect\"><a:avLst/>";
     let mut seed = model();
-    seed.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph,
-        DocxOp::Shape { kind: BasicShape::Rectangle }]);
+    seed.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::NewParagraph,
+        DocxOp::Shape {
+            kind: BasicShape::Rectangle,
+        },
+    ]);
     let seed = seed.export().unwrap();
     let package = package::open(&seed, package::Side::Original).unwrap();
     let body = std::str::from_utf8(package.get(MAIN).unwrap()).unwrap();
     assert_eq!(body.matches(RECT).count(), 1);
     let fixture = |geometry: &str| {
         let xml = body.replacen(RECT, geometry, 1);
-        let entries = package.order.iter().map(|name| {
-            let bytes = if name == MAIN { xml.as_bytes() } else { package.get(name).unwrap() };
-            entry(name, bytes)
-        }).collect::<Vec<_>>();
+        let entries = package
+            .order
+            .iter()
+            .map(|name| {
+                let bytes = if name == MAIN {
+                    xml.as_bytes()
+                } else {
+                    package.get(name).unwrap()
+                };
+                entry(name, bytes)
+            })
+            .collect::<Vec<_>>();
         zip(&entries, false)
     };
     let source = fixture(ROUND);
     let reader = io::open_bytes("rounded.docx", &source).unwrap();
     let mut reader = Session::new(reader);
-    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |object| object.rect.w == 108.0)
+        .unwrap();
     let select = DocxOp::Pointer {
-        page: hit.page as u32, x: hit.rect.x + hit.rect.w / 2.0, y: hit.rect.y + hit.rect.h / 2.0,
-        extend: false, before_insert: false, drag: false, select_object: true,
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
     };
-    let selection = |model: &mut DocxModel| serde_json::to_value(model.view()).unwrap()["object"].clone();
+    let selection =
+        |model: &mut DocxModel| serde_json::to_value(model.view()).unwrap()["object"].clone();
     let request = |object: &serde_json::Value, position: &str| DocxOp::ObjectEdit {
-        position: position.into(), epoch: object["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+        position: position.into(),
+        epoch: object["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::ConvertShape {
+            to: BasicShape::Rectangle,
+        },
     };
     for unsupported in ["prst=\"round1Rect\"><a:avLst/>"] {
         let mut rejected = DocxModel::open(&fixture(unsupported)).unwrap();
@@ -10396,7 +12594,12 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
         assert_eq!(object["kind"], "shape");
         assert!(object["convertShape"].is_null());
         let before = rejected.export().unwrap();
-        assert_eq!(rejected.apply(&[request(&object, object["position"].as_str().unwrap())]).rejected, vec![0]);
+        assert_eq!(
+            rejected
+                .apply(&[request(&object, object["position"].as_str().unwrap())])
+                .rejected,
+            vec![0]
+        );
         assert_eq!(rejected.export().unwrap(), before);
         assert_eq!(rejected.apply(&[DocxOp::Undo {}]).changed, 0);
     }
@@ -10405,7 +12608,10 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
     let object = selection(&mut model);
     assert_eq!(object["convertShape"], "rectangle");
     let before = model.export().unwrap();
-    assert_eq!(model.apply(&[request(&object, "part0:0:0")]).rejected, vec![0]);
+    assert_eq!(
+        model.apply(&[request(&object, "part0:0:0")]).rejected,
+        vec![0]
+    );
     assert_eq!(model.export().unwrap(), before);
     let edit = request(&object, object["position"].as_str().unwrap());
     assert_eq!(model.apply(&[edit.clone()]).changed, 1);
@@ -10415,9 +12621,16 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
     assert!(service::check_saved(Format::Docx, &source, &after, None, true).is_safe());
     let original = package::open(&source, package::Side::Original).unwrap();
     let saved = package::open(&after, package::Side::Output).unwrap();
-    assert_eq!(original.parts.keys().collect::<Vec<_>>(), saved.parts.keys().collect::<Vec<_>>());
+    assert_eq!(
+        original.parts.keys().collect::<Vec<_>>(),
+        saved.parts.keys().collect::<Vec<_>>()
+    );
     for name in original.parts.keys().filter(|name| name.as_str() != MAIN) {
-        assert_eq!(original.get(name), saved.get(name), "unrelated OPC part {name}");
+        assert_eq!(
+            original.get(name),
+            saved.get(name),
+            "unrelated OPC part {name}"
+        );
     }
     assert_eq!(saved.get(MAIN), Some(body.as_bytes()));
     assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
@@ -10425,11 +12638,21 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), after);
     let reopened = io::open_bytes("rect.docx", &after).unwrap();
-    assert!(reopened.body.iter().filter_map(|block| block.as_para()).any(|para| {
-        para.objects.iter().any(|object| matches!(object, wordcraft_engine::doc::InlineObject::Shape {
-            kind: ShapeKind::Rectangle, ..
-        }))
-    }));
+    assert!(reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
+        .any(|para| {
+            para.objects.iter().any(|object| {
+                matches!(
+                    object,
+                    wordcraft_engine::doc::InlineObject::Shape {
+                        kind: ShapeKind::Rectangle,
+                        ..
+                    }
+                )
+            })
+        }));
     let mut reopened_model = DocxModel::open(&after).unwrap();
     reopened_model.apply(&[select]);
     assert_eq!(selection(&mut reopened_model)["convertShape"], "ellipse");
@@ -10443,9 +12666,9 @@ fn stage3a_p6_docx_converts_canonical_round_rect_to_rect() {
 
 #[test]
 fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
+    use super::engine::{BasicShape, ObjectEdit};
     use crate::document::Format;
     use crate::services::save::{package, service};
-    use super::engine::{BasicShape, ObjectEdit};
     use wordcraft_engine::doc::para::{ShapeKind, Wrap};
     use wordcraft_engine::{io, Session};
 
@@ -10460,7 +12683,10 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     ]);
     let inline = seed.export().unwrap();
     let mut reader = Session::new(io::open_bytes("inline.docx", &inline).unwrap());
-    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |object| object.rect.w == 108.0)
+        .unwrap();
     let pointer = DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + hit.rect.w / 2.0,
@@ -10483,14 +12709,25 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     let body = std::str::from_utf8(original.get(MAIN).unwrap()).unwrap();
     assert!(body.contains("<wp:anchor "));
     let rebuild = |body: &str| {
-        let entries = original.order.iter().map(|name| {
-            let bytes = if name == MAIN { body.as_bytes() } else { original.get(name).unwrap() };
-            entry(name, bytes)
-        }).collect::<Vec<_>>();
+        let entries = original
+            .order
+            .iter()
+            .map(|name| {
+                let bytes = if name == MAIN {
+                    body.as_bytes()
+                } else {
+                    original.get(name).unwrap()
+                };
+                entry(name, bytes)
+            })
+            .collect::<Vec<_>>();
         zip(&entries, false)
     };
     let floating_noop = DocxModel::open(&floating).unwrap().export().unwrap();
-    assert!(package::docx_body_source_roundtrips(&floating, &floating_noop), "floating anchor no-op round-trip");
+    assert!(
+        package::docx_body_source_roundtrips(&floating, &floating_noop),
+        "floating anchor no-op round-trip"
+    );
     let with_glow = |body: &str| {
         body.replacen(
             "</wps:spPr>",
@@ -10506,7 +12743,10 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     let effect_only_body = with_glow(body);
     let effect_only = rebuild(&effect_only_body);
     let effect_noop = DocxModel::open(&effect_only).unwrap().export().unwrap();
-    assert!(package::docx_body_source_roundtrips(&effect_only, &effect_noop), "supported glow no-op round-trip");
+    assert!(
+        package::docx_body_source_roundtrips(&effect_only, &effect_noop),
+        "supported glow no-op round-trip"
+    );
     let adjustment_only_body = body.replacen(
         "prst=\"rect\"><a:avLst/>",
         "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
@@ -10514,13 +12754,15 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     );
     let adjustment_only = rebuild(&adjustment_only_body);
     let adjustment_noop = DocxModel::open(&adjustment_only).unwrap().export().unwrap();
-    assert!(package::docx_body_source_roundtrips(&adjustment_only, &adjustment_noop), "custom adjustment no-op round-trip");
-    let body = body
-        .replacen(
-            "prst=\"rect\"><a:avLst/>",
-            "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
-            1,
-        );
+    assert!(
+        package::docx_body_source_roundtrips(&adjustment_only, &adjustment_noop),
+        "custom adjustment no-op round-trip"
+    );
+    let body = body.replacen(
+        "prst=\"rect\"><a:avLst/>",
+        "prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val 25000\"/></a:avLst>",
+        1,
+    );
     let body = with_glow(&body);
     let source = rebuild(&body);
 
@@ -10531,7 +12773,10 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
         "floating placement, supported effects, and custom preset adjustments must round-trip before conversion is enabled"
     );
     let mut reader = Session::new(io::open_bytes("floating.docx", &source).unwrap());
-    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |object| object.rect.w == 108.0)
+        .unwrap();
     model.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + hit.rect.w / 2.0,
@@ -10547,7 +12792,9 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     let convert = DocxOp::ObjectEdit {
         position: object["position"].as_str().unwrap().into(),
         epoch: object["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+        edit: ObjectEdit::ConvertShape {
+            to: BasicShape::Rectangle,
+        },
     };
     assert_eq!(model.apply(&[convert.clone()]).changed, 1);
     let after = model.export().unwrap();
@@ -10555,9 +12802,20 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     assert!(service::check_saved(Format::Docx, &source, &after, None, true).is_safe());
     let original_package = package::open(&source, package::Side::Original).unwrap();
     let saved = package::open(&after, package::Side::Output).unwrap();
-    assert_eq!(original_package.parts.keys().collect::<Vec<_>>(), saved.parts.keys().collect::<Vec<_>>());
-    for name in original_package.parts.keys().filter(|name| name.as_str() != MAIN) {
-        assert_eq!(original_package.get(name), saved.get(name), "unrelated OPC part {name}");
+    assert_eq!(
+        original_package.parts.keys().collect::<Vec<_>>(),
+        saved.parts.keys().collect::<Vec<_>>()
+    );
+    for name in original_package
+        .parts
+        .keys()
+        .filter(|name| name.as_str() != MAIN)
+    {
+        assert_eq!(
+            original_package.get(name),
+            saved.get(name),
+            "unrelated OPC part {name}"
+        );
     }
     let original_body = std::str::from_utf8(original_package.get(MAIN).unwrap()).unwrap();
     assert_eq!(
@@ -10570,31 +12828,56 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
     assert_eq!(model.export().unwrap(), after);
     let reopened = io::open_bytes("converted.docx", &after).unwrap();
-    let shape = reopened.body.iter().filter_map(|block| block.as_para())
+    let shape = reopened
+        .body
+        .iter()
+        .filter_map(|block| block.as_para())
         .flat_map(|para| para.objects.iter())
         .find_map(|object| match object {
-            wordcraft_engine::doc::InlineObject::Shape { kind, float, effects, extra, .. } => Some((*kind, float.clone(), effects.clone(), extra.clone())),
+            wordcraft_engine::doc::InlineObject::Shape {
+                kind,
+                float,
+                effects,
+                extra,
+                ..
+            } => Some((*kind, float.clone(), effects.clone(), extra.clone())),
             _ => None,
-        }).unwrap();
+        })
+        .unwrap();
     assert_eq!(shape.0, ShapeKind::Rectangle);
     assert_eq!(shape.1.wrap, Wrap::Square);
     assert!(!shape.2.is_empty());
-    assert_eq!(shape.3.preset_adjustments, vec![
-        wordcraft_engine::doc::connector::PresetAdjustment { name: "adj".into(), formula: "val 25000".into() },
-    ]);
+    assert_eq!(
+        shape.3.preset_adjustments,
+        vec![wordcraft_engine::doc::connector::PresetAdjustment {
+            name: "adj".into(),
+            formula: "val 25000".into()
+        },]
+    );
 
     let unsupported = original_body.replace(
         "<a:effectLst><a:glow rad=\"25400\"><a:srgbClr val=\"123456\"><a:alpha val=\"100000\"/></a:srgbClr></a:glow></a:effectLst>",
         "<a:effectLst><a:prstShdw prst=\"shdw1\"><a:srgbClr val=\"000000\"/></a:prstShdw></a:effectLst>",
     );
-    let entries = original_package.order.iter().map(|name| {
-        let bytes = if name == MAIN { unsupported.as_bytes() } else { original_package.get(name).unwrap() };
-        entry(name, bytes)
-    }).collect::<Vec<_>>();
+    let entries = original_package
+        .order
+        .iter()
+        .map(|name| {
+            let bytes = if name == MAIN {
+                unsupported.as_bytes()
+            } else {
+                original_package.get(name).unwrap()
+            };
+            entry(name, bytes)
+        })
+        .collect::<Vec<_>>();
     let unsupported = zip(&entries, false);
     let mut rejected = DocxModel::open(&unsupported).unwrap();
     let mut reader = Session::new(io::open_bytes("unsupported-effect.docx", &unsupported).unwrap());
-    let hit = reader.layout().find_object(0, |object| object.rect.w == 108.0).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |object| object.rect.w == 108.0)
+        .unwrap();
     rejected.apply(&[DocxOp::Pointer {
         page: hit.page as u32,
         x: hit.rect.x + hit.rect.w / 2.0,
@@ -10610,7 +12893,9 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     let request = DocxOp::ObjectEdit {
         position: object["position"].as_str().unwrap().into(),
         epoch: object["epoch"].as_u64().unwrap(),
-        edit: ObjectEdit::ConvertShape { to: BasicShape::Rectangle },
+        edit: ObjectEdit::ConvertShape {
+            to: BasicShape::Rectangle,
+        },
     };
     assert_eq!(rejected.apply(&[request]).rejected, vec![0]);
     assert_eq!(rejected.export().unwrap(), before);
@@ -10619,38 +12904,70 @@ fn stage3a_p6_docx_converts_floating_effect_custom_adjustment_shape() {
     if let Some(directory) = std::env::var_os("GEUL_STAGE3_OUT") {
         let directory = std::path::PathBuf::from(directory);
         std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("a-p6-floating-round-rect-original.docx"), &source).unwrap();
-        std::fs::write(directory.join("a-p6-floating-round-rect-edited.docx"), &after).unwrap();
+        std::fs::write(
+            directory.join("a-p6-floating-round-rect-original.docx"),
+            &source,
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("a-p6-floating-round-rect-edited.docx"),
+            &after,
+        )
+        .unwrap();
     }
 }
 
 #[test]
 fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
+    use super::engine::{BasicShape, HwpxPolygon, ObjectEdit};
     use crate::document::Format;
     use crate::services::save::{package, service};
-    use super::engine::{BasicShape, HwpxPolygon, ObjectEdit};
     use wordcraft_engine::doc::freeform::DrawingMlPathCommand as PathCommand;
     use wordcraft_engine::doc::{para::ShapeKind, InlineObject, StoryRef};
     use wordcraft_engine::{io, Session};
 
     let mut m = model();
-    assert_eq!(m.apply(&[mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph,
-        DocxOp::Shape { kind: BasicShape::Rectangle }]).changed, 2);
+    assert_eq!(
+        m.apply(&[
+            mv(MoveTarget::DocEnd, false),
+            DocxOp::NewParagraph,
+            DocxOp::Shape {
+                kind: BasicShape::Rectangle
+            }
+        ])
+        .changed,
+        2
+    );
     let original = m.export().unwrap();
     let mut reader = Session::new(io::open_bytes("p6.docx", &original).unwrap());
-    let hit = reader.layout().find_object(0, |o| o.rect.w == 108.0).unwrap();
+    let hit = reader
+        .layout()
+        .find_object(0, |o| o.rect.w == 108.0)
+        .unwrap();
     let select = DocxOp::Pointer {
-        page: hit.page as u32, x: hit.rect.x + hit.rect.w / 2.0, y: hit.rect.y + hit.rect.h / 2.0,
-        extend: false, before_insert: false, drag: false, select_object: true,
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
     };
     assert!(m.apply(&[select.clone()]).rejected.is_empty());
-    assert_eq!(serde_json::to_value(m.view()).unwrap()["object"]["convertShape"], "ellipse");
+    assert_eq!(
+        serde_json::to_value(m.view()).unwrap()["object"]["convertShape"],
+        "ellipse"
+    );
     let edit = |m: &mut DocxModel, to| {
         let view = serde_json::to_value(m.view()).unwrap();
         let object = &view["object"];
         let position = object["position"].as_str().unwrap().into();
         let epoch = object["epoch"].as_u64().unwrap();
-        DocxOp::ObjectEdit { position, epoch, edit: ObjectEdit::ConvertShape { to } }
+        DocxOp::ObjectEdit {
+            position,
+            epoch,
+            edit: ObjectEdit::ConvertShape { to },
+        }
     };
     let same_type = edit(&mut m, BasicShape::Rectangle);
     assert_eq!(m.apply(&[same_type]).rejected, vec![0]);
@@ -10667,7 +12984,11 @@ fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
         assert_eq!(before.get(name), after.get(name));
     }
     let xml = std::str::from_utf8(before.get(main).unwrap()).unwrap();
-    assert_eq!(xml.replacen("prst=\"rect\"", "prst=\"ellipse\"", 1).as_bytes(), after.get(main).unwrap());
+    assert_eq!(
+        xml.replacen("prst=\"rect\"", "prst=\"ellipse\"", 1)
+            .as_bytes(),
+        after.get(main).unwrap()
+    );
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
     assert_eq!(m.export().unwrap(), original);
     assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
@@ -10677,14 +12998,29 @@ fn stage3a_p6_docx_converts_plain_shapes_and_reopens_freeform_import() {
     assert_eq!(m.apply(&[to_rectangle]).changed, 1);
     assert_eq!(m.export().unwrap(), original);
 
-    m.apply(&[DocxOp::DeselectObject {}, mv(MoveTarget::DocEnd, false), DocxOp::NewParagraph]);
+    m.apply(&[
+        DocxOp::DeselectObject {},
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::NewParagraph,
+    ]);
     let before_import = m.export().unwrap();
-    let polygon = HwpxPolygon { width: 10800, height: 7200, points: vec![[1600,1300],[9700,700],[6400,6500]],
-        fill: "442277".into(), description: "HWPX polygon".into() };
+    let polygon = HwpxPolygon {
+        width: 10800,
+        height: 7200,
+        points: vec![[1600, 1300], [9700, 700], [6400, 6500]],
+        fill: "442277".into(),
+        description: "HWPX polygon".into(),
+    };
     let mut invalid = polygon.clone();
     invalid.points[1][0] = 10801;
-    assert!(!validate(&[DocxOp::PasteHwpxPolygon { polygon: invalid.clone() }]));
-    assert_eq!(m.apply(&[DocxOp::PasteHwpxPolygon { polygon: invalid }]).rejected, vec![0]);
+    assert!(!validate(&[DocxOp::PasteHwpxPolygon {
+        polygon: invalid.clone()
+    }]));
+    assert_eq!(
+        m.apply(&[DocxOp::PasteHwpxPolygon { polygon: invalid }])
+            .rejected,
+        vec![0]
+    );
     assert_eq!(m.export().unwrap(), before_import);
     assert_eq!(m.apply(&[DocxOp::PasteHwpxPolygon { polygon }]).changed, 1);
     let imported = m.export().unwrap();
@@ -10779,11 +13115,17 @@ fn stage3a_p6_hwpx_inline_primitives_remain_editable_and_t009_safe() {
         1
     );
     let original = base.export().unwrap();
-    let mut model = DocxModel::open(&original).expect("fixture with an existing editable drawing opens");
+    let mut model =
+        DocxModel::open(&original).expect("fixture with an existing editable drawing opens");
     let unedited = model.export().unwrap();
     assert!(package::docx_body_source_roundtrips(&original, &unedited));
     assert!(service::preflight(Format::Docx, &original, &unedited, None).is_safe());
-    assert_eq!(model.apply(&[DocxOp::DeselectObject {}, mv(MoveTarget::DocEnd, false)]).changed, 0);
+    assert_eq!(
+        model
+            .apply(&[DocxOp::DeselectObject {}, mv(MoveTarget::DocEnd, false)])
+            .changed,
+        0
+    );
     let native_fixture_caret = model.view().caret_key.clone();
     if let Some(out) = std::env::var_os("GEUL_P6_HX_DX_MORE_FIXTURE_OUT") {
         let out = std::path::PathBuf::from(out);
@@ -10961,9 +13303,7 @@ fn stage3a_p6_hwpx_shape_transfer_refuses_docx_body_without_t009_roundtrip() {
         description: "HWPX rectangle".into(),
     };
     assert_eq!(
-        model
-            .apply(&[DocxOp::PasteHwpxShape { shape }])
-            .rejected,
+        model.apply(&[DocxOp::PasteHwpxShape { shape }]).rejected,
         vec![0]
     );
     assert_eq!(model.export().unwrap(), unedited);

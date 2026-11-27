@@ -560,7 +560,11 @@ mod tests {
                 let pattern = (api.FcPatternCreate)();
                 assert!(!pattern.is_null());
                 assert_ne!(
-                    add_string(pattern, obj(b"file\0"), c"/tmp/test-font.ttf".as_ptr().cast()),
+                    add_string(
+                        pattern,
+                        obj(b"file\0"),
+                        c"/tmp/test-font.ttf".as_ptr().cast()
+                    ),
                     0
                 );
                 assert_ne!(

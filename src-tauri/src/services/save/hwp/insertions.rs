@@ -108,17 +108,13 @@ fn read_records(c: &Container, name: &str) -> Checked<Vec<u8>> {
 fn decode_records<'a>(b: &'a [u8], name: &str) -> Checked<Vec<Record<'a>>> {
     records(b).ok_or_else(|| finding(FindingCode::OutputMalformed, name))
 }
-fn paragraph_instance_counts(
-    container: &Container,
-    side: Side,
-) -> Checked<BTreeMap<u32, usize>> {
+fn paragraph_instance_counts(container: &Container, side: Side) -> Checked<BTreeMap<u32, usize>> {
     let mut counts = BTreeMap::new();
     for (name, data) in &container.streams {
         if !section_stream(name) {
             continue;
         }
-        let raw = unpack(container, data)
-            .map_err(|problem| side.unpack_finding(problem, name))?;
+        let raw = unpack(container, data).map_err(|problem| side.unpack_finding(problem, name))?;
         let rows = decode_records(&raw, name)?;
         for (tag, _, payload) in rows {
             if tag == 66 && payload.len() >= 22 {
@@ -225,10 +221,7 @@ fn header_owner_spans(rs: &[Record<'_>]) -> Vec<(usize, usize)> {
 /// its owning paragraph. This small reader intentionally does not interpret
 /// unrelated DocInfo paragraph-shape extensions; their bytes must remain exact.
 fn header_markers_bound(rs: &[Record<'_>]) -> Option<()> {
-    if rs.is_empty()
-        || rs.len() > 100_000
-        || rs.windows(2).any(|pair| pair[1].1 > pair[0].1 + 1)
-    {
+    if rs.is_empty() || rs.len() > 100_000 || rs.windows(2).any(|pair| pair[1].1 > pair[0].1 + 1) {
         return None;
     }
     let mut start = 0;
@@ -335,11 +328,8 @@ fn header_object_section(
     for &(start, end) in &old_owners {
         in_header[start..end].fill(true);
         if before[start..end] != after[start..end] {
-            match super::gso::prove_header_story_edit(
-                &before[start..end],
-                &after[start..end],
-                defs,
-            ) {
+            match super::gso::prove_header_story_edit(&before[start..end], &after[start..end], defs)
+            {
                 Ok(ids) => changed_ids.extend(ids),
                 Err(_) => {
                     return None;
@@ -1606,7 +1596,10 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         }
     }
     reference(used.pictures.len() == resources.new_paths.len(), "DocInfo")?;
-    preserved(entries(&added, 20).is_empty() || !used.borders.is_empty(), "DocInfo")?;
+    preserved(
+        entries(&added, 20).is_empty() || !used.borders.is_empty(),
+        "DocInfo",
+    )?;
     Ok(Proof {
         streams: resources.new_paths,
         header_streams: BTreeSet::new(),
@@ -1624,7 +1617,10 @@ fn basic_bullet(bullet: &[u8], defs: &Defs<'_>) -> Checked<()> {
     canonical[6] = 50;
     // Stage 1 custom bullets: the standard bullet or one of the offered characters (○ ▪ – ✓).
     let ch = word(bullet, 12)? as u16;
-    preserved([0x2022, 0x25CB, 0x25AA, 0x2013, 0x2713].contains(&ch), "DocInfo")?;
+    preserved(
+        [0x2022, 0x25CB, 0x25AA, 0x2013, 0x2713].contains(&ch),
+        "DocInfo",
+    )?;
     canonical[12..14].copy_from_slice(&ch.to_le_bytes());
     canonical[8..12].copy_from_slice(&bullet[8..12]);
     preserved(bullet == canonical, "DocInfo")
@@ -1656,7 +1652,8 @@ fn valid_appended_border_fill(bf: &[u8], orig_borders: &[&[u8]]) -> Checked<()> 
     let no_diag = [0u8; 6];
     let attr_diag_default =
         bf[0..2] == [0, 0] && (bf[26..32] == default_diag || bf[26..32] == no_diag);
-    let matches_orig_header = |o: &&[u8]| o.len() >= 32 && o[0..2] == bf[0..2] && o[26..32] == bf[26..32];
+    let matches_orig_header =
+        |o: &&[u8]| o.len() >= 32 && o[0..2] == bf[0..2] && o[26..32] == bf[26..32];
     preserved(
         attr_diag_default || orig_borders.iter().any(matches_orig_header),
         "DocInfo",
@@ -1729,8 +1726,14 @@ fn basic_numbering(rec: &[u8], defs: &Defs<'_>) -> Checked<()> {
     let mut at = 0usize;
     for _ in 0..7 {
         let attr = dword(rec, at)? as u32;
-        preserved(attr & !(0x0f << 5) == 1 << 3 && matches!((attr >> 5) & 0x0f, 0 | 2 | 3 | 4 | 5 | 8), "DocInfo")?;
-        preserved(word(rec, at + 4)? == 0 && word(rec, at + 6)? == 0 && dword(rec, at + 8)? == 0, "DocInfo")?;
+        preserved(
+            attr & !(0x0f << 5) == 1 << 3 && matches!((attr >> 5) & 0x0f, 0 | 2 | 3 | 4 | 5 | 8),
+            "DocInfo",
+        )?;
+        preserved(
+            word(rec, at + 4)? == 0 && word(rec, at + 6)? == 0 && dword(rec, at + 8)? == 0,
+            "DocInfo",
+        )?;
         reference(!entries(defs, 21).is_empty(), "DocInfo")?;
         let len = word(rec, at + 12)?;
         preserved((1..=32).contains(&len), "DocInfo")?;
@@ -1738,7 +1741,8 @@ fn basic_numbering(rec: &[u8], defs: &Defs<'_>) -> Checked<()> {
         for k in 0..len {
             units.push(word(rec, at + 14 + 2 * k)? as u16);
         }
-        let text = String::from_utf16(&units).map_err(|_| finding(FindingCode::RecordsChanged, "DocInfo"))?;
+        let text = String::from_utf16(&units)
+            .map_err(|_| finding(FindingCode::RecordsChanged, "DocInfo"))?;
         let mut chars = text.chars().peekable();
         let mut valid = true;
         while let Some(c) = chars.next() {
@@ -2006,7 +2010,13 @@ fn tokens_preserved(
             .all(|token| tokens.any(|t| token_matches(t, token, restructured)));
     }
     let mut budget = 2048usize;
-    match_tokens_with_deletions(old_tokens, new_tokens, restructured, deleted_gso, &mut budget)
+    match_tokens_with_deletions(
+        old_tokens,
+        new_tokens,
+        restructured,
+        deleted_gso,
+        &mut budget,
+    )
 }
 
 fn match_tokens_with_deletions(
@@ -2052,13 +2062,8 @@ fn match_tokens_with_deletions(
         }
         let count = deleted_gso.get_mut(token.para.as_ref()).unwrap();
         *count -= 1;
-        let ok = match_tokens_with_deletions(
-            rest_old,
-            new_tokens,
-            restructured,
-            deleted_gso,
-            budget,
-        );
+        let ok =
+            match_tokens_with_deletions(rest_old, new_tokens, restructured, deleted_gso, budget);
         if !ok {
             *deleted_gso.get_mut(token.para.as_ref()).unwrap() += 1;
         }
@@ -2232,7 +2237,14 @@ pub(super) fn prove_caption_paragraphs(
     let mut old_objs: Vec<Vec<Vec<Record<'_>>>> = Vec::new();
     for &p in &old_paras {
         old_slots.extend(number_slots(p)?);
-        let objs = paragraph_with_caption_number(p, 2, original_defs, original_defs, &mut scratch(), true)?;
+        let objs = paragraph_with_caption_number(
+            p,
+            2,
+            original_defs,
+            original_defs,
+            &mut scratch(),
+            true,
+        )?;
         preserved(
             objs.is_empty()
                 || objs.iter().all(|o| matches!(o.as_slice(), [(71, 3, raw)] if raw.len() == 16 && raw.starts_with(b"onta"))),
@@ -2254,16 +2266,20 @@ pub(super) fn prove_caption_paragraphs(
         )?;
         new_objs.extend(objs.into_iter().map(|o| vec![o]));
         let new_ps = entries(defs, 25)[word(p[0].2, 8)?];
-        let matches_original = old_paras.iter().try_fold(false, |found, &op| -> Checked<bool> {
-            if found {
-                return Ok(true);
-            }
-            if op[0].2.get(10..12) != p[0].2.get(10..12) || op[0].2.get(18..) != p[0].2.get(18..) {
-                return Ok(false);
-            }
-            let old_ps = entries(original_defs, 25)[word(op[0].2, 8)?];
-            Ok(same_textbox_para_style(old_ps, new_ps).is_ok())
-        })?;
+        let matches_original = old_paras
+            .iter()
+            .try_fold(false, |found, &op| -> Checked<bool> {
+                if found {
+                    return Ok(true);
+                }
+                if op[0].2.get(10..12) != p[0].2.get(10..12)
+                    || op[0].2.get(18..) != p[0].2.get(18..)
+                {
+                    return Ok(false);
+                }
+                let old_ps = entries(original_defs, 25)[word(op[0].2, 8)?];
+                Ok(same_textbox_para_style(old_ps, new_ps).is_ok())
+            })?;
         preserved(matches_original, BODY)?;
     }
 
@@ -2320,7 +2336,10 @@ fn paragraph_with_caption_number<'a>(
         .filter(|r| r.0 == 68 && r.1 == level + 1)
         .collect();
     let lines = rs.iter().filter(|r| r.0 == 69 && r.1 == level + 1).count();
-    valid(texts.len() <= 1 && runs.len() == 1 && (lines == 1 || (caption && lines == 0)), BODY)?;
+    valid(
+        texts.len() <= 1 && runs.len() == 1 && (lines == 1 || (caption && lines == 0)),
+        BODY,
+    )?;
     // Reserve token storage before allocation; shape/paragraph signatures are
     // shared per run/paragraph rather than copied once for every character.
     let text = texts.first().map_or(&b"\r\0"[..], |r| r.2);
@@ -2736,7 +2755,15 @@ fn restructured_table(
         reference(bf > 0 && bf <= entries(defs, BORDER).len(), BODY)?;
         used.borders.insert(bf);
         valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
-        let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !(0x01 | 0x04), h[7], h[38..].to_vec());
+        let template = |h: &[u8]| {
+            (
+                h[4] & !0x60,
+                h[5],
+                h[6] & !(0x01 | 0x04),
+                h[7],
+                h[38..].to_vec(),
+            )
+        };
         preserved(
             before.iter().any(|o| {
                 template(o.header) == template(cell.header)
@@ -2774,7 +2801,8 @@ fn table_header_preserved(level: u16, a: &[u8], b: &[u8]) -> Checked<()> {
     preserved(a.len() >= 42, BODY)?;
     preserved(a[..4] == b[..4], BODY)?;
     preserved(a[8..12] == b[8..12] && a[24..28] == b[24..28], BODY)?;
-    let positioning_changed = a[4..8] != b[4..8] || a[12..16] != b[12..16] || a[28..36] != b[28..36];
+    let positioning_changed =
+        a[4..8] != b[4..8] || a[12..16] != b[12..16] || a[28..36] != b[28..36];
     if positioning_changed {
         preserved(level == 1, BODY)?;
         let attr_a = dword(a, 4)? as u32;
@@ -3055,7 +3083,13 @@ fn prove_cell_picture_resizes(
             && old_header[24..40] == new_header[24..40],
         BODY,
     )?;
-    let (_, caption) = evolved_cells(old, original_defs, original_defs, &mut BTreeSet::new(), None)?;
+    let (_, caption) = evolved_cells(
+        old,
+        original_defs,
+        original_defs,
+        &mut BTreeSet::new(),
+        None,
+    )?;
     preserved(caption.is_empty(), BODY)?;
     let table = old[1].2;
     let mut row_heights = vec![0; word(table, 4)?];
@@ -3208,7 +3242,15 @@ fn evolved_table(
             valid(valid_hwp_margin_pair(cell.header, 24)?, BODY)?;
             let bf = word(cell.header, 32)?;
             valid(((cell.header[4] >> 5) & 0x03) <= 2, BODY)?;
-            let template = |h: &[u8]| (h[4] & !0x60, h[5], h[6] & !(0x01 | 0x04), h[7], h[38..].to_vec());
+            let template = |h: &[u8]| {
+                (
+                    h[4] & !0x60,
+                    h[5],
+                    h[6] & !(0x01 | 0x04),
+                    h[7],
+                    h[38..].to_vec(),
+                )
+            };
             preserved(
                 before.iter().any(|o| {
                     template(o.header) == template(cell.header)
@@ -3319,7 +3361,10 @@ fn evolved_table(
             x.texts == y.texts
                 && x.object_paragraphs == y.object_paragraphs
                 && x.objects.len() == y.objects.len()
-                && x.objects.iter().zip(&y.objects).all(|(a, b)| same_child(a, b))
+                && x.objects
+                    .iter()
+                    .zip(&y.objects)
+                    .all(|(a, b)| same_child(a, b))
         });
     // Stage 2 P4-1: cell clipboard paste/clear on an unchanged table grid (same cell geometries and
     // paragraph counts; no child object loss/reorder) that also updates cell header, paragraph shape, or
@@ -3330,7 +3375,10 @@ fn evolved_table(
             x.para_shapes.len() == y.para_shapes.len()
                 && x.object_paragraphs == y.object_paragraphs
                 && x.objects.len() == y.objects.len()
-                && x.objects.iter().zip(&y.objects).all(|(a, b)| same_child(a, b))
+                && x.objects
+                    .iter()
+                    .zip(&y.objects)
+                    .all(|(a, b)| same_child(a, b))
         })
         && before.iter().zip(&after).any(|(x, y)| {
             x.header != y.header || x.para_shapes != y.para_shapes || x.char_shapes != y.char_shapes
@@ -4794,14 +4842,23 @@ mod tests {
         after.extend_from_slice(&[0, 0]);
         let old = (71, 3, before.as_slice());
         let new = (71, 3, after.as_slice());
-        assert_eq!(empty_description_canonicalization(&old, &new), Some(0x7203_cb70));
+        assert_eq!(
+            empty_description_canonicalization(&old, &new),
+            Some(0x7203_cb70)
+        );
 
         let mut changed_prefix = after.clone();
         changed_prefix[20] ^= 1;
-        assert!(empty_description_canonicalization(&old, &(71, 3, changed_prefix.as_slice())).is_none());
+        assert!(
+            empty_description_canonicalization(&old, &(71, 3, changed_prefix.as_slice())).is_none()
+        );
         let mut nonempty_description = before.clone();
         nonempty_description.extend_from_slice(&[1, 0]);
-        assert!(empty_description_canonicalization(&old, &(71, 3, nonempty_description.as_slice())).is_none());
+        assert!(empty_description_canonicalization(
+            &old,
+            &(71, 3, nonempty_description.as_slice())
+        )
+        .is_none());
         assert!(empty_description_canonicalization(&old, &(71, 2, after.as_slice())).is_none());
         let mut zero_id = before;
         zero_id[36..40].fill(0);

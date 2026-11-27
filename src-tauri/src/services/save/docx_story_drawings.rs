@@ -37,20 +37,22 @@ fn linked_stories(original: &Package, output: &Package) -> Option<Stories> {
             }
             bindings
         });
-    Some(bindings
-        .into_iter()
-        .filter_map(|(name, kind)| {
-            let kind = kind?;
-            let (root, note) = match kind.strip_prefix(REL)?.strip_prefix('/')? {
-                "header" => ("hdr", None),
-                "footer" => ("ftr", None),
-                "footnotes" => ("footnotes", Some("footnote")),
-                "endnotes" => ("endnotes", Some("endnote")),
-                _ => return None,
-            };
-            Some((name, root, note))
-        })
-        .collect())
+    Some(
+        bindings
+            .into_iter()
+            .filter_map(|(name, kind)| {
+                let kind = kind?;
+                let (root, note) = match kind.strip_prefix(REL)?.strip_prefix('/')? {
+                    "header" => ("hdr", None),
+                    "footer" => ("ftr", None),
+                    "footnotes" => ("footnotes", Some("footnote")),
+                    "endnotes" => ("endnotes", Some("endnote")),
+                    _ => return None,
+                };
+                Some((name, root, note))
+            })
+            .collect(),
+    )
 }
 
 fn owned_images(original: &Package, output: &Package, part: &str) -> Option<BTreeSet<String>> {
@@ -64,28 +66,40 @@ fn owned_images(original: &Package, output: &Package, part: &str) -> Option<BTre
     let mut ids = Vec::with_capacity(relationships.len());
     xml::visit_element_starts(rels, |el| {
         if el.name == "Relationship" {
-            let (_, _, value) = el.attributes.iter()
-                .find(|(ns, key, _)| ns.is_none() && key == "Id").ok_or(xml::Invalid)?;
+            let (_, _, value) = el
+                .attributes
+                .iter()
+                .find(|(ns, key, _)| ns.is_none() && key == "Id")
+                .ok_or(xml::Invalid)?;
             ids.push(value.to_string());
         }
         Ok(())
-    }).ok()?;
+    })
+    .ok()?;
     if ids.len() != relationships.len() {
         return None;
     }
-    Some(ids.into_iter().zip(relationships).filter_map(|(id, rel)| {
-        if rel.external || rel.kind != IMAGE_REL {
-            return None;
-        }
-        let target = resolve(&rels_name, &rel.target)?;
-        (original.get(&target)? == output.get(&target)?).then_some(id)
-    }).collect())
+    Some(
+        ids.into_iter()
+            .zip(relationships)
+            .filter_map(|(id, rel)| {
+                if rel.external || rel.kind != IMAGE_REL {
+                    return None;
+                }
+                let target = resolve(&rels_name, &rel.target)?;
+                (original.get(&target)? == output.get(&target)?).then_some(id)
+            })
+            .collect(),
+    )
 }
 
 /// Prove that WordCraft's initial serialization preserves the source XML of the
 /// actual stories and that every eligible model picture has valid frame/shape extents.
 pub(crate) fn resize_source_supported(source: &[u8], export: &[u8], count: usize) -> bool {
-    let (Ok(original), Ok(output)) = (package::open(source, Side::Original), package::open(export, Side::Output)) else {
+    let (Ok(original), Ok(output)) = (
+        package::open(source, Side::Original),
+        package::open(export, Side::Output),
+    ) else {
         return false;
     };
     let Some(stories) = linked_stories(&original, &output) else {
@@ -124,9 +138,12 @@ pub(super) fn inline_picture_edits(original: &Package, output: &Package) -> BTre
                 return None;
             }
             let images = owned_images(original, output, &name).unwrap_or_default();
-            let ((before, before_sizes), (after, after_sizes)) =
-                (masked(before, root, note, &images)?, masked(after, root, note, &images)?);
-            (before == after && resized_extents_supported(&before_sizes, &after_sizes)).then_some(name)
+            let ((before, before_sizes), (after, after_sizes)) = (
+                masked(before, root, note, &images)?,
+                masked(after, root, note, &images)?,
+            );
+            (before == after && resized_extents_supported(&before_sizes, &after_sizes))
+                .then_some(name)
         })
         .collect();
     if !parts.is_empty() && !same_story_references(original, output) {
@@ -527,9 +544,7 @@ pub(super) fn deleted_story_picture_edits(
             return BTreeSet::new();
         }
         if relationship_removed {
-            let (Some(rels_bytes), Some(_)) =
-                (original.get(&rels_part), output.get(&part))
-            else {
+            let (Some(rels_bytes), Some(_)) = (original.get(&rels_part), output.get(&part)) else {
                 return BTreeSet::new();
             };
             let Ok(relationships) = xml::relationships(rels_bytes) else {
@@ -1250,12 +1265,17 @@ struct MaskedPictureExtents {
     nodes: [usize; 2],
 }
 
-fn resized_extents_supported(before: &[MaskedPictureExtents], after: &[MaskedPictureExtents]) -> bool {
+fn resized_extents_supported(
+    before: &[MaskedPictureExtents],
+    after: &[MaskedPictureExtents],
+) -> bool {
     before.len() == after.len()
         && before.iter().zip(after).all(|(old, new)| {
             (0..2).all(|axis| {
                 let source_frame = u128::from(old.frame[axis]);
-                let Some(numerator) = u128::from(old.shape[axis]).checked_mul(u128::from(new.frame[axis])) else {
+                let Some(numerator) =
+                    u128::from(old.shape[axis]).checked_mul(u128::from(new.frame[axis]))
+                else {
                     return false;
                 };
                 let Some(rounded) = numerator.checked_add(source_frame / 2) else {
@@ -1350,7 +1370,9 @@ fn masked(
                 }
                 if matches_path(&stack, &xfrm) {
                     transformed |= attributes.iter().any(|(ns, key, value)| {
-                        ns.is_some() || !matches!(key.as_str(), "rot" | "flipH" | "flipV") || value != "0"
+                        ns.is_some()
+                            || !matches!(key.as_str(), "rot" | "flipH" | "flipV")
+                            || value != "0"
                     });
                 }
                 if matches_path(&stack, &blip) {
@@ -1361,9 +1383,12 @@ fn masked(
                     }) && !attributes
                         .iter()
                         .any(|(ns, key, _)| ns.as_deref() == Some(REL) && key == "link");
-                    owned = embedded && attributes.iter().any(|(ns, key, value)| {
-                        ns.as_deref() == Some(REL) && key == "embed" && owned_images.contains(value.as_str())
-                    });
+                    owned = embedded
+                        && attributes.iter().any(|(ns, key, value)| {
+                            ns.as_deref() == Some(REL)
+                                && key == "embed"
+                                && owned_images.contains(value.as_str())
+                        });
                 }
             }
             Canonical::End => {
@@ -1429,7 +1454,8 @@ fn extent(event: &Canonical) -> Option<[u32; 2]> {
     }
     let parse = |value: &Atom| {
         let size = value.parse::<u32>().ok()?;
-        ((25_400..=50_800_000).contains(&size) && value.as_str() == size.to_string()).then_some(size)
+        ((25_400..=50_800_000).contains(&size) && value.as_str() == size.to_string())
+            .then_some(size)
     };
     Some([parse(width)?, parse(height)?])
 }

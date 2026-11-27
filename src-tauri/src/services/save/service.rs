@@ -135,7 +135,13 @@ pub fn check_saved_with_preview(
     regenerated_image: Option<&[u8]>,
 ) -> Preservation {
     check_saved_with_regenerated_previews(
-        format, original, output, report, reopen_equal, regenerated_image, None,
+        format,
+        original,
+        output,
+        report,
+        reopen_equal,
+        regenerated_image,
+        None,
     )
 }
 
@@ -186,7 +192,9 @@ fn check_saved_with_regenerated_previews(
             (Ok(before), Ok(after)) if format == Format::Hwpx => {
                 findings.extend(package::validate_hwpx(&before, &after));
                 let (image, text) = regenerated_hwpx.unwrap_or((None, None));
-                findings.extend(package::compare_saved_hwpx_with_previews(&before, &after, image, text));
+                findings.extend(package::compare_saved_hwpx_with_previews(
+                    &before, &after, image, text,
+                ));
                 findings.extend(package::validate_hwpx_references(&after));
             }
             (Ok(before), Ok(after)) => {
@@ -248,7 +256,16 @@ pub fn validate_snapshot(
         });
     }
     let original = read_original(&ticket.source, limits)?;
-    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original, None, None)
+    validate_snapshot_from(
+        ticket,
+        limits,
+        output,
+        report,
+        reopen_equal,
+        original,
+        None,
+        None,
+    )
 }
 
 fn validate_snapshot_from(
@@ -354,11 +371,18 @@ fn validated_output(
         Format::Hwp => refreshed_hwp.output.as_deref(),
         Format::Hwpx => refreshed_hwpx.output.as_deref(),
         Format::Docx => None,
-    }.unwrap_or(output);
-    let hwp_image = if ticket.source.load.format == Format::Hwp { refreshed_hwp.image.as_deref() } else { None };
-    let hwpx_previews = (refreshed_hwpx.image.is_some() || refreshed_hwpx.text.is_some()).then_some((
-        refreshed_hwpx.image.as_deref(), refreshed_hwpx.text.as_deref(),
-    ));
+    }
+    .unwrap_or(output);
+    let hwp_image = if ticket.source.load.format == Format::Hwp {
+        refreshed_hwp.image.as_deref()
+    } else {
+        None
+    };
+    let hwpx_previews = (refreshed_hwpx.image.is_some() || refreshed_hwpx.text.is_some())
+        .then_some((
+            refreshed_hwpx.image.as_deref(),
+            refreshed_hwpx.text.as_deref(),
+        ));
     let original = validate_snapshot_from(
         ticket,
         limits,

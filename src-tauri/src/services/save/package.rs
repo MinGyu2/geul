@@ -35,14 +35,19 @@ pub(crate) fn docx_body_source_roundtrips(source: &[u8], export: &[u8]) -> bool 
     fn body(bytes: &[u8]) -> Option<Vec<u8>> {
         let mut reader = Cursor::new(bytes);
         let archive = zip::read_directory(&mut reader, bytes.len() as u64, &LIMITS).ok()?;
-        let mut matches = archive.entries().iter().filter(|entry| entry.name() == b"word/document.xml");
+        let mut matches = archive
+            .entries()
+            .iter()
+            .filter(|entry| entry.name() == b"word/document.xml");
         let entry = matches.next()?;
         if matches.next().is_some() {
             return None;
         }
         archive.read(&mut reader, entry, MAX_PART_BYTES).ok()
     }
-    let (Some(source), Some(export)) = (body(source), body(export)) else { return false };
+    let (Some(source), Some(export)) = (body(source), body(export)) else {
+        return false;
+    };
     xml::canonical_equal(&source, &export) == Ok(true)
 }
 
@@ -394,7 +399,10 @@ pub(super) fn compare_preflight_docx(original: &Package, output: &Package) -> Ve
     });
     findings.retain(|finding| {
         !(finding.code == FindingCode::PartAdded
-            && finding.part.as_deref().is_some_and(|name| graphics.contains(name)))
+            && finding
+                .part
+                .as_deref()
+                .is_some_and(|name| graphics.contains(name)))
     });
     findings
 }
@@ -421,13 +429,14 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     let graphics = super::docx_graphics::graphic_parts_regenerated(original, output);
     let mut story_drawing_edits =
         super::docx_story_drawings::inline_picture_edits(original, output);
-    story_drawing_edits.extend(super::docx_story_drawings::moved_note_picture_edits(original, output));
-    story_drawing_edits.extend(
-        super::docx_story_drawings::moved_header_footer_picture_edits(original, output),
-    );
-    story_drawing_edits.extend(
-        super::docx_story_drawings::deleted_story_picture_edits(original, output),
-    );
+    story_drawing_edits.extend(super::docx_story_drawings::moved_note_picture_edits(
+        original, output,
+    ));
+    story_drawing_edits
+        .extend(super::docx_story_drawings::moved_header_footer_picture_edits(original, output));
+    story_drawing_edits.extend(super::docx_story_drawings::deleted_story_picture_edits(
+        original, output,
+    ));
     let media_removed = if added.is_none() && pictures.is_none() {
         authorized_table_media_changes(original, output)
     } else {
@@ -472,7 +481,9 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             || graphics.contains(name)
             || story_drawing_edits.contains(name)
             || fonts.as_ref().is_some_and(|f| {
-                f.parts.contains(name) || name == CONTENT_TYPES || (f.document_rels && name == DOCUMENT_RELS)
+                f.parts.contains(name)
+                    || name == CONTENT_TYPES
+                    || (f.document_rels && name == DOCUMENT_RELS)
             })
     });
     findings.retain(|finding| {
@@ -484,7 +495,10 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     });
     findings.retain(|finding| {
         !(finding.code == FindingCode::PartAdded
-            && finding.part.as_deref().is_some_and(|name| graphics.contains(name)))
+            && finding
+                .part
+                .as_deref()
+                .is_some_and(|name| graphics.contains(name)))
     });
     if let Some(media) = &media_removed {
         findings.retain(|f| {
@@ -496,7 +510,10 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     }
     if let Some(fonts) = &fonts {
         findings.retain(|f| {
-            !(f.code == FindingCode::PartAdded && f.part.as_ref().is_some_and(|name| fonts.parts.contains(name)))
+            !(f.code == FindingCode::PartAdded
+                && f.part
+                    .as_ref()
+                    .is_some_and(|name| fonts.parts.contains(name)))
         });
     }
     if let Some(pictures) = &pictures {
@@ -1237,7 +1254,11 @@ pub fn compare_saved_hwpx_with_previews(
     });
     let pictures = hwpx_pictures_appended(original, output);
     // Stage 1 F: embedded fonts (manifest font items + hh:font references); not composed with pictures.
-    let fonts = if pictures.is_none() { super::hwpx_fonts::hwpx_fonts_embedded(original, output) } else { None };
+    let fonts = if pictures.is_none() {
+        super::hwpx_fonts::hwpx_fonts_embedded(original, output)
+    } else {
+        None
+    };
     let charts = super::hwpx_charts::hwpx_charts_edited(original, output).unwrap_or_default();
     let mut findings = compare(original, output, &|name| {
         (hwpx_body(name)
@@ -1255,7 +1276,8 @@ pub fn compare_saved_hwpx_with_previews(
     }
     if let Some(fonts) = &fonts {
         findings.retain(|f| {
-            !(f.code == FindingCode::PartAdded && f.part.as_ref().is_some_and(|n| fonts.parts.contains(n)))
+            !(f.code == FindingCode::PartAdded
+                && f.part.as_ref().is_some_and(|n| fonts.parts.contains(n)))
         });
     }
     // header는 원본과 같거나, 글자 서식이 덧붙인 글자 모양 정의만 다를 수 있다(T010 Phase 3B, `hwpx_char_shapes_appended`).
@@ -1264,7 +1286,10 @@ pub fn compare_saved_hwpx_with_previews(
     // With embedded fonts the header rules see the output header with exactly those references made non-embedded
     // (the embeds themselves were proved by `hwpx_fonts_embedded`).
     let normalized = fonts.as_ref().map(|f| f.normalized_header.as_slice());
-    if let (Some(before), Some(after)) = (original.get(HWPX_HEADER), normalized.or(output.get(HWPX_HEADER))) {
+    if let (Some(before), Some(after)) = (
+        original.get(HWPX_HEADER),
+        normalized.or(output.get(HWPX_HEADER)),
+    ) {
         if before != after {
             match (
                 xml::canonical_checked(before),
@@ -1335,7 +1360,9 @@ fn hwpx_preview_dimensions(package: &Package) -> Option<(u32, u32)> {
                 return Err(xml::Invalid);
             }
             let attr = |name: &str| {
-                element.attributes.iter()
+                element
+                    .attributes
+                    .iter()
                     .find(|(namespace, key, _)| namespace.is_none() && key == name)
                     .map(|(_, _, value)| value.as_str())
             };
@@ -1344,13 +1371,18 @@ fn hwpx_preview_dimensions(package: &Package) -> Option<(u32, u32)> {
                 if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
                     return None;
                 }
-                text.parse::<u32>().ok().filter(|value| (1..=2_000_000).contains(value))
+                text.parse::<u32>()
+                    .ok()
+                    .filter(|value| (1..=2_000_000).contains(value))
             };
-            dimensions = Some((parse_dimension("width").ok_or(xml::Invalid)?,
-                parse_dimension("height").ok_or(xml::Invalid)?));
+            dimensions = Some((
+                parse_dimension("width").ok_or(xml::Invalid)?,
+                parse_dimension("height").ok_or(xml::Invalid)?,
+            ));
         }
         Ok(())
-    }).ok()?;
+    })
+    .ok()?;
     let (width, height) = dimensions?;
     preview::preview_dimensions(width, height, false)
 }
@@ -1393,7 +1425,9 @@ pub fn refresh_hwpx_previews(
     }
 
     let image = if stale_image {
-        let Some(raster) = raster else { return Ok(RefreshedHwpxPreviews::default()) };
+        let Some(raster) = raster else {
+            return Ok(RefreshedHwpxPreviews::default());
+        };
         let Some((width, height)) = hwpx_preview_dimensions(&raw) else {
             return Ok(RefreshedHwpxPreviews::default());
         };
@@ -1420,7 +1454,9 @@ pub fn refresh_hwpx_previews(
     let mut entries = Vec::new();
     entries.try_reserve_exact(raw.order.len()).map_err(|_| {
         resources::allocation_refused();
-        crate::document::DocumentError::ResourceLimit { limit: crate::document::LimitKind::FileSize }
+        crate::document::DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        }
     })?;
     for name in &raw.order {
         let Some((method, data)) = raw.parts.get(name) else {
@@ -1444,20 +1480,25 @@ pub fn refresh_hwpx_previews(
             method: selected_method,
         });
     }
-    let reserve = output.len()
+    let reserve = output
+        .len()
         .checked_add(image.as_ref().map_or(0, Vec::len))
         .and_then(|size| size.checked_add(text.as_ref().map_or(0, Vec::len)))
-        .ok_or(crate::document::DocumentError::ResourceLimit { limit: crate::document::LimitKind::FileSize })?;
+        .ok_or(crate::document::DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        })?;
     resources::charge(Category::Staging, reserve)?;
     let rebuilt = match crate::document::zip::write_archive(&entries, max_file_bytes) {
         Ok(bytes) => bytes,
-        Err(crate::document::zip::ZipProblem::EntryCount
+        Err(
+            crate::document::zip::ZipProblem::EntryCount
             | crate::document::zip::ZipProblem::MetadataSize
-            | crate::document::zip::ZipProblem::PartSize) => {
-                return Err(crate::document::DocumentError::ResourceLimit {
-                    limit: crate::document::LimitKind::FileSize,
-                })
-            }
+            | crate::document::zip::ZipProblem::PartSize,
+        ) => {
+            return Err(crate::document::DocumentError::ResourceLimit {
+                limit: crate::document::LimitKind::FileSize,
+            })
+        }
         Err(_) => return Ok(RefreshedHwpxPreviews::default()),
     };
     if rebuilt.len() as u64 > max_file_bytes {
@@ -1499,13 +1540,20 @@ pub fn refresh_hwpx_previews(
     let final_findings = validate_hwpx(&before, &rebuilt_package)
         .into_iter()
         .chain(compare_saved_hwpx_with_previews(
-            &before, &rebuilt_package, image.as_deref(), text.as_deref(),
+            &before,
+            &rebuilt_package,
+            image.as_deref(),
+            text.as_deref(),
         ))
         .chain(validate_hwpx_references(&rebuilt_package));
     if final_findings.into_iter().next().is_some() {
         return Ok(RefreshedHwpxPreviews::default());
     }
-    Ok(RefreshedHwpxPreviews { output: Some(rebuilt), image, text })
+    Ok(RefreshedHwpxPreviews {
+        output: Some(rebuilt),
+        image,
+        text,
+    })
 }
 
 /// HWPX 글자·문단 모양 정의를 읽는 부분(고정 rhwp `parser/hwpx/reader.rs` `DOCUMENT_HEADER_PATH`).
@@ -2131,7 +2179,10 @@ struct TableMediaChanges {
 /// Validates removed-media ownership at the package XML/rels level (not independent UI command history);
 /// when no media parts are removed, `[Content_Types].xml` is never exempted and non-image relationships
 /// must retain exact IDs.
-fn authorized_table_media_changes(original: &Package, output: &Package) -> Option<TableMediaChanges> {
+fn authorized_table_media_changes(
+    original: &Package,
+    output: &Package,
+) -> Option<TableMediaChanges> {
     const IMAGE_REL: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
     const REL_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -2159,7 +2210,18 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
         let ext = tail.rsplit('.').next()?.to_ascii_lowercase();
         if !matches!(
             ext.as_str(),
-            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "svg" | "emf" | "wmf" | "ico"
+            "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "bmp"
+                | "webp"
+                | "tif"
+                | "tiff"
+                | "svg"
+                | "emf"
+                | "wmf"
+                | "ico"
         ) {
             return None;
         }
@@ -2214,10 +2276,11 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
                 if !removed_exts.contains(&ext) {
                     return None;
                 }
-                let ext_still_used = output
-                    .parts
-                    .keys()
-                    .any(|p| p.rsplit('.').next().is_some_and(|e| e.eq_ignore_ascii_case(&ext)));
+                let ext_still_used = output.parts.keys().any(|p| {
+                    p.rsplit('.')
+                        .next()
+                        .is_some_and(|e| e.eq_ignore_ascii_case(&ext))
+                });
                 if ext_still_used {
                     return None;
                 }
@@ -2258,9 +2321,8 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
             }
         }
     }
-    let without_id = |a: &Attrs| -> Attrs {
-        a.iter().filter(|(k, _)| k != "Id").cloned().collect()
-    };
+    let without_id =
+        |a: &Attrs| -> Attrs { a.iter().filter(|(k, _)| k != "Id").cloned().collect() };
     let mut rem_b: Vec<Attrs> = rels_b.iter().map(without_id).collect();
     let mut omitted_rels: Vec<Attrs> = Vec::new();
     for entry in rels_a.iter().map(without_id) {
@@ -2296,7 +2358,9 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
     }
     // Walk word/document.xml bindings with table nesting depth.
     type Binding = (String, String, String, Attrs);
-    let doc_bindings = |pkg: &Package, rels: &[Attrs]| -> Option<Vec<(bool, Option<String>, Binding)>> {
+    let doc_bindings = |pkg: &Package,
+                        rels: &[Attrs]|
+     -> Option<Vec<(bool, Option<String>, Binding)>> {
         let mut out = Vec::new();
         // (is `w:tbl`, is `w:drawing`) per open element.
         let mut tbl_stack: Vec<(bool, bool)> = Vec::new();
@@ -2326,8 +2390,8 @@ fn authorized_table_media_changes(original: &Package, output: &Package) -> Optio
                             continue;
                         }
                         let rel = rels.iter().find(|a| attr(a, "Id") == Some(id.as_str()))?;
-                        let external =
-                            attr(rel, "TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("External"));
+                        let external = attr(rel, "TargetMode")
+                            .is_some_and(|m| m.eq_ignore_ascii_case("External"));
                         let resolved_img = (!external && attr(rel, "Type") == Some(IMAGE_REL))
                             .then(|| attr(rel, "Target").and_then(|t| resolve(DOCUMENT_RELS, t)))
                             .flatten();
@@ -2518,13 +2582,16 @@ fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
             "abstractNum" => {
                 let candidates: Vec<AbstractNum> = kinds
                     .iter()
-                    .map(|kind| AbstractNum { id: unit.1, levels: levels_for(*kind), ..Default::default() })
+                    .map(|kind| AbstractNum {
+                        id: unit.1,
+                        levels: levels_for(*kind),
+                        ..Default::default()
+                    })
                     .collect();
                 // One rendering per kind (each in its own template: same id).
-                if !candidates
-                    .into_iter()
-                    .any(|candidate| render(vec![candidate], Vec::new()).is_some_and(|u| u.contains(unit)))
-                {
+                if !candidates.into_iter().any(|candidate| {
+                    render(vec![candidate], Vec::new()).is_some_and(|u| u.contains(unit))
+                }) {
                     return None;
                 }
             }
@@ -2533,10 +2600,18 @@ fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
                     return None;
                 }
                 let (abstract_id, start_overrides) = num_unit_fields(&unit.2)?;
-                if !after.iter().any(|u| u.0 == "abstractNum" && u.1 == abstract_id) {
+                if !after
+                    .iter()
+                    .any(|u| u.0 == "abstractNum" && u.1 == abstract_id)
+                {
                     return None;
                 }
-                let candidate = Num { id: unit.1, abstract_id, start_overrides, ..Default::default() };
+                let candidate = Num {
+                    id: unit.1,
+                    abstract_id,
+                    start_overrides,
+                    ..Default::default()
+                };
                 if !render(Vec::new(), vec![candidate]).is_some_and(|u| u.contains(unit)) {
                     return None;
                 }
@@ -2550,8 +2625,16 @@ fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
     }
     if original.get(NUMBERING).is_none() {
         let mut template = wordcraft_engine::blank_document(&Default::default());
-        template.numbering.abstracts = vec![AbstractNum { id: 0, levels: levels_for(ListKind::Bullet), ..Default::default() }];
-        template.numbering.nums = vec![Num { id: 1, abstract_id: 0, ..Default::default() }];
+        template.numbering.abstracts = vec![AbstractNum {
+            id: 0,
+            levels: levels_for(ListKind::Bullet),
+            ..Default::default()
+        }];
+        template.numbering.nums = vec![Num {
+            id: 1,
+            abstract_id: 0,
+            ..Default::default()
+        }];
         let bytes = wordcraft_engine::io::save_bytes("x.docx", &template).ok()?;
         let pkg = open(&bytes, Side::Output).ok()?;
         if root != units(pkg.get(NUMBERING)?)?.0 {
@@ -2570,13 +2653,15 @@ fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
 /// Other children are left to the exact serializer comparison.
 fn num_unit_fields(events: &[xml::Canonical]) -> Option<(u32, Vec<(u8, u32)>)> {
     let value = |event: &xml::Canonical| -> Option<u32> {
-        let xml::Canonical::Start { attributes, .. } = event else { return None };
-        let (_, _, v) = attributes.iter().find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "val")?;
+        let xml::Canonical::Start { attributes, .. } = event else {
+            return None;
+        };
+        let (_, _, v) = attributes
+            .iter()
+            .find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "val")?;
         v.parse().ok().filter(|n: &u32| v.as_str() == n.to_string())
     };
-    let named = |event: &xml::Canonical, want: &str| {
-        matches!(event, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == WML && name == want)
-    };
+    let named = |event: &xml::Canonical, want: &str| matches!(event, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == WML && name == want);
     let mut abstract_id = None;
     let mut overrides = Vec::new();
     let mut level: Option<u8> = None;
@@ -2584,8 +2669,12 @@ fn num_unit_fields(events: &[xml::Canonical]) -> Option<(u32, Vec<(u8, u32)>)> {
         if named(event, "abstractNumId") {
             abstract_id = Some(value(event)?);
         } else if named(event, "lvlOverride") {
-            let xml::Canonical::Start { attributes, .. } = event else { return None };
-            let (_, _, v) = attributes.iter().find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "ilvl")?;
+            let xml::Canonical::Start { attributes, .. } = event else {
+                return None;
+            };
+            let (_, _, v) = attributes
+                .iter()
+                .find(|(ns, k, _)| ns.as_deref() == Some(WML) && k == "ilvl")?;
             level = Some(v.parse::<u8>().ok().filter(|l| *l <= 8)?);
         } else if named(event, "startOverride") {
             let start = value(event).filter(|v| *v <= 32_767)?;
@@ -2791,7 +2880,10 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
             } = &event
             {
                 if ns == HWPML_HEAD
-                    && matches!(name.as_str(), "paraProperties" | "bullets" | "borderFills" | "numberings")
+                    && matches!(
+                        name.as_str(),
+                        "paraProperties" | "bullets" | "borderFills" | "numberings"
+                    )
                 {
                     if parents.last() != Some(&true)
                         || attributes.len() != 1
@@ -2870,14 +2962,24 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
         while let Some(mut e) = iter.next() {
             // Stage 1 paragraph values: alignment, margins/indent/spacing and line spacing are values
             // of fixed elements; appended values must have the pinned serializer's form.
-            if let xml::Canonical::Start { namespace: Some(ns), name, attributes } = &mut e {
+            if let xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } = &mut e
+            {
                 let integer = |v: &str| {
                     let digits = v.strip_prefix('-').unwrap_or(v);
-                    !digits.is_empty() && digits.len() <= 7 && digits.bytes().all(|b| b.is_ascii_digit())
-                        && (digits == "0" || !digits.starts_with('0')) && v != "-0"
+                    !digits.is_empty()
+                        && digits.len() <= 7
+                        && digits.bytes().all(|b| b.is_ascii_digit())
+                        && (digits == "0" || !digits.starts_with('0'))
+                        && v != "-0"
                 };
                 let mut take = |key: &str, ok: &dyn Fn(&str) -> bool| -> Option<()> {
-                    let mut found = attributes.iter().filter(|(n, k, _)| n.is_none() && k == key);
+                    let mut found = attributes
+                        .iter()
+                        .filter(|(n, k, _)| n.is_none() && k == key);
                     match (found.next(), found.next()) {
                         (Some((_, _, v)), None) if !appended || ok(v) => {}
                         (None, _) => {}
@@ -2888,10 +2990,20 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
                 };
                 if ns == HWPML_HEAD && name == "align" {
                     take("horizontal", &|v| {
-                        ["JUSTIFY", "LEFT", "RIGHT", "CENTER", "DISTRIBUTE", "DISTRIBUTE_SPACE"].contains(&v)
+                        [
+                            "JUSTIFY",
+                            "LEFT",
+                            "RIGHT",
+                            "CENTER",
+                            "DISTRIBUTE",
+                            "DISTRIBUTE_SPACE",
+                        ]
+                        .contains(&v)
                     })?;
                 } else if ns == HWPML_HEAD && name == "lineSpacing" {
-                    take("type", &|v| ["PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST"].contains(&v))?;
+                    take("type", &|v| {
+                        ["PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST"].contains(&v)
+                    })?;
                     take("value", &integer)?;
                 } else if ns == HWPML_CORE
                     && matches!(name.as_str(), "intent" | "left" | "right" | "prev" | "next")
@@ -2942,9 +3054,7 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     let empty = Vec::new();
     let old_borders = old.get("borderFills").unwrap_or(&empty);
     let borders = new.get("borderFills").unwrap_or(&empty);
-    if borders.len() < old_borders.len()
-        || borders.get(..old_borders.len())? != old_borders
-    {
+    if borders.len() < old_borders.len() || borders.get(..old_borders.len())? != old_borders {
         return None;
     }
     if borders.len() > old_borders.len() {
@@ -3035,7 +3145,10 @@ fn hwpx_combined_appended(before: &[u8], after: &[u8], output: &Package) -> bool
 /// `target` with its `hh:refList`/`hh:fontfaces` and `hh:refList`/`hh:charProperties` elements replaced by those of
 /// `source` (each present exactly once in both, or absent from both). UTF-8 documents only.
 fn hwpx_with_char_lists_of(source: &[u8], target: &[u8]) -> Option<Vec<u8>> {
-    let (source, target) = (std::str::from_utf8(source).ok()?, std::str::from_utf8(target).ok()?);
+    let (source, target) = (
+        std::str::from_utf8(source).ok()?,
+        std::str::from_utf8(target).ok()?,
+    );
     let (from, to) = (hwpx_ref_list_spans(source)?, hwpx_ref_list_spans(target)?);
     let mut pairs = Vec::new();
     for name in ["fontfaces", "charProperties"] {
@@ -3106,31 +3219,72 @@ fn hwpx_ref_list_spans(text: &str) -> Option<BTreeMap<&'static str, std::ops::Ra
 /// automatic indent, zero width/offset, character shape 0, a known number format and a level-placeholder text.
 fn hwpx_appended_numbering(def: &[xml::Canonical]) -> bool {
     let mut iter = def.iter();
-    let Some(root) = iter.next() else { return false };
-    let xml::Canonical::Start { attributes, .. } = root else { return false };
-    if attributes.len() != 2 || plain_attribute(root, "start") != Some("1") || plain_attribute(root, "id").is_none() {
+    let Some(root) = iter.next() else {
+        return false;
+    };
+    let xml::Canonical::Start { attributes, .. } = root else {
+        return false;
+    };
+    if attributes.len() != 2
+        || plain_attribute(root, "start") != Some("1")
+        || plain_attribute(root, "id").is_none()
+    {
         return false;
     }
-    const KEYS: [&str; 11] = ["start", "level", "align", "useInstWidth", "autoIndent", "widthAdjust", "textOffsetType",
-        "textOffset", "numFormat", "charPrIDRef", "checkable"];
-    const FORMATS: [&str; 6] = ["DIGIT", "ROMAN_CAPITAL", "ROMAN_SMALL", "LATIN_CAPITAL", "LATIN_SMALL", "HANGUL_SYLLABLE"];
+    const KEYS: [&str; 11] = [
+        "start",
+        "level",
+        "align",
+        "useInstWidth",
+        "autoIndent",
+        "widthAdjust",
+        "textOffsetType",
+        "textOffset",
+        "numFormat",
+        "charPrIDRef",
+        "checkable",
+    ];
+    const FORMATS: [&str; 6] = [
+        "DIGIT",
+        "ROMAN_CAPITAL",
+        "ROMAN_SMALL",
+        "LATIN_CAPITAL",
+        "LATIN_SMALL",
+        "HANGUL_SYLLABLE",
+    ];
     let mut level = 0;
     loop {
-        let Some(event) = iter.next() else { return false };
+        let Some(event) = iter.next() else {
+            return false;
+        };
         if *event == xml::Canonical::End {
             return level == 10 && iter.next().is_none();
         }
         if !is_head(event, "paraHead") {
             return false;
         }
-        let xml::Canonical::Start { attributes, .. } = event else { return false };
+        let xml::Canonical::Start { attributes, .. } = event else {
+            return false;
+        };
         level += 1;
-        let fixed = [("start", "1"), ("align", "LEFT"), ("useInstWidth", "0"), ("autoIndent", "1"), ("widthAdjust", "0"),
-            ("textOffset", "0"), ("charPrIDRef", "0"), ("checkable", "0")];
+        let fixed = [
+            ("start", "1"),
+            ("align", "LEFT"),
+            ("useInstWidth", "0"),
+            ("autoIndent", "1"),
+            ("widthAdjust", "0"),
+            ("textOffset", "0"),
+            ("charPrIDRef", "0"),
+            ("checkable", "0"),
+        ];
         if attributes.len() != KEYS.len()
-            || !attributes.iter().all(|(ns, k, _)| ns.is_none() && KEYS.contains(&k.as_ref()))
+            || !attributes
+                .iter()
+                .all(|(ns, k, _)| ns.is_none() && KEYS.contains(&k.as_ref()))
             || plain_attribute(event, "level") != Some(level.to_string().as_str())
-            || !fixed.iter().all(|(k, v)| plain_attribute(event, k) == Some(*v))
+            || !fixed
+                .iter()
+                .all(|(k, v)| plain_attribute(event, k) == Some(*v))
             || !plain_attribute(event, "numFormat").is_some_and(|f| FORMATS.contains(&f))
             || plain_attribute(event, "textOffsetType").is_none()
         {
@@ -3279,17 +3433,14 @@ fn hwpx_valid_win_brush(events: &[xml::Canonical]) -> bool {
             attributes.len() == 4
                 && matches!(
                     h,
-                    "HORIZONTAL"
-                        | "VERTICAL"
-                        | "BACK_SLASH"
-                        | "SLASH"
-                        | "CROSS"
-                        | "CROSS_DIAGONAL"
+                    "HORIZONTAL" | "VERTICAL" | "BACK_SLASH" | "SLASH" | "CROSS" | "CROSS_DIAGONAL"
                 )
         }
     };
-    let alpha_ok = attr("alpha")
-        .is_some_and(|a| a.parse::<f64>().is_ok_and(|v| v.is_finite() && (0.0..=1.0).contains(&v)));
+    let alpha_ok = attr("alpha").is_some_and(|a| {
+        a.parse::<f64>()
+            .is_ok_and(|v| v.is_finite() && (0.0..=1.0).contains(&v))
+    });
     attr("faceColor").is_some_and(hwpx_color_ok)
         && attr("hatchColor").is_some_and(hwpx_color_ok)
         && hatch_ok
@@ -3363,7 +3514,10 @@ fn parse_border_fill_parts(
         children.push((namespace.as_deref(), name.as_str(), &events[start..pos]));
     }
     let mut idx = 0usize;
-    let take_head = |children: &[(Option<&str>, &str, &[xml::Canonical])], idx: &mut usize, expected: &str| -> Option<Vec<xml::Canonical>> {
+    let take_head = |children: &[(Option<&str>, &str, &[xml::Canonical])],
+                     idx: &mut usize,
+                     expected: &str|
+     -> Option<Vec<xml::Canonical>> {
         let (cns, cname, slice) = children.get(*idx)?;
         if *cns == Some(HWPML_HEAD) && *cname == expected {
             *idx += 1;
@@ -3450,9 +3604,8 @@ fn verify_appended_border_fills(
                 && base.back_slash == parts.back_slash
                 && base.diagonal == parts.diagonal
         };
-        let diagonal_default_or_none = parts.diagonal.as_ref()
-            == default_parts.diagonal.as_ref()
-            || parts.diagonal.is_none();
+        let diagonal_default_or_none =
+            parts.diagonal.as_ref() == default_parts.diagonal.as_ref() || parts.diagonal.is_none();
         let skeleton_ok = (parts.root_attrs_no_id == default_parts.root_attrs_no_id
             && parts.slash == default_parts.slash
             && parts.back_slash == default_parts.back_slash
@@ -3465,9 +3618,9 @@ fn verify_appended_border_fills(
             None => true,
             Some(fb) => {
                 hwpx_valid_win_brush(fb)
-                    || existing_parts.iter().any(|base| {
-                        matches_base(base) && base.fill_brush.as_ref() == Some(fb)
-                    })
+                    || existing_parts
+                        .iter()
+                        .any(|base| matches_base(base) && base.fill_brush.as_ref() == Some(fb))
             }
         };
         if !fill_ok {
@@ -3602,7 +3755,10 @@ mod omitted_hwpx_resource_lists {
         );
         let cell_bf_2 = r##"<hh:borderFill id="2" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="DASH" width="0.4 mm" color="#1E40AF"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="DOUBLE_SLIM" width="0.5 mm" color="#DC2626"/><hh:bottomBorder type="NONE" width="0.12 mm" color="none"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/><hc:fillBrush xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"><hc:winBrush faceColor="#FEF08A" hatchColor="#FF000000" alpha="0"/></hc:fillBrush></hh:borderFill>"##;
         let bf1 = r##"<hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill>"##;
-        let after = header(&format!(r#"<hh:borderFills itemCnt="2">{bf1}{cell_bf_2}</hh:borderFills>"#), "NONE");
+        let after = header(
+            &format!(r#"<hh:borderFills itemCnt="2">{bf1}{cell_bf_2}</hh:borderFills>"#),
+            "NONE",
+        );
         let tc_body = output(
             r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="1"><hp:tr><hp:tc borderFillIDRef="2"/></hp:tr></hp:tbl></hp:p>"#,
         );
@@ -3611,7 +3767,10 @@ mod omitted_hwpx_resource_lists {
         let tbl_only = output(
             r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="2"><hp:tr><hp:tc borderFillIDRef="1"/></hp:tr></hp:tbl></hp:p>"#,
         );
-        assert_ne!(hwpx_bullets_appended(&before, &after, &tbl_only), Some(true));
+        assert_ne!(
+            hwpx_bullets_appended(&before, &after, &tbl_only),
+            Some(true)
+        );
         assert_ne!(
             hwpx_bullets_appended(
                 &before,
@@ -3669,15 +3828,27 @@ mod combined_hwpx_proof {
     use super::*;
 
     fn load(name: &str, side: Side) -> Package {
-        let dir = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
-        open(&std::fs::read(dir.join("hwpx-stage1-combined").join(name)).unwrap(), side).unwrap()
+        let dir =
+            std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+        open(
+            &std::fs::read(dir.join("hwpx-stage1-combined").join(name)).unwrap(),
+            side,
+        )
+        .unwrap()
     }
 
     fn with(base: &Package, part: &str, edit: impl Fn(&str) -> String) -> Package {
-        let mut p = Package { order: base.order.clone(), parts: base.parts.clone() };
+        let mut p = Package {
+            order: base.order.clone(),
+            parts: base.parts.clone(),
+        };
         let entry = p.parts.get_mut(part).unwrap();
         let changed = edit(std::str::from_utf8(&entry.1).unwrap());
-        assert_ne!(changed.as_bytes(), entry.1.as_slice(), "mutation not applied to {part}");
+        assert_ne!(
+            changed.as_bytes(),
+            entry.1.as_slice(),
+            "mutation not applied to {part}"
+        );
         entry.1 = changed.into_bytes();
         p
     }
@@ -3696,13 +3867,21 @@ mod combined_hwpx_proof {
     fn stage1_hwpx_combined_proof_accepts_union_and_rejects_invalid() {
         let original = load("original.hwpx", Side::Original);
         let edited = load("edited.hwpx", Side::Output);
-        let (before, after) = (original.get(HWPX_HEADER).unwrap(), edited.get(HWPX_HEADER).unwrap());
+        let (before, after) = (
+            original.get(HWPX_HEADER).unwrap(),
+            edited.get(HWPX_HEADER).unwrap(),
+        );
         // Reproduction: each earlier single-change rule refuses this header on its own.
-        assert!(!super::super::special::header_equal_or_appended(before, after, &edited));
+        assert!(!super::super::special::header_equal_or_appended(
+            before, after, &edited
+        ));
         assert_ne!(hwpx_bullets_appended(before, after, &edited), Some(true));
         assert!(hwpx_combined_appended(before, after, &edited));
         let findings = compare_saved_hwpx(&original, &edited);
-        assert!(findings.iter().all(|f| f.code == FindingCode::PreviewStale), "{findings:?}");
+        assert!(
+            findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+            "{findings:?}"
+        );
         assert!(!refused(&original, &edited));
 
         let header = |from: &'static str, to: &'static str, nth_last: bool| {
@@ -3714,17 +3893,76 @@ mod combined_hwpx_proof {
                 false => h.replacen(from, to, 1),
             })
         };
-        let section = |from: &'static str, to: &'static str| with(&edited, "Contents/section0.xml", move |s| s.replacen(from, to, 1));
+        let section = |from: &'static str, to: &'static str| {
+            with(&edited, "Contents/section0.xml", move |s| {
+                s.replacen(from, to, 1)
+            })
+        };
         let cases: Vec<(&str, Package)> = vec![
-            ("invalid character-shape reference", section(r#"charPrIDRef="10""#, r#"charPrIDRef="11""#)),
-            ("invalid paragraph-shape reference", section(r#"paraPrIDRef="24""#, r#"paraPrIDRef="25""#)),
-            ("invalid numbering id", header(r#"<hh:heading type="NUMBER" idRef="3" level="0"/>"#, r#"<hh:heading type="NUMBER" idRef="4" level="0"/>"#, true)),
-            ("bullet heading beyond the bullet count", header(r#"<hh:heading type="BULLET" idRef="1" level="0"/>"#, r#"<hh:heading type="BULLET" idRef="2" level="0"/>"#, true)),
-            ("altered original character definition", header(r#"<hh:charPr id="0" height="1000""#, r#"<hh:charPr id="0" height="1100""#, false)),
-            ("incorrect character definition count", header(r#"<hh:charProperties itemCnt="11">"#, r#"<hh:charProperties itemCnt="12">"#, false)),
-            ("incorrect numbering definition count", header(r#"<hh:numberings itemCnt="3">"#, r#"<hh:numberings itemCnt="4">"#, false)),
-            ("appended numbering with a foreign start", header(r#"<hh:numbering id="3" start="1">"#, r#"<hh:numbering id="3" start="2">"#, false)),
-            ("unrelated header change", header(r#"<hh:beginNum page="1""#, r#"<hh:beginNum page="2""#, false)),
+            (
+                "invalid character-shape reference",
+                section(r#"charPrIDRef="10""#, r#"charPrIDRef="11""#),
+            ),
+            (
+                "invalid paragraph-shape reference",
+                section(r#"paraPrIDRef="24""#, r#"paraPrIDRef="25""#),
+            ),
+            (
+                "invalid numbering id",
+                header(
+                    r#"<hh:heading type="NUMBER" idRef="3" level="0"/>"#,
+                    r#"<hh:heading type="NUMBER" idRef="4" level="0"/>"#,
+                    true,
+                ),
+            ),
+            (
+                "bullet heading beyond the bullet count",
+                header(
+                    r#"<hh:heading type="BULLET" idRef="1" level="0"/>"#,
+                    r#"<hh:heading type="BULLET" idRef="2" level="0"/>"#,
+                    true,
+                ),
+            ),
+            (
+                "altered original character definition",
+                header(
+                    r#"<hh:charPr id="0" height="1000""#,
+                    r#"<hh:charPr id="0" height="1100""#,
+                    false,
+                ),
+            ),
+            (
+                "incorrect character definition count",
+                header(
+                    r#"<hh:charProperties itemCnt="11">"#,
+                    r#"<hh:charProperties itemCnt="12">"#,
+                    false,
+                ),
+            ),
+            (
+                "incorrect numbering definition count",
+                header(
+                    r#"<hh:numberings itemCnt="3">"#,
+                    r#"<hh:numberings itemCnt="4">"#,
+                    false,
+                ),
+            ),
+            (
+                "appended numbering with a foreign start",
+                header(
+                    r#"<hh:numbering id="3" start="1">"#,
+                    r#"<hh:numbering id="3" start="2">"#,
+                    false,
+                ),
+            ),
+            (
+                "unrelated header change",
+                header(
+                    r#"<hh:beginNum page="1""#,
+                    r#"<hh:beginNum page="2""#,
+                    false,
+                ),
+            ),
         ];
         // Missing appended definition: drop the last appended character shape but keep the declared count.
         let missing = with(&edited, HWPX_HEADER, |h| {
@@ -3732,23 +3970,38 @@ mod combined_hwpx_proof {
             let end = start + h[start..].find("</hh:charPr>").unwrap() + "</hh:charPr>".len();
             format!("{}{}", &h[..start], &h[end..])
         });
-        for (name, output) in cases.iter().map(|(n, p)| (*n, p)).chain([("missing appended definition", &missing)]) {
+        for (name, output) in cases
+            .iter()
+            .map(|(n, p)| (*n, p))
+            .chain([("missing appended definition", &missing)])
+        {
             assert!(refused(&original, output), "{name}: accepted");
         }
     }
 
     #[test]
     fn char_list_splice_requires_one_list_each() {
-        let head = |inner: &str| format!(r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:refList>{inner}</hh:refList></hh:head>"#);
+        let head = |inner: &str| {
+            format!(
+                r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:refList>{inner}</hh:refList></hh:head>"#
+            )
+        };
         let a = head(r#"<hh:charProperties itemCnt="0"/><hh:paraProperties itemCnt="0"/>"#);
-        let b = head(r#"<hh:charProperties itemCnt="1"><hh:charPr id="0"/></hh:charProperties><hh:paraProperties itemCnt="0"/>"#);
-        assert_eq!(hwpx_with_char_lists_of(a.as_bytes(), b.as_bytes()).unwrap(), a.as_bytes());
+        let b = head(
+            r#"<hh:charProperties itemCnt="1"><hh:charPr id="0"/></hh:charProperties><hh:paraProperties itemCnt="0"/>"#,
+        );
+        assert_eq!(
+            hwpx_with_char_lists_of(a.as_bytes(), b.as_bytes()).unwrap(),
+            a.as_bytes()
+        );
         let twice = head(r#"<hh:charProperties itemCnt="0"/><hh:charProperties itemCnt="0"/>"#);
         assert!(hwpx_with_char_lists_of(a.as_bytes(), twice.as_bytes()).is_none());
         let none = head(r#"<hh:paraProperties itemCnt="0"/>"#);
         assert!(hwpx_with_char_lists_of(a.as_bytes(), none.as_bytes()).is_none());
         // Outside hh:refList the name is not a character list.
-        let foreign = format!(r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:charProperties itemCnt="0"/></hh:head>"#);
+        let foreign = format!(
+            r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:charProperties itemCnt="0"/></hh:head>"#
+        );
         assert!(hwpx_with_char_lists_of(a.as_bytes(), foreign.as_bytes()).is_none());
     }
 }

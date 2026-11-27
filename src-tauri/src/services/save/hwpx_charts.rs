@@ -61,12 +61,10 @@ fn editable_slot_role(stack: &[(Option<Atom>, Atom)]) -> Option<SlotRole> {
         .iter()
         .position(|(ns, name)| ns.as_deref() == Some(NS_C) && name.as_str() == "ser")
         .map(|off| plot_pos + 1 + off)?;
-    let field = stack[ser_pos + 1..]
-        .iter()
-        .find(|(ns, name)| {
-            ns.as_deref() == Some(NS_C)
-                && matches!(name.as_str(), "tx" | "cat" | "xVal" | "val" | "yVal")
-        })?;
+    let field = stack[ser_pos + 1..].iter().find(|(ns, name)| {
+        ns.as_deref() == Some(NS_C)
+            && matches!(name.as_str(), "tx" | "cat" | "xVal" | "val" | "yVal")
+    })?;
     // Reject nested unexpected containers like extLst inside a series field.
     if stack[ser_pos + 1..]
         .iter()
@@ -79,12 +77,14 @@ fn editable_slot_role(stack: &[(Option<Atom>, Atom)]) -> Option<SlotRole> {
         "val" | "yVal" => stack[ser_pos + 1..]
             .iter()
             .any(|(ns, name)| {
-                ns.as_deref() == Some(NS_C) && matches!(name.as_str(), "numRef" | "numCache" | "numLit")
+                ns.as_deref() == Some(NS_C)
+                    && matches!(name.as_str(), "numRef" | "numCache" | "numLit")
             })
             .then_some(SlotRole::Numeric),
         "xVal" => {
             if stack[ser_pos + 1..].iter().any(|(ns, name)| {
-                ns.as_deref() == Some(NS_C) && matches!(name.as_str(), "numRef" | "numCache" | "numLit")
+                ns.as_deref() == Some(NS_C)
+                    && matches!(name.as_str(), "numRef" | "numCache" | "numLit")
             }) {
                 Some(SlotRole::Numeric)
             } else {
@@ -191,7 +191,8 @@ pub(super) fn prove_ooxml_chart_xml_edit(
             Canonical::Comment(_) | Canonical::Instruction(_) => return None,
         }
     }
-    (i == before.len() && j == after.len() && stack.is_empty()).then_some(ChartLogicalState { slots })
+    (i == before.len() && j == after.len() && stack.is_empty())
+        .then_some(ChartLogicalState { slots })
 }
 
 fn unwrap_ole_cfb(bytes: &[u8], strip_size_prefix: bool) -> Option<&[u8]> {
@@ -316,7 +317,10 @@ fn manifest_hrefs(content_hpf: &[u8]) -> Option<BTreeMap<String, String>> {
     Some(out)
 }
 
-fn switch_chart_ole_bindings(pkg: &Package, href_by_id: &BTreeMap<String, String>) -> Option<Vec<(String, String)>> {
+fn switch_chart_ole_bindings(
+    pkg: &Package,
+    href_by_id: &BTreeMap<String, String>,
+) -> Option<Vec<(String, String)>> {
     let mut bindings = Vec::new();
     for (name, (_, bytes)) in &pkg.parts {
         if !package::hwpx_body(name) {
@@ -547,7 +551,10 @@ mod tests {
             "BinData/ole1.ole".to_owned(),
         ];
         let mut parts = BTreeMap::new();
-        parts.insert("mimetype".to_owned(), (0u16, b"application/hwp+zip".to_vec()));
+        parts.insert(
+            "mimetype".to_owned(),
+            (0u16, b"application/hwp+zip".to_vec()),
+        );
         parts.insert("Contents/header.xml".to_owned(), (8, header));
         parts.insert("Contents/section0.xml".to_owned(), (8, body));
         parts.insert("Contents/content.hpf".to_owned(), (8, hpf));
@@ -563,7 +570,10 @@ mod tests {
         Package { order, parts }
     }
 
-    fn all_findings(before: &Package, after: &Package) -> Vec<crate::services::save::preserve::Finding> {
+    fn all_findings(
+        before: &Package,
+        after: &Package,
+    ) -> Vec<crate::services::save::preserve::Finding> {
         validate_hwpx(before, after)
             .into_iter()
             .chain(compare_saved_hwpx(before, after))
@@ -584,24 +594,53 @@ mod tests {
 
         // Negative 1: non-numeric value in c:val
         let c_nan = chart_xml("S1", "Q1", "not-a-num", "Title");
-        let bad_num = build_hwpx(&c_nan, &make_ole_cfb(&c_nan, b"OLE-CONTENTS-ORIG", false), true, true);
+        let bad_num = build_hwpx(
+            &c_nan,
+            &make_ole_cfb(&c_nan, b"OLE-CONTENTS-ORIG", false),
+            true,
+            true,
+        );
         assert!(!all_findings(&orig, &bad_num).is_empty());
 
         // Negative 2: uneditable chart title mutated
         let c_title = chart_xml("S1", "Q1", "12.5", "Hacked Title");
-        let bad_title = build_hwpx(&c_title, &make_ole_cfb(&c_title, b"OLE-CONTENTS-ORIG", false), true, true);
+        let bad_title = build_hwpx(
+            &c_title,
+            &make_ole_cfb(&c_title, b"OLE-CONTENTS-ORIG", false),
+            true,
+            true,
+        );
         assert!(!all_findings(&orig, &bad_title).is_empty());
 
         // Negative 3: mismatch between Chart/chart1.xml and nested /OOXMLChartContents
-        let mismatch = build_hwpx(&c_edit, &make_ole_cfb(&chart_xml("S1 edited", "Q1 edited", "99.0", "Title"), b"OLE-CONTENTS-ORIG", false), true, true);
+        let mismatch = build_hwpx(
+            &c_edit,
+            &make_ole_cfb(
+                &chart_xml("S1 edited", "Q1 edited", "99.0", "Title"),
+                b"OLE-CONTENTS-ORIG",
+                false,
+            ),
+            true,
+            true,
+        );
         assert!(!all_findings(&orig, &mismatch).is_empty());
 
         // Negative 4: extra OLE stream mutated
-        let bad_ole_stream = build_hwpx(&c_edit, &make_ole_cfb(&c_edit, b"TAMPERED", false), true, true);
+        let bad_ole_stream = build_hwpx(
+            &c_edit,
+            &make_ole_cfb(&c_edit, b"TAMPERED", false),
+            true,
+            true,
+        );
         assert!(!all_findings(&orig, &bad_ole_stream).is_empty());
 
         // Negative 5: root CLSID zeroed in nested CFB
-        let bad_clsid = build_hwpx(&c_edit, &make_ole_cfb(&c_edit, b"OLE-CONTENTS-ORIG", true), true, true);
+        let bad_clsid = build_hwpx(
+            &c_edit,
+            &make_ole_cfb(&c_edit, b"OLE-CONTENTS-ORIG", true),
+            true,
+            true,
+        );
         assert!(!all_findings(&orig, &bad_clsid).is_empty());
 
         // Negative 6: unbound chart/ole (missing <hp:switch>)
@@ -611,7 +650,9 @@ mod tests {
     }
 
     fn with_blank_preview(pkg: &Package) -> Package {
-        mutate_pkg_part(pkg, "Preview/PrvImage.png", |_| RHWP_BLANK_PREVIEW_PNG.to_vec())
+        mutate_pkg_part(pkg, "Preview/PrvImage.png", |_| {
+            RHWP_BLANK_PREVIEW_PNG.to_vec()
+        })
     }
 
     fn mutate_pkg_part(pkg: &Package, target: &str, f: impl FnOnce(&[u8]) -> Vec<u8>) -> Package {
@@ -630,35 +671,62 @@ mod tests {
     fn release_hwpx_chart_bytes_pass_only_for_proven_edits() {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         for tag in ["bar", "line", "pie", "7406"] {
-            let orig = package::open(&std::fs::read(dir.join(format!("hwpx-chart-{tag}-orig.hwpx"))).unwrap(), Side::Original).unwrap();
-            let edited = package::open(&std::fs::read(dir.join(format!("hwpx-chart-{tag}-edited.hwpx"))).unwrap(), Side::Output).unwrap();
+            let orig = package::open(
+                &std::fs::read(dir.join(format!("hwpx-chart-{tag}-orig.hwpx"))).unwrap(),
+                Side::Original,
+            )
+            .unwrap();
+            let edited = package::open(
+                &std::fs::read(dir.join(format!("hwpx-chart-{tag}-edited.hwpx"))).unwrap(),
+                Side::Output,
+            )
+            .unwrap();
             let non_preview: Vec<_> = all_findings(&orig, &edited)
                 .into_iter()
                 .filter(|f| f.code != FindingCode::PreviewStale)
                 .collect();
-            assert_eq!(non_preview, vec![], "{tag}: unexpected non-preview findings");
+            assert_eq!(
+                non_preview,
+                vec![],
+                "{tag}: unexpected non-preview findings"
+            );
 
             let orig_blank = with_blank_preview(&orig);
             let edit_blank = with_blank_preview(&edited);
-            assert_eq!(all_findings(&orig_blank, &edit_blank), vec![], "{tag}: blank-preview T009 failed");
+            assert_eq!(
+                all_findings(&orig_blank, &edit_blank),
+                vec![],
+                "{tag}: blank-preview T009 failed"
+            );
 
             let tampered_chart = mutate_pkg_part(&edit_blank, "Chart/chart1.xml", |raw| {
                 let s = String::from_utf8(raw.to_vec()).unwrap();
-                s.replacen("<c:v>12.75</c:v>", "<c:v>notanumber</c:v>", 1).into_bytes()
+                s.replacen("<c:v>12.75</c:v>", "<c:v>notanumber</c:v>", 1)
+                    .into_bytes()
             });
-            assert!(!all_findings(&orig_blank, &tampered_chart).is_empty(), "{tag}: NaN tamper admitted");
+            assert!(
+                !all_findings(&orig_blank, &tampered_chart).is_empty(),
+                "{tag}: NaN tamper admitted"
+            );
 
             let mismatched_chart = mutate_pkg_part(&edit_blank, "Chart/chart1.xml", |raw| {
                 let s = String::from_utf8(raw.to_vec()).unwrap();
-                s.replacen("<c:v>12.75</c:v>", "<c:v>99.5</c:v>", 1).into_bytes()
+                s.replacen("<c:v>12.75</c:v>", "<c:v>99.5</c:v>", 1)
+                    .into_bytes()
             });
-            assert!(!all_findings(&orig_blank, &mismatched_chart).is_empty(), "{tag}: mismatch vs OLE admitted");
+            assert!(
+                !all_findings(&orig_blank, &mismatched_chart).is_empty(),
+                "{tag}: mismatch vs OLE admitted"
+            );
 
             let tampered_hpf = mutate_pkg_part(&edit_blank, "Contents/content.hpf", |raw| {
                 let s = String::from_utf8(raw.to_vec()).unwrap();
                 s.replacen(r#"id="ole1""#, r#"id="image1""#, 1).into_bytes()
             });
-            assert!(!all_findings(&orig_blank, &tampered_hpf).is_empty(), "{tag}: content.hpf mutation admitted");
+            assert!(
+                !all_findings(&orig_blank, &tampered_hpf).is_empty(),
+                "{tag}: content.hpf mutation admitted"
+            );
         }
     }
 }

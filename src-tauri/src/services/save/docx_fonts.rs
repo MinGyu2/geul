@@ -34,10 +34,17 @@ const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const OPC_RELS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const FONT_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/font";
-const FONT_TABLE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable";
+const FONT_TABLE_REL: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable";
 const OBFUSCATED_FONT: &str = "application/vnd.openxmlformats-officedocument.obfuscatedFont";
-const FONT_TABLE_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml";
-const SLOTS: [&str; 4] = ["embedRegular", "embedBold", "embedItalic", "embedBoldItalic"];
+const FONT_TABLE_TYPE: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml";
+const SLOTS: [&str; 4] = [
+    "embedRegular",
+    "embedBold",
+    "embedItalic",
+    "embedBoldItalic",
+];
 
 /// Parts the rule accounts for.
 #[derive(Debug, Default, PartialEq)]
@@ -52,18 +59,33 @@ type RelRow = (String, String, String, bool); // id, type, target, external
 
 /// Relationships of a `.rels` part, in document order (OPC namespace only; anything else refuses).
 fn rels(bytes: Option<&[u8]>) -> Option<Vec<RelRow>> {
-    let Some(bytes) = bytes else { return Some(Vec::new()) };
+    let Some(bytes) = bytes else {
+        return Some(Vec::new());
+    };
     let events = xml::canonical(bytes).ok()?;
     let mut out = Vec::new();
     let mut iter = events.iter();
     match iter.next()? {
-        Canonical::Start { namespace: Some(ns), name, .. } if ns.as_str() == OPC_RELS && name.as_str() == "Relationships" => {}
+        Canonical::Start {
+            namespace: Some(ns),
+            name,
+            ..
+        } if ns.as_str() == OPC_RELS && name.as_str() == "Relationships" => {}
         _ => return None,
     }
     while let Some(e) = iter.next() {
         match e {
-            Canonical::Start { namespace: Some(ns), name, attributes } if ns.as_str() == OPC_RELS && name.as_str() == "Relationship" => {
-                let get = |k: &str| attributes.iter().find(|(n, a, _)| n.is_none() && a.as_str() == k).map(|(_, _, v)| v.to_string());
+            Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } if ns.as_str() == OPC_RELS && name.as_str() == "Relationship" => {
+                let get = |k: &str| {
+                    attributes
+                        .iter()
+                        .find(|(n, a, _)| n.is_none() && a.as_str() == k)
+                        .map(|(_, _, v)| v.to_string())
+                };
                 let external = get("TargetMode").is_some_and(|m| m == "External");
                 out.push((get("Id")?, get("Type")?, get("Target")?, external));
                 if iter.next()? != &Canonical::End {
@@ -80,14 +102,26 @@ fn rels(bytes: Option<&[u8]>) -> Option<Vec<RelRow>> {
 
 /// `word/` relative target → part name (no `..`, no absolute or external forms).
 fn word_part(target: &str) -> Option<String> {
-    if target.is_empty() || target.starts_with('/') || target.contains("..") || target.contains(':') || target.contains('\\') {
+    if target.is_empty()
+        || target.starts_with('/')
+        || target.contains("..")
+        || target.contains(':')
+        || target.contains('\\')
+    {
         return None;
     }
     Some(format!("word/{target}"))
 }
 
-fn attr<'a>(attributes: &'a [(Option<xml::Atom>, xml::Atom, xml::Atom)], ns: Option<&str>, key: &str) -> Option<&'a str> {
-    attributes.iter().find(|(n, k, _)| n.as_deref() == ns && k.as_str() == key).map(|(_, _, v)| v.as_ref())
+fn attr<'a>(
+    attributes: &'a [(Option<xml::Atom>, xml::Atom, xml::Atom)],
+    ns: Option<&str>,
+    key: &str,
+) -> Option<&'a str> {
+    attributes
+        .iter()
+        .find(|(n, k, _)| n.as_deref() == ns && k.as_str() == key)
+        .map(|(_, _, v)| v.as_ref())
 }
 
 fn guid_ok(s: &str) -> bool {
@@ -96,7 +130,9 @@ fn guid_ok(s: &str) -> bool {
         && b[0] == b'{'
         && b[37] == b'}'
         && [9, 14, 19, 24].iter().all(|&i| b[i] == b'-')
-        && b.iter().enumerate().all(|(i, c)| i == 0 || i == 37 || [9, 14, 19, 24].contains(&i) || c.is_ascii_hexdigit())
+        && b.iter().enumerate().all(|(i, c)| {
+            i == 0 || i == 37 || [9, 14, 19, 24].contains(&i) || c.is_ascii_hexdigit()
+        })
 }
 
 /// The font-embedding additions between `original` and `output`, or `None` when the difference is not exactly
@@ -108,14 +144,22 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
         return None;
     }
     // Relationships of the font table: original first and unchanged, then added font relationships.
-    let (old_rels, new_rels) = (rels(original.get(FONT_TABLE_RELS))?, rels(output.get(FONT_TABLE_RELS))?);
+    let (old_rels, new_rels) = (
+        rels(original.get(FONT_TABLE_RELS))?,
+        rels(output.get(FONT_TABLE_RELS))?,
+    );
     if new_rels.len() <= old_rels.len() || new_rels.get(..old_rels.len())? != old_rels.as_slice() {
         return None;
     }
     let mut added: BTreeMap<String, String> = BTreeMap::new(); // id → part
     for (id, kind, target, external) in &new_rels[old_rels.len()..] {
         let part = word_part(target)?;
-        if *external || kind != FONT_REL || original.get(&part).is_some() || output.get(&part).is_none() || added.values().any(|p| *p == part) {
+        if *external
+            || kind != FONT_REL
+            || original.get(&part).is_some()
+            || output.get(&part).is_none()
+            || added.values().any(|p| *p == part)
+        {
             return None;
         }
         if old_rels.iter().any(|r| &r.0 == id) || added.insert(id.clone(), part).is_some() {
@@ -131,7 +175,11 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
     let old_families: BTreeSet<String> = old_events
         .iter()
         .filter_map(|e| match e {
-            Canonical::Start { namespace: Some(ns), name, attributes } if ns.as_str() == W && name.as_str() == "font" => {
+            Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } if ns.as_str() == W && name.as_str() == "font" => {
                 attr(attributes, Some(W), "name").map(str::to_string)
             }
             _ => None,
@@ -143,7 +191,12 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
     let mut depth = 0usize;
     while i < new_events.len() {
         let e = &new_events[i];
-        if let Canonical::Start { namespace: Some(ns), name, attributes } = e {
+        if let Canonical::Start {
+            namespace: Some(ns),
+            name,
+            attributes,
+        } = e
+        {
             if depth == 1 && ns.as_str() == W && name.as_str() == "font" {
                 let family = attr(attributes, Some(W), "name")?.to_string();
                 // Collect this w:font subtree.
@@ -154,14 +207,30 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
                 while d > 0 {
                     let c = new_events.get(j)?;
                     if d == 1 {
-                        if let Canonical::Start { namespace: Some(cns), name: cname, attributes: cattrs } = c {
+                        if let Canonical::Start {
+                            namespace: Some(cns),
+                            name: cname,
+                            attributes: cattrs,
+                        } = c
+                        {
                             let id = attr(cattrs, Some(R), "id");
-                            if cns.as_str() == W && SLOTS.contains(&cname.as_str()) && id.is_some_and(|id| added.contains_key(id)) {
+                            if cns.as_str() == W
+                                && SLOTS.contains(&cname.as_str())
+                                && id.is_some_and(|id| added.contains_key(id))
+                            {
                                 let key = attr(cattrs, Some(W), "fontKey")?;
-                                if cattrs.len() != 2 || !guid_ok(key) || new_events.get(j + 1)? != &Canonical::End {
+                                if cattrs.len() != 2
+                                    || !guid_ok(key)
+                                    || new_events.get(j + 1)? != &Canonical::End
+                                {
                                     return None;
                                 }
-                                embeds.push((family.clone(), cname.to_string(), id?.to_string(), key.to_string()));
+                                embeds.push((
+                                    family.clone(),
+                                    cname.to_string(),
+                                    id?.to_string(),
+                                    key.to_string(),
+                                ));
                                 removed += 1;
                                 j += 2;
                                 continue;
@@ -220,7 +289,12 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
     // Original slots of the same family/slot must not coexist with an added one.
     let mut family = None;
     for e in &old_events {
-        if let Canonical::Start { namespace: Some(ns), name, attributes } = e {
+        if let Canonical::Start {
+            namespace: Some(ns),
+            name,
+            attributes,
+        } = e
+        {
             if ns.as_str() == W && name.as_str() == "font" {
                 family = attr(attributes, Some(W), "name").map(str::to_string);
             } else if ns.as_str() == W && SLOTS.contains(&name.as_str()) {
@@ -233,8 +307,15 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
         }
     }
     // Content types and the font programs.
-    let (old_ct, new_ct) = (xml::content_types(original.get(CONTENT_TYPES)?).ok()?, xml::content_types(output.get(CONTENT_TYPES)?).ok()?);
-    let lower = |v: &[(String, String)]| v.iter().map(|(a, b)| (a.to_ascii_lowercase(), b.clone())).collect::<BTreeSet<_>>();
+    let (old_ct, new_ct) = (
+        xml::content_types(original.get(CONTENT_TYPES)?).ok()?,
+        xml::content_types(output.get(CONTENT_TYPES)?).ok()?,
+    );
+    let lower = |v: &[(String, String)]| {
+        v.iter()
+            .map(|(a, b)| (a.to_ascii_lowercase(), b.clone()))
+            .collect::<BTreeSet<_>>()
+    };
     if lower(&old_ct.defaults) != lower(&new_ct.defaults) {
         return None;
     }
@@ -242,9 +323,20 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
     if !old_over.is_subset(&new_over) {
         return None;
     }
-    let mut expected: BTreeSet<(String, String)> = added.values().map(|p| (format!("/{p}").to_ascii_lowercase(), OBFUSCATED_FONT.to_string())).collect();
+    let mut expected: BTreeSet<(String, String)> = added
+        .values()
+        .map(|p| {
+            (
+                format!("/{p}").to_ascii_lowercase(),
+                OBFUSCATED_FONT.to_string(),
+            )
+        })
+        .collect();
     if before.is_none() {
-        expected.insert((format!("/{FONT_TABLE}").to_ascii_lowercase(), FONT_TABLE_TYPE.to_string()));
+        expected.insert((
+            format!("/{FONT_TABLE}").to_ascii_lowercase(),
+            FONT_TABLE_TYPE.to_string(),
+        ));
     }
     let extra: BTreeSet<_> = new_over.difference(&old_over).cloned().collect();
     if extra != expected {
@@ -255,14 +347,21 @@ pub fn docx_fonts_embedded(original: &Package, output: &Package) -> Option<FontP
         let program = embedding::obfuscate(output.get(part)?, key)?;
         let inspected = embedding::inspect(&program).ok()?;
         embedding::embeddable(&inspected).ok()?;
-        if !inspected.families.iter().any(|f| f.eq_ignore_ascii_case(family)) {
+        if !inspected
+            .families
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case(family))
+        {
             return None;
         }
     }
     // Document relationships: unchanged, or exactly the new font table relationship.
     let mut proof = FontProof::default();
     if before.is_none() {
-        let (old_doc, new_doc) = (rels(original.get(DOCUMENT_RELS))?, rels(output.get(DOCUMENT_RELS))?);
+        let (old_doc, new_doc) = (
+            rels(original.get(DOCUMENT_RELS))?,
+            rels(output.get(DOCUMENT_RELS))?,
+        );
         let extra: Vec<&RelRow> = new_doc.iter().filter(|r| !old_doc.contains(r)).collect();
         if old_doc.iter().any(|r| !new_doc.contains(r))
             || extra.len() != 1

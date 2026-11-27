@@ -656,8 +656,7 @@ pub(super) fn prove_textbox_edit(
 }
 
 pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
-    let (Some((kind, _, a)), Some((kind2, _, b))) = (shape_ctrl_id(old), shape_ctrl_id(new))
-    else {
+    let (Some((kind, _, a)), Some((kind2, _, b))) = (shape_ctrl_id(old), shape_ctrl_id(new)) else {
         return false;
     };
     let Some(leaf_tag) = expected_leaf_tag(kind) else {
@@ -788,15 +787,18 @@ pub(super) fn group_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) ->
         return false;
     };
     let valid_owner = |records: &[Record<'_>], kind: &[u8; 4], sc: usize| {
-        let Some(owner) = records.first() else { return false };
-        let Some(list) = records.get(1) else { return false };
+        let Some(owner) = records.first() else {
+            return false;
+        };
+        let Some(list) = records.get(1) else {
+            return false;
+        };
         kind == SC_CONTAINER
             && owner.0 == TAG_CTRL_HEADER
             && owner.1 == 1
             && owner.2.starts_with(CTRL_GSO)
-            && dword(owner.2, 4).is_ok_and(|attr| {
-                attr as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION
-            })
+            && dword(owner.2, 4)
+                .is_ok_and(|attr| attr as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION)
             && list.0 == TAG_LIST_HEADER
             && list.1 == 2
             && list.2.len() == 30
@@ -1526,7 +1528,10 @@ pub(super) fn prove_header_story_edit(
         let Some((ctrl_id, _, _)) = shape_ctrl_id(before) else {
             return Err(finding(FindingCode::RecordsChanged, BODY));
         };
-        if !matches!(ctrl_id, SC_PICTURE | SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER) {
+        if !matches!(
+            ctrl_id,
+            SC_PICTURE | SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER
+        ) {
             return Err(finding(FindingCode::RecordsChanged, BODY));
         }
         let Some(id) = gso_header_id(before) else {
@@ -1589,7 +1594,10 @@ fn prove_header_position_only(old: &[Record<'_>], new: &[Record<'_>]) -> Checked
             && new[0].0 == TAG_CTRL_HEADER
             && new[0].1 == 1
             && old_kind == new_kind
-            && matches!(old_kind, SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER)
+            && matches!(
+                old_kind,
+                SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE | SC_CONTAINER
+            )
             && old_sc == new_sc
             && old[1..] == new[1..],
         BODY,
@@ -1626,8 +1634,12 @@ fn prove_header_position_only(old: &[Record<'_>], new: &[Record<'_>]) -> Checked
 /// Rank and wrapping plane for a bare floating body shape. Reordering is
 /// never routed through the broader field evolution or deletion proofs.
 pub(super) fn shape_layer(rs: &[Record<'_>]) -> Option<(i32, u32)> {
-    let (kind, offset, 1) = shape_ctrl_id(rs)? else { return None };
-    let [header, component, leaf] = rs else { return None };
+    let (kind, offset, 1) = shape_ctrl_id(rs)? else {
+        return None;
+    };
+    let [header, component, leaf] = rs else {
+        return None;
+    };
     let attr = dword(header.2, 4).ok()? as u32;
     if !matches!(kind, SC_RECT | SC_ELLIPSE | SC_LINE | SC_POLYGON | SC_CURVE)
         || gso_header_id(rs)? == 0
@@ -1645,7 +1657,8 @@ pub(super) fn shape_layer(rs: &[Record<'_>]) -> Option<(i32, u32)> {
 
 pub(super) fn shape_layer_changed(old: &[Record<'_>], new: &[Record<'_>]) -> bool {
     old.first().zip(new.first()).is_some_and(|(a, b)| {
-        a.2.starts_with(CTRL_GSO) && b.2.starts_with(CTRL_GSO)
+        a.2.starts_with(CTRL_GSO)
+            && b.2.starts_with(CTRL_GSO)
             && gso_header_id(old).is_some_and(|id| id != 0 && Some(id) == gso_header_id(new))
             && a.2.get(24..28) != b.2.get(24..28)
     })
@@ -1665,8 +1678,7 @@ pub(super) fn prove_shape_layers(
             preserved(old == new, BODY)?;
             continue;
         }
-        let (Some((before, wrap)), Some((after, new_wrap))) =
-            (shape_layer(old), shape_layer(new))
+        let (Some((before, wrap)), Some((after, new_wrap))) = (shape_layer(old), shape_layer(new))
         else {
             return Err(finding(FindingCode::RecordsChanged, BODY));
         };
@@ -2208,28 +2220,31 @@ pub(super) fn prove_cloned_gso(
     }
 
     // Subtree after `SHAPE_COMPONENT` (`TAG_PICTURE`, shape leaf, TextBox, or flat container children).
-    src[sc_idx + 1..].iter().zip(&dst[sc_idx + 1..]).all(|(a, b)| {
-        if a == b {
-            return true;
-        }
-        if a.0 != b.0 || a.1 != b.1 || a.2.len() != b.2.len() {
-            return false;
-        }
-        match a.0 {
-            TAG_PICTURE if a.2.len() >= 78 => a.2[..74] == b.2[..74] && a.2[78..] == b.2[78..],
-            TAG_SHAPE_COMPONENT if a.1 == 3 => {
-                if a.2.starts_with(SC_PICTURE) {
-                    false
-                } else {
-                    a.2.len() >= 22
-                        && a.2[..a.2.len() - 6] == b.2[..b.2.len() - 6]
-                        && a.2[a.2.len() - 2..] == b.2[b.2.len() - 2..]
-                }
+    src[sc_idx + 1..]
+        .iter()
+        .zip(&dst[sc_idx + 1..])
+        .all(|(a, b)| {
+            if a == b {
+                return true;
             }
-            66 => para_eq_except_inst(a, b),
-            _ => false,
-        }
-    })
+            if a.0 != b.0 || a.1 != b.1 || a.2.len() != b.2.len() {
+                return false;
+            }
+            match a.0 {
+                TAG_PICTURE if a.2.len() >= 78 => a.2[..74] == b.2[..74] && a.2[78..] == b.2[78..],
+                TAG_SHAPE_COMPONENT if a.1 == 3 => {
+                    if a.2.starts_with(SC_PICTURE) {
+                        false
+                    } else {
+                        a.2.len() >= 22
+                            && a.2[..a.2.len() - 6] == b.2[..b.2.len() - 6]
+                            && a.2[a.2.len() - 2..] == b.2[b.2.len() - 2..]
+                    }
+                }
+                66 => para_eq_except_inst(a, b),
+                _ => false,
+            }
+        })
 }
 
 pub(super) fn prove_cloned_gso_from(
@@ -2278,9 +2293,8 @@ fn matches_rotated_rendering(
     let (cos, sin) = (theta.cos(), theta.sin());
     let tx = -(w * cos).min(0.0) - (-h * sin).min(0.0);
     let ty = -(w * sin).min(0.0) - (h * cos).min(0.0);
-    let scale_matches = |actual: f64, expected: f64| {
-        (actual - expected).abs() <= 8.0 * f64::EPSILON * expected
-    };
+    let scale_matches =
+        |actual: f64, expected: f64| (actual - expected).abs() <= 8.0 * f64::EPSILON * expected;
     let position_tol = 16.0 * f64::EPSILON * (w + h + x.abs() + y.abs());
     translation == [1.0, 0.0, x, 0.0, 1.0, y]
         && scale[1] == 0.0
@@ -2455,10 +2469,10 @@ fn check_ctrl_header(
     preserved(old_h[36..40] == new_h[36..40], BODY)?; // instance_id
     preserved(old_h[24..36] == new_h[24..36], BODY)?; // z_order + margins
     preserved(old_h[40..44] == new_h[40..44], BODY)?; // prevent_page_break
-    let (old_description, old_extra) = description_parts(old_h)
-        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
-    let (new_description, new_extra) = description_parts(new_h)
-        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let (old_description, old_extra) =
+        description_parts(old_h).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let (new_description, new_extra) =
+        description_parts(new_h).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
 
     let old_attr = dword(old_h, 4)? as u32;
     let new_attr = dword(new_h, 4)? as u32;
@@ -2467,7 +2481,8 @@ fn check_ctrl_header(
     if alignment_changed {
         const RELATIVE_ATTR_MASK: u32 = (3 << 3) | (3 << 8);
         const PLACEMENT_MASK: u32 = ALIGN_ATTR_MASK | RELATIVE_ATTR_MASK;
-        const NONPRESET_FLAGS: u32 = ATTR_CAPTION | ATTR_SIZE_PROTECT | FLOW_WITH_TEXT | 1 | (7 << 21);
+        const NONPRESET_FLAGS: u32 =
+            ATTR_CAPTION | ATTR_SIZE_PROTECT | FLOW_WITH_TEXT | 1 | (7 << 21);
         preserved(
             is_picture
                 && old_attr & NONPRESET_FLAGS == 0
@@ -2710,7 +2725,13 @@ fn parse_hwp5_group_child_component(
     })
 }
 
-fn hwp5_group_child_leaf_supported(tag: u16, leaf: &[u8], width: u32, height: u32, resize: bool) -> bool {
+fn hwp5_group_child_leaf_supported(
+    tag: u16,
+    leaf: &[u8],
+    width: u32,
+    height: u32,
+    resize: bool,
+) -> bool {
     match tag {
         TAG_RECTANGLE => {
             if leaf.len() != 33 || leaf[0] > 100 {
@@ -2731,7 +2752,9 @@ fn hwp5_group_child_leaf_supported(tag: u16, leaf: &[u8], width: u32, height: u3
             let point = |at: usize| -> Option<(i64, i64)> {
                 Some((
                     i64::from(i32::from_le_bytes(leaf.get(at..at + 4)?.try_into().ok()?)),
-                    i64::from(i32::from_le_bytes(leaf.get(at + 4..at + 8)?.try_into().ok()?)),
+                    i64::from(i32::from_le_bytes(
+                        leaf.get(at + 4..at + 8)?.try_into().ok()?,
+                    )),
                 ))
             };
             let (w, h) = (i64::from(width), i64::from(height));
@@ -2776,7 +2799,8 @@ fn hwp5_group_child_change_is_safe(
     old: Hwp5GroupChildComponent,
     new: Hwp5GroupChildComponent,
 ) -> bool {
-    if old.ctrl_id != new.ctrl_id || old.inst_id != new.inst_id
+    if old.ctrl_id != new.ctrl_id
+        || old.inst_id != new.inst_id
         || old_sc.len() != new_sc.len()
         || old.fill_start != new.fill_start
         || old.tail_start != new.tail_start
@@ -2791,13 +2815,21 @@ fn hwp5_group_child_change_is_safe(
     let size_changed = (old.width, old.height) != (new.width, new.height);
     if size_changed {
         if !hwp5_group_child_leaf_supported(
-            if old.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE },
+            if old.ctrl_id == *SC_RECT {
+                TAG_RECTANGLE
+            } else {
+                TAG_ELLIPSE
+            },
             old_leaf,
             old.width,
             old.height,
             true,
         ) || !hwp5_group_child_leaf_supported(
-            if new.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE },
+            if new.ctrl_id == *SC_RECT {
+                TAG_RECTANGLE
+            } else {
+                TAG_ELLIPSE
+            },
             new_leaf,
             new.width,
             new.height,
@@ -2824,7 +2856,13 @@ fn hwp5_group_child_change_is_safe(
         && same_except_hwp5_component_ranges(
             old_sc,
             new_sc,
-            &[(4, 12), (16, 32), (64, 72), (88, 96), (old.fill_start + 4, old.fill_start + 8)],
+            &[
+                (4, 12),
+                (16, 32),
+                (64, 72),
+                (88, 96),
+                (old.fill_start + 4, old.fill_start + 8),
+            ],
         )
 }
 
@@ -2864,7 +2902,8 @@ fn prove_hwp5_group_child_edit(
     let current_width = dword(parent_sc, id_off + 20)?;
     let current_height = dword(parent_sc, id_off + 24)?;
     let parent_flip = dword(parent_sc, id_off + 28)? as u32;
-    let parent_rotation = i16::from_le_bytes(parent_sc[id_off + 32..id_off + 34].try_into().unwrap());
+    let parent_rotation =
+        i16::from_le_bytes(parent_sc[id_off + 32..id_off + 34].try_into().unwrap());
     preserved(
         parent_attr & (ATTR_LOCKED | ATTR_SIZE_PROTECT | ATTR_CAPTION) == 0
             && word(parent_sc, id_off + 8)? == 0
@@ -2896,7 +2935,10 @@ fn prove_hwp5_group_child_edit(
     )?;
     let old_body = &old[old_sc_idx + 1..];
     let new_body = &new[new_sc_idx + 1..];
-    preserved(old_body.len() == child_count * 2 && new_body.len() == child_count * 2, BODY)?;
+    preserved(
+        old_body.len() == child_count * 2 && new_body.len() == child_count * 2,
+        BODY,
+    )?;
     let mut seen = std::collections::HashSet::with_capacity(child_count);
     let mut changed_children = 0usize;
     for index in 0..child_count {
@@ -2920,15 +2962,32 @@ fn prove_hwp5_group_child_edit(
                 && new_component.2.get(..4) == parent_sc.get(id_at..id_at + 4),
             BODY,
         )?;
-        let old_layout = parse_hwp5_group_child_component(&old_component.2, parent_width, parent_height)
-            .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
-        let new_layout = parse_hwp5_group_child_component(&new_component.2, parent_width, parent_height)
-            .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
-        let leaf_tag = if old_layout.ctrl_id == *SC_RECT { TAG_RECTANGLE } else { TAG_ELLIPSE };
+        let old_layout =
+            parse_hwp5_group_child_component(&old_component.2, parent_width, parent_height)
+                .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+        let new_layout =
+            parse_hwp5_group_child_component(&new_component.2, parent_width, parent_height)
+                .ok_or_else(|| finding(FindingCode::RecordsChanged, BODY))?;
+        let leaf_tag = if old_layout.ctrl_id == *SC_RECT {
+            TAG_RECTANGLE
+        } else {
+            TAG_ELLIPSE
+        };
         preserved(old_leaf.0 == leaf_tag, BODY)?;
         valid(
-            hwp5_group_child_leaf_supported(leaf_tag, old_leaf.2, old_layout.width, old_layout.height, false)
-                && hwp5_group_child_leaf_supported(leaf_tag, new_leaf.2, new_layout.width, new_layout.height, false),
+            hwp5_group_child_leaf_supported(
+                leaf_tag,
+                old_leaf.2,
+                old_layout.width,
+                old_layout.height,
+                false,
+            ) && hwp5_group_child_leaf_supported(
+                leaf_tag,
+                new_leaf.2,
+                new_layout.width,
+                new_layout.height,
+                false,
+            ),
             BODY,
         )?;
         reference(seen.insert((old_layout.ctrl_id, old_layout.inst_id)), BODY)?;
@@ -3057,9 +3116,7 @@ pub(super) fn prove_evolved_gso(
         )?;
         if old[1..old_sc_idx] != new[1..new_sc_idx] {
             preserved(
-                !is_container
-                    && old.len() == old_sc_idx + 2
-                    && new.len() == new_sc_idx + 2,
+                !is_container && old.len() == old_sc_idx + 2 && new.len() == new_sc_idx + 2,
                 BODY,
             )?;
             let old_list = old[1].2;
@@ -3136,9 +3193,12 @@ pub(super) fn prove_evolved_gso(
             preserved(new_current == old_current, BODY)?;
         } else if rotated_picture {
             preserved(old_dim > 0 && old_current > 0, BODY)?;
-            let expected = ((old_current as f64 * new_dim as f64 / old_dim as f64).round())
-                .max(1.0) as usize;
-            valid((1..=MAX_DIM_HU).contains(&expected) && new_current == expected, BODY)?;
+            let expected =
+                ((old_current as f64 * new_dim as f64 / old_dim as f64).round()).max(1.0) as usize;
+            valid(
+                (1..=MAX_DIM_HU).contains(&expected) && new_current == expected,
+                BODY,
+            )?;
         } else {
             valid(new_current == new_dim, BODY)?;
         }
@@ -3211,16 +3271,28 @@ pub(super) fn prove_evolved_gso(
         picture_transform_changed,
         is_container,
         component_offset,
-        rotated_picture.then_some((new_rot, [orig_w, orig_h], [old_cw, old_ch], [new_cw, new_ch])),
+        rotated_picture.then_some((
+            new_rot,
+            [orig_w, orig_h],
+            [old_cw, old_ch],
+            [new_cw, new_ch],
+        )),
         scaled_source_picture,
     )?;
 
     if is_container {
         // Group container (`noc$`): child count + child ctrl_ids + instance_id and every child record stay intact.
-        valid(old_sc.len() >= old_r_end + 6 && new_sc.len() >= new_r_end + 6, BODY)?;
+        valid(
+            old_sc.len() >= old_r_end + 6 && new_sc.len() >= new_r_end + 6,
+            BODY,
+        )?;
         let child_count = word(old_sc, old_r_end)?;
         let expected_tail = 6usize
-            .checked_add(child_count.checked_mul(4).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?)
+            .checked_add(
+                child_count
+                    .checked_mul(4)
+                    .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?,
+            )
             .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
         valid(
             child_count >= 1
@@ -3262,7 +3334,10 @@ pub(super) fn prove_evolved_gso(
             BODY,
         )?;
         if (dword(old[0].2, 4)? ^ dword(new[0].2, 4)?) as u32 & ALIGN_ATTR_MASK != 0 {
-            preserved(old_rot == 0 && old_flip & 3 == 0 && old_pic == new_pic, BODY)?;
+            preserved(
+                old_rot == 0 && old_flip & 3 == 0 && old_pic == new_pic,
+                BODY,
+            )?;
         }
         let (op, np) = (old_pic.2, new_pic.2);
         valid(op.len() >= 73 && np.len() >= 73, BODY)?;
@@ -3306,9 +3381,13 @@ pub(super) fn prove_evolved_gso(
     );
     preserved(old_border[8..13] == new_border[8..13], BODY)?;
     if old_border[4..8] != new_border[4..8] {
-        preserved(!has_caption && old.len() == 3 && new.len() == 3 && dword(old_border, 8)? & 0x3f == 1, BODY)?;
+        preserved(
+            !has_caption && old.len() == 3 && new.len() == 3 && dword(old_border, 8)? & 0x3f == 1,
+            BODY,
+        )?;
         valid(
-            (1..=7200).contains(&dword(old_border, 4)?) && (1..=7200).contains(&dword(new_border, 4)?),
+            (1..=7200).contains(&dword(old_border, 4)?)
+                && (1..=7200).contains(&dword(new_border, 4)?),
             BODY,
         )?;
     }
@@ -3388,8 +3467,7 @@ pub(super) fn prove_evolved_gso(
             i32::from_le_bytes(old_sc[attr_at + 38..attr_at + 42].try_into().unwrap()),
         ];
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        let modeled_transform = (-MAX_OFFSET_HU..=MAX_OFFSET_HU)
-            .contains(&component_offset[0])
+        let modeled_transform = (-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&component_offset[0])
             && (-MAX_OFFSET_HU..=MAX_OFFSET_HU).contains(&component_offset[1])
             && (-MAX_OFFSET_HU..=MAX_OFFSET_HU)
                 .contains(&i32::from_le_bytes(old[0].2[8..12].try_into().unwrap()))
@@ -3454,7 +3532,8 @@ struct PolygonLeaf {
 
 fn parse_polygon_leaf(data: &[u8], width: usize, height: usize) -> Option<PolygonLeaf> {
     let count = dword(data, 0).ok()?;
-    if !(4..=257).contains(&count) || data.len() != 8 + 8 * count || data[4 + 8 * count..] != [0; 4] {
+    if !(4..=257).contains(&count) || data.len() != 8 + 8 * count || data[4 + 8 * count..] != [0; 4]
+    {
         return None;
     }
     let mut points = Vec::with_capacity(count);
@@ -3467,11 +3546,19 @@ fn parse_polygon_leaf(data: &[u8], width: usize, height: usize) -> Option<Polygo
     }
     let vertices = &points[..count - 1];
     if points.first() != points.last()
-        || vertices.iter().collect::<std::collections::BTreeSet<_>>().len() != vertices.len()
+        || vertices
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != vertices.len()
     {
         return None;
     }
-    let winding = points.windows(2).map(|e| polygon_cross([0, 0], e[0], e[1])).sum::<i64>().signum();
+    let winding = points
+        .windows(2)
+        .map(|e| polygon_cross([0, 0], e[0], e[1]))
+        .sum::<i64>()
+        .signum();
     if winding == 0 {
         return None;
     }
@@ -3482,25 +3569,41 @@ fn parse_polygon_leaf(data: &[u8], width: usize, height: usize) -> Option<Polygo
             return None;
         }
         let end = if i == 0 { count - 2 } else { count - 1 };
-        if points.windows(2).take(end).skip(i + 2).any(|e| polygon_edges_intersect(a, b, e[0], e[1])) {
+        if points
+            .windows(2)
+            .take(end)
+            .skip(i + 2)
+            .any(|e| polygon_edges_intersect(a, b, e[0], e[1]))
+        {
             return None;
         }
     }
     points.pop();
-    Some(PolygonLeaf { vertices: points, winding })
+    Some(PolygonLeaf {
+        vertices: points,
+        winding,
+    })
 }
 
 fn polygon_corners(vertices: &[CurvePoint]) -> Vec<CurvePoint> {
     let count = vertices.len();
-    vertices.iter().enumerate().filter_map(|(i, &p)| {
-        let (prev, next) = (vertices[(i + count - 1) % count], vertices[(i + 1) % count]);
-        (!strictly_between(prev, p, next)).then_some(p)
-    }).collect()
+    vertices
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &p)| {
+            let (prev, next) = (vertices[(i + count - 1) % count], vertices[(i + 1) % count]);
+            (!strictly_between(prev, p, next)).then_some(p)
+        })
+        .collect()
 }
 
 fn prove_polygon_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
-    let Some(old) = parse_polygon_leaf(old, width, height) else { return false };
-    let Some(new) = parse_polygon_leaf(new, width, height) else { return false };
+    let Some(old) = parse_polygon_leaf(old, width, height) else {
+        return false;
+    };
+    let Some(new) = parse_polygon_leaf(new, width, height) else {
+        return false;
+    };
     if old.winding != new.winding {
         return false;
     }
@@ -3512,9 +3615,11 @@ fn prove_polygon_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) 
     // Point edits preserve indices. An existing vertex cannot be relocated to
     // another slot by a serialized permutation.
     old.vertices.len() == new.vertices.len()
-        && new.vertices.iter().enumerate().all(|(i, point)| {
-            old.vertices[i] == *point || !old.vertices.contains(point)
-        })
+        && new
+            .vertices
+            .iter()
+            .enumerate()
+            .all(|(i, point)| old.vertices[i] == *point || !old.vertices.contains(point))
 }
 
 struct CubicLeaf<'a> {
@@ -3536,8 +3641,9 @@ fn parse_cubic_leaf(data: &[u8], width: usize, height: usize) -> Option<CubicLea
     let point_bytes = &data[4..point_end];
     let points: Vec<_> = point_bytes.chunks_exact(8).collect();
     if points.first() == points.last()
-        || !points.iter().all(|point| dword(point, 0).is_ok_and(|x| x <= width)
-            && dword(point, 4).is_ok_and(|y| y <= height))
+        || !points.iter().all(|point| {
+            dword(point, 0).is_ok_and(|x| x <= width) && dword(point, 4).is_ok_and(|y| y <= height)
+        })
     {
         return None;
     }
@@ -3558,12 +3664,17 @@ fn parse_cubic_leaf(data: &[u8], width: usize, height: usize) -> Option<CubicLea
         }
         segment += 1;
     }
-    (cubic && commands[segment..].iter().all(|value| *value == 0))
-        .then_some(CubicLeaf { point_bytes, used_commands: &commands[..segment] })
+    (cubic && commands[segment..].iter().all(|value| *value == 0)).then_some(CubicLeaf {
+        point_bytes,
+        used_commands: &commands[..segment],
+    })
 }
 
 fn prove_cubic_leaf_edit(old: &[u8], new: &[u8], width: usize, height: usize) -> bool {
-    let (Some(old), Some(new)) = (parse_cubic_leaf(old, width, height), parse_cubic_leaf(new, width, height)) else {
+    let (Some(old), Some(new)) = (
+        parse_cubic_leaf(old, width, height),
+        parse_cubic_leaf(new, width, height),
+    ) else {
         return false;
     };
     if old.point_bytes.len() == new.point_bytes.len() && old.used_commands == new.used_commands {
@@ -3616,7 +3727,9 @@ fn canonical_cubic_path(leaf: CubicLeaf<'_>) -> (CurvePoint, Vec<CurveStep>) {
         let point = points.next().unwrap();
         if command == 0 {
             match steps.last_mut() {
-                Some(CurveStep::Line(previous)) if strictly_between(line_start, *previous, point) => {
+                Some(CurveStep::Line(previous))
+                    if strictly_between(line_start, *previous, point) =>
+                {
                     *previous = point;
                 }
                 _ => {
@@ -3646,12 +3759,17 @@ fn extends_curve_with_lines(start: CurvePoint, short: &[CurveStep], long: &[Curv
     let Some([CurveStep::Line(new_end), suffix @ ..]) = long.strip_prefix(prefix) else {
         return false;
     };
-    strictly_between(prefix.last().map_or(start, CurveStep::end), *old_end, *new_end)
-        && suffix.iter().all(|step| matches!(step, CurveStep::Line(_)))
+    strictly_between(
+        prefix.last().map_or(start, CurveStep::end),
+        *old_end,
+        *new_end,
+    ) && suffix.iter().all(|step| matches!(step, CurveStep::Line(_)))
 }
 
 fn differs_by_one_cubic(short: &[CurveStep], long: &[CurveStep]) -> bool {
-    if long.len() != short.len() + 1 { return false; }
+    if long.len() != short.len() + 1 {
+        return false;
+    }
     (0..long.len()).any(|index| {
         matches!(&long[index], CurveStep::Cubic(_))
             && short.get(..index) == long.get(..index)
@@ -3661,12 +3779,12 @@ fn differs_by_one_cubic(short: &[CurveStep], long: &[CurveStep]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::preview::PreviewRaster;
     use super::super::{
-        Finding, FindingCode, Mode, Side, compare_saved_with_preview, compare_with, open,
-        rebuild_preview, refresh_previews,
+        compare_saved_with_preview, compare_with, open, rebuild_preview, refresh_previews, Finding,
+        FindingCode, Mode, Side,
     };
+    use super::*;
     use std::collections::BTreeSet;
     use std::io::{Cursor, Write};
 
@@ -4312,13 +4430,29 @@ mod tests {
             let mut list = vec![0u8; 33];
             list[..4].copy_from_slice(&1u32.to_le_bytes());
             vec![
-                (71, 1, ctrl_header(303, 0x000a_0000, 0, 0, 8000, 4000, "", &[])),
-                (76, 2, shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, None, 555)),
+                (
+                    71,
+                    1,
+                    ctrl_header(303, 0x000a_0000, 0, 0, 8000, 4000, "", &[]),
+                ),
+                (
+                    76,
+                    2,
+                    shape_component_drawing(b"cer$", 8000, 4000, 0, 0, 0, None, 555),
+                ),
                 (72, 3, list),
                 (66, 4, vec![0; 22]),
                 (67, 4, b"text\r\0".to_vec()),
-                (71, 4, ctrl_header(404, 0x000a_0311, 0, 0, width, height, "Nested", b"\xaa\xbb")),
-                (76, 5, shape_component_base(b"cip$", 4000, 2000, width, height, 0, 0)),
+                (
+                    71,
+                    4,
+                    ctrl_header(404, 0x000a_0311, 0, 0, width, height, "Nested", b"\xaa\xbb"),
+                ),
+                (
+                    76,
+                    5,
+                    shape_component_base(b"cip$", 4000, 2000, width, height, 0, 0),
+                ),
                 (85, 6, picture_leaf(bin_id, [0, 0, 4000, 2000], leaf_tail)),
                 (79, 3, rect_leaf(0, 8000, 4000)),
             ]
@@ -4331,22 +4465,59 @@ mod tests {
         let picture_defs = super::super::insertions::definitions(&picture_def_refs);
         let before = picture(4000, 2000, 1, b"\x01\x02");
         let resized = picture(5000, 2500, 1, b"\x01\x02");
-        let before_refs: Vec<_> = before.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-        let resized_refs: Vec<_> = resized.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-        assert!(super::textbox_nested_gso_candidate(&before_refs, &resized_refs));
-        super::prove_textbox_nested_gso_edit(&before_refs, &resized_refs, &picture_defs, &picture_defs).unwrap();
+        let before_refs: Vec<_> = before
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        let resized_refs: Vec<_> = resized
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        assert!(super::textbox_nested_gso_candidate(
+            &before_refs,
+            &resized_refs
+        ));
+        super::prove_textbox_nested_gso_edit(
+            &before_refs,
+            &resized_refs,
+            &picture_defs,
+            &picture_defs,
+        )
+        .unwrap();
 
         let substituted_resource = picture(5000, 2500, 2, b"\x01\x02");
         let substituted_refs: Vec<_> = substituted_resource
-            .iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-        assert!(super::textbox_nested_gso_candidate(&before_refs, &substituted_refs));
-        assert!(super::prove_textbox_nested_gso_edit(&before_refs, &substituted_refs, &picture_defs, &picture_defs).is_err());
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        assert!(super::textbox_nested_gso_candidate(
+            &before_refs,
+            &substituted_refs
+        ));
+        assert!(super::prove_textbox_nested_gso_edit(
+            &before_refs,
+            &substituted_refs,
+            &picture_defs,
+            &picture_defs
+        )
+        .is_err());
 
         let changed_opaque_tail = picture(5000, 2500, 1, b"\x01\x03");
         let changed_tail_refs: Vec<_> = changed_opaque_tail
-            .iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-        assert!(super::textbox_nested_gso_candidate(&before_refs, &changed_tail_refs));
-        assert!(super::prove_textbox_nested_gso_edit(&before_refs, &changed_tail_refs, &picture_defs, &picture_defs).is_err());
+            .iter()
+            .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+            .collect();
+        assert!(super::textbox_nested_gso_candidate(
+            &before_refs,
+            &changed_tail_refs
+        ));
+        assert!(super::prove_textbox_nested_gso_edit(
+            &before_refs,
+            &changed_tail_refs,
+            &picture_defs,
+            &picture_defs
+        )
+        .is_err());
     }
 
     #[test]
@@ -4575,8 +4746,12 @@ mod tests {
         let mut footer_moved = moved.clone();
         footer_moved[0].2[..4].copy_from_slice(b"toof");
         assert_eq!(
-            super::prove_header_story_edit(&borrow(&footer_original), &borrow(&footer_moved), &defs)
-                .unwrap(),
+            super::prove_header_story_edit(
+                &borrow(&footer_original),
+                &borrow(&footer_moved),
+                &defs
+            )
+            .unwrap(),
             vec![101],
             "a picture move is accepted only within the exact footer owner"
         );
@@ -4594,7 +4769,12 @@ mod tests {
         let mut canonicalized = moved.clone();
         canonicalized[2].2 = ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "", &[]);
         assert_eq!(
-            super::prove_header_story_edit(&borrow(&omitted_description), &borrow(&canonicalized), &defs).unwrap(),
+            super::prove_header_story_edit(
+                &borrow(&omitted_description),
+                &borrow(&canonicalized),
+                &defs
+            )
+            .unwrap(),
             vec![101],
             "RHWP's explicit empty description preserves the source's omitted empty field"
         );
@@ -4612,8 +4792,11 @@ mod tests {
         assert!(super::prove_header_story_edit(&before, &borrow(&replaced_media), &defs).is_err());
 
         let mut changed_description = moved.clone();
-        changed_description[2].2 = ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "x", b"\xaa\xbb");
-        assert!(super::prove_header_story_edit(&before, &borrow(&changed_description), &defs).is_err());
+        changed_description[2].2 =
+            ctrl_header(101, 0x000a_0311, 120, 80, 4000, 3000, "x", b"\xaa\xbb");
+        assert!(
+            super::prove_header_story_edit(&before, &borrow(&changed_description), &defs).is_err()
+        );
 
         let rectangle_owner = |x: i32, y: i32| {
             let mut owner = vec![0u8; 16];
@@ -4623,15 +4806,24 @@ mod tests {
             vec![
                 (71, 1, owner),
                 (66, 2, paragraph),
-                (71, 3, ctrl_header(606, 0x000a_0000, x, y, 4000, 3000, "", b"")),
-                (76, 4, shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0x004455, None, 901)),
+                (
+                    71,
+                    3,
+                    ctrl_header(606, 0x000a_0000, x, y, 4000, 3000, "", b""),
+                ),
+                (
+                    76,
+                    4,
+                    shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0x004455, None, 901),
+                ),
                 (79, 5, rect_leaf(7, 4000, 3000)),
             ]
         };
         let rectangle = rectangle_owner(0, 0);
         let rectangle_moved = rectangle_owner(120, 80);
         assert_eq!(
-            super::prove_header_story_edit(&borrow(&rectangle), &borrow(&rectangle_moved), &defs).unwrap(),
+            super::prove_header_story_edit(&borrow(&rectangle), &borrow(&rectangle_moved), &defs)
+                .unwrap(),
             vec![606],
             "an existing non-picture GSO shape can change only within its exact story owner"
         );
@@ -4641,14 +4833,16 @@ mod tests {
             &borrow(&rectangle),
             &borrow(&rectangle_other_story),
             &defs,
-        ).is_err());
+        )
+        .is_err());
         let mut rectangle_sibling_mutation = rectangle_moved.clone();
         rectangle_sibling_mutation[1].2[4] ^= 1;
         assert!(super::prove_header_story_edit(
             &borrow(&rectangle),
             &borrow(&rectangle_sibling_mutation),
             &defs,
-        ).is_err());
+        )
+        .is_err());
 
         // This supported move contains an opaque nested table story. Every record in that
         // story remains byte-identical while only the owning CTRL_HEADER position changes.
@@ -4660,8 +4854,16 @@ mod tests {
                     owner
                 }),
                 (66, 2, vec![0; 22]),
-                (71, 3, ctrl_header(707, 0x000a_0000, x, y, 4000, 3000, "", b"")),
-                (76, 4, shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0, None, 902)),
+                (
+                    71,
+                    3,
+                    ctrl_header(707, 0x000a_0000, x, y, 4000, 3000, "", b""),
+                ),
+                (
+                    76,
+                    4,
+                    shape_component_drawing(b"cer$", 4000, 3000, 0, 0, 0, None, 902),
+                ),
                 (72, 5, vec![1; 12]),
                 (77, 6, vec![2; 24]),
                 (66, 7, vec![3; 22]),
@@ -4943,12 +5145,16 @@ mod tests {
         let original = read("p5-caption-original.hwp");
         let edited = read("p5-caption-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
-        let picture = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
+        let picture =
+            |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
         let cases: [(fn(u16, u16, &[u8]) -> bool, usize); 5] = [
             (picture, 16),
             (|t, l, _| t == 72 && l == 2, 4),
             (|t, l, _| t == 67 && l == 3, 4),
-            (|t, l, bytes| t == 71 && l == 3 && bytes.starts_with(b"onta"), 8),
+            (
+                |t, l, bytes| t == 71 && l == 3 && bytes.starts_with(b"onta"),
+                8,
+            ),
             (|t, l, _| t == 85 && l == 3, 71),
         ];
         for (pick, offset) in cases {
@@ -4958,7 +5164,8 @@ mod tests {
                 changed
             });
             assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
         let lock = |header: &[u8]| {
             let mut changed = header.to_vec();
@@ -4968,7 +5175,8 @@ mod tests {
         let locked = mutate_body_record(&original, picture, lock);
         let locked_edit = mutate_body_record(&edited, picture, lock);
         assert!(check_with_preview_refresh(&locked, &locked_edit)
-            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+            .iter()
+            .any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -4979,23 +5187,29 @@ mod tests {
         let original = read("p3-polygon-original.hwp");
         let edited = read("p3-polygon-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
-        let component = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(super::SC_POLYGON);
+        let component = |tag, level, data: &[u8]| {
+            tag == 76 && level == 2 && data.starts_with(super::SC_POLYGON)
+        };
         let vertices = |tag, level, _: &[u8]| tag == super::TAG_POLYGON && level == 3;
         let cases: [(fn(u16, u16, &[u8]) -> bool, usize); 4] = [
-            (vertices, 4), (component, 20), (component, 200), (component, 204),
+            (vertices, 4),
+            (component, 20),
+            (component, 200),
+            (component, 204),
         ];
         for (pick, offset) in cases {
             let tampered = mutate_body_record(&edited, pick, |data| {
                 let mut changed = data.to_vec();
                 if offset == 200 {
-                    changed[offset..offset+4].copy_from_slice(&7201u32.to_le_bytes());
+                    changed[offset..offset + 4].copy_from_slice(&7201u32.to_le_bytes());
                 } else {
                     changed[offset] ^= 1;
                 }
                 changed
             });
             assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
     }
 
@@ -5014,7 +5228,8 @@ mod tests {
             changed
         });
         assert!(check_with_preview_refresh(&original, &tampered_curve)
-            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+            .iter()
+            .any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -5038,9 +5253,11 @@ mod tests {
                 changed
             });
             assert!(check_with_preview_refresh(&source, &tampered)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
-        let comp = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"lop$lop$");
+        let comp =
+            |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"lop$lop$");
         let translated = |data: &[u8]| {
             let mut changed = data.to_vec();
             changed[8] = 1;
@@ -5049,7 +5266,9 @@ mod tests {
         assert!(check_with_preview_refresh(
             &mutate_body_record(&source, comp, translated),
             &mutate_body_record(&moved, comp, translated),
-        ).iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+        )
+        .iter()
+        .any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -5057,10 +5276,18 @@ mod tests {
     fn prepare_stage3a_hwp_curve_fixture() {
         let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         let original = std::fs::read(directory.join("p3-poly-curve-original.hwp")).unwrap();
-        let points = [(0, 2000), (2500, 1000), (4300, 6300), (8100, 5800), (10000, 4200)];
+        let points = [
+            (0, 2000),
+            (2500, 1000),
+            (4300, 6300),
+            (8100, 5800),
+            (10000, 4200),
+        ];
         let path = cubic_fixture_leaf(&points, &[1, 0]);
         let candidate = mutate_body_record(
-            &original, |tag, level, _| tag == super::TAG_CURVE && level == 3, |_| path,
+            &original,
+            |tag, level, _| tag == super::TAG_CURVE && level == 3,
+            |_| path,
         );
         std::fs::write(directory.join("a-p4-curve-original.hwp"), &candidate).unwrap();
         let translated = mutate_p4_cubic_component(&candidate, 68, &9000.0f64.to_le_bytes());
@@ -5074,12 +5301,18 @@ mod tests {
                 changed
             },
         );
-        std::fs::write(directory.join("a-p4-curve-unmodeled.hwp"), unmodeled_padding).unwrap();
+        std::fs::write(
+            directory.join("a-p4-curve-unmodeled.hwp"),
+            unmodeled_padding,
+        )
+        .unwrap();
 
         let mut points = points.to_vec();
         points.extend([(10200, 2800), (9900, 1100), (8400, 900)]);
         let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
-        let interior = mutate_body_record(&original, curve, |_| cubic_fixture_leaf(&points, &[1, 0, 1]));
+        let interior = mutate_body_record(&original, curve, |_| {
+            cubic_fixture_leaf(&points, &[1, 0, 1])
+        });
         std::fs::write(directory.join("a-p4-curve-interior-original.hwp"), interior).unwrap();
     }
 
@@ -5101,15 +5334,54 @@ mod tests {
         let leaf = |tail: &[(i32, i32)], commands: &[u8]| {
             cubic_fixture_leaf(&[prefix.as_slice(), tail].concat(), commands)
         };
-        let old = leaf(&[(600, 400), (650, 350), (600, 200), (550, 100), (500, 100)], &[1, 0, 1, 0]);
-        let edited = leaf(&[(500, 400), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)], &[1, 0, 0, 1, 0]);
+        let old = leaf(
+            &[(600, 400), (650, 350), (600, 200), (550, 100), (500, 100)],
+            &[1, 0, 1, 0],
+        );
+        let edited = leaf(
+            &[
+                (500, 400),
+                (600, 400),
+                (650, 350),
+                (600, 200),
+                (550, 100),
+                (440, 100),
+            ],
+            &[1, 0, 0, 1, 0],
+        );
         assert!(super::prove_cubic_leaf_edit(&old, &edited, 2000, 2000));
         for tail in [
-            [(500, 401), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)],
-            [(620, 400), (600, 400), (650, 350), (600, 200), (550, 100), (440, 100)],
-            [(500, 400), (600, 400), (651, 350), (600, 200), (550, 100), (440, 100)],
+            [
+                (500, 401),
+                (600, 400),
+                (650, 350),
+                (600, 200),
+                (550, 100),
+                (440, 100),
+            ],
+            [
+                (620, 400),
+                (600, 400),
+                (650, 350),
+                (600, 200),
+                (550, 100),
+                (440, 100),
+            ],
+            [
+                (500, 400),
+                (600, 400),
+                (651, 350),
+                (600, 200),
+                (550, 100),
+                (440, 100),
+            ],
         ] {
-            assert!(!super::prove_cubic_leaf_edit(&old, &leaf(&tail, &[1, 0, 0, 1, 0]), 2000, 2000));
+            assert!(!super::prove_cubic_leaf_edit(
+                &old,
+                &leaf(&tail, &[1, 0, 0, 1, 0]),
+                2000,
+                2000
+            ));
         }
     }
 
@@ -5117,22 +5389,50 @@ mod tests {
     fn stage3a_cubic_segment_proof_allows_one_owned_cubic_and_preserves_neighbors() {
         let old = cubic_fixture_leaf(&[(0, 0), (10, 5), (20, 10), (30, 15), (40, 15)], &[1, 0]);
         let inserted = cubic_fixture_leaf(
-            &[(0, 0), (10, 5), (20, 10), (30, 15), (34, 17), (38, 17), (42, 15), (40, 15)],
+            &[
+                (0, 0),
+                (10, 5),
+                (20, 10),
+                (30, 15),
+                (34, 17),
+                (38, 17),
+                (42, 15),
+                (40, 15),
+            ],
             &[1, 1, 0],
         );
         assert!(super::prove_cubic_leaf_edit(&old, &inserted, 100, 100));
         assert!(super::prove_cubic_leaf_edit(&inserted, &old, 100, 100));
 
         let changed_neighbor = cubic_fixture_leaf(
-            &[(0, 0), (10, 5), (20, 10), (30, 15), (34, 17), (38, 17), (42, 15), (41, 15)],
+            &[
+                (0, 0),
+                (10, 5),
+                (20, 10),
+                (30, 15),
+                (34, 17),
+                (38, 17),
+                (42, 15),
+                (41, 15),
+            ],
             &[1, 1, 0],
         );
         let inserted_line = cubic_fixture_leaf(
             &[(0, 0), (10, 5), (20, 10), (30, 15), (35, 20), (40, 15)],
             &[1, 0, 0],
         );
-        assert!(!super::prove_cubic_leaf_edit(&old, &changed_neighbor, 100, 100));
-        assert!(!super::prove_cubic_leaf_edit(&old, &inserted_line, 100, 100));
+        assert!(!super::prove_cubic_leaf_edit(
+            &old,
+            &changed_neighbor,
+            100,
+            100
+        ));
+        assert!(!super::prove_cubic_leaf_edit(
+            &old,
+            &inserted_line,
+            100,
+            100
+        ));
     }
 
     #[test]
@@ -5178,7 +5478,8 @@ mod tests {
     #[ignore = "Release-WASM HWP5 editable cubic path and published fixture"]
     fn release_stage3a_hwp_cubic_preserves_segment_structure() {
         let directory = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
-        let original = std::fs::read(directory.join("a-p4-path-transform-h5-original.hwp")).unwrap();
+        let original =
+            std::fs::read(directory.join("a-p4-path-transform-h5-original.hwp")).unwrap();
         let output = std::fs::read(directory.join("a-p4-path-transform-h5-edited.hwp")).unwrap();
         assert_eq!(check_with_preview_refresh(&original, &output), vec![]);
         let curve = |tag, level, _: &[u8]| tag == super::TAG_CURVE && level == 3;
@@ -5189,7 +5490,8 @@ mod tests {
                 bytes
             });
             assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
         // The accepted fixture carries a centered 30-degree rotation, modeled
         // horizontal flip, and nonzero owner/component offsets. Rendering
@@ -5199,15 +5501,24 @@ mod tests {
         let translation = 9000.0f64.to_le_bytes();
         let translated_original = mutate_p4_cubic_component(&original, 68, &translation);
         let translated_output = mutate_p4_cubic_component(&output, 68, &translation);
-        assert!(check_with_preview_refresh(&translated_original, &translated_output)
-            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        assert!(
+            check_with_preview_refresh(&translated_original, &translated_output)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY))
+        );
         let oversized_original = mutate_p4_cubic_component(&original, 8, &2000001i32.to_le_bytes());
         let oversized_output = mutate_p4_cubic_component(&output, 8, &2000001i32.to_le_bytes());
-        assert!(check_with_preview_refresh(&oversized_original, &oversized_output)
-            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+        assert!(
+            check_with_preview_refresh(&oversized_original, &oversized_output)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY))
+        );
         let both_flips_original = mutate_p4_cubic_component(&original, 36, &3u32.to_le_bytes());
         let both_flips_output = mutate_p4_cubic_component(&output, 36, &3u32.to_le_bytes());
-        assert_eq!(check_with_preview_refresh(&both_flips_original, &both_flips_output), vec![]);
+        assert_eq!(
+            check_with_preview_refresh(&both_flips_original, &both_flips_output),
+            vec![]
+        );
         for (offset, replacement) in [
             (8, &15001i32.to_le_bytes()[..]),
             (36, &524293u32.to_le_bytes()[..]),
@@ -5215,7 +5526,8 @@ mod tests {
         ] {
             let tampered = mutate_p4_cubic_component(&output, offset, replacement);
             assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
         for (offset, replacement) in [
             (40, &361i16.to_le_bytes()[..]),
@@ -5223,8 +5535,11 @@ mod tests {
         ] {
             let unsupported_original = mutate_p4_cubic_component(&original, offset, replacement);
             let unsupported_output = mutate_p4_cubic_component(&output, offset, replacement);
-            assert!(check_with_preview_refresh(&unsupported_original, &unsupported_output)
-                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+            assert!(
+                check_with_preview_refresh(&unsupported_original, &unsupported_output)
+                    .iter()
+                    .any(|finding| finding.part.as_deref() == Some(super::BODY))
+            );
         }
     }
 
@@ -5246,13 +5561,17 @@ mod tests {
                 changed[offset] ^= mask;
                 changed
             });
-            assert!(check_with_preview_refresh(&source, &tampered)
-                .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)),
-                "accepted a tampered count, point, command or padding at {offset}");
+            assert!(
+                check_with_preview_refresh(&source, &tampered)
+                    .iter()
+                    .any(|finding| finding.part.as_deref() == Some(super::BODY)),
+                "accepted a tampered count, point, command or padding at {offset}"
+            );
         }
         let shifted = mutate_p4_cubic_component(&appended, 8, &15001i32.to_le_bytes());
         assert!(check_with_preview_refresh(&source, &shifted)
-            .iter().any(|finding| finding.part.as_deref() == Some(super::BODY)));
+            .iter()
+            .any(|finding| finding.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -5264,7 +5583,9 @@ mod tests {
         let edited = read("p3-position-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
         let picture = |tag, level, data: &[u8]| {
-            tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO)
+            tag == 71
+                && level == 1
+                && data.starts_with(super::CTRL_GSO)
                 && super::dword(data, 16) == Ok(3600)
         };
         for (offset, mask) in [(4, 8), (4, 0x80), (12, 1), (20, 1), (28, 1)] {
@@ -5273,9 +5594,12 @@ mod tests {
                 changed[offset] ^= mask;
                 changed
             });
-            assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)),
-                "accepted unauthorized picture placement field at {offset}");
+            assert!(
+                check_with_preview_refresh(&original, &tampered)
+                    .iter()
+                    .any(|f| f.part.as_deref() == Some(super::BODY)),
+                "accepted unauthorized picture placement field at {offset}"
+            );
         }
     }
 
@@ -5287,16 +5611,21 @@ mod tests {
         let original = read("p3-layer-original.hwp");
         let edited = read("p3-layer-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
-        let shape = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
+        let shape =
+            |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(super::CTRL_GSO);
         let leaf = |tag, level, _: &[u8]| tag == 80 && level == 3;
-        for (pick, offset, value) in [(shape as fn(u16, u16, &[u8]) -> bool, 24, 1000u32), (leaf, 8, 1)] {
+        for (pick, offset, value) in [
+            (shape as fn(u16, u16, &[u8]) -> bool, 24, 1000u32),
+            (leaf, 8, 1),
+        ] {
             let tampered = mutate_body_record(&edited, pick, |data| {
                 let mut changed = data.to_vec();
                 changed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
                 changed
             });
             assert!(check_with_preview_refresh(&original, &tampered)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
         let locked = |data: &[u8]| {
             let mut changed = data.to_vec();
@@ -5306,7 +5635,8 @@ mod tests {
         let original = mutate_body_record(&original, shape, locked);
         let edited = mutate_body_record(&edited, shape, locked);
         assert!(check_with_preview_refresh(&original, &edited)
-            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+            .iter()
+            .any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -5318,14 +5648,19 @@ mod tests {
         let edited = read("p2-cell-picture-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
         let table = |tag, level, data: &[u8]| tag == 71 && level == 1 && data.starts_with(b" lbt");
-        let picture = |tag, level, data: &[u8]| tag == 71 && level == 3 && data.starts_with(super::CTRL_GSO);
+        let picture =
+            |tag, level, data: &[u8]| tag == 71 && level == 3 && data.starts_with(super::CTRL_GSO);
         let leaf = |tag, level, _: &[u8]| tag == 85 && level == 5;
         let cases: [(fn(u16, u16, &[u8]) -> bool, usize, u8); 5] = [
             (table, 20, 1),
             (table, 7, 0x40),
             (picture, 36, 1),
             (leaf, 71, 1),
-            (|tag, level, data| tag == 67 && level == 3 && data.starts_with(b"s\0i\0"), 0, 1),
+            (
+                |tag, level, data| tag == 67 && level == 3 && data.starts_with(b"s\0i\0"),
+                0,
+                1,
+            ),
         ];
         for (pick, offset, mask) in cases {
             let tampered = mutate_body_record(&edited, pick, |data| {
@@ -5340,17 +5675,24 @@ mod tests {
                 "accepted tampered table/picture record at offset {offset}"
             );
         }
-        for (pick, mask) in [(table as fn(u16, u16, &[u8]) -> bool, 0x40), (picture, 0x40), (picture, 0)] {
+        for (pick, mask) in [
+            (table as fn(u16, u16, &[u8]) -> bool, 0x40),
+            (picture, 0x40),
+            (picture, 0),
+        ] {
             let set_protection = |data: &[u8]| {
                 let mut changed = data.to_vec();
                 changed[7] |= mask;
-                if mask == 0 { changed[6] |= 0x10; } // independent size protection
+                if mask == 0 {
+                    changed[6] |= 0x10;
+                } // independent size protection
                 changed
             };
             let original = mutate_body_record(&original, pick, set_protection);
             let edited = mutate_body_record(&edited, pick, set_protection);
             assert!(check_with_preview_refresh(&original, &edited)
-                .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
     }
 
@@ -5363,16 +5705,28 @@ mod tests {
         let edited = read("p2-nested-cell-picture-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
 
-        let outer_table = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 1 && data.starts_with(b" lbt");
-        let inner_table = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 3 && data.starts_with(b" lbt");
-        let picture = |tag: u16, level: u16, data: &[u8]| tag == 71 && level == 5 && data.starts_with(super::CTRL_GSO);
+        let outer_table = |tag: u16, level: u16, data: &[u8]| {
+            tag == 71 && level == 1 && data.starts_with(b" lbt")
+        };
+        let inner_table = |tag: u16, level: u16, data: &[u8]| {
+            tag == 71 && level == 3 && data.starts_with(b" lbt")
+        };
+        let picture = |tag: u16, level: u16, data: &[u8]| {
+            tag == 71 && level == 5 && data.starts_with(super::CTRL_GSO)
+        };
         let leaf = |tag: u16, level: u16, _: &[u8]| tag == 85 && level == 7;
         for (pick, offset, mask) in [
             (outer_table as fn(u16, u16, &[u8]) -> bool, 20, 1u8),
             (inner_table, 20, 1),
             (picture, 36, 1),
             (leaf, 71, 1),
-            (|tag: u16, level: u16, data: &[u8]| tag == 67 && level == 5 && data.starts_with(b"d\0e\0"), 0, 1),
+            (
+                |tag: u16, level: u16, data: &[u8]| {
+                    tag == 67 && level == 5 && data.starts_with(b"d\0e\0")
+                },
+                0,
+                1,
+            ),
         ] {
             let tampered = mutate_body_record(&edited, pick, |data| {
                 let mut changed = data.to_vec();
@@ -5394,11 +5748,9 @@ mod tests {
             };
             let locked_orig = mutate_body_record(&original, pick, set_locked);
             let locked_edit = mutate_body_record(&edited, pick, set_locked);
-            assert!(
-                check_with_preview_refresh(&locked_orig, &locked_edit)
-                    .iter()
-                    .any(|f| f.part.as_deref() == Some(super::BODY))
-            );
+            assert!(check_with_preview_refresh(&locked_orig, &locked_edit)
+                .iter()
+                .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
     }
 
@@ -5411,9 +5763,8 @@ mod tests {
         let edited = read("combined-outline-edited.hwp");
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
 
-        let component = |tag, level, data: &[u8]| {
-            tag == 76 && level == 2 && data.starts_with(b"cer$cer$")
-        };
+        let component =
+            |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cer$cer$");
         for (offset, value) in [
             (200, 0u32),
             (200, 7201),
@@ -5442,14 +5793,19 @@ mod tests {
         let original = std::fs::read(dir.join("p3-width-original.hwp")).unwrap();
         let edited = std::fs::read(dir.join("p3-width-edited.hwp")).unwrap();
         assert_eq!(check_with_preview_refresh(&original, &edited), vec![]);
-        let pick = |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cer$cer$");
-        for (at, bytes) in [(200, 7201u32.to_le_bytes()), (204, 0xd100_0042u32.to_le_bytes())] {
+        let pick =
+            |tag, level, data: &[u8]| tag == 76 && level == 2 && data.starts_with(b"cer$cer$");
+        for (at, bytes) in [
+            (200, 7201u32.to_le_bytes()),
+            (204, 0xd100_0042u32.to_le_bytes()),
+        ] {
             let tampered = mutate_body_record(&edited, pick, |data| {
                 let mut changed = data.to_vec();
                 changed[at..at + 4].copy_from_slice(&bytes);
                 changed
             });
-            assert!(check_with_preview_refresh(&original, &tampered).iter()
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter()
                 .any(|f| f.part.as_deref() == Some(super::BODY)));
         }
     }
@@ -5465,7 +5821,9 @@ mod tests {
         for (tag, level, offset, mask) in [(72, 3, 0, 1), (79, 3, 1, 1), (71, 1, 36, 1)] {
             let tampered = mutate_body_record(
                 &edited,
-                |t, l, data| t == tag && l == level && (t != 71 || data.starts_with(super::CTRL_GSO)),
+                |t, l, data| {
+                    t == tag && l == level && (t != 71 || data.starts_with(super::CTRL_GSO))
+                },
                 |data| {
                     let mut v = data.to_vec();
                     v[offset] ^= mask;
@@ -5507,7 +5865,9 @@ mod tests {
         let first_refresh = refresh_previews(&original, &split, Some(&raster)).unwrap();
         let first_output = first_refresh.output.expect("first split preview rebuilt");
         let first_image = first_refresh.image.expect("first split preview evidence");
-        assert!(compare_saved_with_preview(&original, &first_output, Some(&first_image)).is_empty());
+        assert!(
+            compare_saved_with_preview(&original, &first_output, Some(&first_image)).is_empty()
+        );
 
         // A second save from that same live engine exports `merged` with the pre-save image.
         // It must replace that stale image with the exact reopened render, then pass the full
@@ -5516,7 +5876,10 @@ mod tests {
         let second_output = second_refresh.output.expect("second merge preview rebuilt");
         let second_image = second_refresh.image.expect("second merge preview evidence");
         assert_eq!(second_image, first_image);
-        assert!(compare_saved_with_preview(&first_output, &second_output, Some(&second_image)).is_empty());
+        assert!(
+            compare_saved_with_preview(&first_output, &second_output, Some(&second_image))
+                .is_empty()
+        );
 
         // A changed preview without a body edit is not a save: even a valid render cannot
         // authorize replacing the image when the output has no visual body change.
@@ -5528,10 +5891,12 @@ mod tests {
             &[("PrvImage", old_image.as_slice())],
         )
         .unwrap();
-        assert!(refresh_previews(&first_output, &preview_only_change, Some(&raster))
-            .unwrap()
-            .output
-            .is_none());
+        assert!(
+            refresh_previews(&first_output, &preview_only_change, Some(&raster))
+                .unwrap()
+                .output
+                .is_none()
+        );
 
         let changed_text = mutate_body_record(
             &split,
@@ -5552,9 +5917,7 @@ mod tests {
         let duplicate_paragraph_id = mutate_body_record(
             &split,
             |tag, level, data| {
-                tag == 66
-                    && level == 3
-                    && data.get(18..22) == Some(&[1, 0, 0, 0][..])
+                tag == 66 && level == 3 && data.get(18..22) == Some(&[1, 0, 0, 0][..])
             },
             |data| {
                 let mut changed = data.to_vec();
@@ -5594,10 +5957,13 @@ mod tests {
                 changed
             },
         );
-        assert!(refresh_previews(&first_output, &moved_owner, Some(&raster))
-            .unwrap()
-            .output
-            .is_none(), "regenerated preview authorized a textbox geometry mutation");
+        assert!(
+            refresh_previews(&first_output, &moved_owner, Some(&raster))
+                .unwrap()
+                .output
+                .is_none(),
+            "regenerated preview authorized a textbox geometry mutation"
+        );
         assert!(
             check_with_preview_refresh(&original, &moved_owner)
                 .iter()
@@ -5699,13 +6065,11 @@ mod tests {
                 h
             },
         );
-        assert!(
-            check_with_preview_refresh(&locked, &locked_edit)
-                .iter()
-                .any(|f| {
-                    f.code == FindingCode::RecordsChanged && f.part.as_deref() == Some(super::BODY)
-                })
-        );
+        assert!(check_with_preview_refresh(&locked, &locked_edit)
+            .iter()
+            .any(|f| {
+                f.code == FindingCode::RecordsChanged && f.part.as_deref() == Some(super::BODY)
+            }));
     }
 
     #[test]
@@ -5728,11 +6092,9 @@ mod tests {
                 bytes[offset] ^= 1;
                 bytes
             });
-            assert!(
-                check_with_preview_refresh(&original, &tampered)
-                    .iter()
-                    .any(|finding| finding.part.as_deref() == Some(super::BODY))
-            );
+            assert!(check_with_preview_refresh(&original, &tampered)
+                .iter()
+                .any(|finding| finding.part.as_deref() == Some(super::BODY)));
         }
     }
 
@@ -5766,7 +6128,9 @@ mod tests {
                 check_with_preview_refresh(&orig, &change(edit.as_slice())),
             ] {
                 assert!(
-                    findings.iter().any(|f| f.part.as_deref() == Some(super::BODY)),
+                    findings
+                        .iter()
+                        .any(|f| f.part.as_deref() == Some(super::BODY)),
                     "{label}: {findings:?}",
                 );
             }
@@ -5994,10 +6358,11 @@ mod tests {
             }
             leaf
         };
-        assert!(
-            !check_with_preview_refresh(&file(collapsed_src), &file(noncanon_resized_w.clone()))
-                .is_empty()
-        );
+        assert!(!check_with_preview_refresh(
+            &file(collapsed_src),
+            &file(noncanon_resized_w.clone())
+        )
+        .is_empty());
         let mut oob_src = noncanonical.clone();
         oob_src[2].2 = {
             let mut leaf = vec![7u8];
@@ -6134,10 +6499,8 @@ mod tests {
         let normalized = mutate_body_record(&edited, rectangle_record, |leaf| {
             rect_leaf(leaf[0], 7200, 3600)
         });
-        assert!(
-            check_with_preview_refresh(&source, &normalized)
-                .contains(&Finding::at(FindingCode::RecordsChanged, super::BODY))
-        );
+        assert!(check_with_preview_refresh(&source, &normalized)
+            .contains(&Finding::at(FindingCode::RecordsChanged, super::BODY)));
         let resized = read("noncanonical-width");
         let multistep = read("noncanonical-multistep");
         assert_eq!(check_with_preview_refresh(&source, &multistep), vec![]);
@@ -6439,16 +6802,15 @@ mod tests {
         // Deleting pic1 AND mutating BinData is still rejected.
         let bad_bin = build_hwp(&di_ref, &del_pic1_ref, b"\x89PNG\r\n\x1a\nBAD");
         assert!(
-            check_with_preview_refresh(&orig_cfb, &bad_bin)
-                .contains(&Finding::at(FindingCode::PartChanged, "BinData/BIN0001.png"))
+            check_with_preview_refresh(&orig_cfb, &bad_bin).contains(&Finding::at(
+                FindingCode::PartChanged,
+                "BinData/BIN0001.png"
+            ))
         );
 
         // Deleting a TextBox shape that contains a nested control is rejected.
         let mut nested_tb = rect_tb;
-        nested_tb.insert(
-            4,
-            (71, 5, b"umf%\x00\x00\x00\x00\x08\x00\x00\x00".to_vec()),
-        );
+        nested_tb.insert(4, (71, 5, b"umf%\x00\x00\x00\x00\x08\x00\x00\x00".to_vec()));
         let nested_sec = wrap_section(vec![pic1.clone(), nested_tb]);
         let nested_ref: Vec<_> = nested_sec
             .iter()
@@ -6494,8 +6856,14 @@ mod tests {
             (-h * sin, h * cos),
             (w * cos - h * sin, w * sin + h * cos),
         ];
-        let tx = -corners.iter().map(|(x, _)| *x).fold(f64::INFINITY, f64::min);
-        let ty = -corners.iter().map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
+        let tx = -corners
+            .iter()
+            .map(|(x, _)| *x)
+            .fold(f64::INFINITY, f64::min);
+        let ty = -corners
+            .iter()
+            .map(|(_, y)| *y)
+            .fold(f64::INFINITY, f64::min);
         let m3 = [cos, -sin, tx - ox, sin, cos, ty - oy];
         for m in [m1, m2, m3] {
             for v in m {
@@ -6570,7 +6938,10 @@ mod tests {
             let tampered = if at == 98 { f64::NAN } else { 99.0 };
             bad_r[at..at + 8].copy_from_slice(&tampered.to_le_bytes());
             let bad = file(6780, 5580, new_cw, new_ch, 30, bad_r);
-            assert!(!check_with_preview_refresh(&orig, &bad).is_empty(), "at {at}");
+            assert!(
+                !check_with_preview_refresh(&orig, &bad).is_empty(),
+                "at {at}"
+            );
         }
 
         // Inconsistent current_width or nonfinite/sheared source matrix must be rejected.
@@ -6607,16 +6978,41 @@ mod tests {
             b
         };
 
-        let build = |w: u32, h: u32, flip: u32, rot: i16, fill: Option<u32>, border_c: u32, leaf_poly: &[u8], leaf_curve: &[u8], locked: bool| {
+        let build = |w: u32,
+                     h: u32,
+                     flip: u32,
+                     rot: i16,
+                     fill: Option<u32>,
+                     border_c: u32,
+                     leaf_poly: &[u8],
+                     leaf_curve: &[u8],
+                     locked: bool| {
             let attr = if locked { super::ATTR_LOCKED } else { 0 } | (1 << 21);
             let poly = vec![
                 (71, 1, ctrl_header(201, attr, 0, 0, w, h, "", &[])),
-                (76, 2, shape_component_drawing(super::SC_POLYGON, w, h, flip, rot, border_c, fill, 201)),
+                (
+                    76,
+                    2,
+                    shape_component_drawing(
+                        super::SC_POLYGON,
+                        w,
+                        h,
+                        flip,
+                        rot,
+                        border_c,
+                        fill,
+                        201,
+                    ),
+                ),
                 (super::TAG_POLYGON, 3, leaf_poly.to_vec()),
             ];
             let curve = vec![
                 (71, 1, ctrl_header(202, attr, 0, 0, w, h, "", &[])),
-                (76, 2, shape_component_drawing(super::SC_CURVE, w, h, flip, rot, border_c, fill, 202)),
+                (
+                    76,
+                    2,
+                    shape_component_drawing(super::SC_CURVE, w, h, flip, rot, border_c, fill, 202),
+                ),
                 (super::TAG_CURVE, 3, leaf_curve.to_vec()),
             ];
             let sec = wrap_section(vec![poly, curve]);
@@ -6625,18 +7021,48 @@ mod tests {
         };
 
         let orig = build(10800, 7200, 0, 0, None, 0, &poly_leaf, &curve_leaf, false);
-        let edited = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &poly_leaf, &curve_leaf, false);
+        let edited = build(
+            15000,
+            9000,
+            1,
+            45,
+            Some(0x00CC_8822),
+            0x0011_33AA,
+            &poly_leaf,
+            &curve_leaf,
+            false,
+        );
         assert_eq!(check_with_preview_refresh(&orig, &edited), vec![]);
 
         // Negative 1: mutated polygon vertex or curve segment must fail closed.
         let mut bad_poly = poly_leaf.clone();
         bad_poly[8] ^= 1;
-        let tampered_poly = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &bad_poly, &curve_leaf, false);
+        let tampered_poly = build(
+            15000,
+            9000,
+            1,
+            45,
+            Some(0x00CC_8822),
+            0x0011_33AA,
+            &bad_poly,
+            &curve_leaf,
+            false,
+        );
         assert!(!check_with_preview_refresh(&orig, &tampered_poly).is_empty());
 
         let mut bad_curve = curve_leaf.clone();
         bad_curve[28] = 0; // segment_type flipped
-        let tampered_curve = build(15000, 9000, 1, 45, Some(0x00CC_8822), 0x0011_33AA, &poly_leaf, &bad_curve, false);
+        let tampered_curve = build(
+            15000,
+            9000,
+            1,
+            45,
+            Some(0x00CC_8822),
+            0x0011_33AA,
+            &poly_leaf,
+            &bad_curve,
+            false,
+        );
         assert!(!check_with_preview_refresh(&orig, &tampered_curve).is_empty());
 
         // Negative 2: locked polygon/curve must never allow geometry evolution.
@@ -6646,7 +7072,10 @@ mod tests {
 
         // Deletion of unlocked polygon & curve succeeds cleanly.
         let deleted_sec = wrap_section(vec![]);
-        let deleted_refs: Vec<_> = deleted_sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let deleted_refs: Vec<_> = deleted_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
         let deleted = build_hwp(&di_ref, &deleted_refs, b"\x89PNG\r\n\x1a\n123");
         assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
     }
@@ -6656,30 +7085,31 @@ mod tests {
         let di = doc_info_records(1);
         let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
 
-        let container_sc = |w: u32, h: u32, inst: u32, child_ids: &[u32], rc: [i32; 2], rendering: &[u8]| {
-            let mut b = Vec::new();
-            b.extend_from_slice(super::SC_CONTAINER);
-            b.extend_from_slice(super::SC_CONTAINER);
-            b.extend_from_slice(&0i32.to_le_bytes()); // offset_x
-            b.extend_from_slice(&0i32.to_le_bytes()); // offset_y
-            b.extend_from_slice(&0u16.to_le_bytes()); // group_level = 0
-            b.extend_from_slice(&0u16.to_le_bytes()); // local_file_version
-            b.extend_from_slice(&12000u32.to_le_bytes()); // orig_w
-            b.extend_from_slice(&8000u32.to_le_bytes()); // orig_h
-            b.extend_from_slice(&w.to_le_bytes()); // cur_w
-            b.extend_from_slice(&h.to_le_bytes()); // cur_h
-            b.extend_from_slice(&0u32.to_le_bytes()); // flip
-            b.extend_from_slice(&0i16.to_le_bytes()); // rot
-            b.extend_from_slice(&rc[0].to_le_bytes());
-            b.extend_from_slice(&rc[1].to_le_bytes());
-            b.extend_from_slice(rendering);
-            b.extend_from_slice(&(child_ids.len() as u16).to_le_bytes());
-            for id in child_ids {
-                b.extend_from_slice(&id.to_le_bytes());
-            }
-            b.extend_from_slice(&inst.to_le_bytes());
-            b
-        };
+        let container_sc =
+            |w: u32, h: u32, inst: u32, child_ids: &[u32], rc: [i32; 2], rendering: &[u8]| {
+                let mut b = Vec::new();
+                b.extend_from_slice(super::SC_CONTAINER);
+                b.extend_from_slice(super::SC_CONTAINER);
+                b.extend_from_slice(&0i32.to_le_bytes()); // offset_x
+                b.extend_from_slice(&0i32.to_le_bytes()); // offset_y
+                b.extend_from_slice(&0u16.to_le_bytes()); // group_level = 0
+                b.extend_from_slice(&0u16.to_le_bytes()); // local_file_version
+                b.extend_from_slice(&12000u32.to_le_bytes()); // orig_w
+                b.extend_from_slice(&8000u32.to_le_bytes()); // orig_h
+                b.extend_from_slice(&w.to_le_bytes()); // cur_w
+                b.extend_from_slice(&h.to_le_bytes()); // cur_h
+                b.extend_from_slice(&0u32.to_le_bytes()); // flip
+                b.extend_from_slice(&0i16.to_le_bytes()); // rot
+                b.extend_from_slice(&rc[0].to_le_bytes());
+                b.extend_from_slice(&rc[1].to_le_bytes());
+                b.extend_from_slice(rendering);
+                b.extend_from_slice(&(child_ids.len() as u16).to_le_bytes());
+                for id in child_ids {
+                    b.extend_from_slice(&id.to_le_bytes());
+                }
+                b.extend_from_slice(&inst.to_le_bytes());
+                b
+            };
         let child_rect_sc = {
             let mut b = Vec::new();
             b.extend_from_slice(super::SC_RECT);
@@ -6721,7 +7151,18 @@ mod tests {
         let build = |w: u32, h: u32, rc: [i32; 2], rendering: &[u8], leaf: &[u8]| {
             let group = vec![
                 (71, 1, ctrl_header(301, 1 << 21, 500, 500, w, h, "", &[])),
-                (76, 2, container_sc(w, h, 301, &[u32::from_le_bytes(*super::SC_RECT)], rc, rendering)),
+                (
+                    76,
+                    2,
+                    container_sc(
+                        w,
+                        h,
+                        301,
+                        &[u32::from_le_bytes(*super::SC_RECT)],
+                        rc,
+                        rendering,
+                    ),
+                ),
                 (76, 3, child_rect_sc.clone()),
                 (super::TAG_RECTANGLE, 4, leaf.to_vec()),
             ];
@@ -6746,7 +7187,10 @@ mod tests {
 
         // Flat unlocked uncaptioned HWP5 container deletion succeeds cleanly.
         let deleted_sec = wrap_section(vec![]);
-        let deleted_refs: Vec<_> = deleted_sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+        let deleted_refs: Vec<_> = deleted_sec
+            .iter()
+            .map(|(t, l, b)| (*t, *l, b.as_slice()))
+            .collect();
         let deleted = build_hwp(&di_ref, &deleted_refs, b"\x89PNG\r\n\x1a\n123");
         assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
     }
@@ -6800,8 +7244,13 @@ mod tests {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(&0u32.to_le_bytes());
             for (x, y) in [
-                (cx, cy), (w, cy), (cx, h), (w, cy),
-                (w, cy), (w, cy), (w, cy),
+                (cx, cy),
+                (w, cy),
+                (cx, h),
+                (w, cy),
+                (w, cy),
+                (w, cy),
+                (w, cy),
             ] {
                 bytes.extend_from_slice(&x.to_le_bytes());
                 bytes.extend_from_slice(&y.to_le_bytes());
@@ -6832,14 +7281,17 @@ mod tests {
             bytes.extend_from_slice(&301u32.to_le_bytes());
             bytes
         };
-        let records = |rect_sc: Vec<u8>, rect_leaf: Vec<u8>, ellipse_sc: Vec<u8>, ellipse_leaf: Vec<u8>| {
-            vec![
-                (71, 1, b" osg\0\0\0\0".to_vec()),
-                (76, 2, parent()),
-                (76, 3, rect_sc), (79, 4, rect_leaf),
-                (76, 3, ellipse_sc), (80, 4, ellipse_leaf),
-            ]
-        };
+        let records =
+            |rect_sc: Vec<u8>, rect_leaf: Vec<u8>, ellipse_sc: Vec<u8>, ellipse_leaf: Vec<u8>| {
+                vec![
+                    (71, 1, b" osg\0\0\0\0".to_vec()),
+                    (76, 2, parent()),
+                    (76, 3, rect_sc),
+                    (79, 4, rect_leaf),
+                    (76, 3, ellipse_sc),
+                    (80, 4, ellipse_leaf),
+                ]
+            };
         let original = records(
             component(super::SC_RECT, 0, 0, 4000, 3000, 1001, 0x0011_2233),
             rectangle(4000, 3000),
@@ -6847,9 +7299,16 @@ mod tests {
             ellipse(4000, 3000),
         );
         let prove = |next: &[(u16, u16, Vec<u8>)]| {
-            let old_refs: Vec<super::Record<'_>> = original.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-            let new_refs: Vec<super::Record<'_>> = next.iter().map(|(tag, level, data)| (*tag, *level, data.as_slice())).collect();
-            super::prove_hwp5_group_child_edit(&old_refs, &new_refs, 1, 1, 2, 196, 12000, 8000).is_ok()
+            let old_refs: Vec<super::Record<'_>> = original
+                .iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect();
+            let new_refs: Vec<super::Record<'_>> = next
+                .iter()
+                .map(|(tag, level, data)| (*tag, *level, data.as_slice()))
+                .collect();
+            super::prove_hwp5_group_child_edit(&old_refs, &new_refs, 1, 1, 2, 196, 12000, 8000)
+                .is_ok()
         };
         let mut moved = original.clone();
         moved[2].2[4..8].copy_from_slice(&100i32.to_le_bytes());
@@ -6880,7 +7339,10 @@ mod tests {
 
         let mut bad_matrix = moved.clone();
         bad_matrix[2].2[64..72].copy_from_slice(&99f64.to_le_bytes());
-        assert!(!prove(&bad_matrix), "offset/render translation mismatch must fail");
+        assert!(
+            !prove(&bad_matrix),
+            "offset/render translation mismatch must fail"
+        );
         let mut bad_border = filled.clone();
         bad_border[2].2[288] ^= 1;
         assert!(!prove(&bad_border), "border changes must fail");
@@ -6908,7 +7370,8 @@ mod tests {
             changed
         });
         assert!(check_with_preview_refresh(&original, &tampered)
-            .iter().any(|f| f.part.as_deref() == Some(super::BODY)));
+            .iter()
+            .any(|f| f.part.as_deref() == Some(super::BODY)));
     }
 
     #[test]
@@ -6931,39 +7394,40 @@ mod tests {
         let di = doc_info_records(1);
         let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
 
-        let cap_para = |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
-            let mut raw_text = Vec::new();
-            for cu in text.encode_utf16() {
-                raw_text.extend_from_slice(&cu.to_le_bytes());
-            }
-            if with_atno {
-                raw_text.extend_from_slice(&18u16.to_le_bytes());
-                raw_text.extend_from_slice(b"onta");
-                raw_text.extend_from_slice(&[0u8; 8]);
-                raw_text.extend_from_slice(&18u16.to_le_bytes());
-            }
-            raw_text.extend_from_slice(b"\r\0");
-            let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
-            let mask: u32 = if with_atno { 1 << 18 } else { 0 };
-            let mut hdr = vec![0u8; 22];
-            hdr[0..4].copy_from_slice(&cc.to_le_bytes());
-            hdr[4..8].copy_from_slice(&mask.to_le_bytes());
-            hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
-            hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
-            let mut cs = vec![0u8; 8];
-            cs[0..4].copy_from_slice(&0u32.to_le_bytes());
-            let mut ls = vec![0u8; 36];
-            ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
-            ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
-            ls[12..16].copy_from_slice(&850i32.to_le_bytes());
-            let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
-            if with_atno {
-                let mut atno = vec![0u8; 16];
-                atno[0..4].copy_from_slice(b"onta");
-                out.push((71, 3, atno));
-            }
-            out
-        };
+        let cap_para =
+            |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
+                let mut raw_text = Vec::new();
+                for cu in text.encode_utf16() {
+                    raw_text.extend_from_slice(&cu.to_le_bytes());
+                }
+                if with_atno {
+                    raw_text.extend_from_slice(&18u16.to_le_bytes());
+                    raw_text.extend_from_slice(b"onta");
+                    raw_text.extend_from_slice(&[0u8; 8]);
+                    raw_text.extend_from_slice(&18u16.to_le_bytes());
+                }
+                raw_text.extend_from_slice(b"\r\0");
+                let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
+                let mask: u32 = if with_atno { 1 << 18 } else { 0 };
+                let mut hdr = vec![0u8; 22];
+                hdr[0..4].copy_from_slice(&cc.to_le_bytes());
+                hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+                hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+                hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+                let mut cs = vec![0u8; 8];
+                cs[0..4].copy_from_slice(&0u32.to_le_bytes());
+                let mut ls = vec![0u8; 36];
+                ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
+                ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
+                ls[12..16].copy_from_slice(&850i32.to_le_bytes());
+                let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
+                if with_atno {
+                    let mut atno = vec![0u8; 16];
+                    atno[0..4].copy_from_slice(b"onta");
+                    out.push((71, 3, atno));
+                }
+                out
+            };
 
         let cap_list = |para_count: u16, extra_flags: u8| -> Vec<u8> {
             let mut list = vec![0u8; 30];
@@ -6972,22 +7436,32 @@ mod tests {
             list
         };
 
-        let shape_sc = shape_component_drawing(super::SC_RECT, 201, 6000, 4000, 100, 0, Some(0x00ff_ffff), 1);
+        let shape_sc = shape_component_drawing(
+            super::SC_RECT,
+            201,
+            6000,
+            4000,
+            100,
+            0,
+            Some(0x00ff_ffff),
+            1,
+        );
         let shape_leaf = rect_leaf(0, 6000, 4000);
-        let build_shape_cap = |paras: Vec<Vec<(u16, u16, Vec<u8>)>>, list_hdr: Vec<u8>, attr: u32| {
-            let mut obj = vec![
-                (71, 1, ctrl_header(201, attr, 500, 500, 6000, 4000, "", &[])),
-                (72, 2, list_hdr),
-            ];
-            for p in paras {
-                obj.extend(p);
-            }
-            obj.push((76, 2, shape_sc.clone()));
-            obj.push((super::TAG_RECTANGLE, 3, shape_leaf.clone()));
-            let sec = wrap_section(vec![obj]);
-            let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
-            build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
-        };
+        let build_shape_cap =
+            |paras: Vec<Vec<(u16, u16, Vec<u8>)>>, list_hdr: Vec<u8>, attr: u32| {
+                let mut obj = vec![
+                    (71, 1, ctrl_header(201, attr, 500, 500, 6000, 4000, "", &[])),
+                    (72, 2, list_hdr),
+                ];
+                for p in paras {
+                    obj.extend(p);
+                }
+                obj.push((76, 2, shape_sc.clone()));
+                obj.push((super::TAG_RECTANGLE, 3, shape_leaf.clone()));
+                let sec = wrap_section(vec![obj]);
+                let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
+                build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
+            };
 
         // Positive 1: 1-para shape caption split into 2 paragraphs while preserving AutoNumber (`atno`).
         let orig_shape = build_shape_cap(
@@ -7040,18 +7514,30 @@ mod tests {
             "a vertical-to-horizontal caption transition may set its newly applicable alignment"
         );
         let split_shape = build_shape_cap(
-            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("둘째 줄", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION,
         );
-        assert_eq!(check_with_preview_refresh(&orig_shape, &split_shape), vec![]);
+        assert_eq!(
+            check_with_preview_refresh(&orig_shape, &split_shape),
+            vec![]
+        );
 
         // Positive 2: 2-para caption merged back into 1 paragraph preserving `atno`.
-        assert_eq!(check_with_preview_refresh(&split_shape, &orig_shape), vec![]);
+        assert_eq!(
+            check_with_preview_refresh(&split_shape, &orig_shape),
+            vec![]
+        );
 
         // Negative 1: deleting `atno` during multi-para caption edit must fail closed.
         let lost_atno = build_shape_cap(
-            vec![cap_para("도형 ", false, false), cap_para("둘째 줄", false, true)],
+            vec![
+                cap_para("도형 ", false, false),
+                cap_para("둘째 줄", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION,
         );
@@ -7059,7 +7545,10 @@ mod tests {
 
         // Negative 2: tampering caption LIST_HEADER bytes beyond para_count (`[2..]`) must fail closed.
         let bad_list = build_shape_cap(
-            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("둘째 줄", false, true),
+            ],
             cap_list(2, 1),
             super::ATTR_CAPTION,
         );
@@ -7078,7 +7567,10 @@ mod tests {
             super::ATTR_CAPTION | super::ATTR_LOCKED,
         );
         let locked_edit = build_shape_cap(
-            vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("둘째 줄", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION | super::ATTR_LOCKED,
         );
@@ -7086,7 +7578,10 @@ mod tests {
 
         // Negative 4: duplicating `atno` across paragraphs must fail closed.
         let dup_atno = build_shape_cap(
-            vec![cap_para("도형 ", true, false), cap_para("둘째 ", true, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("둘째 ", true, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION,
         );
@@ -7099,12 +7594,22 @@ mod tests {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         let read = |name| std::fs::read(dir.join(name)).unwrap();
         for (orig_name, edit_name) in [
-            ("p5-shape-caption-original.hwp", "p5-shape-caption-edited.hwp"),
-            ("p5-multipara-caption-original.hwp", "p5-multipara-caption-edited.hwp"),
+            (
+                "p5-shape-caption-original.hwp",
+                "p5-shape-caption-edited.hwp",
+            ),
+            (
+                "p5-multipara-caption-original.hwp",
+                "p5-multipara-caption-edited.hwp",
+            ),
         ] {
             let orig = read(orig_name);
             let edited = read(edit_name);
-            assert_eq!(check_with_preview_refresh(&orig, &edited), vec![], "{edit_name}");
+            assert_eq!(
+                check_with_preview_refresh(&orig, &edited),
+                vec![],
+                "{edit_name}"
+            );
         }
     }
 
@@ -7118,11 +7623,17 @@ mod tests {
             hdr[24..28].copy_from_slice(&z.to_le_bytes());
             vec![
                 (71, 1, hdr),
-                (76, 2, shape_component_drawing(super::SC_RECT, 6000, 4000, 0, 0, 0, fill, id)),
+                (
+                    76,
+                    2,
+                    shape_component_drawing(super::SC_RECT, 6000, 4000, 0, 0, 0, fill, id),
+                ),
                 (super::TAG_RECTANGLE, 3, rect_leaf(0, 6000, 4000)),
             ]
         };
-        let build = |s1: Vec<(u16, u16, Vec<u8>)>, s2: Vec<(u16, u16, Vec<u8>)>, s3: Vec<(u16, u16, Vec<u8>)>| {
+        let build = |s1: Vec<(u16, u16, Vec<u8>)>,
+                     s2: Vec<(u16, u16, Vec<u8>)>,
+                     s3: Vec<(u16, u16, Vec<u8>)>| {
             let sec = wrap_section(vec![s1, s2, s3]);
             let refs: Vec<_> = sec.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
             build_hwp(&di_ref, &refs, b"\x89PNG\r\n\x1a\n123")
@@ -7182,46 +7693,53 @@ mod tests {
     fn combined_hwp_caption_and_outer_edit_preserves_autonumber_and_refuses_tamper() {
         let di = doc_info_records(1);
         let di_ref: Vec<_> = di.iter().map(|(t, l, b)| (*t, *l, b.as_slice())).collect();
-        let cap_para = |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
-            let mut raw_text = Vec::new();
-            for cu in text.encode_utf16() {
-                raw_text.extend_from_slice(&cu.to_le_bytes());
-            }
-            if with_atno {
-                raw_text.extend_from_slice(&18u16.to_le_bytes());
-                raw_text.extend_from_slice(b"onta");
-                raw_text.extend_from_slice(&[0u8; 8]);
-                raw_text.extend_from_slice(&18u16.to_le_bytes());
-            }
-            raw_text.extend_from_slice(b"\r\0");
-            let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
-            let mask: u32 = if with_atno { 1 << 18 } else { 0 };
-            let mut hdr = vec![0u8; 22];
-            hdr[0..4].copy_from_slice(&cc.to_le_bytes());
-            hdr[4..8].copy_from_slice(&mask.to_le_bytes());
-            hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
-            hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
-            let mut cs = vec![0u8; 8];
-            cs[0..4].copy_from_slice(&0u32.to_le_bytes());
-            let mut ls = vec![0u8; 36];
-            ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
-            ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
-            ls[12..16].copy_from_slice(&850i32.to_le_bytes());
-            let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
-            if with_atno {
-                let mut atno = vec![0u8; 16];
-                atno[0..4].copy_from_slice(b"onta");
-                out.push((71, 3, atno));
-            }
-            out
-        };
+        let cap_para =
+            |text: &str, with_atno: bool, is_last_mask: bool| -> Vec<(u16, u16, Vec<u8>)> {
+                let mut raw_text = Vec::new();
+                for cu in text.encode_utf16() {
+                    raw_text.extend_from_slice(&cu.to_le_bytes());
+                }
+                if with_atno {
+                    raw_text.extend_from_slice(&18u16.to_le_bytes());
+                    raw_text.extend_from_slice(b"onta");
+                    raw_text.extend_from_slice(&[0u8; 8]);
+                    raw_text.extend_from_slice(&18u16.to_le_bytes());
+                }
+                raw_text.extend_from_slice(b"\r\0");
+                let cc = ((raw_text.len() / 2) as u32) | if is_last_mask { 0x8000_0000 } else { 0 };
+                let mask: u32 = if with_atno { 1 << 18 } else { 0 };
+                let mut hdr = vec![0u8; 22];
+                hdr[0..4].copy_from_slice(&cc.to_le_bytes());
+                hdr[4..8].copy_from_slice(&mask.to_le_bytes());
+                hdr[12..14].copy_from_slice(&1u16.to_le_bytes());
+                hdr[16..18].copy_from_slice(&1u16.to_le_bytes());
+                let mut cs = vec![0u8; 8];
+                cs[0..4].copy_from_slice(&0u32.to_le_bytes());
+                let mut ls = vec![0u8; 36];
+                ls[4..8].copy_from_slice(&1000i32.to_le_bytes());
+                ls[8..12].copy_from_slice(&1000i32.to_le_bytes());
+                ls[12..16].copy_from_slice(&850i32.to_le_bytes());
+                let mut out = vec![(66, 2, hdr), (67, 3, raw_text), (68, 3, cs), (69, 3, ls)];
+                if with_atno {
+                    let mut atno = vec![0u8; 16];
+                    atno[0..4].copy_from_slice(b"onta");
+                    out.push((71, 3, atno));
+                }
+                out
+            };
         let cap_list = |para_count: u16, extra: u8| -> Vec<u8> {
             let mut list = vec![0u8; 30];
             list[0..2].copy_from_slice(&para_count.to_le_bytes());
             list[8] = extra;
             list
         };
-        let build = |paras: Vec<Vec<(u16, u16, Vec<u8>)>>, list: Vec<u8>, attr: u32, w: u32, h: u32, fill: Option<u32>, bw: i32| {
+        let build = |paras: Vec<Vec<(u16, u16, Vec<u8>)>>,
+                     list: Vec<u8>,
+                     attr: u32,
+                     w: u32,
+                     h: u32,
+                     fill: Option<u32>,
+                     bw: i32| {
             let mut obj = vec![
                 (71, 1, ctrl_header(201, attr, 500, 500, w, h, "", &[])),
                 (72, 2, list),
@@ -7250,7 +7768,10 @@ mod tests {
         );
         // Positive: split caption + outer resize + solid fill in one save.
         let combined = build(
-            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("편집", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION | (1 << 21),
             8400,
@@ -7262,7 +7783,10 @@ mod tests {
 
         // Negative 1: missing atno fails closed.
         let no_atno = build(
-            vec![cap_para("도형 ", false, false), cap_para("편집", false, true)],
+            vec![
+                cap_para("도형 ", false, false),
+                cap_para("편집", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION | (1 << 21),
             8400,
@@ -7274,7 +7798,10 @@ mod tests {
 
         // Negative 2: LIST_HEADER tamper fails closed.
         let bad_list = build(
-            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("편집", false, true),
+            ],
             cap_list(2, 1),
             super::ATTR_CAPTION | (1 << 21),
             8400,
@@ -7286,7 +7813,10 @@ mod tests {
 
         // Negative 3: outline width mutation on caption-bearing shape remains refused.
         let bad_bw = build(
-            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("편집", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION | (1 << 21),
             8400,
@@ -7307,7 +7837,10 @@ mod tests {
             33,
         );
         let locked_edit = build(
-            vec![cap_para("도형 ", true, false), cap_para("편집", false, true)],
+            vec![
+                cap_para("도형 ", true, false),
+                cap_para("편집", false, true),
+            ],
             cap_list(2, 0),
             super::ATTR_CAPTION | super::ATTR_LOCKED | (1 << 21),
             8400,
@@ -7324,12 +7857,22 @@ mod tests {
         let dir = std::path::PathBuf::from(std::env::var_os("GEUL_STAGE3_OUT").unwrap());
         let read = |name| std::fs::read(dir.join(name)).unwrap();
         for (orig_name, edit_name) in [
-            ("b1-1-multi-layer-original.hwp", "b1-1-multi-layer-edited.hwp"),
-            ("b1-2-combined-caption-original.hwp", "b1-2-combined-caption-edited.hwp"),
+            (
+                "b1-1-multi-layer-original.hwp",
+                "b1-1-multi-layer-edited.hwp",
+            ),
+            (
+                "b1-2-combined-caption-original.hwp",
+                "b1-2-combined-caption-edited.hwp",
+            ),
         ] {
             let orig = read(orig_name);
             let edited = read(edit_name);
-            assert_eq!(check_with_preview_refresh(&orig, &edited), vec![], "{edit_name}");
+            assert_eq!(
+                check_with_preview_refresh(&orig, &edited),
+                vec![],
+                "{edit_name}"
+            );
         }
     }
 
@@ -7392,7 +7935,11 @@ mod tests {
             if let Some(ex) = extra {
                 obj.push(ex);
             }
-            obj.push((76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)));
+            obj.push((
+                76,
+                2,
+                shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0),
+            ));
             obj.push((85, 3, picture_leaf(1, [0; 4], &[])));
             obj
         };
@@ -7402,7 +7949,11 @@ mod tests {
                 (72, 2, list.clone()),
             ];
             obj.extend(cap_para("도형 ", true, false));
-            obj.push((76, 2, shape_component_drawing(super::SC_RECT, 5000, 3000, 0, 0, 0, None, id)));
+            obj.push((
+                76,
+                2,
+                shape_component_drawing(super::SC_RECT, 5000, 3000, 0, 0, 0, None, id),
+            ));
             if with_textbox {
                 obj.push((72, 3, vec![0u8; 33]));
                 obj.push((66, 4, vec![0u8; 22]));
@@ -7428,7 +7979,12 @@ mod tests {
         assert_eq!(check_with_preview_refresh(&orig, &deleted), vec![]);
 
         // Negative 1: locked captioned picture deletion refused.
-        let locked_orig = build(vec![pic_obj(101, super::ATTR_CAPTION | super::ATTR_LOCKED | 1, false, None)]);
+        let locked_orig = build(vec![pic_obj(
+            101,
+            super::ATTR_CAPTION | super::ATTR_LOCKED | 1,
+            false,
+            None,
+        )]);
         assert!(!check_with_preview_refresh(&locked_orig, &build(vec![])).is_empty());
 
         // Negative 2: malformed caption (duplicate atno) deletion refused.
@@ -7436,7 +7992,12 @@ mod tests {
         assert!(!check_with_preview_refresh(&dup_orig, &build(vec![])).is_empty());
 
         // Negative 3: unknown dependent record inside caption (e.g. CTRL_DATA tag 90) refused.
-        let unknown_orig = build(vec![pic_obj(101, super::ATTR_CAPTION | 1, false, Some((90, 3, vec![1, 2, 3])))]);
+        let unknown_orig = build(vec![pic_obj(
+            101,
+            super::ATTR_CAPTION | 1,
+            false,
+            Some((90, 3, vec![1, 2, 3])),
+        )]);
         assert!(!check_with_preview_refresh(&unknown_orig, &build(vec![])).is_empty());
 
         // Negative 4: TextBox+caption deletion refused.
@@ -7506,13 +8067,29 @@ mod tests {
             b
         };
         let survivor_pic = vec![
-            (71, 1, ctrl_header(202, 1 << 21 | 1, 0, 0, 4000, 3000, "", &[])),
-            (76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)),
+            (
+                71,
+                1,
+                ctrl_header(202, 1 << 21 | 1, 0, 0, 4000, 3000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0),
+            ),
             (85, 3, picture_leaf(1, [0; 4], &[])),
         ];
         let flat_group = vec![
-            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
-            (76, 2, container_sc(201, &[super::SC_RECT, super::SC_PICTURE])),
+            (
+                71,
+                1,
+                ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[]),
+            ),
+            (
+                76,
+                2,
+                container_sc(201, &[super::SC_RECT, super::SC_PICTURE]),
+            ),
             (76, 3, child_sc(super::SC_RECT, 13 + 8 + 22)),
             (super::TAG_RECTANGLE, 4, rect_leaf(0, 4000, 3000)),
             (76, 3, child_sc(super::SC_PICTURE, 0)),
@@ -7531,12 +8108,38 @@ mod tests {
 
         // Negative 1: locked group deletion refused.
         let mut locked = flat_group.clone();
-        locked[0].2 = ctrl_header(201, (1 << 21) | super::ATTR_LOCKED, 500, 500, 12000, 8000, "", &[]);
-        assert!(!check_with_preview_refresh(&build(vec![locked, survivor_pic.clone()]), &after_delete).is_empty());
+        locked[0].2 = ctrl_header(
+            201,
+            (1 << 21) | super::ATTR_LOCKED,
+            500,
+            500,
+            12000,
+            8000,
+            "",
+            &[],
+        );
+        assert!(!check_with_preview_refresh(
+            &build(vec![locked, survivor_pic.clone()]),
+            &after_delete
+        )
+        .is_empty());
 
         // Negative 2: captioned group deletion refused.
         let captioned = vec![
-            (71, 1, ctrl_header(201, (1 << 21) | super::ATTR_CAPTION, 500, 500, 12000, 8000, "", &[])),
+            (
+                71,
+                1,
+                ctrl_header(
+                    201,
+                    (1 << 21) | super::ATTR_CAPTION,
+                    500,
+                    500,
+                    12000,
+                    8000,
+                    "",
+                    &[],
+                ),
+            ),
             (72, 2, vec![0u8; 30]),
             (66, 2, vec![0u8; 22]),
             (68, 2, vec![0u8; 8]),
@@ -7545,35 +8148,62 @@ mod tests {
             (76, 3, child_sc(super::SC_RECT, 13 + 8 + 22)),
             (super::TAG_RECTANGLE, 4, rect_leaf(0, 4000, 3000)),
         ];
-        assert!(!check_with_preview_refresh(&build(vec![captioned, survivor_pic.clone()]), &after_delete).is_empty());
+        assert!(!check_with_preview_refresh(
+            &build(vec![captioned, survivor_pic.clone()]),
+            &after_delete
+        )
+        .is_empty());
 
         // Negative 3: nested group child refused.
         let nested = vec![
-            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (
+                71,
+                1,
+                ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[]),
+            ),
             (76, 2, container_sc(201, &[super::SC_CONTAINER])),
             (76, 3, child_sc(super::SC_CONTAINER, 10)),
             (76, 4, child_sc(super::SC_RECT, 13 + 8 + 22)),
             (super::TAG_RECTANGLE, 5, rect_leaf(0, 4000, 3000)),
         ];
-        assert!(!check_with_preview_refresh(&build(vec![nested, survivor_pic.clone()]), &after_delete).is_empty());
+        assert!(!check_with_preview_refresh(
+            &build(vec![nested, survivor_pic.clone()]),
+            &after_delete
+        )
+        .is_empty());
 
         // Negative 4: OLE child inside group refused.
         let ole_group = vec![
-            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (
+                71,
+                1,
+                ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[]),
+            ),
             (76, 2, container_sc(201, &[b"elo$"])),
             (76, 3, child_sc(b"elo$", 0)),
             (84, 4, vec![0u8; 30]),
         ];
-        assert!(!check_with_preview_refresh(&build(vec![ole_group, survivor_pic.clone()]), &after_delete).is_empty());
+        assert!(!check_with_preview_refresh(
+            &build(vec![ole_group, survivor_pic.clone()]),
+            &after_delete
+        )
+        .is_empty());
 
         // Negative 5: Arc child inside group refused.
         let arc_group = vec![
-            (71, 1, ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[])),
+            (
+                71,
+                1,
+                ctrl_header(201, 1 << 21, 500, 500, 12000, 8000, "", &[]),
+            ),
             (76, 2, container_sc(201, &[b"cra$"])),
             (76, 3, child_sc(b"cra$", 13 + 8 + 22)),
             (81, 4, vec![0u8; 25]),
         ];
-        assert!(!check_with_preview_refresh(&build(vec![arc_group, survivor_pic]), &after_delete).is_empty());
+        assert!(
+            !check_with_preview_refresh(&build(vec![arc_group, survivor_pic]), &after_delete)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -7594,14 +8224,26 @@ mod tests {
             let mut leaf = picture_leaf(1, [0; 4], &[0u8; 9]);
             leaf[74..78].copy_from_slice(&pic_inst.to_le_bytes());
             vec![
-                (71, 1, ctrl_header(id, attr, off, off, 4000, 3000, "pic", &[])),
-                (76, 2, shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0)),
+                (
+                    71,
+                    1,
+                    ctrl_header(id, attr, off, off, 4000, 3000, "pic", &[]),
+                ),
+                (
+                    76,
+                    2,
+                    shape_component_base(super::SC_PICTURE, 4000, 3000, 4000, 3000, 0, 0),
+                ),
                 (85, 3, leaf),
             ]
         };
         let shape_obj = |id: u32, attr: u32, off: i32, sc_inst: u32, border_color: u32| {
             vec![
-                (71, 1, ctrl_header(id, attr, off, off, 5000, 3000, "rect", &[])),
+                (
+                    71,
+                    1,
+                    ctrl_header(id, attr, off, off, 5000, 3000, "rect", &[]),
+                ),
                 (
                     76,
                     2,
@@ -7645,7 +8287,13 @@ mod tests {
         assert_eq!(check_with_preview_refresh(&orig, &cut_pasted), vec![]);
 
         // Negative 1: Cloning a locked source or fabricating an unowned styled shape must fail closed.
-        let locked_orig = build(vec![shape_obj(102, (1 << 21) | super::ATTR_LOCKED, 1500, 2, 100)]);
+        let locked_orig = build(vec![shape_obj(
+            102,
+            (1 << 21) | super::ATTR_LOCKED,
+            1500,
+            2,
+            100,
+        )]);
         let locked_clone = build(vec![
             shape_obj(102, (1 << 21) | super::ATTR_LOCKED, 1500, 2, 100),
             shape_obj(202, (1 << 21) | super::ATTR_LOCKED, 2067, 10, 100),
@@ -7660,11 +8308,7 @@ mod tests {
         assert!(!check_with_preview_refresh(&orig, &tampered_border).is_empty());
 
         // Negative 2: Reusing original instance_id in cloned object must fail closed.
-        let reused_id = build(vec![
-            src_pic,
-            src_shape,
-            pic_obj(101, 1 << 21, 1067, 9),
-        ]);
+        let reused_id = build(vec![src_pic, src_shape, pic_obj(101, 1 << 21, 1067, 9)]);
         assert!(!check_with_preview_refresh(&orig, &reused_id).is_empty());
 
         // Negative 3: Cross-document / unowned BinData ID in pasted picture fails closed.

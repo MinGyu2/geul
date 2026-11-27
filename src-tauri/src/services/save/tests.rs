@@ -303,13 +303,21 @@ fn hwp_이미지_미리보기_갱신은_본문에서_유도된_빈_글_미리보
         let mut page = vec![0; 40];
         page[..4].copy_from_slice(&59_528u32.to_le_bytes());
         page[4..8].copy_from_slice(&84_188u32.to_le_bytes());
-        [record(66, 0, &header), record(67, 1, &utf16("hello")), record(73, 0, &page)].concat()
+        [
+            record(66, 0, &header),
+            record(67, 1, &utf16("hello")),
+            record(73, 0, &page),
+        ]
+        .concat()
     };
     let original = hwp_doc(
         0,
         &docinfo(0, b"font"),
         &body(0),
-        &[("/PrvText", b"\r\0\n\0"), ("/PrvImage", b"previous page image")],
+        &[
+            ("/PrvText", b"\r\0\n\0"),
+            ("/PrvImage", b"previous page image"),
+        ],
     );
     let output = hwp_doc(
         0,
@@ -328,11 +336,18 @@ fn hwp_이미지_미리보기_갱신은_본문에서_유도된_빈_글_미리보
     rgb[0] = 0;
     let raster = PreviewRaster::new(724, 1024, rgb).unwrap();
     let refreshed = hwp::refresh_previews(&original, &output, Some(&raster)).unwrap();
-    let saved = refreshed.output.expect("the exact derived text and fresh image should publish");
-    let image = refreshed.image.expect("the new image is part of this proof");
+    let saved = refreshed
+        .output
+        .expect("the exact derived text and fresh image should publish");
+    let image = refreshed
+        .image
+        .expect("the new image is part of this proof");
     assert!(hwp::compare_saved_with_preview(&original, &saved, Some(&image)).is_empty());
     assert_eq!(cfb_stream(&saved, "/PrvText").unwrap(), utf16("hello\r\n"));
-    assert_ne!(cfb_stream(&saved, "/PrvImage").unwrap(), b"previous page image");
+    assert_ne!(
+        cfb_stream(&saved, "/PrvImage").unwrap(),
+        b"previous page image"
+    );
 
     // A previously nonblank source preview cannot be replaced by a body-derived value
     // through this image-only path.
@@ -340,7 +355,10 @@ fn hwp_이미지_미리보기_갱신은_본문에서_유도된_빈_글_미리보
         0,
         &docinfo(0, b"font"),
         &body(0),
-        &[("/PrvText", b"prior preview"), ("/PrvImage", b"previous page image")],
+        &[
+            ("/PrvText", b"prior preview"),
+            ("/PrvImage", b"previous page image"),
+        ],
     );
     assert!(hwp::refresh_previews(&nonblank, &output, Some(&raster))
         .unwrap()
@@ -2283,32 +2301,51 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
         entries.push(entry("BinData/untouched.bin", resource));
         zip(&entries, false)
     };
-    let archive_with_masterpage = |body: &str,
-                                   text: &[u8],
-                                   image: &[u8],
-                                   resource: &[u8],
-                                   masterpage: &[u8]| {
-        let section = section(body, 77102);
-        let mut entries = hwpx_package(&section, "<head/>", true, true);
-        entries.push(entry("Preview/PrvText.txt", text));
-        entries.push(entry("Preview/PrvImage.png", image));
-        entries.push(entry("BinData/untouched.bin", resource));
-        entries.push(entry("Contents/masterpage0.xml", masterpage));
-        zip(&entries, false)
-    };
+    let archive_with_masterpage =
+        |body: &str, text: &[u8], image: &[u8], resource: &[u8], masterpage: &[u8]| {
+            let section = section(body, 77102);
+            let mut entries = hwpx_package(&section, "<head/>", true, true);
+            entries.push(entry("Preview/PrvText.txt", text));
+            entries.push(entry("Preview/PrvImage.png", image));
+            entries.push(entry("BinData/untouched.bin", resource));
+            entries.push(entry("Contents/masterpage0.xml", masterpage));
+            zip(&entries, false)
+        };
     let source_text = b"old text preview";
     let source_image = png(8, 4, false);
-    let original = archive("source", 77102, source_text, &source_image, b"same resource");
-    let raw_output = archive("edited", 77102, source_text, &source_image, b"same resource");
+    let original = archive(
+        "source",
+        77102,
+        source_text,
+        &source_image,
+        b"same resource",
+    );
+    let raw_output = archive(
+        "edited",
+        77102,
+        source_text,
+        &source_image,
+        b"same resource",
+    );
 
     let mut pixels = vec![255; 707 * 1024 * 3];
     pixels[(512 * 707 + 353) * 3..(512 * 707 + 353) * 3 + 3].copy_from_slice(&[0, 0, 0]);
     let raster = super::preview::PreviewRaster::new(707, 1024, pixels).unwrap();
-    let refreshed = package::refresh_hwpx_previews(&original, &raw_output, Some(&raster), 16 * 1024 * 1024)
-        .unwrap();
-    let normalized = refreshed.output.as_deref().expect("stale previews are refreshed");
-    let image = refreshed.image.as_deref().expect("page-1 image is refreshed");
-    let text = refreshed.text.as_deref().expect("stale text is cleared to the known blank value");
+    let refreshed =
+        package::refresh_hwpx_previews(&original, &raw_output, Some(&raster), 16 * 1024 * 1024)
+            .unwrap();
+    let normalized = refreshed
+        .output
+        .as_deref()
+        .expect("stale previews are refreshed");
+    let image = refreshed
+        .image
+        .as_deref()
+        .expect("page-1 image is refreshed");
+    let text = refreshed
+        .text
+        .as_deref()
+        .expect("stale text is cleared to the known blank value");
     assert_eq!(text, b"\r\n");
     assert_eq!(
         super::preview::decode_canonical_png(image).map(|(width, height, _)| (width, height)),
@@ -2323,49 +2360,122 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
         match name.as_str() {
             "Preview/PrvImage.png" => assert_eq!(after.get(name), Some(image)),
             "Preview/PrvText.txt" => assert_eq!(after.get(name), Some(text)),
-            _ => assert_eq!(engine_output.get(name), after.get(name), "unrelated OPC part {name}"),
+            _ => assert_eq!(
+                engine_output.get(name),
+                after.get(name),
+                "unrelated OPC part {name}"
+            ),
         }
     }
-    assert!(package::compare_saved_hwpx_with_previews(&before, &after, Some(image), Some(text)).is_empty());
+    assert!(
+        package::compare_saved_hwpx_with_previews(&before, &after, Some(image), Some(text))
+            .is_empty()
+    );
 
     // The preview exception is tied to the exact package bytes and its declared first-page geometry.
     let mut altered_image = image.to_vec();
     *altered_image.last_mut().unwrap() ^= 1;
     assert!(package::compare_saved_hwpx_with_previews(
-        &before, &after, Some(&altered_image), Some(text)
-    ).iter().any(|finding| finding.code == FindingCode::PartChanged));
+        &before,
+        &after,
+        Some(&altered_image),
+        Some(text)
+    )
+    .iter()
+    .any(|finding| finding.code == FindingCode::PartChanged));
     assert!(package::compare_saved_hwpx_with_previews(
-        &before, &after, Some(image), Some(b"not the blank preview")
-    ).iter().any(|finding| finding.code == FindingCode::PartChanged));
+        &before,
+        &after,
+        Some(image),
+        Some(b"not the blank preview")
+    )
+    .iter()
+    .any(|finding| finding.code == FindingCode::PartChanged));
 
     // Missing, wrong-sized, and uniform client rasters cannot authorize replacing the old image.
-    assert!(package::refresh_hwpx_previews(&original, &raw_output, None, 16 * 1024 * 1024)
-        .unwrap().output.is_none());
-    let small_raster = super::preview::PreviewRaster::new(700, 700, vec![255; 700 * 700 * 3]).unwrap();
-    assert!(package::refresh_hwpx_previews(&original, &raw_output, Some(&small_raster), 16 * 1024 * 1024)
-        .unwrap().output.is_none());
-    let uniform_raster = super::preview::PreviewRaster::new(707, 1024, vec![255; 707 * 1024 * 3]).unwrap();
-    assert!(package::refresh_hwpx_previews(&original, &raw_output, Some(&uniform_raster), 16 * 1024 * 1024)
-        .unwrap().output.is_none());
+    assert!(
+        package::refresh_hwpx_previews(&original, &raw_output, None, 16 * 1024 * 1024)
+            .unwrap()
+            .output
+            .is_none()
+    );
+    let small_raster =
+        super::preview::PreviewRaster::new(700, 700, vec![255; 700 * 700 * 3]).unwrap();
+    assert!(package::refresh_hwpx_previews(
+        &original,
+        &raw_output,
+        Some(&small_raster),
+        16 * 1024 * 1024
+    )
+    .unwrap()
+    .output
+    .is_none());
+    let uniform_raster =
+        super::preview::PreviewRaster::new(707, 1024, vec![255; 707 * 1024 * 3]).unwrap();
+    assert!(package::refresh_hwpx_previews(
+        &original,
+        &raw_output,
+        Some(&uniform_raster),
+        16 * 1024 * 1024
+    )
+    .unwrap()
+    .output
+    .is_none());
 
     // A mutation outside the two specifically proven preview entries blocks the entire normalization.
-    let unauthorized = archive("edited", 77102, source_text, &source_image, b"changed resource");
-    assert!(package::refresh_hwpx_previews(&original, &unauthorized, Some(&raster), 16 * 1024 * 1024)
-        .unwrap().output.is_none());
-    let unauthorized = archive("edited", 77102, source_text, &source_image, b"changed resource");
+    let unauthorized = archive(
+        "edited",
+        77102,
+        source_text,
+        &source_image,
+        b"changed resource",
+    );
+    assert!(package::refresh_hwpx_previews(
+        &original,
+        &unauthorized,
+        Some(&raster),
+        16 * 1024 * 1024
+    )
+    .unwrap()
+    .output
+    .is_none());
+    let unauthorized = archive(
+        "edited",
+        77102,
+        source_text,
+        &source_image,
+        b"changed resource",
+    );
     let rejected = service::check_saved(
-        Format::Hwpx, &original, &unauthorized, Some(&report("hwpx", json!([]))), true,
+        Format::Hwpx,
+        &original,
+        &unauthorized,
+        Some(&report("hwpx", json!([]))),
+        true,
     );
     assert_eq!(rejected.outcome, Outcome::Unsafe);
     assert!(rejected.findings.iter().any(|finding| {
-        finding.code == FindingCode::PartChanged && finding.part.as_deref() == Some("BinData/untouched.bin")
+        finding.code == FindingCode::PartChanged
+            && finding.part.as_deref() == Some("BinData/untouched.bin")
     }));
 
     // The output's own page definition determines the image size. A raster for the prior geometry is refused.
-    let changed_geometry = archive("edited", 30000, source_text, &source_image, b"same resource");
+    let changed_geometry = archive(
+        "edited",
+        30000,
+        source_text,
+        &source_image,
+        b"same resource",
+    );
     assert!(package::refresh_hwpx_previews(
-        &original, &changed_geometry, Some(&raster), 16 * 1024 * 1024,
-    ).unwrap().output.is_none());
+        &original,
+        &changed_geometry,
+        Some(&raster),
+        16 * 1024 * 1024,
+    )
+    .unwrap()
+    .output
+    .is_none());
 
     // RHWP may rewrite unrelated XML prefixes, declaration and attribute order. The complete
     // XML event stream, including comments and processing instructions, must remain equivalent;
@@ -2374,10 +2484,18 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
 <m:root xmlns:m="urn:master"><!-- keep --><?keep stable?><m:item a="1" b="2">same</m:item></m:root>"#;
     let rewritten_masterpage = br#"<x:root xmlns:x="urn:master"><!-- keep --><?keep stable?><x:item b="2" a="1">same</x:item></x:root>"#;
     let original_with_masterpage = archive_with_masterpage(
-        "source", source_text, &source_image, b"same resource", source_masterpage,
+        "source",
+        source_text,
+        &source_image,
+        b"same resource",
+        source_masterpage,
     );
     let output_with_masterpage = archive_with_masterpage(
-        "edited", source_text, &source_image, b"same resource", rewritten_masterpage,
+        "edited",
+        source_text,
+        &source_image,
+        b"same resource",
+        rewritten_masterpage,
     );
     assert_eq!(
         crate::document::xml::canonical_equal(source_masterpage, rewritten_masterpage),
@@ -2390,7 +2508,10 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
     assert!(package::validate_hwpx_references(&raw_package).is_empty());
     assert_eq!(
         package::compare_saved_hwpx(&source_package, &raw_package),
-        vec![Finding::at(FindingCode::PreviewStale, "Preview/PrvImage.png"), Finding::at(FindingCode::PreviewStale, "Preview/PrvText.txt")]
+        vec![
+            Finding::at(FindingCode::PreviewStale, "Preview/PrvImage.png"),
+            Finding::at(FindingCode::PreviewStale, "Preview/PrvText.txt")
+        ]
     );
     let refreshed = package::refresh_hwpx_previews(
         &original_with_masterpage,
@@ -2405,8 +2526,14 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
         .expect("canonical-equivalent XML rewrites are restored alongside exact preview refresh");
     let before = package::open(&original_with_masterpage, package::Side::Original).unwrap();
     let after = package::open(normalized, package::Side::Output).unwrap();
-    assert_eq!(after.get("Contents/masterpage0.xml"), Some(&source_masterpage[..]));
-    assert_ne!(after.get("Contents/section0.xml"), before.get("Contents/section0.xml"));
+    assert_eq!(
+        after.get("Contents/masterpage0.xml"),
+        Some(&source_masterpage[..])
+    );
+    assert_ne!(
+        after.get("Contents/section0.xml"),
+        before.get("Contents/section0.xml")
+    );
     assert!(package::compare_saved_hwpx_with_previews(
         &before,
         &after,
@@ -2417,17 +2544,24 @@ fn hwpx_저장은_정확히_다시_만든_페이지_미리보기만_허용한다
 
     let changed_comment = br#"<x:root xmlns:x="urn:master"><!-- changed --><?keep stable?><x:item b="2" a="1">same</x:item></x:root>"#;
     let unauthorized_xml = archive_with_masterpage(
-        "edited", source_text, &source_image, b"same resource", changed_comment,
+        "edited",
+        source_text,
+        &source_image,
+        b"same resource",
+        changed_comment,
     );
-    assert!(package::refresh_hwpx_previews(
-        &original_with_masterpage,
-        &unauthorized_xml,
-        Some(&raster),
-        16 * 1024 * 1024,
-    )
-    .unwrap()
-    .output
-    .is_none(), "a changed comment is not hidden by XML formatting normalization");
+    assert!(
+        package::refresh_hwpx_previews(
+            &original_with_masterpage,
+            &unauthorized_xml,
+            Some(&raster),
+            16 * 1024 * 1024,
+        )
+        .unwrap()
+        .output
+        .is_none(),
+        "a changed comment is not hidden by XML formatting normalization"
+    );
 }
 
 #[test]
@@ -7055,7 +7189,15 @@ fn hwpx_header의_서식_덧붙임_밖_변경은_계속_partchanged다() {
         (
             // Stage 1 allows height/textColor/shadeColor; every other definition attribute stays owned.
             "서식 밖 속성(useKerning) 다름",
-            fmt_header(4, &d, &[&fmt_def(3, 1000, "").replace("<hh:charPr id=\"3\" ", "<hh:charPr id=\"3\" useKerning=\"1\" ")], "JUSTIFY"),
+            fmt_header(
+                4,
+                &d,
+                &[&fmt_def(3, 1000, "").replace(
+                    "<hh:charPr id=\"3\" ",
+                    "<hh:charPr id=\"3\" useKerning=\"1\" ",
+                )],
+                "JUSTIFY",
+            ),
             fmt_body(&[3]),
         ),
         (
@@ -9132,7 +9274,12 @@ fn special_header_hash_collision_still_requires_full_semantic_equality() {
     let d: Vec<_> = defs.iter().map(String::as_str).collect();
     let good = fmt_header(4, &d, &[&italic_of_zero()], "JUSTIFY");
     // Stage 1 authorized appended `height`; `useKerning` stays unauthorized, so this must still be refused.
-    let bad = fmt_header(4, &d, &[&fmt_def(3, 1000, "<hh:italic/>").replace("textColor=", "useKerning=\"1\" textColor=")], "JUSTIFY");
+    let bad = fmt_header(
+        4,
+        &d,
+        &[&fmt_def(3, 1000, "<hh:italic/>").replace("textColor=", "useKerning=\"1\" textColor=")],
+        "JUSTIFY",
+    );
     super::special::with_colliding_hashes(|| {
         assert!(fmt_check(&good, &fmt_body(&[3])).is_empty());
         assert_eq!(fmt_check(&bad, &fmt_body(&[3])), vec![header_changed()]);
@@ -10099,7 +10246,10 @@ fn hwpx_header의_장평_자간_덧붙임_밖_변경은_계속_partchanged다() 
         ("ratio에 내용", content, vec![3]),
         (
             "장평과 useKerning 함께 다름",
-            metric_def(3, 1000, &langs(150), &ok_spacing, "").replace("<hh:charPr id=\"3\" ", "<hh:charPr id=\"3\" useKerning=\"1\" "),
+            metric_def(3, 1000, &langs(150), &ok_spacing, "").replace(
+                "<hh:charPr id=\"3\" ",
+                "<hh:charPr id=\"3\" useKerning=\"1\" ",
+            ),
             vec![3],
         ),
         (
@@ -11625,7 +11775,8 @@ fn calc_cell_edited(from: &[u8], old: u8, new: u8, cache: &str) -> Vec<u8> {
             if dependent {
                 let end = 11 + 2 * usize::from(u16::from_le_bytes([field[9], field[10]]));
                 assert_eq!(field.len() - end, 8);
-                field[9..11].copy_from_slice(&u16::try_from(command.len() / 2).unwrap().to_le_bytes());
+                field[9..11]
+                    .copy_from_slice(&u16::try_from(command.len() / 2).unwrap().to_le_bytes());
                 field.splice(11..end, command.iter().copied());
             }
 
@@ -11792,14 +11943,18 @@ fn calc_cell_stale_previews_are_regenerated_only_from_a_valid_render() {
     // A valid render cannot authorize an operand edit with a stale formula
     // result, even if the display and the stored command agree with each other.
     let stale_cache = calc_cell_edited(CALC_CELL, b'1', b'9', "2");
-    assert!(hwp::compare_saved(CALC_CELL, &stale_cache).contains(&Finding::at(
-        FindingCode::OutputMalformed,
-        "BodyText/Section0"
-    )));
-    assert!(hwp::refresh_previews(CALC_CELL, &stale_cache, Some(&render))
-        .unwrap()
-        .output
-        .is_none());
+    assert!(
+        hwp::compare_saved(CALC_CELL, &stale_cache).contains(&Finding::at(
+            FindingCode::OutputMalformed,
+            "BodyText/Section0"
+        ))
+    );
+    assert!(
+        hwp::refresh_previews(CALC_CELL, &stale_cache, Some(&render))
+            .unwrap()
+            .output
+            .is_none()
+    );
     let fixed = hwp::refresh_previews(CALC_CELL, &edited, Some(&render)).unwrap();
     let (output, png) = (fixed.output.unwrap(), fixed.image.unwrap());
     assert!(hwp::compare_saved_with_preview(CALC_CELL, &output, Some(&png)).is_empty());
@@ -13774,17 +13929,40 @@ mod stage1_font_embed;
 fn stage1_hwpx_header_accepts_size_color_shade_script_appends_only() {
     let (defs, _) = fmt_original();
     let d: Vec<&str> = defs.iter().map(String::as_str).collect();
-    let changed = fmt_def(3, 1800, "<hh:supscript/>")
-        .replace(r##"textColor="#000000""##, r##"textColor="#C00000" shadeColor="#FFFF00""##);
-    assert_eq!(fmt_check(&fmt_header(4, &d, &[&changed], "JUSTIFY"), &fmt_body(&[3, 1])), vec![]);
+    let changed = fmt_def(3, 1800, "<hh:supscript/>").replace(
+        r##"textColor="#000000""##,
+        r##"textColor="#C00000" shadeColor="#FFFF00""##,
+    );
+    assert_eq!(
+        fmt_check(
+            &fmt_header(4, &d, &[&changed], "JUSTIFY"),
+            &fmt_body(&[3, 1])
+        ),
+        vec![]
+    );
     let sub = fmt_def(3, 900, "<hh:subscript/>");
-    assert_eq!(fmt_check(&fmt_header(4, &d, &[&sub], "JUSTIFY"), &fmt_body(&[3])), vec![]);
+    assert_eq!(
+        fmt_check(&fmt_header(4, &d, &[&sub], "JUSTIFY"), &fmt_body(&[3])),
+        vec![]
+    );
     for (label, def) in [
-        ("both scripts", fmt_def(3, 1000, "<hh:supscript/><hh:subscript/>")),
-        ("script attribute", fmt_def(3, 1000, r#"<hh:supscript x="1"/>"#)),
-        ("height leading zero", fmt_def(3, 1000, "").replace(r#"height="1000""#, r#"height="01000""#)),
+        (
+            "both scripts",
+            fmt_def(3, 1000, "<hh:supscript/><hh:subscript/>"),
+        ),
+        (
+            "script attribute",
+            fmt_def(3, 1000, r#"<hh:supscript x="1"/>"#),
+        ),
+        (
+            "height leading zero",
+            fmt_def(3, 1000, "").replace(r#"height="1000""#, r#"height="01000""#),
+        ),
         ("height too large", fmt_def(3, 409_601, "")),
-        ("lowercase color", fmt_def(3, 1000, "").replace(r##"textColor="#000000""##, r##"textColor="#c00000""##)),
+        (
+            "lowercase color",
+            fmt_def(3, 1000, "").replace(r##"textColor="#000000""##, r##"textColor="#c00000""##),
+        ),
     ] {
         let findings = fmt_check(&fmt_header(4, &d, &[&def], "JUSTIFY"), &fmt_body(&[3]));
         assert!(!findings.is_empty(), "{label}: accepted");
@@ -13796,34 +13974,58 @@ fn stage1_hwpx_header_accepts_size_color_shade_script_appends_only() {
 #[test]
 #[ignore = "requires the Stage 1 Release-WASM exports (GEUL_FORMAT_DIR)"]
 fn stage1_hwpx_list_proof_rejects_invalid_appends() {
-    let root = std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
+    let root =
+        std::path::PathBuf::from(std::env::var_os("GEUL_FORMAT_DIR").expect("GEUL_FORMAT_DIR"));
     let folder = root.join("hwpx-stage1-lists");
     let part = |name: &str, entry: &str| {
         let bytes = std::fs::read(folder.join(name)).unwrap();
         let p = package::open(&bytes, package::Side::Output).unwrap();
         String::from_utf8(p.get(entry).unwrap().to_vec()).unwrap()
     };
-    let (h0, s0) = (part("original.hwpx", "Contents/header.xml"), part("original.hwpx", "Contents/section0.xml"));
-    let (h1, s1) = (part("edited.hwpx", "Contents/header.xml"), part("edited.hwpx", "Contents/section0.xml"));
+    let (h0, s0) = (
+        part("original.hwpx", "Contents/header.xml"),
+        part("original.hwpx", "Contents/section0.xml"),
+    );
+    let (h1, s1) = (
+        part("edited.hwpx", "Contents/header.xml"),
+        part("edited.hwpx", "Contents/section0.xml"),
+    );
     let before = pkg(&hwpx_package(&s0, &h0, true, true));
     let check = |header: &str| {
         let after = pkg(&hwpx_package(&s1, header, true, true));
         package::compare_saved_hwpx(&before, &after)
     };
-    assert!(check(&h1).iter().all(|f| f.code == FindingCode::PreviewStale), "{:?}", check(&h1));
+    assert!(
+        check(&h1)
+            .iter()
+            .all(|f| f.code == FindingCode::PreviewStale),
+        "{:?}",
+        check(&h1)
+    );
     let last = h1.rfind("<hh:numbering ").expect("appended numbering");
     let mutate = |from: &str, to: &str| {
         let (head, tail) = h1.split_at(last);
         format!("{head}{}", tail.replacen(from, to, 1))
     };
     for (name, header) in [
-        ("unknown number format", mutate("numFormat=\"DIGIT\"", "numFormat=\"CIRCLED_DIGIT\"")),
-        ("char shape reference", mutate("charPrIDRef=\"0\"", "charPrIDRef=\"3\"")),
+        (
+            "unknown number format",
+            mutate("numFormat=\"DIGIT\"", "numFormat=\"CIRCLED_DIGIT\""),
+        ),
+        (
+            "char shape reference",
+            mutate("charPrIDRef=\"0\"", "charPrIDRef=\"3\""),
+        ),
         ("format text", mutate("^1.<", "x<")),
         ("start number", mutate("start=\"1\"", "start=\"4\"")),
     ] {
         assert_ne!(header, h1, "{name}: mutation not applied");
-        assert!(check(&header).iter().any(|f| f.code != FindingCode::PreviewStale), "{name}: accepted");
+        assert!(
+            check(&header)
+                .iter()
+                .any(|f| f.code != FindingCode::PreviewStale),
+            "{name}: accepted"
+        );
     }
 }
 
@@ -13881,29 +14083,33 @@ fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
 </w:document>"#
     );
 
-    let build = |ct: &str, doc: &str, rels: &str, media: &[(&str, &[u8])], extra: &[(&str, &[u8])]| {
-        let mut entries = vec![
-            entry("[Content_Types].xml", ct.as_bytes()),
-            entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
-            entry("word/document.xml", doc.as_bytes()),
-            entry("word/_rels/document.xml.rels", rels.as_bytes()),
-            entry("word/styles.xml", styles.as_bytes()),
-        ];
-        for (p, b) in media {
-            entries.push(stored(p, b));
-        }
-        for (p, b) in extra {
-            entries.push(entry(p, b));
-        }
-        pkg(&entries)
-    };
+    let build =
+        |ct: &str, doc: &str, rels: &str, media: &[(&str, &[u8])], extra: &[(&str, &[u8])]| {
+            let mut entries = vec![
+                entry("[Content_Types].xml", ct.as_bytes()),
+                entry("_rels/.rels", package_rels("word/document.xml").as_bytes()),
+                entry("word/document.xml", doc.as_bytes()),
+                entry("word/_rels/document.xml.rels", rels.as_bytes()),
+                entry("word/styles.xml", styles.as_bytes()),
+            ];
+            for (p, b) in media {
+                entries.push(stored(p, b));
+            }
+            for (p, b) in extra {
+                entries.push(entry(p, b));
+            }
+            pkg(&entries)
+        };
 
     // Positive: removing table-bound image1.png while body-bound image2.png stays intact passes T009
     let orig = build(
         ct_with_png,
         &doc_orig,
         &rels_all,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
         &[],
     );
     let valid_out = build(
@@ -13944,7 +14150,10 @@ fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
         ct_with_png,
         &doc_orig,
         &rels_all,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
         &[("word/_rels/header1.xml.rels", header_rels.as_bytes())],
     );
     let out_missing_header_media = build(
@@ -13990,7 +14199,10 @@ fn docx_table_media_deletion_proof_admits_only_table_bound_media() {
         ct_with_png,
         &doc_orig,
         &rels_bad_type,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
         &[],
     );
     assert!(!package::compare_saved_docx(&orig_bad_rel, &valid_out).is_empty());
@@ -14151,9 +14363,13 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package";
 
     // Build a real WordCraft DOCX with one editable chart and one editable SmartArt diagram.
-    let mut sess = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
-    sess.run("insert.chart", &json!({"type": "column", "title": "Original"}))
-        .unwrap();
+    let mut sess =
+        Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    sess.run(
+        "insert.chart",
+        &json!({"type": "column", "title": "Original"}),
+    )
+    .unwrap();
     sess.run("caret.docEnd", &json!({})).unwrap();
     sess.run("text.newParagraph", &json!({})).unwrap();
     sess.run("insert.smartArt", &json!({"layout": "process"}))
@@ -14178,18 +14394,37 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         "<dgm:prSet presName=\"Primary\" presStyleIdx=\"2\"/>",
         1,
     );
-    let annotated_data = format!("{}{}{}", &data[..node_start], annotated_node, &data[node_end..]);
-    let base_entries: Vec<ZipEntry> = base_saved_pkg.parts.iter().map(|(name, (_, bytes))| {
-        if name == "word/diagrams/data1.xml" { entry(name, annotated_data.as_bytes()) } else { entry(name, bytes) }
-    }).collect();
+    let annotated_data = format!(
+        "{}{}{}",
+        &data[..node_start],
+        annotated_node,
+        &data[node_end..]
+    );
+    let base_entries: Vec<ZipEntry> = base_saved_pkg
+        .parts
+        .iter()
+        .map(|(name, (_, bytes))| {
+            if name == "word/diagrams/data1.xml" {
+                entry(name, annotated_data.as_bytes())
+            } else {
+                entry(name, bytes)
+            }
+        })
+        .collect();
     let base_bytes = zip(&base_entries, false);
     let base_pkg = package::open(&base_bytes, package::Side::Original).unwrap();
 
     // Positive: legitimate chart (title, type, data) and SmartArt (items, layout) edits pass.
     let mut edited_sess = Session::new(io::open_bytes("fixture.docx", &base_bytes).unwrap());
-    edited_sess.run("select.objects", &json!({"index": 0})).unwrap();
-    edited_sess.run("chart.title", &json!({"text": "Updated Title"})).unwrap();
-    edited_sess.run("chart.type", &json!({"type": "pie"})).unwrap();
+    edited_sess
+        .run("select.objects", &json!({"index": 0}))
+        .unwrap();
+    edited_sess
+        .run("chart.title", &json!({"text": "Updated Title"}))
+        .unwrap();
+    edited_sess
+        .run("chart.type", &json!({"type": "pie"}))
+        .unwrap();
     edited_sess
         .run(
             "chart.editData",
@@ -14197,7 +14432,9 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         )
         .unwrap();
 
-    edited_sess.run("select.objects", &json!({"index": 1})).unwrap();
+    edited_sess
+        .run("select.objects", &json!({"index": 1}))
+        .unwrap();
     edited_sess
         .run(
             "smartArt.items",
@@ -14221,9 +14458,17 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         let source = std::str::from_utf8(pkg_src.get(part).unwrap()).unwrap();
         assert!(source.contains(from), "{part} missing {from}");
         let replaced = source.replacen(from, to, 1);
-        let entries: Vec<ZipEntry> = pkg_src.parts.iter().map(|(name, (_, bytes))| {
-            if name == part { entry(name, replaced.as_bytes()) } else { entry(name, bytes) }
-        }).collect();
+        let entries: Vec<ZipEntry> = pkg_src
+            .parts
+            .iter()
+            .map(|(name, (_, bytes))| {
+                if name == part {
+                    entry(name, replaced.as_bytes())
+                } else {
+                    entry(name, bytes)
+                }
+            })
+            .collect();
         zip(&entries, false)
     };
     let unauthorized_node_property = mutate_part(
@@ -14232,14 +14477,28 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         "presName=\"Primary\"",
         "presName=\"Unauthorized\"",
     );
-    assert!(!service::check_saved(Format::Docx, &base_bytes, &unauthorized_node_property, None, true).is_safe());
+    assert!(!service::check_saved(
+        Format::Docx,
+        &base_bytes,
+        &unauthorized_node_property,
+        None,
+        true
+    )
+    .is_safe());
     let unauthorized_drawing_style = mutate_part(
         &edited_pkg,
         "word/diagrams/drawing1.xml",
         "AABBCC",
         "DDEEFF",
     );
-    assert!(!service::check_saved(Format::Docx, &base_bytes, &unauthorized_drawing_style, None, true).is_safe());
+    assert!(!service::check_saved(
+        Format::Docx,
+        &base_bytes,
+        &unauthorized_drawing_style,
+        None,
+        true
+    )
+    .is_safe());
 
     // Multiple actual DrawingML owners may legally reference the same SmartArt data/layout/style/color
     // relationships. Editing one owner must not be accepted while both still share changed parts.
@@ -14280,15 +14539,30 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
             &format!("name=\"{new_name}\""),
             1,
         );
-        let document = format!("{}{}{}", &source[..paragraph_end], duplicate, &source[paragraph_end..]);
-        let entries: Vec<ZipEntry> = pkg_src.parts.iter().map(|(name, (_, bytes))| {
-            if name == "word/document.xml" { entry(name, document.as_bytes()) } else { entry(name, bytes) }
-        }).collect();
+        let document = format!(
+            "{}{}{}",
+            &source[..paragraph_end],
+            duplicate,
+            &source[paragraph_end..]
+        );
+        let entries: Vec<ZipEntry> = pkg_src
+            .parts
+            .iter()
+            .map(|(name, (_, bytes))| {
+                if name == "word/document.xml" {
+                    entry(name, document.as_bytes())
+                } else {
+                    entry(name, bytes)
+                }
+            })
+            .collect();
         zip(&entries, false)
     };
     let shared_original = duplicate_smart_art_owner(&base_pkg);
-    let shared_unedited_session = Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
-    let shared_unedited_output = io::save_bytes("fixture.docx", &shared_unedited_session.doc).unwrap();
+    let shared_unedited_session =
+        Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
+    let shared_unedited_output =
+        io::save_bytes("fixture.docx", &shared_unedited_session.doc).unwrap();
     let shared_unedited_reopened = io::open_bytes("fixture.docx", &shared_unedited_output).unwrap();
     assert!(matches!(
         wordcraft_engine::doc::roundtrip::roundtrip_equivalent(
@@ -14297,10 +14571,16 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         ),
         Ok(true)
     ));
-    let shared_preflight = service::preflight(Format::Docx, &shared_original, &shared_unedited_output, None);
+    let shared_preflight = service::preflight(
+        Format::Docx,
+        &shared_original,
+        &shared_unedited_output,
+        None,
+    );
     assert!(shared_preflight.is_safe(),
         "lossless shared SmartArt graph de-sharing during an unedited roundtrip must pass preflight: {shared_preflight:?}");
-    let shared_unedited_pkg = package::open(&shared_unedited_output, package::Side::Output).unwrap();
+    let shared_unedited_pkg =
+        package::open(&shared_unedited_output, package::Side::Output).unwrap();
     let mut shared_preflight_with_extra: Vec<ZipEntry> = shared_unedited_pkg
         .parts
         .iter()
@@ -14308,25 +14588,47 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         .collect();
     shared_preflight_with_extra.push(entry("customXml/item99.xml", b"<unrelated/>"));
     let shared_unedited_with_extra = zip(&shared_preflight_with_extra, false);
-    assert!(!service::preflight(Format::Docx, &shared_original, &shared_unedited_with_extra, None).is_safe(),
-        "no-op SmartArt de-sharing must not admit unrelated OPC parts");
+    assert!(
+        !service::preflight(
+            Format::Docx,
+            &shared_original,
+            &shared_unedited_with_extra,
+            None
+        )
+        .is_safe(),
+        "no-op SmartArt de-sharing must not admit unrelated OPC parts"
+    );
     let shared_output = duplicate_smart_art_owner(&edited_pkg);
-    assert!(!service::check_saved(Format::Docx, &shared_original, &shared_output, None, true).is_safe(),
-        "node-style mutation must reject a SmartArt part shared by two drawing owners");
+    assert!(
+        !service::check_saved(Format::Docx, &shared_original, &shared_output, None, true).is_safe(),
+        "node-style mutation must reject a SmartArt part shared by two drawing owners"
+    );
 
     // Composite acceptance: edit only the second real owner of a shared source diagram. WordCraft
     // should write independent diagram parts and reconnect that owner's relationships; T009 must
     // prove this copy-on-write and leave the first owner's model unchanged.
-    let mut shared_session = Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
-    shared_session.run("select.objects", &json!({"index": 2})).unwrap();
+    let mut shared_session =
+        Session::new(io::open_bytes("fixture.docx", &shared_original).unwrap());
+    shared_session
+        .run("select.objects", &json!({"index": 2}))
+        .unwrap();
     shared_session.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
         "fill": "A1B2C3", "line": "223344", "lineWidth": 19050,
         "text": {"color": "DDEEFF", "bold": true, "italic": false, "fontSize": 1400, "language": "ko-KR"}
     }})).unwrap();
     let shared_cow_output = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
     let shared_cow_pkg = package::open(&shared_cow_output, package::Side::Output).unwrap();
-    let shared_cow_findings = service::check_saved(Format::Docx, &shared_original, &shared_cow_output, None, true);
-    assert!(shared_cow_findings.is_safe(), "valid SmartArt copy-on-write must pass T009: {shared_cow_findings:?}");
+    let shared_cow_findings = service::check_saved(
+        Format::Docx,
+        &shared_original,
+        &shared_cow_output,
+        None,
+        true,
+    );
+    assert!(
+        shared_cow_findings.is_safe(),
+        "valid SmartArt copy-on-write must pass T009: {shared_cow_findings:?}"
+    );
     let shared_original_pkg = package::open(&shared_original, package::Side::Original).unwrap();
     for part in [
         "word/diagrams/data1.xml",
@@ -14335,13 +14637,27 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         "word/diagrams/colors1.xml",
         "word/diagrams/drawing1.xml",
     ] {
-        assert_eq!(shared_cow_pkg.get(part), shared_original_pkg.get(part), "first owner changed: {part}");
+        assert_eq!(
+            shared_cow_pkg.get(part),
+            shared_original_pkg.get(part),
+            "first owner changed: {part}"
+        );
     }
-    assert!(std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data2.xml").unwrap()).unwrap().contains("A1B2C3"));
-    assert!(!std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data1.xml").unwrap()).unwrap().contains("A1B2C3"));
-    assert!(std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap()).unwrap().contains(
-        "<wp:docPr id=\"3\" name=\"Diagram 3\" descr=\"\"/>"
-    ));
+    assert!(
+        std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data2.xml").unwrap())
+            .unwrap()
+            .contains("A1B2C3")
+    );
+    assert!(
+        !std::str::from_utf8(shared_cow_pkg.get("word/diagrams/data1.xml").unwrap())
+            .unwrap()
+            .contains("A1B2C3")
+    );
+    assert!(
+        std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap())
+            .unwrap()
+            .contains("<wp:docPr id=\"3\" name=\"Diagram 3\" descr=\"\"/>")
+    );
     let shared_cow_reopened = io::open_bytes("fixture.docx", &shared_cow_output).unwrap();
     let shared_cow_equivalence = wordcraft_engine::doc::roundtrip::compare_roundtrip(
         &shared_session.doc,
@@ -14349,9 +14665,10 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         &wordcraft_engine::doc::roundtrip::RoundTripLimits::default(),
     );
     assert!(
-        shared_cow_equivalence
-            .as_ref()
-            .is_ok_and(|result| matches!(result, wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_))),
+        shared_cow_equivalence.as_ref().is_ok_and(|result| matches!(
+            result,
+            wordcraft_engine::doc::roundtrip::Equivalence::Equivalent(_)
+        )),
         "copy-on-write save/reopen changed the edited model: {shared_cow_equivalence:?}"
     );
 
@@ -14374,28 +14691,49 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     assert_eq!(
         super::docx_graphics::smart_art_data_mutation_preserves_identity_for_test(
             shared_cow_pkg.get("word/diagrams/data2.xml").unwrap(),
-            changed_connection_pkg.get("word/diagrams/data2.xml").unwrap(),
+            changed_connection_pkg
+                .get("word/diagrams/data2.xml")
+                .unwrap(),
         ),
         Some(false),
         "changed owner model must parse, then reject the changed node identity",
     );
-    assert!(!service::check_saved(Format::Docx, &shared_original, &changed_connection, None, true).is_safe(),
-        "shared SmartArt copy-on-write must reject replacing a node identity");
+    assert!(
+        !service::check_saved(
+            Format::Docx,
+            &shared_original,
+            &changed_connection,
+            None,
+            true
+        )
+        .is_safe(),
+        "shared SmartArt copy-on-write must reject replacing a node identity"
+    );
 
     shared_session.run("edit.undo", &json!({})).unwrap();
     let shared_undo = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
-    assert!(service::check_saved(Format::Docx, &shared_original, &shared_undo, None, true).is_safe());
+    assert!(
+        service::check_saved(Format::Docx, &shared_original, &shared_undo, None, true).is_safe()
+    );
     let shared_undo_reopened = io::open_bytes("fixture.docx", &shared_undo).unwrap();
     assert!(matches!(
-        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&shared_session.doc, &shared_undo_reopened),
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(
+            &shared_session.doc,
+            &shared_undo_reopened
+        ),
         Ok(true)
     ));
     shared_session.run("edit.redo", &json!({})).unwrap();
     let shared_redo = io::save_bytes("fixture.docx", &shared_session.doc).unwrap();
-    assert!(service::check_saved(Format::Docx, &shared_original, &shared_redo, None, true).is_safe());
+    assert!(
+        service::check_saved(Format::Docx, &shared_original, &shared_redo, None, true).is_safe()
+    );
     let shared_redo_reopened = io::open_bytes("fixture.docx", &shared_redo).unwrap();
     assert!(matches!(
-        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&shared_session.doc, &shared_redo_reopened),
+        wordcraft_engine::doc::roundtrip::roundtrip_equivalent(
+            &shared_session.doc,
+            &shared_redo_reopened
+        ),
         Ok(true)
     ));
 
@@ -14403,26 +14741,55 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     // owner receives one independent graph; those duplicate original references are authorized.
     let shared_two_pkg = package::open(&shared_original, package::Side::Original).unwrap();
     let shared_three_original = duplicate_smart_art_owner(&shared_two_pkg);
-    let mut shared_three_session = Session::new(io::open_bytes("fixture.docx", &shared_three_original).unwrap());
-    shared_three_session.run("select.objects", &json!({"index": 3})).unwrap();
+    let mut shared_three_session =
+        Session::new(io::open_bytes("fixture.docx", &shared_three_original).unwrap());
+    shared_three_session
+        .run("select.objects", &json!({"index": 3}))
+        .unwrap();
     shared_three_session.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
         "fill": "B2C3D4", "line": "334455", "lineWidth": 19050,
         "text": {"color": "EEFFAA", "bold": true, "italic": false, "fontSize": 1400, "language": "ko-KR"}
     }})).unwrap();
     let shared_three_output = io::save_bytes("fixture.docx", &shared_three_session.doc).unwrap();
-    let shared_three_findings = service::check_saved(Format::Docx, &shared_three_original, &shared_three_output, None, true);
+    let shared_three_findings = service::check_saved(
+        Format::Docx,
+        &shared_three_original,
+        &shared_three_output,
+        None,
+        true,
+    );
     assert!(shared_three_findings.is_safe(),
         "copy-on-write must permit unaffected owners to share unchanged original relationship rows: {shared_three_findings:?}");
 
-    let mut cross_owner_document = std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap()).unwrap().to_string();
+    let mut cross_owner_document =
+        std::str::from_utf8(shared_cow_pkg.get("word/document.xml").unwrap())
+            .unwrap()
+            .to_string();
     assert!(cross_owner_document.contains("r:dm=\"rId8\""));
     cross_owner_document = cross_owner_document.replacen("r:dm=\"rId8\"", "r:dm=\"rId3\"", 1);
-    let cross_owner_entries: Vec<ZipEntry> = shared_cow_pkg.parts.iter().map(|(name, (_, bytes))| {
-        if name == "word/document.xml" { entry(name, cross_owner_document.as_bytes()) } else { entry(name, bytes) }
-    }).collect();
+    let cross_owner_entries: Vec<ZipEntry> = shared_cow_pkg
+        .parts
+        .iter()
+        .map(|(name, (_, bytes))| {
+            if name == "word/document.xml" {
+                entry(name, cross_owner_document.as_bytes())
+            } else {
+                entry(name, bytes)
+            }
+        })
+        .collect();
     let cross_owner_output = zip(&cross_owner_entries, false);
-    assert!(!service::check_saved(Format::Docx, &shared_original, &cross_owner_output, None, true).is_safe(),
-        "two owners must not be allowed to alias the first owner's copied relationship");
+    assert!(
+        !service::check_saved(
+            Format::Docx,
+            &shared_original,
+            &cross_owner_output,
+            None,
+            true
+        )
+        .is_safe(),
+        "two owners must not be allowed to alias the first owner's copied relationship"
+    );
 
     let shifted_copy = mutate_part(
         &shared_cow_pkg,
@@ -14430,53 +14797,86 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         "x=\"1113175\"",
         "x=\"1113176\"",
     );
-    assert!(!service::check_saved(Format::Docx, &shared_original, &shifted_copy, None, true).is_safe(),
-        "style-only SmartArt edits must preserve the copied drawing geometry");
+    assert!(
+        !service::check_saved(Format::Docx, &shared_original, &shifted_copy, None, true).is_safe(),
+        "style-only SmartArt edits must preserve the copied drawing geometry"
+    );
 
-    let mut with_unrelated_part: Vec<ZipEntry> = shared_cow_pkg.parts.iter().map(|(name, (_, bytes))| entry(name, bytes)).collect();
+    let mut with_unrelated_part: Vec<ZipEntry> = shared_cow_pkg
+        .parts
+        .iter()
+        .map(|(name, (_, bytes))| entry(name, bytes))
+        .collect();
     with_unrelated_part.push(entry("customXml/item99.xml", b"<unrelated/>"));
     let unrelated_output = zip(&with_unrelated_part, false);
-    assert!(!service::check_saved(Format::Docx, &shared_original, &unrelated_output, None, true).is_safe(),
-        "copy-on-write proof must reject unrelated OPC part additions");
+    assert!(
+        !service::check_saved(
+            Format::Docx,
+            &shared_original,
+            &unrelated_output,
+            None,
+            true
+        )
+        .is_safe(),
+        "copy-on-write proof must reject unrelated OPC part additions"
+    );
 
     // Venn nodes consist of overlapping fill, outline and text shapes. A node style must follow
     // its semantic node across all three shapes, rather than painting the transparent text box.
-    let mut venn_source = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
-    venn_source.run("insert.smartArt", &json!({"layout": "venn", "items": ["A", "B"]})).unwrap();
+    let mut venn_source =
+        Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    venn_source
+        .run(
+            "insert.smartArt",
+            &json!({"layout": "venn", "items": ["A", "B"]}),
+        )
+        .unwrap();
     let venn_original = io::save_bytes("fixture.docx", &venn_source.doc).unwrap();
     let mut venn_edited = Session::new(io::open_bytes("fixture.docx", &venn_original).unwrap());
-    venn_edited.run("select.objects", &json!({"index": 0})).unwrap();
-    venn_edited.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
-        "fill": "AABBCC", "line": "112233", "lineWidth": 9525,
-        "text": {"color": "CCDDEE", "bold": true, "fontSize": 1400}
-    }})).unwrap();
+    venn_edited
+        .run("select.objects", &json!({"index": 0}))
+        .unwrap();
+    venn_edited
+        .run(
+            "smartArt.nodeStyle",
+            &json!({"index": 0, "style": {
+                "fill": "AABBCC", "line": "112233", "lineWidth": 9525,
+                "text": {"color": "CCDDEE", "bold": true, "fontSize": 1400}
+            }}),
+        )
+        .unwrap();
     let venn_output = io::save_bytes("fixture.docx", &venn_edited.doc).unwrap();
     let venn_before = package::open(&venn_original, package::Side::Original).unwrap();
     let venn_after = package::open(&venn_output, package::Side::Output).unwrap();
-    assert_eq!(package::compare_saved_docx(&venn_before, &venn_after), vec![]);
+    assert_eq!(
+        package::compare_saved_docx(&venn_before, &venn_after),
+        vec![]
+    );
     assert!(service::check_saved(Format::Docx, &venn_original, &venn_output, None, true).is_safe());
 
     // Helper: clone a package with part overrides and repack as DOCX bytes.
-    let repack = |pkg_src: &package::Package, overrides: &[(&str, Vec<u8>)], removals: &[&str]| -> Vec<u8> {
-        let mut owned: Vec<(String, Vec<u8>)> = Vec::new();
-        for (name, (_, data)) in &pkg_src.parts {
-            if removals.contains(&name.as_str()) {
-                continue;
+    let repack =
+        |pkg_src: &package::Package, overrides: &[(&str, Vec<u8>)], removals: &[&str]| -> Vec<u8> {
+            let mut owned: Vec<(String, Vec<u8>)> = Vec::new();
+            for (name, (_, data)) in &pkg_src.parts {
+                if removals.contains(&name.as_str()) {
+                    continue;
+                }
+                if let Some((_, replacement)) = overrides.iter().find(|(k, _)| *k == name.as_str())
+                {
+                    owned.push((name.clone(), replacement.clone()));
+                } else {
+                    owned.push((name.clone(), data.clone()));
+                }
             }
-            if let Some((_, replacement)) = overrides.iter().find(|(k, _)| *k == name.as_str()) {
-                owned.push((name.clone(), replacement.clone()));
-            } else {
-                owned.push((name.clone(), data.clone()));
+            for (name, data) in overrides {
+                if !pkg_src.parts.contains_key(*name) {
+                    owned.push(((*name).to_string(), data.clone()));
+                }
             }
-        }
-        for (name, data) in overrides {
-            if !pkg_src.parts.contains_key(*name) {
-                owned.push(((*name).to_string(), data.clone()));
-            }
-        }
-        let entries: Vec<ZipEntry> = owned.iter().map(|(n, d)| entry(n, d)).collect();
-        zip(&entries, false)
-    };
+            let entries: Vec<ZipEntry> = owned.iter().map(|(n, d)| entry(n, d)).collect();
+            zip(&entries, false)
+        };
 
     let replace_str = |part: &str, from: &str, to: &str| -> Vec<u8> {
         let s = std::str::from_utf8(base_pkg.get(part).unwrap()).unwrap();
@@ -14512,7 +14912,11 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
             "chart non-canonical number format",
             vec![(
                 "word/charts/chart1.xml",
-                replace_str("word/charts/chart1.xml", "<c:v>3.2</c:v>", "<c:v>3.20</c:v>"),
+                replace_str(
+                    "word/charts/chart1.xml",
+                    "<c:v>3.2</c:v>",
+                    "<c:v>3.20</c:v>",
+                ),
             )],
             vec![],
         ),
@@ -14613,11 +15017,7 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
             "SmartArt data unauthorized dataModelExt relId change",
             vec![(
                 "word/diagrams/data1.xml",
-                replace_str(
-                    "word/diagrams/data1.xml",
-                    "minVer=",
-                    "extra=\"1\" minVer=",
-                ),
+                replace_str("word/diagrams/data1.xml", "minVer=", "extra=\"1\" minVer="),
             )],
             vec![],
         ),
@@ -14637,7 +15037,10 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
             "SmartArt layout changed without data layout change",
             vec![(
                 "word/diagrams/layout1.xml",
-                edited_pkg.get("word/diagrams/layout1.xml").unwrap().to_vec(),
+                edited_pkg
+                    .get("word/diagrams/layout1.xml")
+                    .unwrap()
+                    .to_vec(),
             )],
             vec![],
         ),
@@ -14659,14 +15062,16 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
         ),
         (
             "Unrelated document.xml missing chart reference",
-            vec![(
-                "word/document.xml",
-                replace_str("word/document.xml", "<c:chart ", "<c:ignoredChart "),
-            ),
-            (
-                "word/charts/chart1.xml",
-                edited_pkg.get("word/charts/chart1.xml").unwrap().to_vec(),
-            )],
+            vec![
+                (
+                    "word/document.xml",
+                    replace_str("word/document.xml", "<c:chart ", "<c:ignoredChart "),
+                ),
+                (
+                    "word/charts/chart1.xml",
+                    edited_pkg.get("word/charts/chart1.xml").unwrap().to_vec(),
+                ),
+            ],
             vec![],
         ),
         (
@@ -14796,9 +15201,15 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     let extra_rels = replace_str(
         "word/_rels/document.xml.rels",
         "</Relationships>",
-        &format!(r#"<Relationship Id="rId99" Type="{CHART_REL}" Target="charts/chart2.xml"/></Relationships>"#),
+        &format!(
+            r#"<Relationship Id="rId99" Type="{CHART_REL}" Target="charts/chart2.xml"/></Relationships>"#
+        ),
     );
-    let rels_changed = repack(&edited_pkg, &[("word/_rels/document.xml.rels", extra_rels)], &[]);
+    let rels_changed = repack(
+        &edited_pkg,
+        &[("word/_rels/document.xml.rels", extra_rels)],
+        &[],
+    );
     assert!(!service::check_saved(Format::Docx, &base_bytes, &rels_changed, None, true).is_safe());
 
     assert!(package::regenerated_graphic_part(
@@ -14809,8 +15220,6 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     ));
     assert!(!package::regenerated_graphic_part("word/charts/chartX.xml"));
     assert!(!package::regenerated_graphic_part("word/charts/style1.xml"));
-
-
 }
 
 #[test]
@@ -14839,7 +15248,8 @@ fn docx_all_chart_types_and_smart_art_layouts_pass_narrow_graphic_proof() {
         "venn",
     ];
 
-    let mut sess = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    let mut sess =
+        Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
     sess.run("insert.chart", &json!({"type": "column", "title": "Init"}))
         .unwrap();
     sess.run("caret.docEnd", &json!({})).unwrap();
@@ -14878,7 +15288,8 @@ fn docx_all_chart_types_and_smart_art_layouts_pass_narrow_graphic_proof() {
     for layout in layouts {
         let mut s = Session::new(io::open_bytes("fixture.docx", &orig_bytes).unwrap());
         s.run("select.objects", &json!({"index": 1})).unwrap();
-        s.run("smartArt.layout", &json!({"layout": layout})).unwrap();
+        s.run("smartArt.layout", &json!({"layout": layout}))
+            .unwrap();
         s.run(
             "smartArt.items",
             &json!({"items": [
@@ -14967,7 +15378,10 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
         ct_png,
         &doc_orig,
         &rels_orig,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
     );
 
     // T1: Valid relationship-ID renumbering with no media removal and unchanged [Content_Types].xml MUST pass
@@ -14975,13 +15389,19 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
         ct_png,
         &doc_renumbered,
         &rels_renumbered,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
     );
     assert_eq!(package::validate_docx(&t1_valid), vec![]);
     assert_eq!(package::compare_saved_docx(&orig, &t1_valid), vec![]);
 
     // T2: Same T1 relationship-ID renumbering paired with unrelated well-formed [Content_Types].xml mutations MUST be refused
-    let ct_bad_mime = ct_png.replace(r#"ContentType="image/png""#, r#"ContentType="application/octet-stream""#);
+    let ct_bad_mime = ct_png.replace(
+        r#"ContentType="image/png""#,
+        r#"ContentType="application/octet-stream""#,
+    );
     let ct_bad_override = ct_png.replace(
         r#"ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml""#,
         r#"ContentType="application/xml""#,
@@ -14999,12 +15419,22 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
             &bad_ct,
             &doc_renumbered,
             &rels_renumbered,
-            &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+            &[
+                ("word/media/image1.png", PNG_SIG),
+                ("word/media/image2.png", PNG_SIG),
+            ],
         );
-        assert_eq!(package::validate_docx(&t2_invalid), vec![], "{label}: validate_docx sees well-formed OPC");
+        assert_eq!(
+            package::validate_docx(&t2_invalid),
+            vec![],
+            "{label}: validate_docx sees well-formed OPC"
+        );
         let findings = package::compare_saved_docx(&orig, &t2_invalid);
         assert!(
-            findings.contains(&Finding::at(FindingCode::PartChanged, "[Content_Types].xml")),
+            findings.contains(&Finding::at(
+                FindingCode::PartChanged,
+                "[Content_Types].xml"
+            )),
             "{label}: expected PartChanged on [Content_Types].xml, got {findings:?}"
         );
     }
@@ -15032,7 +15462,10 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
         &ct_png_jpg,
         &doc_orig,
         &rels_orig_jpg,
-        &[("word/media/image1.jpg", JPG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.jpg", JPG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
     );
     let t3_valid = build(
         ct_png,
@@ -15044,14 +15477,18 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
     assert_eq!(package::compare_saved_docx(&orig_jpg, &t3_valid), vec![]);
 
     // Negative on T3: deleting table image1.jpg must STILL reject dropping surviving png Default or mutating styles Override
-    let ct_dropped_png = ct_png.replace(r#"<Default Extension="png" ContentType="image/png"/>"#, "");
+    let ct_dropped_png =
+        ct_png.replace(r#"<Default Extension="png" ContentType="image/png"/>"#, "");
     let ct_t3_mutated_styles = ct_png.replace(
         r#"ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml""#,
         r#"ContentType="application/xml""#,
     );
     for (label, bad_ct) in [
         ("dropped surviving png default", ct_dropped_png),
-        ("unrelated styles override change during media delete", ct_t3_mutated_styles),
+        (
+            "unrelated styles override change during media delete",
+            ct_t3_mutated_styles,
+        ),
     ] {
         let bad_t3 = build(
             &bad_ct,
@@ -15096,7 +15533,10 @@ fn docx_table_media_renumbering_rejects_unrelated_content_types() {
         ct_png,
         &doc_renumbered,
         &rels_non_image_renumbered,
-        &[("word/media/image1.png", PNG_SIG), ("word/media/image2.png", PNG_SIG)],
+        &[
+            ("word/media/image1.png", PNG_SIG),
+            ("word/media/image2.png", PNG_SIG),
+        ],
     );
     assert!(!package::compare_saved_docx(&orig, &bad_non_image_id).is_empty());
 }
