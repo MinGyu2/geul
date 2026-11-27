@@ -245,25 +245,71 @@
   "officialHancomModel": {
     "repository": "https://github.com/hancom-io/hwpx-owpml-model",
     "commit": "1453388472c703a4b299a0834f425cdac16644b9",
-    "reviewedAt": "2026-11-27",
+    "reviewedAt": "2026-11-28",
     "files": [
       {
         "path": "OWPML/Class/Para/CurveType.h",
         "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/CurveType.h",
-        "finding": "CCurveType stores repeated CSeg child objects."
+        "finding": "CCurveType stores repeated CSeg child objects along with the common shape model."
       },
       {
         "path": "OWPML/Class/Para/seg.h",
         "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/seg.h",
-        "finding": "CSeg model fields are type, x1, y1, x2 and y2; it declares no Bezier control coordinates or extra children."
+        "finding": "CSeg declares only type, x1, y1, x2 and y2 data members; it declares no independent Bezier control coordinates."
       },
       {
         "path": "OWPML/Class/Para/seg.cpp",
         "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/seg.cpp",
-        "finding": "ReadAttribute/WriteElement map exactly type, x1, y1, x2 and y2."
+        "finding": "ReadAttribute and WriteElement read/write exactly type, x1, y1, x2 and y2."
+      },
+      {
+        "path": "OWPML/Class/Para/CurveType.cpp",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/CurveType.cpp",
+        "finding": "CCurveType maps repeated seg elements to CSeg and serializes that model; no separate Bezier-control child is mapped."
+      },
+      {
+        "path": "OWPML/Class/Para/ConnectLineType.h",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/ConnectLineType.h",
+        "finding": "The control-points accessor belongs to CConnectLineType, a distinct connector model."
+      },
+      {
+        "path": "OWPML/Class/Para/ConnectLineType.cpp",
+        "url": "https://github.com/hancom-io/hwpx-owpml-model/blob/1453388472c703a4b299a0834f425cdac16644b9/OWPML/Class/Para/ConnectLineType.cpp",
+        "finding": "The controlPoints element is mapped as CConnectControlPoints under CConnectLineType, not CCurveType."
       }
     ],
-    "scope": "This official implementation corroborates the current revision 03 schema; it does not rule out private extensions or authentic samples that are not public."
+    "scope": "This Hancom-published model implementation corroborates the current revision 03 schema for the inspected contract. It is not itself the normative standard and does not rule out private extensions or authentic samples that are not public."
+  },
+  "alternativeRepresentationReview": {
+    "reviewedAt": "2026-11-28",
+    "evidenceLevels": {
+      "documented": "The active KS X 6101:2024 revision 03 CurveType and the inspected Hancom CCurveType/CSeg model expose segment type and endpoints only; the pinned RHWP HWPX writer emits endpoint segments.",
+      "empirical": "The tracked sample corpus audit found 337 curve objects and 1504 segments across readable candidates, with only type/x1/y1/x2/y2 and no segment child elements. This is observational evidence, not proof that all compatible files lack extensions.",
+      "inference": "Within the inspected standard/model/writer envelope, there is no proven durable place for independently editable Bezier controls. This conclusion is bounded to reviewed public evidence and is not a universal claim that no proprietary representation exists."
+    },
+    "paths": [
+      {
+        "path": "A_DIRECT_NATIVE",
+        "finding": "No independent Bezier-control field or child is present in the active CurveType schema, Hancom CSeg model/serializer, or pinned RHWP HWPX parser/writer.",
+        "result": "No verified direct native serialization contract; keep independent-control mutations fail-closed."
+      },
+      {
+        "path": "B_STANDARD_COMPATIBLE_ALTERNATIVE",
+        "finding": "ConnectLineType.controlPoints belongs to connector-specific start/end/control-point semantics, not a free CurveType path. Replacing the curve with raster, polyline, or another shape changes editability, geometry, or object semantics; no alternative standard representation preserving the original editable-curve contract was verified.",
+        "result": "No acceptable standard-compatible replacement identified."
+      },
+      {
+        "path": "C_MATHEMATICAL_REPRESENTABILITY",
+        "finding": "De Casteljau subdivision can exactly split a cubic when its four Bezier points are available. The endpoint-only CSeg representation cannot durably store independent inner controls. Existing Catmull–Rom-derived handles are functions of neighboring anchors, so arbitrary independent handle edits cannot be serialized through that model with a proven exact geometry mapping. Exact inverse-subdivision deletion likewise requires known child control geometry and representable parent geometry; approximate fitting is not exact.",
+        "result": "The algorithm is mathematically valid under its control-point precondition, but that precondition and resulting geometry are not durably representable by the verified CurveType contract. No CURVE split/delete or approximate fitting was implemented."
+      },
+      {
+        "path": "D_APPLICATION_EXTENSION",
+        "finding": "A geul-only extension or sidecar could not be shown to preserve rendering and editability when an external HWPX editor ignores or removes it; no such extension was introduced.",
+        "result": "Not accepted as interoperable completion without a standard contract and authentic cross-editor roundtrip evidence."
+      }
+    ],
+    "decision": "Retain the previously accepted endpoint, derived-handle display, anchor insertion/removal, strict LINE split/join, preservation, and Native subset. Keep independent Bezier control editing/serialization and geometry-preserving CURVE split/delete blocked by the reviewed format contract; do not infer universal extension absence or claim full P4 acceptance."
   },
   "currentModelEvidence": {
     "status": "PARTIAL / BLOCKED_BY_FORMAT_CONTRACT",
