@@ -48,13 +48,13 @@
     "decision": "P6-HX-CURVE structured same-format transfer is IMPLEMENTED_VERIFIED within the tested supported envelope. Independent Bezier handle editing/serialization is the separate unresolved P4-HX-CURVE requirement; do not invent a HWPX field or claim P4 complete."
   },
   "verification": {
-    "orderedPatchReconstruction": "PASS: pinned RHWP reconstructed with 73 ordered patches; source tree SHA-256 103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40. The shared-input caveat is recorded above.",
-    "compiledSourceIdentity": "PASS: release binding and application correspond to the recorded RHWP generation; committed-root-only reproduction excluding the dirty evaluator input is NOT VERIFIED.",
+    "orderedPatchReconstruction": "PASS: RHWP pin을 커밋된 입력만으로 ordered patch 73개 적용해 재구성. prepared source tree SHA-256 c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0; checkpointed ordered patch-manifest identity bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa; generated clean-clone manifest file SHA-256 1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3. clean-clone manifest 파일 및 체크포인트 patch identity는 committedSourceVerification에 기록했다.",
+    "compiledSourceIdentity": "PASS: geul HEAD cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d의 커밋 소스에서 Release binding과 앱을 재현했다. RHWP source tree는 c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0; committed evaluator 입력 SHA-256 a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842; alternates와 /tests symlink 없음, tracked clone clean.",
     "rustHostCheck": "PASS: RHWP host cargo check.",
-    "typescriptTypecheck": "PASS: npm run typecheck.",
+    "typescriptTypecheck": "PASS: 커밋 소스 checkout의 npm run typecheck.",
     "nativeHarnessSyntax": "PASS: Python py_compile.",
-    "releaseBuild": "PASS: guarded Tauri Release build; application SHA-256 recorded in release.",
-    "focusedWasmRuntime": "PASS: stage3-hwpx-clipboard-safety.wasm.test.ts, 76/76; includes unknown nested fill metadata rejection.",
+    "releaseBuild": "PASS: 커밋 소스의 guarded Tauri Release. 앱 SHA-256 dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2, 64,064,984 bytes. Privacy/runtime-path PASS, Nix 밖 이식성 UNVERIFIED.",
+    "focusedWasmRuntime": "PASS: 커밋 소스의 P6-HX-CURVE clipboard Release WASM 회귀 76/76. 이는 검증된 same-format transfer 범위를 뜻하며 P4 독립 Bezier 편집을 입증하지 않는다.",
     "t009": "PASS: actual Native T009 publish reported saved/synced; saved package independently inspected.",
     "undoRedo": "PASS: trusted Native Ctrl+C/Ctrl+V/Ctrl+Z/Ctrl+Y; render undo/redo verified and source package remained unchanged.",
     "serializationAndReopen": "PASS: supported segment types/endpoints/tree and deterministic derived cubic model compare equal source→destination→save/reopen; source and destination ownership/IDs validated.",
@@ -62,12 +62,13 @@
     "resourceRemap": "PASS: image1→image2; source media SHA-256 1c41541a9c04bb052f6cbcac81ae15c54b858b87a059cdb08f09f47c96b95dc5; preexisting destination media SHA-256 90506d137585e835a5063561ad0a25adbc473feeb3a127ddd9923d5db649bce7; both retained without aliasing.",
     "sourceImmutability": "PASS: source document bytes/model unchanged during transfer.",
     "externalHwpInterop": "NOT RUN. No external HWP editor interoperability was tested.",
-    "otherPlatforms": "Wayland, Windows, and macOS NOT RUN; non-Nix Release portability NOT VERIFIED."
+    "otherPlatforms": "Wayland, Windows, and macOS NOT RUN; non-Nix Release portability NOT VERIFIED.",
+    "committedSourceFocusedP4Curve": "PASS 3/3: P4-HX-CURVE 구현 부분의 집중 Release WASM 회귀. 독립 Bezier 편집/직렬화 및 CURVE 분할/삭제는 계속 차단 상태다.",
+    "committedSourceNative": "최종 clean committed-source 실행에서 P6-HX-CURVE Native GUI는 실행하지 않음(NOT RUN). 앞선 Native 증거는 기록된 앱/generation identity를 유지한다."
   },
   "limitations": [
     "Only the verified standard HWPX segment/resource envelope is accepted; unknown/ambiguous structure remains fail-closed.",
     "Independent Bezier handle editing/serialization is unresolved under P4-HX-CURVE. P6 transfer preserves the deterministic derived cubic model but does not establish a format-level handle representation or complete P4.",
-    "Committed-root-only artifact reconstruction excluding user-owned patches/rhwp/table-calc/evaluator.rs is NOT VERIFIED.",
     "Wayland, Windows, macOS, external HWP editor interoperability, and non-Nix Release portability are NOT RUN/NOT VERIFIED."
   ],
   "nextAction": "No remaining P6-HX-CURVE work for the verified same-format structured transfer scope. Keep unsupported envelopes fail-closed. Track independent Bezier handle serialization and any broader curve editing under P4-HX-CURVE; do not infer a HWPX contract.",
@@ -208,6 +209,13 @@
         "Contents/section0.xml"
       ],
       "pasteCascadeStepHwpUnits": 567
+    },
+    "committedSourceCaveatSuperseded": {
+      "recordedCaveat": "The prepared source includes preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED.",
+      "meaning": "이전 준비 소스와 Native 결과에는 루트 사용자 소유 evaluator.rs 미커밋 변경이 포함돼 있었다. 해당 과거 결과에 대한 caveat는 그대로 보존하며, 아래 clean committed-source 검증이 소스 재현성에 한해 이를 대체한다."
+    },
+    "rhwp": {
+      "sharedInputCaveat": "The prepared source includes preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
     }
   },
   "rhwp": {
@@ -216,14 +224,34 @@
     "patchIndex": 73,
     "patch": "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
     "patchSha256": "77ac12264e182003c1f3796834890d264599c98634210401f45ef659a77156bf",
-    "releaseSourceTreeSha256": "103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40",
-    "sharedInputCaveat": "The prepared source includes preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
+    "releaseSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
+    "sharedInputCaveat": "최종 커밋 소스 재구성에서는 사용자 미커밋 입력을 포함하지 않았다. 지정 parent HEAD의 clean isolated clone이며, evaluator 입력은 커밋된 blob과 일치하고 Git alternates와 /tests symlink가 없으며 tracked tree가 clean이다."
   },
   "release": {
-    "generation": "2af916e8f3c9b9d4b5f2c21e8684231809ffa8ab034688578537e077a182bf61",
+    "generation": "79311a70de2d266112c427c4bdcb29cb0c9872df8f666309cad2cf6c617a96f6",
     "javascriptSha256": "40585a9ae88876d6cc662bc19bcec07fa0c74a783c01de06b60e25ecf1463f74",
-    "wasmSha256": "1117fbd4f4f1839f926b5083dbff3f7bcc1a6c6120656d750a6202b33673db30",
-    "guardedApplicationSha256": "2b04af9bf774fd6d20bb3f5e2902ed9de234f538a1efadb99bc52e346f4fd478",
-    "focus": "Release WASM clipboard suite 76/76 PASS; npm run typecheck, Native harness py_compile, RHWP host cargo check, guarded Tauri Release build PASS."
+    "wasmSha256": "0ca84da4c2739d428d2d3b8e64c06b0190e1906745bc54f93d0297bdd7a3b1a9",
+    "guardedApplicationSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+    "focus": "커밋 소스의 clipboard Release WASM 76/76 PASS; P4 곡선 집중 Release WASM 3/3 PASS; npm run typecheck PASS; guarded Tauri Release privacy/runtime-path PASS; Nix 밖 이식성 UNVERIFIED.",
+    "guardedApplicationBytes": 64064984
+  },
+  "committedSourceVerification": {
+    "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
+    "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "rhwpOrderedPatchCount": 73,
+    "orderedPatchManifestSha256FromCheckpoint": "bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa",
+    "generatedManifestFileSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+    "preparedRhwpSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
+    "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842",
+    "wordcraftPin": "d714567c4ccc34884809e644676f879ee2008b89",
+    "wordcraftReconstruction": "PASS: 정확한 pin을 23단계로 재구성.",
+    "isolatedCheckout": "tracked tree clean; Git alternates 없음; /tests symlink 없음.",
+    "rhwpGeneration": "79311a70de2d266112c427c4bdcb29cb0c9872df8f666309cad2cf6c617a96f6",
+    "javascriptSha256": "40585a9ae88876d6cc662bc19bcec07fa0c74a783c01de06b60e25ecf1463f74",
+    "wasmSha256": "0ca84da4c2739d428d2d3b8e64c06b0190e1906745bc54f93d0297bdd7a3b1a9",
+    "tauriAppSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+    "tauriAppBytes": 64064984,
+    "results": "P6 clipboard WASM 76/76 PASS; P4 곡선 집중 WASM 3/3 PASS; npm typecheck PASS; guarded Release PASS. P6-HX-CURVE clean-build Native 수락은 NOT RUN.",
+    "portability": "Nix 실행환경 밖 이식성은 UNVERIFIED."
   }
 }

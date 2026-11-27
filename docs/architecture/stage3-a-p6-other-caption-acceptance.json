@@ -56,8 +56,10 @@
     "diffCheck": "PASS: git diff --check",
     "guardedReleaseBuild": {
       "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
-      "result": "PASS: TypeScript/Vite production build, guarded Tauri Release compile, and path/runtime privacy scan.",
-      "appSha256": "b47dbf90d681706d5aa5a0632df31c08cc031e7427e4d9469d444d74f387d8f8",
+      "result": "PASS: 커밋 소스 checkout에서 TypeScript/Vite production build, guarded Tauri Release 및 privacy/runtime-path scan.",
+      "appSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+      "appBytes": 64064984,
+      "sourceHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
       "portability": "UNVERIFIED outside the current Nix runtime."
     },
     "nativeX11Hwpx": {
@@ -110,6 +112,63 @@
       }
     },
     "nativeDocx": {
+      "result": "PASS: 커밋 소스 Release 앱으로 실제 Linux X11/Xvfb Native case P6-OTHER-CAP-DOCX 및 P6-OTHER-CAP-DOCX-FRESH를 실행했다.",
+      "environment": "비공개 Linux X11/Xvfb, D-Bus, IBus Hangul, Tauri WebDriver; 신뢰된 pointer 이벤트를 확인했다.",
+      "command": "PYTHONPATH=$GEUL_TEST_SUPPORT_ROOT/tests/e2e:$GEUL_TEST_SUPPORT_ROOT/tests/integration/rhwp:$GEUL_TEST_SUPPORT_ROOT/tests/integration/wordcraft python3 scripts/tests/native-ibus-session.py --out target/p6-other-cap-clean-native-final/session -- python3 scripts/tests/native-stage3a-p6.py --out target/p6-other-cap-clean-native-final/run --fixtures scripts/tests/fixtures --xdotool @XDOTOOL@ --ibus @IBUS@ --app src-tauri/target/release/geul --driver /tmp/geul-tauri-driver-target/debug/tauri-driver --cases P6-OTHER-CAP-DOCX P6-OTHER-CAP-DOCX-FRESH",
+      "testSupportOnlyImports": {
+        "tauriSmokeSha256": "9804366864d1ef21d809b3ce015bf23e29641be75d226e523cc1c108a386e39e",
+        "rhwpPocSha256": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a",
+        "wordcraftPocSha256": "15878d9d36b9791efc654cf4913ea6869f086a5c4aedf2465a81e9d5f40e42e5",
+        "scope": "외부 Python 모듈은 테스트 전용 harness helper이며 제품/빌드 입력이 아니다. 복사하거나 수정하지 않았다.",
+        "geulTestSupportRoot": "GEUL_TEST_SUPPORT_ROOT는 Native harness 전용으로 사용하는 외부 read-only geul-tests helper checkout 경로다. helper들은 테스트 보조 입력이며 제품/빌드 입력이 아니고, 복사하거나 수정하지 않았다."
+      },
+      "applicationSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+      "processAppSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+      "applicationBytes": 64064984,
+      "fixtureSha256": "c2fe4450285ebe110773bc653fd057e6d637c55298a442da6a8c5ede2496a2dc",
+      "resultSha256": "60d45a89980017bde5a440a644f998412f9b2b90869e25c25c462d82108a478a",
+      "savedDocxSha256": "ea5cbc28d183b86e9d27951095a31d35d71b5e5694e4f2bfccfd1c8192c46281",
+      "sessionSha256": "b0397016ef0beb988db871829e1d90fc8e0b3d509256edc8428fe94bc98a49ec",
+      "cleanupSha256": "7fd743a080ba92b549ca682195c2d7aa633bbcf95eaa29b7a37eac330660b4dd",
+      "sessionRunId": "17baed10f68d4386942965718862cbcb",
+      "appPids": {
+        "primary": 2913548,
+        "freshProcess": 2913880,
+        "distinct": true
+      },
+      "trustedPointer": "PASS: 기록된 pointer event 46/46이 trusted Native X11 이벤트였으며 canvas/group와 caption 선택을 포함한다.",
+      "operations": "PASS: 소유 캡션 텍스트 편집, child 캡션 배치 이동, outer group 이동과 텍스트/배치/group 이동 Undo/Redo. 구조적 group-child/textbox-story 연결을 보존했다.",
+      "undoRedo": "PASS: 텍스트, child 캡션 배치, outer group 이동에 대해 Undo/Redo 후 예상 상태를 복구했다.",
+      "t009": "PASS: saved, synced=true, changedSince=false, findings 없음.",
+      "opcInspection": "PASS: group/shape identity와 hierarchy, caption style, relationships, 인접 미소유 body text를 보존하고 관계없는 OPC 8개 part가 byte-identical임을 독립 검사했다. 저장 package에서 캡션 텍스트와 배치를 확인했다.",
+      "sameAppReopen": "PASS: 저장 DOCX를 같은 앱에서 다시 열고 소유 캡션과 배치를 확인했다.",
+      "freshProcessReopen": "PASS: 별도 PID에서 저장 DOCX를 열어 동일 owner/story와 수정된 caption을 복구했고 dirty=false였다. 저장 package SHA도 유지됐다.",
+      "publishedSha256": "ea5cbc28d183b86e9d27951095a31d35d71b5e5694e4f2bfccfd1c8192c46281",
+      "cleanup": "PASS: 파일시스템 증명 cleanup 완료. teardown 시 관리 프로세스 14개, survivor/leak/process error 없음; 소유 work/socket 경로 제거.",
+      "externalOffice": "NOT RUN: Microsoft Word의 semantic caption recognition/interoperability를 주장하지 않는다.",
+      "otherPlatforms": "Wayland, Windows, macOS는 NOT RUN."
+    },
+    "externalOffice": "NOT RUN; Microsoft Word semantic caption recognition/interoperability has not been tested.",
+    "waylandWindowsMacos": "NOT RUN.",
+    "focusedRustT009Regression": "PASS 3/3: exact group-caption story ownership, epoch/stale/ambiguous rejection, text Undo/Redo, T009 and saved DOCX parse/reopen; group copy remaps owner/story identity; deleting group preserves unowned nearby body caption.",
+    "hwpRustRegressions": "PASS 65, FAIL 0, IGNORE 40 (105 tests, 568 filtered): cargo test --lib hwp_ -- --nocapture, rerun after metadata sanitization.",
+    "fixtureMetadataSanitization": {
+      "result": "PASS",
+      "method": "The fixture generator empties SummaryInformation strings and FILETIMEs, zeros DocOptions/_LinkDoc and CFB directory timestamps, then verifies no workstation path remains.",
+      "independentStreamComparison": "PASS: compared raw pinned-RHWP generated HWP5 with sanitized fixture; only HwpSummaryInformation and DocOptions/_LinkDoc streams changed. BodyText/Section0, DocInfo, FileHeader, PrvImage, PrvText, script streams, and CFB stream inventory are byte-identical.",
+      "originalFixtureSha256": "2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0",
+      "editedFixtureSha256": "2ee39992696b27b49c30a26425cfd016c35bfe4c7532b18f0f49c1d76ac1c019",
+      "privacyScan": "PASS: strings inspection shows only CFB stream names and synthetic body text; no workstation path or author metadata remains."
+    },
+    "focusedUiRegression": "PASS 1/1 explicit caption-entry button test and PASS 1/1 selected DOCX group story-entry test.",
+    "nativeDocxPreviousStatus": "과거 두 시도는 test helper import 누락으로 case 실행 전에 중단됐다. 세 개의 명시적 test-only PYTHONPATH entry를 지정한 최종 실행에서는 두 case가 모두 통과했다. nativeDocxImportPrerequisiteAttempts 참조.",
+    "historicalGuardedReleaseBuildBeforeCommittedSourceProof": {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "result": "PASS: TypeScript/Vite production build, guarded Tauri Release compile, and path/runtime privacy scan.",
+      "appSha256": "b47dbf90d681706d5aa5a0632df31c08cc031e7427e4d9469d444d74f387d8f8",
+      "portability": "UNVERIFIED outside the current Nix runtime."
+    },
+    "historicalNativeDocxBeforeCommittedSourceProof": {
       "result": "PASS: actual Linux X11/Xvfb private D-Bus/IBus Native cases P6-OTHER-CAP-DOCX and P6-OTHER-CAP-DOCX-FRESH.",
       "applicationSha256": "b47dbf90d681706d5aa5a0632df31c08cc031e7427e4d9469d444d74f387d8f8",
       "fixtureSha256": "c2fe4450285ebe110773bc653fd057e6d637c55298a442da6a8c5ede2496a2dc",
@@ -129,20 +188,42 @@
       "freshProcessReopen": "PASS: distinct app process reopened the saved DOCX and restored the same owner/story without dirty state.",
       "cleanup": "PASS: complete, filesystem-proven, exit 0, no surviving test processes."
     },
-    "externalOffice": "NOT RUN; Microsoft Word semantic caption recognition/interoperability has not been tested.",
-    "waylandWindowsMacos": "NOT RUN.",
-    "focusedRustT009Regression": "PASS 3/3: exact group-caption story ownership, epoch/stale/ambiguous rejection, text Undo/Redo, T009 and saved DOCX parse/reopen; group copy remaps owner/story identity; deleting group preserves unowned nearby body caption.",
-    "hwpRustRegressions": "PASS 65, FAIL 0, IGNORE 40 (105 tests, 568 filtered): cargo test --lib hwp_ -- --nocapture, rerun after metadata sanitization.",
-    "fixtureMetadataSanitization": {
-      "result": "PASS",
-      "method": "The fixture generator empties SummaryInformation strings and FILETIMEs, zeros DocOptions/_LinkDoc and CFB directory timestamps, then verifies no workstation path remains.",
-      "independentStreamComparison": "PASS: compared raw pinned-RHWP generated HWP5 with sanitized fixture; only HwpSummaryInformation and DocOptions/_LinkDoc streams changed. BodyText/Section0, DocInfo, FileHeader, PrvImage, PrvText, script streams, and CFB stream inventory are byte-identical.",
-      "originalFixtureSha256": "2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0",
-      "editedFixtureSha256": "2ee39992696b27b49c30a26425cfd016c35bfe4c7532b18f0f49c1d76ac1c019",
-      "privacyScan": "PASS: strings inspection shows only CFB stream names and synthetic body text; no workstation path or author metadata remains."
+    "nativeDocxImportPrerequisiteAttempts": [
+      {
+        "status": "NOT RUN",
+        "reason": "최초 실행은 case 시작 전에 중단: rhwp_poc import에서 ModuleNotFoundError.",
+        "sessionRunId": "53409e07733240bdb50d275899467a9f",
+        "sessionSha256": "4fb13f26e7df1b020daca8b885a71ab75c2b40edb7ae0d136bc368d3297c1a28",
+        "cleanupSha256": "d9ade8c4d591a0c68ae916a493232e7da674e04a45175fb994f72c2444faa416",
+        "cleanup": "파일시스템 증명 cleanup 완료. survivor, leak, process error 없음."
+      },
+      {
+        "status": "NOT RUN",
+        "reason": "e2e 및 RHWP helper 경로를 포함한 재시도도 case 시작 전에 중단: wordcraft_poc import에서 ModuleNotFoundError.",
+        "sessionRunId": "183c504e2b614d2f86f6221ef59defe1",
+        "sessionSha256": "13ab09944f3d3a82bcd81882ea1392a1eb483093c996a94681206f0edc6ea3a1",
+        "cleanupSha256": "631c1b161ce507033a2cec3f80e8d3bf0c4195528a1c222f796a0f62631f3edf",
+        "cleanup": "파일시스템 증명 cleanup 완료. survivor, leak, process error 없음."
+      }
+    ],
+    "committedSourceVerification": {
+      "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
+      "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpOrderedPatchCount": 73,
+      "orderedPatchManifestSha256FromCheckpoint": "bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa",
+      "generatedManifestFileSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+      "preparedRhwpSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
+      "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842",
+      "wordcraftPin": "d714567c4ccc34884809e644676f879ee2008b89",
+      "wordcraftReconstruction": "PASS: 정확한 pin을 23단계로 재구성.",
+      "isolatedCheckout": "tracked tree clean; Git alternates 없음; /tests symlink 없음.",
+      "typecheck": "PASS: npm run typecheck.",
+      "rustOwnerRegression": "PASS 3/3: DOCX group-caption owner/T009 집중 Rust 회귀.",
+      "guardedRelease": "PASS: dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2; 64,064,984 bytes. privacy/runtime-path PASS, Nix 실행환경 밖 이식성 UNVERIFIED.",
+      "rustfmt": "루트 작업 트리 cargo fmt --check PASS. clean committed checkout은 보호된 기존 evaluator.rs만 포맷 차이로 실패하며 루트 사용자 소유 파일은 그대로 보존됐다.",
+      "commit": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d"
     },
-    "focusedUiRegression": "PASS 1/1 explicit caption-entry button test and PASS 1/1 selected DOCX group story-entry test.",
-    "nativeDocxPreviousStatus": "NOT RUN in earlier partial records; superseded by the current passing DOCX Native evidence above."
+    "currentStatusDate": "2026-11-28"
   },
   "limitations": [
     "The standard OOXML structure supplies durable parent/child and textbox-story identity, but does not provide a dedicated semantic group-caption role. Geul exposes caption editing only for the exact supported structural envelope described above; Microsoft Word caption recognition is not claimed.",

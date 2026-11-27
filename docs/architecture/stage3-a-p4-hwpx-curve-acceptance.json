@@ -358,5 +358,47 @@
     "sanitizedSourceSha256": "cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0",
     "canonicalFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548",
     "inference": "The Catmull–Rom interpolation model is inferred from the public sample anchor/preview evidence. This does not establish Hancom rendering semantics, a KS X 6101 guarantee, or a durable XML control-point serialization contract."
+  },
+  "committedSourceVerification": {
+    "status": "커밋된 소스 빌드 및 구현된 부분 범위 집중 검증 PASS",
+    "date": "2026-11-28",
+    "isolatedCheckout": {
+      "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
+      "trackedTree": "깨끗함",
+      "gitAlternates": "없음",
+      "testsSymlink": "없음"
+    },
+    "rhwp": {
+      "pin": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 73,
+      "orderedPatchManifestSha256FromCheckpoint": "체크포인트에 기록된 순서형 패치 manifest SHA-256: bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa",
+      "generatedManifestFileSha256": "격리 clone에서 생성한 manifest 파일의 SHA-256: 1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+      "preparedSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
+      "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842"
+    },
+    "wordcraft": {
+      "pin": "d714567c4ccc34884809e644676f879ee2008b89",
+      "reconstruction": "PASS: 검토된 정확한 WordCraft pin을 23단계로 재구성하고 commit identity를 확인했다."
+    },
+    "releaseArtifacts": {
+      "rhwpGeneration": "79311a70de2d266112c427c4bdcb29cb0c9872df8f666309cad2cf6c617a96f6",
+      "javascriptSha256": "40585a9ae88876d6cc662bc19bcec07fa0c74a783c01de06b60e25ecf1463f74",
+      "wasmSha256": "0ca84da4c2739d428d2d3b8e64c06b0190e1906745bc54f93d0297bdd7a3b1a9",
+      "guardedTauriApplicationSha256": "dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2",
+      "guardedTauriApplicationBytes": 64064984,
+      "guardStatus": "PASS: privacy 및 runtime-path 검사. Nix 실행환경 밖 이식성은 UNVERIFIED."
+    },
+    "functionalChecks": {
+      "focusedReleaseWasm": "PASS: P4-HX-CURVE 구현 부분의 Release WASM 집중 회귀 3/3.",
+      "clipboardCurveRegression": "PASS: P6-HX-CURVE clipboard WASM 회귀 76/76. 독립 Bezier 편집을 입증하는 결과는 아니다.",
+      "typescriptTypecheck": "PASS: npm run typecheck.",
+      "native": "이번 clean committed-source 앱으로 P4-HX-CURVE Native를 실행하지 않음(NOT RUN). 앞선 Linux X11 결과는 수락 JSON에 기록한 구현 부분 범위에 한정된다."
+    },
+    "formatting": {
+      "workingTreeCargoFmtCheck": "루트 작업 트리에서 `cargo fmt --check` PASS. 보호된 사용자 evaluator.rs는 이미 rustfmt 적용 상태다.",
+      "cleanCommittedCloneCargoFmtCheck": "FAIL: 커밋된 기준의 보호 파일 `patches/rhwp/table-calc/evaluator.rs`에서만 포맷 차이를 보고했다. 루트의 사용자 파일은 수정하거나 stage하지 않았다.",
+      "formatCommit": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d"
+    },
+    "decision": "커밋된 소스 재현은 빌드와 구현 부분의 집중 동작에 대해 확인됐다. 독립 Bezier 제어점 편집/직렬화와 geometry를 보존하는 CURVE 분할/삭제 계약은 여전히 미해결이므로 P4 수락 상태는 바뀌지 않는다."
   }
 }
