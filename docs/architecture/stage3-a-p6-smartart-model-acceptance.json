@@ -28,8 +28,8 @@
       "scripts/prepare-wordcraft.py"
     ],
     "scope": "Canonical DOCX SmartArt node fill, outline color and width, text color, bold/italic, stable point/transition identifiers, and allowlisted additional node properties. The UI edits the selected node. Unsupported diagram envelopes are rejected before mutation.",
-    "t009Proof": "Only the bound chart and SmartArt data/layout/drawing parts are admitted by exact regenerated-part proof. The test verifies the package part set, node identifiers, existing node properties, source mapping, and all unrelated part bytes. Unauthorized changes and shared owners are rejected. The Native save changed exactly word/charts/chart1.xml, word/diagrams/data1.xml, word/diagrams/drawing1.xml, and word/diagrams/layout1.xml; no relationship part changed.",
-    "sharedPartBoundary": "Mutating a data, layout, or drawing part with multiple owners remains fail-closed until P6-SMARTART-SHARED implements copy-on-write and relationship reconnection."
+    "t009Proof": "Only the bound chart and SmartArt data/layout/drawing parts are admitted by exact regenerated-part proof. The test verifies the package part set, node identifiers, existing node properties, source mapping, and all unrelated part bytes. Unauthorized changes and shared-owner mutations that do not satisfy the proven P6-SMARTART-SHARED copy-on-write path are rejected. The Native save changed exactly word/charts/chart1.xml, word/diagrams/data1.xml, word/diagrams/drawing1.xml, and word/diagrams/layout1.xml; no relationship part changed.",
+    "sharedPartBoundary": "Canonical shared-owner graphs with supported node-style edits now use independently copied graph parts and owner-specific relationship reconnection under P6-SMARTART-SHARED. Noncanonical or externally shared graph envelopes remain fail-closed; see stage3-a-p6-smartart-shared-acceptance.json."
   },
   "dependencies": {
     "wordcraftGitlink": "b2a38b938a2b659ac2e56c112c08e3ff2ba63cfa",
@@ -159,8 +159,8 @@
     "X11 run11 verified style, Undo/Redo, save and OPC, then failed its frame assertion because a later HWP5 selected_frame helper shadowed the SmartArt helper. The helper was given a distinct name and runs13/14 passed."
   ],
   "limitations": [
-    "Shared SmartArt data/layout/drawing OPC parts remain fail-closed; independent copy-on-write and relationship reconnection are tracked separately as P6-SMARTART-SHARED.",
-    "Only the canonical uniquely-owned SmartArt fixture and its node-style properties were exercised; other noncanonical styles, colors, layouts and additional-data envelopes remain fail-closed until individually modeled and proven.",
-    "External Office interoperability, Wayland, Windows and macOS were NOT RUN. Nix-independent portability is NOT VERIFIED."
+    "The accepted node-style model remains limited to canonical, supported SmartArt data/layout/drawing envelopes; unsupported styles, colors, layouts, and additional-data envelopes remain fail-closed.",
+    "Shared graph copy-on-write is accepted only for the canonical owner and relationship envelope documented by P6-SMARTART-SHARED; noncanonical and external owners remain fail-closed.",
+    "External Office interoperability, Wayland, Windows, and macOS were NOT RUN. Nix-independent portability is NOT VERIFIED."
   ]
 }

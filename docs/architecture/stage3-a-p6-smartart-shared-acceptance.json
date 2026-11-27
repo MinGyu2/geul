@@ -1,0 +1,144 @@
+{
+  "issue": "P6-SMARTART-SHARED",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Safely edit a supported DOCX SmartArt owner when diagram OPC parts are shared, by creating independent owner-owned copies and reconnecting relationships while preserving every other owner, package part, and the saved editable model.",
+  "implementation": {
+    "geulCommits": [
+      "5a3408acfd1cc5d5fc3a98f4143cdefb1adc3e01"
+    ],
+    "changedFiles": [
+      "src-tauri/src/services/save/docx_graphics.rs",
+      "src-tauri/src/services/save/package.rs",
+      "src-tauri/src/services/save/service.rs",
+      "src-tauri/src/services/save/tests.rs",
+      "scripts/tests/native-stage3-p6.py"
+    ],
+    "scope": "The DOCX preflight accepts only a proven no-op SmartArt graph de-sharing. T009 accepts one supported owner node-style change through copy-on-write. It clones the bound data, layout, quickStyle, colors, and drawing parts, reconnects the selected owner, and preserves the original graph for the other owner.",
+    "preflightProof": "Only stable SmartArt drawing-owner IDs and dgm:relIds references may differ in word/document.xml. Output owner graph sets are independent; original parts remain; only exact graph parts and exact content-type overrides may be added; old relationship rows, owner references, model and drawing consistency, and unrelated OPC parts are checked. docProps/app.xml is admitted only when its existing statistics text alone changes.",
+    "t009Proof": "The edited-output proof validates exact source/target owner identity, complete supported models, node IDs and properties, layout/data agreement, drawing semantics and geometry, relationship ownership, exact added parts, content types, and absence of foreign part relationships. It rejects multiple changed owners, node insertion/deletion/identity changes, cross-owner aliasing, unsupported envelopes, geometry drift, and unrelated package changes.",
+    "wordcraftChangedForIssue": false
+  },
+  "dependencies": {
+    "wordcraftGitlink": "d714567c4ccc34884809e644676f879ee2008b89",
+    "wordcraftExactReconstruction": "PASS: scripts/prepare-wordcraft.py reproduced the exact reviewed pin.",
+    "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "verification": {
+    "focusedRustT009": {
+      "command": "python3 scripts/cargo-geul.py test --release --lib docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts -- --nocapture",
+      "result": "PASS 1/1",
+      "coverage": "No-op reopen/preflight and unrelated OPC rejection; shared-owner mutation rejection; valid COW edit; original owner graph identity; relationship alias, geometry, unauthorized data, and extra-part negative cases; syntactically valid owner-node-ID replacement rejection; Undo/Redo and saved model reopen."
+    },
+    "typescriptAndVite": "PASS as part of guarded Tauri Release build: tsc --noEmit and production Vite build. Vite reported the existing >500 KiB chunk advisory.",
+    "nativeHarnessSyntax": "PASS: python3 -m py_compile scripts/tests/native-stage3-p6.py.",
+    "diffCheck": "PASS: git diff HEAD --check.",
+    "fileWideRustfmt": "FAIL: rustfmt --check on the four modified Rust files reports extensive existing formatting drift across unrelated pre-existing code. New changed logic was formatted against rustfmt output; no mass rewrite was applied.",
+    "guardedReleaseBuild": {
+      "command": "python3 scripts/tauri-geul.py build",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "f9c094e06185ab8923bc0fabdfc94fef200410acdea3eb5237a77a68d9bb48a5",
+      "bytes": 64008712,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED: Nix store runtime dependencies; Debian/Ubuntu portability is not established.",
+      "releasePathReportSha256": "b44b9574967407c0602669f10695999f944231dec293a786383c54f57ab5b381",
+      "rhwpWasmIntegrityReportSha256": "af85e222e791b3092ae5646da0e40b1c00e7ad3496116ee88149456068efa9bd",
+      "workspaceInputNote": "The acceptance build used the current workspace RHWP release assets. A pre-existing user-owned evaluator patch is dirty; committed-root-only artifact reproduction is NOT VERIFIED."
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul 1.5.5 / IBus 1.5.33.",
+      "appSha256": "f9c094e06185ab8923bc0fabdfc94fef200410acdea3eb5237a77a68d9bb48a5",
+      "originalFixtureSha256": "e3398fbae93cf5da93bf503f6e495ca0bea1a7c5a03dde380867e0a153c3972e",
+      "sharedOwnerFixtureSha256": "9286c020e21cdd14b3dd2dbba0ffa3988ee226d7561fbbe171ec686887520c15",
+      "savedDocxSha256": "abb7a35244c12bcd6cc1639efb095aac0c9899561d502d00acea7c8bf5b91683",
+      "run11": {
+        "case": "smartart-shared",
+        "result": "PASS",
+        "trustedPointerSelection": "Selected the two rendered owners on pages 0 and 1 using the X11 trusted pointer; selected the second owner for node-style edit.",
+        "ownerIds": [
+          "2",
+          "3"
+        ],
+        "t009": {
+          "state": "saved",
+          "synced": true,
+          "changedSince": false,
+          "revision": 3,
+          "findings": ""
+        },
+        "addedParts": [
+          "word/diagrams/colors2.xml",
+          "word/diagrams/data2.xml",
+          "word/diagrams/drawing2.xml",
+          "word/diagrams/layout2.xml",
+          "word/diagrams/quickStyle2.xml"
+        ],
+        "changedExistingParts": [
+          "[Content_Types].xml",
+          "docProps/app.xml (statistics text only)",
+          "word/_rels/document.xml.rels",
+          "word/document.xml"
+        ],
+        "firstOwnerGraphUnchanged": true,
+        "ownerIdsPreserved": true,
+        "nodeIdsAndTextPreserved": true,
+        "canvasSha256": {
+          "beforeAndUndo": "8a14095efe4d434908deb5b817f89f6c2fd6e32c6fb57433518ed49e055b656d",
+          "editedAndRedoAndSameAppReopen": "07f6779aa647828c57ae2bcb1589ec4380a41e7d4ad8c0737d2e9178cd483c44"
+        },
+        "resultJson": {
+          "path": "target/p6-smartart-shared-x11-run-11/result.json",
+          "sha256": "16dda889c8f5584174fb1fd086de817cbdb6d242f37544428ad7662384d48c22"
+        },
+        "driverLog": {
+          "path": "target/p6-smartart-shared-x11-run-11/driver.log",
+          "sha256": "f63173ad7c124e488a9e9e22b9725581cf6e35e961f5ba48fc2b05fff965a6dc"
+        },
+        "session": {
+          "path": "target/p6-smartart-shared-x11-session-11/session.json",
+          "sha256": "bd23f2608af52795a3e429978e752c6db7de597a198c58ba87cfd2ed514f9b1d"
+        },
+        "cleanup": {
+          "path": "target/p6-smartart-shared-x11-session-11/cleanup.json",
+          "sha256": "e9aa7803a311920c427556448d8659818da3fe05d268bb330aac2859ce277a60",
+          "result": "PASS: exit 0, complete/proven, no survivors or process errors."
+        }
+      },
+      "run12": {
+        "case": "smartart-shared-reopen",
+        "result": "PASS: independently launched app process reopened the saved DOCX.",
+        "firstOwnerUnchanged": true,
+        "secondOwnerStyle": "PASS",
+        "sameFramesAndCanvas": "PASS",
+        "canvasSha256": "07f6779aa647828c57ae2bcb1589ec4380a41e7d4ad8c0737d2e9178cd483c44",
+        "resultJson": {
+          "path": "target/p6-smartart-shared-x11-run-12/result.json",
+          "sha256": "75a189a3e54623b5692682955fe61a25777fdbef507c66bfa266fef06db162c9"
+        },
+        "driverLog": {
+          "path": "target/p6-smartart-shared-x11-run-12/driver.log",
+          "sha256": "540e4942b687e887bf6b8d3966d85f3d0c9c95260edc2df41fdc1fdb6bddbf51"
+        },
+        "session": {
+          "path": "target/p6-smartart-shared-x11-session-12/session.json",
+          "sha256": "f34003939367a6a076c014537be6dc91c24357b3817e7bcc83bce0e246e65d95"
+        },
+        "cleanup": {
+          "path": "target/p6-smartart-shared-x11-session-12/cleanup.json",
+          "sha256": "08ec606c76c62addb6101cf5b201b9c3e9ed5d031e5f1fe488200b8bb93301b6",
+          "result": "PASS: exit 0, complete/proven, no survivors or process errors."
+        }
+      }
+    }
+  },
+  "supersededAttempts": [
+    "X11 run10 reached the application harness but failed before fixture load because its invocation used the stale default target/stage3-p6/graphics-original.docx path. The wrapper cleanup was proven complete with exit 1 and no survivors; run11 passed with the explicit current fixture path."
+  ],
+  "limitations": [
+    "Copy-on-write acceptance is limited to the canonical supported shared SmartArt owner graph and supported node-style mutation; noncanonical, external, or semantically unsupported envelopes remain fail-closed.",
+    "External Office interoperability, Wayland, Windows, and macOS were NOT RUN. Nix-independent portability is NOT VERIFIED.",
+    "The workspace-wide rustfmt gate remains FAIL because of pre-existing drift in the modified files; this issue was not accepted by a mass formatting rewrite."
+  ]
+}
