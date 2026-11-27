@@ -7,7 +7,8 @@
   ],
   "status": "IMPLEMENTED_VERIFIED",
   "supported": "Existing separately owned HWPX caption on a supported unrotated and unflipped embedded floating Square body picture anchored Column/Para, Left/Top, with zero outer margins, positive caption width, and a nonnegative stored gap. Supports moving the caption left or right and setting Top, Center, or Bottom vertical alignment.",
-  "refused": "Inline lateral placement: representative identical inline SVG and caret geometry before and after changing side, although XML persisted new values. Unsupported float anchors or transforms, included caption margin, missing atno or unsupported formatting, and vertical alignment for upper/lower captions remain refused. Lateral gap editing is outside this slice.",
+  "refused": "At the date of this floating-only record, inline lateral placement had identical SVG and caret geometry before and after changing side; that limitation was later resolved separately in stage3-a-p6-hwpx-inline-caption-acceptance.json. Unsupported floating anchors/transforms, included caption margin, missing atno or unsupported formatting, and vertical alignment for upper/lower captions remain refused. Lateral gap editing is outside this slice.",
+  "inlineFollowup": "P6-HX-CAP-INLINE is verified in stage3-a-p6-hwpx-inline-caption-acceptance.json; this record continues to describe the earlier floating-picture scope.",
   "release": {
     "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
     "generation": "304cf9cf1b4bebb057bb7c52183ab34b8d3e14d3c1ed9e3cf9bd8259e38c0cb1",

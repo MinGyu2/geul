@@ -266,6 +266,114 @@
       },
       "trustedWaylandEvents": 15,
       "westonExit": 0
+    },
+    {
+      "platform": "Linux X11/Xvfb",
+      "result": "PASS",
+      "checks": "Trusted canvas pointer selection, actual inline Left/Right layout and vertical alignment, Undo/Redo through revisions 1-6, T009 save, independent HWPX XML/OPC/BinData checks, and reopened fresh document session.",
+      "harness": "scripts/tests/native-stage3a-p6.py",
+      "rawEvidence": "target/p6-hx-cap-inline-x11-run-01/result.json",
+      "processAppSha256": "99468b81883377bb62d5d69a9555ff5df548d1d762202e51db5225dfef656bbf",
+      "rhwpGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+      "trustedPointerSelections": 8,
+      "undoRedoRevisions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "save": {
+        "state": "saved",
+        "synced": true,
+        "changedSince": false,
+        "findings": ""
+      },
+      "freshDocumentSessionReopen": "PASS in the same app process; separate app-process reopen NOT RUN.",
+      "cleanup": {
+        "rawEvidence": "target/p6-hx-cap-inline-x11-session-01/cleanup.json",
+        "sha256": "5f808ee326954c63b9184273a7bc765664ae9d61dc89aceaf14ac5b8321e7f75",
+        "proven": true,
+        "filesystemProven": true,
+        "exit": 0,
+        "survivors": []
+      },
+      "feature": "P6-HX-CAP-INLINE-LEFT",
+      "captionSide": "Left",
+      "captionVerticalAlign": "Center",
+      "outputs": [
+        {
+          "file": "a-p6-inline-caption-left-published.hwpx",
+          "sha256": "ffa9a9b4232ddc299fde8f75e9b44d12bde1b9e5b9994b51a92fbc1c1fbf9340",
+          "saveRevision": 6,
+          "reopened": "ready",
+          "fixture": "a-p6-inline-caption-left-original.hwpx",
+          "fixtureSha256": "7d94e026755d902aff3655b82934f902608e28843b08b0eddbc1b5851fdb3965",
+          "imageX": 227.6,
+          "captionCaret": {
+            "x": 214.1,
+            "y": 143.1
+          },
+          "media": {
+            "BinData/image1.png": "b597fd2d6de478be83c18427bb2182eae49ec41b6de3a9786390d4812bdd7b59"
+          }
+        }
+      ]
+    },
+    {
+      "platform": "Linux X11/Xvfb",
+      "result": "PASS",
+      "checks": "Trusted canvas pointer selection, actual inline Left/Right layout and vertical alignment, Undo/Redo through revisions 1-6, T009 save, independent HWPX XML/OPC/BinData checks, and reopened fresh document session.",
+      "harness": "scripts/tests/native-stage3a-p6.py",
+      "rawEvidence": "target/p6-hx-cap-inline-x11-run-01/result.json",
+      "processAppSha256": "99468b81883377bb62d5d69a9555ff5df548d1d762202e51db5225dfef656bbf",
+      "rhwpGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+      "trustedPointerSelections": 8,
+      "undoRedoRevisions": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "save": {
+        "state": "saved",
+        "synced": true,
+        "changedSince": false,
+        "findings": ""
+      },
+      "freshDocumentSessionReopen": "PASS in the same app process; separate app-process reopen NOT RUN.",
+      "cleanup": {
+        "rawEvidence": "target/p6-hx-cap-inline-x11-session-01/cleanup.json",
+        "sha256": "5f808ee326954c63b9184273a7bc765664ae9d61dc89aceaf14ac5b8321e7f75",
+        "proven": true,
+        "filesystemProven": true,
+        "exit": 0,
+        "survivors": []
+      },
+      "feature": "P6-HX-CAP-INLINE-RIGHT",
+      "captionSide": "Right",
+      "captionVerticalAlign": "Bottom",
+      "outputs": [
+        {
+          "file": "a-p6-inline-caption-right-published.hwpx",
+          "sha256": "21b0379e7c6c313a43d35f047103b9b6770c4648ff1d60a8b04221e61a2584a3",
+          "saveRevision": 6,
+          "reopened": "ready",
+          "fixture": "a-p6-inline-caption-right-original.hwpx",
+          "fixtureSha256": "7d94e026755d902aff3655b82934f902608e28843b08b0eddbc1b5851fdb3965",
+          "imageX": 155.6,
+          "captionCaret": {
+            "x": 276.1,
+            "y": 153.9
+          },
+          "media": {
+            "BinData/image1.png": "b597fd2d6de478be83c18427bb2182eae49ec41b6de3a9786390d4812bdd7b59"
+          }
+        }
+      ]
     }
   ],
   "otherPlatformResults": {

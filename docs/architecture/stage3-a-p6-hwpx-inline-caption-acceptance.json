@@ -1,0 +1,98 @@
+{
+  "issue": "P6-HX-CAP-INLINE",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Safely lay out and edit left/right captions on HWPX inline pictures, and preserve rendered placement through T009 save and independent reopen.",
+  "implementation": {
+    "geulCommit": "52e7b00b9a7273be62dd51615d205f0996770419",
+    "parentCommit": "68c890d112c06cdbd3d0d0aca5b70c2cc81cc006",
+    "changedFiles": [
+      "patches/rhwp/stage3a-p6-hwpx-inline-caption-layout.patch",
+      "scripts/rhwp-patches.py",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+      "scripts/tests/stage3-object-edit.wasm.test.ts",
+      "scripts/tests/native-stage3a-p6.py",
+      "scripts/tests/stage3-p6-hwpx-inline-caption-fixtures.cjs"
+    ],
+    "scope": "Embedded plain HWPX body pictures with treatAsChar=true, zero rotation/flips and outer margins, captionIncludeMargin=false, positive caption width and bounded nonnegative spacing. The inline flow box reserves the caption width and gap; the image and caption use the stored Left/Right side and Top/Center/Bottom vertical alignment.",
+    "refused": "Rotated or flipped inline pictures, included caption margins, nonzero outer margins, external/non-plain pictures, missing or ambiguous caption ownership/number slot, and unproved paragraph formatting do not expose lateral edit operations.",
+    "rhwpPatch": {
+      "baseGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 70,
+      "patch": "patches/rhwp/stage3a-p6-hwpx-inline-caption-layout.patch",
+      "patchSha256": "4ba3849dfb7bbb2055f94645cf3c01d1253f057ac0c49c1e9faf6a73a8882334",
+      "preparedSourceTreeSha256": "c8266fbc5ef6647453aae0414284d4ed99b1d3bf6c9206efcd7d52fec1635e1f"
+    },
+    "dependencies": {
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "releaseGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+      "releaseArtifacts": {
+        "rhwp.js": "96a212ef1431110b89638c77fefc4236ea705d2deb582791ab151414f76534f6",
+        "rhwp_bg.wasm": "3076c2e2b3ada780f1abe4b300c76edd8af3fbd01601a98e0d591a231ee09a6f"
+      }
+    }
+  },
+  "verification": {
+    "focusedReleaseEngine": "PASS 16/16: scripts/tests/stage3-object-edit.wasm.test.ts. Includes Left/Right geometry, caption vertical alignment roundtrip, Undo/Redo, durable HWPX reopen, and rotated-inline refusal without mutation.",
+    "typecheck": "PASS: npm run typecheck",
+    "scopedEslint": "PASS: src/components/Editor/rhwp/hwpxPortableClipboard.ts and scripts/tests/stage3-object-edit.wasm.test.ts",
+    "nativeHarnessSyntax": "PASS: Python AST parse and node --check for the fixture generator",
+    "orderedPatchReconstruction": "PASS: pinned clean RHWP source with all 70 ordered patches; generated source tree matched the recorded hash and built Release WASM.",
+    "guardedReleaseBuild": {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "99468b81883377bb62d5d69a9555ff5df548d1d762202e51db5225dfef656bbf",
+      "bytes": 63633608,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED: Nix store runtime dependencies.",
+      "inputCaveat": "The build used the preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs. Reproducing this exact artifact from committed-root-only inputs is NOT VERIFIED; no user-owned change was included in the issue commit."
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "99468b81883377bb62d5d69a9555ff5df548d1d762202e51db5225dfef656bbf",
+      "rhwpGeneration": "c3e0c5508788c028ff7d512916185084ecf5b52724b66f0aaf38a8c97ec06375",
+      "resultJson": {
+        "path": "target/p6-hx-cap-inline-x11-run-01/result.json",
+        "sha256": "824c0daa82d5631ddd50e8d6441f4151cc218ef7af6a47bf39fec6f6b1004875"
+      },
+      "fixtureGenerator": "scripts/tests/stage3-p6-hwpx-inline-caption-fixtures.cjs",
+      "trustedPointerSelection": "PASS: 8 trusted pointerdown events on the HWPX page canvas for each case.",
+      "undoRedo": "PASS: direction and vertical alignment changes were each undone and redone; save completed at revision 6.",
+      "t009": "PASS for both cases: state=saved, synced=true, changedSince=false, findings empty.",
+      "packageProof": "The independent Python harness compares section0.xml after changing only the owned caption side and subList vertAlign, verifies all other non-preview OPC part bytes, checks the unchanged BinData image hash, body text and caption text, then reopens the saved HWPX in a fresh document session.",
+      "freshDocumentSessionReopen": "PASS in the same application process; an independent RHWP load also matched the saved layout. Separate app-process reopen was NOT RUN.",
+      "cleanup": {
+        "path": "target/p6-hx-cap-inline-x11-session-01/cleanup.json",
+        "sha256": "5f808ee326954c63b9184273a7bc765664ae9d61dc89aceaf14ac5b8321e7f75",
+        "result": "PASS: complete, filesystem-proven, exit 0, no survivors or process errors."
+      },
+      "cases": {
+        "P6-HX-CAP-INLINE-LEFT": {
+          "status": "PASS",
+          "fixtureSha256": "7d94e026755d902aff3655b82934f902608e28843b08b0eddbc1b5851fdb3965",
+          "publishedSha256": "ffa9a9b4232ddc299fde8f75e9b44d12bde1b9e5b9994b51a92fbc1c1fbf9340",
+          "savedImageX": 227.6,
+          "savedCaptionCaret": { "x": 214.1, "y": 143.1 },
+          "media": { "BinData/image1.png": "b597fd2d6de478be83c18427bb2182eae49ec41b6de3a9786390d4812bdd7b59" }
+        },
+        "P6-HX-CAP-INLINE-RIGHT": {
+          "status": "PASS",
+          "fixtureSha256": "7d94e026755d902aff3655b82934f902608e28843b08b0eddbc1b5851fdb3965",
+          "publishedSha256": "21b0379e7c6c313a43d35f047103b9b6770c4648ff1d60a8b04221e61a2584a3",
+          "savedImageX": 155.6,
+          "savedCaptionCaret": { "x": 276.1, "y": 153.9 },
+          "media": { "BinData/image1.png": "b597fd2d6de478be83c18427bb2182eae49ec41b6de3a9786390d4812bdd7b59" }
+        }
+      }
+    },
+    "diffCheck": "PASS for source/test/harness files. The generic full-tree check reports the standard single-space blank-context prefix at lines 110 and 251 inside the new unified-diff patch file; the patch is applied and verified by the official ordered reconstruction."
+  },
+  "limitations": [
+    "The Native fixture exercised an embedded plain inline PNG with caption width 4800 HWPUNIT and spacing 600 HWPUNIT. Other picture effects, transforms, outer margins, included caption margins, and external links remain refused for editing.",
+    "Native checked Left/Center and Right/Bottom; other-platform and external HWP editor interoperability were NOT RUN.",
+    "The build used an existing user-owned dirty RHWP formula patch and Nix runtime dependencies; clean-root-only artifact reproduction and non-Nix portability are NOT VERIFIED."
+  ]
+}
