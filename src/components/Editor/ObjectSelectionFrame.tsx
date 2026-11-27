@@ -71,9 +71,11 @@ export interface ObjectSelectionFrameProps {
   scale: number;
   /** Commit one completed drag (one history step). `epoch` is the selection the drag started on. */
   onEdit?: (edit: ObjectEdit, epoch: number) => void;
+  /** Enter an explicitly owned DOCX group text-box child. */
+  onEnterCaption?: (epoch: number) => void;
 }
 
-export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelectionFrameProps) {
+export function ObjectSelectionFrame({ selection, scale, onEdit, onEnterCaption }: ObjectSelectionFrameProps) {
   const { t } = useTranslation();
   // The preview belongs to one selection/document/zoom; any change of those abandons it.
   const owner = `${selection.sessionId}:${selection.loadGeneration}:${selection.epoch}:${scale}`;
@@ -180,6 +182,11 @@ export function ObjectSelectionFrame({ selection, scale, onEdit }: ObjectSelecti
         onMouseDown={event => event.stopPropagation()} onClick={() => setGroupChildMode(editingGroupChildren ? null : groupChildOwner)}>
         {t(editingGroupChildren ? "editor.object.groupChild.done" : "editor.object.groupChild.edit")}
       </button>}
+      {onEnterCaption && selection.address.engine === "wordcraft" && selection.operations.includes("editCaption") &&
+        <button type="button" className="object-group-caption-edit" data-testid="object-group-caption-edit"
+          onMouseDown={event => event.stopPropagation()} onClick={() => onEnterCaption(selection.epoch)}>
+          {t("editor.object.groupCaption.edit")}
+        </button>}
       {editingPath && selection.shapePath && onEdit &&
         <ShapePointEditor path={selection.shapePath} owner={owner} width={selection.frame.width * scale}
           height={selection.frame.height * scale} scale={scale} {...(selection.shape ? { shape: selection.shape } : {})}

@@ -110,6 +110,11 @@ pub enum DocxOp {
     },
     DeselectObject {},
     LeaveTextBox {},
+    /// Navigate into the uniquely owned direct text-box child of a selected group.
+    EnterGroupCaption {
+        position: String,
+        epoch: u64,
+    },
     SelectAll,
     /// 지금 커서 자리를 `id`로 기억한다(IME가 클릭 뒤에 늦게 보내는 확정을 클릭 전 자리에 넣을 때).
     Mark {
@@ -1075,6 +1080,9 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::CutShape { position, epoch } => {
                 !position.is_empty() && position.len() <= 256 && *epoch > 0
             }
+            DocxOp::EnterGroupCaption { position, epoch } => {
+                !position.is_empty() && position.len() <= 256 && *epoch > 0
+            }
             DocxOp::PasteObject { payload } => {
                 payload.media.iter().map(|m| m.data.len()).sum::<usize>()
                     <= MAX_PAYLOAD_MEDIA_BYTES.div_ceil(3) * 4
@@ -1823,6 +1831,7 @@ impl DocxModel {
                     | DocxOp::Pointer { .. }
                     | DocxOp::DeselectObject {}
                     | DocxOp::LeaveTextBox {}
+                    | DocxOp::EnterGroupCaption { .. }
                     | DocxOp::SelectAll
                     | DocxOp::Mark { .. }
                     | DocxOp::Find { .. }
@@ -1841,6 +1850,7 @@ impl DocxModel {
                 DocxOp::Pointer { .. }
                 | DocxOp::DeselectObject {}
                 | DocxOp::Mark { .. }
+                | DocxOp::EnterGroupCaption { .. }
                 | DocxOp::InsertAt { .. }
                 | DocxOp::ReplaceInserted { .. }
                 | DocxOp::Undo {}
@@ -1891,6 +1901,7 @@ impl DocxModel {
                 let anchor = self.session.doc.text_box_anchor(id).ok_or(Rejected)?;
                 self.run("caret.set", json!({"pos": anchor}))
             }
+            DocxOp::EnterGroupCaption { position, epoch } => self.enter_group_caption(position, *epoch),
             DocxOp::SelectAll => self.run("select.all", json!({})),
             DocxOp::Pointer {
                 page,
@@ -2919,6 +2930,9 @@ impl DocxModel {
         if top_level && self.editable_group_children(pos).is_some_and(|group| group.children.iter().any(|child| child.can_move || child.can_resize)) {
             ops.push("groupChildGeometry");
         }
+        if self.group_caption_story(pos).is_some() {
+            ops.push("editCaption");
+        }
         if top_level && self.drawingml_paths(pos).is_some() {
             ops.push("pathPoint");
             if let InlineObject::Shape { freeform: Some(freeform), .. } = object {
@@ -2935,6 +2949,80 @@ impl DocxModel {
             ops.extend(["rotate", "zOrder"]);
         }
         ops
+    }
+
+    /// A DOCX group owns a text-box caption only when its standard DrawingML child tree
+    /// contains exactly one direct text-box shape with a uniquely referenced TextBox story.
+    /// This deliberately does not bind nearby Caption/SEQ paragraphs or nested/linked boxes.
+    fn group_caption_story(&self, pos: &Pos) -> Option<u32> {
+        use wordcraft_engine::doc::para::ShapeKind;
+        use wordcraft_engine::doc::PartKind;
+        let doc = &self.session.doc;
+        if !self.body_roundtrips
+            || pos.story != StoryRef::Body
+            || pos.path.0.len() != 1
+            || doc.settings.protection.is_some()
+            || doc.settings.track_changes
+        {
+            return None;
+        }
+        let InlineObject::Group { children, .. } = self.object_at(pos)? else { return None };
+        let mut direct = children.iter().filter_map(|child| match &child.obj {
+            InlineObject::Shape { kind: ShapeKind::TextBox, story: Some(id), .. } => Some(*id),
+            _ => None,
+        });
+        let id = direct.next()?;
+        if direct.next().is_some()
+            || !doc.parts.get(&id).is_some_and(|part| part.kind == PartKind::TextBox)
+            || doc.text_box_chain(id).is_some()
+            || self.text_box_reference_count(id) != 1
+        {
+            return None;
+        }
+        let anchor = doc.text_box_anchor(id)?;
+        (anchor.story == pos.story
+            && anchor.path == pos.path
+            && anchor.off == pos.off + wordcraft_engine::doc::para::OBJ.len_utf8())
+            .then_some(id)
+    }
+
+    /// Count all modeled references, including objects in other stories, and stop as soon as
+    /// aliasing is proven. The selected group must be the sole owner of the target TextBox part.
+    fn text_box_reference_count(&self, target: u32) -> usize {
+        let doc = &self.session.doc;
+        let stories = std::iter::once(StoryRef::Body)
+            .chain(doc.parts.keys().copied().map(StoryRef::Part));
+        let mut count = 0usize;
+        for story in stories {
+            for path in doc.para_paths(story) {
+                let Some(para) = doc.para(story, &path) else { continue };
+                for offset in para.object_offsets() {
+                    if para.object_at(offset).is_some_and(|object| object.text_boxes().contains(&target)) {
+                        count += 1;
+                        if count > 1 {
+                            return count;
+                        }
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    fn enter_group_caption(&mut self, position: &str, epoch: u64) -> Result<bool, Rejected> {
+        let (pos, _) = self.selected_object.clone().ok_or(Rejected)?;
+        if epoch != self.object_epoch
+            || position_key(&pos) != position
+        {
+            return Err(Rejected);
+        }
+        let story = self.group_caption_story(&pos).ok_or(Rejected)?;
+        let caret = self.session.doc.start_of(StoryRef::Part(story));
+        let changed = self.run("caret.set", json!({"pos": caret}))?;
+        self.selected_object = None;
+        self.last_insert = None;
+        self.object_epoch = self.object_epoch.wrapping_add(1).max(1);
+        Ok(changed)
     }
 
     /// Direct, unturned group members whose local rectangles can be edited without mapping
@@ -2976,6 +3064,7 @@ impl DocxModel {
                 InlineObject::Image { ole: None, .. } => "picture",
                 InlineObject::Shape { kind: ShapeKind::Rectangle, .. } => "rectangle",
                 InlineObject::Shape { kind: ShapeKind::Ellipse, .. } => "ellipse",
+            InlineObject::Shape { kind: ShapeKind::TextBox, .. } => "textBox",
                 InlineObject::Shape { .. } => "shape",
                 InlineObject::Group { .. } => "group",
                 _ => continue,

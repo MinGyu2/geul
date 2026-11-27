@@ -146,7 +146,7 @@ export const CHART_PLOTS = ["column", "columnStacked", "bar", "barStacked", "lin
 export const SMART_ART_LAYOUTS = ["basicList", "process", "cycle", "hierarchy", "pyramid", "radial", "matrix", "venn"] as const;
 export const MAX_GRAPHIC_TEXT_CHARS = 256;
 export type MutatingObjectOperation = typeof MUTATING_OBJECT_OPERATIONS[number];
-export type ObjectOperation = "deselect" | "copy" | "cut" | MutatingObjectOperation;
+export type ObjectOperation = "deselect" | "copy" | "cut" | "editCaption" | MutatingObjectOperation;
 export function isMutatingObjectOperation(op: ObjectOperation): op is MutatingObjectOperation {
   return MUTATING_OBJECT_OPERATION_SET.has(op);
 }

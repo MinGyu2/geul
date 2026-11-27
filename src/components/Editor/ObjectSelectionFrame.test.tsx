@@ -182,6 +182,16 @@ describe("object edit requests", () => {
 describe("ObjectSelectionFrame", () => {
   const rhwp = { engine: "rhwp", path: [0, 0, 2] } as const;
 
+  it("offers an explicit entry for a DOCX group-owned caption story", () => {
+    const onEnterCaption = vi.fn();
+    frame({
+      selection: selection({ kind: "group", address: { engine: "wordcraft", position: "body:3:0" }, operations: ["deselect", "editCaption"] }),
+      onEnterCaption,
+    });
+    fireEvent.click(screen.getByTestId("object-group-caption-edit"));
+    expect(onEnterCaption).toHaveBeenCalledExactlyOnceWith(7);
+  });
+
   it("edits a DOCX Bezier control point in its original viewport coordinates", () => {
     const selected = selection({
       kind: "shape",

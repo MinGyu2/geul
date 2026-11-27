@@ -47,7 +47,7 @@ export interface DocxView {
   pages: DocxPage[];
   caret: DocxCaret | null;
   selection: DocxRect[];
-  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean }; operations: readonly MutatingObjectOperation[] };
+  object?: ObjectHit & { clipboardShape?: { shape: BasicShape; cutAllowed: boolean }; operations: readonly (MutatingObjectOperation | "editCaption")[] };
   collapsed: boolean;
   inTable: boolean;
   /** 커서·기준점 자리 키(`story:path:off`). 비교·검사용. */
@@ -261,6 +261,7 @@ export type DocxOp =
   | { op: "pointer"; page: number; x: number; y: number; extend: boolean; beforeInsert: boolean; drag?: boolean; selectObject?: boolean }
   | { op: "deselectObject" }
   | { op: "leaveTextBox" }
+  | { op: "enterGroupCaption"; position: string; epoch: number }
   | { op: "shape"; kind: BasicShape }
   | { op: "cutShape"; position: string; epoch: number }
   | { op: "objectEdit"; position: string; epoch: number; edit: ObjectEdit }
@@ -776,9 +777,10 @@ function parseDocxBaseView(value: unknown): DocxView | null {
       || typeof raw.position !== "string" || raw.position.length > 256
       || !/^(body|part\d+):\d+(\.\d+)*:\d+$/.test(raw.position)) return null;
     const operations = raw.operations;
-    if (!Array.isArray(operations) || operations.length > MUTATING_OBJECT_OPERATIONS.length
-      || !operations.every((op, i) => MUTATING_OBJECT_OPERATIONS.some(known => known === op) && operations.indexOf(op) === i)) return null;
-    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as MutatingObjectOperation[] };
+    if (!Array.isArray(operations) || operations.length > MUTATING_OBJECT_OPERATIONS.length + 1
+      || !operations.every((op, i) => (op === "editCaption" || MUTATING_OBJECT_OPERATIONS.some(known => known === op)) && operations.indexOf(op) === i)) return null;
+    if (operations.includes("editCaption") && kind !== "group") return null;
+    object = { kind, frame, epoch: raw.epoch, address: { engine: "wordcraft", position: raw.position }, operations: operations as (MutatingObjectOperation | "editCaption")[] };
     if ("convertShape" in raw) {
       if (kind !== "shape" || (raw.convertShape !== "rectangle" && raw.convertShape !== "ellipse")) return null;
       object.convertShape = raw.convertShape;

@@ -813,6 +813,7 @@
   "editor.object.docxPath.insertVertex": "다음 직선에 꼭짓점 삽입",
   "editor.object.docxPath.removeVertex": "선택한 꼭짓점 삭제",
   "editor.object.groupChild.edit": "묶음 안 도형 편집",
+  "editor.object.groupCaption.edit": "묶음 캡션 편집",
   "editor.object.groupChild.done": "도형 편집 종료",
   "editor.object.groupChild.width": "너비 (HWPUNIT)",
   "editor.object.groupChild.height": "높이 (HWPUNIT)",

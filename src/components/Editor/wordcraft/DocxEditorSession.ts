@@ -113,7 +113,7 @@ const DOCX_BORDER_WIDTHS_PT = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6] as cons
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
  * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
  */
-const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "deselectObject", "leaveTextBox", "selectAll", "mark", "find", "clearSearch"]);
+const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "deselectObject", "leaveTextBox", "enterGroupCaption", "selectAll", "mark", "find", "clearSearch"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 const TABLE_STRUCTURE_ACTIONS: Readonly<Record<import("../../../commands/target").TableStructureCommandId, DocxTableAction>> = {
   "table.insertRowAbove": "insertRowAbove",
@@ -638,13 +638,22 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     const { clipboardShape: _legacy, operations: edits, ...object } = this.view.object;
     void _legacy;
     const writable = this.editable && !this.view.trackedReadOnly;
-    const mutations = writable ? edits : [];
+    const mutations = writable ? edits.filter(operation => operation !== "editCaption") : [];
+    const captionNavigation = writable && edits.includes("editCaption") ? ["editCaption" as const] : [];
     const rich = this.richClipboard();
     return {
       ...object, sessionId: this.sessionId, loadGeneration: this.generation, revision: this.revision,
       editable: mutations.length > 0,
-      operations: ["deselect", ...mutations, ...(rich ? ["copy" as const] : []), ...(rich?.cutAllowed ? ["cut" as const] : [])],
+      operations: ["deselect", ...mutations, ...captionNavigation, ...(rich ? ["copy" as const] : []), ...(rich?.cutAllowed ? ["cut" as const] : [])],
     };
+  }
+
+  /** Enter the one structurally owned direct text box exposed as a group's caption. */
+  enterGroupCaption(epoch: number): boolean {
+    const object = this.objectSelection;
+    if (!object || object.address.engine !== "wordcraft" || object.epoch !== epoch
+      || !object.operations.includes("editCaption")) return false;
+    return this.push({ op: "enterGroupCaption", position: object.address.position, epoch }, false);
   }
 
   /** Stage 3 P5: the selected body drawing the engine can copy structurally (pictures, shapes, text boxes, groups). */

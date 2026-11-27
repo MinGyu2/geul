@@ -8569,6 +8569,354 @@ fn stage3_docx_group_child_geometry_t009_preserves_nested_resources() {
 }
 
 #[test]
+fn stage3_docx_group_caption_exposes_explicit_owned_textbox_entry() {
+    use super::engine::ObjectEdit;
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
+    use wordcraft_engine::doc::{Block, CharProps, InlineObject, Paragraph, PartKind};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    let caption_story = source.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text("Owned group caption", CharProps::default())).into()],
+    );
+    let group = InlineObject::Group {
+        w: 200.0,
+        h: 90.0,
+        float: Float::default(),
+        ch_w: 200.0,
+        ch_h: 90.0,
+        canvas: None,
+        children: vec![GroupChild {
+            x: 10.0,
+            y: 55.0,
+            obj: InlineObject::Shape {
+                kind: ShapeKind::TextBox,
+                w: 180.0,
+                h: 28.0,
+                fill: None,
+                stroke: None,
+                stroke_width: 0.0,
+                float: Float::default(),
+                story: Some(caption_story),
+                freeform: None,
+                effects: Default::default(),
+                extra: Default::default(),
+            },
+        }],
+    };
+    let group_pos = source.sel.focus.clone();
+    source.doc.insert_object(&group_pos, group, &CharProps::default()).unwrap();
+    source.run("caret.set", &json!({"pos": wordcraft_engine::doc::Pos {
+        off: group_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(), ..group_pos
+    }})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    source.run("text.insert", &json!({"text":"Nearby Caption 9", "raw":true})).unwrap();
+    let original_bytes = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &original_bytes).unwrap());
+    let hit = reader.layout().find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01)
+        .expect("the group with a text-box child is laid out");
+    let mut model = DocxModel::open(&original_bytes).unwrap();
+    let unowned_body_text = model.body_text();
+    let selected = model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 1.0,
+        y: hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "group");
+    let position = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
+        "a uniquely owned direct text-box child needs an explicit caption-edit entry");
+
+    let before = model.export().unwrap();
+    let stale = model.apply(&[DocxOp::EnterGroupCaption { position: position.clone(), epoch: epoch + 1 }]);
+    assert_eq!((stale.applied, stale.changed, stale.rejected), (0, 0, vec![0]));
+    assert_eq!(model.export().unwrap(), before, "stale caption ownership must reject atomically");
+
+    let entered = model.apply(&[DocxOp::EnterGroupCaption { position, epoch }]);
+    assert_eq!(entered.applied, 1, "{:?}", entered.rejected);
+    assert!(entered.rejected.is_empty());
+    assert!(model.view().caret_key.starts_with(&format!("part{caption_story}:")),
+        "the caret must move into the group's exact TextBox story");
+    assert!(model.view().object.is_none(), "the group selection ends when its owned story gets focus");
+
+    let typed = model.apply(&[DocxOp::InsertText { text: "!".into() }]);
+    assert_eq!((typed.applied, typed.changed, typed.rejected), (1, 1, vec![]));
+    let story_text = |bytes: &[u8]| {
+        let doc = io::open_bytes("fixture.docx", bytes).unwrap();
+        doc.parts[&caption_story].blocks.iter().filter_map(|block| block.as_para())
+            .map(|para| para.plain_text().to_owned()).collect::<String>()
+    };
+    assert_eq!(story_text(&model.export().unwrap()), "!Owned group caption");
+    assert_eq!(model.body_text(), unowned_body_text, "a nearby unowned body caption is not edited with the group");
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(story_text(&model.export().unwrap()), "Owned group caption");
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert_eq!(story_text(&model.export().unwrap()), "!Owned group caption");
+
+    let after = model.export().unwrap();
+    let same = model.same_as(&after);
+    let gate = crate::services::save::service::check_saved(
+        crate::document::Format::Docx, &before, &after, None, same,
+    );
+    assert!(same && gate.is_safe(), "T009 must prove only the modeled group-child story edit: {gate:?}");
+    assert_eq!(story_text(&after), "!Owned group caption", "independently parsed DOCX keeps the edited caption story");
+
+    let saved_doc = io::open_bytes("fixture.docx", &after).unwrap();
+    let mut group_pos = saved_doc.text_box_anchor(caption_story).expect("saved caption has one group owner");
+    group_pos.off -= wordcraft_engine::doc::para::OBJ.len_utf8();
+    let mut saved_session = Session::new(saved_doc);
+    let hit = saved_session.layout().object(&group_pos, 0).expect("saved group remains laid out");
+    let mut deleter = DocxModel::open(&after).unwrap();
+    let selected = deleter.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + hit.rect.w / 2.0,
+        y: hit.rect.y + hit.rect.h / 2.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    assert!(selected.rejected.is_empty());
+    let delete_view = serde_json::to_value(deleter.view()).unwrap();
+    let delete = deleter.apply(&[DocxOp::ObjectEdit {
+        position: delete_view["object"]["position"].as_str().unwrap().to_owned(),
+        epoch: delete_view["object"]["epoch"].as_u64().unwrap(),
+        edit: ObjectEdit::Delete {},
+    }]);
+    assert_eq!((delete.changed, delete.rejected), (1, vec![]));
+    let deleted = deleter.export().unwrap();
+    let same = deleter.same_as(&deleted);
+    let gate = crate::services::save::service::check_saved(
+        crate::document::Format::Docx, &after, &deleted, None, same,
+    );
+    assert!(same && gate.is_safe(), "T009 must prove intentional deletion of the owner and its nested caption: {gate:?}");
+    let deleted_doc = io::open_bytes("fixture.docx", &deleted).unwrap();
+    assert!(deleted_doc.text_box_anchor(caption_story).is_none(), "deleting the owner cannot orphan or reassign its caption story");
+    assert!(deleted_doc.plain_text(wordcraft_engine::doc::StoryRef::Body).contains("Nearby Caption 9"),
+        "unowned nearby caption content must survive group deletion");
+}
+
+#[test]
+fn stage3_docx_group_caption_tracks_multiple_owners_and_rejects_ambiguity() {
+    use wordcraft_engine::doc::para::{Float, GroupChild, ShapeKind};
+    use wordcraft_engine::doc::{Block, CharProps, InlineObject, Paragraph, PartKind, StoryRef};
+    use wordcraft_engine::{io, Session};
+
+    let mut source = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    source.run("caret.docEnd", &json!({})).unwrap();
+    source.run("text.newParagraph", &json!({})).unwrap();
+    let first_story = source.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text("Same caption", CharProps::default())).into()],
+    );
+    let second_story = source.doc.add_part(
+        PartKind::TextBox,
+        vec![Block::Para(Paragraph::with_text("Same caption", CharProps::default())).into()],
+    );
+    let text_box = |story| InlineObject::Shape {
+        kind: ShapeKind::TextBox,
+        w: 90.0,
+        h: 24.0,
+        fill: None,
+        stroke: None,
+        stroke_width: 0.0,
+        float: Float::default(),
+        story: Some(story),
+        freeform: None,
+        effects: Default::default(),
+        extra: Default::default(),
+    };
+    let group = |children| InlineObject::Group {
+        w: 200.0,
+        h: 90.0,
+        float: Float::default(),
+        ch_w: 200.0,
+        ch_h: 90.0,
+        canvas: None,
+        children,
+    };
+    let child = |x, story| GroupChild { x, y: 55.0, obj: text_box(story) };
+
+    // Two groups with identical visible caption text retain separate structural story owners.
+    let first_pos = source.sel.focus.clone();
+    source.doc.insert_object(&first_pos, group(vec![child(10.0, first_story)]), &CharProps::default()).unwrap();
+    let second_pos = wordcraft_engine::doc::Pos {
+        off: first_pos.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+        ..first_pos.clone()
+    };
+    source.doc.insert_object(&second_pos, group(vec![child(10.0, second_story)]), &CharProps::default()).unwrap();
+    let refs = |id| source.doc.para_paths(StoryRef::Body).iter().map(|path| {
+        source.doc.para(StoryRef::Body, path).unwrap().object_offsets().iter().filter(|offset|
+            source.doc.para(StoryRef::Body, path).unwrap().object_at(**offset)
+                .is_some_and(|object| object.text_boxes().contains(&id))).count()
+    }).sum::<usize>();
+    assert_eq!((refs(first_story), refs(second_story)), (1, 1), "both group-owner references must exist before serialization");
+    let two_owners = io::save_bytes("fixture.docx", &source.doc).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &two_owners).unwrap());
+    let mut owner_positions = Vec::new();
+    for (id, part) in &reader.doc.parts {
+        let same_caption = part.kind == PartKind::TextBox
+            && part.blocks.iter().filter_map(|block| block.as_para()).map(|para| para.plain_text()).collect::<String>() == "Same caption";
+        if !same_caption { continue; }
+        let Some(mut anchor) = reader.doc.text_box_anchor(*id) else { continue };
+        anchor.off = anchor.off.saturating_sub(wordcraft_engine::doc::para::OBJ.len_utf8());
+        if matches!(reader.doc.para_at(&anchor).and_then(|para| para.object_at(anchor.off)),
+            Some(InlineObject::Group { children, .. }) if children.iter().any(|child| matches!(&child.obj,
+                InlineObject::Shape { kind: ShapeKind::TextBox, story: Some(story), .. } if story == id)))
+        {
+            owner_positions.push(anchor);
+        }
+    }
+    let parsed_stories: Vec<_> = reader.doc.parts.iter().map(|(id, part)| (*id, part.kind, part.blocks.iter()
+        .filter_map(|block| block.as_para()).map(|para| para.plain_text().to_owned()).collect::<String>())).collect();
+    assert_eq!(owner_positions.len(), 2, "the two identical captions have separate group-child owners; stories={parsed_stories:?}");
+    let layout = reader.layout();
+    let first_hit = layout.object(&owner_positions[0], 0).unwrap();
+    let second_hit = layout.object(&owner_positions[1], 0).unwrap();
+    let mut model = DocxModel::open(&two_owners).unwrap();
+    let select = |model: &mut DocxModel, hit: wordcraft_engine::layout::hit::ObjectHit| model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 1.0,
+        y: hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    let selected = select(&mut model, first_hit);
+    assert!(selected.rejected.is_empty());
+    let view = serde_json::to_value(model.view()).unwrap();
+    let first_position = view["object"]["position"].as_str().unwrap().to_owned();
+    let first_epoch = view["object"]["epoch"].as_u64().unwrap();
+    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"));
+    assert!(model.apply(&[DocxOp::EnterGroupCaption { position: first_position, epoch: first_epoch }]).rejected.is_empty());
+    let first_caret = model.view().caret_key;
+    assert!(first_caret.starts_with(&format!("part{first_story}:")));
+
+    let selected = select(&mut model, second_hit);
+    assert!(selected.rejected.is_empty());
+    let view = serde_json::to_value(model.view()).unwrap();
+    let second_position = view["object"]["position"].as_str().unwrap().to_owned();
+    let second_epoch = view["object"]["epoch"].as_u64().unwrap();
+    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"));
+    assert!(model.apply(&[DocxOp::EnterGroupCaption { position: second_position, epoch: second_epoch }]).rejected.is_empty());
+    let second_caret = model.view().caret_key;
+    assert!(second_caret.starts_with(&format!("part{second_story}:")));
+    assert_ne!(first_caret, second_caret, "identical caption text does not alias group owners");
+
+    // A single group with two direct text boxes has no provable single caption child.
+    let mut ambiguous = Session::new(io::open_bytes("fixture.docx", &fixture()).unwrap());
+    ambiguous.run("caret.docEnd", &json!({})).unwrap();
+    ambiguous.run("text.newParagraph", &json!({})).unwrap();
+    let first = ambiguous.doc.add_part(PartKind::TextBox, vec![Block::Para(Paragraph::with_text("One", CharProps::default())).into()]);
+    let second = ambiguous.doc.add_part(PartKind::TextBox, vec![Block::Para(Paragraph::with_text("Two", CharProps::default())).into()]);
+    ambiguous.doc.insert_object(&ambiguous.sel.focus,
+        group(vec![child(5.0, first), child(105.0, second)]), &CharProps::default()).unwrap();
+    let ambiguous_bytes = io::save_bytes("fixture.docx", &ambiguous.doc).unwrap();
+    let mut model = DocxModel::open(&ambiguous_bytes).unwrap();
+    let mut reader = Session::new(io::open_bytes("fixture.docx", &ambiguous_bytes).unwrap());
+    let hit = reader.layout().find_object(0, |object| (object.rect.w - 200.0).abs() < 0.01).unwrap();
+    let selected = model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 1.0,
+        y: hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    assert!(selected.rejected.is_empty());
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert!(!view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
+        "multiple direct text boxes are ambiguous and must remain unopened");
+    assert!(model.apply(&[DocxOp::EnterGroupCaption {
+        position: view["object"]["position"].as_str().unwrap().to_owned(),
+        epoch: view["object"]["epoch"].as_u64().unwrap(),
+    }]).rejected == vec![0], "forged entry is rejected even if the UI hides the action");
+}
+
+#[test]
+fn stage3_docx_group_caption_parses_saved_group_child_fixture() {
+    use super::engine::ObjectPayload;
+    use crate::services::save::service;
+    use wordcraft_engine::doc::StoryRef;
+    use wordcraft_engine::{io, Session};
+
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../scripts/tests/fixtures/stage3a-p6-group-caption.docx"
+    ));
+    let mut reader = Session::new(io::open_bytes("fixture.docx", bytes).unwrap());
+    let hit = reader.layout().find_object(0, |object| (object.rect.w - 220.0).abs() < 0.1)
+        .expect("the saved DOCX fixture contains the expected group");
+    let mut model = DocxModel::open(bytes).unwrap();
+    assert!(model.body_text().contains("Nearby Caption 9"),
+        "the nearby ordinary caption paragraph must remain an unowned body story");
+    let selected = model.apply(&[DocxOp::Pointer {
+        page: hit.page as u32,
+        x: hit.rect.x + 1.0,
+        y: hit.rect.y + 1.0,
+        extend: false,
+        before_insert: false,
+        drag: false,
+        select_object: true,
+    }]);
+    assert_eq!(selected.applied, 1, "{:?}", selected.rejected);
+    let view = serde_json::to_value(model.view()).unwrap();
+    assert_eq!(view["object"]["kind"], "group");
+    assert!(view["object"]["operations"].as_array().unwrap().iter().any(|op| op == "editCaption"),
+        "the serialized direct text-box child must expose its owning group entry");
+    let position = view["object"]["position"].as_str().unwrap().to_owned();
+    let epoch = view["object"]["epoch"].as_u64().unwrap();
+    let owner = model.diagnostic_document().text_box_anchor(
+        model.diagnostic_document().parts.iter()
+            .find(|(_, part)| part.kind == wordcraft_engine::doc::PartKind::TextBox)
+            .map(|(id, _)| *id).expect("the fixture has a text-box story"),
+    ).expect("the fixture's text-box story has a single group owner");
+    assert_eq!(owner.story, StoryRef::Body);
+    assert!(model.body_text().contains("Nearby Caption 9"));
+
+    let original = model.export().unwrap();
+    let payload: ObjectPayload = serde_json::from_str(&model.clipboard_object(&position, epoch).unwrap()).unwrap();
+    model.apply(&[mv(MoveTarget::DocEnd, false)]);
+    model.apply(&[DocxOp::NewParagraph]);
+    let pasted = model.apply(&[DocxOp::PasteObject { payload: Box::new(payload) }]);
+    assert_eq!(pasted.changed, 1, "group-caption copy/paste rejected: {:?}", pasted.rejected);
+    let copied = model.export().unwrap();
+    let gate = service::check_saved(
+        crate::document::Format::Docx,
+        &original,
+        &copied,
+        None,
+        model.same_as(&copied),
+    );
+    assert!(gate.is_safe(), "T009 must prove the copied group and caption story atomically: {gate:?}");
+    let reopened = io::open_bytes("fixture.docx", &copied).unwrap();
+    let caption_stories: Vec<_> = reopened.parts.iter()
+        .filter(|(_, part)| part.kind == wordcraft_engine::doc::PartKind::TextBox)
+        .map(|(id, part)| {
+            let text = part.blocks.iter().filter_map(|block| block.as_para())
+                .map(|para| para.plain_text().to_owned()).collect::<String>();
+            let anchor = reopened.text_box_anchor(*id).expect("copied textbox remains attached to a group");
+            (text, format!("{anchor:?}"))
+        }).collect();
+    assert_eq!(caption_stories.len(), 2, "the paste must allocate a distinct owned caption story");
+    assert!(caption_stories.iter().all(|(text, _)| text == "Group-owned caption"));
+    assert_ne!(caption_stories[0].1, caption_stories[1].1,
+        "the copied caption must resolve to a distinct group owner address");
+}
+
+#[test]
 fn stage3_docx_clipboard_expands_textbox_story_and_remaps_colliding_shape_ids() {
     use super::engine::ObjectPayload;
     use crate::services::save::service;

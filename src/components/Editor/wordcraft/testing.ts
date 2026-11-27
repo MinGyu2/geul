@@ -287,6 +287,7 @@ export class FakeDocx implements DocxBackend {
   objectSelectionPayload: string | null = null;
   objectView: DocxView["object"] | null = null;
   objectEdits: { position: string; epoch: number; edit: unknown }[] = [];
+  enteredGroupCaptions: { position: string; epoch: number }[] = [];
   async selectionObject(sessionId: number, generation: number, revision: number, position: string, epoch: number): Promise<Result<string>> {
     const checked = this.check(sessionId, generation);
     if (!checked.ok) return checked;
@@ -390,6 +391,14 @@ export class FakeDocx implements DocxBackend {
       if (!this.objectView || this.objectView.address.engine !== "wordcraft"
         || this.objectView.address.position !== op.position || this.objectView.epoch !== op.epoch) return false;
       this.objectEdits.push({ position: op.position, epoch: op.epoch, edit: op.edit });
+      return true;
+    }
+    if (op.op === "enterGroupCaption") {
+      if (!this.objectView || this.objectView.address.engine !== "wordcraft"
+        || this.objectView.address.position !== op.position || this.objectView.epoch !== op.epoch
+        || !this.objectView.operations.includes("editCaption")) return false;
+      this.enteredGroupCaptions.push({ position: op.position, epoch: op.epoch });
+      this.objectView = null;
       return true;
     }
     if (op.op === "tableStructure") {

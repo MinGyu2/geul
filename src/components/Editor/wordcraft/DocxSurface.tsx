@@ -315,7 +315,8 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
                 aria-hidden="true"
               />
               {object?.frame.page === page && <ObjectSelectionFrame selection={object} scale={k}
-                onEdit={(edit, epoch) => { session.execute("object.edit", objectEditRequest(object, edit, epoch)); focusInput(); }} />}
+                onEdit={(edit, epoch) => { session.execute("object.edit", objectEditRequest(object, edit, epoch)); focusInput(); }}
+                onEnterCaption={(epoch) => { session.enterGroupCaption(epoch); focusInput(); }} />}
               {(view?.selection ?? []).filter((rect) => rect.page === page).map((rect, index) => (
                 <div key={`s${index}`} className="rhwp-selection" style={rectStyle(rect)} />
               ))}

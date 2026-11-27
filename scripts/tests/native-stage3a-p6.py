@@ -15,6 +15,10 @@ entry = Path(__file__).with_name("native-stage3-c.py")
 spec = importlib.util.spec_from_file_location("stage3c", entry)
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
+p4_entry = Path(__file__).with_name("native-stage3a-p4.py")
+p4_spec = importlib.util.spec_from_file_location("stage3a_p4", p4_entry)
+p4a = importlib.util.module_from_spec(p4_spec)
+p4_spec.loader.exec_module(p4a)
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
@@ -625,6 +629,337 @@ def caption_lateral(acc, row, fixtures, out, side, align, inline=False):
     pick(after, side, align)
 
 
+def _ancestors(node, parent):
+    while node in parent:
+        node = parent[node]
+        yield node
+
+
+def docx_group_caption_info(path):
+    ns = {
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+    }
+    with zipfile.ZipFile(path) as package:
+        root = ET.fromstring(package.read("word/document.xml"))
+        relationships = package.read("word/_rels/document.xml.rels")
+        other_parts = {name: package.read(name) for name in package.namelist() if name != "word/document.xml"}
+    groups = root.findall(".//wpg:wgp", ns)
+    if len(groups) != 1:
+        raise ValueError(f"expected one outer WordprocessingML group, got {len(groups)}")
+    group = groups[0]
+    body = root.find("./w:body", ns)
+    parent = {child: owner for owner in root.iter() for child in list(owner)}
+    body_text = "".join(
+        node.text or ""
+        for paragraph in body.findall("./w:p", ns)
+        for node in paragraph.iter(f"{{{ns['w']}}}t")
+        if not any(ancestor.tag == f"{{{ns['w']}}}txbxContent"
+                   for ancestor in _ancestors(node, parent))
+    )
+    boxes = [child for child in list(group) if child.tag == f"{{{ns['wps']}}}wsp"
+             and child.find("./wps:txbx/w:txbxContent", ns) is not None]
+    if len(boxes) != 1:
+        raise ValueError(f"expected one direct text-box child, got {len(boxes)}")
+    box = boxes[0]
+    content = box.find("./wps:txbx/w:txbxContent", ns)
+    paragraph = content.find("./w:p", ns)
+    transform = box.find("./wps:spPr/a:xfrm", ns)
+    offset = transform.find("./a:off", ns)
+    extent = transform.find("./a:ext", ns)
+    nv = box.find("./wps:cNvPr", ns)
+    style = paragraph.find("./w:pPr/w:pStyle", ns)
+    bold = paragraph.find("./w:r/w:rPr/w:b", ns)
+    text = "".join(node.text or "" for node in content.iter() if node.tag == f"{{{ns['w']}}}t")
+    parent = {child: owner for owner in root.iter() for child in list(owner)}
+    wrapper = box
+    while wrapper in parent and wrapper.tag not in (f"{{{ns['wp']}}}anchor", f"{{{ns['wp']}}}inline"):
+        wrapper = parent[wrapper]
+    wrapper_copy = deepcopy(wrapper)
+    copied_group = wrapper_copy.find(".//wpg:wgp", ns)
+    if copied_group is None:
+        raise ValueError("the caption text box lost its group owner while inspecting its DrawingML wrapper")
+    copied_boxes = [child for child in list(copied_group) if child.tag == f"{{{ns['wps']}}}wsp"
+                    and child.find("./wps:txbx/w:txbxContent", ns) is not None]
+    if len(copied_boxes) == 1:
+        copied_group.remove(copied_boxes[0])
+    placement = ET.tostring(wrapper_copy, encoding="unicode")
+    return {
+        "root": root,
+        "group": group,
+        "box": box,
+        "content": content,
+        "text": text,
+        "bodyText": body_text,
+        "childId": nv.get("id"),
+        "childName": nv.get("name"),
+        "textStyle": (style.get(f"{{{ns['w']}}}val") if style is not None else None, bold is not None),
+        "geometry": tuple(int(offset.get(key)) for key in ("x", "y"))
+                    + tuple(int(extent.get(key)) for key in ("cx", "cy")),
+        "placement": placement,
+        "relationships": relationships,
+        "otherParts": other_parts,
+        "tree": p4a.inspect_docx_group(path)["tree"],
+        "namespaces": ns,
+    }
+
+
+def docx_group_caption_summary(info):
+    return {
+        "text": info["text"],
+        "bodyText": info["bodyText"],
+        "childId": info["childId"],
+        "childName": info["childName"],
+        "textStyle": info["textStyle"],
+        "geometry": info["geometry"],
+        "tree": info["tree"],
+        "placementSha256": hashlib.sha256(info["placement"].encode()).hexdigest(),
+        "relationshipsSha256": hashlib.sha256(info["relationships"]).hexdigest(),
+        "otherPartSha256": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(info["otherParts"].items())},
+    }
+
+
+def select_docx_group_with_caption(acc):
+    button = ".object-group-caption-edit"
+    if not acc.d.exists(button):
+        pixel_attempts = []
+        acc.d.js("""
+          window.p6CaptionClickEvents=[];
+          if(!window.p6CaptionClickListener){
+            window.p6CaptionClickListener=true;
+            for(const type of ['pointerdown','pointerup']) document.addEventListener(type,e=>{
+              window.p6CaptionClickEvents.push({type,trusted:e.isTrusted,x:e.clientX,y:e.clientY,
+                target:e.target instanceof Element?e.target.tagName+'.'+e.target.className:'other'});
+            },true);
+          }
+        """)
+        # The fixture has two uniquely colored editable children. Resolve their painted
+        # pixel positions after scrolling the actual page canvas into the native viewport;
+        # fraction scans drift when clicking text moves the document caret and auto-scrolls.
+        for color in ([51, 102, 153], [204, 136, 68]):
+            point = acc.d.js("""
+              const rgb=arguments[0], c=document.querySelector('.docx-page canvas');
+              const s=document.querySelector('.editor__scroll');
+              if(!c||!s) return null;
+              const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+              const xs=[],ys=[];
+              for(let i=0;i<d.length;i+=4){
+                if(d[i]===rgb[0]&&d[i+1]===rgb[1]&&d[i+2]===rgb[2]){
+                  const p=i/4;xs.push(p%c.width);ys.push(Math.floor(p/c.width));
+                }
+              }
+              if(xs.length<16) return null;
+              xs.sort((a,b)=>a-b);ys.sort((a,b)=>a-b);
+              const px=xs[Math.floor(xs.length/2)],py=ys[Math.floor(ys.length/2)];
+              const kx=c.clientWidth/c.width,ky=c.clientHeight/c.height;
+              const r=c.getBoundingClientRect(),v=s.getBoundingClientRect();
+              const desired=s.scrollTop+r.top+py*ky-(v.top+v.height*.45);
+              s.scrollTop=Math.max(0,Math.min(s.scrollHeight-s.clientHeight,desired));
+              const n=c.getBoundingClientRect();
+              return {x:n.left+px*kx,y:n.top+py*ky,pixel:[px,py],count:xs.length};
+            """, color)
+            if point is not None:
+                h.p4.rhwp_poc.click(acc.d, point["x"], point["y"])
+                pixel_attempts.append({"color": color, "point": point,
+                                       "selection": acc.d.js("return document.querySelector('.object-selection-frame')?.dataset.objectKind"),
+                                       "captionEntry": acc.d.exists(button)})
+                if acc.d.exists(button):
+                    break
+        if not acc.d.exists(button):
+            h.require(False, "trusted pointer could not select a group with one direct text-box child",
+                      {"pixelAttempts": pixel_attempts,
+                       "pointers": acc.d.js("return window.p6CaptionClickEvents")})
+    h.require(acc.d.js("return document.querySelector('.object-selection-frame')?.dataset.objectKind==='group'"),
+              "caption entry is not owned by the selected outer group")
+
+
+def enter_docx_group_caption(acc, text):
+    select_docx_group_with_caption(acc)
+    try:
+        p4a.docx_group_click(acc, ".object-group-caption-edit")
+        acc.wait("return document.querySelector('[data-testid=docx-status]')?.dataset.paragraphText===arguments[0]", text)
+    except Exception as error:
+        observed = acc.d.js("""
+          const s=document.querySelector('[data-testid=docx-status]');
+          const f=document.querySelector('.object-selection-frame');
+          const b=document.querySelector('.object-group-caption-edit');
+          return {status:s&&{...s.dataset},selection:f&&{kind:f.dataset.objectKind,html:f.outerHTML.slice(0,1000)},
+            button:b&&{rect:(()=>{const r=b.getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})(),text:b.textContent},
+            viewport:[innerWidth,innerHeight],hit:(()=>{const r=b?.getBoundingClientRect();const e=r&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return e&&{tag:e.tagName,class:e.className,html:e.outerHTML.slice(0,300)}})(),
+            pointers:window.p6DocxCaptionPointers};
+        """)
+        h.require(False, "explicit DOCX group-caption entry did not focus the owned story",
+                  {"wait": str(error), "observed": observed})
+
+
+def docx_object_frame(acc):
+    return acc.d.js("""
+      const e=document.querySelector('.object-selection-frame');
+      if(!e) return null;
+      return Object.fromEntries(['left','top','width','height'].map(k=>[k,parseFloat(e.style[k])]));
+    """)
+
+
+def docx_revision_after_change(acc, previous):
+    selector = "[data-testid=docx-status]"
+    acc.wait("return +document.querySelector(arguments[0])?.dataset.revision>arguments[1]", selector, previous, timeout=12)
+    acc.settle("docx")
+    current = int(acc.status("docx")["revision"])
+    h.require(current > previous, "DOCX mutation did not advance the engine revision", {"before": previous, "after": current})
+    return current
+
+
+def docx_group_caption_case(acc, row, fixtures, out):
+    fixture = fixtures / "stage3a-p6-group-caption.docx"
+    if not fixture.is_file():
+        raise ValueError("the parser-verified DOCX group-caption fixture is missing")
+    before = docx_group_caption_info(fixture)
+    row["before"] = docx_group_caption_summary(before)
+    h.require(before["text"] == "Group-owned caption", "synthetic group-owned text does not match")
+    h.require(before["textStyle"] == ("Caption", True), "caption paragraph/run formatting was not created")
+    h.require(before["bodyText"].endswith("Nearby Caption 9"),
+              "unowned nearby caption paragraph is not present", before["bodyText"])
+    h.require([child["kind"] for child in before["tree"]] == ["shape", "shape", "shape"],
+              "fixture hierarchy does not contain two sibling shapes and the direct text-box child", before["tree"])
+    path = h.begin(acc, row, fixture, out, "p6-other-cap-docx-edited.docx")
+    acc.d.js("""
+      window.p6DocxCaptionPointers=[];
+      for(const type of ['pointerdown','pointerup']) addEventListener(type,e=>{
+        const target=e.target;
+        window.p6DocxCaptionPointers.push({type,trusted:e.isTrusted,
+          x:e.clientX,y:e.clientY,
+          canvas:!!target.closest('.rhwp-page__canvas'),
+          caption:!!target.closest('.object-group-caption-edit'),
+          child:!!target.closest('.object-group-child')});
+      },true);
+    """)
+
+    enter_docx_group_caption(acc, before["text"])
+    revision = int(acc.status("docx")["revision"])
+    acc.key("End")
+    acc.type(" edited")
+    expected_text = before["text"] + " edited"
+    acc.text_is("docx", expected_text)
+    revision = docx_revision_after_change(acc, revision)
+    acc.key("ctrl+z")
+    acc.text_is("docx", before["text"])
+    revision = docx_revision_after_change(acc, revision)
+    acc.key("ctrl+y")
+    acc.text_is("docx", expected_text)
+    revision = docx_revision_after_change(acc, revision)
+    row["captionTextUndoRedo"] = "PASS: text returned to the source on Undo and returned to the edited value on Redo."
+
+    select_docx_group_with_caption(acc)
+    p4a.docx_group_click(acc, ".object-group-child-mode")
+    h.require(acc.d.js("return document.querySelectorAll('.object-group-child').length") == 3,
+              "the group editor must expose its direct nested group, sibling, and text-box caption")
+    p4a.docx_group_click(acc, '.object-group-child[data-index="2"]')
+    caption_box = p4a.docx_group_values(acc)
+    row["captionChildBefore"] = caption_box
+    moved_caption = [caption_box[0] + 5, caption_box[1], caption_box[2], caption_box[3]]
+    p4a.docx_group_set_values(acc, moved_caption)
+    p4a.docx_group_click(acc, ".object-group-child-apply-move")
+    revision = docx_revision_after_change(acc, revision)
+    select_docx_group_with_caption(acc)
+    p4a.docx_group_click(acc, ".object-group-child-mode")
+    p4a.docx_group_click(acc, '.object-group-child[data-index="2"]')
+    caption_box_after = p4a.docx_group_values(acc)
+    h.require(caption_box_after == moved_caption, "caption placement edit did not change the selected child frame", caption_box_after)
+    acc.key("ctrl+z")
+    revision = docx_revision_after_change(acc, revision)
+    select_docx_group_with_caption(acc)
+    p4a.docx_group_click(acc, ".object-group-child-mode")
+    p4a.docx_group_click(acc, '.object-group-child[data-index="2"]')
+    h.require(p4a.docx_group_values(acc) == caption_box, "Undo did not restore the caption child position")
+    acc.key("ctrl+y")
+    revision = docx_revision_after_change(acc, revision)
+    select_docx_group_with_caption(acc)
+    p4a.docx_group_click(acc, ".object-group-child-mode")
+    p4a.docx_group_click(acc, '.object-group-child[data-index="2"]')
+    h.require(p4a.docx_group_values(acc) == moved_caption, "Redo did not restore the caption child position")
+    row["captionPlacementUndoRedo"] = "PASS: the direct text-box caption retained ownership through placement Undo and Redo."
+
+    # Move the containing group with trusted X11 pointer input; its nested text box remains owned.
+    p4a.docx_group_click(acc, ".object-group-child-mode")
+    group_frame_before = docx_object_frame(acc)
+    move_body = ".object-selection-frame__body"
+    h.require(acc.d.exists(move_body), "selected DrawingML group has no move handle")
+    x, y = acc.d.js("""
+      const r=document.querySelector(arguments[0]).getBoundingClientRect();
+      return [r.left+r.width/2,r.top+r.height/2];
+    """, move_body)
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x*sx, y*sy), ((x+9)*sx, (y+6)*sy))
+    revision = docx_revision_after_change(acc, revision)
+    group_frame_moved = docx_object_frame(acc)
+    h.require(group_frame_moved != group_frame_before, "outer group did not move")
+    acc.key("ctrl+z")
+    revision = docx_revision_after_change(acc, revision)
+    select_docx_group_with_caption(acc)
+    h.require(docx_object_frame(acc) == group_frame_before, "Undo did not restore the outer group frame")
+    acc.key("ctrl+y")
+    revision = docx_revision_after_change(acc, revision)
+    select_docx_group_with_caption(acc)
+    h.require(docx_object_frame(acc) == group_frame_moved, "Redo did not restore the outer group frame")
+    enter_docx_group_caption(acc, expected_text)
+    acc.text_is("docx", expected_text)
+    pointers = acc.d.js("return window.p6DocxCaptionPointers")
+    h.require(any(event["type"] == "pointerdown" and event["trusted"] and event["canvas"] for event in pointers)
+              and any(event["type"] == "pointerup" and event["trusted"] and event["caption"] for event in pointers),
+              "group selection and caption entry did not use trusted native X11 pointer input", pointers)
+    row["trustedX11Pointers"] = pointers
+    h.publish(acc, "docx", row)
+
+    after = docx_group_caption_info(path)
+    row["after"] = docx_group_caption_summary(after)
+    h.require(after["text"] == expected_text, "edited caption text did not survive DOCX serialization", after["text"])
+    h.require(after["bodyText"] == before["bodyText"], "editing group caption changed the nearby unowned paragraph", after["bodyText"])
+    h.require(after["textStyle"] == before["textStyle"], "caption paragraph or character formatting changed", after["textStyle"])
+    h.require(after["childId"] == before["childId"] and after["childName"] == before["childName"],
+              "caption shape identity changed during editing")
+    h.require(after["relationships"] == before["relationships"], "caption edits changed OPC relationships")
+    h.require(after["otherParts"] == before["otherParts"], "caption edits changed unrelated OPC parts")
+    h.require(after["tree"][0:2] == before["tree"][0:2] and len(after["tree"]) == 3,
+              "nested group hierarchy, sibling, or ownership tree changed", after["tree"])
+    h.require(after["tree"][2]["x"] == before["tree"][2]["x"] + 5.0,
+              "saved caption placement differs from the requested local move", after["tree"][2])
+    h.require(after["placement"] != before["placement"], "outer group movement did not serialize a new placement")
+    row["serializedCaption"] = {"text": after["text"], "shapeId": after["childId"], "name": after["childName"],
+                                "style": after["textStyle"], "geometry": after["geometry"]}
+    row["unrelatedPackageParts"] = len(before["otherParts"])
+    row["publishedSha256"] = h.digest(path)
+    h.reopen(acc, path, row)
+    enter_docx_group_caption(acc, expected_text)
+    h.require(acc.status("docx").get("dirty") == "false", "reopened caption document is unexpectedly dirty")
+    h.require(h.digest(path) == row["publishedSha256"], "reopening changed the published DOCX package")
+
+
+def docx_group_caption_fresh_reopen_case(acc, row, fixtures, out):
+    published = out / "p6-other-cap-docx-edited.docx"
+    if not published.is_file():
+        raise ValueError("the primary DOCX group-caption acceptance did not publish its file")
+    before_sha = h.digest(published)
+    before = docx_group_caption_info(published)
+    path = h.begin(acc, row, published, out, "p6-other-cap-docx-fresh-reopen.docx")
+    previous = json.loads((out / "result.json").read_text())["cases"].get("P6-OTHER-CAP-DOCX", {})
+    h.require(previous.get("status") == "PASS", "primary DOCX group-caption case did not pass", previous.get("status"))
+    h.require(previous.get("appPid") != row.get("appPid"), "fresh reopen must use a distinct application process")
+    enter_docx_group_caption(acc, before["text"])
+    status = acc.status("docx")
+    h.require(status.get("paragraphText") == before["text"] and status.get("dirty") == "false",
+              "fresh application did not restore the exact group-owned caption story", status)
+    after = docx_group_caption_info(path)
+    h.require(after["text"] == before["text"] and after["tree"] == before["tree"],
+              "fresh application reopened a different owner or group child tree")
+    h.require(h.digest(path) == before_sha, "fresh application changed the published DOCX package")
+    row["freshAppProcess"] = {"pid": row.get("appPid"), "differentFromPrimary": True,
+                              "captionText": status.get("paragraphText"), "dirty": status.get("dirty"),
+                              "publishedSha256": before_sha}
+
+
 h.CASES = {
     "P6.1": lambda *args: paste_polygon(*args, "hwpx"),
     "P6.2-type": preset,
@@ -638,6 +973,8 @@ h.CASES = {
     "P6-HX-CAP-INLINE-LEFT": lambda *args: caption_lateral(*args, "Left", "Center", inline=True),
     "P6-HX-CAP-INLINE-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom", inline=True),
     "P6-OTHER-CAP-HWPX": group_caption_case,
+    "P6-OTHER-CAP-DOCX": docx_group_caption_case,
+    "P6-OTHER-CAP-DOCX-FRESH": docx_group_caption_fresh_reopen_case,
 }
 
 if __name__ == "__main__":

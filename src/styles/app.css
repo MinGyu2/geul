@@ -1268,6 +1268,15 @@ button {
   white-space: nowrap;
 }
 
+.object-group-caption-edit {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
 .object-group-child {
   box-sizing: border-box;
   padding: 0;

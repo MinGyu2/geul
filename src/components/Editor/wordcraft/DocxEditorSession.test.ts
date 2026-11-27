@@ -12,6 +12,27 @@ import { decodeFake, docxSessions, FakeDocx, flush, readyDocx, recordingCanvas }
 const edits = (fake: FakeDocx) => fake.calls.filter((call) => call.method === "edit");
 
 describe("DocxEditorSession", () => {
+  it("enters only the selected DOCX group's explicit caption story", async () => {
+    const { editor, fake } = await readyDocx();
+    fake.objectView = {
+      kind: "group",
+      address: { engine: "wordcraft", position: "body:3:0" },
+      frame: { page: 0, x: 90, y: 120, width: 210, height: 80 },
+      epoch: 9,
+      operations: ["move", "editCaption"],
+    };
+    await editor.load({ discard: true });
+    expect(editor.objectSelection?.operations).toContain("editCaption");
+    expect(editor.enterGroupCaption(10)).toBe(false);
+    expect(editor.enterGroupCaption(9)).toBe(true);
+    await flush();
+    expect(fake.enteredGroupCaptions).toEqual([{ position: "body:3:0", epoch: 9 }]);
+    expect(fake.calls.filter(call => call.method === "edit").at(-1)?.args[3]).toEqual([
+      { op: "enterGroupCaption", position: "body:3:0", epoch: 9 },
+    ]);
+    expect(editor.objectSelection).toBeNull();
+  });
+
   it("HWPX inline primitive portable objects become editable DOCX shapes", async () => {
     const cases = [
       {
