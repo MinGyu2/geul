@@ -3,6 +3,7 @@
 import argparse
 import importlib.util
 import json
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
