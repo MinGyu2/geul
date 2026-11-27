@@ -312,6 +312,20 @@ export function readHwpxPictureCaption(doc: RhwpDocument, address: readonly [num
   }
 }
 
+/** Read a group-owned HWPX caption only when its unique caption-list owner and rich paragraph data are proven. */
+export function readHwpxGroupCaption(doc: RhwpDocument, address: readonly [number, number, number]) {
+  try {
+    const props = JSON.parse(doc.getShapeProperties?.(...address) ?? "null");
+    if (props?.shapeType !== "group" || props.hasCaption !== true || "tbVerticalAlign" in props) return undefined;
+    const caption = extractHwpxCaption(doc, ...address, true, props, true);
+    if (!caption || caption.width < 1 || caption.width > 2_000_000
+      || caption.spacing < 0 || caption.spacing > MAX_CAPTION_SPACING_HWPUNIT || caption.includeMargin) return undefined;
+    return { props, caption, side: caption.direction, lateral: true };
+  } catch {
+    return undefined;
+  }
+}
+
 function hasPortableLineGeometry(
   doc: RhwpDocument, [section, paragraph, control]: readonly [number, number, number],
   shape: { width: number; height: number; rotationAngle: number; horzFlip: boolean; vertFlip: boolean },

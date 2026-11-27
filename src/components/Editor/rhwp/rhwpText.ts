@@ -701,10 +701,12 @@ export class RhwpText {
         if (c.cell !== 0 || !doc.getPictureProperties) return false;
         const props = json(doc.getPictureProperties(...address));
         if (!isRecord(props) || props.hasCaption !== true || "externalPath" in props) return false;
-      } else if (["사각형", "타원", "직선", "다각형", "곡선"].includes(String(owner.userDesc ?? ""))) {
+      } else if (["사각형", "타원", "직선", "다각형", "곡선"].includes(String(owner.userDesc ?? ""))
+        || (owner.userDesc === "그리기" && c.cell === 65534)) {
         if (c.cell !== 65534 || !doc.getShapeProperties) return false;
         const props = json(doc.getShapeProperties(...address));
-        if (!isRecord(props) || props.hasCaption !== true || props.tbVerticalAlign !== undefined) return false;
+        if (!isRecord(props) || props.hasCaption !== true || props.tbVerticalAlign !== undefined
+          || (owner.userDesc === "그리기" ? props.shapeType !== "group" : props.shapeType === "group")) return false;
       } else {
         return false;
       }

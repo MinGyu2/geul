@@ -4,6 +4,7 @@
 import hashlib
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 import shutil
 import sys
@@ -29,6 +30,188 @@ def hwpx_polygon(path):
 def docx_root(path):
     with zipfile.ZipFile(path) as package:
         return ET.fromstring(package.read("word/document.xml"))
+
+
+def group_caption_model(path):
+    return h.inspect_rhwp(path, """
+      const group=pages.flatMap((page,i)=>page.filter(c=>c.type==='group').map(c=>({...c,page:i,
+        props:JSON.parse(doc.getShapeProperties(c.secIdx,c.paraIdx,c.controlIdx))})))
+        .find(c=>c.props.shapeType==='group'&&c.props.hasCaption);
+      if(!group) throw Error('no captioned group');
+      const at=[group.secIdx,group.paraIdx,group.controlIdx,65534,0];
+      const length=doc.getCellParagraphLength(...at);
+      const caption={text:doc.getTextInCell(...at,0,length),caret:JSON.parse(doc.getCursorRectInCell(...at,length))};
+      console.log(JSON.stringify({group,caption,body}));
+    """)
+
+
+def group_caption_xml(path):
+    with zipfile.ZipFile(path) as package:
+        return ET.fromstring(package.read("Contents/section0.xml"))
+
+
+def unique_group_caption(root):
+    matches = [node for node in root.iter() if node.tag.split("}")[-1] == "container"
+               and any(child.tag.split("}")[-1] == "caption" for child in node)]
+    h.require(len(matches) == 1, "expected exactly one group-owned caption", len(matches))
+    owner = matches[0]
+    caption = next(child for child in owner if child.tag.split("}")[-1] == "caption")
+    return owner, caption
+
+
+def group_children_xml(path):
+    owner, _ = unique_group_caption(group_caption_xml(path))
+    return [ET.tostring(child) for child in owner if child.tag.split("}")[-1] != "caption"]
+
+
+def group_object_children(path):
+    owner, _ = unique_group_caption(group_caption_xml(path))
+    return [child for child in owner if child.tag.split("}")[-1] in {"rect", "ellipse", "line", "polygon", "curve", "pic", "container"}]
+
+
+def caption_text(caption):
+    return "".join(node.text or "" for node in caption.iter() if node.tag.split("}")[-1] == "t")
+
+
+def next_revision(acc, previous):
+    acc.wait("return +document.querySelector('[data-testid=rhwp-status]')?.dataset.revision>arguments[0]", previous)
+    return int(acc.status("hwpx")["revision"])
+
+
+def group_caption_case(acc, row, fixtures, out):
+    fixture = fixtures / "group-caption-original.hwpx"
+    before = row["before"] = group_caption_model(fixture)
+    group, caption = before["group"], before["caption"]
+    h.require(caption["text"].endswith("Group-owned caption"), "wrong fixture caption text", caption)
+    h.require([child.tag.split("}")[-1] for child in group_object_children(fixture)] == ["rect", "ellipse"],
+              "fixture group child tree is not the expected shape pair")
+    path = h.begin(acc, row, fixture, out, "group-caption-edited.hwpx")
+    acc.d.js("""
+      window.p6GroupCaptionPointers=[];
+      document.addEventListener('pointerdown',event=>{
+        if(!(event.target instanceof Element)) return;
+        window.p6GroupCaptionPointers.push({trusted:event.isTrusted,
+          canvas:!!event.target.closest('.rhwp-page__canvas'),x:event.clientX,y:event.clientY});
+      },true);
+    """)
+
+    # Edit the text in its actual group caption cell, then prove Undo/Redo.
+    caret = caption["caret"]
+    h.p6.pointer(acc, (caret["pageIndex"], caret["x"], caret["y"] + caret["height"] / 2))
+    initial_text = acc.status("hwpx")["paragraphText"]
+    acc.key("End")
+    acc.type(" edited")
+    acc.wait("return document.querySelector('[data-testid=rhwp-status]')?.dataset.paragraphText.endsWith(arguments[0])",
+             "Group-owned caption edited")
+    row["textEdit"] = acc.status("hwpx")
+    revision = int(row["textEdit"]["revision"])
+    h.require(row["textEdit"].get("paragraphText", "").endswith("Group-owned caption edited"),
+              "typing did not reach the group caption", row["textEdit"])
+    undo_count = 0
+    while acc.status("hwpx")["paragraphText"] != initial_text and undo_count < 8:
+        acc.key("ctrl+z")
+        revision = next_revision(acc, revision)
+        undo_count += 1
+    h.require(undo_count > 0 and acc.status("hwpx")["paragraphText"] == initial_text,
+              "Undo did not restore the original group caption", acc.status("hwpx"))
+    for _ in range(undo_count):
+        acc.key("ctrl+y")
+        revision = next_revision(acc, revision)
+    h.require(acc.status("hwpx")["paragraphText"].endswith("Group-owned caption edited"),
+              "Redo did not restore the edited group caption", acc.status("hwpx"))
+    row["textUndoRedoCount"] = undo_count
+
+    # Select the outer group and change its own caption placement, retaining children.
+    h.select_object(acc, group, "group")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", CAPTION) == "Bottom",
+              "group caption side was not exposed", acc.status("hwpx"))
+    h.p6.select(acc, CAPTION, "Right")
+    revision = next_revision(acc, revision)
+    acc.settle("hwpx")
+    h.select_object(acc, group, "group")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", CAPTION) == "Right",
+              "group caption side edit did not apply")
+    alignment = "[data-testid=caption-vertical-align]"
+    h.require(acc.d.exists(alignment), "right group caption omitted vertical alignment")
+    h.p6.select(acc, alignment, "Center")
+    revision = next_revision(acc, revision)
+    acc.settle("hwpx")
+    acc.key("ctrl+z")
+    revision = next_revision(acc, revision)
+    acc.settle("hwpx")
+    h.select_object(acc, group, "group")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", alignment) == "Top",
+              "caption alignment Undo failed")
+    acc.key("ctrl+y")
+    revision = next_revision(acc, revision)
+    acc.settle("hwpx")
+    h.select_object(acc, group, "group")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", alignment) == "Center",
+              "caption alignment Redo failed")
+
+    pointers = acc.d.js("return window.p6GroupCaptionPointers")
+    h.require(len(pointers) >= 2 and all(p["trusted"] and p["canvas"] for p in pointers),
+              "selection/text editing did not use trusted canvas pointers", pointers)
+    row["trustedCanvasPointers"] = pointers
+    h.publish(acc, "hwpx", row)
+
+    after = row["after"] = group_caption_model(path)
+    h.require(group_children_xml(path) == group_children_xml(fixture), "group child XML, hierarchy, or IDs changed")
+    h.require(after["group"]["props"] == {**group["props"], "captionDirection": "Right", "captionVertAlign": "Center"},
+              "group properties changed outside the requested caption layout", after["group"]["props"])
+    h.require(after["caption"]["text"] == caption["text"] + " edited", "caption text did not survive save")
+    h.require(after["body"] == before["body"], "body text changed while editing the group caption")
+    h.require(after["caption"]["caret"]["x"] > after["group"]["x"] + after["group"]["w"],
+              "right group caption did not render to the right", after)
+    h.require(after["group"]["y"] < after["caption"]["caret"]["y"] < after["group"]["y"] + after["group"]["h"],
+              "centered group caption did not render inside the group height", after)
+
+    original_xml, edited_xml = group_caption_xml(fixture), group_caption_xml(path)
+    old_owner, old_caption = unique_group_caption(original_xml)
+    new_owner, new_caption = unique_group_caption(edited_xml)
+    h.require(old_owner.attrib == new_owner.attrib, "group owner identity or placement envelope changed")
+    old_without_caption, new_without_caption = deepcopy(original_xml), deepcopy(edited_xml)
+    old_owner_without, _ = unique_group_caption(old_without_caption)
+    new_owner_without, _ = unique_group_caption(new_without_caption)
+    old_owner_without.remove(next(child for child in old_owner_without if child.tag.split("}")[-1] == "caption"))
+    new_owner_without.remove(next(child for child in new_owner_without if child.tag.split("}")[-1] == "caption"))
+    h.require(ET.tostring(old_without_caption) == ET.tostring(new_without_caption),
+              "section XML outside the exact group caption changed")
+    h.require({key:value for key,value in old_caption.attrib.items() if key != "side"}
+              == {key:value for key,value in new_caption.attrib.items() if key != "side"},
+              "caption width, gap, or other ownership metadata changed")
+    old_sub = next(child for child in old_caption if child.tag.split("}")[-1] == "subList")
+    new_sub = next(child for child in new_caption if child.tag.split("}")[-1] == "subList")
+    h.require({key:value for key,value in old_sub.attrib.items() if key != "vertAlign"}
+              == {key:value for key,value in new_sub.attrib.items() if key != "vertAlign"},
+              "caption paragraph-list ownership metadata changed")
+    old_atno = [ET.tostring(node) for node in old_caption.iter() if node.tag.split("}")[-1] == "atno"]
+    new_atno = [ET.tostring(node) for node in new_caption.iter() if node.tag.split("}")[-1] == "atno"]
+    h.require(old_atno == new_atno, "caption numbering control changed")
+    h.require(old_caption.get("side") == "BOTTOM" and new_caption.get("side") == "RIGHT",
+              "caption direction was not serialized on the group owner")
+    h.require(old_sub.get("vertAlign") == "TOP" and new_sub.get("vertAlign") == "CENTER",
+              "caption vertical alignment was not serialized")
+    h.require(caption_text(new_caption) == caption_text(old_caption) + " edited",
+              "serialized caption run text differs")
+    verify_other_parts(fixture, path, lambda name: name == "Contents/section0.xml" or name.startswith("Preview/"))
+    with zipfile.ZipFile(fixture) as source_package:
+        row["unchangedPackageParts"] = len([name for name in source_package.namelist()
+                                              if name != "Contents/section0.xml" and not name.startswith("Preview/")])
+    row["publishedSha256"] = h.digest(path)
+    h.reopen(acc, path, row)
+    h.select_object(acc, after["group"], "group")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", CAPTION) == "Right",
+              "reopened group caption placement differs")
+    h.require(acc.d.js("return document.querySelector(arguments[0])?.value", alignment) == "Center",
+              "reopened group caption alignment differs")
+    reopened_caret = after["caption"]["caret"]
+    h.p6.pointer(acc, (reopened_caret["pageIndex"], reopened_caret["x"],
+                       reopened_caret["y"] + reopened_caret["height"] / 2))
+    status = acc.status("hwpx")
+    h.require(status.get("paragraphText", "").endswith("Group-owned caption edited"),
+              "reopened caption text ownership is unavailable", status)
+    h.require(h.digest(path) == row["publishedSha256"], "fresh document session changed the published package")
 
 
 def docx_canvas_digest(acc):
@@ -454,6 +637,7 @@ h.CASES = {
     "P6-HX-CAP-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom"),
     "P6-HX-CAP-INLINE-LEFT": lambda *args: caption_lateral(*args, "Left", "Center", inline=True),
     "P6-HX-CAP-INLINE-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom", inline=True),
+    "P6-OTHER-CAP-HWPX": group_caption_case,
 }
 
 if __name__ == "__main__":

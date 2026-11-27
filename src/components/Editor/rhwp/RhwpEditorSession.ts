@@ -7,7 +7,7 @@ import { inspectHwp5CaptionLayout } from "./hwp5CaptionLayout";
 import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import {
   extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject,
-  insertHwpxPortableObjectIntoHwp5, readHwpxPictureCaption,
+  insertHwpxPortableObjectIntoHwp5, readHwpxGroupCaption, readHwpxPictureCaption,
 } from "./hwpxPortableClipboard";
 import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 import {
@@ -2101,7 +2101,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           let captionVerticalAlign = captionSide === "Left" || captionSide === "Right"
             ? caption?.caption.vertAlign ?? hwpPictureCaption?.verticalAlign : undefined;
           const spacing = caption?.caption.spacing;
-          const captionSpacing = !captionVerticalAlign && spacing !== undefined && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
+          let captionSpacing = !captionVerticalAlign && spacing !== undefined && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
             ? spacing : undefined;
           if (captionSide) operations.push("captionSide");
           if (captionSpacing !== undefined) operations.push("captionSpacing");
@@ -2192,6 +2192,18 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const groupSupported = format === "hwpx" || (canEditHwp && this.unlockedBodyGso(groupAddress) === "그리기");
           const group = groupAddress && this.history && canEditGso && groupSupported && this.doc.setShapeProperties
             ? inspectRhwpGroup(this.doc, groupAddress) : undefined;
+          const groupCaption = format === "hwpx" && group?.hasCaption && groupAddress
+            && this.unlockedBodyGso(groupAddress) === "그리기" ? readHwpxGroupCaption(this.doc, groupAddress) : undefined;
+          if (groupCaption) {
+            captionSide = groupCaption.side;
+            captionLateral = groupCaption.lateral;
+            captionVerticalAlign = captionSide === "Left" || captionSide === "Right"
+              ? groupCaption.caption.vertAlign : undefined;
+            captionSpacing = groupCaption.caption.spacing;
+            if (!operations.includes("captionSide")) operations.push("captionSide");
+            if (captionSpacing <= MAX_CAPTION_SPACING_HWPUNIT && !operations.includes("captionSpacing")) operations.push("captionSpacing");
+            if (captionVerticalAlign && !operations.includes("captionVerticalAlign")) operations.push("captionVerticalAlign");
+          }
           const groupChildFills = group && groupAddress && this.doc.setGroupChildFill
             ? inspectRhwpGroupFills(this.doc, groupAddress) : undefined;
           const groupChildren = (format === "hwpx" || (format === "hwp" && canEditHwp && groupSupported))
@@ -5045,6 +5057,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return this.editAdvancedShape(request);
     }
     if (request.edit.kind === "captionSide" || request.edit.kind === "captionSpacing" || request.edit.kind === "captionVerticalAlign") {
+      if (this.selectedObject?.groupAddress) return this.editHwpxGroupCaption(request, this.selectedObject.groupAddress);
       return this.editPictureCaption(request);
     }
     if (this.selectedObject?.chartAddress) return this.editChart(request, this.selectedObject.chartAddress);
@@ -5488,6 +5501,46 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         || JSON.stringify(after.props) !== JSON.stringify({ ...before.props, ...update })
         || JSON.stringify(after.caption) !== JSON.stringify({ ...before.caption, direction: side, spacing, vertAlign })) {
         throw new Error("caption placement did not preserve its owner or contents");
+      }
+      return { caret, anchor };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = saved;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  private editHwpxGroupCaption(request: ObjectEditRequest, address: readonly [number, number, number]): boolean {
+    const { edit } = request, selected = this.objectSelection, saved = this.selectedObject, doc = this.doc;
+    if ((edit.kind !== "captionSide" && edit.kind !== "captionSpacing" && edit.kind !== "captionVerticalAlign")
+      || !selected || selected.kind !== "group" || !saved?.groupAddress || !doc?.setShapeProperties || !doc.getControls
+      || !this.history || this.imeUnsettled || !objectEditMatches(request, selected)
+      || this.sessions.get(this.sessionId)?.format !== "hwpx" || this.unlockedBodyGso(address) !== "그리기") return false;
+    const before = readHwpxGroupCaption(doc, address);
+    if (!before || before.side !== selected.captionSide) return false;
+    const side = edit.kind === "captionSide" ? edit.side : before.side;
+    const spacing = edit.kind === "captionSpacing" ? edit.spacing : before.caption.spacing;
+    const vertAlign = edit.kind === "captionVerticalAlign" ? edit.align : before.caption.vertAlign;
+    if ((side === "Left" || side === "Right") && !before.lateral) return false;
+    if (edit.kind === "captionSpacing" && selected.captionSpacing !== before.caption.spacing) return false;
+    if (edit.kind === "captionVerticalAlign" && selected.captionVerticalAlign !== before.caption.vertAlign) return false;
+    if (edit.kind === "captionVerticalAlign" && side !== "Left" && side !== "Right") return false;
+    if (side === before.side && spacing === before.caption.spacing && vertAlign === before.caption.vertAlign) return false;
+    const update = edit.kind === "captionSide" ? { captionDirection: side }
+      : edit.kind === "captionSpacing" ? { captionSpacing: spacing } : { captionVertAlign: vertAlign };
+    const expectedProps = { ...before.props, ...update };
+    const controls = doc.getControls();
+    const { caret, anchor } = this;
+    this.selectedObject = null;
+    const accepted = this.mutate(() => {
+      const result = JSON.parse(doc.setShapeProperties!(...address, JSON.stringify({ hasCaption: true, ...update })));
+      const after = readHwpxGroupCaption(doc, address);
+      const expectedCaption = { ...before.caption, direction: side, spacing, vertAlign };
+      if (result.ok !== true || !after || JSON.stringify(after.props) !== JSON.stringify(expectedProps)
+        || JSON.stringify(after.caption) !== JSON.stringify(expectedCaption) || doc.getControls!() !== controls
+        || this.unlockedBodyGso(address) !== "그리기") {
+        throw new Error("group caption placement edit changed its owner or retained data");
       }
       return { caret, anchor };
     }, true, "other", null, true, true);
