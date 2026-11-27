@@ -37,7 +37,9 @@
       "reformNo": "03",
       "formType": "STD"
     },
-    "revalidationDate": "2026-11-27"
+    "revalidationDate": "2026-11-27",
+    "responseBytes": 14766098,
+    "responseSha256": "701d05ce646918c979c71b0e26e79cd1007b72c8ef5c70e2cccd4bd006d934cc"
   },
   "rhwpModelReview": {
     "files": [
