@@ -364,16 +364,34 @@ def caption_spacing(acc, row, fixtures, out):
     h.reopen(acc,path,row)
     pick(after,4.25)
 
-def caption_lateral(acc, row, fixtures, out, side, align):
-    name = f"a-p6-caption-{side.lower()}"
+def caption_lateral(acc, row, fixtures, out, side, align, inline=False):
+    name = f"a-p6-inline-caption-{side.lower()}" if inline else f"a-p6-caption-{side.lower()}"
     fixture = fixtures / f"{name}-original.hwpx"
     old_layout = row["before"] = h.p6.hwp(fixture)
+    picture = old_layout["images"][0]
+    h.require(picture["props"].get("treatAsChar") is inline,
+              "caption fixture has the wrong inline ownership", picture["props"])
     new_layout = h.p6.hwp(fixtures / f"{name}-edited.hwpx")
     path = h.begin(acc, row, fixture, out, f"{name}-published.hwpx")
     alignment = "[data-testid=caption-vertical-align]"
+    if inline:
+        acc.d.js("""
+          window.p6InlineCaptionPointers = [];
+          document.addEventListener('pointerdown', event => {
+            if (!(event.target instanceof Element)) return;
+            window.p6InlineCaptionPointers.push({trusted:event.isTrusted,
+              canvas:!!event.target.closest('.rhwp-page__canvas'),
+              x:event.clientX,y:event.clientY});
+          }, true);
+        """)
 
     def pick(layout, position, vertical=None):
         h.select_object(acc, layout["images"][0], "picture")
+        if inline:
+            pointer = acc.d.js("return window.p6InlineCaptionPointers.at(-1)")
+            h.require(pointer and pointer["trusted"] and pointer["canvas"],
+                      "inline picture selection did not use a trusted canvas pointer", pointer)
+            row.setdefault("trustedCanvasPointerSelections", []).append(pointer)
         acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", CAPTION, position)
         if vertical:
             acc.wait("return document.querySelector(arguments[0])?.value===arguments[1]", alignment, vertical)
@@ -434,6 +452,8 @@ h.CASES = {
     "P6.7": caption_spacing,
     "P6-HX-CAP-LEFT": lambda *args: caption_lateral(*args, "Left", "Center"),
     "P6-HX-CAP-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom"),
+    "P6-HX-CAP-INLINE-LEFT": lambda *args: caption_lateral(*args, "Left", "Center", inline=True),
+    "P6-HX-CAP-INLINE-RIGHT": lambda *args: caption_lateral(*args, "Right", "Bottom", inline=True),
 }
 
 if __name__ == "__main__":

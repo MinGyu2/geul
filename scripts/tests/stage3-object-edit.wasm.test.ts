@@ -10,6 +10,7 @@ import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
+import { readHwpxPictureCaption } from "../../src/components/Editor/rhwp/hwpxPortableClipboard";
 import { POSITION_PRESETS, objectEditRequest, type ObjectEdit } from "../../src/commands/objectSelection";
 import { FIXED_MEMORY_BYTES, controlledBackend, info, loaded, ok, flush } from "../../src/components/Editor/rhwp/testing";
 
@@ -150,6 +151,105 @@ const offsets = (doc: RhwpDocument, control: number) => {
 };
 
 describe("Stage 3 HWPX object edit on the Release engine", () => {
+  it("lays out an inline HWPX picture's lateral caption and retains it after save/reopen", async () => {
+    const seed = engine.HwpDocument.createEmpty() as RhwpDocument;
+    let bytes: Uint8Array;
+    let control = -1;
+    const width = 4800, spacing = 600;
+    try {
+      seed.createBlankDocument();
+      seed.insertText(0, 0, 0, "before after");
+      const inserted = JSON.parse(seed.insertPicture!(0, 0, 7, "[]", png, 4050, 2025, 54, 27, "png", ""));
+      expect(inserted.ok).toBe(true);
+      control = inserted.controlIdx;
+      expect(JSON.parse(seed.setPictureProperties!(0, 0, control, JSON.stringify({
+        treatAsChar: true, hasCaption: true, captionDirection: "Right", captionVertAlign: "Center",
+        captionWidth: width, captionSpacing: spacing, captionIncludeMargin: false,
+      }))).ok).toBe(true);
+      expect(JSON.parse(seed.insertTextInCell!(0, 0, control, 0, 0, 0, "캡션")).ok).toBe(true);
+      bytes = seed.exportHwpx!();
+    } finally { seed.free(); }
+
+    const pagePicture = (doc: RhwpDocument) => (JSON.parse(doc.getPageControlLayout!(0)).controls as (Frame & {
+      type: string; controlIdx: number;
+    })[]).find(item => item.type === "image" && item.controlIdx === control)!;
+    const withSide = (side: "Left" | "Right") => {
+      const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+      expect(JSON.parse(doc.setPictureProperties!(0, 0, control, JSON.stringify({ hasCaption: true, captionDirection: side }))).ok).toBe(true);
+      return { doc, frame: pagePicture(doc) };
+    };
+    const left = withSide("Left");
+    const right = withSide("Right");
+    try {
+      expect(left.frame.x - right.frame.x).toBeCloseTo((width + spacing) / 75, 0);
+      expect(readHwpxPictureCaption(left.doc, [0, 0, control])).toMatchObject({ side: "Left", lateral: true });
+      expect(readHwpxPictureCaption(right.doc, [0, 0, control])).toMatchObject({ side: "Right", lateral: true });
+    } finally { left.doc.free(); right.doc.free(); }
+
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", false, false, bytes);
+    const owner = doc.getControls!();
+    try {
+      const selection = pick(pagePicture(doc));
+      expect(selection.captionSide).toBe("Right");
+      expect(selection.captionLateral).toBe(true);
+      expect(selection.operations).toContain("captionSide");
+      const rightX = pagePicture(doc).x;
+      expect(edit({ kind: "captionSide", side: "Left" })).toBe(true);
+      await confirm(1);
+      const leftX = pagePicture(doc).x;
+      expect(leftX - rightX).toBeCloseTo((width + spacing) / 75, 0);
+      expect(doc.getControls!()).toBe(owner);
+      expect(editor.undo()).toBe(true);
+      await confirm(2);
+      expect(pagePicture(doc).x).toBeCloseTo(rightX, 0);
+      expect(editor.redo()).toBe(true);
+      await confirm(3);
+      expect(pagePicture(doc).x).toBeCloseTo(leftX, 0);
+
+      const exported = doc.exportHwpxWithReport!();
+      try {
+        const report = exported.contentLoss(), output = exported.takeBytes();
+        expectReopenEvidence(doc, output, report);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, control)).captionDirection).toBe("Left");
+          expect(JSON.parse(reopened.getPictureProperties!(0, 0, control)).captionVertAlign).toBe("Center");
+          expect(pagePicture(reopened).x).toBeCloseTo(leftX, 0);
+          expect(readHwpxPictureCaption(reopened, [0, 0, control])).toMatchObject({ side: "Left", lateral: true });
+        } finally { reopened.free(); }
+      } finally { exported.free(); }
+    } finally { editor.dispose(); }
+  });
+
+  it("rejects lateral caption edits for rotated inline HWPX pictures without mutation", async () => {
+    const seed = engine.HwpDocument.createEmpty() as RhwpDocument;
+    let bytes: Uint8Array;
+    try {
+      seed.createBlankDocument();
+      const inserted = JSON.parse(seed.insertPicture!(0, 0, 0, "[]", png, 4050, 2025, 54, 27, "png", ""));
+      expect(inserted.ok).toBe(true);
+      expect(JSON.parse(seed.setPictureProperties!(0, 0, inserted.controlIdx, JSON.stringify({
+        treatAsChar: true, hasCaption: true, captionDirection: "Right", captionWidth: 4800,
+        captionSpacing: 600, captionIncludeMargin: false, rotationAngle: 10,
+      }))).ok).toBe(true);
+      expect(JSON.parse(seed.insertTextInCell!(0, 0, inserted.controlIdx, 0, 0, 0, "캡션")).ok).toBe(true);
+      bytes = seed.exportHwpx!();
+    } finally { seed.free(); }
+
+    const { editor, doc, pick } = await setup("hwpx", false, false, bytes);
+    try {
+      const frame = (JSON.parse(doc.getPageControlLayout!(0)).controls as (Frame & {
+        type: string; controlIdx: number;
+      })[]).find(item => item.type === "image" && item.controlIdx === 2)!;
+      const selection = pick(frame);
+      const before = doc.getPictureProperties!(...selection.address!.path as [number, number, number]);
+      expect(selection.captionSide).toBeUndefined();
+      expect(selection.operations).not.toContain("captionSide");
+      expect(editor.execute("object.edit", objectEditRequest(selection, { kind: "captionSide", side: "Left" })).accepted).toBe(false);
+      expect(doc.getPictureProperties!(...selection.address!.path as [number, number, number])).toBe(before);
+    } finally { editor.dispose(); }
+  });
+
   it.each(["hwp", "hwpx"] as const)("positions a plain %s picture in all nine page-body alignments", async format => {
     const { editor, doc, bytes, pick, edit, confirm } = await setup(format, true);
     try {
@@ -384,7 +484,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       await confirm(3);
 
       const shape = pick(shapes()[0]!);
-      expect(shape.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "copy", "cut"]);
+      expect(shape.operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "convertShape", "copy", "cut"]);
       const address = [0, 0, shapes()[0]!.controlIdx] as const;
       const beforeMixed = doc.getShapeProperties!(...address);
       expect(edit({ kind: "bounds", x: shape.frame.x - 10, y: shape.frame.y, width: 80, height: 36 })).toBe(false);
@@ -496,7 +596,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       expect(JSON.parse(fixture.setPictureProperties(0, 0, 2, '{"hasCaption":true}'))).toMatchObject({ ok: true });
       original = fixture.exportHwp();
     } finally { fixture.free(); }
-    const { editor, doc, pick, edit, confirm } = await setup("hwp", true, false, original);
+    const { editor, doc, pick, confirm } = await setup("hwp", true, false, original);
     const properties = (d: RhwpDocument) => JSON.parse(d.getPictureProperties!(0, 0, 2));
     const text = (d: RhwpDocument) =>
       d.getTextInCell(0, 0, 2, 0, 0, 0, d.getCellParagraphLength(0, 0, 2, 0, 0));
@@ -683,7 +783,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       const pic = () => [...images(doc)].sort((a, b) => b.w - a.w)[0]!;
 
       // Captioned inline picture: outer ops including owned delete permitted.
-      expect(pick(pic()).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "copy", "cut"]);
+      expect(pick(pic()).operations).toEqual(["deselect", "resize", "delete", "crop", "wrap", "altText", "captionSide", "copy", "cut"]);
       expect(edit({ kind: "altText", text: "캡션 그림 outer" })).toBe(true);
       await confirm(++seq);
       pick(pic());
@@ -691,7 +791,7 @@ describe("Stage 3 HWPX object edit on the Release engine", () => {
       await confirm(++seq);
 
       // Captioned shape: outer ops including owned delete permitted.
-      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "copy", "cut"]);
+      expect(pick(shapes()[0]!).operations).toEqual(["deselect", "captionSide", "move", "resize", "delete", "wrap", "fill", "outline", "rotate", "copy", "cut"]);
       expect(edit({ kind: "fill", color: "336699" })).toBe(true);
       await confirm(++seq);
       pick(shapes()[0]!);

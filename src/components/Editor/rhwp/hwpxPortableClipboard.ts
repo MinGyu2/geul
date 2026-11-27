@@ -293,15 +293,18 @@ export function readHwpxPictureCaption(doc: RhwpDocument, address: readonly [num
     const caption = extractHwpxCaption(doc, ...address, false, props, true);
     if (!caption) return undefined;
     const { direction: side, width, spacing } = caption;
-    // RHWP's inline body layout paints lateral captions below the picture.
-    // The column-anchored floating layout implements lateral positioning and alignment.
     const picture = inspectRhwpPicture(doc, address);
-    const lateral = width > 0 && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
+    const lateralEnvelope = width > 0 && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
       && width + props.width + spacing <= 0x7fff_ffff
-      && !caption.includeMargin && picture?.properties.wrap === "square" && picture.plain && !!picture.movable
-      && props.horzRelTo === "Column" && props.vertRelTo === "Para"
+      && !caption.includeMargin && picture?.plain
       && props.horzFlip === false && props.vertFlip === false
       && ["outerMarginLeft", "outerMarginTop", "outerMarginRight", "outerMarginBottom"].every(key => props[key] === 0);
+    const inlineLateral = lateralEnvelope && props.treatAsChar === true
+      && picture?.properties.wrap === "inline" && props.rotationAngle === 0;
+    const floatingLateral = lateralEnvelope && props.treatAsChar === false
+      && picture?.properties.wrap === "square" && !!picture?.movable
+      && props.horzRelTo === "Column" && props.vertRelTo === "Para";
+    const lateral = inlineLateral || floatingLateral;
     if (!lateral && (side === "Left" || side === "Right")) return undefined;
     return { props, caption, side, lateral };
   } catch {

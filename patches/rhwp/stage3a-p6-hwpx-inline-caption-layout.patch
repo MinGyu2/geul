@@ -1,0 +1,355 @@
+--- a/src/renderer/layout.rs
++++ b/src/renderer/layout.rs
+@@ -14874,8 +14874,29 @@
+                             super::layout::paragraph_layout::tac_picture_outer_margins_px(
+                                 pic, self.dpi,
+                             );
+-                        let box_w = pic_w + margin_left + margin_right;
+-                        let box_h = pic_h + margin_top + margin_bottom;
++                        let (caption_left_band, caption_right_band) =
++                            super::layout::paragraph_layout::tac_picture_caption_lateral_bands_px(
++                                pic, self.dpi,
++                            );
++                        let box_w = pic_w
++                            + margin_left
++                            + margin_right
++                            + caption_left_band
++                            + caption_right_band;
++                        let caption_h = self.calculate_caption_height(&pic.caption, styles);
++                        let lateral_caption = pic.caption.as_ref().is_some_and(|caption| {
++                            matches!(
++                                caption.direction,
++                                crate::model::shape::CaptionDirection::Left
++                                    | crate::model::shape::CaptionDirection::Right
++                            )
++                        });
++                        let image_flow_h = if lateral_caption {
++                            pic_h.max(caption_h)
++                        } else {
++                            pic_h
++                        };
++                        let box_h = image_flow_h + margin_top + margin_bottom;
+                         // 같은 paragraph 의 sibling wrap=TopAndBottom 개체(tac=false)가
+                         // 차지하는 vertical 영역만큼 picture y 보정.
+                         let sibling_reserved_hu =
+@@ -14897,11 +14918,17 @@
+                                         super::layout::paragraph_layout::tac_picture_outer_margins_px(
+                                             sibling, self.dpi,
+                                         );
++                                    let (caption_left, caption_right) =
++                                        super::layout::paragraph_layout::tac_picture_caption_lateral_bands_px(
++                                            sibling, self.dpi,
++                                        );
+                                     Some((
+                                         ci,
+                                         self.resolve_inline_picture_size(sibling, col_area).0
+                                             + ml
+-                                            + mr,
++                                            + mr
++                                            + caption_left
++                                            + caption_right,
+                                     ))
+                                 }
+                                 _ => None,
+@@ -14946,7 +14973,7 @@
+                             comp,
+                             styles,
+                             para_y_for_pic,
+-                            pic_h,
++                            image_flow_h,
+                         );
+                         let para_style_id = comp
+                             .map(|c| c.para_style_id as usize)
+@@ -14991,7 +15018,7 @@
+                         // - 단일 picture: 기존 alignment 그대로
+                         // - 시퀀스 첫 picture: total_tac_width 기반 alignment + state 초기화
+                         // - 시퀀스 후속 picture: state.cursor_x 사용 (가로 누적)
+-                        let pic_x = if is_subsequent_in_seq {
++                        let pic_frame_x = if is_subsequent_in_seq {
+                             let cur = para_inline_state
+                                 .get(&para_index)
+                                 .map(|s| s.cursor_x)
+@@ -15087,26 +15114,37 @@
+                         } else {
+                             pic_h
+                         };
++                        let effective_pic_x = if lateral_caption {
++                            registered_inline_pos
++                                .map(|(registered_x, _)| registered_x)
++                                .unwrap_or(pic_frame_x + margin_left + caption_left_band)
++                        } else {
++                            pic_frame_x
++                        };
+                         // [Task #1151 v9 결함 D] state 갱신 — 가로 분배 cursor 누적.
+                         // 첫 picture 시 line_top_y / cursor_x 초기화. 후속 picture 마다 cursor_x 가산.
+                         if !is_single_pic {
+                             let entry = para_inline_state.entry(para_index).or_insert(
+                                 super::layout::paragraph_layout::ParaInlineState {
+-                                    cursor_x: pic_x + box_w,
++                                    cursor_x: pic_frame_x + box_w,
+                                     line_top_y: pic_y,
+                                     line_height: box_h,
+                                 },
+                             );
+                             if is_subsequent_in_seq {
+-                                entry.cursor_x = pic_x + box_w;
++                                entry.cursor_x = pic_frame_x + box_w;
+                                 entry.line_height = entry.line_height.max(box_h);
+                             } else {
+                                 // 첫 picture: 초기화 (기존 값 덮어쓰기)
+-                                entry.cursor_x = pic_x + box_w;
++                                entry.cursor_x = pic_frame_x + box_w;
+                                 entry.line_top_y = pic_y;
+                                 entry.line_height = box_h;
+                             }
+                         }
++
++                        // The paragraph flow cursor is the full picture/caption envelope;
++                        // the image itself follows a leading Left caption band.
++                        let image_x = pic_frame_x + margin_left + caption_left_band;
+ 
+                         if !already_registered && !has_full_para_item {
+                             let bin_data_id = pic.image_attr.bin_data_id;
+@@ -15136,7 +15174,7 @@
+                                     ..ImageNode::new(bin_data_id, image_data)
+                                 }),
+                                 BoundingBox::new(
+-                                    pic_x + margin_left,
++                                    image_x,
+                                     pic_y + margin_top,
+                                     pic_w,
+                                     pic_h,
+@@ -15161,7 +15199,7 @@
+                                 para_index,
+                                 control_index,
+                                 None,
+-                                pic_x + margin_left,
++                                image_x,
+                                 pic_y + margin_top,
+                             );
+                             if !has_real_text {
+@@ -15227,6 +15265,7 @@
+                         let mut pic_content_bottom = effective_pic_y + effective_pic_h;
+                         if let Some(ref caption) = pic.caption {
+                             use crate::model::shape::CaptionDirection;
++                            use crate::model::shape::CaptionVertAlign;
+                             let caption_spacing = hwpunit_to_px(caption.spacing as i32, self.dpi);
+                             let caption_h = self.calculate_caption_height(&pic.caption, styles);
+                             // 캡션은 실제로 그려진 그림 상자 바로 아래에 붙는다.
+@@ -15240,7 +15279,15 @@
+                             let cap_y = match caption.direction {
+                                 CaptionDirection::Bottom => image_bottom + caption_spacing,
+                                 CaptionDirection::Top => effective_pic_y,
+-                                _ => image_bottom + caption_spacing,
++                                CaptionDirection::Left | CaptionDirection::Right => match caption.vert_align {
++                                    CaptionVertAlign::Top => effective_pic_y,
++                                    CaptionVertAlign::Center => {
++                                        effective_pic_y + (effective_pic_h - caption_h).max(0.0) / 2.0
++                                    }
++                                    CaptionVertAlign::Bottom => {
++                                        effective_pic_y + (effective_pic_h - caption_h).max(0.0)
++                                    }
++                                },
+                             };
+                             if caption.direction == CaptionDirection::Top {
+                                 let dy = caption_h + caption_spacing;
+@@ -15261,14 +15308,27 @@
+                                     text_direction: 0,
+                                 }],
+                             };
++                            let (caption_x, caption_width) = match caption.direction {
++                                CaptionDirection::Left => {
++                                    let width = hwpunit_to_px(caption.width as i32, self.dpi);
++                                    (effective_pic_x - caption_spacing - width, width)
++                                }
++                                CaptionDirection::Right => (
++                                    effective_pic_x + pic_w + caption_spacing,
++                                    hwpunit_to_px(caption.width as i32, self.dpi),
++                                ),
++                                CaptionDirection::Top | CaptionDirection::Bottom => {
++                                    (pic_frame_x, pic_w)
++                                }
++                            };
+                             self.layout_caption(
+                                 tree,
+                                 col_node,
+                                 caption,
+                                 styles,
+                                 col_area,
+-                                pic_x,
+-                                pic_w,
++                                caption_x,
++                                caption_width,
+                                 cap_y,
+                                 &mut self.auto_counter.borrow_mut(),
+                                 bin_data_content,
+@@ -15296,13 +15356,17 @@
+                                 p.text.chars().all(|c| c <= '\u{001F}' || c == '\u{FFFC}')
+                                     && p.controls.is_empty()
+                             });
+-                            if !caption_is_empty
+-                                && matches!(caption.direction, CaptionDirection::Bottom)
+-                            {
++                            if !caption_is_empty && matches!(caption.direction, CaptionDirection::Bottom) {
+                                 let cap_bottom = cap_y + caption_h;
+                                 if cap_bottom > result_y {
+                                     result_y = cap_bottom;
+                                 }
++                                pic_content_bottom = pic_content_bottom.max(cap_bottom);
++                            } else if !caption_is_empty
++                                && matches!(caption.direction, CaptionDirection::Left | CaptionDirection::Right)
++                            {
++                                let cap_bottom = cap_y + caption_h;
++                                result_y = result_y.max(cap_bottom);
+                                 pic_content_bottom = pic_content_bottom.max(cap_bottom);
+                             }
+                         }
+--- a/src/renderer/layout/paragraph_layout.rs
++++ b/src/renderer/layout/paragraph_layout.rs
+@@ -1763,18 +1763,37 @@
+     let Some(cap) = caption else {
+         return object_h;
+     };
+-    if !matches!(
+-        cap.direction,
+-        CaptionDirection::Top | CaptionDirection::Bottom
+-    ) || cap.paragraphs.is_empty()
+-    {
++    if cap.paragraphs.is_empty() {
+         return object_h;
+     }
+     let caption_h = crate::renderer::composer::caption_height_px(caption, dpi);
+     if caption_h <= 0.0 {
+         return object_h;
+     }
+-    object_h + hwpunit_to_px(i32::from(cap.spacing), dpi) + caption_h
++    match cap.direction {
++        CaptionDirection::Top | CaptionDirection::Bottom => {
++            object_h + hwpunit_to_px(i32::from(cap.spacing), dpi) + caption_h
++        }
++        CaptionDirection::Left | CaptionDirection::Right => object_h.max(caption_h),
++    }
++}
++
++/// Horizontal caption bands that extend a TAC picture's inline flow box.
++/// Returned values include the picture-to-caption gap.
++pub(crate) fn tac_picture_caption_lateral_bands_px(
++    picture: &crate::model::image::Picture,
++    dpi: f64,
++) -> (f64, f64) {
++    let Some(caption) = picture.caption.as_ref() else {
++        return (0.0, 0.0);
++    };
++    let band = hwpunit_to_px(caption.width as i32, dpi)
++        + hwpunit_to_px(i32::from(caption.spacing), dpi);
++    match caption.direction {
++        CaptionDirection::Left => (band, 0.0),
++        CaptionDirection::Right => (0.0, band),
++        CaptionDirection::Top | CaptionDirection::Bottom => (0.0, 0.0),
++    }
+ }
+ 
+ /// [#6603] 글자처럼 그림의 바깥 여백(px) — (왼쪽, 오른쪽, 위, 아래).
+@@ -4208,6 +4227,8 @@
+                             // 잉크는 상자의 (왼쪽, 위) 여백 안쪽에 그린다.
+                             let (margin_left, _, margin_top, margin_bottom) =
+                                 tac_picture_outer_margins_px(pic, self.dpi);
++                            let (caption_left, _) =
++                                tac_picture_caption_lateral_bands_px(pic, self.dpi);
+                             let box_h = tac_object_box_height_px(pic_h, &pic.caption, self.dpi)
+                                 + margin_top
+                                 + margin_bottom;
+@@ -4228,7 +4249,12 @@
+                                 original_size_hu,
+                                 bin_data_id,
+                                 image_data,
+-                                BoundingBox::new(x + margin_left, img_y, pic_w, pic_h),
++                                BoundingBox::new(
++                                    x + margin_left + caption_left,
++                                    img_y,
++                                    pic_w,
++                                    pic_h,
++                                ),
+                             );
+                             line_node.children.push(img_node);
+                             x += tac_w;
+@@ -4770,10 +4796,14 @@
+                                 // [#6603] 줄 안에서 차지하는 폭은 잉크 + 좌우 바깥 여백.
+                                 let (margin_left, margin_right, _, _) =
+                                     tac_picture_outer_margins_px(pic, self.dpi);
++                                let (caption_left, caption_right) =
++                                    tac_picture_caption_lateral_bands_px(pic, self.dpi);
+                                 Some(
+                                     self.resolve_inline_picture_size(pic, col_area).0
+                                         + margin_left
+-                                        + margin_right,
++                                        + margin_right
++                                        + caption_left
++                                        + caption_right,
+                                 )
+                             }
+                             Control::Shape(shape) => {
+@@ -8355,6 +8385,8 @@
+                                 // [#6603] 잉크는 바깥 여백 상자의 (왼쪽, 위) 안쪽에 그린다.
+                                 let (margin_left, _, margin_top, margin_bottom) =
+                                     tac_picture_outer_margins_px(pic, self.dpi);
++                                let (caption_left, _) =
++                                    tac_picture_caption_lateral_bands_px(pic, self.dpi);
+                                 // LINE_SEG vpos가 TopAndBottom 흐름 위치를 이미 담고 있으면
+                                 // sibling 예약 높이를 다시 더하지 않는다.
+                                 let sibling_reserved_px = if para_topbottom_line_vpos_base.is_some()
+@@ -8429,7 +8461,12 @@
+                                     original_size_hu,
+                                     bin_data_id,
+                                     image_data,
+-                                    BoundingBox::new(x + margin_left, img_y, pic_w, pic_h),
++                                    BoundingBox::new(
++                                        x + margin_left + caption_left,
++                                        img_y,
++                                        pic_w,
++                                        pic_h,
++                                    ),
+                                 );
+                                 line_node.children.push(img_node);
+                                 // [Task #864 Stage G] inline TAC picture 의 위치 등록.
+@@ -8445,7 +8482,7 @@
+                                     para_index,
+                                     tac_ci,
+                                     cell_ctx.as_ref(),
+-                                    x + margin_left,
++                                    x + margin_left + caption_left,
+                                     img_y,
+                                 );
+                             }
+@@ -9877,6 +9914,8 @@
+                             // [#6603] 잉크는 바깥 여백 상자의 (왼쪽, 위) 안쪽에 그린다.
+                             let (margin_left, _, margin_top, margin_bottom) =
+                                 tac_picture_outer_margins_px(pic, self.dpi);
++                            let (caption_left, _) =
++                                tac_picture_caption_lateral_bands_px(pic, self.dpi);
+                             // LINE_SEG vpos가 TopAndBottom 흐름 위치를 이미 담고 있으면
+                             // sibling 예약 높이를 다시 더하지 않는다.
+                             let sibling_reserved_px = if vars.has_topbottom_vpos_base {
+@@ -9969,7 +10008,12 @@
+                                 original_size_hu,
+                                 bin_data_id,
+                                 image_data,
+-                                BoundingBox::new(img_x + margin_left, img_y, pic_w, pic_h),
++                                BoundingBox::new(
++                                    img_x + margin_left + caption_left,
++                                    img_y,
++                                    pic_w,
++                                    pic_h,
++                                ),
+                             );
+                             line_node.children.push(img_node);
+                             // [Task #418/#376] layout_shape_item 의 Task #347 분기 (빈 문단 +
+@@ -9980,7 +10024,7 @@
+                                 vars.para_index,
+                                 tac_ci,
+                                 cell_ctx.as_ref(),
+-                                img_x + margin_left,
++                                img_x + margin_left + caption_left,
+                                 img_y,
+                             );
+                             img_x += tac_w;
