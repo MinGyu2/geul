@@ -179,15 +179,16 @@ def smartart_nodes(path):
     return nodes
 
 
-def selected_frame(acc):
-    frame = acc.d.js("""
+def smartart_selected_frame(acc):
+    # Return primitive coordinates through WebDriver, then build the Python mapping locally.
+    values = acc.d.js("""
       const e=document.querySelector(arguments[0]); if(!e)return null;
       const r=e.getBoundingClientRect();
-      return {left:r.left,top:r.top,width:r.width,height:r.height};
+      return [r.left,r.top,r.width,r.height];
     """, FRAME)
-    if frame is None:
-        raise AssertionError("selected SmartArt object has no rendered selection frame")
-    return frame
+    if not isinstance(values, list) or len(values) != 4:
+        raise AssertionError("selected SmartArt object has no complete rendered selection frame")
+    return dict(zip(("left", "top", "width", "height"), map(float, values)))
 
 
 def assert_same_frame(before, after, label):
@@ -430,7 +431,7 @@ def graphics(acc, progress):
     assert value(acc, style + " label:nth-of-type(5) input") == "CCDDEE"
     assert value(acc, style + " label:nth-of-type(6) select") == "true"
     assert value(acc, style + " label:nth-of-type(7) select") == "false"
-    progress["sameAppFrame"] = selected_frame(acc)
+    progress["sameAppFrame"] = smartart_selected_frame(acc)
     redo_canvas = docx_canvas_digest(acc)
     assert redo_canvas == style_canvas_after, "SmartArt style Redo did not restore rendered page pixels"
     progress["nodeStyleCanvas"]["redo"] = redo_canvas
@@ -471,7 +472,7 @@ def graphics(acc, progress):
     pointer(acc,points[1],ratio)
     acc.wait("return !!document.querySelector(arguments[0])", ART)
     assert value(acc,ART+" textarea") == "Plan\nLaunch" and value(acc,ART+" select") == "cycle"
-    progress["sameAppReopenedFrame"] = selected_frame(acc)
+    progress["sameAppReopenedFrame"] = smartart_selected_frame(acc)
     assert_same_frame(progress["sameAppFrame"], progress["sameAppReopenedFrame"], "same-app reopen")
     pointer(acc,points[0],ratio)
     acc.wait("return !!document.querySelector(arguments[0])", CHART)
@@ -504,7 +505,7 @@ def graphics_reopen(acc, progress):
     acc.wait("return !!document.querySelector(arguments[0])", ART, timeout=12)
     assert value(acc, ART + " textarea") == "Plan\nLaunch"
     assert value(acc, ART + " select") == "cycle"
-    progress["freshFrame"] = selected_frame(acc)
+    progress["freshFrame"] = smartart_selected_frame(acc)
     previous = json.loads(acc.args.previous_report.read_text())["cases"]["graphics"]
     assert_same_frame(previous["sameAppFrame"], progress["freshFrame"], "fresh-process reopen")
     style = ART + " .smart-art-node-style"
