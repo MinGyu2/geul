@@ -163,6 +163,16 @@ export type ObjectEdit =
   | { kind: "chartType"; plot: typeof CHART_PLOTS[number] }
   | { kind: "chartData"; categories: string[]; series: { name: string; values: (number | null)[] }[] }
   | { kind: "smartArtItems"; items: { text: string; level: number }[] }
+  | {
+      kind: "smartArtNodeStyle";
+      index: number;
+      style: {
+        fill?: string | null;
+        line?: string | null;
+        lineWidth?: number | null;
+        text?: { color?: string | null; bold?: boolean | null; italic?: boolean | null; fontSize?: number | null; language?: string | null };
+      };
+    }
   | { kind: "smartArtLayout"; layout: typeof SMART_ART_LAYOUTS[number] }
   | { kind: "pathPoint"; index: number; x: number; y: number }
   | { kind: "docxPathPoint"; path: number; segment: number; point: number; x: number; y: number }
@@ -211,7 +221,7 @@ export function objectEditOperation(edit: ObjectEdit): MutatingObjectOperation {
     case "rotate": return "rotate";
     case "layer": return "zOrder";
     case "chartTitle": case "chartType": case "chartData": return "chart";
-    case "smartArtItems": case "smartArtLayout": return "smartArt";
+    case "smartArtItems": case "smartArtNodeStyle": case "smartArtLayout": return "smartArt";
     case "pathPoint": case "pathVertex": case "pathSegment": case "groupChildFill": case "convertShape":
     case "captionSide": case "captionSpacing": case "captionVerticalAlign": return edit.kind;
     case "docxPathPoint": return "pathPoint";
@@ -243,6 +253,11 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     && (["left", "top", "right", "bottom"] as const).every(side => finite(value[side], MAX_CROP_FRACTION) && (value[side] as number) >= 0);
   const color = (c: unknown) => c === null || (typeof c === "string" && /^[0-9A-Fa-f]{6}$/.test(c));
   const integer = (n: unknown, max: number) => finite(n, max) && Number.isSafeInteger(n) && n >= 0;
+  const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  const smartArtColor = (c: unknown, allowNone: boolean) => typeof c === "string"
+    && (/^[0-9A-Fa-f]{6}$/.test(c)
+      || ["scheme:accent1", "scheme:accent2", "scheme:accent3", "scheme:accent4", "scheme:accent5", "scheme:accent6", "scheme:lt1", "scheme:tx1"].includes(c)
+      || (allowNone && c === "none"));
   if (value.kind === "pathPoint") return keys === "index,kind,x,y" && integer(value.index, 256)
     && integer(value.x, 2_000_000) && integer(value.y, 2_000_000);
   if (value.kind === "docxPathPoint") return keys === "kind,path,point,segment,x,y"
@@ -310,6 +325,30 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
   if (value.kind === "chartTitle") return keys === "kind,text" && (value.text === null || graphicText(value.text));
   if (value.kind === "chartType") return keys === "kind,plot" && CHART_PLOTS.some(p => p === value.plot);
   if (value.kind === "smartArtLayout") return keys === "kind,layout" && SMART_ART_LAYOUTS.some(l => l === value.layout);
+  if (value.kind === "smartArtNodeStyle") {
+    if (keys !== "index,kind,style" || !integer(value.index, 99) || !record(value.style)) return false;
+    const style = value.style;
+    if (Object.keys(style).length === 0 || Object.keys(style).some(key => !["fill", "line", "lineWidth", "text"].includes(key))) return false;
+    if (("fill" in style && style.fill !== null && !smartArtColor(style.fill, true))
+      || ("line" in style && style.line !== null && !smartArtColor(style.line, true))
+      || ("lineWidth" in style && style.lineWidth !== null && (!integer(style.lineWidth, 1_000_000_000) || style.lineWidth === 0))
+      || (style.lineWidth !== undefined && style.lineWidth !== null
+        && (typeof style.line !== "string" || style.line === "none"))) return false;
+    if ("text" in style) {
+      if (!record(style.text) || Object.keys(style.text).length === 0
+        || Object.keys(style.text).some(key => !["color", "bold", "italic", "fontSize", "language"].includes(key))) return false;
+      const textStyle = style.text;
+      if (("color" in textStyle && textStyle.color !== null && !(typeof textStyle.color === "string"
+        && (/^[0-9A-Fa-f]{6}$/.test(textStyle.color) || ["scheme:accent1", "scheme:accent2", "scheme:accent3", "scheme:accent4", "scheme:accent5", "scheme:accent6", "scheme:lt1", "scheme:tx1"].includes(textStyle.color))))
+        || ("bold" in textStyle && textStyle.bold !== null && typeof textStyle.bold !== "boolean")
+        || ("italic" in textStyle && textStyle.italic !== null && typeof textStyle.italic !== "boolean")
+        || ("fontSize" in textStyle && textStyle.fontSize !== null
+          && (typeof textStyle.fontSize !== "number" || !integer(textStyle.fontSize, 2400) || textStyle.fontSize < 500))
+        || ("language" in textStyle && textStyle.language !== null && (typeof textStyle.language !== "string"
+          || textStyle.language.length === 0 || textStyle.language.length > 64 || !/^[\x20-\x7E]+$/.test(textStyle.language)))) return false;
+    }
+    return true;
+  }
   if (value.kind === "chartData") {
     const { categories, series } = value;
     return keys === "categories,kind,series" && Array.isArray(categories) && categories.length >= 1 && categories.length <= 128

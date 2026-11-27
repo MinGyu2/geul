@@ -14121,7 +14121,31 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     sess.run("text.newParagraph", &json!({})).unwrap();
     sess.run("insert.smartArt", &json!({"layout": "process"}))
         .unwrap();
-    let base_bytes = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+    sess.run("select.objects", &json!({"index": 1})).unwrap();
+    sess.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
+        "fill": "112233", "line": "445566", "lineWidth": 9525,
+        "text": {"color": "778899", "bold": false, "italic": false, "fontSize": 1200, "language": "en-US"}
+    }})).unwrap();
+    let base_saved = io::save_bytes("fixture.docx", &sess.doc).unwrap();
+    let base_saved_pkg = package::open(&base_saved, package::Side::Original).unwrap();
+    // Add documented, supported dgm:prSet node properties to an authentic WordCraft part. The
+    // actual note/model ID, relationship graph and drawing remain WordCraft-generated.
+    let data = std::str::from_utf8(base_saved_pkg.get("word/diagrams/data1.xml").unwrap()).unwrap();
+    let doc_end = data.find("</dgm:pt>").unwrap() + "</dgm:pt>".len();
+    let node_start = data[doc_end..].find("<dgm:pt ").unwrap() + doc_end;
+    let node_end = data[node_start..].find("</dgm:pt>").unwrap() + node_start + "</dgm:pt>".len();
+    let node = &data[node_start..node_end];
+    assert!(node.contains("<dgm:prSet/>"));
+    let annotated_node = node.replacen(
+        "<dgm:prSet/>",
+        "<dgm:prSet presName=\"Primary\" presStyleIdx=\"2\"/>",
+        1,
+    );
+    let annotated_data = format!("{}{}{}", &data[..node_start], annotated_node, &data[node_end..]);
+    let base_entries: Vec<ZipEntry> = base_saved_pkg.parts.iter().map(|(name, (_, bytes))| {
+        if name == "word/diagrams/data1.xml" { entry(name, annotated_data.as_bytes()) } else { entry(name, bytes) }
+    }).collect();
+    let base_bytes = zip(&base_entries, false);
     let base_pkg = package::open(&base_bytes, package::Side::Original).unwrap();
 
     // Positive: legitimate chart (title, type, data) and SmartArt (items, layout) edits pass.
@@ -14146,10 +14170,84 @@ fn docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts
     edited_sess
         .run("smartArt.layout", &json!({"layout": "hierarchy"}))
         .unwrap();
+    edited_sess.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
+        "fill": "AABBCC", "line": "112233", "lineWidth": 12700,
+        "text": {"color": "CCDDEE", "bold": true, "italic": false, "fontSize": 1400, "language": "ko-KR"}
+    }})).unwrap();
     let edited_bytes = io::save_bytes("fixture.docx", &edited_sess.doc).unwrap();
     let edited_pkg = package::open(&edited_bytes, package::Side::Output).unwrap();
     assert_eq!(package::compare_saved_docx(&base_pkg, &edited_pkg), vec![]);
     assert!(service::check_saved(Format::Docx, &base_bytes, &edited_bytes, None, true).is_safe());
+
+    // Positive and negative semantic proof for node-specific style and supported additional data.
+    let mutate_part = |pkg_src: &package::Package, part: &str, from: &str, to: &str| -> Vec<u8> {
+        let source = std::str::from_utf8(pkg_src.get(part).unwrap()).unwrap();
+        assert!(source.contains(from), "{part} missing {from}");
+        let replaced = source.replacen(from, to, 1);
+        let entries: Vec<ZipEntry> = pkg_src.parts.iter().map(|(name, (_, bytes))| {
+            if name == part { entry(name, replaced.as_bytes()) } else { entry(name, bytes) }
+        }).collect();
+        zip(&entries, false)
+    };
+    let unauthorized_node_property = mutate_part(
+        &edited_pkg,
+        "word/diagrams/data1.xml",
+        "presName=\"Primary\"",
+        "presName=\"Unauthorized\"",
+    );
+    assert!(!service::check_saved(Format::Docx, &base_bytes, &unauthorized_node_property, None, true).is_safe());
+    let unauthorized_drawing_style = mutate_part(
+        &edited_pkg,
+        "word/diagrams/drawing1.xml",
+        "AABBCC",
+        "DDEEFF",
+    );
+    assert!(!service::check_saved(Format::Docx, &base_bytes, &unauthorized_drawing_style, None, true).is_safe());
+
+    // Two actual DrawingML owners may legally reference the same SmartArt data/layout/style/color
+    // relationships. Until copy-on-write exists, changing a shared generated part must fail closed.
+    let duplicate_smart_art_owner = |pkg_src: &package::Package| -> Vec<u8> {
+        let source = std::str::from_utf8(pkg_src.get("word/document.xml").unwrap()).unwrap();
+        let rel_ids = source.find("<dgm:relIds ").unwrap();
+        let paragraph_start = source[..rel_ids].rfind("<w:p>").unwrap();
+        let paragraph_end = source[rel_ids..].find("</w:p>").unwrap() + rel_ids + "</w:p>".len();
+        let paragraph = &source[paragraph_start..paragraph_end];
+        let id_start = paragraph.find("<wp:docPr id=\"").unwrap() + "<wp:docPr id=\"".len();
+        let id_end = paragraph[id_start..].find('\"').unwrap() + id_start;
+        let id: u32 = paragraph[id_start..id_end].parse().unwrap();
+        let next_id = (id + 1).to_string();
+        let duplicate = paragraph.replacen(
+            &format!("<wp:docPr id=\"{id}\""),
+            &format!("<wp:docPr id=\"{next_id}\""),
+            1,
+        );
+        let document = format!("{}{}{}", &source[..paragraph_end], duplicate, &source[paragraph_end..]);
+        let entries: Vec<ZipEntry> = pkg_src.parts.iter().map(|(name, (_, bytes))| {
+            if name == "word/document.xml" { entry(name, document.as_bytes()) } else { entry(name, bytes) }
+        }).collect();
+        zip(&entries, false)
+    };
+    let shared_original = duplicate_smart_art_owner(&base_pkg);
+    let shared_output = duplicate_smart_art_owner(&edited_pkg);
+    assert!(!service::check_saved(Format::Docx, &shared_original, &shared_output, None, true).is_safe(),
+        "node-style mutation must reject a SmartArt part shared by two drawing owners");
+
+    // Venn nodes consist of overlapping fill, outline and text shapes. A node style must follow
+    // its semantic node across all three shapes, rather than painting the transparent text box.
+    let mut venn_source = Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    venn_source.run("insert.smartArt", &json!({"layout": "venn", "items": ["A", "B"]})).unwrap();
+    let venn_original = io::save_bytes("fixture.docx", &venn_source.doc).unwrap();
+    let mut venn_edited = Session::new(io::open_bytes("fixture.docx", &venn_original).unwrap());
+    venn_edited.run("select.objects", &json!({"index": 0})).unwrap();
+    venn_edited.run("smartArt.nodeStyle", &json!({"index": 0, "style": {
+        "fill": "AABBCC", "line": "112233", "lineWidth": 9525,
+        "text": {"color": "CCDDEE", "bold": true, "fontSize": 1400}
+    }})).unwrap();
+    let venn_output = io::save_bytes("fixture.docx", &venn_edited.doc).unwrap();
+    let venn_before = package::open(&venn_original, package::Side::Original).unwrap();
+    let venn_after = package::open(&venn_output, package::Side::Output).unwrap();
+    assert_eq!(package::compare_saved_docx(&venn_before, &venn_after), vec![]);
+    assert!(service::check_saved(Format::Docx, &venn_original, &venn_output, None, true).is_safe());
 
     // Helper: clone a package with part overrides and repack as DOCX bytes.
     let repack = |pkg_src: &package::Package, overrides: &[(&str, Vec<u8>)], removals: &[&str]| -> Vec<u8> {

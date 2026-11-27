@@ -291,6 +291,9 @@ function ChartFields({ chart, disabled, onEdit }: { chart: ChartGraphic; disable
 function SmartArtFields({ art, disabled, onEdit }: { art: SmartArtGraphic; disabled: boolean; onEdit: (edit: ObjectEdit) => void }) {
   const { t } = useTranslation();
   const [text, setText] = useState(art.items.map(item => `${"  ".repeat(item.level)}${item.text}`).join("\n"));
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const nodeIndex = Math.min(selectedIndex, Math.max(0, art.items.length - 1));
+  const selectedItem = art.items[nodeIndex];
   const items = text.split("\n").filter(line => line.trim() !== "").map(line => {
     const indent = line.length - line.trimStart().length;
     return { text: line.trim(), level: Math.floor(indent / 2) };
@@ -310,7 +313,79 @@ function SmartArtFields({ art, disabled, onEdit }: { art: SmartArtGraphic; disab
           {SMART_ART_LAYOUTS.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
       </label>}
+      {selectedItem && <SmartArtNodeStyleFields key={`${nodeIndex}:${JSON.stringify(selectedItem.style)}`} item={selectedItem}
+        index={nodeIndex} count={art.items.length} disabled={disabled} onIndex={setSelectedIndex} onEdit={onEdit} />}
     </div>
+  );
+}
+
+function SmartArtNodeStyleFields({ item, index, count, disabled, onIndex, onEdit }: {
+  item: SmartArtGraphic["items"][number];
+  index: number;
+  count: number;
+  disabled: boolean;
+  onIndex: (index: number) => void;
+  onEdit: (edit: ObjectEdit) => void;
+}) {
+  const { t } = useTranslation();
+  const [fill, setFill] = useState(item.style?.fill ?? "");
+  const [line, setLine] = useState(item.style?.line ?? "");
+  const [lineWidth, setLineWidth] = useState(item.style?.lineWidth === undefined ? "" : String(item.style.lineWidth / 12700));
+  const [color, setColor] = useState(item.style?.text?.color ?? "");
+  const [bold, setBold] = useState(item.style?.text?.bold === undefined ? "" : String(item.style.text.bold));
+  const [italic, setItalic] = useState(item.style?.text?.italic === undefined ? "" : String(item.style.text.italic));
+  const normalized = (value: string) => value.trim().replace(/^#/, "");
+  const lineWidthPoints = lineWidth.trim() === "" ? null : Number(lineWidth);
+  const lineWidthEmu = lineWidthPoints === null ? null : Math.round(lineWidthPoints * 12700);
+  const edit: ObjectEdit = {
+    kind: "smartArtNodeStyle",
+    index,
+    style: {
+      fill: fill.trim() ? normalized(fill) : null,
+      line: line.trim() ? normalized(line) : null,
+      lineWidth: lineWidthEmu,
+      text: {
+        color: color.trim() ? normalized(color) : null,
+        bold: bold === "" ? null : bold === "true",
+        italic: italic === "" ? null : italic === "true",
+        fontSize: item.style?.text?.fontSize ?? null,
+        language: item.style?.text?.language ?? null,
+      },
+    },
+  };
+  const valid = validObjectEdit(edit) && (lineWidthPoints === null
+    || (Number.isFinite(lineWidthPoints) && lineWidthPoints >= 0.01 && lineWidthPoints <= 72));
+  return (
+    <form className="smart-art-node-style" onSubmit={event => { event.preventDefault(); if (!disabled && valid) onEdit(edit); }}>
+      <label className="picture-size-field">{t("properties.smartArt.node")}
+        <select value={index} disabled={disabled} onChange={event => onIndex(Number(event.target.value))}>
+          {Array.from({ length: count }, (_, i) => <option key={i} value={i}>{t("properties.smartArt.nodeOption", { index: i + 1 })}</option>)}
+        </select>
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeFill")}
+        <input type="text" value={fill} maxLength={64} placeholder="RRGGBB / scheme:accent1 / none" disabled={disabled} onChange={event => setFill(event.target.value)} />
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeLine")}
+        <input type="text" value={line} maxLength={64} placeholder="RRGGBB / scheme:accent1 / none" disabled={disabled} onChange={event => setLine(event.target.value)} />
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeLineWidth")}
+        <input type="number" min="0.01" max="72" step="0.01" value={lineWidth} disabled={disabled} onChange={event => setLineWidth(event.target.value)} />
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeTextColor")}
+        <input type="text" value={color} maxLength={64} placeholder="RRGGBB / scheme:tx1" disabled={disabled} onChange={event => setColor(event.target.value)} />
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeBold")}
+        <select value={bold} disabled={disabled} onChange={event => setBold(event.target.value)}>
+          <option value="">{t("properties.smartArt.inherit")}</option><option value="true">{t("properties.smartArt.bold")}</option><option value="false">{t("properties.smartArt.regular")}</option>
+        </select>
+      </label>
+      <label className="picture-size-field">{t("properties.smartArt.nodeItalic")}
+        <select value={italic} disabled={disabled} onChange={event => setItalic(event.target.value)}>
+          <option value="">{t("properties.smartArt.inherit")}</option><option value="true">{t("properties.smartArt.italic")}</option><option value="false">{t("properties.smartArt.upright")}</option>
+        </select>
+      </label>
+      <button type="submit" className="document-bar__button" disabled={disabled || !valid}>{t("properties.smartArt.nodeStyleApply")}</button>
+    </form>
   );
 }
 

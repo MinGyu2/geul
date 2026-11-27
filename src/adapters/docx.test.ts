@@ -98,6 +98,17 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxState({ session: { ...session, format: "hwp", engine: "rhwp" }, view }, 3)).toBeNull();
   });
 
+  it("accepts a Rust-serialized SmartArt model id when parsing the selected DOCX object", () => {
+    const graphic = { kind: "smartArt", layout: "process", modelId: null, colors: "accent1", items: [{ text: "Plan", level: 0 }] };
+    const object = {
+      kind: "smartArt", position: "body:0:0", frame: { page: 0, x: 72, y: 72, width: 180, height: 100 },
+      epoch: 1, operations: ["smartArt"], graphic,
+    };
+    expect(parseDocxView({ ...view, caret: null, object })?.object?.graphic).toEqual({
+      kind: "smartArt", layout: "process", colors: "accent1", items: [{ text: "Plan", level: 0 }],
+    });
+  });
+
   it("accepts bounded editable DrawingML paths and rejects malformed path data", () => {
     const drawingMlPaths = [{ viewportWidth: 1000, viewportHeight: 500, segments: [
       { command: "moveTo", points: [{ x: 0, y: 0, control: false }] },

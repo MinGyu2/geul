@@ -1,0 +1,6 @@
+tree 84555750793c4aa916292e048b23b69922f5d7f1
+parent 9ea07830ede9aed0d6cc87c62d6cb05a73008d05
+author Geul Local Reconstruction <geul-local-reconstruction@invalid> 1795751842 +0900
+committer Geul Local Reconstruction <geul-local-reconstruction@invalid> 1795751842 +0900
+
+test(stage3-p6): assert SmartArt style rendering [P6-SMARTART-MODEL]

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import traceback
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -102,9 +103,107 @@ def color(acc, selector, rgb):
 def start(acc, name, fixture, fmt):
     path = acc.args.out / name
     shutil.copyfile(fixture, path)
-    acc.open_native(fmt, path)
+    try:
+        acc.open_native(fmt, path)
+    except Exception:
+        diagnostics = {}
+        try:
+            diagnostics["sessions"] = acc.sessions()
+        except Exception as error:
+            diagnostics["sessionsError"] = f"{type(error).__name__}: {error}"
+        try:
+            diagnostics["dom"] = acc.d.js("""
+              const view=e=>e?{...e.dataset,text:e.textContent}:null;
+              return {
+                tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>({text:e.textContent,...e.dataset,selected:e.getAttribute('aria-selected')})),
+                docxStatus:view(document.querySelector('[data-testid=docx-status]')),
+                saveStatus:view(document.querySelector('[data-testid=docx-save-result]')),
+                notices:[...document.querySelectorAll('[role=alert],[data-testid*=error]')].map(e=>e.textContent).slice(0,12),
+                bodyText:document.body.innerText.slice(0,2000)
+              };
+            """)
+        except Exception as error:
+            diagnostics["domError"] = f"{type(error).__name__}: {error}"
+        acc.report["openDiagnostic"] = diagnostics
+        raise
     acc.engine("xkb:us::eng")
     return path
+
+
+def add_smartart_node_metadata(source, destination):
+    with zipfile.ZipFile(source) as src, zipfile.ZipFile(destination, "w") as dst:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename == "word/diagrams/data1.xml":
+                xml = data.decode("utf-8")
+                doc_end = xml.index("</dgm:pt>") + len("</dgm:pt>")
+                node_start = xml.index("<dgm:pt ", doc_end)
+                node_end = xml.index("</dgm:pt>", node_start) + len("</dgm:pt>")
+                node = xml[node_start:node_end]
+                if "<dgm:prSet/>" not in node:
+                    raise AssertionError("fixture SmartArt node does not have the expected canonical property set")
+                node = node.replace("<dgm:prSet/>", '<dgm:prSet presName="NativeStable" presStyleIdx="1"/>', 1)
+                data = (xml[:node_start] + node + xml[node_end:]).encode("utf-8")
+            dst.writestr(info, data)
+
+
+def smartart_nodes(path):
+    ns = {"dgm": "http://schemas.openxmlformats.org/drawingml/2006/diagram", "a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+    with zipfile.ZipFile(path) as archive:
+        data = archive.read("word/diagrams/data1.xml")
+    root = ET.fromstring(data)
+    points = root.find("dgm:ptLst", ns)
+    nodes = []
+    for point in points.findall("dgm:pt", ns):
+        if "type" in point.attrib:
+            continue
+        text = point.find("dgm:t/a:p/a:r/a:t", ns)
+        prop = point.find("dgm:prSet", ns)
+        fill = point.find("dgm:spPr/a:solidFill/a:srgbClr", ns)
+        line = point.find("dgm:spPr/a:ln/a:solidFill/a:srgbClr", ns)
+        line_shape = point.find("dgm:spPr/a:ln", ns)
+        rpr = point.find("dgm:t/a:p/a:r/a:rPr", ns)
+        text_fill = rpr.find("a:solidFill/a:srgbClr", ns) if rpr is not None else None
+        nodes.append({
+            "id": point.get("modelId"),
+            "text": text.text if text is not None else "",
+            "properties": prop.attrib if prop is not None else {},
+            "fill": fill.get("val") if fill is not None else None,
+            "line": line.get("val") if line is not None else None,
+            "lineWidth": line_shape.get("w") if line_shape is not None else None,
+            "textFill": text_fill.get("val") if text_fill is not None else None,
+            "bold": rpr.get("b") if rpr is not None else None,
+            "italic": rpr.get("i") if rpr is not None else None,
+        })
+    return nodes
+
+
+def selected_frame(acc):
+    frame = acc.d.js("""
+      const e=document.querySelector(arguments[0]); if(!e)return null;
+      const r=e.getBoundingClientRect();
+      return {left:r.left,top:r.top,width:r.width,height:r.height};
+    """, FRAME)
+    if frame is None:
+        raise AssertionError("selected SmartArt object has no rendered selection frame")
+    return frame
+
+
+def assert_same_frame(before, after, label):
+    for key in ("left", "top", "width", "height"):
+        assert abs(before[key] - after[key]) <= 1.5, f"{label} rendered frame differs at {key}: {before} -> {after}"
+
+
+def docx_canvas_digest(acc):
+    acc.wait("""
+      return [...document.querySelectorAll('.docx-page')].some(
+        p=>p.dataset.current==='true' && p.dataset.revision===
+           document.querySelector('[data-testid=docx-status]').dataset.revision && p.querySelector('canvas'));
+    """, timeout=15)
+    canvases = acc.d.js("return [...document.querySelectorAll('.docx-page canvas')].map(c=>c.toDataURL('image/png'))")
+    if not canvases:
+        raise AssertionError("DOCX page canvas is not rendered")
+    return hashlib.sha256(json.dumps(canvases, separators=(",", ":")).encode()).hexdigest()
 
 
 def pointer(acc, point, ratio=1):
@@ -250,7 +349,12 @@ def caption(acc, progress):
 
 def graphics(acc, progress):
     src = acc.args.fixtures / "graphics-original.docx"
-    path = start(acc, "graphics.docx", src, "docx")
+    metadata_src = acc.args.out / "graphics-node-metadata.docx"
+    add_smartart_node_metadata(src, metadata_src)
+    path = start(acc, "graphics.docx", metadata_src, "docx")
+    original_nodes = smartart_nodes(path)
+    assert original_nodes[0]["properties"].get("presName") == "NativeStable"
+    progress["fixtureSha256"] = __import__("hashlib").sha256(path.read_bytes()).hexdigest()
     before = [line.split() for line in (acc.args.fixtures / "graphics-layout.txt").read_text().splitlines()]
     points = []
     for page,x,y,w,h in before:
@@ -277,35 +381,159 @@ def graphics(acc, progress):
     acc.key("ctrl+a")
     acc.type("Plan")
     acc.key("Return")
-    acc.type("  Launch")
+    acc.type("Launch")
     acc.dom_click(ART+" button[type=submit]")
     rev(acc,"docx",4)
     select(acc,ART+" select","cycle")
     rev(acc,"docx",5)
+    style_canvas_before = docx_canvas_digest(acc)
+    style = ART + " .smart-art-node-style"
+    # Keep both items as Cycle nodes so each has an independently represented
+    # DrawingML shape whose fill and text style can be checked after save.
+    select(acc, style + " label:nth-of-type(1) select", "1")
+    fill_input(acc, style + " label:nth-of-type(2) input", "AABBCC")
+    fill_input(acc, style + " label:nth-of-type(3) input", "334455")
+    fill_input(acc, style + " label:nth-of-type(4) input", "2")
+    fill_input(acc, style + " label:nth-of-type(5) input", "CCDDEE")
+    select(acc, style + " label:nth-of-type(6) select", "true")
+    select(acc, style + " label:nth-of-type(7) select", "false")
+    acc.dom_click(style + " button[type=submit]")
+    rev(acc,"docx",6)
+    style_canvas_after = docx_canvas_digest(acc)
+    assert style_canvas_after != style_canvas_before, "SmartArt node style did not change the rendered page"
+    progress["nodeStyleCanvas"] = {"before":style_canvas_before,"after":style_canvas_after}
+    acc.key("ctrl+z")
+    rev(acc,"docx",7)
+    pointer(acc,points[1],ratio)
+    acc.wait("return !!document.querySelector(arguments[0])", ART, timeout=12)
+    style = ART + " .smart-art-node-style"
+    select(acc, style + " label:nth-of-type(1) select", "1")
+    assert value(acc, style + " label:nth-of-type(2) input") == ""
+    assert value(acc, style + " label:nth-of-type(3) input") == ""
+    assert value(acc, style + " label:nth-of-type(4) input") == ""
+    assert value(acc, style + " label:nth-of-type(5) input") == ""
+    assert value(acc, style + " label:nth-of-type(6) select") == ""
+    assert value(acc, style + " label:nth-of-type(7) select") == ""
+    undo_canvas = docx_canvas_digest(acc)
+    assert undo_canvas == style_canvas_before, "SmartArt style Undo did not restore rendered page pixels"
+    progress["nodeStyleCanvas"]["undo"] = undo_canvas
+    acc.key("ctrl+y")
+    rev(acc,"docx",8)
+    pointer(acc,points[1],ratio)
+    acc.wait("return !!document.querySelector(arguments[0])", ART, timeout=12)
+    style = ART + " .smart-art-node-style"
+    select(acc, style + " label:nth-of-type(1) select", "1")
+    assert value(acc, style + " label:nth-of-type(2) input") == "AABBCC"
+    assert value(acc, style + " label:nth-of-type(3) input") == "334455"
+    assert value(acc, style + " label:nth-of-type(4) input") == "2"
+    assert value(acc, style + " label:nth-of-type(5) input") == "CCDDEE"
+    assert value(acc, style + " label:nth-of-type(6) select") == "true"
+    assert value(acc, style + " label:nth-of-type(7) select") == "false"
+    progress["sameAppFrame"] = selected_frame(acc)
+    redo_canvas = docx_canvas_digest(acc)
+    assert redo_canvas == style_canvas_after, "SmartArt style Redo did not restore rendered page pixels"
+    progress["nodeStyleCanvas"]["redo"] = redo_canvas
+    progress["nodeStyle"] = {"index":1,"fill":"AABBCC","line":"334455","lineWidthPt":2,"textColor":"CCDDEE","bold":True,"italic":False,"undoRedo":"PASS"}
     progress["smartArt"] = [value(acc,ART+" textarea"),value(acc,ART+" select")]
-    assert progress["smartArt"] == ["Plan\n  Launch","cycle"], progress["smartArt"]
+    assert progress["smartArt"] == ["Plan\nLaunch","cycle"], progress["smartArt"]
     progress["save"] = acc.save("docx")
+    progress["savedSha256"] = p4.sha256(path)
     with zipfile.ZipFile(path) as z:
         chart = z.read("word/charts/chart1.xml")
         data = z.read("word/diagrams/data1.xml")
+        drawing = z.read("word/diagrams/drawing1.xml")
         assert b"Revenue Native" in chart and b'<c:barDir val="bar"' in chart and b">37<" in chart
         assert b">Plan<" in data and b">Launch<" in data
+        assert b'presName="NativeStable"' in data and b'presStyleIdx="1"' in data
+        assert b'AABBCC' in data and b'334455' in data and b'w="25400"' in data
+        assert b'CCDDEE' in data and b'b="1"' in data and b'i="0"' in data
+        assert b'AABBCC' in drawing and b'334455' in drawing and b'w="25400"' in drawing
+        assert b'CCDDEE' in drawing
+        changed = []
+        with zipfile.ZipFile(metadata_src) as original:
+            before = {name: original.read(name) for name in original.namelist()}
+        with zipfile.ZipFile(path) as saved:
+            after = {name: saved.read(name) for name in saved.namelist()}
+        assert set(before) == set(after)
+        changed = sorted(name for name in before if before[name] != after[name])
+        assert changed == ["word/charts/chart1.xml", "word/diagrams/data1.xml", "word/diagrams/drawing1.xml", "word/diagrams/layout1.xml"], changed
+        after_nodes = smartart_nodes(path)
+        assert [node["id"] for node in after_nodes] == [node["id"] for node in original_nodes[:2]]
+        assert after_nodes[0]["properties"] == original_nodes[0]["properties"]
+        assert after_nodes[1]["fill"] == "AABBCC" and after_nodes[1]["line"] == "334455"
+        assert after_nodes[1]["lineWidth"] == "25400" and after_nodes[1]["textFill"] == "CCDDEE"
+        assert after_nodes[1]["bold"] == "1" and after_nodes[1]["italic"] == "0"
+        progress["changedOpcParts"] = changed
+        progress["nodeMetadataAndIds"] = "PASS"
     assert p4.rhwp_poc.close_tab(acc.d, path.name)
     acc.open_native("docx", path)
     pointer(acc,points[1],ratio)
     acc.wait("return !!document.querySelector(arguments[0])", ART)
-    assert value(acc,ART+" textarea") == "Plan\n  Launch" and value(acc,ART+" select") == "cycle"
+    assert value(acc,ART+" textarea") == "Plan\nLaunch" and value(acc,ART+" select") == "cycle"
+    progress["sameAppReopenedFrame"] = selected_frame(acc)
+    assert_same_frame(progress["sameAppFrame"], progress["sameAppReopenedFrame"], "same-app reopen")
     pointer(acc,points[0],ratio)
     acc.wait("return !!document.querySelector(arguments[0])", CHART)
     assert [value(acc,title),value(acc,CHART+" select"),value(acc,CHART+' input[inputmode="decimal"]')] == progress["chart"]
+    progress["reopenedCanvasSha256"] = docx_canvas_digest(acc)
+    assert progress["reopenedCanvasSha256"] == style_canvas_after, "saved same-app reopen changed SmartArt rendering"
     progress["reopened"] = True
 
 
-CASES = {"picture":picture,"deletion":deletion,"shape":shape,"caption":caption,"graphics":graphics}
+def graphics_reopen(acc, progress):
+    path = acc.args.saved
+    if path is None or not path.is_file():
+        raise AssertionError("--saved must name the independently saved SmartArt DOCX")
+    progress["savedSha256"] = p4.sha256(path)
+    nodes = smartart_nodes(path)
+    assert len(nodes) == 2, nodes
+    assert nodes[0]["properties"] == {"presName": "NativeStable", "presStyleIdx": "1"}
+    assert nodes[1]["fill"] == "AABBCC" and nodes[1]["line"] == "334455"
+    assert nodes[1]["lineWidth"] == "25400" and nodes[1]["textFill"] == "CCDDEE"
+    assert nodes[1]["bold"] == "1" and nodes[1]["italic"] == "0"
+    assert [node["text"] for node in nodes] == ["Plan", "Launch"]
+    progress["savedOpcModel"] = "PASS"
+
+    before = [line.split() for line in (acc.args.fixtures / "graphics-layout.txt").read_text().splitlines()]
+    points = [(int(page), float(x) + float(w) / 2, float(y) + float(h) / 2) for page, x, y, w, h in before]
+    acc.open_native("docx", path)
+    acc.engine("xkb:us::eng")
+    ratio = acc.d.js("return document.querySelector('.docx-page').clientWidth/612")
+    pointer(acc, points[1], ratio)
+    acc.wait("return !!document.querySelector(arguments[0])", ART, timeout=12)
+    assert value(acc, ART + " textarea") == "Plan\nLaunch"
+    assert value(acc, ART + " select") == "cycle"
+    progress["freshFrame"] = selected_frame(acc)
+    previous = json.loads(acc.args.previous_report.read_text())["cases"]["graphics"]
+    assert_same_frame(previous["sameAppFrame"], progress["freshFrame"], "fresh-process reopen")
+    style = ART + " .smart-art-node-style"
+    select(acc, style + " label:nth-of-type(1) select", "1")
+    assert value(acc, style + " label:nth-of-type(2) input") == "AABBCC"
+    assert value(acc, style + " label:nth-of-type(3) input") == "334455"
+    assert value(acc, style + " label:nth-of-type(4) input") == "2"
+    assert value(acc, style + " label:nth-of-type(5) input") == "CCDDEE"
+    assert value(acc, style + " label:nth-of-type(6) select") == "true"
+    assert value(acc, style + " label:nth-of-type(7) select") == "false"
+    progress["reopenedNodeStyle"] = "PASS"
+    pointer(acc, points[0], ratio)
+    acc.wait("return !!document.querySelector(arguments[0])", CHART, timeout=12)
+    assert value(acc, CHART + " form:first-child input") == "Revenue Native"
+    assert value(acc, CHART + " select") == "bar"
+    assert value(acc, CHART + ' input[inputmode="decimal"]') == "37"
+    progress["reopenedChart"] = "PASS"
+    canvas = docx_canvas_digest(acc)
+    expected = json.loads(acc.args.previous_report.read_text())["cases"]["graphics"]["reopenedCanvasSha256"]
+    assert canvas == expected, "fresh-process reopen changed rendered chart/SmartArt placement or style"
+    progress["reopenedCanvasSha256"] = canvas
+
+
+CASES = {"picture":picture,"deletion":deletion,"shape":shape,"caption":caption,"graphics":graphics,"graphics-reopen":graphics_reopen}
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--fixtures", type=Path, default=FIXTURES)
+    parser.add_argument("--saved", type=Path, help="previously saved DOCX for a new-app SmartArt reopen case")
+    parser.add_argument("--previous-report", type=Path, help="graphics run report used to compare fresh-process rendering")
     parser.add_argument("--xdotool", required=True)
     parser.add_argument("--ibus", required=True)
     parser.add_argument("--driver", default="/tmp/geul-tauri-driver-target/debug/tauri-driver")

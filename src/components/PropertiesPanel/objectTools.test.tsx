@@ -208,6 +208,30 @@ describe("object tools in the properties panel", () => {
     expect(onEdit).toHaveBeenLastCalledWith(request({ kind: "smartArtLayout", layout: "cycle" }));
   });
 
+  it("sends bounded node fill, outline, width and text styles", () => {
+    const { picture: _picture, ...base } = selection();
+    void _picture;
+    const art: ObjectSelection = { ...base, kind: "smartArt", operations: ["deselect", "smartArt"],
+      graphic: { kind: "smartArt", layout: "hierarchy", items: [
+        { text: "Root", level: 0 }, { text: "Detail", level: 1 },
+      ] } };
+    const onEdit = panel(art);
+    fireEvent.change(screen.getByLabelText("Node"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Node fill (RRGGBB)"), { target: { value: "AABBCC" } });
+    fireEvent.change(screen.getByLabelText("Node outline (RRGGBB)"), { target: { value: "334455" } });
+    fireEvent.change(screen.getByLabelText("Node outline width (pt)"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Text color (RRGGBB)"), { target: { value: "CCDDEE" } });
+    fireEvent.change(screen.getByLabelText("Bold"), { target: { value: "true" } });
+    fireEvent.change(screen.getByLabelText("Italic"), { target: { value: "false" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply node style" }));
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(request({ kind: "smartArtNodeStyle", index: 1, style: {
+      fill: "AABBCC", line: "334455", lineWidth: 25400,
+      text: { color: "CCDDEE", bold: true, italic: false, fontSize: null, language: null },
+    } }));
+    fireEvent.change(screen.getByLabelText("Node outline width (pt)"), { target: { value: "72.01" } });
+    expect(screen.getByRole("button", { name: "Apply node style" })).toBeDisabled();
+  });
+
   it("routes chart and SmartArt UI edits through executeCommand and DocxEditorSession to the backend", async () => {
     const { editor, fake, sessions } = await readyDocx();
     fake.objectView = {

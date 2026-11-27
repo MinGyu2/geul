@@ -903,5 +903,19 @@
   "properties.chart.dataApply": "Apply data",
   "properties.smartArt.items": "Items (one per line, two leading spaces = one level)",
   "properties.smartArt.itemsApply": "Apply items",
-  "properties.smartArt.layout": "Layout"
+  "properties.smartArt.layout": "Layout",
+  "properties.smartArt.node": "Node",
+  "properties.smartArt.nodeOption": "Node {{index}}",
+  "properties.smartArt.nodeFill": "Node fill (RRGGBB)",
+  "properties.smartArt.nodeLine": "Node outline (RRGGBB)",
+  "properties.smartArt.nodeLineWidth": "Node outline width (pt)",
+  "properties.smartArt.nodeTextColor": "Text color (RRGGBB)",
+  "properties.smartArt.nodeBold": "Bold",
+  "properties.smartArt.nodeItalic": "Italic",
+  "properties.smartArt.nodeStyleApply": "Apply node style",
+  "properties.smartArt.inherit": "Inherit",
+  "properties.smartArt.bold": "Bold",
+  "properties.smartArt.regular": "Regular",
+  "properties.smartArt.italic": "Italic",
+  "properties.smartArt.upright": "Upright"
 }

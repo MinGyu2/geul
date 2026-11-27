@@ -903,5 +903,19 @@
   "properties.chart.dataApply": "데이터 적용",
   "properties.smartArt.items": "항목 (한 줄에 하나, 앞 공백 두 칸 = 한 단계)",
   "properties.smartArt.itemsApply": "항목 적용",
-  "properties.smartArt.layout": "레이아웃"
+  "properties.smartArt.layout": "레이아웃",
+  "properties.smartArt.node": "노드",
+  "properties.smartArt.nodeOption": "노드 {{index}}",
+  "properties.smartArt.nodeFill": "노드 채우기 색 (RRGGBB)",
+  "properties.smartArt.nodeLine": "노드 윤곽선 색 (RRGGBB)",
+  "properties.smartArt.nodeLineWidth": "노드 윤곽선 굵기 (pt)",
+  "properties.smartArt.nodeTextColor": "글자 색 (RRGGBB)",
+  "properties.smartArt.nodeBold": "굵게",
+  "properties.smartArt.nodeItalic": "기울임",
+  "properties.smartArt.nodeStyleApply": "노드 스타일 적용",
+  "properties.smartArt.inherit": "상속",
+  "properties.smartArt.bold": "굵게",
+  "properties.smartArt.regular": "보통",
+  "properties.smartArt.italic": "기울임",
+  "properties.smartArt.upright": "기울임 해제"
 }

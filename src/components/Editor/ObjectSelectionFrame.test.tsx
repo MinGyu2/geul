@@ -94,6 +94,13 @@ describe("object edit requests", () => {
   it("validates polygon vertex positions and rejects mixed insertion and deletion fields", () => {
     expect(validObjectEdit({ kind: "pathVertex", action: "insert", index: 2, x: 20, y: 30 })).toBe(true);
     expect(validObjectEdit({ kind: "pathVertex", action: "remove", index: 2 })).toBe(true);
+    expect(validObjectEdit({ kind: "smartArtNodeStyle", index: 1, style: {
+      fill: "AABBCC", line: "scheme:accent1", lineWidth: 9525,
+      text: { color: "scheme:tx1", bold: true, italic: false, fontSize: 1400, language: "ko-KR" },
+    } })).toBe(true);
+    expect(validObjectEdit({ kind: "smartArtNodeStyle", index: 100, style: { fill: "AABBCC" } })).toBe(false);
+    expect(validObjectEdit({ kind: "smartArtNodeStyle", index: 1, style: { fill: "not-a-color" } })).toBe(false);
+    expect(validObjectEdit({ kind: "smartArtNodeStyle", index: 1, style: { text: { color: "none" } } })).toBe(false);
     for (const edit of [
       { kind: "pathVertex", action: "remove", index: 2, x: 20 },
       { kind: "pathVertex", action: "insert", index: 256, x: 20, y: 30 },

@@ -755,6 +755,11 @@ pub enum ObjectEdit {
     SmartArtItems {
         items: Vec<SmartArtItemEdit>,
     },
+    /// Per-node SmartArt fill, outline and text formatting.
+    SmartArtNodeStyle {
+        index: usize,
+        style: wordcraft_engine::doc::smart_art::SmartArtNodeStyle,
+    },
     /// SmartArt layout id.
     SmartArtLayout {
         layout: String,
@@ -950,6 +955,18 @@ impl ObjectEdit {
                         .iter()
                         .all(|i| i.level <= 7 && !i.text.is_empty() && valid_graphic_text(&i.text))
             }
+            Self::SmartArtNodeStyle { index, style } => {
+                *index < wordcraft_engine::doc::smart_art::MAX_ITEMS
+                    && [&style.fill, &style.line, &style.text.color].into_iter().flatten()
+                        .all(|color| wordcraft_engine::doc::smart_art::valid_smart_art_color(color)
+                            && !(color == "none" && style.text.color.as_ref() == Some(color)))
+                    && style.text.font_size.is_none_or(|size| (500..=2400).contains(&size))
+                    && style.line_width.is_none_or(|width| (1..=1_000_000_000).contains(&width))
+                    && (style.line_width.is_none() || style.line.as_deref().is_some_and(|line| line != "none"))
+                    && style.text.language.as_deref().is_none_or(|lang| {
+                        !lang.is_empty() && lang.len() <= 64 && lang.is_ascii() && !lang.chars().any(char::is_control)
+                    })
+            }
             Self::SmartArtLayout { layout } => SMART_ART_LAYOUTS.contains(&layout.as_str()),
             Self::DocxPathPoint { path, segment, point, x, y } => {
                 *path < wordcraft_engine::doc::freeform::MAX_PATHS
@@ -1000,7 +1017,7 @@ impl ObjectEdit {
             Self::Rotate { .. } => "rotate",
             Self::Layer { .. } => "zOrder",
             Self::ChartTitle { .. } | Self::ChartType { .. } | Self::ChartData { .. } => "chart",
-            Self::SmartArtItems { .. } | Self::SmartArtLayout { .. } => "smartArt",
+            Self::SmartArtItems { .. } | Self::SmartArtNodeStyle { .. } | Self::SmartArtLayout { .. } => "smartArt",
             Self::DocxPathPoint { .. } => "pathPoint",
             Self::DocxPathVertex { .. } => "pathVertex",
             Self::DocxGroupChildMove { .. } | Self::DocxGroupChildResize { .. } => "groupChildGeometry",
@@ -3891,6 +3908,10 @@ impl DocxModel {
                     model.run("smartArt.items", json!({ "items": items }))?,
                     Some(pos.clone()),
                 ),
+                ObjectEdit::SmartArtNodeStyle { index, style } => (
+                    model.run("smartArt.nodeStyle", json!({ "index": index, "style": style }))?,
+                    Some(pos.clone()),
+                ),
                 ObjectEdit::SmartArtLayout { layout } => (
                     model.run("smartArt.layout", json!({ "layout": layout }))?,
                     Some(pos.clone()),
@@ -4005,7 +4026,8 @@ impl DocxModel {
         if art.items.len() > 128 || art.items.iter().any(|i| i.text.len() > 1024 || i.level > 7) {
             return None;
         }
-        Some(json!({"kind": "smartArt", "layout": art.layout.id(), "items": art.items}))
+        Some(json!({"kind": "smartArt", "layout": art.layout.id(), "modelId": art.model_id,
+            "colors": art.colors.id(), "items": art.items}))
     }
 
     pub fn view(&mut self) -> DocxView {

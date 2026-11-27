@@ -87,7 +87,9 @@ class Acceptance:
             raise smoke.Failure(f'native GTK chooser not visible: {title}')
         self.command(self.args.xdotool, 'windowfocus', '--sync', windows)
         self.key('ctrl+l', 'ctrl+a')
-        self.type(str(path))
+        # GTK's location entry resolves relative paths from its current folder,
+        # which can be the user's home rather than the test process cwd.
+        self.type(str(Path(path).resolve()))
         self.key('Return')
         return windows
 
