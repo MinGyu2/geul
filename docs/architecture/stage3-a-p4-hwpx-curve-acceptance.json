@@ -309,6 +309,32 @@
         "result": "Not accepted as interoperable completion without a standard contract and authentic cross-editor roundtrip evidence."
       }
     ],
+    "catmullRomSplitCounterexample": {
+      "modelScope": "기존 공개 sample에서 추론한 uniform Catmull–Rom-to-cubic 규칙에 한정된 정확한 대수 반례다. 이 예는 인접 anchor를 유지하며, KS X 6101 또는 Hancom curve semantics의 보편적 증명이 아니다.",
+      "anchors": {
+        "A": [0, 0],
+        "B": [0, 24],
+        "C": [24, 24],
+        "D": [24, 0]
+      },
+      "originalBCubic": {
+        "controls": {
+          "C1": [4, 28],
+          "C2": [20, 28]
+        },
+        "derivation": "C1=B+(C-A)/6; C2=C-(D-B)/6"
+      },
+      "deCasteljauAtHalf": {
+        "splitPoint": [12, 27],
+        "leftControls": [[2, 26], [7, 27]],
+        "rightControls": [[17, 27], [22, 26]]
+      },
+      "uniformCatmullReencodingWithAnchorsA_B_Q_C_D": {
+        "leftBCubicControls": [[2, "57/2"], [8, 27]],
+        "rightQCubicControls": [[16, 27], [22, "57/2"]]
+      },
+      "conclusion": "두 child cubic의 재인코딩 controls가 de Casteljau 결과와 각각 다르므로, 이 정확한 split 전략은 인접 anchor를 보존한 채 같은 uniform Catmull–Rom 규칙으로 lossless하게 표현되지 않는다. 이는 이 추론 모델의 counterexample이며 다른 HWPX/Hancom curve semantics를 일반화하지 않는다. approximate fit은 구현하지 않았다."
+    },
     "connectorCandidateInvestigation": {
       "reviewedAt": "2026-11-28",
       "documented": "현행 e나라 KS X 6101:2024 rev03 CurveType의 childless seg는 type/x1/y1/x2/y2만 정의한다. Hancom 공개 모델 commit 1453388472c703a4b299a0834f425cdac16644b9에서 CSeg parser/writer도 이 다섯 필드만 다루며, CConnectLineType은 별도의 startPt/endPt/controlPoints 모델이다. 공식 도움말(https://help.hancom.com/hoffice110/en-US/HShow/drawing/edit_points_line.htm)은 일반 선의 Edit Points 기능과 곡선 segment 전환/삭제를 설명하지만 HWPX curve serialization contract를 정하지 않는다. 다른 공식 도움말(https://help.hancom.com/hoffice100/en-US/Hwp/draw/drawing%28polygon%29.htm)은 Curve와 Object Connector를 별도 도형으로 설명하고 connector가 다른 도형에 붙어 대상 이동 시 따라간다고 설명한다.",
