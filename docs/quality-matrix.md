@@ -481,7 +481,13 @@ Engine test는 picture와 rectangle shape의 ID·style·geometry/resource remapp
 
 실제 Linux X11/Xvfb + private D-Bus/IBus Hangul Release Native `P6-HX-GROUP`와 별도 앱 프로세스 `P6-HX-GROUP-FRESH`가 PASS했다. 신뢰된 포인터·복사/붙여넣기/Undo/Redo, T009 `saved; synced=true; changedSince=false`, 저장된 HWPX의 독립 OPC/tree/resource 검사, 같은 세션과 새 프로세스 재열기를 확인했다. 원본 fixture SHA `098968c2523c4ea84352df71a13521c50439cfea636f816916f55d0d97d0f671`, 대상 저장 SHA `5db5d98e0fed30ded54e3459276263d5941f7b9cb32bf7b68468f70b8ee2a167`; 원본과 저장 트리 SHA `cea6179235b256ad00896f05592fc9d60867238b2cd5bce77e77084e1a541e28`, 그림 SHA `11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63`. 기존 대상 미디어는 그대로 남고 `BinData/image2.png`만 추가됐다. 상세 앱/RHWP/test/output hashes는 [P6-HX-GROUP acceptance JSON](architecture/stage3-a-p6-hwpx-group-acceptance.json)에 있다.
 
-곡선, 캡션, textbox, connector, chart/OLE, external/ambiguous/unowned resources는 fail-closed다. 곡선 전송은 별도 `P6-HX-CURVE` 요구사항에 남아 있다. Wayland/Windows/macOS와 외부 HWP 앱 재열기는 NOT RUN, Release portability는 NOT VERIFIED다.
+캡션, textbox, connector, chart/OLE, external/ambiguous/unowned resources는 fail-closed다. 곡선 전송은 별도 `P6-HX-CURVE` 요구사항에 남아 있다. Wayland/Windows/macOS와 외부 HWP 앱 재열기는 NOT RUN, Release portability는 NOT VERIFIED다.
+
+#### P6-HX-CURVE HWPX endpoint-segment 구조 전송 (2026-11-27)
+
+**PARTIAL / BLOCKED_BY_FORMAT_CONTRACT — 런타임 수락 미완료.** RHWP에 bounded package export/import API를 추가해 표준 `hp:seg`의 segment type과 endpoint 좌표, 검증된 공통 속성 및 소유 embedded resource를 보존하도록 했다. 알 수 없는 root/segment 속성, segment child, caption/textbox, 모호하거나 미소유한 resource는 거부한다. 그러나 공식 HWPX `CurveType` 계약과 RHWP 모델에는 별도 Bezier control-point 필드가 없어 원래 요구사항 전체를 만족한다고 주장할 수 없다.
+
+새 ordered RHWP 패치 71개로 pinned source 재구성 PASS, prepared source와 WASM 타깃 컴파일 source의 파일 해시 전부 일치, Rust host check·WASM Release target compile·TypeScript typecheck·Vite build PASS. Release JavaScript bindings와 focused WASM 런타임 회귀는 `wasm-bindgen` CLI가 없어 NOT RUN; T009·Native X11·Undo/Redo·저장/재열기도 NOT RUN. 세부 해시와 blocker는 [부분 구현 acceptance 기록](architecture/stage3-a-p6-hwpx-curve-acceptance.json)에 남겼다.
 
 #### P6-HX-TYPE HWP/HWPX 기본 도형 타입 변경 (2026-11-26)
 

@@ -1,0 +1,67 @@
+{
+  "issue": "P6-HX-CURVE",
+  "status": "PARTIAL",
+  "blocker": "BLOCKED_BY_FORMAT_CONTRACT",
+  "requirement": "Transfer editable HWPX curves between HWPX documents while preserving segment types, coordinates, control-point representation, ownership, resources, and durable serialization.",
+  "implementation": {
+    "commit": "38da56813a1c1c920201784c69fa7b9215426ce9",
+    "scope": "Compile-verified endpoint-only HWPX curve package export/import. This is partial work and does not satisfy the editable Bezier control-point requirement.",
+    "files": [
+      "patches/rhwp/stage3a-p6-hwpx-curve-clipboard.patch",
+      "scripts/rhwp-patches.py",
+      "scripts/tests/stage3-hwpx-clipboard-safety.wasm.test.ts",
+      "src/commands/objectClipboard.ts",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/hwpxPortableClipboard.ts",
+      "src/components/Editor/rhwp/rhwpModule.ts",
+      "src/components/Editor/wordcraft/DocxEditorSession.ts"
+    ],
+    "behavior": "The proposed RHWP API packages one standard curve and only its referenced embedded resources. It validates the supported root and segment envelope, rejects unknown or duplicate attributes, segment children, captions, textboxes, external or ambiguous resources, and remaps embedded resource references on paste. Destination mutation is snapshot-backed and restores the document on paste failure.",
+    "limits": {
+      "packageBytes": 8388608,
+      "mediaBytes": 6291456,
+      "segments": 4096,
+      "supportedSegmentAttributes": ["type", "x1", "y1", "x2", "y2"],
+      "supportedTypes": ["LINE", "CURVE"]
+    },
+    "rhwp": {
+      "baseRevision": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 71,
+      "patch": "stage3a-p6-hwpx-curve-clipboard.patch",
+      "patchSha256": "678e59d9816b70f3ee927834adfb4a31d1ce70d4c280aab1de51afce40afe12b",
+      "releaseSourceTreeSha256": "d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047",
+      "compiledWasmSha256": "96e6b56b9e4ee9855c94890e6019ca37dc51a08bdead7397c2fb7374f6c1d292",
+      "compiledWasmPath": "target/rhwp-wasm/wasm32-unknown-unknown/release/rhwp.wasm",
+      "sharedInputCaveat": "The prepared source contains the preserved user-owned unstaged patches/rhwp/table-calc/evaluator.rs input. Reconstruction against the current worktree passed; committed-root-only reconstruction is NOT VERIFIED."
+    }
+  },
+  "formatContractEvidence": {
+    "source": "stage3-a-p4-hwpx-curve-acceptance.json",
+    "officialSchema": "KS X 6101:2024 revision 03, Annex E CurveType",
+    "finding": "The active CurveType contract allows each segment type and x1/y1/x2/y2 integer endpoints. It does not define separate Bezier control-point coordinates. RHWP's HWPX model likewise retains endpoint segment records and does not recover HWP5 cubic control points.",
+    "decision": "Do not invent control-point fields or translate endpoint-only HWPX segments into a different Bezier command model. P6-HX-CURVE remains partial until an authentic supported representation and sample establish the required editable curve contract."
+  },
+  "verification": {
+    "orderedPatchReconstruction": "PASS: pinned RHWP source reconstructed with 71 ordered patches; generated tree SHA-256 d56987aedad6ffb6370944487f46fda4a47a7a27dd3a09c3e94c3aa207927047.",
+    "compiledSourceIdentity": "PASS: all 1,654 prepared-source files match the source used for the WASM target compilation.",
+    "rustHostCheck": "PASS: cargo check --lib on the patched source.",
+    "wasmTargetCompile": "PASS: locked offline Release cargo build for wasm32-unknown-unknown; this did not generate JavaScript bindings or publish a new Release generation.",
+    "typescriptTypecheck": "PASS: npm run typecheck.",
+    "frontendBuild": "PASS: npm run build; Vite reported its existing large-chunk warning.",
+    "diffCheck": "PASS: git diff --check.",
+    "focusedWasmRuntime": "NOT RUN: the repository Release binding build stopped at its tool preflight because wasm-bindgen CLI is unavailable. The new focused regression was added but did not run.",
+    "t009": "NOT RUN.",
+    "undoRedo": "NOT RUN.",
+    "saveAndIndependentReopen": "NOT RUN.",
+    "releaseApplication": "NOT RUN: no new rhwp.js/rhwp_bg.wasm Release generation was published.",
+    "nativeX11": "NOT RUN.",
+    "externalHwpInterop": "NOT RUN."
+  },
+  "limitations": [
+    "No separate Bezier control-point representation is established by the available HWPX contract; the original P6 requirement remains unmet.",
+    "The new clipboard runtime path, resource remapping, transaction rollback, Undo/Redo, T009, save/reopen, and Native X11 acceptance have not been executed.",
+    "The current WASM application binding remains the previously published Release generation; the new API is not available in that app until a guarded binding build succeeds.",
+    "Wayland, Windows, macOS, and external HWP editor interoperability are NOT RUN."
+  ],
+  "nextAction": "Provide or restore the pinned wasm-bindgen CLI, build and publish the guarded Release binding, run the focused WASM and actual Linux X11 acceptance, and revisit the original Bezier representation only if an authentic schema extension or sample establishes it."
+}
