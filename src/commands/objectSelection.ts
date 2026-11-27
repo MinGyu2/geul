@@ -43,6 +43,14 @@ export interface ShapePath {
   height: number;
   closed: boolean;
   points: readonly { x: number; y: number; control: boolean }[];
+  /** HWPX only: cubic handles derived from a standard Catmull-Rom anchor chain. */
+  curveModel?: "catmull-rom-derived-bezier";
+  bezierSegments?: readonly {
+    start: { x: number; y: number };
+    control1: { x: number; y: number };
+    control2: { x: number; y: number };
+    end: { x: number; y: number };
+  }[];
 }
 
 /** DrawingML custom geometry retained in its original integer coordinate space. */
@@ -107,6 +115,7 @@ export interface ObjectHit {
   curveTerminalLine?: { append: boolean; remove: boolean };
   curveLineStructure?: true;
   curveLineSegments?: readonly number[];
+  hwpxCurveSegments?: readonly number[];
   curveCubicStructure?: true;
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;

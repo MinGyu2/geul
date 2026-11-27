@@ -70,6 +70,9 @@ export interface RhwpDocument {
   /** HWPX curve segments whose source records contain only the standard endpoint attributes. */
   getHwpxCurveLineSegments?(section: number, paragraph: number, control: number): string;
   editHwpxCurveLine?(section: number, paragraph: number, control: number, index: number, split: boolean, x: number, y: number): void;
+  /** HWPX all-CURVE segments with standard childless envelopes and derived handles. */
+  getHwpxCurveSegments?(section: number, paragraph: number, control: number): string;
+  editHwpxCurveAnchor?(section: number, paragraph: number, control: number, index: number, insert: boolean, x: number, y: number): void;
   editCurveCubicSegment?(section: number, paragraph: number, control: number, index: number, insert: boolean,
     c1x: number, c1y: number, c2x: number, c2y: number, x: number, y: number): void;
   getEditableGroupFills?(section: number, paragraph: number, control: number): string;

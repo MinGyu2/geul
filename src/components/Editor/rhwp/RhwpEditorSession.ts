@@ -4,7 +4,7 @@ import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 import { inspectHwp5CaptionLayout } from "./hwp5CaptionLayout";
-import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { deriveHwpxCurveBezierSegments, hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpHwpxCurveSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import {
   extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject,
   insertHwpxPortableObjectIntoHwp5, readHwpxGroupCaption, readHwpxPictureCaption,
@@ -2168,6 +2168,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
           const curveLineSegments = format === "hwpx" && shapePath?.kind === "curve" && shapeAddress
             ? inspectRhwpHwpxCurveLineSegments(this.doc, shapeAddress, shapePath.points.length - 1) : undefined;
+          const hwpxCurveSegments = format === "hwpx" && shapePath?.kind === "curve" && shapeAddress
+            && shapePath.curveModel === "catmull-rom-derived-bezier"
+            ? inspectRhwpHwpxCurveSegments(this.doc, shapeAddress, shapePath.points.length - 1) : undefined;
           const curveCubicStructure = format === "hwp" && shapePath?.kind === "curve"
             && !!curveTerminalLine && !!this.doc.editCurveCubicSegment
             && shapePath.points.some((point, index) => point.control && shapePath.points[index + 1]?.control);
@@ -2175,6 +2178,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             || curveLineSegments?.length) operations.push("pathSegment");
           if (shapePath?.kind === "polygon" && shapePath.closed && shapeAddress
             && this.doc.editPolygonVertex && this.doc.canEditPolygonVertices?.(...shapeAddress)) operations.push("pathVertex");
+          if (hwpxCurveSegments?.length) operations.push("pathVertex");
           if (shape) {
             operations.push(...(shape.movable ? ["move" as const] : []),
               ...(headerFooterShape
@@ -2262,6 +2266,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
               ...(curveTerminalLine ? { curveTerminalLine } : {}),
               ...(curveLineStructure ? { curveLineStructure: true } : {}),
               ...(curveLineSegments ? { curveLineSegments } : {}),
+              ...(hwpxCurveSegments ? { hwpxCurveSegments } : {}),
               ...(curveCubicStructure ? { curveCubicStructure: true } : {}),
               ...(captionSide ? { captionSide } : {}),
               ...(captionLateral ? { captionLateral: true } : {}),
@@ -5258,7 +5263,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       ? inspectRhwpShapePath(d, a)
       : groupChildGeomEdit ? inspectRhwpGroupChildren(d, a) : inspectRhwpGroupFills(d, a);
     let apply: () => void;
-    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "curveLineSegments" | "curveCubicStructure" | "operations">;
+    let refreshed: Pick<ObjectSelection, "shapePath" | "groupChildFills" | "groupChildren" | "curveTerminalLine" | "curveLineSegments" | "hwpxCurveSegments" | "curveCubicStructure" | "operations">;
     if (edit.kind === "pathPoint") {
       const path = selected.shapePath;
       const point = path?.points[edit.index];
@@ -5270,20 +5275,57 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       apply = () => doc.moveShapePathPoint!(...address, edit.index, edit.x, edit.y);
     } else if (edit.kind === "pathVertex") {
       const path = selected.shapePath;
-      if (path?.kind !== "polygon" || !path.closed
-        || !doc.editPolygonVertex || !doc.canEditPolygonVertices?.(...address) || edit.index >= path.points.length - 1) return false;
-      const points = path.points.slice(0, -1);
-      if (edit.action === "insert") {
-        if (points.length >= 256 || edit.x > path.width || edit.y > path.height) return false;
-        points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
-        apply = () => doc.editPolygonVertex!(...address, edit.index, true, edit.x, edit.y);
+      if (path?.kind === "curve" && format === "hwpx") {
+        const available = inspectRhwpHwpxCurveSegments(doc, address, path.points.length - 1);
+        if (!path.bezierSegments || !selected.hwpxCurveSegments || !doc.editHwpxCurveAnchor
+          || !available || JSON.stringify(available) !== JSON.stringify(selected.hwpxCurveSegments)) return false;
+        const points = path.closed ? path.points.slice(0, -1) : path.points.slice();
+        if (!Number.isSafeInteger(edit.index) || edit.index < 0) return false;
+        if (edit.action === "insert") {
+          const segment = path.bezierSegments[edit.index];
+          if (!segment || !available.includes(edit.index) || points.length >= 256
+            || (!path.closed && edit.index >= points.length - 1)
+            || !Number.isSafeInteger(edit.x) || !Number.isSafeInteger(edit.y)
+            || edit.x < 0 || edit.x > path.width || edit.y < 0 || edit.y > path.height) return false;
+          const expectedX = Math.round((segment.start.x + 3 * segment.control1.x + 3 * segment.control2.x + segment.end.x) / 8);
+          const expectedY = Math.round((segment.start.y + 3 * segment.control1.y + 3 * segment.control2.y + segment.end.y) / 8);
+          if (edit.x !== expectedX || edit.y !== expectedY
+            || points.some(point => point.x === edit.x && point.y === edit.y)) return false;
+          points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
+          apply = () => doc.editHwpxCurveAnchor!(...address, edit.index, true, edit.x, edit.y);
+        } else {
+          const anchorCount = path.closed ? path.points.length - 1 : path.points.length;
+          if (points.length <= 3 || edit.index >= anchorCount
+            || (!path.closed && (edit.index === 0 || edit.index === points.length - 1))) return false;
+          points.splice(edit.index, 1);
+          apply = () => doc.editHwpxCurveAnchor!(...address, edit.index, false, 0, 0);
+        }
+        if (path.closed) points.push(points[0]!);
+        const bezierSegments = deriveHwpxCurveBezierSegments(points, path.closed);
+        if (!bezierSegments) return false;
+        const hwpxCurveSegments = Array.from({ length: points.length - 1 }, (_, index) => index);
+        refreshed = {
+          operations: selected.operations,
+          shapePath: { ...path, points, bezierSegments },
+          hwpxCurveSegments,
+        };
       } else {
-        if (points.length <= 3) return false;
-        points.splice(edit.index, 1);
-        apply = () => doc.editPolygonVertex!(...address, edit.index, false, 0, 0);
+        if (path?.kind !== "polygon" || !path.closed
+          || !doc.editPolygonVertex || !doc.canEditPolygonVertices?.(...address)
+          || !Number.isSafeInteger(edit.index) || edit.index < 0 || edit.index >= path.points.length - 1) return false;
+        const points = path.points.slice(0, -1);
+        if (edit.action === "insert") {
+          if (points.length >= 256 || edit.x < 0 || edit.y < 0 || edit.x > path.width || edit.y > path.height) return false;
+          points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
+          apply = () => doc.editPolygonVertex!(...address, edit.index, true, edit.x, edit.y);
+        } else {
+          if (points.length <= 3) return false;
+          points.splice(edit.index, 1);
+          apply = () => doc.editPolygonVertex!(...address, edit.index, false, 0, 0);
+        }
+        points.push(points[0]!);
+        refreshed = { operations: selected.operations, shapePath: { ...path, points } };
       }
-      points.push(points[0]!);
-      refreshed = { operations: selected.operations, shapePath: { ...path, points } };
     } else if (edit.kind === "pathSegment") {
       const path = selected.shapePath;
       if (format === "hwpx") {
@@ -5451,12 +5493,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           throw new Error("HWPX curve line edit did not verify");
         }
       }
+      if (refreshed.hwpxCurveSegments) {
+        const path = refreshed.shapePath;
+        const available = path?.kind === "curve"
+          ? inspectRhwpHwpxCurveSegments(doc, address, path.points.length - 1) : undefined;
+        if (JSON.stringify(available) !== JSON.stringify(refreshed.hwpxCurveSegments)) {
+          throw new Error("HWPX curve anchor edit did not verify");
+        }
+      }
       if (pathEdit && refreshed.shapePath?.kind === "polygon") {
         const canEditVertices = refreshed.shapePath.closed && !!doc.editPolygonVertex && doc.canEditPolygonVertices?.(...address) === true;
         if (edit.kind === "pathVertex" && !canEditVertices) throw new Error("polygon vertex edit did not verify");
         if (canEditVertices !== selected.operations.includes("pathVertex")) {
           refreshed.operations = canEditVertices ? [...selected.operations, "pathVertex"]
             : selected.operations.filter(operation => operation !== "pathVertex");
+        }
+      }
+      if (pathEdit && refreshed.shapePath?.kind === "curve" && format === "hwpx") {
+        if (edit.kind === "pathVertex" && !refreshed.hwpxCurveSegments?.length) {
+          throw new Error("HWPX curve anchor edit did not verify");
         }
       }
       return { caret, anchor };

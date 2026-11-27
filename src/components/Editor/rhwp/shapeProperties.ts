@@ -126,12 +126,33 @@ export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [numbe
     const raw = portable ? doc.getPortablePolygonPath?.(...address) : doc.getEditableShapePath?.(...address);
     if (!raw) return undefined;
     const value = JSON.parse(raw);
-    const { kind, width, height, points, closed } = value ?? {};
+    const { kind, width, height, points, closed, curveModel, bezierSegments: rawBeziers } = value ?? {};
     if ((kind !== "polygon" && kind !== "curve")
       || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0
       || typeof closed !== "boolean" || !Array.isArray(points) || points.length < 3 || points.length > 257
       || !points.every(p => p && within(p.x, width) && within(p.y, height) && typeof p.control === "boolean")) return undefined;
-    return { kind, width, height, points: points.map(({ x, y, control }) => ({ x, y, control })), closed };
+    let bezierSegments: ShapePath["bezierSegments"];
+    if (curveModel !== undefined || rawBeziers !== undefined) {
+      const finite = (n: unknown) => typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= 4_000_000;
+      if (kind !== "curve" || curveModel !== "catmull-rom-derived-bezier"
+        || !Array.isArray(rawBeziers) || rawBeziers.length !== points.length - 1
+        || !rawBeziers.every((segment, index) => {
+          const coordinates = [segment?.start, segment?.control1, segment?.control2, segment?.end];
+          return coordinates.every(point => point && finite(point.x) && finite(point.y))
+            && segment.start.x === points[index].x && segment.start.y === points[index].y
+            && segment.end.x === points[index + 1].x && segment.end.y === points[index + 1].y;
+        })) return undefined;
+      bezierSegments = rawBeziers.map(segment => ({
+        start: { x: segment.start.x, y: segment.start.y },
+        control1: { x: segment.control1.x, y: segment.control1.y },
+        control2: { x: segment.control2.x, y: segment.control2.y },
+        end: { x: segment.end.x, y: segment.end.y },
+      }));
+    }
+    return {
+      kind, width, height, points: points.map(({ x, y, control }) => ({ x, y, control })), closed,
+      ...(bezierSegments ? { curveModel: "catmull-rom-derived-bezier" as const, bezierSegments } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -157,6 +178,41 @@ export function inspectRhwpHwpxCurveLineSegments(
         && (position === 0 || index > value[position - 1]))) return undefined;
     return value as number[];
   } catch { return undefined; }
+}
+
+export function inspectRhwpHwpxCurveSegments(
+  doc: RhwpDocument, address: readonly [number, number, number], segmentCount: number,
+): number[] | undefined {
+  if (!doc.getHwpxCurveSegments || !doc.editHwpxCurveAnchor || !within(segmentCount, 256) || segmentCount === 0) return undefined;
+  try {
+    const value: unknown = JSON.parse(doc.getHwpxCurveSegments(...address));
+    if (!Array.isArray(value) || value.length !== segmentCount
+      || !value.every((index, position) => index === position)) return undefined;
+    return value as number[];
+  } catch { return undefined; }
+}
+
+/** Preview the same derived cubic handles after an anchor insertion/removal. */
+export function deriveHwpxCurveBezierSegments(
+  points: readonly { x: number; y: number }[], closed: boolean,
+): NonNullable<ShapePath["bezierSegments"]> | undefined {
+  if (points.length < 2 || (closed && (points.length < 4
+    || points[0]!.x !== points[points.length - 1]!.x || points[0]!.y !== points[points.length - 1]!.y))) return undefined;
+  const anchors = closed ? points.slice(0, -1) : points;
+  if (closed && anchors.length < 3) return undefined;
+  return Array.from({ length: anchors.length - 1 + (closed ? 1 : 0) }, (_, index) => {
+    const start = index;
+    const end = closed ? (index + 1) % anchors.length : index + 1;
+    const previous = index > 0 ? index - 1 : closed ? anchors.length - 1 : start;
+    const next = end + 1 < anchors.length ? end + 1 : closed ? 0 : end;
+    const p0 = anchors[start]!, p1 = anchors[end]!, pPrev = anchors[previous]!, pNext = anchors[next]!;
+    return {
+      start: { x: p0.x, y: p0.y },
+      control1: { x: p0.x + (p1.x - pPrev.x) / 6, y: p0.y + (p1.y - pPrev.y) / 6 },
+      control2: { x: p1.x - (pNext.x - p0.x) / 6, y: p1.y - (pNext.y - p0.y) / 6 },
+      end: { x: p1.x, y: p1.y },
+    };
+  });
 }
 
 export function inspectRhwpGroupFills(doc: RhwpDocument, address: readonly [number, number, number]): GroupChildFill[] | undefined {

@@ -38,6 +38,13 @@ function defaultCubic(path: ShapePath, point: ShapePath["points"][number]) {
   };
 }
 
+function bezierMidpoint(segment: NonNullable<ShapePath["bezierSegments"]>[number]) {
+  const x = Math.round((segment.start.x + 3 * segment.control1.x + 3 * segment.control2.x + segment.end.x) / 8);
+  const y = Math.round((segment.start.y + 3 * segment.control1.y + 3 * segment.control2.y + segment.end.y) / 8);
+  if ((x === segment.start.x && y === segment.start.y) || (x === segment.end.x && y === segment.end.y)) return undefined;
+  return { x, y };
+}
+
 export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveLineSegments, curveCubicStructure, onEdit }: {
   path: ShapePath;
   owner: string;
@@ -64,10 +71,15 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
   const overlay = pathOverlayGeometry(width, height, scale, pathTransform);
   const index = Math.min(vertexIndex, points.length - 1);
   const selected = points[index]!;
-  const newVertex = editVertices && points.length < 256
-    ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined;
-  const removable = editVertices && points.length > 3 && (!collinearVertexRemoval
-    || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!));
+  const hasNext = path.closed || index < points.length - 1;
+  const curveMidpoint = path.kind === "curve" ? path.bezierSegments?.[index] && bezierMidpoint(path.bezierSegments[index]!) : undefined;
+  const newVertex = editVertices && points.length < 256 && hasNext
+    ? curveMidpoint ?? (path.kind === "polygon" ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined)
+    : undefined;
+  const removable = editVertices && (path.kind === "curve"
+    ? points.length > 3 && (path.closed || (index > 0 && index < points.length - 1))
+    : points.length > 3 && (!collinearVertexRemoval
+      || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!)));
   const previous = points[index - 1], next = points[index + 1];
   const curveNext = next ?? (curveLineSegments && path.closed ? points[0] : undefined);
   const lineSplitAllowed = curveLineStructure || curveLineSegments?.includes(index) === true;

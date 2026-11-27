@@ -1,0 +1,555 @@
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -824,6 +824,24 @@
+     pub coordinates_edited: bool,
+ }
+ 
++/// A fractional point in the derived cubic representation of an HWPX curve.
++/// HWPX stores anchor endpoints; these Bezier handles are derived and are not
++/// written back as independent XML coordinates.
++#[derive(Debug, Clone, Copy, serde::Serialize)]
++pub struct DerivedCurvePoint {
++    pub x: f64,
++    pub y: f64,
++}
++
++/// One Catmull-Rom segment expressed as a cubic Bezier for rendering/editing.
++#[derive(Debug, Clone, Copy, serde::Serialize)]
++pub struct DerivedBezierSegment {
++    pub start: DerivedCurvePoint,
++    pub control1: DerivedCurvePoint,
++    pub control2: DerivedCurvePoint,
++    pub end: DerivedCurvePoint,
++}
++
+ #[derive(Debug, Default, Clone, serde::Serialize)]
+ pub struct CurveShape {
+     /// 공통 속성
+@@ -836,6 +854,116 @@
+     pub segment_types: Vec<u8>,
+     /// Original HWPX `<hp:seg>` records. Empty for HWP5/HWP3 curves.
+     pub hwpx_segments: Vec<HwpxCurveSegment>,
++}
++
++impl CurveShape {
++    /// Derive cubic handles for an unextended, all-CURVE HWPX anchor chain.
++    /// Hancom's observed interpolation is Catmull-Rom: handles use adjacent
++    /// anchor differences divided by six; closed paths wrap neighbors and
++    /// open paths clamp the endpoint neighbor to the endpoint itself.
++    ///
++    /// Return `None` when a source envelope is mixed, extended, disconnected,
++    /// or inconsistent. Such records stay preserved but are not reinterpreted.
++    pub fn hwpx_bezier_segments(&self) -> Option<Vec<DerivedBezierSegment>> {
++        let segments = &self.hwpx_segments;
++        if segments.is_empty()
++            || segments.len() > 4096
++            || self.points.len() != segments.len() + 1
++        {
++            return None;
++        }
++        let same_point = |a: &Point, b: &Point| a.x == b.x && a.y == b.y;
++        for (index, segment) in segments.iter().enumerate() {
++            if segment.has_children
++                || segment.attributes.len() != 5
++                || !same_point(&segment.start, &self.points[index])
++                || !same_point(&segment.end, &self.points[index + 1])
++            {
++                return None;
++            }
++            let mut names = std::collections::BTreeSet::new();
++            for (name, _) in &segment.attributes {
++                if !matches!(name.as_str(), "type" | "x1" | "y1" | "x2" | "y2")
++                    || !names.insert(name.as_str())
++                {
++                    return None;
++                }
++            }
++            let attribute = |name: &str| {
++                segment
++                    .attributes
++                    .iter()
++                    .find(|(key, _)| key == name)
++                    .map(|(_, value)| value.as_str())
++            };
++            if names.len() != 5
++                || attribute("type") != Some("CURVE")
++                || attribute("x1").and_then(|value| value.parse::<i32>().ok())
++                    != Some(segment.start.x)
++                || attribute("y1").and_then(|value| value.parse::<i32>().ok())
++                    != Some(segment.start.y)
++                || attribute("x2").and_then(|value| value.parse::<i32>().ok())
++                    != Some(segment.end.x)
++                || attribute("y2").and_then(|value| value.parse::<i32>().ok())
++                    != Some(segment.end.y)
++            {
++                return None;
++            }
++        }
++
++        let closed = self.points.len() > 1
++            && same_point(&self.points[0], self.points.last()?);
++        let anchors = if closed {
++            let unique = self.points.len().checked_sub(1)?;
++            if unique < 3 || unique != segments.len() {
++                return None;
++            }
++            &self.points[..unique]
++        } else {
++            if self.points.len() < 2 || self.points.len() - 1 != segments.len() {
++                return None;
++            }
++            self.points.as_slice()
++        };
++
++        let count = anchors.len();
++        let mut derived = Vec::with_capacity(segments.len());
++        for index in 0..segments.len() {
++            let start = index;
++            let end = if closed { (index + 1) % count } else { index + 1 };
++            let previous = if index > 0 {
++                index - 1
++            } else if closed {
++                count - 1
++            } else {
++                start
++            };
++            let next = if end + 1 < count {
++                end + 1
++            } else if closed {
++                0
++            } else {
++                end
++            };
++            let p0 = anchors[start];
++            let p1 = anchors[end];
++            let p_prev = anchors[previous];
++            let p_next = anchors[next];
++            derived.push(DerivedBezierSegment {
++                start: DerivedCurvePoint { x: p0.x as f64, y: p0.y as f64 },
++                control1: DerivedCurvePoint {
++                    x: p0.x as f64 + (p1.x as f64 - p_prev.x as f64) / 6.0,
++                    y: p0.y as f64 + (p1.y as f64 - p_prev.y as f64) / 6.0,
++                },
++                control2: DerivedCurvePoint {
++                    x: p1.x as f64 - (p_next.x as f64 - p0.x as f64) / 6.0,
++                    y: p1.y as f64 - (p_next.y as f64 - p0.y as f64) / 6.0,
++                },
++                end: DerivedCurvePoint { x: p1.x as f64, y: p1.y as f64 },
++            });
++        }
++        Some(derived)
++    }
+ }
+ 
+ /// 묶음 개체 (HWPTAG_SHAPE_COMPONENT_CONTAINER)
+--- a/src/renderer/layout/shape_layout.rs
++++ b/src/renderer/layout/shape_layout.rs
+@@ -4405,6 +4405,31 @@
+             return commands;
+         }
+ 
++        if let Some(beziers) = Self::hwpx_curve_catmull_beziers(curve) {
++            let point = |x: f64, y: f64| {
++                (
++                    base_x + hwpunit_to_px(1, self.dpi) * x * sx,
++                    base_y + hwpunit_to_px(1, self.dpi) * y * sy,
++                )
++            };
++            let first = curve.points[0];
++            let (x, y) = point(first.x as f64, first.y as f64);
++            commands.push(PathCommand::MoveTo(x, y));
++            for (control1, control2, end) in beziers {
++                let (x1, y1) = point(control1.0, control1.1);
++                let (x2, y2) = point(control2.0, control2.1);
++                let (x, y) = point(end.0, end.1);
++                commands.push(PathCommand::CurveTo(x1, y1, x2, y2, x, y));
++            }
++            if curve.points.len() > 1
++                && curve.points[0].x == curve.points[curve.points.len() - 1].x
++                && curve.points[0].y == curve.points[curve.points.len() - 1].y
++            {
++                commands.push(PathCommand::ClosePath);
++            }
++            return commands;
++        }
++
+         let pts: Vec<(f64, f64)> = curve
+             .points
+             .iter()
+@@ -4442,6 +4467,23 @@
+         }
+ 
+         commands
++    }
++
++    fn hwpx_curve_catmull_beziers(
++        curve: &crate::model::shape::CurveShape,
++    ) -> Option<Vec<((f64, f64), (f64, f64), (f64, f64))>> {
++        curve.hwpx_bezier_segments().map(|segments| {
++            segments
++                .into_iter()
++                .map(|segment| {
++                    (
++                        (segment.control1.x, segment.control1.y),
++                        (segment.control2.x, segment.control2.y),
++                        (segment.end.x, segment.end.y),
++                    )
++                })
++                .collect()
++        })
+     }
+ 
+     /// TopAndBottom 모드 글상자들의 앵커 문단별 예약 높이 계산
+@@ -4846,4 +4888,118 @@
+         assert_eq!(para.line_segs[0].text_start, 0);
+         assert_eq!(para.line_segs[0].segment_width, px_to_hwpunit(80.0, 96.0));
+     }
++
++    fn hwpx_curve_from_anchors(
++        anchors: &[(i32, i32)],
++        closed: bool,
++    ) -> crate::model::shape::CurveShape {
++        let mut points = anchors
++            .iter()
++            .map(|(x, y)| crate::model::Point { x: *x, y: *y })
++            .collect::<Vec<_>>();
++        if closed {
++            points.push(points[0]);
++        }
++        let hwpx_segments = points
++            .windows(2)
++            .map(|pair| crate::model::shape::HwpxCurveSegment {
++                start: pair[0],
++                end: pair[1],
++                attributes: vec![
++                    ("type".to_string(), "CURVE".to_string()),
++                    ("x1".to_string(), pair[0].x.to_string()),
++                    ("y1".to_string(), pair[0].y.to_string()),
++                    ("x2".to_string(), pair[1].x.to_string()),
++                    ("y2".to_string(), pair[1].y.to_string()),
++                ],
++                has_children: false,
++                coordinates_edited: false,
++            })
++            .collect();
++        crate::model::shape::CurveShape {
++            points,
++            hwpx_segments,
++            ..Default::default()
++        }
++    }
++
++    #[test]
++    fn hwpx_standard_curve_derives_hancom_catmull_rom_bezier_handles() {
++        // Anchors from a Hancom-rendered SimpleCurve HWPX reference sample.
++        let curve = hwpx_curve_from_anchors(
++            &[
++                (450, 6140),
++                (8000, 11215),
++                (2500, 19340),
++                (14175, 20515),
++                (15675, 8440),
++                (2475, 15),
++            ],
++            true,
++        );
++        let beziers = LayoutEngine::hwpx_curve_catmull_beziers(&curve).unwrap();
++        assert_eq!(beziers.len(), 6);
++        let close = |actual: f64, expected: f64| assert!((actual - expected).abs() < 1e-9);
++        close(beziers[0].0.0, 1370.8333333333333);
++        close(beziers[0].0.1, 8006.666666666667);
++        close(beziers[0].1.0, 7658.333333333333);
++        close(beziers[0].1.1, 9015.0);
++
++        // The 16-step cubic envelope reproduces the sample's serialized orgSz.
++        let mut xs = Vec::new();
++        let mut ys = Vec::new();
++        for (index, (control1, control2, end)) in beziers.iter().enumerate() {
++            let start = curve.points[index];
++            for step in 0..=16 {
++                let t = step as f64 / 16.0;
++                let u = 1.0 - t;
++                let x = u.powi(3) * start.x as f64
++                    + 3.0 * u.powi(2) * t * control1.0
++                    + 3.0 * u * t.powi(2) * control2.0
++                    + t.powi(3) * end.0;
++                let y = u.powi(3) * start.y as f64
++                    + 3.0 * u.powi(2) * t * control1.1
++                    + 3.0 * u * t.powi(2) * control2.1
++                    + t.powi(3) * end.1;
++                xs.push(x);
++                ys.push(y);
++            }
++        }
++        let width = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
++            - xs.iter().copied().fold(f64::INFINITY, f64::min);
++        let height = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max)
++            - ys.iter().copied().fold(f64::INFINITY, f64::min);
++        assert_eq!(width.round() as i32, 16636);
++        assert_eq!(height.round() as i32, 21360);
++    }
++
++    #[test]
++    fn hwpx_open_curve_clamps_end_tangents_to_the_end_anchors() {
++        let curve = hwpx_curve_from_anchors(&[(0, 0), (60, 0), (60, 60)], false);
++        let beziers = LayoutEngine::hwpx_curve_catmull_beziers(&curve).unwrap();
++        assert_eq!(beziers.len(), 2);
++        assert_eq!(beziers[0].0, (10.0, 0.0));
++        assert_eq!(beziers[0].1, (50.0, -10.0));
++        assert_eq!(beziers[1].0, (70.0, 10.0));
++        assert_eq!(beziers[1].1, (60.0, 50.0));
++    }
++
++    #[test]
++    fn hwpx_curve_geometry_rejects_mixed_extended_and_mismatched_segments() {
++        let mut curve = hwpx_curve_from_anchors(&[(0, 0), (30, 10), (50, 50)], false);
++        curve.hwpx_segments[1].attributes[0].1 = "LINE".to_string();
++        assert!(LayoutEngine::hwpx_curve_catmull_beziers(&curve).is_none());
++
++        let mut curve = hwpx_curve_from_anchors(&[(0, 0), (30, 10), (50, 50)], false);
++        curve.hwpx_segments[0].attributes.push(("vendor".into(), "x".into()));
++        assert!(LayoutEngine::hwpx_curve_catmull_beziers(&curve).is_none());
++
++        let mut curve = hwpx_curve_from_anchors(&[(0, 0), (30, 10), (50, 50)], false);
++        curve.hwpx_segments[0].has_children = true;
++        assert!(LayoutEngine::hwpx_curve_catmull_beziers(&curve).is_none());
++
++        let mut curve = hwpx_curve_from_anchors(&[(0, 0), (30, 10), (50, 50)], false);
++        curve.hwpx_segments[0].attributes[1].1 = "1".to_string();
++        assert!(LayoutEngine::hwpx_curve_catmull_beziers(&curve).is_none());
++    }
+ }
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -1844,6 +1844,14 @@
+                 }).collect::<Vec<_>>()
+             }).collect::<Vec<_>>());
+         }
++        if let ShapeObject::Curve(curve) = shape {
++            if self.source_format == FileFormat::Hwpx {
++                if let Some(segments) = curve.hwpx_bezier_segments() {
++                    path["curveModel"] = serde_json::json!("catmull-rom-derived-bezier");
++                    path["bezierSegments"] = serde_json::json!(segments);
++                }
++            }
++        }
+         Some(path)
+     }
+ 
+@@ -2183,6 +2191,107 @@
+                 })
+                 .collect(),
+         )
++    }
++
++    /// All-CURVE HWPX chains with standard, childless source envelopes expose
++    /// anchor insertion/removal. Their cubic handles are derived on demand.
++    pub fn editable_hwpx_curve_segments(
++        &self, sec: usize, para: usize, ctrl: usize,
++    ) -> Option<Vec<usize>> {
++        if self.source_format != crate::parser::FileFormat::Hwpx {
++            return None;
++        }
++        let ShapeObject::Curve(curve) = self.advanced_body_shape(sec, para, ctrl)? else {
++            return None;
++        };
++        let beziers = curve.hwpx_bezier_segments()?;
++        Some((0..beziers.len()).collect())
++    }
++
++    /// Insert an anchor into one strict HWPX CURVE segment, or remove an
++    /// existing internal/closed-path anchor. Only standard source records are
++    /// eligible, so no opaque segment metadata is discarded or guessed.
++    pub fn edit_hwpx_curve_anchor(
++        &mut self, sec: usize, para: usize, ctrl: usize, index: usize,
++        insert: Option<crate::model::Point>,
++    ) -> Result<(), HwpError> {
++        let (mut points, mut segments, width, height, closed, beziers) = {
++            if self.source_format != crate::parser::FileFormat::Hwpx {
++                return Err(geul_bad_shape_edit());
++            }
++            let Some(ShapeObject::Curve(curve)) = self.advanced_body_shape(sec, para, ctrl) else {
++                return Err(geul_bad_shape_edit());
++            };
++            let Some(beziers) = curve.hwpx_bezier_segments() else {
++                return Err(geul_bad_shape_edit());
++            };
++            let closed = curve.points.len() > 1
++                && geul_same_point(&curve.points[0], curve.points.last().unwrap());
++            (
++                curve.points.clone(),
++                curve.hwpx_segments.clone(),
++                curve.drawing.shape_attr.original_width as i32,
++                curve.drawing.shape_attr.original_height as i32,
++                closed,
++                beziers,
++            )
++        };
++        if let Some(point) = insert {
++            let expected = beziers.get(index).map(|segment| crate::model::Point {
++                x: ((segment.start.x + 3.0 * segment.control1.x
++                    + 3.0 * segment.control2.x + segment.end.x) / 8.0).round() as i32,
++                y: ((segment.start.y + 3.0 * segment.control1.y
++                    + 3.0 * segment.control2.y + segment.end.y) / 8.0).round() as i32,
++            });
++            if segments.len() >= 256 || points.len() >= 257 || index >= segments.len()
++                || point.x < 0 || point.y < 0 || point.x > width || point.y > height
++                || expected.is_none_or(|expected| expected.x != point.x || expected.y != point.y)
++                || points.iter().any(|existing| geul_same_point(existing, &point))
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            let mut first = segments[index].clone();
++            let mut second = first.clone();
++            first.end = point;
++            first.coordinates_edited = true;
++            second.start = point;
++            second.coordinates_edited = true;
++            segments.splice(index..=index, [first, second]);
++            points.insert(index + 1, point);
++        } else {
++            let anchors = if closed { points.len() - 1 } else { points.len() };
++            if index >= anchors
++                || (closed && anchors <= 3)
++                || (!closed && (points.len() <= 3 || index == 0 || index + 1 >= points.len()))
++            {
++                return Err(geul_bad_shape_edit());
++            }
++            let previous_segment = if index == 0 { segments.len() - 1 } else { index - 1 };
++            let next_anchor = if index + 1 < anchors { points[index + 1] } else { points[0] };
++            segments[previous_segment].end = next_anchor;
++            segments[previous_segment].coordinates_edited = true;
++            segments.remove(index);
++            points.remove(index);
++            if closed && index == 0 {
++                points.pop();
++                points.push(points[0]);
++            }
++        }
++        let candidate = crate::model::shape::CurveShape {
++            points: points.clone(),
++            hwpx_segments: segments.clone(),
++            ..Default::default()
++        };
++        if candidate.hwpx_bezier_segments().is_none() {
++            return Err(geul_bad_shape_edit());
++        }
++        let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {
++            return Err(geul_bad_shape_edit());
++        };
++        curve.points = points;
++        curve.hwpx_segments = segments;
++        self.refresh_advanced_shape(sec);
++        Ok(())
+     }
+ 
+     /// Split one explicit standard HWPX LINE at an interior collinear point,
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -5033,6 +5033,26 @@
+     pub fn get_hwpx_curve_line_segments(&self, sec: u32, para: u32, ctrl: u32) -> String {
+         self.editable_hwpx_curve_line_segments(sec as usize, para as usize, ctrl as usize)
+             .map_or(serde_json::Value::Null, |segments| serde_json::json!(segments)).to_string()
++    }
++
++    #[wasm_bindgen(js_name = getHwpxCurveSegments)]
++    pub fn get_hwpx_curve_segments(&self, sec: u32, para: u32, ctrl: u32) -> String {
++        self.editable_hwpx_curve_segments(sec as usize, para as usize, ctrl as usize)
++            .map_or(serde_json::Value::Null, |segments| serde_json::json!(segments)).to_string()
++    }
++
++    #[wasm_bindgen(js_name = editHwpxCurveAnchor)]
++    pub fn edit_hwpx_curve_anchor_wasm(
++        &mut self, sec: u32, para: u32, ctrl: u32, index: u32, insert: bool, x: i32, y: i32,
++    ) -> Result<(), JsValue> {
++        self.edit_hwpx_curve_anchor(
++            sec as usize,
++            para as usize,
++            ctrl as usize,
++            index as usize,
++            insert.then_some(crate::model::Point { x, y }),
++        )
++        .map_err(|error| error.into())
+     }
+ 
+     #[wasm_bindgen(js_name = editHwpxCurveLine)]
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -1762,7 +1762,13 @@
+         // The HWP5 component offset is relative to a group. The top-level renderer
+         // positions a body curve with CommonObjAttr and keeps the component bytes intact.
+         if attr.group_level != 0 || !(-360..=360).contains(&attr.rotation_angle)
+-            || attr.rotate_image
++            // HWPX commonly writes rotateimage=1 on unrotated drawing shapes. At
++            // angle zero the flag has no geometric effect; retain it unchanged
++            // in the source envelope while allowing path edits. Other cases
++            // still need format-specific transform semantics that this editor
++            // does not model.
++            || (attr.rotate_image
++                && !(self.source_format == FileFormat::Hwpx && attr.rotation_angle == 0))
+             || (self.source_format == FileFormat::Hwp
+                 && (attr.local_file_version != 1
+                     || !(-2_000_000..=2_000_000).contains(&attr.offset_x)
+--- a/src/model/shape.rs
++++ b/src/model/shape.rs
+@@ -896,16 +896,23 @@
+                     .find(|(key, _)| key == name)
+                     .map(|(_, value)| value.as_str())
+             };
++            let source_points = [
++                attribute("x1").and_then(|value| value.parse::<i32>().ok()),
++                attribute("y1").and_then(|value| value.parse::<i32>().ok()),
++                attribute("x2").and_then(|value| value.parse::<i32>().ok()),
++                attribute("y2").and_then(|value| value.parse::<i32>().ok()),
++            ];
+             if names.len() != 5
+                 || attribute("type") != Some("CURVE")
+-                || attribute("x1").and_then(|value| value.parse::<i32>().ok())
+-                    != Some(segment.start.x)
+-                || attribute("y1").and_then(|value| value.parse::<i32>().ok())
+-                    != Some(segment.start.y)
+-                || attribute("x2").and_then(|value| value.parse::<i32>().ok())
+-                    != Some(segment.end.x)
+-                || attribute("y2").and_then(|value| value.parse::<i32>().ok())
+-                    != Some(segment.end.y)
++                || source_points.iter().any(Option::is_none)
++                || (!segment.coordinates_edited
++                    && source_points
++                        != [
++                            Some(segment.start.x),
++                            Some(segment.start.y),
++                            Some(segment.end.x),
++                            Some(segment.end.y),
++                        ])
+             {
+                 return None;
+             }
+--- a/src/renderer/layout/shape_layout.rs
++++ b/src/renderer/layout/shape_layout.rs
+@@ -4985,6 +4985,26 @@
+     }
+ 
+     #[test]
++    fn hwpx_curve_edited_anchors_keep_the_original_segment_envelope() {
++        let mut curve = hwpx_curve_from_anchors(&[(0, 30), (60, 30), (60, 90)], false);
++        let segment = LayoutEngine::hwpx_curve_catmull_beziers(&curve).unwrap()[0];
++        let point = crate::model::Point {
++            x: ((0.0 + 3.0 * segment.0.0 + 3.0 * segment.1.0 + 60.0) / 8.0).round() as i32,
++            y: ((30.0 + 3.0 * segment.0.1 + 3.0 * segment.1.1 + 30.0) / 8.0).round() as i32,
++        };
++        let mut first = curve.hwpx_segments[0].clone();
++        let mut second = first.clone();
++        first.end = point;
++        first.coordinates_edited = true;
++        second.start = point;
++        second.coordinates_edited = true;
++        curve.hwpx_segments.splice(0..=0, [first, second]);
++        curve.points.insert(1, point);
++
++        assert_eq!(LayoutEngine::hwpx_curve_catmull_beziers(&curve).unwrap().len(), 3);
++    }
++
++    #[test]
+     fn hwpx_curve_geometry_rejects_mixed_extended_and_mismatched_segments() {
+         let mut curve = hwpx_curve_from_anchors(&[(0, 0), (30, 10), (50, 50)], false);
+         curve.hwpx_segments[1].attributes[0].1 = "LINE".to_string();

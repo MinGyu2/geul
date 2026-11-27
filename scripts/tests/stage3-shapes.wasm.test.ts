@@ -739,6 +739,41 @@ print(json.dumps([dict(segment.attrib) for segment in curve.findall("{*}seg")]))
 `], { input: bytes, encoding: "utf8" }));
 }
 
+function withCurveRotationAngle(bytes: Uint8Array, angle: number): Uint8Array {
+  return execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+angle = sys.argv[1].encode()
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as source:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as destination:
+        for entry in source.infolist():
+            data = source.read(entry.filename)
+            if entry.filename == "Contents/section0.xml":
+                data, count = re.subn(
+                    rb'(<hp:curve\\b[^>]*>.*?<hp:rotationInfo angle=\")-?\\d+(\")',
+                    lambda match: match.group(1) + angle + match.group(2),
+                    data, count=1, flags=re.S,
+                )
+                assert count == 1
+            destination.writestr(entry, data)
+sys.stdout.buffer.write(output.getvalue())
+`, String(angle)], { input: bytes });
+}
+
+function curveRotationInfo(bytes: Uint8Array): Record<string, string> {
+  return JSON.parse(execFileSync("python3", ["-c", `
+import io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as doc:
+    root = ET.fromstring(doc.read("Contents/section0.xml"))
+curve = root.find(".//{*}curve")
+assert curve is not None
+rotation = curve.find("{*}rotationInfo")
+assert rotation is not None
+print(json.dumps(rotation.attrib))
+`], { input: bytes, encoding: "utf8" }));
+}
+
 function addCurveSegmentChild(bytes: Uint8Array, segmentIndex: number): Uint8Array {
   return execFileSync("python3", ["-c", `
 import io, re, sys, zipfile
@@ -773,6 +808,39 @@ with zipfile.ZipFile(io.BytesIO(left)) as a, zipfile.ZipFile(io.BytesIO(right)) 
     names_b = {name for name in b.namelist() if name != "Contents/section0.xml" and not name.startswith("Preview/")}
     assert names_a == names_b
     assert all(a.read(name) == b.read(name) for name in names_a)
+print("true")
+`], { input: JSON.stringify([Buffer.from(original).toString("base64"), Buffer.from(output).toString("base64")]), encoding: "utf8" }).trim() === "true";
+}
+
+function preservedHwpxPartsForCurve(original: Uint8Array, output: Uint8Array): boolean {
+  return execFileSync("python3", ["-c", `
+import base64, io, json, sys, zipfile
+from xml.etree import ElementTree as ET
+left, right = (base64.b64decode(value) for value in json.load(sys.stdin))
+with zipfile.ZipFile(io.BytesIO(left)) as a, zipfile.ZipFile(io.BytesIO(right)) as b:
+    names_a, names_b = set(a.namelist()), set(b.namelist())
+    assert "Contents/section0.xml" in names_a and "Contents/section0.xml" in names_b
+    assert "META-INF/container.rdf" not in names_a and "META-INF/container.rdf" in names_b
+    excluded = {"Contents/section0.xml", "META-INF/container.rdf"}
+    excluded.update(name for name in names_a | names_b if name.startswith("Preview/"))
+    assert names_a - excluded == names_b - excluded
+    for name in names_a - excluded:
+        source, saved = a.read(name), b.read(name)
+        if name in {"Contents/content.hpf", "Contents/header.xml"}:
+            assert ET.tostring(ET.fromstring(source)) == ET.tostring(ET.fromstring(saved)), name
+        elif name == "META-INF/container.xml":
+            root = ET.fromstring(saved)
+            rdf_rootfiles = [node for node in root.iter() if node.attrib.get("full-path") == "META-INF/container.rdf"]
+            assert len(rdf_rootfiles) == 1
+            for node in rdf_rootfiles:
+                parent = next(parent for parent in root.iter() if node in list(parent))
+                parent.remove(node)
+            assert ET.tostring(ET.fromstring(source)) == ET.tostring(root), name
+        else:
+            assert source == saved, name
+    rdf = ET.fromstring(b.read("META-INF/container.rdf"))
+    resources = {value for node in rdf.iter() for key, value in node.attrib.items() if key.rsplit("}", 1)[-1] == "resource"}
+    assert {"Contents/header.xml", "Contents/section0.xml"} <= resources
 print("true")
 `], { input: JSON.stringify([Buffer.from(original).toString("base64"), Buffer.from(output).toString("base64")]), encoding: "utf8" }).trim() === "true";
 }
@@ -1308,6 +1376,138 @@ describe("Stage 3 shapes on the Release engine", () => {
     } finally { sourceDoc.free(); }
   });
 
+  it("renders and edits authentic Hancom HWPX Catmull-Rom curves through derived cubic handles", async () => {
+    const sourceBytes = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx"));
+    const bytes = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"));
+    const originalSegments = curveSegments(bytes);
+    expect(curveSegments(sourceBytes)).toEqual(originalSegments);
+    expect(originalSegments).toHaveLength(6);
+    expect(originalSegments.map(segment => segment.type)).toEqual(Array(6).fill("CURVE"));
+    const sourceDoc = new engine.HwpDocument(sourceBytes) as RhwpDocument;
+    try {
+      const sourcePath = JSON.parse(sourceDoc.getEditableShapePath!(0, 0, 2));
+      expect(sourcePath).toMatchObject({ curveModel: "catmull-rom-derived-bezier", closed: true });
+      expect(sourcePath.bezierSegments).toHaveLength(6);
+      expect(((sourceDoc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0).match(/\bC/g) ?? [])).toHaveLength(6);
+      const normalized = sourceDoc.exportHwpxWithReport();
+      try {
+        const canonical = normalized.takeBytes();
+        expect(JSON.parse(normalized.contentLoss())).toMatchObject({ count: 0 });
+        expect(Buffer.from(canonical)).toEqual(Buffer.from(bytes));
+        expect(preservedHwpxPartsForCurve(sourceBytes, canonical)).toBe(true);
+      } finally { normalized.free(); }
+    } finally { sourceDoc.free(); }
+    const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
+    try {
+      expect(curveRotationInfo(bytes)).toMatchObject({ angle: "0", rotateimage: "1" });
+      const frame = shapes(doc).find(candidate => {
+        try {
+          return JSON.parse(doc.getEditableShapePath!(0, 0, candidate.controlIdx)).curveModel
+            === "catmull-rom-derived-bezier";
+        } catch { return false; }
+      });
+      expect(frame).toBeDefined();
+      const selected = pick(frame!);
+      expect(selected.operations).toContain("pathVertex");
+      expect(selected.hwpxCurveSegments).toEqual([0, 1, 2, 3, 4, 5]);
+      const initial = selected.shapePath!;
+      expect(initial).toMatchObject({ kind: "curve", closed: true, width: 16636, height: 21360,
+        curveModel: "catmull-rom-derived-bezier" });
+      expect(initial.points.map(point => [point.x, point.y])).toEqual([
+        [450, 6140], [8000, 11215], [2500, 19340], [14175, 20515], [15675, 8440], [2475, 15], [450, 6140],
+      ]);
+      const firstBezier = initial.bezierSegments?.[0]!;
+      expect(firstBezier).toMatchObject({
+        start: { x: 450, y: 6140 }, end: { x: 8000, y: 11215 },
+      });
+      expect(firstBezier.control1.x).toBeCloseTo(1370.8333333333333, 10);
+      expect(firstBezier.control1.y).toBeCloseTo(8006.666666666667, 10);
+      expect(firstBezier.control2.x).toBeCloseTo(7658.333333333333, 10);
+      expect(firstBezier.control2.y).toBe(9015);
+      const svg = () => (doc as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0);
+      const beforeSvg = svg();
+      expect((beforeSvg.match(/\bC/g) ?? []).length).toBe(6);
+      const midpoint = initial.bezierSegments![0]!;
+      const insert = {
+        x: Math.round((midpoint.start.x + 3 * midpoint.control1.x + 3 * midpoint.control2.x + midpoint.end.x) / 8),
+        y: Math.round((midpoint.start.y + 3 * midpoint.control1.y + 3 * midpoint.control2.y + midpoint.end.y) / 8),
+      };
+      const beforeProperties = doc.getShapeProperties!(0, 0, frame!.controlIdx);
+      const untouched = doc.exportHwpx();
+      for (const invalid of [
+        { kind: "pathVertex", action: "insert", index: 0, x: insert.x + 1, y: insert.y },
+        { kind: "pathVertex", action: "remove", index: -1 },
+        { kind: "pathVertex", action: "remove", index: initial.points.length - 1 },
+      ] as const) expect(edit(invalid)).toBe(false);
+      expect(() => doc.editHwpxCurveAnchor!(0, 0, frame!.controlIdx, 0, true, insert.x + 1, insert.y)).toThrow();
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+      expect(edit({ kind: "pathVertex", action: "insert", index: 0, ...insert })).toBe(true);
+      await confirm();
+      const inserted = JSON.parse(doc.getEditableShapePath!(0, 0, frame!.controlIdx));
+      expect(inserted.points).toHaveLength(8);
+      expect(inserted.bezierSegments).toHaveLength(7);
+      expect(curveSegments(doc.exportHwpx())).toHaveLength(7);
+      expect((svg().match(/\bC/g) ?? []).length).toBe(7);
+      expect(doc.getShapeProperties!(0, 0, frame!.controlIdx)).toBe(beforeProperties);
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(JSON.parse(doc.getEditableShapePath!(0, 0, frame!.controlIdx)).points).toEqual(initial.points);
+      expect(curveSegments(doc.exportHwpx())).toEqual(originalSegments);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      pick(frame!);
+      expect(edit({ kind: "pathVertex", action: "remove", index: 1 })).toBe(true);
+      await confirm();
+      const removed = JSON.parse(doc.getEditableShapePath!(0, 0, frame!.controlIdx));
+      expect(removed.points).toEqual(initial.points);
+      expect(removed.bezierSegments).toEqual(initial.bezierSegments);
+      expect(curveSegments(doc.exportHwpx())).toEqual(originalSegments);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(JSON.parse(doc.getEditableShapePath!(0, 0, frame!.controlIdx)).points).toHaveLength(8);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      const saved = doc.exportHwpxWithReport();
+      try {
+        const output = saved.takeBytes();
+        expectReopenEvidence(doc, output, saved.contentLoss());
+        expect(curveSegments(output)).toEqual(originalSegments);
+        expect(curveRotationInfo(output)).toEqual(curveRotationInfo(bytes));
+        expect(unchangedHwpxParts(bytes, output)).toBe(true);
+        const reopened = new engine.HwpDocument(output) as RhwpDocument;
+        try {
+          const path = JSON.parse(reopened.getEditableShapePath!(0, 0, frame!.controlIdx));
+          expect(path.curveModel).toBe("catmull-rom-derived-bezier");
+          expect(path.bezierSegments).toEqual(initial.bezierSegments);
+          const reopenedSvg = (reopened as RhwpDocument & { renderPageSvg(page: number): string }).renderPageSvg(0);
+          expect((reopenedSvg.match(/\bC/g) ?? [])).toHaveLength(6);
+        } finally { reopened.free(); }
+        if (out) {
+          const dir = resolve(out, "catmull-rom");
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(resolve(dir, "SimpleCurve-source.hwpx"), sourceBytes);
+          writeFileSync(resolve(dir, "SimpleCurve-original.hwpx"), bytes);
+          writeFileSync(resolve(dir, "SimpleCurve-saved.hwpx"), output);
+          writeFileSync(resolve(dir, "SimpleCurve-report.json"), saved.contentLoss());
+        }
+      } finally { saved.free(); }
+    } finally { editor.dispose(); }
+
+    const rotatedBytes = withCurveRotationAngle(bytes, 15);
+    const rotatedDoc = new engine.HwpDocument(rotatedBytes) as RhwpDocument;
+    try {
+      expect(rotatedDoc.getEditableShapePath!(0, 0, 2)).toBe("null");
+      const before = rotatedDoc.exportHwpx();
+      expect(() => rotatedDoc.editHwpxCurveAnchor!(0, 0, 2, 0, true, 1000, 1000)).toThrow();
+      expect(rotatedDoc.exportHwpx()).toEqual(before);
+    } finally { rotatedDoc.free(); }
+  });
+
   it("splits and rejoins only explicit unextended HWPX LINE curve segments", async () => {
     const { bytes, index } = curveFixture("LINE");
     const { editor, doc, pick, edit, confirm } = await setup("hwpx", bytes);
@@ -1317,6 +1517,7 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(selected?.shapePath?.kind).toBe("curve");
       expect(selected?.curveLineSegments).toEqual([1]);
       expect(selected.operations).toContain("pathSegment");
+      expect(selected.operations).not.toContain("pathVertex");
       const initial = selected.shapePath!;
       const initialSegments = curveSegments(bytes);
       const beforeProperties = doc.getShapeProperties!(0, 0, index);
@@ -1336,11 +1537,13 @@ describe("Stage 3 shapes on the Release engine", () => {
       }
       expect(() => doc.editHwpxCurveLine!(0, 0, index, 1, false, 0, 0)).toThrow();
       expect(() => doc.editHwpxCurveLine!(0, 0, index, 2, false, 0, 0)).toThrow();
+      expect(() => doc.editHwpxCurveAnchor!(0, 0, index, 0, true, 4000, 2000)).toThrow();
       expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 5000, y: 1000 })).toBe(false);
       expect(edit({ kind: "pathSegment", action: "splitLine", index: 2, x: 4000, y: 3900 })).toBe(false);
       expect(edit({ kind: "pathSegment", action: "splitLine", index: 1, x: 8000, y: 3000 })).toBe(false);
       expect(edit({ kind: "pathSegment", action: "joinLines", index: 1 })).toBe(false);
       expect(edit({ kind: "pathSegment", action: "joinLines", index: 2 })).toBe(false);
+      expect(edit({ kind: "pathVertex", action: "insert", index: 0, x: 4000, y: 2000 })).toBe(false);
       expect(editor.localRevision).toBe(0);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
       expect(doc.exportHwpx()).toEqual(untouched);
@@ -1438,9 +1641,38 @@ describe("Stage 3 shapes on the Release engine", () => {
       expect(selected.shapePath?.kind).toBe("curve");
       expect(selected.curveLineSegments).toEqual([]);
       expect(selected.operations).not.toContain("pathSegment");
+      expect(selected.operations).not.toContain("pathVertex");
       const untouched = doc.exportHwpx();
       expect(() => doc.editHwpxCurveLine!(0, 0, index, 1, true, 8050, 3600)).toThrow();
+      expect(() => doc.editHwpxCurveAnchor!(0, 0, index, 0, true, 8000, 3000)).toThrow();
+      expect(editor.execute("object.edit", objectEditRequest(selected,
+        { kind: "pathVertex", action: "insert", index: 0, x: 8000, y: 3000 })).accepted).toBe(false);
       expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.localRevision).toBe(0);
+      expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
+    } finally { editor.dispose(); }
+  });
+
+  it("keeps child-bearing authentic HWPX CURVE records out of the derived editable model", async () => {
+    const bytes = readFileSync(resolve(process.cwd(), "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx"));
+    const extended = addCurveSegmentChild(bytes, 0);
+    const { editor, doc, pick } = await setup("hwpx", extended);
+    try {
+      const frame = shapes(doc).find(candidate => {
+        try { return JSON.parse(doc.getEditableShapePath!(0, 0, candidate.controlIdx)).kind === "curve"; }
+        catch { return false; }
+      });
+      expect(frame).toBeDefined();
+      const selected = pick(frame!);
+      expect(selected.shapePath?.kind).toBe("curve");
+      expect(selected.shapePath?.curveModel).toBeUndefined();
+      expect(selected.operations).not.toContain("pathVertex");
+      expect(JSON.parse(doc.getHwpxCurveSegments!(0, 0, frame!.controlIdx))).toBeNull();
+      const untouched = doc.exportHwpx();
+      expect(() => doc.editHwpxCurveAnchor!(0, 0, frame!.controlIdx, 0, true, 4000, 2000)).toThrow();
+      expect(doc.exportHwpx()).toEqual(untouched);
+      expect(editor.execute("object.edit", objectEditRequest(selected,
+        { kind: "pathVertex", action: "remove", index: 1 })).accepted).toBe(false);
       expect(editor.localRevision).toBe(0);
       expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
     } finally { editor.dispose(); }

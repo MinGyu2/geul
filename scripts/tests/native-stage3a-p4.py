@@ -1115,6 +1115,173 @@ def section_pair(fixture, path):
         return ET.fromstring(before.read(section)), ET.fromstring(after.read(section))
 
 
+def hwpx_curve_catmull_rom_case(acc, row, fixtures, out):
+    source_sample = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx"
+    fixture = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"
+    row["sourceSampleSha256"] = h.digest(source_sample)
+    before = row["before"] = inspect(fixture)
+    row["canonicalFixtureSha256"] = h.digest(fixture)
+    target = next(frame for frame in before["frames"]
+                  if frame["path"] and frame["path"].get("curveModel") == "catmull-rom-derived-bezier")
+    original_points = target["path"]["points"]
+    original_segments = deepcopy(target["path"]["segments"])
+    h.require(target["path"]["closed"] and len(original_points) == 7 and len(original_segments) == 6,
+              "unexpected authentic Catmull-Rom curve topology", target["path"])
+    h.require(all(dict(segment).get("type") == "CURVE" and set(dict(segment)) ==
+                  {"type", "x1", "y1", "x2", "y2"} for segment in original_segments),
+              "fixture segment envelope is not strict standard HWPX CURVE", original_segments)
+    bezier = target["path"]["bezierSegments"][0]
+    midpoint_x = (bezier["start"]["x"] + 3 * bezier["control1"]["x"]
+                  + 3 * bezier["control2"]["x"] + bezier["end"]["x"]) / 8
+    midpoint_y = (bezier["start"]["y"] + 3 * bezier["control1"]["y"]
+                  + 3 * bezier["control2"]["y"] + bezier["end"]["y"]) / 8
+    midpoint = {
+        "x": math.floor(midpoint_x + 0.5),
+        "y": math.floor(midpoint_y + 0.5),
+        "control": False,
+    }
+    path = h.begin(acc, row, fixture, out, "a-p4-hwpx-catmull-rom-edited.hwpx")
+
+    def select():
+        h.select_object(acc, target, "shape")
+        if acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')") != "true":
+            acc.dom_click(".object-path-mode")
+
+    def count(expected):
+        acc.wait("return document.querySelectorAll(arguments[0]).length===arguments[1]", POINT, expected)
+
+    def select_vertex(index, value):
+        labels = acc.d.js("return [...document.querySelectorAll(arguments[0])].map(e=>e.getAttribute('aria-label'))", POINT)
+        h.require(len(labels) > index, "missing Catmull-Rom anchor handle", labels)
+        label = labels[index].replace("\\", "\\\\").replace('"', '\\"')
+        acc.dom_click(f'{POINT}[aria-label="{label}"]')
+        expected = f'[{value["x"]},{value["y"]}]'
+        acc.wait("return JSON.stringify([...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value))===arguments[1]",
+                 COORDS, expected)
+
+    acc.d.js("""
+      window.catmullRomAnchorActions=[];
+      document.addEventListener('click',e=>{
+        if(e.target.matches('.object-path-add-vertex,.object-path-remove-vertex'))
+          window.catmullRomAnchorActions.push({action:e.target.classList.contains('object-path-add-vertex')?'insert':'remove',trusted:e.isTrusted});
+      },true);
+    """)
+    select()
+    count(6)
+    select_vertex(0, original_points[0])
+    h.require(not acc.d.js("return document.querySelector('.object-path-add-vertex').disabled"),
+              "derived Catmull-Rom midpoint insertion is unavailable")
+    acc.dom_click(".object-path-add-vertex")
+    h.revision(acc, "hwpx", 1)
+    select()
+    count(7)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    select()
+    count(6)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    select()
+    count(7)
+    select_vertex(1, midpoint)
+
+    inserted_segments = deepcopy(original_segments)
+    left = deepcopy(inserted_segments[0])
+    right = deepcopy(inserted_segments[0])
+    for attributes, updates in ((left, {"x2": str(midpoint["x"]), "y2": str(midpoint["y"])}),
+                                (right, {"x1": str(midpoint["x"]), "y1": str(midpoint["y"])})):
+        for pair in attributes:
+            if pair[0] in updates:
+                pair[1] = updates[pair[0]]
+    inserted_segments[0:1] = [left, right]
+    inserted_points = [*original_points[:1], midpoint, *original_points[1:]]
+    inserted_path = {**target["path"], "points": inserted_points, "segments": inserted_segments}
+    anchors = inserted_points[:-1]
+    inserted_path["bezierSegments"] = []
+    for index, start in enumerate(anchors):
+        end = anchors[(index + 1) % len(anchors)]
+        previous = anchors[(index - 1) % len(anchors)]
+        following = anchors[(index + 2) % len(anchors)]
+        inserted_path["bezierSegments"].append({
+            "start": {"x": start["x"], "y": start["y"]},
+            "control1": {"x": start["x"] + (end["x"] - previous["x"]) / 6,
+                         "y": start["y"] + (end["y"] - previous["y"]) / 6},
+            "control2": {"x": end["x"] - (following["x"] - start["x"]) / 6,
+                         "y": end["y"] - (following["y"] - start["y"]) / 6},
+            "end": {"x": end["x"], "y": end["y"]},
+        })
+    inserted_target = {**target, "path": inserted_path}
+    expected_inserted = {**before, "frames": [inserted_target if frame == target else frame for frame in before["frames"]]}
+    row["trustedAnchorActions"] = acc.d.js("return window.catmullRomAnchorActions")
+    h.require(row["trustedAnchorActions"] == [{"action": "insert", "trusted": True}],
+              "anchor insertion was not a trusted Native click", row["trustedAnchorActions"])
+    h.publish(acc, "hwpx", row)
+    row["insertedSave"] = row["save"]
+    inserted_model = row["insertedModel"] = inspect(path)
+    h.require(inserted_model == expected_inserted,
+              "saved anchor insertion changed curve ownership, sibling geometry, or attributes", inserted_model)
+    old_section, inserted_section = section_pair(fixture, path)
+    expected_section = deepcopy(old_section)
+    curve = expected_section.find(".//{*}curve")
+    xml_segments = curve.findall("{*}seg")
+    first = xml_segments[0]
+    second = deepcopy(first)
+    first.attrib["x2"], first.attrib["y2"] = str(midpoint["x"]), str(midpoint["y"])
+    second.attrib["x1"], second.attrib["y1"] = str(midpoint["x"]), str(midpoint["y"])
+    curve.insert(list(curve).index(first) + 1, second)
+    h.require(ET.tostring(expected_section) == ET.tostring(inserted_section),
+              "saved insertion changed raw segment metadata or unrelated section XML")
+    h.reopen(acc, path, row)
+    row["insertedReopenedSession"] = row["reopenedSession"]
+    h.require(row["insertedReopenedSession"].get("dirty") == "false"
+              and row["insertedReopenedSession"].get("unpreserved") == "false",
+              "inserted curve did not reopen cleanly", row["insertedReopenedSession"])
+
+    target = next(frame for frame in inserted_model["frames"]
+                  if frame["path"] and frame["path"].get("curveModel") == "catmull-rom-derived-bezier")
+    select()
+    count(7)
+    select_vertex(1, midpoint)
+    h.require(not acc.d.js("return document.querySelector('.object-path-remove-vertex').disabled"),
+              "inserted curve anchor cannot be removed")
+    acc.dom_click(".object-path-remove-vertex")
+    h.revision(acc, "hwpx", 1)
+    select()
+    count(6)
+    acc.key("ctrl+z")
+    h.revision(acc, "hwpx", 2)
+    select()
+    count(7)
+    acc.key("ctrl+y")
+    h.revision(acc, "hwpx", 3)
+    select()
+    count(6)
+    row["trustedAnchorActions"] = acc.d.js("return window.catmullRomAnchorActions")
+    h.require(row["trustedAnchorActions"] == [
+        {"action": "insert", "trusted": True}, {"action": "remove", "trusted": True}],
+        "anchor insert/delete were not trusted Native clicks", row["trustedAnchorActions"])
+    h.publish(acc, "hwpx", row)
+    after = row["after"] = inspect(path)
+    h.require(after == before, "deleted anchor did not restore original curve model and ownership", after)
+    old_section, new_section = section_pair(fixture, path)
+    h.require(ET.tostring(old_section) == ET.tostring(new_section),
+              "saved deletion did not restore exact source curve XML")
+    h.reopen(acc, path, row)
+    row["deletedReopenedSession"] = row["reopenedSession"]
+    h.require(row["deletedReopenedSession"].get("dirty") == "false"
+              and row["deletedReopenedSession"].get("unpreserved") == "false",
+              "deleted curve did not reopen cleanly", row["deletedReopenedSession"])
+    target = next(frame for frame in after["frames"]
+                  if frame["path"] and frame["path"].get("curveModel") == "catmull-rom-derived-bezier")
+    select()
+    count(6)
+    row["fixtureSha256After"] = h.digest(fixture)
+    h.require(row["fixtureSha256After"] == row["fixtureSha256"], "authentic source fixture changed")
+    row["sourceSampleSha256After"] = h.digest(source_sample)
+    h.require(row["sourceSampleSha256After"] == row["sourceSampleSha256"],
+              "upstream source sample changed")
+
+
 def hwpx_curve_line_segments_case(acc, row, fixtures, out):
     fixture = fixtures / "a-p4-curve-original.hwpx"
     before = row["before"] = inspect(fixture)
@@ -2345,6 +2512,7 @@ h.CASES = {
     "P4-PATH-XFM-HWP5": lambda *args: rhwp_path_transform_case(*args, "hwp"),
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
+    "P4-HX-CURVE-CATMULL": hwpx_curve_catmull_rom_case,
     "P4-HX-CURVE-LINES": hwpx_curve_line_segments_case,
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),
     "P4.3": group_case,

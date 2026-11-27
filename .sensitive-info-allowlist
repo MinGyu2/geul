@@ -20,3 +20,7 @@ email-address patches/wordcraft/docx-note-picture-move.commit sha256=56ef2fe9e17
 # 2026-11-27: synthetic P6-OTHER-CAP HWP5 fixture pair; metadata scrubbed and document structure reviewed in PROVENANCE.md.
 uninspected-binary scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-original.hwp sha256=2aabc9d6cb0fe6f87a2b7a7aae51f6eb41729ee68053eb93c7f15bf55a81a4f0 -- synthetic HWP5 group-caption fixture; metadata scrubbed and records reviewed (PROVENANCE.md)
 uninspected-binary scripts/tests/fixtures/p6-other-cap-hwp5/group-caption-edited.hwp sha256=2ee39992696b27b49c30a26425cfd016c35bfe4c7532b18f0f49c1d76ac1c019 -- synthetic HWP5 group-caption fixture; metadata scrubbed and records reviewed (PROVENANCE.md)
+
+# 2026-11-27: public Apache-2.0 SimpleCurve HWPX fixture pair; embedded preview PNG chunks were inspected (IHDR/pHYs/IDAT/IEND only; no text or EXIF chunks). Metadata creator and lastsaveby were cleared. Exact outer hashes scope the remaining binary preview exception.
+uninspected-binary scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.hwpx sha256=cd403f9facf7ccef55a171b2c824d72ea41a4d13c38e5997eea598a37744c7b0 -- public licensed curve fixture; embedded PNG chunks inspected, no text or EXIF metadata
+uninspected-binary scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx sha256=53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548 -- canonical fixture derived from the public sample; embedded PNG chunks inspected, no text or EXIF metadata
