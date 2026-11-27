@@ -205,7 +205,7 @@
   },
   "revalidationMethod": {
     "officialRevalidation": {
-      "date": "2026-11-25",
+      "date": "2026-11-27",
       "officialRegistry": "e나라표준인증 KS X 6101 revision 03, active; operation date 2024-10-30.",
       "sourceUrl": "https://www.standard.go.kr/KSCI/api/std/viewMachineNextPage.do?format=json",
       "method": "POST",
