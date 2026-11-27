@@ -146,7 +146,38 @@
       "publishedSha256": "ea5cbc28d183b86e9d27951095a31d35d71b5e5694e4f2bfccfd1c8192c46281",
       "cleanup": "PASS: 파일시스템 증명 cleanup 완료. teardown 시 관리 프로세스 14개, survivor/leak/process error 없음; 소유 work/socket 경로 제거.",
       "externalOffice": "NOT RUN: Microsoft Word의 semantic caption recognition/interoperability를 주장하지 않는다.",
-      "otherPlatforms": "Wayland, Windows, macOS는 NOT RUN."
+      "otherPlatforms": "Wayland, Windows, macOS는 NOT RUN.",
+      "retainedArtifacts": {
+        "description": "Native acceptance artifacts are retained under the ignored root target directory for review and recovery.",
+        "root": "target/p6-other-cap-clean-source-native",
+        "copyVerification": {
+          "result": "PASS: all 20 copied file SHA-256 values matched their corresponding files in the clean committed-source clone.",
+          "fileCount": 20,
+          "totalBytes": 58812
+        },
+        "successfulRun": {
+          "directory": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final",
+          "resultJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final/run/result.json",
+          "editedDocx": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final/run/p6-other-cap-docx-edited.docx",
+          "freshReopenDocx": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final/run/p6-other-cap-docx-fresh-reopen.docx",
+          "sessionJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final/session/session.json",
+          "cleanupJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-final/session/cleanup.json"
+        },
+        "notRunAttempts": [
+          {
+            "status": "NOT RUN: the harness stopped before case execution because rhwp_poc was missing.",
+            "directory": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native",
+            "sessionJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native/session/session.json",
+            "cleanupJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native/session/cleanup.json"
+          },
+          {
+            "status": "NOT RUN: the harness stopped before case execution because wordcraft_poc was missing.",
+            "directory": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-retry",
+            "sessionJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-retry/session/session.json",
+            "cleanupJson": "target/p6-other-cap-clean-source-native/p6-other-cap-clean-native-retry/session/cleanup.json"
+          }
+        ]
+      }
     },
     "externalOffice": "NOT RUN; Microsoft Word semantic caption recognition/interoperability has not been tested.",
     "waylandWindowsMacos": "NOT RUN.",
