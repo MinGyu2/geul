@@ -456,5 +456,37 @@
       "formatCommit": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d"
     },
     "decision": "커밋된 소스 재현은 빌드와 구현 부분의 집중 동작에 대해 확인됐다. 독립 Bezier 제어점 편집/직렬화와 geometry를 보존하는 CURVE 분할/삭제 계약은 여전히 미해결이므로 P4 수락 상태는 바뀌지 않는다."
+  },
+  "currentRootGeneratedArtifactAudit": {
+    "reviewedAt": "2026-11-28",
+    "committedSourceReconstruction": {
+      "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
+      "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "orderedPatchCount": 73,
+      "lastPatchSha256": "c2334340e2c86f99bae97f7f5cfbba548164c714415e7191eb819c2572548c4f",
+      "preparedSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
+      "generatedManifestJsonRawSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+      "result": "PASS: clean committed-source reconstruction; manifest raw-file hash and prepared source-tree hash are distinct values."
+    },
+    "ignoredRootHistoricalArtifacts": {
+      "manifestPath": "target/rhwp-patched-source.json",
+      "manifestRawSha256": "1f3c9f278e06851f76cc62e76d351c740c16efc893b64b8ea90c83271937fb02",
+      "evaluatorInputSha256": "6fb4ea05525285235869b49fbcc3f2f607da81cb2fa537c312c8077a05bbd1d1",
+      "lastPatchSha256": "77ac12264e182003c1f3796834890d264599c98634210401f45ef659a77156bf",
+      "preparedSourceTreeSha256": "103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40",
+      "classification": "현재 무시된 루트 manifest는 보호된 사용자 evaluator 입력을 포함한 이전 generated artifact다. committed-source 증거에서 제외한다."
+    },
+    "publicRhwpBuildSelection": {
+      "generation": "2af916e8f3c9b9d4b5f2c21e8684231809ffa8ab034688578537e077a182bf61",
+      "integrationSourceTreeSha256": "103c8c4eeae9a421680f0290c0e59aebfb27a3c05f2803d19153414197b2cb40",
+      "selectedJavascriptSha256": "40585a9ae88876d6cc662bc19bcec07fa0c74a783c01de06b60e25ecf1463f74",
+      "selectedWasmSha256": "1117fbd4f4f1839f926b5083dbff3f7bcc1a6c6120656d750a6202b33673db30",
+      "integrationLastPatchSha256": "77ac12264e182003c1f3796834890d264599c98634210401f45ef659a77156bf"
+    },
+    "rootTopLevelArtifacts": {
+      "javascriptSha256": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+      "wasmSha256": "0340e34c0887dc3153525123fd56a7333e60acb10a85758f790020783554d2c5",
+      "classification": "루트 top-level JS/WASM은 public/rhwp/BUILD.json 선택 artifact와도 일치하지 않는 현재 로컬 generated files다. 이 무시/생성 산출물들은 clean committed-source 검증에서 제외하며 새 기능 acceptance로 해석하지 않는다."
+    }
   }
 }
