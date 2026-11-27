@@ -34,7 +34,8 @@ TEXTBOX_PICTURE_OWNERSHIP_PIN = "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee"
 DOCX_PRESET_ADJUSTMENTS_PIN = "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e"
 DOCX_SMARTART_NODE_STYLE_PIN = "9ea07830ede9aed0d6cc87c62d6cb05a73008d05"
 DOCX_SMARTART_STYLE_TEST_PIN = "b2a38b938a2b659ac2e56c112c08e3ff2ba63cfa"
-PIN = DOCX_SMARTART_STYLE_TEST_PIN
+DOCX_SMARTART_MODELED_PASSTHROUGH_PIN = "d714567c4ccc34884809e644676f879ee2008b89"
+PIN = DOCX_SMARTART_MODELED_PASSTHROUGH_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -59,6 +60,7 @@ STEPS = [
     (TEXTBOX_PICTURE_OWNERSHIP_PIN, DOCX_PRESET_ADJUSTMENTS_PIN, "patches/wordcraft/docx-preset-adjustments.patch.b64", "patches/wordcraft/docx-preset-adjustments.commit"),
     (DOCX_PRESET_ADJUSTMENTS_PIN, DOCX_SMARTART_NODE_STYLE_PIN, "patches/wordcraft/docx-smartart-node-style.patch.b64", "patches/wordcraft/docx-smartart-node-style.commit"),
     (DOCX_SMARTART_NODE_STYLE_PIN, DOCX_SMARTART_STYLE_TEST_PIN, "patches/wordcraft/docx-smartart-style-test.patch.b64", "patches/wordcraft/docx-smartart-style-test.commit"),
+    (DOCX_SMARTART_STYLE_TEST_PIN, DOCX_SMARTART_MODELED_PASSTHROUGH_PIN, "patches/wordcraft/docx-smartart-modeled-passthrough.patch.b64", "patches/wordcraft/docx-smartart-modeled-passthrough.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]
