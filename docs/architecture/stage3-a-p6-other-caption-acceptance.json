@@ -241,8 +241,6 @@
       "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
       "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
       "rhwpOrderedPatchCount": 73,
-      "orderedPatchManifestSha256FromCheckpoint": "bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa",
-      "generatedManifestFileSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
       "preparedRhwpSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
       "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842",
       "wordcraftPin": "d714567c4ccc34884809e644676f879ee2008b89",
@@ -252,7 +250,14 @@
       "rustOwnerRegression": "PASS 3/3: DOCX group-caption owner/T009 집중 Rust 회귀.",
       "guardedRelease": "PASS: dca7eaa1b23b73aa0fa5ce9a57216b7e6423def25c23506635cdcb870eaabea2; 64,064,984 bytes. privacy/runtime-path PASS, Nix 실행환경 밖 이식성 UNVERIFIED.",
       "rustfmt": "루트 작업 트리 cargo fmt --check PASS. clean committed checkout은 보호된 기존 evaluator.rs만 포맷 차이로 실패하며 루트 사용자 소유 파일은 그대로 보존됐다.",
-      "commit": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d"
+      "commit": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
+      "generatedManifestJsonRawSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+      "lastOrderedPatch": {
+        "path": "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
+        "sha256": "c2334340e2c86f99bae97f7f5cfbba548164c714415e7191eb819c2572548c4f"
+      },
+      "manifestContents": "rhwp-patches.py JSON은 pin, ordered patches의 개별 SHA-256, shared 입력, prepared files 해시를 기록하며 별도 aggregate patch-manifest digest를 생성하지 않는다.",
+      "sourceTreeSha256Definition": "SHA-256((json.dumps(manifest[\"files\"], sort_keys=True) + \"\\n\").encode())"
     },
     "currentStatusDate": "2026-11-28"
   },

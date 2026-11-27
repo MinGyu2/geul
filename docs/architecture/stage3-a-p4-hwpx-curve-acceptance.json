@@ -371,10 +371,15 @@
     "rhwp": {
       "pin": "1a76570e833917d15817415a53c09ad61ab3203f",
       "orderedPatchCount": 73,
-      "orderedPatchManifestSha256FromCheckpoint": "체크포인트에 기록된 순서형 패치 manifest SHA-256: bcb80dce553c8a8e7beaf8eb90f38dee53191139d547465e63f468bb7bb1adaa",
-      "generatedManifestFileSha256": "격리 clone에서 생성한 manifest 파일의 SHA-256: 1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
       "preparedSourceTreeSha256": "c83fa91acd47da339f88fc4eb1a46867e46825bbccfeb173272a6acb9a8da2a0",
-      "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842"
+      "committedEvaluatorInputSha256": "a02b0ca82b75cc89ed0fa312821ccfc366d874998f93b6072952218bc4d7c842",
+      "generatedManifestJsonRawSha256": "1b52aa75946499733840361ee523dc3c116cadc959d50183025a911adb3463c3",
+      "lastOrderedPatch": {
+        "path": "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
+        "sha256": "c2334340e2c86f99bae97f7f5cfbba548164c714415e7191eb819c2572548c4f"
+      },
+      "manifestContents": "스크립트가 생성하는 JSON은 pin, 순서가 있는 patch별 SHA-256, shared 입력, 준비한 source 파일의 해시를 기록하며 별도 aggregate patch-manifest digest를 정의하지 않는다.",
+      "sourceTreeSha256Definition": "SHA-256((json.dumps(manifest[\"files\"], sort_keys=True) + \"\\n\").encode())"
     },
     "wordcraft": {
       "pin": "d714567c4ccc34884809e644676f879ee2008b89",
