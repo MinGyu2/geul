@@ -1,0 +1,132 @@
+{
+  "issue": "P6-H5-CAP",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Safely change body-owned HWP5 shape and picture caption direction and horizontal-caption vertical alignment while preserving record ownership, unrelated bytes, Undo/Redo, and durable save/reopen.",
+  "implementation": {
+    "geulCommit": "cd9ce740e33d6f00c2b828c38f669a053ceb5b52",
+    "parentCommit": "d0c9ee2969e9d1a1171115ba6ef8df91f284f641",
+    "changedFiles": [
+      "src-tauri/src/services/save/hwp/gso.rs",
+      "src/components/Editor/rhwp/RhwpEditorSession.ts",
+      "src/components/Editor/rhwp/hwp5CaptionLayout.ts",
+      "src/components/Editor/rhwp/hwp5CaptionLayout.test.ts",
+      "src/components/Editor/rhwp/hwp5CaptionLayoutSession.test.ts",
+      "scripts/tests/stage3-p6-h5-caption-native-fixtures.cjs",
+      "scripts/tests/native-stage3a-p6-h5-caption.py"
+    ],
+    "scope": "Owned, unlocked body GSO captions on supported HWP5 shapes and embedded pictures. Lateral placement is enabled only for positive caption geometry on an unrotated, unflipped floating Square object without caption margins.",
+    "t009Proof": "Only caption LIST_HEADER direction bits (caption_attr[1:0]) and horizontal-caption vertical-alignment bits (list_attr[22:21]) may change. Caption paragraph records, GSO envelope, caption ownership/address, record sequence and sizes, DocInfo definitions, and all other LIST_HEADER fields remain identical. The general caption-text proof remains the fallback for other supported caption edits; unproved layout changes fail closed.",
+    "dependencies": {
+      "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "wordcraftGitlink": "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e",
+      "rhwpReleaseGeneration": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609"
+    }
+  },
+  "verification": {
+    "focusedRustT009": "PASS 1/1: python3 scripts/cargo-geul.py test --lib hwp_shape_and_multiparagraph_caption_preserve_autonumber -- --nocapture",
+    "focusedVitest": "PASS 16/16 across the HWP5 caption/session and related object-tools checks",
+    "scopedEslint": "PASS for RhwpEditorSession.ts and the new caption helper/tests",
+    "nativeHarnessSyntax": "PASS: python3 -m py_compile scripts/tests/native-stage3a-p6-h5-caption.py",
+    "diffCheck": "PASS: git diff --check",
+    "workspaceRustfmt": "FAIL: cargo fmt --all -- --check reports broad existing formatting differences in unrelated workspace files; the changed Rust proof was individually checked with rustfmt and no unrelated formatting rewrite was made.",
+    "guardedReleaseBuild": {
+      "command": "VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "4484218bb1c65440d935b4fff01c96b40f0cbec615cc3421318008b044592104",
+      "bytes": 63633600,
+      "typescriptAndVite": "PASS",
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED",
+      "workspaceInputNote": "The build used the preserved, user-owned dirty patches/rhwp/table-calc/evaluator.rs; reproducing this exact artifact from committed-root-only sources is NOT VERIFIED."
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "run": "run12",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul",
+      "appSha256": "4484218bb1c65440d935b4fff01c96b40f0cbec615cc3421318008b044592104",
+      "rhwpGeneration": "3284d08e186e131210b4239a1bb35ac5155874a9218c7bf03754efb9a0d03609",
+      "trustedPointerSelection": "PASS for each editable shape and picture owner",
+      "editableShape": {
+        "fixtureSha256": "4705a98a96c33de9084bc9005b264dab065d2960dd8a9146fe38d37f2402e1ba",
+        "savedHwpSha256": "f2a6d19b8ed33260ea938bf7663753d4634555c701a6076049132e02195c4bae",
+        "owner": {
+          "kind": "shape",
+          "gsoControlRecordIndex": 12,
+          "captionListHeaderRecordIndex": 13,
+          "captionParagraphs": 1,
+          "gsoAttribute": "0x200a0000"
+        },
+        "edit": "Bottom to Right; vertical alignment Top to Center",
+        "undoRedoRevisions": [1, 2, 3, 4, 5, 6],
+        "t009": "PASS: saved, synced=true, changedSince=false, findings empty at revision 6",
+        "cfbAndRecordProof": {
+          "changedStreams": ["BodyText/Section0", "PrvImage"],
+          "unchangedRecordStructure": true,
+          "changedRecordIndexes": [13],
+          "allOtherCaptionAndGsoBytes": "UNCHANGED",
+          "ownerAndCaptionParagraphIdentity": "UNCHANGED",
+          "captionListHeaderSha256": "424f44c36483df78962a42fc8537ab3ddffbf4de965e7b81567f9d97fddfafc1"
+        },
+        "rightCaptionRenderedY": {
+          "Top": 40.7,
+          "Center": 55.3,
+          "Bottom": 70.0
+        },
+        "freshNativeSessionReopen": "PASS; saved caption properties and rendered positions matched the independently reopened RHWP model"
+      },
+      "editablePicture": {
+        "fixtureSha256": "a02813083766f3d93a2210d2216de52bd1a41766485041ef9f6fbed51a4a1965",
+        "savedHwpSha256": "54f6b38e2d47a35b521b421ab3a9eb0fa0017c0179c21c0c287662e372c07043",
+        "owner": {
+          "kind": "embedded picture",
+          "gsoControlRecordIndex": 12,
+          "captionListHeaderRecordIndex": 13,
+          "captionParagraphs": 1,
+          "gsoAttribute": "0x200a0000"
+        },
+        "edit": "Bottom to Right; vertical alignment Top to Center",
+        "undoRedoRevisions": [1, 2, 3, 4, 5, 6],
+        "t009": "PASS: saved, synced=true, changedSince=false, findings empty at revision 6",
+        "cfbAndRecordProof": {
+          "changedStreams": ["BodyText/Section0", "PrvImage"],
+          "unchangedRecordStructure": true,
+          "changedRecordIndexes": [13],
+          "allOtherCaptionAndGsoBytes": "UNCHANGED",
+          "ownerAndCaptionParagraphIdentity": "UNCHANGED",
+          "captionListHeaderSha256": "424f44c36483df78962a42fc8537ab3ddffbf4de965e7b81567f9d97fddfafc1"
+        },
+        "rightCaptionRenderedY": {
+          "Top": 40.0,
+          "Center": 58.7,
+          "Bottom": 77.3
+        },
+        "freshNativeSessionReopen": "PASS; saved caption properties and rendered positions matched the independently reopened RHWP model"
+      },
+      "lockedShape": {
+        "status": "PASS; mutation controls absent, revision 0, dirty=false, disk bytes untouched",
+        "fixtureSha256": "5789147cac80dd447f3afceaaad28ee7fcaeaa7d103d95d92668047c3d127cff"
+      },
+      "lockedPicture": {
+        "status": "PASS; mutation controls absent, revision 0, dirty=false, disk bytes untouched",
+        "fixtureSha256": "e53476df936f44d785ac840000aee0c8eb37cb2659f737fe850fbc39c2a547f8"
+      },
+      "resultJson": {
+        "path": "target/stage3-p6-h5-cap-native-run12/result/result.json",
+        "sha256": "c262b3d0434315ddb930aeb7b85049bcead9dc482d99878144b5624a24dcdc65"
+      },
+      "cleanup": {
+        "path": "target/stage3-p6-h5-cap-native-run12/x11-session/cleanup.json",
+        "sha256": "aae0d61a49a81543a19fc1c9cbdd9535352096eaa36b1dd99adf3e32e9558ed1",
+        "result": "PASS; complete, proven, filesystemProven, exit 0, no survivors or process errors"
+      }
+    }
+  },
+  "limitations": [
+    "Native cases exercised HWP5 body Rectangle and embedded Picture owners; other supported body shape types share the guarded implementation but were not separately exercised in Native.",
+    "Native saved Bottom-to-Right direction changes and Top-to-Center alignment changes. The UI exposes Top, Bottom, Left, and Right; other durable Native direction transitions were not separately exercised.",
+    "The Native reopen used a fresh document session in the same application process; separate application-PID reopen was NOT RUN.",
+    "External HWP editors, Wayland, Windows, and macOS were NOT RUN. Nix-independent portability is NOT VERIFIED."
+  ]
+}
