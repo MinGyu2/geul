@@ -1,0 +1,166 @@
+{
+  "issue": "P6-SMARTART-MODEL",
+  "status": "IMPLEMENTED_VERIFIED",
+  "requirement": "Edit node-specific SmartArt styles and supported additional data in DOCX while preserving node identity, diagram ownership, package relationships, Undo/Redo, and durable save/reopen.",
+  "implementation": {
+    "wordcraft": {
+      "commit": "b2a38b938a2b659ac2e56c112c08e3ff2ba63cfa",
+      "parentCommit": "9ea07830ede9aed0d6cc87c62d6cb05a73008d05",
+      "tree": "84555750793c4aa916292e048b23b69922f5d7f1",
+      "exactReconstruction": "PASS"
+    },
+    "geulCommits": [
+      "7fa020c6a8997e420983dab7f37f19b182995ed5",
+      "56d0ce0776768306e1667290dabdd5e581c7534b",
+      "f4ba57dd5d39e58ef92b0886a58e2644905a96aa"
+    ],
+    "changedFiles": [
+      "src-tauri/src/adapters/wordcraft/engine.rs",
+      "src-tauri/src/services/save/docx_graphics.rs",
+      "src-tauri/src/services/save/tests.rs",
+      "src/commands/graphicProperties.ts",
+      "src/commands/objectSelection.ts",
+      "src/components/PropertiesPanel/PropertiesPanel.tsx",
+      "src/language/en.json",
+      "src/language/ko.json",
+      "scripts/tests/native-stage3-p6.py",
+      "scripts/tests/native-new-document.py",
+      "scripts/prepare-wordcraft.py"
+    ],
+    "scope": "Canonical DOCX SmartArt node fill, outline color and width, text color, bold/italic, stable point/transition identifiers, and allowlisted additional node properties. The UI edits the selected node. Unsupported diagram envelopes are rejected before mutation.",
+    "t009Proof": "Only the bound chart and SmartArt data/layout/drawing parts are admitted by exact regenerated-part proof. The test verifies the package part set, node identifiers, existing node properties, source mapping, and all unrelated part bytes. Unauthorized changes and shared owners are rejected. The Native save changed exactly word/charts/chart1.xml, word/diagrams/data1.xml, word/diagrams/drawing1.xml, and word/diagrams/layout1.xml; no relationship part changed.",
+    "sharedPartBoundary": "Mutating a data, layout, or drawing part with multiple owners remains fail-closed until P6-SMARTART-SHARED implements copy-on-write and relationship reconnection."
+  },
+  "dependencies": {
+    "wordcraftGitlink": "b2a38b938a2b659ac2e56c112c08e3ff2ba63cfa",
+    "wordcraftParent": "9ea07830ede9aed0d6cc87c62d6cb05a73008d05",
+    "wordcraftTree": "84555750793c4aa916292e048b23b69922f5d7f1",
+    "rhwpGitlink": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "verification": {
+    "wordcraftEngineRegression": "PASS 1/1: smart_art_round_trips_through_docx on the source tree identical to the exact reconstructed WordCraft pin.",
+    "wordcraftReconstruction": "PASS: scripts/prepare-wordcraft.py reproduced the pinned commit and tree exactly.",
+    "typescript": "PASS: npm run typecheck.",
+    "focusedVitest": "PASS 67/67 across objectTools, graphicProperties, DOCX adapter, and object-selection frame tests.",
+    "focusedRustT009": "PASS 1/1: docx_regenerated_graphic_part_proof_admits_only_bound_chart_and_diagram_parts, including positive, unauthorized-part, Venn-style, and shared-owner cases.",
+    "nativeHarnessSyntax": "PASS: python3 -m py_compile scripts/tests/native-stage3-p6.py.",
+    "guardedReleaseBuild": {
+      "command": "python3 scripts/tauri-geul.py build --no-bundle",
+      "result": "PASS",
+      "path": "src-tauri/target/release/geul",
+      "sha256": "fd662cf18464539d4cc283d0c97cc7073ecdf3913d7f0614a275d44f9ec36e89",
+      "bytes": 63738248,
+      "privacy": "PASS",
+      "runtimePath": "PASS",
+      "portability": "NOT VERIFIED",
+      "workspaceInputNote": "The build used the preserved user-owned dirty patches/rhwp/table-calc/evaluator.rs; reproducing the exact artifact from committed-root-only inputs is NOT VERIFIED."
+    },
+    "nativeX11": {
+      "result": "PASS",
+      "environment": "Linux X11/Xvfb with private D-Bus and IBus Hangul 1.5.5/IBus 1.5.33",
+      "appSha256": "fd662cf18464539d4cc283d0c97cc7073ecdf3913d7f0614a275d44f9ec36e89",
+      "originalFixtureSha256": "e3398fbae93cf5da93bf503f6e495ca0bea1a7c5a03dde380867e0a153c3972e",
+      "injectedMetadataFixtureSha256": "031204094500ecc16cd52640d4eca1ee6fd4048a22f27e4278e5b827beb93900",
+      "savedDocxSha256": "3bc2333494cd59ecd295fc1ff99a828ce30f094deb2c1a70b51f8560722bf65c",
+      "run13": {
+        "case": "graphics",
+        "result": "PASS",
+        "trustedPointerAndNodeStyle": {
+          "nodeIndex": 1,
+          "fill": "AABBCC",
+          "outline": "334455",
+          "outlineWidthPt": 2,
+          "textColor": "CCDDEE",
+          "bold": true,
+          "italic": false
+        },
+        "canvasSha256": {
+          "before": "7bd005b221a36f498331122778b27a1b6dd454b25ef42519b1718dd21d351226",
+          "after": "b361205d576be3ef46c69adf812f2003cdcdcc5ae4e9ec41f46252d103e795a6",
+          "undo": "7bd005b221a36f498331122778b27a1b6dd454b25ef42519b1718dd21d351226",
+          "redo": "b361205d576be3ef46c69adf812f2003cdcdcc5ae4e9ec41f46252d103e795a6",
+          "sameAppReopen": "b361205d576be3ef46c69adf812f2003cdcdcc5ae4e9ec41f46252d103e795a6"
+        },
+        "t009": {
+          "state": "saved",
+          "synced": true,
+          "changedSince": false,
+          "revision": 8,
+          "findings": ""
+        },
+        "changedOpcParts": [
+          "word/charts/chart1.xml",
+          "word/diagrams/data1.xml",
+          "word/diagrams/drawing1.xml",
+          "word/diagrams/layout1.xml"
+        ],
+        "packagePartSetPreserved": true,
+        "allUnlistedOpcPartsByteIdentical": true,
+        "stableNodeIdsAndMetadata": "PASS",
+        "sameAppReopenFrame": {
+          "left": 368.0,
+          "top": 517.265625,
+          "width": 576.0,
+          "height": 336.0
+        },
+        "resultJson": {
+          "path": "target/p6-smartart-model-x11-run-13/result.json",
+          "sha256": "cef58403b1d68291c23a4db6b18d95b2db789d99b60b0c62f82a76d83af91289"
+        },
+        "driverLog": {
+          "path": "target/p6-smartart-model-x11-run-13/driver.log",
+          "sha256": "74ab52376becb12246bcba81e9468bdee2fff3a0db8d0ee39bd2dc8423333ea8"
+        },
+        "session": {
+          "path": "target/p6-smartart-model-x11-session-13/session.json",
+          "sha256": "7c68f3ef6138672b81b5015afec0dbe19250246d83843861b9595dd74f4c3637"
+        },
+        "cleanup": {
+          "path": "target/p6-smartart-model-x11-session-13/cleanup.json",
+          "sha256": "efc40d00def92ef6d091e56ce0df093a64772658f96e40c50a5841abb01f68b8",
+          "result": "PASS: complete/proven, exit 0, no survivors, process errors, or leaked managed processes"
+        }
+      },
+      "run14": {
+        "case": "graphics-reopen",
+        "result": "PASS: new application process reopened the run13 DOCX",
+        "reopenedSavedOpcModel": "PASS",
+        "reopenedNodeStyle": "PASS",
+        "reopenedChart": "PASS",
+        "frame": {
+          "left": 368.0,
+          "top": 517.265625,
+          "width": 576.0,
+          "height": 336.0
+        },
+        "canvasSha256": "b361205d576be3ef46c69adf812f2003cdcdcc5ae4e9ec41f46252d103e795a6",
+        "resultJson": {
+          "path": "target/p6-smartart-model-x11-run-14/result.json",
+          "sha256": "99467a8e76baf598e6d9d4b4349988e8183fd9a816860c464461af5f2c7e1c3a"
+        },
+        "driverLog": {
+          "path": "target/p6-smartart-model-x11-run-14/driver.log",
+          "sha256": "fc207f071320e6aa0cf0d0ccc82085a45a033e996d85763d17d01f49d721917c"
+        },
+        "session": {
+          "path": "target/p6-smartart-model-x11-session-14/session.json",
+          "sha256": "fb48af1d70d59b6bfd135e12663070952a3ebbd171f0a83048fbdcf526a4ab82"
+        },
+        "cleanup": {
+          "path": "target/p6-smartart-model-x11-session-14/cleanup.json",
+          "sha256": "a8c56b28762a5bf5c8b624ab78980d4d211b82e6892a3f4a9770745db2733b07",
+          "result": "PASS: complete/proven, exit 0, no survivors, process errors, or leaked managed processes"
+        }
+      }
+    }
+  },
+  "supersededAttempts": [
+    "X11 run09 failed before style mutation because the harness lacked hashlib; cleanup was proven and no process survived.",
+    "X11 run11 verified style, Undo/Redo, save and OPC, then failed its frame assertion because a later HWP5 selected_frame helper shadowed the SmartArt helper. The helper was given a distinct name and runs13/14 passed."
+  ],
+  "limitations": [
+    "Shared SmartArt data/layout/drawing OPC parts remain fail-closed; independent copy-on-write and relationship reconnection are tracked separately as P6-SMARTART-SHARED.",
+    "Only the canonical uniquely-owned SmartArt fixture and its node-style properties were exercised; other noncanonical styles, colors, layouts and additional-data envelopes remain fail-closed until individually modeled and proven.",
+    "External Office interoperability, Wayland, Windows and macOS were NOT RUN. Nix-independent portability is NOT VERIFIED."
+  ]
+}
