@@ -1,0 +1,6 @@
+tree f41293ac5ee9ab5f0fec694ed446f717a14d5f2c
+parent bbd2b6178008fd760ff9b30c4753d4b53d6ece3e
+author Geul Local Reconstruction <geul-local-reconstruction@invalid> 1795748818 +0900
+committer Geul Local Reconstruction <geul-local-reconstruction@invalid> 1795748818 +0900
+
+feat(wordcraft): model SmartArt node styles [P6-SMARTART-MODEL]

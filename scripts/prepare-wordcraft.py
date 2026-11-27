@@ -32,7 +32,8 @@ STORY_PICTURE_IDS_PIN = "d945a5bcac9f9e8f2cfe4cea39a055a8fbf6fb8c"
 NONCANONICAL_STORY_PICTURE_EXTENTS_PIN = "ce77006df77470f044a4f31257b5fec8d58640fc"
 TEXTBOX_PICTURE_OWNERSHIP_PIN = "7b73ec9361b7c6dd05860b06bb7a2f8f5ecd3aee"
 DOCX_PRESET_ADJUSTMENTS_PIN = "bbd2b6178008fd760ff9b30c4753d4b53d6ece3e"
-PIN = DOCX_PRESET_ADJUSTMENTS_PIN
+DOCX_SMARTART_NODE_STYLE_PIN = "9ea07830ede9aed0d6cc87c62d6cb05a73008d05"
+PIN = DOCX_SMARTART_NODE_STYLE_PIN
 REMOTE = "https://github.com/MinGyu2/wordcraft.git"
 STEPS = [
     (BASE, FONT_PIN, "patches/wordcraft/system-font-source.patch", "patches/wordcraft/system-font-source.commit"),
@@ -55,6 +56,7 @@ STEPS = [
     (STORY_PICTURE_IDS_PIN, NONCANONICAL_STORY_PICTURE_EXTENTS_PIN, "patches/wordcraft/docx-noncanonical-story-picture-extents.patch.b64", "patches/wordcraft/docx-noncanonical-story-picture-extents.commit"),
     (NONCANONICAL_STORY_PICTURE_EXTENTS_PIN, TEXTBOX_PICTURE_OWNERSHIP_PIN, "patches/wordcraft/docx-textbox-picture-ownership.patch.b64", "patches/wordcraft/docx-textbox-picture-ownership.commit"),
     (TEXTBOX_PICTURE_OWNERSHIP_PIN, DOCX_PRESET_ADJUSTMENTS_PIN, "patches/wordcraft/docx-preset-adjustments.patch.b64", "patches/wordcraft/docx-preset-adjustments.commit"),
+    (DOCX_PRESET_ADJUSTMENTS_PIN, DOCX_SMARTART_NODE_STYLE_PIN, "patches/wordcraft/docx-smartart-node-style.patch.b64", "patches/wordcraft/docx-smartart-node-style.commit"),
 ]
 PATCH = STEPS[0][2]
 COMMIT = STEPS[0][3]
