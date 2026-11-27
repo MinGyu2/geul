@@ -678,6 +678,66 @@ pub(super) fn picture_caption_candidate(old: &[Record<'_>], new: &[Record<'_>]) 
         && old[a..] == new[b..]
 }
 
+/// HWP5 stores caption direction in `caption_attr[1:0]` and horizontal-caption
+/// vertical alignment in `LIST_HEADER.list_attr[22:21]`. Admit a layout-only
+/// edit only when the complete caption story and GSO envelope are unchanged.
+fn caption_layout_only_change(
+    kind: &[u8; 4],
+    old: &[Record<'_>],
+    new: &[Record<'_>],
+    old_sc: usize,
+    new_sc: usize,
+    original_defs: &Defs<'_>,
+    defs: &Defs<'_>,
+) -> bool {
+    let old_list = old.get(1).map(|r| r.2);
+    let new_list = new.get(1).map(|r| r.2);
+    let (Some(old_list), Some(new_list)) = (old_list, new_list) else {
+        return false;
+    };
+    if !matches!(
+        kind,
+        SC_PICTURE | SC_LINE | SC_RECT | SC_ELLIPSE | SC_POLYGON | SC_CURVE
+    ) || old_list.len() != 30
+        || new_list.len() != 30
+        || old_list[..2] != new_list[..2]
+        || old_list[6..8] != new_list[6..8]
+        || old_list[12..] != new_list[12..]
+        || old.get(2..old_sc) != new.get(2..new_sc)
+        || original_defs != defs
+    {
+        return false;
+    }
+
+    let count = u16::from_le_bytes([old_list[0], old_list[1]]);
+    if !(1..=64).contains(&count) {
+        return false;
+    }
+    let old_list_attr = u32::from_le_bytes(old_list[2..6].try_into().unwrap());
+    let new_list_attr = u32::from_le_bytes(new_list[2..6].try_into().unwrap());
+    let align_mask = 0x03 << 21;
+    if (old_list_attr ^ new_list_attr) & !align_mask != 0
+        || (old_list_attr & align_mask) >> 21 > 2
+        || (new_list_attr & align_mask) >> 21 > 2
+    {
+        return false;
+    }
+    let align_changed = old_list_attr != new_list_attr;
+
+    let old_caption_attr = u32::from_le_bytes(old_list[8..12].try_into().unwrap());
+    let new_caption_attr = u32::from_le_bytes(new_list[8..12].try_into().unwrap());
+    if (old_caption_attr ^ new_caption_attr) & !0x03 != 0 {
+        return false;
+    }
+    let old_direction = old_caption_attr & 0x03;
+    let new_direction = new_caption_attr & 0x03;
+    let direction_changed = old_direction != new_direction;
+    if !align_changed && !direction_changed {
+        return false;
+    }
+    !align_changed || matches!(new_direction, 0 | 1)
+}
+
 pub(super) fn prove_picture_caption(
     old: &[Record<'_>],
     new: &[Record<'_>],
@@ -698,11 +758,14 @@ pub(super) fn prove_picture_caption(
             && dword(old[0].2, 4)? as u32 & (ATTR_LOCKED | ATTR_CAPTION) == ATTR_CAPTION
             && old_list.len() == 30
             && new_list.len() == 30
-            && old_list[2..] == new_list[2..]
             && (1..=64).contains(&old_count)
             && (1..=64).contains(&new_count),
         BODY,
     )?;
+    if caption_layout_only_change(kind, old, new, a, b, original_defs, defs) {
+        return Ok(());
+    }
+    preserved(old_list[2..] == new_list[2..], BODY)?;
     super::insertions::prove_caption_paragraphs(
         &old[2..a],
         &new[2..b],
@@ -6862,6 +6925,50 @@ mod tests {
             cap_list(1, 0),
             super::ATTR_CAPTION,
         );
+        let bottom_caption = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 3),
+            super::ATTR_CAPTION,
+        );
+        assert_eq!(
+            check_with_preview_refresh(&orig_shape, &bottom_caption),
+            vec![],
+            "a caption direction-only edit should preserve its caption story"
+        );
+        let mut centered_list = cap_list(1, 0);
+        centered_list[2..6].copy_from_slice(&(1u32 << 21).to_le_bytes());
+        let centered_caption = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            centered_list,
+            super::ATTR_CAPTION,
+        );
+        assert_eq!(
+            check_with_preview_refresh(&orig_shape, &centered_caption),
+            vec![],
+            "a caption vertical-alignment-only edit should preserve its caption story"
+        );
+        let mut right_center_list = cap_list(1, 1);
+        right_center_list[2..6].copy_from_slice(&(1u32 << 21).to_le_bytes());
+        let right_center_caption = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            right_center_list,
+            super::ATTR_CAPTION,
+        );
+        assert_eq!(
+            check_with_preview_refresh(&orig_shape, &right_center_caption),
+            vec![],
+            "a combined caption direction and vertical-alignment edit should preserve its story"
+        );
+        let vertical_shape = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 3),
+            super::ATTR_CAPTION,
+        );
+        assert_eq!(
+            check_with_preview_refresh(&vertical_shape, &right_center_caption),
+            vec![],
+            "a vertical-to-horizontal caption transition may set its newly applicable alignment"
+        );
         let split_shape = build_shape_cap(
             vec![cap_para("도형 ", true, false), cap_para("둘째 줄", false, true)],
             cap_list(2, 0),
@@ -6887,6 +6994,12 @@ mod tests {
             super::ATTR_CAPTION,
         );
         assert!(!check_with_preview_refresh(&orig_shape, &bad_list).is_empty());
+        let unrelated_caption_bits = build_shape_cap(
+            vec![cap_para("도형 ", true, true)],
+            cap_list(1, 0x80),
+            super::ATTR_CAPTION,
+        );
+        assert!(!check_with_preview_refresh(&orig_shape, &unrelated_caption_bits).is_empty());
 
         // Negative 3: locked shape caption edit must fail closed.
         let locked_orig = build_shape_cap(

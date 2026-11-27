@@ -3,6 +3,7 @@ import { hitRhwpObject, type CellPictureAddress, type CellShapeAddress, type Hea
 import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
+import { inspectHwp5CaptionLayout } from "./hwp5CaptionLayout";
 import { hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveLineSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import {
   extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject,
@@ -2088,9 +2089,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           }
           const caption = format === "hwpx" && address && canPic && this.doc.setPictureProperties
             && this.unlockedBodyGso(address) === "그림" ? readHwpxPictureCaption(this.doc, address) : undefined;
-          const captionSide = caption?.side;
-          const captionLateral = caption?.lateral === true;
-          const captionVerticalAlign = captionSide === "Left" || captionSide === "Right" ? caption?.caption.vertAlign : undefined;
+          const hwpPictureCaption = format === "hwp" && address && canPic
+            && this.doc.getPictureProperties && this.doc.setPictureProperties
+            && this.unlockedBodyGso(address) === "그림" && this.ownsHwpGsoCaption(address, false)
+            ? (() => {
+              try { return inspectHwp5CaptionLayout(JSON.parse(this.doc!.getPictureProperties!(...address))); }
+              catch { return undefined; }
+            })() : undefined;
+          let captionSide = caption?.side ?? hwpPictureCaption?.side;
+          let captionLateral = caption?.lateral === true || hwpPictureCaption?.lateral === true;
+          let captionVerticalAlign = captionSide === "Left" || captionSide === "Right"
+            ? caption?.caption.vertAlign ?? hwpPictureCaption?.verticalAlign : undefined;
           const spacing = caption?.caption.spacing;
           const captionSpacing = !captionVerticalAlign && spacing !== undefined && spacing >= 0 && spacing <= MAX_CAPTION_SPACING_HWPUNIT
             ? spacing : undefined;
@@ -2127,6 +2136,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           const shape = resolvedShapeAddress && this.history && shapeSupported
             && (shapeAddress ? !!this.doc.setShapeProperties : !!headerShapeApi || !!cellShapeApi)
             ? inspectRhwpShape(shapePropertiesApi!, resolvedShapeAddress) : undefined;
+          const hwpShapeCaption = format === "hwp" && shapeAddress && shape?.hasCaption && !shape.textBox
+            && this.doc.getShapeProperties && this.doc.setShapeProperties
+            && this.isEditableHwpGso(shapeAddress, true) && this.ownsHwpGsoCaption(shapeAddress, true)
+            ? (() => {
+              try { return inspectHwp5CaptionLayout(JSON.parse(this.doc!.getShapeProperties!(...shapeAddress))); }
+              catch { return undefined; }
+            })() : undefined;
+          if (!captionSide && hwpShapeCaption) {
+            captionSide = hwpShapeCaption.side;
+            captionLateral = hwpShapeCaption.lateral;
+            captionVerticalAlign = captionSide === "Left" || captionSide === "Right"
+              ? hwpShapeCaption.verticalAlign : undefined;
+            operations.push("captionSide");
+            if (captionVerticalAlign) operations.push("captionVerticalAlign");
+          }
           const convertShape = shapeAddress && shape && this.doc.getShapeTypeChangeTarget && this.doc.changeShapeType
             && (format === "hwp" || format === "hwpx")
             ? (() => {
@@ -5437,6 +5461,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private editPictureCaption(request: ObjectEditRequest): boolean {
     const { edit } = request;
     const selection = this.objectSelection, saved = this.selectedObject, doc = this.doc;
+    if (this.sessions.get(this.sessionId)?.format === "hwp") return this.editHwpCaptionLayout(request);
     const address = saved?.pictureAddress;
     if ((edit.kind !== "captionSide" && edit.kind !== "captionSpacing" && edit.kind !== "captionVerticalAlign")
       || !address || !selection || !doc?.setPictureProperties || !doc.getControls
@@ -5463,6 +5488,69 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         || JSON.stringify(after.props) !== JSON.stringify({ ...before.props, ...update })
         || JSON.stringify(after.caption) !== JSON.stringify({ ...before.caption, direction: side, spacing, vertAlign })) {
         throw new Error("caption placement did not preserve its owner or contents");
+      }
+      return { caret, anchor };
+    }, true, "other", null, true, true);
+    if (!accepted && this.status.kind === "ready") {
+      this.selectedObject = saved;
+      this.emit();
+    }
+    return accepted;
+  }
+
+  private editHwpCaptionLayout(request: ObjectEditRequest): boolean {
+    const { edit } = request;
+    if (edit.kind !== "captionSide" && edit.kind !== "captionVerticalAlign") return false;
+    const selected = this.objectSelection, saved = this.selectedObject, doc = this.doc;
+    const isShape = !!saved?.shapeAddress;
+    const address = saved?.shapeAddress ?? saved?.pictureAddress;
+    const read = isShape ? doc?.getShapeProperties?.bind(doc) : doc?.getPictureProperties?.bind(doc);
+    const write = isShape ? doc?.setShapeProperties?.bind(doc) : doc?.setPictureProperties?.bind(doc);
+    if (!selected || !saved || !doc || !address || !read || !write || !doc.getControls || !this.history
+      || this.imeUnsettled || !objectEditMatches(request, selected)
+      || this.sessions.get(this.sessionId)?.format !== "hwp" || !this.structuralFormat()
+      || !this.ownsHwpGsoCaption(address, isShape)
+      || (isShape ? !this.isEditableHwpGso(address, true) : !this.isEditableHwpGso(address, false))) return false;
+    const ownerKind = this.unlockedBodyGso(address);
+    if (isShape
+      ? !["사각형", "타원", "직선", "다각형", "곡선"].includes(ownerKind ?? "")
+      : ownerKind !== "그림") return false;
+
+    let before: Record<string, unknown>;
+    try {
+      const raw: unknown = JSON.parse(read(...address));
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+      before = raw as Record<string, unknown>;
+    } catch { return false; }
+    const layout = inspectHwp5CaptionLayout(before);
+    if (!layout || layout.side !== selected.captionSide
+      || ((layout.side === "Left" || layout.side === "Right")
+        && selected.captionVerticalAlign !== layout.verticalAlign)) return false;
+    let update: { captionDirection: string } | { captionVertAlign: string };
+    if (edit.kind === "captionSide") {
+      if (edit.side === layout.side || ((edit.side === "Left" || edit.side === "Right") && !layout.lateral)) return false;
+      update = { captionDirection: edit.side };
+    } else {
+      if ((layout.side !== "Left" && layout.side !== "Right") || edit.align === layout.verticalAlign) return false;
+      update = { captionVertAlign: edit.align };
+    }
+    const expectedSide = "captionDirection" in update ? update.captionDirection : layout.side;
+    const expectedVerticalAlign = "captionVertAlign" in update ? update.captionVertAlign : layout.verticalAlign;
+    const expected: Record<string, unknown> = { ...before, ...update };
+    const controls = doc.getControls();
+    const { caret, anchor } = this;
+    this.selectedObject = null;
+    const accepted = this.mutate(() => {
+      const result = JSON.parse(write(...address, JSON.stringify({ hasCaption: true, ...update }))) as { ok?: boolean };
+      const after: unknown = JSON.parse(read(...address));
+      const sameProperties = !!after && typeof after === "object" && !Array.isArray(after)
+        && Object.keys(after).length === Object.keys(expected).length
+        && Object.keys(expected).every(key => JSON.stringify((after as Record<string, unknown>)[key]) === JSON.stringify(expected[key]));
+      const next = inspectHwp5CaptionLayout(after);
+      if (result.ok !== true || !sameProperties || !next || next.side !== expectedSide
+        || next.verticalAlign !== expectedVerticalAlign
+        || doc.getControls!() !== controls || !this.ownsHwpGsoCaption(address, isShape)) {
+        throw new Error("HWP5 caption layout edit changed its owner or retained data");
       }
       return { caret, anchor };
     }, true, "other", null, true, true);
