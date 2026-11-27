@@ -315,6 +315,25 @@
       "empirical": "external/rhwp/samples/**/*.hwpx에서 connector 20개를 확인했다: 18 STRAIGHT_ONEWAY(point type 3,26), 2 STROKE_ONEWAY(point type 3,2,2,26), ARC는 0개다. Authentic public SimpleCurve fixture에서 현재 추론한 Catmull–Rom handles에는 소수 좌표가 있고 connector point x/y는 정수다; 따라서 이 추론 geometry를 connector로 정확히 변환할 수 없다.",
       "inferenceAndLimitations": "SimpleCurve의 Catmull–Rom handle 모델은 sample geometry에서 도출한 inference이며 KS가 보장하는 semantics가 아니다. Connector는 연결 대상과 이동 결합을 갖는 별도 object semantics/type change다. detached ARC_NOARROW의 Hancom save/reopen 호환성에 대한 증거도 없다. 따라서 connector는 독립 Bezier controls를 저장하는 대체 CurveType으로 인정하지 않으며, 기존 partial 편집 동작을 유지한다. 이는 검토한 표준·공개 모델·samples의 범위에 한정되며 미공개 proprietary extension의 부재를 보편적으로 증명하지 않는다."
     },
+    "independentImplementationCrossCheck": {
+      "reviewedAt": "2026-11-28",
+      "evidenceClass": "비규범적 독립 HWPX 구현체 교차 확인이며 표준 해석 또는 proprietary extension 전체 부재의 증거가 아니다.",
+      "implementations": [
+        {
+          "name": "gohwpxlib",
+          "version": "v0.1.1",
+          "source": "https://pkg.go.dev/bitbucket.org/ownsoftware/gohwpxlib@v0.1.1/object/content/section_xml/paragraph/paraobject/curve",
+          "observation": "curve.CurveSegment 구조체는 Type, X1, Y1, X2, Y2 필드만 둔다."
+        },
+        {
+          "name": "HwpForge hwpforge-smithy-hwpx",
+          "version": "0.20.2",
+          "source": "https://docs.rs/hwpforge-smithy-hwpx/0.20.2/src/hwpforge_smithy_hwpx/encoder/shapes.rs.html",
+          "observation": "encoder/shapes.rs의 encode_curve_to_hx는 각 curve segment에 type/x1/y1/x2/y2를 쓴다. encode_connect_line_to_hx는 별도로 HxControlPoints를 HxConnectLine에 쓴다."
+        }
+      ],
+      "interpretation": "두 공개 구현체의 관찰은 Curve segment와 connector control-point 모델이 분리된다는 기존 검토와 일치하는 비규범적 교차 확인이다. 이들은 표준 계약을 정의하지 않고 모든 Hancom 호환 또는 proprietary 표현을 배제하지 않는다. 기존 PARTIAL / BLOCKED_BY_FORMAT_CONTRACT 결론과 수락 범위는 변경하지 않는다."
+    },
     "decision": "Retain the previously accepted endpoint, derived-handle display, anchor insertion/removal, strict LINE split/join, preservation, and Native subset. Keep independent Bezier control editing/serialization and geometry-preserving CURVE split/delete blocked by the reviewed format contract; do not infer universal extension absence or claim full P4 acceptance."
   },
   "currentModelEvidence": {
