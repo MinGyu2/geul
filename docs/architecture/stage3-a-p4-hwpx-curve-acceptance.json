@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "issueId": "P4-HX-CURVE",
   "originalCategory": "A",
-  "implementationStatus": "PARTIAL_BLOCKED_BY_FORMAT_CONTRACT",
+  "implementationStatus": "IMPLEMENTED_VERIFIED",
   "approvedContractRevision": {
     "contractName": "HWPX Native Curve Editing Contract",
     "version": "1.0",
@@ -52,19 +52,15 @@
     }
   },
   "implementedSubset": [
-    "Parse and retain original HWPX hp:seg attributes, type identity, ordering, and lexical coordinate strings.",
-    "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
-    "Move a shared endpoint in both adjacent segment records; keep a closed path closed.",
-    "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types.",
-    "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts.",
-    "For the supported standard all-CURVE chain, compute Catmull–Rom-derived Bezier handles inferred from the public authentic sample model observed through its anchors/preview; this interpolation is not guaranteed by KS X 6101 and has no verified durable XML control-point contract. Support anchor insertion/removal; the derived handles are not independently serialized."
+    "Parse, retain, and edit supported native HWPX LINE/CURVE anchors while preserving segment type, order, coordinates, shared endpoints, closure, supported source metadata, ownership, and unrelated package content.",
+    "Move a selected supported anchor; update both connected segment endpoints and preserve closed-path topology. Reject stale identity, invalid coordinates, unknown segment semantics, or ambiguous metadata atomically.",
+    "Perform ordinary supported anchor insertion and deletion deterministically. For CURVE paths these operations may intentionally change rendered shape; they are not exact subdivision/merge.",
+    "Convert supported representable segments LINE-to-CURVE and CURVE-to-LINE while retaining endpoints and connectivity and preserving only metadata valid for the target segment type; reject incompatible unknown metadata.",
+    "Perform exact LINE split/join only for strict representable cases: childless standard LINE envelope with exact known fields and an interior integer point on the line; join only eligible adjacent collinear LINE segments. Preserve source order, path closure, and unrelated OPC parts.",
+    "Compute the supported sample-inferred Catmull–Rom-derived geometry for rendering and hit testing. This is not a KS X 6101 guarantee and derived Bezier controls are not independently editable or serialized.",
+    "Keep exact CURVE subdivision/merge and independent Bezier control-point editing/serialization unavailable unless a verified native representation and geometric equivalence are established; fail closed without mutation."
   ],
-  "unresolvedRequirements": [
-    "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
-    "Bezier control-point editing has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
-    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed.",
-    "Independent Bezier handle editing/serialization has no verified format contract. Safe, geometry-preserving CURVE segment split/delete remains unresolved; do not infer a serialization contract from derived controls. The supported anchor insertion/removal behavior does not establish either capability."
-  ],
+  "unresolvedRequirements": [],
   "formatEvidence": {
     "source": "Hancom HWPML 3.0 Revision 1.2, section 5.6.6, table 140 SEGMENT",
     "url": "https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D3.0_HWPML_revision1.2.pdf",
@@ -360,26 +356,83 @@
     "catmullRomSplitCounterexample": {
       "modelScope": "기존 공개 sample에서 추론한 uniform Catmull–Rom-to-cubic 규칙에 한정된 정확한 대수 반례다. 이 예는 인접 anchor를 유지하며, KS X 6101 또는 Hancom curve semantics의 보편적 증명이 아니다.",
       "anchors": {
-        "A": [0, 0],
-        "B": [0, 24],
-        "C": [24, 24],
-        "D": [24, 0]
+        "A": [
+          0,
+          0
+        ],
+        "B": [
+          0,
+          24
+        ],
+        "C": [
+          24,
+          24
+        ],
+        "D": [
+          24,
+          0
+        ]
       },
       "originalBCubic": {
         "controls": {
-          "C1": [4, 28],
-          "C2": [20, 28]
+          "C1": [
+            4,
+            28
+          ],
+          "C2": [
+            20,
+            28
+          ]
         },
         "derivation": "C1=B+(C-A)/6; C2=C-(D-B)/6"
       },
       "deCasteljauAtHalf": {
-        "splitPoint": [12, 27],
-        "leftControls": [[2, 26], [7, 27]],
-        "rightControls": [[17, 27], [22, 26]]
+        "splitPoint": [
+          12,
+          27
+        ],
+        "leftControls": [
+          [
+            2,
+            26
+          ],
+          [
+            7,
+            27
+          ]
+        ],
+        "rightControls": [
+          [
+            17,
+            27
+          ],
+          [
+            22,
+            26
+          ]
+        ]
       },
       "uniformCatmullReencodingWithAnchorsA_B_Q_C_D": {
-        "leftBCubicControls": [[2, "57/2"], [8, 27]],
-        "rightQCubicControls": [[16, 27], [22, "57/2"]]
+        "leftBCubicControls": [
+          [
+            2,
+            "57/2"
+          ],
+          [
+            8,
+            27
+          ]
+        ],
+        "rightQCubicControls": [
+          [
+            16,
+            27
+          ],
+          [
+            22,
+            "57/2"
+          ]
+        ]
       },
       "conclusion": "두 child cubic의 재인코딩 controls가 de Casteljau 결과와 각각 다르므로, 이 정확한 split 전략은 인접 anchor를 보존한 채 같은 uniform Catmull–Rom 규칙으로 lossless하게 표현되지 않는다. 이는 이 추론 모델의 counterexample이며 다른 HWPX/Hancom curve semantics를 일반화하지 않는다. approximate fit은 구현하지 않았다."
     },
@@ -505,7 +558,186 @@
     },
     "decision": "커밋된 소스 재현은 빌드와 구현 부분의 집중 동작에 대해 확인됐다. 독립 Bezier 제어점 편집/직렬화와 geometry를 보존하는 CURVE 분할/삭제 계약은 여전히 미해결이므로 P4 수락 상태는 바뀌지 않는다."
   },
-  "currentRootGeneratedArtifactAudit": {
+  "historicalUnresolvedRequirements": [
+    "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
+    "Bezier control-point editing has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
+    "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed.",
+    "Independent Bezier handle editing/serialization has no verified format contract. Safe, geometry-preserving CURVE segment split/delete remains unresolved; do not infer a serialization contract from derived controls. The supported anchor insertion/removal behavior does not establish either capability."
+  ],
+  "statusScope": "IMPLEMENTED_VERIFIED applies only to the explicitly approved HWPX Native Curve Editing Contract v1.0. It does not claim independent durable Bezier control serialization or exact arbitrary CURVE subdivision/merge under the previous strict contract.",
+  "historicalStatusSnapshots": [
+    {
+      "asOf": "2026-11-28 before Contract v1.0 acceptance",
+      "status": "PARTIAL_BLOCKED_BY_FORMAT_CONTRACT",
+      "requirementScope": "previous strict requirement",
+      "unresolvedRequirements": [
+        "The current official KS X 6101:2024 CurveType schema defines hp:seg with a type and x1/y1/x2/y2 endpoints, but no editable Bezier control-point fields. The separate ConnectLineType controlPoints model is not a curve contract.",
+        "Bezier control-point editing has no verified serialization representation in the supported HWPX contract. Do not synthesize undocumented attributes or child elements.",
+        "CURVE segment insertion/deletion remains unsupported because endpoint-only samples and the standard do not specify interpolation/control data needed to reproduce or split the curve safely. LINE split/join is now supported only for exact standard, childless LINE source envelopes; extended, ambiguous, non-collinear, endpoint, and unsupported segment operations remain fail-closed.",
+        "Independent Bezier handle editing/serialization has no verified format contract. Safe, geometry-preserving CURVE segment split/delete remains unresolved; do not infer a serialization contract from derived controls. The supported anchor insertion/removal behavior does not establish either capability."
+      ],
+      "note": "Historical strict-contract evidence is retained. The approved product requirement revision changes the acceptance contract; it does not retroactively claim that independent Bezier serialization or exact arbitrary CURVE operations were implemented."
+    }
+  ],
+  "unsupportedCapabilities": [
+    {
+      "capability": "Independent Bezier control-point editing and durable native serialization",
+      "status": "UNSUPPORTED_UNDER_VERIFIED_HWPX_CURVETYPE",
+      "reason": "No verified independent control-point storage exists in the supported native HWPX hp:seg representation. Derived Catmull-Rom Bezier controls are display/geometry calculations only and are not independently persisted."
+    },
+    {
+      "capability": "Exact CURVE subdivision or geometry-preserving CURVE merge/deletion",
+      "status": "UNAVAILABLE_AND_FAIL_CLOSED",
+      "reason": "The endpoint-based native representation does not establish a generally exact re-encoding contract. Ordinary anchor insertion/deletion remains an explicit shape-changing operation."
+    }
+  ],
+  "contractV1Acceptance": {
+    "contractName": "HWPX Native Curve Editing Contract",
+    "version": "1.0",
+    "acceptedStatus": "IMPLEMENTED_VERIFIED",
+    "acceptanceDate": "2026-11-28",
+    "scope": "P4-HX-CURVE only; all previously accepted 38 issue IDs remain accepted. The original strict independent-control-point requirement remains historically unfulfilled and is not represented as implemented.",
+    "operations": {
+      "nativeSegments": "Preserve supported LINE/CURVE type, ordering, coordinates, shared endpoint connectivity, closure, source envelope metadata and object ownership.",
+      "anchorMovement": "Move connected native anchors, update both segment endpoints where shared, and preserve closed-path topology.",
+      "ordinaryInsertionDeletion": "Insert/delete supported anchors deterministically. Curve geometry may intentionally change; this is a shape edit, not serialization loss. Unsupported endpoints, invalid topology, mixed-type boundaries, unknown metadata, or ambiguous ownership fail closed.",
+      "segmentTypeConversion": "Support LINE-to-CURVE and CURVE-to-LINE conversion on representable supported segments while retaining endpoints, order, connectivity and safe metadata.",
+      "exactLineOperations": "Exact LINE split/join are separately supported only for strict representable childless standard LINE records and proven collinear integer geometry.",
+      "exactCurveOperations": "Exact CURVE split/merge are disabled unless future native representability and geometric equivalence are independently proven.",
+      "derivedGeometry": "Catmull-Rom-derived cubic handles are inferred from an authentic sample anchor/preview model; this interpolation is not guaranteed by KS X 6101 and handles are not independent persisted controls."
+    },
+    "criteria": {
+      "C01": {
+        "status": "PASS",
+        "evidence": "The serialized hp:seg records retain type/order/coordinates/attributes; saved model segment XML matches the independently inspected package. All non-segment section XML and unrelated OPC parts are preserved."
+      },
+      "C02": {
+        "status": "PASS",
+        "evidence": "Contract-v1 Release WASM suite 6/6 verifies anchor movement, ordinary insertion/deletion, topology constraints, Undo/Redo and durable reopen; Native closed/open cases exercise the supported operations."
+      },
+      "C03": {
+        "status": "PASS",
+        "evidence": "Native trusted UI converts CURVE↔LINE with Undo/Redo; saved segment type and endpoints are independently inspected. WASM contract test verifies both conversions and reopen."
+      },
+      "C04": {
+        "status": "PASS",
+        "evidence": "Closed and generated open fixtures both pass Native acceptance. Endpoint deletion and mixed LINE/CURVE boundary deletion remain unavailable; closure and minimum anchor rules are checked."
+      },
+      "C05": {
+        "status": "PASS",
+        "evidence": "UI and command paths distinguish shape-changing ordinary anchors from exact operations. Exact LINE split/join are tested separately; exact CURVE controls/split/merge are not exposed."
+      },
+      "C06": {
+        "status": "PASS",
+        "evidence": "Negative Release WASM cases verify unsupported/unknown metadata, invalid operations, exact CURVE operations and independent-control edits reject without document/revision/history changes."
+      },
+      "C07": {
+        "status": "PASS",
+        "evidence": "Independent OPC inspection confirms unrelated parts byte-identical, non-segment section XML unchanged, ownership/body/other objects unchanged, and only the relevant preview regenerated with valid 724x1024 PNG dimensions."
+      },
+      "C08": {
+        "status": "PASS",
+        "evidence": "Supported mutation Undo/Redo and T009 publication pass in Release WASM/Native; Native saves report saved with empty findings and cleanup manifests prove no survivors."
+      },
+      "C09": {
+        "status": "PASS",
+        "evidence": "Saved HWPX package segment records match the reopened engine model; both closed/open outputs reopen in a new clean document session with intended path and segment types."
+      },
+      "C10": {
+        "status": "PASS",
+        "evidence": "Actual guarded Release Linux X11 Native case P4-HX-CURVE-CONTRACT-V1 passed for closed and open fixtures with trusted pointer input, capability checks, Undo/Redo, T009, independent package inspection, fresh-session reopen and proven cleanup."
+      }
+    },
+    "focusedWasm": {
+      "command": "GEUL_RHWP_TEST_ARTIFACTS=public/rhwp npm run test -- --config scripts/tests/vitest.config.ts --run scripts/tests/stage3-hwpx-curve-contract.wasm.test.ts",
+      "result": "PASS: 6/6"
+    },
+    "committedSourceBuild": {
+      "checkout": "isolated clean committed-source checkout (local path omitted)",
+      "sourceHead": "8718b582525e593b1ac88647eaa386d911aa96b9",
+      "rhwpPin": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "rhwpOrderedPatchCount": 74,
+      "rhwpLastPatch": "patches/rhwp/stage3a-hwpx-curve-contract-v1.patch",
+      "rhwpLastPatchSha256": "9d380efa57897c0ab069742d190c304c5b376dfed00a7146024ad19f11d861df",
+      "preparedSourceTreeSha256": "3cecac8fe7bb2171816bb0f1098164c62837743c9274d941af6eb0f9ebb7af0e",
+      "manifestJsonRawFileSha256": "cab780f45a00bb5d8f9d48b22a0b8c96ed039b6484433d9b8e7f508ae1c29573",
+      "manifestHashMeaning": "Raw SHA-256 of target/rhwp-patched-source.json bytes; distinct from prepared source-tree SHA-256. No aggregate patch-manifest digest is defined by the preparation scripts.",
+      "rhwpGeneration": "b64392dc48162cbc985ea1411bdfa5c6c1755f3993ad951867df2fe859f44eae",
+      "rhwpJavascriptSha256": "f4cb5aaaf7217d7d8ba11b188f0c714f9626e7df46d597c01d0f58e3f06c4bb5",
+      "rhwpWasmSha256": "95766668d45faec10da33edfc963c414f60e1d7e6795dfd708ff2b11d27e40d2",
+      "rhwpReleaseWasmBuild": "PASS; external dependency checkout unchanged",
+      "wordcraftPin": "d714567c4ccc34884809e644676f879ee2008b89",
+      "wordcraftReconstruction": "PASS; exact reviewed pin",
+      "guardedTauriRelease": {
+        "command": "npm run tauri -- build",
+        "result": "PASS",
+        "applicationSha256": "d0878946db0c2728f68880780c1ee0d8aac27456a171934804c68399958aa8ac",
+        "applicationBytes": 64086552,
+        "typescriptBuild": "PASS: tsc --noEmit",
+        "privacyAndRuntimePath": "PASS",
+        "portability": "NOT VERIFIED outside the Nix runtime environment"
+      },
+      "workspaceRustfmt": {
+        "command": "npm run rust -- fmt --check",
+        "result": "PASS"
+      },
+      "sourceTreeReproducibility": "PASS; exact pin and ordered patch identities were reconstructed. Binary bit-for-bit reproducibility is not claimed."
+    },
+    "nativeLinuxX11": {
+      "case": "P4-HX-CURVE-CONTRACT-V1",
+      "result": "PASS for both closed and open fixtures",
+      "applicationSha256": "d0878946db0c2728f68880780c1ee0d8aac27456a171934804c68399958aa8ac",
+      "closedFixtureSha256": "53806f5004522b5260fac24a9700ed068849e890f0ae492573e62c26c4fd2548",
+      "openGeneratedFixtureSha256": "6b203185ec6b3b26347de3d5328b9b1e20c6c490f2e91077a9357d7699e98b66",
+      "closedSavedHwpxSha256": "74d57d27fbfafdbb06518dcf44c80b1f99453339b8cd4433ab0cb5769d4507c8",
+      "openSavedHwpxSha256": "208649a69e1e237f30484a7f181bb3d947fd87b977fe23a7256cbbd80084046f",
+      "resultFile": "target/native-p4-contract-v1-final-20261128-retry7/result.json",
+      "resultFileSha256": "c5ce361218f7368bff86b97aec1784b20aa53317d48b5118d3621643f3db81a9",
+      "cleanupFile": "target/native-session-p4-contract-v1-final-20261128-retry7/cleanup.json",
+      "cleanupFileSha256": "491faddf7eda87001b5beedabcb1ae4fc43a21c62a20b33dca04c09b184faf97",
+      "cleanup": "PASS; proven with no surviving processes or files",
+      "t009": "PASS; saved, synchronized, no findings or errors",
+      "interactions": "Trusted pointer selection and movement; anchor insertion/deletion; segment type conversion; exact LINE split/join; Undo/Redo.",
+      "reopen": "PASS in a new clean document session for both fixtures; reopened path and native segment model match saved package.",
+      "packageInspection": "PASS; all non-section OPC parts except regenerated Preview/PrvImage.png are byte-identical, preview SHA changes and remains valid 724x1024 PNG, non-segment section XML unchanged, owner/body/other objects unchanged."
+    },
+    "crossFeatureRegression": {
+      "issue": "P6-HX-CURVE",
+      "result": "PASS for P6-HX-CURVE-TRANSFER and P6-HX-CURVE-TRANSFER-FRESH on the same Release generation.",
+      "resultFile": "target/native-p6-hx-curve-contract-v1-20261128/result.json",
+      "resultFileSha256": "61363ca3563c4ce65cbe6f415c2e1911daf77fb3cf038dc2e737c6dc0dfc7ff3",
+      "cleanupFileSha256": "75dc82e16cd7dddb4d7dc36c7f3856ff3a093abe1e97518511f82ad617f455c2",
+      "cleanup": "PASS; proven with no survivors"
+    },
+    "commitSet": [
+      {
+        "sha": "b07731084d3c5f3c09d1232cd610ec0b12306cd5",
+        "role": "approved Contract v1.0 decision and historical requirement revision"
+      },
+      {
+        "sha": "752aff54a7040cf3c91e4744eb2c93aaaad3135d",
+        "role": "implementation, RHWP ordered patch #74, UI capability boundary and contract tests"
+      },
+      {
+        "sha": "bf978c1fdffb1016f30475deeea83a8d78155e18",
+        "role": "adapter geometry refresh, topology capability synchronization and focused regressions"
+      },
+      {
+        "sha": "8718b582525e593b1ac88647eaa386d911aa96b9",
+        "role": "committed-source rustfmt gate correction"
+      },
+      {
+        "sha": "73c6acfe6f2ab4bdf0f02421816b5890da24242d",
+        "role": "Native harness revision function correction"
+      },
+      {
+        "sha": "71f50ff835a292dac2865c490c89e75e1ad906c1",
+        "role": "closed/open Native contract v1 acceptance proof and harness corrections"
+      }
+    ],
+    "remainingPlatformAndInterop": "Wayland, Windows, macOS, external Hancom Office and Microsoft Office interoperability were NOT RUN. Release portability outside Nix is NOT VERIFIED."
+  },
+  "historicalRootGeneratedArtifactAudit": {
     "reviewedAt": "2026-11-28",
     "committedSourceReconstruction": {
       "parentHead": "cab29cfec1ee2329ec0fc1caf9972da9be1f9e2d",
@@ -535,6 +767,31 @@
       "javascriptSha256": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
       "wasmSha256": "0340e34c0887dc3153525123fd56a7333e60acb10a85758f790020783554d2c5",
       "classification": "루트 top-level JS/WASM은 public/rhwp/BUILD.json 선택 artifact와도 일치하지 않는 현재 로컬 generated files다. 이 무시/생성 산출물들은 clean committed-source 검증에서 제외하며 새 기능 acceptance로 해석하지 않는다."
-    }
-  }
+    },
+    "classification": "Historical audit of ignored/generated root artifacts before the final clean committed-source Contract v1.0 build; excluded from current acceptance."
+  },
+  "historicalEvidenceFields": [
+    "releaseWasm",
+    "native",
+    "commit",
+    "tauriRelease",
+    "previousEndpointReleaseWasm",
+    "previousEndpointNative",
+    "previousEndpointTauriRelease",
+    "revalidationMethod",
+    "officialHancomModel",
+    "alternativeRepresentationReview",
+    "currentModelEvidence",
+    "currentModelCommit",
+    "sampleModelInference",
+    "committedSourceVerification"
+  ],
+  "historicalImplementedSubset": [
+    "Parse and retain original HWPX hp:seg attributes, type identity, ordering, and lexical coordinate strings.",
+    "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
+    "Move a shared endpoint in both adjacent segment records; keep a closed path closed.",
+    "Serialize edited endpoints while retaining original segment metadata and refusing unsupported segment types.",
+    "Split only a childless standard HWPX LINE record with exactly type/x1/y1/x2/y2 at an interior integer point on the line; join only adjacent eligible collinear LINE records. Preserve source attributes/order, closed-path structure, and unrelated OPC parts.",
+    "For the supported standard all-CURVE chain, compute Catmull–Rom-derived Bezier handles inferred from the public authentic sample model observed through its anchors/preview; this interpolation is not guaranteed by KS X 6101 and has no verified durable XML control-point contract. Support anchor insertion/removal; the derived handles are not independently serialized."
+  ]
 }
