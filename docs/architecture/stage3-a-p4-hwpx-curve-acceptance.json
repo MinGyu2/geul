@@ -3,6 +3,54 @@
   "issueId": "P4-HX-CURVE",
   "originalCategory": "A",
   "implementationStatus": "PARTIAL_BLOCKED_BY_FORMAT_CONTRACT",
+  "approvedContractRevision": {
+    "contractName": "HWPX Native Curve Editing Contract",
+    "version": "1.0",
+    "approvedDate": "2026-11-28",
+    "historicalStatusAtApproval": "PARTIAL_BLOCKED_BY_FORMAT_CONTRACT",
+    "previousRequirement": [
+      "Independently editable Bezier control points with durable, lossless native serialization.",
+      "Geometry-preserving exact curve subdivision and segment deletion/merging."
+    ],
+    "revisedRequirement": [
+      "Use the supported native HWPX LINE/CURVE endpoint representation, preserve original segment identity/order/coordinates/metadata/ownership, and provide deterministic anchor editing.",
+      "Ordinary anchor insertion and deletion may intentionally change rendered curve geometry; this is a shape edit, not serialization loss.",
+      "Support LINE-to-CURVE and CURVE-to-LINE conversion for representable supported segments while preserving endpoints, connectivity, type-specific metadata safety, and durable serialization.",
+      "Exact subdivision and exact merging are conditional capabilities: enable only when the result is representable and independently proven geometry-equivalent; otherwise reject or omit the capability without mutation or history changes.",
+      "Independent Bezier control-point editing/serialization is not required when the supported HWPX representation has no verified native storage contract. Do not invent XML fields, treat derived controls as durable controls, or add sidecar storage.",
+      "Preserve unknown or incompatible segment metadata and fail closed when an edit cannot safely preserve it."
+    ],
+    "revisionReason": "The reviewed current KS X 6101 CurveType, Hancom model, pinned RHWP parser/writer, and available authentic samples expose endpoint-based hp:seg records without a verified independent Bezier-control serialization contract. Requiring universally exact operations on this representation would force an unsupported format assumption. The approved revision prioritizes native structure, editable anchors, explicit shape-changing operations, and conditional exact capabilities without weakening preservation guarantees.",
+    "formatEvidenceReferences": [
+      "currentOfficialStandard",
+      "rhwpModelReview",
+      "sampleCorpusAudit",
+      "officialHancomModel",
+      "alternativeRepresentationReview",
+      "sampleModelInference"
+    ],
+    "operationPolicy": [
+      "Anchor movement updates both records at a shared endpoint and retains closed-path closure.",
+      "Ordinary insertion duplicates the selected standard segment type and preserves path order/continuity; recomputed curve geometry may change intentionally.",
+      "Open-path endpoint deletion is unavailable; only interior anchors may be removed. Closed-path deletion retains closure. Both forms retain at least three unique anchors.",
+      "Deletion across a mixed LINE/CURVE boundary, or across unknown/extended segment metadata, is rejected atomically unless a safe merge rule is proven. Strict collinear LINE split/join remains its separate exact operation.",
+      "Segment type conversion changes only the type attribute on a connected childless standard envelope, retains endpoints and surrounding order, and rejects unknown or incompatible metadata.",
+      "Exact CURVE subdivision/merging and independent Bezier control-point mutation remain unavailable unless native serialization and geometric equivalence are proven."
+    ],
+    "historicalEvidencePreservation": "The prior strict requirement, earlier partial implementation status, format investigation, inferred Catmull-Rom limitations, and exact-subdivision counterexamples remain in this acceptance record. This revision does not claim that independent Bezier control-point serialization was implemented.",
+    "acceptanceCriteria": {
+      "C01": "Preserve native HWPX LINE/CURVE segment types, order, coordinates, required original attributes, connectivity, closure, ownership, and supported metadata.",
+      "C02": "Verify ordinary anchor movement, insertion, and deletion with deterministic path updates and documented topology rules.",
+      "C03": "Verify supported LINE-to-CURVE and CURVE-to-LINE conversion while preserving endpoints, surrounding connectivity, ownership, formatting, and durable segment type.",
+      "C04": "Verify valid open and closed path behavior, shared endpoint connectivity, closure, and minimum geometry constraints.",
+      "C05": "Distinguish ordinary shape-changing anchor operations from conditional geometry-preserving exact subdivision and exact merging.",
+      "C06": "Reject unsupported independent Bezier edits and nonrepresentable exact operations without document mutation, misleading capability exposure, or history changes.",
+      "C07": "Preserve unrelated XML/OPC parts, object ownership, formatting, transformations, supported metadata, and resource relationships.",
+      "C08": "Verify Undo/Redo and narrowly scoped T009 semantic preservation for every supported mutation.",
+      "C09": "Inspect the actual saved HWPX structure and independently reopen it with intended segment types, coordinates, and edited geometry intact.",
+      "C10": "Run actual Linux X11 guarded Release Native acceptance for the revised supported behavior and capability restrictions."
+    }
+  },
   "implementedSubset": [
     "Parse and retain original HWPX hp:seg attributes, type identity, ordering, and lexical coordinate strings.",
     "Expose editable point chains only for connected known LINE/CURVE segments with integer endpoints.",
