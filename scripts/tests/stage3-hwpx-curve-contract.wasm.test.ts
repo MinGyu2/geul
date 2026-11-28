@@ -67,19 +67,24 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 
 function unknownSegmentMetadataFixture(bytes: Uint8Array) {
   return new Uint8Array(execFileSync("python3", ["-c", `
-import io, sys, zipfile
-from xml.etree import ElementTree as ET
+import io, re, sys, zipfile
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w") as dst:
         for entry in src.infolist():
             data=src.read(entry)
             if entry.filename=="Contents/section0.xml":
-                root=ET.fromstring(data)
-                segments=root.findall(".//{http://www.hancom.co.kr/hwpml/2011/paragraph}curve/{http://www.hancom.co.kr/hwpml/2011/paragraph}seg")
-                assert len(segments)==6,len(segments)
-                segments[0].set("marker","preserve")
-                data=ET.tostring(root,encoding="utf-8",xml_declaration=True)
+                def annotate(match):
+                    body=match.group(0)
+                    segments=list(re.finditer(rb'<hp:seg\\b[^>]*/>',body))
+                    assert len(segments)==6,len(segments)
+                    first=segments[0]
+                    tag=first.group(0)
+                    assert b'marker=' not in tag
+                    changed=tag[:-2]+b' marker="preserve"/>'
+                    return body[:first.start()]+changed+body[first.end():]
+                data,count=re.subn(rb'<hp:curve\\b[^>]*>.*?</hp:curve>',annotate,data,count=1,flags=re.S)
+                assert count==1,count
             dst.writestr(entry,data)
     sys.stdout.buffer.write(out.getvalue())
 `], { input: bytes }));
@@ -87,19 +92,24 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 
 function unknownSegmentTypeFixture(bytes: Uint8Array) {
   return new Uint8Array(execFileSync("python3", ["-c", `
-import io, sys, zipfile
-from xml.etree import ElementTree as ET
+import io, re, sys, zipfile
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w") as dst:
         for entry in src.infolist():
             data=src.read(entry)
             if entry.filename=="Contents/section0.xml":
-                root=ET.fromstring(data)
-                segments=root.findall(".//{http://www.hancom.co.kr/hwpml/2011/paragraph}curve/{http://www.hancom.co.kr/hwpml/2011/paragraph}seg")
-                assert len(segments)==6,len(segments)
-                segments[0].set("type","SPLINE")
-                data=ET.tostring(root,encoding="utf-8",xml_declaration=True)
+                def change_type(match):
+                    body=match.group(0)
+                    segments=list(re.finditer(rb'<hp:seg\\b[^>]*/>',body))
+                    assert len(segments)==6,len(segments)
+                    first=segments[0]
+                    tag=first.group(0)
+                    assert b'type="CURVE"' in tag
+                    changed=tag.replace(b'type="CURVE"',b'type="SPLINE"',1)
+                    return body[:first.start()]+changed+body[first.end():]
+                data,count=re.subn(rb'<hp:curve\\b[^>]*>.*?</hp:curve>',change_type,data,count=1,flags=re.S)
+                assert count==1,count
             dst.writestr(entry,data)
     sys.stdout.buffer.write(out.getvalue())
 `], { input: bytes }));
@@ -107,36 +117,50 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 
 function duplicateLineSplitFixture(bytes: Uint8Array) {
   return new Uint8Array(execFileSync("python3", ["-c", `
-import io, math, sys, zipfile
-from xml.etree import ElementTree as ET
+import io, math, re, sys, zipfile
 with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
     out=io.BytesIO()
     with zipfile.ZipFile(out,"w") as dst:
         for entry in src.infolist():
             data=src.read(entry)
             if entry.filename=="Contents/section0.xml":
-                root=ET.fromstring(data)
-                segments=root.findall(".//{http://www.hancom.co.kr/hwpml/2011/paragraph}curve/{http://www.hancom.co.kr/hwpml/2011/paragraph}seg")
-                assert len(segments)==6,len(segments)
-                first=segments[0]
-                first.set("type","LINE")
-                x1,y1,x2,y2=(int(first.attrib[key]) for key in ("x1","y1","x2","y2"))
-                dx,dy=x2-x1,y2-y1
-                divisor=math.gcd(abs(dx),abs(dy))
-                assert divisor>=2
-                point=(x1+dx//divisor,y1+dy//divisor)
-                segments[1].set("x2",str(point[0]))
-                segments[1].set("y2",str(point[1]))
-                segments[2].set("x1",str(point[0]))
-                segments[2].set("y1",str(point[1]))
-                data=ET.tostring(root,encoding="utf-8",xml_declaration=True)
+                def make_duplicate(match):
+                    body=match.group(0)
+                    segments=list(re.finditer(rb'<hp:seg\\b[^>]*/>',body))
+                    assert len(segments)==6,len(segments)
+                    tags=[m.group(0) for m in segments]
+                    attrs=dict(re.findall(rb'([A-Za-z0-9_-]+)="([^"]*)"',tags[0]))
+                    x1,y1,x2,y2=(int(attrs[key]) for key in (b'x1',b'y1',b'x2',b'y2'))
+                    dx,dy=x2-x1,y2-y1
+                    divisor=math.gcd(abs(dx),abs(dy))
+                    assert divisor>=2
+                    point=(x1+dx//divisor,y1+dy//divisor)
+                    def set_attr(tag,key,value):
+                        old=re.search(rb'(?<![A-Za-z0-9_-])'+key+rb'="([^"]*)"',tag)
+                        assert old is not None,key
+                        return tag[:old.start(1)]+str(value).encode()+tag[old.end(1):]
+                    tags[0]=set_attr(tags[0],b'type','LINE')
+                    for pos,key,value in ((1,b'x2',point[0]),(1,b'y2',point[1]),
+                                          (2,b'x1',point[0]),(2,b'y1',point[1])):
+                        tags[pos]=set_attr(tags[pos],key,value)
+                    result=body
+                    for old,new in reversed(list(zip(segments,tags))):
+                        result=result[:old.start()]+new+result[old.end():]
+                    return result
+                data,count=re.subn(rb'<hp:curve\\b[^>]*>.*?</hp:curve>',make_duplicate,data,count=1,flags=re.S)
+                assert count==1,count
             dst.writestr(entry,data)
     sys.stdout.buffer.write(out.getvalue())
 `], { input: bytes }));
 }
 
 function pathOf(doc: RhwpDocument, control: number) {
-  return JSON.parse(doc.getEditableShapePath!(0, 0, control));
+  const path = JSON.parse(doc.getEditableShapePath!(0, 0, control));
+  if (path && Array.isArray(path.segments)) {
+    path.nativeSegmentTypes = path.segments.map((attributes: [string, string][]) =>
+      Object.fromEntries(attributes).type);
+  }
+  return path;
 }
 
 function shapes(doc: RhwpDocument) {
@@ -151,8 +175,15 @@ async function setup(bytes: Uint8Array) {
   control.take("open").reply(ok(sessionInfo({ displayName: "contract-v1.hwpx" })));
   await opening;
   const doc = new engine.HwpDocument(bytes) as RhwpDocument;
+  let firstOpen = true;
   const editor = new RhwpEditorSession(1, control.backend, sessions,
-    async () => ({ openDocument: input => new engine.HwpDocument(input) as RhwpDocument,
+    async () => ({ openDocument: input => {
+      if (firstOpen) {
+        firstOpen = false;
+        return doc;
+      }
+      return new engine.HwpDocument(input) as RhwpDocument;
+    },
       memoryBytes: () => FIXED_MEMORY_BYTES }), { natural: null });
   const loading = editor.load();
   control.take("load").reply(loaded(bytes));
@@ -373,6 +404,7 @@ it("retains open HWPX topology, rejects endpoint deletion, and persists ordinary
     expect(editor.redo()).toBe(true);
     await confirm();
 
+    pick(frame!);
     expect(edit({ kind: "pathVertex", action: "remove", index: 2 })).toBe(true);
     await confirm();
     expect(pathOf(doc, frame!.controlIdx).points).toHaveLength(initial.points.length);
@@ -383,6 +415,7 @@ it("retains open HWPX topology, rejects endpoint deletion, and persists ordinary
     expect(editor.redo()).toBe(true);
     await confirm();
 
+    pick(frame!);
     const preMovePath = pathOf(doc, frame!.controlIdx);
     const moved = { x: initial.points[0].x + 17, y: initial.points[0].y + 9 };
     expect(edit({ kind: "pathPoint", index: 0, ...moved })).toBe(true);
@@ -449,9 +482,20 @@ it("preserves unknown segment metadata while withholding structural edit capabil
     expect(editor.snapshot().history).toMatchObject({ undo: false, redo: false });
 
     const anchor = selected.shapePath!.points[0]!;
-    expect(edit({ kind: "pathPoint", index: 0, x: anchor.x + 11, y: anchor.y + 7 })).toBe(true);
+    const movedAnchor = { x: anchor.x + 11, y: anchor.y + 7 };
+    expect(edit({ kind: "pathPoint", index: 0, ...movedAnchor })).toBe(true);
     await confirm();
-    expect(pathOf(doc, frame!.controlIdx).segments[0]).toContainEqual(["marker", "preserve"]);
+    const expectedSegments = source.segments.map((segment: [string, string][]) => segment.map(pair => [...pair]));
+    const updateAttribute = (segment: [string, string][], name: string, value: number) => {
+      const entry = segment.find(pair => pair[0] === name);
+      expect(entry).toBeDefined();
+      entry![1] = String(value);
+    };
+    updateAttribute(expectedSegments[0]!, "x1", movedAnchor.x);
+    updateAttribute(expectedSegments[0]!, "y1", movedAnchor.y);
+    updateAttribute(expectedSegments.at(-1)!, "x2", movedAnchor.x);
+    updateAttribute(expectedSegments.at(-1)!, "y2", movedAnchor.y);
+    expect(pathOf(doc, frame!.controlIdx).segments).toEqual(expectedSegments);
     expect(editor.undo()).toBe(true);
     await confirm();
     expect(pathOf(doc, frame!.controlIdx).segments[0]).toContainEqual(["marker", "preserve"]);
@@ -465,7 +509,7 @@ it("preserves unknown segment metadata while withholding structural edit capabil
       const actual = packageEvidence(output);
       expect(actual.parts).toEqual(source.parts);
       expect(actual.nonSegmentSectionSha256).toBe(source.nonSegmentSectionSha256);
-      expect(actual.segments).toEqual(source.segments);
+      expect(actual.segments).toEqual(expectedSegments);
       const reopened = new engine.HwpDocument(output) as RhwpDocument;
       try { expect(pathOf(reopened, frame!.controlIdx).segments).toEqual(pathOf(doc, frame!.controlIdx).segments); }
       finally { reopened.free(); }
@@ -534,7 +578,7 @@ it("supports exact collinear LINE split and merge separately from ordinary curve
 
 it("rejects an exact LINE split that would duplicate an existing anchor", async () => {
   const original = duplicateLineSplitFixture(readFileSync(fixture));
-  const { editor, doc, pick, edit, confirm } = await setup(original);
+  const { editor, doc, pick, edit } = await setup(original);
   try {
     const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
     expect(frame).toBeDefined();
@@ -543,20 +587,14 @@ it("rejects an exact LINE split that would duplicate an existing anchor", async 
     const a = path.points[0]!, b = path.points[1]!;
     expect((b.x - a.x) * (duplicate.y - a.y) - (b.y - a.y) * (duplicate.x - a.x)).toBe(0);
     pick(frame!);
-    const beforeConversion = doc.exportHwpx();
-    expect(edit({ kind: "pathSegment", action: "convertHwpxType", index: 0,
-      expected: "CURVE", to: "LINE" })).toBe(true);
-    await confirm();
     const beforeReject = doc.exportHwpx();
     const revision = editor.localRevision;
     const history = editor.snapshot().history;
-    pick(frame!);
     expect(edit({ kind: "pathSegment", action: "splitLine", index: 0,
       x: duplicate.x, y: duplicate.y })).toBe(false);
     expect(doc.exportHwpx()).toEqual(beforeReject);
     expect(editor.localRevision).toBe(revision);
     expect(editor.snapshot().history).toEqual(history);
-    expect(beforeConversion).not.toEqual(beforeReject);
   } finally { editor.dispose(); }
 });
 
@@ -565,18 +603,19 @@ it("withholds anchor movement from an unknown HWPX segment type and preserves th
   const source = packageEvidence(original);
   const { editor, doc, pick, edit } = await setup(original);
   try {
-    const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+    const frame = shapes(doc).find(candidate => candidate.controlIdx === 2);
     expect(frame).toBeDefined();
     const selected = pick(frame!);
+    expect(selected.shapePath).toBeUndefined();
     expect(selected.operations).not.toContain("pathPoint");
     expect(selected.operations).not.toContain("pathVertex");
     expect(selected.operations).not.toContain("pathSegment");
     const path = pathOf(doc, frame!.controlIdx);
+    expect(path).toBeNull();
     const before = doc.exportHwpx();
     const revision = editor.localRevision;
-    expect(edit({ kind: "pathPoint", index: 0, x: path.points[0].x + 3, y: path.points[0].y + 5 })).toBe(false);
-    expect(() => doc.moveShapePathPoint!(0, 0, frame!.controlIdx, 0,
-      path.points[0].x + 3, path.points[0].y + 5)).toThrow();
+    expect(edit({ kind: "pathPoint", index: 0, x: 3, y: 5 })).toBe(false);
+    expect(() => doc.moveShapePathPoint!(0, 0, frame!.controlIdx, 0, 3, 5)).toThrow();
     expect(doc.exportHwpx()).toEqual(before);
     expect(editor.localRevision).toBe(revision);
     const saved = doc.exportHwpxWithReport();

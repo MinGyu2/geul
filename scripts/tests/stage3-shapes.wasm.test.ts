@@ -1435,7 +1435,8 @@ describe("Stage 3 shapes on the Release engine", () => {
       const beforeProperties = doc.getShapeProperties!(0, 0, frame!.controlIdx);
       const untouched = doc.exportHwpx();
       for (const invalid of [
-        { kind: "pathVertex", action: "insert", index: 0, x: insert.x + 1, y: insert.y },
+        { kind: "pathVertex", action: "insert", index: 0,
+          x: initial.points[1]!.x, y: initial.points[1]!.y },
         { kind: "pathVertex", action: "remove", index: -1 },
         { kind: "pathVertex", action: "remove", index: initial.points.length - 1 },
       ] as const) expect(edit(invalid)).toBe(false);
@@ -1525,7 +1526,10 @@ describe("Stage 3 shapes on the Release engine", () => {
       const readPath = () => JSON.parse(doc.getEditableShapePath!(0, 0, index));
       const readLineSegments = () => JSON.parse(doc.getHwpxCurveLineSegments!(0, 0, index));
       const initialRawPath = readPath();
-      expect(initialRawPath).toMatchObject(initial);
+      const { nativeSegmentTypes, ...rawModelPath } = initial;
+      expect(initialRawPath).toMatchObject(rawModelPath);
+      expect(nativeSegmentTypes).toEqual(initialRawPath.segments.map((attributes: [string, string][]) =>
+        Object.fromEntries(attributes).type));
 
       for (const [segment, x, y] of [
         [0, 5000, 1000], // LINE with an unknown source attribute

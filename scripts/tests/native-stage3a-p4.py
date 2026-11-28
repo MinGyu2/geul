@@ -5,6 +5,7 @@ from copy import deepcopy
 import importlib.util
 import hashlib
 import math
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -1015,13 +1016,16 @@ def hwpx_open_curve_fixture(source, destination):
         for entry in original.infolist():
             data = original.read(entry)
             if entry.filename == "Contents/section0.xml":
-                root = ET.fromstring(data)
-                curves = root.findall(".//{*}curve")
-                h.require(len(curves) == 1, "open-path fixture must contain one HWPX curve", len(curves))
-                segments = curves[0].findall("./{*}seg")
-                h.require(len(segments) >= 4, "open-path fixture needs at least four source segments")
-                curves[0].remove(segments[-1])
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                def make_open(match):
+                    body = match.group(0)
+                    segments = list(re.finditer(rb'<hp:seg\b[^>]*/>', body))
+                    h.require(len(segments) >= 4, "open-path fixture needs at least four source segments")
+                    last = segments[-1]
+                    return body[:last.start()] + body[last.end():]
+
+                data, count = re.subn(rb'<hp:curve\b[^>]*>.*?</hp:curve>', make_open, data,
+                                      count=1, flags=re.S)
+                h.require(count == 1, "open-path fixture must contain one HWPX curve", count)
             output.writestr(entry, data)
 
 
