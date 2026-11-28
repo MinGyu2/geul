@@ -137,6 +137,15 @@ function parseHwpxSegmentTypes(raw: unknown, expectedCount: number): ("LINE" | "
   return types;
 }
 
+export function hwpxExactLineSegmentIndices(segmentTypes: readonly ("LINE" | "CURVE")[], closed: boolean): number[] {
+  return segmentTypes.flatMap((type, index) => {
+    if (type !== "LINE") return [];
+    const previous = index > 0 ? segmentTypes[index - 1] : closed ? segmentTypes.at(-1) : undefined;
+    const next = index + 1 < segmentTypes.length ? segmentTypes[index + 1] : closed ? segmentTypes[0] : undefined;
+    return previous !== "CURVE" && next !== "CURVE" ? [index] : [];
+  });
+}
+
 export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [number, number, number], portable = false): ShapePath | undefined {
   try {
     const raw = portable ? doc.getPortablePolygonPath?.(...address) : doc.getEditableShapePath?.(...address);
@@ -207,13 +216,17 @@ export function inspectRhwpCurveTerminalLine(doc: RhwpDocument, address: readonl
 
 export function inspectRhwpHwpxCurveLineSegments(
   doc: RhwpDocument, address: readonly [number, number, number], segmentCount: number,
+  segmentTypes: readonly ("LINE" | "CURVE")[] | undefined, closed: boolean,
 ): number[] | undefined {
-  if (!doc.getHwpxCurveLineSegments || !doc.editHwpxCurveLine || !within(segmentCount, 256)) return undefined;
+  if (!doc.getHwpxCurveLineSegments || !doc.editHwpxCurveLine || !within(segmentCount, 256)
+    || !segmentTypes || segmentTypes.length !== segmentCount) return undefined;
   try {
     const value: unknown = JSON.parse(doc.getHwpxCurveLineSegments(...address));
+    const expected = hwpxExactLineSegmentIndices(segmentTypes, closed);
     if (!Array.isArray(value) || value.length > segmentCount
       || !value.every((index, position) => within(index, Math.max(0, segmentCount - 1))
-        && (position === 0 || index > value[position - 1]))) return undefined;
+        && (position === 0 || index > value[position - 1]))
+      || JSON.stringify(value) !== JSON.stringify(expected)) return undefined;
     return value as number[];
   } catch { return undefined; }
 }

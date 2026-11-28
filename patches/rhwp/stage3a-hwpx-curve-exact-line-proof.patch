@@ -1,0 +1,166 @@
+--- a/src/document_core/commands/object_ops/shape.rs
++++ b/src/document_core/commands/object_ops/shape.rs
+@@ -499,6 +499,83 @@
+
+ fn geul_hwpx_line_segment_is_editable(segment: &HwpxCurveSegment) -> bool {
+     geul_hwpx_standard_segment_type(segment) == Some("LINE")
++}
++
++/// Exact LINE operations may not change the neighboring-anchor dependency of
++/// a CURVE segment. Return only standard LINEs with no adjacent CURVE segment;
++/// the mutation API additionally proves that every derived curve is unchanged.
++fn geul_hwpx_exact_line_segments(
++    segments: &[HwpxCurveSegment],
++    points: &[crate::model::Point],
++) -> Option<Vec<usize>> {
++    if segments.is_empty()
++        || !geul_hwpx_curve_matches(segments, points)
++        || !geul_hwpx_curve_anchor_topology_valid(points)
++        || segments.iter().any(|segment| geul_hwpx_standard_segment_type(segment).is_none())
++    {
++        return None;
++    }
++    let closed = geul_same_point(&points[0], points.last()?);
++    Some(segments.iter().enumerate().filter_map(|(index, segment)| {
++        if !geul_hwpx_line_segment_is_editable(segment) {
++            return None;
++        }
++        let previous_curve = if index > 0 {
++            geul_hwpx_standard_segment_type(&segments[index - 1]) == Some("CURVE")
++        } else {
++            closed && geul_hwpx_standard_segment_type(segments.last()?) == Some("CURVE")
++        };
++        let next_curve = if index + 1 < segments.len() {
++            geul_hwpx_standard_segment_type(&segments[index + 1]) == Some("CURVE")
++        } else {
++            closed && geul_hwpx_standard_segment_type(segments.first()?) == Some("CURVE")
++        };
++        (!previous_curve && !next_curve).then_some(index)
++    }).collect())
++}
++
++/// Exact integer numerators (denominator six) for every derived CURVE cubic.
++/// This compares the geometry used by the current renderer without a floating
++/// point tolerance and is intentionally independent of serialized controls.
++fn geul_hwpx_curve_geometry_signature(
++    segments: &[HwpxCurveSegment],
++    points: &[crate::model::Point],
++) -> Option<Vec<[[i64; 2]; 4]>> {
++    if !geul_hwpx_curve_matches(segments, points)
++        || !geul_hwpx_curve_anchor_topology_valid(points)
++        || segments.iter().any(|segment| geul_hwpx_standard_segment_type(segment).is_none())
++    {
++        return None;
++    }
++    let closed = geul_same_point(&points[0], points.last()?);
++    let anchor_count = points.len().checked_sub(usize::from(closed))?;
++    if segments.len() != if closed { anchor_count } else { anchor_count.checked_sub(1)? } {
++        return None;
++    }
++    let scaled = |point: crate::model::Point| [6 * i64::from(point.x), 6 * i64::from(point.y)];
++    let mut signature = Vec::new();
++    for (index, segment) in segments.iter().enumerate() {
++        if geul_hwpx_standard_segment_type(segment) != Some("CURVE") {
++            continue;
++        }
++        let start_index = index;
++        let end_index = if closed { (index + 1) % anchor_count } else { index + 1 };
++        let previous_index = if index > 0 { index - 1 } else if closed { anchor_count - 1 } else { start_index };
++        let next_index = if end_index + 1 < anchor_count { end_index + 1 } else if closed { 0 } else { end_index };
++        let p0 = points[start_index];
++        let p1 = points[end_index];
++        let previous = points[previous_index];
++        let next = points[next_index];
++        signature.push([
++            scaled(p0),
++            [6 * i64::from(p0.x) + i64::from(p1.x) - i64::from(previous.x),
++             6 * i64::from(p0.y) + i64::from(p1.y) - i64::from(previous.y)],
++            [6 * i64::from(p1.x) - i64::from(next.x) + i64::from(p0.x),
++             6 * i64::from(p1.y) - i64::from(next.y) + i64::from(p0.y)],
++            scaled(p1),
++        ]);
++    }
++    Some(signature)
+ }
+
+ fn geul_polygon_valid(points: &[crate::model::Point]) -> bool {
+@@ -2309,15 +2386,7 @@
+         {
+             return None;
+         }
+-        Some(
+-            curve.hwpx_segments
+-                .iter()
+-                .enumerate()
+-                .filter_map(|(index, segment)| {
+-                    geul_hwpx_line_segment_is_editable(segment).then_some(index)
+-                })
+-                .collect(),
+-        )
++        geul_hwpx_exact_line_segments(&curve.hwpx_segments, &curve.points)
+     }
+
+     /// All-CURVE HWPX chains with standard, childless source envelopes expose
+@@ -2622,7 +2691,7 @@
+         &mut self, sec: usize, para: usize, ctrl: usize, index: usize,
+         split_at: Option<crate::model::Point>,
+     ) -> Result<(), HwpError> {
+-        let (mut segments, mut points, width, height) = {
++        let (mut segments, mut points, width, height, original_curve_geometry) = {
+             if self.source_format != crate::parser::FileFormat::Hwpx {
+                 return Err(geul_bad_shape_edit());
+             }
+@@ -2634,13 +2703,20 @@
+             {
+                 return Err(geul_bad_shape_edit());
+             }
++            let original_curve_geometry = geul_hwpx_curve_geometry_signature(
++                &curve.hwpx_segments,
++                &curve.points,
++            ).ok_or_else(geul_bad_shape_edit)?;
+             (
+                 curve.hwpx_segments.clone(),
+                 curve.points.clone(),
+                 curve.drawing.shape_attr.original_width as i32,
+                 curve.drawing.shape_attr.original_height as i32,
++                original_curve_geometry,
+             )
+         };
++        let exact_lines = geul_hwpx_exact_line_segments(&segments, &points)
++            .ok_or_else(geul_bad_shape_edit)?;
+         let between = |a, point, b| {
+             !geul_same_point(&a, &point) && !geul_same_point(&point, &b)
+                 && geul_within_segment_bounds(point, a, b)
+@@ -2650,7 +2726,7 @@
+             if segments.len() >= 256
+                 || points.len() >= 257
+                 || index >= segments.len()
+-                || !geul_hwpx_line_segment_is_editable(&segments[index])
++                || !exact_lines.contains(&index)
+                 || point.x < 0
+                 || point.y < 0
+                 || point.x > width
+@@ -2677,8 +2753,8 @@
+                 || index == 0
+                 || index >= points.len() - 1
+                 || index >= segments.len()
+-                || !geul_hwpx_line_segment_is_editable(&segments[index - 1])
+-                || !geul_hwpx_line_segment_is_editable(&segments[index])
++                || !exact_lines.contains(&(index - 1))
++                || !exact_lines.contains(&index)
+                 || !between(points[index - 1], points[index], points[index + 1])
+             {
+                 return Err(geul_bad_shape_edit());
+@@ -2690,7 +2766,11 @@
+             segments.remove(index);
+             points.remove(index);
+         }
+-        if !geul_hwpx_curve_matches(&segments, &points) {
++        if !geul_hwpx_curve_matches(&segments, &points)
++            || !geul_hwpx_curve_anchor_topology_valid(&points)
++            || geul_hwpx_curve_geometry_signature(&segments, &points)
++                .is_none_or(|candidate| candidate != original_curve_geometry)
++        {
+             return Err(geul_bad_shape_edit());
+         }
+         let ShapeObject::Curve(curve) = self.resolve_shape_control_mut(sec, para, ctrl)? else {

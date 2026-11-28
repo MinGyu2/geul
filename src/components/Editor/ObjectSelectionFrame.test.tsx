@@ -431,7 +431,7 @@ it("labels ordinary HWPX anchor edits and exposes supported LINE/CURVE conversio
   const { onEdit } = frame({ selection: selection({
     kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] },
     operations: ["deselect", "pathPoint", "pathVertex", "pathSegment"],
-    curveLineSegments: [1],
+    curveLineSegments: [],
     hwpxEditableCurveSegments: [0, 1, 2, 3],
     shapePath: { kind: "curve", closed: true, width: 60, height: 60, nativeSegmentTypes,
       points: points.map(([x, y]) => ({ x: x!, y: y!, control: false })) },
@@ -446,7 +446,26 @@ it("labels ordinary HWPX anchor edits and exposes supported LINE/CURVE conversio
   expect(screen.getByRole("button", { name: "Remove anchor (curve shape may change)" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Insert anchor (curve shape may change)" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Convert segment to curve" })).toBeEnabled();
-  expect(screen.queryByRole("button", { name: "Split next straight segment" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Split next straight segment" })).toBeNull();
+});
+
+it("exposes exact HWPX LINE split and merge controls only for geometry-independent lines", () => {
+  const points = [[10, 10], [30, 10], [50, 10], [50, 30], [10, 10]];
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] },
+    operations: ["deselect", "pathPoint", "pathVertex", "pathSegment"],
+    curveLineSegments: [0, 1, 2, 3],
+    hwpxEditableCurveSegments: [0, 1, 2, 3],
+    shapePath: { kind: "curve", closed: true, width: 60, height: 60,
+      nativeSegmentTypes: ["LINE", "LINE", "LINE", "LINE"],
+      points: points.map(([x, y]) => ({ x: x!, y: y!, control: false })) },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  expect(screen.getByRole("button", { name: "Split next straight segment" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 2" }));
+  expect(screen.getByRole("button", { name: "Join adjacent straight segments" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Join adjacent straight segments" }));
+  expect(onEdit).toHaveBeenCalledExactlyOnceWith({ kind: "pathSegment", action: "joinLines", index: 1 }, 7);
 });
 
 it("only enables HWP5 vertex removal when joining collinear edges", () => {

@@ -1029,6 +1029,29 @@ def hwpx_open_curve_fixture(source, destination):
             output.writestr(entry, data)
 
 
+def hwpx_all_line_curve_fixture(source, destination):
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(destination, "w") as output:
+        for entry in original.infolist():
+            data = original.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                def make_all_lines(match):
+                    body = match.group(0)
+                    segments = list(re.finditer(rb'<hp:seg\b[^>]*/>', body))
+                    h.require(bool(segments), "all-LINE fixture has no curve segments")
+                    for segment in reversed(segments):
+                        tag = segment.group(0)
+                        changed, count = re.subn(rb'(?<![A-Za-z0-9_-])type="(?:LINE|CURVE)"',
+                                                 b'type="LINE"', tag, count=1)
+                        h.require(count == 1, "fixture segment type is not standard", tag)
+                        body = body[:segment.start()] + changed + body[segment.end():]
+                    return body
+
+                data, count = re.subn(rb'<hp:curve\b[^>]*>.*?</hp:curve>', make_all_lines, data,
+                                      count=1, flags=re.S)
+                h.require(count == 1, "all-LINE fixture must contain one HWPX curve", count)
+            output.writestr(entry, data)
+
+
 def hwpx_curve_package_evidence(path):
     with zipfile.ZipFile(path) as package:
         root = ET.fromstring(package.read("Contents/section0.xml"))
@@ -1141,45 +1164,15 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
         h.require(acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
                   "mixed LINE/CURVE boundary deletion must remain unavailable after conversion history")
 
-    # Exact operations stay distinct from shape-changing anchors. The current
-    # source has one native LINE whose integer lattice contains a midpoint.
+    # The converted LINE borders a CURVE, whose derived Catmull-Rom controls
+    # depend on the previous/next anchor. Exact split must not be advertised.
     acc.dom_click(f"{POINT}:nth-of-type(1)")
     split = ".object-path-split-line"
-    h.require(acc.d.exists(split), "supported straight segment did not expose its exact split")
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
-              "exact LINE split started from unexpected topology")
-    acc.dom_click(split)
-    commit_revision()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
-              "exact LINE split did not add one anchor")
-    acc.key("ctrl+z")
-    commit_revision()
-    enter_path_mode()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
-              "exact LINE split Undo did not restore topology")
-    acc.key("ctrl+y")
-    commit_revision()
-    enter_path_mode()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
-              "exact LINE split Redo did not restore the split anchor")
-    acc.dom_click(f"{POINT}:nth-of-type(2)")
-    join = ".object-path-join-lines"
-    h.require(acc.d.exists(join), "collinear native LINE halves did not expose exact merge")
-    acc.dom_click(join)
-    commit_revision()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
-              "exact LINE merge did not restore the original topology")
-    acc.key("ctrl+z")
-    commit_revision()
-    enter_path_mode()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
-              "exact LINE merge Undo did not restore the split topology")
-    acc.key("ctrl+y")
-    commit_revision()
-    enter_path_mode()
-    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
-              "exact LINE merge Redo did not restore the joined topology")
-    row["exactLineSplitMerge"] = {"undoRedo": True, "anchorCountAfterJoin": expected_count}
+    h.require(not acc.d.exists(split), "geometry-changing mixed-path exact split remained available")
+    h.require(not acc.d.exists(".object-path-join-lines"),
+              "geometry-changing mixed-path exact merge remained available")
+    row["unsafeMixedExactOps"] = {"split": "unavailable", "merge": "unavailable",
+                                  "reason": "adjacent CURVE geometry depends on the edited anchor"}
 
     # Ordinary insertion is explicitly shape-changing. Undo/Redo must retain topology.
     acc.dom_click(f"{POINT}:nth-of-type(2)")
@@ -1286,6 +1279,141 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     row["publishedSha256"] = h.digest(path)
 
 
+def hwpx_exact_line_native_document(acc, row, fixture, out, filename):
+    before = inspect(fixture)
+    source = hwpx_curve_package_evidence(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "curve")
+    h.require(target["path"]["closed"] is True, "safe exact-operation fixture must be closed")
+    h.require(all(dict(segment).get("type") == "LINE" for segment in source["segments"]),
+              "safe exact-operation fixture must contain only native LINE segments")
+    expected_count = len(target["path"]["points"]) - 1
+    path = h.begin(acc, row, fixture, out, filename)
+    revision_number = 0
+
+    def commit_revision():
+        nonlocal revision_number
+        revision_number += 1
+        h.revision(acc, "hwpx", revision_number)
+
+    def enter_path_mode():
+        current = inspect(path)
+        model = next(item for item in current["frames"]
+                     if item["controlIdx"] == target["controlIdx"] and item["path"])
+        h.select_object(acc, model, "shape")
+        if acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')!=='true'"):
+            acc.dom_click(".object-path-mode")
+        h.require(acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"),
+                  "all-LINE HWPX path mode did not activate")
+
+    enter_path_mode()
+    acc.dom_click(f"{POINT}:nth-of-type(1)")
+    split = ".object-path-split-line"
+    h.require(acc.d.exists(split), "safe all-LINE path did not expose exact split")
+    first = target["path"]["points"][0]
+    second = target["path"]["points"][1]
+    dx, dy = second["x"] - first["x"], second["y"] - first["y"]
+    divisor = math.gcd(abs(dx), abs(dy))
+    steps = divisor // 2
+    h.require(divisor >= 2 and 0 < steps < divisor, "safe fixture has no interior integer split point")
+    point = {"x": first["x"] + dx // divisor * steps,
+             "y": first["y"] + dy // divisor * steps}
+    acc.dom_click(split)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact split did not add one anchor")
+    acc.key("ctrl+z")
+    commit_revision()
+    enter_path_mode()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact split Undo did not restore the original topology")
+    acc.key("ctrl+y")
+    commit_revision()
+    enter_path_mode()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact split Redo did not restore the intermediate topology")
+
+    expected_split = deepcopy(source["segments"])
+
+    def set_attribute(segment, name, value):
+        entry = next((item for item in segment if item[0] == name), None)
+        h.require(entry is not None, "standard segment attribute is missing", name)
+        entry[1] = str(value)
+
+    set_attribute(expected_split[0], "x2", point["x"])
+    set_attribute(expected_split[0], "y2", point["y"])
+    second_half = deepcopy(source["segments"][0])
+    set_attribute(second_half, "x1", point["x"])
+    set_attribute(second_half, "y1", point["y"])
+    expected_split.insert(1, second_half)
+    h.publish(acc, "hwpx", row)
+    row["splitSave"] = row.pop("save")
+    h.reopen(acc, path, row)
+    row["splitReopenSession"] = row.pop("reopenedSession")
+    split_state = inspect(path)
+    split_target = next(item for item in split_state["frames"]
+                        if item["controlIdx"] == target["controlIdx"] and item["path"])
+    split_evidence = hwpx_curve_package_evidence(path)
+    h.require(split_evidence["segments"] == expected_split,
+              "published intermediate split differs from exact expected native LINE records",
+              split_evidence["segments"])
+    h.require(split_evidence["otherPartSha256"] == source["otherPartSha256"]
+              and split_evidence["nonSegmentSectionSha256"] == source["nonSegmentSectionSha256"],
+              "intermediate exact split changed unrelated OPC or section content")
+    h.require(split_target["path"]["points"][1]["x"] == point["x"]
+              and split_target["path"]["points"][1]["y"] == point["y"]
+              and split_target["path"]["closed"] is True,
+              "freshly reopened intermediate split geometry or closure differs")
+    row["intermediateExactSplit"] = {
+        "anchor": point, "segments": split_evidence["segments"],
+        "otherPartSha256": split_evidence["otherPartSha256"],
+        "nonSegmentSectionSha256": split_evidence["nonSegmentSectionSha256"],
+        "publishedSha256": h.digest(path),
+    }
+
+    revision_number = 0
+    enter_path_mode()
+    acc.dom_click(f"{POINT}:nth-of-type(2)")
+    join = ".object-path-join-lines"
+    h.require(acc.d.exists(join), "reopened exact split did not expose its safe merge")
+    acc.dom_click(join)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact merge did not restore the original anchor count")
+    acc.key("ctrl+z")
+    commit_revision()
+    enter_path_mode()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact merge Undo did not restore the split topology")
+    acc.key("ctrl+y")
+    commit_revision()
+    enter_path_mode()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact merge Redo did not restore the joined topology")
+    h.publish(acc, "hwpx", row)
+    row["mergedSave"] = row.pop("save")
+    h.reopen(acc, path, row)
+    row["mergedReopenSession"] = row.pop("reopenedSession")
+    final_state = inspect(path)
+    final_target = next(item for item in final_state["frames"]
+                        if item["controlIdx"] == target["controlIdx"] and item["path"])
+    final_evidence = hwpx_curve_package_evidence(path)
+    h.require(final_evidence["segments"] == source["segments"],
+              "published exact merge did not restore the original native segment chain")
+    h.require(final_evidence["otherPartSha256"] == source["otherPartSha256"]
+              and final_evidence["nonSegmentSectionSha256"] == source["nonSegmentSectionSha256"],
+              "merged exact result changed unrelated OPC or section content")
+    h.require(final_target["path"] == target["path"] and final_state["body"] == before["body"],
+              "freshly reopened exact merge differs from source geometry or body text")
+    h.require(row["mergedReopenSession"].get("dirty") == "false",
+              "merged exact result reopened in a dirty session")
+    row["exactLineSplitMerge"] = {
+        "splitUndoRedo": True, "mergeUndoRedo": True,
+        "intermediateSavedAndReopened": True, "mergedSavedAndReopened": True,
+        "intermediateGeometryProof": row["intermediateExactSplit"],
+        "finalSha256": h.digest(path),
+    }
+
+
 def hwpx_curve_contract_v1_case(acc, row, fixtures, out):
     closed_fixture = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"
     h.require(closed_fixture.is_file(), "canonical HWPX curve fixture is missing", str(closed_fixture))
@@ -1298,6 +1426,12 @@ def hwpx_curve_contract_v1_case(acc, row, fixtures, out):
     open_row = row["open"] = {}
     hwpx_contract_native_document(acc, open_row, open_fixture, out,
                                   "p4-hwpx-contract-open-edited.hwpx", False)
+
+    safe_fixture = out / "p4-hwpx-contract-all-line-fixture.hwpx"
+    hwpx_all_line_curve_fixture(closed_fixture, safe_fixture)
+    safe_row = row["safeExactLine"] = {}
+    hwpx_exact_line_native_document(acc, safe_row, safe_fixture, out,
+                                    "p4-hwpx-contract-exact-lines.hwpx")
 
 
 def inspect_polygon_records(source, path, before, after):

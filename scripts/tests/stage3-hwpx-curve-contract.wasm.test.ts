@@ -65,6 +65,41 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
 `], { input: bytes }));
 }
 
+function nativeCurveFixture(bytes: Uint8Array, points: { x: number; y: number }[], types: ("LINE" | "CURVE")[]) {
+  if (points.length !== types.length + 1) throw new Error("curve fixture point/segment count mismatch");
+  return new Uint8Array(execFileSync("python3", ["-c", `
+import io, re, sys, zipfile
+points,types=__import__('json').loads(sys.argv[1]),__import__('json').loads(sys.argv[2])
+with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as src:
+    out=io.BytesIO()
+    with zipfile.ZipFile(out,"w") as dst:
+        for entry in src.infolist():
+            data=src.read(entry)
+            if entry.filename=="Contents/section0.xml":
+                def replace_segments(match):
+                    body=match.group(0)
+                    old=list(re.finditer(rb'<hp:seg\\b[^>]*/>',body))
+                    assert len(old)==6,len(old)
+                    new=b''.join((f'<hp:seg type="{kind}" x1="{a["x"]}" y1="{a["y"]}" x2="{b["x"]}" y2="{b["y"]}"/>').encode()
+                                 for kind,a,b in zip(types,points,points[1:]))
+                    return body[:old[0].start()]+new+body[old[-1].end():]
+                data,count=re.subn(rb'<hp:curve\\b[^>]*>.*?</hp:curve>',replace_segments,data,count=1,flags=re.S)
+                assert count==1,count
+            dst.writestr(entry,data)
+    sys.stdout.buffer.write(out.getvalue())
+`, JSON.stringify(points), JSON.stringify(types)], { input: bytes }));
+}
+
+function independentCurveControls(points: { x: number; y: number }[], segment: number) {
+  if (segment <= 0 || segment + 2 >= points.length) throw new Error("oracle requires both neighboring anchors");
+  const start = points[segment]!, end = points[segment + 1]!;
+  const previous = points[segment - 1]!, next = points[segment + 2]!;
+  return {
+    c1Numerator: [6 * start.x + end.x - previous.x, 6 * start.y + end.y - previous.y],
+    c2Numerator: [6 * end.x - next.x + start.x, 6 * end.y - next.y + start.y],
+  };
+}
+
 function unknownSegmentMetadataFixture(bytes: Uint8Array) {
   return new Uint8Array(execFileSync("python3", ["-c", `
 import io, re, sys, zipfile
@@ -517,63 +552,156 @@ it("preserves unknown segment metadata while withholding structural edit capabil
   } finally { editor.dispose(); }
 });
 
-it("supports exact collinear LINE split and merge separately from ordinary curve anchors", async () => {
-  const original = readFileSync(fixture);
-  const source = packageEvidence(original);
+it("rejects exact LINE split when a neighboring CURVE depends on the inserted anchor", async () => {
+  const points = [{ x: 100, y: 100 }, { x: 160, y: 100 }, { x: 190, y: 160 }, { x: 220, y: 160 }];
+  const original = nativeCurveFixture(readFileSync(fixture), points, ["LINE", "CURVE", "CURVE"]);
   const { editor, doc, pick, edit, confirm } = await setup(original);
   try {
     const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
     expect(frame).toBeDefined();
-    pick(frame!);
-    expect(edit({ kind: "pathSegment", action: "convertHwpxType", index: 0,
-      expected: "CURVE", to: "LINE" })).toBe(true);
-    await confirm();
-    const converted = pathOf(doc, frame!.controlIdx);
-    const start = converted.points[0]!;
-    const end = converted.points[1]!;
-    const dx = end.x - start.x, dy = end.y - start.y;
-    const gcd = (a: number, b: number): number => b === 0 ? a : gcd(b, a % b);
-    const divisor = gcd(Math.abs(dx), Math.abs(dy));
-    const steps = Math.floor(divisor / 2);
-    expect(divisor).toBeGreaterThanOrEqual(2);
-    const midpoint = { x: start.x + dx / divisor * steps, y: start.y + dy / divisor * steps };
-    expect([midpoint.x, midpoint.y]).not.toEqual([start.x, start.y]);
-    expect([midpoint.x, midpoint.y]).not.toEqual([end.x, end.y]);
+    const before = pathOf(doc, frame!.controlIdx);
+    expect(before.nativeSegmentTypes).toEqual(["LINE", "CURVE", "CURVE"]);
+    const beforeControls = independentCurveControls(before.points, 1);
+    expect(beforeControls.c1Numerator).toEqual([1050, 660]);
+    const hypothetical = [...before.points];
+    hypothetical.splice(1, 0, { x: 130, y: 100, control: false });
+    expect(independentCurveControls(hypothetical, 2).c1Numerator).toEqual([1020, 660]);
+    expect(independentCurveControls(hypothetical, 2).c1Numerator).not.toEqual(beforeControls.c1Numerator);
+    expect(doc.getHwpxCurveLineSegments!(0, 0, frame!.controlIdx)).toBe("[]");
 
     pick(frame!);
-    expect(editor.objectSelection!.curveLineSegments).toContain(0);
-    expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, ...midpoint })).toBe(true);
-    await confirm();
-    const split = pathOf(doc, frame!.controlIdx);
-    expect(split.points).toHaveLength(converted.points.length + 1);
-    expect(split.nativeSegmentTypes.slice(0, 2)).toEqual(["LINE", "LINE"]);
-    expect(split.points[1]).toMatchObject(midpoint);
-    expect(editor.undo()).toBe(true);
-    await confirm();
-    expect(pathOf(doc, frame!.controlIdx)).toEqual(converted);
-    expect(editor.redo()).toBe(true);
-    await confirm();
-    pick(frame!);
-    expect(edit({ kind: "pathSegment", action: "joinLines", index: 1 })).toBe(true);
-    await confirm();
-    expect(pathOf(doc, frame!.controlIdx)).toEqual(converted);
-    expect(editor.undo()).toBe(true);
-    await confirm();
-    expect(pathOf(doc, frame!.controlIdx)).toEqual(split);
-    expect(editor.redo()).toBe(true);
-    await confirm();
+    const selected = editor.objectSelection;
+    const beforeBytes = doc.exportHwpx();
+    const revision = editor.localRevision, history = editor.snapshot().history, dirty = editor.hasUnpreservedChanges;
+    expect(selected?.curveLineSegments).toEqual([]);
+    expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, x: 130, y: 100 })).toBe(false);
+    expect(() => doc.editHwpxCurveLine!(0, 0, frame!.controlIdx, 0, true, 130, 100)).toThrow();
+    expect(doc.exportHwpx()).toEqual(beforeBytes);
+    expect(editor.localRevision).toBe(revision);
+    expect(editor.snapshot().history).toEqual(history);
+    expect(editor.hasUnpreservedChanges).toBe(dirty);
+    expect(editor.objectSelection).toBe(selected);
 
-    const saved = doc.exportHwpxWithReport();
-    try {
-      const bytes = saved.takeBytes();
-      expectReopen(doc, bytes, saved.contentLoss());
-      const actual = packageEvidence(bytes);
-      expect(actual.parts).toEqual(source.parts);
-      expect(actual.nonSegmentSectionSha256).toBe(source.nonSegmentSectionSha256);
-      expect(actual.segments.map((segment: [string, string][]) => segment.find(([name]) => name === "type")?.[1]))
-        .toEqual(["LINE", "CURVE", "CURVE", "CURVE", "CURVE", "CURVE"]);
-    } finally { saved.free(); }
+    expect(edit({ kind: "pathVertex", action: "insert", index: 0, x: 130, y: 100 })).toBe(true);
+    await confirm();
   } finally { editor.dispose(); }
+});
+
+it("rejects exact LINE merge when deleting the shared anchor changes a neighboring CURVE", async () => {
+  const points = [{ x: 30, y: 60 }, { x: 60, y: 60 }, { x: 90, y: 60 },
+    { x: 120, y: 60 }, { x: 150, y: 90 }, { x: 180, y: 120 }];
+  const original = nativeCurveFixture(readFileSync(fixture), points, ["LINE", "LINE", "CURVE", "CURVE", "CURVE"]);
+  const { editor, doc, pick, edit, confirm } = await setup(original);
+  try {
+    const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+    expect(frame).toBeDefined();
+    const before = pathOf(doc, frame!.controlIdx);
+    const beforeControls = independentCurveControls(before.points, 2);
+    expect(beforeControls.c1Numerator).toEqual([600, 360]);
+    const hypothetical = before.points.filter((_: unknown, index: number) => index !== 1);
+    expect(independentCurveControls(hypothetical, 1).c1Numerator).toEqual([630, 360]);
+    expect(independentCurveControls(hypothetical, 1).c1Numerator).not.toEqual(beforeControls.c1Numerator);
+    expect(doc.getHwpxCurveLineSegments!(0, 0, frame!.controlIdx)).toBe("[0]");
+
+    pick(frame!);
+    const selected = editor.objectSelection;
+    const beforeBytes = doc.exportHwpx();
+    const revision = editor.localRevision, history = editor.snapshot().history, dirty = editor.hasUnpreservedChanges;
+    expect(selected?.curveLineSegments).toEqual([0]);
+    expect(edit({ kind: "pathSegment", action: "joinLines", index: 1 })).toBe(false);
+    expect(() => doc.editHwpxCurveLine!(0, 0, frame!.controlIdx, 1, false, 0, 0)).toThrow();
+    expect(doc.exportHwpx()).toEqual(beforeBytes);
+    expect(editor.localRevision).toBe(revision);
+    expect(editor.snapshot().history).toEqual(history);
+    expect(editor.hasUnpreservedChanges).toBe(dirty);
+    expect(editor.objectSelection).toBe(selected);
+
+    expect(edit({ kind: "pathVertex", action: "remove", index: 1 })).toBe(true);
+    await confirm();
+  } finally { editor.dispose(); }
+});
+
+it("supports exact collinear LINE split and merge separately from ordinary curve anchors", async () => {
+  for (const closed of [false, true]) {
+    const anchors = [{ x: 100, y: 100 }, { x: 160, y: 100 }, { x: 220, y: 100 }, { x: 250, y: 160 }];
+    const points = closed ? [...anchors, anchors[0]!] : anchors;
+    const types = Array.from({ length: points.length - 1 }, () => "LINE" as const);
+    const original = nativeCurveFixture(readFileSync(fixture), points, types);
+    const source = packageEvidence(original);
+    const { editor, doc, pick, edit, confirm } = await setup(original);
+    try {
+      const frame = shapes(doc).find(candidate => pathOf(doc, candidate.controlIdx)?.kind === "curve");
+      expect(frame).toBeDefined();
+      const before = pathOf(doc, frame!.controlIdx);
+      const midpoint = { x: 130, y: 100 };
+      pick(frame!);
+      expect(editor.objectSelection!.curveLineSegments).toEqual(types.map((_, index) => index));
+      expect(edit({ kind: "pathSegment", action: "splitLine", index: 0, ...midpoint })).toBe(true);
+      await confirm();
+      const split = pathOf(doc, frame!.controlIdx);
+      expect(split.closed).toBe(closed);
+      expect(split.points).toHaveLength(before.points.length + 1);
+      expect(split.nativeSegmentTypes.slice(0, 2)).toEqual(["LINE", "LINE"]);
+      expect(split.points[1]).toMatchObject(midpoint);
+
+      const expectedSplit = source.segments.map((segment: [string, string][]) =>
+        segment.map(pair => [...pair]) as [string, string][]);
+      const first = expectedSplit[0]!;
+      const set = (segment: [string, string][], name: string, value: number) => {
+        const attribute = segment.find(pair => pair[0] === name);
+        if (!attribute) throw new Error(`missing fixture attribute ${name}`);
+        attribute[1] = String(value);
+      };
+      set(first, "x2", midpoint.x); set(first, "y2", midpoint.y);
+      const second = source.segments[0]!.map(pair => [...pair]) as [string, string][];
+      set(second, "x1", midpoint.x); set(second, "y1", midpoint.y);
+      expectedSplit.splice(1, 0, second);
+
+      const splitSave = doc.exportHwpxWithReport();
+      let splitBytes: Uint8Array;
+      try {
+        splitBytes = splitSave.takeBytes();
+        expectReopen(doc, splitBytes, splitSave.contentLoss());
+        const actual = packageEvidence(splitBytes);
+        expect(actual.parts).toEqual(source.parts);
+        expect(actual.nonSegmentSectionSha256).toBe(source.nonSegmentSectionSha256);
+        expect(actual.segments).toEqual(expectedSplit);
+        const reopened = new engine.HwpDocument(splitBytes) as RhwpDocument;
+        try {
+          expect(pathOf(reopened, frame!.controlIdx)).toEqual(split);
+        } finally { reopened.free(); }
+      } finally { splitSave.free(); }
+
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(before);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(split);
+      pick(frame!);
+      expect(edit({ kind: "pathSegment", action: "joinLines", index: 1 })).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(before);
+      expect(editor.undo()).toBe(true);
+      await confirm();
+      expect(pathOf(doc, frame!.controlIdx)).toEqual(split);
+      expect(editor.redo()).toBe(true);
+      await confirm();
+
+      const mergedSave = doc.exportHwpxWithReport();
+      try {
+        const bytes = mergedSave.takeBytes();
+        expectReopen(doc, bytes, mergedSave.contentLoss());
+        const actual = packageEvidence(bytes);
+        expect(actual.parts).toEqual(source.parts);
+        expect(actual.nonSegmentSectionSha256).toBe(source.nonSegmentSectionSha256);
+        expect(actual.segments).toEqual(source.segments);
+        const reopened = new engine.HwpDocument(bytes) as RhwpDocument;
+        try { expect(pathOf(reopened, frame!.controlIdx)).toEqual(before); }
+        finally { reopened.free(); }
+      } finally { mergedSave.free(); }
+    } finally { editor.dispose(); }
+  }
 });
 
 it("rejects an exact LINE split that would duplicate an existing anchor", async () => {

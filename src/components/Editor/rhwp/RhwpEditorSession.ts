@@ -4,7 +4,7 @@ import { hasUnlockedTextBoxOwnerPath } from "./textBoxOwnerPath";
 import { parseGraphicProperties } from "../../../commands/graphicProperties";
 import { inspectRhwpHeaderFooterPicture, inspectRhwpPicture } from "./pictureProperties";
 import { inspectHwp5CaptionLayout } from "./hwp5CaptionLayout";
-import { deriveHwpxCurveBezierSegments, hexToBgr, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveEditableSegments, inspectRhwpHwpxCurveLineSegments, inspectRhwpHwpxCurveSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
+import { deriveHwpxCurveBezierSegments, hexToBgr, hwpxExactLineSegmentIndices, inspectRhwpCurveTerminalLine, inspectRhwpGroup, inspectRhwpGroupChildren, inspectRhwpGroupFills, inspectRhwpHeaderFooterShape, inspectRhwpHwpxCurveEditableSegments, inspectRhwpHwpxCurveLineSegments, inspectRhwpHwpxCurveSegments, inspectRhwpShape, inspectRhwpShapePath } from "./shapeProperties";
 import {
   extractHwpxPortableObject, insertDocxPortableShapeIntoHwp5, insertHwpxPortableObject,
   insertHwpxPortableObjectIntoHwp5, readHwpxGroupCaption, readHwpxPictureCaption,
@@ -2167,7 +2167,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             ? inspectRhwpCurveTerminalLine(this.doc, shapeAddress) : undefined;
           const curveLineStructure = !!curveTerminalLine && !!this.doc.editCurveInteriorLine;
           const curveLineSegments = format === "hwpx" && shapePath?.kind === "curve" && shapeAddress
-            ? inspectRhwpHwpxCurveLineSegments(this.doc, shapeAddress, shapePath.points.length - 1) : undefined;
+            ? inspectRhwpHwpxCurveLineSegments(this.doc, shapeAddress, shapePath.points.length - 1,
+              shapePath.nativeSegmentTypes, shapePath.closed) : undefined;
           const hwpxCurveSegments = format === "hwpx" && shapePath?.kind === "curve" && shapeAddress
             && shapePath.curveModel === "catmull-rom-derived-bezier"
             ? inspectRhwpHwpxCurveSegments(this.doc, shapeAddress, shapePath.points.length - 1) : undefined;
@@ -5325,7 +5326,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           shapePath.bezierSegments = bezierSegments;
         }
         const hwpxEditableCurveSegments = segmentTypes.map((_, index) => index);
-        const curveLineSegments = segmentTypes.flatMap((type, index) => type === "LINE" ? [index] : []);
+        const curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
         refreshed = {
           operations: selected.operations,
           shapePath,
@@ -5405,7 +5406,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             shapePath.curveModel = "catmull-rom-derived-bezier";
             shapePath.bezierSegments = bezierSegments;
           }
-          const curveLineSegments = segmentTypes.flatMap((type, index) => type === "LINE" ? [index] : []);
+          const curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
           refreshed = {
             operations: selected.operations,
             shapePath,
@@ -5416,7 +5417,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           apply = () => doc.editHwpxCurveSegmentType!(...address, edit.index, edit.expected, edit.to);
         } else {
         if (!selected.curveLineSegments || !doc.editHwpxCurveLine) return false;
-        const available = inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1);
+        const available = inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1,
+          path.nativeSegmentTypes, path.closed);
         if (!available || JSON.stringify(available) !== JSON.stringify(selected.curveLineSegments)
           || !path.nativeSegmentTypes || path.nativeSegmentTypes.length !== path.points.length - 1) return false;
         const points = path.points.slice();
@@ -5428,16 +5430,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
             || edit.x < 0 || edit.x > path.width || edit.y < 0 || edit.y > path.height) return false;
           points.splice(edit.index + 1, 0, { x: edit.x, y: edit.y, control: false });
           segmentTypes.splice(edit.index + 1, 0, segmentTypes[edit.index]!);
-          curveLineSegments = available.flatMap(index => index < edit.index ? [index]
-            : index === edit.index ? [index, index + 1] : [index + 1]);
+          curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
           apply = () => doc.editHwpxCurveLine!(...address, edit.index, true, edit.x, edit.y);
         } else if (edit.action === "joinLines") {
           if (edit.index <= 0 || edit.index >= points.length - 1
             || !available.includes(edit.index - 1) || !available.includes(edit.index)) return false;
           points.splice(edit.index, 1);
           segmentTypes.splice(edit.index, 1);
-          curveLineSegments = available.filter(index => index !== edit.index)
-            .map(index => index > edit.index ? index - 1 : index);
+          curveLineSegments = hwpxExactLineSegmentIndices(segmentTypes, path.closed);
           apply = () => doc.editHwpxCurveLine!(...address, edit.index, false, 0, 0);
         } else return false;
         const shapePath: ShapePath = { ...path, points, nativeSegmentTypes: segmentTypes };
@@ -5586,7 +5586,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (refreshed.curveLineSegments) {
         const path = refreshed.shapePath;
         const available = path?.kind === "curve"
-          ? inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1) : undefined;
+          ? inspectRhwpHwpxCurveLineSegments(doc, address, path.points.length - 1,
+            path.nativeSegmentTypes, path.closed) : undefined;
         if (JSON.stringify(available) !== JSON.stringify(refreshed.curveLineSegments)) {
           throw new Error("HWPX curve line edit did not verify");
         }
