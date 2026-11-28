@@ -1095,7 +1095,7 @@ def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
     def commit_revision():
         nonlocal revision_number
         revision_number += 1
-        revision(acc, "hwpx", revision_number)
+        h.revision(acc, "hwpx", revision_number)
 
     # Convert a native CURVE segment to LINE, then prove Undo/Redo in the actual UI.
     acc.dom_click(f"{POINT}:nth-of-type(1)")
