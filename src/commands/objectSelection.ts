@@ -43,6 +43,8 @@ export interface ShapePath {
   height: number;
   closed: boolean;
   points: readonly { x: number; y: number; control: boolean }[];
+  /** HWPX native segment types in endpoint-chain order; no derived controls are serialized. */
+  nativeSegmentTypes?: readonly ("LINE" | "CURVE")[];
   /** HWPX only: cubic handles derived from a standard Catmull-Rom anchor chain. */
   curveModel?: "catmull-rom-derived-bezier";
   bezierSegments?: readonly {
@@ -116,6 +118,7 @@ export interface ObjectHit {
   curveLineStructure?: true;
   curveLineSegments?: readonly number[];
   hwpxCurveSegments?: readonly number[];
+  hwpxEditableCurveSegments?: readonly number[];
   curveCubicStructure?: true;
   groupChildFills?: readonly GroupChildFill[];
   groupChildren?: EditableGroupChildren;
@@ -193,6 +196,7 @@ export type ObjectEdit =
   | { kind: "pathSegment"; action: "remove" }
   | { kind: "pathSegment"; action: "splitLine"; index: number; x: number; y: number }
   | { kind: "pathSegment"; action: "joinLines"; index: number }
+  | { kind: "pathSegment"; action: "convertHwpxType"; index: number; expected: "LINE" | "CURVE"; to: "LINE" | "CURVE" }
   | { kind: "pathSegment"; action: "insertCubic"; index: number; c1x: number; c1y: number; c2x: number; c2y: number; x: number; y: number }
   | { kind: "pathSegment"; action: "removeCubic"; index: number }
   | { kind: "groupChildFill"; index: number; color: string }
@@ -282,6 +286,9 @@ export function validObjectEdit(edit: unknown): edit is ObjectEdit {
     || (value.action === "insert" && keys === "action,index,kind,x,y" && integer(value.x, 2_000_000) && integer(value.y, 2_000_000)));
   if (value.kind === "pathSegment") return (value.action === "remove" && keys === "action,kind")
     || (value.action === "joinLines" && keys === "action,index,kind" && integer(value.index, 255))
+    || (value.action === "convertHwpxType" && keys === "action,expected,index,kind,to"
+      && integer(value.index, 255) && (value.expected === "LINE" || value.expected === "CURVE")
+      && (value.to === "LINE" || value.to === "CURVE") && value.expected !== value.to)
     || (value.action === "removeCubic" && keys === "action,index,kind" && integer(value.index, 255))
     || (((value.action === "append" && keys === "action,kind,x,y")
       || (value.action === "splitLine" && keys === "action,index,kind,x,y" && integer(value.index, 255)))

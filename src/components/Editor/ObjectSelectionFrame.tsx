@@ -195,6 +195,7 @@ export function ObjectSelectionFrame({ selection, scale, onEdit, onEnterCaption 
           curveTerminalLine={selection.curveTerminalLine}
           curveLineStructure={selection.curveLineStructure}
           curveLineSegments={selection.curveLineSegments}
+          hwpxEditableCurveSegments={selection.hwpxEditableCurveSegments}
           curveCubicStructure={selection.curveCubicStructure}
           onEdit={edit => onEdit(edit, selection.epoch)} />}
       {editingPath && selection.drawingMlPaths && onEdit &&

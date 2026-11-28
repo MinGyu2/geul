@@ -1010,6 +1010,263 @@ def points_case(acc, row, fixtures, out, kind, fmt):
     h.require(ui_point() == exact, "published point did not reopen in app")
 
 
+def hwpx_open_curve_fixture(source, destination):
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(destination, "w") as output:
+        for entry in original.infolist():
+            data = original.read(entry)
+            if entry.filename == "Contents/section0.xml":
+                root = ET.fromstring(data)
+                curves = root.findall(".//{*}curve")
+                h.require(len(curves) == 1, "open-path fixture must contain one HWPX curve", len(curves))
+                segments = curves[0].findall("./{*}seg")
+                h.require(len(segments) >= 4, "open-path fixture needs at least four source segments")
+                curves[0].remove(segments[-1])
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            output.writestr(entry, data)
+
+
+def hwpx_curve_package_evidence(path):
+    with zipfile.ZipFile(path) as package:
+        root = ET.fromstring(package.read("Contents/section0.xml"))
+        curves = root.findall(".//{*}curve")
+        h.require(len(curves) == 1, "expected exactly one target HWPX curve", len(curves))
+        segments = [list(segment.attrib.items()) for segment in curves[0].findall("./{*}seg")]
+        non_segment_root = deepcopy(root)
+        non_segment_curves = non_segment_root.findall(".//{*}curve")
+        for segment in non_segment_curves[0].findall("./{*}seg"):
+            non_segment_curves[0].remove(segment)
+        non_segment_xml = ET.tostring(non_segment_root)
+        parts = {name: hashlib.sha256(package.read(name)).hexdigest()
+                 for name in package.namelist() if name != "Contents/section0.xml"}
+    return {
+        "segments": segments,
+        "nonSegmentSectionSha256": hashlib.sha256(non_segment_xml).hexdigest(),
+        "otherPartSha256": parts,
+    }
+
+
+def hwpx_contract_native_document(acc, row, fixture, out, filename, closed):
+    before = inspect(fixture)
+    target = next(item for item in before["frames"] if item["path"] and item["path"]["kind"] == "curve")
+    path = h.begin(acc, row, fixture, out, filename)
+    select = lambda: h.select_object(acc, target, "shape")
+    select()
+    if acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')!=='true'"):
+        acc.dom_click(".object-path-mode")
+    h.require(acc.d.js("return document.querySelector('.object-path-mode')?.getAttribute('aria-pressed')==='true'"),
+              "native HWPX curve path mode did not activate")
+    expected_count = len(target["path"]["points"]) - int(closed)
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "native curve anchor count differs", expected_count)
+    remove = ".object-path-remove-vertex"
+    if not closed:
+        for endpoint_index in (1, expected_count):
+            acc.dom_click(f"{POINT}:nth-of-type({endpoint_index})")
+            h.require(acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
+                      "open-path endpoint deletion must remain unavailable", endpoint_index)
+    note = acc.d.js("return document.querySelector('[data-testid=hwpx-curve-capability-note]')?.textContent||''")
+    h.require("Bezier" in note or "베지어" in note,
+              "UI must disclose that HWPX Bezier handles are not independent", note)
+    exposed_handles = acc.d.js("return [...document.querySelectorAll('.object-path-point')].map(e=>e.dataset.control)")
+    h.require(exposed_handles == ["false"] * expected_count,
+              "HWPX exposed a misleading independently editable Bezier control handle", exposed_handles)
+    h.require(not acc.d.exists("[data-testid=hwpx-curve-exact-split], [data-testid=hwpx-curve-exact-merge]"),
+              "nonrepresentable exact CURVE operation is exposed in the UI")
+    row["capabilityNote"] = note
+    row["sourcePath"] = target["path"]
+    row["pointerEvents"] = []
+    acc.d.js("""
+      window.p4HwpxCurvePointers=[];
+      document.addEventListener('pointerdown', e => {
+        if (e.target instanceof Element && e.target.matches('.object-path-point'))
+          window.p4HwpxCurvePointers.push({type:e.type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      }, true);
+      document.addEventListener('pointerup', e => {
+        if (e.target instanceof Element && e.target.matches('.object-path-point'))
+          window.p4HwpxCurvePointers.push({type:e.type,x:e.clientX,y:e.clientY,trusted:e.isTrusted});
+      }, true);
+    """)
+    revision_number = 0
+
+    def commit_revision():
+        nonlocal revision_number
+        revision_number += 1
+        revision(acc, "hwpx", revision_number)
+
+    # Convert a native CURVE segment to LINE, then prove Undo/Redo in the actual UI.
+    acc.dom_click(f"{POINT}:nth-of-type(1)")
+    convert = "[data-testid=hwpx-curve-segment-convert]"
+    h.require(acc.d.exists(convert), "segment type conversion control is missing")
+    acc.dom_click(convert)
+    commit_revision()
+    if closed:
+        acc.dom_click(f"{POINT}:nth-of-type(1)")
+        h.require(acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
+                  "mixed LINE/CURVE boundary deletion must remain unavailable")
+    acc.key("ctrl+z")
+    commit_revision()
+    acc.key("ctrl+y")
+    commit_revision()
+    acc.dom_click(f"{POINT}:nth-of-type(1)")
+    acc.dom_click(convert)
+    commit_revision()
+    acc.key("ctrl+z")
+    commit_revision()
+    acc.key("ctrl+y")
+    commit_revision()
+    # Leave the persisted first segment as LINE after proving the reverse conversion.
+    acc.key("ctrl+z")
+    commit_revision()
+    acc.dom_click(f"{POINT}:nth-of-type(1)")
+    if closed:
+        h.require(acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
+                  "mixed LINE/CURVE boundary deletion must remain unavailable after conversion history")
+
+    # Exact operations stay distinct from shape-changing anchors. The current
+    # source has one native LINE whose integer lattice contains a midpoint.
+    acc.dom_click(f"{POINT}:nth-of-type(1)")
+    split = ".object-path-split-line"
+    h.require(acc.d.exists(split), "supported straight segment did not expose its exact split")
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact LINE split started from unexpected topology")
+    acc.dom_click(split)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact LINE split did not add one anchor")
+    acc.key("ctrl+z")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact LINE split Undo did not restore topology")
+    acc.key("ctrl+y")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact LINE split Redo did not restore the split anchor")
+    acc.dom_click(f"{POINT}:nth-of-type(2)")
+    join = ".object-path-join-lines"
+    h.require(acc.d.exists(join), "collinear native LINE halves did not expose exact merge")
+    acc.dom_click(join)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact LINE merge did not restore the original topology")
+    acc.key("ctrl+z")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "exact LINE merge Undo did not restore the split topology")
+    acc.key("ctrl+y")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "exact LINE merge Redo did not restore the joined topology")
+    row["exactLineSplitMerge"] = {"undoRedo": True, "anchorCountAfterJoin": expected_count}
+
+    # Ordinary insertion is explicitly shape-changing. Undo/Redo must retain topology.
+    acc.dom_click(f"{POINT}:nth-of-type(2)")
+    add = ".object-path-add-vertex"
+    h.require(not acc.d.js("return document.querySelector(arguments[0])?.disabled", add),
+              "valid native curve segment did not offer ordinary anchor insertion")
+    acc.dom_click(add)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "anchor insertion did not add exactly one native anchor")
+    acc.key("ctrl+z")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "anchor insertion Undo did not restore topology")
+    acc.key("ctrl+y")
+    commit_revision()
+
+    # The inserted anchor is index 2 and has like-typed neighbors in this fixture.
+    acc.dom_click(f"{POINT}:nth-of-type(3)")
+    h.require(not acc.d.js("return document.querySelector(arguments[0])?.disabled", remove),
+              "supported same-type anchor deletion was not offered")
+    acc.dom_click(remove)
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count,
+              "anchor deletion did not restore the original anchor count")
+    acc.key("ctrl+z")
+    commit_revision()
+    h.require(acc.d.js("return document.querySelectorAll('.object-path-point').length") == expected_count + 1,
+              "anchor deletion Undo did not restore the inserted anchor")
+    acc.key("ctrl+y")
+    commit_revision()
+
+    # Move a shared endpoint using trusted X11 pointer input. The closed path
+    # must retain closure; open paths retain their two independent endpoints.
+    first = f"{POINT}:nth-of-type(1)"
+    acc.dom_click(first)
+    before_coordinates = acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
+    x, y = acc.d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]", first)
+    sx, sy = acc.d.pointer_scale
+    h.p4.rhwp_poc.drag(acc.d, (x*sx,y*sy), ((x+7)*sx,(y+5)*sy))
+    pointer_events = row["pointer"] = acc.d.js("return window.p4HwpxCurvePointers")
+    h.require(len(pointer_events) >= 2 and all(event["trusted"] for event in pointer_events[-2:]),
+              "anchor movement did not use trusted Native pointer input", pointer_events)
+    commit_revision()
+    after_coordinates = acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
+    h.require(after_coordinates != before_coordinates, "Native pointer did not move the selected curve anchor")
+    acc.key("ctrl+z")
+    commit_revision()
+    select()
+    acc.dom_click(first)
+    h.require(acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
+              == before_coordinates, "anchor movement Undo did not restore the shared endpoint")
+    acc.key("ctrl+y")
+    commit_revision()
+    select()
+    acc.dom_click(first)
+    h.require(acc.d.js("return [...document.querySelectorAll(arguments[0]+' input')].map(e=>+e.value)", COORDS)
+              == after_coordinates, "anchor movement Redo did not restore the moved endpoint")
+
+    acc.key("Escape")
+    h.publish(acc, "hwpx", row)
+    row["after"] = inspect(path)
+    saved = hwpx_curve_package_evidence(path)
+    source = hwpx_curve_package_evidence(fixture)
+    h.require(saved["otherPartSha256"] == source["otherPartSha256"],
+              "curve editing changed unrelated HWPX package parts")
+    h.require(saved["nonSegmentSectionSha256"] == source["nonSegmentSectionSha256"],
+              "curve editing changed owner, formatting, or unrelated section XML")
+    saved_frame = next(item for item in row["after"]["frames"]
+                       if item["controlIdx"] == target["controlIdx"] and item["path"])
+    saved_path = saved_frame["path"]
+    model_segments = [[list(pair) for pair in segment] for segment in saved_path["segments"]]
+    h.require(saved["segments"] == model_segments,
+              "saved native hp:seg records differ from the reopened engine model", saved)
+    types = [dict(segment).get("type") for segment in saved["segments"]]
+    h.require(types == ["LINE"] + ["CURVE"] * (len(types) - 1),
+              "serialized segment conversion or remaining segment types differ", types)
+    h.require(saved_path["closed"] is closed,
+              "saved path open/closed state changed", saved_path)
+    h.require(row["after"]["body"] == before["body"], "curve edit changed unrelated body text")
+    other_before = [item for item in before["frames"] if item["controlIdx"] != target["controlIdx"]]
+    other_after = [item for item in row["after"]["frames"] if item["controlIdx"] != target["controlIdx"]]
+    h.require(other_after == other_before, "curve edit changed another object or owner")
+    row["independentPackageProof"] = saved
+    h.require(digest(fixture) == row["fixtureSha256"], "curve source fixture changed on disk")
+    reopen(acc, path, row)
+    h.require(row["reopenedSession"].get("dirty") == "false",
+              "saved curve did not reopen in a clean independent document session", row["reopenedSession"])
+    reopened = inspect(path)
+    reopened_frame = next(item for item in reopened["frames"]
+                          if item["controlIdx"] == target["controlIdx"] and item["path"])
+    h.require(reopened_frame["path"] == saved_path, "fresh-session reopened curve differs from saved geometry")
+    row["freshSessionPath"] = reopened_frame["path"]
+    row["publishedSha256"] = digest(path)
+
+
+def hwpx_curve_contract_v1_case(acc, row, fixtures, out):
+    closed_fixture = ROOT / "scripts/tests/fixtures/hwpx-catmull-rom/SimpleCurve.canonical.hwpx"
+    h.require(closed_fixture.is_file(), "canonical HWPX curve fixture is missing", str(closed_fixture))
+    closed_row = row["closed"] = {}
+    hwpx_contract_native_document(acc, closed_row, closed_fixture, out,
+                                  "p4-hwpx-contract-closed-edited.hwpx", True)
+
+    open_fixture = out / "p4-hwpx-contract-open-fixture.hwpx"
+    hwpx_open_curve_fixture(closed_fixture, open_fixture)
+    open_row = row["open"] = {}
+    hwpx_contract_native_document(acc, open_row, open_fixture, out,
+                                  "p4-hwpx-contract-open-edited.hwpx", False)
+
+
 def inspect_polygon_records(source, path, before, after):
     gso = h.p6.gso
     streams = [gso.cfb_streams(item.read_bytes()) for item in (source, path)]
@@ -2512,6 +2769,7 @@ h.CASES = {
     "P4-PATH-XFM-HWP5": lambda *args: rhwp_path_transform_case(*args, "hwp"),
     "P4.1": lambda *args: points_case(*args, "polygon", "hwpx"),
     "P4-HX-CURVE": lambda *args: points_case(*args, "curve", "hwpx"),
+    "P4-HX-CURVE-CONTRACT-V1": hwpx_curve_contract_v1_case,
     "P4-HX-CURVE-CATMULL": hwpx_curve_catmull_rom_case,
     "P4-HX-CURVE-LINES": hwpx_curve_line_segments_case,
     "P4.2": lambda *args: points_case(*args, "curve", "hwp"),

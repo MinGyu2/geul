@@ -76,7 +76,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/stage3a-p6-hwpx-inline-caption-layout.patch",
           "patches/rhwp/stage3a-p6-hwpx-curve-clipboard.patch",
           "patches/rhwp/stage3a-hwpx-curve-catmull-rom-model.patch",
-          "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch")
+          "patches/rhwp/stage3a-p6-hwpx-curve-fill-safety.patch",
+          "patches/rhwp/stage3a-hwpx-curve-contract-v1.patch")
 SHARED = tuple("patches/rhwp/table-calc/" + name for name in ("parser.rs", "tokenizer.rs", "evaluator.rs"))
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"

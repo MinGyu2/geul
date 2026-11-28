@@ -121,12 +121,29 @@ export function inspectRhwpGroup(doc: Pick<RhwpDocument, "getShapeProperties">, 
 const within = (value: unknown, max: number): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max;
 
+function parseHwpxSegmentTypes(raw: unknown, expectedCount: number): ("LINE" | "CURVE")[] | undefined {
+  if (!Array.isArray(raw) || raw.length !== expectedCount) return undefined;
+  const types: ("LINE" | "CURVE")[] = [];
+  for (const segment of raw) {
+    if (!Array.isArray(segment)) return undefined;
+    const typeAttributes = segment.filter((attribute): attribute is [string, string] =>
+      Array.isArray(attribute) && attribute.length === 2
+      && typeof attribute[0] === "string" && typeof attribute[1] === "string"
+      && attribute[0] === "type");
+    if (typeAttributes.length !== 1
+      || (typeAttributes[0]![1] !== "LINE" && typeAttributes[0]![1] !== "CURVE")) return undefined;
+    types.push(typeAttributes[0]![1]);
+  }
+  return types;
+}
+
 export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [number, number, number], portable = false): ShapePath | undefined {
   try {
     const raw = portable ? doc.getPortablePolygonPath?.(...address) : doc.getEditableShapePath?.(...address);
     if (!raw) return undefined;
     const value = JSON.parse(raw);
-    const { kind, width, height, points, closed, curveModel, bezierSegments: rawBeziers } = value ?? {};
+    const { kind, width, height, points, closed, curveModel, bezierSegments: rawBeziers,
+      segments: rawNativeSegments } = value ?? {};
     if ((kind !== "polygon" && kind !== "curve")
       || !within(width, 2_000_000) || width === 0 || !within(height, 2_000_000) || height === 0
       || typeof closed !== "boolean" || !Array.isArray(points) || points.length < 3 || points.length > 257
@@ -149,13 +166,34 @@ export function inspectRhwpShapePath(doc: RhwpDocument, address: readonly [numbe
         end: { x: segment.end.x, y: segment.end.y },
       }));
     }
+    let nativeSegmentTypes: ShapePath["nativeSegmentTypes"];
+    if (rawNativeSegments !== undefined) {
+      if (kind !== "curve") return undefined;
+      const parsed = parseHwpxSegmentTypes(rawNativeSegments, points.length - 1);
+      if (!parsed) return undefined;
+      nativeSegmentTypes = parsed;
+    }
     return {
       kind, width, height, points: points.map(({ x, y, control }) => ({ x, y, control })), closed,
+      ...(nativeSegmentTypes ? { nativeSegmentTypes } : {}),
       ...(bezierSegments ? { curveModel: "catmull-rom-derived-bezier" as const, bezierSegments } : {}),
     };
   } catch {
     return undefined;
   }
+}
+
+export function inspectRhwpHwpxCurveEditableSegments(
+  doc: RhwpDocument, address: readonly [number, number, number], segmentCount: number,
+): number[] | undefined {
+  if (!doc.getHwpxEditableCurveSegments || !doc.editHwpxCurveVertex
+    || !within(segmentCount, 256) || segmentCount === 0) return undefined;
+  try {
+    const value: unknown = JSON.parse(doc.getHwpxEditableCurveSegments(...address));
+    if (!Array.isArray(value) || value.length !== segmentCount
+      || !value.every((index, position) => index === position)) return undefined;
+    return value as number[];
+  } catch { return undefined; }
 }
 
 export function inspectRhwpCurveTerminalLine(doc: RhwpDocument, address: readonly [number, number, number]) {

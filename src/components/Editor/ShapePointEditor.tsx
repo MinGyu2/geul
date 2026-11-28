@@ -45,7 +45,7 @@ function bezierMidpoint(segment: NonNullable<ShapePath["bezierSegments"]>[number
   return { x, y };
 }
 
-export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveLineSegments, curveCubicStructure, onEdit }: {
+export function ShapePointEditor({ path, owner, width, height, scale, shape, editVertices, collinearVertexRemoval, curveTerminalLine, curveLineStructure, curveLineSegments, hwpxEditableCurveSegments, curveCubicStructure, onEdit }: {
   path: ShapePath;
   owner: string;
   width: number;
@@ -57,6 +57,7 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
   curveTerminalLine: ObjectSelection["curveTerminalLine"];
   curveLineStructure: ObjectSelection["curveLineStructure"];
   curveLineSegments: ObjectSelection["curveLineSegments"];
+  hwpxEditableCurveSegments: ObjectSelection["hwpxEditableCurveSegments"];
   curveCubicStructure: ObjectSelection["curveCubicStructure"];
   onEdit: (edit: Extract<ObjectEdit, { kind: "pathPoint" | "pathVertex" | "pathSegment" }>) => void;
 }) {
@@ -73,15 +74,36 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
   const selected = points[index]!;
   const hasNext = path.closed || index < points.length - 1;
   const curveMidpoint = path.kind === "curve" ? path.bezierSegments?.[index] && bezierMidpoint(path.bezierSegments[index]!) : undefined;
-  const newVertex = editVertices && points.length < 256 && hasNext
-    ? curveMidpoint ?? (path.kind === "polygon" ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined)
+  const segmentNext = points[index + 1] ?? (path.closed ? points[0] : undefined);
+  const ordinaryCurveMidpoint = hwpxEditableCurveSegments?.includes(index) && segmentNext
+    ? { x: Math.round((selected.x + segmentNext.x) / 2), y: Math.round((selected.y + segmentNext.y) / 2) }
     : undefined;
+  const ordinaryCurveMidpointValid = ordinaryCurveMidpoint
+    && (ordinaryCurveMidpoint.x !== selected.x || ordinaryCurveMidpoint.y !== selected.y)
+    && (ordinaryCurveMidpoint.x !== segmentNext?.x || ordinaryCurveMidpoint.y !== segmentNext?.y)
+    && !points.some(point => point.x === ordinaryCurveMidpoint.x && point.y === ordinaryCurveMidpoint.y)
+    ? ordinaryCurveMidpoint : undefined;
+  const newVertexCandidate = editVertices && points.length < 256 && hasNext
+    ? curveMidpoint ?? ordinaryCurveMidpointValid
+      ?? (path.kind === "polygon" ? edgeInteriorPoint(selected, points[(index + 1) % points.length]!) : undefined)
+    : undefined;
+  const newVertex = newVertexCandidate
+    && !points.some(point => point.x === newVertexCandidate.x && point.y === newVertexCandidate.y)
+    ? newVertexCandidate : undefined;
+  const previousSegmentIndex = index === 0 && path.closed && path.nativeSegmentTypes
+    ? path.nativeSegmentTypes.length - 1 : index - 1;
+  const nextSegmentIndex = index;
+  const sameTypeAtDeletion = previousSegmentIndex !== undefined && previousSegmentIndex >= 0
+    && path.nativeSegmentTypes?.[previousSegmentIndex] !== undefined
+    && path.nativeSegmentTypes[previousSegmentIndex] === path.nativeSegmentTypes[nextSegmentIndex];
   const removable = editVertices && (path.kind === "curve"
-    ? points.length > 3 && (path.closed || (index > 0 && index < points.length - 1))
+    ? points.length > 3 && (hwpxEditableCurveSegments?.length
+      ? sameTypeAtDeletion && (path.closed || (index > 0 && index < points.length - 1))
+      : (path.closed || (index > 0 && index < points.length - 1)))
     : points.length > 3 && (!collinearVertexRemoval
       || canJoinEdges(points[(index + points.length - 1) % points.length]!, selected, points[(index + 1) % points.length]!)));
   const previous = points[index - 1], next = points[index + 1];
-  const curveNext = next ?? (curveLineSegments && path.closed ? points[0] : undefined);
+  const curveNext = next ?? ((curveLineSegments || hwpxEditableCurveSegments) && path.closed ? points[0] : undefined);
   const lineSplitAllowed = curveLineStructure || curveLineSegments?.includes(index) === true;
   const split = lineSplitAllowed && path.points.length < 257 && !selected.control && curveNext && !curveNext.control
     ? edgeInteriorPoint(selected, curveNext) : undefined;
@@ -171,13 +193,25 @@ export function ShapePointEditor({ path, owner, width, height, scale, shape, edi
       {editVertices && <div className="object-path-vertex-actions">
         <button type="button" className="object-path-add-vertex" disabled={!newVertex}
           onClick={() => { if (newVertex) onEdit({ kind: "pathVertex", action: "insert", index, ...newVertex }); }}>
-          {t("editor.object.path.addVertex")}
+          {t(hwpxEditableCurveSegments ? "editor.object.path.addHwpxAnchor" : "editor.object.path.addVertex")}
         </button>
         <button type="button" className="object-path-remove-vertex" disabled={!removable}
           onClick={() => onEdit({ kind: "pathVertex", action: "remove", index })}>
-          {t("editor.object.path.removeVertex")}
+          {t(hwpxEditableCurveSegments ? "editor.object.path.removeHwpxAnchor" : "editor.object.path.removeVertex")}
         </button>
       </div>}
+      {hwpxEditableCurveSegments?.includes(index) && path.nativeSegmentTypes?.[index] &&
+        <div className="object-path-vertex-actions">
+          <button type="button" className="object-path-convert-hwpx-segment" data-testid="hwpx-curve-segment-convert"
+            onClick={() => onEdit({ kind: "pathSegment", action: "convertHwpxType", index,
+              expected: path.nativeSegmentTypes![index]!, to: path.nativeSegmentTypes![index] === "LINE" ? "CURVE" : "LINE" })}>
+            {t(path.nativeSegmentTypes[index] === "LINE" ? "editor.object.path.convertToCurve" : "editor.object.path.convertToLine")}
+          </button>
+        </div>}
+      {path.kind === "curve" && path.nativeSegmentTypes &&
+        <p className="object-path-capability-note" data-testid="hwpx-curve-capability-note">
+          {t("editor.object.path.hwpxCurveLimits")}
+        </p>}
       {curveTerminalLine && index === points.length - 1 && <div className="object-path-vertex-actions">
         <button type="button" className="object-path-append-line"
           disabled={!curveTerminalLine.append || !valid || (x === points[0]!.x && y === points[0]!.y)}

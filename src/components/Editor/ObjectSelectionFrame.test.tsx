@@ -107,6 +107,16 @@ describe("object edit requests", () => {
       { kind: "pathVertex", action: "insert", index: 2, x: 20.5, y: 30 },
     ]) expect(validObjectEdit(edit)).toBe(false);
   });
+
+  it("validates HWPX segment type conversions against the native type pair", () => {
+    expect(validObjectEdit({ kind: "pathSegment", action: "convertHwpxType", index: 1, expected: "LINE", to: "CURVE" })).toBe(true);
+    for (const edit of [
+      { kind: "pathSegment", action: "convertHwpxType", index: 1, expected: "LINE", to: "LINE" },
+      { kind: "pathSegment", action: "convertHwpxType", index: 256, expected: "CURVE", to: "LINE" },
+      { kind: "pathSegment", action: "convertHwpxType", index: 1, expected: "SPLINE", to: "LINE" },
+      { kind: "pathSegment", action: "convertHwpxType", index: 1, expected: "CURVE", to: "LINE", extra: true },
+    ]) expect(validObjectEdit(edit)).toBe(false);
+  });
   it("validates HWP5 cubic segment edits as exact integer payloads", () => {
     expect(validObjectEdit({ kind: "pathSegment", action: "insertCubic", index: 3,
       c1x: 20, c1y: 30, c2x: 40, c2y: 30, x: 60, y: 50 })).toBe(true);
@@ -413,6 +423,30 @@ it("inserts HWPX curve anchors at the derived cubic midpoint and removes a selec
   expect(remove.disabled).toBe(false);
   fireEvent.click(remove);
   expect(onRemove).toHaveBeenLastCalledWith({ kind: "pathVertex", action: "remove", index: 1 }, 7);
+});
+
+it("labels ordinary HWPX anchor edits and exposes supported LINE/CURVE conversion only", () => {
+  const nativeSegmentTypes = ["CURVE", "LINE", "CURVE", "CURVE"] as const;
+  const points = [[10, 10], [30, 10], [30, 30], [10, 30], [10, 10]];
+  const { onEdit } = frame({ selection: selection({
+    kind: "shape", address: { engine: "rhwp", path: [0, 0, 2] },
+    operations: ["deselect", "pathPoint", "pathVertex", "pathSegment"],
+    curveLineSegments: [1],
+    hwpxEditableCurveSegments: [0, 1, 2, 3],
+    shapePath: { kind: "curve", closed: true, width: 60, height: 60, nativeSegmentTypes,
+      points: points.map(([x, y]) => ({ x: x!, y: y!, control: false })) },
+  }) });
+  fireEvent.click(screen.getByRole("button", { name: "Edit points" }));
+  expect(screen.getByTestId("hwpx-curve-capability-note")).toHaveTextContent("independent Bezier handles");
+  expect(screen.queryByRole("button", { name: /exact curve/i })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Convert segment to line" }));
+  expect(onEdit).toHaveBeenLastCalledWith({ kind: "pathSegment", action: "convertHwpxType", index: 0,
+    expected: "CURVE", to: "LINE" }, 7);
+  fireEvent.click(screen.getByRole("button", { name: "Vertex 2" }));
+  expect(screen.getByRole("button", { name: "Remove anchor (curve shape may change)" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Insert anchor (curve shape may change)" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Convert segment to curve" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Split next straight segment" })).not.toBeNull();
 });
 
 it("only enables HWP5 vertex removal when joining collinear edges", () => {
